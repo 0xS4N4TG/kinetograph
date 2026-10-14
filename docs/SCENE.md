@@ -73,10 +73,30 @@ Every layer has these fields:
 | `anchorX`, `anchorY` | `0` | Anchor point in the layer's own coordinates. Scale and rotation pivot here. |
 | `rotateX`, `rotateY` | `0` | Degrees. Turn the layer in 3D about the horizontal and the vertical axis through its position, as CSS's `rotateX` and `rotateY`. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `z` | `0` | Pixels toward the viewer, as CSS's `translateZ`. |
+| `originX`, `originY` | `0` | A point of the layer's box as a fraction of its size, added to the anchor to make the pivot: see [Transform origin](#transform-origin). |
 
 The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale) * translate(-anchorX, -anchorY)`. A child's
 matrix is applied inside its parent's. `rotateX`, `rotateY` and `z` do not change it: they move the finished layer
 afterwards.
+
+### Transform origin
+
+`originX` and `originY` say where the layer turns and scales without knowing its size: a point of its box (the box
+`inset` clips use, see [Clip paths](#clip-paths)) as a fraction of the box's width and height, so `0.5, 0.5` is the
+centre and `1, 1` the bottom-right corner. The pivot of `rotation`, `scale` and, in 3D, `rotateX` and `rotateY` is then
+the anchor plus `(originX * width, originY * height)`.
+
+Like CSS's `transform-origin`, the origin changes the pivot and does not move the layer: with no turn and no scale the
+layer is where it would be without an origin, with its anchor at `(x, y)`, and the pivot sits at `(x, y)` plus the
+origin offset whatever `rotation` and `scale` do. The matrix is
+`translate(x + ox, y + oy) * rotate(rotation) * scale(scale) * translate(-(anchorX + ox), -(anchorY + oy))`, with
+`(ox, oy)` the origin in pixels. The 3D turn is about that same point.
+
+- Both are animatable numbers. The size is the box at that frame, so a text layer or an image whose size animates keeps
+  turning about its middle.
+- A layer without a box (a group) ignores them.
+- A text layer's box is its laid-out box, so measuring it needs its font: a scene with an origin on text is resolved with
+  the renderer's text engine.
 
 Layers are blended bottom-up in linear light (not in sRGB as CSS does, so `multiply`, `screen` and `softLight` look
 different from a browser).
@@ -110,14 +130,16 @@ is drawn over the fill. `fill` is a colour string or a [gradient](#gradients) (s
   "size": 64, "color": "#ffffff", "lineHeight": 1.2, "maxWidth": 600 }
 ```
 
-Left-aligned, one font per layer, no fallback, no bidi. `\n` starts a new line. The layer origin is the top-left of
-the text box.
+One font per layer, no fallback, no bidi. `\n` starts a new line. The layer origin is the top-left of the text box.
 
 - `font`: a key of the scene's `fonts`.
 - `size`: font size in pixels.
 - `color`: a colour string or a [gradient](#gradients) (see [Gradient fills](#gradient-fills)).
 - `lineHeight`: multiple of `size`. Omitted: the font's own line height.
 - `maxWidth`: wrap width in pixels. Omitted: lines break only at `\n`.
+- `align`: `left` (default), `center` or `right`. Each line is placed within `maxWidth`, or within the widest line when
+  there is no `maxWidth`. A line wider than `maxWidth` (a long word that does not break) is left-aligned. The text box
+  does not change with `align`: it is `maxWidth`, or the widest line, wide.
 
 Fonts are registered before any text is measured.
 

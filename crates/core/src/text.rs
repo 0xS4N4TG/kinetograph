@@ -10,11 +10,12 @@ use std::path::Path;
 
 use parley::fontique::{Blob, Collection, CollectionOptions, FontInfoOverride, SourceCache};
 use parley::{
-    FontContext, FontData, FontFamily, LayoutContext, LineHeight, PositionedLayoutItem,
-    StyleProperty,
+    Alignment, AlignmentOptions, FontContext, FontData, FontFamily, LayoutContext, LineHeight,
+    PositionedLayoutItem, StyleProperty,
 };
 
 use crate::error::{Error, Result};
+use crate::scene::TextAlign;
 
 pub struct TextEngine {
     font_cx: FontContext,
@@ -29,6 +30,17 @@ pub struct LaidOutText {
     pub height: f32,
     pub lines: Vec<LaidOutLine>,
     pub runs: Vec<LaidOutRun>,
+}
+
+impl LaidOutText {
+    /// The text box (`docs/SCENE.md`, "Clip paths"): `max_width`, or the
+    /// widest line without one, by the height.
+    pub fn box_size(&self, max_width: Option<f32>) -> (f64, f64) {
+        (
+            f64::from(max_width.unwrap_or(self.width)),
+            f64::from(self.height),
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -111,7 +123,8 @@ impl TextEngine {
     }
 
     /// Shapes `text` in the named font. `line_height` is a multiple of
-    /// `size`; `max_width` wraps lines.
+    /// `size`; `max_width` wraps lines. `align` places each line within
+    /// `max_width`, or within the widest line when there is none.
     pub fn layout(
         &mut self,
         text: &str,
@@ -119,6 +132,7 @@ impl TextEngine {
         size: f32,
         line_height: Option<f32>,
         max_width: Option<f32>,
+        align: TextAlign,
     ) -> LaidOutText {
         let mut builder = self
             .layout_cx
@@ -130,6 +144,13 @@ impl TextEngine {
         }
         let mut layout = builder.build(text);
         layout.break_all_lines(max_width);
+        // Left is Parley's own start: leaving it alone keeps left-aligned
+        // text exactly as it was before alignment existed.
+        match align {
+            TextAlign::Left => {}
+            TextAlign::Center => layout.align(Alignment::Center, AlignmentOptions::default()),
+            TextAlign::Right => layout.align(Alignment::Right, AlignmentOptions::default()),
+        }
 
         let mut lines = Vec::new();
         let mut runs = Vec::new();
@@ -191,7 +212,7 @@ mod tests {
 
     #[test]
     fn exposes_glyph_positions() {
-        let t = engine().layout("Hello", "DM Sans", 32.0, None, None);
+        let t = engine().layout("Hello", "DM Sans", 32.0, None, None, TextAlign::Left);
         assert_eq!(t.lines.len(), 1);
         assert_eq!(glyph_count(&t), 5);
         let glyphs: Vec<_> = t.runs.iter().flat_map(|r| &r.glyphs).collect();
@@ -203,19 +224,95 @@ mod tests {
     #[test]
     fn wraps_at_max_width_and_honours_newlines() {
         let mut e = engine();
-        let one = e.layout("alpha beta gamma", "DM Sans", 32.0, None, None);
-        let wrapped = e.layout("alpha beta gamma", "DM Sans", 32.0, None, Some(150.0));
+        let one = e.layout(
+            "alpha beta gamma",
+            "DM Sans",
+            32.0,
+            None,
+            None,
+            TextAlign::Left,
+        );
+        let wrapped = e.layout(
+            "alpha beta gamma",
+            "DM Sans",
+            32.0,
+            None,
+            Some(150.0),
+            TextAlign::Left,
+        );
         assert_eq!(one.lines.len(), 1);
         assert!(wrapped.lines.len() > 1);
         assert!(wrapped.width <= 150.0);
-        let broken = e.layout("a\nb", "DM Sans", 32.0, None, None);
+        let broken = e.layout("a\nb", "DM Sans", 32.0, None, None, TextAlign::Left);
         assert_eq!(broken.lines.len(), 2);
+    }
+
+    /// The left edge of the first glyph of each line and the line's width.
+    fn line_starts(t: &LaidOutText) -> Vec<(f32, f32)> {
+        t.lines
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let glyphs: Vec<_> = t
+                    .runs
+                    .iter()
+                    .filter(|r| r.line == i)
+                    .flat_map(|r| &r.glyphs)
+                    .collect();
+                let first = glyphs.first().unwrap().x;
+                let last = glyphs.last().unwrap();
+                (first, last.x + last.advance - first)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn aligns_lines_within_the_widest_line() {
+        let mut e = engine();
+        let text = "a long line\nshort";
+        let left = e.layout(text, "DM Sans", 32.0, None, None, TextAlign::Left);
+        let [(l0, w0), (l1, w1)] = line_starts(&left)[..] else {
+            panic!("two lines");
+        };
+        assert!(l0.abs() < 0.01 && l1.abs() < 0.01 && w1 < w0);
+        let center = e.layout(text, "DM Sans", 32.0, None, None, TextAlign::Center);
+        let [(c0, _), (c1, _)] = line_starts(&center)[..] else {
+            panic!("two lines");
+        };
+        assert!(c0.abs() < 0.01, "the widest line stays put: {c0}");
+        assert!(
+            (c1 - (w0 - w1) / 2.0).abs() < 0.05,
+            "{c1} vs {}",
+            (w0 - w1) / 2.0
+        );
+        let right = e.layout(text, "DM Sans", 32.0, None, None, TextAlign::Right);
+        let [(r0, _), (r1, _)] = line_starts(&right)[..] else {
+            panic!("two lines");
+        };
+        assert!(r0.abs() < 0.01);
+        assert!((r1 - (w0 - w1)).abs() < 0.05, "{r1} vs {}", w0 - w1);
+        // The box does not change with the alignment.
+        assert_eq!(left.box_size(None), center.box_size(None));
+    }
+
+    #[test]
+    fn aligns_lines_within_the_max_width() {
+        let mut e = engine();
+        let w = 400.0;
+        let left = e.layout("hi", "DM Sans", 32.0, None, Some(w), TextAlign::Left);
+        let width = line_starts(&left)[0].1;
+        let center = e.layout("hi", "DM Sans", 32.0, None, Some(w), TextAlign::Center);
+        let right = e.layout("hi", "DM Sans", 32.0, None, Some(w), TextAlign::Right);
+        assert!((line_starts(&center)[0].0 - (w - width) / 2.0).abs() < 0.05);
+        assert!((line_starts(&right)[0].0 - (w - width)).abs() < 0.05);
+        // The box is the max width.
+        assert_eq!(right.box_size(Some(w)).0, 400.0);
     }
 
     #[test]
     fn line_height_scales_with_size() {
         let mut e = engine();
-        let t = e.layout("a\nb", "DM Sans", 20.0, Some(2.0), None);
+        let t = e.layout("a\nb", "DM Sans", 20.0, Some(2.0), None, TextAlign::Left);
         assert!((t.lines[1].baseline - t.lines[0].baseline - 40.0).abs() < 0.01);
     }
 }

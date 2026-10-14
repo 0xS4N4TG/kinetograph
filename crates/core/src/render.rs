@@ -237,7 +237,7 @@ impl Renderer {
     /// the caller starts the next one, and `finish_frame` collects it.
     /// Frames are finished in the order they were started.
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
-        let resolved = self.scene.resolve(frame)?;
+        let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
         self.start_resolved(&resolved)
     }
 
@@ -257,7 +257,7 @@ impl Renderer {
     /// `render_frame`; use `render_frame` to time the whole frame.
     pub fn render_timed(&mut self, frame: u32) -> Result<(Frame, Timings)> {
         let start = Instant::now();
-        let resolved = self.scene.resolve(frame)?;
+        let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
         self.timings = Some(Timings {
             resolve_ms: start.elapsed().as_secs_f64() * 1000.0,
             ..Timings::default()
@@ -956,11 +956,12 @@ impl Renderer {
                 size,
                 line_height,
                 max_width,
+                align,
                 ..
             } => {
-                let laid_out = self
-                    .text
-                    .layout(text, font, *size, *line_height, *max_width);
+                let laid_out =
+                    self.text
+                        .layout(text, font, *size, *line_height, *max_width, *align);
                 text_bounds(&laid_out, *size, *max_width)
             }
             ResolvedKind::Image { width, height, .. }
@@ -1022,16 +1023,13 @@ impl Renderer {
                 color,
                 line_height,
                 max_width,
+                align,
             } => {
-                let laid_out = self
-                    .text
-                    .layout(text, font, *size, *line_height, *max_width);
-                let text_box = Rect::new(
-                    0.0,
-                    0.0,
-                    f64::from(max_width.unwrap_or(laid_out.width)),
-                    f64::from(laid_out.height),
-                );
+                let laid_out =
+                    self.text
+                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let (box_width, box_height) = laid_out.box_size(*max_width);
+                let text_box = Rect::new(0.0, 0.0, box_width, box_height);
                 let (brush, brush_transform) = paint_brush(color, Some(text_box));
                 for run in &laid_out.runs {
                     self.vello_scene
@@ -1220,18 +1218,14 @@ impl Renderer {
                 size,
                 line_height,
                 max_width,
+                align,
                 ..
             } => {
-                let laid_out = self
-                    .text
-                    .layout(text, font, *size, *line_height, *max_width);
-                let width = max_width.unwrap_or(laid_out.width);
-                Some(Rect::new(
-                    0.0,
-                    0.0,
-                    f64::from(width),
-                    f64::from(laid_out.height),
-                ))
+                let laid_out =
+                    self.text
+                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let (width, height) = laid_out.box_size(*max_width);
+                Some(Rect::new(0.0, 0.0, width, height))
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
@@ -1782,6 +1776,7 @@ pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::TextAlign;
     use vello::peniko::GradientKind;
 
     #[test]
@@ -2643,7 +2638,7 @@ mod tests {
     #[test]
     fn text_is_bounded_by_its_layout_and_its_glyphs_a_font_size_wider() {
         let mut engine = text_engine();
-        let laid_out = engine.layout("Hello world", "DM Sans", 40.0, None, None);
+        let laid_out = engine.layout("Hello world", "DM Sans", 40.0, None, None, TextAlign::Left);
         let b = text_bounds(&laid_out, 40.0, None);
         assert_eq!(b.x0, -40.0);
         assert_eq!(b.y0, -40.0);
@@ -2656,7 +2651,14 @@ mod tests {
         }
         // A word wider than the wrap width hangs out of the box, and the
         // bounds follow it.
-        let wide = engine.layout("Unbreakable", "DM Sans", 40.0, None, Some(60.0));
+        let wide = engine.layout(
+            "Unbreakable",
+            "DM Sans",
+            40.0,
+            None,
+            Some(60.0),
+            TextAlign::Left,
+        );
         let b = text_bounds(&wide, 40.0, Some(60.0));
         assert!(
             f64::from(wide.width) > 60.0,

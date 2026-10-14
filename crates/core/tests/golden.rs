@@ -384,3 +384,17 @@ fn motion_blur_frames_match_golden() {
     let frame = render_still(scene("tests/scenes/motion-frames.json"), 15).unwrap();
     check("motion-frames", &frame);
 }
+
+#[test]
+fn origin_and_align_match_golden() {
+    // Frame 15 of 30: the rotations, scale and tilt are half way. Covers a
+    // rect turning and shrinking about its centre (its outline stays put), an
+    // ellipse turning about its bottom-right corner, a path turning about the
+    // middle of its box (which does not start at the origin), a layer with
+    // an anchor and an origin together, a card tilted about the vertical
+    // axis through its centre under no camera, text turning about its centre,
+    // and three-line text left, centre and right aligned in a 130 px wrap
+    // width (outlined) and centred with no wrap width.
+    let frame = render_still(scene("tests/scenes/origin-align.json"), 15).unwrap();
+    check("origin-align", &frame);
+}

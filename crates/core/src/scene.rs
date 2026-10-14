@@ -207,6 +207,12 @@ pub struct Transform {
     /// Pixels toward the viewer, as CSS's `translateZ`. Moves nothing on
     /// screen without a camera, but still orders a `preserve3d` group.
     pub z: Num,
+    /// A point of the layer's box, as a fraction of its size, that the layer
+    /// turns and scales about, added to the anchor. `0.5, 0.5` is the centre.
+    /// A layer without a box ignores them. Unlike the anchor, they do not
+    /// move the layer.
+    pub origin_x: Num,
+    pub origin_y: Num,
 }
 
 impl Transform {
@@ -230,6 +236,8 @@ impl Default for Transform {
             rotate_x: Num::Const(0.0),
             rotate_y: Num::Const(0.0),
             z: Num::Const(0.0),
+            origin_x: Num::Const(0.0),
+            origin_y: Num::Const(0.0),
         }
     }
 }
@@ -929,6 +937,18 @@ pub struct TextLayer {
     pub line_height: Option<Num>,
     /// Wrap width in pixels. Omitted: no wrapping.
     pub max_width: Option<Num>,
+    /// How lines sit in the box: within `maxWidth`, or within the widest line.
+    #[serde(default)]
+    pub align: TextAlign,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -3565,6 +3585,48 @@ mod tests {
         );
         // In pixels it is fine on a group.
         Scene::from_json(&json(""), PathBuf::new()).unwrap();
+    }
+
+    // --- Origin and text alignment. -------------------------------------------
+
+    #[test]
+    fn the_origin_is_animatable_and_defaults_to_zero() {
+        let scene = scene_with("").unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!((t.origin_x.at(0.0), t.origin_y.at(0.0)), (0.0, 0.0));
+        let scene = scene_with(
+            r#""transform": {"originX": 0.5, "originY": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]},"#,
+        )
+        .unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!((t.origin_x.at(0.0), t.origin_y.at(4.5)), (0.5, 0.5));
+    }
+
+    #[test]
+    fn text_aligns_left_unless_told_otherwise() {
+        let align = |extra: &str| {
+            let json = format!(
+                r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1,
+                    "fonts": {{"DM Sans": "f.ttf"}}, "layers": [
+                  {{"id": "t", "type": "text", "text": "a", "font": "DM Sans", "size": 9,
+                    "color": "#fff"{extra}}}]}}"##
+            );
+            match Scene::from_json(&json, PathBuf::new()) {
+                Ok(scene) => match &scene.layers[0].kind {
+                    LayerKind::Text(t) => Ok(t.align),
+                    _ => panic!("not text"),
+                },
+                Err(e) => Err(e.to_string()),
+            }
+        };
+        assert_eq!(align(""), Ok(TextAlign::Left));
+        assert_eq!(align(r#", "align": "center""#), Ok(TextAlign::Center));
+        assert_eq!(align(r#", "align": "right""#), Ok(TextAlign::Right));
+        assert!(
+            align(r#", "align": "justify""#)
+                .unwrap_err()
+                .contains("justify")
+        );
     }
 
     // --- Motion blur frames. --------------------------------------------------
