@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
-use vello::kurbo::{Affine, BezPath, Ellipse, Rect, RoundedRect, Shape, Stroke};
+use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke};
 use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
 use vello::util::RenderContext;
 use vello::wgpu;
@@ -14,8 +14,11 @@ use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
-use crate::resolve::{ResolvedClip, ResolvedGeometry, ResolvedKind, ResolvedLayer, ResolvedScene};
-use crate::scene::{LayerKind, Scene};
+use crate::resolve::{
+    ResolvedClip, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry, ResolvedKind,
+    ResolvedLayer, ResolvedMask, ResolvedScene,
+};
+use crate::scene::{Extend, LayerKind, MaskMode, Scene};
 use crate::text::TextEngine;
 
 /// Curve flattening tolerance when converting shapes to paths.
@@ -224,7 +227,7 @@ impl Renderer {
     }
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
-    /// effects and its clip, in that order.
+    /// effects, clip and mask, in that order.
     fn layer_texture(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<Tex> {
         let src = match &layer.kind {
             ResolvedKind::Group { children } => {
@@ -243,7 +246,14 @@ impl Renderer {
             let matrix = parent * layer.transform.matrix();
             self.timed(Stage::Raster, |s| s.rasterise_clip(clip, layer, matrix))?;
             src = self.timed(Stage::Composite, |s| {
-                s.compositor.mask_with_alpha(src, &s.vello_view)
+                s.compositor.mask(src, &s.vello_view, MaskMode::Alpha)
+            });
+        }
+        if let Some(mask) = &layer.mask {
+            let matrix = parent * layer.transform.matrix();
+            self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
+            src = self.timed(Stage::Composite, |s| {
+                s.compositor.mask(src, &s.vello_view, mask.mode)
             });
         }
         Ok(src)
@@ -328,6 +338,27 @@ impl Renderer {
         self.vello_scene.reset();
         self.vello_scene
             .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, &path);
+        self.render_vello_scene(false)
+    }
+
+    /// Fills the whole canvas with the mask's gradient, which lives in layer
+    /// space, into the Vello target.
+    fn rasterise_mask(&mut self, mask: &ResolvedMask, matrix: Affine) -> Result<()> {
+        let (brush, brush_transform) = gradient_brush(&mask.gradient);
+        let canvas = Rect::new(
+            0.0,
+            0.0,
+            f64::from(self.scene.width),
+            f64::from(self.scene.height),
+        );
+        self.vello_scene.reset();
+        self.vello_scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &brush,
+            Some(matrix * brush_transform),
+            &canvas,
+        );
         self.render_vello_scene(false)
     }
 
@@ -430,6 +461,80 @@ impl Renderer {
             )
             .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
+}
+
+/// A resolved gradient as a Vello brush, plus a transform to apply to the
+/// brush on top of the transform of whatever it paints (a conic gradient is
+/// turned here so its first stop points the way CSS wants).
+///
+/// Stops are adjusted for how Vello reads them: it ignores the first stop's
+/// offset (treating it as 0) and pads past the last, so end stops are added at
+/// 0 and 1. For `repeat` and `reflect`, the span between the first and last
+/// stop is what repeats (as in CSS), so the line, radius or angle is scaled to
+/// that span and the stops stretched to fill 0..=1. A gradient with no
+/// extent (zero length or radius, or all stops at one offset in a repeating
+/// gradient) is the solid colour of its last stop.
+fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
+    let last = g.stops[g.stops.len() - 1];
+    let solid = (peniko::Brush::Solid(to_peniko(last.1)), Affine::IDENTITY);
+    let (lo, hi) = match g.extend {
+        Extend::Pad => (0.0, 1.0),
+        _ => (g.stops[0].0, last.0),
+    };
+    if hi - lo < 1e-6 {
+        return solid;
+    }
+    let mut turn = Affine::IDENTITY;
+    let gradient = match g.geometry {
+        ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } => {
+            let (p0, p1) = (Point::new(x0, y0), Point::new(x1, y1));
+            if p0.distance(p1) < 1e-6 {
+                return solid;
+            }
+            peniko::Gradient::new_linear(p0 + (p1 - p0) * lo, p0 + (p1 - p0) * hi)
+        }
+        ResolvedGradientGeometry::Radial { cx, cy, r } => {
+            if r < 1e-6 {
+                return solid;
+            }
+            let c = Point::new(cx, cy);
+            peniko::Gradient::new_two_point_radial(c, (r * lo) as f32, c, (r * hi) as f32)
+        }
+        ResolvedGradientGeometry::Conic { cx, cy, angle } => {
+            let c = Point::new(cx, cy);
+            // Vello's sweep starts at 3 o'clock; CSS starts at 12.
+            turn = Affine::rotate_about((angle - 90.0).to_radians(), c);
+            let turns = std::f64::consts::TAU;
+            peniko::Gradient::new_sweep(c, (lo * turns) as f32, (hi * turns) as f32)
+        }
+    };
+    let extend = match g.extend {
+        Extend::Pad => peniko::Extend::Pad,
+        Extend::Repeat => peniko::Extend::Repeat,
+        Extend::Reflect => peniko::Extend::Reflect,
+    };
+    let gradient = gradient
+        .with_extend(extend)
+        .with_stops(vello_stops(&g.stops, lo, hi).as_slice());
+    (peniko::Brush::Gradient(gradient), turn)
+}
+
+/// `stops` with offsets mapped from `lo..=hi` onto 0..=1, and a stop added at
+/// 0 and at 1 if the first or last does not already sit there.
+fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorStop> {
+    let at = |offset: f64, color: Color| peniko::ColorStop::from((offset as f32, to_peniko(color)));
+    let mut out = Vec::with_capacity(stops.len() + 2);
+    let (first, last) = (stops[0], stops[stops.len() - 1]);
+    if first.0 > lo {
+        out.push(at(0.0, first.1));
+    }
+    for &(offset, color) in stops {
+        out.push(at(((offset - lo) / (hi - lo)).clamp(0.0, 1.0), color));
+    }
+    if last.0 < hi {
+        out.push(at(1.0, last.1));
+    }
+    out
 }
 
 /// `b` shrunk by the four distances, with rounded corners. Empty when
@@ -544,6 +649,166 @@ fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vello::peniko::GradientKind;
+
+    const RED: Color = Color {
+        r: 255,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+
+    fn gradient(
+        geometry: ResolvedGradientGeometry,
+        stops: &[(f64, Color)],
+        extend: Extend,
+    ) -> ResolvedGradient {
+        ResolvedGradient {
+            geometry,
+            stops: stops.to_vec(),
+            extend,
+        }
+    }
+
+    fn peniko_gradient(brush: peniko::Brush) -> peniko::Gradient {
+        match brush {
+            peniko::Brush::Gradient(g) => g,
+            other => panic!("expected a gradient, got {other:?}"),
+        }
+    }
+
+    fn offsets(g: &peniko::Gradient) -> Vec<f32> {
+        g.stops.iter().map(|s| s.offset).collect()
+    }
+
+    #[test]
+    fn padded_gradients_get_end_stops() {
+        let line = ResolvedGradientGeometry::Linear {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 0.0,
+        };
+        let (brush, turn) = gradient_brush(&gradient(
+            line,
+            &[(0.2, RED), (0.8, Color::BLACK)],
+            Extend::Pad,
+        ));
+        let g = peniko_gradient(brush);
+        assert_eq!(offsets(&g), [0.0, 0.2, 0.8, 1.0]);
+        assert_eq!(turn, Affine::IDENTITY);
+        let GradientKind::Linear(pos) = g.kind else {
+            panic!("not linear");
+        };
+        assert_eq!(
+            (pos.start, pos.end),
+            (Point::new(0.0, 0.0), Point::new(100.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn repeating_gradients_repeat_the_stop_span() {
+        let line = ResolvedGradientGeometry::Linear {
+            x0: 0.0,
+            y0: 10.0,
+            x1: 100.0,
+            y1: 10.0,
+        };
+        let stops = [(0.25, RED), (0.75, Color::BLACK)];
+        let (brush, _) = gradient_brush(&gradient(line, &stops, Extend::Repeat));
+        let g = peniko_gradient(brush);
+        // The period is half the line, starting a quarter of the way along.
+        assert_eq!(offsets(&g), [0.0, 1.0]);
+        assert_eq!(g.extend, peniko::Extend::Repeat);
+        let GradientKind::Linear(pos) = g.kind else {
+            panic!("not linear");
+        };
+        assert_eq!(
+            (pos.start, pos.end),
+            (Point::new(25.0, 10.0), Point::new(75.0, 10.0))
+        );
+
+        let circle = ResolvedGradientGeometry::Radial {
+            cx: 5.0,
+            cy: 6.0,
+            r: 40.0,
+        };
+        let (brush, _) = gradient_brush(&gradient(circle, &stops, Extend::Reflect));
+        let g = peniko_gradient(brush);
+        assert_eq!(g.extend, peniko::Extend::Reflect);
+        let GradientKind::Radial(pos) = g.kind else {
+            panic!("not radial");
+        };
+        assert_eq!((pos.start_radius, pos.end_radius), (10.0, 30.0));
+        assert_eq!(
+            (pos.start_center, pos.end_center),
+            (Point::new(5.0, 6.0), Point::new(5.0, 6.0))
+        );
+    }
+
+    #[test]
+    fn conic_gradients_start_at_twelve_oclock() {
+        let conic = |angle| ResolvedGradientGeometry::Conic {
+            cx: 10.0,
+            cy: 20.0,
+            angle,
+        };
+        let stops = [(0.0, RED), (1.0, Color::BLACK)];
+        let direction = |angle: f64| {
+            let (brush, turn) = gradient_brush(&gradient(conic(angle), &stops, Extend::Pad));
+            let GradientKind::Sweep(pos) = peniko_gradient(brush).kind else {
+                panic!("not a sweep");
+            };
+            assert_eq!(
+                (pos.start_angle, pos.end_angle),
+                (0.0, std::f32::consts::TAU)
+            );
+            // Where the sweep's start direction (+x from the centre) ends up.
+            let p = turn * Point::new(11.0, 20.0);
+            (p.x - 10.0, p.y - 20.0)
+        };
+        let (x, y) = direction(0.0);
+        assert!(
+            x.abs() < 1e-9 && (y + 1.0).abs() < 1e-9,
+            "up, got ({x}, {y})"
+        );
+        let (x, y) = direction(90.0);
+        assert!(
+            (x - 1.0).abs() < 1e-9 && y.abs() < 1e-9,
+            "right, got ({x}, {y})"
+        );
+    }
+
+    #[test]
+    fn gradients_without_extent_are_solid_colours() {
+        let stops = [(0.0, RED), (1.0, Color::BLACK)];
+        let is_black = |g: ResolvedGradient| matches!(gradient_brush(&g).0, peniko::Brush::Solid(c) if c == to_peniko(Color::BLACK));
+        let zero_line = ResolvedGradientGeometry::Linear {
+            x0: 3.0,
+            y0: 3.0,
+            x1: 3.0,
+            y1: 3.0,
+        };
+        assert!(is_black(gradient(zero_line, &stops, Extend::Pad)));
+        let no_radius = ResolvedGradientGeometry::Radial {
+            cx: 0.0,
+            cy: 0.0,
+            r: 0.0,
+        };
+        assert!(is_black(gradient(no_radius, &stops, Extend::Pad)));
+        // Repeating a span of zero width.
+        let line = ResolvedGradientGeometry::Linear {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 9.0,
+            y1: 0.0,
+        };
+        let same = [(0.5, RED), (0.5, Color::BLACK)];
+        assert!(is_black(gradient(line, &same, Extend::Repeat)));
+        // Padding it is fine: a hard edge at 0.5.
+        let (brush, _) = gradient_brush(&gradient(line, &same, Extend::Pad));
+        assert_eq!(offsets(&peniko_gradient(brush)), [0.0, 0.5, 0.5, 1.0]);
+    }
 
     #[test]
     fn inset_shrinks_the_box_and_limits_the_radius() {

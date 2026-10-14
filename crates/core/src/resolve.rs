@@ -4,7 +4,10 @@ use vello::kurbo::Affine;
 
 use crate::color::Color;
 use crate::error::{Error, Result};
-use crate::scene::{BlendMode, Clip, Effect, Geometry, Layer, LayerKind, Scene, Transform};
+use crate::scene::{
+    BlendMode, Clip, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer, LayerKind,
+    MaskMode, Scene, Transform,
+};
 
 #[derive(Clone, Debug)]
 pub struct ResolvedScene {
@@ -23,6 +26,7 @@ pub struct ResolvedLayer {
     pub blend_mode: BlendMode,
     pub effects: Vec<ResolvedEffect>,
     pub clip: Option<ResolvedClip>,
+    pub mask: Option<ResolvedMask>,
     pub kind: ResolvedKind,
 }
 
@@ -75,6 +79,42 @@ pub enum ResolvedClip {
     },
     Path {
         d: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct ResolvedMask {
+    pub gradient: ResolvedGradient,
+    pub mode: MaskMode,
+}
+
+/// A gradient at one frame, in the space of whatever it paints.
+#[derive(Clone, Debug)]
+pub struct ResolvedGradient {
+    pub geometry: ResolvedGradientGeometry,
+    /// At least 2 stops, offsets in 0..=1 and never decreasing.
+    pub stops: Vec<(f64, Color)>,
+    pub extend: Extend,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ResolvedGradientGeometry {
+    Linear {
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+    },
+    Radial {
+        cx: f64,
+        cy: f64,
+        r: f64,
+    },
+    /// `angle` in degrees clockwise from 12 o'clock.
+    Conic {
+        cx: f64,
+        cy: f64,
+        angle: f64,
     },
 }
 
@@ -198,7 +238,48 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
         blend_mode: layer.blend_mode,
         effects: layer.effects.iter().map(|e| resolve_effect(e, f)).collect(),
         clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
+        mask: layer.mask.as_ref().map(|m| ResolvedMask {
+            gradient: resolve_gradient(&m.gradient, f),
+            mode: m.mode,
+        }),
         kind,
+    }
+}
+
+pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
+    let geometry = match &g.geometry {
+        GradientGeometry::Linear { x0, y0, x1, y1 } => ResolvedGradientGeometry::Linear {
+            x0: x0.at(f),
+            y0: y0.at(f),
+            x1: x1.at(f),
+            y1: y1.at(f),
+        },
+        GradientGeometry::Radial { cx, cy, r } => ResolvedGradientGeometry::Radial {
+            cx: cx.at(f),
+            cy: cy.at(f),
+            r: r.at(f).max(0.0),
+        },
+        GradientGeometry::Conic { cx, cy, angle } => ResolvedGradientGeometry::Conic {
+            cx: cx.at(f),
+            cy: cy.at(f),
+            angle: angle.at(f),
+        },
+    };
+    // Stops that go backwards are held at the largest offset so far, as in
+    // CSS.
+    let mut highest = 0.0_f64;
+    let stops = g
+        .stops
+        .iter()
+        .map(|s| {
+            highest = highest.max(s.offset.at(f).clamp(0.0, 1.0));
+            (highest, s.color)
+        })
+        .collect();
+    ResolvedGradient {
+        geometry,
+        stops,
+        extend: g.extend,
     }
 }
 
@@ -363,6 +444,32 @@ mod tests {
         assert!(matches!(
             &r.layers[1].clip,
             Some(ResolvedClip::Ellipse { rx, ry, .. }) if *rx == 4.0 && *ry == 4.0
+        ));
+    }
+
+    #[test]
+    fn gradient_stops_never_go_backwards() {
+        let json = r##"{
+            "width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "a", "type": "shape",
+              "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+              "mask": {"gradient": {"type": "linear", "x0": 0, "y0": 0,
+                         "x1": [{"frame": 0, "value": 0}, {"frame": 10, "value": 100}], "y1": 0,
+                         "stops": [{"offset": 0.6, "color": "#fff"},
+                                   {"offset": [{"frame": 0, "value": 1}, {"frame": 10, "value": 0}], "color": "#000"},
+                                   {"offset": 0.7, "color": "#f00"}]}}}]
+        }"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let g = &scene.resolve(5).unwrap().layers[0]
+            .mask
+            .clone()
+            .unwrap()
+            .gradient;
+        let offsets: Vec<f64> = g.stops.iter().map(|s| s.0).collect();
+        assert_eq!(offsets, [0.6, 0.6, 0.7]);
+        assert!(matches!(
+            g.geometry,
+            ResolvedGradientGeometry::Linear { x1, .. } if x1 == 50.0
         ));
     }
 }

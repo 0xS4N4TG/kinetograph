@@ -5,7 +5,7 @@
 //!
 //! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
-//! - `mask`: layer x the alpha of a Vello-drawn clip shape
+//! - `mask`: layer x the alpha or luminance of a Vello-drawn clip or gradient
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
@@ -18,7 +18,7 @@ use vello::wgpu::{self, util::DeviceExt};
 use crate::blur::{self, Blur};
 use crate::error::{Error, Result};
 use crate::resolve::ResolvedEffect;
-use crate::scene::BlendMode;
+use crate::scene::{BlendMode, MaskMode};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -193,12 +193,16 @@ impl Compositor {
         target
     }
 
-    /// Multiplies `src` by the alpha of a Vello output texture (Rgba8, a
-    /// shape drawn in opaque white). `src` goes back to the pool; the result
-    /// is a new texture.
-    pub fn mask_with_alpha(&mut self, src: Tex, vello_output: &wgpu::TextureView) -> Tex {
+    /// Multiplies `src` by the alpha or luminance of a Vello output texture
+    /// (Rgba8): a clip shape drawn in opaque white, or a gradient. `src`
+    /// goes back to the pool; the result is a new texture.
+    pub fn mask(&mut self, src: Tex, vello_output: &wgpu::TextureView, mode: MaskMode) -> Tex {
+        let mode = match mode {
+            MaskMode::Alpha => 0,
+            MaskMode::Luminance => 2,
+        };
         let target = self.acquire();
-        self.pass(&self.mask, &src.view, vello_output, 0.0, 0, &target.view);
+        self.pass(&self.mask, &src.view, vello_output, 0.0, mode, &target.view);
         self.release(src);
         target
     }

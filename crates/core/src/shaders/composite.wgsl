@@ -14,7 +14,7 @@ struct Params {
 //   blend:     tex_a = backdrop, tex_b = source
 //   encode:    tex_a = linear premultiplied image
 //   mask:      tex_a = layer (linear premultiplied), tex_b = Vello output
-//              whose alpha is the coverage to keep
+//              (Rgba8, sRGB-encoded, straight alpha) that says what to keep
 // Unused bindings are bound to the same texture as tex_a.
 @group(0) @binding(0) var tex_a: texture_2d<f32>;
 @group(0) @binding(1) var tex_b: texture_2d<f32>;
@@ -220,12 +220,30 @@ fn fs_blend(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     return vec4<f32>(rgb, a);
 }
 
-// Multiplies the layer by the alpha of a Vello output (a clip shape drawn in
-// opaque white, so its alpha is the anti-aliased coverage).
+// How much of the layer a mask colour keeps. `m` is linear premultiplied.
+// Modes: 0 alpha, 2 luminance (Rec. 709 on the linear colour; because `m` is
+// premultiplied this is already times alpha). Mode 1 and 3 are the inverses
+// of 0 and 2.
+fn coverage(m: vec4<f32>, mode: u32) -> f32 {
+    var c = m.a;
+    if mode >= 2u {
+        c = dot(m.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    }
+    if mode % 2u == 1u {
+        c = 1.0 - c;
+    }
+    return clamp(c, 0.0, 1.0);
+}
+
+// Multiplies the layer by what a Vello output keeps. A clip shape is drawn in
+// opaque white, so its alpha is the anti-aliased coverage; a gradient mask
+// is read by `mode`.
 @fragment
 fn fs_mask(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let xy = vec2<i32>(p.xy);
-    return textureLoad(tex_a, xy, 0) * textureLoad(tex_b, xy, 0).a;
+    let v = textureLoad(tex_b, xy, 0);
+    let m = vec4<f32>(srgb_to_linear(v.rgb) * v.a, v.a);
+    return textureLoad(tex_a, xy, 0) * coverage(m, params.mode);
 }
 
 // Linear premultiplied -> sRGB-encoded, straight alpha, for readback.

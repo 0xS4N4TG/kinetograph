@@ -50,6 +50,8 @@ pub struct Layer {
     pub effects: Vec<Effect>,
     /// Cuts the layer to a shape, after its effects.
     pub clip: Option<Clip>,
+    /// Fades the layer by a gradient, after the clip.
+    pub mask: Option<Mask>,
     #[serde(flatten)]
     pub kind: LayerKind,
 }
@@ -163,6 +165,78 @@ pub enum Clip {
     Path {
         d: String,
     },
+}
+
+/// Multiplies the layer by a gradient. The gradient is in the layer's own
+/// coordinates and fills the whole plane (see `Gradient::extend`).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Mask {
+    pub gradient: Gradient,
+    #[serde(default)]
+    pub mode: MaskMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MaskMode {
+    /// Keep the layer where the gradient is opaque.
+    #[default]
+    Alpha,
+    /// Keep the layer where the gradient is light: Rec. 709 luminance of the
+    /// linear-light colour, times its alpha.
+    Luminance,
+}
+
+/// Colour stops along a line, around a point or around an angle. All
+/// coordinates are in the space of whatever the gradient paints.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Gradient {
+    #[serde(flatten)]
+    pub geometry: GradientGeometry,
+    /// At least 2, offsets in 0..=1.
+    pub stops: Vec<Stop>,
+    #[serde(default)]
+    pub extend: Extend,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum GradientGeometry {
+    /// Offset 0 is at (x0, y0), offset 1 at (x1, y1).
+    Linear { x0: Num, y0: Num, x1: Num, y1: Num },
+    /// Offset 1 is at distance `r` from the centre.
+    Radial { cx: Num, cy: Num, r: Num },
+    /// Offset 0 is `angle` degrees clockwise from 12 o'clock (as in CSS);
+    /// offset 1 is a full turn later.
+    Conic {
+        cx: Num,
+        cy: Num,
+        #[serde(default = "zero")]
+        angle: Num,
+    },
+}
+
+/// A colour at an offset along the gradient. Colours are interpolated in
+/// sRGB with premultiplied alpha, like CSS.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Stop {
+    pub offset: Num,
+    pub color: Color,
+}
+
+/// What a gradient does outside the first and last stop.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Extend {
+    /// Hold the end colours.
+    #[default]
+    Pad,
+    /// Repeat the span from the first to the last stop, like CSS
+    /// `repeating-*-gradient`.
+    Repeat,
+    /// Like `Repeat`, but every second span runs backwards.
+    Reflect,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -283,6 +357,9 @@ impl Scene {
             if let Some(clip) = &layer.clip {
                 validate_clip(&layer.id, clip, &layer.kind)?;
             }
+            if let Some(mask) = &layer.mask {
+                validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
+            }
             match &layer.kind {
                 LayerKind::Shape(s) => {
                     match &s.shape {
@@ -364,6 +441,25 @@ fn validate_clip(id: &str, clip: &Clip, kind: &LayerKind) -> Result<()> {
                 Error::Scene(format!("layer {id:?}: clip has a bad SVG path {d:?}: {e}"))
             })?;
         }
+    }
+    Ok(())
+}
+
+fn validate_gradient(id: &str, what: &str, g: &Gradient) -> Result<()> {
+    let bad = |msg: &str| Err(Error::Scene(format!("layer {id:?}: {what} {msg}")));
+    if g.stops.len() < 2 {
+        return bad("needs at least 2 stops");
+    }
+    if g.stops
+        .iter()
+        .any(|s| s.offset.min() < 0.0 || s.offset.max() > 1.0)
+    {
+        return bad("stop offsets must be between 0 and 1");
+    }
+    if let GradientGeometry::Radial { r, .. } = &g.geometry
+        && r.min() < 0.0
+    {
+        return bad("radius must not be negative");
     }
     Ok(())
 }
@@ -453,5 +549,68 @@ mod tests {
             msg.contains("\"g\"") && msg.contains("polygon or path"),
             "{msg}"
         );
+    }
+
+    #[test]
+    fn parses_gradients_and_masks() {
+        let mask = |gradient: &str, mode: &str| {
+            scene_with(&format!(r##""mask": {{"gradient": {gradient}{mode}}},"##))
+        };
+        let stops = r##""stops": [{"offset": 0, "color": "#fff"}, {"offset": [{"frame": 0, "value": 0.5}, {"frame": 9, "value": 1}], "color": "#0000"}]"##;
+        for gradient in [
+            format!(r#"{{"type": "linear", "x0": 0, "y0": 0, "x1": 100, "y1": 0, {stops}}}"#),
+            format!(
+                r#"{{"type": "radial", "cx": 50, "cy": 25, "r": 40, "extend": "repeat", {stops}}}"#
+            ),
+            format!(r#"{{"type": "conic", "cx": 50, "cy": 25, "extend": "reflect", {stops}}}"#),
+        ] {
+            let scene = mask(&gradient, "").unwrap_or_else(|e| panic!("{gradient}: {e}"));
+            let mask = scene.layers[0].mask.as_ref().unwrap();
+            assert_eq!(mask.mode, MaskMode::Alpha);
+        }
+        let g = format!(r#"{{"type": "conic", "cx": 0, "cy": 0, {stops}}}"#);
+        let scene = mask(&g, r#", "mode": "luminance""#).unwrap();
+        assert_eq!(
+            scene.layers[0].mask.as_ref().unwrap().mode,
+            MaskMode::Luminance
+        );
+    }
+
+    #[test]
+    fn rejects_bad_gradients_naming_the_layer() {
+        let two = r##""stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]"##;
+        let cases = [
+            (
+                r##"{"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, "stops": [{"offset": 0, "color": "#fff"}]}"##.to_string(),
+                "at least 2 stops",
+            ),
+            (
+                r##"{"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1.5, "color": "#000"}]}"##.to_string(),
+                "between 0 and 1",
+            ),
+            (
+                format!(r#"{{"type": "radial", "cx": 0, "cy": 0, "r": -3, {two}}}"#),
+                "radius must not be negative",
+            ),
+            (
+                format!(r#"{{"type": "spiral", "cx": 0, "cy": 0, {two}}}"#),
+                "spiral",
+            ),
+            (
+                format!(r#"{{"type": "conic", "cx": 0, "cy": 0, "extend": "wrap", {two}}}"#),
+                "wrap",
+            ),
+        ];
+        for (gradient, want) in cases {
+            let msg = error(&format!(r#""mask": {{"gradient": {gradient}}},"#));
+            assert!(msg.contains(want), "{gradient}: {msg}");
+        }
+        let msg = error(&format!(
+            r#""mask": {{"gradient": {{"type": "conic", "cx": 0, "cy": 0, {two}}}, "mode": "alphaInverted"}},"#
+        ));
+        assert!(msg.contains("alphaInverted"), "{msg}");
+        let msg =
+            error(r#""mask": {"gradient": {"type": "conic", "cx": 0, "cy": 0, "stops": []}},"#);
+        assert!(msg.contains("\"box\"") && msg.contains("2 stops"), "{msg}");
     }
 }

@@ -58,6 +58,7 @@ Every layer has these fields:
 | `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
 | `effects` | array | `[]` | Applied in order to the layer's own pixels, before it is blended. See [Effects](#effects). |
 | `clip` | object | none | Cuts the layer to a shape. See [Clip paths](#clip-paths). |
+| `mask` | object | none | Fades the layer by a gradient. See [Gradient masks](#gradient-masks). |
 
 `transform` fields, all animatable numbers:
 
@@ -159,8 +160,8 @@ position to within 0.01 pixel, so moving or resizing a blurred glow does not mak
 
 `clip` cuts a layer to a shape: pixels outside it become transparent, and the edge is anti-aliased (16x multisampled,
 like every shape). The shape is in the layer's own coordinates, so it follows the layer's `transform` (position,
-scale, rotation). A layer's pixels go through, in this order: its `effects`, its `clip`, then `opacity` and
-`blendMode`. So a blur is cut off by the clip, and the clip is not blurred. A group's clip applies to the composited
+scale, rotation). A layer's pixels go through, in this order: its `effects`, its `clip`, its `mask`, then `opacity`
+and `blendMode`. So a blur is cut off by the clip, and the clip is not blurred. A group's clip applies to the composited
 group. Every number is animatable.
 
 ```json
@@ -188,8 +189,56 @@ The layer's own box, which `inset` is measured from:
 Loading a scene rejects a polygon with fewer than 3 points, a bad path `d`, a negative `radius`, `rx` or `ry` at any
 keyframe, and `inset` on a group, and the error names the layer.
 
+## Gradients
+
+A gradient is an object that appears wherever a scene paints with one (so far, `mask`). Its coordinates are in the
+space of whatever it paints, so a mask gradient lives in the layer's own space and follows the layer's `transform`.
+Every number is animatable, including the stop offsets.
+
+```json
+{ "type": "linear", "x0": 0, "y0": 0, "x1": 400, "y1": 0,
+  "stops": [{ "offset": 0, "color": "#ff0000" }, { "offset": 1, "color": "#0000ff" }], "extend": "pad" }
+```
+
+| `type` | Fields | Meaning |
+|---|---|---|
+| `linear` | `x0`, `y0`, `x1`, `y1` | Offset 0 is at (x0, y0) and offset 1 at (x1, y1); lines perpendicular to that axis have one colour. |
+| `radial` | `cx`, `cy`, `r` | Circles around the centre; offset 1 is at distance `r` (at least 0). |
+| `conic` | `cx`, `cy`, `angle` (default `0`) | Offset 0 points `angle` degrees clockwise from 12 o'clock, as in CSS `conic-gradient`; offset 1 is a full turn later. |
+
+Common fields:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `stops` | required | At least 2 `{ "offset", "color" }`. Offsets are between 0 and 1 at every keyframe. An offset lower than an earlier stop's is raised to it, as in CSS, so `[0.6, 0.3]` makes a hard edge at 0.6. Colours are plain colour strings (not animated) and may be translucent. |
+| `extend` | `pad` | Outside the first and last stop. `pad` holds the end colours. `repeat` repeats the span from the first to the last stop, which is CSS `repeating-linear-gradient` and friends; `reflect` does the same with every second span backwards. For `conic`, which already goes round, `repeat` repeats the span within the turn. |
+
+Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
+and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
+stop's colour everywhere: a linear gradient whose two points coincide, a radial one with `r` 0, or a repeating one
+whose first and last stop have the same offset. The ramp between stops is sampled at 512 steps.
+
+## Gradient masks
+
+`mask` multiplies the layer by a gradient, after the `clip`. It fades the layer in or out, or cuts it with a pattern.
+
+```json
+{ "id": "photo", "type": "image", "src": "photo.png", "width": 160, "height": 120,
+  "mask": { "mode": "luminance",
+            "gradient": { "type": "radial", "cx": 80, "cy": 60, "r": 90,
+                          "stops": [{ "offset": 0, "color": "#ffffff" }, { "offset": 1, "color": "#000000" }] } } }
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `gradient` | required | A [gradient](#gradients), in the layer's own coordinates. It covers the whole plane (see `extend`), not just the layer's box. |
+| `mode` | `alpha` | `alpha` keeps the layer where the gradient is opaque. `luminance` keeps it where the gradient is light: the Rec. 709 luminance of the gradient's linear-light colour, times its alpha, so black and transparent both hide the layer. |
+
+Loading a scene rejects a gradient with fewer than 2 stops, a stop offset outside 0..1 at any keyframe, a negative
+radial `r`, and a `mode` other than `alpha` or `luminance`; the error names the layer.
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - `blur` is the only effect.
-- No video layers, masks, mattes, gradients or per-glyph text animation yet.
+- No video layers, mattes, gradient fills or per-glyph text animation yet. Gradients are only used by `mask`.
