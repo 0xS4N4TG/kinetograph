@@ -83,7 +83,7 @@ Media: ffmpeg-next (libav) decode/encode, VideoToolbox/NVENC; symphonia for audi
 Pipeline threads: decode → render → async GPU readback → encode
         │
         ├── CLI + MCP server (TS)      agent surface
-        └── Tauri editor               preview; same core compiled to WASM + WebGPU in the webview
+        └── kinetograph studio (TS)    local web server + browser UI; preview frames rendered by the addon
 ```
 
 Decisions and why:
@@ -106,11 +106,26 @@ Decisions and why:
   3D card stacks, motion blur). A web-page renderer cannot produce it, and Blitz's gaps are exactly the motion-design
   features (see RESEARCH.md §2). CSS compatibility is a later, optional layer.
 - **Not a Tauri webview as the renderer.** WKWebView (macOS) and WebKitGTK (Linux) have no CDP; `takeSnapshot` is
-  slow, async and per-OS; no headless mode; output differs per OS; `<video>` seeking is unreliable. Tauri is only the
-  editor shell.
-- **wgpu + Vello + WGSL, not Skia.** WGSL runs natively through wgpu and in the browser through WebGPU, so the WASM
-  preview and the native render share shaders and match pixel for pixel. Skia (skia-safe native, CanvasKit on the
-  web) is the more mature fallback if Vello's text or filter quality falls short.
+  slow, async and per-OS; no headless mode; output differs per OS; `<video>` seeking is unreliable. The UI is a
+  browser page that only shows frames the addon rendered.
+- **The UI is a local web server, like Remotion Studio, not a desktop app** (decided 2026-10-14, replacing the Tauri
+  editor with a WASM + WebGPU preview). `npx kinetograph studio` starts a Node server and opens `localhost`; the addon
+  renders the preview frames on the GPU and streams them to the page (half size while scrubbing, full size when
+  paused), and esbuild watches the TSX and reloads the composition on save. Why: the preview is the render, drawn by
+  the same binary, so they match pixel for pixel with nothing to keep in sync; ffmpeg, fonts and Lottie work as in
+  `render` (a WASM build would need WebCodecs and web ports of each); nothing to package or sign; and it works over
+  SSH from a machine with a GPU. Cost: scrubbing waits on the server, which on a laptop is local. Full-size frames
+  take ~40 ms on the M4 (2c), so ~25 fps; draft speed is unmeasured. A WASM preview stays possible later (WGSL runs
+  in browsers through WebGPU) for hosting without a GPU server, and Tauri can wrap the same UI if a desktop app is
+  ever wanted.
+- **Studio UI stack** (decided 2026-10-14): React + Vite, styled only with Tailwind CSS utilities, and built from
+  shadcn/ui components (default style, zinc base colour, dark theme: the zinc-950 background shadcn ships). Use a
+  shadcn component wherever one fits (buttons, sliders, tabs, dialogs, menus, resizable panels, scroll areas,
+  tooltips) and keep its defaults; no other component library and no hand-written CSS files. The timeline and the
+  preview canvas are the only custom components, and they are styled with Tailwind too.
+- **wgpu + Vello + WGSL, not Skia.** WGSL runs natively through wgpu and in the browser through WebGPU, so a later
+  in-browser preview could share the shaders and match the native render pixel for pixel. Skia (skia-safe native,
+  CanvasKit on the web) is the more mature fallback if Vello's text or filter quality falls short.
 - **Stand on existing crates; write only the glue.** Text shaping, line breaking, bidi and font fallback must not be
   hand-written. Most bugs will live in text and layout edge cases; treat them as test-and-fix work.
 - **Scene graph is the source of truth**, so agents query it (`inspect`) instead of looking at pixels.
@@ -235,6 +250,7 @@ CLI first (`npx kinetograph …`, TS, calling the addon), MCP server wrapping th
 | `effects` | list of effects and their parameters |
 | `doctor` | compat-mode report: what fell back to Chrome and why |
 | `bench` | ms/frame per stage (JS, layout, raster, readback, encode) |
+| `studio` | local web server and browser UI: preview, timeline, props, render queue (Phase 4) |
 
 Ship an agent skill alongside (fframes does `npx skills add https://fframes.studio`).
 
@@ -289,7 +305,10 @@ per-glyph text animation. Open with two spikes: (1) the addon handoff cost per f
 Rebuild the 5-second reference and the papercut scene. Compare frames and timing against Remotion. Go/no-go here:
 if it isn't clearly faster (5x+) and visually matching, rethink the wedge.
 **3D layer (after Phase 3).** Three.js on Dawn, or the kiss3d mapping if the spike fails (section 4).
-**Phase 4: editor.** Tauri shell, WASM + WebGPU preview, timeline, video layers.
+**Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
+shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
+of sequences and layers, scene tree from `inspect`, props panel, render queue calling `render`, hot reload on save.
+Plus video layers (`<Video>`, `<OffthreadVideo>`, `@remotion/gif`, section 5).
 **Phase 5: Remotion compat mode.** CSS subset mapped onto layers (possibly via Blitz/Stylo), Chrome fallback per frame
 range, `doctor`.
 
