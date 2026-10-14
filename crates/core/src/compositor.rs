@@ -207,6 +207,10 @@ pub struct Compositor {
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    /// `to_linear` and `blend` for a batch of layers (`blend_batch`), on the
+    /// shared layout and then `turbulence_layout`, whose one storage buffer
+    /// holds the layers' opacities.
+    blend_batch: wgpu::RenderPipeline,
     mask: wgpu::RenderPipeline,
     matte: wgpu::RenderPipeline,
     accumulate: wgpu::RenderPipeline,
@@ -395,6 +399,37 @@ impl Compositor {
             "fs_noise",
             LINEAR_FORMAT,
         );
+        let batch_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blend batch"),
+                bind_group_layouts: &[Some(&layout), Some(&turbulence_layout)],
+                immediate_size: 0,
+            });
+        let blend_batch = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("fs_blend_batch"),
+            layout: Some(&batch_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_batch"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_blend_batch"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: LINEAR_FORMAT,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
         let (mesh, mesh_size) = mesh_pipeline(
             device,
             &shader_module(device, "mesh", include_str!("shaders/mesh.wgsl")),
@@ -468,6 +503,7 @@ impl Compositor {
             margin,
             to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
+            blend_batch,
             mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
             matte: pipeline(&shader, "fs_matte", LINEAR_FORMAT),
             accumulate: pipeline(&shader, "fs_accumulate", LINEAR_FORMAT),
@@ -684,6 +720,114 @@ impl Compositor {
             c.pass(&c.blend, dst.input(), src.input(), opacity, mode, temp);
         });
         dst.bounds = dst.bounds.union(src.bounds);
+        dst
+    }
+
+    /// `from_srgb8` and then `blend` with normal blending for each of
+    /// `layers`, layers that Vello drew together into `vello_output` (over
+    /// the whole canvas): each is its box of that output and its opacity.
+    /// The boxes must not overlap. Each pixel of the output is then one
+    /// layer's, as it would be in a draw of that layer alone, and the order
+    /// the layers are blended in makes no difference. Two passes, the
+    /// conversion and the blend, with one draw a layer each, and one submit
+    /// for them all. The converted layers sit in an Rgba16Float texture
+    /// between the passes, as they do between `from_srgb8` and `blend`, so
+    /// each pixel is rounded the same way.
+    pub fn blend_batch(
+        &mut self,
+        mut dst: Tex,
+        vello_output: &wgpu::TextureView,
+        layers: &[(PixelRect, f32)],
+    ) -> Tex {
+        let whole = self.whole();
+        let layers: Vec<(PixelRect, f32)> = layers
+            .iter()
+            .map(|&(region, opacity)| (region.intersect(whole), opacity))
+            .filter(|(region, _)| !region.is_empty())
+            .collect();
+        let all = layers
+            .iter()
+            .fold(PixelRect::EMPTY, |all, (region, _)| all.union(*region));
+        if all.is_empty() {
+            return dst;
+        }
+        assert!(
+            dst.rect().intersect(all) == all,
+            "a texture over {:?} cannot take {all:?}",
+            dst.rect()
+        );
+        // The layers in linear light, as `from_srgb8` makes each, and then
+        // the result of blending them.
+        let linear = self.target(all);
+        let temp = self.target(all);
+        let vello = self.vello_input(vello_output);
+        // Opacity unused (it is per layer), mode 0: normal.
+        let params = [0u8; 16];
+        let to_linear = self.composite_bind_group(vello, vello, &params, &linear);
+        let blend = self.composite_bind_group(dst.input(), linear.input(), &params, &temp);
+        let opacities: Vec<u8> = layers
+            .iter()
+            .flat_map(|(_, opacity)| opacity.to_le_bytes())
+            .collect();
+        let opacities = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("batch opacities"),
+                contents: &opacities,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let opacity_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("batch opacities"),
+            layout: &self.turbulence_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: opacities.as_entire_binding(),
+            }],
+        });
+        // The scissor rectangle of each layer, in texels of `linear` and
+        // `temp`, which sit at the same place.
+        let scissors: Vec<PixelRect> = layers
+            .iter()
+            .map(|(region, _)| region.translate(-temp.origin[0], -temp.origin[1]))
+            .collect();
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("batch to linear"),
+                color_attachments: &[Some(clear_attachment(
+                    &linear.view,
+                    wgpu::Color::TRANSPARENT,
+                ))],
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.to_linear);
+            pass.set_bind_group(0, &to_linear, &[]);
+            for r in &scissors {
+                pass.set_scissor_rect(r.x0 as u32, r.y0 as u32, r.width(), r.height());
+                pass.draw(0..3, 0..1);
+            }
+        }
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("blend batch"),
+                color_attachments: &[Some(clear_attachment(&temp.view, wgpu::Color::TRANSPARENT))],
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.blend_batch);
+            pass.set_bind_group(0, &blend, &[]);
+            pass.set_bind_group(1, &opacity_group, &[]);
+            for (i, r) in scissors.iter().enumerate() {
+                pass.set_scissor_rect(r.x0 as u32, r.y0 as u32, r.width(), r.height());
+                pass.draw(0..3, i as u32..i as u32 + 1);
+            }
+        }
+        for (region, _) in &layers {
+            copy_box(&mut encoder, &temp, &dst, *region);
+        }
+        self.queue.submit([encoder.finish()]);
+        self.release(linear);
+        self.release(temp);
+        dst.bounds = dst.bounds.union(all);
         dst
     }
 
@@ -1676,6 +1820,47 @@ impl Compositor {
                 contents: &place_bytes(target.origin, (a.origin, a.size), (b.origin, b.size)),
                 usage: wgpu::BufferUsages::UNIFORM,
             })
+    }
+
+    /// The bind group of a pass on the shared layout that draws into
+    /// `target` with `a` and `b` as inputs and `params` as its uniforms.
+    fn composite_bind_group(
+        &self,
+        a: Input,
+        b: Input,
+        params: &[u8],
+        target: &Tex,
+    ) -> wgpu::BindGroup {
+        let uniform = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: params,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let place = self.place_buffer(target, a, b);
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("composite"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(a.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(b.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: place.as_entire_binding(),
+                },
+            ],
+        })
     }
 
     /// One full-screen pass over `target` with `a` and `b` as inputs. Only

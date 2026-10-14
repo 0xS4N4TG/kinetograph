@@ -288,8 +288,25 @@ impl Renderer {
         &mut self,
         layers: &[ResolvedLayer],
         parent: Affine,
+        canvas: Tex,
+        below: Option<&Tex>,
+    ) -> Result<Tex> {
+        let mut batch = Batch::default();
+        let canvas = self.draw_into(layers, parent, canvas, below, &mut batch)?;
+        self.flush(canvas, &mut batch)
+    }
+
+    /// `draw_layers`, except that plain leaves (`is_plain_leaf`) are added to
+    /// `batch` and drawn when it is flushed: before anything else is drawn
+    /// onto `canvas`, and before a leaf that overlaps one of them joins it.
+    /// The children of a group with no buffer join the same batch.
+    fn draw_into<'a>(
+        &mut self,
+        layers: &'a [ResolvedLayer],
+        parent: Affine,
         mut canvas: Tex,
         below: Option<&Tex>,
+        batch: &mut Batch<'a>,
     ) -> Result<Tex> {
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
@@ -302,6 +319,7 @@ impl Renderer {
                 preserve3d: true,
             } = &layer.kind
             {
+                canvas = self.flush(canvas, batch)?;
                 canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
                 continue;
             }
@@ -311,18 +329,92 @@ impl Renderer {
                 && needs_no_buffer(layer)
             {
                 self.cache_path.push(layer.id.clone());
-                let drawn =
-                    self.draw_layers(children, parent * layer.transform.matrix(), canvas, below);
+                let drawn = self.draw_into(
+                    children,
+                    parent * layer.transform.matrix(),
+                    canvas,
+                    below,
+                    batch,
+                );
                 self.cache_path.pop();
                 canvas = drawn?;
                 continue;
             }
+            // The samples of a motion-blurred layer draw their leaves into
+            // their own boxes (`vello_area`), one by one.
+            if self.cache_paused == 0 && is_plain_leaf(layer) {
+                let region = self.raster_bounds(layer, parent * layer.transform.matrix())?;
+                // Nothing lands on the canvas.
+                if region.is_empty() {
+                    continue;
+                }
+                if batch.overlaps(region) {
+                    canvas = self.flush(canvas, batch)?;
+                }
+                batch.items.push(BatchItem {
+                    layer,
+                    siblings: layers,
+                    parent,
+                    region,
+                    cache_path: self.cache_path.clone(),
+                });
+                continue;
+            }
+            canvas = self.flush(canvas, batch)?;
             // A layer turned in 3D is drawn flat and then warped about its
             // own position, in its parent's plane.
             let placement =
                 warp::layer_world(&layer.transform).map(|world| Placement { parent, world });
             canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
         }
+        Ok(canvas)
+    }
+
+    /// Draws the leaves in `batch` onto `canvas` and empties it. Vello draws
+    /// them all in one scene over the whole target, where each is drawn as
+    /// it would be alone, since no two overlap; one pass then blends them
+    /// all (`Compositor::blend_batch`). A batch of one leaf goes through
+    /// `draw_layer` when the layer cache is on, so the cache can keep it.
+    fn flush(&mut self, mut canvas: Tex, batch: &mut Batch) -> Result<Tex> {
+        if batch.items.is_empty() {
+            return Ok(canvas);
+        }
+        if batch.items.len() == 1 && self.cache.enabled() {
+            let item = batch.items.pop().expect("one item");
+            let path = std::mem::replace(&mut self.cache_path, item.cache_path);
+            let drawn = self.draw_layer(
+                item.layer,
+                item.siblings,
+                item.parent,
+                None,
+                1.0,
+                canvas,
+                None,
+            );
+            self.cache_path = path;
+            return drawn;
+        }
+        let has_images = batch
+            .items
+            .iter()
+            .any(|item| matches!(item.layer.kind, ResolvedKind::Image { .. }));
+        let whole = self.whole();
+        self.timed(Stage::Raster, |s| {
+            s.vello_scene.reset();
+            for item in &batch.items {
+                s.encode_leaf(item.layer, item.parent * item.layer.transform.matrix())?;
+            }
+            s.render_vello_scene(has_images, whole)
+        })?;
+        let layers: Vec<(PixelRect, f32)> = batch
+            .items
+            .iter()
+            .map(|item| (item.region, item.layer.opacity))
+            .collect();
+        batch.items.clear();
+        canvas = self.timed(Stage::Composite, |s| {
+            s.compositor.blend_batch(canvas, &s.vello_view, &layers)
+        });
         Ok(canvas)
     }
 
@@ -799,6 +891,12 @@ impl Renderer {
     fn rasterise(&mut self, layer: &ResolvedLayer, parent: Affine, area: PixelRect) -> Result<()> {
         let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
+        self.encode_leaf(layer, matrix)?;
+        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }), area)
+    }
+
+    /// Adds the leaf `layer`, drawn with `matrix`, to `vello_scene`.
+    fn encode_leaf(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<()> {
         match &layer.kind {
             ResolvedKind::Shape {
                 geometry,
@@ -873,7 +971,7 @@ impl Renderer {
                 unreachable!("groups and meshes are composited, not rasterised")
             }
         }
-        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }), area)
+        Ok(())
     }
 
     /// Draws a shape layer's fill and stroke in opaque white into the Vello
@@ -1211,6 +1309,49 @@ fn margin_origin(margin: u32) -> Affine {
 }
 
 /// Whether `layer` draws nothing at any time of its frame.
+/// Leaves waiting to be drawn onto the canvas together, bottom first, no two
+/// of whose boxes overlap (`Renderer::flush`).
+#[derive(Default)]
+struct Batch<'a> {
+    items: Vec<BatchItem<'a>>,
+}
+
+struct BatchItem<'a> {
+    layer: &'a ResolvedLayer,
+    /// The list `layer` is in, and its parent's matrix, as `draw_layer`
+    /// takes them.
+    siblings: &'a [ResolvedLayer],
+    parent: Affine,
+    /// The pixels Vello can draw for it (`raster_bounds`).
+    region: PixelRect,
+    /// `Renderer::cache_path` where it was met.
+    cache_path: Vec<String>,
+}
+
+impl Batch<'_> {
+    fn overlaps(&self, region: PixelRect) -> bool {
+        self.items
+            .iter()
+            .any(|item| !item.region.intersect(region).is_empty())
+    }
+}
+
+/// Whether `layer` can be drawn in a batch: a shape, text or image that is
+/// only blended normally at its opacity once Vello has drawn it, with no
+/// effects, clip, mask, matte, motion blur or 3D turn.
+fn is_plain_leaf(layer: &ResolvedLayer) -> bool {
+    matches!(
+        layer.kind,
+        ResolvedKind::Shape { .. } | ResolvedKind::Text { .. } | ResolvedKind::Image { .. }
+    ) && layer.blend_mode == BlendMode::Normal
+        && layer.effects.is_empty()
+        && layer.clip.is_none()
+        && layer.mask.is_none()
+        && layer.matte.is_none()
+        && layer.motion.is_empty()
+        && warp::layer_world(&layer.transform).is_none()
+}
+
 fn is_hidden(layer: &ResolvedLayer) -> bool {
     if layer.motion.is_empty() {
         layer.opacity <= 0.0
