@@ -54,7 +54,7 @@ Every layer has these fields:
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
 | `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
-| `effects` | array | `[]` | Reserved. No effects exist yet. |
+| `effects` | array | `[]` | Applied in order to the layer's own pixels, before it is blended. See [Effects](#effects). |
 
 `transform` fields, all animatable numbers:
 
@@ -127,8 +127,33 @@ A group composites its children (bottom first) into its own buffer, then blends 
 group's `opacity` and `blendMode`. Its `transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates.
 
+## Effects
+
+Each entry in a layer's `effects` is an object with a `type`. A group's effects run on its composited result.
+
+### blur
+
+```json
+{ "type": "blur", "radius": 24 }
+{ "type": "blur", "radius": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 40 }] }
+```
+
+| Field | Meaning |
+|---|---|
+| `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..128. |
+
+The blur is a dual Kawase filter, a cheap approximation of a Gaussian, run in linear light on premultiplied colour. In
+tests the measured standard deviation is within about 10% of `radius`. Things to know:
+
+- It does not scale with the layer's `scale` or a parent group's `scale`; the radius is always in canvas pixels.
+- Radii below 1 do nothing, because the smallest blur the filter can make spreads by about one pixel.
+- The layer is blurred as if it sat in transparent space: its edges fade out, and content that lies outside the canvas
+  is not part of the layer, so it cannot bleed in.
+- The filter is not shift invariant. Small details can drift by a fraction of a pixel as `radius` or position
+  changes.
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- `effects` is empty until the blur effect lands.
+- `blur` is the only effect.
 - No video layers, masks, mattes, gradients or per-glyph text animation yet.

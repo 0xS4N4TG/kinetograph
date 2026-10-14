@@ -48,7 +48,13 @@ impl ResolvedTransform {
 
 /// One variant per entry in `scene::Effect`.
 #[derive(Clone, Debug)]
-pub enum ResolvedEffect {}
+pub enum ResolvedEffect {
+    /// Standard deviation in pixels.
+    Blur { radius: f32 },
+}
+
+/// Largest blur radius; bigger values are clamped.
+pub const MAX_BLUR_RADIUS: f64 = 128.0;
 
 #[derive(Clone, Debug)]
 pub enum ResolvedKind {
@@ -165,7 +171,7 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
         transform: resolve_transform(&layer.transform, f),
         opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
         blend_mode: layer.blend_mode,
-        effects: layer.effects.iter().map(resolve_effect).collect(),
+        effects: layer.effects.iter().map(|e| resolve_effect(e, f)).collect(),
         kind,
     }
 }
@@ -181,8 +187,12 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
     }
 }
 
-fn resolve_effect(effect: &Effect) -> ResolvedEffect {
-    match *effect {}
+fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
+    match effect {
+        Effect::Blur { radius } => ResolvedEffect::Blur {
+            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+        },
+    }
 }
 
 #[cfg(test)]

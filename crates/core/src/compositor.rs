@@ -14,6 +14,7 @@
 
 use vello::wgpu::{self, util::DeviceExt};
 
+use crate::blur::{self, Blur};
 use crate::error::{Error, Result};
 use crate::resolve::ResolvedEffect;
 use crate::scene::BlendMode;
@@ -36,6 +37,7 @@ pub struct Compositor {
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     encode: wgpu::RenderPipeline,
+    blur: Blur,
     pool: Vec<Tex>,
 }
 
@@ -112,6 +114,7 @@ impl Compositor {
             to_linear: pipeline("fs_to_linear", LINEAR_FORMAT),
             blend: pipeline("fs_blend", LINEAR_FORMAT),
             encode: pipeline("fs_encode", READBACK_FORMAT),
+            blur: Blur::new(device),
             layout,
             pool: Vec::new(),
         }
@@ -119,25 +122,9 @@ impl Compositor {
 
     /// A texture with undefined contents, from the pool when possible.
     pub fn acquire(&mut self) -> Tex {
-        self.pool.pop().unwrap_or_else(|| {
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("layer"),
-                size: wgpu::Extent3d {
-                    width: self.width,
-                    height: self.height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: LINEAR_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            Tex { texture, view }
-        })
+        self.pool
+            .pop()
+            .unwrap_or_else(|| new_texture(&self.device, self.width, self.height))
     }
 
     pub fn release(&mut self, tex: Tex) {
@@ -206,11 +193,26 @@ impl Compositor {
     /// Runs a layer's effects, in order, on its own texture before it is
     /// blended. Each effect should read `src`, draw into a texture from
     /// `acquire`, release `src` and return the new one.
-    pub fn apply_effects(&mut self, src: Tex, effects: &[ResolvedEffect]) -> Result<Tex> {
-        if let Some(effect) = effects.first() {
-            match *effect {}
+    pub fn apply_effects(&mut self, mut src: Tex, effects: &[ResolvedEffect]) -> Tex {
+        for effect in effects {
+            match *effect {
+                ResolvedEffect::Blur { radius } if radius >= blur::MIN_RADIUS => {
+                    let dst = self.acquire();
+                    self.blur.run(
+                        &self.device,
+                        &self.queue,
+                        &src.view,
+                        &dst.view,
+                        (self.width, self.height),
+                        radius,
+                    );
+                    self.release(src);
+                    src = dst;
+                }
+                ResolvedEffect::Blur { .. } => {}
+            }
         }
-        Ok(src)
+        src
     }
 
     /// Encodes a linear texture to sRGB and reads it back as tightly packed
@@ -343,6 +345,26 @@ impl Compositor {
         }
         self.queue.submit([encoder.finish()]);
     }
+}
+
+/// A canvas-sized (or any size) linear texture that can be drawn to and read.
+pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("layer"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: LINEAR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    Tex { texture, view }
 }
 
 /// The number the shader's `blend_fn` switches on.

@@ -111,11 +111,15 @@ pub enum BlendMode {
     Luminosity,
 }
 
-/// Per-layer effects. None exist yet; each one added here gets a matching
-/// variant in `resolve::ResolvedEffect` and a pass in the compositor.
+/// Per-layer effects. Each one added here gets a matching variant in
+/// `resolve::ResolvedEffect` and a pass in the compositor.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
-pub enum Effect {}
+pub enum Effect {
+    /// Gaussian-like blur; `radius` is roughly the standard deviation in
+    /// pixels.
+    Blur { radius: Num },
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
