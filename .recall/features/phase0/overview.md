@@ -1,6 +1,6 @@
 # phase0
 
-**Status:** active
+**Status:** stable
 **Paths:** `phase0/**`, `docs/**`, `CLAUDE.md`, `.claude/**`, `README.md`
 **Last touched:** 2026-10-14
 
@@ -16,8 +16,8 @@ Validation before building the engine (docs/HANDOFF.md §8 Phase 0): Remotion sp
 
 ## Open threads
 - [x] Rust toolchain: rustup stable 1.99.0 active via ~/.zshrc PATH (2026-10-14). The first rustup install had been interrupted (no rustc); reinstalled.
-- [ ] Decide what to commit from phase0/: keep remotion-baseline.md, fframes LOG/RESULTS/compare/reference src; drop unused papercut/ template and skill-installer clutter (.agents, .claude, .hermes, .kiro, .zcode, skills-lock.json).
-- [ ] Start Phase 1 (workspace, compositor layers, blur, blend modes, PNG `still`, `bench`) once the user says go.
+- [x] phase0/ committed (a38280b): baseline, fframes LOG/RESULTS/reference crate. Card photos p*.jpg and compare/ are crops of the third-party video: gitignored. papercut/ template and skill-installer dirs left untracked (not deleted).
+- [x] Phase 1 done — see features/phase1.
 
 ## Key files
 - docs/HANDOFF.md §3, §8 — decision and roadmap

@@ -1,16 +1,21 @@
 # Kinetograph
 
-A browserless programmatic video engine: agents write Remotion-shaped TypeScript and Web Audio code, and a Rust GPU
-compositor renders it. "Kinetograph" is a placeholder name.
+A browserless programmatic video engine: agents write Remotion-shaped TypeScript and Web Audio code, Node runs it,
+and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is a placeholder name.
 
-Nothing is built yet. Before doing anything, read:
+Phase 1 (core renderer: JSON scene graph, `kinetograph still`, `bench`) is built; see `README.md` and
+`docs/SCENE.md`. Before doing anything, read:
 
 - `docs/HANDOFF.md`: what it is, how it differs from fframes, architecture, effects list, agent CLI, roadmap, rules.
 - `docs/RESEARCH.md`: competitor scan, the papercut-vs-Blitz audit, the reference video breakdown.
 - `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.
 
-Decided 2026-10-14: own the engine, built from scratch (`HANDOFF.md` §3). fframes is a reference only. Next is
-Phase 1 (`HANDOFF.md` §8).
+Decided 2026-10-14: own the engine, built from scratch (`HANDOFF.md` §3). fframes is a reference only. Phase 1 done
+2026-10-14; next is Phase 2a (`HANDOFF.md` §8), built in a Claude Code cloud session: code only there, all
+GPU tests, goldens and `bench` on the M4 (see "Building a phase in a Claude Code cloud session" in §8).
+
+Use the rustup toolchain (`~/.cargo/bin`, `/opt/homebrew/opt/rustup/bin`); Homebrew's `/opt/homebrew/bin/rustc` is
+broken.
 
 Related code elsewhere on this machine:
 
