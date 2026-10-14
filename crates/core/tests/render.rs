@@ -182,3 +182,72 @@ fn a_margin_does_not_move_or_change_the_canvas() {
         assert!(close, "pixel ({x}, {y}): {a:?} vs {b:?}");
     }
 }
+
+#[test]
+fn frames_drawn_from_the_layer_cache_are_the_frames_drawn_without_it() {
+    let load = |name: &str| {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/scenes")
+            .join(format!("{name}.json"));
+        Scene::load(&path).unwrap()
+    };
+    // Frames repeated, so that every layer can come from the cache; in an
+    // order that moves on and comes back, so that some do and some do not;
+    // and far apart, so that what changed has changed a lot. The scenes cover
+    // what the cache keys on: mattes, the camera and 3D placement, motion
+    // blur, backdrop blur (never kept), seeded patterns that change with the
+    // frame, a shader that reads it, displacement, masks and clips.
+    let frames = [10, 10, 11, 12, 11, 10, 25, 25];
+    for name in [
+        "backdrop-blur",
+        "camera",
+        "clip-paths",
+        "corner-pin",
+        "dither",
+        "dot-matrix",
+        "grain",
+        "halftone",
+        "masks",
+        "mattes",
+        "mesh-gradient",
+        "motion-blur",
+        "shader",
+        "shadows",
+        "turbulence",
+    ] {
+        let mut cached = Renderer::new(load(name)).unwrap();
+        cached.set_layer_cache(true);
+        let mut plain = Renderer::new(load(name)).unwrap();
+        for frame in frames {
+            let a = cached.render_frame(frame).unwrap();
+            let b = plain.render_frame(frame).unwrap();
+            assert_eq!(a.rgba, b.rgba, "{name}, frame {frame}");
+        }
+        let (hits, misses) = cached.layer_cache_counts();
+        assert!(
+            hits > 0 && misses > 0,
+            "{name}: {hits} hits, {misses} misses"
+        );
+        assert_eq!(plain.layer_cache_counts(), (0, 0), "{name}: cache is off");
+    }
+}
+
+#[test]
+fn turning_the_layer_cache_off_gives_back_what_it_kept() {
+    let mut renderer = Renderer::new(example()).unwrap();
+    // Off, a new renderer finds and keeps nothing.
+    let plain = renderer.render_frame(20).unwrap();
+    assert_eq!(renderer.layer_cache_counts(), (0, 0));
+    renderer.set_layer_cache(true);
+    let first = renderer.render_frame(20).unwrap();
+    let again = renderer.render_frame(20).unwrap();
+    let (hits, misses) = renderer.layer_cache_counts();
+    assert!(hits > 0 && misses > 0);
+    assert_eq!((&first.rgba, &again.rgba), (&plain.rgba, &plain.rgba));
+    // Off and on again, the first frame finds nothing.
+    renderer.set_layer_cache(false);
+    renderer.set_layer_cache(true);
+    let (before, _) = renderer.layer_cache_counts();
+    assert_eq!(renderer.render_frame(20).unwrap().rgba, plain.rgba);
+    assert_eq!(renderer.layer_cache_counts().0, before);
+}

@@ -33,6 +33,9 @@ cargo build --release
 
 # Time one frame: two warm-up renders, then K runs; per-stage mean/min/max in ms
 ./target/release/kinetograph bench examples/papercut-card.json --frame 30 --runs 10
+
+# Time successive frames in order, with the layer cache on (see "Layer cache" below)
+./target/release/kinetograph bench examples/bench-diorama.json --range 40..90
 ```
 
 ### Rendering video
@@ -56,11 +59,35 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
 - **Frame rate.** `fps` becomes an exact fraction: whole rates are `n/1`, and 23.976, 29.97 and 59.94 are
   `24000/1001`, `30000/1001` and `60000/1001`. Frame `first` of the range is time 0 in the file.
 - **Speed.** One renderer (one GPU setup) renders the whole range, and finished frames go through a channel that holds
-  two to an encoder thread, so the GPU work for frame N+1 overlaps the encoding of frame N. No sound yet: the file has a
-  video stream only.
+  two to an encoder thread, so the GPU work for frame N+1 overlaps the encoding of frame N. Layers that did not change
+  since the previous frame are not drawn again (see [Layer cache](#layer-cache)). No sound yet: the file has a video
+  stream only.
 - **Output.** Text mode prints a progress line to stderr and a one-line summary. `--json` prints
   `{output, encoder, width, height, fps, frames, first, last, ms, ms_per_frame}` (`last` inclusive; `ms` covers
   rendering and encoding the range, not GPU setup). On failure the partial file is deleted.
+
+### Layer cache
+
+A layer that has not changed since the previous frame is not drawn again: the renderer keeps the finished texture a
+layer was blended from and blends it again. (A group keeps its whole subtree's, so a group of still layers is one blend.)
+A kept texture is used only when everything it was made from is equal to what it is made from now, compared exactly:
+the layer and everything in it as resolved for the frame (motion blur samples included, and the frame that grain,
+dither and custom shaders read), its parent's matrix, its matte source, and the camera if something in it is moved in
+3D. The layer's own `opacity` and `blendMode` are not part of that, since they are applied when it is blended, so a
+fading layer is not redrawn. A layer with a `backdropBlur` (or whose matte source has one) is never kept, because its
+texture is made from the canvas under it, and nor are the layers inside a motion-blurred layer, of which only the
+average is kept. Frames are byte-identical with the cache on or off. What a frame does not use is dropped when it ends,
+and no more than 1 GiB of textures is kept.
+
+- `render` turns the cache on. `still` renders one frame, so it has nothing to reuse. In the library, a new `Renderer`
+  has the cache off; `Renderer::set_layer_cache(true)` turns it on and `layer_cache_counts()` says how many layers have
+  come from it.
+- `bench --frame` renders the same frame over and over, so it runs with the cache off (on, every run after the first
+  would only time the cache). `bench --range a..b` (the syntax of `render --range`) times the frames in order with the
+  cache on, as `render` runs them: a line per frame with its time and how many layers came from the cache (`reused`)
+  and how many were drawn and kept (`drawn`), then the stage means, minimums and maximums over the frames. The range is
+  rendered twice from an empty cache, first the whole frames and then the stages (which wait for the GPU after every
+  step, so they cannot also be the frame's time). `--range` cannot be combined with `--frame` or `--runs`.
 
 Checks: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. The golden-image tests compare
 against PNGs in `crates/core/tests/golden/` made on an Apple M4; regenerate them with

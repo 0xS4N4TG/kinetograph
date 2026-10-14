@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{Parser, Subcommand};
-use kinetograph_cli::render::{RenderRequest, render};
+use kinetograph_cli::render::{RenderRequest, parse_range, render};
 use kinetograph_core::{Renderer, Scene, render_still};
 use serde_json::{Value, json};
 
@@ -55,16 +55,25 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Time the render stages of one frame on a warm renderer
+    /// Time the render stages of one frame on a warm renderer, or of
+    /// successive frames with the layer cache on
     Bench {
         /// Scene JSON file (see docs/SCENE.md)
         scene: PathBuf,
-        /// Frame number, 0-based
+        /// Frame number, 0-based. It is rendered over and over, so the layer
+        /// cache is off (on, only the cache would be timed)
         #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
         frame: i64,
         /// Timed runs after two warm-up renders (one per timing path)
         #[arg(long, default_value_t = 10)]
         runs: u32,
+        /// Frames to time instead, in order and with the layer cache on, as
+        /// `render` runs them: 10..40 (10 to 39) or 10..=40 (10 to 40).
+        /// Replaces `--frame` and `--runs`: the range is rendered twice from
+        /// an empty cache, once for each frame's whole time and once for
+        /// its stages
+        #[arg(long, conflicts_with_all = ["frame", "runs"])]
+        range: Option<String>,
         /// Print the result as JSON
         #[arg(long)]
         json: bool,
@@ -99,8 +108,15 @@ fn main() -> ExitCode {
             scene,
             frame,
             runs,
+            range,
             json,
-        } => (json, bench(&scene, frame, runs)),
+        } => (
+            json,
+            match range {
+                Some(range) => bench_range(&scene, &range),
+                None => bench(&scene, frame, runs),
+            },
+        ),
     };
     match result {
         Ok(out) => {
@@ -251,8 +267,11 @@ fn bench(scene_path: &Path, frame: i64, runs: u32) -> Result<Output, String> {
     let started = Instant::now();
     let mut renderer = Renderer::new(scene).map_err(err)?;
     let setup_ms = started.elapsed().as_secs_f64() * 1000.0;
+    // The same frame is rendered over and over, so the layer cache stays off
+    // (a new renderer has it off): on, every run after the first would only
+    // time the cache.
 
-    // Warm-up: pipelines, texture pool and caches fill on the first frame.
+    // Warm-up: pipelines and the texture pool fill on the first frame.
     let (warm, _) = renderer.render_timed(frame).map_err(err)?;
     warm.encode_png().map_err(err)?;
     renderer.render_frame(frame).map_err(err)?;
@@ -292,16 +311,34 @@ fn bench(scene_path: &Path, frame: i64, runs: u32) -> Result<Output, String> {
         ("total", Stats::of(&total)),
     ];
     let mut text = format!(
-        "{}  {width}x{height}  frame {frame}  {runs} runs after 2 warm-up renders\n\
-         setup (GPU, shaders, fonts; once per process): {setup_ms:.1} ms\n\n\
-         {:<11}{:>10}{:>10}{:>10}\n",
+        "{}  {width}x{height}  frame {frame}  {runs} runs after 2 warm-up renders, layer cache off\n\
+         setup (GPU, shaders, fonts; once per process): {setup_ms:.1} ms\n\n",
         scene_path.display(),
-        "stage (ms)",
-        "mean",
-        "min",
-        "max"
     );
-    for (name, s) in &stages {
+    text.push_str(&stage_table(&stages));
+    Ok(Output {
+        text,
+        json: json!({
+            "scene": scene_path,
+            "width": width,
+            "height": height,
+            "frame": frame,
+            "runs": runs,
+            "layer_cache": false,
+            "setup_ms": setup_ms,
+            "stages_ms": stages_json(&stages),
+        }),
+    })
+}
+
+/// The stages' mean, min and max as a table, with the note on what the waits
+/// do to them.
+fn stage_table(stages: &[(&str, Stats)]) -> String {
+    let mut text = format!(
+        "{:<11}{:>10}{:>10}{:>10}\n",
+        "stage (ms)", "mean", "min", "max"
+    );
+    for (name, s) in stages {
         text.push_str(&format!(
             "{name:<11}{:>10.3}{:>10.3}{:>10.3}\n",
             s.mean, s.min, s.max
@@ -311,11 +348,108 @@ fn bench(scene_path: &Path, frame: i64, runs: u32) -> Result<Output, String> {
         "\nStages wait for the GPU after every step, so they add up to more than\n\
          total, which is the whole frame without those waits.",
     );
-    let stages_json: serde_json::Map<String, Value> = stages
+    text
+}
+
+fn stages_json(stages: &[(&str, Stats)]) -> serde_json::Map<String, Value> {
+    stages
         .iter()
         .map(|(name, s)| {
             let key = name.replace(' ', "_");
             (key, json!({ "mean": s.mean, "min": s.min, "max": s.max }))
+        })
+        .collect()
+}
+
+/// `bench --range`: the frames of the range, in order, on one renderer with
+/// the layer cache on, as `render` runs them. Each frame is timed once, so
+/// what a frame costs includes what the cache saved it from drawing, which
+/// depends on the frames before it. The range is rendered twice, each time
+/// from an empty cache, because the stage times wait for the GPU after every
+/// step and so cannot also be the time of the whole frame: first the whole
+/// frames, then the stages.
+fn bench_range(scene_path: &Path, range: &str) -> Result<Output, String> {
+    let scene = Scene::load(scene_path).map_err(|e| e.to_string())?;
+    let (first, last) = parse_range(range, scene.duration_in_frames)?;
+    let (width, height) = (scene.width, scene.height);
+    let err = |e: kinetograph_core::Error| e.to_string();
+
+    let started = Instant::now();
+    let mut renderer = Renderer::new(scene).map_err(err)?;
+    let setup_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    // Warm-up with the cache off (a new renderer has it so), so the pipelines
+    // and the texture pool are filled and the cache is not: its first frame
+    // is as cold as it gets.
+    renderer.render_frame(first).map_err(err)?;
+    renderer.set_layer_cache(true);
+
+    let ms = |t: Instant| t.elapsed().as_secs_f64() * 1000.0;
+    // (frame, ms, layers drawn from the cache, layers drawn)
+    let mut per_frame = Vec::new();
+    let mut total = Vec::new();
+    for frame in first..=last {
+        let (hits, misses) = renderer.layer_cache_counts();
+        let started = Instant::now();
+        let rendered = renderer.render_frame(frame).map_err(err)?;
+        rendered.encode_png().map_err(err)?;
+        let elapsed = ms(started);
+        total.push(elapsed);
+        let (now_hits, now_misses) = renderer.layer_cache_counts();
+        per_frame.push((frame, elapsed, now_hits - hits, now_misses - misses));
+    }
+
+    // The same frames again, from an empty cache, for the stages.
+    renderer.set_layer_cache(false);
+    renderer.set_layer_cache(true);
+    let mut resolve = Vec::new();
+    let mut raster = Vec::new();
+    let mut composite = Vec::new();
+    let mut readback = Vec::new();
+    let mut png = Vec::new();
+    for frame in first..=last {
+        let (rendered, t) = renderer.render_timed(frame).map_err(err)?;
+        resolve.push(t.resolve_ms);
+        raster.push(t.raster_ms);
+        composite.push(t.composite_ms);
+        readback.push(t.readback_ms);
+        let started = Instant::now();
+        rendered.encode_png().map_err(err)?;
+        png.push(ms(started));
+    }
+
+    let stages = [
+        ("resolve", Stats::of(&resolve)),
+        ("raster", Stats::of(&raster)),
+        ("composite", Stats::of(&composite)),
+        ("readback", Stats::of(&readback)),
+        ("png encode", Stats::of(&png)),
+        ("total", Stats::of(&total)),
+    ];
+    let frames = last - first + 1;
+    let mut text = format!(
+        "{}  {width}x{height}  frames {first}..={last} ({frames}), in order, layer cache on\n\
+         setup (GPU, shaders, fonts; once per process): {setup_ms:.1} ms\n\n\
+         {:<7}{:>12}{:>9}{:>9}\n",
+        scene_path.display(),
+        "frame",
+        "total (ms)",
+        "reused",
+        "drawn"
+    );
+    for (frame, elapsed, reused, drawn) in &per_frame {
+        text.push_str(&format!("{frame:<7}{elapsed:>12.3}{reused:>9}{drawn:>9}\n"));
+    }
+    text.push('\n');
+    text.push_str(&stage_table(&stages));
+    text.push_str(
+        "\n\"reused\" and \"drawn\" count the layers blended from the cache and those drawn\n\
+         (and kept) in the whole-frame pass; the stage rows are a second pass from an empty cache.",
+    );
+    let frames_json: Vec<Value> = per_frame
+        .iter()
+        .map(|(frame, elapsed, reused, drawn)| {
+            json!({ "frame": frame, "total_ms": elapsed, "layers_reused": reused, "layers_drawn": drawn })
         })
         .collect();
     Ok(Output {
@@ -324,10 +458,13 @@ fn bench(scene_path: &Path, frame: i64, runs: u32) -> Result<Output, String> {
             "scene": scene_path,
             "width": width,
             "height": height,
-            "frame": frame,
-            "runs": runs,
+            "first": first,
+            "last": last,
+            "frames": frames,
+            "layer_cache": true,
             "setup_ms": setup_ms,
-            "stages_ms": stages_json,
+            "stages_ms": stages_json(&stages),
+            "per_frame": frames_json,
         }),
     })
 }

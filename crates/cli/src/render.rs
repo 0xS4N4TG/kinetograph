@@ -68,6 +68,9 @@ pub fn render(
     encode::fps_rational(fps)?;
 
     let mut renderer = Renderer::new(scene).map_err(|e| e.to_string())?;
+    // The frames come one after the other: a layer that did not change since
+    // the last is not drawn again.
+    renderer.set_layer_cache(true);
     let started = Instant::now();
 
     // The encoder lives on its own thread (ffmpeg's contexts cannot cross

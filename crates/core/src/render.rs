@@ -15,6 +15,7 @@ use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
+use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
@@ -29,6 +30,10 @@ use crate::warp;
 
 /// Curve flattening tolerance when converting shapes to paths.
 const SHAPE_TOLERANCE: f64 = 0.1;
+
+/// How many bytes of finished layer textures the layer cache keeps from one
+/// frame to the next (`cache.rs`).
+const CACHE_BYTES: u64 = 1 << 30;
 
 /// Tightly packed RGBA8, straight alpha, sRGB-encoded.
 pub struct Frame {
@@ -110,6 +115,14 @@ pub struct Renderer {
     images: HashMap<String, ImageData>,
     /// `Some` while `render_timed` runs.
     timings: Option<Timings>,
+    /// The textures of layers that stopped changing, kept for the next frame.
+    cache: LayerCache<Tex>,
+    /// The ids of the groups the layer being drawn is in, outermost first.
+    /// With the layer's own id they say which layer it is to the cache.
+    cache_path: Vec<String>,
+    /// Above 0 while the samples of a motion-blurred layer are drawn: they are
+    /// copies of one layer with the same ids, and only their average is kept.
+    cache_paused: u32,
 }
 
 impl Renderer {
@@ -174,7 +187,30 @@ impl Renderer {
             text,
             images,
             timings: None,
+            cache: LayerCache::new(CACHE_BYTES),
+            cache_path: Vec::new(),
+            cache_paused: 0,
         })
+    }
+
+    /// Turns the layer cache on or off; a new renderer has it off. With it
+    /// on, a frame that has a layer the last frame had blends the layer's
+    /// texture from the last frame again instead of drawing it, whenever
+    /// everything the texture is made from is equal (`cache.rs`): the frames
+    /// are the same either way. It is for rendering frames one after the
+    /// other (`render`); rendering one frame over and over, as `bench` does,
+    /// would only time the cache. Turning it off empties it; turning it on
+    /// starts from an empty one.
+    pub fn set_layer_cache(&mut self, on: bool) {
+        for tex in self.cache.set_enabled(on) {
+            self.compositor.release(tex);
+        }
+    }
+
+    /// How many layers have been drawn from the layer cache so far, and how
+    /// many were looked for in it and drawn instead.
+    pub fn layer_cache_counts(&self) -> (u64, u64) {
+        self.cache.counts()
     }
 
     pub fn render_frame(&mut self, frame: u32) -> Result<Frame> {
@@ -221,10 +257,18 @@ impl Renderer {
 
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
         self.projection = warp::projection(scene.camera.as_ref(), self.margin);
+        // A frame that failed may have left these half way.
+        self.cache_path.clear();
+        self.cache_paused = 0;
+        self.cache.begin_frame();
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas =
             self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?;
+        // What this frame did not draw, the next probably will not either.
+        for tex in self.cache.end_frame() {
+            self.compositor.release(tex);
+        }
         let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
         self.compositor.release(canvas);
         Ok(Frame {
@@ -290,8 +334,9 @@ impl Renderer {
         let mut items = Vec::new();
         collect_preserve3d(children, space, &mut |l| self.layer_box(l), &mut items)?;
         warp::sort_far_to_near(&mut items, |item| item.depth);
+        self.cache_path.push(group.id.clone());
         for item in items {
-            canvas = self.draw_layer(
+            let drawn = self.draw_layer(
                 item.layer,
                 item.siblings,
                 item.flat_parent,
@@ -299,8 +344,16 @@ impl Renderer {
                 item.opacity,
                 canvas,
                 below,
-            )?;
+            );
+            canvas = match drawn {
+                Ok(canvas) => canvas,
+                Err(e) => {
+                    self.cache_path.pop();
+                    return Err(e);
+                }
+            };
         }
+        self.cache_path.pop();
         Ok(canvas)
     }
 
@@ -310,6 +363,9 @@ impl Renderer {
     /// the layer's parent, as in `draw_layers`. A layer with motion blur
     /// ignores `placement` and works its own out for each sub-frame, so it
     /// cannot be drawn by `draw_preserve3d` (the scene refuses it).
+    ///
+    /// The texture it blends is the layer cache's when the layer is what it
+    /// was in the last frame (`cache.rs`), and is kept there when it is not.
     #[allow(clippy::too_many_arguments)]
     fn draw_layer(
         &mut self,
@@ -321,6 +377,50 @@ impl Renderer {
         mut canvas: Tex,
         below: Option<&Tex>,
     ) -> Result<Tex> {
+        // Each sub-frame's opacity is already in a blurred layer's average.
+        let opacity = if layer.motion.is_empty() {
+            layer.opacity * opacity_scale
+        } else {
+            1.0
+        };
+        let matte = layer
+            .matte
+            .as_ref()
+            .and_then(|m| siblings.iter().find(|l| l.id == m.layer));
+        let id = self.cache_id(layer, matte);
+        // A blurred layer places its sub-frames one by one.
+        let placed = placement
+            .filter(|_| layer.motion.is_empty())
+            .map(|p| (p.parent, p.world));
+        let inputs = Inputs {
+            layer,
+            matte,
+            parent,
+            placement: placed,
+            // The warp reads the camera: for a layer placed from outside (the
+            // children of a preserve3d group are, whatever their own
+            // transform) as well as for one with something moved in 3D in it.
+            projection: (placed.is_some()
+                || cache::uses_projection(layer)
+                || matte.is_some_and(cache::uses_projection))
+            .then_some(self.projection),
+            opacity_scale: (!layer.motion.is_empty()).then_some(opacity_scale),
+        };
+        if let Some(id) = &id {
+            match self.cache.take(id, &inputs) {
+                Ok(hit) => {
+                    canvas = self.timed(Stage::Composite, |s| {
+                        s.compositor
+                            .blend(canvas, hit.texture(), opacity, layer.blend_mode)
+                    });
+                    self.cache.put_back(id.clone(), hit);
+                    return Ok(canvas);
+                }
+                Err(Some(stale)) => self.compositor.release(stale),
+                Err(None) => {}
+            }
+        }
+
         // The backdrop is only built for a layer that blurs it: the canvas so
         // far, under anything the enclosing groups have behind them.
         let needs_backdrop = uses_backdrop(siblings, layer);
@@ -331,31 +431,73 @@ impl Renderer {
             _ => None,
         };
         let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
-        let drawn = if layer.motion.is_empty() {
-            self.layer_texture(layer, siblings, parent, backdrop, None)
-                .map(|src| (src, layer.opacity * opacity_scale))
-        } else {
-            // Each sub-frame's opacity is already in the average.
-            self.motion_blurred(layer, siblings, parent, backdrop, opacity_scale)
-                .map(|src| (src, 1.0))
-        };
+        let drawn =
+            self.layer_final_texture(layer, siblings, parent, placement, opacity_scale, backdrop);
         if let Some(combined) = combined {
             self.compositor.release(combined);
         }
-        let (src, opacity) = drawn?;
-        let src = match placement {
-            // The sub-frames of a blurred layer were placed one by one.
-            Some(placement) if layer.motion.is_empty() => match self.place(src, &placement) {
-                Some(src) => src,
-                // Seen edge on: nothing to blend.
-                None => return Ok(canvas),
-            },
-            _ => src,
+        // Seen edge on: nothing to blend.
+        let Some(src) = drawn? else {
+            return Ok(canvas);
         };
         canvas = self.timed(Stage::Composite, |s| {
-            s.compositor.blend(canvas, src, opacity, layer.blend_mode)
+            s.compositor.blend(canvas, &src, opacity, layer.blend_mode)
         });
+        match id {
+            Some(id) => {
+                for tex in self.cache.put(id, &inputs, src) {
+                    self.compositor.release(tex);
+                }
+            }
+            None => self.compositor.release(src),
+        }
         Ok(canvas)
+    }
+
+    /// Where `layer`'s texture is cached, if it may be: the cache is on, the
+    /// layer is not one of a motion-blurred layer's samples, and neither it
+    /// nor its matte source blurs the backdrop, which makes its texture
+    /// depend on the canvas under it.
+    fn cache_id(
+        &self,
+        layer: &ResolvedLayer,
+        matte: Option<&ResolvedLayer>,
+    ) -> Option<Vec<String>> {
+        if !self.cache.enabled()
+            || self.cache_paused > 0
+            || cache::mentions_backdrop(layer)
+            || matte.is_some_and(cache::mentions_backdrop)
+        {
+            return None;
+        }
+        let mut id = self.cache_path.clone();
+        id.push(layer.id.clone());
+        Some(id)
+    }
+
+    /// `layer`'s texture as it is blended: drawn, then warped to its 3D
+    /// `placement` if it has one, or the average of its motion blur samples
+    /// (each placed by itself). `None` if it is seen edge on.
+    fn layer_final_texture(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        placement: Option<Placement>,
+        opacity_scale: f32,
+        backdrop: Option<&Tex>,
+    ) -> Result<Option<Tex>> {
+        if layer.motion.is_empty() {
+            let src = self.layer_texture(layer, siblings, parent, backdrop, None)?;
+            return Ok(match placement {
+                Some(placement) => self.place(src, &placement),
+                None => Some(src),
+            });
+        }
+        self.cache_paused += 1;
+        let sum = self.motion_blurred(layer, siblings, parent, backdrop, opacity_scale);
+        self.cache_paused -= 1;
+        sum.map(Some)
     }
 
     /// The average of `layer`'s sub-frames (`ResolvedLayer::motion`), each
@@ -443,7 +585,10 @@ impl Renderer {
         let src = match &layer.kind {
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
-                self.draw_layers(children, matrix, empty, backdrop)?
+                self.cache_path.push(layer.id.clone());
+                let drawn = self.draw_layers(children, matrix, empty, backdrop);
+                self.cache_path.pop();
+                drawn?
             }
             // Triangles with vertex colours, not a Vello scene.
             ResolvedKind::MeshGradient {

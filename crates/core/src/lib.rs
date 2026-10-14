@@ -4,6 +4,7 @@ pub mod anim;
 pub mod blur;
 pub mod bounds;
 pub mod box_shadow;
+pub mod cache;
 pub mod color;
 pub mod compositor;
 pub mod error;

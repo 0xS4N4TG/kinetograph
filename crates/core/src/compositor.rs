@@ -646,8 +646,9 @@ impl Compositor {
     }
 
     /// Composites `src` over `dst` with the layer's opacity and blend mode.
-    /// `src` goes back to the pool; the result is `dst`, changed under the
-    /// box of `src` only.
+    /// `src` is only read, and stays its owner's (the layer cache keeps one
+    /// for the next frame); the result is `dst`, changed under the box of
+    /// `src` only.
     ///
     /// Where `src` is transparent the pass gives back the pixel of `dst`
     /// exactly: the source is `0 * opacity = 0`, so the result is
@@ -659,7 +660,7 @@ impl Compositor {
     /// they are drawn over the whole texture as they always were.
     ///
     /// `dst` must hold the box drawn.
-    pub fn blend(&mut self, mut dst: Tex, src: Tex, opacity: f32, mode: BlendMode) -> Tex {
+    pub fn blend(&mut self, mut dst: Tex, src: &Tex, opacity: f32, mode: BlendMode) -> Tex {
         let mode = mode_index(mode);
         let region = if mode >= FIRST_NON_SEPARABLE_MODE {
             self.whole()
@@ -670,7 +671,6 @@ impl Compositor {
             c.pass(&c.blend, dst.input(), src.input(), opacity, mode, temp);
         });
         dst.bounds = dst.bounds.union(src.bounds);
-        self.release(src);
         dst
     }
 
@@ -933,7 +933,9 @@ impl Compositor {
         let coverage = coverage.map_or_else(|| src.input(), |t| t.input());
         self.pass(&self.matte, blurred.input(), coverage, 1.0, 0, &frosted);
         self.release(blurred);
-        self.blend(frosted, src, 1.0, BlendMode::Normal)
+        let frosted = self.blend(frosted, &src, 1.0, BlendMode::Normal);
+        self.release(src);
+        frosted
     }
 
     /// Draws a halo under `src`: a blurred copy of it, tinted if asked. `src`
