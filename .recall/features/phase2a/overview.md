@@ -20,9 +20,9 @@ gradient fills, backdrop blur, glow, chromatic aberration, custom WGSL. Built in
   Scene-wide canvas margin M = max effect reach; textures (w+2M)x(h+2M).
 
 ## Open threads
-- [ ] Phase 2b runs in a cloud session (kickoff prompt: branch feat/looks-camera-video from main); M4 then renders,
+- [x] Phase 2b runs in a cloud session (kickoff prompt: branch feat/looks-camera-video from main); M4 then renders,
   makes goldens, benches.
-- [ ] Phase 2c performance pass (HANDOFF §8 2c), including Phase 1's MSAA 16x / Gaussian / full-canvas textures.
+- [x] Phase 2c performance pass (code on perf/layer-bounds, PR #4) (HANDOFF §8 2c), including Phase 1's MSAA 16x / Gaussian / full-canvas textures.
 - [ ] Possible follow-up: give custom shaders the backdrop as a second input (custom transitions).
 - [ ] Remote branch feat/compositing-effects still exists (no auto-delete); delete if unwanted.
 
