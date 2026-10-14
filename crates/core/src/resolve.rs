@@ -7,8 +7,8 @@ use crate::error::{Error, Result};
 use crate::scene::{
     BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Geometry, Gradient,
     GradientGeometry, HalftoneShape, Layer, LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE,
-    MIN_DITHER_LEVELS, MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform, Turbulence,
-    TurbulenceKind,
+    MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels, Paint, Scene, Shadow, Stop, Transform,
+    Turbulence, TurbulenceKind,
 };
 use crate::turbulence::MAX_OCTAVES;
 
@@ -355,6 +355,13 @@ pub enum ResolvedKind {
     Group {
         children: Vec<ResolvedLayer>,
     },
+    /// The noise over the box `(0, 0, width, height)` in layer space.
+    Noise {
+        width: f64,
+        height: f64,
+        turbulence: ResolvedTurbulence,
+        channels: NoiseChannels,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -448,6 +455,12 @@ fn resolve_layer(layer: &Layer, clock: Clock) -> ResolvedLayer {
         },
         LayerKind::Group(g) => ResolvedKind::Group {
             children: g.children.iter().map(|c| resolve_layer(c, clock)).collect(),
+        },
+        LayerKind::Noise(n) => ResolvedKind::Noise {
+            width: n.width.at(f),
+            height: n.height.at(f),
+            turbulence: resolve_turbulence(&n.turbulence, f),
+            channels: n.channels,
         },
     };
     ResolvedLayer {
@@ -1278,6 +1291,39 @@ mod tests {
                     octaves: 1,
                     seed: 7,
                 },
+            }
+        );
+    }
+
+    #[test]
+    fn noise_layers_resolve_their_box_and_turbulence() {
+        let json = r#"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "n", "type": "noise", "channels": "gray",
+              "width": [{"frame": 0, "value": 0}, {"frame": 10, "value": 80}], "height": 30,
+              "turbulence": {"type": "fractalNoise", "numOctaves": 2, "seed": 11,
+                "baseFrequency": [{"frame": 0, "value": 0.1}, {"frame": 10, "value": 0.3}]}}]}"#;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let resolved = scene.resolve(5).unwrap();
+        let ResolvedKind::Noise {
+            width,
+            height,
+            turbulence,
+            channels,
+        } = &resolved.layers[0].kind
+        else {
+            panic!("not a noise layer");
+        };
+        assert_eq!(
+            (*width, *height, *channels),
+            (40.0, 30.0, NoiseChannels::Gray)
+        );
+        assert_eq!(
+            *turbulence,
+            ResolvedTurbulence {
+                fractal: true,
+                frequency: [0.2, 0.2],
+                octaves: 2,
+                seed: 11,
             }
         );
     }

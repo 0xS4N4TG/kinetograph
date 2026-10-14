@@ -29,7 +29,9 @@
 //!
 //! The displace pass (`shaders/displace.wgsl`) also reads the layer through
 //! the filtered layout, and takes the noise tables of its seed (built on first
-//! use, `turbulence_tables`) as a second bind group.
+//! use, `turbulence_tables`) as a second bind group. So does the noise layer's
+//! pass (`shaders/noise.wgsl`), on the shared layout, which fills a box's
+//! coverage with the raw noise.
 //!
 //! The `lut` pass (`shaders/lut.wgsl`) reads a 3D texture as well, so it has
 //! a bind group layout of its own (`lut_layout`) and the scene's tables are
@@ -59,10 +61,11 @@ use crate::lut::Lut;
 use crate::resolve::{
     ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect, ResolvedGlow,
     ResolvedGradientMap, ResolvedGrain, ResolvedHalftone, ResolvedShader, ResolvedShadow,
+    ResolvedTurbulence,
 };
 use crate::scene::{
     BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, MAX_GRADIENT_MAP_STOPS, MaskMode,
-    MatteMode,
+    MatteMode, NoiseChannels,
 };
 use crate::turbulence::{self, Tables};
 
@@ -114,6 +117,8 @@ pub struct Compositor {
     dot_matrix: wgpu::RenderPipeline,
     /// On `filtered_layout` and then `turbulence_layout`.
     displace: wgpu::RenderPipeline,
+    /// On the shared layout and then `turbulence_layout`.
+    noise: wgpu::RenderPipeline,
     /// For passes that evaluate turbulence: the storage buffer of one seed's
     /// tables, at bind group 1.
     turbulence_layout: wgpu::BindGroupLayout,
@@ -178,6 +183,7 @@ impl Compositor {
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
         let displace_shader =
             shader_module(device, "displace", include_str!("shaders/displace.wgsl"));
+        let noise_shader = shader_module(device, "noise", include_str!("shaders/noise.wgsl"));
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -239,6 +245,19 @@ impl Compositor {
             &displace_pipeline_layout,
             &displace_shader,
             "fs_displace",
+            LINEAR_FORMAT,
+        );
+        let noise_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("noise"),
+                bind_group_layouts: &[Some(&layout), Some(&turbulence_layout)],
+                immediate_size: 0,
+            });
+        let noise = fullscreen_pipeline(
+            device,
+            &noise_pipeline_layout,
+            &noise_shader,
+            "fs_noise",
             LINEAR_FORMAT,
         );
         let lut_layout = lut_bind_group_layout(device);
@@ -324,6 +343,7 @@ impl Compositor {
             halftone,
             dot_matrix: pipeline(&dot_matrix_shader, "fs_dot_matrix", LINEAR_FORMAT),
             displace,
+            noise,
             turbulence_layout,
             turbulence_tables: HashMap::new(),
             lut_layout,
@@ -744,6 +764,31 @@ impl Compositor {
         target
     }
 
+    /// Fills the box whose coverage is `coverage` (opaque white where the box
+    /// is, anti-aliased at its edge) with the raw turbulence image, in the
+    /// layer's space (`layer_matrix` takes that to texels). `coverage` goes
+    /// back to the pool; the result is a new texture.
+    pub fn noise(
+        &mut self,
+        coverage: Tex,
+        layer_matrix: Affine,
+        turbulence: &ResolvedTurbulence,
+        channels: NoiseChannels,
+    ) -> Tex {
+        let key = self.turbulence_tables(turbulence.seed);
+        let target = self.acquire();
+        self.run_pass_with(
+            &self.noise,
+            &coverage.view,
+            &coverage.view,
+            &noise_values(turbulence, channels, layer_matrix),
+            Some(&self.turbulence_tables[&key]),
+            &target.view,
+        );
+        self.release(coverage);
+        target
+    }
+
     /// Makes sure the noise tables of `seed` are on the GPU and returns the
     /// key of their bind group in `turbulence_tables`.
     fn turbulence_tables(&mut self, seed: i64) -> i64 {
@@ -1066,6 +1111,20 @@ impl Compositor {
         params: &[u8],
         target: &wgpu::TextureView,
     ) {
+        self.run_pass_with(pipeline, a, b, params, None, target);
+    }
+
+    /// Like `run_pass`, with a second bind group (at group 1) for the passes
+    /// that have one.
+    fn run_pass_with(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        a: &wgpu::TextureView,
+        b: &wgpu::TextureView,
+        params: &[u8],
+        extra: Option<&wgpu::BindGroup>,
+        target: &wgpu::TextureView,
+    ) {
         let uniform = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1091,7 +1150,7 @@ impl Compositor {
                 },
             ],
         });
-        self.draw(pipeline, &bind_group, target);
+        self.draw_with(pipeline, &bind_group, extra, target);
     }
 
     /// Like `run_pass`, for a pipeline on `filtered_layout`: `input` is read
@@ -1543,6 +1602,47 @@ fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine) -> Vec<u8>
             displace.x_channel.index(),
             displace.y_channel.index(),
             u32::from(t.fractal),
+        ]
+        .iter()
+        .flat_map(|v| v.to_le_bytes()),
+    );
+    bytes
+}
+
+/// A noise layer as `shaders/noise.wgsl` reads it: the inverse of the layer
+/// matrix (linear part, then translation), the base frequency, then the
+/// octaves, whether the noise is fractal and whether it is gray, as u32s. A
+/// matrix that cannot be inverted has nothing to draw, so its inverse is zeros.
+fn noise_values(
+    turbulence: &ResolvedTurbulence,
+    channels: NoiseChannels,
+    layer_matrix: Affine,
+) -> Vec<u8> {
+    let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
+        layer_matrix.inverse().as_coeffs()
+    } else {
+        [0.0; 6]
+    };
+    let mut bytes = floats(&[
+        inverse[0] as f32,
+        inverse[1] as f32,
+        inverse[2] as f32,
+        inverse[3] as f32,
+        inverse[4] as f32,
+        inverse[5] as f32,
+        0.0,
+        0.0,
+        turbulence.frequency[0],
+        turbulence.frequency[1],
+        0.0,
+        0.0,
+    ]);
+    bytes.extend(
+        [
+            turbulence.octaves,
+            u32::from(turbulence.fractal),
+            u32::from(channels == NoiseChannels::Gray),
+            0,
         ]
         .iter()
         .flat_map(|v| v.to_le_bytes()),
@@ -2018,6 +2118,44 @@ mod tests {
         let flat = displace_values(&plain, Affine::scale(0.0));
         assert!(flat[..24].iter().all(|b| *b == 0));
         assert_eq!(u32::from_le_bytes(flat[76..80].try_into().unwrap()), 0);
+    }
+
+    #[test]
+    fn noise_values_carry_the_inverse_the_frequency_and_the_options() {
+        use crate::resolve::ResolvedTurbulence;
+
+        let turbulence = ResolvedTurbulence {
+            fractal: false,
+            frequency: [0.25, 0.5],
+            octaves: 3,
+            seed: 7,
+        };
+        let matrix = Affine::translate((10.0, 20.0)) * Affine::scale(2.0);
+        let bytes = noise_values(&turbulence, NoiseChannels::Gray, matrix);
+        assert_eq!(bytes.len(), 64);
+        let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        // The inverse (linear part, then translation): x / 2 - 5.
+        assert_eq!(
+            [0, 1, 2, 3, 4, 5].map(float),
+            [0.5, 0.0, 0.0, 0.5, -5.0, -10.0]
+        );
+        assert_eq!([8, 9].map(float), [0.25, 0.5]);
+        // Octaves, not fractal, gray.
+        assert_eq!([12, 13, 14].map(word), [3, 0, 1]);
+        let rgba = noise_values(
+            &ResolvedTurbulence {
+                fractal: true,
+                ..turbulence
+            },
+            NoiseChannels::Rgba,
+            matrix,
+        );
+        assert_eq!(u32::from_le_bytes(rgba[52..56].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(rgba[56..60].try_into().unwrap()), 0);
+        // Nothing to invert for a layer scaled to nothing.
+        let flat = noise_values(&turbulence, NoiseChannels::Rgba, Affine::scale(0.0));
+        assert!(flat[..24].iter().all(|b| *b == 0));
     }
 
     #[test]

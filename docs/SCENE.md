@@ -52,7 +52,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image` or `group`. |
+| `type` | string | required | `shape`, `text`, `image`, `group` or `noise`. |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
 | `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
@@ -133,6 +133,38 @@ PNG or JPEG, scaled to `width` x `height` from the layer origin. Colours are rea
 A group composites its children (bottom first) into its own buffer, then blends that result into its parent using the
 group's `opacity` and `blendMode`. Its `transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates.
+
+### noise
+
+```json
+{ "id": "clouds", "type": "noise", "width": 480, "height": 270,
+  "turbulence": { "type": "fractalNoise", "baseFrequency": 0.01, "numOctaves": 4, "seed": 3 } }
+{ "id": "static", "type": "noise", "width": 200, "height": 200, "channels": "gray",
+  "turbulence": { "type": "turbulence", "baseFrequency": [0.05, 0.2], "seed": 11 } }
+```
+
+The raw output of SVG's `feTurbulence` over a box, from the layer origin: clouds, marble or smoke to blend, matte or
+mask with, or to displace by. Like any layer it takes `effects`, `clip`, `mask`, `matte`, `blendMode` and `opacity`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `width`, `height` | required | Animatable, not negative: the box in layer pixels. |
+| `turbulence` | required | The noise, with the fields described under [`displace`](#displace): `type`, `baseFrequency`, `numOctaves`, `seed`. |
+| `channels` | `rgba` | `rgba`: the four noise channels are red, green, blue and alpha, as SVG draws a `feTurbulence`, so the box is a coloured, partly see-through haze. `gray`: the red channel as grey, fully opaque. |
+
+- **Colour.** The channel values are taken as linear light, which is what SVG's default `linearRGB` filter space
+  means, and the compositor's own space, so `rgba` is premultiplied (each colour times its alpha) and nothing else is
+  done to it. A noise value of 0.5 is therefore a mid grey in linear light, which looks lighter (about 188 of 255)
+  than a 0.5 sRGB grey. Use a [`gradientMap`](#gradientmap) or a colour filter to grade it.
+- **In layer space.** The noise is computed at each pixel's centre in the layer's own coordinates, so it moves, scales
+  and rotates with the layer (a scaled-up noise layer has a bigger, softer pattern; `baseFrequency` is per layer
+  pixel). It is a function of the layer's space and the `seed` only: it changes over time only if you animate
+  `baseFrequency`, the transform or the box.
+- **The box edge** is anti-aliased: the box is drawn as a white shape through the layer matrix by the same rasteriser
+  as a `shape` layer, and the noise fills its coverage. A box off the canvas is clipped as any layer is.
+- A group has no box, but a noise layer does: an `inset` clip or a `sweep` dot matrix on one measures from
+  `(0, 0, width, height)`.
+- Counts nothing in the [margin](#canvas-margin).
 
 ## Effects
 
@@ -520,7 +552,7 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
 | `yChannelSelector` | `G` | The channel that moves pixels up and down. |
 | `turbulence` | required | The noise, below. |
 
-`turbulence` takes SVG's `feTurbulence` attributes:
+`turbulence` takes SVG's `feTurbulence` attributes (the [`noise` layer](#noise) takes the same object):
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -812,9 +844,10 @@ layer.
 - `dotMatrix` has dots that grow linearly in radius (so their area is quadratic in `progress`), no easing of its own
   (ease `progress`), circle or square only, and `sweep` is a straight wipe across the box (no radial
   wipe). Random delays are per cell and fixed for a seed; a new seed is a new pattern.
-- `displace` and the `turbulence` noise follow SVG's `feTurbulence` without `stitchTiles` (the noise does not tile
+- `displace` and the `noise` layer follow SVG's `feTurbulence` without `stitchTiles` (the noise does not tile
   seamlessly over a region), take at most 10 octaves, and do not animate `seed` or `numOctaves` (animate
-  `baseFrequency` or `scale`, or swap layers). A rotated layer's displacement can reach 1.41 times past the margin it
+  `baseFrequency` or `scale`, or swap layers). A `noise` layer's colours are the raw channels, taken as linear light
+  (see [noise](#noise)). A rotated layer's displacement can reach 1.41 times past the margin it
   gets. The noise is evaluated at the output pixel in the layer's space, so a layer scaled up a lot shows its noise
   magnified (and one scaled far down aliases it); there are no mipmaps.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.

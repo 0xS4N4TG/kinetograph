@@ -284,7 +284,19 @@ impl Renderer {
             }
             _ => {
                 self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
-                self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view))
+                let drawn =
+                    self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view));
+                match &layer.kind {
+                    // What was drawn is the box's coverage; the noise fills it.
+                    ResolvedKind::Noise {
+                        turbulence,
+                        channels,
+                        ..
+                    } => self.timed(Stage::Composite, |s| {
+                        s.compositor.noise(drawn, matrix, turbulence, *channels)
+                    }),
+                    _ => drawn,
+                }
             }
         };
         // A shape frosts its whole geometry, however see-through its fill is.
@@ -410,6 +422,16 @@ impl Renderer {
                     height / f64::from(image.height),
                 );
                 self.vello_scene.draw_image(image, matrix * fit);
+            }
+            // The box in opaque white: the noise pass fills its coverage.
+            ResolvedKind::Noise { width, height, .. } => {
+                self.vello_scene.fill(
+                    Fill::NonZero,
+                    matrix,
+                    peniko::Color::WHITE,
+                    None,
+                    &Rect::new(0.0, 0.0, *width, *height),
+                );
             }
             ResolvedKind::Group { .. } => unreachable!("groups are composited, not rasterised"),
         }
@@ -552,7 +574,10 @@ impl Renderer {
                     f64::from(laid_out.height),
                 ))
             }
-            ResolvedKind::Image { width, height, .. } => Some(Rect::new(0.0, 0.0, *width, *height)),
+            ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Noise { width, height, .. } => {
+                Some(Rect::new(0.0, 0.0, *width, *height))
+            }
             ResolvedKind::Group { .. } => None,
         })
     }

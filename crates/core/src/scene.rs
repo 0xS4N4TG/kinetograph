@@ -103,6 +103,7 @@ pub enum LayerKind {
     Text(TextLayer),
     Image(ImageLayer),
     Group(GroupLayer),
+    Noise(NoiseLayer),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -810,6 +811,28 @@ pub struct GroupLayer {
     pub children: Vec<Layer>,
 }
 
+/// The raw `feTurbulence` image over a box at the layer's origin.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoiseLayer {
+    pub width: Num,
+    pub height: Num,
+    pub turbulence: Turbulence,
+    #[serde(default)]
+    pub channels: NoiseChannels,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoiseChannels {
+    /// The four channels as red, green, blue and alpha, as SVG draws a
+    /// feTurbulence.
+    #[default]
+    Rgba,
+    /// The red channel as grey, fully opaque.
+    Gray,
+}
+
 impl Scene {
     pub fn load(path: &Path) -> Result<Scene> {
         let json = std::fs::read_to_string(path).map_err(|source| Error::Io {
@@ -989,6 +1012,11 @@ impl Scene {
                     non_negative("height", &i.height)?;
                 }
                 LayerKind::Group(g) => self.validate_layers(&g.children, ids)?,
+                LayerKind::Noise(n) => {
+                    non_negative("width", &n.width)?;
+                    non_negative("height", &n.height)?;
+                    validate_turbulence(&layer.id, "noise", &n.turbulence)?;
+                }
             }
         }
         Ok(())
@@ -2328,6 +2356,88 @@ mod tests {
 
         // A scale of 0 reaches nothing.
         assert_eq!(effects_of(&format!("[{}]", displace("0"))).margin(), 0);
+    }
+
+    fn noise_scene(fields: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r#"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                    {{"id": "n", "type": "noise", {fields}}}]}}"#
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn parses_noise_layers_with_defaults() {
+        let scene = noise_scene(
+            r#""width": 120, "height": [{"frame": 0, "value": 10}, {"frame": 9, "value": 40}],
+               "turbulence": {"type": "turbulence", "baseFrequency": 0.1, "numOctaves": 2, "seed": 3}"#,
+        )
+        .unwrap();
+        let LayerKind::Noise(noise) = &scene.layers[0].kind else {
+            panic!("not a noise layer");
+        };
+        assert_eq!((noise.width.at(0.0), noise.height.at(9.0)), (120.0, 40.0));
+        assert_eq!(noise.channels, NoiseChannels::Rgba);
+        assert_eq!(noise.turbulence.kind, TurbulenceKind::Turbulence);
+        assert_eq!(noise.turbulence.num_octaves, 2);
+        // It paints inside its box and nothing else.
+        assert_eq!(scene.margin(), 0);
+        let gray = noise_scene(
+            r#""width": 1, "height": 1, "channels": "gray",
+               "turbulence": {"type": "fractalNoise", "baseFrequency": [0.1, 0.2], "seed": 0}"#,
+        )
+        .unwrap();
+        let LayerKind::Noise(noise) = &gray.layers[0].kind else {
+            panic!("not a noise layer");
+        };
+        assert_eq!(noise.channels, NoiseChannels::Gray);
+    }
+
+    #[test]
+    fn rejects_bad_noise_layers_naming_the_layer() {
+        let turbulence =
+            r#""turbulence": {"type": "fractalNoise", "baseFrequency": 0.1, "seed": 1}"#;
+        for (fields, want) in [
+            (
+                format!(r#""width": -1, "height": 5, {turbulence}"#),
+                "width must not be negative",
+            ),
+            (
+                format!(
+                    r#""width": 5, "height": [{{"frame": 0, "value": 1}}, {{"frame": 9, "value": -2}}], {turbulence}"#
+                ),
+                "height must not be negative",
+            ),
+            (
+                r#""width": 5, "height": 5, "turbulence": {"type": "fractalNoise", "baseFrequency": -1, "seed": 1}"#
+                    .to_string(),
+                "noise turbulence baseFrequency must not be negative",
+            ),
+            (
+                r#""width": 5, "height": 5, "turbulence": {"type": "fractalNoise", "baseFrequency": 1, "numOctaves": 11, "seed": 1}"#
+                    .to_string(),
+                "noise turbulence numOctaves must be a whole number from 0 to 10",
+            ),
+        ] {
+            let msg = noise_scene(&fields).unwrap_err().to_string();
+            assert!(
+                msg.contains("layer \"n\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The JSON parser's complaints.
+        let msg = noise_scene(&format!(
+            r#""width": 5, "height": 5, "channels": "rg", {turbulence}"#
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("rg"), "{msg}");
+        let msg = noise_scene(r#""width": 5, "height": 5"#)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("turbulence"), "{msg}");
     }
 
     const SHADER: &str =
