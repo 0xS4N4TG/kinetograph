@@ -1,0 +1,40 @@
+{
+  "name": "@kinetograph/core",
+  "version": "0.1.0",
+  "description": "Remotion-shaped authoring API for Kinetograph: frame clock, Remotion core and packages, determinism",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./transitions": { "types": "./dist/transitions/index.d.ts", "default": "./dist/transitions/index.js" },
+    "./transitions/*": { "types": "./dist/transitions/*.d.ts", "default": "./dist/transitions/*.js" },
+    "./motion-blur": { "types": "./dist/motion-blur.d.ts", "default": "./dist/motion-blur.js" },
+    "./noise": { "types": "./dist/noise.d.ts", "default": "./dist/noise.js" },
+    "./paths": { "types": "./dist/paths.d.ts", "default": "./dist/paths.js" },
+    "./shapes": { "types": "./dist/shapes.d.ts", "default": "./dist/shapes.js" },
+    "./layout-utils": { "types": "./dist/layout-utils.d.ts", "default": "./dist/layout-utils.js" },
+    "./animation-utils": { "types": "./dist/animation-utils.d.ts", "default": "./dist/animation-utils.js" },
+    "./captions": { "types": "./dist/captions.d.ts", "default": "./dist/captions.js" },
+    "./google-fonts": { "types": "./dist/google-fonts.d.ts", "default": "./dist/google-fonts.js" },
+    "./fonts": { "types": "./dist/fonts.d.ts", "default": "./dist/fonts.js" },
+    "./lottie": { "types": "./dist/lottie.d.ts", "default": "./dist/lottie.js" },
+    "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
+    "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@kinetograph/native": "0.1.0",
+    "@kinetograph/react": "0.1.0",
+    "@kinetograph/scene": "0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "react": "19.3.1"
+  }
+}
