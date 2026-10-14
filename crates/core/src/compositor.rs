@@ -11,8 +11,9 @@
 //! - `matte`: layer x the alpha or luminance of another layer's texture
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
-//! `shaders/shadow.wgsl` holds the shadow effects' passes; it shares the
-//! bind group layout, so its passes go through the same `run_pass`.
+//! `shaders/shadow.wgsl` holds the shadow effects' passes and
+//! `shaders/color.wgsl` the colour filter pass; they share the bind group
+//! layout, so their passes go through the same `run_pass`.
 //!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
 //! mapping in `mode_index`. Adding an effect: add a variant to
@@ -22,6 +23,7 @@
 use vello::wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
+use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::resolve::{ResolvedEffect, ResolvedShadow};
 use crate::scene::{BlendMode, MaskMode, MatteMode};
@@ -53,6 +55,7 @@ pub struct Compositor {
     spread: wgpu::RenderPipeline,
     drop_shadow: wgpu::RenderPipeline,
     inset_shadow: wgpu::RenderPipeline,
+    color: wgpu::RenderPipeline,
     blur: Blur,
     pool: Vec<Tex>,
 }
@@ -74,6 +77,10 @@ impl Compositor {
         let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shadow"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
+        });
+        let color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("color"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/color.wgsl").into()),
         });
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -149,6 +156,7 @@ impl Compositor {
             spread: pipeline(&shadow_shader, "fs_spread", LINEAR_FORMAT),
             drop_shadow: pipeline(&shadow_shader, "fs_drop", LINEAR_FORMAT),
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
+            color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             blur: Blur::new(device),
             layout,
             pool: Vec::new(),
@@ -285,9 +293,26 @@ impl Compositor {
                 ResolvedEffect::Blur { .. } => {}
                 ResolvedEffect::DropShadow(shadow) => src = self.shadow(src, &shadow, false),
                 ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
+                ResolvedEffect::ColorMatrix(matrix) if matrix == ColorMatrix::IDENTITY => {}
+                ResolvedEffect::ColorMatrix(matrix) => src = self.color_matrix(src, &matrix),
             }
         }
         src
+    }
+
+    /// Runs a colour filter over `src` in one pass. `src` goes back to the
+    /// pool; the result is a new texture.
+    fn color_matrix(&mut self, src: Tex, matrix: &ColorMatrix) -> Tex {
+        let target = self.acquire();
+        self.run_pass(
+            &self.color,
+            &src.view,
+            &src.view,
+            &floats(&matrix_values(matrix)),
+            &target.view,
+        );
+        self.release(src);
+        target
     }
 
     /// Adds a drop shadow under `src`, or an inset shadow over it. `src`
@@ -557,6 +582,19 @@ fn floats(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
+/// A colour matrix as `shaders/color.wgsl` reads it: the four rows of
+/// coefficients, then the four offsets.
+fn matrix_values(matrix: &ColorMatrix) -> [f32; 20] {
+    let mut values = [0.0; 20];
+    for (i, row) in matrix.0.iter().enumerate() {
+        for (j, value) in row[..4].iter().enumerate() {
+            values[i * 4 + j] = *value as f32;
+        }
+        values[16 + i] = row[4] as f32;
+    }
+    values
+}
+
 /// The number the shader's `blend_fn` switches on.
 fn mode_index(mode: BlendMode) -> u32 {
     match mode {
@@ -576,5 +614,25 @@ fn mode_index(mode: BlendMode) -> u32 {
         BlendMode::Saturation => 13,
         BlendMode::Color => 14,
         BlendMode::Luminosity => 15,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matrix_values_put_coefficients_first_and_offsets_last() {
+        let values = matrix_values(&ColorMatrix::invert(1.0));
+        assert_eq!(
+            values,
+            [
+                -1.0, 0.0, 0.0, 0.0, //
+                0.0, -1.0, 0.0, 0.0, //
+                0.0, 0.0, -1.0, 0.0, //
+                0.0, 0.0, 0.0, 1.0, //
+                1.0, 1.0, 1.0, 0.0,
+            ]
+        );
     }
 }

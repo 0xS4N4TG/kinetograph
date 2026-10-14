@@ -2,7 +2,7 @@
 
 use vello::kurbo::Affine;
 
-use crate::color::Color;
+use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
     BlendMode, Clip, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer, LayerKind,
@@ -61,6 +61,10 @@ pub enum ResolvedEffect {
     DropShadow(ResolvedShadow),
     /// Cast inside the layer's own shape.
     InsetShadow(ResolvedShadow),
+    /// One or more consecutive colour filters (`saturate`, `contrast`,
+    /// `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`) composed
+    /// into a single matrix.
+    ColorMatrix(ColorMatrix),
 }
 
 /// A shadow at one frame, in canvas pixels.
@@ -261,7 +265,7 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
         transform: resolve_transform(&layer.transform, f),
         opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
         blend_mode: layer.blend_mode,
-        effects: layer.effects.iter().map(|e| resolve_effect(e, f)).collect(),
+        effects: resolve_effects(&layer.effects, f),
         clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
         mask: layer.mask.as_ref().map(|m| ResolvedMask {
             gradient: resolve_gradient(&m.gradient, f),
@@ -351,6 +355,22 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
     }
 }
 
+/// Resolves a layer's effects, composing each run of colour filters into one
+/// matrix so it takes a single pass.
+fn resolve_effects(effects: &[Effect], f: f64) -> Vec<ResolvedEffect> {
+    let mut out: Vec<ResolvedEffect> = Vec::with_capacity(effects.len());
+    for effect in effects {
+        let resolved = resolve_effect(effect, f);
+        match (&resolved, out.last_mut()) {
+            (ResolvedEffect::ColorMatrix(next), Some(ResolvedEffect::ColorMatrix(prev))) => {
+                *prev = prev.then(next);
+            }
+            _ => out.push(resolved),
+        }
+    }
+    out
+}
+
 fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
     match effect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
@@ -358,6 +378,23 @@ fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
         },
         Effect::DropShadow(s) => ResolvedEffect::DropShadow(resolve_shadow(s, f)),
         Effect::InsetShadow(s) => ResolvedEffect::InsetShadow(resolve_shadow(s, f)),
+        Effect::Saturate { amount } => {
+            ResolvedEffect::ColorMatrix(ColorMatrix::saturate(amount.at(f)))
+        }
+        Effect::Contrast { amount } => {
+            ResolvedEffect::ColorMatrix(ColorMatrix::contrast(amount.at(f)))
+        }
+        Effect::Brightness { amount } => {
+            ResolvedEffect::ColorMatrix(ColorMatrix::brightness(amount.at(f)))
+        }
+        Effect::Grayscale { amount } => {
+            ResolvedEffect::ColorMatrix(ColorMatrix::grayscale(amount.at(f)))
+        }
+        Effect::Sepia { amount } => ResolvedEffect::ColorMatrix(ColorMatrix::sepia(amount.at(f))),
+        Effect::Invert { amount } => ResolvedEffect::ColorMatrix(ColorMatrix::invert(amount.at(f))),
+        Effect::HueRotate { angle } => {
+            ResolvedEffect::ColorMatrix(ColorMatrix::hue_rotate(angle.at(f)))
+        }
     }
 }
 
@@ -512,6 +549,62 @@ mod tests {
             panic!("not an inset shadow");
         };
         assert_eq!((inset.blur, inset.spread), (0.0, 2.5));
+    }
+
+    /// The resolved effects of a one-layer scene at `frame`.
+    fn effects_at(effects: &str, frame: u32) -> Vec<ResolvedEffect> {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+              "layers": [{{"id": "a", "type": "shape",
+                "shape": {{"kind": "rect", "width": 50, "height": 50}}, "fill": "#fff",
+                "effects": {effects}}}]}}"##
+        );
+        let scene = Scene::from_json(&json, PathBuf::new()).unwrap();
+        scene.resolve(frame).unwrap().layers[0].effects.clone()
+    }
+
+    #[test]
+    fn a_run_of_colour_filters_becomes_one_matrix() {
+        let effects = effects_at(
+            r#"[{"type": "brightness", "amount": 2}, {"type": "invert"},
+                {"type": "blur", "radius": 3},
+                {"type": "grayscale", "amount": 0}, {"type": "hueRotate", "angle": 0}]"#,
+            0,
+        );
+        assert_eq!(effects.len(), 3);
+        // Brightness, then invert: 1 - 2c.
+        let ResolvedEffect::ColorMatrix(first) = effects[0] else {
+            panic!("not a matrix");
+        };
+        let want = ColorMatrix::brightness(2.0).then(&ColorMatrix::invert(1.0));
+        assert_eq!(first, want);
+        assert!(matches!(effects[1], ResolvedEffect::Blur { radius } if radius == 3.0));
+        // The second run is two neutral filters: still the identity.
+        let ResolvedEffect::ColorMatrix(second) = effects[2] else {
+            panic!("not a matrix");
+        };
+        for (row, want) in second.0.iter().zip(ColorMatrix::IDENTITY.0) {
+            assert!(row.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-12));
+        }
+    }
+
+    #[test]
+    fn colour_filters_resolve_keyframes_and_clamp() {
+        let effects = effects_at(
+            r#"[{"type": "sepia", "amount": [{"frame": 0, "value": 0}, {"frame": 10, "value": 4}]}]"#,
+            10,
+        );
+        // Sepia is clamped to 1 at the last keyframe.
+        assert!(
+            matches!(effects[..], [ResolvedEffect::ColorMatrix(m)] if m == ColorMatrix::sepia(1.0))
+        );
+        let effects = effects_at(
+            r#"[{"type": "sepia", "amount": [{"frame": 0, "value": 0}, {"frame": 10, "value": 1}]}]"#,
+            5,
+        );
+        assert!(
+            matches!(effects[..], [ResolvedEffect::ColorMatrix(m)] if m == ColorMatrix::sepia(0.5))
+        );
     }
 
     #[test]

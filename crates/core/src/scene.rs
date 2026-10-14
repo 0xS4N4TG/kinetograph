@@ -138,6 +138,39 @@ pub enum Effect {
     DropShadow(Shadow),
     /// A shadow cast inside the layer's own shape.
     InsetShadow(Shadow),
+    /// The colour filters below follow CSS. A run of them in a row becomes
+    /// one pass. `amount` is 1 when omitted, which is no change for
+    /// `saturate`, `contrast` and `brightness` and the full effect for the
+    /// others.
+    Saturate {
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    Contrast {
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    Brightness {
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    Grayscale {
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    Sepia {
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    Invert {
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    /// Turns the hue by `angle` degrees.
+    HueRotate {
+        #[serde(default = "zero")]
+        angle: Num,
+    },
 }
 
 /// The fields of `dropShadow` and `insetShadow`.
@@ -185,6 +218,14 @@ impl Effect {
             // which is exactly the canvas-sized rendering they had before.
             Effect::Blur { .. } => 0.0,
             Effect::DropShadow(shadow) | Effect::InsetShadow(shadow) => shadow.reach(),
+            // Colour filters change pixels in place.
+            Effect::Saturate { .. }
+            | Effect::Contrast { .. }
+            | Effect::Brightness { .. }
+            | Effect::Grayscale { .. }
+            | Effect::Sepia { .. }
+            | Effect::Invert { .. }
+            | Effect::HueRotate { .. } => 0.0,
         }
     }
 }
@@ -899,6 +940,56 @@ mod tests {
                "effects": [{"type": "dropShadow", "y": -10}]}]}"#;
         let scene = Scene::from_json(json, PathBuf::new()).unwrap();
         assert_eq!(scene.margin(), 20);
+    }
+
+    #[test]
+    fn parses_colour_filters_with_defaults() {
+        let scene = effects_of(
+            r#"[{"type": "saturate"}, {"type": "contrast"}, {"type": "brightness"},
+                {"type": "grayscale"}, {"type": "sepia"}, {"type": "invert"},
+                {"type": "hueRotate"}]"#,
+        );
+        let effects = &scene.layers[0].effects;
+        assert_eq!(effects.len(), 7);
+        for effect in &effects[..6] {
+            let (Effect::Saturate { amount }
+            | Effect::Contrast { amount }
+            | Effect::Brightness { amount }
+            | Effect::Grayscale { amount }
+            | Effect::Sepia { amount }
+            | Effect::Invert { amount }) = effect
+            else {
+                panic!("not an amount filter: {effect:?}");
+            };
+            assert_eq!(amount.at(0.0), 1.0);
+        }
+        assert!(matches!(&effects[6], Effect::HueRotate { angle } if angle.at(0.0) == 0.0));
+    }
+
+    #[test]
+    fn parses_colour_filter_keyframes() {
+        let scene = effects_of(
+            r#"[{"type": "hueRotate", "angle": [{"frame": 0, "value": 0}, {"frame": 9, "value": 90}]},
+                {"type": "saturate", "amount": 0.5}]"#,
+        );
+        let Effect::HueRotate { angle } = &scene.layers[0].effects[0] else {
+            panic!("not a hue rotate");
+        };
+        assert_eq!(angle.at(4.5), 45.0);
+        assert!(
+            matches!(&scene.layers[0].effects[1], Effect::Saturate { amount } if amount.at(0.0) == 0.5)
+        );
+        let msg = error(r#""effects": [{"type": "sepia", "amount": "lots"}],"#);
+        assert!(msg.contains("did not match"), "{msg}");
+    }
+
+    #[test]
+    fn colour_filters_add_no_margin() {
+        let scene = effects_of(
+            r#"[{"type": "saturate", "amount": 9}, {"type": "hueRotate", "angle": 720},
+                {"type": "contrast", "amount": 1000}]"#,
+        );
+        assert_eq!(scene.margin(), 0);
     }
 
     #[test]

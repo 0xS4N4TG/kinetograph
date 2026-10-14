@@ -150,6 +150,7 @@ side.
   only `blur` keeps margin 0.
 - `dropShadow` and `insetShadow` count `max(|x|, |y|) + spread + 3 * blur`, with spread counted only when positive.
   (An inset shadow stays inside its layer, but it reads the space around the layer, so it needs the room too.)
+- The colour filters count nothing: they change pixels in place.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -218,6 +219,43 @@ to where the layer is opaque, so nothing spills outside the shape. The fields ar
 - The shadow is made from the layer's alpha inverted, so everything outside the shape, including space beyond the
   canvas edge, counts as shadow. A shape that stops at the canvas edge therefore gets a shadow along that edge; one
   that continues past it into the margin does not.
+
+### Colour filters
+
+```json
+{ "type": "saturate", "amount": 1.5 }
+{ "type": "hueRotate", "angle": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 180 }] }
+```
+
+Seven effects change a layer's colours the way the CSS `filter` functions of the same name do. They use the matrices in
+the W3C Filter Effects spec, so they match a browser's.
+
+| `type` | Field | Default | Meaning |
+|---|---|---|---|
+| `saturate` | `amount` | `1` | `0` is greyscale, `1` no change, above `1` over-saturated. Below 0 counts as 0. |
+| `contrast` | `amount` | `1` | Scales colours about mid grey (0.5): `0` is flat grey, `1` no change, above `1` more contrast. Below 0 counts as 0. |
+| `brightness` | `amount` | `1` | Multiplies the colours: `0` is black, `1` no change, above `1` brighter. Below 0 counts as 0. |
+| `grayscale` | `amount` | `1` | `0` no change, `1` fully grey (Rec. 709 weights). Clamped to 0..1. |
+| `sepia` | `amount` | `1` | `0` no change, `1` full sepia. Clamped to 0..1. |
+| `invert` | `amount` | `1` | `0` no change, `1` the negative, `0.5` flat mid grey. Clamped to 0..1. |
+| `hueRotate` | `angle` | `0` | Degrees. Turns every hue round the colour wheel (positive is the CSS direction); greys stay grey. The W3C matrix is an approximation of a true hue turn, so brightness drifts slightly. |
+
+All numbers are animatable. Alpha is never changed: a transparent pixel stays transparent (`invert` does not fill the
+empty space around a shape) and a translucent one keeps its alpha.
+
+A run of consecutive colour filters in one `effects` list is combined into a single matrix and drawn in one pass, so
+`[sepia, hueRotate, contrast]` costs the same as `[sepia]`. Another kind of effect between them (a `blur`, say) splits
+the run in two; they are applied in list order, so `[brightness 2, invert]` and `[invert, brightness 2]` differ.
+
+Colours are filtered the way a browser does it: on the straight (not premultiplied) colour, in sRGB encoding, which is
+not the linear light the rest of the compositor works in. So `brightness 0.5` is 0.5 on the sRGB value you would see in
+an image editor, not half the light. The result is clamped to 0..1 once, at the end of the run. A browser clamps after
+every filter, so a run that overshoots and then comes back, such as `[brightness 2, brightness 0.5]`, ends differently:
+here it is a no-op, in a browser it is not. Any other effect between two filters splits the run and clamps there (a
+`blur` with `radius: 0` draws nothing and serves).
+
+Colour filters see the layer after the effects before them, so a filter after a `dropShadow` recolours the shadow too.
+A run whose combined matrix is exactly the identity (a lone `saturate` of `1`, say) is skipped.
 
 ## Clip paths
 
@@ -334,9 +372,12 @@ layer.
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- Effects so far: `blur`, `dropShadow`, `insetShadow`.
+- Effects so far: `blur`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`, `grayscale`, `sepia`,
+  `invert`, `hueRotate`.
 - No video layers, gradient fills or per-glyph text animation yet. Gradients are only used by `mask`.
 - A shadow's spread uses a square window (see `dropShadow`), and its colour is not animated.
+- Colour filters clamp once per run of consecutive filters, not after each one as a browser does (see
+  [Colour filters](#colour-filters)).
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.

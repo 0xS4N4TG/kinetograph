@@ -110,6 +110,15 @@ fn shadows_match_golden() {
 }
 
 #[test]
+fn colour_filters_match_golden() {
+    // Frame 15 of 30: halfway through every filter animation. Covers filter
+    // runs composed into one pass, a run split by a blur, a group, text,
+    // layers hanging off the canvas, and a filter after a drop shadow.
+    let frame = render_still(scene("tests/scenes/colour-filters.json"), 15).unwrap();
+    check("colour-filters", &frame);
+}
+
+#[test]
 fn rendering_is_deterministic() {
     // Mid-animation frame: keyframes, blur and multiply all in play.
     let card = || scene("../../examples/papercut-card.json");
