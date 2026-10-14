@@ -18,6 +18,21 @@ impl Color {
         a: 255,
     };
 
+    /// Linear-light RGBA, premultiplied by alpha: what the compositor's
+    /// textures hold.
+    pub fn linear_premultiplied(self) -> [f64; 4] {
+        let lin = |v: u8| {
+            let v = f64::from(v) / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let a = f64::from(self.a) / 255.0;
+        [lin(self.r) * a, lin(self.g) * a, lin(self.b) * a, a]
+    }
+
     /// Parses `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or `transparent`.
     pub fn parse(s: &str) -> Result<Color, String> {
         let s = s.trim();
@@ -85,6 +100,22 @@ impl TryFrom<String> for Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linear_premultiplied_decodes_srgb_and_multiplies_alpha() {
+        let close = |a: [f64; 4], b: [f64; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
+        let rgba = |s: &str| Color::parse(s).unwrap().linear_premultiplied();
+        assert!(close(rgba("#ffffff"), [1.0; 4]));
+        assert!(close(rgba("#000000"), [0.0, 0.0, 0.0, 1.0]));
+        assert!(close(rgba("transparent"), [0.0; 4]));
+        // sRGB 0x80 is 0.2158605 in linear light; half alpha halves it.
+        let half = rgba("#80808080");
+        let a = 128.0 / 255.0;
+        assert!((half[3] - a).abs() < 1e-9);
+        assert!((half[0] - 0.2158605 * a).abs() < 1e-6);
+        // Below the sRGB knee the curve is linear: 10 / 255 / 12.92.
+        assert!((rgba("#0a0a0a")[0] - 10.0 / 255.0 / 12.92).abs() < 1e-9);
+    }
 
     #[test]
     fn parses_all_hex_forms() {

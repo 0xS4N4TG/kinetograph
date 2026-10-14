@@ -6,7 +6,7 @@ use crate::color::Color;
 use crate::error::{Error, Result};
 use crate::scene::{
     BlendMode, Clip, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer, LayerKind,
-    MaskMode, MatteMode, Scene, Transform,
+    MAX_SHADOW_SIZE, MaskMode, MatteMode, Scene, Shadow, Transform,
 };
 
 #[derive(Clone, Debug)]
@@ -57,6 +57,23 @@ impl ResolvedTransform {
 pub enum ResolvedEffect {
     /// Standard deviation in pixels.
     Blur { radius: f32 },
+    /// Cast onto what is behind the layer.
+    DropShadow(ResolvedShadow),
+    /// Cast inside the layer's own shape.
+    InsetShadow(ResolvedShadow),
+}
+
+/// A shadow at one frame, in canvas pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct ResolvedShadow {
+    pub x: f32,
+    pub y: f32,
+    /// Standard deviation of the blur, 0..=`MAX_SHADOW_SIZE`.
+    pub blur: f32,
+    /// Growth of the shadow, -`MAX_SHADOW_SIZE`..=`MAX_SHADOW_SIZE`; negative
+    /// shrinks it.
+    pub spread: f32,
+    pub color: Color,
 }
 
 /// A clip in layer space. Counterpart of `scene::Clip`.
@@ -339,6 +356,18 @@ fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
         },
+        Effect::DropShadow(s) => ResolvedEffect::DropShadow(resolve_shadow(s, f)),
+        Effect::InsetShadow(s) => ResolvedEffect::InsetShadow(resolve_shadow(s, f)),
+    }
+}
+
+fn resolve_shadow(s: &Shadow, f: f64) -> ResolvedShadow {
+    ResolvedShadow {
+        x: s.x.at(f) as f32,
+        y: s.y.at(f) as f32,
+        blur: s.blur.at(f).clamp(0.0, MAX_SHADOW_SIZE) as f32,
+        spread: s.spread.at(f).clamp(-MAX_SHADOW_SIZE, MAX_SHADOW_SIZE) as f32,
+        color: s.color,
     }
 }
 
@@ -457,6 +486,32 @@ mod tests {
             &r.layers[1].clip,
             Some(ResolvedClip::Ellipse { rx, ry, .. }) if *rx == 4.0 && *ry == 4.0
         ));
+    }
+
+    #[test]
+    fn resolves_shadows_with_clamped_blur_and_spread() {
+        let json = r##"{
+            "width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "a", "type": "shape",
+              "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+              "effects": [
+                {"type": "dropShadow", "x": [{"frame": 0, "value": 0}, {"frame": 10, "value": 10}],
+                 "y": -3, "blur": [{"frame": 0, "value": 0}, {"frame": 10, "value": 400}],
+                 "spread": -500, "color": "#ff000080"},
+                {"type": "insetShadow", "blur": -4, "spread": 2.5}]}]
+        }"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let effects = scene.resolve(5).unwrap().layers[0].effects.clone();
+        let ResolvedEffect::DropShadow(drop) = effects[0] else {
+            panic!("not a drop shadow");
+        };
+        assert_eq!((drop.x, drop.y), (5.0, -3.0));
+        assert_eq!((drop.blur, drop.spread), (128.0, -128.0));
+        assert_eq!(drop.color, crate::color::Color::parse("#ff000080").unwrap());
+        let ResolvedEffect::InsetShadow(inset) = effects[1] else {
+            panic!("not an inset shadow");
+        };
+        assert_eq!((inset.blur, inset.spread), (0.0, 2.5));
     }
 
     #[test]

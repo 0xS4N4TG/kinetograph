@@ -148,6 +148,8 @@ side.
 - A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
+- `dropShadow` and `insetShadow` count `max(|x|, |y|) + spread + 3 * blur`, with spread counted only when positive.
+  (An inset shadow stays inside its layer, but it reads the space around the layer, so it needs the room too.)
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -174,6 +176,48 @@ position to within 0.01 pixel, so moving or resizing a blurred glow does not mak
 - The layer is blurred as if it sat in transparent space: its edges fade out. Content that lies outside the canvas is
   part of the layer only as far as the scene's [margin](#canvas-margin) reaches, so in a scene with no margin (blur
   alone) it cannot bleed in, and in a scene with a margin it can, from at most that far out.
+
+### dropShadow
+
+```json
+{ "type": "dropShadow", "x": 0, "y": 8, "blur": 12, "spread": 0, "color": "#00000080" }
+```
+
+A shadow of the layer's shape under the layer, cast onto whatever is behind it. The layer itself is drawn on top of it
+unchanged.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `x`, `y` | `0` | Offset of the shadow in canvas pixels (positive is right and down). Not scaled by the layer's `scale` or rotated with it. Fractions are fine and move the shadow smoothly. |
+| `blur` | `0` | Blur of the shadow, in canvas pixels. The same scale as the `blur` effect: roughly the standard deviation of the Gaussian. Clamped to 0..128. CSS `box-shadow` takes the full width, which is about twice this, so `0 8px 24px` is `blur: 12`. |
+| `spread` | `0` | Grows the shadow by this many pixels on every side before it is blurred. Negative shrinks it. Clamped to -128..128. |
+| `color` | `#000000` | The shadow colour, with straight alpha (so `#00000080` is a half-strength black). Not animated. |
+
+The shadow comes from the layer's alpha, so a half-transparent layer casts a half-strength shadow and a hollow shape
+(a ring) casts a hollow shadow. `opacity` is applied afterwards, to the layer and its shadow together, as in CSS
+`filter: drop-shadow()`. A group's shadow is of the whole composited group, so overlapping children cast one shadow.
+
+Spread is done with a square window (a separate pass along each axis), not a round one, so a large spread turns the
+corners of a round shape slightly square. It is exact for rectangles. Fractions of a pixel are
+interpolated, so animating the spread is smooth.
+
+The shadow is computed on the layer as it is after the effects before it in the list, and effects after it (a `blur`,
+say) run on layer and shadow together. Shadow pixels past the canvas are real up to the [margin](#canvas-margin), so
+the shadow of a layer that hangs off the canvas, or lies wholly outside it, still falls on the canvas.
+
+### insetShadow
+
+```json
+{ "type": "insetShadow", "x": 0, "y": 6, "blur": 10, "spread": 0, "color": "#000000b3" }
+```
+
+A shadow cast inside the layer's shape: with `y: 6` it lies along the top edge. It is drawn over the layer and kept
+to where the layer is opaque, so nothing spills outside the shape. The fields are those of `dropShadow`; the differences:
+
+- `spread` grows the shadow inward, shrinking the lit area (negative shrinks the shadow).
+- The shadow is made from the layer's alpha inverted, so everything outside the shape, including space beyond the
+  canvas edge, counts as shadow. A shape that stops at the canvas edge therefore gets a shadow along that edge; one
+  that continues past it into the margin does not.
 
 ## Clip paths
 
@@ -290,8 +334,9 @@ layer.
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- `blur` is the only effect.
+- Effects so far: `blur`, `dropShadow`, `insetShadow`.
 - No video layers, gradient fills or per-glyph text animation yet. Gradients are only used by `mask`.
+- A shadow's spread uses a square window (see `dropShadow`), and its colour is not animated.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.

@@ -11,6 +11,9 @@
 //! - `matte`: layer x the alpha or luminance of another layer's texture
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
+//! `shaders/shadow.wgsl` holds the shadow effects' passes; it shares the
+//! bind group layout, so its passes go through the same `run_pass`.
+//!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
 //! mapping in `mode_index`. Adding an effect: add a variant to
 //! `scene::Effect` and `resolve::ResolvedEffect`, write its pass, and call it
@@ -20,7 +23,7 @@ use vello::wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
 use crate::error::{Error, Result};
-use crate::resolve::ResolvedEffect;
+use crate::resolve::{ResolvedEffect, ResolvedShadow};
 use crate::scene::{BlendMode, MaskMode, MatteMode};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -47,6 +50,9 @@ pub struct Compositor {
     mask: wgpu::RenderPipeline,
     matte: wgpu::RenderPipeline,
     encode: wgpu::RenderPipeline,
+    spread: wgpu::RenderPipeline,
+    drop_shadow: wgpu::RenderPipeline,
+    inset_shadow: wgpu::RenderPipeline,
     blur: Blur,
     pool: Vec<Tex>,
 }
@@ -64,6 +70,10 @@ impl Compositor {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("composite"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/composite.wgsl").into()),
+        });
+        let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("shadow"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
         });
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -97,18 +107,18 @@ impl Compositor {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        let pipeline = |entry: &str, format| {
+        let pipeline = |shader: &wgpu::ShaderModule, entry: &str, format| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(entry),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &shader,
+                    module: shader,
                     entry_point: Some("vs"),
                     compilation_options: Default::default(),
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &shader,
+                    module: shader,
                     entry_point: Some(entry),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
@@ -131,11 +141,14 @@ impl Compositor {
             height: height + 2 * margin,
             canvas: (width, height),
             margin,
-            to_linear: pipeline("fs_to_linear", LINEAR_FORMAT),
-            blend: pipeline("fs_blend", LINEAR_FORMAT),
-            mask: pipeline("fs_mask", LINEAR_FORMAT),
-            matte: pipeline("fs_matte", LINEAR_FORMAT),
-            encode: pipeline("fs_encode", READBACK_FORMAT),
+            to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
+            blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
+            mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
+            matte: pipeline(&shader, "fs_matte", LINEAR_FORMAT),
+            encode: pipeline(&shader, "fs_encode", READBACK_FORMAT),
+            spread: pipeline(&shadow_shader, "fs_spread", LINEAR_FORMAT),
+            drop_shadow: pipeline(&shadow_shader, "fs_drop", LINEAR_FORMAT),
+            inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
             blur: Blur::new(device),
             layout,
             pool: Vec::new(),
@@ -270,9 +283,101 @@ impl Compositor {
                     src = dst;
                 }
                 ResolvedEffect::Blur { .. } => {}
+                ResolvedEffect::DropShadow(shadow) => src = self.shadow(src, &shadow, false),
+                ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
             }
         }
         src
+    }
+
+    /// Adds a drop shadow under `src`, or an inset shadow over it. `src`
+    /// goes back to the pool; the result is a new texture.
+    ///
+    /// Both are built from the layer's alpha: grown by the spread, blurred,
+    /// then shifted by the offset and tinted in the last pass. An inset
+    /// shadow comes from the alpha inverted, so the spread there shrinks the
+    /// layer's opaque area instead of growing it.
+    fn shadow(&mut self, src: Tex, shadow: &ResolvedShadow, inset: bool) -> Tex {
+        let spread = if inset { -shadow.spread } else { shadow.spread };
+        let alpha = self.shadow_alpha(&src, spread, shadow.blur, inset);
+        let [r, g, b, a] = shadow.color.linear_premultiplied();
+        let params = floats(&[
+            0.0, 0.0, 0.0, 0.0, shadow.x, shadow.y, 0.0, 0.0, r as f32, g as f32, b as f32,
+            a as f32,
+        ]);
+        let target = self.acquire();
+        let pipeline = if inset {
+            &self.inset_shadow
+        } else {
+            &self.drop_shadow
+        };
+        // With no spread, inversion or blur the shadow is just `src`'s alpha.
+        let alpha_view = alpha.as_ref().map_or(&src.view, |t| &t.view);
+        self.run_pass(pipeline, &src.view, alpha_view, &params, &target.view);
+        if let Some(alpha) = alpha {
+            self.release(alpha);
+        }
+        self.release(src);
+        target
+    }
+
+    /// The alpha of `src` grown by `spread` pixels (shrunk when negative),
+    /// inverted if asked, then blurred, in the alpha channel of a new
+    /// texture. `None` when none of that changes anything: the alpha of
+    /// `src` itself is what is wanted.
+    fn shadow_alpha(&mut self, src: &Tex, spread: f32, blur: f32, invert: bool) -> Option<Tex> {
+        let blurred = blur >= blur::MIN_RADIUS;
+        let mut current: Option<Tex> = None;
+        if spread != 0.0 {
+            let horizontal = self.acquire();
+            self.spread_pass(&src.view, spread, [1.0, 0.0], false, &horizontal.view);
+            current = Some(horizontal);
+        }
+        if spread != 0.0 || invert {
+            let target = self.acquire();
+            let input = current.as_ref().map_or(&src.view, |t| &t.view);
+            self.spread_pass(input, spread, [0.0, 1.0], invert, &target.view);
+            if let Some(done) = current.replace(target) {
+                self.release(done);
+            }
+        }
+        if blurred {
+            let target = self.acquire();
+            let input = current.as_ref().map_or(&src.view, |t| &t.view);
+            let size = (self.width, self.height);
+            self.blur
+                .run(&self.device, &self.queue, input, &target.view, size, blur);
+            if let Some(done) = current.replace(target) {
+                self.release(done);
+            }
+        }
+        current
+    }
+
+    /// One axis of the spread filter (see `shaders/shadow.wgsl`).
+    fn spread_pass(
+        &self,
+        input: &wgpu::TextureView,
+        spread: f32,
+        axis: [f32; 2],
+        invert: bool,
+        target: &wgpu::TextureView,
+    ) {
+        let params = floats(&[
+            spread,
+            axis[0],
+            axis[1],
+            f32::from(u8::from(invert)),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ]);
+        self.run_pass(&self.spread, input, input, &params, target);
     }
 
     /// Encodes a linear texture to sRGB and reads it back as tightly packed
@@ -367,11 +472,23 @@ impl Compositor {
         let mut bytes = [0u8; 16];
         bytes[0..4].copy_from_slice(&opacity.to_le_bytes());
         bytes[4..8].copy_from_slice(&mode.to_le_bytes());
+        self.run_pass(pipeline, a, b, &bytes, target);
+    }
+
+    /// Like `pass`, with the shader's whole uniform block given as bytes.
+    fn run_pass(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        a: &wgpu::TextureView,
+        b: &wgpu::TextureView,
+        params: &[u8],
+        target: &wgpu::TextureView,
+    ) {
         let uniform = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("params"),
-                contents: &bytes,
+                contents: params,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -433,6 +550,11 @@ pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     Tex { texture, view }
+}
+
+/// Little-endian bytes of a uniform block made of `f32`s.
+fn floats(values: &[f32]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
 /// The number the shader's `blend_fn` switches on.

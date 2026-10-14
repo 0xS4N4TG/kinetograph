@@ -202,7 +202,7 @@ impl Renderer {
     }
 
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
-        let color = linear_premultiplied(scene.background);
+        let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas = self.draw_layers(&scene.layers, margin_origin(self.margin), background)?;
         let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
@@ -640,20 +640,6 @@ fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {
             BezPath::from_svg(d).map_err(|e| Error::Scene(format!("bad SVG path {d:?}: {e}")))?
         }
     })
-}
-
-/// sRGB 8-bit colour to linear, premultiplied RGBA for the compositor.
-fn linear_premultiplied(c: Color) -> [f64; 4] {
-    let lin = |v: u8| {
-        let v = f64::from(v) / 255.0;
-        if v <= 0.04045 {
-            v / 12.92
-        } else {
-            ((v + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    let a = f64::from(c.a) / 255.0;
-    [lin(c.r) * a, lin(c.g) * a, lin(c.b) * a, a]
 }
 
 /// Decodes every image the scene refers to, so a missing file fails early.

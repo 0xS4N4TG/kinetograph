@@ -66,6 +66,10 @@ fn zero() -> Num {
     Num::Const(0.0)
 }
 
+fn black() -> Color {
+    Color::BLACK
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum LayerKind {
@@ -130,7 +134,46 @@ pub enum Effect {
     /// Gaussian-like blur; `radius` is roughly the standard deviation in
     /// pixels.
     Blur { radius: Num },
+    /// The layer's shadow, cast onto what is behind it.
+    DropShadow(Shadow),
+    /// A shadow cast inside the layer's own shape.
+    InsetShadow(Shadow),
 }
+
+/// The fields of `dropShadow` and `insetShadow`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Shadow {
+    /// Offset in canvas pixels.
+    #[serde(default = "zero")]
+    pub x: Num,
+    #[serde(default = "zero")]
+    pub y: Num,
+    /// Blur radius, like the `blur` effect's.
+    #[serde(default = "zero")]
+    pub blur: Num,
+    /// Grows the shadow (shrinks it when negative), in pixels.
+    #[serde(default = "zero")]
+    pub spread: Num,
+    #[serde(default = "black")]
+    pub color: Color,
+}
+
+impl Shadow {
+    /// Offset, spread and about three blur radii, at the largest keyframes.
+    fn reach(&self) -> f64 {
+        let offset = [&self.x, &self.y]
+            .into_iter()
+            .map(|n| n.max().abs().max(n.min().abs()))
+            .fold(0.0, f64::max);
+        let spread = self.spread.max().clamp(0.0, MAX_SHADOW_SIZE);
+        let blur = self.blur.max().clamp(0.0, MAX_SHADOW_SIZE);
+        offset + spread + 3.0 * blur
+    }
+}
+
+/// Largest shadow blur and spread, in pixels; bigger values are clamped.
+pub const MAX_SHADOW_SIZE: f64 = 128.0;
 
 impl Effect {
     /// How far past the layer's own pixels the effect can paint, in pixels,
@@ -141,6 +184,7 @@ impl Effect {
             // leaving it out keeps scenes that use nothing else at margin 0,
             // which is exactly the canvas-sized rendering they had before.
             Effect::Blur { .. } => 0.0,
+            Effect::DropShadow(shadow) | Effect::InsetShadow(shadow) => shadow.reach(),
         }
     }
 }
@@ -775,6 +819,86 @@ mod tests {
         // Several layers can share one source.
         let d = group("d", r#""matte": {"layer": "b"},"#, "");
         parse(&format!("[{a}, {b}, {d}]")).unwrap();
+    }
+
+    fn effects_of(effects: &str) -> Scene {
+        scene_with(&format!(r#""effects": {effects},"#)).unwrap()
+    }
+
+    #[test]
+    fn parses_shadows_with_defaults() {
+        let scene = effects_of(r#"[{"type": "dropShadow"}, {"type": "insetShadow"}]"#);
+        for effect in &scene.layers[0].effects {
+            let (Effect::DropShadow(s) | Effect::InsetShadow(s)) = effect else {
+                panic!("not a shadow: {effect:?}");
+            };
+            let zeros = [&s.x, &s.y, &s.blur, &s.spread].map(|n| n.at(0.0));
+            assert_eq!(zeros, [0.0; 4]);
+            assert_eq!(s.color, Color::BLACK);
+        }
+        assert!(matches!(scene.layers[0].effects[1], Effect::InsetShadow(_)));
+    }
+
+    #[test]
+    fn parses_shadow_fields_and_keyframes() {
+        let scene = effects_of(
+            r##"[{"type": "dropShadow", "x": 2, "y": [{"frame": 0, "value": 4}, {"frame": 9, "value": 12}],
+                 "blur": 6, "spread": -1.5, "color": "#11223380"}]"##,
+        );
+        let Effect::DropShadow(s) = &scene.layers[0].effects[0] else {
+            panic!("not a drop shadow");
+        };
+        assert_eq!(
+            (s.x.at(0.0), s.y.at(4.5), s.blur.at(0.0), s.spread.at(0.0)),
+            (2.0, 8.0, 6.0, -1.5)
+        );
+        assert_eq!(s.color, Color::parse("#11223380").unwrap());
+    }
+
+    #[test]
+    fn rejects_bad_shadow_fields() {
+        for (effects, want) in [
+            (
+                r#"[{"type": "dropShadow", "blur": "wide"}]"#,
+                "did not match",
+            ),
+            (r#"[{"type": "insetShadow", "color": "red"}]"#, "red"),
+            (r#"[{"type": "innerGlow"}]"#, "innerGlow"),
+        ] {
+            let msg = error(&format!(r#""effects": {effects},"#));
+            assert!(msg.contains(want), "{effects}: {msg}");
+        }
+    }
+
+    #[test]
+    fn margin_covers_the_largest_shadow_reach() {
+        // Offset 30 (the larger axis, at its extreme keyframe) + spread 2 +
+        // 3 x blur 5.
+        let scene = effects_of(
+            r#"[{"type": "dropShadow", "x": 10, "y": [{"frame": 0, "value": -30}, {"frame": 9, "value": 5}],
+                 "blur": 5, "spread": 2}]"#,
+        );
+        assert_eq!(scene.margin(), 47);
+        // Negative spread shrinks the shadow, so it adds no reach; blur and
+        // spread are limited to 128 as they are when drawn.
+        let scene = effects_of(
+            r#"[{"type": "insetShadow", "y": 4, "blur": [{"frame": 0, "value": 1}, {"frame": 9, "value": 1000}],
+                 "spread": -20}]"#,
+        );
+        assert_eq!(scene.margin(), 4 + 3 * 128);
+        // The largest reach over layers wins, including layers in groups,
+        // and blur on the same layer adds nothing.
+        let json = r#"{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10,
+            "layers": [
+              {"id": "a", "type": "group", "effects": [{"type": "dropShadow", "blur": 2}],
+               "children": [
+                 {"id": "b", "type": "group", "children": [
+                   {"id": "c", "type": "group", "children": [],
+                    "effects": [{"type": "blur", "radius": 99}, {"type": "dropShadow", "x": 20}]}]}]},
+              {"id": "d", "type": "group", "children": [],
+               "effects": [{"type": "dropShadow", "y": -10}]}]}"#;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        assert_eq!(scene.margin(), 20);
     }
 
     #[test]
