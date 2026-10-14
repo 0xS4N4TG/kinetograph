@@ -136,7 +136,10 @@ PNG or JPEG, scaled to `width` x `height` from the layer origin. Colours are rea
 ```
 
 A group composites its children (bottom first) into its own buffer, then blends that result into its parent using the
-group's `opacity` and `blendMode`. Its `transform` applies to all children. `anchorX/anchorY` are in the group's
+group's `opacity` and `blendMode`. (A group that blends normally at opacity 1, with no effects, clip, mask,
+matte, motion blur or 3D turn, whose drawn children all blend normally and none of which reads the backdrop, skips
+the buffer and draws its children straight into its parent; the result is the same up to rounding.) Its
+`transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates. `"preserve3d": true` (default `false`) makes the group a 3D scene instead: see
 [preserve3d groups](#preserve3d-groups).
 
@@ -340,6 +343,16 @@ The shadow comes from the layer's alpha, so a half-transparent layer casts a hal
 Spread is done with a square window (a separate pass along each axis), not a round one, so a large spread turns the
 corners of a round shape slightly square. It is exact for rectangles. Fractions of a pixel are
 interpolated, so animating the spread is smooth.
+
+A `dropShadow` that is the first effect of a `rect`, `roundedRect` or `ellipse` layer, filled with one colour and with
+no stroke, is not made by blurring at all (when `blur` is at least 1; below that nothing is blurred in any case). The
+renderer works the blurred shape out for each pixel from a formula, in the same pass that draws the layer over it: exact
+for a rectangle, within about 0.002 of full alpha for the others, and it has no coarse grid. `blur` means the same
+standard deviation, the offset is in canvas pixels, and the shadow's alpha is the fill's alpha, as above. The layer may
+be rotated and uniformly scaled; a skewed or stretched one keeps the blurred path. So does an ellipse more than four
+times as long as it is wide, and a `spread` unless the shape is a `rect` or `roundedRect` with its sides along the
+canvas axes (a `rotation` of 0, 90, 180 or 270), where the spread grows it on every side. A layer that hangs off the
+canvas casts the shadow of the whole shape, not just of the part inside the [margin](#canvas-margin).
 
 The shadow is computed on the layer as it is after the effects before it in the list, and effects after it (a `blur`,
 say) run on layer and shadow together. Shadow pixels past the canvas are real up to the [margin](#canvas-margin), so

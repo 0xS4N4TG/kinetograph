@@ -260,34 +260,27 @@ two so each half is reviewable:
   goldens pass on the M4.
 - **2b: looks, camera and video.** Gradient map / LUT, halftone, dither, dot-matrix reveal, turbulence +
   displacement (seeded), grain and noise, animated mesh gradient, corner-pin, 2.5D camera (perspective,
-  rotateX/Y, translateZ, depth sort), motion blur, ffmpeg encode (`render`).
-- **2c: performance** (before Phase 3's comparison, whose go/no-go needs 5x+ over Remotion). A papercut diorama
-  using the 2a effects (1080x1920, 34 layers, 30 effects, most layers with two drop shadows) measured 213–313 ms per
-  frame in `bench` on the M4 (2026-10-14, two runs of frame 60), of which composite was ~234 ms, raster ~64 ms and
-  PNG encode ~36 ms. Rendering 90 frames with one `still` process per frame took 37 s (~410 ms/frame). Work items:
-  - Run each effect pass only over the layer's bounding box plus the effect's reach, not the whole padded canvas.
-    Today a 200 px layer's shadow blurs as many pixels as a full-screen layer's.
-  - Blur shadows at lower resolution.
-  - Cache layers that stop changing (the diorama's hills are still from frame 41 but are re-rasterised and
-    re-blurred every frame).
-  - Frame-range rendering that keeps one GPU setup and overlaps encoding with the next frame (fold into 2b's
-    `render`).
-  - Phase 1's three costly choices, each kept for a reason that any replacement must still meet:
-    - **16x MSAA** (chosen over Vello's `Area` mode for byte-identical frames, see §10). Try 8x MSAA (Vello has an
-      `msaa8` config) and keep it if frames stay byte-identical and the goldens pass by eye; rasterise only each
-      layer's bounds (follows from the per-layer textures below); revisit `Area` if Vello makes its coverage order
-      deterministic.
-    - **The resampled Gaussian blur** (replaced dual Kawase in `139171a` because Kawase snapped small moving layers to
-      a coarse grid). Halve the taps with the bilinear trick (one fetch between two texels weighted for both);
-      draw the shadow of a `rect`, `roundedRect` or `ellipse` with no blur at all, as a closed-form Gaussian (an erf
-      expression in the fragment shader, exact for rectangles and close for rounded ones), which covers most papercut
-      shadows; blur only the layer's bounds plus reach.
-    - **A full padded-canvas texture per layer** (the pool hands out one size, canvas plus twice the margin). Size
-      each layer texture to its bounds plus its effects' reach and composite it at an offset; pool by size class;
-      skip the separate buffer for a group that does not need one (normal blend, opacity 1, no effects, clip, mask
-      or matte) and draw its children straight into the parent.
-  Measure each change with `bench` before and after, and keep the blur position and sigma tests (`tests/blur.rs`) and
-  the goldens passing; none of the gains above are measured yet.
+  rotateX/Y, translateZ, depth sort), motion blur, ffmpeg encode (`render`). **Done 2026-10-14** (PR #3, merged):
+  tests and goldens pass on the M4.
+- **2c: performance.** **Done 2026-10-14** (PR #4, with #5 stacked on it and merged in): tested and benched on the
+  M4. Every pixel is within 2 levels of 2b's goldens, and two runs give byte-identical frames. Kept:
+  - Effect passes scissored to the layer's bounds plus each effect's reach; layer textures sized to that box and
+    pooled by size class; closed-form (erf) drop shadows for a `rect`, `roundedRect` or `ellipse` when the shadow is
+    the first effect; bilinear blur taps; a layer cache for layers that did not change since the previous frame
+    (`render` and `bench --range`); motion-blur sub-frames rasterised at the moving layer's bounds; groups that need no
+    buffer drawn straight into their parent.
+  - From #5: the leaves that do not overlap are drawn in one Vello render per "page" and cut out of it; all compositor
+    passes go into one command encoder per submit; uniforms packed into shared buffers; `render` starts frame N+1
+    before it reads frame N back. Output byte-identical to 2c before it.
+  - Rejected: 8x MSAA changed edges by up to 168 levels and saved under 1 ms per frame (§10); blurring shadows at
+    lower resolution gained nothing measurable once closed-form shadows drew most of them.
+  - Numbers on the M4: diorama `render` 294 (2b) → 36.5 ms/frame. The ep 13 S04Meter papercut scene, hand-ported to
+    scene JSON (89 frames, 1080x1920): 3.95–4.14 s for the whole `render`, ~40 ms/frame, against 16.1–16.8 s in
+    Remotion 4.0.530 (with `--concurrency` 1 or 5): **about 4.1x**. 200 small rects without effects: 167 → 40 ms.
+  - Not yet at Phase 3's 5x on that scene: 16.3 s / 5 = 3.26 s, so ~32 ms/frame after ~0.45 s of GPU setup. Most of the
+    remaining time is CPU spent encoding ~400 GPU passes per frame. Next, all byte-identical: cut out a whole page in
+    one pass, merge consecutive blends of layers that do not overlap, closed-form inset shadows for rect shapes. These
+    need the M4 to measure, so they are not cloud work.
 **Phase 3: authoring + agents.** The N-API addon (napi-rs) exposing the Rust core; the `@kinetograph/core` TS
 package: Remotion shim, `react-reconciler` host config emitting the scene graph, determinism shim; Web Audio via
 `node-web-audio-api`; the `kinetograph` CLI in TS and the MCP server; the Remotion package table in section 5;
@@ -328,6 +321,44 @@ happens on the user's M4.
   checkable at its own tip. 2b merged as PR #3 on 2026-10-14; `perf/layer-bounds` merges `main` before 2c resumes and
   opens its PR against `main`.
 
+**Phase 3 in a cloud session** (decided 2026-10-14). One Opus 5.5 orchestrator at high effort with five Sonnet 5.5
+subagents at high effort, started with the Agent tool as ordinary subagents (not a Workflow). The cloud rules above
+still hold, plus:
+- Install Node 22+ and a C++ toolchain (dotlottie-rs builds ThorVG) as well as the ffmpeg dev libraries. The CPU-only
+  checks add `npm ci`, `npm run build` and `npm test` for the TS packages. The addon may be loaded in Node, but
+  nothing in the cloud calls a function that opens a GPU device.
+- The orchestrator goes first: it branches `feat/node-authoring` from `main` and commits the scaffolding (npm
+  workspaces under `packages/`, a napi-rs crate `crates/node`) and `docs/AUTHORING.md`, the contract the five streams
+  build against: package names and layout, the addon's JS API (signatures and errors), and how each element and effect
+  helper maps to `docs/SCENE.md` JSON. Then it pushes and starts the five subagents.
+- Each subagent works in its own git worktree, on its own branch cut from that commit, and opens a draft PR against
+  `feat/node-authoring`. Streams that need another stream's API stub it from the contract rather than wait.
+  1. `feat/napi-addon`: `crates/node`. A `Renderer` with one GPU setup; `still(scene, frame)` returning a PNG
+     `Buffer`; `render(scene, range, output)` through the existing encoder; `bench`; `inspect` (the resolved scene as
+     JSON). Scenes go in as JSON strings; pixels stay in Rust. A `bench` stage for the handoff cost (spike 1, run on
+     the M4).
+  2. `feat/remotion-shim`: `packages/core`. The frame clock and Remotion core API (`useCurrentFrame`,
+     `useVideoConfig`, `interpolate`, `interpolateColors`, `spring`, `Easing`, `random`, `Sequence`, `Series`, `Loop`,
+     `Freeze`, `AbsoluteFill`, `staticFile`, `delayRender`), the determinism shim (`Date`, `Math.random`,
+     `performance.now`, timers and `requestAnimationFrame` driven by the frame), and the pure-TS packages of §5
+     (transitions, motion-blur, noise, paths, shapes, layout-utils, animation-utils, captions, google-fonts), written
+     from Remotion's documented behaviour (§9). Unit tests, including `random`'s exact values for the seeds the
+     papercut kit uses.
+  3. `feat/reconciler`: the `react-reconciler` host config and the native elements of §5, emitting SCENE.md JSON per
+     frame; TS types for the whole scene schema and the effect helpers; snapshot tests of the emitted JSON.
+  4. `feat/layout-glyphs`: Rust core. taffy flexbox layout for container layers; per-glyph text animation (glyph
+     positions exposed, per-glyph transform, opacity and fill); `<Lottie>` through dotlottie-rs at a pinned git tag
+     (§4). Test scenes and golden entries; the goldens are made on the M4.
+  5. `feat/cli-audio-mcp`: the TS CLI (`npx kinetograph`, the §7 commands, calling the addon), the MCP server wrapping
+     it, and Web Audio through `node-web-audio-api` (`onFrame`, an `OfflineAudioContext` render, muxed into the
+     `render` output; `audio analyze`). Plus spike 2: a script that renders a glTF model and a torus knot with Three.js
+     `WebGPURenderer` headless on Dawn in Node and asserts the backend is WebGPU, run on the M4.
+- The orchestrator reviews each stream PR, runs the CPU checks on it, merges it into `feat/node-authoring` and resolves
+  conflicts. Then it writes a TSX rebuild of the 5-second reference segment (`docs/reference/`, ~21–25 s) under
+  `examples/`, for rendering and comparison on the M4, and opens `feat/node-authoring` as a draft PR against `main`
+  titled Phase 3. The TSX port of ep 13 S04Meter is done on the M4, where the papercut source is.
+  Nothing merges into `main` before the M4 tests it. The stream branches are kept after they merge.
+
 ## 9. Rules for the build
 
 - `random(seed)` must be bit-exact with Remotion's implementation (the papercut kit seeds all jitter with it), but
@@ -348,5 +379,6 @@ happens on the user's M4.
   Phase 3's comparison whether Remotion-compat needs an sRGB blend path.
 - Anti-aliasing. Vello's analytic `Area` mode gave frames that differed by a level or two between runs (GPU thread
   timing changes the order coverage is summed in), so the renderer uses 16x MSAA, which is repeatable. Revisit if edge
-  quality matters more than exact repeatability, or when Vello fixes the ordering.
+  quality matters more than exact repeatability, or when Vello fixes the ordering. 8x MSAA was tried in 2c and
+  rejected: it moved edge pixels by up to 168 levels and saved under 1 ms per frame.
 - Final name.

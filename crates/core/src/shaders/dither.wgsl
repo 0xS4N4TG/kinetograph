@@ -10,7 +10,7 @@
 // The threshold belongs to a cell of `size` canvas pixels (the texel minus the
 // margin, so it does not move when the margin changes). Random thresholds are
 // a function of (seed, cell, frame) through hash.wgsl, which the compositor
-// puts in front of this file.
+// puts in front of this file, with place.wgsl.
 
 struct Params {
     // x: levels, y: size, z: 0 for ordered, 1 for random
@@ -58,8 +58,8 @@ fn bayer8(x: u32, y: u32) -> u32 {
 
 @fragment
 fn fs_dither(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = vec2<i32>(p.xy);
-    let c = textureLoad(tex_a, xy, 0);
+    let xy = canvas_xy(p);
+    let c = load_a(xy);
     if c.a <= 0.0 {
         return vec4<f32>(0.0);
     }

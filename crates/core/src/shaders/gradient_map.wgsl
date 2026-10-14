@@ -9,7 +9,8 @@
 //                    sRGB with straight alpha; a luminance outside the first
 //                    and last offsets takes the end stop. The graded alpha is
 //                    the layer's alpha times the stop's. Fully transparent
-//                    pixels stay empty.
+//                    pixels stay empty. place.wgsl is put in front of this
+//                    file by the compositor.
 
 struct Params {
     // x: number of stops, y: amount
@@ -68,7 +69,7 @@ fn gradient_color(l: f32) -> vec4<f32> {
 
 @fragment
 fn fs_gradient_map(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let c = textureLoad(tex_a, vec2<i32>(p.xy), 0);
+    let c = load_a(canvas_xy(p));
     if c.a <= 0.0 {
         return vec4<f32>(0.0);
     }

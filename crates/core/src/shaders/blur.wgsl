@@ -1,10 +1,14 @@
 // Blur passes. Textures are Rgba16Float, linear, premultiplied.
 //
-//   fs_pad:   copy the layer into the middle of a larger transparent texture
+//   fs_pad:   copy the layer into the middle of a larger transparent texture.
+//             The layer's texture holds only part of the canvas (its origin and
+//             size come in `c`), and what is outside it is transparent
 //   fs_down:  2x downsample with the [1 3 3 1] / 8 filter per axis (4 bilinear
 //             taps). This tent filter keeps the centre of mass of whatever it
 //             shrinks, so a moving layer moves its blur by the same amount.
-//   fs_gauss: one axis of a separable Gaussian, read with exact texel loads
+//   fs_gauss: one axis of a separable Gaussian. The centre tap is an exact
+//             texel load; the others are read in pairs, one filtered fetch
+//             between two texels weighted for both
 //   fs_up:    2x upsample, one bilinear tap (the transpose of fs_down)
 //
 // The Rust side shrinks the layer until the Gaussian is at least a few texels
@@ -16,6 +20,8 @@ struct Params {
     a: vec4<f32>,
     // xy: size of the (virtual) output in pixels, zw: gauss axis
     b: vec4<f32>,
+    // pad: xy: the canvas pixel of the source's texel (0, 0), zw: its size
+    c: vec4<i32>,
 }
 
 @group(0) @binding(0) var tex: texture_2d<f32>;
@@ -35,9 +41,10 @@ fn tap(uv: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_pad(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let q = vec2<i32>(p.xy) - vec2<i32>(params.a.yz);
-    let size = vec2<i32>(textureDimensions(tex));
-    if any(q < vec2<i32>(0)) || any(q >= size) {
+    // The canvas pixel that this texel of the padded image stands for, and
+    // the texel of the source that is.
+    let q = vec2<i32>(p.xy) - vec2<i32>(params.a.yz) - params.c.xy;
+    if any(q < vec2<i32>(0)) || any(q >= params.c.zw) {
         return vec4<f32>(0.0);
     }
     return textureLoad(tex, q, 0);
@@ -56,19 +63,38 @@ fn fs_down(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     return sum / 4.0;
 }
 
+fn gauss_weight(i: i32, sigma: f32) -> f32 {
+    return exp(-0.5 * f32(i * i) / (sigma * sigma));
+}
+
+// The weights are those of one load per texel from -reach to reach. A pair of
+// neighbouring texels i and i + 1 with weights w1 and w2 is read by one
+// bilinear fetch at i + w2 / (w1 + w2), which weighs them w1 / (w1 + w2) and
+// w2 / (w1 + w2), times the pair's weight w1 + w2. When reach is odd the last
+// texel has no partner and is read on its own (w2 = 0). The sampler clamps to
+// the edge texel on every tap of a fetch, as the loads clamped their indices,
+// so no tap reads outside the texture.
 @fragment
 fn fs_gauss(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let sigma = params.a.x;
     let reach = i32(ceil(3.0 * sigma));
+    let size = vec2<f32>(textureDimensions(tex));
     let last = vec2<i32>(textureDimensions(tex)) - vec2<i32>(1);
     let q = vec2<i32>(p.xy) + vec2<i32>(params.a.yz);
-    let axis = vec2<i32>(params.b.zw);
-    var sum = vec4<f32>(0.0);
-    var weights = 0.0;
-    for (var i = -reach; i <= reach; i++) {
-        let w = exp(-0.5 * f32(i * i) / (sigma * sigma));
-        sum += w * textureLoad(tex, clamp(q + i * axis, vec2<i32>(0), last), 0);
-        weights += w;
+    let centre = vec2<f32>(q) + vec2<f32>(0.5);
+    let axis = params.b.zw;
+    var sum = textureLoad(tex, clamp(q, vec2<i32>(0), last), 0);
+    var weights = 1.0;
+    for (var i = 1; i <= reach; i += 2) {
+        let w1 = gauss_weight(i, sigma);
+        var w2 = 0.0;
+        if i + 1 <= reach {
+            w2 = gauss_weight(i + 1, sigma);
+        }
+        let w = w1 + w2;
+        let offset = (f32(i) + w2 / w) * axis;
+        sum += w * (tap((centre + offset) / size) + tap((centre - offset) / size));
+        weights += 2.0 * w;
     }
     return sum / weights;
 }

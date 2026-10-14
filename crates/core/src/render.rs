@@ -13,20 +13,27 @@ use vello::wgpu;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 
 use crate::blur::MIN_RADIUS;
+use crate::bounds::{self, PixelRect};
+use crate::box_shadow::BoxShadow;
+use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
-use crate::compositor::{Compositor, Tex};
+use crate::compositor::{Compositor, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::mesh;
 use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
     ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
-use crate::scene::{DotOrder, Extend, LayerKind, MaskMode, Scene};
-use crate::text::TextEngine;
+use crate::scene::{BlendMode, DotOrder, Extend, LayerKind, MaskMode, Scene};
+use crate::text::{LaidOutText, TextEngine};
 use crate::warp;
 
 /// Curve flattening tolerance when converting shapes to paths.
 const SHAPE_TOLERANCE: f64 = 0.1;
+
+/// How many bytes of finished layer textures the layer cache keeps from one
+/// frame to the next (`cache.rs`).
+const CACHE_BYTES: u64 = 1 << 30;
 
 /// Tightly packed RGBA8, straight alpha, sRGB-encoded.
 pub struct Frame {
@@ -48,6 +55,13 @@ impl Frame {
             .map_err(|e| Error::Render(format!("PNG encode failed: {e}")))?;
         Ok(out)
     }
+}
+
+/// A frame the GPU is still drawing (`Renderer::start_frame`).
+pub struct PendingFrame {
+    readback: Readback,
+    width: u32,
+    height: u32,
 }
 
 /// Where one frame's time went, in milliseconds. Collected by
@@ -108,6 +122,19 @@ pub struct Renderer {
     images: HashMap<String, ImageData>,
     /// `Some` while `render_timed` runs.
     timings: Option<Timings>,
+    /// The textures of layers that stopped changing, kept for the next frame.
+    cache: LayerCache<Tex>,
+    /// The ids of the groups the layer being drawn is in, outermost first.
+    /// With the layer's own id they say which layer it is to the cache.
+    cache_path: Vec<String>,
+    /// The leaves of the frame that Vello draws a page at a time
+    /// (`plan_pages`), and the textures of those drawn and not yet used.
+    pages: Pages,
+    /// Above 0 while the samples of a motion-blurred layer are drawn: they are
+    /// copies of one layer with the same ids, and only their average is kept.
+    /// Their leaves are also rasterised into the box they cover, not the
+    /// whole target (`vello_area`).
+    cache_paused: u32,
 }
 
 impl Renderer {
@@ -172,12 +199,54 @@ impl Renderer {
             text,
             images,
             timings: None,
+            cache: LayerCache::new(CACHE_BYTES),
+            cache_path: Vec::new(),
+            pages: Pages::default(),
+            cache_paused: 0,
         })
     }
 
+    /// Turns the layer cache on or off; a new renderer has it off. With it
+    /// on, a frame that has a layer the last frame had blends the layer's
+    /// texture from the last frame again instead of drawing it, whenever
+    /// everything the texture is made from is equal (`cache.rs`): the frames
+    /// are the same either way. It is for rendering frames one after the
+    /// other (`render`); rendering one frame over and over, as `bench` does,
+    /// would only time the cache. Turning it off empties it; turning it on
+    /// starts from an empty one.
+    pub fn set_layer_cache(&mut self, on: bool) {
+        for tex in self.cache.set_enabled(on) {
+            self.compositor.release(tex);
+        }
+    }
+
+    /// How many layers have been drawn from the layer cache so far, and how
+    /// many were looked for in it and drawn instead.
+    pub fn layer_cache_counts(&self) -> (u64, u64) {
+        self.cache.counts()
+    }
+
     pub fn render_frame(&mut self, frame: u32) -> Result<Frame> {
+        let pending = self.start_frame(frame)?;
+        self.finish_frame(pending)
+    }
+
+    /// `render_frame` up to the readback: the GPU works on the frame while
+    /// the caller starts the next one, and `finish_frame` collects it.
+    /// Frames are finished in the order they were started.
+    pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
         let resolved = self.scene.resolve(frame)?;
-        self.render_resolved(&resolved)
+        self.start_resolved(&resolved)
+    }
+
+    /// The pixels of a frame from `start_frame`.
+    pub fn finish_frame(&mut self, pending: PendingFrame) -> Result<Frame> {
+        let rgba = self.compositor.finish_readback(pending.readback)?;
+        Ok(Frame {
+            width: pending.width,
+            height: pending.height,
+            rgba,
+        })
     }
 
     /// Like `render_frame`, but also reports where the time went. To make
@@ -204,6 +273,7 @@ impl Renderer {
         }
         let start = Instant::now();
         let out = f(self);
+        self.compositor.submit();
         // A lost device makes the next call fail anyway.
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         let ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -218,17 +288,41 @@ impl Renderer {
     }
 
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
+        let pending = self.start_resolved(scene)?;
+        let rgba = self.timed(Stage::Readback, |s| {
+            s.compositor.finish_readback(pending.readback)
+        })?;
+        Ok(Frame {
+            width: pending.width,
+            height: pending.height,
+            rgba,
+        })
+    }
+
+    fn start_resolved(&mut self, scene: &ResolvedScene) -> Result<PendingFrame> {
         self.projection = warp::projection(scene.camera.as_ref(), self.margin);
+        // A frame that failed may have left these half way.
+        self.cache_path.clear();
+        self.cache_paused = 0;
+        self.cache.begin_frame();
+        self.compositor.begin_frame();
+        self.clear_pages();
+        self.plan_pages(&scene.layers)?;
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas =
             self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?;
-        let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
+        // What this frame did not draw, the next probably will not either.
+        for tex in self.cache.end_frame() {
+            self.compositor.release(tex);
+        }
+        self.clear_pages();
+        let readback = self.timed(Stage::Readback, |s| s.compositor.start_readback(&canvas));
         self.compositor.release(canvas);
-        Ok(Frame {
+        Ok(PendingFrame {
+            readback,
             width: scene.width,
             height: scene.height,
-            rgba,
         })
     }
 
@@ -255,6 +349,18 @@ impl Renderer {
             } = &layer.kind
             {
                 canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
+                continue;
+            }
+            // A group that changes nothing about how its children are blended
+            // needs no buffer either (`needs_no_buffer`).
+            if let ResolvedKind::Group { children, .. } = &layer.kind
+                && needs_no_buffer(layer)
+            {
+                self.cache_path.push(layer.id.clone());
+                let drawn =
+                    self.draw_layers(children, parent * layer.transform.matrix(), canvas, below);
+                self.cache_path.pop();
+                canvas = drawn?;
                 continue;
             }
             // A layer turned in 3D is drawn flat and then warped about its
@@ -288,8 +394,9 @@ impl Renderer {
         let mut items = Vec::new();
         collect_preserve3d(children, space, &mut |l| self.layer_box(l), &mut items)?;
         warp::sort_far_to_near(&mut items, |item| item.depth);
+        self.cache_path.push(group.id.clone());
         for item in items {
-            canvas = self.draw_layer(
+            let drawn = self.draw_layer(
                 item.layer,
                 item.siblings,
                 item.flat_parent,
@@ -297,8 +404,16 @@ impl Renderer {
                 item.opacity,
                 canvas,
                 below,
-            )?;
+            );
+            canvas = match drawn {
+                Ok(canvas) => canvas,
+                Err(e) => {
+                    self.cache_path.pop();
+                    return Err(e);
+                }
+            };
         }
+        self.cache_path.pop();
         Ok(canvas)
     }
 
@@ -308,6 +423,9 @@ impl Renderer {
     /// the layer's parent, as in `draw_layers`. A layer with motion blur
     /// ignores `placement` and works its own out for each sub-frame, so it
     /// cannot be drawn by `draw_preserve3d` (the scene refuses it).
+    ///
+    /// The texture it blends is the layer cache's when the layer is what it
+    /// was in the last frame (`cache.rs`), and is kept there when it is not.
     #[allow(clippy::too_many_arguments)]
     fn draw_layer(
         &mut self,
@@ -319,6 +437,50 @@ impl Renderer {
         mut canvas: Tex,
         below: Option<&Tex>,
     ) -> Result<Tex> {
+        // Each sub-frame's opacity is already in a blurred layer's average.
+        let opacity = if layer.motion.is_empty() {
+            layer.opacity * opacity_scale
+        } else {
+            1.0
+        };
+        let matte = layer
+            .matte
+            .as_ref()
+            .and_then(|m| siblings.iter().find(|l| l.id == m.layer));
+        let id = self.cache_id(layer, matte);
+        // A blurred layer places its sub-frames one by one.
+        let placed = placement
+            .filter(|_| layer.motion.is_empty())
+            .map(|p| (p.parent, p.world));
+        let inputs = Inputs {
+            layer,
+            matte,
+            parent,
+            placement: placed,
+            // The warp reads the camera: for a layer placed from outside (the
+            // children of a preserve3d group are, whatever their own
+            // transform) as well as for one with something moved in 3D in it.
+            projection: (placed.is_some()
+                || cache::uses_projection(layer)
+                || matte.is_some_and(cache::uses_projection))
+            .then_some(self.projection),
+            opacity_scale: (!layer.motion.is_empty()).then_some(opacity_scale),
+        };
+        if let Some(id) = &id {
+            match self.cache.take(id, &inputs) {
+                Ok(hit) => {
+                    canvas = self.timed(Stage::Composite, |s| {
+                        s.compositor
+                            .blend(canvas, hit.texture(), opacity, layer.blend_mode)
+                    });
+                    self.cache.put_back(id.clone(), hit);
+                    return Ok(canvas);
+                }
+                Err(Some(stale)) => self.compositor.release(stale),
+                Err(None) => {}
+            }
+        }
+
         // The backdrop is only built for a layer that blurs it: the canvas so
         // far, under anything the enclosing groups have behind them.
         let needs_backdrop = uses_backdrop(siblings, layer);
@@ -329,31 +491,73 @@ impl Renderer {
             _ => None,
         };
         let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
-        let drawn = if layer.motion.is_empty() {
-            self.layer_texture(layer, siblings, parent, backdrop, None)
-                .map(|src| (src, layer.opacity * opacity_scale))
-        } else {
-            // Each sub-frame's opacity is already in the average.
-            self.motion_blurred(layer, siblings, parent, backdrop, opacity_scale)
-                .map(|src| (src, 1.0))
-        };
+        let drawn =
+            self.layer_final_texture(layer, siblings, parent, placement, opacity_scale, backdrop);
         if let Some(combined) = combined {
             self.compositor.release(combined);
         }
-        let (src, opacity) = drawn?;
-        let src = match placement {
-            // The sub-frames of a blurred layer were placed one by one.
-            Some(placement) if layer.motion.is_empty() => match self.place(src, &placement) {
-                Some(src) => src,
-                // Seen edge on: nothing to blend.
-                None => return Ok(canvas),
-            },
-            _ => src,
+        // Seen edge on: nothing to blend.
+        let Some(src) = drawn? else {
+            return Ok(canvas);
         };
         canvas = self.timed(Stage::Composite, |s| {
-            s.compositor.blend(canvas, src, opacity, layer.blend_mode)
+            s.compositor.blend(canvas, &src, opacity, layer.blend_mode)
         });
+        match id {
+            Some(id) => {
+                for tex in self.cache.put(id, &inputs, src) {
+                    self.compositor.release(tex);
+                }
+            }
+            None => self.compositor.release(src),
+        }
         Ok(canvas)
+    }
+
+    /// Where `layer`'s texture is cached, if it may be: the cache is on, the
+    /// layer is not one of a motion-blurred layer's samples, and neither it
+    /// nor its matte source blurs the backdrop, which makes its texture
+    /// depend on the canvas under it.
+    fn cache_id(
+        &self,
+        layer: &ResolvedLayer,
+        matte: Option<&ResolvedLayer>,
+    ) -> Option<Vec<String>> {
+        if !self.cache.enabled()
+            || self.cache_paused > 0
+            || cache::mentions_backdrop(layer)
+            || matte.is_some_and(cache::mentions_backdrop)
+        {
+            return None;
+        }
+        let mut id = self.cache_path.clone();
+        id.push(layer.id.clone());
+        Some(id)
+    }
+
+    /// `layer`'s texture as it is blended: drawn, then warped to its 3D
+    /// `placement` if it has one, or the average of its motion blur samples
+    /// (each placed by itself). `None` if it is seen edge on.
+    fn layer_final_texture(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        placement: Option<Placement>,
+        opacity_scale: f32,
+        backdrop: Option<&Tex>,
+    ) -> Result<Option<Tex>> {
+        if layer.motion.is_empty() {
+            let src = self.layer_texture(layer, siblings, parent, backdrop, None)?;
+            return Ok(match placement {
+                Some(placement) => self.place(src, &placement),
+                None => Some(src),
+            });
+        }
+        self.cache_paused += 1;
+        let sum = self.motion_blurred(layer, siblings, parent, backdrop, opacity_scale);
+        self.cache_paused -= 1;
+        sum.map(Some)
     }
 
     /// The average of `layer`'s sub-frames (`ResolvedLayer::motion`), each
@@ -411,7 +615,7 @@ impl Renderer {
         if warp::is_identity(&h) {
             return Some(src);
         }
-        Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h.inverse())))
+        Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h)))
     }
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
@@ -433,10 +637,18 @@ impl Renderer {
     ) -> Result<Tex> {
         // Layer space to padded texture pixels.
         let matrix = parent * layer.transform.matrix();
+        // Where a leaf layer's pixels are (see `raster_bounds`).
+        let raster = match &layer.kind {
+            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => None,
+            _ => Some(self.raster_bounds(layer, matrix)?),
+        };
         let src = match &layer.kind {
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
-                self.draw_layers(children, matrix, empty, backdrop)?
+                self.cache_path.push(layer.id.clone());
+                let drawn = self.draw_layers(children, matrix, empty, backdrop);
+                self.cache_path.pop();
+                drawn?
             }
             // Triangles with vertex colours, not a Vello scene.
             ResolvedKind::MeshGradient {
@@ -449,10 +661,22 @@ impl Renderer {
                 let vertices = mesh::tessellate(*columns, *rows, points, colors, matrix);
                 self.timed(Stage::Raster, |s| s.compositor.mesh_gradient(&vertices))
             }
+            // Nothing lands on the texture: nothing to draw.
+            _ if raster.is_some_and(|r| r.is_empty()) => {
+                self.timed(Stage::Composite, |s| s.compositor.empty())
+            }
             _ => {
-                self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
-                let drawn =
-                    self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view));
+                let region = raster.unwrap_or_else(|| self.whole());
+                let drawn = match self.take_from_page(layer, matrix)? {
+                    Some(drawn) => drawn,
+                    None => {
+                        let area = self.vello_area(region);
+                        self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
+                        self.timed(Stage::Composite, |s| {
+                            s.compositor.from_srgb8(&s.vello_view, area, region)
+                        })
+                    }
+                };
                 match &layer.kind {
                     // What was drawn is the box's coverage; the noise fills it.
                     ResolvedKind::Noise {
@@ -469,8 +693,16 @@ impl Renderer {
         // A shape frosts its whole geometry, however see-through its fill is.
         let coverage = match (&layer.kind, backdrop) {
             (ResolvedKind::Shape { .. }, Some(_)) if has_backdrop_blur(&layer.effects) => {
-                self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent))?;
-                Some(self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view)))
+                let region = raster.unwrap_or_else(|| self.whole());
+                if region.is_empty() {
+                    Some(self.timed(Stage::Composite, |s| s.compositor.empty()))
+                } else {
+                    let area = self.vello_area(region);
+                    self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent, area))?;
+                    Some(self.timed(Stage::Composite, |s| {
+                        s.compositor.from_srgb8(&s.vello_view, area, region)
+                    }))
+                }
             }
             _ => None,
         };
@@ -479,6 +711,8 @@ impl Renderer {
         } else {
             None
         };
+        // The first effect, if it is a drop shadow with a formula.
+        let box_shadow = BoxShadow::plan(layer, matrix);
         let mut src = self.timed(Stage::Composite, |s| {
             s.compositor.apply_effects(
                 src,
@@ -487,21 +721,33 @@ impl Renderer {
                 &layer.effects,
                 backdrop,
                 coverage.as_ref(),
+                box_shadow.as_ref(),
             )
         });
         if let Some(coverage) = coverage {
             self.compositor.release(coverage);
         }
         if let Some(clip) = &layer.clip {
-            self.timed(Stage::Raster, |s| s.rasterise_clip(clip, layer, matrix))?;
-            src = self.timed(Stage::Composite, |s| {
-                s.compositor.mask(src, &s.vello_view, MaskMode::Alpha)
-            });
+            let path = self.clip_path(clip, layer)?;
+            let keep = self.path_bounds(&path, matrix);
+            if keep.is_empty() {
+                // Nothing is kept.
+                self.compositor.release(src);
+                src = self.timed(Stage::Composite, |s| s.compositor.empty());
+            } else if !src.bounds.is_empty() {
+                self.timed(Stage::Raster, |s| s.rasterise_clip(&path, matrix))?;
+                src = self.timed(Stage::Composite, |s| {
+                    s.compositor.mask(src, &s.vello_view, MaskMode::Alpha, keep)
+                });
+            }
         }
-        if let Some(mask) = &layer.mask {
+        if let Some(mask) = &layer.mask
+            && !src.bounds.is_empty()
+        {
             self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
+            let whole = self.whole();
             src = self.timed(Stage::Composite, |s| {
-                s.compositor.mask(src, &s.vello_view, mask.mode)
+                s.compositor.mask(src, &s.vello_view, mask.mode, whole)
             });
         }
         if let Some(matte) = &layer.matte {
@@ -529,11 +775,214 @@ impl Renderer {
         Ok(src)
     }
 
+    /// Groups the leaves of the frame that `layer_texture` will rasterise
+    /// into pages, and encodes each page's Vello scene. No two leaves of a
+    /// page overlap, and a page is drawn over the whole target with the
+    /// matrices `rasterise` uses, so each leaf comes out of it as it would
+    /// from a draw of its own. A page is drawn when one of its leaves is
+    /// first wanted (`take_from_page`), so a frame whose layers all come
+    /// from the layer cache draws none. Motion-blurred layers and the
+    /// children of preserve3d groups are left out, and are drawn the way
+    /// they always were.
+    fn plan_pages(&mut self, layers: &[ResolvedLayer]) -> Result<()> {
+        let mut leaves = Vec::new();
+        self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
+        // First fit: each leaf goes on the first page it overlaps nothing on.
+        let mut members: Vec<Vec<usize>> = Vec::new();
+        for (i, (_, _, region)) in leaves.iter().enumerate() {
+            let fits = |page: &Vec<usize>| {
+                page.iter()
+                    .all(|&j| leaves[j].2.intersect(*region).is_empty())
+            };
+            match members.iter_mut().find(|page| fits(page)) {
+                Some(page) => page.push(i),
+                None => members.push(vec![i]),
+            }
+        }
+        for page in members {
+            self.vello_scene.reset();
+            let mut drawn = Vec::with_capacity(page.len());
+            let mut has_images = false;
+            for i in page {
+                let (layer, matrix, region) = leaves[i];
+                self.encode_leaf(layer, matrix)?;
+                has_images |= matches!(layer.kind, ResolvedKind::Image { .. });
+                let key = leaf_key(layer, matrix);
+                self.pages.page_of.insert(key, self.pages.pages.len());
+                drawn.push((key, region));
+            }
+            self.pages.pages.push(Page {
+                scene: Some(std::mem::replace(
+                    &mut self.vello_scene,
+                    vello::Scene::new(),
+                )),
+                has_images,
+                leaves: drawn,
+            });
+        }
+        Ok(())
+    }
+
+    /// The leaves of `layers` and their groups for `plan_pages`: each with
+    /// the matrix and the box `layer_texture` rasterises it with.
+    fn collect_leaves<'a>(
+        &mut self,
+        layers: &'a [ResolvedLayer],
+        parent: Affine,
+        leaves: &mut Vec<(&'a ResolvedLayer, Affine, PixelRect)>,
+    ) -> Result<()> {
+        for layer in layers {
+            let matte_source = is_matte_source(layers, layer);
+            if (is_hidden(layer) && !matte_source) || !layer.motion.is_empty() {
+                continue;
+            }
+            let matrix = parent * layer.transform.matrix();
+            match &layer.kind {
+                ResolvedKind::Group {
+                    children,
+                    preserve3d: false,
+                } => self.collect_leaves(children, matrix, leaves)?,
+                ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {}
+                _ => {
+                    let region = self.raster_bounds(layer, matrix)?;
+                    if !region.is_empty() {
+                        leaves.push((layer, matrix, region));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The texture `rasterise` and `from_srgb8` would make of the leaf
+    /// `layer` under `matrix`, from its page, if it is on one and this is
+    /// the first time it is wanted. Drawing the page makes the textures of
+    /// all its leaves from one Vello draw.
+    fn take_from_page(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<Option<Tex>> {
+        if self.cache_paused > 0 {
+            return Ok(None);
+        }
+        let key = leaf_key(layer, matrix);
+        if let Some(tex) = self.pages.drawn.remove(&key) {
+            return Ok(Some(tex));
+        }
+        let Some(&page) = self.pages.page_of.get(&key) else {
+            return Ok(None);
+        };
+        let Some(scene) = self.pages.pages[page].scene.take() else {
+            // Drawn already, and this leaf's texture used: it is wanted twice.
+            return Ok(None);
+        };
+        let has_images = self.pages.pages[page].has_images;
+        let whole = self.whole();
+        let previous = std::mem::replace(&mut self.vello_scene, scene);
+        let rendered = self.timed(Stage::Raster, |s| s.render_vello_scene(has_images, whole));
+        self.vello_scene = previous;
+        rendered?;
+        let regions: Vec<PixelRect> = self.pages.pages[page]
+            .leaves
+            .iter()
+            .map(|(_, region)| *region)
+            .collect();
+        let texes = self.timed(Stage::Composite, |s| {
+            s.compositor.from_srgb8_many(&s.vello_view, &regions)
+        });
+        for ((key, _), tex) in self.pages.pages[page].leaves.iter().zip(texes) {
+            self.pages.drawn.insert(*key, tex);
+        }
+        Ok(self.pages.drawn.remove(&key))
+    }
+
+    /// Forgets the pages, giving back the textures no layer took.
+    fn clear_pages(&mut self) {
+        for (_, tex) in self.pages.drawn.drain() {
+            self.compositor.release(tex);
+        }
+        self.pages.pages.clear();
+        self.pages.page_of.clear();
+    }
+
+    /// The box of the padded canvas's pixels.
+    fn whole(&self) -> PixelRect {
+        PixelRect::whole(self.target_size.0, self.target_size.1)
+    }
+
+    /// The pixels Vello is asked to draw for a leaf whose pixels are in
+    /// `region`. The whole target, except for the leaves of a motion-blurred
+    /// layer's samples (`cache_paused`), which are drawn many times a frame
+    /// and are drawn into the box they cover (`bounds::vello_area`).
+    fn vello_area(&self, region: PixelRect) -> PixelRect {
+        if self.cache_paused > 0 && !region.is_empty() {
+            bounds::vello_area(region)
+        } else {
+            self.whole()
+        }
+    }
+
+    /// The pixels that rasterising the leaf `layer` under `matrix` can touch:
+    /// the box of what it draws in layer space, through the matrix, a pixel
+    /// more all round for the anti-aliased edge (Vello draws nothing else),
+    /// cut to the target.
+    ///
+    /// - a shape: the box of its path, and for a stroke half the stroke's
+    ///   width more, which is how far the round joins and caps reach;
+    /// - text: the layout box and where the glyphs sit, a font size more
+    ///   each way (`text_bounds`);
+    /// - an image or a noise layer: its box.
+    fn raster_bounds(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<PixelRect> {
+        let whole = self.whole();
+        let local = match &layer.kind {
+            ResolvedKind::Shape {
+                geometry,
+                fill,
+                stroke,
+            } => {
+                if fill.is_none() && stroke.is_none() {
+                    return Ok(PixelRect::EMPTY);
+                }
+                shape_box(geometry, stroke.map(|(_, width)| width))?
+            }
+            ResolvedKind::Text {
+                text,
+                font,
+                size,
+                line_height,
+                max_width,
+                ..
+            } => {
+                let laid_out = self
+                    .text
+                    .layout(text, font, *size, *line_height, *max_width);
+                text_bounds(&laid_out, *size, *max_width)
+            }
+            ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
+            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
+        };
+        Ok(device_bounds(matrix, local).intersect(whole))
+    }
+
+    /// The pixels a path in layer space can touch under `matrix` (see
+    /// `raster_bounds`); none for a path with no segments.
+    fn path_bounds(&self, path: &BezPath, matrix: Affine) -> PixelRect {
+        if path.elements().is_empty() {
+            return PixelRect::EMPTY;
+        }
+        device_bounds(matrix, path.bounding_box()).intersect(self.whole())
+    }
+
     /// Draws one leaf layer, with all transforms applied, into the Vello
-    /// target texture.
-    fn rasterise(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<()> {
-        let matrix = parent * layer.transform.matrix();
+    /// target texture: the pixels `area` of the canvas, from the texture's
+    /// top left corner.
+    fn rasterise(&mut self, layer: &ResolvedLayer, parent: Affine, area: PixelRect) -> Result<()> {
+        let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
+        self.encode_leaf(layer, matrix)?;
+        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }), area)
+    }
+
+    /// Adds the leaf `layer`, drawn with `matrix`, to `vello_scene`.
+    fn encode_leaf(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<()> {
         match &layer.kind {
             ResolvedKind::Shape {
                 geometry,
@@ -608,14 +1057,19 @@ impl Renderer {
                 unreachable!("groups and meshes are composited, not rasterised")
             }
         }
-        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }))
+        Ok(())
     }
 
     /// Draws a shape layer's fill and stroke in opaque white into the Vello
-    /// target, whatever their colours and alphas; its alpha is then where the
-    /// shape is solid.
-    fn rasterise_coverage(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<()> {
-        let matrix = parent * layer.transform.matrix();
+    /// target (the pixels `area`, as in `rasterise`), whatever their colours
+    /// and alphas; its alpha is then where the shape is solid.
+    fn rasterise_coverage(
+        &mut self,
+        layer: &ResolvedLayer,
+        parent: Affine,
+        area: PixelRect,
+    ) -> Result<()> {
+        let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
         if let ResolvedKind::Shape {
             geometry,
@@ -638,22 +1092,16 @@ impl Renderer {
                 );
             }
         }
-        self.render_vello_scene(false)
+        self.render_vello_scene(false, area)
     }
 
-    /// Draws the layer's clip shape in opaque white into the Vello target;
-    /// its alpha is then the clip's coverage.
-    fn rasterise_clip(
-        &mut self,
-        clip: &ResolvedClip,
-        layer: &ResolvedLayer,
-        matrix: Affine,
-    ) -> Result<()> {
-        let path = self.clip_path(clip, layer)?;
+    /// Draws the layer's clip shape (`path`, in layer space) in opaque white
+    /// into the Vello target; its alpha is then the clip's coverage.
+    fn rasterise_clip(&mut self, path: &BezPath, matrix: Affine) -> Result<()> {
         self.vello_scene.reset();
         self.vello_scene
-            .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, &path);
-        self.render_vello_scene(false)
+            .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, path);
+        self.render_vello_scene(false, self.whole())
     }
 
     /// Fills the whole target (canvas and margin) with the mask's gradient,
@@ -674,7 +1122,7 @@ impl Renderer {
             Some(matrix * brush_transform),
             &canvas,
         );
-        self.render_vello_scene(false)
+        self.render_vello_scene(false, self.whole())
     }
 
     /// The clip as a path in layer space. Empty when it keeps nothing.
@@ -756,9 +1204,15 @@ impl Renderer {
         })
     }
 
-    /// Renders `vello_scene` into the Vello target texture. Image layers
-    /// use their own renderer (see `vello_images`).
-    fn render_vello_scene(&mut self, has_images: bool) -> Result<()> {
+    /// Renders `vello_scene` into the top left corner of the Vello target
+    /// texture, `area` pixels across and down (`area` is a box of the padded
+    /// canvas, and the scene's matrices already put its corner at (0, 0), see
+    /// `in_area`). Vello writes only the pixels of that size, so the rest of
+    /// the texture keeps what it held and is not read (`from_srgb8`). Image
+    /// layers use their own renderer (see `vello_images`).
+    fn render_vello_scene(&mut self, has_images: bool, area: PixelRect) -> Result<()> {
+        // The passes recorded so far may read what Vello drew last.
+        self.compositor.submit();
         let renderer = if has_images {
             self.vello_images.as_mut()
         } else {
@@ -773,8 +1227,8 @@ impl Renderer {
                 &self.vello_view,
                 &RenderParams {
                     base_color: peniko::Color::TRANSPARENT,
-                    width: self.target_size.0,
-                    height: self.target_size.1,
+                    width: area.width(),
+                    height: area.height(),
                     antialiasing_method: AaConfig::Msaa16,
                 },
             )
@@ -882,6 +1336,59 @@ fn collect_preserve3d<'a>(
     Ok(())
 }
 
+/// The box of a shape in layer space: its geometry, and, if it has a stroke
+/// of `stroke_width`, half the width more all round, which is as far as the
+/// stroke's round joins and caps (the default) reach.
+fn shape_box(geometry: &ResolvedGeometry, stroke_width: Option<f64>) -> Result<Rect> {
+    let shape = match geometry {
+        ResolvedGeometry::Rect { width, height }
+        | ResolvedGeometry::RoundedRect { width, height, .. }
+        | ResolvedGeometry::Ellipse { width, height } => Rect::new(0.0, 0.0, *width, *height),
+        ResolvedGeometry::Path { .. } => geometry_path(geometry)?.bounding_box(),
+    };
+    let half = stroke_width.map_or(0.0, |width| width.max(0.0) / 2.0);
+    Ok(shape.inflate(half, half))
+}
+
+/// The pixels that a box `local` in layer space reaches under `matrix`: its
+/// corners through the matrix, rounded outwards, with a pixel more all round
+/// for the anti-aliased edge. Anywhere (a huge box) if that is not a number.
+fn device_bounds(matrix: Affine, local: Rect) -> PixelRect {
+    let anywhere = PixelRect::new(i32::MIN / 4, i32::MIN / 4, i32::MAX / 4, i32::MAX / 4);
+    bounds::pixel_rect(bounds::transformed(matrix, local).inflate(1.0, 1.0)).unwrap_or(anywhere)
+}
+
+/// Where the glyphs of `laid_out` (text of font size `size`, wrapped at
+/// `max_width`) can be drawn, in layout space: the layout box and every
+/// glyph's origin and advance, grown by one font size on each side, which
+/// holds the ink of any glyph that rises or falls less than that from its
+/// baseline or overhangs its advance by less (descenders, accents, italic
+/// slants). A word wider than `max_width` hangs out of the box, so the glyphs
+/// count as well.
+fn text_bounds(laid_out: &LaidOutText, size: f32, max_width: Option<f32>) -> Rect {
+    let width = max_width.unwrap_or(0.0).max(laid_out.width);
+    let mut b = Rect::new(0.0, 0.0, f64::from(width), f64::from(laid_out.height));
+    for glyph in laid_out.runs.iter().flat_map(|run| &run.glyphs) {
+        b = b
+            .union_pt((f64::from(glyph.x), f64::from(glyph.y)))
+            .union_pt((f64::from(glyph.x + glyph.advance), f64::from(glyph.y)));
+    }
+    let em = f64::from(size).abs();
+    b.inflate(em, em)
+}
+
+/// `matrix` (layer space to padded-canvas pixels) for a draw of the pixels
+/// `area` of the canvas, whose corner Vello takes for (0, 0): moved back by
+/// that corner, a whole number of pixels. A draw from the canvas's own corner
+/// gets `matrix` itself.
+fn in_area(area: PixelRect, matrix: Affine) -> Affine {
+    if area.x0 == 0 && area.y0 == 0 {
+        matrix
+    } else {
+        Affine::translate((-f64::from(area.x0), -f64::from(area.y0))) * matrix
+    }
+}
+
 /// Where the canvas's top-left corner sits in the padded textures: `margin`
 /// pixels in from the corner. Every layer is drawn inside this transform. At
 /// margin 0 it is bit for bit `Affine::IDENTITY`.
@@ -890,12 +1397,83 @@ fn margin_origin(margin: u32) -> Affine {
 }
 
 /// Whether `layer` draws nothing at any time of its frame.
+/// A leaf layer as `layer_texture` rasterises it: the layer itself (its
+/// address, which is the same for the whole frame) and its matrix.
+type LeafKey = (usize, [u64; 6]);
+
+fn leaf_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
+    (
+        std::ptr::from_ref(layer) as usize,
+        matrix.as_coeffs().map(f64::to_bits),
+    )
+}
+
+/// The leaves of a frame that Vello draws a page at a time
+/// (`Renderer::plan_pages`).
+#[derive(Default)]
+struct Pages {
+    pages: Vec<Page>,
+    /// Which page each leaf is on.
+    page_of: HashMap<LeafKey, usize>,
+    /// The textures of the leaves of drawn pages, until they are used.
+    drawn: HashMap<LeafKey, Tex>,
+}
+
+struct Page {
+    /// Its Vello scene, until the page is drawn.
+    scene: Option<vello::Scene>,
+    /// Whether it has an image, which picks the renderer (`vello_images`).
+    has_images: bool,
+    /// Its leaves and the pixels each can touch (`raster_bounds`).
+    leaves: Vec<(LeafKey, PixelRect)>,
+}
+
 fn is_hidden(layer: &ResolvedLayer) -> bool {
     if layer.motion.is_empty() {
         layer.opacity <= 0.0
     } else {
         layer.motion.iter().all(|sub| sub.opacity <= 0.0)
     }
+}
+
+/// Whether `layer` is a flat group whose children can be drawn straight onto
+/// its parent's canvas, under its matrix, instead of into a buffer of its own
+/// that is then blended: it blends normally at opacity 1, with no effects,
+/// clip, mask, matte, motion blur or 3D turn, nothing in it reads the backdrop,
+/// and every child it draws blends normally and is not a preserve3d group
+/// (whose children would blend one by one). Its children are then blended
+/// onto the canvas in the same order, so the result is the same up to f16
+/// rounding: `(b over a) over canvas` against `b over (a over canvas)`.
+fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
+    let ResolvedKind::Group {
+        children,
+        preserve3d: false,
+    } = &layer.kind
+    else {
+        return false;
+    };
+    layer.blend_mode == BlendMode::Normal
+        && layer.opacity == 1.0
+        && layer.effects.is_empty()
+        && layer.clip.is_none()
+        && layer.mask.is_none()
+        && layer.matte.is_none()
+        && layer.motion.is_empty()
+        && warp::layer_world(&layer.transform).is_none()
+        && !needs_backdrop(layer)
+        && children
+            .iter()
+            .filter(|c| !is_hidden(c) && !is_matte_source(children, c))
+            .all(|c| {
+                c.blend_mode == BlendMode::Normal
+                    && !matches!(
+                        c.kind,
+                        ResolvedKind::Group {
+                            preserve3d: true,
+                            ..
+                        }
+                    )
+            })
 }
 
 /// Whether another layer in `layers` uses `layer` as its matte.
@@ -1221,6 +1799,33 @@ mod tests {
             margin_origin(7) * Point::new(1.0, 2.0),
             Point::new(8.0, 9.0)
         );
+    }
+
+    #[test]
+    fn a_draw_of_part_of_the_canvas_puts_its_corner_at_the_origin() {
+        let bits = |a: Affine| a.as_coeffs().map(f64::to_bits);
+        let matrix = Affine::translate((130.25, 77.5)) * Affine::rotate(0.3) * Affine::scale(1.5);
+        // From the canvas's own corner: the matrix itself, not a product.
+        assert_eq!(
+            bits(in_area(PixelRect::new(0, 0, 500, 300), matrix)),
+            bits(matrix)
+        );
+        // From a corner on the tile grid: the same matrix moved back by the
+        // corner, a whole number of pixels, so the linear part keeps its bits.
+        let area = bounds::vello_area(PixelRect::new(133, 85, 200, 150));
+        assert_eq!((area.x0, area.y0), (128, 80));
+        let moved = in_area(area, matrix);
+        assert_eq!(bits(moved)[..4], bits(matrix)[..4]);
+        for p in [Point::new(0.0, 0.0), Point::new(40.5, 12.25)] {
+            let (at, in_draw) = (matrix * p, moved * p);
+            assert!((in_draw.x - (at.x - 128.0)).abs() < 1e-9, "{p:?}");
+            assert!((in_draw.y - (at.y - 80.0)).abs() < 1e-9, "{p:?}");
+        }
+        // A corner on one axis only moves along the other.
+        let moved = in_area(PixelRect::new(0, 48, 10, 60), matrix);
+        let (at, in_draw) = (matrix * Point::new(3.0, 4.0), moved * Point::new(3.0, 4.0));
+        assert_eq!(in_draw.x, at.x);
+        assert!((in_draw.y - (at.y - 48.0)).abs() < 1e-9);
     }
 
     #[test]
@@ -1674,6 +2279,80 @@ mod tests {
     }
 
     #[test]
+    fn only_groups_that_change_nothing_about_blending_skip_their_buffer() {
+        let group = |fields: &str, children: &str| {
+            let json =
+                format!(r##"[{{"id": "g", "type": "group"{fields}, "children": [{children}]}}]"##);
+            needs_no_buffer(&resolve_layers(&json)[0])
+        };
+        let plain = format!("{}, {}", card("a", "{}"), card("b", r##"{"x": 5}"##));
+        assert!(group("", &plain));
+        assert!(group(
+            r##", "transform": {"x": 10, "rotation": 30, "scale": 2}"##,
+            &plain
+        ));
+        // A faded child is blended by itself either way.
+        assert!(group(
+            "",
+            r##"{"id": "c", "type": "shape", "fill": "#fff", "opacity": 0.5,
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+        // A plain group inside: blended normally, whatever it does itself.
+        assert!(group(
+            "",
+            r##"{"id": "inner", "type": "group", "children": [
+            {"id": "m", "type": "shape", "fill": "#fff", "blendMode": "multiply",
+              "shape": {"kind": "rect", "width": 5, "height": 5}}]}"##
+        ));
+        // A hidden child, or a matte source, is not drawn by the group.
+        assert!(group(
+            "",
+            r##"{"id": "h", "type": "shape", "fill": "#fff", "opacity": 0,
+            "blendMode": "screen", "shape": {"kind": "rect", "width": 5, "height": 5}},
+            {"id": "cut", "type": "shape", "fill": "#fff", "matte": {"layer": "src"},
+            "shape": {"kind": "rect", "width": 5, "height": 5}},
+            {"id": "src", "type": "shape", "fill": "#fff", "blendMode": "multiply",
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+
+        for fields in [
+            r##", "opacity": 0.5"##,
+            r##", "blendMode": "multiply""##,
+            r##", "effects": [{"type": "blur", "radius": 4}]"##,
+            r##", "clip": {"kind": "polygon", "points": [[0, 0], [9, 0], [0, 9]]}"##,
+            r##", "transform": {"rotateY": 20}"##,
+            r##", "motionBlur": {"samples": 4, "shutter": 1}, "transform": {"x": [{"frame": 0, "value": 0}, {"frame": 1, "value": 10}]}"##,
+            r##", "preserve3d": true"##,
+        ] {
+            assert!(!group(fields, &plain), "{fields}");
+        }
+        // A child that blends against what is under it, or reads it.
+        assert!(!group(
+            "",
+            r##"{"id": "m", "type": "shape", "fill": "#fff", "blendMode": "multiply",
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+        assert!(!group(
+            "",
+            r##"{"id": "f", "type": "shape", "fill": "#fff",
+            "effects": [{"type": "backdropBlur", "radius": 8}],
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+        assert!(!group(
+            "",
+            &format!(
+                r##"{{"id": "p", "type": "group", "preserve3d": true,
+            "children": [{}]}}"##,
+                card("a", "{}")
+            )
+        ));
+        // Not a group at all.
+        assert!(!needs_no_buffer(
+            &resolve_layers(&format!("[{}]", card("a", "{}")))[0]
+        ));
+    }
+
+    #[test]
     fn a_group_scaled_to_nothing_draws_nothing() {
         let layers = resolve_layers(&format!(
             r#"[{{"id": "g", "type": "group", "preserve3d": true,
@@ -1715,5 +2394,97 @@ mod tests {
         );
         assert!(!has_backdrop_blur(&layers[0].effects));
         assert!(uses_backdrop(&layers, &layers[0]));
+    }
+
+    #[test]
+    fn a_shape_reaches_half_its_strokes_width_past_its_geometry() {
+        let rect = ResolvedGeometry::Rect {
+            width: 40.0,
+            height: 20.0,
+        };
+        assert_eq!(
+            shape_box(&rect, None).unwrap(),
+            Rect::new(0.0, 0.0, 40.0, 20.0)
+        );
+        assert_eq!(
+            shape_box(&rect, Some(10.0)).unwrap(),
+            Rect::new(-5.0, -5.0, 45.0, 25.0)
+        );
+        // A rounded corner or an ellipse stays in the box.
+        let round = ResolvedGeometry::RoundedRect {
+            width: 40.0,
+            height: 20.0,
+            radius: 8.0,
+        };
+        assert_eq!(
+            shape_box(&round, None).unwrap(),
+            shape_box(&rect, None).unwrap()
+        );
+        // A path is its curves' box, not its control points': the curve
+        // from (0, 0) through a control at (50, 100) to (100, 0) peaks at 50.
+        let curve = ResolvedGeometry::Path {
+            d: "M 0 0 Q 50 100 100 0".into(),
+        };
+        let b = shape_box(&curve, None).unwrap();
+        assert!(
+            (b.y1 - 50.0).abs() < 1e-9 && b.x0 == 0.0 && b.x1 == 100.0,
+            "{b:?}"
+        );
+        let bad = ResolvedGeometry::Path {
+            d: "not a path".into(),
+        };
+        assert!(shape_box(&bad, None).is_err());
+    }
+
+    #[test]
+    fn device_boxes_are_the_matrix_image_a_pixel_wider_and_rounded_out() {
+        let local = Rect::new(0.0, 0.0, 10.0, 4.0);
+        // Moved by a fraction: 10.3 - 1 = 9.3 rounds down to 9, 20.3 + 1 = 21.3 up to 22.
+        let moved = Affine::translate((10.3, 5.0));
+        assert_eq!(device_bounds(moved, local), PixelRect::new(9, 4, 22, 10));
+        // Turned a quarter: the box is 4 wide and 10 tall.
+        let turned = Affine::translate((50.0, 50.0)) * Affine::rotate(std::f64::consts::FRAC_PI_2);
+        assert_eq!(device_bounds(turned, local), PixelRect::new(45, 49, 51, 61));
+        // Not a number: anywhere.
+        let nan = device_bounds(Affine::scale(f64::NAN), local);
+        assert!(nan.x0 < -1_000_000 && nan.x1 > 1_000_000);
+    }
+
+    fn text_engine() -> TextEngine {
+        let fonts = std::collections::BTreeMap::from([(
+            "DM Sans".to_string(),
+            "assets/fonts/DMSans-Medium.ttf".to_string(),
+        )]);
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        TextEngine::new(&fonts, &root).unwrap()
+    }
+
+    #[test]
+    fn text_is_bounded_by_its_layout_and_its_glyphs_a_font_size_wider() {
+        let mut engine = text_engine();
+        let laid_out = engine.layout("Hello world", "DM Sans", 40.0, None, None);
+        let b = text_bounds(&laid_out, 40.0, None);
+        assert_eq!(b.x0, -40.0);
+        assert_eq!(b.y0, -40.0);
+        assert!((b.x1 - (f64::from(laid_out.width) + 40.0)).abs() < 1e-3);
+        assert!((b.y1 - (f64::from(laid_out.height) + 40.0)).abs() < 1e-3);
+        // Every glyph's origin and advance is inside.
+        for glyph in laid_out.runs.iter().flat_map(|r| &r.glyphs) {
+            assert!(f64::from(glyph.x) >= b.x0 && f64::from(glyph.x + glyph.advance) <= b.x1);
+            assert!(f64::from(glyph.y) >= b.y0 && f64::from(glyph.y) <= b.y1);
+        }
+        // A word wider than the wrap width hangs out of the box, and the
+        // bounds follow it.
+        let wide = engine.layout("Unbreakable", "DM Sans", 40.0, None, Some(60.0));
+        let b = text_bounds(&wide, 40.0, Some(60.0));
+        assert!(
+            f64::from(wide.width) > 60.0,
+            "the word fits: {}",
+            wide.width
+        );
+        assert!(b.x1 >= f64::from(wide.width) + 40.0 - 1e-3, "{b:?}");
+        // A box wider than the text (a wrap width) counts as it is.
+        let b = text_bounds(&laid_out, 40.0, Some(500.0));
+        assert_eq!(b.x1, 540.0);
     }
 }

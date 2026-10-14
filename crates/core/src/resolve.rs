@@ -49,7 +49,7 @@ pub struct ResolvedCamera {
     pub y: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedLayer {
     pub id: String,
     pub transform: ResolvedTransform,
@@ -81,7 +81,7 @@ pub fn motion_times(t: f64, samples: u32, shutter: f64) -> Vec<f64> {
         .collect()
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ResolvedTransform {
     pub x: f64,
     pub y: f64,
@@ -108,7 +108,7 @@ impl ResolvedTransform {
 }
 
 /// One variant per entry in `scene::Effect`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedEffect {
     /// Standard deviation in pixels.
     Blur {
@@ -264,7 +264,7 @@ pub struct ResolvedGrain {
 }
 
 /// A gradient map at one frame.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedGradientMap {
     /// `MIN_GRADIENT_MAP_STOPS..=MAX_GRADIENT_MAP_STOPS` stops, offsets in
     /// 0..=1 and never decreasing.
@@ -274,7 +274,7 @@ pub struct ResolvedGradientMap {
 }
 
 /// A custom shader at one frame.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedShader {
     /// The whole WGSL module (`shader::compose`), which is also the key of
     /// the compositor's pipeline for it.
@@ -287,7 +287,7 @@ pub struct ResolvedShader {
 }
 
 /// A glow at one frame.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ResolvedGlow {
     /// Standard deviation of the blur, 0..=`MAX_BLUR_RADIUS`.
     pub radius: f32,
@@ -298,7 +298,7 @@ pub struct ResolvedGlow {
 }
 
 /// A shadow at one frame, in canvas pixels.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ResolvedShadow {
     pub x: f32,
     pub y: f32,
@@ -311,7 +311,7 @@ pub struct ResolvedShadow {
 }
 
 /// A clip in layer space. Counterpart of `scene::Clip`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedClip {
     Polygon {
         points: Vec<(f64, f64)>,
@@ -334,13 +334,13 @@ pub enum ResolvedClip {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedMask {
     pub gradient: ResolvedGradient,
     pub mode: MaskMode,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedMatte {
     /// The id of a sibling layer.
     pub layer: String,
@@ -348,14 +348,14 @@ pub struct ResolvedMatte {
 }
 
 /// What a shape's fill or a text's colour paints with, at one frame.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedPaint {
     Solid(Color),
     Gradient(ResolvedGradient),
 }
 
 /// A gradient at one frame, in the space of whatever it paints.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedGradient {
     pub geometry: ResolvedGradientGeometry,
     /// At least 2 stops, offsets in 0..=1 and never decreasing.
@@ -363,7 +363,7 @@ pub struct ResolvedGradient {
     pub extend: Extend,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ResolvedGradientGeometry {
     Linear {
         x0: f64,
@@ -390,7 +390,7 @@ pub const MAX_BLUR_RADIUS: f64 = 128.0;
 /// Largest glow intensity; bigger values are clamped.
 pub const MAX_GLOW_INTENSITY: f64 = 4.0;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedKind {
     Shape {
         geometry: ResolvedGeometry,
@@ -436,7 +436,7 @@ pub enum ResolvedKind {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedGeometry {
     Rect {
         width: f64,

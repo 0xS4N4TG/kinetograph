@@ -21,7 +21,8 @@
 //                  `grown` times the distance to the cell's farthest corner
 //                  (or side), plus half a pixel, so grown = 1 is exactly solid
 //                  everywhere in the cell. Edges fade over one canvas pixel.
-//                  hash.wgsl is put in front of this file by the compositor.
+//                  hash.wgsl and place.wgsl are put in front of this file
+//                  by the compositor.
 
 struct Params {
     // The inverse of the layer matrix (texel -> layer): its linear part
@@ -60,14 +61,15 @@ fn coverage(dist: f32, r: f32, aa: f32) -> f32 {
 
 @fragment
 fn fs_dot_matrix(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let c = textureLoad(tex_a, vec2<i32>(p.xy), 0);
+    let c = load_a(canvas_xy(p));
+    let pos = canvas_pos(p);
     let size = params.offset.z;
     let inv = params.inverse;
     // The pixel's centre in layer space, and how long a pixel is there (the
     // layer matrix is a rotation and a uniform scale, so one number).
     let layer = vec2<f32>(
-        inv.x * p.x + inv.z * p.y + params.offset.x,
-        inv.y * p.x + inv.w * p.y + params.offset.y,
+        inv.x * pos.x + inv.z * pos.y + params.offset.x,
+        inv.y * pos.x + inv.w * pos.y + params.offset.y,
     );
     let aa = max(sqrt(abs(inv.x * inv.w - inv.y * inv.z)), 0.000001);
 
