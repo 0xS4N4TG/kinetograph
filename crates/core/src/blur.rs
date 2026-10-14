@@ -1,19 +1,18 @@
-//! Gaussian-like blur by dual Kawase filtering (`shaders/blur.wgsl`).
+//! Gaussian blur on the GPU (`shaders/blur.wgsl`).
 //!
 //! The layer is copied into the middle of a transparent texture that is
 //! `3 * radius` larger on every side, so the blur fades out past the layer's
-//! edge instead of smearing the border pixels. That texture is downsampled
-//! `n` times and upsampled back; the last upsample writes the original
-//! canvas-sized region.
+//! edge instead of smearing the border pixels. That texture is shrunk `n`
+//! times by a `[1 3 3 1] / 8` filter, blurred by a separable Gaussian, and
+//! enlarged back by bilinear upsampling; the last upsample writes the
+//! original canvas-sized region.
 //!
-//! With `n` levels and tap offset `o` (in texels), the chain spreads a point
-//! by `sigma^2 = S * (11/6 * o^2 + 1)` pixels squared, where
-//! `S = (4^n - 1) / 3`. The `11/6 * o^2` part is the tap spread. The `1`
-//! comes from the bilinear filtering and was confirmed by measurement
-//! (`tests/blur.rs`). `plan` takes the largest `n` whose `S` does not exceed
-//! `radius^2` and solves for `o`, so the radius is continuous and can be
-//! keyframed. The filter is not shift invariant: small details can drift by
-//! a fraction of a texel of the coarsest level.
+//! `plan` picks the largest `n` that leaves the Gaussian at least
+//! `MIN_SIGMA` texels wide, so the coarse grid is invisible. Both the shrink
+//! and the enlarge keep the centre of mass, and the Gaussian is smooth at that
+//! scale, so a blurred layer tracks its position to a small fraction of a
+//! pixel (`tests/blur.rs` sweeps it). The two resampling filters add
+//! `(4^n - 1) / 2` pixels squared of variance, which `plan` subtracts.
 
 use vello::wgpu::{self, util::DeviceExt};
 
@@ -28,6 +27,7 @@ pub struct Blur {
     sampler: wgpu::Sampler,
     pad: wgpu::RenderPipeline,
     down: wgpu::RenderPipeline,
+    gauss: wgpu::RenderPipeline,
     up: wgpu::RenderPipeline,
 }
 
@@ -108,6 +108,7 @@ impl Blur {
             }),
             pad: pipeline("fs_pad"),
             down: pipeline("fs_down"),
+            gauss: pipeline("fs_gauss"),
             up: pipeline("fs_up"),
             layout,
         }
@@ -123,7 +124,7 @@ impl Blur {
         (width, height): (u32, u32),
         radius: f32,
     ) {
-        let (levels, offset) = plan(radius);
+        let (levels, sigma) = plan(radius);
         let step = 1u32 << levels;
         let pad = (3.0 * radius).ceil() as u32;
         // Rounded up so every level is exactly half the size of the last.
@@ -132,55 +133,67 @@ impl Blur {
             (height + 2 * pad).next_multiple_of(step),
         );
 
-        // chain[k] is the padded image shrunk 2^k times.
+        // chain[k] is the padded image shrunk 2^k times; `spare` takes the
+        // horizontal Gaussian pass at the smallest size.
         let chain: Vec<_> = (0..=levels)
             .map(|k| new_texture(device, padded.0 >> k, padded.1 >> k))
             .collect();
+        let spare = new_texture(device, padded.0 >> levels, padded.1 >> levels);
         let size = |k: u32| [(padded.0 >> k) as f32, (padded.1 >> k) as f32];
         let origin = pad as f32;
 
         let mut encoder = device.create_command_encoder(&Default::default());
-        let mut draw = |pipeline, input: &wgpu::TextureView, target, offset, origin, size| {
-            self.draw(
-                device,
-                &mut encoder,
-                pipeline,
-                input,
-                target,
-                offset,
-                origin,
-                size,
-            );
+        let mut draw = |pipeline, input, target, params| {
+            self.draw(device, &mut encoder, pipeline, input, target, params);
         };
-        draw(&self.pad, src, &chain[0].view, 0.0, origin, size(0));
+        let [w0, h0] = size(0);
+        draw(
+            &self.pad,
+            src,
+            &chain[0].view,
+            [0.0, origin, origin, 0.0, w0, h0, 0.0, 0.0],
+        );
         for k in 1..=levels {
+            let [w, h] = size(k);
             let input = &chain[k as usize - 1].view;
-            draw(
-                &self.down,
-                input,
-                &chain[k as usize].view,
-                offset,
-                0.0,
-                size(k),
-            );
+            let params = [0.0, 0.0, 0.0, 0.0, w, h, 0.0, 0.0];
+            draw(&self.down, input, &chain[k as usize].view, params);
         }
-        for k in (2..=levels).rev() {
+        // At level 0 the vertical pass is the one that writes `dst`.
+        let (last, shift) = if levels == 0 {
+            (dst, origin)
+        } else {
+            (&chain[levels as usize].view, 0.0)
+        };
+        let [w, h] = size(levels);
+        let horizontal = [sigma, 0.0, 0.0, 0.0, w, h, 1.0, 0.0];
+        draw(
+            &self.gauss,
+            &chain[levels as usize].view,
+            &spare.view,
+            horizontal,
+        );
+        let vertical = [sigma, shift, shift, 0.0, w, h, 0.0, 1.0];
+        draw(&self.gauss, &spare.view, last, vertical);
+        for k in (1..=levels).rev() {
+            let [w, h] = size(k - 1);
             let input = &chain[k as usize].view;
-            draw(
-                &self.up,
-                input,
-                &chain[k as usize - 1].view,
-                offset,
-                0.0,
-                size(k - 1),
-            );
+            if k == 1 {
+                draw(
+                    &self.up,
+                    input,
+                    dst,
+                    [0.0, origin, origin, 0.0, w, h, 0.0, 0.0],
+                );
+            } else {
+                let params = [0.0, 0.0, 0.0, 0.0, w, h, 0.0, 0.0];
+                draw(&self.up, input, &chain[k as usize - 1].view, params);
+            }
         }
-        draw(&self.up, &chain[1].view, dst, offset, origin, size(0));
         queue.submit([encoder.finish()]);
     }
 
-    /// One full-screen pass. `origin` and `size` fill the shader's params.
-    #[allow(clippy::too_many_arguments)]
+    /// One full-screen pass. `params` fills the shader's `Params`.
     fn draw(
         &self,
         device: &wgpu::Device,
@@ -188,11 +201,8 @@ impl Blur {
         pipeline: &wgpu::RenderPipeline,
         input: &wgpu::TextureView,
         target: &wgpu::TextureView,
-        offset: f32,
-        origin: f32,
-        size: [f32; 2],
+        params: [f32; 8],
     ) {
-        let params: [f32; 8] = [offset, origin, origin, 0.0, size[0], size[1], 0.0, 0.0];
         let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("blur params"),
@@ -236,27 +246,32 @@ impl Blur {
     }
 }
 
-/// Number of down/up levels and the tap offset (in texels) for a radius.
+/// Smallest Gaussian width, in texels, that hides the coarse grid.
+const MIN_SIGMA: f32 = 4.0;
+
+/// Number of down/up levels and the Gaussian's sigma (in texels of the
+/// smallest level) for a radius.
 fn plan(radius: f32) -> (u32, f32) {
-    let spread = |levels: u32| (4f32.powi(levels as i32) - 1.0) / 3.0;
-    let mut levels = 1;
-    while spread(levels + 1) <= radius * radius {
+    let mut levels = 0;
+    while radius / (2u32 << levels) as f32 >= MIN_SIGMA {
         levels += 1;
     }
-    let offset_squared = (radius * radius / spread(levels) - 1.0) * 6.0 / 11.0;
-    (levels, offset_squared.sqrt())
+    let scale = 4f32.powi(levels as i32);
+    let resampling = (scale - 1.0) / 2.0;
+    (levels, ((radius * radius - resampling) / scale).sqrt())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::plan;
+    use super::{MIN_SIGMA, plan};
 
     #[test]
-    fn offset_stays_small() {
-        for radius in [1.0, 1.35, 2.0, 2.3, 3.0, 12.0, 64.0, 128.0] {
-            let (levels, offset) = plan(radius);
-            assert!(levels >= 1);
-            assert!((0.0..=1.3).contains(&offset), "radius {radius}: {offset}");
+    fn gaussian_stays_wide_enough() {
+        for radius in [1.0, 2.0, 7.9, 8.0, 12.0, 44.0, 64.0, 127.0, 128.0] {
+            let (levels, sigma) = plan(radius);
+            let narrowest = if levels == 0 { 1.0 } else { MIN_SIGMA - 0.1 };
+            assert!(sigma >= narrowest, "radius {radius}: {sigma}");
+            assert!(sigma < 2.0 * MIN_SIGMA, "radius {radius}: {sigma}");
         }
     }
 }

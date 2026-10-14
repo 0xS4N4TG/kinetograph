@@ -142,15 +142,15 @@ Each entry in a layer's `effects` is an object with a `type`. A group's effects 
 |---|---|
 | `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..128. |
 
-The blur is a dual Kawase filter, a cheap approximation of a Gaussian, run in linear light on premultiplied colour. In
-tests the measured standard deviation is within about 10% of `radius`. Things to know:
+The blur is a Gaussian, run in linear light on premultiplied colour. Large radii are blurred at reduced resolution, but
+never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. In tests (`tests/blur.rs`) the
+measured standard deviation is within 5% of `radius` for radii from 2 to 128, and a small layer's blur follows its
+position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to know:
 
 - It does not scale with the layer's `scale` or a parent group's `scale`; the radius is always in canvas pixels.
-- Radii below 1 do nothing, because the smallest blur the filter can make spreads by about one pixel.
+- Radii below 1 do nothing.
 - The layer is blurred as if it sat in transparent space: its edges fade out, and content that lies outside the canvas
   is not part of the layer, so it cannot bleed in.
-- The filter is not shift invariant. Small details can drift by a fraction of a pixel as `radius` or position
-  changes.
 
 ## Limits in this version
 

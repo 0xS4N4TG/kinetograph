@@ -1,17 +1,20 @@
-// Dual Kawase blur passes. Textures are Rgba16Float, linear, premultiplied.
+// Blur passes. Textures are Rgba16Float, linear, premultiplied.
 //
-//   fs_pad:  copy the layer into the middle of a larger transparent texture
-//   fs_down: 2x downsample, 5 taps (centre x4, four diagonal corners x1)
-//   fs_up:   2x upsample, 8 taps (four axis taps x1, four diagonal taps x2)
+//   fs_pad:   copy the layer into the middle of a larger transparent texture
+//   fs_down:  2x downsample with the [1 3 3 1] / 8 filter per axis (4 bilinear
+//             taps). This tent filter keeps the centre of mass of whatever it
+//             shrinks, so a moving layer moves its blur by the same amount.
+//   fs_gauss: one axis of a separable Gaussian, read with exact texel loads
+//   fs_up:    2x upsample, one bilinear tap (the transpose of fs_down)
 //
-// `offset` stretches the taps; the Rust side picks it so the whole chain
-// approximates a Gaussian of the requested radius.
+// The Rust side shrinks the layer until the Gaussian is at least a few texels
+// wide, so the coarse grid cannot show.
 
 struct Params {
-    // x: offset, yz: origin (pad: where the source starts in the target;
-    // up: where the target starts inside the virtual output)
+    // x: sigma in texels, yz: origin (pad: where the source starts in the
+    // target; gauss, up: where the target starts inside the virtual output)
     a: vec4<f32>,
-    // xy: size of the (virtual) output in pixels
+    // xy: size of the (virtual) output in pixels, zw: gauss axis
     b: vec4<f32>,
 }
 
@@ -42,27 +45,35 @@ fn fs_pad(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_down(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    // The output texel centre sits on a corner between four input texels.
+    // Taps 0.75 texel either side of it weigh the pairs 3:1.
     let uv = p.xy / params.b.xy;
-    let d = params.a.x / vec2<f32>(textureDimensions(tex));
-    var sum = tap(uv) * 4.0;
-    sum += tap(uv + vec2<f32>(-d.x, -d.y));
+    let d = 0.75 / vec2<f32>(textureDimensions(tex));
+    var sum = tap(uv + vec2<f32>(-d.x, -d.y));
     sum += tap(uv + vec2<f32>(d.x, -d.y));
     sum += tap(uv + vec2<f32>(-d.x, d.y));
     sum += tap(uv + vec2<f32>(d.x, d.y));
-    return sum / 8.0;
+    return sum / 4.0;
+}
+
+@fragment
+fn fs_gauss(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let sigma = params.a.x;
+    let reach = i32(ceil(3.0 * sigma));
+    let last = vec2<i32>(textureDimensions(tex)) - vec2<i32>(1);
+    let q = vec2<i32>(p.xy) + vec2<i32>(params.a.yz);
+    let axis = vec2<i32>(params.b.zw);
+    var sum = vec4<f32>(0.0);
+    var weights = 0.0;
+    for (var i = -reach; i <= reach; i++) {
+        let w = exp(-0.5 * f32(i * i) / (sigma * sigma));
+        sum += w * textureLoad(tex, clamp(q + i * axis, vec2<i32>(0), last), 0);
+        weights += w;
+    }
+    return sum / weights;
 }
 
 @fragment
 fn fs_up(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let uv = (p.xy + params.a.yz) / params.b.xy;
-    let h = 0.5 * params.a.x / vec2<f32>(textureDimensions(tex));
-    var sum = tap(uv + vec2<f32>(-2.0 * h.x, 0.0));
-    sum += tap(uv + vec2<f32>(2.0 * h.x, 0.0));
-    sum += tap(uv + vec2<f32>(0.0, -2.0 * h.y));
-    sum += tap(uv + vec2<f32>(0.0, 2.0 * h.y));
-    sum += 2.0 * tap(uv + vec2<f32>(-h.x, h.y));
-    sum += 2.0 * tap(uv + vec2<f32>(h.x, h.y));
-    sum += 2.0 * tap(uv + vec2<f32>(h.x, -h.y));
-    sum += 2.0 * tap(uv + vec2<f32>(-h.x, -h.y));
-    return sum / 12.0;
+    return tap((p.xy + params.a.yz) / params.b.xy);
 }
