@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +18,9 @@ export interface ChildResult {
 /** Runs the CLI with `argv`. A child process, so that the server never installs a project's determinism shim. */
 export type Runner = (argv: string[]) => Promise<ChildResult>;
 
-const CLI_JS = fileURLToPath(new URL('./cli.js', import.meta.url));
+// Next to this file once built; when the sources run directly (vitest), the built copy.
+const BESIDE = fileURLToPath(new URL('./cli.js', import.meta.url));
+const CLI_JS = existsSync(BESIDE) ? BESIDE : fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
 export const runCli: Runner = (argv) =>
   new Promise((resolve, reject) => {

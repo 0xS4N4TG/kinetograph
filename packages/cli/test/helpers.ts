@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 import type { Native } from '../src/native.js';
 
@@ -109,4 +112,32 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
     ...overrides,
   } as unknown as Native;
   return { native, calls };
+}
+
+export function sine(freq: number, amplitude: number, seconds: number, sampleRate: number): Float32Array {
+  const out = new Float32Array(Math.round(seconds * sampleRate));
+  for (let i = 0; i < out.length; i++) out[i] = amplitude * Math.sin(2 * Math.PI * freq * (i / sampleRate));
+  return out;
+}
+
+/** A mono 16-bit WAV file in a fresh temp directory. */
+export function writeWav(samples: Float32Array, sampleRate: number, name = 'clip.wav'): { dir: string; name: string } {
+  const data = Buffer.alloc(samples.length * 2);
+  samples.forEach((v, i) => data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, v)) * 32767), i * 2));
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write('WAVEfmt ', 8);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(data.length, 40);
+  const dir = mkdtempSync(join(tmpdir(), 'kinetograph-cli-wav-'));
+  writeFileSync(join(dir, name), Buffer.concat([header, data]));
+  return { dir, name };
 }
