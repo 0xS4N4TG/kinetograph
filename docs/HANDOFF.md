@@ -322,8 +322,8 @@ happens on the user's M4.
 - On the M4, test 2b at its own tip first: `cargo test`, look at each new scene, `UPDATE_GOLDEN=1`, then a `bench`
   baseline on the papercut diorama. Only then go through 2c commit by commit, with `bench` and the goldens after each.
   2b's goldens must come from 2b's code, so a 2c regression shows up as a golden failure instead of being recorded
-  as correct. Fixes to 2b go on its branch and are merged into the 2c branch. Merge 2b into `main` first; GitHub
-  then retargets the 2c PR to `main`.
+  as correct. Fixes to 2b go on its branch and are merged into the 2c branch. Merge 2b into `main` first and delete its
+  branch on merge, so GitHub retargets the 2c PR to `main` (otherwise change the base by hand).
 
 ## 9. Rules for the build
 
