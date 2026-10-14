@@ -143,7 +143,7 @@ impl Blur {
     pub fn run(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         src: Input,
         dst: Input,
         size: (u32, u32),
@@ -171,11 +171,10 @@ impl Blur {
         let spare = self.scratch_texture(device, padded.0 >> levels, padded.1 >> levels);
         let size = |k: u32| [(padded.0 >> k) as f32, (padded.1 >> k) as f32];
 
-        let mut encoder = device.create_command_encoder(&Default::default());
         let mut draw = |pipeline, input, target, params, source, region| {
             self.draw(
                 device,
-                &mut encoder,
+                &mut *encoder,
                 pipeline,
                 input,
                 target,
@@ -254,7 +253,6 @@ impl Blur {
                 );
             }
         }
-        queue.submit([encoder.finish()]);
         for texture in chain.into_iter().chain([spare]) {
             self.scratch.put(texture);
         }

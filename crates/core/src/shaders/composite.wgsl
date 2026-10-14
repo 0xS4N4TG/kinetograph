@@ -278,37 +278,6 @@ fn fs_accumulate(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     return load_a(xy) + load_b(xy) * params.opacity;
 }
 
-// A batch of layers, none overlapping another (`Compositor::blend_batch`):
-// `fs_blend` with tex_a = backdrop, tex_b = the layers (`fs_to_linear` of
-// what Vello drew). Each draw is one layer, its box set by the scissor
-// rectangle and its opacity the instance's entry here; `params.mode` is the
-// blend mode.
-@group(1) @binding(0) var<storage, read> batch_opacity: array<f32>;
-
-struct BatchVertex {
-    @builtin(position) position: vec4<f32>,
-    @location(0) @interpolate(flat) layer: u32,
-}
-
-// `vs` for one layer of a batch.
-@vertex
-fn vs_batch(@builtin(vertex_index) i: u32, @builtin(instance_index) layer: u32) -> BatchVertex {
-    let x = f32(i32(i) / 2) * 4.0 - 1.0;
-    let y = f32(i32(i) % 2) * 4.0 - 1.0;
-    return BatchVertex(vec4<f32>(x, y, 0.0, 1.0), layer);
-}
-
-@fragment
-fn fs_blend_batch(v: BatchVertex) -> @location(0) vec4<f32> {
-    let xy = canvas_xy(v.position);
-    let b = load_a(xy);
-    let s = load_b(xy) * batch_opacity[v.layer];
-    let mixed = blend_fn(params.mode, unpremultiply(b), unpremultiply(s));
-    let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
-    let a = s.a + b.a * (1.0 - s.a);
-    return vec4<f32>(rgb, a);
-}
-
 // Linear premultiplied -> sRGB-encoded, straight alpha, for readback.
 @fragment
 fn fs_encode(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {

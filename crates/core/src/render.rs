@@ -120,6 +120,9 @@ pub struct Renderer {
     /// The ids of the groups the layer being drawn is in, outermost first.
     /// With the layer's own id they say which layer it is to the cache.
     cache_path: Vec<String>,
+    /// The leaves of the frame that Vello draws a page at a time
+    /// (`plan_pages`), and the textures of those drawn and not yet used.
+    pages: Pages,
     /// Above 0 while the samples of a motion-blurred layer are drawn: they are
     /// copies of one layer with the same ids, and only their average is kept.
     /// Their leaves are also rasterised into the box they cover, not the
@@ -191,6 +194,7 @@ impl Renderer {
             timings: None,
             cache: LayerCache::new(CACHE_BYTES),
             cache_path: Vec::new(),
+            pages: Pages::default(),
             cache_paused: 0,
         })
     }
@@ -244,6 +248,7 @@ impl Renderer {
         }
         let start = Instant::now();
         let out = f(self);
+        self.compositor.submit();
         // A lost device makes the next call fail anyway.
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         let ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -263,6 +268,8 @@ impl Renderer {
         self.cache_path.clear();
         self.cache_paused = 0;
         self.cache.begin_frame();
+        self.clear_pages();
+        self.plan_pages(&scene.layers)?;
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas =
@@ -271,6 +278,7 @@ impl Renderer {
         for tex in self.cache.end_frame() {
             self.compositor.release(tex);
         }
+        self.clear_pages();
         let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
         self.compositor.release(canvas);
         Ok(Frame {
@@ -288,25 +296,8 @@ impl Renderer {
         &mut self,
         layers: &[ResolvedLayer],
         parent: Affine,
-        canvas: Tex,
-        below: Option<&Tex>,
-    ) -> Result<Tex> {
-        let mut batch = Batch::default();
-        let canvas = self.draw_into(layers, parent, canvas, below, &mut batch)?;
-        self.flush(canvas, &mut batch)
-    }
-
-    /// `draw_layers`, except that plain leaves (`is_plain_leaf`) are added to
-    /// `batch` and drawn when it is flushed: before anything else is drawn
-    /// onto `canvas`, and before a leaf that overlaps one of them joins it.
-    /// The children of a group with no buffer join the same batch.
-    fn draw_into<'a>(
-        &mut self,
-        layers: &'a [ResolvedLayer],
-        parent: Affine,
         mut canvas: Tex,
         below: Option<&Tex>,
-        batch: &mut Batch<'a>,
     ) -> Result<Tex> {
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
@@ -319,7 +310,6 @@ impl Renderer {
                 preserve3d: true,
             } = &layer.kind
             {
-                canvas = self.flush(canvas, batch)?;
                 canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
                 continue;
             }
@@ -329,92 +319,18 @@ impl Renderer {
                 && needs_no_buffer(layer)
             {
                 self.cache_path.push(layer.id.clone());
-                let drawn = self.draw_into(
-                    children,
-                    parent * layer.transform.matrix(),
-                    canvas,
-                    below,
-                    batch,
-                );
+                let drawn =
+                    self.draw_layers(children, parent * layer.transform.matrix(), canvas, below);
                 self.cache_path.pop();
                 canvas = drawn?;
                 continue;
             }
-            // The samples of a motion-blurred layer draw their leaves into
-            // their own boxes (`vello_area`), one by one.
-            if self.cache_paused == 0 && is_plain_leaf(layer) {
-                let region = self.raster_bounds(layer, parent * layer.transform.matrix())?;
-                // Nothing lands on the canvas.
-                if region.is_empty() {
-                    continue;
-                }
-                if batch.overlaps(region) {
-                    canvas = self.flush(canvas, batch)?;
-                }
-                batch.items.push(BatchItem {
-                    layer,
-                    siblings: layers,
-                    parent,
-                    region,
-                    cache_path: self.cache_path.clone(),
-                });
-                continue;
-            }
-            canvas = self.flush(canvas, batch)?;
             // A layer turned in 3D is drawn flat and then warped about its
             // own position, in its parent's plane.
             let placement =
                 warp::layer_world(&layer.transform).map(|world| Placement { parent, world });
             canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
         }
-        Ok(canvas)
-    }
-
-    /// Draws the leaves in `batch` onto `canvas` and empties it. Vello draws
-    /// them all in one scene over the whole target, where each is drawn as
-    /// it would be alone, since no two overlap; one pass then blends them
-    /// all (`Compositor::blend_batch`). A batch of one leaf goes through
-    /// `draw_layer` when the layer cache is on, so the cache can keep it.
-    fn flush(&mut self, mut canvas: Tex, batch: &mut Batch) -> Result<Tex> {
-        if batch.items.is_empty() {
-            return Ok(canvas);
-        }
-        if batch.items.len() == 1 && self.cache.enabled() {
-            let item = batch.items.pop().expect("one item");
-            let path = std::mem::replace(&mut self.cache_path, item.cache_path);
-            let drawn = self.draw_layer(
-                item.layer,
-                item.siblings,
-                item.parent,
-                None,
-                1.0,
-                canvas,
-                None,
-            );
-            self.cache_path = path;
-            return drawn;
-        }
-        let has_images = batch
-            .items
-            .iter()
-            .any(|item| matches!(item.layer.kind, ResolvedKind::Image { .. }));
-        let whole = self.whole();
-        self.timed(Stage::Raster, |s| {
-            s.vello_scene.reset();
-            for item in &batch.items {
-                s.encode_leaf(item.layer, item.parent * item.layer.transform.matrix())?;
-            }
-            s.render_vello_scene(has_images, whole)
-        })?;
-        let layers: Vec<(PixelRect, f32)> = batch
-            .items
-            .iter()
-            .map(|item| (item.region, item.layer.opacity))
-            .collect();
-        batch.items.clear();
-        canvas = self.timed(Stage::Composite, |s| {
-            s.compositor.blend_batch(canvas, &s.vello_view, &layers)
-        });
         Ok(canvas)
     }
 
@@ -713,11 +629,16 @@ impl Renderer {
             }
             _ => {
                 let region = raster.unwrap_or_else(|| self.whole());
-                let area = self.vello_area(region);
-                self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
-                let drawn = self.timed(Stage::Composite, |s| {
-                    s.compositor.from_srgb8(&s.vello_view, area, region)
-                });
+                let drawn = match self.take_from_page(layer, matrix)? {
+                    Some(drawn) => drawn,
+                    None => {
+                        let area = self.vello_area(region);
+                        self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
+                        self.timed(Stage::Composite, |s| {
+                            s.compositor.from_srgb8(&s.vello_view, area, region)
+                        })
+                    }
+                };
                 match &layer.kind {
                     // What was drawn is the box's coverage; the noise fills it.
                     ResolvedKind::Noise {
@@ -814,6 +735,133 @@ impl Renderer {
             });
         }
         Ok(src)
+    }
+
+    /// Groups the leaves of the frame that `layer_texture` will rasterise
+    /// into pages, and encodes each page's Vello scene. No two leaves of a
+    /// page overlap, and a page is drawn over the whole target with the
+    /// matrices `rasterise` uses, so each leaf comes out of it as it would
+    /// from a draw of its own. A page is drawn when one of its leaves is
+    /// first wanted (`take_from_page`), so a frame whose layers all come
+    /// from the layer cache draws none. Motion-blurred layers and the
+    /// children of preserve3d groups are left out, and are drawn the way
+    /// they always were.
+    fn plan_pages(&mut self, layers: &[ResolvedLayer]) -> Result<()> {
+        let mut leaves = Vec::new();
+        self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
+        // First fit: each leaf goes on the first page it overlaps nothing on.
+        let mut members: Vec<Vec<usize>> = Vec::new();
+        for (i, (_, _, region)) in leaves.iter().enumerate() {
+            let fits = |page: &Vec<usize>| {
+                page.iter()
+                    .all(|&j| leaves[j].2.intersect(*region).is_empty())
+            };
+            match members.iter_mut().find(|page| fits(page)) {
+                Some(page) => page.push(i),
+                None => members.push(vec![i]),
+            }
+        }
+        for page in members {
+            self.vello_scene.reset();
+            let mut drawn = Vec::with_capacity(page.len());
+            let mut has_images = false;
+            for i in page {
+                let (layer, matrix, region) = leaves[i];
+                self.encode_leaf(layer, matrix)?;
+                has_images |= matches!(layer.kind, ResolvedKind::Image { .. });
+                let key = leaf_key(layer, matrix);
+                self.pages.page_of.insert(key, self.pages.pages.len());
+                drawn.push((key, region));
+            }
+            self.pages.pages.push(Page {
+                scene: Some(std::mem::replace(
+                    &mut self.vello_scene,
+                    vello::Scene::new(),
+                )),
+                has_images,
+                leaves: drawn,
+            });
+        }
+        Ok(())
+    }
+
+    /// The leaves of `layers` and their groups for `plan_pages`: each with
+    /// the matrix and the box `layer_texture` rasterises it with.
+    fn collect_leaves<'a>(
+        &mut self,
+        layers: &'a [ResolvedLayer],
+        parent: Affine,
+        leaves: &mut Vec<(&'a ResolvedLayer, Affine, PixelRect)>,
+    ) -> Result<()> {
+        for layer in layers {
+            let matte_source = is_matte_source(layers, layer);
+            if (is_hidden(layer) && !matte_source) || !layer.motion.is_empty() {
+                continue;
+            }
+            let matrix = parent * layer.transform.matrix();
+            match &layer.kind {
+                ResolvedKind::Group {
+                    children,
+                    preserve3d: false,
+                } => self.collect_leaves(children, matrix, leaves)?,
+                ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {}
+                _ => {
+                    let region = self.raster_bounds(layer, matrix)?;
+                    if !region.is_empty() {
+                        leaves.push((layer, matrix, region));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The texture `rasterise` and `from_srgb8` would make of the leaf
+    /// `layer` under `matrix`, from its page, if it is on one and this is
+    /// the first time it is wanted. Drawing the page makes the textures of
+    /// all its leaves from one Vello draw.
+    fn take_from_page(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<Option<Tex>> {
+        if self.cache_paused > 0 {
+            return Ok(None);
+        }
+        let key = leaf_key(layer, matrix);
+        if let Some(tex) = self.pages.drawn.remove(&key) {
+            return Ok(Some(tex));
+        }
+        let Some(&page) = self.pages.page_of.get(&key) else {
+            return Ok(None);
+        };
+        let Some(scene) = self.pages.pages[page].scene.take() else {
+            // Drawn already, and this leaf's texture used: it is wanted twice.
+            return Ok(None);
+        };
+        let has_images = self.pages.pages[page].has_images;
+        let whole = self.whole();
+        let previous = std::mem::replace(&mut self.vello_scene, scene);
+        let rendered = self.timed(Stage::Raster, |s| s.render_vello_scene(has_images, whole));
+        self.vello_scene = previous;
+        rendered?;
+        let regions: Vec<PixelRect> = self.pages.pages[page]
+            .leaves
+            .iter()
+            .map(|(_, region)| *region)
+            .collect();
+        let texes = self.timed(Stage::Composite, |s| {
+            s.compositor.from_srgb8_many(&s.vello_view, &regions)
+        });
+        for ((key, _), tex) in self.pages.pages[page].leaves.iter().zip(texes) {
+            self.pages.drawn.insert(*key, tex);
+        }
+        Ok(self.pages.drawn.remove(&key))
+    }
+
+    /// Forgets the pages, giving back the textures no layer took.
+    fn clear_pages(&mut self) {
+        for (_, tex) in self.pages.drawn.drain() {
+            self.compositor.release(tex);
+        }
+        self.pages.pages.clear();
+        self.pages.page_of.clear();
     }
 
     /// The box of the padded canvas's pixels.
@@ -1125,6 +1173,8 @@ impl Renderer {
     /// the texture keeps what it held and is not read (`from_srgb8`). Image
     /// layers use their own renderer (see `vello_images`).
     fn render_vello_scene(&mut self, has_images: bool, area: PixelRect) -> Result<()> {
+        // The passes recorded so far may read what Vello drew last.
+        self.compositor.submit();
         let renderer = if has_images {
             self.vello_images.as_mut()
         } else {
@@ -1309,47 +1359,35 @@ fn margin_origin(margin: u32) -> Affine {
 }
 
 /// Whether `layer` draws nothing at any time of its frame.
-/// Leaves waiting to be drawn onto the canvas together, bottom first, no two
-/// of whose boxes overlap (`Renderer::flush`).
+/// A leaf layer as `layer_texture` rasterises it: the layer itself (its
+/// address, which is the same for the whole frame) and its matrix.
+type LeafKey = (usize, [u64; 6]);
+
+fn leaf_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
+    (
+        std::ptr::from_ref(layer) as usize,
+        matrix.as_coeffs().map(f64::to_bits),
+    )
+}
+
+/// The leaves of a frame that Vello draws a page at a time
+/// (`Renderer::plan_pages`).
 #[derive(Default)]
-struct Batch<'a> {
-    items: Vec<BatchItem<'a>>,
+struct Pages {
+    pages: Vec<Page>,
+    /// Which page each leaf is on.
+    page_of: HashMap<LeafKey, usize>,
+    /// The textures of the leaves of drawn pages, until they are used.
+    drawn: HashMap<LeafKey, Tex>,
 }
 
-struct BatchItem<'a> {
-    layer: &'a ResolvedLayer,
-    /// The list `layer` is in, and its parent's matrix, as `draw_layer`
-    /// takes them.
-    siblings: &'a [ResolvedLayer],
-    parent: Affine,
-    /// The pixels Vello can draw for it (`raster_bounds`).
-    region: PixelRect,
-    /// `Renderer::cache_path` where it was met.
-    cache_path: Vec<String>,
-}
-
-impl Batch<'_> {
-    fn overlaps(&self, region: PixelRect) -> bool {
-        self.items
-            .iter()
-            .any(|item| !item.region.intersect(region).is_empty())
-    }
-}
-
-/// Whether `layer` can be drawn in a batch: a shape, text or image that is
-/// only blended normally at its opacity once Vello has drawn it, with no
-/// effects, clip, mask, matte, motion blur or 3D turn.
-fn is_plain_leaf(layer: &ResolvedLayer) -> bool {
-    matches!(
-        layer.kind,
-        ResolvedKind::Shape { .. } | ResolvedKind::Text { .. } | ResolvedKind::Image { .. }
-    ) && layer.blend_mode == BlendMode::Normal
-        && layer.effects.is_empty()
-        && layer.clip.is_none()
-        && layer.mask.is_none()
-        && layer.matte.is_none()
-        && layer.motion.is_empty()
-        && warp::layer_world(&layer.transform).is_none()
+struct Page {
+    /// Its Vello scene, until the page is drawn.
+    scene: Option<vello::Scene>,
+    /// Whether it has an image, which picks the renderer (`vello_images`).
+    has_images: bool,
+    /// Its leaves and the pixels each can touch (`raster_bounds`).
+    leaves: Vec<(LeafKey, PixelRect)>,
 }
 
 fn is_hidden(layer: &ResolvedLayer) -> bool {

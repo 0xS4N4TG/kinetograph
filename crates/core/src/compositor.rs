@@ -86,6 +86,7 @@
 //! `scene::Effect` and `resolve::ResolvedEffect`, write its pass, and call it
 //! from `apply_effects`.
 
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 
 use glam::DMat3;
@@ -207,10 +208,6 @@ pub struct Compositor {
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
-    /// `to_linear` and `blend` for a batch of layers (`blend_batch`), on the
-    /// shared layout and then `turbulence_layout`, whose one storage buffer
-    /// holds the layers' opacities.
-    blend_batch: wgpu::RenderPipeline,
     mask: wgpu::RenderPipeline,
     matte: wgpu::RenderPipeline,
     accumulate: wgpu::RenderPipeline,
@@ -265,6 +262,10 @@ pub struct Compositor {
     shaders: HashMap<String, wgpu::RenderPipeline>,
     blur: Blur,
     pool: Pool<Tex>,
+    /// What the passes have recorded since the last `submit`. Passes record
+    /// here instead of submitting one by one, which costs the driver far
+    /// more than the passes themselves.
+    pending: RefCell<Option<wgpu::CommandEncoder>>,
 }
 
 impl Compositor {
@@ -399,37 +400,6 @@ impl Compositor {
             "fs_noise",
             LINEAR_FORMAT,
         );
-        let batch_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("blend batch"),
-                bind_group_layouts: &[Some(&layout), Some(&turbulence_layout)],
-                immediate_size: 0,
-            });
-        let blend_batch = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("fs_blend_batch"),
-            layout: Some(&batch_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_batch"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_blend_batch"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: LINEAR_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
         let (mesh, mesh_size) = mesh_pipeline(
             device,
             &shader_module(device, "mesh", include_str!("shaders/mesh.wgsl")),
@@ -503,7 +473,6 @@ impl Compositor {
             margin,
             to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
-            blend_batch,
             mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
             matte: pipeline(&shader, "fs_matte", LINEAR_FORMAT),
             accumulate: pipeline(&shader, "fs_accumulate", LINEAR_FORMAT),
@@ -549,6 +518,23 @@ impl Compositor {
             blur: Blur::new(device),
             layout,
             pool: Pool::new(POOL_BYTES),
+            pending: RefCell::new(None),
+        }
+    }
+
+    /// The encoder the passes record into, until the next `submit`.
+    fn encoder(&self) -> RefMut<'_, wgpu::CommandEncoder> {
+        RefMut::map(self.pending.borrow_mut(), |pending| {
+            pending.get_or_insert_with(|| self.device.create_command_encoder(&Default::default()))
+        })
+    }
+
+    /// Submits what the passes have recorded. Whatever else writes to the
+    /// textures they read (Vello drawing into its target) must come after,
+    /// and whatever waits for their results (a readback) too.
+    pub fn submit(&self) {
+        if let Some(encoder) = self.pending.borrow_mut().take() {
+            self.queue.submit([encoder.finish()]);
         }
     }
 
@@ -607,14 +593,14 @@ impl Compositor {
             return None;
         }
         let full = self.target_full(src.bounds);
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = self.encoder();
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear"),
             color_attachments: &[Some(clear_attachment(&full.view, wgpu::Color::TRANSPARENT))],
             ..Default::default()
         });
         copy_box(&mut encoder, src, &full, src.bounds);
-        self.queue.submit([encoder.finish()]);
+        drop(encoder);
         Some(full)
     }
 
@@ -661,13 +647,12 @@ impl Compositor {
     }
 
     fn clear(&self, tex: &Tex, color: wgpu::Color) {
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("clear"),
-            color_attachments: &[Some(clear_attachment(&tex.view, color))],
-            ..Default::default()
-        });
-        self.queue.submit([encoder.finish()]);
+        self.encoder()
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear"),
+                color_attachments: &[Some(clear_attachment(&tex.view, color))],
+                ..Default::default()
+            });
     }
 
     /// Converts the box `region` of a Vello output texture (Rgba8,
@@ -692,6 +677,25 @@ impl Compositor {
         };
         self.pass(&self.to_linear, input, input, 0.0, 0, &target);
         target
+    }
+
+    /// `from_srgb8` for each of `regions` of a Vello output that was drawn
+    /// over the whole canvas, as one texture each.
+    pub fn from_srgb8_many(
+        &mut self,
+        vello_output: &wgpu::TextureView,
+        regions: &[PixelRect],
+    ) -> Vec<Tex> {
+        let input = self.vello_input(vello_output);
+        regions
+            .iter()
+            .map(|&region| {
+                let target = self.target(region);
+                let bind_group = self.composite_bind_group(input, input, &[0u8; 16], &target);
+                self.encode_draw(&mut self.encoder(), &self.to_linear, &bind_group, &target);
+                target
+            })
+            .collect()
     }
 
     /// Composites `src` over `dst` with the layer's opacity and blend mode.
@@ -723,114 +727,6 @@ impl Compositor {
         dst
     }
 
-    /// `from_srgb8` and then `blend` with normal blending for each of
-    /// `layers`, layers that Vello drew together into `vello_output` (over
-    /// the whole canvas): each is its box of that output and its opacity.
-    /// The boxes must not overlap. Each pixel of the output is then one
-    /// layer's, as it would be in a draw of that layer alone, and the order
-    /// the layers are blended in makes no difference. Two passes, the
-    /// conversion and the blend, with one draw a layer each, and one submit
-    /// for them all. The converted layers sit in an Rgba16Float texture
-    /// between the passes, as they do between `from_srgb8` and `blend`, so
-    /// each pixel is rounded the same way.
-    pub fn blend_batch(
-        &mut self,
-        mut dst: Tex,
-        vello_output: &wgpu::TextureView,
-        layers: &[(PixelRect, f32)],
-    ) -> Tex {
-        let whole = self.whole();
-        let layers: Vec<(PixelRect, f32)> = layers
-            .iter()
-            .map(|&(region, opacity)| (region.intersect(whole), opacity))
-            .filter(|(region, _)| !region.is_empty())
-            .collect();
-        let all = layers
-            .iter()
-            .fold(PixelRect::EMPTY, |all, (region, _)| all.union(*region));
-        if all.is_empty() {
-            return dst;
-        }
-        assert!(
-            dst.rect().intersect(all) == all,
-            "a texture over {:?} cannot take {all:?}",
-            dst.rect()
-        );
-        // The layers in linear light, as `from_srgb8` makes each, and then
-        // the result of blending them.
-        let linear = self.target(all);
-        let temp = self.target(all);
-        let vello = self.vello_input(vello_output);
-        // Opacity unused (it is per layer), mode 0: normal.
-        let params = [0u8; 16];
-        let to_linear = self.composite_bind_group(vello, vello, &params, &linear);
-        let blend = self.composite_bind_group(dst.input(), linear.input(), &params, &temp);
-        let opacities: Vec<u8> = layers
-            .iter()
-            .flat_map(|(_, opacity)| opacity.to_le_bytes())
-            .collect();
-        let opacities = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("batch opacities"),
-                contents: &opacities,
-                usage: wgpu::BufferUsages::STORAGE,
-            });
-        let opacity_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("batch opacities"),
-            layout: &self.turbulence_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: opacities.as_entire_binding(),
-            }],
-        });
-        // The scissor rectangle of each layer, in texels of `linear` and
-        // `temp`, which sit at the same place.
-        let scissors: Vec<PixelRect> = layers
-            .iter()
-            .map(|(region, _)| region.translate(-temp.origin[0], -temp.origin[1]))
-            .collect();
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("batch to linear"),
-                color_attachments: &[Some(clear_attachment(
-                    &linear.view,
-                    wgpu::Color::TRANSPARENT,
-                ))],
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.to_linear);
-            pass.set_bind_group(0, &to_linear, &[]);
-            for r in &scissors {
-                pass.set_scissor_rect(r.x0 as u32, r.y0 as u32, r.width(), r.height());
-                pass.draw(0..3, 0..1);
-            }
-        }
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("blend batch"),
-                color_attachments: &[Some(clear_attachment(&temp.view, wgpu::Color::TRANSPARENT))],
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.blend_batch);
-            pass.set_bind_group(0, &blend, &[]);
-            pass.set_bind_group(1, &opacity_group, &[]);
-            for (i, r) in scissors.iter().enumerate() {
-                pass.set_scissor_rect(r.x0 as u32, r.y0 as u32, r.width(), r.height());
-                pass.draw(0..3, i as u32..i as u32 + 1);
-            }
-        }
-        for (region, _) in &layers {
-            copy_box(&mut encoder, &temp, &dst, *region);
-        }
-        self.queue.submit([encoder.finish()]);
-        self.release(linear);
-        self.release(temp);
-        dst.bounds = dst.bounds.union(all);
-        dst
-    }
-
     /// Draws `region` of a new texture with `draw`, which is given `dst` and
     /// that texture, and copies the result over the same box of `dst`, which
     /// must hold it. It is how a pass that reads `dst` changes it in place:
@@ -852,9 +748,7 @@ impl Compositor {
         );
         let temp = self.target(region);
         draw(self, dst, &temp);
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        copy_box(&mut encoder, &temp, dst, region);
-        self.queue.submit([encoder.finish()]);
+        copy_box(&mut self.encoder(), &temp, dst, region);
         self.release(temp);
     }
 
@@ -1041,7 +935,9 @@ impl Compositor {
         let dst = self.target(reach);
         self.blur.run(
             &self.device,
-            &self.queue,
+            self.pending
+                .get_mut()
+                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
             src.input(),
             dst.input(),
             size,
@@ -1074,7 +970,9 @@ impl Compositor {
         let size = (self.width, self.height);
         self.blur.run(
             &self.device,
-            &self.queue,
+            self.pending
+                .get_mut()
+                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
             backdrop.input(),
             blurred.input(),
             size,
@@ -1105,7 +1003,9 @@ impl Compositor {
         let halo = self.target(Blur::reach(size, glow.radius, src.bounds));
         self.blur.run(
             &self.device,
-            &self.queue,
+            self.pending
+                .get_mut()
+                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
             src.input(),
             halo.input(),
             size,
@@ -1411,8 +1311,8 @@ impl Compositor {
                 contents: &mesh_vertex_bytes(vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-        let mut encoder = self.device.create_command_encoder(&Default::default());
         {
+            let mut encoder = self.encoder();
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("mesh"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1432,7 +1332,6 @@ impl Compositor {
             pass.set_vertex_buffer(0, buffer.slice(..));
             pass.draw(0..vertices.len() as u32, 0..1);
         }
-        self.queue.submit([encoder.finish()]);
         // Nothing is drawn outside the triangles, and a pixel they touch
         // only partly is inside the box of their corners grown by a pixel.
         target.bounds = mesh_bounds(vertices).intersect(self.whole());
@@ -1689,7 +1588,9 @@ impl Compositor {
             let from = current.as_ref().map_or_else(|| src.input(), |t| t.input());
             self.blur.run(
                 &self.device,
-                &self.queue,
+                self.pending
+                    .get_mut()
+                    .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
                 from,
                 target.input(),
                 size,
@@ -1762,7 +1663,7 @@ impl Compositor {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = self.encoder();
         // Only the canvas, which sits in the middle of the margin.
         let mut source = target.texture.as_image_copy();
         source.origin = wgpu::Origin3d {
@@ -1786,7 +1687,8 @@ impl Compositor {
                 depth_or_array_layers: 1,
             },
         );
-        self.queue.submit([encoder.finish()]);
+        drop(encoder);
+        self.submit();
 
         let (tx, rx) = std::sync::mpsc::channel();
         buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -2013,6 +1915,29 @@ impl Compositor {
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
     ) {
+        self.encode_draw_with(&mut self.encoder(), pipeline, bind_group, extra, target);
+    }
+
+    /// `draw`, recorded into `encoder` to be submitted with other work.
+    fn encode_draw(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+        target: &Tex,
+    ) {
+        self.encode_draw_with(encoder, pipeline, bind_group, None, target);
+    }
+
+    /// `draw_with`, recorded into `encoder`.
+    fn encode_draw_with(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+        extra: Option<&wgpu::BindGroup>,
+        target: &Tex,
+    ) {
         let region = target
             .bounds
             .translate(-target.origin[0], -target.origin[1])
@@ -2022,32 +1947,28 @@ impl Compositor {
                 target.size[0] as i32,
                 target.size[1] as i32,
             ));
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("composite"),
-                color_attachments: &[Some(clear_attachment(
-                    &target.view,
-                    wgpu::Color::TRANSPARENT,
-                ))],
-                ..Default::default()
-            });
-            if !region.is_empty() {
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, bind_group, &[]);
-                if let Some(extra) = extra {
-                    pass.set_bind_group(1, extra, &[]);
-                }
-                pass.set_scissor_rect(
-                    region.x0 as u32,
-                    region.y0 as u32,
-                    region.width(),
-                    region.height(),
-                );
-                pass.draw(0..3, 0..1);
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("composite"),
+            color_attachments: &[Some(clear_attachment(
+                &target.view,
+                wgpu::Color::TRANSPARENT,
+            ))],
+            ..Default::default()
+        });
+        if !region.is_empty() {
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            if let Some(extra) = extra {
+                pass.set_bind_group(1, extra, &[]);
             }
+            pass.set_scissor_rect(
+                region.x0 as u32,
+                region.y0 as u32,
+                region.width(),
+                region.height(),
+            );
+            pass.draw(0..3, 0..1);
         }
-        self.queue.submit([encoder.finish()]);
     }
 }
 

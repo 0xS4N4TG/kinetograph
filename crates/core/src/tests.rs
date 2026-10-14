@@ -67,12 +67,11 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
     // The compositor's shared layout (the two inputs, the pass's uniforms and
     // the placement), the lut's (the same, with a 3D table for the second
     // input), the filtered layout (the layer, a sampler, uniforms), the
-    // blur's, the mesh's, and the turbulence tables at group 1 (which the
-    // batch blend in composite.wgsl uses for its opacities).
+    // blur's, the mesh's, and the turbulence tables at group 1.
     let shared = vec![(0, 0), (0, 1), (0, 2), (0, 3)];
     let with_tables = vec![(0, 0), (0, 1), (0, 2), (0, 3), (1, 0)];
-    assert_eq!(declared_bindings("composite.wgsl"), with_tables);
     for file in [
+        "composite.wgsl",
         "shadow.wgsl",
         "shadow_box.wgsl",
         "color.wgsl",
