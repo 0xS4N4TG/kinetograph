@@ -10,6 +10,9 @@ pub mod resolve;
 pub mod scene;
 pub mod text;
 
+#[cfg(test)]
+mod tests;
+
 pub use error::{Error, Result};
 pub use render::{Frame, Renderer, Timings, render_still};
 pub use scene::Scene;

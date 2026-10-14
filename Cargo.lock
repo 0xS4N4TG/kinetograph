@@ -733,6 +733,7 @@ name = "kinetograph-core"
 version = "0.1.0"
 dependencies = [
  "image",
+ "naga",
  "parley",
  "pollster",
  "serde",
