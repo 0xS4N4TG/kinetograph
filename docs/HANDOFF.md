@@ -314,6 +314,16 @@ happens on the user's M4.
   `feat/looks-camera-video` is 2b); the phase goes in the PR title. Keep session links and `Claude-Session:`
   trailers out of commit messages and PR descriptions. Renaming a branch on GitHub closes its open PR rather than
   moving it (PR #1 for 2a), so pick the name before opening the PR.
+- **2b and 2c run back to back in one cloud session, and neither merges before the M4 tests them** (decided
+  2026-10-14). 2b goes on `feat/looks-camera-video`. 2c goes on `perf/layer-bounds`, branched from 2b's tip, not from
+  `main`, with one commit per work item (blur, MSAA, texture sizing, layer cache, frame-range render) so any item that
+  does not pay off can be reverted alone. Open both as draft PRs: 2b against `main`, 2c against
+  `feat/looks-camera-video`, so each diff shows only its own phase.
+- On the M4, test 2b at its own tip first: `cargo test`, look at each new scene, `UPDATE_GOLDEN=1`, then a `bench`
+  baseline on the papercut diorama. Only then go through 2c commit by commit, with `bench` and the goldens after each.
+  2b's goldens must come from 2b's code, so a 2c regression shows up as a golden failure instead of being recorded
+  as correct. Fixes to 2b go on its branch and are merged into the 2c branch. Merge 2b into `main` first; GitHub
+  then retargets the 2c PR to `main`.
 
 ## 9. Rules for the build
 
