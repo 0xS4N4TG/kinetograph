@@ -955,8 +955,9 @@ projection is orthographic: rotations foreshorten but nothing shrinks with dista
 - **Back faces** are drawn, mirrored, as in CSS's default: turn a layer past 90 degrees and you see it from behind.
 - **Behind the eye.** The part of a layer that `z` (or a rotation) takes past the eye, to `perspective` pixels or more
   toward the viewer, is not drawn: it is cut off where it passes the eye plane, not mirrored back onto the screen.
-  Near that plane the rest is magnified enormously, as in a browser. A layer seen exactly edge on (a `rotateY` of 90)
-  is not drawn at all.
+  Near that plane the rest is magnified enormously, as in a browser. A layer seen exactly edge on (a `rotateY` of 90
+  without a camera, or with one when the layer's plane runs through the eye) is not drawn at all; with a camera, a
+  `rotateY` of 90 on a layer whose `x` is off the camera's `x` is seen from the side, as a thin sliver.
 - `z` is in the units of the parent's plane and is not scaled by any `scale`: a group at `scale` 2 enlarges its
   children in the plane but not in depth (as `scale()` in CSS leaves z alone).
 - A matte source cannot have `rotateX`, `rotateY` or `z` (a load error naming both layers): the source is cut out in the
@@ -1067,8 +1068,8 @@ the layer's backdrop then happens once, with the layer's `blendMode`.
 - **Precision**: the sum is kept in the compositor's half-float textures, so the average of many samples carries a
   rounding error of about one part in a thousand; a layer that does not move is not byte-identical to the same layer
   without `motionBlur`. Use `shutter: 0` (or leave the field out) for that.
-- A sample that is seen edge on (a 3D rotation of 90 degrees) adds nothing but still counts in the average, so the
-  layer fades as it turns edge on.
+- A sample that is seen edge on (see [3D transforms](#3d-transforms-and-the-camera)) adds nothing but still counts in
+  the average, so the layer fades as it turns edge on.
 - Counts nothing in the [margin](#canvas-margin).
 
 ## Limits in this version
