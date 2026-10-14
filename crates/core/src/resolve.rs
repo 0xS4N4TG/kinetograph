@@ -371,6 +371,8 @@ pub enum ResolvedKind {
     },
     Group {
         children: Vec<ResolvedLayer>,
+        /// The children are drawn straight into the parent, depth sorted.
+        preserve3d: bool,
     },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
@@ -492,6 +494,7 @@ fn resolve_layer(layer: &Layer, clock: Clock) -> ResolvedLayer {
         },
         LayerKind::Group(g) => ResolvedKind::Group {
             children: g.children.iter().map(|c| resolve_layer(c, clock)).collect(),
+            preserve3d: g.preserve3d,
         },
         LayerKind::MeshGradient(m) => {
             let (width, height) = (m.width.at(f), m.height.at(f));
@@ -848,7 +851,7 @@ mod tests {
         assert_eq!(r.layers[1].blend_mode, BlendMode::Multiply);
         assert!(matches!(
             &r.layers[1].kind,
-            ResolvedKind::Group { children } if children.len() == 1
+            ResolvedKind::Group { children, .. } if children.len() == 1
         ));
     }
 
@@ -1606,5 +1609,29 @@ mod tests {
                 .camera
                 .is_none()
         );
+    }
+
+    #[test]
+    fn resolves_the_preserve3d_flag() {
+        let json = r#"{"width": 50, "height": 50, "fps": 30, "durationInFrames": 1, "layers": [
+            {"id": "flat", "type": "group", "children": []},
+            {"id": "deep", "type": "group", "preserve3d": true, "children": []}]}"#;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let flags: Vec<_> = scene
+            .resolve(0)
+            .unwrap()
+            .layers
+            .iter()
+            .map(|l| {
+                matches!(
+                    l.kind,
+                    ResolvedKind::Group {
+                        preserve3d: true,
+                        ..
+                    }
+                )
+            })
+            .collect();
+        assert_eq!(flags, [false, true]);
     }
 }

@@ -136,7 +136,8 @@ PNG or JPEG, scaled to `width` x `height` from the layer origin. Colours are rea
 
 A group composites its children (bottom first) into its own buffer, then blends that result into its parent using the
 group's `opacity` and `blendMode`. Its `transform` applies to all children. `anchorX/anchorY` are in the group's
-coordinates.
+coordinates. `"preserve3d": true` (default `false`) makes the group a 3D scene instead: see
+[preserve3d groups](#preserve3d-groups).
 
 ### noise
 
@@ -931,6 +932,58 @@ projection is orthographic: rotations foreshorten but nothing shrinks with dista
 - `backdropBlur` on a layer that is turned frosts what is behind the layer *before* the turn, then turns the frosted
   picture with the layer.
 
+### preserve3d groups
+
+```json
+{ "id": "stack", "type": "group", "preserve3d": true,
+  "transform": { "x": 115, "y": 212, "rotateX": 24, "rotateY": [{ "frame": 0, "value": 10 }, { "frame": 30, "value": 70 }] },
+  "children": [
+    { "id": "back",  "type": "shape", "shape": { "kind": "roundedRect", "width": 88, "height": 54, "radius": 8 },
+      "fill": "#2a9d8f", "transform": { "x": 34, "z": -60, "anchorX": 44, "anchorY": 27 } },
+    { "id": "front", "type": "shape", "shape": { "kind": "roundedRect", "width": 88, "height": 54, "radius": 8 },
+      "fill": "#e9c46a", "transform": { "x": 52, "z": 60, "anchorX": 44, "anchorY": 27 } }
+  ] }
+```
+
+`"preserve3d": true` on a group is CSS's `transform-style: preserve-3d`. An ordinary group is flat: it renders its
+children into a buffer and turns that picture as one. A preserve3d group has **no buffer of its own**: its children are
+drawn straight into the group's parent, each in its own 3D position in the group's space, so cards at different `z`
+inside a group that turns (a card stack, an orbiting ring of cards) move relative to one another in 3D and each is
+warped on its own. A child's placement is the group's matrix times its own, as if the matrices were nested in 3D
+(`W_total = W_G * (A_G * W_C * A_G^-1)`, deeper for deeper nesting); the child itself is still drawn flat, with the
+groups' 2D matrices applied, and then warped like any layer with a 3D transform (see
+[3D transforms and the camera](#3d-transforms-and-the-camera)). The scene's `camera` applies to all of them, and the
+layers inside a preserve3d group are warped even when they have no 3D transform of their own, since the group moves
+them.
+
+**Depth sorting.** The layers a preserve3d group draws (its children, and recursively the children of preserve3d
+groups nested in it, which sort together with them) are painted in **painter's order**: farthest first, by the `z` of
+each layer's centre after its placement (before the camera's perspective, which does not change the order along a
+line of sight). A layer's centre is the middle of its box (the box an `inset` clip uses: a shape's, image's, noise's or
+mesh's width by height, a text layer's layout box, a path's bounding box), or its position `(x, y)` (where its anchor
+lands) for a group, which has no box. The sort is stable: layers at the same depth (within 1/1024 of a pixel) keep
+their document order. Only preserve3d groups sort. Every other list, a preserve3d group's parent and the children of an
+ordinary group inside it included, keeps document order; an ordinary group inside a preserve3d group is one layer to sort,
+at its position, and is drawn as a flat picture. The group as a whole is drawn at its place in its parent's list, so
+siblings above and below it stay above and below.
+
+Rules:
+
+- A preserve3d group may not have `effects`, `clip`, `mask` or `matte`, a `blendMode` other than `normal`, or be a matte
+  source: it has no buffer to apply them to. Loading a scene rejects it, naming the layer; wrap the group in an
+  ordinary group and put them there. Its `transform` and `opacity` are fine.
+- Its `opacity` is multiplied into each child it draws (CSS would flatten the group and fade the picture instead, so
+  overlapping children show through one another here). A group at `opacity` 0 draws nothing.
+- Children can have mattes among themselves (the source is a sibling in the same group, not drawn on its own), blend
+  modes, effects, clips and masks like any layer; each is applied to the layer flat, before it is warped. A matte
+  source cannot have `rotateX`, `rotateY` or `z` itself: the matte moves with the layer it cuts.
+- A `backdropBlur` child blurs the canvas as painted so far, in depth order.
+- Sorting only orders whole layers. There is no depth buffer, so two layers that cross each other (a card pushed through
+  another) do not intersect: one is entirely over the other, and a layer that is large and tilted can be sorted wrong
+  against a small one in front of part of it.
+- A preserve3d group scaled to nothing draws nothing. Its `scale` enlarges its children in the plane only, not in
+  depth (see above).
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
@@ -972,6 +1025,9 @@ projection is orthographic: rotations foreshorten but nothing shrinks with dista
 - 3D is a warp of a flat layer, not a 3D renderer: no depth buffer, no intersecting layers, no lighting, one scene
   camera, no mipmaps (see [3D transforms and the camera](#3d-transforms-and-the-camera)), and a layer that hangs off the
   canvas is cut at the canvas edge (plus margin) before it is turned.
+- A `preserve3d` group sorts whole layers by the depth of their centre (painter's order); it cannot have effects, a
+  clip, a mask, a matte or a blend mode, and multiplies its `opacity` into its children instead of fading them as one
+  picture (see [preserve3d groups](#preserve3d-groups)).
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.

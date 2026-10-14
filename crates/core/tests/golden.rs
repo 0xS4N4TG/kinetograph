@@ -301,7 +301,14 @@ fn camera_matches_golden() {
     // magnifying a card until it hangs off the top and right edges, and a thin
     // bar tipped toward the eye until its far end passes the eye plane (that
     // end is cut off, not mirrored back), drawn half transparent under the
-    // rest.
+    // rest. Also two preserve3d groups at the bottom: a stack of five cards
+    // at different depths, listed out of depth order, turned about both axes
+    // (two of them at one depth, so the later one in the list is on top), and
+    // an orbit of four cards facing outward around a ring at 90% opacity,
+    // turned a long way about the vertical axis, so some show their backs.
+    // The ring holds an image matted by an ellipse, a flat group card with
+    // text, and a nested preserve3d group of two discs on either side of the
+    // ring's centre, turned on its own, which sort among the ring's cards.
     let frame = render_still(scene("tests/scenes/camera.json"), 15).unwrap();
     check("camera", &frame);
 }

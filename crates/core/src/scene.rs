@@ -856,6 +856,10 @@ pub struct ImageLayer {
 #[serde(rename_all = "camelCase")]
 pub struct GroupLayer {
     pub children: Vec<Layer>,
+    /// CSS's `transform-style: preserve-3d`: the children are drawn straight
+    /// into the group's parent, in their own 3D positions, sorted by depth.
+    #[serde(default)]
+    pub preserve3d: bool,
 }
 
 /// The raw `feTurbulence` image over a box at the layer's origin.
@@ -1083,7 +1087,12 @@ impl Scene {
                     non_negative("width", &i.width)?;
                     non_negative("height", &i.height)?;
                 }
-                LayerKind::Group(g) => self.validate_layers(&g.children, ids)?,
+                LayerKind::Group(g) => {
+                    if g.preserve3d {
+                        validate_preserve3d(layer, layers)?;
+                    }
+                    self.validate_layers(&g.children, ids)?;
+                }
                 LayerKind::Noise(n) => {
                     non_negative("width", &n.width)?;
                     non_negative("height", &n.height)?;
@@ -1196,6 +1205,40 @@ fn validate_matte(layer: &Layer, matte: &Matte, siblings: &[Layer]) -> Result<()
              layer it cuts, so put them on that layer instead",
             source.id
         ));
+    }
+    Ok(())
+}
+
+/// A `preserve3d` group has no buffer of its own, so it has nowhere to run
+/// effects, a clip, a mask or a matte, or to blend as a whole.
+fn validate_preserve3d(group: &Layer, siblings: &[Layer]) -> Result<()> {
+    let bad = |msg: &str| {
+        Err(Error::Scene(format!(
+            "layer {:?}: a preserve3d group {msg}; put the group inside another group and \
+             give that one what it needs",
+            group.id
+        )))
+    };
+    if !group.effects.is_empty() {
+        return bad("cannot have effects");
+    }
+    if group.clip.is_some() {
+        return bad("cannot have a clip");
+    }
+    if group.mask.is_some() {
+        return bad("cannot have a mask");
+    }
+    if group.matte.is_some() {
+        return bad("cannot have a matte");
+    }
+    if group.blend_mode != BlendMode::Normal {
+        return bad("must use the normal blendMode");
+    }
+    if siblings
+        .iter()
+        .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == group.id))
+    {
+        return bad("cannot be a matte source");
     }
     Ok(())
 }
@@ -2943,5 +2986,92 @@ mod tests {
                 "{transform}: {msg}"
             );
         }
+    }
+
+    /// A scene whose first layer is a `preserve3d` group with `extra` fields
+    /// spliced in, beside a plain shape that the group can matte or be mattes
+    /// by.
+    fn group_scene(extra: &str) -> std::result::Result<Scene, String> {
+        let json = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+              {{"id": "stack", "type": "group", "preserve3d": true, {extra}
+                "children": [{{"id": "card", "type": "shape", "transform": {{"z": 10}},
+                  "shape": {{"kind": "rect", "width": 5, "height": 5}}, "fill": "#fff"}}]}},
+              {{"id": "other", "type": "shape", "matte": {{"layer": "stack"}},
+                "shape": {{"kind": "rect", "width": 5, "height": 5}}, "fill": "#fff"}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new()).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn preserve3d_defaults_to_off_and_parses() {
+        let json = r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+            {"id": "plain", "type": "group", "children": []},
+            {"id": "deep", "type": "group", "preserve3d": true, "children": []}]}"#;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let flags: Vec<_> = scene
+            .layers
+            .iter()
+            .map(|l| matches!(&l.kind, LayerKind::Group(g) if g.preserve3d))
+            .collect();
+        assert_eq!(flags, [false, true]);
+    }
+
+    #[test]
+    fn rejects_what_a_preserve3d_group_cannot_do_naming_the_layer() {
+        // The group is also a matte source here (the shape's matte), so the
+        // plain cases have to drop that.
+        let parse = |extra: &str| {
+            let json = format!(
+                r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                  {{"id": "stack", "type": "group", "preserve3d": true, {extra} "children": []}},
+                  {{"id": "other", "type": "group", "children": []}}]}}"##
+            );
+            Scene::from_json(&json, PathBuf::new()).map_err(|e| e.to_string())
+        };
+        assert!(parse(r#""transform": {"rotateY": 30},"#).is_ok());
+        assert!(parse(r#""opacity": 0.5,"#).is_ok());
+        let cases = [
+            (r#""effects": [{"type": "blur", "radius": 2}],"#, "effects"),
+            (
+                r#""clip": {"kind": "ellipse", "cx": 0, "cy": 0, "rx": 5, "ry": 5},"#,
+                "clip",
+            ),
+            (
+                r##""mask": {"gradient": {"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0,
+                    "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]}},"##,
+                "mask",
+            ),
+            (r#""matte": {"layer": "other"},"#, "matte"),
+            (r#""blendMode": "multiply","#, "blendMode"),
+        ];
+        for (extra, want) in cases {
+            let msg = parse(extra).unwrap_err();
+            assert!(
+                msg.contains("\"stack\"") && msg.contains("preserve3d") && msg.contains(want),
+                "{extra}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_preserve3d_group_cannot_be_a_matte_source() {
+        let msg = group_scene("").unwrap_err();
+        assert!(
+            msg.contains("\"stack\"") && msg.contains("matte source"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn preserve3d_children_may_use_mattes_and_3d_among_themselves() {
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+          {"id": "stack", "type": "group", "preserve3d": true, "children": [
+            {"id": "photo", "type": "group", "children": [], "transform": {"z": 5, "rotateY": 20},
+             "matte": {"layer": "cut"}},
+            {"id": "cut", "type": "group", "children": []},
+            {"id": "inner", "type": "group", "preserve3d": true, "opacity": 0.5,
+             "transform": {"rotateX": 30}, "children": []}]}]}"##;
+        Scene::from_json(json, PathBuf::new()).unwrap();
     }
 }

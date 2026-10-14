@@ -27,6 +27,10 @@ use crate::resolve::{ResolvedCamera, ResolvedTransform};
 /// edge on, a layer scaled to nothing): there is nothing to draw.
 const SINGULAR: f64 = 1e-12;
 
+/// Depths closer than this many pixels are a tie when sorting (see
+/// `sort_far_to_near`).
+const DEPTH_STEP: f64 = 1.0 / 1024.0;
+
 /// `W` for a layer, or `None` when it has no 3D transform of its own.
 pub fn layer_world(t: &ResolvedTransform) -> Option<DMat4> {
     if t.rotate_x == 0.0 && t.rotate_y == 0.0 && t.z == 0.0 {
@@ -99,6 +103,45 @@ pub fn is_identity(h: &DMat3) -> bool {
     h.abs_diff_eq(DMat3::IDENTITY, 1e-9)
 }
 
+/// `W_G . A_G . W_C . A_G^-1` generalised: the world matrix of a child whose
+/// parent in a `preserve3d` group has world `parent_world` and flat matrix
+/// `parent_flat` (both relative to the outermost such group's parent), when the
+/// child's own `W` is `child`. The child's flat matrix is `parent_flat` times
+/// its own `A`.
+pub fn child_world(parent_world: DMat4, parent_flat: Affine, child: DMat4) -> DMat4 {
+    parent_world * flat(parent_flat) * child * flat(parent_flat.inverse())
+}
+
+/// The depth of `point` (in the plane of space 0, flat coordinates) after the
+/// layer is moved by `world`: the z that decides painter's order.
+pub fn depth(world: &DMat4, point: (f64, f64)) -> f64 {
+    world.transform_point3(DVec3::new(point.0, point.1, 0.0)).z
+}
+
+/// Sorts `items` farthest first (smallest z first), keeping document order
+/// among ties. Depths are compared in steps of 1/1024 pixel, so layers a
+/// rotation leaves at the same depth up to rounding error stay in document
+/// order instead of swapping on the last bit.
+pub fn sort_far_to_near<T>(items: &mut [T], z: impl Fn(&T) -> f64) {
+    // `sort_by` is stable.
+    items.sort_by(|a, b| {
+        let step = |z: f64| (z / DEPTH_STEP).round();
+        step(z(a)).total_cmp(&step(z(b)))
+    });
+}
+
+/// A layer's whole 3D matrix straight from the formula in the module docs, to
+/// check the factored forms against.
+#[cfg(test)]
+pub(crate) fn full_matrix(t: &ResolvedTransform) -> DMat4 {
+    DMat4::from_translation(DVec3::new(t.x, t.y, t.z))
+        * DMat4::from_rotation_x(t.rotate_x.to_radians())
+        * DMat4::from_rotation_y(t.rotate_y.to_radians())
+        * DMat4::from_rotation_z(t.rotation.to_radians())
+        * DMat4::from_scale(DVec3::new(t.scale, t.scale, 1.0))
+        * DMat4::from_translation(DVec3::new(-t.anchor_x, -t.anchor_y, 0.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,16 +165,6 @@ mod tests {
             rotate_y: ry,
             z,
         }
-    }
-
-    /// The matrix straight from the formula in the module docs.
-    fn full_matrix(t: &ResolvedTransform) -> DMat4 {
-        DMat4::from_translation(DVec3::new(t.x, t.y, t.z))
-            * DMat4::from_rotation_x(t.rotate_x.to_radians())
-            * DMat4::from_rotation_y(t.rotate_y.to_radians())
-            * DMat4::from_rotation_z(t.rotation.to_radians())
-            * DMat4::from_scale(DVec3::new(t.scale, t.scale, 1.0))
-            * DMat4::from_translation(DVec3::new(-t.anchor_x, -t.anchor_y, 0.0))
     }
 
     fn near(a: DMat4, b: DMat4) -> bool {
@@ -321,5 +354,64 @@ mod tests {
         let q = inv * DVec3::new(0.0, -40.0, 1.0);
         let plane_y = q.y / q.z;
         assert!((q.z - 1.0 / w_at(plane_y)).abs() < 1e-9 * q.z.abs().max(1.0));
+    }
+
+    #[test]
+    fn child_worlds_compose_like_nested_matrices() {
+        // A preserve3d group at (100, 80), turned about y, holds a card at
+        // (30, 10) with z = 20. The card's full matrix in the parent of the
+        // group is M_G . M_C; its world matrix times its flat matrix must
+        // equal that.
+        let g = transform((100.0, 80.0), 15.0, 1.2, (0.0, 0.0), (0.0, 40.0, 0.0));
+        let c = transform((30.0, 10.0), -5.0, 1.0, (4.0, 3.0), (20.0, 0.0, 20.0));
+        let (wg, wc) = (layer_world(&g).unwrap(), layer_world(&c).unwrap());
+        let world = child_world(wg, g.matrix(), wc);
+        let flat_c = g.matrix() * c.matrix();
+        assert!(near(
+            world * flat(flat_c),
+            full_matrix(&g) * full_matrix(&c)
+        ));
+        // A child with no 3D of its own keeps the group's world.
+        let plain = transform((30.0, 10.0), 0.0, 1.0, (0.0, 0.0), (0.0, 0.0, 0.0));
+        assert!(layer_world(&plain).is_none());
+        let both = child_world(wg, g.matrix(), DMat4::IDENTITY);
+        assert!(near(both, wg));
+        assert!(near(
+            both * flat(g.matrix() * plain.matrix()),
+            full_matrix(&g) * full_matrix(&plain)
+        ));
+    }
+
+    #[test]
+    fn depth_is_the_z_of_a_point_after_the_world_matrix() {
+        let t = transform((0.0, 0.0), 0.0, 1.0, (0.0, 0.0), (0.0, 90.0, 30.0));
+        let w = layer_world(&t).unwrap();
+        // rotateY(90) sends x = 10 to z = -10, then z = 30 adds 30.
+        assert!((depth(&w, (10.0, 0.0)) - 20.0).abs() < 1e-9);
+        assert!((depth(&DMat4::IDENTITY, (10.0, 5.0))).abs() < 1e-12);
+    }
+
+    #[test]
+    fn sorting_is_far_to_near_and_stable() {
+        let mut items = [
+            ("near", 50.0),
+            ("far", -80.0),
+            ("a", 10.0),
+            ("b", 10.0),
+            ("mid", 0.0),
+            ("c", 10.0),
+        ];
+        sort_far_to_near(&mut items, |i| i.1);
+        let order: Vec<_> = items.iter().map(|i| i.0).collect();
+        assert_eq!(order, ["far", "mid", "a", "b", "c", "near"]);
+        // Depths that differ by rounding error stay in document order.
+        let mut items = [("x", 1.0 + 1e-13), ("y", 1.0), ("z", 1.0 - 1e-13)];
+        sort_far_to_near(&mut items, |i| i.1);
+        let order: Vec<_> = items.iter().map(|i| i.0).collect();
+        assert_eq!(order, ["x", "y", "z"]);
+        // Already sorted input is untouched.
+        let mut items = [1, 2, 3];
+        sort_far_to_near(&mut items, |i| f64::from(*i));
+        assert_eq!(items, [1, 2, 3]);
     }
 }
