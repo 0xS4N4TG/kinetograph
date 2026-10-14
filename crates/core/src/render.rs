@@ -2,6 +2,7 @@
 //! the compositor blends them in linear light.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use vello::kurbo::{Affine, BezPath, Ellipse, Rect, RoundedRect, Shape, Stroke};
@@ -42,6 +43,27 @@ impl Frame {
     }
 }
 
+/// Where one frame's time went, in milliseconds. Collected by
+/// [`Renderer::render_timed`]; rendering itself never reads the clock.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Timings {
+    /// Evaluating the scene's animated values.
+    pub resolve_ms: f64,
+    /// Vello drawing leaf layers into textures.
+    pub raster_ms: f64,
+    /// Colour conversion, effects and blending.
+    pub composite_ms: f64,
+    /// Encoding to sRGB 8-bit and copying back to the CPU.
+    pub readback_ms: f64,
+}
+
+#[derive(Clone, Copy)]
+enum Stage {
+    Raster,
+    Composite,
+    Readback,
+}
+
 /// Resolves `frame` (so a bad frame number fails before any GPU work) and
 /// renders it.
 pub fn render_still(scene: Scene, frame: u32) -> Result<Frame> {
@@ -70,6 +92,8 @@ pub struct Renderer {
     compositor: Compositor,
     text: TextEngine,
     images: HashMap<String, ImageData>,
+    /// `Some` while `render_timed` runs.
+    timings: Option<Timings>,
 }
 
 impl Renderer {
@@ -119,6 +143,7 @@ impl Renderer {
             compositor,
             text,
             images,
+            timings: None,
         })
     }
 
@@ -127,12 +152,48 @@ impl Renderer {
         self.render_resolved(&resolved)
     }
 
+    /// Like `render_frame`, but also reports where the time went. To make
+    /// each stage's number include the GPU's work and not just the submit,
+    /// this waits for the GPU after every step, so it is slower than
+    /// `render_frame`; use `render_frame` to time the whole frame.
+    pub fn render_timed(&mut self, frame: u32) -> Result<(Frame, Timings)> {
+        let start = Instant::now();
+        let resolved = self.scene.resolve(frame)?;
+        self.timings = Some(Timings {
+            resolve_ms: start.elapsed().as_secs_f64() * 1000.0,
+            ..Timings::default()
+        });
+        let rendered = self.render_resolved(&resolved);
+        let timings = self.timings.take().unwrap_or_default();
+        Ok((rendered?, timings))
+    }
+
+    /// Runs `f` and, when timing, waits for the GPU and adds the elapsed
+    /// time to `stage`.
+    fn timed<T>(&mut self, stage: Stage, f: impl FnOnce(&mut Self) -> T) -> T {
+        if self.timings.is_none() {
+            return f(self);
+        }
+        let start = Instant::now();
+        let out = f(self);
+        // A lost device makes the next call fail anyway.
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        if let Some(t) = self.timings.as_mut() {
+            *match stage {
+                Stage::Raster => &mut t.raster_ms,
+                Stage::Composite => &mut t.composite_ms,
+                Stage::Readback => &mut t.readback_ms,
+            } += ms;
+        }
+        out
+    }
+
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
-        let background = self
-            .compositor
-            .filled(linear_premultiplied(scene.background));
+        let color = linear_premultiplied(scene.background);
+        let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas = self.draw_layers(&scene.layers, Affine::IDENTITY, background)?;
-        let rgba = self.compositor.read_rgba8(&canvas)?;
+        let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
         self.compositor.release(canvas);
         Ok(Frame {
             width: scene.width,
@@ -155,18 +216,19 @@ impl Renderer {
             }
             let src = match &layer.kind {
                 ResolvedKind::Group { children } => {
-                    let empty = self.compositor.filled([0.0; 4]);
+                    let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
                     self.draw_layers(children, parent * layer.transform.matrix(), empty)?
                 }
                 _ => {
-                    self.rasterise(layer, parent)?;
-                    self.compositor.from_srgb8(&self.vello_view)
+                    self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
+                    self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view))
                 }
             };
-            let src = self.compositor.apply_effects(src, &layer.effects);
-            canvas = self
-                .compositor
-                .blend(canvas, src, layer.opacity, layer.blend_mode);
+            canvas = self.timed(Stage::Composite, |s| {
+                let src = s.compositor.apply_effects(src, &layer.effects);
+                s.compositor
+                    .blend(canvas, src, layer.opacity, layer.blend_mode)
+            });
         }
         Ok(canvas)
     }

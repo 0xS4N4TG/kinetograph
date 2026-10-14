@@ -102,3 +102,15 @@ fn opaque_colours_survive_the_linear_round_trip() {
     assert_eq!(&frame.rgba[4..8], [0xc0, 0xff, 0xee, 0xff]);
     assert_eq!(&frame.rgba[(5 * 4)..(5 * 4 + 4)], [0x7f, 0x3f, 0xbf, 0xff]);
 }
+
+#[test]
+fn timing_a_frame_does_not_change_its_pixels() {
+    let mut renderer = Renderer::new(example()).unwrap();
+    let plain = renderer.render_frame(20).unwrap();
+    let (timed, t) = renderer.render_timed(20).unwrap();
+    assert_eq!(plain.rgba, timed.rgba);
+    assert!(t.raster_ms > 0.0 && t.composite_ms > 0.0 && t.readback_ms > 0.0);
+    assert!(t.resolve_ms >= 0.0);
+    // Timing is off again afterwards.
+    assert_eq!(renderer.render_frame(20).unwrap().rgba, plain.rgba);
+}
