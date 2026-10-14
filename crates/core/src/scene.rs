@@ -71,6 +71,14 @@ fn two() -> Num {
     Num::Const(2.0)
 }
 
+fn eight() -> Num {
+    Num::Const(8.0)
+}
+
+fn forty_five() -> Num {
+    Num::Const(45.0)
+}
+
 fn yes() -> bool {
     true
 }
@@ -251,8 +259,35 @@ pub enum Effect {
         #[serde(default)]
         animate: bool,
     },
+    /// Replaces the layer with a halftone screen in layer space: a rotated
+    /// grid of dots whose area follows the layer's brightness.
+    Halftone {
+        /// Cell width in layer pixels, above 0.
+        #[serde(default = "eight")]
+        size: Num,
+        /// Degrees, clockwise.
+        #[serde(default = "forty_five")]
+        angle: Num,
+        #[serde(default)]
+        shape: HalftoneShape,
+        /// Dot colour; the sampled layer colour when absent.
+        color: Option<Color>,
+        /// Dark areas get the big dots instead of light ones.
+        #[serde(default)]
+        invert: bool,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HalftoneShape {
+    #[default]
+    Circle,
+    Square,
+    /// Parallel lines, thicker where the layer is brighter.
+    Line,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -367,6 +402,8 @@ impl Effect {
             | Effect::Lut { .. }
             | Effect::Grain { .. }
             | Effect::Dither { .. } => 0.0,
+            // Dots stay inside their cells, which only sample the layer.
+            Effect::Halftone { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -695,6 +732,14 @@ impl Scene {
                         seed,
                         ..
                     } => validate_dither(&layer.id, *mode, levels, size, *seed)?,
+                    Effect::Halftone { size, .. } => {
+                        if size.min() <= 0.0 {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: halftone size must be greater than 0",
+                                layer.id
+                            )));
+                        }
+                    }
                     Effect::Lut { src, .. } if src.trim().is_empty() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: lut needs a src, the path of a .cube file",
@@ -1605,6 +1650,83 @@ mod tests {
         // An unknown mode is the JSON parser's complaint.
         let msg = dither(r#""mode": "bayer""#);
         assert!(msg.contains("bayer"), "{msg}");
+    }
+
+    #[test]
+    fn parses_halftone_with_defaults() {
+        let scene = effects_of(
+            r##"[{"type": "halftone"},
+                {"type": "halftone", "shape": "line", "color": "#ff000080", "invert": true,
+                 "size": [{"frame": 0, "value": 4}, {"frame": 9, "value": 12}], "angle": 15}]"##,
+        );
+        let Effect::Halftone {
+            size,
+            angle,
+            shape,
+            color,
+            invert,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a halftone");
+        };
+        assert_eq!((size.at(0.0), angle.at(0.0)), (8.0, 45.0));
+        assert_eq!(
+            (*shape, *color, *invert),
+            (HalftoneShape::Circle, None, false)
+        );
+        let Effect::Halftone {
+            size,
+            angle,
+            shape,
+            color,
+            invert,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a halftone");
+        };
+        assert_eq!((size.at(9.0), angle.at(0.0)), (12.0, 15.0));
+        assert_eq!(*shape, HalftoneShape::Line);
+        assert_eq!(color.map(|c| (c.r, c.a)), Some((255, 128)));
+        assert!(*invert);
+        // The dots stay in their cells.
+        assert_eq!(scene.margin(), 0);
+        // `null` is the same as leaving the colour out.
+        assert!(scene_with(r#""effects": [{"type": "halftone", "color": null}],"#).is_ok());
+        // A halftone of a group has nothing special to measure.
+        assert!(
+            Scene::from_json(
+                r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                    {"id": "g", "type": "group", "children": [], "effects": [{"type": "halftone"}]}]}"#,
+                PathBuf::new()
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_bad_halftone_naming_the_layer() {
+        let halftone = |fields: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "halftone", {fields}}}],"#
+            ))
+            .unwrap_err()
+            .to_string()
+        };
+        for fields in [
+            r#""size": 0"#,
+            r#""size": -3"#,
+            r#""size": [{"frame": 0, "value": 8}, {"frame": 9, "value": 0}]"#,
+        ] {
+            let msg = halftone(fields);
+            assert!(
+                msg.contains("layer \"box\"")
+                    && msg.contains("halftone size must be greater than 0"),
+                "{fields}: {msg}"
+            );
+        }
+        // An unknown shape is the JSON parser's complaint.
+        let msg = halftone(r#""shape": "star""#);
+        assert!(msg.contains("star"), "{msg}");
     }
 
     const SHADER: &str =

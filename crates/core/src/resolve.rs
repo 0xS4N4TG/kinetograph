@@ -5,9 +5,9 @@ use vello::kurbo::Affine;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
-    BlendMode, Clip, DitherMode, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer,
-    LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, Paint,
-    Scene, Shadow, Stop, Transform,
+    BlendMode, Clip, DitherMode, Effect, Extend, Geometry, Gradient, GradientGeometry,
+    HalftoneShape, Layer, LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS,
+    MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform,
 };
 
 /// The time a scene is evaluated at.
@@ -103,8 +103,27 @@ pub enum ResolvedEffect {
     },
     Grain(ResolvedGrain),
     Dither(ResolvedDither),
+    Halftone(ResolvedHalftone),
     Shader(ResolvedShader),
 }
+
+/// A halftone at one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedHalftone {
+    /// Layer pixels per cell, above 0.
+    pub size: f32,
+    /// Degrees, clockwise.
+    pub angle: f32,
+    pub shape: HalftoneShape,
+    /// Dots take this colour (its alpha scales their coverage) instead of the
+    /// layer's.
+    pub color: Option<Color>,
+    pub invert: bool,
+}
+
+/// Smallest halftone cell, in layer pixels: a cell much smaller than a pixel
+/// is noise, and it keeps the shader's division sane.
+pub const MIN_HALFTONE_SIZE: f64 = 0.01;
 
 /// A dither at one frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -588,6 +607,19 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
                 0
             },
         }),
+        Effect::Halftone {
+            size,
+            angle,
+            shape,
+            color,
+            invert,
+        } => ResolvedEffect::Halftone(ResolvedHalftone {
+            size: size.at(f).max(MIN_HALFTONE_SIZE) as f32,
+            angle: angle.at(f) as f32,
+            shape: *shape,
+            color: *color,
+            invert: *invert,
+        }),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
@@ -1004,6 +1036,51 @@ mod tests {
             }
         );
         assert_eq!(effects[2].clone().dither().frame, 0);
+    }
+
+    impl ResolvedEffect {
+        fn halftone(self) -> ResolvedHalftone {
+            let ResolvedEffect::Halftone(h) = self else {
+                panic!("not a halftone: {self:?}");
+            };
+            h
+        }
+    }
+
+    #[test]
+    fn halftone_resolves_animated_size_and_angle() {
+        let effects = effects_at(
+            r##"[{"type": "halftone", "size": [{"frame": 0, "value": 4}, {"frame": 10, "value": 14}],
+                 "angle": [{"frame": 0, "value": 0}, {"frame": 10, "value": 90}],
+                 "shape": "square", "color": "#10203040", "invert": true},
+                {"type": "halftone"}]"##,
+            5,
+        );
+        assert_eq!(
+            effects[0].clone().halftone(),
+            ResolvedHalftone {
+                size: 9.0,
+                angle: 45.0,
+                shape: HalftoneShape::Square,
+                color: Some(Color {
+                    r: 0x10,
+                    g: 0x20,
+                    b: 0x30,
+                    a: 0x40
+                }),
+                invert: true,
+            }
+        );
+        assert_eq!(
+            effects[1].clone().halftone(),
+            ResolvedHalftone {
+                size: 8.0,
+                angle: 45.0,
+                shape: HalftoneShape::Circle,
+                color: None,
+                invert: false,
+            }
+        );
     }
 
     #[test]

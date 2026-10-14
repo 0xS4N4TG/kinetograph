@@ -159,7 +159,8 @@ side.
   else is derived from the code.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
-- The colour filters, `gradientMap`, `lut`, `grain` and `dither` count nothing: they change pixels in place.
+- The colour filters, `gradientMap`, `lut`, `grain` and `dither` count nothing: they change pixels in place. `halftone`
+  counts nothing either: its dots stay inside their cells.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -423,6 +424,40 @@ gets, so gradients turn into the dotted look of a one-bit or low-colour display 
   thresholds come from an integer hash of `seed`, the cell and (if `animate`) the output frame.
 - Counts nothing in the [margin](#canvas-margin).
 
+### halftone
+
+```json
+{ "type": "halftone", "size": 8, "angle": 45 }
+{ "type": "halftone", "size": 5, "angle": 0, "shape": "line", "color": "#ffcc00", "invert": true }
+```
+
+Replaces the layer with a halftone screen, the printed-newspaper look: a grid of dots whose size follows how bright the
+layer is. The grid lives in the layer's own space, so the dots move, scale and rotate with the layer (unlike `grain`
+and `dither`, which stay on the screen).
+
+| Field | Default | Meaning |
+|---|---|---|
+| `size` | `8` | Animatable, greater than 0 (checked when the scene loads): the width of a grid cell in layer pixels. |
+| `angle` | `45` | Animatable, degrees clockwise: the rotation of the grid. 45 is the classic screen. |
+| `shape` | `circle` | `circle`, `square`, or `line` (parallel lines along the grid's x axis, whose thickness follows the layer and steps from one cell to the next along the line). |
+| `color` | none | The dot colour. Its alpha scales the dots' coverage. Without it a dot takes the colour the layer has at its cell's centre, at full alpha. |
+| `invert` | `false` | Big dots where the layer is dark instead of light. |
+
+- **What each cell does.** The layer is read once per cell, at the cell's centre, with bilinear filtering. The cell's
+  value `v` is the colour's luminance (Rec. 709, of the straight sRGB colour, as the colour filters use it) times its
+  alpha, or `(1 - luminance) * alpha` with `invert`. A transparent or black cell therefore has no dot, and a white
+  opaque one is solid. A cell whose centre lies off the texture (off the canvas, margin included) has no dot either.
+- **Dot size.** The dot's area is the fraction `v` of the cell's: a `circle` has radius `size * sqrt(v / pi)`, which is
+  where neighbouring dots touch at `v = pi/4`; above that the part of the circle inside the cell has area `v` (the
+  radius is found by bisection and reaches the half diagonal at `v = 1`, so the cell is exactly solid). A `square` has
+  side `size * sqrt(v)`, a `line` thickness `size * v`. A dot never leaves its cell.
+- **Edges** are anti-aliased over about one canvas pixel, whatever the layer's scale. A dot narrower than half a pixel
+  fades out instead of flickering.
+- **Alpha.** The output alpha is the dots' coverage (times the `color`'s alpha), so a half-transparent layer gets
+  smaller dots, not see-through ones, and an opacity set on the layer still multiplies the result afterwards.
+- Counts nothing in the [margin](#canvas-margin). Halftone on a group screens the group's combined pixels; a `blur`
+  before it is screened as it is blurred.
+
 ### backdropBlur
 
 ```json
@@ -666,7 +701,7 @@ layer.
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
-  `shader`.
+  `halftone`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
@@ -682,6 +717,10 @@ layer.
 - `grain` and `dither` are in canvas space and seeded with whole numbers from 0 to 4294967295. A seed out of range,
   or missing on a `random` dither, is an error naming the layer; a missing `grain` seed or one that is not a whole
   number is rejected by the JSON parser with a line and column. `ordered` dithering has one fixed 8x8 Bayer pattern.
+- `halftone` has one dot per cell, read at the cell's centre: it does not average the layer over the cell, so a detail
+  smaller than a cell can fall between samples. There is one screen (one angle), not the four of colour print; dots
+  never overlap their neighbours, so the square and circle are cut at the cell's sides. Its cells are in layer space, so
+  a screen on a layer that is scaled down a lot is finer than a pixel and aliases.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.

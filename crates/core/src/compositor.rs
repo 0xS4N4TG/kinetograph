@@ -19,6 +19,9 @@
 //! They use `filtered_layout` instead: the layer, a sampler and one uniform
 //! block, run by `run_filtered_pass`.
 //!
+//! The halftone pass (`shaders/halftone.wgsl`) reads the layer at cell
+//! centres through the filtered layout, with the layer's matrix.
+//!
 //! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`) are
 //! compiled with `shaders/hash.wgsl` in front of them (`shader_module`).
 //!
@@ -49,9 +52,11 @@ use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::resolve::{
     ResolvedDither, ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedGrain,
-    ResolvedShader, ResolvedShadow,
+    ResolvedHalftone, ResolvedShader, ResolvedShadow,
 };
-use crate::scene::{BlendMode, DitherMode, MAX_GRADIENT_MAP_STOPS, MaskMode, MatteMode};
+use crate::scene::{
+    BlendMode, DitherMode, HalftoneShape, MAX_GRADIENT_MAP_STOPS, MaskMode, MatteMode,
+};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -96,6 +101,8 @@ pub struct Compositor {
     gradient_map: wgpu::RenderPipeline,
     grain: wgpu::RenderPipeline,
     dither: wgpu::RenderPipeline,
+    /// On `filtered_layout`: it reads the layer between texels.
+    halftone: wgpu::RenderPipeline,
     /// For `lut`: the layer, a 3D texture and the pass's uniforms.
     lut_layout: wgpu::BindGroupLayout,
     lut: wgpu::RenderPipeline,
@@ -107,11 +114,9 @@ pub struct Compositor {
     shader_sampler: wgpu::Sampler,
     /// For passes that resample the layer: the layer (filterable), a
     /// bilinear sampler and a uniform block.
-    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
     filtered_layout: wgpu::BindGroupLayout,
     #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
     filtered_pipeline_layout: wgpu::PipelineLayout,
-    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
     filtered_sampler: wgpu::Sampler,
     /// One pipeline per distinct custom shader, by `shader::compose` text.
     shaders: HashMap<String, wgpu::RenderPipeline>,
@@ -148,6 +153,8 @@ impl Compositor {
         );
         let grain_shader = shader_module(device, "grain", include_str!("shaders/grain.wgsl"));
         let dither_shader = shader_module(device, "dither", include_str!("shaders/dither.wgsl"));
+        let halftone_shader =
+            shader_module(device, "halftone", include_str!("shaders/halftone.wgsl"));
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -191,6 +198,13 @@ impl Compositor {
                 bind_group_layouts: &[Some(&filtered_layout)],
                 immediate_size: 0,
             });
+        let halftone = fullscreen_pipeline(
+            device,
+            &filtered_pipeline_layout,
+            &halftone_shader,
+            "fs_halftone",
+            LINEAR_FORMAT,
+        );
         let lut_layout = lut_bind_group_layout(device);
         let lut_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("lut"),
@@ -271,6 +285,7 @@ impl Compositor {
             gradient_map: pipeline(&gradient_map_shader, "fs_gradient_map", LINEAR_FORMAT),
             grain: pipeline(&grain_shader, "fs_grain", LINEAR_FORMAT),
             dither: pipeline(&dither_shader, "fs_dither", LINEAR_FORMAT),
+            halftone,
             lut_layout,
             lut,
             luts,
@@ -428,7 +443,7 @@ impl Compositor {
     pub fn apply_effects(
         &mut self,
         mut src: Tex,
-        _layer_matrix: Affine,
+        layer_matrix: Affine,
         effects: &[ResolvedEffect],
         backdrop: Option<&Tex>,
         coverage: Option<&Tex>,
@@ -480,6 +495,9 @@ impl Compositor {
                 }
                 ResolvedEffect::Grain(_) => {}
                 ResolvedEffect::Dither(dither) => src = self.dither(src, &dither),
+                ResolvedEffect::Halftone(halftone) => {
+                    src = self.halftone(src, layer_matrix, &halftone);
+                }
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -615,6 +633,21 @@ impl Compositor {
             &src.view,
             &src.view,
             &dither_values(dither, self.margin),
+            &target.view,
+        );
+        self.release(src);
+        target
+    }
+
+    /// Replaces `src` with a halftone screen of it, laid out in the layer's
+    /// space (`layer_matrix` takes that to texels). `src` goes back to the
+    /// pool; the result is a new texture.
+    fn halftone(&mut self, src: Tex, layer_matrix: Affine, halftone: &ResolvedHalftone) -> Tex {
+        let target = self.acquire();
+        self.run_filtered_pass(
+            &self.halftone,
+            &src.view,
+            &floats(&halftone_values(halftone, layer_matrix)),
             &target.view,
         );
         self.release(src);
@@ -948,7 +981,6 @@ impl Compositor {
 
     /// Like `run_pass`, for a pipeline on `filtered_layout`: `input` is read
     /// through a bilinear sampler.
-    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
     fn run_filtered_pass(
         &self,
         pipeline: &wgpu::RenderPipeline,
@@ -1257,6 +1289,58 @@ fn dither_values(dither: &ResolvedDither, margin: u32) -> Vec<u8> {
     bytes
 }
 
+/// A halftone as `shaders/halftone.wgsl` reads it: the inverse of the layer
+/// matrix (its linear part, then its translation), the cell size and grid
+/// angle, the matrix's linear part, the options (shape, invert, whether
+/// there is a tint) and the tint as linear straight colour plus alpha. A
+/// matrix that cannot be inverted (a layer scaled to nothing) has nothing to
+/// draw, so its inverse is zeros.
+fn halftone_values(halftone: &ResolvedHalftone, layer_matrix: Affine) -> [f32; 20] {
+    let m = layer_matrix.as_coeffs();
+    let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
+        layer_matrix.inverse().as_coeffs()
+    } else {
+        [0.0; 6]
+    };
+    let tint = halftone.color.map(|c| {
+        let [r, g, b, a] = c.linear_premultiplied();
+        // Back to straight: the shader scales by the alpha itself.
+        if a > 0.0 {
+            [r / a, g / a, b / a, a]
+        } else {
+            [0.0; 4]
+        }
+    });
+    let shape = match halftone.shape {
+        HalftoneShape::Circle => 0.0,
+        HalftoneShape::Square => 1.0,
+        HalftoneShape::Line => 2.0,
+    };
+    let [tr, tg, tb, ta] = tint.unwrap_or([0.0; 4]);
+    [
+        inverse[0] as f32,
+        inverse[1] as f32,
+        inverse[2] as f32,
+        inverse[3] as f32,
+        inverse[4] as f32,
+        inverse[5] as f32,
+        halftone.size,
+        halftone.angle.to_radians(),
+        m[0] as f32,
+        m[1] as f32,
+        m[2] as f32,
+        m[3] as f32,
+        shape,
+        f32::from(u8::from(halftone.invert)),
+        f32::from(u8::from(tint.is_some())),
+        0.0,
+        tr as f32,
+        tg as f32,
+        tb as f32,
+        ta as f32,
+    ]
+}
+
 /// Little-endian bytes of a uniform block made of `f32`s.
 fn floats(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
@@ -1422,6 +1506,163 @@ mod tests {
         assert_eq!(
             f32::from_le_bytes(<[u8; 4]>::try_from(&colour[8..12]).unwrap()),
             0.0
+        );
+    }
+
+    fn halftone(shape: HalftoneShape) -> ResolvedHalftone {
+        ResolvedHalftone {
+            size: 8.0,
+            angle: 90.0,
+            shape,
+            color: None,
+            invert: false,
+        }
+    }
+
+    #[test]
+    fn halftone_values_carry_the_matrix_both_ways() {
+        let matrix = Affine::translate((10.0, 20.0)) * Affine::scale(2.0);
+        let values = halftone_values(
+            &ResolvedHalftone {
+                color: Some(Color {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 128,
+                }),
+                invert: true,
+                ..halftone(HalftoneShape::Line)
+            },
+            matrix,
+        );
+        // The inverse (linear part, then translation): x / 2 - 5.
+        assert_eq!(values[..6], [0.5, 0.0, 0.0, 0.5, -5.0, -10.0]);
+        assert_eq!(values[6], 8.0);
+        assert!((values[7] - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert_eq!(values[8..12], [2.0, 0.0, 0.0, 2.0]);
+        // Line, inverted, tinted; the tint is straight, so only its alpha
+        // is 128/255.
+        assert_eq!(values[12..15], [2.0, 1.0, 1.0]);
+        assert_eq!(values[16..19], [1.0, 0.0, 0.0]);
+        assert!((values[19] - 128.0 / 255.0).abs() < 1e-6);
+        let plain = halftone_values(&halftone(HalftoneShape::Circle), matrix);
+        assert_eq!(plain[12..15], [0.0, 0.0, 0.0]);
+        // Nothing to invert for a layer scaled to nothing.
+        let flat = halftone_values(&halftone(HalftoneShape::Circle), Affine::scale(0.0));
+        assert_eq!(flat[..6], [0.0; 6]);
+    }
+
+    /// `circle_radius` in shaders/halftone.wgsl, in units of the cell.
+    fn circle_radius(v: f64) -> f64 {
+        if v <= std::f64::consts::FRAC_PI_4 {
+            return (v / std::f64::consts::PI).sqrt();
+        }
+        let (mut lo, mut hi) = (0.5_f64, 0.5_f64.sqrt());
+        for _ in 0..10 {
+            let r = 0.5 * (lo + hi);
+            let segments = r * r * (0.5 / r).acos() - 0.5 * (r * r - 0.25).sqrt();
+            if std::f64::consts::PI * r * r - 4.0 * segments < v {
+                lo = r;
+            } else {
+                hi = r;
+            }
+        }
+        hi
+    }
+
+    /// `coverage` in shaders/halftone.wgsl.
+    fn coverage(dist: f64, r: f64, aa: f64) -> f64 {
+        ((r - dist) / aa + 0.5).clamp(0.0, 1.0) * (2.0 * r / aa).clamp(0.0, 1.0)
+    }
+
+    /// The coverage of a unit cell at `(x, y)` from its centre, as
+    /// `fs_halftone` works it out for a pixel `aa` of a cell wide.
+    fn dot(shape: HalftoneShape, v: f64, aa: f64, x: f64, y: f64) -> f64 {
+        let grow = 0.5 * aa * v;
+        match shape {
+            HalftoneShape::Circle => coverage(x.hypot(y), circle_radius(v) + grow, aa),
+            HalftoneShape::Square => coverage(x.abs().max(y.abs()), 0.5 * v.sqrt() + grow, aa),
+            HalftoneShape::Line => coverage(y.abs(), 0.5 * v + grow, aa),
+        }
+    }
+
+    /// The mean of `dot` over the cell on an n x n grid.
+    fn dot_area(shape: HalftoneShape, v: f64, aa: f64) -> f64 {
+        let n = 400;
+        let at = |i: usize| (i as f64 + 0.5) / n as f64 - 0.5;
+        let sum: f64 = (0..n * n)
+            .map(|i| dot(shape, v, aa, at(i % n), at(i / n)))
+            .sum();
+        sum / (n * n) as f64
+    }
+
+    #[test]
+    fn dots_cover_the_fraction_of_the_cell_that_the_value_asks_for() {
+        // Pixels a thousandth of a cell wide, so the soft edge is negligible.
+        let aa = 0.001;
+        for shape in [
+            HalftoneShape::Circle,
+            HalftoneShape::Square,
+            HalftoneShape::Line,
+        ] {
+            // The circle's area is exact on both sides of the point where
+            // neighbouring dots touch (pi/4 = 0.785).
+            for v in [0.05, 0.25, 0.5, 0.78, 0.8, 0.9, 0.97] {
+                let area = dot_area(shape, v, aa);
+                assert!((area - v).abs() < 0.004, "{shape:?} {v}: {area}");
+            }
+        }
+    }
+
+    #[test]
+    fn full_value_is_solid_and_zero_is_empty() {
+        // A pixel a hundredth of a cell wide: every point of the cell,
+        // corners included, must be fully covered at v = 1, and nothing at
+        // v = 0, not even a faint speck at the centre.
+        for shape in [
+            HalftoneShape::Circle,
+            HalftoneShape::Square,
+            HalftoneShape::Line,
+        ] {
+            for i in 0..=40 {
+                for j in 0..=40 {
+                    let (x, y) = (i as f64 / 40.0 - 0.5, j as f64 / 40.0 - 0.5);
+                    assert_eq!(dot(shape, 1.0, 0.01, x, y), 1.0, "{shape:?} {x} {y}");
+                    assert_eq!(dot(shape, 0.0, 0.01, x, y), 0.0, "{shape:?} {x} {y}");
+                }
+            }
+        }
+        // And the circle's radius is the half diagonal there.
+        assert_eq!(circle_radius(1.0), 0.5_f64.sqrt());
+    }
+
+    #[test]
+    fn dots_grow_smoothly_and_the_edge_is_one_pixel_wide() {
+        let mut last = 0.0;
+        for i in 0..=100 {
+            let r = circle_radius(f64::from(i) / 100.0);
+            assert!(r >= last, "{i}: {r} < {last}");
+            last = r;
+        }
+        // Either side of the touching point the radius is continuous.
+        let touch = std::f64::consts::FRAC_PI_4;
+        assert!((circle_radius(touch - 1e-6) - circle_radius(touch + 1e-6)).abs() < 5e-4);
+        // A dot of radius 0.25 fades from full to nothing over one pixel
+        // (aa = 0.02 of a cell) around its edge.
+        let edge = |d: f64| coverage(d, 0.25, 0.02);
+        assert_eq!(edge(0.25 - 0.01), 1.0);
+        assert_eq!(edge(0.25 + 0.01), 0.0);
+        assert!((edge(0.25) - 0.5).abs() < 1e-12);
+        // A speck narrower than half a pixel dims instead of holding at half.
+        assert!(coverage(0.0, 0.001, 0.02) < 0.1);
+        // The shader solves the same equation the same number of times.
+        let wgsl = include_str!("shaders/halftone.wgsl");
+        assert!(
+            wgsl.contains("PI * r * r - 4.0 * (r * r * acos(0.5 / r) - 0.5 * sqrt(r * r - 0.25))")
+        );
+        assert!(wgsl.contains("i < 10"));
+        assert!(
+            wgsl.contains("clamp((r - dist) / aa + 0.5, 0.0, 1.0) * clamp(2.0 * r / aa, 0.0, 1.0)")
         );
     }
 

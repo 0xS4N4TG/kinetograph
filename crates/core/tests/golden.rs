@@ -226,3 +226,15 @@ fn dither_matches_golden() {
     let frame = render_still(scene("tests/scenes/dither.json"), 15).unwrap();
     check("dither", &frame);
 }
+
+#[test]
+fn halftone_matches_golden() {
+    // Frame 15 of 30: the animated cell sizes and grid angles are half way.
+    // Covers circle, square and line dots on grey ramps (solid at white,
+    // empty at black), an image in its own colours and inverted in a given
+    // colour, text rotating and scaling so the screen turns with the layer, a
+    // scaled group hanging off the left and bottom edges, and half-transparent
+    // layers whose alpha and a colour's alpha must scale the dots.
+    let frame = render_still(scene("tests/scenes/halftone.json"), 15).unwrap();
+    check("halftone", &frame);
+}
