@@ -170,11 +170,15 @@ fn a_margin_does_not_move_or_change_the_canvas() {
     let plain = render_still(scene(""), 0).unwrap();
     let padded = render_still(scene(shadow), 0).unwrap();
     // The ghost layer is white on a dark background, so ignore its corner.
+    // With a margin Vello draws the disc at a translated position, where f32
+    // rounding of the edge can flip an MSAA sample; after the blur that is at
+    // most one level. A canvas moved by even one pixel differs by tens.
     for (i, (a, b)) in plain.rgba.chunks(4).zip(padded.rgba.chunks(4)).enumerate() {
         let (x, y) = (i % 96, i / 96);
         if x < 4 && y < 4 {
             continue;
         }
-        assert_eq!(a, b, "pixel ({x}, {y})");
+        let close = a.iter().zip(b).all(|(p, q)| p.abs_diff(*q) <= 1);
+        assert!(close, "pixel ({x}, {y}): {a:?} vs {b:?}");
     }
 }
