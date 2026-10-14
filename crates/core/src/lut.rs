@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::scene::{Effect, Layer, LayerKind, Scene};
+use crate::scene::{Effect, Layer, Scene, walk_layers};
 
 pub const MIN_LUT_SIZE: u32 = 2;
 pub const MAX_LUT_SIZE: u32 = 64;
@@ -149,16 +149,13 @@ fn triple(words: &[&str]) -> Option<[f32; 3]> {
 
 /// Every `lut` effect in the scene as (layer id, `src`), in order of use.
 fn sources(layers: &[Layer], out: &mut Vec<(String, String)>) {
-    for layer in layers {
+    walk_layers(layers, &mut |layer| {
         for effect in &layer.effects {
             if let Effect::Lut { src, .. } = effect {
                 out.push((layer.id.clone(), src.clone()));
             }
         }
-        if let LayerKind::Group(g) = &layer.kind {
-            sources(&g.children, out);
-        }
-    }
+    });
 }
 
 /// Every `lut` effect in the scene as (layer id, `src`), in order of use. A

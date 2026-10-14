@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use kinetograph_core::scene::TextAlign;
 use kinetograph_core::text::{LaidOutText, TextEngine};
 
 use crate::error::{Result, from_core, invalid};
@@ -61,9 +62,9 @@ pub fn layout_text(request: &TextLayoutRequest) -> Result<TextLayout> {
         return Err(invalid(format!("maxWidth must be greater than 0, got {w}")));
     }
     let align = match request.align.as_deref() {
-        None | Some("left") => 0.0,
-        Some("center") => 0.5,
-        Some("right") => 1.0,
+        None | Some("left") => TextAlign::Left,
+        Some("center") => TextAlign::Center,
+        Some("right") => TextAlign::Right,
         Some(other) => {
             return Err(invalid(format!(
                 "align must be left, center or right, got {other:?}"
@@ -105,21 +106,20 @@ pub fn layout_text(request: &TextLayoutRequest) -> Result<TextLayout> {
         engines.insert(key.clone(), engine);
     }
     let engine = engines.get_mut(&key).expect("inserted above");
-    // merge: stream 4's `TextEngine::layout` takes `align` and positions the
-    // lines itself; then `align_lines` goes and `align` is passed through.
     let laid_out = engine.layout(
         &request.text,
         &request.font,
         request.size as f32,
         request.line_height.map(|h| h as f32),
         request.max_width.map(|w| w as f32),
+        align,
     );
     drop(engines);
-    Ok(describe(&request.text, &laid_out, align, request.max_width))
+    Ok(describe(&request.text, &laid_out))
 }
 
 /// The shaped text as the addon returns it.
-fn describe(text: &str, laid_out: &LaidOutText, align: f64, max_width: Option<f64>) -> TextLayout {
+fn describe(text: &str, laid_out: &LaidOutText) -> TextLayout {
     // Byte offsets to code point indices, which is what `chars` counts.
     let mut code_point = vec![0_u32; text.len() + 1];
     let mut count = 0_u32;
@@ -130,7 +130,6 @@ fn describe(text: &str, laid_out: &LaidOutText, align: f64, max_width: Option<f6
         count += 1;
     }
     code_point[text.len()] = count;
-    let chars: Vec<char> = text.chars().collect();
 
     let lines: Vec<TextLine> = laid_out
         .lines
@@ -144,75 +143,25 @@ fn describe(text: &str, laid_out: &LaidOutText, align: f64, max_width: Option<f6
         })
         .collect();
 
-    // merge: Parley gives a glyph no link to the text it came from, so the
-    // index is worked out here from the run: glyph j of a run of n glyphs
-    // over k code points is code point j * k / n of it. That is exact when
-    // each glyph is one code point, and gives a ligature or a cluster the
-    // index of its first code point. Right-to-left runs, whose glyphs are in
-    // reverse order, are not handled. Stream 4 adds `char_index` to
-    // `PositionedGlyph`; use it and delete this.
-    let mut glyphs = Vec::new();
-    for run in &laid_out.runs {
-        let first = code_point[run.text_range.start.min(text.len())];
-        let last = code_point[run.text_range.end.min(text.len())];
-        let (n, k) = (run.glyphs.len() as u32, last.saturating_sub(first));
-        for (j, glyph) in run.glyphs.iter().enumerate() {
-            let offset = (j as u32 * k).checked_div(n).unwrap_or(0);
-            glyphs.push(TextGlyph {
-                char_index: first + offset,
+    let glyphs = laid_out
+        .runs
+        .iter()
+        .flat_map(|run| {
+            run.glyphs.iter().map(|glyph| TextGlyph {
+                char_index: glyph.char_index,
                 line: run.line as u32,
                 x: f64::from(glyph.x),
                 y: f64::from(glyph.y),
                 advance: f64::from(glyph.advance),
-            });
-        }
-    }
-    if align > 0.0 {
-        align_lines(
-            &mut glyphs,
-            &chars,
-            lines.len(),
-            align,
-            max_width,
-            laid_out.width,
-        );
-    }
+            })
+        })
+        .collect();
 
     TextLayout {
         width: f64::from(laid_out.width),
         height: f64::from(laid_out.height),
         lines,
         glyphs,
-    }
-}
-
-/// Moves each line right by `align` (0.5 centres, 1 right-aligns) of the room
-/// it has in the box, which is `max_width` wide or as wide as the widest
-/// line. A line's trailing spaces hang out of the box, as in CSS.
-fn align_lines(
-    glyphs: &mut [TextGlyph],
-    chars: &[char],
-    line_count: usize,
-    align: f64,
-    max_width: Option<f64>,
-    widest: f32,
-) {
-    let box_width = max_width.unwrap_or(f64::from(widest));
-    for line in 0..line_count as u32 {
-        let right = glyphs
-            .iter()
-            .filter(|g| {
-                g.line == line
-                    && chars
-                        .get(g.char_index as usize)
-                        .is_some_and(|c| !c.is_whitespace())
-            })
-            .map(|g| g.x + g.advance)
-            .fold(0.0, f64::max);
-        let shift = ((box_width - right) * align).max(0.0);
-        for g in glyphs.iter_mut().filter(|g| g.line == line) {
-            g.x += shift;
-        }
     }
 }
 

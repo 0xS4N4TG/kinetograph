@@ -142,9 +142,9 @@ pub struct InspectLayer {
 /// is out of range or a font cannot be loaded.
 pub fn inspect(scene: &Scene, frame: u32) -> Result<InspectResult> {
     let mut text = TextEngine::new(&scene.fonts, &scene.base_dir)?;
-    // merge: `scene.resolve_with_text(frame, &mut text)?` (stream 4's flex
-    // layout), so the transforms and boxes reported are the laid-out ones.
-    let resolved = scene.resolve(frame)?;
+    // The renderer's own resolve, flex layout included, so the transforms
+    // and boxes reported are the laid-out ones.
+    let resolved = scene.resolve_with_text(frame, &mut text)?;
     Ok(describe(scene, &resolved, &mut text))
 }
 
@@ -230,6 +230,7 @@ impl Walk<'_> {
                 ResolvedKind::Group {
                     children,
                     preserve3d,
+                    ..
                 },
             ) => {
                 // A `preserve3d` group places its children itself.
@@ -340,7 +341,9 @@ impl Walk<'_> {
                 _ => None,
             },
             src: match &r.kind {
-                ResolvedKind::Image { src, .. } => Some(src.clone()),
+                ResolvedKind::Image { src, .. } | ResolvedKind::Lottie { src, .. } => {
+                    Some(src.clone())
+                }
                 _ => None,
             },
             children,
@@ -377,12 +380,12 @@ impl Walk<'_> {
                 size,
                 line_height,
                 max_width,
+                align,
                 ..
             } => {
-                // merge: stream 4's `align` joins the arguments here.
-                let laid_out = self
-                    .text
-                    .layout(text, font, *size, *line_height, *max_width);
+                let laid_out =
+                    self.text
+                        .layout(text, font, *size, *line_height, *max_width, *align);
                 let width = max_width.unwrap_or(laid_out.width);
                 let b = Rect::new(0.0, 0.0, f64::from(width), f64::from(laid_out.height));
                 Boxes {
@@ -393,7 +396,8 @@ impl Walk<'_> {
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
-            | ResolvedKind::MeshGradient { width, height, .. } => {
+            | ResolvedKind::MeshGradient { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. } => {
                 let b = Rect::new(0.0, 0.0, *width, *height);
                 Boxes {
                     layer: Some(b),
@@ -401,8 +405,15 @@ impl Walk<'_> {
                     laid_out: None,
                 }
             }
-            // merge: a `Lottie` kind is a box like an image's.
-            ResolvedKind::Group { .. } => Boxes::default(),
+            // A group with a flex layout has the box the layout gave it.
+            ResolvedKind::Group { size, .. } => {
+                let b = size.map(|(width, height)| Rect::new(0.0, 0.0, width, height));
+                Boxes {
+                    layer: b,
+                    ink: None,
+                    laid_out: None,
+                }
+            }
         }
     }
 
@@ -457,6 +468,7 @@ impl Walk<'_> {
                 ResolvedKind::Group {
                     children,
                     preserve3d,
+                    ..
                 },
             ) => {
                 let mut union = None;
@@ -613,7 +625,7 @@ fn kind_name(kind: &LayerKind) -> &'static str {
         LayerKind::Group(_) => "group",
         LayerKind::Noise(_) => "noise",
         LayerKind::MeshGradient(_) => "meshGradient",
-        // merge: `LayerKind::Lottie(_) => "lottie"`.
+        LayerKind::Lottie(_) => "lottie",
     }
 }
 

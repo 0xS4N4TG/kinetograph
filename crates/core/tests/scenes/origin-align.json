@@ -1,0 +1,57 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#14161d",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    { "id": "rect-ghost", "type": "shape", "shape": { "kind": "rect", "width": 100, "height": 60 },
+      "stroke": { "color": "#ffffff44", "width": 1 }, "transform": { "x": 20, "y": 20 } },
+    { "id": "rect-centre", "type": "shape", "shape": { "kind": "rect", "width": 100, "height": 60 },
+      "fill": "#f6c177",
+      "transform": { "x": 20, "y": 20, "originX": 0.5, "originY": 0.5,
+                     "rotation": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 60 }],
+                     "scale": [{ "frame": 0, "value": 1 }, { "frame": 30, "value": 0.6 }] } },
+
+    { "id": "ellipse-corner", "type": "shape", "shape": { "kind": "ellipse", "width": 90, "height": 60 },
+      "fill": "#7aa2f7",
+      "transform": { "x": 150, "y": 20, "originX": 1, "originY": 1,
+                     "rotation": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": -50 }] } },
+
+    { "id": "path-centre", "type": "shape", "shape": { "kind": "path", "d": "M300 20 L360 20 L330 80 Z" },
+      "fill": "#06d6a0",
+      "transform": { "originX": 0.5, "originY": 0.5,
+                     "rotation": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 90 }] } },
+
+    { "id": "anchor-and-origin", "type": "shape", "shape": { "kind": "rect", "width": 60, "height": 60 },
+      "fill": "#ef476f",
+      "transform": { "x": 420, "y": 50, "anchorX": 30, "anchorY": 30, "originX": 0.5, "originY": 0.5,
+                     "rotation": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 45 }] } },
+
+    { "id": "tilt", "type": "shape", "shape": { "kind": "roundedRect", "width": 110, "height": 50, "radius": 8 },
+      "fill": "#d4a5ff",
+      "transform": { "x": 20, "y": 110, "originX": 0.5, "originY": 0.5,
+                     "rotateY": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 60 }] } },
+
+    { "id": "word", "type": "text", "text": "Origin", "font": "DM Sans", "size": 40, "color": "#ffffff",
+      "transform": { "x": 160, "y": 110, "originX": 0.5, "originY": 0.5,
+                     "rotation": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 20 }] } },
+
+    { "id": "left-box", "type": "shape", "shape": { "kind": "rect", "width": 130, "height": 70 },
+      "stroke": { "color": "#ffffff44", "width": 1 }, "transform": { "x": 20, "y": 180 } },
+    { "id": "left", "type": "text", "text": "wide line\nmid\nx", "font": "DM Sans", "size": 20,
+      "color": "#f6c177", "maxWidth": 130, "transform": { "x": 20, "y": 180 } },
+    { "id": "centre-box", "type": "shape", "shape": { "kind": "rect", "width": 130, "height": 70 },
+      "stroke": { "color": "#ffffff44", "width": 1 }, "transform": { "x": 175, "y": 180 } },
+    { "id": "centre", "type": "text", "text": "wide line\nmid\nx", "font": "DM Sans", "size": 20,
+      "color": "#7aa2f7", "maxWidth": 130, "align": "center", "transform": { "x": 175, "y": 180 } },
+    { "id": "right-box", "type": "shape", "shape": { "kind": "rect", "width": 130, "height": 70 },
+      "stroke": { "color": "#ffffff44", "width": 1 }, "transform": { "x": 330, "y": 180 } },
+    { "id": "right", "type": "text", "text": "wide line\nmid\nx", "font": "DM Sans", "size": 20,
+      "color": "#06d6a0", "maxWidth": 130, "align": "right", "transform": { "x": 330, "y": 180 } },
+
+    { "id": "widest", "type": "text", "text": "no max\nwidth", "font": "DM Sans", "size": 20,
+      "color": "#ef476f", "align": "center", "transform": { "x": 330, "y": 120 } }
+  ]
+}

@@ -20,13 +20,17 @@ use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
 use crate::compositor::{Compositor, Readback, Tex};
 use crate::error::{Error, Result};
+use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
 use crate::lut::Lut;
 use crate::mesh;
 use crate::resolve::{
-    ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
-    ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
+    ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient,
+    ResolvedGradientGeometry, ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint,
+    ResolvedScene,
 };
-use crate::scene::{BlendMode, DotOrder, Extend, LayerKind, MaskMode, Scene};
+use crate::scene::{
+    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
+};
 use crate::text::{LaidOutText, TextEngine};
 use crate::warp;
 
@@ -126,6 +130,8 @@ pub struct Renderer {
     images: HashMap<String, ImageData>,
     /// The files the fonts, images and tables were read from.
     loaded: Loaded,
+    /// The Lottie animations of the scene, painted at the size each is drawn at.
+    lotties: Lotties,
     /// `Some` while `render_timed` runs.
     timings: Option<Timings>,
     /// The textures of layers that stopped changing, kept for the next frame.
@@ -191,6 +197,7 @@ impl Renderer {
             compositor,
             text,
             images: HashMap::new(),
+            lotties: Lotties::default(),
             loaded: Loaded::default(),
             timings: None,
             cache: LayerCache::new(CACHE_BYTES),
@@ -198,7 +205,7 @@ impl Renderer {
             pages: Pages::default(),
             cache_paused: 0,
         };
-        renderer.ensure_image_renderer(!fresh.images.is_empty())?;
+        renderer.ensure_image_renderer(!fresh.images.is_empty() || !fresh.lotties.is_empty())?;
         renderer.install_assets(fresh);
         renderer.add_shaders();
         Ok(renderer)
@@ -224,7 +231,7 @@ impl Renderer {
     /// that is edited between scenes is read again.
     pub fn set_scene(&mut self, scene: Scene) -> Result<()> {
         let fresh = read_assets(&scene, &self.loaded, true)?;
-        self.ensure_image_renderer(!fresh.images.is_empty())?;
+        self.ensure_image_renderer(!fresh.images.is_empty() || !fresh.lotties.is_empty())?;
         // Nothing fails from here on.
         let margin = scene.margin();
         let resized = (scene.width, scene.height, margin)
@@ -253,7 +260,9 @@ impl Renderer {
     /// Makes the Vello renderer for image layers once a scene has an image
     /// (see `vello_images`), or when `will_have_images`.
     fn ensure_image_renderer(&mut self, will_have_images: bool) -> Result<()> {
-        if self.vello_images.is_none() && (will_have_images || !self.images.is_empty()) {
+        if self.vello_images.is_none()
+            && (will_have_images || !self.images.is_empty() || !self.lotties.is_empty())
+        {
             self.vello_images = Some(new_vello(&self.device)?);
         }
         Ok(())
@@ -268,6 +277,10 @@ impl Renderer {
         for (src, id, image) in fresh.images {
             self.images.insert(src.clone(), image);
             self.loaded.images.insert(src, id);
+        }
+        for (src, id, lottie) in fresh.lotties {
+            self.lotties.insert(src.clone(), lottie);
+            self.loaded.lotties.insert(src, id);
         }
         let mut luts = HashMap::new();
         for (src, id, lut) in fresh.luts {
@@ -321,7 +334,7 @@ impl Renderer {
     /// the caller starts the next one, and `finish_frame` collects it.
     /// Frames are finished in the order they were started.
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
-        let resolved = self.scene.resolve(frame)?;
+        let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
         self.start_resolved(&resolved)
     }
 
@@ -341,7 +354,7 @@ impl Renderer {
     /// `render_frame`; use `render_frame` to time the whole frame.
     pub fn render_timed(&mut self, frame: u32) -> Result<(Frame, Timings)> {
         let start = Instant::now();
-        let resolved = self.scene.resolve(frame)?;
+        let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
         self.timings = Some(Timings {
             resolve_ms: start.elapsed().as_secs_f64() * 1000.0,
             ..Timings::default()
@@ -432,6 +445,7 @@ impl Renderer {
             if let ResolvedKind::Group {
                 children,
                 preserve3d: true,
+                ..
             } = &layer.kind
             {
                 canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
@@ -830,7 +844,13 @@ impl Renderer {
         if let Some(mask) = &layer.mask
             && !src.bounds.is_empty()
         {
-            self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
+            // A gradient in box units is measured in the layer's box.
+            let mask_box = if mask.gradient.units == Units::Box {
+                self.layer_box(layer)?
+            } else {
+                None
+            };
+            self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix, mask_box))?;
             let whole = self.whole();
             src = self.timed(Stage::Composite, |s| {
                 s.compositor.mask(src, &s.vello_view, mask.mode, whole)
@@ -892,7 +912,7 @@ impl Renderer {
             for i in page {
                 let (layer, matrix, region) = leaves[i];
                 self.encode_leaf(layer, matrix)?;
-                has_images |= matches!(layer.kind, ResolvedKind::Image { .. });
+                has_images |= draws_image(&layer.kind);
                 let key = leaf_key(layer, matrix);
                 self.pages.page_of.insert(key, self.pages.pages.len());
                 drawn.push((key, region));
@@ -927,6 +947,7 @@ impl Renderer {
                 ResolvedKind::Group {
                     children,
                     preserve3d: false,
+                    ..
                 } => self.collect_leaves(children, matrix, leaves)?,
                 ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {}
                 _ => {
@@ -1034,14 +1055,17 @@ impl Renderer {
                 size,
                 line_height,
                 max_width,
+                align,
+                chars,
                 ..
             } => {
-                let laid_out = self
-                    .text
-                    .layout(text, font, *size, *line_height, *max_width);
-                text_bounds(&laid_out, *size, *max_width)
+                let laid_out =
+                    self.text
+                        .layout(text, font, *size, *line_height, *max_width, *align);
+                text_bounds(&laid_out, *size, *max_width, chars)
             }
             ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
             ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
         };
@@ -1064,7 +1088,7 @@ impl Renderer {
         let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
         self.encode_leaf(layer, matrix)?;
-        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }), area)
+        self.render_vello_scene(draws_image(&layer.kind), area)
     }
 
     /// Adds the leaf `layer`, drawn with `matrix`, to `vello_scene`.
@@ -1077,7 +1101,9 @@ impl Renderer {
             } => {
                 let path = geometry_path(geometry)?;
                 if let Some(paint) = fill {
-                    let (brush, brush_transform) = paint_brush(paint);
+                    // The box a gradient in box units is measured in: the
+                    // geometry, without the stroke.
+                    let (brush, brush_transform) = paint_brush(paint, Some(path.bounding_box()));
                     self.vello_scene
                         .fill(Fill::NonZero, matrix, &brush, brush_transform, &path);
                 }
@@ -1098,36 +1124,132 @@ impl Renderer {
                 color,
                 line_height,
                 max_width,
+                align,
+                chars,
             } => {
-                let laid_out = self
-                    .text
-                    .layout(text, font, *size, *line_height, *max_width);
-                let (brush, brush_transform) = paint_brush(color);
+                let laid_out =
+                    self.text
+                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let (box_width, box_height) = laid_out.box_size(*max_width);
+                let text_box = Rect::new(0.0, 0.0, box_width, box_height);
+                let (brush, brush_transform) = paint_brush(color, Some(text_box));
+                let centres = if chars.iter().any(Option::is_some) {
+                    laid_out.char_centres()
+                } else {
+                    BTreeMap::new()
+                };
                 for run in &laid_out.runs {
-                    self.vello_scene
-                        .draw_glyphs(&run.font)
-                        .transform(matrix)
-                        .brush_transform(brush_transform)
-                        .font_size(run.font_size)
-                        .hint(false)
-                        .brush(&brush)
-                        .draw(
-                            Fill::NonZero,
-                            run.glyphs.iter().map(|g| vello::Glyph {
-                                id: g.id,
-                                x: g.x,
-                                y: g.y,
-                            }),
+                    let mut plain = Vec::new();
+                    let draw = |scene: &mut vello::Scene,
+                                matrix: Affine,
+                                brush: &peniko::Brush,
+                                brush_transform: Option<Affine>,
+                                glyphs: &mut Vec<vello::Glyph>| {
+                        if glyphs.is_empty() {
+                            return;
+                        }
+                        scene
+                            .draw_glyphs(&run.font)
+                            .transform(matrix)
+                            .brush_transform(brush_transform)
+                            .font_size(run.font_size)
+                            .hint(false)
+                            .brush(brush)
+                            .draw(Fill::NonZero, glyphs.drain(..));
+                    };
+                    for g in &run.glyphs {
+                        let glyph = vello::Glyph {
+                            id: g.id,
+                            x: g.x,
+                            y: g.y,
+                        };
+                        let Some(style) = char_style(chars, g.char_index) else {
+                            plain.push(glyph);
+                            continue;
+                        };
+                        // The characters before this one are drawn first, to
+                        // keep the order of the text.
+                        draw(
+                            &mut self.vello_scene,
+                            matrix,
+                            &brush,
+                            brush_transform,
+                            &mut plain,
                         );
+                        if style.opacity <= 0.0 {
+                            continue;
+                        }
+                        let centre = centres.get(&g.char_index).copied().unwrap_or_default();
+                        let own = match style.color {
+                            Some(c) => peniko::Brush::Solid(to_peniko(c)),
+                            None => brush.clone(),
+                        }
+                        .multiply_alpha(style.opacity);
+                        let own_transform = if style.color.is_some() {
+                            None
+                        } else {
+                            brush_transform
+                        };
+                        draw(
+                            &mut self.vello_scene,
+                            matrix * char_matrix(style, centre),
+                            &own,
+                            own_transform,
+                            &mut vec![glyph],
+                        );
+                    }
+                    draw(
+                        &mut self.vello_scene,
+                        matrix,
+                        &brush,
+                        brush_transform,
+                        &mut plain,
+                    );
                 }
             }
-            ResolvedKind::Image { src, width, height } => {
+            ResolvedKind::Image {
+                src,
+                width,
+                height,
+                fit,
+            } => {
                 let image = &self.images[src];
-                let fit = Affine::scale_non_uniform(
-                    width / f64::from(image.width),
-                    height / f64::from(image.height),
-                );
-                self.vello_scene.draw_image(image, matrix * fit);
+                let size = (f64::from(image.width), f64::from(image.height));
+                if let Some(placed) = fit_image(*fit, (*width, *height), size) {
+                    // `cover` overhangs the box; the clip cuts it to the box.
+                    let cut = *fit == Fit::Cover;
+                    if cut {
+                        self.vello_scene.push_clip_layer(
+                            Fill::NonZero,
+                            matrix,
+                            &Rect::new(0.0, 0.0, *width, *height),
+                        );
+                    }
+                    self.vello_scene.draw_image(image, matrix * placed);
+                    if cut {
+                        self.vello_scene.pop_layer();
+                    }
+                }
+            }
+            // ThorVG paints the animation at the size it is drawn at, and
+            // it goes in like an image.
+            ResolvedKind::Lottie {
+                src,
+                width,
+                height,
+                time,
+                looped,
+            } => {
+                if let Some((pixels_wide, pixels_high)) = lottie_pixels((*width, *height), matrix) {
+                    let image =
+                        self.lotties
+                            .image(src, *time, *looped, pixels_wide, pixels_high)?;
+                    let to_box = Affine::scale_non_uniform(
+                        width / f64::from(pixels_wide),
+                        height / f64::from(pixels_high),
+                    );
+                    self.vello_scene.draw_image(&image, matrix * to_box);
+                }
             }
             // The box in opaque white: the noise pass fills its coverage.
             ResolvedKind::Noise { width, height, .. } => {
@@ -1191,9 +1313,15 @@ impl Renderer {
     }
 
     /// Fills the whole target (canvas and margin) with the mask's gradient,
-    /// which lives in layer space, into the Vello target.
-    fn rasterise_mask(&mut self, mask: &ResolvedMask, matrix: Affine) -> Result<()> {
-        let (brush, brush_transform) = gradient_brush(&mask.gradient);
+    /// which lives in layer space (or in the layer's box, `layer_box`), into
+    /// the Vello target.
+    fn rasterise_mask(
+        &mut self,
+        mask: &ResolvedMask,
+        matrix: Affine,
+        layer_box: Option<Rect>,
+    ) -> Result<()> {
+        let (brush, brush_transform) = gradient_brush_in(&mask.gradient, layer_box);
         let canvas = Rect::new(
             0.0,
             0.0,
@@ -1251,7 +1379,7 @@ impl Renderer {
     }
 
     /// The layer's own box in layer space, which `inset` clips are measured
-    /// from. A group has none.
+    /// from. A group has one only with a layout: the size the layout gave it.
     fn layer_box(&mut self, layer: &ResolvedLayer) -> Result<Option<Rect>> {
         Ok(match &layer.kind {
             ResolvedKind::Shape { geometry, .. } => Some(match geometry {
@@ -1268,25 +1396,22 @@ impl Renderer {
                 size,
                 line_height,
                 max_width,
+                align,
                 ..
             } => {
-                let laid_out = self
-                    .text
-                    .layout(text, font, *size, *line_height, *max_width);
-                let width = max_width.unwrap_or(laid_out.width);
-                Some(Rect::new(
-                    0.0,
-                    0.0,
-                    f64::from(width),
-                    f64::from(laid_out.height),
-                ))
+                let laid_out =
+                    self.text
+                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let (width, height) = laid_out.box_size(*max_width);
+                Some(Rect::new(0.0, 0.0, width, height))
             }
             ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
-            ResolvedKind::Group { .. } => None,
+            ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w, h)),
         })
     }
 
@@ -1391,6 +1516,7 @@ fn collect_preserve3d<'a>(
         if let ResolvedKind::Group {
             children: inner,
             preserve3d: true,
+            ..
         } = &child.kind
         {
             let inner_space = Space3d {
@@ -1451,7 +1577,16 @@ fn device_bounds(matrix: Affine, local: Rect) -> PixelRect {
 /// baseline or overhangs its advance by less (descenders, accents, italic
 /// slants). A word wider than `max_width` hangs out of the box, so the glyphs
 /// count as well.
-fn text_bounds(laid_out: &LaidOutText, size: f32, max_width: Option<f32>) -> Rect {
+///
+/// A character with its own style (`chars`) is moved, scaled and turned about
+/// its centre: its glyphs' box, grown by the same font size, goes through the
+/// character's matrix and is added.
+fn text_bounds(
+    laid_out: &LaidOutText,
+    size: f32,
+    max_width: Option<f32>,
+    chars: &[Option<ResolvedChar>],
+) -> Rect {
     let width = max_width.unwrap_or(0.0).max(laid_out.width);
     let mut b = Rect::new(0.0, 0.0, f64::from(width), f64::from(laid_out.height));
     for glyph in laid_out.runs.iter().flat_map(|run| &run.glyphs) {
@@ -1460,7 +1595,40 @@ fn text_bounds(laid_out: &LaidOutText, size: f32, max_width: Option<f32>) -> Rec
             .union_pt((f64::from(glyph.x + glyph.advance), f64::from(glyph.y)));
     }
     let em = f64::from(size).abs();
-    b.inflate(em, em)
+    let mut b = b.inflate(em, em);
+    if chars.iter().any(Option::is_some) {
+        let centres = laid_out.char_centres();
+        for glyph in laid_out.runs.iter().flat_map(|run| &run.glyphs) {
+            let Some(style) = char_style(chars, glyph.char_index) else {
+                continue;
+            };
+            let centre = centres.get(&glyph.char_index).copied().unwrap_or_default();
+            let ink = Rect::new(
+                f64::from(glyph.x),
+                f64::from(glyph.y),
+                f64::from(glyph.x + glyph.advance),
+                f64::from(glyph.y),
+            )
+            .inflate(em, em);
+            b = b.union(bounds::transformed(char_matrix(style, centre), ink));
+        }
+    }
+    b
+}
+
+/// The style of the character at code point `index`, if it has one.
+fn char_style(chars: &[Option<ResolvedChar>], index: u32) -> Option<&ResolvedChar> {
+    chars.get(index as usize).and_then(Option::as_ref)
+}
+
+/// Where a styled character goes, in text-box space: moved by its offset,
+/// then scaled and turned about its centre.
+fn char_matrix(style: &ResolvedChar, centre: (f64, f64)) -> Affine {
+    Affine::translate((style.x, style.y))
+        * Affine::translate(centre)
+        * Affine::rotate(style.rotation.to_radians())
+        * Affine::scale(style.scale)
+        * Affine::translate((-centre.0, -centre.1))
 }
 
 /// `matrix` (layer space to padded-canvas pixels) for a draw of the pixels
@@ -1534,6 +1702,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
     let ResolvedKind::Group {
         children,
         preserve3d: false,
+        ..
     } = &layer.kind
     else {
         return false;
@@ -1607,14 +1776,35 @@ fn uses_backdrop(siblings: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 
 /// The brush for a fill or text colour, and the transform to apply to it on
 /// top of the transform of whatever it paints (`None` for a solid colour).
-fn paint_brush(paint: &ResolvedPaint) -> (peniko::Brush, Option<Affine>) {
+///
+/// `layer_box` is the box of the layer being painted, which a gradient in box
+/// units is measured in (`gradient_brush_in`).
+fn paint_brush(paint: &ResolvedPaint, layer_box: Option<Rect>) -> (peniko::Brush, Option<Affine>) {
     match paint {
         ResolvedPaint::Solid(color) => (peniko::Brush::Solid(to_peniko(*color)), None),
         ResolvedPaint::Gradient(g) => {
-            let (brush, brush_transform) = gradient_brush(g);
+            let (brush, brush_transform) = gradient_brush_in(g, layer_box);
             (brush, Some(brush_transform))
         }
     }
+}
+
+/// `gradient_brush`, for a gradient that may be in box units: its coordinates
+/// are then fractions of `layer_box`, so the brush is moved to the box's
+/// corner and stretched to its size, after the gradient's own turn (SVG's
+/// `objectBoundingBox`). A box with no width or height has no extent, and so
+/// paints the last stop's colour, like any gradient without one.
+fn gradient_brush_in(g: &ResolvedGradient, layer_box: Option<Rect>) -> (peniko::Brush, Affine) {
+    let (brush, turn) = gradient_brush(g);
+    let (Units::Box, Some(b)) = (g.units, layer_box) else {
+        return (brush, turn);
+    };
+    if !(b.width() > 0.0 && b.height() > 0.0) {
+        let last = g.stops[g.stops.len() - 1].1;
+        return (peniko::Brush::Solid(to_peniko(last)), Affine::IDENTITY);
+    }
+    let to_box = Affine::translate((b.x0, b.y0)) * Affine::scale_non_uniform(b.width(), b.height());
+    (brush, to_box * turn)
 }
 
 /// A resolved gradient as a Vello brush, plus a transform to apply to the
@@ -1689,6 +1879,58 @@ fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorSto
         out.push(at(1.0, last.1));
     }
     out
+}
+
+/// Whether a leaf is drawn with an image (the image renderer, `vello_images`).
+fn draws_image(kind: &ResolvedKind) -> bool {
+    matches!(
+        kind,
+        ResolvedKind::Image { .. } | ResolvedKind::Lottie { .. }
+    )
+}
+
+/// Largest side, in pixels, ThorVG is asked to paint a Lottie layer at.
+const MAX_LOTTIE_SIDE: f64 = 4096.0;
+
+/// The size in pixels to paint a Lottie layer whose box is `size`, drawn under
+/// `matrix`: the box through the matrix's largest stretch, rounded up, and cut
+/// down to `MAX_LOTTIE_SIDE` a side. `None` for a box with no area.
+fn lottie_pixels(size: (f64, f64), matrix: Affine) -> Option<(u32, u32)> {
+    let stretch = bounds::max_stretch(matrix);
+    let (width, height) = (size.0 * stretch, size.1 * stretch);
+    if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
+        return None;
+    }
+    let down = (MAX_LOTTIE_SIDE / width.max(height)).min(1.0);
+    Some((
+        (width * down).ceil().max(1.0) as u32,
+        (height * down).ceil().max(1.0) as u32,
+    ))
+}
+
+/// Where a picture of `image` pixels sits in a box of `size`, as the matrix
+/// from the picture's pixels to the box's space; `None` when it would have no
+/// area. `Fill` stretches it to the box, `Contain` and `Cover` keep its aspect
+/// ratio and centre it, the first inside the box, the second over it.
+fn fit_image(fit: Fit, size: (f64, f64), image: (f64, f64)) -> Option<Affine> {
+    let (sx, sy) = (size.0 / image.0, size.1 / image.1);
+    if fit == Fit::Fill {
+        return Some(Affine::scale_non_uniform(sx, sy));
+    }
+    let scale = if fit == Fit::Contain {
+        sx.min(sy)
+    } else {
+        sx.max(sy)
+    };
+    if !(scale > 0.0 && scale.is_finite()) {
+        return None;
+    }
+    Some(
+        Affine::translate((
+            (size.0 - image.0 * scale) / 2.0,
+            (size.1 - image.1 * scale) / 2.0,
+        )) * Affine::scale(scale),
+    )
 }
 
 /// `b` shrunk by the four distances, with rounded corners. Empty when
@@ -1770,17 +2012,14 @@ fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {
 /// The `src` of every image layer in the scene, in order of use. One used
 /// twice is listed twice.
 fn image_sources(scene: &Scene) -> Vec<String> {
-    fn walk(layers: &[crate::scene::Layer], out: &mut Vec<String>) {
-        for layer in layers {
-            match &layer.kind {
-                LayerKind::Image(i) => out.push(i.src.clone()),
-                LayerKind::Group(g) => walk(&g.children, out),
-                _ => {}
-            }
-        }
-    }
+    // `walk_layers` also visits motion-blur copies, which can hold images of
+    // their own.
     let mut sources = Vec::new();
-    walk(&scene.layers, &mut sources);
+    walk_layers(&scene.layers, &mut |layer| {
+        if let LayerKind::Image(i) = &layer.kind {
+            sources.push(i.src.clone());
+        }
+    });
     sources
 }
 
@@ -1848,6 +2087,7 @@ impl FileId {
 struct Loaded {
     fonts: BTreeMap<String, FileId>,
     images: HashMap<String, FileId>,
+    lotties: HashMap<String, FileId>,
     luts: HashMap<String, FileId>,
 }
 
@@ -1860,13 +2100,15 @@ struct NewAssets {
     /// Every font the renderer will hold.
     fonts: BTreeMap<String, FileId>,
     images: Vec<(String, FileId, ImageData)>,
+    lotties: Vec<(String, FileId, Lottie)>,
     luts: Vec<(String, FileId, Lut)>,
     /// A name the renderer already held now stands for another file, so what
     /// the layer cache drew from the old one is out of date.
     rebound: bool,
 }
 
-/// Reads the fonts, images and tables of `scene` that `loaded` does not have
+/// Reads the fonts, images, Lottie animations and tables of `scene` that
+/// `loaded` does not have
 /// (or has from another file). It changes nothing, so a failure leaves the
 /// renderer as it was; `Renderer::install_assets` keeps the result. With
 /// `has_text` false the result has a text engine whatever the fonts are.
@@ -1875,9 +2117,6 @@ struct NewAssets {
 /// them. That cannot change a frame: a text layer's font must be one of the
 /// scene's own (`Scene::validate`), and no system fonts are loaded for text
 /// to fall back on.
-///
-/// merge: Lottie files (`LayerKind::Lottie`) are read here too, as images
-/// are.
 fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAssets> {
     let mut rebound = false;
 
@@ -1923,6 +2162,22 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         images.push((src, id, image));
     }
 
+    let mut lotties = Vec::new();
+    let mut seen = HashSet::new();
+    for (layer, src) in lottie_sources(scene) {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.lotties.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let lottie = open_lottie(&scene.base_dir, &layer, &src)?;
+        lotties.push((src, id, lottie));
+    }
+
     let mut luts = Vec::new();
     let mut seen = HashSet::new();
     for (layer, src) in crate::lut::lut_sources(scene) {
@@ -1943,6 +2198,7 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         text,
         fonts,
         images,
+        lotties,
         luts,
         rebound,
     })
@@ -1951,6 +2207,7 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::TextAlign;
     use vello::peniko::GradientKind;
 
     #[test]
@@ -1990,6 +2247,7 @@ mod tests {
             geometry,
             stops: stops.to_vec(),
             extend,
+            units: Units::User,
         }
     }
 
@@ -2256,7 +2514,7 @@ mod tests {
 
     #[test]
     fn paint_brush_only_transforms_gradients() {
-        let (brush, transform) = paint_brush(&ResolvedPaint::Solid(RED));
+        let (brush, transform) = paint_brush(&ResolvedPaint::Solid(RED), None);
         assert!(matches!(brush, peniko::Brush::Solid(_)) && transform.is_none());
         let g = gradient(
             ResolvedGradientGeometry::Conic {
@@ -2267,11 +2525,112 @@ mod tests {
             &[(0.0, RED), (1.0, Color::BLACK)],
             Extend::Pad,
         );
-        let (brush, transform) = paint_brush(&ResolvedPaint::Gradient(g));
+        let (brush, transform) = paint_brush(&ResolvedPaint::Gradient(g), None);
         assert!(matches!(brush, peniko::Brush::Gradient(_)));
         // The conic turn about its centre leaves the centre where it is.
         let moved = transform.unwrap() * Point::new(10.0, 20.0);
         assert!(moved.distance(Point::new(10.0, 20.0)) < 1e-9);
+    }
+
+    fn in_box_units(mut g: ResolvedGradient) -> ResolvedGradient {
+        g.units = Units::Box;
+        g
+    }
+
+    #[test]
+    fn a_box_unit_gradient_is_stretched_to_the_layers_box() {
+        let line = ResolvedGradientGeometry::Linear {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1.0,
+            y1: 1.0,
+        };
+        let stops = [(0.0, RED), (1.0, Color::BLACK)];
+        let g = in_box_units(gradient(line, &stops, Extend::Pad));
+        let b = Rect::new(10.0, 20.0, 50.0, 40.0);
+        let (_, transform) = gradient_brush_in(&g, Some(b));
+        // The unit square's corners land on the box's.
+        let corner = |x: f64, y: f64| transform * Point::new(x, y);
+        assert!(corner(0.0, 0.0).distance(Point::new(10.0, 20.0)) < 1e-9);
+        assert!(corner(1.0, 1.0).distance(Point::new(50.0, 40.0)) < 1e-9);
+        assert!(corner(1.0, 0.0).distance(Point::new(50.0, 20.0)) < 1e-9);
+        // The same gradient in pixels is left alone, box or not.
+        let plain = gradient(line, &stops, Extend::Pad);
+        assert_eq!(gradient_brush_in(&plain, Some(b)).1, Affine::IDENTITY);
+        // A conic gradient turns about its centre first, and the box then
+        // stretches the turn: the centre (0.5, 0.5) lands on the box's.
+        let conic = in_box_units(gradient(
+            ResolvedGradientGeometry::Conic {
+                cx: 0.5,
+                cy: 0.5,
+                angle: 90.0,
+            },
+            &stops,
+            Extend::Pad,
+        ));
+        let (_, transform) = gradient_brush_in(&conic, Some(b));
+        assert!((transform * Point::new(0.5, 0.5)).distance(b.center()) < 1e-9);
+        // Through paint_brush, which text and shapes use.
+        let (_, via_paint) = paint_brush(&ResolvedPaint::Gradient(g), Some(b));
+        assert_eq!(
+            via_paint.map(|t| t * Point::new(1.0, 1.0)),
+            Some(Point::new(50.0, 40.0))
+        );
+    }
+
+    #[test]
+    fn a_box_unit_gradient_on_an_empty_box_is_the_last_stop() {
+        let line = ResolvedGradientGeometry::Linear {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1.0,
+            y1: 0.0,
+        };
+        let g = in_box_units(gradient(
+            line,
+            &[(0.0, RED), (1.0, Color::BLACK)],
+            Extend::Pad,
+        ));
+        for b in [
+            Rect::new(0.0, 0.0, 0.0, 10.0),
+            Rect::new(0.0, 0.0, 10.0, 0.0),
+        ] {
+            let (brush, _) = gradient_brush_in(&g, Some(b));
+            assert!(
+                matches!(brush, peniko::Brush::Solid(c) if c == to_peniko(Color::BLACK)),
+                "{b:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn images_fit_their_box_by_fill_contain_or_cover() {
+        let at = |m: Affine, x: f64, y: f64| m * Point::new(x, y);
+        // A 720 x 540 picture in a 200 x 200 box.
+        let (size, image) = ((200.0, 200.0), (720.0, 540.0));
+        let fill = fit_image(Fit::Fill, size, image).unwrap();
+        assert_eq!(
+            fill,
+            Affine::scale_non_uniform(200.0 / 720.0, 200.0 / 540.0)
+        );
+        // Contain: the width fills the box, the picture is 150 high and
+        // centred.
+        let contain = fit_image(Fit::Contain, size, image).unwrap();
+        assert!(at(contain, 0.0, 0.0).distance(Point::new(0.0, 25.0)) < 1e-9);
+        assert!(at(contain, 720.0, 540.0).distance(Point::new(200.0, 175.0)) < 1e-9);
+        // Cover: the height fills the box, the picture is 266.67 wide and
+        // overhangs by a sixth on each side.
+        let cover = fit_image(Fit::Cover, size, image).unwrap();
+        let overhang = (200.0 * 720.0 / 540.0 - 200.0) / 2.0;
+        assert!(at(cover, 0.0, 0.0).distance(Point::new(-overhang, 0.0)) < 1e-9);
+        assert!(at(cover, 720.0, 540.0).distance(Point::new(200.0 + overhang, 200.0)) < 1e-9);
+        // A box of the picture's own shape needs no fitting.
+        let same = fit_image(Fit::Cover, (360.0, 270.0), image).unwrap();
+        assert!(at(same, 720.0, 540.0).distance(Point::new(360.0, 270.0)) < 1e-9);
+        // An empty box has nothing to fit (fill keeps its old, empty, result; a
+        // cover with one side left is cut to nothing by the clip).
+        assert!(fit_image(Fit::Contain, (0.0, 50.0), image).is_none());
+        assert!(fit_image(Fit::Cover, (0.0, 0.0), image).is_none());
     }
 
     /// The box of a rect shape or an empty group, which is all these tests
@@ -2710,8 +3069,8 @@ mod tests {
     #[test]
     fn text_is_bounded_by_its_layout_and_its_glyphs_a_font_size_wider() {
         let mut engine = text_engine();
-        let laid_out = engine.layout("Hello world", "DM Sans", 40.0, None, None);
-        let b = text_bounds(&laid_out, 40.0, None);
+        let laid_out = engine.layout("Hello world", "DM Sans", 40.0, None, None, TextAlign::Left);
+        let b = text_bounds(&laid_out, 40.0, None, &[]);
         assert_eq!(b.x0, -40.0);
         assert_eq!(b.y0, -40.0);
         assert!((b.x1 - (f64::from(laid_out.width) + 40.0)).abs() < 1e-3);
@@ -2723,8 +3082,15 @@ mod tests {
         }
         // A word wider than the wrap width hangs out of the box, and the
         // bounds follow it.
-        let wide = engine.layout("Unbreakable", "DM Sans", 40.0, None, Some(60.0));
-        let b = text_bounds(&wide, 40.0, Some(60.0));
+        let wide = engine.layout(
+            "Unbreakable",
+            "DM Sans",
+            40.0,
+            None,
+            Some(60.0),
+            TextAlign::Left,
+        );
+        let b = text_bounds(&wide, 40.0, Some(60.0), &[]);
         assert!(
             f64::from(wide.width) > 60.0,
             "the word fits: {}",
@@ -2732,7 +3098,7 @@ mod tests {
         );
         assert!(b.x1 >= f64::from(wide.width) + 40.0 - 1e-3, "{b:?}");
         // A box wider than the text (a wrap width) counts as it is.
-        let b = text_bounds(&laid_out, 40.0, Some(500.0));
+        let b = text_bounds(&laid_out, 40.0, Some(500.0), &[]);
         assert_eq!(b.x1, 540.0);
     }
 
@@ -2771,8 +3137,22 @@ mod tests {
         for (src, id, _) in &fresh.images {
             loaded.images.insert(src.clone(), id.clone());
         }
+        for (src, id, _) in &fresh.lotties {
+            loaded.lotties.insert(src.clone(), id.clone());
+        }
         for (src, id, _) in &fresh.luts {
             loaded.luts.insert(src.clone(), id.clone());
+        }
+    }
+
+    fn style(x: f64, y: f64, scale: f64, rotation: f64) -> ResolvedChar {
+        ResolvedChar {
+            x,
+            y,
+            scale,
+            rotation,
+            opacity: 1.0,
+            color: None,
         }
     }
 
@@ -2827,6 +3207,27 @@ mod tests {
     }
 
     #[test]
+    fn lottie_files_are_read_once_like_images() {
+        let anims = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/anims");
+        let json = serde_json::json!({
+            "width": 64, "height": 64, "fps": 30, "durationInFrames": 2,
+            "layers": [
+                { "id": "a", "type": "lottie", "src": "burst.json", "width": 32, "height": 32 },
+                { "id": "b", "type": "lottie", "src": "burst.json", "width": 16, "height": 16 },
+            ],
+        });
+        let scene = Scene::from_json(&json.to_string(), anims).unwrap();
+        let mut loaded = Loaded::default();
+        let fresh = read_assets(&scene, &loaded, false).unwrap();
+        // Two layers, one file.
+        assert_eq!(fresh.lotties.len(), 1);
+        hold(&mut loaded, &fresh);
+        // The next frame's scene names it again: nothing is read.
+        let fresh = read_assets(&scene, &loaded, true).unwrap();
+        assert!(fresh.lotties.is_empty() && !fresh.rebound);
+    }
+
+    #[test]
     fn a_missing_file_fails_the_read_and_names_it() {
         let dir = std::env::temp_dir().join(format!("kinetograph-missing-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -2837,5 +3238,46 @@ mod tests {
             .to_string();
         assert!(err.contains("pic.png"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_character_turns_and_scales_about_its_centre_after_its_offset() {
+        let centre = (30.0, 20.0);
+        // Nothing set: the identity.
+        assert_eq!(
+            char_matrix(&style(0.0, 0.0, 1.0, 0.0), centre),
+            Affine::IDENTITY
+        );
+        // Scale and turn leave the centre where it is.
+        let m = char_matrix(&style(0.0, 0.0, 2.5, 70.0), centre);
+        assert!((m * Point::new(30.0, 20.0)).distance(Point::new(30.0, 20.0)) < 1e-9);
+        // 90 degrees clockwise (y down): the point to the right of the centre
+        // goes below it, at twice the distance for a scale of 2.
+        let m = char_matrix(&style(0.0, 0.0, 2.0, 90.0), centre);
+        assert!((m * Point::new(40.0, 20.0)).distance(Point::new(30.0, 40.0)) < 1e-9);
+        // The offset moves the centre.
+        let m = char_matrix(&style(5.0, -7.0, 2.0, 90.0), centre);
+        assert!((m * Point::new(30.0, 20.0)).distance(Point::new(35.0, 13.0)) < 1e-9);
+    }
+
+    #[test]
+    fn styled_characters_widen_the_text_bounds_and_the_rest_do_not() {
+        let mut engine = text_engine();
+        let laid_out = engine.layout("Hello", "DM Sans", 40.0, None, None, TextAlign::Left);
+        let plain = text_bounds(&laid_out, 40.0, None, &[]);
+        // Only null entries: the same box.
+        assert_eq!(
+            text_bounds(&laid_out, 40.0, None, &[None, None, None]),
+            plain
+        );
+        // Styled but not moved: inside it.
+        let b = text_bounds(&laid_out, 40.0, None, &[Some(style(0.0, 0.0, 1.0, 0.0))]);
+        assert_eq!(b, plain);
+        // The last letter thrown 300 px down and made twice as big.
+        let chars = [None, None, None, None, Some(style(0.0, 300.0, 2.0, 0.0))];
+        let b = text_bounds(&laid_out, 40.0, None, &chars);
+        assert!(b.y1 > plain.y1 + 250.0, "{b:?} vs {plain:?}");
+        assert!(b.x1 > plain.x1, "{b:?} vs {plain:?}");
+        assert_eq!((b.x0, b.y0), (plain.x0, plain.y0));
     }
 }

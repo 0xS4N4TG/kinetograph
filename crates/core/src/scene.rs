@@ -35,6 +35,11 @@ pub struct Scene {
     /// Directory that asset paths resolve against (the scene file's directory).
     #[serde(skip)]
     pub base_dir: PathBuf,
+    /// The natural size in pixels of the image (and Lottie) files that a layer
+    /// leaves a size out for, by `src`. Read from the files' headers when the
+    /// scene loads, so that resolving a frame needs no I/O.
+    #[serde(skip)]
+    pub asset_sizes: BTreeMap<String, (f64, f64)>,
 }
 
 fn default_background() -> Color {
@@ -76,6 +81,9 @@ pub struct Layer {
     /// Averages the layer over the time the shutter is open, so what moves
     /// smears. A group blurs its whole subtree.
     pub motion_blur: Option<MotionBlur>,
+    /// How the layer takes part in the flex layout of the group it is in
+    /// (`Layout`). Ignored when that group has no `layout`.
+    pub layout_item: Option<LayoutItem>,
     #[serde(flatten)]
     pub kind: LayerKind,
 }
@@ -96,6 +104,12 @@ pub struct MotionBlur {
     /// Clamped to 0..=2 when resolved; 0 is no blur.
     #[serde(default = "half")]
     pub shutter: Num,
+    /// Exactly `samples` complete layers of the same type as this one, one
+    /// per sub-frame in time order. When present, sub-frame `i` is `frames[i]`
+    /// resolved at that sub-frame's time, instead of this layer resolved there
+    /// (an authoring layer that renders its tree at each sub-frame's time
+    /// fills it). A copy's own `motionBlur` is ignored.
+    pub frames: Option<Vec<Layer>>,
 }
 
 fn default_motion_samples() -> i64 {
@@ -155,6 +169,32 @@ pub enum LayerKind {
     Group(GroupLayer),
     Noise(NoiseLayer),
     MeshGradient(MeshGradientLayer),
+    Lottie(LottieLayer),
+}
+
+impl LayerKind {
+    /// The `type` the scene spells it with.
+    pub fn name(&self) -> &'static str {
+        match self {
+            LayerKind::Shape(_) => "shape",
+            LayerKind::Text(_) => "text",
+            LayerKind::Image(_) => "image",
+            LayerKind::Group(_) => "group",
+            LayerKind::Noise(_) => "noise",
+            LayerKind::MeshGradient(_) => "meshGradient",
+            LayerKind::Lottie(_) => "lottie",
+        }
+    }
+
+    /// Whether the layer has a box (`docs/SCENE.md`, "Clip paths"): every kind
+    /// but a group without a `layout`, whose box is the size the layout gives
+    /// it.
+    pub fn has_box(&self) -> bool {
+        match self {
+            LayerKind::Group(g) => g.layout.is_some(),
+            _ => true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -176,6 +216,12 @@ pub struct Transform {
     /// Pixels toward the viewer, as CSS's `translateZ`. Moves nothing on
     /// screen without a camera, but still orders a `preserve3d` group.
     pub z: Num,
+    /// A point of the layer's box, as a fraction of its size, that the layer
+    /// turns and scales about, added to the anchor. `0.5, 0.5` is the centre.
+    /// A layer without a box ignores them. Unlike the anchor, they do not
+    /// move the layer.
+    pub origin_x: Num,
+    pub origin_y: Num,
 }
 
 impl Transform {
@@ -199,6 +245,8 @@ impl Default for Transform {
             rotate_x: Num::Const(0.0),
             rotate_y: Num::Const(0.0),
             z: Num::Const(0.0),
+            origin_x: Num::Const(0.0),
+            origin_y: Num::Const(0.0),
         }
     }
 }
@@ -762,6 +810,22 @@ pub struct Gradient {
     pub stops: Vec<Stop>,
     #[serde(default)]
     pub extend: Extend,
+    /// What the coordinates are measured in.
+    #[serde(default)]
+    pub units: Units,
+}
+
+/// The space a gradient's coordinates are in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Units {
+    /// The painted layer's own pixels.
+    #[default]
+    User,
+    /// Fractions of the painted layer's box, `(0, 0)` its top-left corner and
+    /// `(1, 1)` its bottom-right, stretching with the box (SVG's
+    /// `objectBoundingBox`).
+    Box,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -882,14 +946,97 @@ pub struct TextLayer {
     pub line_height: Option<Num>,
     /// Wrap width in pixels. Omitted: no wrapping.
     pub max_width: Option<Num>,
+    /// How lines sit in the box: within `maxWidth`, or within the widest line.
+    #[serde(default)]
+    pub align: TextAlign,
+    /// One entry per Unicode code point of `text` (a `\n` has one too, which
+    /// is ignored): `null` for a character drawn as the layer is, or its own
+    /// style. Entries past the end of the text are ignored; a list shorter
+    /// than the text styles the first characters only.
+    #[serde(default)]
+    pub chars: Vec<Option<CharStyle>>,
+}
+
+/// How one character of a text layer differs from the layer, in text-box
+/// pixels and about the character's centre (`docs/SCENE.md`, "Per-character
+/// styles").
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CharStyle {
+    /// Offset of the character.
+    #[serde(default = "zero")]
+    pub x: Num,
+    #[serde(default = "zero")]
+    pub y: Num,
+    /// About the character's centre.
+    #[serde(default = "one")]
+    pub scale: Num,
+    /// Degrees clockwise about the character's centre.
+    #[serde(default = "zero")]
+    pub rotation: Num,
+    /// 0..1, multiplies the layer's `opacity`; clamped when resolved.
+    #[serde(default = "one")]
+    pub opacity: Num,
+    /// Replaces the layer's `color` (a colour or a gradient) for this
+    /// character.
+    pub color: Option<Color>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageLayer {
     pub src: String,
-    pub width: Num,
-    pub height: Num,
+    /// Omitted: the file's pixel width, or, with a `height`, the width that
+    /// keeps the picture's aspect ratio.
+    pub width: Option<Num>,
+    /// Omitted: like `width`.
+    pub height: Option<Num>,
+    /// How the picture sits in the box `width` x `height`.
+    #[serde(default)]
+    pub fit: Fit,
+}
+
+/// A Lottie animation, rasterised by ThorVG at the size it is drawn at.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LottieLayer {
+    /// A `.json` or `.lottie` file, relative to the scene.
+    pub src: String,
+    /// The box the animation is fitted into, centred, keeping its aspect
+    /// ratio. Omitted: the animation's own size, or, with the other side
+    /// given, the size that keeps its aspect ratio.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+    /// Seconds into the animation. Omitted: the time of the frame
+    /// (`frame / fps`).
+    pub time: Option<Num>,
+    /// Past the end of the animation: wrap round (`true`), or hold its last
+    /// frame (`false`).
+    #[serde(default, rename = "loop")]
+    pub looped: bool,
+}
+
+/// How an image is fitted to its box (CSS's `object-fit`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Fit {
+    /// Stretched to the box.
+    #[default]
+    Fill,
+    /// Scaled to fit inside the box, keeping its aspect ratio, and centred.
+    Contain,
+    /// Scaled to cover the box, keeping its aspect ratio, centred and cut to
+    /// the box.
+    Cover,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -900,6 +1047,179 @@ pub struct GroupLayer {
     /// into the group's parent, in their own 3D positions, sorted by depth.
     #[serde(default)]
     pub preserve3d: bool,
+    /// Flex layout of the children, applied when the scene is resolved.
+    pub layout: Option<Layout>,
+}
+
+/// A group's flex layout (`docs/SCENE.md`, "Layout"). Names and values are
+/// CSS's.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Layout {
+    pub display: Display,
+    pub flex_direction: FlexDirection,
+    pub flex_wrap: FlexWrap,
+    pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    pub align_content: AlignContent,
+    /// One number, or `[row, column]`.
+    pub gap: Option<Spacing>,
+    /// One number, or `[top, right, bottom, left]`.
+    pub padding: Option<Spacing>,
+    /// The container's box. Omitted: from the content (or, for a container
+    /// that is a flex item, as its parent's layout makes it).
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+}
+
+/// How a layer sits in its parent's flex layout.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LayoutItem {
+    pub position: Position,
+    pub flex_grow: Option<Num>,
+    pub flex_shrink: Option<Num>,
+    pub flex_basis: Option<FlexBasis>,
+    pub align_self: AlignSelf,
+    /// One number, or `[top, right, bottom, left]`.
+    pub margin: Option<Spacing>,
+    /// The size the layout uses for this layer, instead of its box.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Display {
+    #[default]
+    Flex,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FlexDirection {
+    #[default]
+    Row,
+    Column,
+    RowReverse,
+    ColumnReverse,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FlexWrap {
+    #[default]
+    Nowrap,
+    Wrap,
+    WrapReverse,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum JustifyContent {
+    #[default]
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AlignItems {
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+    #[default]
+    Stretch,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AlignContent {
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+    #[default]
+    Stretch,
+}
+
+/// A layer's own `alignItems`, or its parent's when `Auto`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AlignSelf {
+    #[default]
+    Auto,
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+    Stretch,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Position {
+    #[default]
+    Relative,
+    Absolute,
+}
+
+/// `flexBasis`: a number of pixels, or `"auto"`.
+#[derive(Clone, Debug)]
+pub enum FlexBasis {
+    Auto,
+    Length(Num),
+}
+
+impl<'de> Deserialize<'de> for FlexBasis {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = serde_json::Value::deserialize(d)?;
+        if value.as_str() == Some("auto") {
+            return Ok(FlexBasis::Auto);
+        }
+        serde_json::from_value::<Num>(value)
+            .map(FlexBasis::Length)
+            .map_err(|e| D::Error::custom(format!("flexBasis takes a number or \"auto\": {e}")))
+    }
+}
+
+/// A list of lengths that is one number, or an array of them: `gap`,
+/// `padding` and `margin`. A list of keyframe objects is one number. How many
+/// it must have is the property's business (checked when the scene loads).
+#[derive(Clone, Debug)]
+pub struct Spacing(pub Vec<Num>);
+
+impl<'de> Deserialize<'de> for Spacing {
+    // Read by hand, as `BaseFrequency` is: `[8, 4]` and a keyframe list are
+    // both arrays.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = serde_json::Value::deserialize(d)?;
+        let num = |v: serde_json::Value| {
+            serde_json::from_value::<Num>(v)
+                .map_err(|e| D::Error::custom(format!("bad length: {e}")))
+        };
+        match value {
+            serde_json::Value::Array(items)
+                if !items.is_empty() && items.iter().all(|v| !v.is_object()) =>
+            {
+                items
+                    .into_iter()
+                    .map(num)
+                    .collect::<std::result::Result<_, _>>()
+                    .map(Spacing)
+            }
+            other => Ok(Spacing(vec![num(other)?])),
+        }
+    }
 }
 
 /// The raw `feTurbulence` image over a box at the layer's origin.
@@ -959,7 +1279,47 @@ impl Scene {
             serde_json::from_str(json).map_err(|e| Error::Scene(e.to_string()))?;
         scene.base_dir = base_dir;
         scene.validate()?;
+        scene.measure_assets()?;
         Ok(scene)
+    }
+
+    /// Reads the pixel size of every image that leaves its `width` or
+    /// `height` out, from the file's header, into `asset_sizes`.
+    fn measure_assets(&mut self) -> Result<()> {
+        let mut wanted = Vec::new();
+        walk_layers(&self.layers, &mut |layer| match &layer.kind {
+            LayerKind::Image(i) if i.width.is_none() || i.height.is_none() => {
+                wanted.push((layer.id.clone(), i.src.clone(), false));
+            }
+            LayerKind::Lottie(l) if l.width.is_none() || l.height.is_none() => {
+                wanted.push((layer.id.clone(), l.src.clone(), true));
+            }
+            _ => {}
+        });
+        for (id, src, lottie) in wanted {
+            if self.asset_sizes.contains_key(&src) {
+                continue;
+            }
+            let path = self.base_dir.join(&src);
+            let size = if lottie {
+                crate::lottie::natural_size(&path).map_err(|e| {
+                    Error::Scene(format!(
+                        "layer {id:?}: cannot read the size of lottie {}: {e}",
+                        path.display()
+                    ))
+                })?
+            } else {
+                let (width, height) = image::image_dimensions(&path).map_err(|e| {
+                    Error::Scene(format!(
+                        "layer {id:?}: cannot read the size of image {}: {e}",
+                        path.display()
+                    ))
+                })?;
+                (f64::from(width), f64::from(height))
+            };
+            self.asset_sizes.insert(src, size);
+        }
+        Ok(())
     }
 
     /// Pixels of room kept on every side of the canvas while rendering, so
@@ -1007,6 +1367,22 @@ impl Scene {
 
     fn validate_layers<'a>(&self, layers: &'a [Layer], ids: &mut HashSet<&'a str>) -> Result<()> {
         for layer in layers {
+            self.validate_layer(layer, layers, ids, false)?;
+        }
+        Ok(())
+    }
+
+    /// Checks one layer of the list `layers`. `copy` is whether it is one of a
+    /// motion blur's `frames`: its own `motionBlur` is ignored, so it is not
+    /// checked.
+    fn validate_layer<'a>(
+        &self,
+        layer: &'a Layer,
+        layers: &'a [Layer],
+        ids: &mut HashSet<&'a str>,
+        copy: bool,
+    ) -> Result<()> {
+        {
             if !ids.insert(&layer.id) {
                 return Err(Error::Scene(format!("duplicate layer id {:?}", layer.id)));
             }
@@ -1060,9 +1436,9 @@ impl Scene {
                     Effect::Displace { turbulence, .. } => {
                         validate_turbulence(&layer.id, "displace", turbulence)?;
                     }
-                    Effect::CornerPin { .. } if matches!(layer.kind, LayerKind::Group(_)) => {
+                    Effect::CornerPin { .. } if !layer.kind.has_box() => {
                         return Err(Error::Scene(format!(
-                            "layer {:?}: cornerPin needs a box, and a group has none; pin a \
+                            "layer {:?}: cornerPin needs a box, and a group without a layout has none; pin a \
                              layer inside it, or put the group's children in a layer that has one",
                             layer.id
                         )));
@@ -1082,17 +1458,24 @@ impl Scene {
             if let Some(matte) = &layer.matte {
                 validate_matte(layer, matte, layers)?;
             }
-            if let Some(blur) = &layer.motion_blur
-                && !(MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES).contains(&blur.samples)
-            {
-                return Err(Error::Scene(format!(
-                    "layer {:?}: motionBlur samples must be a whole number from \
-                     {MIN_MOTION_SAMPLES} to {MAX_MOTION_SAMPLES}, got {}",
-                    layer.id, blur.samples
-                )));
+            if !copy && let Some(blur) = &layer.motion_blur {
+                if !(MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES).contains(&blur.samples) {
+                    return Err(Error::Scene(format!(
+                        "layer {:?}: motionBlur samples must be a whole number from \
+                         {MIN_MOTION_SAMPLES} to {MAX_MOTION_SAMPLES}, got {}",
+                        layer.id, blur.samples
+                    )));
+                }
+                if let Some(frames) = &blur.frames {
+                    self.validate_frames(layer, blur.samples, frames, layers)?;
+                }
             }
             if let Some(mask) = &layer.mask {
                 validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
+                validate_units(layer, "mask gradient", &mask.gradient)?;
+            }
+            if let Some(item) = &layer.layout_item {
+                validate_layout_item(&layer.id, item)?;
             }
             match &layer.kind {
                 LayerKind::Shape(s) => {
@@ -1140,10 +1523,17 @@ impl Scene {
                     }
                 }
                 LayerKind::Image(i) => {
-                    non_negative("width", &i.width)?;
-                    non_negative("height", &i.height)?;
+                    if let Some(width) = &i.width {
+                        non_negative("width", width)?;
+                    }
+                    if let Some(height) = &i.height {
+                        non_negative("height", height)?;
+                    }
                 }
                 LayerKind::Group(g) => {
+                    if let Some(layout) = &g.layout {
+                        validate_layout(&layer.id, layout)?;
+                    }
                     if g.preserve3d {
                         validate_preserve3d(layer, layers)?;
                         if let Some(child) = g.children.iter().find(|c| c.motion_blur.is_some()) {
@@ -1168,14 +1558,76 @@ impl Scene {
                     non_negative("height", &m.height)?;
                     validate_mesh_gradient(&layer.id, m)?;
                 }
+                LayerKind::Lottie(l) => {
+                    if l.src.trim().is_empty() {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: lottie needs a src, the path of a .json or .lottie file",
+                            layer.id
+                        )));
+                    }
+                    for (what, side) in [("width", &l.width), ("height", &l.height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
+                    }
+                }
             }
+        }
+        Ok(())
+    }
+
+    /// Checks a layer's motion blur `frames`: `samples` of them, each of the
+    /// layer's type and a valid layer on its own. A copy has its original's id
+    /// (and its children those of the original's), so it is checked with an id
+    /// set of its own; it sits among the original's `siblings`.
+    fn validate_frames<'a>(
+        &self,
+        layer: &Layer,
+        samples: i64,
+        frames: &'a [Layer],
+        siblings: &'a [Layer],
+    ) -> Result<()> {
+        if frames.len() as i64 != samples {
+            return Err(Error::Scene(format!(
+                "layer {:?}: motionBlur frames needs exactly {samples} layers (one per sample), \
+                 got {}",
+                layer.id,
+                frames.len()
+            )));
+        }
+        for (i, copy) in frames.iter().enumerate() {
+            if std::mem::discriminant(&copy.kind) != std::mem::discriminant(&layer.kind) {
+                return Err(Error::Scene(format!(
+                    "layer {:?}: motionBlur frames[{i}] is a {} layer, but the layer is a {}",
+                    layer.id,
+                    copy.kind.name(),
+                    layer.kind.name()
+                )));
+            }
+            self.validate_layer(copy, siblings, &mut HashSet::new(), true)?;
         }
         Ok(())
     }
 }
 
-fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
+/// Calls `f` on every layer of `layers`, depth first: a layer, then the
+/// copies in its motion blur `frames`, then its children. The walkers that
+/// load or compile what layers refer to use it, so that a copy's assets are
+/// loaded like any other layer's.
+pub fn walk_layers(layers: &[Layer], f: &mut impl FnMut(&Layer)) {
     for layer in layers {
+        f(layer);
+        if let Some(frames) = layer.motion_blur.as_ref().and_then(|m| m.frames.as_ref()) {
+            walk_layers(frames, f);
+        }
+        if let LayerKind::Group(g) = &layer.kind {
+            walk_layers(&g.children, f);
+        }
+    }
+}
+
+fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
+    walk_layers(layers, &mut |layer| {
         for effect in &layer.effects {
             if let Effect::Shader(shader) = effect {
                 let source = crate::shader::compose(&shader.code, &shader.names());
@@ -1184,17 +1636,15 @@ fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
                 }
             }
         }
-        if let LayerKind::Group(g) = &layer.kind {
-            collect_shader_sources(&g.children, sources);
-        }
-    }
+    });
 }
 
 /// The largest reach of any layer in `layers`. Reaches add up along a
 /// chain: each effect in a list works on what the ones before it painted,
 /// and a group's effects on what its children painted. `scale` is the
 /// largest product of the enclosing groups' `scale` (1 for the scene's own
-/// layers), which turns an effect's layer units into pixels.
+/// layers), which turns an effect's layer units into pixels. A layer's motion
+/// blur `frames` count as alternatives to the layer itself.
 fn max_reach(layers: &[Layer], scale: f64) -> f64 {
     layers.iter().fold(0.0, |most, layer| {
         let t = &layer.transform.scale;
@@ -1204,7 +1654,12 @@ fn max_reach(layers: &[Layer], scale: f64) -> f64 {
             _ => 0.0,
         };
         let own: f64 = layer.effects.iter().map(|e| e.reach(scale)).sum();
-        most.max(children + own)
+        let copies = layer
+            .motion_blur
+            .as_ref()
+            .and_then(|m| m.frames.as_ref())
+            .map_or(0.0, |frames| max_reach(frames, scale));
+        most.max(children + own).max(copies)
     })
 }
 
@@ -1227,9 +1682,9 @@ fn validate_clip(id: &str, clip: &Clip, kind: &LayerKind) -> Result<()> {
             }
         }
         Clip::Inset { radius, .. } => {
-            if matches!(kind, LayerKind::Group(_)) {
+            if !kind.has_box() {
                 return bad(
-                    "inset needs a box, and a group has none; use a polygon or path clip".into(),
+                    "inset needs a box, and a group without a layout has none; use a polygon or path clip".into(),
                 );
             }
             if radius.min() < 0.0 {
@@ -1366,9 +1821,9 @@ fn validate_dot_matrix(
         (_, Some(seed)) => validate_seed(id, "dotMatrix", seed)?,
         _ => {}
     }
-    if order == DotOrder::Sweep && matches!(kind, LayerKind::Group(_)) {
+    if order == DotOrder::Sweep && !kind.has_box() {
         return bad(
-            "order \"sweep\" needs a box, and a group has none; use order \"random\"".into(),
+            "order \"sweep\" needs a box, and a group without a layout has none; use order \"random\"".into(),
         );
     }
     Ok(())
@@ -1432,6 +1887,85 @@ fn validate_mesh_gradient(id: &str, mesh: &MeshGradientLayer) -> Result<()> {
             "needs {count} points (columns x rows), got {}",
             points.len()
         ));
+    }
+    Ok(())
+}
+
+/// The number of lengths `property` takes: `gap` one or two, `padding` and
+/// `margin` one or four. Not negative at any keyframe unless `signed`.
+fn validate_spacing(
+    id: &str,
+    what: &str,
+    spacing: &Option<Spacing>,
+    counts: [usize; 2],
+    signed: bool,
+) -> Result<()> {
+    let Some(Spacing(values)) = spacing else {
+        return Ok(());
+    };
+    if !counts.contains(&values.len()) {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: {what} takes {} or {} numbers, got {}",
+            counts[0],
+            counts[1],
+            values.len()
+        )));
+    }
+    if !signed && values.iter().any(|n| n.min() < 0.0) {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: {what} must not be negative"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_layout(id: &str, layout: &Layout) -> Result<()> {
+    validate_spacing(id, "layout gap", &layout.gap, [1, 2], false)?;
+    validate_spacing(id, "layout padding", &layout.padding, [1, 4], false)?;
+    for (what, size) in [("width", &layout.width), ("height", &layout.height)] {
+        if size.as_ref().is_some_and(|n| n.min() < 0.0) {
+            return Err(Error::Scene(format!(
+                "layer {id:?}: layout {what} must not be negative"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_layout_item(id: &str, item: &LayoutItem) -> Result<()> {
+    validate_spacing(id, "layoutItem margin", &item.margin, [1, 4], true)?;
+    let sizes = [
+        ("flexGrow", &item.flex_grow),
+        ("flexShrink", &item.flex_shrink),
+        ("width", &item.width),
+        ("height", &item.height),
+    ];
+    for (what, n) in sizes {
+        if n.as_ref().is_some_and(|n| n.min() < 0.0) {
+            return Err(Error::Scene(format!(
+                "layer {id:?}: layoutItem {what} must not be negative"
+            )));
+        }
+    }
+    if let Some(FlexBasis::Length(n)) = &item.flex_basis
+        && n.min() < 0.0
+    {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: layoutItem flexBasis must not be negative"
+        )));
+    }
+    Ok(())
+}
+
+/// A gradient in box units measures from the box of the layer it paints, so a
+/// layer without one cannot have it.
+fn validate_units(layer: &Layer, what: &str, g: &Gradient) -> Result<()> {
+    if g.units == Units::Box && !layer.kind.has_box() {
+        return Err(Error::Scene(format!(
+            "layer {:?}: {what} uses \"units\": \"box\", and a group without a layout has no box; use the default \
+             units, or put the group's children in a layer that has a box",
+            layer.id
+        )));
     }
     Ok(())
 }
@@ -3178,7 +3712,7 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(
-            msg.contains("\"g\"") && msg.contains("cornerPin") && msg.contains("group has none"),
+            msg.contains("\"g\"") && msg.contains("cornerPin") && msg.contains("without a layout"),
             "{msg}"
         );
         // A pin far outside the box still counts nothing: it only moves
@@ -3244,5 +3778,610 @@ mod tests {
               {"id": "card", "type": "group", "children": [
                 {"id": "inner", "type": "group", "children": [], "motionBlur": {}}]}]}]}]}"##;
         Scene::from_json(json, PathBuf::new()).unwrap();
+    }
+
+    // --- Images with sides left out, and fit. ---------------------------------
+
+    fn examples() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples")
+    }
+
+    fn image_scene(image: &str, base: PathBuf) -> Result<Scene> {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 1, "layers": [
+              {{"id": "pic", "type": "image", {image}}}]}}"##
+        );
+        Scene::from_json(&json, base)
+    }
+
+    #[test]
+    fn an_image_may_leave_its_sides_out_and_the_file_is_measured() {
+        // card-art.png is 720 x 540.
+        for image in [
+            r#""src": "card-art.png""#,
+            r#""src": "card-art.png", "width": 360"#,
+            r#""src": "card-art.png", "height": [{"frame": 0, "value": 270}]"#,
+        ] {
+            let scene = image_scene(image, examples()).unwrap();
+            assert_eq!(scene.asset_sizes["card-art.png"], (720.0, 540.0), "{image}");
+        }
+        // With both sides given, the file is not read.
+        let scene = image_scene(
+            r#""src": "missing.png", "width": 4, "height": 5"#,
+            PathBuf::new(),
+        )
+        .unwrap();
+        assert!(scene.asset_sizes.is_empty());
+        // Without, a missing file is an error naming the layer.
+        let msg = image_scene(r#""src": "missing.png", "width": 4"#, PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"pic\"") && msg.contains("missing.png"),
+            "{msg}"
+        );
+        let msg = image_scene(r#""src": "card-art.png", "height": -3"#, examples())
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("\"pic\"") && msg.contains("negative"), "{msg}");
+    }
+
+    #[test]
+    fn an_image_fits_its_box_by_fill_unless_told_otherwise() {
+        let fit = |image: &str| {
+            let scene = image_scene(image, PathBuf::new()).unwrap();
+            let LayerKind::Image(i) = &scene.layers[0].kind else {
+                panic!("not an image");
+            };
+            i.fit
+        };
+        let base = r#""src": "a.png", "width": 4, "height": 5"#;
+        assert_eq!(fit(base), Fit::Fill);
+        assert_eq!(fit(&format!(r#"{base}, "fit": "contain""#)), Fit::Contain);
+        assert_eq!(fit(&format!(r#"{base}, "fit": "cover""#)), Fit::Cover);
+        let msg = image_scene(&format!(r#"{base}, "fit": "scale-down""#), PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("scale-down"), "{msg}");
+    }
+
+    // --- Gradients in box units. ----------------------------------------------
+
+    fn linear(units: &str) -> String {
+        format!(r#"{{"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, {TWO_STOPS}{units}}}"#)
+    }
+
+    #[test]
+    fn gradients_are_in_pixels_unless_they_say_box() {
+        let fill = |g: String| {
+            Scene::from_json(
+                &format!(
+                    r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                      {{"id": "s", "type": "shape", "shape": {{"kind": "rect", "width": 9, "height": 9}},
+                        "fill": {g}}}]}}"##
+                ),
+                PathBuf::new(),
+            )
+            .unwrap()
+        };
+        let units = |scene: Scene| match &scene.layers[0].kind {
+            LayerKind::Shape(ShapeLayer {
+                fill: Some(Paint::Gradient(g)),
+                ..
+            }) => g.units,
+            _ => panic!("not a gradient fill"),
+        };
+        assert_eq!(units(fill(linear(""))), Units::User);
+        assert_eq!(units(fill(linear(r#", "units": "user""#))), Units::User);
+        assert_eq!(units(fill(linear(r#", "units": "box""#))), Units::Box);
+        // Text colours and masks take it too.
+        scene_with(&format!(
+            r#""mask": {{"gradient": {}}},"#,
+            linear(r#", "units": "box""#)
+        ))
+        .unwrap();
+        let text = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1,
+                "fonts": {{"DM Sans": "f.ttf"}}, "layers": [
+              {{"id": "t", "type": "text", "text": "a", "font": "DM Sans", "size": 9,
+                "color": {}}}]}}"##,
+            linear(r#", "units": "box""#)
+        );
+        Scene::from_json(&text, PathBuf::new()).unwrap();
+        let msg = error(&format!(
+            r#""mask": {{"gradient": {}}},"#,
+            linear(r#", "units": "bbox""#)
+        ));
+        assert!(msg.contains("bbox"), "{msg}");
+    }
+
+    #[test]
+    fn a_box_unit_mask_on_a_layer_without_a_box_is_an_error_naming_it() {
+        let json = |units: &str| {
+            format!(
+                r#"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                  {{"id": "g", "type": "group", "children": [],
+                    "mask": {{"gradient": {}}}}}]}}"#,
+                linear(units)
+            )
+        };
+        let msg = Scene::from_json(&json(r#", "units": "box""#), PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"g\"") && msg.contains("mask") && msg.contains("box"),
+            "{msg}"
+        );
+        // In pixels it is fine on a group.
+        Scene::from_json(&json(""), PathBuf::new()).unwrap();
+    }
+
+    // --- Origin and text alignment. -------------------------------------------
+
+    #[test]
+    fn the_origin_is_animatable_and_defaults_to_zero() {
+        let scene = scene_with("").unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!((t.origin_x.at(0.0), t.origin_y.at(0.0)), (0.0, 0.0));
+        let scene = scene_with(
+            r#""transform": {"originX": 0.5, "originY": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]},"#,
+        )
+        .unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!((t.origin_x.at(0.0), t.origin_y.at(4.5)), (0.5, 0.5));
+    }
+
+    #[test]
+    fn text_aligns_left_unless_told_otherwise() {
+        let align = |extra: &str| {
+            let json = format!(
+                r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1,
+                    "fonts": {{"DM Sans": "f.ttf"}}, "layers": [
+                  {{"id": "t", "type": "text", "text": "a", "font": "DM Sans", "size": 9,
+                    "color": "#fff"{extra}}}]}}"##
+            );
+            match Scene::from_json(&json, PathBuf::new()) {
+                Ok(scene) => match &scene.layers[0].kind {
+                    LayerKind::Text(t) => Ok(t.align),
+                    _ => panic!("not text"),
+                },
+                Err(e) => Err(e.to_string()),
+            }
+        };
+        assert_eq!(align(""), Ok(TextAlign::Left));
+        assert_eq!(align(r#", "align": "center""#), Ok(TextAlign::Center));
+        assert_eq!(align(r#", "align": "right""#), Ok(TextAlign::Right));
+        assert!(
+            align(r#", "align": "justify""#)
+                .unwrap_err()
+                .contains("justify")
+        );
+    }
+
+    // --- Lottie. --------------------------------------------------------------
+
+    fn anims() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/anims")
+    }
+
+    fn lottie_scene(layer: &str, base: PathBuf) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                  {{"id": "anim", "type": "lottie", {layer}}}]}}"##
+            ),
+            base,
+        )
+    }
+
+    #[test]
+    fn a_lottie_layer_takes_a_file_a_box_a_time_and_a_loop() {
+        let scene = lottie_scene(
+            r#""src": "burst.json", "width": 40, "height": 30, "time": [{"frame": 0, "value": 0}, {"frame": 9, "value": 2}], "loop": true"#,
+            PathBuf::new(),
+        )
+        .unwrap();
+        let LayerKind::Lottie(l) = &scene.layers[0].kind else {
+            panic!("not a lottie layer");
+        };
+        assert_eq!(l.src, "burst.json");
+        assert_eq!(l.time.as_ref().unwrap().at(9.0), 2.0);
+        assert!(l.looped);
+        // With both sides given, the file is not read.
+        assert!(scene.asset_sizes.is_empty());
+        assert_eq!(scene.layers[0].kind.name(), "lottie");
+        assert!(scene.layers[0].kind.has_box());
+        // The defaults.
+        let scene = lottie_scene(
+            r#""src": "burst.json", "width": 1, "height": 1"#,
+            PathBuf::new(),
+        )
+        .unwrap();
+        let LayerKind::Lottie(l) = &scene.layers[0].kind else {
+            panic!("not a lottie layer");
+        };
+        assert!(l.time.is_none() && !l.looped);
+    }
+
+    #[test]
+    fn a_lottie_layer_without_sides_is_measured_from_its_file() {
+        let scene = lottie_scene(r#""src": "burst.json""#, anims()).unwrap();
+        assert_eq!(scene.asset_sizes["burst.json"], (120.0, 120.0));
+        let scene = lottie_scene(r#""src": "burst.lottie", "height": 50"#, anims()).unwrap();
+        assert_eq!(scene.asset_sizes["burst.lottie"], (120.0, 120.0));
+    }
+
+    #[test]
+    fn a_bad_lottie_layer_is_an_error_naming_it() {
+        let msg = lottie_scene(r#""src": "nope.json", "width": 5"#, anims())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"anim\"") && msg.contains("nope.json") && msg.contains("size of lottie"),
+            "{msg}"
+        );
+        let msg = lottie_scene(r#""src": " ""#, anims())
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("\"anim\"") && msg.contains("src"), "{msg}");
+        let msg = lottie_scene(r#""src": "a.json", "width": -4, "height": 4"#, anims())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"anim\"") && msg.contains("negative"),
+            "{msg}"
+        );
+    }
+
+    // --- Per-character styles. ------------------------------------------------
+
+    fn chars_scene(chars: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 10,
+                    "fonts": {{"DM Sans": "f.ttf"}}, "layers": [
+                  {{"id": "t", "type": "text", "text": "abc", "font": "DM Sans", "size": 9,
+                    "color": "#fff", "chars": {chars}}}]}}"##
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn characters_take_null_or_a_style_with_defaults() {
+        let scene = chars_scene(
+            r##"[null, {}, {"x": 4, "y": [{"frame": 0, "value": 0}, {"frame": 9, "value": 9}],
+                          "scale": 2, "rotation": 45, "opacity": 0.5, "color": "#ff0000"}]"##,
+        )
+        .unwrap();
+        let LayerKind::Text(t) = &scene.layers[0].kind else {
+            panic!("not text");
+        };
+        assert_eq!(t.chars.len(), 3);
+        assert!(t.chars[0].is_none());
+        let plain = t.chars[1].as_ref().unwrap();
+        let values = [
+            &plain.x,
+            &plain.y,
+            &plain.scale,
+            &plain.rotation,
+            &plain.opacity,
+        ];
+        assert_eq!(values.map(|n| n.at(0.0)), [0.0, 0.0, 1.0, 0.0, 1.0]);
+        assert!(plain.color.is_none());
+        let full = t.chars[2].as_ref().unwrap();
+        assert_eq!(
+            (full.x.at(0.0), full.y.at(9.0), full.scale.at(0.0)),
+            (4.0, 9.0, 2.0)
+        );
+        assert_eq!(full.color, Some(Color::parse("#ff0000").unwrap()));
+        // An empty list, and lists longer and shorter than the text, are fine.
+        chars_scene("[]").unwrap();
+        chars_scene(r#"[null, null, null, null, {"x": 1}]"#).unwrap();
+        let bad = chars_scene(r#"[{"color": "red"}]"#)
+            .unwrap_err()
+            .to_string();
+        assert!(bad.contains("red") || bad.contains("colour"), "{bad}");
+        let bad = chars_scene(r#"["x"]"#).unwrap_err().to_string();
+        assert!(bad.contains("invalid type"), "{bad}");
+    }
+
+    // --- Layout. --------------------------------------------------------------
+
+    fn layout_scene(layout: &str, item: &str) -> Result<Scene> {
+        scene_of(&format!(
+            r#"{{"id": "row", "type": "group", "layout": {layout}, "children": [
+                 {}]}}"#,
+            rect("a", &format!(r#""layoutItem": {item},"#))
+        ))
+    }
+
+    fn the_layout(scene: &Scene) -> &Layout {
+        match &scene.layers[0].kind {
+            LayerKind::Group(g) => g.layout.as_ref().unwrap(),
+            _ => panic!("not a group"),
+        }
+    }
+
+    #[test]
+    fn a_layout_has_css_defaults() {
+        let scene = layout_scene("{}", "{}").unwrap();
+        let l = the_layout(&scene);
+        assert_eq!(
+            (l.flex_direction, l.flex_wrap, l.justify_content),
+            (
+                FlexDirection::Row,
+                FlexWrap::Nowrap,
+                JustifyContent::FlexStart
+            )
+        );
+        assert_eq!(
+            (l.align_items, l.align_content),
+            (AlignItems::Stretch, AlignContent::Stretch)
+        );
+        assert!(l.gap.is_none() && l.padding.is_none() && l.width.is_none());
+        let LayerKind::Group(g) = &scene.layers[0].kind else {
+            panic!("not a group");
+        };
+        let item = g.children[0].layout_item.as_ref().unwrap();
+        assert_eq!(
+            (item.position, item.align_self),
+            (Position::Relative, AlignSelf::Auto)
+        );
+        assert!(item.flex_grow.is_none() && item.flex_basis.is_none());
+        // A group without a layout has none, and no layer needs an item.
+        assert!(scene_with("").unwrap().layers[1].layout_item.is_none());
+    }
+
+    #[test]
+    fn a_layout_parses_every_value() {
+        let scene = layout_scene(
+            r#"{"display": "flex", "flexDirection": "column-reverse", "flexWrap": "wrap-reverse",
+                "justifyContent": "space-evenly", "alignItems": "baseline", "alignContent": "space-around",
+                "gap": [4, [{"frame": 0, "value": 1}, {"frame": 9, "value": 5}]],
+                "padding": [1, 2, 3, 4], "width": 300, "height": [{"frame": 0, "value": 1}, {"frame": 9, "value": 90}]}"#,
+            r#"{"position": "absolute", "flexGrow": 2, "flexShrink": 0, "flexBasis": 40,
+                "alignSelf": "flex-end", "margin": [1, 2, 3, 4], "width": 5, "height": 6}"#,
+        )
+        .unwrap();
+        let l = the_layout(&scene);
+        assert_eq!(l.flex_direction, FlexDirection::ColumnReverse);
+        assert_eq!(l.flex_wrap, FlexWrap::WrapReverse);
+        assert_eq!(l.justify_content, JustifyContent::SpaceEvenly);
+        assert_eq!(l.align_items, AlignItems::Baseline);
+        assert_eq!(l.align_content, AlignContent::SpaceAround);
+        let gap = &l.gap.as_ref().unwrap().0;
+        assert_eq!((gap[0].at(0.0), gap[1].at(9.0)), (4.0, 5.0));
+        assert_eq!(l.padding.as_ref().unwrap().0.len(), 4);
+        assert_eq!(l.height.as_ref().unwrap().at(9.0), 90.0);
+        let LayerKind::Group(g) = &scene.layers[0].kind else {
+            panic!("not a group");
+        };
+        let item = g.children[0].layout_item.as_ref().unwrap();
+        assert_eq!(item.position, Position::Absolute);
+        assert_eq!(item.align_self, AlignSelf::FlexEnd);
+        assert!(matches!(&item.flex_basis, Some(FlexBasis::Length(n)) if n.at(0.0) == 40.0));
+        let auto = layout_scene("{}", r#"{"flexBasis": "auto"}"#).unwrap();
+        let LayerKind::Group(g) = &auto.layers[0].kind else {
+            panic!("not a group");
+        };
+        assert!(matches!(
+            g.children[0].layout_item.as_ref().unwrap().flex_basis,
+            Some(FlexBasis::Auto)
+        ));
+        // A single number or a keyframe list is one length.
+        for gap in [
+            "7",
+            r#"[{"frame": 0, "value": 1}, {"frame": 9, "value": 5}]"#,
+        ] {
+            let scene =
+                layout_scene(&format!(r#"{{"gap": {gap}, "padding": {gap}}}"#), "{}").unwrap();
+            assert_eq!(the_layout(&scene).gap.as_ref().unwrap().0.len(), 1);
+        }
+    }
+
+    #[test]
+    fn a_bad_layout_is_an_error_naming_the_layer() {
+        let cases = [
+            (r#"{"gap": [1, 2, 3]}"#, "{}", "\"row\"", "gap takes 1 or 2"),
+            (
+                r#"{"padding": [1, 2]}"#,
+                "{}",
+                "\"row\"",
+                "padding takes 1 or 4",
+            ),
+            (
+                r#"{"padding": -1}"#,
+                "{}",
+                "\"row\"",
+                "must not be negative",
+            ),
+            (
+                r#"{"gap": [1, -1]}"#,
+                "{}",
+                "\"row\"",
+                "must not be negative",
+            ),
+            (r#"{"width": -5}"#, "{}", "\"row\"", "layout width"),
+            (
+                "{}",
+                r#"{"margin": [1, 2, 3]}"#,
+                "\"a\"",
+                "margin takes 1 or 4",
+            ),
+            (
+                "{}",
+                r#"{"flexGrow": -1}"#,
+                "\"a\"",
+                "flexGrow must not be negative",
+            ),
+            (
+                "{}",
+                r#"{"flexBasis": -2}"#,
+                "\"a\"",
+                "flexBasis must not be negative",
+            ),
+            (
+                "{}",
+                r#"{"height": -2}"#,
+                "\"a\"",
+                "height must not be negative",
+            ),
+        ];
+        for (layout, item, layer, want) in cases {
+            let msg = layout_scene(layout, item).unwrap_err().to_string();
+            assert!(
+                msg.contains(layer) && msg.contains(want),
+                "{layout} {item}: {msg}"
+            );
+        }
+        // Negative margins are fine, as in CSS.
+        layout_scene("{}", r#"{"margin": -4}"#).unwrap();
+        // Unknown names are the parser's errors.
+        for (layout, item, word) in [
+            (r#"{"justifyContent": "start"}"#, "{}", "start"),
+            (r#"{"display": "grid"}"#, "{}", "grid"),
+            (r#"{"flexDirection": "diagonal"}"#, "{}", "diagonal"),
+            ("{}", r#"{"flexBasis": "content"}"#, "flexBasis"),
+            ("{}", r#"{"position": "fixed"}"#, "fixed"),
+        ] {
+            let msg = layout_scene(layout, item).unwrap_err().to_string();
+            assert!(msg.contains(word), "{layout} {item}: {msg}");
+        }
+    }
+
+    // --- Motion blur frames. --------------------------------------------------
+
+    fn rect(id: &str, extra: &str) -> String {
+        format!(
+            r##"{{"id": "{id}", "type": "shape", {extra}
+                 "shape": {{"kind": "rect", "width": 10, "height": 10}}, "fill": "#fff"}}"##
+        )
+    }
+
+    fn blurred(samples: usize, frames: &[String]) -> String {
+        rect(
+            "a",
+            &format!(
+                r#""motionBlur": {{"samples": {samples}, "frames": [{}]}},"#,
+                frames.join(",")
+            ),
+        )
+    }
+
+    fn scene_of(layers: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r#"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 1, "layers": [{layers}]}}"#
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn motion_blur_frames_are_samples_complete_layers_of_the_same_type() {
+        let copies = |n: usize| vec![rect("a", ""); n];
+        let scene = scene_of(&blurred(3, &copies(3))).unwrap();
+        let blur = scene.layers[0].motion_blur.as_ref().unwrap();
+        assert_eq!(blur.frames.as_ref().map(Vec::len), Some(3));
+        // No frames is fine, and is the default.
+        let scene = scene_with(r#""motionBlur": {},"#).unwrap();
+        assert!(
+            scene.layers[0]
+                .motion_blur
+                .as_ref()
+                .unwrap()
+                .frames
+                .is_none()
+        );
+
+        let msg = scene_of(&blurred(3, &copies(2))).unwrap_err().to_string();
+        assert!(
+            msg.contains("\"a\"") && msg.contains("exactly 3") && msg.contains("got 2"),
+            "{msg}"
+        );
+        let group = r#"{"id": "a", "type": "group", "children": []}"#.to_string();
+        let msg = scene_of(&blurred(2, &[rect("a", ""), group]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"a\"")
+                && msg.contains("frames[1]")
+                && msg.contains("group")
+                && msg.contains("shape"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn motion_blur_frames_are_validated_like_layers() {
+        let bad = rect("a", r#""clip": {"kind": "polygon", "points": []},"#);
+        let msg = scene_of(&blurred(2, &[rect("a", ""), bad]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"a\"") && msg.contains("at least 3 points"),
+            "{msg}"
+        );
+        // A copy has its original's id, and its own motionBlur is ignored,
+        // even one that would be an error.
+        let odd = rect("a", r#""motionBlur": {"samples": 1},"#);
+        scene_of(&blurred(2, &[odd.clone(), odd])).unwrap();
+        // A copy of a group repeats its children's ids too.
+        let group = |extra: &str| {
+            format!(
+                r#"{{"id": "g", "type": "group", {extra} "children": [{}]}}"#,
+                rect("kid", "")
+            )
+        };
+        let copies = format!("{0},{0}", group(""));
+        scene_of(&group(&format!(
+            r#""motionBlur": {{"samples": 2, "frames": [{copies}]}},"#
+        )))
+        .unwrap();
+        // A copy's matte source is found among the original's siblings.
+        let matted = rect("a", r#""matte": {"layer": "src"},"#);
+        scene_of(&format!(
+            "{},{}",
+            blurred(2, &[matted.clone(), matted]),
+            rect("src", "")
+        ))
+        .unwrap();
+        let unmatted = rect("a", r#""matte": {"layer": "nope"},"#);
+        let msg = scene_of(&blurred(2, &[unmatted.clone(), unmatted]))
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("\"nope\" is not a sibling"), "{msg}");
+    }
+
+    #[test]
+    fn motion_blur_frames_effects_count_in_the_margin_and_the_shaders() {
+        let shadowed = |y: u32| {
+            rect(
+                "a",
+                &format!(r#""effects": [{{"type": "dropShadow", "y": {y}, "blur": 5}}],"#),
+            )
+        };
+        let shader = rect(
+            "a",
+            r#""effects": [{"type": "shader",
+                "code": "fn effect(px: vec2<f32>) -> vec4<f32> { return layer(px); }"}],"#,
+        );
+        let scene = scene_of(&blurred(2, &[rect("a", ""), shadowed(20)])).unwrap();
+        // 20 + 3 * 5.
+        assert_eq!(scene.margin(), 35);
+        assert!(scene.shader_sources().is_empty());
+        let scene = scene_of(&blurred(2, &[shader.clone(), shader])).unwrap();
+        assert_eq!(scene.shader_sources().len(), 1);
+        // The layer itself still counts when it is the larger.
+        let big = rect(
+            "a",
+            &format!(
+                r#""effects": [{{"type": "dropShadow", "y": 50}}],
+                   "motionBlur": {{"samples": 2, "frames": [{0}, {0}]}},"#,
+                shadowed(10)
+            ),
+        );
+        assert_eq!(scene_of(&big).unwrap().margin(), 50);
     }
 }
