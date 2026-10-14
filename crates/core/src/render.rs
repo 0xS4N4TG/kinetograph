@@ -273,10 +273,12 @@ impl Renderer {
         parent: Affine,
         backdrop: Option<&Tex>,
     ) -> Result<Tex> {
+        // Layer space to padded texture pixels.
+        let matrix = parent * layer.transform.matrix();
         let src = match &layer.kind {
             ResolvedKind::Group { children } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
-                self.draw_layers(children, parent * layer.transform.matrix(), empty, backdrop)?
+                self.draw_layers(children, matrix, empty, backdrop)?
             }
             _ => {
                 self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
@@ -293,20 +295,18 @@ impl Renderer {
         };
         let mut src = self.timed(Stage::Composite, |s| {
             s.compositor
-                .apply_effects(src, &layer.effects, backdrop, coverage.as_ref())
+                .apply_effects(src, matrix, &layer.effects, backdrop, coverage.as_ref())
         });
         if let Some(coverage) = coverage {
             self.compositor.release(coverage);
         }
         if let Some(clip) = &layer.clip {
-            let matrix = parent * layer.transform.matrix();
             self.timed(Stage::Raster, |s| s.rasterise_clip(clip, layer, matrix))?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor.mask(src, &s.vello_view, MaskMode::Alpha)
             });
         }
         if let Some(mask) = &layer.mask {
-            let matrix = parent * layer.transform.matrix();
             self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor.mask(src, &s.vello_view, mask.mode)

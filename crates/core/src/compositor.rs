@@ -14,6 +14,14 @@
 //! A scene's custom shader effects (`shader.rs`) have a pipeline each, made
 //! when the compositor is, on a bind group layout of their own.
 //!
+//! Passes that resample the layer (a warp, a displacement) need a bilinear
+//! sampler, which the layout below does not have (it only `textureLoad`s).
+//! They use `filtered_layout` instead: the layer, a sampler and one uniform
+//! block, run by `run_filtered_pass`.
+//!
+//! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`) are
+//! compiled with `shaders/hash.wgsl` in front of them (`shader_module`).
+//!
 //! `shaders/shadow.wgsl` holds the shadow effects' passes,
 //! `shaders/color.wgsl` the colour filter pass, `shaders/glow.wgsl` the glow
 //! pass and `shaders/aberration.wgsl` the chromatic aberration pass; they
@@ -27,6 +35,7 @@
 
 use std::collections::HashMap;
 
+use vello::kurbo::Affine;
 use vello::wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
@@ -69,6 +78,14 @@ pub struct Compositor {
     /// scene's named uniforms.
     shader_layout: wgpu::BindGroupLayout,
     shader_sampler: wgpu::Sampler,
+    /// For passes that resample the layer: the layer (filterable), a
+    /// bilinear sampler and a uniform block.
+    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
+    filtered_layout: wgpu::BindGroupLayout,
+    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
+    filtered_pipeline_layout: wgpu::PipelineLayout,
+    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
+    filtered_sampler: wgpu::Sampler,
     /// One pipeline per distinct custom shader, by `shader::compose` text.
     shaders: HashMap<String, wgpu::RenderPipeline>,
     blur: Blur,
@@ -87,26 +104,15 @@ impl Compositor {
         margin: u32,
         shaders: &[String],
     ) -> Compositor {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("composite"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/composite.wgsl").into()),
-        });
-        let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shadow"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
-        });
-        let color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("color"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/color.wgsl").into()),
-        });
-        let glow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("glow"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/glow.wgsl").into()),
-        });
-        let aberration_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("aberration"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/aberration.wgsl").into()),
-        });
+        let shader = shader_module(device, "composite", include_str!("shaders/composite.wgsl"));
+        let shadow_shader = shader_module(device, "shadow", include_str!("shaders/shadow.wgsl"));
+        let color_shader = shader_module(device, "color", include_str!("shaders/color.wgsl"));
+        let glow_shader = shader_module(device, "glow", include_str!("shaders/glow.wgsl"));
+        let aberration_shader = shader_module(
+            device,
+            "aberration",
+            include_str!("shaders/aberration.wgsl"),
+        );
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -140,32 +146,15 @@ impl Compositor {
             immediate_size: 0,
         });
         let pipeline = |shader: &wgpu::ShaderModule, entry: &str, format| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(entry),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: shader,
-                    entry_point: Some("vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: shader,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview_mask: None,
-                cache: None,
-            })
+            fullscreen_pipeline(device, &pipeline_layout, shader, entry, format)
         };
+        let filtered_layout = filtered_bind_group_layout(device);
+        let filtered_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("filtered"),
+                bind_group_layouts: &[Some(&filtered_layout)],
+                immediate_size: 0,
+            });
         let shader_layout = shader_bind_group_layout(device);
         let shader_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -234,6 +223,14 @@ impl Compositor {
                 ..Default::default()
             }),
             shaders,
+            filtered_layout,
+            filtered_pipeline_layout,
+            filtered_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("filtered"),
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }),
             blur: Blur::new(device),
             layout,
             pool: Vec::new(),
@@ -364,9 +361,15 @@ impl Compositor {
     /// whenever the effects include a backdrop blur. `coverage` is a texture
     /// whose alpha says where the layer is solid for that blur; without it
     /// the layer's own alpha does. Neither is released.
+    ///
+    /// `layer_matrix` takes layer space to pixels of the padded textures
+    /// (the product of the enclosing groups' matrices and the layer's own,
+    /// with the margin offset), for effects that work in layer space: they
+    /// pass its inverse to their shader to map a texel back to the layer.
     pub fn apply_effects(
         &mut self,
         mut src: Tex,
+        _layer_matrix: Affine,
         effects: &[ResolvedEffect],
         backdrop: Option<&Tex>,
         coverage: Option<&Tex>,
@@ -781,6 +784,44 @@ impl Compositor {
         self.draw(pipeline, &bind_group, target);
     }
 
+    /// Like `run_pass`, for a pipeline on `filtered_layout`: `input` is read
+    /// through a bilinear sampler.
+    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
+    fn run_filtered_pass(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        input: &wgpu::TextureView,
+        params: &[u8],
+        target: &wgpu::TextureView,
+    ) {
+        let uniform = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: params,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("filtered"),
+            layout: &self.filtered_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(input),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.filtered_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform.as_entire_binding(),
+                },
+            ],
+        });
+        self.draw(pipeline, &bind_group, target);
+    }
+
     /// One full-screen triangle with `bind_group`, written over all of
     /// `target`.
     fn draw(
@@ -810,6 +851,92 @@ impl Compositor {
         }
         self.queue.submit([encoder.finish()]);
     }
+}
+
+/// A pipeline that draws one full-screen triangle (`vs`) and runs the
+/// fragment function `entry` into a `format` target, with no blending.
+fn fullscreen_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    entry: &str,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(entry),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// The bind group of passes that resample the layer: the layer as a
+/// filterable texture, a filtering sampler and one uniform block.
+fn filtered_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("filtered"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    })
+}
+
+/// A shader module for a built-in pass. Passes that call `hash` or
+/// `cell_hash` get `shaders/hash.wgsl` put in front of their source.
+fn shader_module(device: &wgpu::Device, label: &str, source: &str) -> wgpu::ShaderModule {
+    let source = if source.contains("hash(") {
+        format!("{}{source}", include_str!("shaders/hash.wgsl"))
+    } else {
+        source.to_string()
+    };
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    })
 }
 
 /// The bind group of a custom shader (`shader::compose` declares the

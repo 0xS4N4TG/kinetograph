@@ -5,6 +5,8 @@ pub mod blur;
 pub mod color;
 pub mod compositor;
 pub mod error;
+#[cfg(test)]
+mod hash;
 pub mod render;
 pub mod resolve;
 pub mod scene;

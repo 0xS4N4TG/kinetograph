@@ -9,6 +9,21 @@ use crate::scene::{
     MAX_SHADOW_SIZE, MaskMode, MatteMode, Paint, Scene, Shadow, Transform,
 };
 
+/// The time a scene is evaluated at.
+///
+/// `t` is where keyframes are read, in frames and possibly fractional (motion
+/// blur samples between frames); `frame` is the whole output frame being
+/// rendered. Seeded noise that changes from frame to frame hashes `frame`,
+/// so the sub-frame samples of one output frame share a pattern instead of
+/// averaging it away. A custom shader's `kg.frame` and `kg.time` come from
+/// `t`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Clock {
+    pub t: f64,
+    pub frame: u32,
+    pub fps: f64,
+}
+
 #[derive(Clone, Debug)]
 pub struct ResolvedScene {
     pub width: u32,
@@ -254,7 +269,11 @@ impl Scene {
                 duration: self.duration_in_frames,
             });
         }
-        let f = f64::from(frame);
+        let clock = Clock {
+            t: f64::from(frame),
+            frame,
+            fps: self.fps,
+        };
         Ok(ResolvedScene {
             width: self.width,
             height: self.height,
@@ -263,13 +282,14 @@ impl Scene {
             layers: self
                 .layers
                 .iter()
-                .map(|l| resolve_layer(l, f, self.fps))
+                .map(|l| resolve_layer(l, clock))
                 .collect(),
         })
     }
 }
 
-fn resolve_layer(layer: &Layer, f: f64, fps: f64) -> ResolvedLayer {
+fn resolve_layer(layer: &Layer, clock: Clock) -> ResolvedLayer {
+    let f = clock.t;
     let kind = match &layer.kind {
         LayerKind::Shape(s) => ResolvedKind::Shape {
             geometry: match &s.shape {
@@ -309,11 +329,7 @@ fn resolve_layer(layer: &Layer, f: f64, fps: f64) -> ResolvedLayer {
             height: i.height.at(f),
         },
         LayerKind::Group(g) => ResolvedKind::Group {
-            children: g
-                .children
-                .iter()
-                .map(|c| resolve_layer(c, f, fps))
-                .collect(),
+            children: g.children.iter().map(|c| resolve_layer(c, clock)).collect(),
         },
     };
     ResolvedLayer {
@@ -321,7 +337,7 @@ fn resolve_layer(layer: &Layer, f: f64, fps: f64) -> ResolvedLayer {
         transform: resolve_transform(&layer.transform, f),
         opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
         blend_mode: layer.blend_mode,
-        effects: resolve_effects(&layer.effects, f, fps),
+        effects: resolve_effects(&layer.effects, clock),
         clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
         mask: layer.mask.as_ref().map(|m| ResolvedMask {
             gradient: resolve_gradient(&m.gradient, f),
@@ -420,10 +436,10 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
 
 /// Resolves a layer's effects, composing each run of colour filters into one
 /// matrix so it takes a single pass.
-fn resolve_effects(effects: &[Effect], f: f64, fps: f64) -> Vec<ResolvedEffect> {
+fn resolve_effects(effects: &[Effect], clock: Clock) -> Vec<ResolvedEffect> {
     let mut out: Vec<ResolvedEffect> = Vec::with_capacity(effects.len());
     for effect in effects {
-        let resolved = resolve_effect(effect, f, fps);
+        let resolved = resolve_effect(effect, clock);
         match (&resolved, out.last_mut()) {
             (ResolvedEffect::ColorMatrix(next), Some(ResolvedEffect::ColorMatrix(prev))) => {
                 *prev = prev.then(next);
@@ -434,7 +450,8 @@ fn resolve_effects(effects: &[Effect], f: f64, fps: f64) -> Vec<ResolvedEffect> 
     out
 }
 
-fn resolve_effect(effect: &Effect, f: f64, fps: f64) -> ResolvedEffect {
+fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
+    let f = clock.t;
     match effect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
@@ -478,7 +495,7 @@ fn resolve_effect(effect: &Effect, f: f64, fps: f64) -> ResolvedEffect {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
             frame: f as f32,
-            time: (f / fps) as f32,
+            time: (f / clock.fps) as f32,
         }),
     }
 }
@@ -715,6 +732,39 @@ mod tests {
         assert_eq!(shader.time, 0.1);
         assert!(shader.source.contains(code));
         assert!(shader.source.starts_with("struct U { a: f32, z: f32 }"));
+    }
+
+    #[test]
+    fn keyframes_and_the_shader_clock_follow_t_not_the_frame() {
+        let json = r##"{
+            "width": 100, "height": 100, "fps": 25, "durationInFrames": 11,
+            "layers": [{"id": "a", "type": "shape",
+              "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+              "transform": {"x": [{"frame": 0, "value": 0}, {"frame": 10, "value": 100}]},
+              "effects": [{"type": "shader",
+                "code": "fn effect(px: vec2<f32>) -> vec4<f32> { return layer(px); }"}]}]
+        }"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        // Half a frame past frame 2, as a motion blur sub-frame would be.
+        let clock = Clock {
+            t: 2.5,
+            frame: 2,
+            fps: scene.fps,
+        };
+        let layer = resolve_layer(&scene.layers[0], clock);
+        assert_eq!(layer.transform.x, 25.0);
+        let [ResolvedEffect::Shader(shader)] = &layer.effects[..] else {
+            panic!("not a shader");
+        };
+        assert_eq!((shader.frame, shader.time), (2.5, 0.1));
+        // A whole frame resolves exactly as `Scene::resolve` does.
+        let whole = Clock {
+            t: 4.0,
+            frame: 4,
+            fps: scene.fps,
+        };
+        assert_eq!(resolve_layer(&scene.layers[0], whole).transform.x, 40.0);
+        assert_eq!(scene.resolve(4).unwrap().layers[0].transform.x, 40.0);
     }
 
     #[test]
