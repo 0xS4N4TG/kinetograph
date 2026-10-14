@@ -213,4 +213,7 @@ range, `doctor`.
 - Blend space. The compositor blends in linear light (section 4). CSS, and so Remotion, blends in sRGB space, so
   `multiply`, `screen` and `softLight` will look different from a Remotion render of the same layers. Decide before
   Phase 3's comparison whether Remotion-compat needs an sRGB blend path.
+- Anti-aliasing. Vello's analytic `Area` mode gave frames that differed by a level or two between runs (GPU thread
+  timing changes the order coverage is summed in), so the renderer uses 16x MSAA, which is repeatable. Revisit if edge
+  quality matters more than exact repeatability, or when Vello fixes the ordering.
 - Final name.
