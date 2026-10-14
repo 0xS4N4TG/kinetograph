@@ -5,9 +5,9 @@ use vello::kurbo::Affine;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
-    BlendMode, Clip, DitherMode, Effect, Extend, Geometry, Gradient, GradientGeometry,
-    HalftoneShape, Layer, LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS,
-    MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform,
+    BlendMode, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Geometry, Gradient,
+    GradientGeometry, HalftoneShape, Layer, LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE,
+    MIN_DITHER_LEVELS, MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform,
 };
 
 /// The time a scene is evaluated at.
@@ -104,7 +104,25 @@ pub enum ResolvedEffect {
     Grain(ResolvedGrain),
     Dither(ResolvedDither),
     Halftone(ResolvedHalftone),
+    DotMatrix(ResolvedDotMatrix),
     Shader(ResolvedShader),
+}
+
+/// A dot-matrix reveal at one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedDotMatrix {
+    /// Layer pixels per cell, above 0.
+    pub size: f32,
+    /// 0..=1.
+    pub progress: f32,
+    pub order: DotOrder,
+    /// Degrees clockwise from +x; the direction of a sweep.
+    pub angle: f32,
+    /// 0..1, below 1.
+    pub stagger: f32,
+    /// 0 for a sweep, which has no randomness.
+    pub seed: u32,
+    pub shape: DotShape,
 }
 
 /// A halftone at one frame.
@@ -121,9 +139,13 @@ pub struct ResolvedHalftone {
     pub invert: bool,
 }
 
-/// Smallest halftone cell, in layer pixels: a cell much smaller than a pixel
-/// is noise, and it keeps the shader's division sane.
+/// Smallest halftone or dot-matrix cell, in layer pixels: a cell much smaller
+/// than a pixel is noise, and it keeps the shader's division sane.
 pub const MIN_HALFTONE_SIZE: f64 = 0.01;
+
+/// The largest stagger a dot matrix uses: its dots grow over `1 - stagger` of
+/// the progress, so 1 itself is not allowed.
+const MAX_STAGGER: f64 = 0.999;
 
 /// A dither at one frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -620,6 +642,29 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             color: *color,
             invert: *invert,
         }),
+        Effect::DotMatrix {
+            size,
+            progress,
+            order,
+            angle,
+            stagger,
+            seed,
+            shape,
+        } => ResolvedEffect::DotMatrix(ResolvedDotMatrix {
+            size: size.at(f).max(MIN_HALFTONE_SIZE) as f32,
+            progress: progress.at(f).clamp(0.0, 1.0) as f32,
+            order: *order,
+            angle: angle.at(f) as f32,
+            // Below 1 when the scene loaded; an interpolated value stays
+            // between its keyframes.
+            stagger: stagger.at(f).clamp(0.0, MAX_STAGGER) as f32,
+            // Checked when the scene loaded; a sweep ignores it.
+            seed: match order {
+                DotOrder::Random => seed.and_then(|s| u32::try_from(s).ok()).unwrap_or_default(),
+                DotOrder::Sweep => 0,
+            },
+            shape: *shape,
+        }),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
@@ -1081,6 +1126,61 @@ mod tests {
                 invert: false,
             }
         );
+    }
+
+    #[test]
+    fn dot_matrix_clamps_progress_and_ignores_the_seed_of_a_sweep() {
+        let effects = effects_at(
+            r#"[{"type": "dotMatrix", "seed": 6, "size": 10,
+                 "progress": [{"frame": 0, "value": -0.5}, {"frame": 10, "value": 1.5}]},
+                {"type": "dotMatrix", "order": "sweep", "seed": 6, "shape": "square", "angle": 30,
+                 "stagger": [{"frame": 0, "value": 0}, {"frame": 10, "value": 0.5}],
+                 "progress": 0.25}]"#,
+            5,
+        );
+        let dm = |e: &ResolvedEffect| {
+            let ResolvedEffect::DotMatrix(d) = e else {
+                panic!("not a dot matrix: {e:?}");
+            };
+            *d
+        };
+        assert_eq!(
+            dm(&effects[0]),
+            ResolvedDotMatrix {
+                size: 10.0,
+                progress: 0.5,
+                order: DotOrder::Random,
+                angle: 0.0,
+                stagger: 0.6,
+                seed: 6,
+                shape: DotShape::Circle,
+            }
+        );
+        assert_eq!(
+            dm(&effects[1]),
+            ResolvedDotMatrix {
+                size: 12.0,
+                progress: 0.25,
+                order: DotOrder::Sweep,
+                angle: 30.0,
+                stagger: 0.25,
+                seed: 0,
+                shape: DotShape::Square,
+            }
+        );
+        // Outside the keyframes progress is clamped to 0..=1.
+        let late = effects_at(
+            r#"[{"type": "dotMatrix", "seed": 6,
+                 "progress": [{"frame": 0, "value": -0.5}, {"frame": 10, "value": 1.5}]}]"#,
+            10,
+        );
+        assert_eq!(dm(&late[0]).progress, 1.0);
+        let early = effects_at(
+            r#"[{"type": "dotMatrix", "seed": 6,
+                 "progress": [{"frame": 0, "value": -0.5}, {"frame": 10, "value": 1.5}]}]"#,
+            0,
+        );
+        assert_eq!(dm(&early[0]).progress, 0.0);
     }
 
     #[test]

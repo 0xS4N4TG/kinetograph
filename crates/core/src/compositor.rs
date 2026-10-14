@@ -22,7 +22,8 @@
 //! The halftone pass (`shaders/halftone.wgsl`) reads the layer at cell
 //! centres through the filtered layout, with the layer's matrix.
 //!
-//! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`) are
+//! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`,
+//! `dot_matrix.wgsl`) are
 //! compiled with `shaders/hash.wgsl` in front of them (`shader_module`).
 //!
 //! The `lut` pass (`shaders/lut.wgsl`) reads a 3D texture as well, so it has
@@ -43,7 +44,7 @@
 
 use std::collections::HashMap;
 
-use vello::kurbo::Affine;
+use vello::kurbo::{Affine, Rect};
 use vello::wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
@@ -51,11 +52,12 @@ use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::resolve::{
-    ResolvedDither, ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedGrain,
-    ResolvedHalftone, ResolvedShader, ResolvedShadow,
+    ResolvedDither, ResolvedDotMatrix, ResolvedEffect, ResolvedGlow, ResolvedGradientMap,
+    ResolvedGrain, ResolvedHalftone, ResolvedShader, ResolvedShadow,
 };
 use crate::scene::{
-    BlendMode, DitherMode, HalftoneShape, MAX_GRADIENT_MAP_STOPS, MaskMode, MatteMode,
+    BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, MAX_GRADIENT_MAP_STOPS, MaskMode,
+    MatteMode,
 };
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -103,6 +105,7 @@ pub struct Compositor {
     dither: wgpu::RenderPipeline,
     /// On `filtered_layout`: it reads the layer between texels.
     halftone: wgpu::RenderPipeline,
+    dot_matrix: wgpu::RenderPipeline,
     /// For `lut`: the layer, a 3D texture and the pass's uniforms.
     lut_layout: wgpu::BindGroupLayout,
     lut: wgpu::RenderPipeline,
@@ -153,6 +156,11 @@ impl Compositor {
         );
         let grain_shader = shader_module(device, "grain", include_str!("shaders/grain.wgsl"));
         let dither_shader = shader_module(device, "dither", include_str!("shaders/dither.wgsl"));
+        let dot_matrix_shader = shader_module(
+            device,
+            "dot matrix",
+            include_str!("shaders/dot_matrix.wgsl"),
+        );
         let halftone_shader =
             shader_module(device, "halftone", include_str!("shaders/halftone.wgsl"));
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
@@ -286,6 +294,7 @@ impl Compositor {
             grain: pipeline(&grain_shader, "fs_grain", LINEAR_FORMAT),
             dither: pipeline(&dither_shader, "fs_dither", LINEAR_FORMAT),
             halftone,
+            dot_matrix: pipeline(&dot_matrix_shader, "fs_dot_matrix", LINEAR_FORMAT),
             lut_layout,
             lut,
             luts,
@@ -440,10 +449,14 @@ impl Compositor {
     /// (the product of the enclosing groups' matrices and the layer's own,
     /// with the margin offset), for effects that work in layer space: they
     /// pass its inverse to their shader to map a texel back to the layer.
+    /// `layer_box` is the layer's own box in layer space (none for a group),
+    /// which effects that measure across the layer need; the caller only has
+    /// to work it out when one does (`needs_box`).
     pub fn apply_effects(
         &mut self,
         mut src: Tex,
         layer_matrix: Affine,
+        layer_box: Option<Rect>,
         effects: &[ResolvedEffect],
         backdrop: Option<&Tex>,
         coverage: Option<&Tex>,
@@ -498,6 +511,10 @@ impl Compositor {
                 ResolvedEffect::Halftone(halftone) => {
                     src = self.halftone(src, layer_matrix, &halftone);
                 }
+                ResolvedEffect::DotMatrix(dots) if dots.progress < 1.0 => {
+                    src = self.dot_matrix(src, layer_matrix, layer_box, &dots);
+                }
+                ResolvedEffect::DotMatrix(_) => {}
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -648,6 +665,28 @@ impl Compositor {
             &self.halftone,
             &src.view,
             &floats(&halftone_values(halftone, layer_matrix)),
+            &target.view,
+        );
+        self.release(src);
+        target
+    }
+
+    /// Shows `src` through a grid of growing dots (see
+    /// `shaders/dot_matrix.wgsl`). `src` goes back to the pool; the result is
+    /// a new texture.
+    fn dot_matrix(
+        &mut self,
+        src: Tex,
+        layer_matrix: Affine,
+        layer_box: Option<Rect>,
+        dots: &ResolvedDotMatrix,
+    ) -> Tex {
+        let target = self.acquire();
+        self.run_pass(
+            &self.dot_matrix,
+            &src.view,
+            &src.view,
+            &dot_matrix_values(dots, layer_matrix, layer_box),
             &target.view,
         );
         self.release(src);
@@ -1341,6 +1380,78 @@ fn halftone_values(halftone: &ResolvedHalftone, layer_matrix: Affine) -> [f32; 2
     ]
 }
 
+/// A dot matrix as `shaders/dot_matrix.wgsl` reads it: the inverse of the
+/// layer matrix (linear part, then translation), the cell size, progress,
+/// stagger, shape and order, the sweep (direction, start and 1 / extent), then
+/// the seed as a u32.
+fn dot_matrix_values(
+    dots: &ResolvedDotMatrix,
+    layer_matrix: Affine,
+    layer_box: Option<Rect>,
+) -> Vec<u8> {
+    let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
+        layer_matrix.inverse().as_coeffs()
+    } else {
+        [0.0; 6]
+    };
+    let sweep = sweep_axis(layer_box, f64::from(dots.angle));
+    let shape = match dots.shape {
+        DotShape::Circle => 0.0,
+        DotShape::Square => 1.0,
+    };
+    let order = match dots.order {
+        DotOrder::Random => 0.0,
+        DotOrder::Sweep => 1.0,
+    };
+    let mut bytes = floats(&[
+        inverse[0] as f32,
+        inverse[1] as f32,
+        inverse[2] as f32,
+        inverse[3] as f32,
+        inverse[4] as f32,
+        inverse[5] as f32,
+        dots.size,
+        0.0,
+        dots.progress,
+        dots.stagger,
+        shape,
+        order,
+        sweep[0],
+        sweep[1],
+        sweep[2],
+        sweep[3],
+    ]);
+    bytes.extend([dots.seed, 0, 0, 0].iter().flat_map(|v| v.to_le_bytes()));
+    bytes
+}
+
+/// What a sweep along `angle` degrees (clockwise from +x, 0 is left to right)
+/// needs to turn a cell's position into 0..1 across `bounds`: the direction's
+/// cosine and sine, the nearest box corner's distance along it, and 1 over the
+/// box's extent along it. No box, or one with no extent along the direction,
+/// gives an inverse extent of 0, so every cell starts at once.
+fn sweep_axis(bounds: Option<Rect>, angle: f64) -> [f32; 4] {
+    let (sin, cos) = angle.to_radians().sin_cos();
+    let Some(b) = bounds else {
+        return [cos as f32, sin as f32, 0.0, 0.0];
+    };
+    let along =
+        [(b.x0, b.y0), (b.x1, b.y0), (b.x0, b.y1), (b.x1, b.y1)].map(|(x, y)| x * cos + y * sin);
+    let near = along.into_iter().fold(f64::INFINITY, f64::min);
+    let far = along.into_iter().fold(f64::NEG_INFINITY, f64::max);
+    let extent = far - near;
+    [
+        cos as f32,
+        sin as f32,
+        near as f32,
+        if extent > 1e-9 {
+            (1.0 / extent) as f32
+        } else {
+            0.0
+        },
+    ]
+}
+
 /// Little-endian bytes of a uniform block made of `f32`s.
 fn floats(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
@@ -1424,6 +1535,7 @@ fn mode_index(mode: BlendMode) -> u32 {
 mod tests {
     use super::*;
     use crate::color::Color;
+    use crate::hash::{cell_hash, unit_float};
 
     #[test]
     fn aberration_angles_run_clockwise_from_the_x_axis() {
@@ -1664,6 +1776,170 @@ mod tests {
         assert!(
             wgsl.contains("clamp((r - dist) / aa + 0.5, 0.0, 1.0) * clamp(2.0 * r / aa, 0.0, 1.0)")
         );
+    }
+
+    fn dots(order: DotOrder, shape: DotShape) -> ResolvedDotMatrix {
+        ResolvedDotMatrix {
+            size: 12.0,
+            progress: 0.5,
+            order,
+            angle: 0.0,
+            stagger: 0.6,
+            seed: 41,
+            shape,
+        }
+    }
+
+    #[test]
+    fn dot_matrix_values_carry_the_matrix_the_sweep_and_the_seed() {
+        let matrix = Affine::translate((10.0, 20.0)) * Affine::scale(2.0);
+        let bounds = Some(Rect::new(0.0, 0.0, 100.0, 50.0));
+        let bytes = dot_matrix_values(&dots(DotOrder::Sweep, DotShape::Square), matrix, bounds);
+        assert_eq!(bytes.len(), 80);
+        let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        // The inverse (linear part, then translation): x / 2 - 5.
+        assert_eq!(
+            [0, 1, 2, 3, 4, 5].map(float),
+            [0.5, 0.0, 0.0, 0.5, -5.0, -10.0]
+        );
+        // Size, progress, stagger, square, sweep.
+        assert_eq!([6, 8, 9, 10, 11].map(float), [12.0, 0.5, 0.6, 1.0, 1.0]);
+        // A left-to-right sweep over a box 100 wide.
+        assert_eq!([12, 13, 14, 15].map(float), [1.0, 0.0, 0.0, 0.01]);
+        assert_eq!(u32::from_le_bytes(bytes[64..68].try_into().unwrap()), 41);
+        let random = dot_matrix_values(&dots(DotOrder::Random, DotShape::Circle), matrix, None);
+        let float = |i: usize| f32::from_le_bytes(random[i * 4..i * 4 + 4].try_into().unwrap());
+        assert_eq!([10, 11].map(float), [0.0, 0.0]);
+        // Nothing to invert for a layer scaled to nothing.
+        let flat = dot_matrix_values(
+            &dots(DotOrder::Random, DotShape::Circle),
+            Affine::scale(0.0),
+            None,
+        );
+        assert!(flat[..24].iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn a_sweep_runs_from_the_nearest_corner_to_the_farthest() {
+        let near = |got: [f32; 4], want: [f32; 4]| {
+            assert!(
+                got.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6),
+                "{got:?} {want:?}"
+            );
+        };
+        let b = Some(Rect::new(10.0, 20.0, 110.0, 70.0));
+        // Left to right: from x = 10 over 100.
+        near(sweep_axis(b, 0.0), [1.0, 0.0, 10.0, 0.01]);
+        // Top to bottom (90 degrees clockwise): from y = 20 over 50.
+        near(sweep_axis(b, 90.0), [0.0, 1.0, 20.0, 0.02]);
+        // Right to left starts at the right edge: along -x that is -110.
+        near(sweep_axis(b, 180.0), [-1.0, 0.0, -110.0, 0.01]);
+        // The diagonal: the extent is (width + height) / sqrt 2.
+        let diagonal = sweep_axis(b, 45.0);
+        let h = std::f32::consts::FRAC_1_SQRT_2;
+        near(diagonal, [h, h, (10.0 + 20.0) * h, 1.0 / (150.0 * h)]);
+        // No box, or a box with no extent along the sweep: every cell at once.
+        assert_eq!(sweep_axis(None, 0.0)[3], 0.0);
+        assert_eq!(
+            sweep_axis(Some(Rect::new(5.0, 5.0, 5.0, 40.0)), 0.0)[3],
+            0.0
+        );
+    }
+
+    /// The `grown` of shaders/dot_matrix.wgsl.
+    fn grown(progress: f32, delay: f32, stagger: f32) -> f32 {
+        ((progress - delay) / (1.0 - stagger)).clamp(0.0, 1.0)
+    }
+
+    /// The delay of a random cell in shaders/dot_matrix.wgsl.
+    fn random_delay(seed: u32, ix: i32, iy: i32, stagger: f32) -> f32 {
+        stagger * unit_float(cell_hash(seed, ix as u32, iy as u32, 0))
+    }
+
+    /// The coverage at `(x, y)` from the centre of a unit cell, as
+    /// `fs_dot_matrix` works it out for a pixel `aa` of a cell wide.
+    fn dot_coverage(shape: DotShape, grown: f64, aa: f64, x: f64, y: f64) -> f64 {
+        match shape {
+            DotShape::Circle => coverage(x.hypot(y), grown * (0.5 * 2.0_f64.sqrt() + 0.5 * aa), aa),
+            DotShape::Square => coverage(x.abs().max(y.abs()), grown * (0.5 + 0.5 * aa), aa),
+        }
+    }
+
+    #[test]
+    fn every_cell_is_empty_at_progress_0_and_solid_at_progress_1() {
+        let stagger = 0.6;
+        // Random delays over a patch of cells, including negative cell
+        // indices, which is where a layer hanging off the top left lives.
+        let delays: Vec<f32> = (-20..20)
+            .flat_map(|j| (-20..20).map(move |i| random_delay(1, i, j, stagger)))
+            .collect();
+        assert!(delays.iter().all(|d| (0.0..stagger).contains(d)));
+        // They are spread over the whole range, not bunched.
+        let (min, max) = delays
+            .iter()
+            .fold((1.0_f32, 0.0_f32), |(a, b), d| (a.min(*d), b.max(*d)));
+        assert!(min < 0.03 && max > stagger - 0.03, "{min} {max}");
+        for d in delays.iter().copied().chain([0.0, stagger]) {
+            // The last delay possible is still fully grown at progress 1,
+            // and the first cell has not started at progress 0.
+            assert_eq!(grown(1.0, d, stagger), 1.0);
+            assert_eq!(grown(0.0, d, stagger), 0.0);
+            // A cell does not start before its delay and is done after its
+            // growth time.
+            assert_eq!(grown(d, d, stagger), 0.0);
+            assert!(grown(d + (1.0 - stagger), d, stagger) > 0.9999);
+        }
+        for shape in [DotShape::Circle, DotShape::Square] {
+            for i in 0..=40 {
+                for j in 0..=40 {
+                    let (x, y) = (f64::from(i) / 40.0 - 0.5, f64::from(j) / 40.0 - 0.5);
+                    assert_eq!(
+                        dot_coverage(shape, 1.0, 0.01, x, y),
+                        1.0,
+                        "{shape:?} {x} {y}"
+                    );
+                    assert_eq!(
+                        dot_coverage(shape, 0.0, 0.01, x, y),
+                        0.0,
+                        "{shape:?} {x} {y}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_random_reveal_follows_the_seed_and_a_sweep_runs_along_its_angle() {
+        let pattern = |seed| -> Vec<f32> {
+            (0..64)
+                .map(|i| random_delay(seed, i % 8, i / 8, 0.6))
+                .collect()
+        };
+        assert_eq!(pattern(1), pattern(1));
+        assert_ne!(pattern(1), pattern(2));
+        // A sweep at 90 degrees: delay grows with the cell's y, and does not
+        // depend on x. 10 cells of 10 px over a box 100 px tall.
+        let [dx, dy, p0, inv] = sweep_axis(Some(Rect::new(0.0, 0.0, 100.0, 100.0)), 90.0);
+        let delay = |cx: f32, cy: f32| 0.6 * ((cx * dx + cy * dy - p0) * inv).clamp(0.0, 1.0);
+        let column: Vec<f32> = (0..10).map(|j| delay(5.0, 5.0 + 10.0 * j as f32)).collect();
+        assert!(column.windows(2).all(|w| w[1] > w[0]), "{column:?}");
+        assert_eq!(delay(5.0, 5.0), delay(95.0, 5.0));
+        // Cell centres sit half a cell in from the box, so a sweep over
+        // exactly the box never reaches delay 0 or the stagger itself.
+        assert!(column[0] > 0.0 && column[9] < 0.6);
+        // A cell off the box (a layer that hangs over) is clamped.
+        assert_eq!(delay(5.0, -50.0), 0.0);
+        assert!((delay(5.0, 500.0) - 0.6).abs() < 1e-6);
+        let wgsl = include_str!("shaders/dot_matrix.wgsl");
+        for want in [
+            "clamp((params.options.x - delay) / (1.0 - params.options.y), 0.0, 1.0)",
+            "unit_float(cell_hash(params.seed.x, bitcast<u32>(i32(cell.x)), bitcast<u32>(i32(cell.y)), 0u))",
+            "clamp((along - params.sweep.z) * params.sweep.w, 0.0, 1.0)",
+            "grown * (0.5 * size * sqrt(2.0) + 0.5 * aa)",
+            "grown * (0.5 * size + 0.5 * aa)",
+        ] {
+            assert!(wgsl.contains(want), "dot_matrix.wgsl lacks {want}");
+        }
     }
 
     #[test]

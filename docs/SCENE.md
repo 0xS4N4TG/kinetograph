@@ -160,7 +160,7 @@ side.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
 - The colour filters, `gradientMap`, `lut`, `grain` and `dither` count nothing: they change pixels in place. `halftone`
-  counts nothing either: its dots stay inside their cells.
+  and `dotMatrix` count nothing either: their dots stay inside their cells.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -458,6 +458,43 @@ and `dither`, which stay on the screen).
 - Counts nothing in the [margin](#canvas-margin). Halftone on a group screens the group's combined pixels; a `blur`
   before it is screened as it is blurred.
 
+### dotMatrix
+
+```json
+{ "type": "dotMatrix", "progress": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 1 }], "seed": 1 }
+{ "type": "dotMatrix", "size": 10, "progress": 0.5, "order": "sweep", "angle": 45, "stagger": 0.4, "shape": "square" }
+```
+
+A reveal: the layer seen through a grid of dots that grow from nothing to solid. Animate `progress` from 0 to 1 to
+reveal the layer, or from 1 to 0 to hide it. The grid lives in the layer's own space, so it moves, scales and rotates
+with the layer. `halftone` is the look that follows the layer's brightness; this one follows time.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `progress` | required | Animatable, clamped to 0..1: `0` shows nothing, `1` shows exactly the layer. |
+| `size` | `12` | Animatable, greater than 0 (checked when the scene loads): the width of a grid cell in layer pixels. |
+| `order` | `random` | `random`: each cell gets its own delay from the `seed`. `sweep`: the delay grows with the cell's position along `angle` across the layer's box. |
+| `angle` | `0` | Animatable, degrees clockwise from +x, for `sweep`: `0` reveals left to right, `90` top to bottom, `180` right to left. Ignored by `random`. |
+| `stagger` | `0.6` | Animatable, from 0 up to (not including) 1 (checked when the scene loads): how much of the `progress` range is spent on delays. `0` grows every dot together; the higher it is, the more the dots start one after another and the faster each grows. |
+| `seed` | none | Whole number from 0 to 4294967295. Required for `random` (an error naming the layer if missing); `sweep` ignores it. |
+| `shape` | `circle` | `circle` or `square`. |
+
+- **Timing.** A cell has a delay `d` between 0 and `stagger`: a hash of the `seed` and the cell for `random`, or the cell
+  centre's place along `angle` across the layer's box (0 at the nearest corner, `stagger` at the farthest) for `sweep`.
+  Its dot is `clamp((progress - d) / (1 - stagger), 0, 1)` grown, so it starts at `progress = d`, takes `1 - stagger` of
+  the range to finish, and the last cell is done exactly at `progress = 1`.
+- **The dot.** A grown dot of `1` is a circle whose radius reaches the cell's corners, or a square reaching its sides,
+  so the cell is exactly solid and the layer shows untouched: at `progress` 1 the effect does nothing and costs nothing.
+  Between, the radius (or half side) is `grown` times that, so it opens like an iris. Edges are anti-aliased over
+  about one canvas pixel; a dot narrower than half a pixel fades out instead of flickering.
+- **The layer is multiplied** by the dots' coverage, in premultiplied linear colour, so the colours and alpha inside a
+  dot are the layer's own and the rest is transparent.
+- **Cells are in layer space**, counted from the layer's own origin, so the random delays stick to the layer as it
+  moves (and a layer hanging over the top or left edge has cells at negative indices, which hash like any other).
+- **`sweep` needs a box**: the box a shape, an image or a text layer has (the same as an `inset` clip measures from), so
+  `sweep` on a group is an error when the scene loads, naming the layer. Use `random` on a group.
+- Counts nothing in the [margin](#canvas-margin).
+
 ### backdropBlur
 
 ```json
@@ -701,7 +738,7 @@ layer.
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
-  `halftone`, `shader`.
+  `halftone`, `dotMatrix`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
@@ -721,6 +758,9 @@ layer.
   smaller than a cell can fall between samples. There is one screen (one angle), not the four of colour print; dots
   never overlap their neighbours, so the square and circle are cut at the cell's sides. Its cells are in layer space, so
   a screen on a layer that is scaled down a lot is finer than a pixel and aliases.
+- `dotMatrix` has dots that grow linearly in radius (so their area is quadratic in `progress`), no easing of its own
+  (ease `progress`), circle or square only, and `sweep` is a straight wipe across the box (no radial
+  wipe). Random delays are per cell and fixed for a seed; a new seed is a new pattern.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.

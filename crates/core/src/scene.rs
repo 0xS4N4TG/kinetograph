@@ -75,8 +75,16 @@ fn eight() -> Num {
     Num::Const(8.0)
 }
 
+fn twelve() -> Num {
+    Num::Const(12.0)
+}
+
 fn forty_five() -> Num {
     Num::Const(45.0)
+}
+
+fn stagger_default() -> Num {
+    Num::Const(0.6)
 }
 
 fn yes() -> bool {
@@ -276,8 +284,52 @@ pub enum Effect {
         #[serde(default)]
         invert: bool,
     },
+    /// Reveals the layer through a layer-space grid of dots that grow from
+    /// nothing (progress 0) to solid (progress 1), each starting after its own
+    /// delay.
+    DotMatrix {
+        /// Cell width in layer pixels, above 0.
+        #[serde(default = "twelve")]
+        size: Num,
+        /// 0 shows nothing, 1 shows the layer; clamped to 0..=1.
+        progress: Num,
+        #[serde(default)]
+        order: DotOrder,
+        /// For `sweep`: the direction the reveal travels, degrees clockwise
+        /// from +x (0 is left to right).
+        #[serde(default = "zero")]
+        angle: Num,
+        /// How much of the progress range is spent on delays, 0 up to (not
+        /// including) 1.
+        #[serde(default = "stagger_default")]
+        stagger: Num,
+        /// Which delays, 0..=u32::MAX; required for `random`, ignored by
+        /// `sweep`.
+        seed: Option<i64>,
+        #[serde(default)]
+        shape: DotShape,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DotOrder {
+    /// A random delay per cell, from the seed.
+    #[default]
+    Random,
+    /// The delay follows the cell's position along `angle` across the
+    /// layer's box.
+    Sweep,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DotShape {
+    #[default]
+    Circle,
+    Square,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -403,7 +455,7 @@ impl Effect {
             | Effect::Grain { .. }
             | Effect::Dither { .. } => 0.0,
             // Dots stay inside their cells, which only sample the layer.
-            Effect::Halftone { .. } => 0.0,
+            Effect::Halftone { .. } | Effect::DotMatrix { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -740,6 +792,13 @@ impl Scene {
                             )));
                         }
                     }
+                    Effect::DotMatrix {
+                        size,
+                        stagger,
+                        order,
+                        seed,
+                        ..
+                    } => validate_dot_matrix(&layer.id, &layer.kind, size, stagger, *order, *seed)?,
                     Effect::Lut { src, .. } if src.trim().is_empty() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: lut needs a src, the path of a .cube file",
@@ -936,6 +995,34 @@ fn validate_dither(
         (_, Some(seed)) => validate_seed(id, "dither", seed),
         _ => Ok(()),
     }
+}
+
+fn validate_dot_matrix(
+    id: &str,
+    kind: &LayerKind,
+    size: &Num,
+    stagger: &Num,
+    order: DotOrder,
+    seed: Option<i64>,
+) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: dotMatrix {msg}")));
+    if size.min() <= 0.0 {
+        return bad("size must be greater than 0".into());
+    }
+    if stagger.min() < 0.0 || stagger.max() >= 1.0 {
+        return bad("stagger must be at least 0 and below 1".into());
+    }
+    match (order, seed) {
+        (DotOrder::Random, None) => return bad("order \"random\" needs a seed".into()),
+        (_, Some(seed)) => validate_seed(id, "dotMatrix", seed)?,
+        _ => {}
+    }
+    if order == DotOrder::Sweep && matches!(kind, LayerKind::Group(_)) {
+        return bad(
+            "order \"sweep\" needs a box, and a group has none; use order \"random\"".into(),
+        );
+    }
+    Ok(())
 }
 
 fn validate_gradient_map(id: &str, stops: &[Stop]) -> Result<()> {
@@ -1727,6 +1814,145 @@ mod tests {
         // An unknown shape is the JSON parser's complaint.
         let msg = halftone(r#""shape": "star""#);
         assert!(msg.contains("star"), "{msg}");
+    }
+
+    #[test]
+    fn parses_dot_matrix_with_defaults() {
+        let scene = effects_of(
+            r#"[{"type": "dotMatrix", "progress": 0.5, "seed": 1},
+                {"type": "dotMatrix", "order": "sweep", "shape": "square", "angle": 90, "stagger": 0.2,
+                 "size": 6, "progress": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]}]"#,
+        );
+        let Effect::DotMatrix {
+            size,
+            progress,
+            order,
+            angle,
+            stagger,
+            seed,
+            shape,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a dot matrix");
+        };
+        assert_eq!(
+            (
+                size.at(0.0),
+                progress.at(0.0),
+                angle.at(0.0),
+                stagger.at(0.0)
+            ),
+            (12.0, 0.5, 0.0, 0.6)
+        );
+        assert_eq!(
+            (*order, *seed, *shape),
+            (DotOrder::Random, Some(1), DotShape::Circle)
+        );
+        let Effect::DotMatrix {
+            size,
+            progress,
+            order,
+            angle,
+            stagger,
+            seed,
+            shape,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a dot matrix");
+        };
+        assert_eq!(
+            (
+                size.at(0.0),
+                progress.at(9.0),
+                angle.at(0.0),
+                stagger.at(0.0)
+            ),
+            (6.0, 1.0, 90.0, 0.2)
+        );
+        assert_eq!(
+            (*order, *seed, *shape),
+            (DotOrder::Sweep, None, DotShape::Square)
+        );
+        assert_eq!(scene.margin(), 0);
+        // A random reveal works on a group; a sweep ignores a seed.
+        let group = |effect: &str| {
+            Scene::from_json(
+                &format!(
+                    r#"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                        {{"id": "g", "type": "group", "children": [], "effects": [{effect}]}}]}}"#
+                ),
+                PathBuf::new(),
+            )
+        };
+        assert!(group(r#"{"type": "dotMatrix", "progress": 1, "seed": 2}"#).is_ok());
+        assert!(
+            scene_with(
+                r#""effects": [{"type": "dotMatrix", "progress": 1, "order": "sweep", "seed": 5}],"#
+            )
+            .is_ok()
+        );
+        // `progress` is the point of the effect, so it has no default.
+        let msg = scene_with(r#""effects": [{"type": "dotMatrix", "seed": 2}],"#)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("progress"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_bad_dot_matrix_naming_the_layer() {
+        let dots = |fields: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "dotMatrix", "progress": 1, {fields}}}],"#
+            ))
+            .unwrap_err()
+            .to_string()
+        };
+        for (fields, want) in [
+            (r#""size": 0, "seed": 1"#, "size must be greater than 0"),
+            (r#""size": -4, "seed": 1"#, "size must be greater than 0"),
+            (
+                r#""seed": 1, "stagger": 1"#,
+                "stagger must be at least 0 and below 1",
+            ),
+            (
+                r#""seed": 1, "stagger": -0.1"#,
+                "stagger must be at least 0 and below 1",
+            ),
+            (
+                r#""seed": 1, "stagger": [{"frame": 0, "value": 0.5}, {"frame": 9, "value": 1.5}]"#,
+                "stagger must be at least 0 and below 1",
+            ),
+            (r#""order": "random""#, "needs a seed"),
+            (r#""seed": -1"#, "seed must be a whole number"),
+            (r#""seed": 4294967296"#, "seed must be a whole number"),
+        ] {
+            let msg = dots(fields);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The largest legal values.
+        assert!(
+            scene_with(r#""effects": [{"type": "dotMatrix", "progress": 1, "seed": 4294967295, "stagger": 0.999}],"#)
+                .is_ok()
+        );
+        // A sweep needs the layer's box, which a group does not have.
+        let msg = Scene::from_json(
+            r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                {"id": "g", "type": "group", "children": [],
+                 "effects": [{"type": "dotMatrix", "progress": 1, "order": "sweep"}]}]}"#,
+            PathBuf::new(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            msg.contains("layer \"g\"") && msg.contains("sweep") && msg.contains("group"),
+            "{msg}"
+        );
+        // An unknown order or shape is the JSON parser's complaint.
+        assert!(dots(r#""order": "spiral""#).contains("spiral"));
+        assert!(dots(r#""seed": 1, "shape": "line""#).contains("line"));
     }
 
     const SHADER: &str =

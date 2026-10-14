@@ -238,3 +238,16 @@ fn halftone_matches_golden() {
     let frame = render_still(scene("tests/scenes/halftone.json"), 15).unwrap();
     check("halftone", &frame);
 }
+
+#[test]
+fn dot_matrix_matches_golden() {
+    // Frame 15 of 30: progress and the animated cell sizes are half way.
+    // Covers a random reveal and a left-to-right sweep of an image, a sweep
+    // across text that rotates (so the grid turns with the layer) and one
+    // down a layer drawn upright, a rotating scaled layer, a scaled group
+    // hanging off the left and bottom edges (random only: a group has no
+    // box) with progress overshooting 0..1, a half-transparent layer, and
+    // progress held at 1 (the layer untouched) and at 0 (nothing drawn).
+    let frame = render_still(scene("tests/scenes/dot-matrix.json"), 15).unwrap();
+    check("dot-matrix", &frame);
+}

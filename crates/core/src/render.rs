@@ -19,7 +19,7 @@ use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
     ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
-use crate::scene::{Extend, LayerKind, MaskMode, Scene};
+use crate::scene::{DotOrder, Extend, LayerKind, MaskMode, Scene};
 use crate::text::TextEngine;
 
 /// Curve flattening tolerance when converting shapes to paths.
@@ -295,9 +295,20 @@ impl Renderer {
             }
             _ => None,
         };
+        let layer_box = if needs_box(&layer.effects) {
+            self.layer_box(layer)?
+        } else {
+            None
+        };
         let mut src = self.timed(Stage::Composite, |s| {
-            s.compositor
-                .apply_effects(src, matrix, &layer.effects, backdrop, coverage.as_ref())
+            s.compositor.apply_effects(
+                src,
+                matrix,
+                layer_box,
+                &layer.effects,
+                backdrop,
+                coverage.as_ref(),
+            )
         });
         if let Some(coverage) = coverage {
             self.compositor.release(coverage);
@@ -586,6 +597,14 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
         .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == layer.id))
 }
 
+/// Whether any of `effects` measures across the layer's box, which then has
+/// to be worked out: a sweeping dot matrix.
+fn needs_box(effects: &[ResolvedEffect]) -> bool {
+    effects
+        .iter()
+        .any(|e| matches!(e, ResolvedEffect::DotMatrix(d) if d.order == DotOrder::Sweep))
+}
+
 /// Whether `effects` blur the backdrop.
 fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
     effects
@@ -796,6 +815,24 @@ pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
 mod tests {
     use super::*;
     use vello::peniko::GradientKind;
+
+    #[test]
+    fn only_a_sweep_needs_the_layer_box() {
+        let dots = |order| {
+            ResolvedEffect::DotMatrix(crate::resolve::ResolvedDotMatrix {
+                size: 12.0,
+                progress: 0.5,
+                order,
+                angle: 0.0,
+                stagger: 0.6,
+                seed: 1,
+                shape: crate::scene::DotShape::Circle,
+            })
+        };
+        assert!(needs_box(&[dots(DotOrder::Sweep)]));
+        assert!(!needs_box(&[dots(DotOrder::Random)]));
+        assert!(!needs_box(&[]));
+    }
 
     const RED: Color = Color {
         r: 255,
