@@ -490,7 +490,8 @@ with the layer. `halftone` is the look that follows the layer's brightness; this
 - **The layer is multiplied** by the dots' coverage, in premultiplied linear colour, so the colours and alpha inside a
   dot are the layer's own and the rest is transparent.
 - **Cells are in layer space**, counted from the layer's own origin, so the random delays stick to the layer as it
-  moves (and a layer hanging over the top or left edge has cells at negative indices, which hash like any other).
+  moves, and a layer moving off the canvas keeps its pattern. Content above or left of the origin (a path with negative
+  coordinates, a group's child placed there) is in cells at negative indices, which hash like any other.
 - **`sweep` needs a box**: the box a shape, an image or a text layer has (the same as an `inset` clip measures from), so
   `sweep` on a group is an error when the scene loads, naming the layer. Use `random` on a group.
 - Counts nothing in the [margin](#canvas-margin).

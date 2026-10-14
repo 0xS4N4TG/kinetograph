@@ -1866,7 +1866,7 @@ mod tests {
     fn every_cell_is_empty_at_progress_0_and_solid_at_progress_1() {
         let stagger = 0.6;
         // Random delays over a patch of cells, including negative cell
-        // indices, which is where a layer hanging off the top left lives.
+        // indices, where content above or left of the layer's origin lives.
         let delays: Vec<f32> = (-20..20)
             .flat_map(|j| (-20..20).map(move |i| random_delay(1, i, j, stagger)))
             .collect();
