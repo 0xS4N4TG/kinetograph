@@ -150,6 +150,7 @@ side.
 - A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
+- `glow` counts `3 * radius` as well.
 - `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge).
 - `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
   layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
@@ -183,6 +184,28 @@ position to within 0.01 pixel, so moving or resizing a blurred glow does not mak
 - The layer is blurred as if it sat in transparent space: its edges fade out. Content that lies outside the canvas is
   part of the layer only as far as the scene's [margin](#canvas-margin) reaches, so in a scene with no margin (blur
   alone) it cannot bleed in, and in a scene with a margin it can, from at most that far out.
+
+### glow
+
+```json
+{ "type": "glow", "radius": 16 }
+{ "type": "glow", "radius": 24, "color": "#ffcc66", "intensity": 1.5 }
+```
+
+A halo: a blurred copy of the layer is drawn under it, so the layer keeps its own pixels and light spills out past its
+edges.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `radius` | required | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..128; below 1 the effect does nothing. |
+| `color` | none | Colours the halo. Without it the halo has the layer's own colours; with it the halo is this colour, scaled by the blurred layer's alpha (so the colour's own alpha dims it too). Not animated. |
+| `intensity` | `1` | Animatable. Multiplies the halo, clamped to 0..4. At 0 the effect does nothing. |
+
+The blur runs in linear light on premultiplied colour, so the halo is physically a light falloff. Where
+`intensity` pushes the halo past fully opaque it is capped at alpha 1 with its colour kept (so it saturates rather than
+shifting hue). The halo is made from the layer as it is after the effects before it, and opacity fades layer and halo
+together. The halo reaches about three radii past the layer's edge, which the [margin](#canvas-margin) allows for, so
+the glow of a layer that hangs off the canvas still falls on it.
 
 ### dropShadow
 
@@ -441,7 +464,7 @@ layer.
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- Effects so far: `blur`, `backdropBlur`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`,
+- Effects so far: `blur`, `backdropBlur`, `glow`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`,
   `grayscale`, `sepia`, `invert`, `hueRotate`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.

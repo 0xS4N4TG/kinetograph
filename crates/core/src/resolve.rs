@@ -56,9 +56,14 @@ impl ResolvedTransform {
 #[derive(Clone, Debug)]
 pub enum ResolvedEffect {
     /// Standard deviation in pixels.
-    Blur { radius: f32 },
+    Blur {
+        radius: f32,
+    },
     /// Standard deviation in pixels of the blur applied to the backdrop.
-    BackdropBlur { radius: f32 },
+    BackdropBlur {
+        radius: f32,
+    },
+    Glow(ResolvedGlow),
     /// Cast onto what is behind the layer.
     DropShadow(ResolvedShadow),
     /// Cast inside the layer's own shape.
@@ -67,6 +72,17 @@ pub enum ResolvedEffect {
     /// `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`) composed
     /// into a single matrix.
     ColorMatrix(ColorMatrix),
+}
+
+/// A glow at one frame.
+#[derive(Clone, Copy, Debug)]
+pub struct ResolvedGlow {
+    /// Standard deviation of the blur, 0..=`MAX_BLUR_RADIUS`.
+    pub radius: f32,
+    /// `None`: the halo has the layer's own colours.
+    pub color: Option<Color>,
+    /// 0..=`MAX_GLOW_INTENSITY`.
+    pub intensity: f32,
 }
 
 /// A shadow at one frame, in canvas pixels.
@@ -158,6 +174,9 @@ pub enum ResolvedGradientGeometry {
 
 /// Largest blur radius; bigger values are clamped.
 pub const MAX_BLUR_RADIUS: f64 = 128.0;
+
+/// Largest glow intensity; bigger values are clamped.
+pub const MAX_GLOW_INTENSITY: f64 = 4.0;
 
 #[derive(Clone, Debug)]
 pub enum ResolvedKind {
@@ -395,6 +414,15 @@ fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
         Effect::BackdropBlur { radius } => ResolvedEffect::BackdropBlur {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
         },
+        Effect::Glow {
+            radius,
+            color,
+            intensity,
+        } => ResolvedEffect::Glow(ResolvedGlow {
+            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            color: *color,
+            intensity: intensity.at(f).clamp(0.0, MAX_GLOW_INTENSITY) as f32,
+        }),
         Effect::DropShadow(s) => ResolvedEffect::DropShadow(resolve_shadow(s, f)),
         Effect::InsetShadow(s) => ResolvedEffect::InsetShadow(resolve_shadow(s, f)),
         Effect::Saturate { amount } => {
@@ -593,6 +621,26 @@ mod tests {
         );
         let effects = effects_at(r#"[{"type": "backdropBlur", "radius": -3}]"#, 0);
         assert!(matches!(effects[..], [ResolvedEffect::BackdropBlur { radius }] if radius == 0.0));
+    }
+
+    #[test]
+    fn glow_resolves_and_clamps() {
+        let effects = effects_at(
+            r##"[{"type": "glow", "radius": [{"frame": 0, "value": 0}, {"frame": 10, "value": 300}],
+                  "intensity": [{"frame": 0, "value": 0}, {"frame": 10, "value": 20}], "color": "#ff0000"},
+                 {"type": "glow", "radius": -1, "intensity": -2}]"##,
+            5,
+        );
+        let ResolvedEffect::Glow(first) = effects[0] else {
+            panic!("not a glow");
+        };
+        assert_eq!((first.radius, first.intensity), (128.0, 4.0));
+        assert_eq!(first.color, Some(Color::parse("#ff0000").unwrap()));
+        let ResolvedEffect::Glow(second) = effects[1] else {
+            panic!("not a glow");
+        };
+        assert_eq!((second.radius, second.intensity), (0.0, 0.0));
+        assert_eq!(second.color, None);
     }
 
     #[test]

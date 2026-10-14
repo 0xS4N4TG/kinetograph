@@ -11,9 +11,10 @@
 //! - `matte`: layer x the alpha or luminance of another layer's texture
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
-//! `shaders/shadow.wgsl` holds the shadow effects' passes and
-//! `shaders/color.wgsl` the colour filter pass; they share the bind group
-//! layout, so their passes go through the same `run_pass`.
+//! `shaders/shadow.wgsl` holds the shadow effects' passes,
+//! `shaders/color.wgsl` the colour filter pass and `shaders/glow.wgsl` the
+//! glow pass; they share the bind group layout, so their passes go through
+//! the same `run_pass`.
 //!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
 //! mapping in `mode_index`. Adding an effect: add a variant to
@@ -25,7 +26,7 @@ use vello::wgpu::{self, util::DeviceExt};
 use crate::blur::{self, Blur};
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
-use crate::resolve::{ResolvedEffect, ResolvedShadow};
+use crate::resolve::{ResolvedEffect, ResolvedGlow, ResolvedShadow};
 use crate::scene::{BlendMode, MaskMode, MatteMode};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -56,6 +57,7 @@ pub struct Compositor {
     drop_shadow: wgpu::RenderPipeline,
     inset_shadow: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
+    glow: wgpu::RenderPipeline,
     blur: Blur,
     pool: Vec<Tex>,
 }
@@ -81,6 +83,10 @@ impl Compositor {
         let color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("color"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/color.wgsl").into()),
+        });
+        let glow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("glow"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/glow.wgsl").into()),
         });
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -157,6 +163,7 @@ impl Compositor {
             drop_shadow: pipeline(&shadow_shader, "fs_drop", LINEAR_FORMAT),
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
+            glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             blur: Blur::new(device),
             layout,
             pool: Vec::new(),
@@ -316,6 +323,7 @@ impl Compositor {
                     }
                 }
                 ResolvedEffect::BackdropBlur { .. } => {}
+                ResolvedEffect::Glow(glow) => src = self.glow(src, &glow),
                 ResolvedEffect::DropShadow(shadow) => src = self.shadow(src, &shadow, false),
                 ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
                 ResolvedEffect::ColorMatrix(matrix) if matrix == ColorMatrix::IDENTITY => {}
@@ -352,6 +360,35 @@ impl Compositor {
         self.pass(&self.matte, &blurred.view, coverage, 1.0, 0, &frosted.view);
         self.release(blurred);
         self.blend(frosted, src, 1.0, BlendMode::Normal)
+    }
+
+    /// Draws a halo under `src`: a blurred copy of it, tinted if asked. `src`
+    /// goes back to the pool; the result is a new texture.
+    fn glow(&mut self, src: Tex, glow: &ResolvedGlow) -> Tex {
+        if glow.radius < blur::MIN_RADIUS || glow.intensity <= 0.0 {
+            return src;
+        }
+        let halo = self.acquire();
+        let size = (self.width, self.height);
+        self.blur.run(
+            &self.device,
+            &self.queue,
+            &src.view,
+            &halo.view,
+            size,
+            glow.radius,
+        );
+        let target = self.acquire();
+        self.run_pass(
+            &self.glow,
+            &src.view,
+            &halo.view,
+            &floats(&glow_values(glow)),
+            &target.view,
+        );
+        self.release(halo);
+        self.release(src);
+        target
     }
 
     /// Runs a colour filter over `src` in one pass. `src` goes back to the
@@ -649,6 +686,23 @@ fn matrix_values(matrix: &ColorMatrix) -> [f32; 20] {
     values
 }
 
+/// A glow as `shaders/glow.wgsl` reads it: intensity and whether to tint,
+/// then the linear premultiplied tint.
+fn glow_values(glow: &ResolvedGlow) -> [f32; 8] {
+    let tint = glow.color.map(|c| c.linear_premultiplied());
+    let [r, g, b, a] = tint.unwrap_or([0.0; 4]);
+    [
+        glow.intensity,
+        f32::from(u8::from(tint.is_some())),
+        0.0,
+        0.0,
+        r as f32,
+        g as f32,
+        b as f32,
+        a as f32,
+    ]
+}
+
 /// The number the shader's `blend_fn` switches on.
 fn mode_index(mode: BlendMode) -> u32 {
     match mode {
@@ -674,6 +728,28 @@ fn mode_index(mode: BlendMode) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::Color;
+
+    #[test]
+    fn glow_values_say_whether_to_tint() {
+        let glow = ResolvedGlow {
+            radius: 8.0,
+            color: None,
+            intensity: 2.5,
+        };
+        assert_eq!(glow_values(&glow), [2.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let tinted = ResolvedGlow {
+            color: Some(Color::parse("#ff000080").unwrap()),
+            ..glow
+        };
+        let values = glow_values(&tinted);
+        assert_eq!((values[0], values[1]), (2.5, 1.0));
+        // Premultiplied: red at half alpha is (0.5, 0, 0, 0.5) in linear
+        // light, since 0 and 1 are the same in both encodings.
+        let alpha = 128.0 / 255.0;
+        assert!((values[4] - alpha).abs() < 1e-6 && values[5] == 0.0);
+        assert!((values[7] - alpha).abs() < 1e-6);
+    }
 
     #[test]
     fn matrix_values_put_coefficients_first_and_offsets_last() {

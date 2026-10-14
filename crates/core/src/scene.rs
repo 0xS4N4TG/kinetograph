@@ -138,6 +138,15 @@ pub enum Effect {
     /// Frosted glass: what is behind the layer, blurred, shows through the
     /// layer's shape. `radius` is like `blur`'s.
     BackdropBlur { radius: Num },
+    /// A halo: the layer blurred, drawn under itself. `radius` is like
+    /// `blur`'s. `color` replaces the halo's colours (its alpha scales the
+    /// halo); `intensity` scales it, 0..4.
+    Glow {
+        radius: Num,
+        color: Option<Color>,
+        #[serde(default = "one")]
+        intensity: Num,
+    },
     /// The layer's shadow, cast onto what is behind it.
     DropShadow(Shadow),
     /// A shadow cast inside the layer's own shape.
@@ -222,9 +231,12 @@ impl Effect {
             // leaving it out keeps scenes that use nothing else at margin 0,
             // which is exactly the canvas-sized rendering they had before.
             Effect::Blur { .. } => 0.0,
-            // Reads the canvas around the layer, so a layer at the canvas edge
-            // blurs in what lies beyond it.
-            Effect::BackdropBlur { radius } => 3.0 * radius.max().clamp(0.0, MAX_BLUR_RADIUS),
+            // A backdrop blur reads the canvas around the layer, so a layer at
+            // the canvas edge blurs in what lies beyond it. A glow paints
+            // about three radii past the layer.
+            Effect::BackdropBlur { radius } | Effect::Glow { radius, .. } => {
+                3.0 * radius.max().clamp(0.0, MAX_BLUR_RADIUS)
+            }
             Effect::DropShadow(shadow) | Effect::InsetShadow(shadow) => shadow.reach(),
             // Colour filters change pixels in place.
             Effect::Saturate { .. }
@@ -1055,6 +1067,40 @@ mod tests {
         assert_eq!(scene.margin(), 19);
         let msg = error(r#""effects": [{"type": "backdropBlur"}],"#);
         assert!(msg.contains("radius"), "{msg}");
+    }
+
+    #[test]
+    fn parses_glow_with_defaults_and_counts_three_radii() {
+        let scene = effects_of(
+            r##"[{"type": "glow", "radius": 8},
+                {"type": "glow", "radius": [{"frame": 0, "value": 2}, {"frame": 9, "value": 16}],
+                 "color": "#ffcc6680", "intensity": 2}]"##,
+        );
+        let effects = &scene.layers[0].effects;
+        let Effect::Glow {
+            color, intensity, ..
+        } = &effects[0]
+        else {
+            panic!("not a glow");
+        };
+        assert!(color.is_none() && intensity.at(0.0) == 1.0);
+        let Effect::Glow {
+            radius,
+            color,
+            intensity,
+        } = &effects[1]
+        else {
+            panic!("not a glow");
+        };
+        assert_eq!(radius.at(9.0), 16.0);
+        assert_eq!(*color, Some(Color::parse("#ffcc6680").unwrap()));
+        assert_eq!(intensity.at(0.0), 2.0);
+        // 3 x 8, then 3 x 16 on top of it.
+        assert_eq!(scene.margin(), 24 + 48);
+        let msg = error(r#""effects": [{"type": "glow"}],"#);
+        assert!(msg.contains("radius"), "{msg}");
+        let msg = error(r#""effects": [{"type": "glow", "radius": 4, "color": "gold"}],"#);
+        assert!(msg.contains("gold"), "{msg}");
     }
 
     #[test]

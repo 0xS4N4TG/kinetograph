@@ -1,0 +1,230 @@
+{
+ "width": 512,
+ "height": 288,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#0b0d14",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "neon",
+   "type": "text",
+   "text": "GLOW",
+   "font": "DM Sans",
+   "size": 84,
+   "color": "#7fd4ff",
+   "transform": {
+    "x": 24,
+    "y": 20
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": [
+      {
+       "frame": 0,
+       "value": 4
+      },
+      {
+       "frame": 30,
+       "value": 20
+      }
+     ],
+     "intensity": [
+      {
+       "frame": 0,
+       "value": 1
+      },
+      {
+       "frame": 30,
+       "value": 2
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "orb",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 64,
+    "height": 64
+   },
+   "fill": "#ffcc66",
+   "transform": {
+    "x": 300,
+    "y": 30
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": 18,
+     "color": "#ff6a00",
+     "intensity": [
+      {
+       "frame": 0,
+       "value": 0.5
+      },
+      {
+       "frame": 30,
+       "value": 3
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ring",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 70,
+    "height": 70
+   },
+   "stroke": {
+    "color": "#c8ffb0",
+    "width": 5
+   },
+   "transform": {
+    "x": 400,
+    "y": 24
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": 10,
+     "intensity": 4
+    }
+   ]
+  },
+  {
+   "id": "corner",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 90,
+    "height": 70,
+    "radius": 12
+   },
+   "fill": "#e0556b",
+   "transform": {
+    "x": -30,
+    "y": [
+     {
+      "frame": 0,
+      "value": 190
+     },
+     {
+      "frame": 30,
+      "value": 150
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": 16,
+     "intensity": 1.5
+    }
+   ]
+  },
+  {
+   "id": "pair",
+   "type": "group",
+   "transform": {
+    "x": 150,
+    "y": 160
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": 14,
+     "color": "#5577ff",
+     "intensity": 2
+    }
+   ],
+   "children": [
+    {
+     "id": "pair-a",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 70,
+      "height": 60
+     },
+     "fill": "#f6c177"
+    },
+    {
+     "id": "pair-b",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 70,
+      "height": 60
+     },
+     "fill": "#9ccfd8",
+     "transform": {
+      "x": 40,
+      "y": 30
+     }
+    }
+   ]
+  },
+  {
+   "id": "glass",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 110,
+    "height": 70,
+    "radius": 10
+   },
+   "fill": "#ffffff40",
+   "transform": {
+    "x": 300,
+    "y": 160
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": 12,
+     "color": "#44ddaa",
+     "intensity": 2.5
+    }
+   ]
+  },
+  {
+   "id": "edge",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 50,
+    "height": 50
+   },
+   "fill": "#ffffff",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": 500
+     },
+     {
+      "frame": 30,
+      "value": 490
+     }
+    ],
+    "y": 230
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": 20,
+     "intensity": 1
+    }
+   ]
+  }
+ ]
+}

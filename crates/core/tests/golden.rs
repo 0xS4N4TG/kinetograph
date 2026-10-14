@@ -159,3 +159,13 @@ fn backdrop_blur_matches_golden() {
     let frame = render_still(scene("tests/scenes/backdrop-blur.json"), 15).unwrap();
     check("backdrop-blur", &frame);
 }
+
+#[test]
+fn glow_matches_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers the layer's own
+    // colours and a tint, text, a stroke-only ring at the maximum intensity
+    // (the halo is capped), a half-transparent layer, a group, and layers
+    // hanging off the left and right edges.
+    let frame = render_still(scene("tests/scenes/glow.json"), 15).unwrap();
+    check("glow", &frame);
+}
