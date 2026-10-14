@@ -171,7 +171,7 @@ const Arc: React.FC = () => {
   return (
     <Layer id="arc" x={WIDTH / 2 - 120} y={HEIGHT / 2} rotateY={turn} preserve3d>
       {Array.from({ length: count }, (_, i) => {
-        const angle = (i - (count - 1)) * 13;
+        const angle = (i - 6.5) * 11;
         const rad = (angle * Math.PI) / 180;
         return (
           <Card
@@ -237,9 +237,10 @@ const YouCreate: React.FC = () => {
 export const RajzCards: React.FC = () => {
   const frame = useCurrentFrame();
   // The whip: everything slides out to the left, accelerating, over frames
-  // 100 to 120, and motion blur smears it along the way.
+  // 100 to 120, and motion blur smears it along the way. (`Easing.exp` is not
+  // 0 at the start, so it would nudge the layers before the whip begins.)
   const whip = interpolate(frame, [100, 120], [0, -2600], {
-    easing: Easing.in(Easing.exp),
+    easing: Easing.in(Easing.poly(4)),
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
@@ -268,7 +269,8 @@ export const RajzCards: React.FC = () => {
       <Layer
         id="whip"
         x={whip}
-        motionBlur={{ samples: 12, shutter: 1 }}
+        // Only while it moves: a blurred layer is drawn once per sample.
+        motionBlur={frame >= 99 ? { samples: 12, shutter: 1 } : undefined}
         layoutItem={{ position: 'absolute' }}
       >
         <Sequence from={0} durationInFrames={42}>
