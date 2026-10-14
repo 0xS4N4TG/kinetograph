@@ -5,7 +5,8 @@
 //
 // The pattern is a pure function of (seed, pixel, frame): nothing reads a
 // clock or a random generator. `x` and `y` are canvas pixels (the texel minus
-// the scene's margin), so a pattern does not move when the margin changes.
+// the scene's margin, as an i32 bitcast to u32, so a pixel in the margin
+// wraps), which keeps a pattern from moving when the margin changes.
 
 // PCG hash of one u32.
 fn hash(v: u32) -> u32 {
@@ -22,10 +23,4 @@ fn cell_hash(seed: u32, x: u32, y: u32, frame: u32) -> u32 {
 // A hash as a float in [0, 1): the top 24 bits, which a f32 holds exactly.
 fn unit_float(h: u32) -> f32 {
     return f32(h >> 8u) * (1.0 / 16777216.0);
-}
-
-// A canvas pixel coordinate as a hash input. Pixels in the margin are
-// negative, which wraps; it only has to be the same every time.
-fn pixel_coord(texel: i32, margin: u32) -> u32 {
-    return bitcast<u32>(texel - i32(margin));
 }

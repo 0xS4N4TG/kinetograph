@@ -203,3 +203,14 @@ fn gradient_map_matches_golden() {
     let frame = render_still(scene("tests/scenes/gradient-map.json"), 15).unwrap();
     check("gradient-map", &frame);
 }
+
+#[test]
+fn grain_matches_golden() {
+    // Frame 15 of 30: the animated amount and size are half way. Covers fine
+    // monochrome grain on an image, coloured grain, large smooth grain on
+    // flat grey, text with grain that does not animate, grain staying put on
+    // a rotating card, a half-transparent layer (alpha untouched), and a
+    // group at amount 1 hanging off the right and bottom edges.
+    let frame = render_still(scene("tests/scenes/grain.json"), 15).unwrap();
+    check("grain", &frame);
+}

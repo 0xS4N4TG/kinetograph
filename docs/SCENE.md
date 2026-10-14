@@ -159,7 +159,7 @@ side.
   else is derived from the code.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
-- The colour filters, `gradientMap` and `lut` count nothing: they change pixels in place.
+- The colour filters, `gradientMap`, `lut` and `grain` count nothing: they change pixels in place.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -361,6 +361,36 @@ Grades the layer through a 3D colour lookup table from an Adobe/Resolve `.cube` 
   Outputs are clamped to 0..1. Alpha is unchanged and a fully transparent pixel stays empty. The interpolation is
   done by hand on exact table reads, so the result does not depend on the GPU's filtering.
 - Counts nothing in the [margin](#canvas-margin).
+
+### grain
+
+```json
+{ "type": "grain", "amount": 0.15, "seed": 7 }
+{ "type": "grain", "amount": 0.3, "size": 3, "seed": 21, "animate": false, "monochrome": false }
+```
+
+Film grain: noise added to the layer's own pixels, fixed to the screen. Rendering stays a pure function of the scene
+and the frame, so the noise comes from an explicit `seed`, not a random generator.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `amount` | required | Animatable, clamped to 0..1: how far the noise moves a colour channel, as a fraction of the 0..1 range. `0.15` is a visible film grain, `1` is extreme. At `0` the effect does nothing. |
+| `size` | `1` | Animatable, at least 1 (checked when the scene loads): the grain cell in canvas pixels. At `1` every pixel has its own value; above `1` the values sit on a grid `size` pixels apart and are blended smoothly between (value noise with a smoothstep), so large grain is soft, not blocky, and fainter than fine grain at the same `amount`. |
+| `seed` | required | A whole number from 0 to 4294967295 (checked when the scene loads, naming the layer). Different seeds give unrelated patterns. |
+| `animate` | `true` | A new pattern on every output frame. `false` shows the same pattern on every frame. |
+| `monochrome` | `true` | One noise value for red, green and blue, so the grain only changes brightness. `false` gives each channel its own noise, which also changes hue. |
+
+- **The noise** at a pixel is triangular (the sum of two uniform values, minus 1, so in -1..1 with mean 0 and a standard
+  deviation of about 0.41), from an integer hash of `seed`, the pixel and the frame. It is added to the straight colour in
+  sRGB encoding, scaled by `amount`, and the result is clamped to 0..1, so grain cannot lift pure black or darken pure
+  white past the ends and looks slightly weaker there. Alpha is not changed and a fully transparent pixel stays empty.
+- **Canvas space.** The pixel is the canvas pixel, not a position on the layer: the grain does not move, scale or
+  rotate with the layer, and does not change when the scene's [margin](#canvas-margin) does. (A layer whose pixels
+  move under a fixed pattern shows grain that crawls across them, as film does.)
+- **Motion blur.** The pattern uses the whole output frame number, so the sub-frames of one frame share a pattern
+  rather than averaging the grain away.
+- Counts nothing in the [margin](#canvas-margin). Grain on a group grains the group's combined pixels; grain after a
+  `blur` grains the blurred image.
 
 ### backdropBlur
 
@@ -604,7 +634,7 @@ layer.
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
-  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `shader`.
+  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a

@@ -100,7 +100,23 @@ pub enum ResolvedEffect {
         src: String,
         amount: f32,
     },
+    Grain(ResolvedGrain),
     Shader(ResolvedShader),
+}
+
+/// Grain at one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedGrain {
+    /// 0..=1.
+    pub amount: f32,
+    /// Canvas pixels, at least 1.
+    pub size: f32,
+    pub seed: u32,
+    /// What the pattern hashes with: the output frame, or 0 when the grain
+    /// does not animate. Motion blur's sub-frames share their frame's
+    /// pattern (`Clock::frame`).
+    pub frame: u32,
+    pub monochrome: bool,
 }
 
 /// A gradient map at one frame.
@@ -517,6 +533,20 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             src: src.clone(),
             amount: amount.at(f).clamp(0.0, 1.0) as f32,
         },
+        Effect::Grain {
+            amount,
+            size,
+            seed,
+            animate,
+            monochrome,
+        } => ResolvedEffect::Grain(ResolvedGrain {
+            amount: amount.at(f).clamp(0.0, 1.0) as f32,
+            size: size.at(f).max(1.0) as f32,
+            // Checked when the scene loaded.
+            seed: u32::try_from(*seed).unwrap_or_default(),
+            frame: if *animate { clock.frame } else { 0 },
+            monochrome: *monochrome,
+        }),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
@@ -841,6 +871,54 @@ mod tests {
             2,
         );
         assert!(matches!(&effects[0], ResolvedEffect::Lut { amount, .. } if *amount == 0.2));
+    }
+
+    #[test]
+    fn grain_resolves_and_animates_by_the_output_frame() {
+        let json = r##"{
+            "width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "a", "type": "shape",
+              "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+              "effects": [
+                {"type": "grain", "amount": [{"frame": 0, "value": 0}, {"frame": 10, "value": 2}],
+                 "size": [{"frame": 0, "value": 1}, {"frame": 10, "value": 5}], "seed": 9},
+                {"type": "grain", "amount": 0.2, "seed": 9, "animate": false, "monochrome": false}]}]
+        }"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let grain = |clock: Clock| {
+            let layer = resolve_layer(&scene.layers[0], clock);
+            let [ResolvedEffect::Grain(a), ResolvedEffect::Grain(b)] = layer.effects[..] else {
+                panic!("not two grains");
+            };
+            (a, b)
+        };
+        // A sub-frame between frames 4 and 5 reads keyframes at 4.5 but
+        // hashes the output frame, 4.
+        let (a, b) = grain(Clock {
+            t: 4.5,
+            frame: 4,
+            fps: 30.0,
+        });
+        assert!((a.amount - 0.9).abs() < 1e-6 && (a.size - 2.8).abs() < 1e-6);
+        assert_eq!((a.seed, a.frame, a.monochrome), (9, 4, true));
+        // Not animated: always frame 0, and per-channel noise.
+        assert_eq!(
+            b,
+            ResolvedGrain {
+                amount: 0.2,
+                size: 1.0,
+                seed: 9,
+                frame: 0,
+                monochrome: false
+            }
+        );
+        // The amount is clamped to 1 once the keyframes pass it.
+        let (a, _) = grain(Clock {
+            t: 9.0,
+            frame: 9,
+            fps: 30.0,
+        });
+        assert_eq!(a.amount, 1.0);
     }
 
     #[test]

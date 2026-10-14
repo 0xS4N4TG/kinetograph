@@ -48,7 +48,8 @@ use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::resolve::{
-    ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedShader, ResolvedShadow,
+    ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedGrain, ResolvedShader,
+    ResolvedShadow,
 };
 use crate::scene::{BlendMode, MAX_GRADIENT_MAP_STOPS, MaskMode, MatteMode};
 
@@ -93,6 +94,7 @@ pub struct Compositor {
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
     gradient_map: wgpu::RenderPipeline,
+    grain: wgpu::RenderPipeline,
     /// For `lut`: the layer, a 3D texture and the pass's uniforms.
     lut_layout: wgpu::BindGroupLayout,
     lut: wgpu::RenderPipeline,
@@ -143,6 +145,7 @@ impl Compositor {
             "gradient map",
             include_str!("shaders/gradient_map.wgsl"),
         );
+        let grain_shader = shader_module(device, "grain", include_str!("shaders/grain.wgsl"));
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -264,6 +267,7 @@ impl Compositor {
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
             gradient_map: pipeline(&gradient_map_shader, "fs_gradient_map", LINEAR_FORMAT),
+            grain: pipeline(&grain_shader, "fs_grain", LINEAR_FORMAT),
             lut_layout,
             lut,
             luts,
@@ -468,6 +472,10 @@ impl Compositor {
                     src = self.lut(src, key, amount);
                 }
                 ResolvedEffect::Lut { .. } => {}
+                ResolvedEffect::Grain(grain) if grain.amount > 0.0 => {
+                    src = self.grain(src, &grain);
+                }
+                ResolvedEffect::Grain(_) => {}
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -573,6 +581,21 @@ impl Compositor {
             &src.view,
             &src.view,
             &floats(&gradient_map_values(map)),
+            &target.view,
+        );
+        self.release(src);
+        target
+    }
+
+    /// Adds seeded grain to `src` in one pass. `src` goes back to the pool;
+    /// the result is a new texture.
+    fn grain(&mut self, src: Tex, grain: &ResolvedGrain) -> Tex {
+        let target = self.acquire();
+        self.run_pass(
+            &self.grain,
+            &src.view,
+            &src.view,
+            &grain_values(grain, self.margin),
             &target.view,
         );
         self.release(src);
@@ -1180,6 +1203,23 @@ pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex
     Tex { texture, view }
 }
 
+/// Grain as `shaders/grain.wgsl` reads it: four floats (amount, size,
+/// monochrome, unused), then four u32s (seed, frame, margin, unused).
+fn grain_values(grain: &ResolvedGrain, margin: u32) -> Vec<u8> {
+    let mut bytes = floats(&[
+        grain.amount,
+        grain.size,
+        f32::from(u8::from(grain.monochrome)),
+        0.0,
+    ]);
+    bytes.extend(
+        [grain.seed, grain.frame, margin, 0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes()),
+    );
+    bytes
+}
+
 /// Little-endian bytes of a uniform block made of `f32`s.
 fn floats(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
@@ -1315,6 +1355,37 @@ mod tests {
         assert_eq!(&values[24..28], [1.0, 0.0, 0.0, 128.0 / 255.0]);
         // A padded colour is the last stop's.
         assert_eq!(&values[20 + 15 * 4..], [1.0; 4]);
+    }
+
+    #[test]
+    fn grain_values_mix_floats_and_integers() {
+        let grain = ResolvedGrain {
+            amount: 0.25,
+            size: 3.0,
+            seed: u32::MAX,
+            frame: 12,
+            monochrome: true,
+        };
+        let bytes = grain_values(&grain, 40);
+        assert_eq!(bytes.len(), 32);
+        let word = |i: usize| <[u8; 4]>::try_from(&bytes[i * 4..i * 4 + 4]).unwrap();
+        assert_eq!(f32::from_le_bytes(word(0)), 0.25);
+        assert_eq!(f32::from_le_bytes(word(1)), 3.0);
+        assert_eq!(f32::from_le_bytes(word(2)), 1.0);
+        assert_eq!(u32::from_le_bytes(word(4)), u32::MAX);
+        assert_eq!(u32::from_le_bytes(word(5)), 12);
+        assert_eq!(u32::from_le_bytes(word(6)), 40);
+        let colour = grain_values(
+            &ResolvedGrain {
+                monochrome: false,
+                ..grain
+            },
+            0,
+        );
+        assert_eq!(
+            f32::from_le_bytes(<[u8; 4]>::try_from(&colour[8..12]).unwrap()),
+            0.0
+        );
     }
 
     #[test]

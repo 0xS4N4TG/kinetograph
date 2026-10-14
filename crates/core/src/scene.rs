@@ -67,6 +67,10 @@ fn zero() -> Num {
     Num::Const(0.0)
 }
 
+fn yes() -> bool {
+    true
+}
+
 fn black() -> Color {
     Color::BLACK
 }
@@ -208,6 +212,24 @@ pub enum Effect {
         #[serde(default = "one")]
         amount: Num,
     },
+    /// Film grain: seeded zero-mean noise added to the sRGB colour, fixed to
+    /// the canvas.
+    Grain {
+        /// Strength, 0..1: the noise spans plus and minus this much of the
+        /// 0..1 colour range.
+        amount: Num,
+        /// Grain cell size in canvas pixels, at least 1.
+        #[serde(default = "one")]
+        size: Num,
+        /// Which pattern, 0..=u32::MAX; checked when the scene loads.
+        seed: i64,
+        /// A new pattern each frame.
+        #[serde(default = "yes")]
+        animate: bool,
+        /// One noise value for r, g and b; false is per channel.
+        #[serde(default = "yes")]
+        monochrome: bool,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
@@ -306,7 +328,7 @@ impl Effect {
             | Effect::Invert { .. }
             | Effect::HueRotate { .. } => 0.0,
             // Recolours pixels in place.
-            Effect::GradientMap { .. } | Effect::Lut { .. } => 0.0,
+            Effect::GradientMap { .. } | Effect::Lut { .. } | Effect::Grain { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -619,6 +641,15 @@ impl Scene {
                         crate::shader::validate(&layer.id, &shader.code, &shader.names())?;
                     }
                     Effect::GradientMap { stops, .. } => validate_gradient_map(&layer.id, stops)?,
+                    Effect::Grain { size, seed, .. } => {
+                        validate_seed(&layer.id, "grain", *seed)?;
+                        if size.min() < 1.0 {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: grain size must be at least 1 canvas pixel",
+                                layer.id
+                            )));
+                        }
+                    }
                     Effect::Lut { src, .. } if src.trim().is_empty() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: lut needs a src, the path of a .cube file",
@@ -778,6 +809,18 @@ fn validate_matte(layer: &Layer, matte: &Matte, siblings: &[Layer]) -> Result<()
     };
     if source.matte.is_some() {
         return bad(format!("source {:?} has a matte of its own", source.id));
+    }
+    Ok(())
+}
+
+/// A seed is a whole number that fits a `u32`, so that a pattern is the same
+/// on every machine and the hash input is exact.
+fn validate_seed(id: &str, what: &str, seed: i64) -> Result<()> {
+    if u32::try_from(seed).is_err() {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: {what} seed must be a whole number from 0 to {}, got {seed}",
+            u32::MAX
+        )));
     }
     Ok(())
 }
@@ -1340,6 +1383,78 @@ mod tests {
         assert!(
             msg.contains("layer \"box\"") && msg.contains(".cube"),
             "{msg}"
+        );
+    }
+
+    #[test]
+    fn parses_grain_with_defaults() {
+        let scene = effects_of(
+            r#"[{"type": "grain", "amount": 0.15, "seed": 7},
+                {"type": "grain", "amount": [{"frame": 0, "value": 0}, {"frame": 9, "value": 0.5}],
+                 "size": [{"frame": 0, "value": 1}, {"frame": 9, "value": 4}], "seed": 0,
+                 "animate": false, "monochrome": false}]"#,
+        );
+        let Effect::Grain {
+            amount,
+            size,
+            seed,
+            animate,
+            monochrome,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not grain");
+        };
+        assert_eq!((amount.at(0.0), size.at(0.0), *seed), (0.15, 1.0, 7));
+        assert!(*animate && *monochrome);
+        let Effect::Grain {
+            amount,
+            size,
+            animate,
+            monochrome,
+            ..
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not grain");
+        };
+        assert_eq!((amount.at(9.0), size.at(9.0)), (0.5, 4.0));
+        assert!(!*animate && !*monochrome);
+        // The grain is on the pixels, not past them.
+        assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn rejects_bad_grain_naming_the_layer() {
+        let grain = |fields: &str| {
+            scene_with(&format!(r#""effects": [{{"type": "grain", {fields}}}],"#))
+                .unwrap_err()
+                .to_string()
+        };
+        for (fields, want) in [
+            (
+                r#""amount": 0.1, "seed": -1"#,
+                "seed must be a whole number",
+            ),
+            (r#""amount": 0.1, "seed": 4294967296"#, "got 4294967296"),
+            (
+                r#""amount": 0.1, "seed": 1, "size": [{"frame": 0, "value": 3}, {"frame": 5, "value": 0.5}]"#,
+                "size must be at least 1",
+            ),
+        ] {
+            let msg = grain(fields);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The seed is required, and must be an integer, so the JSON parser
+        // rejects these (without a layer id).
+        assert!(grain(r#""amount": 0.1"#).contains("seed"));
+        assert!(grain(r#""seed": 3"#).contains("amount"));
+        assert!(grain(r#""amount": 0.1, "seed": 1.5"#).contains("invalid type"));
+        // The largest seed is fine.
+        assert!(
+            scene_with(r#""effects": [{"type": "grain", "amount": 0.1, "seed": 4294967295}],"#)
+                .is_ok()
         );
     }
 
