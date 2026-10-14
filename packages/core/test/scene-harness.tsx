@@ -31,12 +31,12 @@ export interface Seen {
 }
 
 /** A leaf that records the frame and duration it sees and draws a 1x1 rect named after itself. */
-export function probe(name: string, seen: Seen[]) {
+export function probe(name: string, seen: Seen[], withId = true) {
   return function Probe() {
     const frame = useCurrentFrame();
     const { durationInFrames } = useVideoConfig();
     seen.push({ name, frame, duration: durationInFrames });
-    return <Rect id={name} width={1} height={1} fill="#fff" />;
+    return withId ? <Rect id={name} width={1} height={1} fill="#fff" /> : <Rect width={1} height={1} fill="#fff" />;
   };
 }
 
