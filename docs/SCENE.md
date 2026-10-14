@@ -274,3 +274,6 @@ layer.
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - `blur` is the only effect.
 - No video layers, gradient fills or per-glyph text animation yet. Gradients are only used by `mask`.
+- Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
+- An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
+  line and column, not the layer id.
