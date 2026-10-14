@@ -15,6 +15,7 @@ struct Params {
 //   encode:    tex_a = linear premultiplied image
 //   mask:      tex_a = layer (linear premultiplied), tex_b = Vello output
 //              (Rgba8, sRGB-encoded, straight alpha) that says what to keep
+//   accumulate: tex_a = running sum, tex_b = sample; `opacity` is its weight
 //   matte:     tex_a = layer, tex_b = matte source (linear premultiplied);
 //              `opacity` is the source layer's opacity
 // Unused bindings are bound to the same texture as tex_a.
@@ -256,6 +257,14 @@ fn fs_matte(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let xy = vec2<i32>(p.xy);
     let m = textureLoad(tex_b, xy, 0) * params.opacity;
     return textureLoad(tex_a, xy, 0) * coverage(m, params.mode);
+}
+
+// Adds one sample of an average. The sum is premultiplied linear light, so a
+// weighted sum of premultiplied pixels is the premultiplied average.
+@fragment
+fn fs_accumulate(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let xy = vec2<i32>(p.xy);
+    return textureLoad(tex_a, xy, 0) + textureLoad(tex_b, xy, 0) * params.opacity;
 }
 
 // Linear premultiplied -> sRGB-encoded, straight alpha, for readback.

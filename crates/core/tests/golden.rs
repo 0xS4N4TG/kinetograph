@@ -189,3 +189,159 @@ fn shader_matches_golden() {
     let frame = render_still(scene("tests/scenes/shader.json"), 15).unwrap();
     check("shader", &frame);
 }
+
+#[test]
+fn gradient_map_matches_golden() {
+    // Frame 15 of 30: the cross-fade on the photo is half way and the moving
+    // stop is at its middle. Covers a four-stop map with a see-through first
+    // stop and a translucent last one, a map on text with a gradient fill, on
+    // a group hanging off the left edge, and on a translucent fill (so the
+    // map sees partial alpha) on a half-opaque layer hanging off the right
+    // and bottom edges. The same scene has a `lut` (a .cube table in
+    // tests/scenes/looks) on an image whose cross-fade is half way, on text,
+    // and on a group hanging off the top and right edges, all sharing one
+    // table.
+    let frame = render_still(scene("tests/scenes/gradient-map.json"), 15).unwrap();
+    check("gradient-map", &frame);
+}
+
+#[test]
+fn grain_matches_golden() {
+    // Frame 15 of 30: the animated amount and size are half way. Covers fine
+    // monochrome grain on an image, coloured grain, large smooth grain on
+    // flat grey, text with grain that does not animate, grain staying put on
+    // a rotating card, a translucent fill on a half-opaque layer (alpha
+    // untouched), and a group at amount 1 hanging off the right and bottom
+    // edges.
+    let frame = render_still(scene("tests/scenes/grain.json"), 15).unwrap();
+    check("grain", &frame);
+}
+
+#[test]
+fn dither_matches_golden() {
+    // Frame 15 of 30: the animated levels (5) and cell sizes are half way.
+    // Covers ordered and seeded random dithering of grey ramps, an image, a
+    // text gradient and a radial-filled group hanging off the left and
+    // bottom edges, a random pattern that animates per frame, one that does
+    // not (with the largest seed), and a translucent gradient fill on a
+    // half-opaque layer, whose alpha must stay as it was.
+    let frame = render_still(scene("tests/scenes/dither.json"), 15).unwrap();
+    check("dither", &frame);
+}
+
+#[test]
+fn halftone_matches_golden() {
+    // Frame 15 of 30: the animated cell sizes and grid angles are half way.
+    // Covers circle, square and line dots on grey ramps (solid at white,
+    // empty at black), an image in its own colours and inverted in a given
+    // colour, text rotating and scaling so the screen turns with the layer, a
+    // scaled group hanging off the left and bottom edges, and half-transparent
+    // layers whose alpha and a colour's alpha must scale the dots.
+    let frame = render_still(scene("tests/scenes/halftone.json"), 15).unwrap();
+    check("halftone", &frame);
+}
+
+#[test]
+fn dot_matrix_matches_golden() {
+    // Frame 15 of 30: progress and the animated cell sizes are half way.
+    // Covers a random reveal and a left-to-right sweep of an image, a sweep
+    // across text that rotates (so the grid turns with the layer) and one
+    // down a layer drawn upright, a rotating scaled layer, a scaled group
+    // hanging off the left and bottom edges (random only: a group has no
+    // box) with progress overshooting 0..1, a half-transparent layer, and
+    // progress held at 1 (the layer untouched) and at 0 (nothing drawn).
+    let frame = render_still(scene("tests/scenes/dot-matrix.json"), 15).unwrap();
+    check("dot-matrix", &frame);
+}
+
+#[test]
+fn turbulence_matches_golden() {
+    // Frame 15 of 30: the keyframed scales, frequencies and rotations are half
+    // way. Covers papercut's `torn` (fractalNoise at 0.04, 4 octaves, seed 7)
+    // on a rotating card with a shadow, `rough` (seed 11) on text, a
+    // `turbulence`-type noise with per-axis frequencies and the B and A
+    // channels on an image, a displaced group that is scaled and rotated so
+    // the noise turns with it and hangs off the left and bottom edges, a bar
+    // off the right edge (the margin lets its off-canvas part be pulled in),
+    // zero octaves of `turbulence` on a half-transparent layer (a plain shift
+    // by half the scale; `fractalNoise` would leave it in place), fractional and
+    // negative seeds, and a zero scale (the layer untouched). The same scene
+    // has `noise` layers: a grey strip of `turbulence`-type noise whose
+    // frequency is animated, an rgba block that turns while hanging off the
+    // bottom and right edges (anti-aliased, premultiplied alpha), and one cut
+    // to a circle by a clip and scaled.
+    let frame = render_still(scene("tests/scenes/turbulence.json"), 15).unwrap();
+    check("turbulence", &frame);
+}
+
+#[test]
+fn mesh_gradient_matches_golden() {
+    // Frame 15 of 30: the animated points, rotations and scales are half way.
+    // Covers a full-canvas 4 x 3 mesh whose interior and edge points have
+    // drifted (the background), a photo cut out by a mesh used as a track
+    // matte (colours fading to clear), a 5 x 2 ribbon whose points wave (and
+    // whose lower colours are half-transparent), a rotating 3 x 2 card cut to
+    // rounded corners by an inset clip with a drop shadow (so the scene has a
+    // margin and the mesh is placed inside it), a scaled group of meshes
+    // hanging off the left and bottom edges with a transparent middle column,
+    // a screen-blended mesh with a fully transparent corner rotating off the
+    // bottom-right corner (anti-aliased outer edge, straight-alpha colours),
+    // and text on top.
+    let frame = render_still(scene("tests/scenes/mesh-gradient.json"), 15).unwrap();
+    check("mesh-gradient", &frame);
+}
+
+#[test]
+fn camera_matches_golden() {
+    // Frame 15 of 30: the animated rotations and depths are half way. Covers
+    // perspective (a camera at 700 px, origin in the middle), `rotateY` on a
+    // rotated image with a clip and a drop shadow (so the scene has a margin
+    // that the warp must account for), `rotateX` on text, a flat group turned
+    // past 90 degrees so its back shows mirrored, with a shadow, `z` alone
+    // magnifying a card until it hangs off the top and right edges, and a thin
+    // bar tipped toward the eye until its far end passes the eye plane (that
+    // end is cut off, not mirrored back), drawn half transparent under the
+    // rest. Also two preserve3d groups at the bottom: a stack of five cards
+    // at different depths, listed out of depth order, turned about both axes
+    // (two of them at one depth, so the later one in the list is on top), and
+    // an orbit of four cards facing outward around a ring at 90% opacity,
+    // turned a long way about the vertical axis, so some show their backs.
+    // The ring holds an image matted by an ellipse, a flat group card with
+    // text, and a nested preserve3d group of two discs on either side of the
+    // ring's centre, turned on its own, which sort among the ring's cards.
+    let frame = render_still(scene("tests/scenes/camera.json"), 15).unwrap();
+    check("camera", &frame);
+}
+
+#[test]
+fn corner_pin_matches_golden() {
+    // Frame 15 of 30: the animated pins are half way. Covers an image with
+    // two corners pinned (the other two left on the box) and one corner of
+    // each animated, text with all four corners pinned, a rotated and scaled
+    // card hanging off the right and bottom edges with a drop shadow before
+    // the pin (so the shadow is pinned with it; the scene has a margin that
+    // the warp must account for), a pinned image that is then turned in 3D
+    // under a camera (the two warps compose), a pinned rectangle inside a
+    // rotated, scaled group (the pin is in the child's space, through its
+    // parent's matrix), and a rectangle whose pins are exactly its own
+    // corners (drawn as if there were no effect).
+    let frame = render_still(scene("tests/scenes/corner-pin.json"), 15).unwrap();
+    check("corner-pin", &frame);
+}
+
+#[test]
+fn motion_blur_matches_golden() {
+    // Frame 15 of 30: the whip is at its fastest. Covers a group moving ~80
+    // px a frame (a card with a drop shadow, so the scene has a margin, and
+    // text) whose shutter is animated from 0.2 to 1.6 frames, a three-spoke
+    // fan spinning 20 degrees a frame, hanging off the right edge, an ellipse
+    // whose opacity steps from 0 to 1 across the frame under a two-frame
+    // shutter (the fade is averaged too), an image cut by a moving ellipse
+    // matte that is blurred with the same sample count (the matte smears with
+    // it), a card spinning about the vertical axis under the camera (each
+    // sub-frame is warped on its own), a square with a shut shutter (drawn
+    // exactly as without motion blur) and text that does not move (stays
+    // sharp).
+    let frame = render_still(scene("tests/scenes/motion-blur.json"), 15).unwrap();
+    check("motion-blur", &frame);
+}

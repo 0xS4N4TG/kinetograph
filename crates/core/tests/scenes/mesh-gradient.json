@@ -1,0 +1,483 @@
+{
+ "width": 480,
+ "height": 270,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#101014",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "bg",
+   "type": "meshGradient",
+   "width": 480,
+   "height": 270,
+   "columns": 4,
+   "rows": 3,
+   "points": [
+    [
+     0,
+     0
+    ],
+    [
+     [
+      {
+       "frame": 0,
+       "value": 160
+      },
+      {
+       "frame": 30,
+       "value": 240
+      }
+     ],
+     0
+    ],
+    [
+     320,
+     0
+    ],
+    [
+     480,
+     0
+    ],
+    [
+     0,
+     135
+    ],
+    [
+     [
+      {
+       "frame": 0,
+       "value": 160
+      },
+      {
+       "frame": 30,
+       "value": 220
+      }
+     ],
+     [
+      {
+       "frame": 0,
+       "value": 135
+      },
+      {
+       "frame": 30,
+       "value": 80
+      }
+     ]
+    ],
+    [
+     [
+      {
+       "frame": 0,
+       "value": 320
+      },
+      {
+       "frame": 30,
+       "value": 270
+      }
+     ],
+     [
+      {
+       "frame": 0,
+       "value": 135
+      },
+      {
+       "frame": 30,
+       "value": 190
+      }
+     ]
+    ],
+    [
+     480,
+     135
+    ],
+    [
+     0,
+     270
+    ],
+    [
+     160,
+     270
+    ],
+    [
+     [
+      {
+       "frame": 0,
+       "value": 320
+      },
+      {
+       "frame": 30,
+       "value": 250
+      }
+     ],
+     270
+    ],
+    [
+     480,
+     270
+    ]
+   ],
+   "colors": [
+    "#3a1c71",
+    "#d76d77",
+    "#ffaf7b",
+    "#4b2a8c",
+    "#0f2027",
+    "#2c5364",
+    "#ff6a88",
+    "#6a11cb",
+    "#11998e",
+    "#38ef7d",
+    "#fc4a1a",
+    "#f7b733"
+   ]
+  },
+  {
+   "id": "photo",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 150,
+   "height": 112,
+   "transform": {
+    "x": 300,
+    "y": 16
+   },
+   "matte": {
+    "layer": "veil",
+    "mode": "alpha"
+   }
+  },
+  {
+   "id": "veil",
+   "type": "meshGradient",
+   "width": 150,
+   "height": 112,
+   "columns": 3,
+   "rows": 3,
+   "transform": {
+    "x": 300,
+    "y": 16
+   },
+   "colors": [
+    "#ffffff",
+    "#ffffffcc",
+    "#ffffff10",
+    "#ffffffcc",
+    "#ffffff",
+    "#ffffff80",
+    "#ffffff40",
+    "#ffffffcc",
+    "#ffffff"
+   ]
+  },
+  {
+   "id": "ribbon",
+   "type": "meshGradient",
+   "width": 220,
+   "height": 40,
+   "columns": 5,
+   "rows": 2,
+   "points": [
+    [
+     0,
+     [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 10
+      }
+     ]
+    ],
+    [
+     55,
+     [
+      {
+       "frame": 0,
+       "value": -14
+      },
+      {
+       "frame": 30,
+       "value": 0
+      }
+     ]
+    ],
+    [
+     110,
+     [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": -10
+      }
+     ]
+    ],
+    [
+     165,
+     [
+      {
+       "frame": 0,
+       "value": 14
+      },
+      {
+       "frame": 30,
+       "value": 0
+      }
+     ]
+    ],
+    [
+     220,
+     [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 10
+      }
+     ]
+    ],
+    [
+     0,
+     [
+      {
+       "frame": 0,
+       "value": 40
+      },
+      {
+       "frame": 30,
+       "value": 50
+      }
+     ]
+    ],
+    [
+     55,
+     [
+      {
+       "frame": 0,
+       "value": 26
+      },
+      {
+       "frame": 30,
+       "value": 40
+      }
+     ]
+    ],
+    [
+     110,
+     [
+      {
+       "frame": 0,
+       "value": 40
+      },
+      {
+       "frame": 30,
+       "value": 30
+      }
+     ]
+    ],
+    [
+     165,
+     [
+      {
+       "frame": 0,
+       "value": 54
+      },
+      {
+       "frame": 30,
+       "value": 40
+      }
+     ]
+    ],
+    [
+     220,
+     [
+      {
+       "frame": 0,
+       "value": 40
+      },
+      {
+       "frame": 30,
+       "value": 50
+      }
+     ]
+    ]
+   ],
+   "colors": [
+    "#00f5d4",
+    "#00bbf9",
+    "#9b5de5",
+    "#f15bb5",
+    "#fee440",
+    "#00f5d4aa",
+    "#00bbf9aa",
+    "#9b5de5aa",
+    "#f15bb5aa",
+    "#fee440aa"
+   ],
+   "transform": {
+    "x": 236,
+    "y": 150
+   }
+  },
+  {
+   "id": "card",
+   "type": "meshGradient",
+   "width": 150,
+   "height": 100,
+   "columns": 3,
+   "rows": 2,
+   "colors": [
+    "#ff0054",
+    "#ffbd00",
+    "#390099",
+    "#00f5d4",
+    "#ffffff",
+    "#fb5607"
+   ],
+   "transform": {
+    "x": 110,
+    "y": 100,
+    "anchorX": 75,
+    "anchorY": 50,
+    "rotation": [
+     {
+      "frame": 0,
+      "value": 0
+     },
+     {
+      "frame": 30,
+      "value": 16
+     }
+    ]
+   },
+   "clip": {
+    "kind": "inset",
+    "top": 0,
+    "right": 0,
+    "bottom": 0,
+    "left": 0,
+    "radius": 18
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "y": 6,
+     "blur": 8,
+     "color": "#00000099"
+    }
+   ]
+  },
+  {
+   "id": "stack",
+   "type": "group",
+   "opacity": 0.9,
+   "transform": {
+    "x": -30,
+    "y": 180,
+    "scale": 0.7
+   },
+   "children": [
+    {
+     "id": "stack-wide",
+     "type": "meshGradient",
+     "width": 240,
+     "height": 120,
+     "columns": 2,
+     "rows": 2,
+     "colors": [
+      "#f72585",
+      "#7209b7",
+      "#3a0ca3",
+      "#4cc9f0"
+     ]
+    },
+    {
+     "id": "stack-small",
+     "type": "meshGradient",
+     "width": 100,
+     "height": 100,
+     "columns": 3,
+     "rows": 3,
+     "transform": {
+      "x": 120,
+      "y": 40
+     },
+     "colors": [
+      "#ffffff",
+      "#ffffff00",
+      "#ffffff",
+      "#000000",
+      "#ffe66d",
+      "#000000",
+      "#ffffff",
+      "#ffffff00",
+      "#ffffff"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "corner",
+   "type": "meshGradient",
+   "width": 140,
+   "height": 100,
+   "columns": 2,
+   "rows": 2,
+   "opacity": 0.85,
+   "blendMode": "screen",
+   "colors": [
+    "#ff9f1c",
+    "#2ec4b6",
+    "#e71d3600",
+    "#cbf3f0cc"
+   ],
+   "transform": {
+    "x": 410,
+    "y": 230,
+    "anchorX": 70,
+    "anchorY": 50,
+    "rotation": [
+     {
+      "frame": 0,
+      "value": 20
+     },
+     {
+      "frame": 30,
+      "value": 50
+     }
+    ],
+    "scale": [
+     {
+      "frame": 0,
+      "value": 1.2
+     },
+     {
+      "frame": 30,
+      "value": 1.6
+     }
+    ]
+   }
+  },
+  {
+   "id": "label",
+   "type": "text",
+   "text": "MESH GRADIENT",
+   "font": "DM Sans",
+   "size": 30,
+   "color": "#ffffff",
+   "transform": {
+    "x": 24,
+    "y": 18
+   }
+  }
+ ]
+}

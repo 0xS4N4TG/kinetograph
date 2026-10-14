@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use glam::DMat4;
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke};
 use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
@@ -15,12 +16,14 @@ use crate::blur::MIN_RADIUS;
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
+use crate::mesh;
 use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
     ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
-use crate::scene::{Extend, LayerKind, MaskMode, Scene};
+use crate::scene::{DotOrder, Extend, LayerKind, MaskMode, Scene};
 use crate::text::TextEngine;
+use crate::warp;
 
 /// Curve flattening tolerance when converting shapes to paths.
 const SHAPE_TOLERANCE: f64 = 0.1;
@@ -98,6 +101,8 @@ pub struct Renderer {
     target_size: (u32, u32),
     /// See `Scene::margin`.
     margin: u32,
+    /// The camera of the frame being rendered (`warp::projection`).
+    projection: DMat4,
     compositor: Compositor,
     text: TextEngine,
     images: HashMap<String, ImageData>,
@@ -110,6 +115,7 @@ impl Renderer {
         // Fonts first: nothing is measured before they are registered.
         let text = TextEngine::new(&scene.fonts, &scene.base_dir)?;
         let images = load_images(&scene)?;
+        let luts = crate::lut::load_luts(&scene)?;
 
         let mut context = RenderContext::new();
         let id = pollster::block_on(context.device(None))
@@ -147,6 +153,7 @@ impl Renderer {
             scene.height,
             margin,
             &scene.shader_sources(),
+            &luts,
         );
 
         Ok(Renderer {
@@ -160,6 +167,7 @@ impl Renderer {
             vello_view,
             target_size,
             margin,
+            projection: DMat4::IDENTITY,
             compositor,
             text,
             images,
@@ -210,6 +218,7 @@ impl Renderer {
     }
 
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
+        self.projection = warp::projection(scene.camera.as_ref(), self.margin);
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas =
@@ -236,51 +245,225 @@ impl Renderer {
     ) -> Result<Tex> {
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
-            if layer.opacity <= 0.0 || is_matte_source(layers, layer) {
+            if is_hidden(layer) || is_matte_source(layers, layer) {
                 continue;
             }
-            // The backdrop is only built for a layer that blurs it: the
-            // canvas so far, under anything the enclosing groups have behind
-            // them.
-            let needs_backdrop = uses_backdrop(layers, layer);
-            let combined = match below {
-                Some(below) if needs_backdrop => {
-                    Some(self.timed(Stage::Composite, |s| s.compositor.over(below, &canvas)))
-                }
-                _ => None,
-            };
-            let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
-            let src = self.layer_texture(layer, layers, parent, backdrop)?;
-            if let Some(combined) = combined {
-                self.compositor.release(combined);
+            // No buffer of its own: the children go straight onto the canvas.
+            if let ResolvedKind::Group {
+                children,
+                preserve3d: true,
+            } = &layer.kind
+            {
+                canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
+                continue;
             }
-            canvas = self.timed(Stage::Composite, |s| {
-                s.compositor
-                    .blend(canvas, src, layer.opacity, layer.blend_mode)
-            });
+            // A layer turned in 3D is drawn flat and then warped about its
+            // own position, in its parent's plane.
+            let placement =
+                warp::layer_world(&layer.transform).map(|world| Placement { parent, world });
+            canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
         }
         Ok(canvas)
+    }
+
+    /// Draws a `preserve3d` group: its children, and those of the preserve3d
+    /// groups nested in it, go straight onto `canvas` with their combined 3D
+    /// placements, farthest first (`warp::sort_far_to_near`), the group's own
+    /// opacity multiplied into each. `parent` is the group's parent's flat
+    /// matrix.
+    fn draw_preserve3d(
+        &mut self,
+        group: &ResolvedLayer,
+        children: &[ResolvedLayer],
+        parent: Affine,
+        mut canvas: Tex,
+        below: Option<&Tex>,
+    ) -> Result<Tex> {
+        let space = Space3d {
+            parent,
+            flat: group.transform.matrix(),
+            world: warp::layer_world(&group.transform).unwrap_or(DMat4::IDENTITY),
+            opacity: group.opacity,
+        };
+        let mut items = Vec::new();
+        collect_preserve3d(children, space, &mut |l| self.layer_box(l), &mut items)?;
+        warp::sort_far_to_near(&mut items, |item| item.depth);
+        for item in items {
+            canvas = self.draw_layer(
+                item.layer,
+                item.siblings,
+                item.flat_parent,
+                Some(item.placement),
+                item.opacity,
+                canvas,
+                below,
+            )?;
+        }
+        Ok(canvas)
+    }
+
+    /// Draws one layer of `siblings` onto `canvas`: its own pixels
+    /// (`layer_texture`), warped into place if it has a `placement`, blended
+    /// with its opacity times `opacity_scale`. `parent` is the flat matrix of
+    /// the layer's parent, as in `draw_layers`. A layer with motion blur
+    /// ignores `placement` and works its own out for each sub-frame, so it
+    /// cannot be drawn by `draw_preserve3d` (the scene refuses it).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_layer(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        placement: Option<Placement>,
+        opacity_scale: f32,
+        mut canvas: Tex,
+        below: Option<&Tex>,
+    ) -> Result<Tex> {
+        // The backdrop is only built for a layer that blurs it: the canvas so
+        // far, under anything the enclosing groups have behind them.
+        let needs_backdrop = uses_backdrop(siblings, layer);
+        let combined = match below {
+            Some(below) if needs_backdrop => {
+                Some(self.timed(Stage::Composite, |s| s.compositor.over(below, &canvas)))
+            }
+            _ => None,
+        };
+        let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
+        let drawn = if layer.motion.is_empty() {
+            self.layer_texture(layer, siblings, parent, backdrop, None)
+                .map(|src| (src, layer.opacity * opacity_scale))
+        } else {
+            // Each sub-frame's opacity is already in the average.
+            self.motion_blurred(layer, siblings, parent, backdrop, opacity_scale)
+                .map(|src| (src, 1.0))
+        };
+        if let Some(combined) = combined {
+            self.compositor.release(combined);
+        }
+        let (src, opacity) = drawn?;
+        let src = match placement {
+            // The sub-frames of a blurred layer were placed one by one.
+            Some(placement) if layer.motion.is_empty() => match self.place(src, &placement) {
+                Some(src) => src,
+                // Seen edge on: nothing to blend.
+                None => return Ok(canvas),
+            },
+            _ => src,
+        };
+        canvas = self.timed(Stage::Composite, |s| {
+            s.compositor.blend(canvas, src, opacity, layer.blend_mode)
+        });
+        Ok(canvas)
+    }
+
+    /// The average of `layer`'s sub-frames (`ResolvedLayer::motion`), each
+    /// drawn and warped into place as `draw_layer` would draw it at that
+    /// time and weighted by its own opacity times `opacity_scale`. A
+    /// sub-frame seen edge on adds nothing but still counts in the average.
+    fn motion_blurred(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        backdrop: Option<&Tex>,
+        opacity_scale: f32,
+    ) -> Result<Tex> {
+        let weight = opacity_scale / layer.motion.len() as f32;
+        let mut sum = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
+        for (i, sub) in layer.motion.iter().enumerate() {
+            if sub.opacity <= 0.0 {
+                continue;
+            }
+            let src = self.layer_texture(
+                sub,
+                siblings,
+                parent,
+                backdrop,
+                Some((i, layer.motion.len())),
+            )?;
+            let placement =
+                warp::layer_world(&sub.transform).map(|world| Placement { parent, world });
+            let src = match placement {
+                Some(placement) => match self.place(src, &placement) {
+                    Some(src) => src,
+                    None => continue,
+                },
+                None => src,
+            };
+            sum = self.timed(Stage::Composite, |s| {
+                s.compositor.accumulate(sum, src, sub.opacity * weight)
+            });
+        }
+        Ok(sum)
+    }
+
+    /// Warps a finished layer texture to where its 3D placement puts it, as
+    /// seen by the camera. `None` (and `src` released) if the layer is seen
+    /// edge on.
+    fn place(&mut self, src: Tex, placement: &Placement) -> Option<Tex> {
+        let Some(h) = warp::plane_homography(self.projection, placement.parent, placement.world)
+        else {
+            self.compositor.release(src);
+            return None;
+        };
+        // A placement that changes nothing (a group at depth 0 in a flat
+        // stack) costs no pass.
+        if warp::is_identity(&h) {
+            return Some(src);
+        }
+        Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h.inverse())))
     }
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
     /// effects, clip, mask and matte, in that order. `siblings` is the list
     /// `layer` is in, where its matte source is found. `backdrop` is what is
     /// behind the layer, given when it or its matte source blurs it.
+    ///
+    /// `sub` is `layer`'s sub-frame number and the count when it is one of a
+    /// blurred layer's copies: its matte source is then the source's copy at the
+    /// same time, if the source is blurred the same number of times (a
+    /// source that is not, or not as many, stays at the frame).
     fn layer_texture(
         &mut self,
         layer: &ResolvedLayer,
         siblings: &[ResolvedLayer],
         parent: Affine,
         backdrop: Option<&Tex>,
+        sub: Option<(usize, usize)>,
     ) -> Result<Tex> {
+        // Layer space to padded texture pixels.
+        let matrix = parent * layer.transform.matrix();
         let src = match &layer.kind {
-            ResolvedKind::Group { children } => {
+            ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
-                self.draw_layers(children, parent * layer.transform.matrix(), empty, backdrop)?
+                self.draw_layers(children, matrix, empty, backdrop)?
+            }
+            // Triangles with vertex colours, not a Vello scene.
+            ResolvedKind::MeshGradient {
+                columns,
+                rows,
+                points,
+                colors,
+                ..
+            } => {
+                let vertices = mesh::tessellate(*columns, *rows, points, colors, matrix);
+                self.timed(Stage::Raster, |s| s.compositor.mesh_gradient(&vertices))
             }
             _ => {
                 self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
-                self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view))
+                let drawn =
+                    self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view));
+                match &layer.kind {
+                    // What was drawn is the box's coverage; the noise fills it.
+                    ResolvedKind::Noise {
+                        turbulence,
+                        channels,
+                        ..
+                    } => self.timed(Stage::Composite, |s| {
+                        s.compositor.noise(drawn, matrix, turbulence, *channels)
+                    }),
+                    _ => drawn,
+                }
             }
         };
         // A shape frosts its whole geometry, however see-through its fill is.
@@ -291,22 +474,31 @@ impl Renderer {
             }
             _ => None,
         };
+        let layer_box = if needs_box(&layer.effects) {
+            self.layer_box(layer)?
+        } else {
+            None
+        };
         let mut src = self.timed(Stage::Composite, |s| {
-            s.compositor
-                .apply_effects(src, &layer.effects, backdrop, coverage.as_ref())
+            s.compositor.apply_effects(
+                src,
+                matrix,
+                layer_box,
+                &layer.effects,
+                backdrop,
+                coverage.as_ref(),
+            )
         });
         if let Some(coverage) = coverage {
             self.compositor.release(coverage);
         }
         if let Some(clip) = &layer.clip {
-            let matrix = parent * layer.transform.matrix();
             self.timed(Stage::Raster, |s| s.rasterise_clip(clip, layer, matrix))?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor.mask(src, &s.vello_view, MaskMode::Alpha)
             });
         }
         if let Some(mask) = &layer.mask {
-            let matrix = parent * layer.transform.matrix();
             self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor.mask(src, &s.vello_view, mask.mode)
@@ -322,9 +514,13 @@ impl Renderer {
                         layer.id, matte.layer
                     ))
                 })?;
+            let source = match sub {
+                Some((i, count)) if source.motion.len() == count => &source.motion[i],
+                _ => source,
+            };
             // The source cannot have a matte (checked at load), so this
             // recursion is one level deep.
-            let matte_tex = self.layer_texture(source, siblings, parent, backdrop)?;
+            let matte_tex = self.layer_texture(source, siblings, parent, backdrop, None)?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor
                     .matte(src, matte_tex, source.opacity, matte.mode)
@@ -398,7 +594,19 @@ impl Renderer {
                 );
                 self.vello_scene.draw_image(image, matrix * fit);
             }
-            ResolvedKind::Group { .. } => unreachable!("groups are composited, not rasterised"),
+            // The box in opaque white: the noise pass fills its coverage.
+            ResolvedKind::Noise { width, height, .. } => {
+                self.vello_scene.fill(
+                    Fill::NonZero,
+                    matrix,
+                    peniko::Color::WHITE,
+                    None,
+                    &Rect::new(0.0, 0.0, *width, *height),
+                );
+            }
+            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {
+                unreachable!("groups and meshes are composited, not rasterised")
+            }
         }
         self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }))
     }
@@ -539,7 +747,11 @@ impl Renderer {
                     f64::from(laid_out.height),
                 ))
             }
-            ResolvedKind::Image { width, height, .. } => Some(Rect::new(0.0, 0.0, *width, *height)),
+            ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Noise { width, height, .. }
+            | ResolvedKind::MeshGradient { width, height, .. } => {
+                Some(Rect::new(0.0, 0.0, *width, *height))
+            }
             ResolvedKind::Group { .. } => None,
         })
     }
@@ -570,6 +782,106 @@ impl Renderer {
     }
 }
 
+/// How a layer is moved in 3D: `world` is its `W` (see `warp.rs`; inside a
+/// `preserve3d` group, the accumulated one), acting on the plane of the
+/// space whose flat matrix is `parent`.
+#[derive(Clone, Copy)]
+struct Placement {
+    parent: Affine,
+    world: DMat4,
+}
+
+/// Where a `preserve3d` group's children are, while they are being placed.
+/// Everything is relative to the space outside the outermost preserve3d group
+/// (`parent` is that space's flat matrix, with the margin offset).
+#[derive(Clone, Copy)]
+struct Space3d {
+    parent: Affine,
+    /// From the space of the children's parent to the outer space: the product
+    /// of the 2D matrices of the preserve3d groups down to it.
+    flat: Affine,
+    /// The `W` of the children's parent in the outer space (`warp::child_world`
+    /// builds a child's from it).
+    world: DMat4,
+    /// The product of those groups' opacities.
+    opacity: f32,
+}
+
+/// A layer of a `preserve3d` group waiting for its turn to be drawn.
+struct DepthItem<'a> {
+    layer: &'a ResolvedLayer,
+    /// The list `layer` is in, where its matte source is found.
+    siblings: &'a [ResolvedLayer],
+    /// Flat matrix of the layer's parent, with the margin: what
+    /// `layer_texture` rasterises the layer under.
+    flat_parent: Affine,
+    placement: Placement,
+    /// The preserve3d groups' opacity, to multiply into the layer's own.
+    opacity: f32,
+    /// What it is sorted by: the z of the layer's centre once placed.
+    depth: f64,
+}
+
+/// Lists the layers a `preserve3d` group draws: its `children`, with those of
+/// preserve3d groups nested in it in their place (nested groups sort as one),
+/// in document order. A group that is not itself preserve3d is one item, drawn
+/// as a flat picture. `layer_box` gives a layer's box in its own space (none
+/// for a group), whose middle is where its depth is measured; a layer without
+/// one is measured at its position. Matte sources and layers with no
+/// opacity are left out.
+fn collect_preserve3d<'a>(
+    children: &'a [ResolvedLayer],
+    space: Space3d,
+    layer_box: &mut impl FnMut(&ResolvedLayer) -> Result<Option<Rect>>,
+    out: &mut Vec<DepthItem<'a>>,
+) -> Result<()> {
+    // A group scaled to nothing shows nothing, and cannot be inverted.
+    if !warp::invertible(space.flat) {
+        return Ok(());
+    }
+    for child in children {
+        if child.opacity <= 0.0 || is_matte_source(children, child) {
+            continue;
+        }
+        let world = match warp::layer_world(&child.transform) {
+            Some(own) => warp::child_world(space.world, space.flat, own),
+            None => space.world,
+        };
+        let flat = space.flat * child.transform.matrix();
+        if let ResolvedKind::Group {
+            children: inner,
+            preserve3d: true,
+        } = &child.kind
+        {
+            let inner_space = Space3d {
+                flat,
+                world,
+                opacity: space.opacity * child.opacity,
+                ..space
+            };
+            collect_preserve3d(inner, inner_space, layer_box, out)?;
+            continue;
+        }
+        let local = match layer_box(child)? {
+            Some(b) => b.center(),
+            None => Point::new(child.transform.anchor_x, child.transform.anchor_y),
+        };
+        let centre = flat * local;
+        out.push(DepthItem {
+            layer: child,
+            siblings: children,
+            flat_parent: space.parent * space.flat,
+            placement: Placement {
+                parent: space.parent,
+                world,
+            },
+            opacity: space.opacity,
+            depth: warp::depth(&world, (centre.x, centre.y)),
+        });
+    }
+    Ok(())
+}
+
 /// Where the canvas's top-left corner sits in the padded textures: `margin`
 /// pixels in from the corner. Every layer is drawn inside this transform. At
 /// margin 0 it is bit for bit `Affine::IDENTITY`.
@@ -577,11 +889,29 @@ fn margin_origin(margin: u32) -> Affine {
     Affine::translate((f64::from(margin), f64::from(margin)))
 }
 
+/// Whether `layer` draws nothing at any time of its frame.
+fn is_hidden(layer: &ResolvedLayer) -> bool {
+    if layer.motion.is_empty() {
+        layer.opacity <= 0.0
+    } else {
+        layer.motion.iter().all(|sub| sub.opacity <= 0.0)
+    }
+}
+
 /// Whether another layer in `layers` uses `layer` as its matte.
 fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
     layers
         .iter()
         .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == layer.id))
+}
+
+/// Whether any of `effects` measures across the layer's box, which then has
+/// to be worked out: a sweeping dot matrix, a corner pin.
+fn needs_box(effects: &[ResolvedEffect]) -> bool {
+    effects.iter().any(|e| {
+        matches!(e, ResolvedEffect::CornerPin(_))
+            || matches!(e, ResolvedEffect::DotMatrix(d) if d.order == DotOrder::Sweep)
+    })
 }
 
 /// Whether `effects` blur the backdrop.
@@ -592,10 +922,12 @@ fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
-/// or so does something inside it.
+/// or so does something inside it, or one of its motion blur sub-frames does
+/// (an animated radius can be under the minimum at the frame itself).
 fn needs_backdrop(layer: &ResolvedLayer) -> bool {
     has_backdrop_blur(&layer.effects)
-        || matches!(&layer.kind, ResolvedKind::Group { children } if children.iter().any(needs_backdrop))
+        || matches!(&layer.kind, ResolvedKind::Group { children, .. } if children.iter().any(needs_backdrop))
+        || layer.motion.iter().any(needs_backdrop)
 }
 
 /// Like `needs_backdrop`, counting the layer's matte source, which is drawn
@@ -794,6 +1126,27 @@ pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
 mod tests {
     use super::*;
     use vello::peniko::GradientKind;
+
+    #[test]
+    fn only_a_sweep_and_a_corner_pin_need_the_layer_box() {
+        let dots = |order| {
+            ResolvedEffect::DotMatrix(crate::resolve::ResolvedDotMatrix {
+                size: 12.0,
+                progress: 0.5,
+                order,
+                angle: 0.0,
+                stagger: 0.6,
+                seed: 1,
+                shape: crate::scene::DotShape::Circle,
+            })
+        };
+        assert!(needs_box(&[dots(DotOrder::Sweep)]));
+        assert!(!needs_box(&[dots(DotOrder::Random)]));
+        assert!(!needs_box(&[]));
+        let pin =
+            ResolvedEffect::CornerPin(crate::resolve::ResolvedCornerPin { corners: [None; 4] });
+        assert!(needs_box(&[dots(DotOrder::Random), pin]));
+    }
 
     const RED: Color = Color {
         r: 255,
@@ -1066,5 +1419,301 @@ mod tests {
         // The conic turn about its centre leaves the centre where it is.
         let moved = transform.unwrap() * Point::new(10.0, 20.0);
         assert!(moved.distance(Point::new(10.0, 20.0)) < 1e-9);
+    }
+
+    /// The box of a rect shape or an empty group, which is all these tests
+    /// use; the renderer's own `layer_box` needs a GPU for the rest.
+    fn test_box(layer: &ResolvedLayer) -> Result<Option<Rect>> {
+        Ok(match &layer.kind {
+            ResolvedKind::Shape {
+                geometry: ResolvedGeometry::Rect { width, height },
+                ..
+            } => Some(Rect::new(0.0, 0.0, *width, *height)),
+            _ => None,
+        })
+    }
+
+    /// `layers_json` at frame 0 as the top-level layers, resolved.
+    fn resolve_layers(layers_json: &str) -> Vec<ResolvedLayer> {
+        let json = format!(
+            r##"{{"width": 400, "height": 300, "fps": 30, "durationInFrames": 1,
+                "layers": {layers_json}}}"##
+        );
+        Scene::from_json(&json, std::path::PathBuf::new())
+            .unwrap()
+            .resolve(0)
+            .unwrap()
+            .layers
+    }
+
+    fn card(id: &str, transform: &str) -> String {
+        format!(
+            r##"{{"id": "{id}", "type": "shape", "fill": "#fff",
+                "shape": {{"kind": "rect", "width": 20, "height": 10}}, "transform": {transform}}}"##
+        )
+    }
+
+    /// The ids of what a preserve3d group at the top of `layers` draws, in
+    /// painting order.
+    fn painting_order(layers: &[ResolvedLayer]) -> (Vec<(String, f32)>, Vec<DepthItem<'_>>) {
+        let ResolvedKind::Group { children, .. } = &layers[0].kind else {
+            panic!("not a group");
+        };
+        let space = Space3d {
+            parent: Affine::IDENTITY,
+            flat: layers[0].transform.matrix(),
+            world: warp::layer_world(&layers[0].transform).unwrap_or(DMat4::IDENTITY),
+            opacity: layers[0].opacity,
+        };
+        let mut items = Vec::new();
+        collect_preserve3d(children, space, &mut test_box, &mut items).unwrap();
+        warp::sort_far_to_near(&mut items, |i| i.depth);
+        let order = items
+            .iter()
+            .map(|i| (i.layer.id.clone(), i.opacity))
+            .collect();
+        (order, items)
+    }
+
+    fn ids(order: &[(String, f32)]) -> Vec<&str> {
+        order.iter().map(|(id, _)| id.as_str()).collect()
+    }
+
+    #[test]
+    fn a_preserve3d_group_paints_far_to_near_whatever_the_document_order() {
+        let cards = [
+            card("front", r#"{"z": 40}"#),
+            card("back", r#"{"z": -50}"#),
+            card("mid", r#"{"z": 0}"#),
+        ]
+        .join(",");
+        let layers = resolve_layers(&format!(
+            r#"[{{"id": "g", "type": "group", "preserve3d": true, "children": [{cards}]}}]"#
+        ));
+        let (order, _) = painting_order(&layers);
+        assert_eq!(ids(&order), ["back", "mid", "front"]);
+    }
+
+    #[test]
+    fn layers_at_the_same_depth_keep_document_order() {
+        let cards = [
+            card("a", r#"{"x": 100, "z": 10}"#),
+            card("b", r#"{"x": 150, "z": -10}"#),
+            card("c", r#"{"x": 200, "z": 10}"#),
+            card("d", r#"{"x": 250, "z": 10}"#),
+        ]
+        .join(",");
+        let layers = resolve_layers(&format!(
+            r#"[{{"id": "g", "type": "group", "preserve3d": true, "children": [{cards}]}}]"#
+        ));
+        let (order, _) = painting_order(&layers);
+        assert_eq!(ids(&order), ["b", "a", "c", "d"]);
+    }
+
+    #[test]
+    fn turning_the_group_turns_the_depth_order() {
+        // Three cards side by side at one depth. Turn the group a quarter
+        // about the vertical axis and the one on the right is the farthest.
+        let cards = [
+            card("left", r#"{"x": -40}"#),
+            card("middle", r#"{"x": 0}"#),
+            card("right", r#"{"x": 40}"#),
+        ]
+        .join(",");
+        let group = |turn: f64| {
+            resolve_layers(&format!(
+                r#"[{{"id": "g", "type": "group", "preserve3d": true,
+                     "transform": {{"x": 200, "y": 150, "rotateY": {turn}}}, "children": [{cards}]}}]"#
+            ))
+        };
+        let flat = group(0.0);
+        assert_eq!(ids(&painting_order(&flat).0), ["left", "middle", "right"]);
+        let turned = group(60.0);
+        assert_eq!(ids(&painting_order(&turned).0), ["right", "middle", "left"]);
+        let other_way = group(-60.0);
+        assert_eq!(
+            ids(&painting_order(&other_way).0),
+            ["left", "middle", "right"]
+        );
+    }
+
+    #[test]
+    fn a_layers_depth_is_measured_at_the_middle_of_its_box() {
+        // Both sit at the group's origin, but the wide one's middle is 100
+        // px to the right, which a quarter turn sends far back.
+        let cards = [
+            r##"{"id": "wide", "type": "shape", "fill": "#fff",
+                "shape": {"kind": "rect", "width": 200, "height": 10}}"##
+                .to_string(),
+            card("narrow", r#"{"x": 0}"#),
+        ]
+        .join(",");
+        let layers = resolve_layers(&format!(
+            r#"[{{"id": "g", "type": "group", "preserve3d": true,
+                 "transform": {{"rotateY": 90}}, "children": [{cards}]}}]"#
+        ));
+        let (order, items) = painting_order(&layers);
+        assert_eq!(ids(&order), ["wide", "narrow"]);
+        // 100 px right of the pivot at a quarter turn is 100 px back; the
+        // narrow one's middle is 10 px right, 10 px back.
+        assert!((items[0].depth + 100.0).abs() < 1e-9);
+        assert!((items[1].depth + 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_groups_depth_is_measured_at_its_position() {
+        // A plain group has no box: it sorts at its position. Rotating the
+        // parent a quarter turn sends the one at x = 80 behind the one at 0.
+        let layers = resolve_layers(
+            r#"[{"id": "g", "type": "group", "preserve3d": true,
+                 "transform": {"rotateY": 90}, "children": [
+                   {"id": "right", "type": "group", "transform": {"x": 80}, "children": []},
+                   {"id": "origin", "type": "group", "children": []}]}]"#,
+        );
+        let (order, items) = painting_order(&layers);
+        assert_eq!(ids(&order), ["right", "origin"]);
+        assert!((items[0].depth + 80.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn nested_preserve3d_groups_sort_with_their_parents_children() {
+        let inner = [
+            card("in-near", r#"{"z": 30}"#),
+            card("in-far", r#"{"z": -30}"#),
+        ]
+        .join(",");
+        let layers = resolve_layers(&format!(
+            r#"[{{"id": "g", "type": "group", "preserve3d": true, "children": [
+                 {first},
+                 {{"id": "nested", "type": "group", "preserve3d": true,
+                   "transform": {{"z": 5}}, "children": [{inner}]}},
+                 {last}]}}]"#,
+            first = card("first", r#"{"z": 10}"#),
+            last = card("last", r#"{"z": -50}"#),
+        ));
+        let (order, items) = painting_order(&layers);
+        // The nested group's z of 5 is added to its children's.
+        assert_eq!(ids(&order), ["last", "in-far", "first", "in-near"]);
+        let depth = |id: &str| items.iter().find(|i| i.layer.id == id).unwrap().depth;
+        assert!((depth("in-far") + 25.0).abs() < 1e-9);
+        assert!((depth("in-near") - 35.0).abs() < 1e-9);
+        // Siblings are the list the layer is in, for its matte source.
+        let nested: Vec<_> = items
+            .iter()
+            .filter(|i| i.layer.id.starts_with("in-"))
+            .collect();
+        assert!(nested.iter().all(|i| i.siblings.len() == 2));
+    }
+
+    #[test]
+    fn placements_compose_the_whole_chain_of_matrices() {
+        // A preserve3d group inside another, each moved and turned in 3D
+        // and in 2D, around a card with its own 3D transform: the card's
+        // world matrix times its flat matrix is the product of the three
+        // full matrices from the formula.
+        let layers = resolve_layers(&format!(
+            r#"[{{"id": "outer", "type": "group", "preserve3d": true,
+                 "transform": {{"x": 90, "y": 60, "rotation": 12, "scale": 1.4, "rotateY": 35, "z": 20,
+                               "anchorX": 5, "anchorY": 7}},
+                 "children": [{{"id": "inner", "type": "group", "preserve3d": true,
+                   "transform": {{"x": 30, "y": -10, "rotateX": -20, "rotation": -8, "scale": 0.8}},
+                   "children": [{card}]}}]}}]"#,
+            card = card(
+                "leaf",
+                r#"{"x": 12, "y": 9, "z": 15, "rotateY": 50, "rotateX": 10, "rotation": 25, "anchorX": 10, "anchorY": 5}"#
+            ),
+        ));
+        let (_, items) = painting_order(&layers);
+        assert_eq!(items.len(), 1);
+        let item = &items[0];
+        let ResolvedKind::Group { children, .. } = &layers[0].kind else {
+            unreachable!()
+        };
+        let inner = &children[0];
+        let ResolvedKind::Group { children, .. } = &inner.kind else {
+            unreachable!()
+        };
+        let leaf = &children[0];
+        let want = warp::full_matrix(&layers[0].transform)
+            * warp::full_matrix(&inner.transform)
+            * warp::full_matrix(&leaf.transform);
+        let flat = item.flat_parent * leaf.transform.matrix();
+        let got = item.placement.world * warp::flat(flat);
+        assert!(got.abs_diff_eq(want, 1e-8), "{got:?} vs {want:?}");
+        // The layer is rasterised under the groups' flat matrices alone.
+        assert_eq!(
+            item.flat_parent,
+            layers[0].transform.matrix() * inner.transform.matrix()
+        );
+    }
+
+    #[test]
+    fn group_opacities_multiply_into_the_layers_and_hidden_ones_are_skipped() {
+        let layers = resolve_layers(&format!(
+            r##"[{{"id": "g", "type": "group", "preserve3d": true, "opacity": 0.5, "children": [
+                 {a},
+                 {{"id": "hidden", "type": "group", "preserve3d": true, "opacity": 0,
+                   "children": [{b}]}},
+                 {{"id": "faded", "type": "group", "preserve3d": true, "opacity": 0.5,
+                   "children": [{c}]}},
+                 {{"id": "cut", "type": "shape", "fill": "#fff", "matte": {{"layer": "source"}},
+                   "shape": {{"kind": "rect", "width": 5, "height": 5}}}},
+                 {{"id": "source", "type": "shape", "fill": "#fff",
+                   "shape": {{"kind": "rect", "width": 5, "height": 5}}}}]}}]"##,
+            a = card("a", "{}"),
+            b = card("b-in-hidden", "{}"),
+            c = card("c-in-faded", "{}"),
+        ));
+        let (order, _) = painting_order(&layers);
+        // `source` is only drawn through `cut`; `hidden` and what is in it
+        // are not drawn at all.
+        assert_eq!(ids(&order), ["a", "c-in-faded", "cut"]);
+        assert_eq!(order[0].1, 0.5);
+        assert_eq!(order[1].1, 0.25);
+        assert_eq!(order[2].1, 0.5);
+    }
+
+    #[test]
+    fn a_group_scaled_to_nothing_draws_nothing() {
+        let layers = resolve_layers(&format!(
+            r#"[{{"id": "g", "type": "group", "preserve3d": true,
+                 "transform": {{"scale": 0}}, "children": [{}]}}]"#,
+            card("a", r#"{"z": 5}"#)
+        ));
+        assert!(painting_order(&layers).0.is_empty());
+    }
+
+    #[test]
+    fn a_blurred_layer_is_hidden_only_when_every_sub_frame_is() {
+        // Fades in across frames 0..2; the shutter reaches back to before it.
+        let layers = resolve_layers(
+            r##"[{"id": "fade", "type": "shape", "fill": "#fff",
+                  "shape": {"kind": "rect", "width": 20, "height": 10},
+                  "opacity": [{"frame": 0, "value": 0}, {"frame": 2, "value": 1}],
+                  "motionBlur": {"samples": 4, "shutter": 1}},
+                 {"id": "gone", "type": "shape", "fill": "#fff",
+                  "shape": {"kind": "rect", "width": 20, "height": 10},
+                  "opacity": 0, "motionBlur": {"samples": 4, "shutter": 1}},
+                 {"id": "plain", "type": "shape", "fill": "#fff",
+                  "shape": {"kind": "rect", "width": 20, "height": 10}, "opacity": 0}]"##,
+        );
+        // Frame 0 itself is invisible, but frame 0.375 is not.
+        assert_eq!(layers[0].opacity, 0.0);
+        assert!(!is_hidden(&layers[0]));
+        assert!(is_hidden(&layers[1]) && is_hidden(&layers[2]));
+    }
+
+    #[test]
+    fn a_blurred_layer_needs_the_backdrop_when_a_sub_frame_frosts_it() {
+        // The radius is 0 at frame 0 and grows after it; the shutter reaches
+        // past it.
+        let layers = resolve_layers(
+            r##"[{"id": "frost", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur",
+                    "radius": [{"frame": 0, "value": 0}, {"frame": 1, "value": 16}]}],
+                  "motionBlur": {"samples": 4, "shutter": 1}}]"##,
+        );
+        assert!(!has_backdrop_blur(&layers[0].effects));
+        assert!(uses_backdrop(&layers, &layers[0]));
     }
 }

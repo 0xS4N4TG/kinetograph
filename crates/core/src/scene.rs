@@ -10,6 +10,7 @@ use crate::anim::Num;
 use crate::color::Color;
 use crate::error::{Error, Result};
 use crate::resolve::MAX_BLUR_RADIUS;
+use crate::turbulence::MAX_OCTAVES;
 
 /// Largest canvas side; wgpu's default texture limit.
 pub const MAX_SIDE: u32 = 8192;
@@ -26,6 +27,9 @@ pub struct Scene {
     /// Font family name -> font file path.
     #[serde(default)]
     pub fonts: BTreeMap<String, String>,
+    /// The viewpoint that layers with a 3D transform are drawn from. Without
+    /// one, 3D transforms are orthographic: no perspective.
+    pub camera: Option<Camera>,
     /// Bottom layer first.
     pub layers: Vec<Layer>,
     /// Directory that asset paths resolve against (the scene file's directory).
@@ -35,6 +39,20 @@ pub struct Scene {
 
 fn default_background() -> Color {
     Color::BLACK
+}
+
+/// CSS's `perspective` and `perspective-origin`, for the whole scene.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Camera {
+    /// Distance from the eye to the canvas plane, in canvas pixels, above 0.
+    /// A point `z` pixels toward the viewer is magnified by
+    /// `perspective / (perspective - z)`.
+    pub perspective: Num,
+    /// Where the eye looks at the canvas, in canvas pixels. Omitted: the
+    /// middle of the canvas.
+    pub x: Option<Num>,
+    pub y: Option<Num>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -55,8 +73,37 @@ pub struct Layer {
     pub mask: Option<Mask>,
     /// Cuts the layer by a sibling layer's pixels, after the mask.
     pub matte: Option<Matte>,
+    /// Averages the layer over the time the shutter is open, so what moves
+    /// smears. A group blurs its whole subtree.
+    pub motion_blur: Option<MotionBlur>,
     #[serde(flatten)]
     pub kind: LayerKind,
+}
+
+/// Fewest and most sub-frames a layer's motion blur averages.
+pub const MIN_MOTION_SAMPLES: i64 = 2;
+pub const MAX_MOTION_SAMPLES: i64 = 64;
+
+/// A layer's motion blur: `samples` copies of it, spread over `shutter`
+/// frames centred on the frame, each evaluated at its own time and averaged.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MotionBlur {
+    /// Whole, `MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES`; not animated.
+    #[serde(default = "default_motion_samples")]
+    pub samples: i64,
+    /// How long the shutter is open, in frames; 0.5 is a 180 degree shutter.
+    /// Clamped to 0..=2 when resolved; 0 is no blur.
+    #[serde(default = "half")]
+    pub shutter: Num,
+}
+
+fn default_motion_samples() -> i64 {
+    8
+}
+
+fn half() -> Num {
+    Num::Const(0.5)
 }
 
 fn one() -> Num {
@@ -65,6 +112,34 @@ fn one() -> Num {
 
 fn zero() -> Num {
     Num::Const(0.0)
+}
+
+fn two() -> Num {
+    Num::Const(2.0)
+}
+
+fn eight() -> Num {
+    Num::Const(8.0)
+}
+
+fn twelve() -> Num {
+    Num::Const(12.0)
+}
+
+fn forty_five() -> Num {
+    Num::Const(45.0)
+}
+
+fn stagger_default() -> Num {
+    Num::Const(0.6)
+}
+
+fn three() -> u32 {
+    3
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn black() -> Color {
@@ -78,6 +153,8 @@ pub enum LayerKind {
     Text(TextLayer),
     Image(ImageLayer),
     Group(GroupLayer),
+    Noise(NoiseLayer),
+    MeshGradient(MeshGradientLayer),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -90,6 +167,24 @@ pub struct Transform {
     pub rotation: Num,
     pub anchor_x: Num,
     pub anchor_y: Num,
+    /// Degrees. Turns the layer about the horizontal axis through its
+    /// position, as CSS's `rotateX`: positive tips the top away.
+    pub rotate_x: Num,
+    /// Degrees. Turns the layer about the vertical axis through its
+    /// position, as CSS's `rotateY`: positive swings the right edge away.
+    pub rotate_y: Num,
+    /// Pixels toward the viewer, as CSS's `translateZ`. Moves nothing on
+    /// screen without a camera, but still orders a `preserve3d` group.
+    pub z: Num,
+}
+
+impl Transform {
+    /// Whether the layer is moved in 3D at any keyframe.
+    pub fn is_3d(&self) -> bool {
+        [&self.rotate_x, &self.rotate_y, &self.z]
+            .iter()
+            .any(|n| n.min() != 0.0 || n.max() != 0.0)
+    }
 }
 
 impl Default for Transform {
@@ -101,6 +196,9 @@ impl Default for Transform {
             rotation: Num::Const(0.0),
             anchor_x: Num::Const(0.0),
             anchor_y: Num::Const(0.0),
+            rotate_x: Num::Const(0.0),
+            rotate_y: Num::Const(0.0),
+            z: Num::Const(0.0),
         }
     }
 }
@@ -192,9 +290,275 @@ pub enum Effect {
         #[serde(default = "zero")]
         angle: Num,
     },
+    /// Maps each pixel's luminance through colour stops (the thermal look).
+    /// `amount` cross-fades from the original (0) to the graded image (1).
+    GradientMap {
+        /// `MIN_GRADIENT_MAP_STOPS..=MAX_GRADIENT_MAP_STOPS`, offsets in 0..=1.
+        stops: Vec<Stop>,
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    /// Applies a `.cube` 3D colour lookup table (path relative to the scene
+    /// file) to the sRGB colours; `amount` cross-fades from the original (0)
+    /// to the graded image (1).
+    Lut {
+        src: String,
+        #[serde(default = "one")]
+        amount: Num,
+    },
+    /// Film grain: seeded zero-mean noise added to the sRGB colour, fixed to
+    /// the canvas.
+    Grain {
+        /// Strength, 0..1: the noise spans plus and minus this much of the
+        /// 0..1 colour range.
+        amount: Num,
+        /// Grain cell size in canvas pixels, at least 1.
+        #[serde(default = "one")]
+        size: Num,
+        /// Which pattern, 0..=u32::MAX; checked when the scene loads.
+        seed: i64,
+        /// A new pattern each frame.
+        #[serde(default = "yes")]
+        animate: bool,
+        /// One noise value for r, g and b; false is per channel.
+        #[serde(default = "yes")]
+        monochrome: bool,
+    },
+    /// Quantises each sRGB channel to a few levels, with an ordered Bayer
+    /// pattern or seeded noise choosing between the two nearest.
+    Dither {
+        #[serde(default)]
+        mode: DitherMode,
+        /// Levels per channel, 2..=256 (rounded).
+        #[serde(default = "two")]
+        levels: Num,
+        /// Canvas pixels per dither cell, at least 1.
+        #[serde(default = "one")]
+        size: Num,
+        /// Required for `random`, 0..=u32::MAX; ignored by `ordered`.
+        seed: Option<i64>,
+        /// A new random pattern each output frame (`random` only).
+        #[serde(default)]
+        animate: bool,
+    },
+    /// Replaces the layer with a halftone screen in layer space: a rotated
+    /// grid of dots whose area follows the layer's brightness.
+    Halftone {
+        /// Cell width in layer pixels, above 0.
+        #[serde(default = "eight")]
+        size: Num,
+        /// Degrees, clockwise.
+        #[serde(default = "forty_five")]
+        angle: Num,
+        #[serde(default)]
+        shape: HalftoneShape,
+        /// Dot colour; the sampled layer colour when absent.
+        color: Option<Color>,
+        /// Dark areas get the big dots instead of light ones.
+        #[serde(default)]
+        invert: bool,
+    },
+    /// Reveals the layer through a layer-space grid of dots that grow from
+    /// nothing (progress 0) to solid (progress 1), each starting after its own
+    /// delay.
+    DotMatrix {
+        /// Cell width in layer pixels, above 0.
+        #[serde(default = "twelve")]
+        size: Num,
+        /// 0 shows nothing, 1 shows the layer; clamped to 0..=1.
+        progress: Num,
+        #[serde(default)]
+        order: DotOrder,
+        /// For `sweep`: the direction the reveal travels, degrees clockwise
+        /// from +x (0 is left to right).
+        #[serde(default = "zero")]
+        angle: Num,
+        /// How much of the progress range is spent on delays, 0 up to (not
+        /// including) 1.
+        #[serde(default = "stagger_default")]
+        stagger: Num,
+        /// Which delays, 0..=u32::MAX; required for `random`, ignored by
+        /// `sweep`.
+        seed: Option<i64>,
+        #[serde(default)]
+        shape: DotShape,
+    },
+    /// SVG's `feTurbulence` -> `feDisplacementMap`: pulls each pixel from
+    /// somewhere else on the layer, as far as turbulence noise says.
+    Displace {
+        /// Layer pixels: a pixel is read from up to half of this away, in
+        /// each direction (the noise channel's 0..1 less a half, times it).
+        scale: Num,
+        /// Which noise channel moves a pixel across (default `R`).
+        #[serde(default = "red", rename = "xChannelSelector")]
+        x_channel_selector: Channel,
+        /// Which moves it down (default `G`).
+        #[serde(default = "green", rename = "yChannelSelector")]
+        y_channel_selector: Channel,
+        turbulence: Turbulence,
+    },
+    /// Pins the layer's four box corners to four points, warping it into a
+    /// quadrilateral with perspective. A corner left out stays where it is.
+    #[serde(rename_all = "camelCase")]
+    CornerPin {
+        top_left: Option<[Num; 2]>,
+        top_right: Option<[Num; 2]>,
+        bottom_right: Option<[Num; 2]>,
+        bottom_left: Option<[Num; 2]>,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
+
+/// One channel of a noise image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Channel {
+    R,
+    G,
+    B,
+    A,
+}
+
+impl Channel {
+    /// The channel's number in the noise tables.
+    pub fn index(self) -> u32 {
+        match self {
+            Channel::R => 0,
+            Channel::G => 1,
+            Channel::B => 2,
+            Channel::A => 3,
+        }
+    }
+}
+
+fn red() -> Channel {
+    Channel::R
+}
+
+fn green() -> Channel {
+    Channel::G
+}
+
+/// The attributes of SVG's `feTurbulence` (without `stitchTiles`), named as
+/// SVG names them. See `turbulence.rs`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Turbulence {
+    #[serde(rename = "type")]
+    pub kind: TurbulenceKind,
+    /// Cycles per layer pixel, one number or `[x, y]`; not negative.
+    pub base_frequency: BaseFrequency,
+    /// Octaves of noise, 0..=`turbulence::MAX_OCTAVES`.
+    #[serde(default = "one_octave")]
+    pub num_octaves: i64,
+    /// Truncated toward zero, then SVG's `setup_seed`.
+    pub seed: f64,
+}
+
+fn one_octave() -> i64 {
+    1
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TurbulenceKind {
+    /// Signed noise centred on a middle grey: (sum + 1) / 2.
+    FractalNoise,
+    /// The sum of the noise's absolute values: dark with bright veins.
+    Turbulence,
+}
+
+/// A noise frequency per axis. The JSON is a number (both axes) or `[x, y]`
+/// (each a number or keyframes); a list of keyframe objects is one number.
+#[derive(Clone, Debug)]
+pub struct BaseFrequency {
+    pub x: Num,
+    pub y: Num,
+}
+
+impl<'de> Deserialize<'de> for BaseFrequency {
+    // Read by hand: `[0.04, 0.08]` and a keyframe list are both arrays.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = serde_json::Value::deserialize(d)?;
+        let num = |v: serde_json::Value| {
+            serde_json::from_value::<Num>(v)
+                .map_err(|e| D::Error::custom(format!("bad baseFrequency: {e}")))
+        };
+        match value {
+            serde_json::Value::Array(items)
+                if !items.is_empty() && items.iter().all(|v| !v.is_object()) =>
+            {
+                let [x, y]: [serde_json::Value; 2] = items.try_into().map_err(|_| {
+                    D::Error::custom(
+                        "baseFrequency takes one number or [x, y], or a list of keyframes",
+                    )
+                })?;
+                Ok(BaseFrequency {
+                    x: num(x)?,
+                    y: num(y)?,
+                })
+            }
+            other => {
+                let n = num(other)?;
+                Ok(BaseFrequency { x: n.clone(), y: n })
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DotOrder {
+    /// A random delay per cell, from the seed.
+    #[default]
+    Random,
+    /// The delay follows the cell's position along `angle` across the
+    /// layer's box.
+    Sweep,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DotShape {
+    #[default]
+    Circle,
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HalftoneShape {
+    #[default]
+    Circle,
+    Square,
+    /// Parallel lines, thicker where the layer is brighter.
+    Line,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DitherMode {
+    /// An 8x8 Bayer threshold matrix.
+    #[default]
+    Ordered,
+    /// A seeded white-noise threshold.
+    Random,
+}
+
+/// Fewest and most levels per channel a `dither` takes.
+pub const MIN_DITHER_LEVELS: f64 = 2.0;
+pub const MAX_DITHER_LEVELS: f64 = 256.0;
+
+/// Fewest and most stops a `gradientMap` takes; the shader's uniform block
+/// holds 16.
+pub const MIN_GRADIENT_MAP_STOPS: usize = 2;
+pub const MAX_GRADIENT_MAP_STOPS: usize = 16;
+
+/// Fewest and most points a `meshGradient` has along each axis.
+pub const MIN_MESH_POINTS: u32 = 2;
+pub const MAX_MESH_POINTS: u32 = 8;
 
 /// The fields of `shader`.
 #[derive(Clone, Debug, Deserialize)]
@@ -259,7 +623,9 @@ pub const MAX_SHADOW_SIZE: f64 = 128.0;
 impl Effect {
     /// How far past the layer's own pixels the effect can paint, in pixels,
     /// at its largest keyframes. Sets the scene's margin (`Scene::margin`).
-    fn reach(&self) -> f64 {
+    /// `layer_scale` is the largest product of the `scale` of the layer and
+    /// its ancestors: only effects that measure in layer units use it.
+    fn reach(&self, layer_scale: f64) -> f64 {
         match self {
             // Not counted: blur only ever spreads the layer's own pixels, and
             // leaving it out keeps scenes that use nothing else at margin 0,
@@ -284,6 +650,19 @@ impl Effect {
             | Effect::Sepia { .. }
             | Effect::Invert { .. }
             | Effect::HueRotate { .. } => 0.0,
+            // Recolours pixels in place.
+            Effect::GradientMap { .. }
+            | Effect::Lut { .. }
+            | Effect::Grain { .. }
+            | Effect::Dither { .. } => 0.0,
+            // Dots stay inside their cells, which only sample the layer.
+            Effect::Halftone { .. } | Effect::DotMatrix { .. } => 0.0,
+            // A pixel is read from up to half of `scale` layer units away.
+            Effect::Displace { scale, .. } => {
+                scale.max().abs().max(scale.min().abs()) / 2.0 * layer_scale
+            }
+            // Warps what is in the texture, which paints nothing new.
+            Effect::CornerPin { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -517,6 +896,52 @@ pub struct ImageLayer {
 #[serde(rename_all = "camelCase")]
 pub struct GroupLayer {
     pub children: Vec<Layer>,
+    /// CSS's `transform-style: preserve-3d`: the children are drawn straight
+    /// into the group's parent, in their own 3D positions, sorted by depth.
+    #[serde(default)]
+    pub preserve3d: bool,
+}
+
+/// The raw `feTurbulence` image over a box at the layer's origin.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoiseLayer {
+    pub width: Num,
+    pub height: Num,
+    pub turbulence: Turbulence,
+    #[serde(default)]
+    pub channels: NoiseChannels,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoiseChannels {
+    /// The four channels as red, green, blue and alpha, as SVG draws a
+    /// feTurbulence.
+    #[default]
+    Rgba,
+    /// The red channel as grey, fully opaque.
+    Gray,
+}
+
+/// A grid of colour control points over a box at the layer's origin, blended
+/// smoothly between the points.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshGradientLayer {
+    pub width: Num,
+    pub height: Num,
+    /// Points per row, `MIN_MESH_POINTS..=MAX_MESH_POINTS`.
+    #[serde(default = "three")]
+    pub columns: u32,
+    /// Points per column, `MIN_MESH_POINTS..=MAX_MESH_POINTS`.
+    #[serde(default = "three")]
+    pub rows: u32,
+    /// Row-major positions in layer pixels. Omitted: a regular grid over the
+    /// box.
+    pub points: Option<Vec<[Num; 2]>>,
+    /// One per point, row-major.
+    pub colors: Vec<Color>,
 }
 
 impl Scene {
@@ -545,7 +970,7 @@ impl Scene {
     /// padded canvas still fits
     /// in `MAX_SIDE`. A scene with no such effect has margin 0.
     pub fn margin(&self) -> u32 {
-        margin_for(max_reach(&self.layers), self.width, self.height)
+        margin_for(max_reach(&self.layers, 1.0), self.width, self.height)
     }
 
     /// The WGSL module of every distinct custom shader in the scene, in the
@@ -571,6 +996,11 @@ impl Scene {
         if self.duration_in_frames == 0 {
             return bad("durationInFrames must be at least 1".into());
         }
+        if let Some(camera) = &self.camera
+            && camera.perspective.min() <= 0.0
+        {
+            return bad("camera perspective must be greater than 0".into());
+        }
         let mut ids = HashSet::new();
         self.validate_layers(&self.layers, &mut ids)
     }
@@ -590,9 +1020,60 @@ impl Scene {
                 Ok(())
             };
             for effect in &layer.effects {
-                if let Effect::Shader(shader) = effect {
-                    non_negative("shader padding", &shader.padding)?;
-                    crate::shader::validate(&layer.id, &shader.code, &shader.names())?;
+                match effect {
+                    Effect::Shader(shader) => {
+                        non_negative("shader padding", &shader.padding)?;
+                        crate::shader::validate(&layer.id, &shader.code, &shader.names())?;
+                    }
+                    Effect::GradientMap { stops, .. } => validate_gradient_map(&layer.id, stops)?,
+                    Effect::Grain { size, seed, .. } => {
+                        validate_seed(&layer.id, "grain", *seed)?;
+                        if size.min() < 1.0 {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: grain size must be at least 1 canvas pixel",
+                                layer.id
+                            )));
+                        }
+                    }
+                    Effect::Dither {
+                        mode,
+                        levels,
+                        size,
+                        seed,
+                        ..
+                    } => validate_dither(&layer.id, *mode, levels, size, *seed)?,
+                    Effect::Halftone { size, .. } => {
+                        if size.min() <= 0.0 {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: halftone size must be greater than 0",
+                                layer.id
+                            )));
+                        }
+                    }
+                    Effect::DotMatrix {
+                        size,
+                        stagger,
+                        order,
+                        seed,
+                        ..
+                    } => validate_dot_matrix(&layer.id, &layer.kind, size, stagger, *order, *seed)?,
+                    Effect::Displace { turbulence, .. } => {
+                        validate_turbulence(&layer.id, "displace", turbulence)?;
+                    }
+                    Effect::CornerPin { .. } if matches!(layer.kind, LayerKind::Group(_)) => {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: cornerPin needs a box, and a group has none; pin a \
+                             layer inside it, or put the group's children in a layer that has one",
+                            layer.id
+                        )));
+                    }
+                    Effect::Lut { src, .. } if src.trim().is_empty() => {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: lut needs a src, the path of a .cube file",
+                            layer.id
+                        )));
+                    }
+                    _ => {}
                 }
             }
             if let Some(clip) = &layer.clip {
@@ -600,6 +1081,15 @@ impl Scene {
             }
             if let Some(matte) = &layer.matte {
                 validate_matte(layer, matte, layers)?;
+            }
+            if let Some(blur) = &layer.motion_blur
+                && !(MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES).contains(&blur.samples)
+            {
+                return Err(Error::Scene(format!(
+                    "layer {:?}: motionBlur samples must be a whole number from \
+                     {MIN_MOTION_SAMPLES} to {MAX_MOTION_SAMPLES}, got {}",
+                    layer.id, blur.samples
+                )));
             }
             if let Some(mask) = &layer.mask {
                 validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
@@ -653,7 +1143,31 @@ impl Scene {
                     non_negative("width", &i.width)?;
                     non_negative("height", &i.height)?;
                 }
-                LayerKind::Group(g) => self.validate_layers(&g.children, ids)?,
+                LayerKind::Group(g) => {
+                    if g.preserve3d {
+                        validate_preserve3d(layer, layers)?;
+                        if let Some(child) = g.children.iter().find(|c| c.motion_blur.is_some()) {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: motionBlur is not supported on the children of a \
+                                 preserve3d group, which are drawn straight into its parent; \
+                                 put the preserve3d group inside another group and give that one \
+                                 the motionBlur",
+                                child.id
+                            )));
+                        }
+                    }
+                    self.validate_layers(&g.children, ids)?;
+                }
+                LayerKind::Noise(n) => {
+                    non_negative("width", &n.width)?;
+                    non_negative("height", &n.height)?;
+                    validate_turbulence(&layer.id, "noise", &n.turbulence)?;
+                }
+                LayerKind::MeshGradient(m) => {
+                    non_negative("width", &m.width)?;
+                    non_negative("height", &m.height)?;
+                    validate_mesh_gradient(&layer.id, m)?;
+                }
             }
         }
         Ok(())
@@ -678,14 +1192,18 @@ fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
 
 /// The largest reach of any layer in `layers`. Reaches add up along a
 /// chain: each effect in a list works on what the ones before it painted,
-/// and a group's effects on what its children painted.
-fn max_reach(layers: &[Layer]) -> f64 {
+/// and a group's effects on what its children painted. `scale` is the
+/// largest product of the enclosing groups' `scale` (1 for the scene's own
+/// layers), which turns an effect's layer units into pixels.
+fn max_reach(layers: &[Layer], scale: f64) -> f64 {
     layers.iter().fold(0.0, |most, layer| {
+        let t = &layer.transform.scale;
+        let scale = scale * t.max().abs().max(t.min().abs());
         let children = match &layer.kind {
-            LayerKind::Group(g) => max_reach(&g.children),
+            LayerKind::Group(g) => max_reach(&g.children, scale),
             _ => 0.0,
         };
-        let own: f64 = layer.effects.iter().map(Effect::reach).sum();
+        let own: f64 = layer.effects.iter().map(|e| e.reach(scale)).sum();
         most.max(children + own)
     })
 }
@@ -745,6 +1263,175 @@ fn validate_matte(layer: &Layer, matte: &Matte, siblings: &[Layer]) -> Result<()
     };
     if source.matte.is_some() {
         return bad(format!("source {:?} has a matte of its own", source.id));
+    }
+    if source.transform.is_3d() {
+        return bad(format!(
+            "source {:?} has a 3D transform (rotateX, rotateY or z); the matte moves with the \
+             layer it cuts, so put them on that layer instead",
+            source.id
+        ));
+    }
+    Ok(())
+}
+
+/// A `preserve3d` group has no buffer of its own, so it has nowhere to run
+/// effects, a clip, a mask or a matte, or to blend as a whole.
+fn validate_preserve3d(group: &Layer, siblings: &[Layer]) -> Result<()> {
+    let bad = |msg: &str| {
+        Err(Error::Scene(format!(
+            "layer {:?}: a preserve3d group {msg}; put the group inside another group and \
+             give that one what it needs",
+            group.id
+        )))
+    };
+    if group.motion_blur.is_some() {
+        return bad("cannot have motionBlur");
+    }
+    if !group.effects.is_empty() {
+        return bad("cannot have effects");
+    }
+    if group.clip.is_some() {
+        return bad("cannot have a clip");
+    }
+    if group.mask.is_some() {
+        return bad("cannot have a mask");
+    }
+    if group.matte.is_some() {
+        return bad("cannot have a matte");
+    }
+    if group.blend_mode != BlendMode::Normal {
+        return bad("must use the normal blendMode");
+    }
+    if siblings
+        .iter()
+        .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == group.id))
+    {
+        return bad("cannot be a matte source");
+    }
+    Ok(())
+}
+
+/// A seed is a whole number that fits a `u32`, so that a pattern is the same
+/// on every machine and the hash input is exact.
+fn validate_seed(id: &str, what: &str, seed: i64) -> Result<()> {
+    if u32::try_from(seed).is_err() {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: {what} seed must be a whole number from 0 to {}, got {seed}",
+            u32::MAX
+        )));
+    }
+    Ok(())
+}
+
+fn validate_dither(
+    id: &str,
+    mode: DitherMode,
+    levels: &Num,
+    size: &Num,
+    seed: Option<i64>,
+) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: dither {msg}")));
+    if levels.min() < MIN_DITHER_LEVELS || levels.max() > MAX_DITHER_LEVELS {
+        return bad(format!(
+            "levels must be between {MIN_DITHER_LEVELS} and {MAX_DITHER_LEVELS}"
+        ));
+    }
+    if size.min() < 1.0 {
+        return bad("size must be at least 1 canvas pixel".into());
+    }
+    match (mode, seed) {
+        (DitherMode::Random, None) => bad("mode \"random\" needs a seed".into()),
+        (_, Some(seed)) => validate_seed(id, "dither", seed),
+        _ => Ok(()),
+    }
+}
+
+fn validate_dot_matrix(
+    id: &str,
+    kind: &LayerKind,
+    size: &Num,
+    stagger: &Num,
+    order: DotOrder,
+    seed: Option<i64>,
+) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: dotMatrix {msg}")));
+    if size.min() <= 0.0 {
+        return bad("size must be greater than 0".into());
+    }
+    if stagger.min() < 0.0 || stagger.max() >= 1.0 {
+        return bad("stagger must be at least 0 and below 1".into());
+    }
+    match (order, seed) {
+        (DotOrder::Random, None) => return bad("order \"random\" needs a seed".into()),
+        (_, Some(seed)) => validate_seed(id, "dotMatrix", seed)?,
+        _ => {}
+    }
+    if order == DotOrder::Sweep && matches!(kind, LayerKind::Group(_)) {
+        return bad(
+            "order \"sweep\" needs a box, and a group has none; use order \"random\"".into(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_turbulence(id: &str, what: &str, t: &Turbulence) -> Result<()> {
+    let bad = |msg: String| {
+        Err(Error::Scene(format!(
+            "layer {id:?}: {what} turbulence {msg}"
+        )))
+    };
+    if t.base_frequency.x.min() < 0.0 || t.base_frequency.y.min() < 0.0 {
+        return bad("baseFrequency must not be negative".into());
+    }
+    if !(0..=i64::from(MAX_OCTAVES)).contains(&t.num_octaves) {
+        return bad(format!(
+            "numOctaves must be a whole number from 0 to {MAX_OCTAVES}, got {}",
+            t.num_octaves
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gradient_map(id: &str, stops: &[Stop]) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: gradientMap {msg}")));
+    if !(MIN_GRADIENT_MAP_STOPS..=MAX_GRADIENT_MAP_STOPS).contains(&stops.len()) {
+        return bad(format!(
+            "needs {MIN_GRADIENT_MAP_STOPS} to {MAX_GRADIENT_MAP_STOPS} stops, got {}",
+            stops.len()
+        ));
+    }
+    if stops
+        .iter()
+        .any(|s| s.offset.min() < 0.0 || s.offset.max() > 1.0)
+    {
+        return bad("stop offsets must be between 0 and 1".into());
+    }
+    Ok(())
+}
+
+fn validate_mesh_gradient(id: &str, mesh: &MeshGradientLayer) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: meshGradient {msg}")));
+    for (what, n) in [("columns", mesh.columns), ("rows", mesh.rows)] {
+        if !(MIN_MESH_POINTS..=MAX_MESH_POINTS).contains(&n) {
+            return bad(format!(
+                "{what} must be a whole number from {MIN_MESH_POINTS} to {MAX_MESH_POINTS}, got {n}"
+            ));
+        }
+    }
+    let count = (mesh.columns * mesh.rows) as usize;
+    if mesh.colors.len() != count {
+        return bad(format!(
+            "needs {count} colors (columns x rows), got {}",
+            mesh.colors.len()
+        ));
+    }
+    if let Some(points) = &mesh.points
+        && points.len() != count
+    {
+        return bad(format!(
+            "needs {count} points (columns x rows), got {}",
+            points.len()
+        ));
     }
     Ok(())
 }
@@ -1194,6 +1881,875 @@ mod tests {
         assert!(msg.contains("amount"), "{msg}");
     }
 
+    #[test]
+    fn parses_a_gradient_map_with_a_default_amount() {
+        let scene = effects_of(
+            r##"[{"type": "gradientMap", "stops": [{"offset": 0, "color": "#000"},
+                  {"offset": [{"frame": 0, "value": 0.4}, {"frame": 9, "value": 0.8}], "color": "#ff000080"},
+                  {"offset": 1, "color": "#fff"}]},
+                {"type": "gradientMap", "amount": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}],
+                 "stops": [{"offset": 0, "color": "#000"}, {"offset": 1, "color": "#fff"}]}]"##,
+        );
+        let effects = &scene.layers[0].effects;
+        let Effect::GradientMap { stops, amount } = &effects[0] else {
+            panic!("not a gradient map");
+        };
+        assert_eq!(stops.len(), 3);
+        assert_eq!(stops[1].offset.at(9.0), 0.8);
+        assert_eq!(stops[1].color, Color::parse("#ff000080").unwrap());
+        assert_eq!(amount.at(0.0), 1.0);
+        let Effect::GradientMap { amount, .. } = &effects[1] else {
+            panic!("not a gradient map");
+        };
+        assert_eq!(amount.at(4.5), 0.5);
+        // It recolours in place: no margin.
+        assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn rejects_bad_gradient_maps_naming_the_layer() {
+        let stops = |n: u32| {
+            let last = f64::from(n.max(2) - 1);
+            let stops: Vec<String> = (0..n)
+                .map(|i| {
+                    format!(
+                        r##"{{"offset": {}, "color": "#fff"}}"##,
+                        f64::from(i) / last
+                    )
+                })
+                .collect();
+            format!(r#""stops": [{}]"#, stops.join(","))
+        };
+        let gradient_map = |fields: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "gradientMap", {fields}}}],"#
+            ))
+        };
+        // 16 stops is the most.
+        assert!(gradient_map(&stops(16)).is_ok());
+        let cases = [
+            (stops(1), "2 to 16 stops, got 1"),
+            (stops(0), "2 to 16 stops, got 0"),
+            (stops(17), "2 to 16 stops, got 17"),
+            (
+                r##""stops": [{"offset": 0, "color": "#000"}, {"offset": 1.2, "color": "#fff"}]"##
+                    .to_string(),
+                "between 0 and 1",
+            ),
+            (
+                r##""stops": [{"offset": [{"frame": 0, "value": -0.1}, {"frame": 9, "value": 0.5}], "color": "#000"},
+                    {"offset": 1, "color": "#fff"}]"##
+                    .to_string(),
+                "between 0 and 1",
+            ),
+        ];
+        for (fields, want) in cases {
+            let msg = gradient_map(&fields).unwrap_err().to_string();
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains("gradientMap") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // A missing field is the JSON parser's complaint, with no layer.
+        let msg = gradient_map(r#""amount": 1"#).unwrap_err().to_string();
+        assert!(msg.contains("stops"), "{msg}");
+    }
+
+    #[test]
+    fn parses_a_lut_with_a_default_amount() {
+        let scene = effects_of(
+            r#"[{"type": "lut", "src": "looks/thermal.cube"},
+                {"type": "lut", "src": "b.cube", "amount": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]}]"#,
+        );
+        let Effect::Lut { src, amount } = &scene.layers[0].effects[0] else {
+            panic!("not a lut");
+        };
+        assert_eq!((src.as_str(), amount.at(0.0)), ("looks/thermal.cube", 1.0));
+        assert!(
+            matches!(&scene.layers[0].effects[1], Effect::Lut { amount, .. } if amount.at(4.5) == 0.5)
+        );
+        assert_eq!(scene.margin(), 0);
+        // The file is read when the renderer is built, not when the scene
+        // loads (like an image), so a missing file is not an error here.
+        let msg = error(r#""effects": [{"type": "lut"}],"#);
+        assert!(msg.contains("src"), "{msg}");
+        let msg = error(r#""effects": [{"type": "lut", "src": " "}],"#);
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains(".cube"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn parses_grain_with_defaults() {
+        let scene = effects_of(
+            r#"[{"type": "grain", "amount": 0.15, "seed": 7},
+                {"type": "grain", "amount": [{"frame": 0, "value": 0}, {"frame": 9, "value": 0.5}],
+                 "size": [{"frame": 0, "value": 1}, {"frame": 9, "value": 4}], "seed": 0,
+                 "animate": false, "monochrome": false}]"#,
+        );
+        let Effect::Grain {
+            amount,
+            size,
+            seed,
+            animate,
+            monochrome,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not grain");
+        };
+        assert_eq!((amount.at(0.0), size.at(0.0), *seed), (0.15, 1.0, 7));
+        assert!(*animate && *monochrome);
+        let Effect::Grain {
+            amount,
+            size,
+            animate,
+            monochrome,
+            ..
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not grain");
+        };
+        assert_eq!((amount.at(9.0), size.at(9.0)), (0.5, 4.0));
+        assert!(!*animate && !*monochrome);
+        // The grain is on the pixels, not past them.
+        assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn rejects_bad_grain_naming_the_layer() {
+        let grain = |fields: &str| {
+            scene_with(&format!(r#""effects": [{{"type": "grain", {fields}}}],"#))
+                .unwrap_err()
+                .to_string()
+        };
+        for (fields, want) in [
+            (
+                r#""amount": 0.1, "seed": -1"#,
+                "seed must be a whole number",
+            ),
+            (r#""amount": 0.1, "seed": 4294967296"#, "got 4294967296"),
+            (
+                r#""amount": 0.1, "seed": 1, "size": [{"frame": 0, "value": 3}, {"frame": 5, "value": 0.5}]"#,
+                "size must be at least 1",
+            ),
+        ] {
+            let msg = grain(fields);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The seed is required, and must be an integer, so the JSON parser
+        // rejects these (without a layer id).
+        assert!(grain(r#""amount": 0.1"#).contains("seed"));
+        assert!(grain(r#""seed": 3"#).contains("amount"));
+        assert!(grain(r#""amount": 0.1, "seed": 1.5"#).contains("invalid type"));
+        // The largest seed is fine.
+        assert!(
+            scene_with(r#""effects": [{"type": "grain", "amount": 0.1, "seed": 4294967295}],"#)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn parses_dither_with_defaults() {
+        let scene = effects_of(
+            r#"[{"type": "dither"},
+                {"type": "dither", "mode": "random", "seed": 3, "animate": true,
+                 "levels": [{"frame": 0, "value": 2}, {"frame": 9, "value": 16}],
+                 "size": [{"frame": 0, "value": 1}, {"frame": 9, "value": 4}]}]"#,
+        );
+        let Effect::Dither {
+            mode,
+            levels,
+            size,
+            seed,
+            animate,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a dither");
+        };
+        assert_eq!(*mode, DitherMode::Ordered);
+        assert_eq!(
+            (levels.at(0.0), size.at(0.0), *seed, *animate),
+            (2.0, 1.0, None, false)
+        );
+        let Effect::Dither {
+            mode,
+            levels,
+            size,
+            seed,
+            animate,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a dither");
+        };
+        assert_eq!(*mode, DitherMode::Random);
+        assert_eq!(
+            (levels.at(9.0), size.at(9.0), *seed, *animate),
+            (16.0, 4.0, Some(3), true)
+        );
+        assert_eq!(scene.margin(), 0);
+        // An ordered dither may carry a seed; it is ignored.
+        assert!(scene_with(r#""effects": [{"type": "dither", "seed": 5}],"#).is_ok());
+    }
+
+    #[test]
+    fn rejects_bad_dither_naming_the_layer() {
+        let dither = |fields: &str| {
+            scene_with(&format!(r#""effects": [{{"type": "dither", {fields}}}],"#))
+                .unwrap_err()
+                .to_string()
+        };
+        for (fields, want) in [
+            (r#""mode": "random""#, "needs a seed"),
+            (
+                r#""mode": "random", "seed": -2"#,
+                "seed must be a whole number",
+            ),
+            (r#""seed": 4294967296"#, "seed must be a whole number"),
+            (r#""levels": 1"#, "levels must be between 2 and 256"),
+            (r#""levels": 257"#, "levels must be between 2 and 256"),
+            (
+                r#""levels": [{"frame": 0, "value": 8}, {"frame": 9, "value": 300}]"#,
+                "levels must be between 2 and 256",
+            ),
+            (r#""size": 0.5"#, "size must be at least 1"),
+        ] {
+            let msg = dither(fields);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The largest legal values.
+        assert!(
+            scene_with(r#""effects": [{"type": "dither", "levels": 256, "mode": "random", "seed": 4294967295}],"#)
+                .is_ok()
+        );
+        // An unknown mode is the JSON parser's complaint.
+        let msg = dither(r#""mode": "bayer""#);
+        assert!(msg.contains("bayer"), "{msg}");
+    }
+
+    #[test]
+    fn parses_halftone_with_defaults() {
+        let scene = effects_of(
+            r##"[{"type": "halftone"},
+                {"type": "halftone", "shape": "line", "color": "#ff000080", "invert": true,
+                 "size": [{"frame": 0, "value": 4}, {"frame": 9, "value": 12}], "angle": 15}]"##,
+        );
+        let Effect::Halftone {
+            size,
+            angle,
+            shape,
+            color,
+            invert,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a halftone");
+        };
+        assert_eq!((size.at(0.0), angle.at(0.0)), (8.0, 45.0));
+        assert_eq!(
+            (*shape, *color, *invert),
+            (HalftoneShape::Circle, None, false)
+        );
+        let Effect::Halftone {
+            size,
+            angle,
+            shape,
+            color,
+            invert,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a halftone");
+        };
+        assert_eq!((size.at(9.0), angle.at(0.0)), (12.0, 15.0));
+        assert_eq!(*shape, HalftoneShape::Line);
+        assert_eq!(color.map(|c| (c.r, c.a)), Some((255, 128)));
+        assert!(*invert);
+        // The dots stay in their cells.
+        assert_eq!(scene.margin(), 0);
+        // `null` is the same as leaving the colour out.
+        assert!(scene_with(r#""effects": [{"type": "halftone", "color": null}],"#).is_ok());
+        // A halftone of a group has nothing special to measure.
+        assert!(
+            Scene::from_json(
+                r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                    {"id": "g", "type": "group", "children": [], "effects": [{"type": "halftone"}]}]}"#,
+                PathBuf::new()
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_bad_halftone_naming_the_layer() {
+        let halftone = |fields: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "halftone", {fields}}}],"#
+            ))
+            .unwrap_err()
+            .to_string()
+        };
+        for fields in [
+            r#""size": 0"#,
+            r#""size": -3"#,
+            r#""size": [{"frame": 0, "value": 8}, {"frame": 9, "value": 0}]"#,
+        ] {
+            let msg = halftone(fields);
+            assert!(
+                msg.contains("layer \"box\"")
+                    && msg.contains("halftone size must be greater than 0"),
+                "{fields}: {msg}"
+            );
+        }
+        // An unknown shape is the JSON parser's complaint.
+        let msg = halftone(r#""shape": "star""#);
+        assert!(msg.contains("star"), "{msg}");
+    }
+
+    #[test]
+    fn parses_dot_matrix_with_defaults() {
+        let scene = effects_of(
+            r#"[{"type": "dotMatrix", "progress": 0.5, "seed": 1},
+                {"type": "dotMatrix", "order": "sweep", "shape": "square", "angle": 90, "stagger": 0.2,
+                 "size": 6, "progress": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]}]"#,
+        );
+        let Effect::DotMatrix {
+            size,
+            progress,
+            order,
+            angle,
+            stagger,
+            seed,
+            shape,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a dot matrix");
+        };
+        assert_eq!(
+            (
+                size.at(0.0),
+                progress.at(0.0),
+                angle.at(0.0),
+                stagger.at(0.0)
+            ),
+            (12.0, 0.5, 0.0, 0.6)
+        );
+        assert_eq!(
+            (*order, *seed, *shape),
+            (DotOrder::Random, Some(1), DotShape::Circle)
+        );
+        let Effect::DotMatrix {
+            size,
+            progress,
+            order,
+            angle,
+            stagger,
+            seed,
+            shape,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a dot matrix");
+        };
+        assert_eq!(
+            (
+                size.at(0.0),
+                progress.at(9.0),
+                angle.at(0.0),
+                stagger.at(0.0)
+            ),
+            (6.0, 1.0, 90.0, 0.2)
+        );
+        assert_eq!(
+            (*order, *seed, *shape),
+            (DotOrder::Sweep, None, DotShape::Square)
+        );
+        assert_eq!(scene.margin(), 0);
+        // A random reveal works on a group; a sweep ignores a seed.
+        let group = |effect: &str| {
+            Scene::from_json(
+                &format!(
+                    r#"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                        {{"id": "g", "type": "group", "children": [], "effects": [{effect}]}}]}}"#
+                ),
+                PathBuf::new(),
+            )
+        };
+        assert!(group(r#"{"type": "dotMatrix", "progress": 1, "seed": 2}"#).is_ok());
+        assert!(
+            scene_with(
+                r#""effects": [{"type": "dotMatrix", "progress": 1, "order": "sweep", "seed": 5}],"#
+            )
+            .is_ok()
+        );
+        // `progress` is the point of the effect, so it has no default.
+        let msg = scene_with(r#""effects": [{"type": "dotMatrix", "seed": 2}],"#)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("progress"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_bad_dot_matrix_naming_the_layer() {
+        let dots = |fields: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "dotMatrix", "progress": 1, {fields}}}],"#
+            ))
+            .unwrap_err()
+            .to_string()
+        };
+        for (fields, want) in [
+            (r#""size": 0, "seed": 1"#, "size must be greater than 0"),
+            (r#""size": -4, "seed": 1"#, "size must be greater than 0"),
+            (
+                r#""seed": 1, "stagger": 1"#,
+                "stagger must be at least 0 and below 1",
+            ),
+            (
+                r#""seed": 1, "stagger": -0.1"#,
+                "stagger must be at least 0 and below 1",
+            ),
+            (
+                r#""seed": 1, "stagger": [{"frame": 0, "value": 0.5}, {"frame": 9, "value": 1.5}]"#,
+                "stagger must be at least 0 and below 1",
+            ),
+            (r#""order": "random""#, "needs a seed"),
+            (r#""seed": -1"#, "seed must be a whole number"),
+            (r#""seed": 4294967296"#, "seed must be a whole number"),
+        ] {
+            let msg = dots(fields);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The largest legal values.
+        assert!(
+            scene_with(r#""effects": [{"type": "dotMatrix", "progress": 1, "seed": 4294967295, "stagger": 0.999}],"#)
+                .is_ok()
+        );
+        // A sweep needs the layer's box, which a group does not have.
+        let msg = Scene::from_json(
+            r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                {"id": "g", "type": "group", "children": [],
+                 "effects": [{"type": "dotMatrix", "progress": 1, "order": "sweep"}]}]}"#,
+            PathBuf::new(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            msg.contains("layer \"g\"") && msg.contains("sweep") && msg.contains("group"),
+            "{msg}"
+        );
+        // An unknown order or shape is the JSON parser's complaint.
+        assert!(dots(r#""order": "spiral""#).contains("spiral"));
+        assert!(dots(r#""seed": 1, "shape": "line""#).contains("line"));
+    }
+
+    const TORN: &str =
+        r#"{"type": "fractalNoise", "baseFrequency": 0.04, "numOctaves": 4, "seed": 7}"#;
+
+    #[test]
+    fn parses_displace_with_defaults() {
+        let scene = effects_of(&format!(
+            r#"[{{"type": "displace", "scale": 10, "turbulence": {TORN}}},
+                {{"type": "displace", "scale": [{{"frame": 0, "value": 0}}, {{"frame": 9, "value": 12}}],
+                  "xChannelSelector": "B", "yChannelSelector": "A",
+                  "turbulence": {{"type": "turbulence", "baseFrequency": [0.02, 0.08], "seed": -3.7}}}}]"#
+        ));
+        let Effect::Displace {
+            scale,
+            x_channel_selector,
+            y_channel_selector,
+            turbulence,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a displacement");
+        };
+        // SVG's default channel would be A for both; these are R and G.
+        assert_eq!(
+            (scale.at(0.0), *x_channel_selector, *y_channel_selector),
+            (10.0, Channel::R, Channel::G)
+        );
+        assert_eq!(turbulence.kind, TurbulenceKind::FractalNoise);
+        assert_eq!(
+            (
+                turbulence.base_frequency.x.at(0.0),
+                turbulence.base_frequency.y.at(0.0),
+                turbulence.num_octaves,
+                turbulence.seed
+            ),
+            (0.04, 0.04, 4, 7.0)
+        );
+        let Effect::Displace {
+            scale,
+            x_channel_selector,
+            y_channel_selector,
+            turbulence,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a displacement");
+        };
+        assert_eq!(scale.at(9.0), 12.0);
+        assert_eq!(
+            (*x_channel_selector, *y_channel_selector),
+            (Channel::B, Channel::A)
+        );
+        assert_eq!(turbulence.kind, TurbulenceKind::Turbulence);
+        // A pair is one frequency per axis; numOctaves defaults to 1 as in SVG.
+        assert_eq!(
+            (
+                turbulence.base_frequency.x.at(0.0),
+                turbulence.base_frequency.y.at(0.0),
+                turbulence.num_octaves,
+                turbulence.seed
+            ),
+            (0.02, 0.08, 1, -3.7)
+        );
+    }
+
+    #[test]
+    fn base_frequency_is_a_number_a_pair_or_keyframes() {
+        let frequency = |json: &str| {
+            let t = format!(r#"{{"type": "fractalNoise", "baseFrequency": {json}, "seed": 1}}"#);
+            let scene = effects_of(&format!(
+                r#"[{{"type": "displace", "scale": 1, "turbulence": {t}}}]"#
+            ));
+            let Effect::Displace { turbulence, .. } = &scene.layers[0].effects[0] else {
+                panic!("not a displacement");
+            };
+            let f = &turbulence.base_frequency;
+            ((f.x.at(0.0), f.x.at(9.0)), (f.y.at(0.0), f.y.at(9.0)))
+        };
+        assert_eq!(frequency("0.05"), ((0.05, 0.05), (0.05, 0.05)));
+        assert_eq!(frequency("[0.1, 0.2]"), ((0.1, 0.1), (0.2, 0.2)));
+        // Keyframes on one number: both axes.
+        assert_eq!(
+            frequency(r#"[{"frame": 0, "value": 0.1}, {"frame": 9, "value": 0.3}]"#),
+            ((0.1, 0.3), (0.1, 0.3))
+        );
+        // A pair of keyframe lists animates the axes apart.
+        assert_eq!(
+            frequency(r#"[[{"frame": 0, "value": 0.1}, {"frame": 9, "value": 0.3}], 0.5]"#),
+            ((0.1, 0.3), (0.5, 0.5))
+        );
+    }
+
+    #[test]
+    fn rejects_bad_turbulence_naming_the_layer() {
+        let displace = |turbulence: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "displace", "scale": 5, "turbulence": {turbulence}}}],"#
+            ))
+            .unwrap_err()
+            .to_string()
+        };
+        let t = |fields: &str| format!(r#"{{"type": "fractalNoise", "seed": 1, {fields}}}"#);
+        for (turbulence, want) in [
+            (
+                t(r#""baseFrequency": -0.1"#),
+                "baseFrequency must not be negative",
+            ),
+            (
+                t(r#""baseFrequency": [0.1, -0.1]"#),
+                "baseFrequency must not be negative",
+            ),
+            (
+                t(r#""baseFrequency": [{"frame": 0, "value": 0.1}, {"frame": 9, "value": -1}]"#),
+                "baseFrequency must not be negative",
+            ),
+            (
+                t(r#""baseFrequency": 0.1, "numOctaves": 11"#),
+                "numOctaves must be a whole number from 0 to 10, got 11",
+            ),
+            (
+                t(r#""baseFrequency": 0.1, "numOctaves": -1"#),
+                "numOctaves must be a whole number from 0 to 10, got -1",
+            ),
+        ] {
+            let msg = displace(&turbulence);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains("displace") && msg.contains(want),
+                "{turbulence}: {msg}"
+            );
+        }
+        // These are the JSON parser's complaints: no layer, but a clear one.
+        assert!(displace(&t(r#""baseFrequency": [0.1, 0.2, 0.3]"#)).contains("[x, y]"));
+        assert!(displace(&t(r#""baseFrequency": []"#)).contains("keyframe list is empty"));
+        assert!(displace(&t(r#""baseFrequency": "high""#)).contains("baseFrequency"));
+        assert!(displace(&t(r#""baseFrequency": 0.1, "numOctaves": 2.5"#)).contains("2.5"));
+        assert!(displace(r#"{"type": "fractalNoise", "baseFrequency": 0.1}"#).contains("seed"));
+        assert!(displace(r#"{"baseFrequency": 0.1, "seed": 1}"#).contains("type"));
+        assert!(
+            displace(r#"{"type": "perlin", "baseFrequency": 0.1, "seed": 1}"#).contains("perlin")
+        );
+        let msg = scene_with(
+            r#""effects": [{"type": "displace", "scale": 5, "xChannelSelector": "X", "turbulence":
+                {"type": "fractalNoise", "baseFrequency": 0.1, "seed": 1}}],"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("X"), "{msg}");
+        // The largest legal values.
+        assert!(
+            scene_with(
+                r#""effects": [{"type": "displace", "scale": 5, "turbulence":
+                    {"type": "turbulence", "baseFrequency": 0, "numOctaves": 10, "seed": 1e30}}],"#
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn displace_counts_half_its_scale_times_the_layers_scale_in_the_margin() {
+        let displace = |scale: &str| {
+            format!(r#"{{"type": "displace", "scale": {scale}, "turbulence": {TORN}}}"#)
+        };
+        // Plain layer: half the largest |scale| at any keyframe, rounded up.
+        let scene = effects_of(&format!("[{}]", displace("10")));
+        assert_eq!(scene.margin(), 5);
+        let scene = effects_of(&format!(
+            "[{}]",
+            displace(r#"[{"frame": 0, "value": -30}, {"frame": 9, "value": 9}]"#)
+        ));
+        assert_eq!(scene.margin(), 15);
+        let scene = effects_of(&format!("[{}]", displace("9")));
+        assert_eq!(scene.margin(), 5);
+
+        // The layer's own scale multiplies it, at its largest keyframe and
+        // whichever way it faces; other effects ignore the scale.
+        let with_scale = |transform: &str, effects: &str| {
+            let json = format!(
+                r#"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                    {{"id": "a", "type": "shape", "shape": {{"kind": "rect", "width": 9, "height": 9}},
+                      "transform": {transform}, "effects": {effects}}}]}}"#
+            );
+            Scene::from_json(&json, PathBuf::new()).unwrap().margin()
+        };
+        assert_eq!(
+            with_scale(r#"{"scale": 3}"#, &format!("[{}]", displace("10"))),
+            15
+        );
+        assert_eq!(
+            with_scale(r#"{"scale": -3}"#, &format!("[{}]", displace("10"))),
+            15
+        );
+        assert_eq!(
+            with_scale(
+                r#"{"scale": [{"frame": 0, "value": 0.5}, {"frame": 9, "value": 4}]}"#,
+                &format!("[{}]", displace("10"))
+            ),
+            20
+        );
+        assert_eq!(
+            with_scale(r#"{"scale": 3}"#, r#"[{"type": "dropShadow", "x": 10}]"#),
+            10
+        );
+        // Reaches add up along the list; the shadow after the displacement
+        // casts the displaced layer, and neither is scaled by the other.
+        assert_eq!(
+            with_scale(
+                r#"{"scale": 2}"#,
+                &format!(r#"[{}, {{"type": "dropShadow", "x": 10}}]"#, displace("10"))
+            ),
+            20
+        );
+
+        // Ancestors' scales multiply in: the group's 2 and the child's 3
+        // make 6, and the group's own displacement uses its 2 (and its
+        // ancestors') but not the child's.
+        let json = format!(
+            r#"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                {{"id": "outer", "type": "group", "transform": {{"scale": 2}},
+                  "effects": [{outer}],
+                  "children": [
+                    {{"id": "inner", "type": "group", "transform": {{"scale": 5}}, "children": [
+                      {{"id": "leaf", "type": "group", "transform": {{"scale": 3}}, "children": [],
+                        "effects": [{leaf}]}}]}}]}}]}}"#,
+            outer = displace("4"),
+            leaf = displace("10"),
+        );
+        // leaf: 10 / 2 * (2 * 5 * 3) = 150; outer adds 4 / 2 * 2 = 4.
+        let scene = Scene::from_json(&json, PathBuf::new()).unwrap();
+        assert_eq!(scene.margin(), 154);
+
+        // A scale of 0 reaches nothing.
+        assert_eq!(effects_of(&format!("[{}]", displace("0"))).margin(), 0);
+    }
+
+    fn noise_scene(fields: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r#"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                    {{"id": "n", "type": "noise", {fields}}}]}}"#
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn parses_noise_layers_with_defaults() {
+        let scene = noise_scene(
+            r#""width": 120, "height": [{"frame": 0, "value": 10}, {"frame": 9, "value": 40}],
+               "turbulence": {"type": "turbulence", "baseFrequency": 0.1, "numOctaves": 2, "seed": 3}"#,
+        )
+        .unwrap();
+        let LayerKind::Noise(noise) = &scene.layers[0].kind else {
+            panic!("not a noise layer");
+        };
+        assert_eq!((noise.width.at(0.0), noise.height.at(9.0)), (120.0, 40.0));
+        assert_eq!(noise.channels, NoiseChannels::Rgba);
+        assert_eq!(noise.turbulence.kind, TurbulenceKind::Turbulence);
+        assert_eq!(noise.turbulence.num_octaves, 2);
+        // It paints inside its box and nothing else.
+        assert_eq!(scene.margin(), 0);
+        let gray = noise_scene(
+            r#""width": 1, "height": 1, "channels": "gray",
+               "turbulence": {"type": "fractalNoise", "baseFrequency": [0.1, 0.2], "seed": 0}"#,
+        )
+        .unwrap();
+        let LayerKind::Noise(noise) = &gray.layers[0].kind else {
+            panic!("not a noise layer");
+        };
+        assert_eq!(noise.channels, NoiseChannels::Gray);
+    }
+
+    #[test]
+    fn rejects_bad_noise_layers_naming_the_layer() {
+        let turbulence =
+            r#""turbulence": {"type": "fractalNoise", "baseFrequency": 0.1, "seed": 1}"#;
+        for (fields, want) in [
+            (
+                format!(r#""width": -1, "height": 5, {turbulence}"#),
+                "width must not be negative",
+            ),
+            (
+                format!(
+                    r#""width": 5, "height": [{{"frame": 0, "value": 1}}, {{"frame": 9, "value": -2}}], {turbulence}"#
+                ),
+                "height must not be negative",
+            ),
+            (
+                r#""width": 5, "height": 5, "turbulence": {"type": "fractalNoise", "baseFrequency": -1, "seed": 1}"#
+                    .to_string(),
+                "noise turbulence baseFrequency must not be negative",
+            ),
+            (
+                r#""width": 5, "height": 5, "turbulence": {"type": "fractalNoise", "baseFrequency": 1, "numOctaves": 11, "seed": 1}"#
+                    .to_string(),
+                "noise turbulence numOctaves must be a whole number from 0 to 10",
+            ),
+        ] {
+            let msg = noise_scene(&fields).unwrap_err().to_string();
+            assert!(
+                msg.contains("layer \"n\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The JSON parser's complaints.
+        let msg = noise_scene(&format!(
+            r#""width": 5, "height": 5, "channels": "rg", {turbulence}"#
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("rg"), "{msg}");
+        let msg = noise_scene(r#""width": 5, "height": 5"#)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("turbulence"), "{msg}");
+    }
+
+    fn mesh_scene(fields: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                    {{"id": "m", "type": "meshGradient", {fields}}}]}}"##
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn parses_mesh_gradients_with_defaults() {
+        let scene = mesh_scene(
+            r##""width": 120, "height": 60,
+               "colors": ["#f00", "#0f0", "#00f", "#ff0", "#0ff", "#f0f", "#000", "#fff", "#888"]"##,
+        )
+        .unwrap();
+        let LayerKind::MeshGradient(mesh) = &scene.layers[0].kind else {
+            panic!("not a mesh gradient layer");
+        };
+        assert_eq!((mesh.columns, mesh.rows), (3, 3));
+        assert!(mesh.points.is_none());
+        assert_eq!(mesh.colors.len(), 9);
+        // It paints inside its box and nothing else.
+        assert_eq!(scene.margin(), 0);
+        let animated = mesh_scene(
+            r##""width": 120, "height": 60, "columns": 2, "rows": 3,
+               "points": [[0, 0], [[{"frame": 0, "value": 100}, {"frame": 9, "value": 120}], 0],
+                          [0, 30], [120, 30], [0, 60], [120, 60]],
+               "colors": ["#f00", "#0f0", "#00f", "#ff0", "#0ff", "#f0f"]"##,
+        )
+        .unwrap();
+        let LayerKind::MeshGradient(mesh) = &animated.layers[0].kind else {
+            panic!("not a mesh gradient layer");
+        };
+        let points = mesh.points.as_ref().unwrap();
+        assert_eq!(points.len(), 6);
+        assert_eq!(points[1][0].at(9.0), 120.0);
+    }
+
+    #[test]
+    fn rejects_bad_mesh_gradients_naming_the_layer() {
+        let colors = |n: usize| format!(r##""colors": [{}]"##, vec![r##""#fff""##; n].join(", "));
+        for (fields, want) in [
+            (
+                format!(r#""width": -1, "height": 5, {}"#, colors(9)),
+                "width must not be negative",
+            ),
+            (
+                format!(r#""width": 5, "height": 5, "columns": 1, {}"#, colors(3)),
+                "columns must be a whole number from 2 to 8, got 1",
+            ),
+            (
+                format!(r#""width": 5, "height": 5, "rows": 9, {}"#, colors(27)),
+                "rows must be a whole number from 2 to 8, got 9",
+            ),
+            (
+                format!(r#""width": 5, "height": 5, {}"#, colors(8)),
+                "needs 9 colors (columns x rows), got 8",
+            ),
+            (
+                format!(
+                    r#""width": 5, "height": 5, "columns": 2, "rows": 2, "points": [[0, 0], [1, 0], [0, 1]], {}"#,
+                    colors(4)
+                ),
+                "needs 4 points (columns x rows), got 3",
+            ),
+        ] {
+            let msg = mesh_scene(&fields).unwrap_err().to_string();
+            assert!(
+                msg.contains("layer \"m\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The JSON parser's complaints.
+        let msg = mesh_scene(r#""width": 5, "height": 5"#)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("colors"), "{msg}");
+        let msg = mesh_scene(&format!(
+            r#""width": 5, "height": 5, "columns": 2.5, {}"#,
+            colors(9)
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("2.5"), "{msg}");
+    }
+
     const SHADER: &str =
         r#"fn effect(px: vec2<f32>) -> vec4<f32> {\n  return layer(px) * u.strength;\n}"#;
 
@@ -1410,5 +2966,283 @@ mod tests {
             msg.contains("\"words\"") && msg.contains("color gradient") && msg.contains("radius"),
             "{msg}"
         );
+    }
+
+    /// A scene with the given top-level `camera` entry (or none).
+    fn camera_scene(camera: &str) -> Result<Scene> {
+        let json = format!(
+            r##"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, {camera}
+                "layers": [{{"id": "card", "type": "shape",
+                  "transform": {{"rotateX": 20, "rotateY": [{{"frame": 0, "value": 0}}, {{"frame": 9, "value": 45}}], "z": -30}},
+                  "shape": {{"kind": "rect", "width": 100, "height": 50}}, "fill": "#fff"}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new())
+    }
+
+    #[test]
+    fn parses_3d_transforms_with_zero_defaults() {
+        let scene = camera_scene("").unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!(t.rotate_x.at(0.0), 20.0);
+        assert_eq!(t.rotate_y.at(9.0), 45.0);
+        assert_eq!(t.z.at(0.0), -30.0);
+        assert!(t.is_3d());
+        assert!(scene.camera.is_none());
+        // A layer that names none of them is flat, and so is one that names
+        // them as zero.
+        let scene = scene_with("").unwrap();
+        assert!(!scene.layers[0].transform.is_3d());
+        let scene = scene_with(r#""transform": {"rotateX": 0, "z": [{"frame": 0, "value": 0}, {"frame": 5, "value": 0}]},"#)
+            .unwrap();
+        assert!(!scene.layers[0].transform.is_3d());
+        let scene = scene_with(
+            r#""transform": {"z": [{"frame": 0, "value": 0}, {"frame": 5, "value": 8}]},"#,
+        )
+        .unwrap();
+        assert!(scene.layers[0].transform.is_3d());
+    }
+
+    #[test]
+    fn parses_a_camera_whose_origin_defaults_to_the_middle() {
+        let scene = camera_scene(r#""camera": {"perspective": 800},"#).unwrap();
+        let camera = scene.camera.unwrap();
+        assert_eq!(camera.perspective.at(0.0), 800.0);
+        assert!(camera.x.is_none() && camera.y.is_none());
+        let scene = camera_scene(
+            r#""camera": {"perspective": [{"frame": 0, "value": 900}, {"frame": 9, "value": 400}], "x": 20, "y": 90},"#,
+        )
+        .unwrap();
+        let camera = scene.camera.unwrap();
+        assert_eq!(camera.perspective.at(9.0), 400.0);
+        assert_eq!(camera.x.unwrap().at(0.0), 20.0);
+    }
+
+    #[test]
+    fn rejects_a_camera_without_a_positive_perspective() {
+        for camera in [
+            r#""camera": {"perspective": 0},"#,
+            r#""camera": {"perspective": -50},"#,
+            r#""camera": {"perspective": [{"frame": 0, "value": 500}, {"frame": 5, "value": 0}]},"#,
+        ] {
+            let msg = camera_scene(camera).unwrap_err().to_string();
+            assert!(
+                msg.contains("perspective must be greater than 0"),
+                "{camera}: {msg}"
+            );
+        }
+        // The perspective is required.
+        assert!(camera_scene(r#""camera": {"x": 3},"#).is_err());
+    }
+
+    #[test]
+    fn a_matte_source_cannot_be_turned_in_3d() {
+        let parse = |source_transform: &str| {
+            let json = format!(
+                r#"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                  {{"id": "photo", "type": "group", "children": [], "matte": {{"layer": "cut"}}}},
+                  {{"id": "cut", "type": "group", "children": [], "transform": {source_transform}}}]}}"#
+            );
+            Scene::from_json(&json, PathBuf::new()).map_err(|e| e.to_string())
+        };
+        assert!(parse(r#"{"x": 4, "rotation": 30}"#).is_ok());
+        for transform in [r#"{"rotateX": 10}"#, r#"{"rotateY": 10}"#, r#"{"z": 5}"#] {
+            let msg = parse(transform).unwrap_err();
+            assert!(
+                msg.contains("\"photo\"")
+                    && msg.contains("\"cut\"")
+                    && msg.contains("3D transform"),
+                "{transform}: {msg}"
+            );
+        }
+    }
+
+    /// A scene whose first layer is a `preserve3d` group with `extra` fields
+    /// spliced in, beside a plain shape that the group can matte or be mattes
+    /// by.
+    fn group_scene(extra: &str) -> std::result::Result<Scene, String> {
+        let json = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+              {{"id": "stack", "type": "group", "preserve3d": true, {extra}
+                "children": [{{"id": "card", "type": "shape", "transform": {{"z": 10}},
+                  "shape": {{"kind": "rect", "width": 5, "height": 5}}, "fill": "#fff"}}]}},
+              {{"id": "other", "type": "shape", "matte": {{"layer": "stack"}},
+                "shape": {{"kind": "rect", "width": 5, "height": 5}}, "fill": "#fff"}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new()).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn preserve3d_defaults_to_off_and_parses() {
+        let json = r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+            {"id": "plain", "type": "group", "children": []},
+            {"id": "deep", "type": "group", "preserve3d": true, "children": []}]}"#;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let flags: Vec<_> = scene
+            .layers
+            .iter()
+            .map(|l| matches!(&l.kind, LayerKind::Group(g) if g.preserve3d))
+            .collect();
+        assert_eq!(flags, [false, true]);
+    }
+
+    #[test]
+    fn rejects_what_a_preserve3d_group_cannot_do_naming_the_layer() {
+        // The group is also a matte source here (the shape's matte), so the
+        // plain cases have to drop that.
+        let parse = |extra: &str| {
+            let json = format!(
+                r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                  {{"id": "stack", "type": "group", "preserve3d": true, {extra} "children": []}},
+                  {{"id": "other", "type": "group", "children": []}}]}}"##
+            );
+            Scene::from_json(&json, PathBuf::new()).map_err(|e| e.to_string())
+        };
+        assert!(parse(r#""transform": {"rotateY": 30},"#).is_ok());
+        assert!(parse(r#""opacity": 0.5,"#).is_ok());
+        let cases = [
+            (r#""effects": [{"type": "blur", "radius": 2}],"#, "effects"),
+            (
+                r#""clip": {"kind": "ellipse", "cx": 0, "cy": 0, "rx": 5, "ry": 5},"#,
+                "clip",
+            ),
+            (
+                r##""mask": {"gradient": {"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0,
+                    "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]}},"##,
+                "mask",
+            ),
+            (r#""matte": {"layer": "other"},"#, "matte"),
+            (r#""blendMode": "multiply","#, "blendMode"),
+        ];
+        for (extra, want) in cases {
+            let msg = parse(extra).unwrap_err();
+            assert!(
+                msg.contains("\"stack\"") && msg.contains("preserve3d") && msg.contains(want),
+                "{extra}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_preserve3d_group_cannot_be_a_matte_source() {
+        let msg = group_scene("").unwrap_err();
+        assert!(
+            msg.contains("\"stack\"") && msg.contains("matte source"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn preserve3d_children_may_use_mattes_and_3d_among_themselves() {
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+          {"id": "stack", "type": "group", "preserve3d": true, "children": [
+            {"id": "photo", "type": "group", "children": [], "transform": {"z": 5, "rotateY": 20},
+             "matte": {"layer": "cut"}},
+            {"id": "cut", "type": "group", "children": []},
+            {"id": "inner", "type": "group", "preserve3d": true, "opacity": 0.5,
+             "transform": {"rotateX": 30}, "children": []}]}]}"##;
+        Scene::from_json(json, PathBuf::new()).unwrap();
+    }
+
+    #[test]
+    fn parses_a_corner_pin_with_corners_left_out() {
+        let scene = scene_with(
+            r#""effects": [{"type": "cornerPin", "topRight": [90, [{"frame": 0, "value": 4}, {"frame": 9, "value": 20}]],
+                            "bottomLeft": [-5, 60]}],"#,
+        )
+        .unwrap();
+        let Effect::CornerPin {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a corner pin");
+        };
+        assert!(top_left.is_none() && bottom_right.is_none());
+        let [x, y] = top_right.as_ref().unwrap();
+        assert_eq!((x.at(0.0), y.at(9.0)), (90.0, 20.0));
+        assert_eq!(bottom_left.as_ref().unwrap()[0].at(0.0), -5.0);
+        // None of them is allowed too: it pins nothing.
+        scene_with(r#""effects": [{"type": "cornerPin"}],"#).unwrap();
+    }
+
+    #[test]
+    fn a_corner_pin_needs_a_box_and_adds_no_margin() {
+        let msg = Scene::from_json(
+            r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                {"id": "g", "type": "group", "children": [],
+                 "effects": [{"type": "cornerPin", "topLeft": [1, 1]}]}]}"#,
+            PathBuf::new(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            msg.contains("\"g\"") && msg.contains("cornerPin") && msg.contains("group has none"),
+            "{msg}"
+        );
+        // A pin far outside the box still counts nothing: it only moves
+        // what the texture holds.
+        let scene =
+            scene_with(r#""effects": [{"type": "cornerPin", "topLeft": [-900, -900]}],"#).unwrap();
+        assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn parses_motion_blur_with_defaults() {
+        assert!(scene_with("").unwrap().layers[0].motion_blur.is_none());
+        let scene = scene_with(r#""motionBlur": {},"#).unwrap();
+        let blur = scene.layers[0].motion_blur.as_ref().unwrap();
+        assert_eq!((blur.samples, blur.shutter.at(0.0)), (8, 0.5));
+        let scene = scene_with(
+            r#""motionBlur": {"samples": 24, "shutter": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]},"#,
+        )
+        .unwrap();
+        let blur = scene.layers[0].motion_blur.as_ref().unwrap();
+        assert_eq!((blur.samples, blur.shutter.at(9.0)), (24, 1.0));
+        // A blurred layer needs no margin.
+        assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn rejects_motion_blur_samples_out_of_range_naming_the_layer() {
+        for samples in ["1", "0", "65", "-3"] {
+            let json = format!(r#""motionBlur": {{"samples": {samples}}},"#);
+            let msg = error(&json);
+            assert!(
+                msg.contains("motionBlur") && msg.contains("\"box\""),
+                "{samples}: {msg}"
+            );
+        }
+        for samples in ["2", "64"] {
+            scene_with(&format!(r#""motionBlur": {{"samples": {samples}}},"#)).unwrap();
+        }
+    }
+
+    #[test]
+    fn preserve3d_groups_and_their_children_cannot_be_motion_blurred() {
+        let blur = r#""motionBlur": {"samples": 4},"#;
+        let msg = group_scene(blur).unwrap_err();
+        assert!(
+            msg.contains("\"stack\"") && msg.contains("motionBlur"),
+            "{msg}"
+        );
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+          {"id": "stack", "type": "group", "preserve3d": true, "children": [
+            {"id": "card", "type": "group", "children": [], "motionBlur": {}}]}]}"##;
+        let msg = Scene::from_json(json, PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"card\"") && msg.contains("preserve3d"),
+            "{msg}"
+        );
+        // A group around the whole stack is the way to blur it.
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+          {"id": "outer", "type": "group", "motionBlur": {}, "children": [
+            {"id": "stack", "type": "group", "preserve3d": true, "children": [
+              {"id": "card", "type": "group", "children": [
+                {"id": "inner", "type": "group", "children": [], "motionBlur": {}}]}]}]}]}"##;
+        Scene::from_json(json, PathBuf::new()).unwrap();
     }
 }

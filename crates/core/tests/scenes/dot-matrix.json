@@ -1,0 +1,376 @@
+{
+ "width": 480,
+ "height": 270,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#1b1e26",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "photo-random",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 150,
+   "height": 112,
+   "transform": {
+    "x": 10,
+    "y": 10
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "size": 10,
+     "progress": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 1
+      }
+     ],
+     "seed": 1
+    }
+   ]
+  },
+  {
+   "id": "photo-sweep",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 150,
+   "height": 112,
+   "transform": {
+    "x": 170,
+    "y": 10
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "size": 12,
+     "progress": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 1
+      }
+     ],
+     "order": "sweep",
+     "angle": 0,
+     "stagger": 0.3,
+     "shape": "square"
+    }
+   ]
+  },
+  {
+   "id": "label",
+   "type": "text",
+   "text": "REVEAL",
+   "font": "DM Sans",
+   "size": 44,
+   "color": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 0,
+    "y1": 48,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#fff"
+     },
+     {
+      "offset": 1,
+      "color": "#8fa"
+     }
+    ]
+   },
+   "transform": {
+    "x": 335,
+    "y": 20,
+    "rotation": [
+     {
+      "frame": 0,
+      "value": -6
+     },
+     {
+      "frame": 30,
+      "value": 6
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "size": [
+      {
+       "frame": 0,
+       "value": 6
+      },
+      {
+       "frame": 30,
+       "value": 9
+      }
+     ],
+     "progress": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 1
+      }
+     ],
+     "order": "sweep",
+     "angle": 45,
+     "stagger": 0.8
+    }
+   ]
+  },
+  {
+   "id": "ramp-sweep-down",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 100,
+    "height": 60
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 100,
+    "y1": 0,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#ff5a8a"
+     },
+     {
+      "offset": 1,
+      "color": "#5ad1ff"
+     }
+    ]
+   },
+   "transform": {
+    "x": 350,
+    "y": 90
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "size": 8,
+     "progress": 0.55,
+     "order": "sweep",
+     "angle": 90,
+     "stagger": 0.5,
+     "seed": 9
+    }
+   ]
+  },
+  {
+   "id": "spinner",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 90,
+    "height": 60
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 90,
+    "y1": 0,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#ff5a8a"
+     },
+     {
+      "offset": 1,
+      "color": "#5ad1ff"
+     }
+    ]
+   },
+   "transform": {
+    "x": 330,
+    "y": 200,
+    "rotation": [
+     {
+      "frame": 0,
+      "value": 0
+     },
+     {
+      "frame": 30,
+      "value": 40
+     }
+    ],
+    "scale": 1.1,
+    "anchorX": 45,
+    "anchorY": 30
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "size": 10,
+     "progress": 0.6,
+     "seed": 2,
+     "stagger": 0.4
+    }
+   ]
+  },
+  {
+   "id": "discs",
+   "type": "group",
+   "transform": {
+    "x": -30,
+    "y": [
+     {
+      "frame": 0,
+      "value": 205
+     },
+     {
+      "frame": 30,
+      "value": 195
+     }
+    ],
+    "scale": 1.25
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "size": 9,
+     "progress": [
+      {
+       "frame": 0,
+       "value": -0.2
+      },
+      {
+       "frame": 30,
+       "value": 1.2
+      }
+     ],
+     "seed": 4294967295,
+     "shape": "circle",
+     "stagger": 0.7
+    }
+   ],
+   "children": [
+    {
+     "id": "disc-a",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 120,
+      "height": 120
+     },
+     "fill": {
+      "type": "radial",
+      "cx": 60,
+      "cy": 60,
+      "r": 60,
+      "stops": [
+       {
+        "offset": 0,
+        "color": "#fff"
+       },
+       {
+        "offset": 1,
+        "color": "#445"
+       }
+      ]
+     }
+    },
+    {
+     "id": "disc-b",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 90,
+      "height": 90
+     },
+     "fill": "#ffb347",
+     "transform": {
+      "x": 90,
+      "y": 20
+     }
+    }
+   ]
+  },
+  {
+   "id": "veil",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 120,
+    "height": 60,
+    "radius": 12
+   },
+   "fill": "#7dffb080",
+   "transform": {
+    "x": 170,
+    "y": 140
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "size": 6,
+     "progress": 0.5,
+     "order": "sweep",
+     "angle": 90,
+     "stagger": 0.2,
+     "shape": "square"
+    }
+   ]
+  },
+  {
+   "id": "done",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 70,
+    "height": 40
+   },
+   "fill": "#ffffff",
+   "transform": {
+    "x": 170,
+    "y": 210
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "progress": 1,
+     "seed": 3
+    }
+   ]
+  },
+  {
+   "id": "not-yet",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 60,
+    "height": 40
+   },
+   "fill": "#ff0000",
+   "transform": {
+    "x": 250,
+    "y": 210
+   },
+   "effects": [
+    {
+     "type": "dotMatrix",
+     "progress": 0,
+     "seed": 3
+    }
+   ]
+  }
+ ]
+}
