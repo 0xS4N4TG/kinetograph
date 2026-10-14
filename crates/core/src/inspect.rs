@@ -224,7 +224,7 @@ impl Walk<'_> {
         let matrix = parent * r.transform.matrix();
         let boxes = self.boxes(&r.kind);
 
-        let (children, group_bounds) = match (&layer.kind, &r.kind) {
+        let (mut children, group_bounds) = match (&layer.kind, &r.kind) {
             (
                 LayerKind::Group(g),
                 ResolvedKind::Group {
@@ -262,6 +262,20 @@ impl Walk<'_> {
         for sample in &r.motion {
             let b = self.sample_bounds(layer, sample, parent, space);
             bounds = union_option(bounds, b);
+        }
+        // An ordinary group draws its children flat into its buffer and then
+        // turns the buffer, so its children are seen where the turn takes
+        // them. (A `preserve3d` group's children are placed one by one, which
+        // `space` already did.)
+        if let (Some(nodes), Some((_, false))) = (&mut children, group_bounds)
+            && let Some(p) = placement(r, parent, space)
+        {
+            let h = warp::plane_homography(self.projection, p.parent, p.world);
+            if !h.is_some_and(|h| warp::is_identity(&h)) {
+                for node in nodes.iter_mut() {
+                    warp_subtree(node, h);
+                }
+            }
         }
 
         InspectLayer {
@@ -550,6 +564,19 @@ fn placement(r: &ResolvedLayer, parent: Affine, space: Option<Space>) -> Option<
             },
         }),
         None => warp::layer_world(&r.transform).map(|world| Placement { parent, world }),
+    }
+}
+
+/// Moves the bounds of `node` and everything in it through `h`, the turn of
+/// a group it is drawn inside; `None` (the group is seen edge on) leaves
+/// nothing to see.
+fn warp_subtree(node: &mut InspectLayer, h: Option<DMat3>) {
+    node.bounds = match (node.bounds, h) {
+        (Some(b), Some(h)) => warped(h, b.into()).and_then(rect_json),
+        _ => None,
+    };
+    for child in node.children.iter_mut().flatten() {
+        warp_subtree(child, h);
     }
 }
 
@@ -917,6 +944,25 @@ mod tests {
         assert_eq!((cam.perspective, cam.x, cam.y), (400.0, 200.0, 150.0));
         let b = result.layers[0].bounds.unwrap();
         assert!(b.height > 100.0 - 1e-6 && b.width < 100.0, "{b:?}");
+    }
+
+    #[test]
+    fn children_of_a_turned_group_are_seen_where_it_turns_them() {
+        // The group is drawn flat and turned 60 degrees about the vertical
+        // through (100, 100), so its one child, a square spanning 50..150,
+        // shows where the group does: half as wide, centred there.
+        let group = json!({
+            "id": "card", "type": "group",
+            "transform": { "x": 100, "y": 100, "anchorX": 50, "anchorY": 50, "rotateY": 60 },
+            "children": [rect("face", json!({ "shape": { "kind": "rect", "width": 100, "height": 100 } }))],
+        });
+        let result = inspect(&scene(json!([group])), 0).unwrap();
+        let card = &result.layers[0];
+        let face = &card.children.as_ref().unwrap()[0];
+        close(bounds_of(card), (75.0, 50.0, 50.0, 100.0));
+        close(bounds_of(face), (75.0, 50.0, 50.0, 100.0));
+        // The 2D matrix stays the flat one.
+        assert_eq!(face.matrix, [1.0, 0.0, 0.0, 1.0, 50.0, 50.0]);
     }
 
     #[test]
