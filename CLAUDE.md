@@ -3,16 +3,17 @@
 A browserless programmatic video engine: agents write Remotion-shaped TypeScript and Web Audio code, Node runs it,
 and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is a placeholder name.
 
-Phase 1 (core renderer: JSON scene graph, `kinetograph still`, `bench`) is built; see `README.md` and
-`docs/SCENE.md`. Before doing anything, read:
+Phases 1 and 2 (the core renderer: JSON scene graph, effects, camera, motion blur, `still`, `render`, `bench`) are
+built; see `README.md` and `docs/SCENE.md`. Before doing anything, read:
 
 - `docs/HANDOFF.md`: what it is, how it differs from fframes, architecture, effects list, agent CLI, roadmap, rules.
 - `docs/RESEARCH.md`: competitor scan, the papercut-vs-Blitz audit, the reference video breakdown.
 - `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.
 
-Decided 2026-10-14: own the engine, built from scratch (`HANDOFF.md` §3). fframes is a reference only. Phase 1 done
-2026-10-14; next is Phase 2a (`HANDOFF.md` §8), built in a Claude Code cloud session: code only there, all
-GPU tests, goldens and `bench` on the M4 (see "Building a phase in a Claude Code cloud session" in §8).
+Decided 2026-10-14: own the engine, built from scratch (`HANDOFF.md` §3). fframes is a reference only. Phase 2 (2a,
+2b, 2c) done 2026-10-14; next is Phase 3 (`HANDOFF.md` §8), built in a Claude Code cloud session by one orchestrator
+and five subagents ("Phase 3 in a cloud session" in §8): code only there, all GPU tests, goldens and `bench` on the M4
+(see "Building a phase in a Claude Code cloud session" in §8).
 
 Use the rustup toolchain (`~/.cargo/bin`, `/opt/homebrew/opt/rustup/bin`); Homebrew's `/opt/homebrew/bin/rustc` is
 broken.
