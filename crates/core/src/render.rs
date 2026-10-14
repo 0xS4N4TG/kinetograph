@@ -13,6 +13,7 @@ use vello::wgpu;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 
 use crate::blur::MIN_RADIUS;
+use crate::bounds::{self, PixelRect};
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
@@ -22,7 +23,7 @@ use crate::resolve::{
     ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
 use crate::scene::{DotOrder, Extend, LayerKind, MaskMode, Scene};
-use crate::text::TextEngine;
+use crate::text::{LaidOutText, TextEngine};
 use crate::warp;
 
 /// Curve flattening tolerance when converting shapes to paths.
@@ -411,7 +412,7 @@ impl Renderer {
         if warp::is_identity(&h) {
             return Some(src);
         }
-        Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h.inverse())))
+        Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h)))
     }
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
@@ -433,6 +434,11 @@ impl Renderer {
     ) -> Result<Tex> {
         // Layer space to padded texture pixels.
         let matrix = parent * layer.transform.matrix();
+        // Where a leaf layer's pixels are (see `raster_bounds`).
+        let raster = match &layer.kind {
+            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => None,
+            _ => Some(self.raster_bounds(layer, matrix)?),
+        };
         let src = match &layer.kind {
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
@@ -449,10 +455,16 @@ impl Renderer {
                 let vertices = mesh::tessellate(*columns, *rows, points, colors, matrix);
                 self.timed(Stage::Raster, |s| s.compositor.mesh_gradient(&vertices))
             }
+            // Nothing lands on the texture: nothing to draw.
+            _ if raster.is_some_and(|r| r.is_empty()) => {
+                self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]))
+            }
             _ => {
+                let region = raster.unwrap_or_else(|| self.whole());
                 self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
-                let drawn =
-                    self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view));
+                let drawn = self.timed(Stage::Composite, |s| {
+                    s.compositor.from_srgb8(&s.vello_view, region)
+                });
                 match &layer.kind {
                     // What was drawn is the box's coverage; the noise fills it.
                     ResolvedKind::Noise {
@@ -469,8 +481,15 @@ impl Renderer {
         // A shape frosts its whole geometry, however see-through its fill is.
         let coverage = match (&layer.kind, backdrop) {
             (ResolvedKind::Shape { .. }, Some(_)) if has_backdrop_blur(&layer.effects) => {
-                self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent))?;
-                Some(self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view)))
+                let region = raster.unwrap_or_else(|| self.whole());
+                if region.is_empty() {
+                    Some(self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4])))
+                } else {
+                    self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent))?;
+                    Some(self.timed(Stage::Composite, |s| {
+                        s.compositor.from_srgb8(&s.vello_view, region)
+                    }))
+                }
             }
             _ => None,
         };
@@ -493,15 +512,26 @@ impl Renderer {
             self.compositor.release(coverage);
         }
         if let Some(clip) = &layer.clip {
-            self.timed(Stage::Raster, |s| s.rasterise_clip(clip, layer, matrix))?;
-            src = self.timed(Stage::Composite, |s| {
-                s.compositor.mask(src, &s.vello_view, MaskMode::Alpha)
-            });
+            let path = self.clip_path(clip, layer)?;
+            let keep = self.path_bounds(&path, matrix);
+            if keep.is_empty() {
+                // Nothing is kept.
+                self.compositor.release(src);
+                src = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
+            } else if !src.bounds.is_empty() {
+                self.timed(Stage::Raster, |s| s.rasterise_clip(&path, matrix))?;
+                src = self.timed(Stage::Composite, |s| {
+                    s.compositor.mask(src, &s.vello_view, MaskMode::Alpha, keep)
+                });
+            }
         }
-        if let Some(mask) = &layer.mask {
+        if let Some(mask) = &layer.mask
+            && !src.bounds.is_empty()
+        {
             self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
+            let whole = self.whole();
             src = self.timed(Stage::Composite, |s| {
-                s.compositor.mask(src, &s.vello_view, mask.mode)
+                s.compositor.mask(src, &s.vello_view, mask.mode, whole)
             });
         }
         if let Some(matte) = &layer.matte {
@@ -527,6 +557,63 @@ impl Renderer {
             });
         }
         Ok(src)
+    }
+
+    /// The box of the padded canvas's pixels.
+    fn whole(&self) -> PixelRect {
+        PixelRect::whole(self.target_size.0, self.target_size.1)
+    }
+
+    /// The pixels that rasterising the leaf `layer` under `matrix` can touch:
+    /// the box of what it draws in layer space, through the matrix, a pixel
+    /// more all round for the anti-aliased edge (Vello draws nothing else),
+    /// cut to the target.
+    ///
+    /// - a shape: the box of its path, and for a stroke half the stroke's
+    ///   width more, which is how far the round joins and caps reach;
+    /// - text: the layout box and where the glyphs sit, a font size more
+    ///   each way (`text_bounds`);
+    /// - an image or a noise layer: its box.
+    fn raster_bounds(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<PixelRect> {
+        let whole = self.whole();
+        let local = match &layer.kind {
+            ResolvedKind::Shape {
+                geometry,
+                fill,
+                stroke,
+            } => {
+                if fill.is_none() && stroke.is_none() {
+                    return Ok(PixelRect::EMPTY);
+                }
+                shape_box(geometry, stroke.map(|(_, width)| width))?
+            }
+            ResolvedKind::Text {
+                text,
+                font,
+                size,
+                line_height,
+                max_width,
+                ..
+            } => {
+                let laid_out = self
+                    .text
+                    .layout(text, font, *size, *line_height, *max_width);
+                text_bounds(&laid_out, *size, *max_width)
+            }
+            ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
+            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
+        };
+        Ok(device_bounds(matrix, local).intersect(whole))
+    }
+
+    /// The pixels a path in layer space can touch under `matrix` (see
+    /// `raster_bounds`); none for a path with no segments.
+    fn path_bounds(&self, path: &BezPath, matrix: Affine) -> PixelRect {
+        if path.elements().is_empty() {
+            return PixelRect::EMPTY;
+        }
+        device_bounds(matrix, path.bounding_box()).intersect(self.whole())
     }
 
     /// Draws one leaf layer, with all transforms applied, into the Vello
@@ -641,18 +728,12 @@ impl Renderer {
         self.render_vello_scene(false)
     }
 
-    /// Draws the layer's clip shape in opaque white into the Vello target;
-    /// its alpha is then the clip's coverage.
-    fn rasterise_clip(
-        &mut self,
-        clip: &ResolvedClip,
-        layer: &ResolvedLayer,
-        matrix: Affine,
-    ) -> Result<()> {
-        let path = self.clip_path(clip, layer)?;
+    /// Draws the layer's clip shape (`path`, in layer space) in opaque white
+    /// into the Vello target; its alpha is then the clip's coverage.
+    fn rasterise_clip(&mut self, path: &BezPath, matrix: Affine) -> Result<()> {
         self.vello_scene.reset();
         self.vello_scene
-            .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, &path);
+            .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, path);
         self.render_vello_scene(false)
     }
 
@@ -880,6 +961,47 @@ fn collect_preserve3d<'a>(
         });
     }
     Ok(())
+}
+
+/// The box of a shape in layer space: its geometry, and, if it has a stroke
+/// of `stroke_width`, half the width more all round, which is as far as the
+/// stroke's round joins and caps (the default) reach.
+fn shape_box(geometry: &ResolvedGeometry, stroke_width: Option<f64>) -> Result<Rect> {
+    let shape = match geometry {
+        ResolvedGeometry::Rect { width, height }
+        | ResolvedGeometry::RoundedRect { width, height, .. }
+        | ResolvedGeometry::Ellipse { width, height } => Rect::new(0.0, 0.0, *width, *height),
+        ResolvedGeometry::Path { .. } => geometry_path(geometry)?.bounding_box(),
+    };
+    let half = stroke_width.map_or(0.0, |width| width.max(0.0) / 2.0);
+    Ok(shape.inflate(half, half))
+}
+
+/// The pixels that a box `local` in layer space reaches under `matrix`: its
+/// corners through the matrix, rounded outwards, with a pixel more all round
+/// for the anti-aliased edge. Anywhere (a huge box) if that is not a number.
+fn device_bounds(matrix: Affine, local: Rect) -> PixelRect {
+    let anywhere = PixelRect::new(i32::MIN / 4, i32::MIN / 4, i32::MAX / 4, i32::MAX / 4);
+    bounds::pixel_rect(bounds::transformed(matrix, local).inflate(1.0, 1.0)).unwrap_or(anywhere)
+}
+
+/// Where the glyphs of `laid_out` (text of font size `size`, wrapped at
+/// `max_width`) can be drawn, in layout space: the layout box and every
+/// glyph's origin and advance, grown by one font size on each side, which
+/// holds the ink of any glyph that rises or falls less than that from its
+/// baseline or overhangs its advance by less (descenders, accents, italic
+/// slants). A word wider than `max_width` hangs out of the box, so the glyphs
+/// count as well.
+fn text_bounds(laid_out: &LaidOutText, size: f32, max_width: Option<f32>) -> Rect {
+    let width = max_width.unwrap_or(0.0).max(laid_out.width);
+    let mut b = Rect::new(0.0, 0.0, f64::from(width), f64::from(laid_out.height));
+    for glyph in laid_out.runs.iter().flat_map(|run| &run.glyphs) {
+        b = b
+            .union_pt((f64::from(glyph.x), f64::from(glyph.y)))
+            .union_pt((f64::from(glyph.x + glyph.advance), f64::from(glyph.y)));
+    }
+    let em = f64::from(size).abs();
+    b.inflate(em, em)
 }
 
 /// Where the canvas's top-left corner sits in the padded textures: `margin`
@@ -1715,5 +1837,97 @@ mod tests {
         );
         assert!(!has_backdrop_blur(&layers[0].effects));
         assert!(uses_backdrop(&layers, &layers[0]));
+    }
+
+    #[test]
+    fn a_shape_reaches_half_its_strokes_width_past_its_geometry() {
+        let rect = ResolvedGeometry::Rect {
+            width: 40.0,
+            height: 20.0,
+        };
+        assert_eq!(
+            shape_box(&rect, None).unwrap(),
+            Rect::new(0.0, 0.0, 40.0, 20.0)
+        );
+        assert_eq!(
+            shape_box(&rect, Some(10.0)).unwrap(),
+            Rect::new(-5.0, -5.0, 45.0, 25.0)
+        );
+        // A rounded corner or an ellipse stays in the box.
+        let round = ResolvedGeometry::RoundedRect {
+            width: 40.0,
+            height: 20.0,
+            radius: 8.0,
+        };
+        assert_eq!(
+            shape_box(&round, None).unwrap(),
+            shape_box(&rect, None).unwrap()
+        );
+        // A path is its curves' box, not its control points': the curve
+        // from (0, 0) through a control at (50, 100) to (100, 0) peaks at 50.
+        let curve = ResolvedGeometry::Path {
+            d: "M 0 0 Q 50 100 100 0".into(),
+        };
+        let b = shape_box(&curve, None).unwrap();
+        assert!(
+            (b.y1 - 50.0).abs() < 1e-9 && b.x0 == 0.0 && b.x1 == 100.0,
+            "{b:?}"
+        );
+        let bad = ResolvedGeometry::Path {
+            d: "not a path".into(),
+        };
+        assert!(shape_box(&bad, None).is_err());
+    }
+
+    #[test]
+    fn device_boxes_are_the_matrix_image_a_pixel_wider_and_rounded_out() {
+        let local = Rect::new(0.0, 0.0, 10.0, 4.0);
+        // Moved by a fraction: 10.3 - 1 = 9.3 rounds down to 9, 20.3 + 1 = 21.3 up to 22.
+        let moved = Affine::translate((10.3, 5.0));
+        assert_eq!(device_bounds(moved, local), PixelRect::new(9, 4, 22, 10));
+        // Turned a quarter: the box is 4 wide and 10 tall.
+        let turned = Affine::translate((50.0, 50.0)) * Affine::rotate(std::f64::consts::FRAC_PI_2);
+        assert_eq!(device_bounds(turned, local), PixelRect::new(45, 49, 51, 61));
+        // Not a number: anywhere.
+        let nan = device_bounds(Affine::scale(f64::NAN), local);
+        assert!(nan.x0 < -1_000_000 && nan.x1 > 1_000_000);
+    }
+
+    fn text_engine() -> TextEngine {
+        let fonts = std::collections::BTreeMap::from([(
+            "DM Sans".to_string(),
+            "assets/fonts/DMSans-Medium.ttf".to_string(),
+        )]);
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        TextEngine::new(&fonts, &root).unwrap()
+    }
+
+    #[test]
+    fn text_is_bounded_by_its_layout_and_its_glyphs_a_font_size_wider() {
+        let mut engine = text_engine();
+        let laid_out = engine.layout("Hello world", "DM Sans", 40.0, None, None);
+        let b = text_bounds(&laid_out, 40.0, None);
+        assert_eq!(b.x0, -40.0);
+        assert_eq!(b.y0, -40.0);
+        assert!((b.x1 - (f64::from(laid_out.width) + 40.0)).abs() < 1e-3);
+        assert!((b.y1 - (f64::from(laid_out.height) + 40.0)).abs() < 1e-3);
+        // Every glyph's origin and advance is inside.
+        for glyph in laid_out.runs.iter().flat_map(|r| &r.glyphs) {
+            assert!(f64::from(glyph.x) >= b.x0 && f64::from(glyph.x + glyph.advance) <= b.x1);
+            assert!(f64::from(glyph.y) >= b.y0 && f64::from(glyph.y) <= b.y1);
+        }
+        // A word wider than the wrap width hangs out of the box, and the
+        // bounds follow it.
+        let wide = engine.layout("Unbreakable", "DM Sans", 40.0, None, Some(60.0));
+        let b = text_bounds(&wide, 40.0, Some(60.0));
+        assert!(
+            f64::from(wide.width) > 60.0,
+            "the word fits: {}",
+            wide.width
+        );
+        assert!(b.x1 >= f64::from(wide.width) + 40.0 - 1e-3, "{b:?}");
+        // A box wider than the text (a wrap width) counts as it is.
+        let b = text_bounds(&laid_out, 40.0, Some(500.0));
+        assert_eq!(b.x1, 540.0);
     }
 }

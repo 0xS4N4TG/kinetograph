@@ -2,8 +2,12 @@
 //!
 //! Every intermediate image is a `Rgba16Float` texture holding linear,
 //! premultiplied colour. It covers the canvas plus a margin on every side
-//! (`Scene::margin`, 0 unless an effect paints outside its layer). The
-//! passes live in `shaders/composite.wgsl`:
+//! (`Scene::margin`, 0 unless an effect paints outside its layer). A texture
+//! also says where it can be non-zero (`Tex::bounds`, see `bounds.rs`), and
+//! a pass draws only where its result can be: the input's box grown by what
+//! the pass reads around a pixel. Every pass clears its target all over
+//! first, so what it does not draw is transparent, which is what the pass
+//! would have written there. The passes live in `shaders/composite.wgsl`:
 //!
 //! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
@@ -66,6 +70,7 @@ use vello::kurbo::{Affine, Rect};
 use vello::wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
+use crate::bounds::{self, PixelRect};
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
@@ -89,6 +94,11 @@ const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 pub struct Tex {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
+    /// Where the texture can be non-zero: outside this box it is exactly
+    /// transparent. A texture from the pool holds whatever it held before
+    /// until a pass clears it, so the producer of a texture sets this to
+    /// what it drew.
+    pub bounds: PixelRect,
 }
 
 /// Samples per pixel of a mesh gradient, whose outer edge is anti-aliased by
@@ -415,20 +425,37 @@ impl Compositor {
         }
     }
 
-    /// A texture with undefined contents, from the pool when possible.
+    /// A texture with undefined contents, from the pool when possible. Its
+    /// bounds are empty until the pass that draws it sets them.
     pub fn acquire(&mut self) -> Tex {
-        self.pool
+        let mut tex = self
+            .pool
             .pop()
-            .unwrap_or_else(|| new_texture(&self.device, self.width, self.height))
+            .unwrap_or_else(|| new_texture(&self.device, self.width, self.height));
+        tex.bounds = PixelRect::EMPTY;
+        tex
     }
 
     pub fn release(&mut self, tex: Tex) {
         self.pool.push(tex);
     }
 
+    /// The box of the whole texture.
+    fn whole(&self) -> PixelRect {
+        PixelRect::whole(self.width, self.height)
+    }
+
+    /// A texture for a pass to draw the box `region` of (cut to the
+    /// texture): the box is the texture's bounds, and the pass draws it.
+    fn target(&mut self, region: PixelRect) -> Tex {
+        let mut tex = self.acquire();
+        tex.bounds = region.intersect(self.whole());
+        tex
+    }
+
     /// A texture filled with `color` (linear, premultiplied).
     pub fn filled(&mut self, color: [f64; 4]) -> Tex {
-        let tex = self.acquire();
+        let mut tex = self.acquire();
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear"),
@@ -449,52 +476,106 @@ impl Compositor {
             ..Default::default()
         });
         self.queue.submit([encoder.finish()]);
+        // Transparent black is zero everywhere, which is what empty bounds
+        // promise.
+        if color != [0.0; 4] {
+            tex.bounds = self.whole();
+        }
         tex
     }
 
-    /// Converts a Vello output texture (Rgba8, sRGB-encoded, straight alpha)
-    /// to a linear premultiplied texture.
-    pub fn from_srgb8(&mut self, vello_output: &wgpu::TextureView) -> Tex {
-        let target = self.acquire();
-        self.pass(
-            &self.to_linear,
-            vello_output,
-            vello_output,
-            0.0,
-            0,
-            &target.view,
-        );
+    /// Converts the box `region` of a Vello output texture (Rgba8,
+    /// sRGB-encoded, straight alpha) to a linear premultiplied texture.
+    /// Vello leaves what it did not draw transparent, so `region` is the box
+    /// of what it drew.
+    pub fn from_srgb8(&mut self, vello_output: &wgpu::TextureView, region: PixelRect) -> Tex {
+        let target = self.target(region);
+        self.pass(&self.to_linear, vello_output, vello_output, 0.0, 0, &target);
         target
     }
 
     /// Composites `src` over `dst` with the layer's opacity and blend mode.
-    /// Both inputs go back to the pool; the result is a new texture.
-    pub fn blend(&mut self, dst: Tex, src: Tex, opacity: f32, mode: BlendMode) -> Tex {
+    /// `src` goes back to the pool; the result is `dst`, changed under the
+    /// box of `src` only.
+    ///
+    /// Where `src` is transparent the pass gives back the pixel of `dst`
+    /// exactly: the source is `0 * opacity = 0`, so the result is
+    /// `0 * (1 - b.a) + b.rgb * 1 + 0 * b.a * B(cb, 0) = b.rgb` and the alpha
+    /// `0 + b.a * 1`, provided `B(cb, 0)` is finite. It is for every
+    /// separable mode. The four non-separable modes (hue, saturation, color,
+    /// luminosity) divide in `clip_color`, which a backdrop outside 0..1 or a
+    /// grey that rounds a hair below zero can make a division by zero, so
+    /// they are drawn over the whole texture as they always were.
+    pub fn blend(&mut self, mut dst: Tex, src: Tex, opacity: f32, mode: BlendMode) -> Tex {
         let mode = mode_index(mode);
-        let target = self.acquire();
-        self.pass(
-            &self.blend,
-            &dst.view,
-            &src.view,
-            opacity,
-            mode,
-            &target.view,
-        );
-        self.release(dst);
+        let region = if mode >= FIRST_NON_SEPARABLE_MODE {
+            self.whole()
+        } else {
+            src.bounds
+        };
+        self.update(&mut dst, region, |c, dst, temp| {
+            c.pass(&c.blend, &dst.view, &src.view, opacity, mode, temp);
+        });
+        dst.bounds = dst.bounds.union(src.bounds);
         self.release(src);
-        target
+        dst
+    }
+
+    /// Draws `region` of a new texture with `draw`, which is given `dst` and
+    /// that texture, and copies the result over the same box of `dst`. It is
+    /// how a pass that reads `dst` changes it in place: it cannot be its own
+    /// target. The copy is exact.
+    fn update(
+        &mut self,
+        dst: &mut Tex,
+        region: PixelRect,
+        draw: impl FnOnce(&Compositor, &Tex, &Tex),
+    ) {
+        let region = region.intersect(self.whole());
+        if region.is_empty() {
+            return;
+        }
+        let temp = self.target(region);
+        draw(self, dst, &temp);
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let corner = wgpu::Origin3d {
+            x: region.x0 as u32,
+            y: region.y0 as u32,
+            z: 0,
+        };
+        let (mut from, mut to) = (temp.texture.as_image_copy(), dst.texture.as_image_copy());
+        from.origin = corner;
+        to.origin = corner;
+        encoder.copy_texture_to_texture(
+            from,
+            to,
+            wgpu::Extent3d {
+                width: region.width(),
+                height: region.height(),
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+        self.release(temp);
     }
 
     /// Multiplies `src` by the alpha or luminance of a Vello output texture
-    /// (Rgba8): a clip shape drawn in opaque white, or a gradient. `src`
-    /// goes back to the pool; the result is a new texture.
-    pub fn mask(&mut self, src: Tex, vello_output: &wgpu::TextureView, mode: MaskMode) -> Tex {
+    /// (Rgba8): a clip shape drawn in opaque white, or a gradient. `keep` is
+    /// the box outside which that is zero (the whole texture for a gradient).
+    /// `src` goes back to the pool; the result is a new texture.
+    pub fn mask(
+        &mut self,
+        src: Tex,
+        vello_output: &wgpu::TextureView,
+        mode: MaskMode,
+        keep: PixelRect,
+    ) -> Tex {
         let mode = match mode {
             MaskMode::Alpha => 0,
             MaskMode::Luminance => 2,
         };
-        let target = self.acquire();
-        self.pass(&self.mask, &src.view, vello_output, 0.0, mode, &target.view);
+        let target = self.target(src.bounds.intersect(keep));
+        self.pass(&self.mask, &src.view, vello_output, 0.0, mode, &target);
         self.release(src);
         target
     }
@@ -503,20 +584,31 @@ impl Compositor {
     /// scaling the matte by `matte_opacity`. Both inputs go back to the pool;
     /// the result is a new texture.
     pub fn matte(&mut self, src: Tex, matte: Tex, matte_opacity: f32, mode: MatteMode) -> Tex {
+        // Outside the matte source it keeps nothing, unless the matte is
+        // inverted: then it keeps all.
+        let inverted = matches!(
+            mode,
+            MatteMode::AlphaInverted | MatteMode::LuminanceInverted
+        );
         let mode = match mode {
             MatteMode::Alpha => 0,
             MatteMode::AlphaInverted => 1,
             MatteMode::Luminance => 2,
             MatteMode::LuminanceInverted => 3,
         };
-        let target = self.acquire();
+        let region = if inverted {
+            src.bounds
+        } else {
+            src.bounds.intersect(matte.bounds)
+        };
+        let target = self.target(region);
         self.pass(
             &self.matte,
             &src.view,
             &matte.view,
             matte_opacity,
             mode,
-            &target.view,
+            &target,
         );
         self.release(src);
         self.release(matte);
@@ -524,35 +616,31 @@ impl Compositor {
     }
 
     /// Adds `src` times `weight` to `sum`, for averaging a motion-blurred
-    /// layer's sub-frames. Both inputs go back to the pool; the result is a
-    /// new texture. Callers add in a fixed order, so the result is the same
+    /// layer's sub-frames. `src` goes back to the pool; the result is `sum`,
+    /// changed under the box of `src` only, where it is `sum` plus nothing
+    /// anywhere else. Callers add in a fixed order, so the result is the same
     /// every time.
-    pub fn accumulate(&mut self, sum: Tex, src: Tex, weight: f32) -> Tex {
-        let target = self.acquire();
-        self.pass(
-            &self.accumulate,
-            &sum.view,
-            &src.view,
-            weight,
-            0,
-            &target.view,
-        );
-        self.release(sum);
+    pub fn accumulate(&mut self, mut sum: Tex, src: Tex, weight: f32) -> Tex {
+        self.update(&mut sum, src.bounds, |c, sum, temp| {
+            c.pass(&c.accumulate, &sum.view, &src.view, weight, 0, temp);
+        });
+        sum.bounds = sum.bounds.union(src.bounds);
         self.release(src);
-        target
+        sum
     }
 
     /// Composites `above` over `below` (normal blend, full opacity) into a new
     /// texture. Neither input is released.
     pub fn over(&mut self, below: &Tex, above: &Tex) -> Tex {
-        let target = self.acquire();
-        self.pass(&self.blend, &below.view, &above.view, 1.0, 0, &target.view);
+        let target = self.target(below.bounds.union(above.bounds));
+        self.pass(&self.blend, &below.view, &above.view, 1.0, 0, &target);
         target
     }
 
     /// Runs a layer's effects, in order, on its own texture before it is
     /// blended. Each effect should read `src`, draw into a texture from
-    /// `acquire`, release `src` and return the new one.
+    /// `target`, release `src` and return the new one, whose bounds are
+    /// where the effect can make it non-zero.
     ///
     /// `backdrop` is the canvas as it is behind the layer; it is `Some`
     /// whenever the effects include a backdrop blur. `coverage` is a texture
@@ -578,17 +666,7 @@ impl Compositor {
         for effect in effects {
             match *effect {
                 ResolvedEffect::Blur { radius } if radius >= blur::MIN_RADIUS => {
-                    let dst = self.acquire();
-                    self.blur.run(
-                        &self.device,
-                        &self.queue,
-                        &src.view,
-                        &dst.view,
-                        (self.width, self.height),
-                        radius,
-                    );
-                    self.release(src);
-                    src = dst;
+                    src = self.blur_layer(src, radius);
                 }
                 ResolvedEffect::Blur { .. } => {}
                 ResolvedEffect::BackdropBlur { radius } if radius >= blur::MIN_RADIUS => {
@@ -642,6 +720,29 @@ impl Compositor {
         src
     }
 
+    /// Blurs `src`, which gains a halo up to the blur's reach. `src` goes
+    /// back to the pool; the result is a new texture.
+    fn blur_layer(&mut self, src: Tex, radius: f32) -> Tex {
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let size = (self.width, self.height);
+        let reach = Blur::reach(size, radius, src.bounds);
+        let dst = self.target(reach);
+        self.blur.run(
+            &self.device,
+            &self.queue,
+            &src.view,
+            &dst.view,
+            size,
+            radius,
+            src.bounds,
+            dst.bounds,
+        );
+        self.release(src);
+        dst
+    }
+
     /// Puts the blurred `backdrop` under `src`, kept to where `coverage`'s
     /// alpha is (`src`'s own alpha if none). `src` goes back to the pool; the
     /// result is a new texture.
@@ -652,7 +753,14 @@ impl Compositor {
         backdrop: &Tex,
         coverage: Option<&Tex>,
     ) -> Tex {
-        let blurred = self.acquire();
+        // The blurred backdrop is kept to the box of what keeps it, and
+        // is only worked out there.
+        let frost = coverage.map_or(src.bounds, |t| t.bounds);
+        if frost.is_empty() {
+            // Nothing of it is kept: `src` over nothing is `src`.
+            return src;
+        }
+        let blurred = self.target(frost);
         let size = (self.width, self.height);
         self.blur.run(
             &self.device,
@@ -661,12 +769,14 @@ impl Compositor {
             &blurred.view,
             size,
             radius,
+            backdrop.bounds,
+            blurred.bounds,
         );
         // The matte pass with opacity 1 and alpha mode multiplies its first
         // input by the alpha of its second.
-        let frosted = self.acquire();
+        let frosted = self.target(frost);
         let coverage = coverage.map_or(&src.view, |t| &t.view);
-        self.pass(&self.matte, &blurred.view, coverage, 1.0, 0, &frosted.view);
+        self.pass(&self.matte, &blurred.view, coverage, 1.0, 0, &frosted);
         self.release(blurred);
         self.blend(frosted, src, 1.0, BlendMode::Normal)
     }
@@ -674,11 +784,11 @@ impl Compositor {
     /// Draws a halo under `src`: a blurred copy of it, tinted if asked. `src`
     /// goes back to the pool; the result is a new texture.
     fn glow(&mut self, src: Tex, glow: &ResolvedGlow) -> Tex {
-        if glow.radius < blur::MIN_RADIUS || glow.intensity <= 0.0 {
+        if glow.radius < blur::MIN_RADIUS || glow.intensity <= 0.0 || src.bounds.is_empty() {
             return src;
         }
-        let halo = self.acquire();
         let size = (self.width, self.height);
+        let halo = self.target(Blur::reach(size, glow.radius, src.bounds));
         self.blur.run(
             &self.device,
             &self.queue,
@@ -686,14 +796,16 @@ impl Compositor {
             &halo.view,
             size,
             glow.radius,
+            src.bounds,
+            halo.bounds,
         );
-        let target = self.acquire();
+        let target = self.target(src.bounds.union(halo.bounds));
         self.run_pass(
             &self.glow,
             &src.view,
             &halo.view,
             &floats(&glow_values(glow)),
-            &target.view,
+            &target,
         );
         self.release(halo);
         self.release(src);
@@ -704,15 +816,13 @@ impl Compositor {
     /// `offset` pixels away, blue the same distance the other way. `src` goes
     /// back to the pool; the result is a new texture.
     fn chromatic_aberration(&mut self, src: Tex, offset: [f32; 2]) -> Tex {
-        let target = self.acquire();
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let (dx, dy) = bounds::aberration_growth(offset);
+        let target = self.target(src.bounds.grow(dx, dy));
         let params = floats(&[offset[0], offset[1], 0.0, 0.0]);
-        self.run_pass(
-            &self.aberration,
-            &src.view,
-            &src.view,
-            &params,
-            &target.view,
-        );
+        self.run_pass(&self.aberration, &src.view, &src.view, &params, &target);
         self.release(src);
         target
     }
@@ -720,13 +830,16 @@ impl Compositor {
     /// Runs a colour filter over `src` in one pass. `src` goes back to the
     /// pool; the result is a new texture.
     fn color_matrix(&mut self, src: Tex, matrix: &ColorMatrix) -> Tex {
-        let target = self.acquire();
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let target = self.target(src.bounds);
         self.run_pass(
             &self.color,
             &src.view,
             &src.view,
             &floats(&matrix_values(matrix)),
-            &target.view,
+            &target,
         );
         self.release(src);
         target
@@ -735,13 +848,16 @@ impl Compositor {
     /// Recolours `src` by luminance in one pass. `src` goes back to the pool;
     /// the result is a new texture.
     fn gradient_map(&mut self, src: Tex, map: &ResolvedGradientMap) -> Tex {
-        let target = self.acquire();
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let target = self.target(src.bounds);
         self.run_pass(
             &self.gradient_map,
             &src.view,
             &src.view,
             &floats(&gradient_map_values(map)),
-            &target.view,
+            &target,
         );
         self.release(src);
         target
@@ -750,13 +866,16 @@ impl Compositor {
     /// Adds seeded grain to `src` in one pass. `src` goes back to the pool;
     /// the result is a new texture.
     fn grain(&mut self, src: Tex, grain: &ResolvedGrain) -> Tex {
-        let target = self.acquire();
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let target = self.target(src.bounds);
         self.run_pass(
             &self.grain,
             &src.view,
             &src.view,
             &grain_values(grain, self.margin),
-            &target.view,
+            &target,
         );
         self.release(src);
         target
@@ -765,13 +884,16 @@ impl Compositor {
     /// Quantises `src` to a few levels per channel in one pass. `src` goes
     /// back to the pool; the result is a new texture.
     fn dither(&mut self, src: Tex, dither: &ResolvedDither) -> Tex {
-        let target = self.acquire();
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let target = self.target(src.bounds);
         self.run_pass(
             &self.dither,
             &src.view,
             &src.view,
             &dither_values(dither, self.margin),
-            &target.view,
+            &target,
         );
         self.release(src);
         target
@@ -781,12 +903,19 @@ impl Compositor {
     /// space (`layer_matrix` takes that to texels). `src` goes back to the
     /// pool; the result is a new texture.
     fn halftone(&mut self, src: Tex, layer_matrix: Affine, halftone: &ResolvedHalftone) -> Tex {
-        let target = self.acquire();
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let region = match bounds::halftone_growth(halftone.size, layer_matrix) {
+            Some(g) => src.bounds.grow(g, g),
+            None => self.whole(),
+        };
+        let target = self.target(region);
         self.run_filtered_pass(
             &self.halftone,
             &src.view,
             &floats(&halftone_values(halftone, layer_matrix)),
-            &target.view,
+            &target,
         );
         self.release(src);
         target
@@ -802,13 +931,16 @@ impl Compositor {
         layer_box: Option<Rect>,
         dots: &ResolvedDotMatrix,
     ) -> Tex {
-        let target = self.acquire();
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let target = self.target(src.bounds);
         self.run_pass(
             &self.dot_matrix,
             &src.view,
             &src.view,
             &dot_matrix_values(dots, layer_matrix, layer_box),
-            &target.view,
+            &target,
         );
         self.release(src);
         target
@@ -835,7 +967,7 @@ impl Compositor {
         }
         match warp::corner_pin_homography(b, points).and_then(|h| warp::in_texels(layer_matrix, h))
         {
-            Some(h) => self.warp(src, h.inverse()),
+            Some(h) => self.warp(src, h),
             None => {
                 self.release(src);
                 self.filled([0.0; 4])
@@ -843,16 +975,20 @@ impl Compositor {
         }
     }
 
-    /// Moves `src` by the homography whose inverse is `inverse` (see
+    /// Moves `src` by the homography `h` of texels (see
     /// `shaders/warp.wgsl`). `src` goes back to the pool; the result is a new
     /// texture.
-    pub fn warp(&mut self, src: Tex, inverse: DMat3) -> Tex {
-        let target = self.acquire();
+    pub fn warp(&mut self, src: Tex, h: DMat3) -> Tex {
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let region = bounds::warped(h, src.bounds).unwrap_or(self.whole());
+        let target = self.target(region);
         self.run_filtered_pass(
             &self.warp,
             &src.view,
-            &floats(&warp_values(inverse)),
-            &target.view,
+            &floats(&warp_values(h.inverse())),
+            &target,
         );
         self.release(src);
         target
@@ -862,14 +998,21 @@ impl Compositor {
     /// (`layer_matrix` takes that to texels). `src` goes back to the pool; the
     /// result is a new texture.
     fn displace(&mut self, src: Tex, layer_matrix: Affine, displace: &ResolvedDisplace) -> Tex {
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let region = match bounds::displace_growth(displace.scale, layer_matrix) {
+            Some(g) => src.bounds.grow(g, g),
+            None => self.whole(),
+        };
         let key = self.turbulence_tables(displace.turbulence.seed);
-        let target = self.acquire();
+        let target = self.target(region);
         self.run_filtered_pass_with(
             &self.displace,
             &src.view,
             &displace_values(displace, layer_matrix),
             Some(&self.turbulence_tables[&key]),
-            &target.view,
+            &target,
         );
         self.release(src);
         target
@@ -887,14 +1030,14 @@ impl Compositor {
         channels: NoiseChannels,
     ) -> Tex {
         let key = self.turbulence_tables(turbulence.seed);
-        let target = self.acquire();
+        let target = self.target(coverage.bounds);
         self.run_pass_with(
             &self.noise,
             &coverage.view,
             &coverage.view,
             &noise_values(turbulence, channels, layer_matrix),
             Some(&self.turbulence_tables[&key]),
-            &target.view,
+            &target,
         );
         self.release(coverage);
         target
@@ -904,7 +1047,7 @@ impl Compositor {
     /// `mesh::tessellate`) into a new texture. The triangles are drawn with
     /// multisampling, so the mesh's outer edge is anti-aliased.
     pub fn mesh_gradient(&mut self, vertices: &[mesh::Vertex]) -> Tex {
-        let target = self.acquire();
+        let mut target = self.acquire();
         if self.mesh_samples.is_none() {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("mesh samples"),
@@ -921,7 +1064,11 @@ impl Compositor {
                 view_formats: &[],
             });
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            self.mesh_samples = Some(Tex { texture, view });
+            self.mesh_samples = Some(Tex {
+                texture,
+                view,
+                bounds: PixelRect::EMPTY,
+            });
         }
         let samples = self.mesh_samples.as_ref().expect("made above");
         let buffer = self
@@ -953,6 +1100,9 @@ impl Compositor {
             pass.draw(0..vertices.len() as u32, 0..1);
         }
         self.queue.submit([encoder.finish()]);
+        // Nothing is drawn outside the triangles, and a pixel they touch
+        // only partly is inside the box of their corners grown by a pixel.
+        target.bounds = mesh_bounds(vertices).intersect(self.whole());
         target
     }
 
@@ -985,10 +1135,10 @@ impl Compositor {
     /// `src` goes back to the pool; the result is a new texture. A table the
     /// compositor was not given at creation is skipped.
     fn lut(&mut self, src: Tex, key: &str, amount: f32) -> Tex {
-        if !self.luts.contains_key(key) {
+        if !self.luts.contains_key(key) || src.bounds.is_empty() {
             return src;
         }
-        let target = self.acquire();
+        let target = self.target(src.bounds);
         let lut = &self.luts[key];
         let [rx, ry, rz] = lut.domain_min;
         let [sx, sy, sz] = lut.domain_max;
@@ -1018,7 +1168,7 @@ impl Compositor {
                 },
             ],
         });
-        self.draw(&self.lut, &bind_group, &target.view);
+        self.draw(&self.lut, &bind_group, &target);
         self.release(src);
         target
     }
@@ -1026,11 +1176,15 @@ impl Compositor {
     /// Runs a scene's own fragment shader over `src`. `src` goes back to the
     /// pool; the result is a new texture. A shader the compositor was not
     /// given at creation is skipped.
+    ///
+    /// The shader may paint anywhere (`padding` only sizes the margin), even
+    /// where `src` is transparent, so it runs over the whole texture and
+    /// its result is bounded by nothing.
     fn custom_shader(&mut self, src: Tex, shader: &ResolvedShader) -> Tex {
         if !self.shaders.contains_key(&shader.source) {
             return src;
         }
-        let target = self.acquire();
+        let target = self.target(self.whole());
         let pipeline = &self.shaders[&shader.source];
         // `Globals` in `shader.rs`: the canvas, frame, time and margin.
         let globals = floats(&[
@@ -1079,7 +1233,7 @@ impl Compositor {
                 },
             ],
         });
-        self.draw(pipeline, &bind_group, &target.view);
+        self.draw(pipeline, &bind_group, &target);
         self.release(src);
         target
     }
@@ -1092,14 +1246,34 @@ impl Compositor {
     /// shadow comes from the alpha inverted, so the spread there shrinks the
     /// layer's opaque area instead of growing it.
     fn shadow(&mut self, src: Tex, shadow: &ResolvedShadow, inset: bool) -> Tex {
+        if src.bounds.is_empty() {
+            return src;
+        }
         let spread = if inset { -shadow.spread } else { shadow.spread };
-        let alpha = self.shadow_alpha(&src, spread, shadow.blur, inset);
+        // The shadow of a drop shadow is wherever it is non-zero. An inset
+        // shadow is only seen inside the layer, where the shadow alpha is
+        // read around the layer by the offset.
+        let wanted = if inset {
+            bounds::shadow_source(src.bounds, shadow.x, shadow.y)
+        } else {
+            self.whole()
+        };
+        let alpha = self.shadow_alpha(&src, spread, shadow.blur, inset, wanted);
+        let alpha_bounds = alpha.as_ref().map_or(src.bounds, |t| t.bounds);
         let [r, g, b, a] = shadow.color.linear_premultiplied();
         let params = floats(&[
             0.0, 0.0, 0.0, 0.0, shadow.x, shadow.y, 0.0, 0.0, r as f32, g as f32, b as f32,
             a as f32,
         ]);
-        let target = self.acquire();
+        // Outside the layer an inset shadow is nothing (it is multiplied by
+        // the layer's alpha), and a drop shadow is the layer and its shadow.
+        let region = if inset {
+            src.bounds
+        } else {
+            src.bounds
+                .union(bounds::shadow_cast(alpha_bounds, shadow.x, shadow.y))
+        };
+        let target = self.target(region);
         let pipeline = if inset {
             &self.inset_shadow
         } else {
@@ -1107,7 +1281,7 @@ impl Compositor {
         };
         // With no spread, inversion or blur the shadow is just `src`'s alpha.
         let alpha_view = alpha.as_ref().map_or(&src.view, |t| &t.view);
-        self.run_pass(pipeline, &src.view, alpha_view, &params, &target.view);
+        self.run_pass(pipeline, &src.view, alpha_view, &params, &target);
         if let Some(alpha) = alpha {
             self.release(alpha);
         }
@@ -1119,28 +1293,49 @@ impl Compositor {
     /// inverted if asked, then blurred, in the alpha channel of a new
     /// texture. `None` when none of that changes anything: the alpha of
     /// `src` itself is what is wanted.
-    fn shadow_alpha(&mut self, src: &Tex, spread: f32, blur: f32, invert: bool) -> Option<Tex> {
-        let blurred = blur >= blur::MIN_RADIUS;
+    ///
+    /// A texture that is not inverted is right everywhere, and its bounds
+    /// are where it is non-zero. The inverted alpha is 1 all over the
+    /// texture but where the layer is, so that one is only worked out in
+    /// `wanted` (and what the passes before it must read to give that), which
+    /// is also its bounds. `shadow_plan` says which box each pass draws.
+    fn shadow_alpha(
+        &mut self,
+        src: &Tex,
+        spread: f32,
+        blur: f32,
+        invert: bool,
+        wanted: PixelRect,
+    ) -> Option<Tex> {
+        let size = (self.width, self.height);
+        let plan = shadow_plan(size, src.bounds, spread, blur, invert, wanted);
         let mut current: Option<Tex> = None;
-        if spread != 0.0 {
-            let horizontal = self.acquire();
-            self.spread_pass(&src.view, spread, [1.0, 0.0], false, &horizontal.view);
+        if let Some(region) = plan.horizontal {
+            let horizontal = self.target(region);
+            self.spread_pass(&src.view, spread, [1.0, 0.0], false, &horizontal);
             current = Some(horizontal);
         }
-        if spread != 0.0 || invert {
-            let target = self.acquire();
+        if let Some(region) = plan.vertical {
+            let target = self.target(region);
             let input = current.as_ref().map_or(&src.view, |t| &t.view);
-            self.spread_pass(input, spread, [0.0, 1.0], invert, &target.view);
+            self.spread_pass(input, spread, [0.0, 1.0], invert, &target);
             if let Some(done) = current.replace(target) {
                 self.release(done);
             }
         }
-        if blurred {
-            let target = self.acquire();
-            let input = current.as_ref().map_or(&src.view, |t| &t.view);
-            let size = (self.width, self.height);
-            self.blur
-                .run_shadow(&self.device, &self.queue, input, &target.view, size, blur);
+        if let Some((input, output)) = plan.blur {
+            let target = self.target(output);
+            let input_view = current.as_ref().map_or(&src.view, |t| &t.view);
+            self.blur.run_shadow(
+                &self.device,
+                &self.queue,
+                input_view,
+                &target.view,
+                size,
+                blur,
+                input,
+                target.bounds,
+            );
             if let Some(done) = current.replace(target) {
                 self.release(done);
             }
@@ -1155,7 +1350,7 @@ impl Compositor {
         spread: f32,
         axis: [f32; 2],
         invert: bool,
-        target: &wgpu::TextureView,
+        target: &Tex,
     ) {
         let params = floats(&[
             spread,
@@ -1178,7 +1373,7 @@ impl Compositor {
     /// RGBA8 with straight alpha.
     pub fn read_rgba8(&mut self, image: &Tex) -> Result<Vec<u8>> {
         let (canvas_width, canvas_height) = self.canvas;
-        let target = self.device.create_texture(&wgpu::TextureDescriptor {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("readback"),
             size: wgpu::Extent3d {
                 width: self.width,
@@ -1192,8 +1387,12 @@ impl Compositor {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
-        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
-        self.pass(&self.encode, &image.view, &image.view, 0.0, 0, &target_view);
+        let target = Tex {
+            view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            texture,
+            bounds: self.whole(),
+        };
+        self.pass(&self.encode, &image.view, &image.view, 0.0, 0, &target);
 
         let row_bytes = canvas_width * 4;
         let padded_row = row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
@@ -1205,7 +1404,7 @@ impl Compositor {
         });
         let mut encoder = self.device.create_command_encoder(&Default::default());
         // Only the canvas, which sits in the middle of the margin.
-        let mut source = target.as_image_copy();
+        let mut source = target.texture.as_image_copy();
         source.origin = wgpu::Origin3d {
             x: self.margin,
             y: self.margin,
@@ -1253,7 +1452,8 @@ impl Compositor {
         Ok(pixels)
     }
 
-    /// One full-screen pass over `target` with `a` and `b` as inputs.
+    /// One full-screen pass over `target` with `a` and `b` as inputs. Only
+    /// the target's bounds are drawn (see `draw_with`).
     fn pass(
         &self,
         pipeline: &wgpu::RenderPipeline,
@@ -1261,7 +1461,7 @@ impl Compositor {
         b: &wgpu::TextureView,
         opacity: f32,
         mode: u32,
-        target: &wgpu::TextureView,
+        target: &Tex,
     ) {
         let mut bytes = [0u8; 16];
         bytes[0..4].copy_from_slice(&opacity.to_le_bytes());
@@ -1276,7 +1476,7 @@ impl Compositor {
         a: &wgpu::TextureView,
         b: &wgpu::TextureView,
         params: &[u8],
-        target: &wgpu::TextureView,
+        target: &Tex,
     ) {
         self.run_pass_with(pipeline, a, b, params, None, target);
     }
@@ -1290,7 +1490,7 @@ impl Compositor {
         b: &wgpu::TextureView,
         params: &[u8],
         extra: Option<&wgpu::BindGroup>,
-        target: &wgpu::TextureView,
+        target: &Tex,
     ) {
         let uniform = self
             .device
@@ -1327,7 +1527,7 @@ impl Compositor {
         pipeline: &wgpu::RenderPipeline,
         input: &wgpu::TextureView,
         params: &[u8],
-        target: &wgpu::TextureView,
+        target: &Tex,
     ) {
         self.run_filtered_pass_with(pipeline, input, params, None, target);
     }
@@ -1340,7 +1540,7 @@ impl Compositor {
         input: &wgpu::TextureView,
         params: &[u8],
         extra: Option<&wgpu::BindGroup>,
-        target: &wgpu::TextureView,
+        target: &Tex,
     ) {
         let uniform = self
             .device
@@ -1370,31 +1570,34 @@ impl Compositor {
         self.draw_with(pipeline, &bind_group, extra, target);
     }
 
-    /// One full-screen triangle with `bind_group`, written over all of
-    /// `target`.
-    fn draw(
-        &self,
-        pipeline: &wgpu::RenderPipeline,
-        bind_group: &wgpu::BindGroup,
-        target: &wgpu::TextureView,
-    ) {
+    /// One full-screen triangle with `bind_group`, written over the bounds
+    /// of `target`.
+    fn draw(&self, pipeline: &wgpu::RenderPipeline, bind_group: &wgpu::BindGroup, target: &Tex) {
         self.draw_with(pipeline, bind_group, None, target);
     }
 
     /// Like `draw`, with `extra` set as bind group 1 when given.
+    ///
+    /// The whole of `target` is cleared first and then only its bounds are
+    /// drawn, by a scissor rectangle: it keeps the pixels whose centres are
+    /// inside it (`x0 <= x < x1`), so the first and last row and column of
+    /// the box are drawn and the pixel just past them is not. What is not
+    /// drawn is transparent, which is what the full pass writes outside the
+    /// bounds.
     fn draw_with(
         &self,
         pipeline: &wgpu::RenderPipeline,
         bind_group: &wgpu::BindGroup,
         extra: Option<&wgpu::BindGroup>,
-        target: &wgpu::TextureView,
+        target: &Tex,
     ) {
+        let region = target.bounds.intersect(self.whole());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("composite"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
+                    view: &target.view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1404,12 +1607,20 @@ impl Compositor {
                 })],
                 ..Default::default()
             });
-            pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, bind_group, &[]);
-            if let Some(extra) = extra {
-                pass.set_bind_group(1, extra, &[]);
+            if !region.is_empty() {
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bind_group, &[]);
+                if let Some(extra) = extra {
+                    pass.set_bind_group(1, extra, &[]);
+                }
+                pass.set_scissor_rect(
+                    region.x0 as u32,
+                    region.y0 as u32,
+                    region.width(),
+                    region.height(),
+                );
+                pass.draw(0..3, 0..1);
             }
-            pass.draw(0..3, 0..1);
         }
         self.queue.submit([encoder.finish()]);
     }
@@ -1714,7 +1925,8 @@ fn shader_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
-/// A linear texture of any size that can be drawn to and read.
+/// A linear texture of any size that can be drawn to, read and copied, with
+/// empty bounds.
 pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("layer"),
@@ -1727,11 +1939,18 @@ pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: LINEAR_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    Tex { texture, view }
+    Tex {
+        texture,
+        view,
+        bounds: PixelRect::EMPTY,
+    }
 }
 
 /// Grain as `shaders/grain.wgsl` reads it: four floats (amount, size,
@@ -2050,6 +2269,108 @@ fn aberration_offset(amount: f32, angle: f32) -> [f32; 2] {
     [amount * cos, amount * sin]
 }
 
+/// The first of the non-separable blend modes (hue, saturation, color,
+/// luminosity), whose `blend_fn` divides by quantities that are zero for
+/// some inputs: see `Compositor::blend`.
+const FIRST_NON_SEPARABLE_MODE: u32 = 12;
+
+/// The boxes that the passes of `Compositor::shadow_alpha` draw, in order:
+/// the spread along x, the spread along y (which also inverts), and the blur
+/// with the box its input can be non-zero in and the box it draws. A pass
+/// that does not run is `None`.
+#[derive(Debug, PartialEq)]
+struct ShadowPlan {
+    horizontal: Option<PixelRect>,
+    vertical: Option<PixelRect>,
+    blur: Option<(PixelRect, PixelRect)>,
+}
+
+/// Which box each pass of a shadow's alpha draws, for a layer that is
+/// transparent outside `src`, and, if `invert`, the pixels `wanted` of the
+/// result (see `Compositor::shadow_alpha`).
+///
+/// Not inverted, the alpha is zero where the layer is far away, so each pass
+/// draws the box its input is non-zero in, grown by what it reads when it
+/// spreads outwards (a pass that shrinks, or the blur, is non-zero where its
+/// input is or by the blur's reach). Inverted it is 1 far from the layer, so
+/// the passes are worked out backwards from `wanted`: the blur draws it, the
+/// pass before draws what the blur reads of it (`Blur::source_for`), and the
+/// one before that what that reads of its input, a spread either side along
+/// its axis more.
+fn shadow_plan(
+    size: (u32, u32),
+    src: PixelRect,
+    spread: f32,
+    blur: f32,
+    invert: bool,
+    wanted: PixelRect,
+) -> ShadowPlan {
+    let whole = PixelRect::whole(size.0, size.1);
+    let blurred = blur >= blur::MIN_RADIUS;
+    // How many pixels either side a spread pass reads along its axis.
+    let reach = spread.abs().ceil() as i32;
+    let needed = match (invert, blurred) {
+        (false, _) => PixelRect::EMPTY,
+        (true, true) => Blur::source_for(size, blur, true, wanted),
+        (true, false) => wanted,
+    }
+    .intersect(whole);
+    let horizontal = (spread != 0.0).then(|| {
+        match (invert, spread > 0.0) {
+            (true, _) => needed.grow(0, reach),
+            (false, true) => src.grow(reach, 0),
+            (false, false) => src,
+        }
+        .intersect(whole)
+    });
+    let from_horizontal = horizontal.unwrap_or(src);
+    let vertical = (spread != 0.0 || invert).then(|| {
+        match (invert, spread > 0.0) {
+            (true, _) => needed,
+            (false, true) => from_horizontal.grow(0, reach),
+            (false, false) => from_horizontal,
+        }
+        .intersect(whole)
+    });
+    let from_vertical = vertical.unwrap_or(from_horizontal);
+    let blur = blurred.then(|| {
+        if invert {
+            // The inverted alpha is non-zero everywhere.
+            (whole, wanted.intersect(whole))
+        } else {
+            (from_vertical, Blur::shadow_reach(size, blur, from_vertical))
+        }
+    });
+    ShadowPlan {
+        horizontal,
+        vertical,
+        blur,
+    }
+}
+
+/// The pixels a mesh's `vertices` can touch: their box, and a pixel more
+/// for the multisampled edge. All of the texture if a position is not a
+/// number.
+fn mesh_bounds(vertices: &[mesh::Vertex]) -> PixelRect {
+    let mut corners: Option<Rect> = None;
+    for v in vertices {
+        let p = vello::kurbo::Point::new(f64::from(v.position[0]), f64::from(v.position[1]));
+        corners = Some(match corners {
+            Some(r) => r.union_pt(p),
+            None => Rect::from_points(p, p),
+        });
+    }
+    let Some(corners) = corners else {
+        return PixelRect::EMPTY;
+    };
+    bounds::pixel_rect(corners.inflate(1.0, 1.0)).unwrap_or(PixelRect::new(
+        i32::MIN / 4,
+        i32::MIN / 4,
+        i32::MAX / 4,
+        i32::MAX / 4,
+    ))
+}
+
 /// The number the shader's `blend_fn` switches on.
 fn mode_index(mode: BlendMode) -> u32 {
     match mode {
@@ -2075,6 +2396,7 @@ fn mode_index(mode: BlendMode) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blur::tests::{Axis, blur_axis};
     use crate::color::Color;
     use crate::hash::{cell_hash, unit_float};
 
@@ -2661,5 +2983,234 @@ mod tests {
                 7.0, 8.0, 9.0, 0.0,
             ]
         );
+    }
+
+    // The alpha chain of a shadow in one dimension: the spread along x, the
+    // spread along y with the inversion, and the blur, each as its shader
+    // works it out (the pass along the other axis leaves a row alone), and
+    // drawing only where `ShadowPlan` says.
+
+    /// `fs_spread` along the row; what is outside it is transparent.
+    fn spread_row(a: &[f64], spread: f32, drawn: &dyn Fn(usize) -> bool) -> Vec<f64> {
+        let grow = spread > 0.0;
+        let radius = f64::from(spread.abs());
+        let whole = radius.floor() as i64;
+        let at = |i: i64| {
+            if i < 0 || i >= a.len() as i64 {
+                0.0
+            } else {
+                a[i as usize]
+            }
+        };
+        let extreme = |x: f64, y: f64| if grow { x.max(y) } else { x.min(y) };
+        (0..a.len())
+            .map(|x| {
+                if !drawn(x) {
+                    return 0.0;
+                }
+                let x = x as i64;
+                let mut v = at(x);
+                for i in 1..=whole {
+                    v = extreme(v, extreme(at(x + i), at(x - i)));
+                }
+                let part = radius - whole as f64;
+                if part > 0.0 {
+                    let next = extreme(at(x + whole + 1), at(x - whole - 1));
+                    v = v * (1.0 - part) + extreme(v, next) * part;
+                }
+                v
+            })
+            .collect()
+    }
+
+    fn keep(a: &[f64], drawn: &dyn Fn(usize) -> bool) -> Vec<f64> {
+        a.iter()
+            .enumerate()
+            .map(|(i, v)| if drawn(i) { *v } else { 0.0 })
+            .collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn shadow_row(
+        size: (u32, u32),
+        src: &[f64],
+        axis: Axis,
+        spread: f32,
+        blur: f32,
+        invert: bool,
+        plan: Option<&ShadowPlan>,
+    ) -> Vec<f64> {
+        let span = |r: PixelRect| match axis {
+            Axis::X => (r.x0, r.x1),
+            Axis::Y => (r.y0, r.y1),
+        };
+        let inside = |r: Option<PixelRect>| {
+            move |t: usize| {
+                r.is_none_or(|r| {
+                    let (lo, hi) = span(r);
+                    (t as i32) >= lo && (t as i32) < hi
+                })
+            }
+        };
+        let mut v = src.to_vec();
+        let pick = |f: fn(&ShadowPlan) -> Option<PixelRect>| plan.and_then(f);
+        if spread != 0.0 {
+            let drawn = inside(pick(|p| p.horizontal));
+            v = match axis {
+                Axis::X => spread_row(&v, spread, &drawn),
+                Axis::Y => keep(&v, &drawn),
+            };
+        }
+        if spread != 0.0 || invert {
+            let drawn = inside(pick(|p| p.vertical));
+            v = match axis {
+                Axis::X => keep(&v, &drawn),
+                Axis::Y => spread_row(&v, spread, &drawn),
+            };
+            if invert {
+                for (t, x) in v.iter_mut().enumerate() {
+                    if drawn(t) {
+                        *x = 1.0 - *x;
+                    }
+                }
+            }
+        }
+        if blur >= blur::MIN_RADIUS {
+            let (input, output) = plan
+                .and_then(|p| p.blur)
+                .unwrap_or((PixelRect::EMPTY, PixelRect::EMPTY));
+            v = blur_axis(size, blur, true, &v, axis, input, output, plan.is_some());
+        }
+        v
+    }
+
+    #[test]
+    fn a_shadows_alpha_drawn_in_its_boxes_is_the_full_alpha_where_it_is_read() {
+        let size = (53u32, 47u32);
+        let whole = PixelRect::whole(size.0, size.1);
+        let src_box = PixelRect::new(20, 15, 31, 30);
+        let mut cases = 0;
+        for spread in [0.0_f32, 2.5, -3.0, 7.0, 1.0, -0.5] {
+            for blur in [0.0_f32, 0.5, 6.0, 20.0] {
+                for invert in [false, true] {
+                    for wanted in [
+                        whole,
+                        PixelRect::new(18, 10, 36, 24),
+                        PixelRect::new(0, 0, 5, 5),
+                        PixelRect::new(45, 40, 53, 47),
+                        PixelRect::new(30, 29, 31, 30),
+                    ] {
+                        if !invert && wanted != whole {
+                            continue;
+                        }
+                        let plan = shadow_plan(size, src_box, spread, blur, invert, wanted);
+                        for axis in [Axis::X, Axis::Y] {
+                            let (len, lo, hi, wlo, whi) = match axis {
+                                Axis::X => (53, src_box.x0, src_box.x1, wanted.x0, wanted.x1),
+                                Axis::Y => (47, src_box.y0, src_box.y1, wanted.y0, wanted.y1),
+                            };
+                            let src: Vec<f64> = (0..len)
+                                .map(|i| {
+                                    if (lo..hi).contains(&i) {
+                                        0.3 + 0.07 * f64::from((i * 7 % 11) as u32)
+                                    } else {
+                                        0.0
+                                    }
+                                })
+                                .collect();
+                            let full = shadow_row(size, &src, axis, spread, blur, invert, None);
+                            let drawn =
+                                shadow_row(size, &src, axis, spread, blur, invert, Some(&plan));
+                            let case = format!(
+                                "spread {spread}, blur {blur}, invert {invert}, wanted {wanted:?}, {axis:?}"
+                            );
+                            for t in wlo.max(0)..whi.min(len) {
+                                let t = t as usize;
+                                assert_eq!(full[t], drawn[t], "{case}: pixel {t}");
+                            }
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 2 * (6 * 4 * (1 + 5)));
+    }
+
+    #[test]
+    fn a_shadows_alpha_is_zero_outside_the_box_the_last_pass_draws() {
+        let size = (53u32, 47u32);
+        let src_box = PixelRect::new(20, 15, 31, 30);
+        for spread in [0.0_f32, 2.5, -3.0, 7.0] {
+            for blur in [0.0_f32, 6.0, 20.0] {
+                if spread == 0.0 && blur == 0.0 {
+                    continue;
+                }
+                let plan =
+                    shadow_plan(size, src_box, spread, blur, false, PixelRect::whole(53, 47));
+                // The box of the texture the plan ends with.
+                let last = match (plan.blur, plan.vertical) {
+                    (Some((_, output)), _) => output,
+                    (None, Some(vertical)) => vertical,
+                    (None, None) => unreachable!(),
+                };
+                for axis in [Axis::X, Axis::Y] {
+                    let (len, lo, hi, a, b) = match axis {
+                        Axis::X => (53, src_box.x0, src_box.x1, last.x0, last.x1),
+                        Axis::Y => (47, src_box.y0, src_box.y1, last.y0, last.y1),
+                    };
+                    let src: Vec<f64> = (0..len)
+                        .map(|i| if (lo..hi).contains(&i) { 1.0 } else { 0.0 })
+                        .collect();
+                    let full = shadow_row(size, &src, axis, spread, blur, false, None);
+                    for (t, v) in full.iter().enumerate() {
+                        if (t as i32) < a || (t as i32) >= b {
+                            assert_eq!(*v, 0.0, "spread {spread}, blur {blur}, {axis:?}: {t}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_shadow_plan_skips_the_passes_that_would_change_nothing() {
+        let size = (100u32, 80u32);
+        let src = PixelRect::new(10, 10, 30, 30);
+        let whole = PixelRect::whole(100, 80);
+        let none = shadow_plan(size, src, 0.0, 0.0, false, whole);
+        assert_eq!(
+            none,
+            ShadowPlan {
+                horizontal: None,
+                vertical: None,
+                blur: None
+            }
+        );
+        // Growing by 2.5 reaches 3 pixels along each axis in turn.
+        let grown = shadow_plan(size, src, 2.5, 0.0, false, whole);
+        assert_eq!(grown.horizontal, Some(PixelRect::new(7, 10, 33, 30)));
+        assert_eq!(grown.vertical, Some(PixelRect::new(7, 7, 33, 33)));
+        assert_eq!(grown.blur, None);
+        // Shrinking stays inside the layer.
+        let shrunk = shadow_plan(size, src, -2.5, 0.0, false, whole);
+        assert_eq!(shrunk.horizontal, Some(src));
+        assert_eq!(shrunk.vertical, Some(src));
+        // The inverted alpha with nothing else is a pass over what is wanted.
+        let want = PixelRect::new(5, 5, 20, 20);
+        let inverted = shadow_plan(size, src, 0.0, 0.0, true, want);
+        assert_eq!(inverted.horizontal, None);
+        assert_eq!(inverted.vertical, Some(want));
+        assert_eq!(inverted.blur, None);
+        // And with a blur the pass before it draws what the blur reads, which
+        // is more than is wanted, and the blur's input is everywhere.
+        let blurred = shadow_plan(size, src, 0.0, 6.0, true, want);
+        let (input, output) = blurred.blur.unwrap();
+        assert_eq!((input, output), (whole, want));
+        let read = blurred.vertical.unwrap();
+        assert!(read.x0 <= 0 && read.y0 <= 0 && read.x1 > 20 + 10 && read.y1 > 20 + 10);
+        // The box is cut to the texture.
+        let off = shadow_plan(size, src, 0.0, 0.0, true, PixelRect::new(-50, -50, 400, 20));
+        assert_eq!(off.vertical, Some(PixelRect::new(0, 0, 100, 20)));
     }
 }
