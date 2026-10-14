@@ -9,8 +9,8 @@ Nothing is built yet. Before doing anything, read:
 - `docs/RESEARCH.md`: competitor scan, the papercut-vs-Blitz audit, the reference video breakdown.
 - `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.
 
-Start with Phase 0 in `HANDOFF.md` §8: test fframes against the reference and a papercut scene, then decide whether to
-build on fframes or own the engine. Don't write engine code before that decision.
+Decided 2026-10-14: own the engine, built from scratch (`HANDOFF.md` §3). fframes is a reference only. Next is
+Phase 1 (`HANDOFF.md` §8).
 
 Related code elsewhere on this machine:
 

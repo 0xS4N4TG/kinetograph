@@ -50,8 +50,9 @@ Kinetograph's differences, ranked by how defensible they are:
 4. **Compositor built-ins**: blend modes, track mattes and masks, 2.5D camera, motion blur and an effect graph as
    first-class primitives, not hand-written shaders.
 
-Open question carried forward: could points 1–3 sit on top of fframes (a React reconciler emitting the SVG trees
-fframes renders) instead of on a new engine? Point 4 is the main reason to own the compositor. Phase 0 decides.
+Decided 2026-10-14: own the engine, built from scratch, not on top of fframes. Point 4 needs a compositor fframes'
+SVG-per-frame model doesn't have. fframes stays a reference for CLI design and pipeline ideas (no code copied).
+Phase 0's fframes runs are recorded in `phase0/` as evidence, not as a gate.
 
 ## 4. Architecture
 
@@ -181,6 +182,7 @@ Ship an agent skill alongside (fframes does `npx skills add https://fframes.stud
    3D card stack + "you … create" segment, ~21–25 s) and one papercut scene (ep 13 S04, see RESEARCH.md §2).
    Record iterations, tokens, wall time, and where it hit walls (3D layers, motion blur, blend modes, synth).
 2. Read fframes' `render_frame` path and backends. Decide: build the TS layer on top of fframes, or own the engine.
+   **Decided 2026-10-14: own the engine (see §3).**
 3. Benchmark baseline: time the user's Remotion render of the same papercut scene (ms/frame, total) with
    `lib/tools/render.sh` in the papercut project.
 
