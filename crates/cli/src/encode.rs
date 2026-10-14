@@ -104,6 +104,11 @@ pub fn fps_rational(fps: f64) -> Result<(i32, i32), String> {
         return Ok((ntsc as i32 * 1000, 1001));
     }
     let (mut num, mut den) = ((fps * 1000.0).round() as i64, 1000_i64);
+    if num == 0 {
+        return Err(format!(
+            "fps {fps} is too small: it reads as 0 to three decimals"
+        ));
+    }
     let (mut a, mut b) = (num, den);
     while b != 0 {
         (a, b) = (b, a % b);
@@ -360,6 +365,10 @@ mod tests {
         for fps in [0.0, -30.0, f64::NAN, f64::INFINITY, 1e9] {
             assert!(fps_rational(fps).is_err(), "{fps}");
         }
+        // Positive, but 0 to three decimals: no time base to give ffmpeg.
+        let msg = fps_rational(0.0004).unwrap_err();
+        assert!(msg.contains("too small"), "{msg}");
+        assert_eq!(fps_rational(0.001), Ok((1, 1000)));
     }
 
     #[test]
