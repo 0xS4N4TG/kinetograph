@@ -264,6 +264,66 @@
      ]
     }
    ]
+  },
+  {
+   "id": "framed",
+   "type": "group",
+   "transform": {
+    "x": 398,
+    "y": 36,
+    "rotation": -10,
+    "scale": 0.9
+   },
+   "children": [
+    {
+     "id": "pinned",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 70,
+      "height": 50
+     },
+     "fill": {
+      "type": "linear",
+      "x0": 0,
+      "y0": 0,
+      "x1": 70,
+      "y1": 0,
+      "stops": [
+       {
+        "offset": 0,
+        "color": "#118ab2"
+       },
+       {
+        "offset": 1,
+        "color": "#ef476f"
+       }
+      ]
+     },
+     "effects": [
+      {
+       "type": "cornerPin",
+       "topRight": [
+        70,
+        [
+         {
+          "frame": 0,
+          "value": 0
+         },
+         {
+          "frame": 30,
+          "value": 14
+         }
+        ]
+       ],
+       "bottomLeft": [
+        10,
+        50
+       ]
+      }
+     ]
+    }
+   ]
   }
  ]
 }

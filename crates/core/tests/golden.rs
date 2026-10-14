@@ -321,8 +321,10 @@ fn corner_pin_matches_golden() {
     // card hanging off the right and bottom edges with a drop shadow before
     // the pin (so the shadow is pinned with it; the scene has a margin that
     // the warp must account for), a pinned image that is then turned in 3D
-    // under a camera (the two warps compose), and a rectangle whose pins
-    // are exactly its own corners (drawn as if there were no effect).
+    // under a camera (the two warps compose), a pinned rectangle inside a
+    // rotated, scaled group (the pin is in the child's space, through its
+    // parent's matrix), and a rectangle whose pins are exactly its own
+    // corners (drawn as if there were no effect).
     let frame = render_still(scene("tests/scenes/corner-pin.json"), 15).unwrap();
     check("corner-pin", &frame);
 }
