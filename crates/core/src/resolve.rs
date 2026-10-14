@@ -5,10 +5,10 @@ use vello::kurbo::{Affine, Rect};
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
-    BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Geometry, Gradient,
-    GradientGeometry, HalftoneShape, Layer, LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE,
-    MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels, Paint, Scene, Shadow, Stop, Transform,
-    Turbulence, TurbulenceKind,
+    BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Fit, Geometry,
+    Gradient, GradientGeometry, HalftoneShape, ImageLayer, Layer, LayerKind, MAX_DITHER_LEVELS,
+    MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels, Paint, Scene, Shadow,
+    Stop, Transform, Turbulence, TurbulenceKind, Units,
 };
 use crate::turbulence::MAX_OCTAVES;
 use crate::warp;
@@ -361,6 +361,9 @@ pub struct ResolvedGradient {
     /// At least 2 stops, offsets in 0..=1 and never decreasing.
     pub stops: Vec<(f64, Color)>,
     pub extend: Extend,
+    /// Whether the coordinates are pixels of the painted layer or fractions
+    /// of its box.
+    pub units: Units,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -408,8 +411,10 @@ pub enum ResolvedKind {
     },
     Image {
         src: String,
+        /// The box the picture is fitted to.
         width: f64,
         height: f64,
+        fit: Fit,
     },
     Group {
         children: Vec<ResolvedLayer>,
@@ -471,6 +476,7 @@ impl Scene {
             frame,
             fps: self.fps,
         };
+        let resolver = Resolver { scene: self };
         Ok(ResolvedScene {
             width: self.width,
             height: self.height,
@@ -488,129 +494,187 @@ impl Scene {
             layers: self
                 .layers
                 .iter()
-                .map(|l| resolve_layer(l, clock, true))
-                .collect(),
+                .map(|l| resolver.layer(l, clock, true))
+                .collect::<Result<_>>()?,
         })
     }
 }
 
-/// `blur` is whether a motion blur on `layer` or below counts; a sub-frame's
-/// copy is resolved without it.
-fn resolve_layer(layer: &Layer, clock: Clock, blur: bool) -> ResolvedLayer {
-    let f = clock.t;
-    let motion = match &layer.motion_blur {
-        Some(mb) if blur => {
-            let shutter = mb.shutter.at(f).clamp(0.0, MAX_SHUTTER);
-            // A shut shutter is exactly the layer without motion blur.
-            if shutter > 0.0 {
-                // Checked when the scene loaded.
-                motion_times(f, mb.samples as u32, shutter)
-                    .into_iter()
-                    .map(|t| resolve_layer(layer, Clock { t, ..clock }, false))
-                    .collect()
-            } else {
-                Vec::new()
+/// Evaluates the layers of one scene.
+struct Resolver<'a> {
+    scene: &'a Scene,
+}
+
+impl Resolver<'_> {
+    /// The width and height of an image whose layer leaves a side out: the
+    /// file's size, which the scene read when it loaded.
+    fn natural_size(&self, layer: &Layer, src: &str) -> Result<(f64, f64)> {
+        self.scene.asset_sizes.get(src).copied().ok_or_else(|| {
+            Error::Render(format!(
+                "layer {:?}: the size of {src:?} was not read when the scene loaded",
+                layer.id
+            ))
+        })
+    }
+
+    /// `blur` is whether a motion blur on `layer` or below counts; a
+    /// sub-frame's copy is resolved without it.
+    fn layer(&self, layer: &Layer, clock: Clock, blur: bool) -> Result<ResolvedLayer> {
+        let f = clock.t;
+        let motion = match &layer.motion_blur {
+            Some(mb) if blur => {
+                let shutter = mb.shutter.at(f).clamp(0.0, MAX_SHUTTER);
+                // A shut shutter is exactly the layer without motion blur.
+                if shutter > 0.0 {
+                    // Checked when the scene loaded.
+                    motion_times(f, mb.samples as u32, shutter)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, t)| {
+                            // The authoring layer's own copy for this
+                            // sub-frame, when it gave them.
+                            let source = mb
+                                .frames
+                                .as_ref()
+                                .and_then(|frames| frames.get(i))
+                                .unwrap_or(layer);
+                            let mut sub = self.layer(source, Clock { t, ..clock }, false)?;
+                            sub.id.clone_from(&layer.id);
+                            Ok(sub)
+                        })
+                        .collect::<Result<_>>()?
+                } else {
+                    Vec::new()
+                }
             }
-        }
-        _ => Vec::new(),
-    };
-    // The frame's own children are not drawn when the layer has sub-frames.
-    let blur = blur && motion.is_empty();
-    let kind = match &layer.kind {
-        LayerKind::Shape(s) => ResolvedKind::Shape {
-            geometry: match &s.shape {
-                Geometry::Rect { width, height } => ResolvedGeometry::Rect {
-                    width: width.at(f),
-                    height: height.at(f),
+            _ => Vec::new(),
+        };
+        // The frame's own children are not drawn when the layer has sub-frames.
+        let blur = blur && motion.is_empty();
+        let kind = self.kind(layer, clock, blur)?;
+        Ok(ResolvedLayer {
+            id: layer.id.clone(),
+            transform: resolve_transform(&layer.transform, f),
+            opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
+            blend_mode: layer.blend_mode,
+            effects: resolve_effects(&layer.effects, clock),
+            clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
+            mask: layer.mask.as_ref().map(|m| ResolvedMask {
+                gradient: resolve_gradient(&m.gradient, f),
+                mode: m.mode,
+            }),
+            matte: layer.matte.as_ref().map(|m| ResolvedMatte {
+                layer: m.layer.clone(),
+                mode: m.mode,
+            }),
+            kind,
+            motion,
+        })
+    }
+
+    fn kind(&self, layer: &Layer, clock: Clock, blur: bool) -> Result<ResolvedKind> {
+        let f = clock.t;
+        Ok(match &layer.kind {
+            LayerKind::Shape(s) => ResolvedKind::Shape {
+                geometry: match &s.shape {
+                    Geometry::Rect { width, height } => ResolvedGeometry::Rect {
+                        width: width.at(f),
+                        height: height.at(f),
+                    },
+                    Geometry::RoundedRect {
+                        width,
+                        height,
+                        radius,
+                    } => ResolvedGeometry::RoundedRect {
+                        width: width.at(f),
+                        height: height.at(f),
+                        radius: radius.at(f),
+                    },
+                    Geometry::Ellipse { width, height } => ResolvedGeometry::Ellipse {
+                        width: width.at(f),
+                        height: height.at(f),
+                    },
+                    Geometry::Path { d } => ResolvedGeometry::Path { d: d.clone() },
                 },
-                Geometry::RoundedRect {
+                fill: s.fill.as_ref().map(|p| resolve_paint(p, f)),
+                stroke: s.stroke.as_ref().map(|st| (st.color, st.width.at(f))),
+            },
+            LayerKind::Text(t) => ResolvedKind::Text {
+                text: t.text.clone(),
+                font: t.font.clone(),
+                size: t.size.at(f) as f32,
+                color: resolve_paint(&t.color, f),
+                line_height: t.line_height.as_ref().map(|n| n.at(f) as f32),
+                max_width: t.max_width.as_ref().map(|n| n.at(f) as f32),
+            },
+            LayerKind::Image(i) => {
+                let (width, height) = self.image_size(layer, i, f)?;
+                ResolvedKind::Image {
+                    src: i.src.clone(),
                     width,
                     height,
-                    radius,
-                } => ResolvedGeometry::RoundedRect {
-                    width: width.at(f),
-                    height: height.at(f),
-                    radius: radius.at(f),
-                },
-                Geometry::Ellipse { width, height } => ResolvedGeometry::Ellipse {
-                    width: width.at(f),
-                    height: height.at(f),
-                },
-                Geometry::Path { d } => ResolvedGeometry::Path { d: d.clone() },
-            },
-            fill: s.fill.as_ref().map(|p| resolve_paint(p, f)),
-            stroke: s.stroke.as_ref().map(|st| (st.color, st.width.at(f))),
-        },
-        LayerKind::Text(t) => ResolvedKind::Text {
-            text: t.text.clone(),
-            font: t.font.clone(),
-            size: t.size.at(f) as f32,
-            color: resolve_paint(&t.color, f),
-            line_height: t.line_height.as_ref().map(|n| n.at(f) as f32),
-            max_width: t.max_width.as_ref().map(|n| n.at(f) as f32),
-        },
-        LayerKind::Image(i) => ResolvedKind::Image {
-            src: i.src.clone(),
-            width: i.width.at(f),
-            height: i.height.at(f),
-        },
-        LayerKind::Group(g) => ResolvedKind::Group {
-            children: g
-                .children
-                .iter()
-                .map(|c| resolve_layer(c, clock, blur))
-                .collect(),
-            preserve3d: g.preserve3d,
-        },
-        LayerKind::MeshGradient(m) => {
-            let (width, height) = (m.width.at(f), m.height.at(f));
-            let (columns, rows) = (m.columns as usize, m.rows as usize);
-            ResolvedKind::MeshGradient {
-                width,
-                height,
-                columns,
-                rows,
-                points: match &m.points {
-                    Some(points) => points.iter().map(|[x, y]| [x.at(f), y.at(f)]).collect(),
-                    // Evenly spaced over the box, a row at a time.
-                    None => (0..rows)
-                        .flat_map(|j| {
-                            (0..columns).map(move |i| {
-                                [
-                                    width * i as f64 / (columns - 1) as f64,
-                                    height * j as f64 / (rows - 1) as f64,
-                                ]
-                            })
-                        })
-                        .collect(),
-                },
-                colors: m.colors.clone(),
+                    fit: i.fit,
+                }
             }
+            LayerKind::Group(g) => ResolvedKind::Group {
+                children: g
+                    .children
+                    .iter()
+                    .map(|c| self.layer(c, clock, blur))
+                    .collect::<Result<_>>()?,
+                preserve3d: g.preserve3d,
+            },
+            LayerKind::MeshGradient(m) => {
+                let (width, height) = (m.width.at(f), m.height.at(f));
+                let (columns, rows) = (m.columns as usize, m.rows as usize);
+                ResolvedKind::MeshGradient {
+                    width,
+                    height,
+                    columns,
+                    rows,
+                    points: match &m.points {
+                        Some(points) => points.iter().map(|[x, y]| [x.at(f), y.at(f)]).collect(),
+                        // Evenly spaced over the box, a row at a time.
+                        None => (0..rows)
+                            .flat_map(|j| {
+                                (0..columns).map(move |i| {
+                                    [
+                                        width * i as f64 / (columns - 1) as f64,
+                                        height * j as f64 / (rows - 1) as f64,
+                                    ]
+                                })
+                            })
+                            .collect(),
+                    },
+                    colors: m.colors.clone(),
+                }
+            }
+            LayerKind::Noise(n) => ResolvedKind::Noise {
+                width: n.width.at(f),
+                height: n.height.at(f),
+                turbulence: resolve_turbulence(&n.turbulence, f),
+                channels: n.channels,
+            },
+        })
+    }
+
+    /// The box of an image at time `f`: the sides it gives, and for one it
+    /// leaves out the file's size (both left out), or the size that keeps the
+    /// file's aspect ratio (one left out).
+    fn image_size(&self, layer: &Layer, image: &ImageLayer, f: f64) -> Result<(f64, f64)> {
+        let (width, height) = (
+            image.width.as_ref().map(|n| n.at(f)),
+            image.height.as_ref().map(|n| n.at(f)),
+        );
+        if let (Some(width), Some(height)) = (width, height) {
+            return Ok((width, height));
         }
-        LayerKind::Noise(n) => ResolvedKind::Noise {
-            width: n.width.at(f),
-            height: n.height.at(f),
-            turbulence: resolve_turbulence(&n.turbulence, f),
-            channels: n.channels,
-        },
-    };
-    ResolvedLayer {
-        id: layer.id.clone(),
-        transform: resolve_transform(&layer.transform, f),
-        opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
-        blend_mode: layer.blend_mode,
-        effects: resolve_effects(&layer.effects, clock),
-        clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
-        mask: layer.mask.as_ref().map(|m| ResolvedMask {
-            gradient: resolve_gradient(&m.gradient, f),
-            mode: m.mode,
-        }),
-        matte: layer.matte.as_ref().map(|m| ResolvedMatte {
-            layer: m.layer.clone(),
-            mode: m.mode,
-        }),
-        kind,
-        motion,
+        let (natural_width, natural_height) = self.natural_size(layer, &image.src)?;
+        Ok(match (width, height) {
+            (Some(width), None) => (width, width * natural_height / natural_width),
+            (None, Some(height)) => (height * natural_width / natural_height, height),
+            _ => (natural_width, natural_height),
+        })
     }
 }
 
@@ -644,6 +708,7 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         geometry,
         stops: resolve_stops(&g.stops, f),
         extend: g.extend,
+        units: g.units,
     }
 }
 
@@ -913,6 +978,13 @@ mod tests {
         ]
     }"##;
 
+    /// The scene's first layer at `clock`, which may be between frames.
+    fn resolve_first(scene: &Scene, clock: Clock) -> ResolvedLayer {
+        Resolver { scene }
+            .layer(&scene.layers[0], clock, true)
+            .unwrap()
+    }
+
     fn scene() -> Scene {
         Scene::from_json(SCENE, PathBuf::new()).unwrap()
     }
@@ -1133,7 +1205,7 @@ mod tests {
             frame: 2,
             fps: scene.fps,
         };
-        let layer = resolve_layer(&scene.layers[0], clock, true);
+        let layer = resolve_first(&scene, clock);
         assert_eq!(layer.transform.x, 25.0);
         let [ResolvedEffect::Shader(shader)] = &layer.effects[..] else {
             panic!("not a shader");
@@ -1145,10 +1217,7 @@ mod tests {
             frame: 4,
             fps: scene.fps,
         };
-        assert_eq!(
-            resolve_layer(&scene.layers[0], whole, true).transform.x,
-            40.0
-        );
+        assert_eq!(resolve_first(&scene, whole).transform.x, 40.0);
         assert_eq!(scene.resolve(4).unwrap().layers[0].transform.x, 40.0);
     }
 
@@ -1215,7 +1284,7 @@ mod tests {
         }"##;
         let scene = Scene::from_json(json, PathBuf::new()).unwrap();
         let grain = |clock: Clock| {
-            let layer = resolve_layer(&scene.layers[0], clock, true);
+            let layer = resolve_first(&scene, clock);
             let [ResolvedEffect::Grain(a), ResolvedEffect::Grain(b)] = layer.effects[..] else {
                 panic!("not two grains");
             };
@@ -1841,5 +1910,105 @@ mod tests {
         }
         // A parent whose shutter is shut does not stop its children's.
         assert_eq!(children(&resolved.layers[1])[0].motion.len(), 5);
+    }
+
+    #[test]
+    fn motion_blur_frames_stand_in_for_the_layer_at_each_sub_frame() {
+        // The layer itself moves with t, the copies are at x = 1000 and 2000
+        // and are told apart by their opacity: each sub-frame is the copy
+        // resolved at its own time, with the original's id.
+        let json = r##"{"width": 100, "height": 50, "fps": 30, "durationInFrames": 20, "layers": [
+          {"id": "a", "type": "shape", "shape": {"kind": "rect", "width": 4, "height": 4},
+           "fill": "#fff",
+           "transform": {"x": [{"frame": 0, "value": 0}, {"frame": 10, "value": 100}]},
+           "motionBlur": {"samples": 2, "shutter": 1, "frames": [
+             {"id": "copy0", "type": "shape", "shape": {"kind": "rect", "width": 4, "height": 4},
+              "fill": "#fff", "opacity": 0.25,
+              "transform": {"x": [{"frame": 0, "value": 1000}, {"frame": 10, "value": 1100}]}},
+             {"id": "copy1", "type": "shape", "shape": {"kind": "rect", "width": 4, "height": 4},
+              "fill": "#fff", "opacity": 0.5,
+              "transform": {"x": [{"frame": 0, "value": 2000}, {"frame": 10, "value": 2100}]}}]}}]}"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let layer = &scene.resolve(5).unwrap().layers[0];
+        // The sub-frames sit at t = 4.75 and 5.25.
+        let xs: Vec<f64> = layer.motion.iter().map(|m| m.transform.x).collect();
+        assert_eq!(xs, [1047.5, 2052.5]);
+        assert_eq!(
+            layer.motion.iter().map(|m| m.opacity).collect::<Vec<_>>(),
+            [0.25, 0.5]
+        );
+        assert!(layer.motion.iter().all(|m| m.id == "a"));
+        // The frame itself is the layer's own.
+        assert_eq!(layer.transform.x, 50.0);
+        // Without frames the layer is its own sub-frames.
+        let plain = json.replace(r#""frames": ["#, r#""unused": ["#);
+        let scene = Scene::from_json(&plain, PathBuf::new()).unwrap();
+        let layer = &scene.resolve(5).unwrap().layers[0];
+        let xs: Vec<f64> = layer.motion.iter().map(|m| m.transform.x).collect();
+        assert_eq!(xs, [47.5, 52.5]);
+    }
+
+    fn examples() -> PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples")
+    }
+
+    /// The box of the image layer `pic` (720 x 540 on disk) at frame 0.
+    fn image_box(sides: &str) -> (f64, f64) {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 11, "layers": [
+              {{"id": "pic", "type": "image", "src": "card-art.png", {sides}}}]}}"##
+        );
+        let scene = Scene::from_json(&json, examples()).unwrap();
+        match &scene.resolve(5).unwrap().layers[0].kind {
+            ResolvedKind::Image { width, height, .. } => (*width, *height),
+            _ => panic!("not an image"),
+        }
+    }
+
+    #[test]
+    fn an_image_without_sides_is_the_files_size_and_keeps_its_aspect_ratio() {
+        assert_eq!(image_box(r#""fit": "fill""#), (720.0, 540.0));
+        // 720 x 540 is 4:3.
+        assert_eq!(image_box(r#""width": 400"#), (400.0, 300.0));
+        assert_eq!(image_box(r#""height": 270"#), (360.0, 270.0));
+        // Animated: frame 5 is half way.
+        assert_eq!(
+            image_box(r#""width": [{"frame": 0, "value": 100}, {"frame": 10, "value": 500}]"#),
+            (300.0, 225.0)
+        );
+        // Both given: the box as given, whatever the file's shape.
+        assert_eq!(image_box(r#""width": 10, "height": 90"#), (10.0, 90.0));
+    }
+
+    #[test]
+    fn gradient_units_and_fit_are_carried_to_the_resolved_layer() {
+        let json = r##"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 2, "layers": [
+          {"id": "s", "type": "shape", "shape": {"kind": "rect", "width": 40, "height": 20},
+           "fill": {"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, "units": "box",
+                    "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]},
+           "mask": {"gradient": {"type": "radial", "cx": 0.5, "cy": 0.5, "r": 0.5,
+                    "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]}}},
+          {"id": "i", "type": "image", "src": "x.png", "width": 4, "height": 4, "fit": "cover"}]}"##;
+        let layers = Scene::from_json(json, PathBuf::new())
+            .unwrap()
+            .resolve(0)
+            .unwrap()
+            .layers;
+        let ResolvedKind::Shape {
+            fill: Some(ResolvedPaint::Gradient(fill)),
+            ..
+        } = &layers[0].kind
+        else {
+            panic!("not a gradient fill");
+        };
+        assert_eq!(fill.units, Units::Box);
+        assert_eq!(layers[0].mask.as_ref().unwrap().gradient.units, Units::User);
+        assert!(matches!(
+            &layers[1].kind,
+            ResolvedKind::Image {
+                fit: Fit::Cover,
+                ..
+            }
+        ));
     }
 }

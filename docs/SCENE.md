@@ -127,7 +127,18 @@ Fonts are registered before any text is measured.
 { "id": "logo", "type": "image", "src": "logo.png", "width": 256, "height": 256 }
 ```
 
-PNG or JPEG, scaled to `width` x `height` from the layer origin. Colours are read as sRGB.
+PNG or JPEG, drawn in the box `width` x `height` from the layer origin. Colours are read as sRGB.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | The file, relative to the scene. |
+| `width`, `height` | the file's size | Animatable, not negative. Both left out: the file's size in pixels. One left out: the other side, with the file's aspect ratio. |
+| `fit` | `fill` | How the picture sits in the box. `fill` stretches it to the box. `contain` scales it to fit inside the box, keeping its aspect ratio, and centres it; the rest of the box is empty. `cover` scales it to cover the box, keeping its aspect ratio, centres it, and cuts it to the box. Like CSS's `object-fit`. |
+
+- The size of a file is read from its header when the scene loads, and only for a layer that leaves a side out. A missing
+  or unreadable file is a load error naming the layer.
+- The box does not change with `fit`: it is the layer's box for `inset` clips, `sweep` dot matrices and box-unit
+  gradients, and the layer is cut and bounded by it.
 
 ### group
 
@@ -831,11 +842,35 @@ Common fields:
 |---|---|---|
 | `stops` | required | At least 2 `{ "offset", "color" }`. Offsets are between 0 and 1 at every keyframe. An offset lower than an earlier stop's is raised to it, as in CSS, so `[0.6, 0.3]` makes a hard edge at 0.6. Colours are plain colour strings (not animated) and may be translucent. |
 | `extend` | `pad` | Outside the first and last stop. `pad` holds the end colours. `repeat` repeats the span from the first to the last stop, which is CSS `repeating-linear-gradient` and friends; `reflect` does the same with every second span backwards. For `conic`, which already goes round, `repeat` repeats the span within the turn. |
+| `units` | `user` | What the coordinates are measured in. `user`: pixels of the painted layer. `box`: fractions of the painted layer's box, see [Box units](#box-units). |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
 stop's colour everywhere: a linear gradient whose two points coincide, a radial one with `r` 0, or a repeating one
 whose first and last stop have the same offset. The ramp between stops is sampled at 512 steps.
+
+### Box units
+
+With `"units": "box"` a gradient's coordinates are fractions of the box of the layer it paints: `(0, 0)` is the box's
+top-left corner and `(1, 1)` its bottom-right (the box is the one `inset` clips use, see [Clip paths](#clip-paths)). The
+gradient stretches with the box, as SVG's `objectBoundingBox` does, so a gradient that fits a layer keeps fitting it
+when the layer is resized or animated, without knowing its size.
+
+```json
+{ "id": "glow", "type": "shape", "shape": { "kind": "ellipse", "width": 160, "height": 90 },
+  "fill": { "type": "radial", "units": "box", "cx": 0.5, "cy": 0.5, "r": 0.5,
+            "stops": [{ "offset": 0, "color": "#fff3b0" }, { "offset": 1, "color": "#9e2a2b" }] } }
+```
+
+- It applies wherever a gradient does: a shape's `fill`, a text layer's `color` and a layer's `mask`. A `stroke` takes
+  only a colour.
+- The whole gradient is stretched, not only its position: a `radial` gradient with `r` 0.5 on a box twice as wide as it
+  is tall is an ellipse, and the turn of a `conic` one is stretched with it. `r` is measured in box widths along x and
+  box heights along y.
+- A gradient in box units on a shape is measured from the shape's geometry, not counting its stroke. On a text layer the
+  box is the text box. For a path the box is its bounding box, which need not start at `(0, 0)`.
+- A box with no width or no height has no extent, so the gradient paints the last stop's colour.
+- A layer without a box has nothing to measure from: a `mask` in box units on a group is a load error naming the layer.
 
 ## Gradient fills
 
@@ -880,7 +915,7 @@ coordinates.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `gradient` | required | A [gradient](#gradients), in the layer's own coordinates. It covers the whole plane (see `extend`), not just the layer's box. |
+| `gradient` | required | A [gradient](#gradients), in the layer's own coordinates, or in fractions of its box with `"units": "box"`. It covers the whole plane (see `extend`), not just the layer's box. |
 | `mode` | `alpha` | `alpha` keeps the layer where the gradient is opaque. `luminance` keeps it where the gradient is light: the Rec. 709 luminance of the gradient's linear-light colour, times its alpha, so black and transparent both hide the layer. |
 
 Loading a scene rejects a gradient with fewer than 2 stops, a stop offset outside 0..1 at any keyframe, a negative
@@ -1056,6 +1091,7 @@ subtree, children included, and what the children do relative to one another blu
 |---|---|---|
 | `samples` | `8` | Whole number, 2 to 64 (checked when the scene loads, naming the layer). Not animated. More is smoother and slower: the layer is drawn, run through its effects and warped once per sample. |
 | `shutter` | `0.5` | Animatable, in frames, clamped to 0..2. How long the shutter is open: `0.5` is a 180 degree shutter, `1` a 360 degree one. `0` is exactly the layer without motion blur. |
+| `frames` | none | An array of exactly `samples` complete layers of the same `type` as this one, one per sample in time order. See [Sub-frame layers](#sub-frame-layers). |
 
 The sub-frame times are `t_i = frame + shutter * ((i + 0.5) / samples - 0.5)` for `i` in `0..samples`: the shutter is
 cut into equal slots centred on the frame and each sample sits in the middle of its slot. Every sample is resolved by
@@ -1090,6 +1126,35 @@ the layer's backdrop then happens once, with the layer's `blendMode`.
   the average, so the layer fades as it turns edge on.
 - Counts nothing in the [margin](#canvas-margin).
 
+### Sub-frame layers
+
+Motion blur normally samples the layer by evaluating its keyframes at each sub-frame time. A layer whose values do not
+come from keyframes (an authoring layer that renders its whole tree once per sub-frame time and writes the results as
+constants) gives the sub-frames itself with `frames`:
+
+```json
+{ "id": "ball", "type": "shape", "shape": { "kind": "ellipse", "width": 40, "height": 40 }, "fill": "#fff",
+  "transform": { "x": 100 },
+  "motionBlur": { "samples": 2, "shutter": 1, "frames": [
+    { "id": "ball", "type": "shape", "shape": { "kind": "ellipse", "width": 40, "height": 40 }, "fill": "#fff",
+      "transform": { "x": 96 } },
+    { "id": "ball", "type": "shape", "shape": { "kind": "ellipse", "width": 40, "height": 40 }, "fill": "#fff",
+      "transform": { "x": 104 } } ] } }
+```
+
+- `frames` has exactly `samples` entries, each a complete layer of the same `type` as the layer it is in (a group's
+  entries are groups with their own children). Sub-frame `i` is `frames[i]` resolved at time `t_i`, instead of the layer
+  resolved there, so keyframes in a copy are still evaluated at `t_i`. The layer's own fields are used for the frame
+  itself: when the shutter is shut (`shutter` 0) the frames are not used.
+- Each copy is checked like a layer. Its `id` and its children's may repeat the layer's (they are not checked against
+  the rest of the scene), a `matte` in it names a sibling of the layer, and its own `motionBlur` is ignored, as one
+  inside any blurred layer is.
+- A copy's effects count in the [margin](#canvas-margin) like the layer's, and the images, tables and shaders it uses
+  are loaded like any other layer's. A count that is not `samples`, or an entry of another `type`, is a load error naming
+  the layer.
+- Everything else about sub-frames holds: opacity is applied per sample, mattes pair sample `i` with sample `i`, and the
+  layer's enclosing groups and the camera are taken at the frame itself.
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
@@ -1097,7 +1162,9 @@ the layer's backdrop then happens once, with the layer's `blendMode`.
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
   `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
-  `color`; a `stroke` takes only a colour.
+  `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group (a load error).
+- An image's size is read from its header when the scene loads, only when a side is left out; `cover` cuts the picture
+  with an anti-aliased clip and `contain` leaves the rest of the box empty (no background colour).
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
   `dropShadow` before it is not frosted). Its backdrop edge is the canvas plus margin described above; there is no
   edge-clamp mode as in browsers.

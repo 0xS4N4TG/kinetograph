@@ -35,6 +35,11 @@ pub struct Scene {
     /// Directory that asset paths resolve against (the scene file's directory).
     #[serde(skip)]
     pub base_dir: PathBuf,
+    /// The natural size in pixels of the image (and Lottie) files that a layer
+    /// leaves a size out for, by `src`. Read from the files' headers when the
+    /// scene loads, so that resolving a frame needs no I/O.
+    #[serde(skip)]
+    pub asset_sizes: BTreeMap<String, (f64, f64)>,
 }
 
 fn default_background() -> Color {
@@ -96,6 +101,12 @@ pub struct MotionBlur {
     /// Clamped to 0..=2 when resolved; 0 is no blur.
     #[serde(default = "half")]
     pub shutter: Num,
+    /// Exactly `samples` complete layers of the same type as this one, one
+    /// per sub-frame in time order. When present, sub-frame `i` is `frames[i]`
+    /// resolved at that sub-frame's time, instead of this layer resolved there
+    /// (an authoring layer that renders its tree at each sub-frame's time
+    /// fills it). A copy's own `motionBlur` is ignored.
+    pub frames: Option<Vec<Layer>>,
 }
 
 fn default_motion_samples() -> i64 {
@@ -155,6 +166,26 @@ pub enum LayerKind {
     Group(GroupLayer),
     Noise(NoiseLayer),
     MeshGradient(MeshGradientLayer),
+}
+
+impl LayerKind {
+    /// The `type` the scene spells it with.
+    pub fn name(&self) -> &'static str {
+        match self {
+            LayerKind::Shape(_) => "shape",
+            LayerKind::Text(_) => "text",
+            LayerKind::Image(_) => "image",
+            LayerKind::Group(_) => "group",
+            LayerKind::Noise(_) => "noise",
+            LayerKind::MeshGradient(_) => "meshGradient",
+        }
+    }
+
+    /// Whether the layer has a box (`docs/SCENE.md`, "Clip paths"): every kind
+    /// but a group.
+    pub fn has_box(&self) -> bool {
+        !matches!(self, LayerKind::Group(_))
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -762,6 +793,22 @@ pub struct Gradient {
     pub stops: Vec<Stop>,
     #[serde(default)]
     pub extend: Extend,
+    /// What the coordinates are measured in.
+    #[serde(default)]
+    pub units: Units,
+}
+
+/// The space a gradient's coordinates are in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Units {
+    /// The painted layer's own pixels.
+    #[default]
+    User,
+    /// Fractions of the painted layer's box, `(0, 0)` its top-left corner and
+    /// `(1, 1)` its bottom-right, stretching with the box (SVG's
+    /// `objectBoundingBox`).
+    Box,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -888,8 +935,28 @@ pub struct TextLayer {
 #[serde(rename_all = "camelCase")]
 pub struct ImageLayer {
     pub src: String,
-    pub width: Num,
-    pub height: Num,
+    /// Omitted: the file's pixel width, or, with a `height`, the width that
+    /// keeps the picture's aspect ratio.
+    pub width: Option<Num>,
+    /// Omitted: like `width`.
+    pub height: Option<Num>,
+    /// How the picture sits in the box `width` x `height`.
+    #[serde(default)]
+    pub fit: Fit,
+}
+
+/// How an image is fitted to its box (CSS's `object-fit`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Fit {
+    /// Stretched to the box.
+    #[default]
+    Fill,
+    /// Scaled to fit inside the box, keeping its aspect ratio, and centred.
+    Contain,
+    /// Scaled to cover the box, keeping its aspect ratio, centred and cut to
+    /// the box.
+    Cover,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -959,7 +1026,36 @@ impl Scene {
             serde_json::from_str(json).map_err(|e| Error::Scene(e.to_string()))?;
         scene.base_dir = base_dir;
         scene.validate()?;
+        scene.measure_assets()?;
         Ok(scene)
+    }
+
+    /// Reads the pixel size of every image that leaves its `width` or
+    /// `height` out, from the file's header, into `asset_sizes`.
+    fn measure_assets(&mut self) -> Result<()> {
+        let mut wanted = Vec::new();
+        walk_layers(&self.layers, &mut |layer| {
+            if let LayerKind::Image(i) = &layer.kind
+                && (i.width.is_none() || i.height.is_none())
+            {
+                wanted.push((layer.id.clone(), i.src.clone()));
+            }
+        });
+        for (id, src) in wanted {
+            if self.asset_sizes.contains_key(&src) {
+                continue;
+            }
+            let path = self.base_dir.join(&src);
+            let (width, height) = image::image_dimensions(&path).map_err(|e| {
+                Error::Scene(format!(
+                    "layer {id:?}: cannot read the size of image {}: {e}",
+                    path.display()
+                ))
+            })?;
+            self.asset_sizes
+                .insert(src, (f64::from(width), f64::from(height)));
+        }
+        Ok(())
     }
 
     /// Pixels of room kept on every side of the canvas while rendering, so
@@ -1007,6 +1103,22 @@ impl Scene {
 
     fn validate_layers<'a>(&self, layers: &'a [Layer], ids: &mut HashSet<&'a str>) -> Result<()> {
         for layer in layers {
+            self.validate_layer(layer, layers, ids, false)?;
+        }
+        Ok(())
+    }
+
+    /// Checks one layer of the list `layers`. `copy` is whether it is one of a
+    /// motion blur's `frames`: its own `motionBlur` is ignored, so it is not
+    /// checked.
+    fn validate_layer<'a>(
+        &self,
+        layer: &'a Layer,
+        layers: &'a [Layer],
+        ids: &mut HashSet<&'a str>,
+        copy: bool,
+    ) -> Result<()> {
+        {
             if !ids.insert(&layer.id) {
                 return Err(Error::Scene(format!("duplicate layer id {:?}", layer.id)));
             }
@@ -1082,17 +1194,21 @@ impl Scene {
             if let Some(matte) = &layer.matte {
                 validate_matte(layer, matte, layers)?;
             }
-            if let Some(blur) = &layer.motion_blur
-                && !(MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES).contains(&blur.samples)
-            {
-                return Err(Error::Scene(format!(
-                    "layer {:?}: motionBlur samples must be a whole number from \
-                     {MIN_MOTION_SAMPLES} to {MAX_MOTION_SAMPLES}, got {}",
-                    layer.id, blur.samples
-                )));
+            if !copy && let Some(blur) = &layer.motion_blur {
+                if !(MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES).contains(&blur.samples) {
+                    return Err(Error::Scene(format!(
+                        "layer {:?}: motionBlur samples must be a whole number from \
+                         {MIN_MOTION_SAMPLES} to {MAX_MOTION_SAMPLES}, got {}",
+                        layer.id, blur.samples
+                    )));
+                }
+                if let Some(frames) = &blur.frames {
+                    self.validate_frames(layer, blur.samples, frames, layers)?;
+                }
             }
             if let Some(mask) = &layer.mask {
                 validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
+                validate_units(layer, "mask gradient", &mask.gradient)?;
             }
             match &layer.kind {
                 LayerKind::Shape(s) => {
@@ -1140,8 +1256,12 @@ impl Scene {
                     }
                 }
                 LayerKind::Image(i) => {
-                    non_negative("width", &i.width)?;
-                    non_negative("height", &i.height)?;
+                    if let Some(width) = &i.width {
+                        non_negative("width", width)?;
+                    }
+                    if let Some(height) = &i.height {
+                        non_negative("height", height)?;
+                    }
                 }
                 LayerKind::Group(g) => {
                     if g.preserve3d {
@@ -1172,10 +1292,59 @@ impl Scene {
         }
         Ok(())
     }
+
+    /// Checks a layer's motion blur `frames`: `samples` of them, each of the
+    /// layer's type and a valid layer on its own. A copy has its original's id
+    /// (and its children those of the original's), so it is checked with an id
+    /// set of its own; it sits among the original's `siblings`.
+    fn validate_frames<'a>(
+        &self,
+        layer: &Layer,
+        samples: i64,
+        frames: &'a [Layer],
+        siblings: &'a [Layer],
+    ) -> Result<()> {
+        if frames.len() as i64 != samples {
+            return Err(Error::Scene(format!(
+                "layer {:?}: motionBlur frames needs exactly {samples} layers (one per sample), \
+                 got {}",
+                layer.id,
+                frames.len()
+            )));
+        }
+        for (i, copy) in frames.iter().enumerate() {
+            if std::mem::discriminant(&copy.kind) != std::mem::discriminant(&layer.kind) {
+                return Err(Error::Scene(format!(
+                    "layer {:?}: motionBlur frames[{i}] is a {} layer, but the layer is a {}",
+                    layer.id,
+                    copy.kind.name(),
+                    layer.kind.name()
+                )));
+            }
+            self.validate_layer(copy, siblings, &mut HashSet::new(), true)?;
+        }
+        Ok(())
+    }
+}
+
+/// Calls `f` on every layer of `layers`, depth first: a layer, then the
+/// copies in its motion blur `frames`, then its children. The walkers that
+/// load or compile what layers refer to use it, so that a copy's assets are
+/// loaded like any other layer's.
+pub fn walk_layers(layers: &[Layer], f: &mut impl FnMut(&Layer)) {
+    for layer in layers {
+        f(layer);
+        if let Some(frames) = layer.motion_blur.as_ref().and_then(|m| m.frames.as_ref()) {
+            walk_layers(frames, f);
+        }
+        if let LayerKind::Group(g) = &layer.kind {
+            walk_layers(&g.children, f);
+        }
+    }
 }
 
 fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
-    for layer in layers {
+    walk_layers(layers, &mut |layer| {
         for effect in &layer.effects {
             if let Effect::Shader(shader) = effect {
                 let source = crate::shader::compose(&shader.code, &shader.names());
@@ -1184,17 +1353,15 @@ fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
                 }
             }
         }
-        if let LayerKind::Group(g) = &layer.kind {
-            collect_shader_sources(&g.children, sources);
-        }
-    }
+    });
 }
 
 /// The largest reach of any layer in `layers`. Reaches add up along a
 /// chain: each effect in a list works on what the ones before it painted,
 /// and a group's effects on what its children painted. `scale` is the
 /// largest product of the enclosing groups' `scale` (1 for the scene's own
-/// layers), which turns an effect's layer units into pixels.
+/// layers), which turns an effect's layer units into pixels. A layer's motion
+/// blur `frames` count as alternatives to the layer itself.
 fn max_reach(layers: &[Layer], scale: f64) -> f64 {
     layers.iter().fold(0.0, |most, layer| {
         let t = &layer.transform.scale;
@@ -1204,7 +1371,12 @@ fn max_reach(layers: &[Layer], scale: f64) -> f64 {
             _ => 0.0,
         };
         let own: f64 = layer.effects.iter().map(|e| e.reach(scale)).sum();
-        most.max(children + own)
+        let copies = layer
+            .motion_blur
+            .as_ref()
+            .and_then(|m| m.frames.as_ref())
+            .map_or(0.0, |frames| max_reach(frames, scale));
+        most.max(children + own).max(copies)
     })
 }
 
@@ -1432,6 +1604,19 @@ fn validate_mesh_gradient(id: &str, mesh: &MeshGradientLayer) -> Result<()> {
             "needs {count} points (columns x rows), got {}",
             points.len()
         ));
+    }
+    Ok(())
+}
+
+/// A gradient in box units measures from the box of the layer it paints, so a
+/// layer without one cannot have it.
+fn validate_units(layer: &Layer, what: &str, g: &Gradient) -> Result<()> {
+    if g.units == Units::Box && !layer.kind.has_box() {
+        return Err(Error::Scene(format!(
+            "layer {:?}: {what} uses \"units\": \"box\", and a group has no box; use the default \
+             units, or put the group's children in a layer that has a box",
+            layer.id
+        )));
     }
     Ok(())
 }
@@ -3244,5 +3429,276 @@ mod tests {
               {"id": "card", "type": "group", "children": [
                 {"id": "inner", "type": "group", "children": [], "motionBlur": {}}]}]}]}]}"##;
         Scene::from_json(json, PathBuf::new()).unwrap();
+    }
+
+    // --- Images with sides left out, and fit. ---------------------------------
+
+    fn examples() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples")
+    }
+
+    fn image_scene(image: &str, base: PathBuf) -> Result<Scene> {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 1, "layers": [
+              {{"id": "pic", "type": "image", {image}}}]}}"##
+        );
+        Scene::from_json(&json, base)
+    }
+
+    #[test]
+    fn an_image_may_leave_its_sides_out_and_the_file_is_measured() {
+        // card-art.png is 720 x 540.
+        for image in [
+            r#""src": "card-art.png""#,
+            r#""src": "card-art.png", "width": 360"#,
+            r#""src": "card-art.png", "height": [{"frame": 0, "value": 270}]"#,
+        ] {
+            let scene = image_scene(image, examples()).unwrap();
+            assert_eq!(scene.asset_sizes["card-art.png"], (720.0, 540.0), "{image}");
+        }
+        // With both sides given, the file is not read.
+        let scene = image_scene(
+            r#""src": "missing.png", "width": 4, "height": 5"#,
+            PathBuf::new(),
+        )
+        .unwrap();
+        assert!(scene.asset_sizes.is_empty());
+        // Without, a missing file is an error naming the layer.
+        let msg = image_scene(r#""src": "missing.png", "width": 4"#, PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"pic\"") && msg.contains("missing.png"),
+            "{msg}"
+        );
+        let msg = image_scene(r#""src": "card-art.png", "height": -3"#, examples())
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("\"pic\"") && msg.contains("negative"), "{msg}");
+    }
+
+    #[test]
+    fn an_image_fits_its_box_by_fill_unless_told_otherwise() {
+        let fit = |image: &str| {
+            let scene = image_scene(image, PathBuf::new()).unwrap();
+            let LayerKind::Image(i) = &scene.layers[0].kind else {
+                panic!("not an image");
+            };
+            i.fit
+        };
+        let base = r#""src": "a.png", "width": 4, "height": 5"#;
+        assert_eq!(fit(base), Fit::Fill);
+        assert_eq!(fit(&format!(r#"{base}, "fit": "contain""#)), Fit::Contain);
+        assert_eq!(fit(&format!(r#"{base}, "fit": "cover""#)), Fit::Cover);
+        let msg = image_scene(&format!(r#"{base}, "fit": "scale-down""#), PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("scale-down"), "{msg}");
+    }
+
+    // --- Gradients in box units. ----------------------------------------------
+
+    fn linear(units: &str) -> String {
+        format!(r#"{{"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, {TWO_STOPS}{units}}}"#)
+    }
+
+    #[test]
+    fn gradients_are_in_pixels_unless_they_say_box() {
+        let fill = |g: String| {
+            Scene::from_json(
+                &format!(
+                    r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                      {{"id": "s", "type": "shape", "shape": {{"kind": "rect", "width": 9, "height": 9}},
+                        "fill": {g}}}]}}"##
+                ),
+                PathBuf::new(),
+            )
+            .unwrap()
+        };
+        let units = |scene: Scene| match &scene.layers[0].kind {
+            LayerKind::Shape(ShapeLayer {
+                fill: Some(Paint::Gradient(g)),
+                ..
+            }) => g.units,
+            _ => panic!("not a gradient fill"),
+        };
+        assert_eq!(units(fill(linear(""))), Units::User);
+        assert_eq!(units(fill(linear(r#", "units": "user""#))), Units::User);
+        assert_eq!(units(fill(linear(r#", "units": "box""#))), Units::Box);
+        // Text colours and masks take it too.
+        scene_with(&format!(
+            r#""mask": {{"gradient": {}}},"#,
+            linear(r#", "units": "box""#)
+        ))
+        .unwrap();
+        let text = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1,
+                "fonts": {{"DM Sans": "f.ttf"}}, "layers": [
+              {{"id": "t", "type": "text", "text": "a", "font": "DM Sans", "size": 9,
+                "color": {}}}]}}"##,
+            linear(r#", "units": "box""#)
+        );
+        Scene::from_json(&text, PathBuf::new()).unwrap();
+        let msg = error(&format!(
+            r#""mask": {{"gradient": {}}},"#,
+            linear(r#", "units": "bbox""#)
+        ));
+        assert!(msg.contains("bbox"), "{msg}");
+    }
+
+    #[test]
+    fn a_box_unit_mask_on_a_layer_without_a_box_is_an_error_naming_it() {
+        let json = |units: &str| {
+            format!(
+                r#"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                  {{"id": "g", "type": "group", "children": [],
+                    "mask": {{"gradient": {}}}}}]}}"#,
+                linear(units)
+            )
+        };
+        let msg = Scene::from_json(&json(r#", "units": "box""#), PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"g\"") && msg.contains("mask") && msg.contains("box"),
+            "{msg}"
+        );
+        // In pixels it is fine on a group.
+        Scene::from_json(&json(""), PathBuf::new()).unwrap();
+    }
+
+    // --- Motion blur frames. --------------------------------------------------
+
+    fn rect(id: &str, extra: &str) -> String {
+        format!(
+            r##"{{"id": "{id}", "type": "shape", {extra}
+                 "shape": {{"kind": "rect", "width": 10, "height": 10}}, "fill": "#fff"}}"##
+        )
+    }
+
+    fn blurred(samples: usize, frames: &[String]) -> String {
+        rect(
+            "a",
+            &format!(
+                r#""motionBlur": {{"samples": {samples}, "frames": [{}]}},"#,
+                frames.join(",")
+            ),
+        )
+    }
+
+    fn scene_of(layers: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r#"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 1, "layers": [{layers}]}}"#
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn motion_blur_frames_are_samples_complete_layers_of_the_same_type() {
+        let copies = |n: usize| vec![rect("a", ""); n];
+        let scene = scene_of(&blurred(3, &copies(3))).unwrap();
+        let blur = scene.layers[0].motion_blur.as_ref().unwrap();
+        assert_eq!(blur.frames.as_ref().map(Vec::len), Some(3));
+        // No frames is fine, and is the default.
+        let scene = scene_with(r#""motionBlur": {},"#).unwrap();
+        assert!(
+            scene.layers[0]
+                .motion_blur
+                .as_ref()
+                .unwrap()
+                .frames
+                .is_none()
+        );
+
+        let msg = scene_of(&blurred(3, &copies(2))).unwrap_err().to_string();
+        assert!(
+            msg.contains("\"a\"") && msg.contains("exactly 3") && msg.contains("got 2"),
+            "{msg}"
+        );
+        let group = r#"{"id": "a", "type": "group", "children": []}"#.to_string();
+        let msg = scene_of(&blurred(2, &[rect("a", ""), group]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"a\"")
+                && msg.contains("frames[1]")
+                && msg.contains("group")
+                && msg.contains("shape"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn motion_blur_frames_are_validated_like_layers() {
+        let bad = rect("a", r#""clip": {"kind": "polygon", "points": []},"#);
+        let msg = scene_of(&blurred(2, &[rect("a", ""), bad]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"a\"") && msg.contains("at least 3 points"),
+            "{msg}"
+        );
+        // A copy has its original's id, and its own motionBlur is ignored,
+        // even one that would be an error.
+        let odd = rect("a", r#""motionBlur": {"samples": 1},"#);
+        scene_of(&blurred(2, &[odd.clone(), odd])).unwrap();
+        // A copy of a group repeats its children's ids too.
+        let group = |extra: &str| {
+            format!(
+                r#"{{"id": "g", "type": "group", {extra} "children": [{}]}}"#,
+                rect("kid", "")
+            )
+        };
+        let copies = format!("{0},{0}", group(""));
+        scene_of(&group(&format!(
+            r#""motionBlur": {{"samples": 2, "frames": [{copies}]}},"#
+        )))
+        .unwrap();
+        // A copy's matte source is found among the original's siblings.
+        let matted = rect("a", r#""matte": {"layer": "src"},"#);
+        scene_of(&format!(
+            "{},{}",
+            blurred(2, &[matted.clone(), matted]),
+            rect("src", "")
+        ))
+        .unwrap();
+        let unmatted = rect("a", r#""matte": {"layer": "nope"},"#);
+        let msg = scene_of(&blurred(2, &[unmatted.clone(), unmatted]))
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("\"nope\" is not a sibling"), "{msg}");
+    }
+
+    #[test]
+    fn motion_blur_frames_effects_count_in_the_margin_and_the_shaders() {
+        let shadowed = |y: u32| {
+            rect(
+                "a",
+                &format!(r#""effects": [{{"type": "dropShadow", "y": {y}, "blur": 5}}],"#),
+            )
+        };
+        let shader = rect(
+            "a",
+            r#""effects": [{"type": "shader",
+                "code": "fn effect(px: vec2<f32>) -> vec4<f32> { return layer(px); }"}],"#,
+        );
+        let scene = scene_of(&blurred(2, &[rect("a", ""), shadowed(20)])).unwrap();
+        // 20 + 3 * 5.
+        assert_eq!(scene.margin(), 35);
+        assert!(scene.shader_sources().is_empty());
+        let scene = scene_of(&blurred(2, &[shader.clone(), shader])).unwrap();
+        assert_eq!(scene.shader_sources().len(), 1);
+        // The layer itself still counts when it is the larger.
+        let big = rect(
+            "a",
+            &format!(
+                r#""effects": [{{"type": "dropShadow", "y": 50}}],
+                   "motionBlur": {{"samples": 2, "frames": [{0}, {0}]}},"#,
+                shadowed(10)
+            ),
+        );
+        assert_eq!(scene_of(&big).unwrap().margin(), 50);
     }
 }

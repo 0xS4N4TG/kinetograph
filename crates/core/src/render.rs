@@ -24,7 +24,9 @@ use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
     ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
-use crate::scene::{BlendMode, DotOrder, Extend, LayerKind, MaskMode, Scene};
+use crate::scene::{
+    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
+};
 use crate::text::{LaidOutText, TextEngine};
 use crate::warp;
 
@@ -744,7 +746,13 @@ impl Renderer {
         if let Some(mask) = &layer.mask
             && !src.bounds.is_empty()
         {
-            self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
+            // A gradient in box units is measured in the layer's box.
+            let mask_box = if mask.gradient.units == Units::Box {
+                self.layer_box(layer)?
+            } else {
+                None
+            };
+            self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix, mask_box))?;
             let whole = self.whole();
             src = self.timed(Stage::Composite, |s| {
                 s.compositor.mask(src, &s.vello_view, mask.mode, whole)
@@ -991,7 +999,9 @@ impl Renderer {
             } => {
                 let path = geometry_path(geometry)?;
                 if let Some(paint) = fill {
-                    let (brush, brush_transform) = paint_brush(paint);
+                    // The box a gradient in box units is measured in: the
+                    // geometry, without the stroke.
+                    let (brush, brush_transform) = paint_brush(paint, Some(path.bounding_box()));
                     self.vello_scene
                         .fill(Fill::NonZero, matrix, &brush, brush_transform, &path);
                 }
@@ -1016,7 +1026,13 @@ impl Renderer {
                 let laid_out = self
                     .text
                     .layout(text, font, *size, *line_height, *max_width);
-                let (brush, brush_transform) = paint_brush(color);
+                let text_box = Rect::new(
+                    0.0,
+                    0.0,
+                    f64::from(max_width.unwrap_or(laid_out.width)),
+                    f64::from(laid_out.height),
+                );
+                let (brush, brush_transform) = paint_brush(color, Some(text_box));
                 for run in &laid_out.runs {
                     self.vello_scene
                         .draw_glyphs(&run.font)
@@ -1035,13 +1051,29 @@ impl Renderer {
                         );
                 }
             }
-            ResolvedKind::Image { src, width, height } => {
+            ResolvedKind::Image {
+                src,
+                width,
+                height,
+                fit,
+            } => {
                 let image = &self.images[src];
-                let fit = Affine::scale_non_uniform(
-                    width / f64::from(image.width),
-                    height / f64::from(image.height),
-                );
-                self.vello_scene.draw_image(image, matrix * fit);
+                let size = (f64::from(image.width), f64::from(image.height));
+                if let Some(placed) = fit_image(*fit, (*width, *height), size) {
+                    // `cover` overhangs the box; the clip cuts it to the box.
+                    let cut = *fit == Fit::Cover;
+                    if cut {
+                        self.vello_scene.push_clip_layer(
+                            Fill::NonZero,
+                            matrix,
+                            &Rect::new(0.0, 0.0, *width, *height),
+                        );
+                    }
+                    self.vello_scene.draw_image(image, matrix * placed);
+                    if cut {
+                        self.vello_scene.pop_layer();
+                    }
+                }
             }
             // The box in opaque white: the noise pass fills its coverage.
             ResolvedKind::Noise { width, height, .. } => {
@@ -1105,9 +1137,15 @@ impl Renderer {
     }
 
     /// Fills the whole target (canvas and margin) with the mask's gradient,
-    /// which lives in layer space, into the Vello target.
-    fn rasterise_mask(&mut self, mask: &ResolvedMask, matrix: Affine) -> Result<()> {
-        let (brush, brush_transform) = gradient_brush(&mask.gradient);
+    /// which lives in layer space (or in the layer's box, `layer_box`), into
+    /// the Vello target.
+    fn rasterise_mask(
+        &mut self,
+        mask: &ResolvedMask,
+        matrix: Affine,
+        layer_box: Option<Rect>,
+    ) -> Result<()> {
+        let (brush, brush_transform) = gradient_brush_in(&mask.gradient, layer_box);
         let canvas = Rect::new(
             0.0,
             0.0,
@@ -1521,14 +1559,35 @@ fn uses_backdrop(siblings: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 
 /// The brush for a fill or text colour, and the transform to apply to it on
 /// top of the transform of whatever it paints (`None` for a solid colour).
-fn paint_brush(paint: &ResolvedPaint) -> (peniko::Brush, Option<Affine>) {
+///
+/// `layer_box` is the box of the layer being painted, which a gradient in box
+/// units is measured in (`gradient_brush_in`).
+fn paint_brush(paint: &ResolvedPaint, layer_box: Option<Rect>) -> (peniko::Brush, Option<Affine>) {
     match paint {
         ResolvedPaint::Solid(color) => (peniko::Brush::Solid(to_peniko(*color)), None),
         ResolvedPaint::Gradient(g) => {
-            let (brush, brush_transform) = gradient_brush(g);
+            let (brush, brush_transform) = gradient_brush_in(g, layer_box);
             (brush, Some(brush_transform))
         }
     }
+}
+
+/// `gradient_brush`, for a gradient that may be in box units: its coordinates
+/// are then fractions of `layer_box`, so the brush is moved to the box's
+/// corner and stretched to its size, after the gradient's own turn (SVG's
+/// `objectBoundingBox`). A box with no width or height has no extent, and so
+/// paints the last stop's colour, like any gradient without one.
+fn gradient_brush_in(g: &ResolvedGradient, layer_box: Option<Rect>) -> (peniko::Brush, Affine) {
+    let (brush, turn) = gradient_brush(g);
+    let (Units::Box, Some(b)) = (g.units, layer_box) else {
+        return (brush, turn);
+    };
+    if !(b.width() > 0.0 && b.height() > 0.0) {
+        let last = g.stops[g.stops.len() - 1].1;
+        return (peniko::Brush::Solid(to_peniko(last)), Affine::IDENTITY);
+    }
+    let to_box = Affine::translate((b.x0, b.y0)) * Affine::scale_non_uniform(b.width(), b.height());
+    (brush, to_box * turn)
 }
 
 /// A resolved gradient as a Vello brush, plus a transform to apply to the
@@ -1605,6 +1664,31 @@ fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorSto
     out
 }
 
+/// Where a picture of `image` pixels sits in a box of `size`, as the matrix
+/// from the picture's pixels to the box's space; `None` when it would have no
+/// area. `Fill` stretches it to the box, `Contain` and `Cover` keep its aspect
+/// ratio and centre it, the first inside the box, the second over it.
+fn fit_image(fit: Fit, size: (f64, f64), image: (f64, f64)) -> Option<Affine> {
+    let (sx, sy) = (size.0 / image.0, size.1 / image.1);
+    if fit == Fit::Fill {
+        return Some(Affine::scale_non_uniform(sx, sy));
+    }
+    let scale = if fit == Fit::Contain {
+        sx.min(sy)
+    } else {
+        sx.max(sy)
+    };
+    if !(scale > 0.0 && scale.is_finite()) {
+        return None;
+    }
+    Some(
+        Affine::translate((
+            (size.0 - image.0 * scale) / 2.0,
+            (size.1 - image.1 * scale) / 2.0,
+        )) * Affine::scale(scale),
+    )
+}
+
 /// `b` shrunk by the four distances, with rounded corners. Empty when
 /// nothing is left. The radius is limited to half the shorter side.
 fn inset_path(b: Rect, top: f64, right: f64, bottom: f64, left: f64, radius: f64) -> BezPath {
@@ -1664,17 +1748,12 @@ fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {
 
 /// Decodes every image the scene refers to, so a missing file fails early.
 pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
-    fn walk(layers: &[crate::scene::Layer], out: &mut Vec<String>) {
-        for layer in layers {
-            match &layer.kind {
-                LayerKind::Image(i) => out.push(i.src.clone()),
-                LayerKind::Group(g) => walk(&g.children, out),
-                _ => {}
-            }
-        }
-    }
     let mut sources = Vec::new();
-    walk(&scene.layers, &mut sources);
+    walk_layers(&scene.layers, &mut |layer| {
+        if let LayerKind::Image(i) = &layer.kind {
+            sources.push(i.src.clone());
+        }
+    });
 
     let mut images = HashMap::new();
     for src in sources {
@@ -1742,6 +1821,7 @@ mod tests {
             geometry,
             stops: stops.to_vec(),
             extend,
+            units: Units::User,
         }
     }
 
@@ -2008,7 +2088,7 @@ mod tests {
 
     #[test]
     fn paint_brush_only_transforms_gradients() {
-        let (brush, transform) = paint_brush(&ResolvedPaint::Solid(RED));
+        let (brush, transform) = paint_brush(&ResolvedPaint::Solid(RED), None);
         assert!(matches!(brush, peniko::Brush::Solid(_)) && transform.is_none());
         let g = gradient(
             ResolvedGradientGeometry::Conic {
@@ -2019,11 +2099,112 @@ mod tests {
             &[(0.0, RED), (1.0, Color::BLACK)],
             Extend::Pad,
         );
-        let (brush, transform) = paint_brush(&ResolvedPaint::Gradient(g));
+        let (brush, transform) = paint_brush(&ResolvedPaint::Gradient(g), None);
         assert!(matches!(brush, peniko::Brush::Gradient(_)));
         // The conic turn about its centre leaves the centre where it is.
         let moved = transform.unwrap() * Point::new(10.0, 20.0);
         assert!(moved.distance(Point::new(10.0, 20.0)) < 1e-9);
+    }
+
+    fn in_box_units(mut g: ResolvedGradient) -> ResolvedGradient {
+        g.units = Units::Box;
+        g
+    }
+
+    #[test]
+    fn a_box_unit_gradient_is_stretched_to_the_layers_box() {
+        let line = ResolvedGradientGeometry::Linear {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1.0,
+            y1: 1.0,
+        };
+        let stops = [(0.0, RED), (1.0, Color::BLACK)];
+        let g = in_box_units(gradient(line, &stops, Extend::Pad));
+        let b = Rect::new(10.0, 20.0, 50.0, 40.0);
+        let (_, transform) = gradient_brush_in(&g, Some(b));
+        // The unit square's corners land on the box's.
+        let corner = |x: f64, y: f64| transform * Point::new(x, y);
+        assert!(corner(0.0, 0.0).distance(Point::new(10.0, 20.0)) < 1e-9);
+        assert!(corner(1.0, 1.0).distance(Point::new(50.0, 40.0)) < 1e-9);
+        assert!(corner(1.0, 0.0).distance(Point::new(50.0, 20.0)) < 1e-9);
+        // The same gradient in pixels is left alone, box or not.
+        let plain = gradient(line, &stops, Extend::Pad);
+        assert_eq!(gradient_brush_in(&plain, Some(b)).1, Affine::IDENTITY);
+        // A conic gradient turns about its centre first, and the box then
+        // stretches the turn: the centre (0.5, 0.5) lands on the box's.
+        let conic = in_box_units(gradient(
+            ResolvedGradientGeometry::Conic {
+                cx: 0.5,
+                cy: 0.5,
+                angle: 90.0,
+            },
+            &stops,
+            Extend::Pad,
+        ));
+        let (_, transform) = gradient_brush_in(&conic, Some(b));
+        assert!((transform * Point::new(0.5, 0.5)).distance(b.center()) < 1e-9);
+        // Through paint_brush, which text and shapes use.
+        let (_, via_paint) = paint_brush(&ResolvedPaint::Gradient(g), Some(b));
+        assert_eq!(
+            via_paint.map(|t| t * Point::new(1.0, 1.0)),
+            Some(Point::new(50.0, 40.0))
+        );
+    }
+
+    #[test]
+    fn a_box_unit_gradient_on_an_empty_box_is_the_last_stop() {
+        let line = ResolvedGradientGeometry::Linear {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1.0,
+            y1: 0.0,
+        };
+        let g = in_box_units(gradient(
+            line,
+            &[(0.0, RED), (1.0, Color::BLACK)],
+            Extend::Pad,
+        ));
+        for b in [
+            Rect::new(0.0, 0.0, 0.0, 10.0),
+            Rect::new(0.0, 0.0, 10.0, 0.0),
+        ] {
+            let (brush, _) = gradient_brush_in(&g, Some(b));
+            assert!(
+                matches!(brush, peniko::Brush::Solid(c) if c == to_peniko(Color::BLACK)),
+                "{b:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn images_fit_their_box_by_fill_contain_or_cover() {
+        let at = |m: Affine, x: f64, y: f64| m * Point::new(x, y);
+        // A 720 x 540 picture in a 200 x 200 box.
+        let (size, image) = ((200.0, 200.0), (720.0, 540.0));
+        let fill = fit_image(Fit::Fill, size, image).unwrap();
+        assert_eq!(
+            fill,
+            Affine::scale_non_uniform(200.0 / 720.0, 200.0 / 540.0)
+        );
+        // Contain: the width fills the box, the picture is 150 high and
+        // centred.
+        let contain = fit_image(Fit::Contain, size, image).unwrap();
+        assert!(at(contain, 0.0, 0.0).distance(Point::new(0.0, 25.0)) < 1e-9);
+        assert!(at(contain, 720.0, 540.0).distance(Point::new(200.0, 175.0)) < 1e-9);
+        // Cover: the height fills the box, the picture is 266.67 wide and
+        // overhangs by a sixth on each side.
+        let cover = fit_image(Fit::Cover, size, image).unwrap();
+        let overhang = (200.0 * 720.0 / 540.0 - 200.0) / 2.0;
+        assert!(at(cover, 0.0, 0.0).distance(Point::new(-overhang, 0.0)) < 1e-9);
+        assert!(at(cover, 720.0, 540.0).distance(Point::new(200.0 + overhang, 200.0)) < 1e-9);
+        // A box of the picture's own shape needs no fitting.
+        let same = fit_image(Fit::Cover, (360.0, 270.0), image).unwrap();
+        assert!(at(same, 720.0, 540.0).distance(Point::new(360.0, 270.0)) < 1e-9);
+        // An empty box has nothing to fit (fill keeps its old, empty, result; a
+        // cover with one side left is cut to nothing by the clip).
+        assert!(fit_image(Fit::Contain, (0.0, 50.0), image).is_none());
+        assert!(fit_image(Fit::Cover, (0.0, 0.0), image).is_none());
     }
 
     /// The box of a rect shape or an empty group, which is all these tests
