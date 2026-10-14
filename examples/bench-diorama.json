@@ -1,0 +1,1048 @@
+{
+ "width": 1080,
+ "height": 1920,
+ "fps": 30,
+ "durationInFrames": 90,
+ "background": "#efe4cf",
+ "fonts": {
+  "DM Sans": "../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "sky",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 1080,
+    "height": 1920
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 0,
+    "y1": 1500,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#f3c9a0"
+     },
+     {
+      "offset": 0.55,
+      "color": "#f6e2c4"
+     },
+     {
+      "offset": 1,
+      "color": "#efe4cf"
+     }
+    ]
+   }
+  },
+  {
+   "id": "sun",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 300,
+    "height": 300
+   },
+   "fill": "#fff4d6",
+   "transform": {
+    "x": 640,
+    "y": 260
+   },
+   "effects": [
+    {
+     "type": "glow",
+     "radius": 70,
+     "color": "#ffd9a0",
+     "intensity": 1.2
+    }
+   ]
+  },
+  {
+   "id": "cloud-1",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 340,
+    "height": 120,
+    "radius": 60.0
+   },
+   "fill": "#fffaf0",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": -160,
+      "easing": "linear"
+     },
+     {
+      "frame": 89,
+      "value": 140
+     }
+    ],
+    "y": 210
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c103e"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1027"
+    }
+   ]
+  },
+  {
+   "id": "cloud-2",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 280,
+    "height": 100,
+    "radius": 50.0
+   },
+   "fill": "#fffaf0",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": 700,
+      "easing": "linear"
+     },
+     {
+      "frame": 89,
+      "value": 420
+     }
+    ],
+    "y": 420
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c103e"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1027"
+    }
+   ]
+  },
+  {
+   "id": "cloud-3",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 220,
+    "height": 84,
+    "radius": 42.0
+   },
+   "fill": "#fffaf0",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": 100,
+      "easing": "linear"
+     },
+     {
+      "frame": 89,
+      "value": 620
+     }
+    ],
+    "y": 130
+   },
+   "effects": [
+    {
+     "type": "displace",
+     "scale": 6,
+     "turbulence": {
+      "type": "fractalNoise",
+      "baseFrequency": 0.04,
+      "numOctaves": 4,
+      "seed": 42
+     }
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1021"
+    }
+   ]
+  },
+  {
+   "id": "hill-1",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 46.0 C20.0 52.8 80.0 80.1 120 86.5 C160.0 92.9 200.0 91.8 240 84.4 C280.0 77.0 320.0 55.3 360 41.9 C400.0 28.4 440.0 9.0 480 3.7 C520.0 -1.6 560.0 1.6 600 10.0 C640.0 18.5 680.0 40.9 720 54.2 C760.0 67.5 800.0 85.6 840 89.7 C880.0 93.9 920.0 88.6 960 79.2 C1000.0 69.9 1040.0 46.8 1080 33.8 C1120.0 20.7 1180.0 6.6 1200 1.2 L1200 1140 L0 1140 Z"
+   },
+   "fill": "#d9b98f",
+   "transform": {
+    "x": 0,
+    "y": [
+     {
+      "frame": 0,
+      "value": 840,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 89,
+      "value": 820
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "displace",
+     "scale": 10,
+     "turbulence": {
+      "type": "fractalNoise",
+      "baseFrequency": 0.04,
+      "numOctaves": 4,
+      "seed": 10
+     }
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "hill-2",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 106.0 C20.0 102.8 80.0 99.8 120 86.5 C160.0 73.1 200.0 39.9 240 25.7 C280.0 11.4 320.0 -2.1 360 0.9 C400.0 3.8 440.0 27.0 480 43.5 C520.0 59.9 560.0 90.4 600 99.5 C640.0 108.5 680.0 107.6 720 97.7 C760.0 87.9 800.0 56.7 840 40.5 C880.0 24.3 920.0 2.4 960 0.4 C1000.0 -1.6 1040.0 13.6 1080 28.3 C1120.0 43.1 1180.0 78.8 1200 88.9 L1200 980 L0 980 Z"
+   },
+   "fill": "#c79d6e",
+   "transform": {
+    "x": 0,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1000,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 89,
+      "value": 980
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "displace",
+     "scale": 10,
+     "turbulence": {
+      "type": "fractalNoise",
+      "baseFrequency": 0.04,
+      "numOctaves": 4,
+      "seed": 11
+     }
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1059"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "hill-3",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 94.0 C20.0 81.2 80.0 31.3 120 17.3 C160.0 3.3 200.0 -0.9 240 10.2 C280.0 21.2 320.0 64.7 360 83.6 C400.0 102.5 440.0 126.1 480 123.5 C520.0 120.8 560.0 87.8 600 67.7 C640.0 47.7 680.0 9.4 720 3.1 C760.0 -3.2 800.0 12.8 840 30.0 C880.0 47.3 920.0 92.7 960 106.7 C1000.0 120.7 1040.0 124.9 1080 113.8 C1120.0 102.8 1180.0 52.6 1200 40.4 L1200 800 L0 800 Z"
+   },
+   "fill": "#9c8a55",
+   "transform": {
+    "x": 0,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1250,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1160
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "displace",
+     "scale": 10,
+     "turbulence": {
+      "type": "fractalNoise",
+      "baseFrequency": 0.04,
+      "numOctaves": 4,
+      "seed": 12
+     }
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1059"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "hill-4",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 21.9 C20.0 21.2 80.0 2.2 120 17.7 C160.0 33.2 200.0 96.9 240 114.8 C280.0 132.7 320.0 139.5 360 125.2 C400.0 110.9 440.0 47.6 480 28.7 C520.0 9.9 560.0 -1.0 600 12.2 C640.0 25.3 680.0 87.9 720 107.5 C760.0 127.2 800.0 142.1 840 130.3 C880.0 118.4 920.0 56.8 960 36.3 C1000.0 15.9 1040.0 -3.0 1080 7.6 C1120.0 18.1 1180.0 84.3 1200 99.7 L1200 630 L0 630 Z"
+   },
+   "fill": "#6f7f4a",
+   "transform": {
+    "x": 0,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1420,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1330
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "displace",
+     "scale": 10,
+     "turbulence": {
+      "type": "fractalNoise",
+      "baseFrequency": 0.04,
+      "numOctaves": 4,
+      "seed": 13
+     }
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1059"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "hill-5",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 9.1 C20.0 29.1 80.0 109.8 120 129.0 C160.0 148.2 200.0 144.6 240 124.2 C280.0 103.8 320.0 16.6 360 6.5 C400.0 -3.6 440.0 38.7 480 63.6 C520.0 88.5 560.0 156.9 600 155.9 C640.0 155.0 680.0 82.2 720 57.7 C760.0 33.2 800.0 -2.8 840 9.1 C880.0 21.0 920.0 109.8 960 129.0 C1000.0 148.2 1040.0 144.6 1080 124.2 C1120.0 103.8 1180.0 26.1 1200 6.5 L1200 460 L0 460 Z"
+   },
+   "fill": "#4e6a3f",
+   "transform": {
+    "x": 0,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1590,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1500
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "displace",
+     "scale": 10,
+     "turbulence": {
+      "type": "fractalNoise",
+      "baseFrequency": 0.04,
+      "numOctaves": 4,
+      "seed": 14
+     }
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1059"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "tree-1",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 -160 L60 0 L22 0 L22 40 L-22 40 L-22 0 L-60 0 Z"
+   },
+   "fill": "#35563a",
+   "transform": {
+    "x": 120,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1290,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1230
+     }
+    ],
+    "scale": 1.0
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1050"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1032"
+    }
+   ]
+  },
+  {
+   "id": "tree-2",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 -160 L60 0 L22 0 L22 40 L-22 40 L-22 0 L-60 0 Z"
+   },
+   "fill": "#3f6844",
+   "transform": {
+    "x": 300,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1370,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1310
+     }
+    ],
+    "scale": 1.3
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1032"
+    }
+   ]
+  },
+  {
+   "id": "tree-3",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 -160 L60 0 L22 0 L22 40 L-22 40 L-22 0 L-60 0 Z"
+   },
+   "fill": "#35563a",
+   "transform": {
+    "x": 820,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1320,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1260
+     }
+    ],
+    "scale": 1.1
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1050"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1032"
+    }
+   ]
+  },
+  {
+   "id": "tree-4",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M0 -160 L60 0 L22 0 L22 40 L-22 40 L-22 0 L-60 0 Z"
+   },
+   "fill": "#2c4a33",
+   "transform": {
+    "x": 940,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1440,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1380
+     }
+    ],
+    "scale": 1.5
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1032"
+    }
+   ]
+  },
+  {
+   "id": "house-body",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 220,
+    "height": 150
+   },
+   "fill": "#f1e1c6",
+   "transform": {
+    "x": 430,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1340,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1290
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1059"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "house-roof",
+   "type": "shape",
+   "shape": {
+    "kind": "path",
+    "d": "M-20 0 L110 -90 L240 0 Z"
+   },
+   "fill": "#c4572e",
+   "transform": {
+    "x": 430,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1340,
+      "easing": "easeOut"
+     },
+     {
+      "frame": 40,
+      "value": 1290
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "poster",
+   "type": "image",
+   "src": "card-art.png",
+   "width": 360,
+   "height": 270,
+   "transform": {
+    "x": 120,
+    "y": 560,
+    "anchorX": 180,
+    "anchorY": 135,
+    "rotation": [
+     {
+      "frame": 0,
+      "value": -6,
+      "easing": "easeInOut"
+     },
+     {
+      "frame": 89,
+      "value": 6
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1059"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1038"
+    }
+   ]
+  },
+  {
+   "id": "lantern",
+   "type": "image",
+   "src": "gradient.png",
+   "width": 120,
+   "height": 120,
+   "transform": {
+    "x": 860,
+    "y": [
+     {
+      "frame": 0,
+      "value": 640,
+      "easing": "easeInOut"
+     },
+     {
+      "frame": 89,
+      "value": 700
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1047"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c102c"
+    }
+   ]
+  },
+  {
+   "id": "birds",
+   "type": "group",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": -80,
+      "easing": "linear"
+     },
+     {
+      "frame": 89,
+      "value": 160
+     }
+    ],
+    "y": 360
+   },
+   "children": [
+    {
+     "id": "bird-1",
+     "type": "shape",
+     "shape": {
+      "kind": "path",
+      "d": "M0 0 Q18 -22 36 0 Q18 -10 0 0 Z"
+     },
+     "fill": "#3b2a1a",
+     "transform": {
+      "x": 0,
+      "y": 0.0
+     }
+    },
+    {
+     "id": "bird-2",
+     "type": "shape",
+     "shape": {
+      "kind": "path",
+      "d": "M0 0 Q18 -22 36 0 Q18 -10 0 0 Z"
+     },
+     "fill": "#3b2a1a",
+     "transform": {
+      "x": 70,
+      "y": 50.82941969615793
+     }
+    },
+    {
+     "id": "bird-3",
+     "type": "shape",
+     "shape": {
+      "kind": "path",
+      "d": "M0 0 Q18 -22 36 0 Q18 -10 0 0 Z"
+     },
+     "fill": "#3b2a1a",
+     "transform": {
+      "x": 140,
+      "y": 18.185948536513635
+     }
+    },
+    {
+     "id": "bird-4",
+     "type": "shape",
+     "shape": {
+      "kind": "path",
+      "d": "M0 0 Q18 -22 36 0 Q18 -10 0 0 Z"
+     },
+     "fill": "#3b2a1a",
+     "transform": {
+      "x": 210,
+      "y": 36.82240016119734
+     }
+    },
+    {
+     "id": "bird-5",
+     "type": "shape",
+     "shape": {
+      "kind": "path",
+      "d": "M0 0 Q18 -22 36 0 Q18 -10 0 0 Z"
+     },
+     "fill": "#3b2a1a",
+     "transform": {
+      "x": 280,
+      "y": -15.136049906158565
+     }
+    }
+   ]
+  },
+  {
+   "id": "river",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 900,
+    "height": 120,
+    "radius": 60
+   },
+   "fill": "#6fa3b8",
+   "transform": {
+    "x": 90,
+    "y": 1620
+   },
+   "effects": [
+    {
+     "type": "displace",
+     "scale": 8,
+     "turbulence": {
+      "type": "fractalNoise",
+      "baseFrequency": 0.04,
+      "numOctaves": 4,
+      "seed": 77
+     }
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1047"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c102c"
+    }
+   ]
+  },
+  {
+   "id": "rock-1",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 120,
+    "height": 72.0
+   },
+   "fill": "#8a7355",
+   "transform": {
+    "x": 160,
+    "y": 1560
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1032"
+    }
+   ]
+  },
+  {
+   "id": "rock-2",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 90,
+    "height": 54.0
+   },
+   "fill": "#8a7355",
+   "transform": {
+    "x": 700,
+    "y": 1580
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1032"
+    }
+   ]
+  },
+  {
+   "id": "rock-3",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 140,
+    "height": 84.0
+   },
+   "fill": "#8a7355",
+   "transform": {
+    "x": 890,
+    "y": 1540
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 6,
+     "blur": 4,
+     "color": "#2a1c1050"
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1032"
+    }
+   ]
+  },
+  {
+   "id": "fog",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 1300,
+    "height": 260
+   },
+   "fill": "#fffaf0aa",
+   "transform": {
+    "x": -110,
+    "y": [
+     {
+      "frame": 0,
+      "value": 1180,
+      "easing": "easeInOut"
+     },
+     {
+      "frame": 89,
+      "value": 1140
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "blur",
+     "radius": 48
+    }
+   ]
+  },
+  {
+   "id": "caption-card",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 880,
+    "height": 300,
+    "radius": 48
+   },
+   "fill": "#ffffff30",
+   "transform": {
+    "x": 100,
+    "y": 1450
+   },
+   "effects": [
+    {
+     "type": "backdropBlur",
+     "radius": 22
+    },
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 30,
+     "blur": 20,
+     "color": "#2a1c1027"
+    }
+   ]
+  },
+  {
+   "id": "caption-title",
+   "type": "text",
+   "text": "Where the paper hills end",
+   "font": "DM Sans",
+   "size": 66,
+   "color": "#2b2118",
+   "lineHeight": 1.1,
+   "maxWidth": 800,
+   "transform": {
+    "x": 140,
+    "y": 1490
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 0,
+     "y": 3,
+     "blur": 3,
+     "color": "#ffffff66"
+    }
+   ]
+  },
+  {
+   "id": "caption-sub",
+   "type": "text",
+   "text": "Layers of cut paper, lit from above.",
+   "font": "DM Sans",
+   "size": 34,
+   "color": "#5b4a33",
+   "maxWidth": 800,
+   "transform": {
+    "x": 140,
+    "y": 1640
+   }
+  },
+  {
+   "id": "grain-overlay",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 1080,
+    "height": 1920
+   },
+   "fill": "#808080",
+   "blendMode": "overlay",
+   "opacity": 0.5,
+   "effects": [
+    {
+     "type": "grain",
+     "amount": 0.14,
+     "size": 1,
+     "seed": 9,
+     "animate": true
+    }
+   ]
+  },
+  {
+   "id": "paper-grain",
+   "type": "image",
+   "src": "grain.png",
+   "width": 1080,
+   "height": 1920,
+   "blendMode": "multiply"
+  }
+ ]
+}
