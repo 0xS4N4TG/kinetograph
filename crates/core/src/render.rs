@@ -1,8 +1,9 @@
 //! Scene -> pixels. Vello rasterises each leaf layer into an sRGB texture;
 //! the compositor blends them in linear light.
 
-use std::collections::HashMap;
-use std::time::Instant;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::time::{Instant, SystemTime};
 
 use glam::DMat4;
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
@@ -19,6 +20,7 @@ use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
 use crate::compositor::{Compositor, Readback, Tex};
 use crate::error::{Error, Result};
+use crate::lut::Lut;
 use crate::mesh;
 use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
@@ -92,7 +94,9 @@ pub fn render_still(scene: Scene, frame: u32) -> Result<Frame> {
     Renderer::new(scene)?.render_resolved(&resolved)
 }
 
-/// GPU state for one scene. Reuse it to render more than one frame.
+/// GPU state for rendering scenes. Reuse it to render more than one frame,
+/// and to move on to another scene (`set_scene`) without setting the GPU up
+/// again.
 pub struct Renderer {
     scene: Scene,
     // Keeps the wgpu instance alive for the device.
@@ -120,6 +124,8 @@ pub struct Renderer {
     compositor: Compositor,
     text: TextEngine,
     images: HashMap<String, ImageData>,
+    /// The files the fonts, images and tables were read from.
+    loaded: Loaded,
     /// `Some` while `render_timed` runs.
     timings: Option<Timings>,
     /// The textures of layers that stopped changing, kept for the next frame.
@@ -139,10 +145,10 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(scene: Scene) -> Result<Renderer> {
-        // Fonts first: nothing is measured before they are registered.
-        let text = TextEngine::new(&scene.fonts, &scene.base_dir)?;
-        let images = load_images(&scene)?;
-        let luts = crate::lut::load_luts(&scene)?;
+        // Fonts first: nothing is measured before they are registered. All
+        // the reading is done before the GPU is touched, so a bad file fails
+        // cheaply.
+        let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
 
         let mut context = RenderContext::new();
         let id = pollster::block_on(context.device(None))
@@ -151,45 +157,32 @@ impl Renderer {
         let queue = context.devices[id].queue.clone();
 
         let vello = new_vello(&device)?;
-        let vello_images = if images.is_empty() {
-            None
-        } else {
-            Some(new_vello(&device)?)
-        };
         let margin = scene.margin();
         let target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
-        let vello_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("vello target"),
-            size: wgpu::Extent3d {
-                width: target_size.0,
-                height: target_size.1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let vello_view = vello_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let vello_view = new_vello_target(&device, target_size);
+        // The scene's shaders and tables join below, the way a later
+        // scene's do (`set_scene`).
         let compositor = Compositor::new(
             &device,
             &queue,
             scene.width,
             scene.height,
             margin,
-            &scene.shader_sources(),
-            &luts,
+            &[],
+            &HashMap::new(),
         );
 
-        Ok(Renderer {
+        let text = fresh
+            .text
+            .take()
+            .expect("the first read of a scene's assets builds the text engine");
+        let mut renderer = Renderer {
             scene,
             _context: context,
             device,
             queue,
             vello,
-            vello_images,
+            vello_images: None,
             vello_scene: vello::Scene::new(),
             vello_view,
             target_size,
@@ -197,13 +190,106 @@ impl Renderer {
             projection: DMat4::IDENTITY,
             compositor,
             text,
-            images,
+            images: HashMap::new(),
+            loaded: Loaded::default(),
             timings: None,
             cache: LayerCache::new(CACHE_BYTES),
             cache_path: Vec::new(),
             pages: Pages::default(),
             cache_paused: 0,
-        })
+        };
+        renderer.ensure_image_renderer(!fresh.images.is_empty())?;
+        renderer.install_assets(fresh);
+        renderer.add_shaders();
+        Ok(renderer)
+    }
+
+    /// Takes `scene` as the one to render from now on, keeping the device,
+    /// the Vello renderers, the compositor's pipelines and the layer cache.
+    /// Only what the scene needs that the renderer has not read yet is
+    /// loaded: fonts, images and tables by the file they came from, shader
+    /// pipelines by their source. The textures that depend on the size are
+    /// remade only if the canvas size or the margin changed. A frame of the
+    /// scene is the same as a new renderer's frame of it.
+    ///
+    /// If anything in the scene cannot be loaded, the error is returned and
+    /// the renderer is left as it was.
+    ///
+    /// The layer cache is kept across scenes: a cached layer is used again
+    /// when everything it was drawn from is equal (`cache.rs`), whichever
+    /// scene it came from. It is emptied when that no longer holds: when the
+    /// size or margin changes, and when a font, image or table name the
+    /// renderer has already loaded stands for another file in the new scene.
+    /// A file is told apart by its path, size and modification time, so one
+    /// that is edited between scenes is read again.
+    pub fn set_scene(&mut self, scene: Scene) -> Result<()> {
+        let fresh = read_assets(&scene, &self.loaded, true)?;
+        self.ensure_image_renderer(!fresh.images.is_empty())?;
+        // Nothing fails from here on.
+        let margin = scene.margin();
+        let resized = (scene.width, scene.height, margin)
+            != (self.scene.width, self.scene.height, self.margin);
+        if resized || fresh.rebound {
+            self.clear_layer_cache();
+        }
+        if resized {
+            self.clear_pages();
+            self.margin = margin;
+            self.target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
+            self.vello_view = new_vello_target(&self.device, self.target_size);
+            self.compositor.resize(scene.width, scene.height, margin);
+        }
+        self.install_assets(fresh);
+        self.scene = scene;
+        self.add_shaders();
+        Ok(())
+    }
+
+    /// The scene the renderer is drawing.
+    pub fn scene(&self) -> &Scene {
+        &self.scene
+    }
+
+    /// Makes the Vello renderer for image layers once a scene has an image
+    /// (see `vello_images`), or when `will_have_images`.
+    fn ensure_image_renderer(&mut self, will_have_images: bool) -> Result<()> {
+        if self.vello_images.is_none() && (will_have_images || !self.images.is_empty()) {
+            self.vello_images = Some(new_vello(&self.device)?);
+        }
+        Ok(())
+    }
+
+    /// Keeps what `read_assets` read.
+    fn install_assets(&mut self, fresh: NewAssets) {
+        if let Some(text) = fresh.text {
+            self.text = text;
+        }
+        self.loaded.fonts = fresh.fonts;
+        for (src, id, image) in fresh.images {
+            self.images.insert(src.clone(), image);
+            self.loaded.images.insert(src, id);
+        }
+        let mut luts = HashMap::new();
+        for (src, id, lut) in fresh.luts {
+            luts.insert(src.clone(), lut);
+            self.loaded.luts.insert(src, id);
+        }
+        self.compositor.set_luts(&luts);
+    }
+
+    /// Builds the pipelines for the scene's custom shaders that the
+    /// compositor does not have.
+    fn add_shaders(&mut self) {
+        self.compositor.add_shaders(&self.scene.shader_sources());
+    }
+
+    /// Empties the layer cache, giving its textures back to the pool.
+    fn clear_layer_cache(&mut self) {
+        let on = self.cache.enabled();
+        for tex in self.cache.set_enabled(false) {
+            self.compositor.release(tex);
+        }
+        self.cache.set_enabled(on);
     }
 
     /// Turns the layer cache on or off; a new renderer has it off. With it
@@ -1616,6 +1702,25 @@ fn inset_path(b: Rect, top: f64, right: f64, bottom: f64, left: f64, radius: f64
     RoundedRect::from_rect(r, radius).to_path(SHAPE_TOLERANCE)
 }
 
+/// The texture Vello draws into: the padded canvas, `size` texels.
+fn new_vello_target(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("vello target"),
+        size: wgpu::Extent3d {
+            width: size.0,
+            height: size.1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
 fn new_vello(device: &wgpu::Device) -> Result<vello::Renderer> {
     vello::Renderer::new(
         device,
@@ -1662,8 +1767,9 @@ fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {
     })
 }
 
-/// Decodes every image the scene refers to, so a missing file fails early.
-pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
+/// The `src` of every image layer in the scene, in order of use. One used
+/// twice is listed twice.
+fn image_sources(scene: &Scene) -> Vec<String> {
     fn walk(layers: &[crate::scene::Layer], out: &mut Vec<String>) {
         for layer in layers {
             match &layer.kind {
@@ -1675,29 +1781,171 @@ pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
     }
     let mut sources = Vec::new();
     walk(&scene.layers, &mut sources);
+    sources
+}
 
+/// Decodes the image file `src`, relative to `base_dir`.
+fn read_image(base_dir: &Path, src: &str) -> Result<ImageData> {
+    let path = base_dir.join(src);
+    let decoded = image::open(&path)
+        .map_err(|e| Error::Render(format!("cannot decode {}: {e}", path.display())))?
+        .to_rgba8();
+    let (width, height) = decoded.dimensions();
+    Ok(ImageData {
+        data: Blob::from(decoded.into_raw()),
+        format: ImageFormat::Rgba8,
+        alpha_type: ImageAlphaType::Alpha,
+        width,
+        height,
+    })
+}
+
+/// Decodes every image the scene refers to. The renderer reads them a file at
+/// a time (`read_assets`); this is for the test that every committed scene's
+/// files load.
+#[cfg(test)]
+pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
     let mut images = HashMap::new();
-    for src in sources {
+    for src in image_sources(scene) {
         if images.contains_key(&src) {
             continue;
         }
-        let path = scene.base_dir.join(&src);
-        let decoded = image::open(&path)
-            .map_err(|e| Error::Render(format!("cannot decode {}: {e}", path.display())))?
-            .to_rgba8();
-        let (width, height) = decoded.dimensions();
-        images.insert(
-            src,
-            ImageData {
-                data: Blob::from(decoded.into_raw()),
-                format: ImageFormat::Rgba8,
-                alpha_type: ImageAlphaType::Alpha,
-                width,
-                height,
-            },
-        );
+        let image = read_image(&scene.base_dir, &src)?;
+        images.insert(src, image);
     }
     Ok(images)
+}
+
+/// A file as the renderer read it. Two scenes that name the same file get
+/// the same `FileId` as long as it has not been edited, and the renderer then
+/// keeps what it read instead of reading again. (The modification time only
+/// decides whether to read again; it never reaches a pixel.)
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FileId {
+    /// Absolute, so the same file reached from two scenes' directories is one.
+    path: PathBuf,
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+impl FileId {
+    /// A file that cannot be inspected gets an id no earlier read has, so
+    /// the read that follows reports what is wrong with it.
+    fn of(path: &Path) -> FileId {
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        let meta = std::fs::metadata(&path).ok();
+        FileId {
+            len: meta.as_ref().map_or(0, std::fs::Metadata::len),
+            modified: meta.and_then(|m| m.modified().ok()),
+            path,
+        }
+    }
+}
+
+/// The files behind everything a renderer has loaded from scenes, by the
+/// name a scene calls it: a font family, an image's or a table's `src`.
+#[derive(Default)]
+struct Loaded {
+    fonts: BTreeMap<String, FileId>,
+    images: HashMap<String, FileId>,
+    luts: HashMap<String, FileId>,
+}
+
+/// What reading a scene's assets found that the renderer did not hold yet
+/// (`read_assets`).
+struct NewAssets {
+    /// An engine with every font, made when a font is new or has changed
+    /// (and when the renderer has none).
+    text: Option<TextEngine>,
+    /// Every font the renderer will hold.
+    fonts: BTreeMap<String, FileId>,
+    images: Vec<(String, FileId, ImageData)>,
+    luts: Vec<(String, FileId, Lut)>,
+    /// A name the renderer already held now stands for another file, so what
+    /// the layer cache drew from the old one is out of date.
+    rebound: bool,
+}
+
+/// Reads the fonts, images and tables of `scene` that `loaded` does not have
+/// (or has from another file). It changes nothing, so a failure leaves the
+/// renderer as it was; `Renderer::install_assets` keeps the result. With
+/// `has_text` false the result has a text engine whatever the fonts are.
+///
+/// Fonts the renderer holds stay registered when the scene does not name
+/// them. That cannot change a frame: a text layer's font must be one of the
+/// scene's own (`Scene::validate`), and no system fonts are loaded for text
+/// to fall back on.
+///
+/// merge: Lottie files (`LayerKind::Lottie`) are read here too, as images
+/// are.
+fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAssets> {
+    let mut rebound = false;
+
+    let mut fonts = loaded.fonts.clone();
+    // The new fonts' paths, as the scene spells them.
+    let mut files = BTreeMap::new();
+    for (name, file) in &scene.fonts {
+        let path = scene.base_dir.join(file);
+        let id = FileId::of(&path);
+        match fonts.get(name) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        files.insert(name.clone(), path.to_string_lossy().into_owned());
+        fonts.insert(name.clone(), id);
+    }
+    let text = if has_text && files.is_empty() {
+        None
+    } else {
+        for (name, id) in &fonts {
+            files
+                .entry(name.clone())
+                .or_insert_with(|| id.path.to_string_lossy().into_owned());
+        }
+        // Paths are already joined to their scene's directory.
+        Some(TextEngine::new(&files, Path::new(""))?)
+    };
+
+    let mut images = Vec::new();
+    let mut seen = HashSet::new();
+    for src in image_sources(scene) {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.images.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let image = read_image(&scene.base_dir, &src)?;
+        images.push((src, id, image));
+    }
+
+    let mut luts = Vec::new();
+    let mut seen = HashSet::new();
+    for (layer, src) in crate::lut::lut_sources(scene) {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.luts.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let lut = crate::lut::read_lut(&scene.base_dir, &layer, &src)?;
+        luts.push((src, id, lut));
+    }
+
+    Ok(NewAssets {
+        text,
+        fonts,
+        images,
+        luts,
+        rebound,
+    })
 }
 
 #[cfg(test)]
@@ -2486,5 +2734,108 @@ mod tests {
         // A box wider than the text (a wrap width) counts as it is.
         let b = text_bounds(&laid_out, 40.0, Some(500.0));
         assert_eq!(b.x1, 540.0);
+    }
+
+    /// A scene with an image that has a table, in `dir`, whose fonts are
+    /// `fonts` (family -> file).
+    fn assets_scene(dir: &Path, fonts: &[(&str, &str)]) -> Scene {
+        let fonts: BTreeMap<&str, &str> = fonts.iter().copied().collect();
+        let json = serde_json::json!({
+            "width": 64, "height": 64, "fps": 30, "durationInFrames": 2,
+            "fonts": fonts,
+            "layers": [
+                { "id": "pic", "type": "image", "src": "pic.png", "width": 8, "height": 8,
+                  "effects": [{ "type": "lut", "src": "look.cube" }] },
+            ],
+        });
+        Scene::from_json(&json.to_string(), dir.to_path_buf()).unwrap()
+    }
+
+    fn write_assets(dir: &Path, cube_comment: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([1, 2, 3, 255]))
+            .save(dir.join("pic.png"))
+            .unwrap();
+        std::fs::write(
+            dir.join("look.cube"),
+            format!(
+                "# {cube_comment}\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    /// What `Renderer::install_assets` records.
+    fn hold(loaded: &mut Loaded, fresh: &NewAssets) {
+        loaded.fonts = fresh.fonts.clone();
+        for (src, id, _) in &fresh.images {
+            loaded.images.insert(src.clone(), id.clone());
+        }
+        for (src, id, _) in &fresh.luts {
+            loaded.luts.insert(src.clone(), id.clone());
+        }
+    }
+
+    #[test]
+    fn assets_are_read_once_and_again_only_when_they_changed() {
+        let base = std::env::temp_dir().join(format!("kinetograph-assets-{}", std::process::id()));
+        let (a, b) = (base.join("a"), base.join("b"));
+        write_assets(&a, "a");
+        write_assets(&b, "b, a file of another length");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let font = root.join("assets/fonts/DMSans-Medium.ttf");
+        let font = font.to_str().unwrap();
+        let mut loaded = Loaded::default();
+
+        // The first read gets everything, and an engine.
+        let scene = assets_scene(&a, &[("DM Sans", font)]);
+        let fresh = read_assets(&scene, &loaded, false).unwrap();
+        assert!(fresh.text.is_some() && !fresh.rebound);
+        assert_eq!((fresh.images.len(), fresh.luts.len()), (1, 1));
+        hold(&mut loaded, &fresh);
+
+        // The same scene again: nothing to do.
+        let fresh = read_assets(&scene, &loaded, true).unwrap();
+        assert!(fresh.text.is_none() && !fresh.rebound);
+        assert!(fresh.images.is_empty() && fresh.luts.is_empty());
+
+        // Another directory: the same names stand for other files.
+        let moved = assets_scene(&b, &[("DM Sans", font)]);
+        let fresh = read_assets(&moved, &loaded, true).unwrap();
+        assert!(fresh.rebound);
+        assert_eq!((fresh.images.len(), fresh.luts.len()), (1, 1));
+        // The font is the same file, spelt as an absolute path both times.
+        assert!(fresh.text.is_none());
+
+        // A new family builds a new engine and rebinds nothing.
+        let more = assets_scene(&a, &[("DM Sans", font), ("Second", font)]);
+        let fresh = read_assets(&more, &loaded, true).unwrap();
+        assert!(fresh.text.is_some() && !fresh.rebound);
+        assert_eq!(fresh.fonts.len(), 2);
+        hold(&mut loaded, &fresh);
+
+        // A family that is not named again stays.
+        let fewer = assets_scene(&a, &[]);
+        let fresh = read_assets(&fewer, &loaded, true).unwrap();
+        assert!(fresh.text.is_none() && fresh.fonts.len() == 2);
+
+        // A file edited in place is read again.
+        write_assets(&a, "a, edited so that it is longer");
+        let fresh = read_assets(&scene, &loaded, true).unwrap();
+        assert!(fresh.rebound && fresh.luts.len() == 1);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_missing_file_fails_the_read_and_names_it() {
+        let dir = std::env::temp_dir().join(format!("kinetograph-missing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let scene = assets_scene(&dir, &[]);
+        let err = read_assets(&scene, &Loaded::default(), false)
+            .err()
+            .expect("read a missing image")
+            .to_string();
+        assert!(err.contains("pic.png"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
