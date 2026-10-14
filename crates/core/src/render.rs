@@ -1005,7 +1005,7 @@ impl Renderer {
                     base_color: peniko::Color::TRANSPARENT,
                     width: self.target_size.0,
                     height: self.target_size.1,
-                    antialiasing_method: AaConfig::Msaa16,
+                    antialiasing_method: AaConfig::Msaa8,
                 },
             )
             .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
@@ -1313,15 +1313,15 @@ fn new_vello(device: &wgpu::Device) -> Result<vello::Renderer> {
     vello::Renderer::new(
         device,
         RendererOptions {
-            // 16x MSAA, not Vello's analytic `Area` mode: with `Area`, the
+            // 8x MSAA, not Vello's analytic `Area` mode: with `Area`, the
             // order of path segments inside a tile depends on GPU thread
             // timing, which changed a couple of edge pixels by a level or
             // two between runs of the same frame. MSAA coverage comes from
             // integer masks, so it does not.
             antialiasing_support: AaSupport {
                 area: false,
-                msaa8: false,
-                msaa16: true,
+                msaa8: true,
+                msaa16: false,
             },
             ..Default::default()
         },
