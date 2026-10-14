@@ -21,12 +21,17 @@ fn files_with_extension(dir: &str, extension: &str) -> Vec<PathBuf> {
 fn builtin_shaders_are_valid_wgsl() {
     let shaders = files_with_extension("src/shaders", "wgsl");
     assert!(!shaders.is_empty(), "no shaders found");
-    // The compositor puts hash.wgsl in front of the shaders that call it.
+    // The compositor puts hash.wgsl and turbulence.wgsl in front of the
+    // shaders that call them.
     let hash = include_str!("shaders/hash.wgsl");
+    let turbulence = include_str!("shaders/turbulence.wgsl");
     for path in shaders {
         let mut source = std::fs::read_to_string(&path).unwrap();
         if source.contains("hash(") && !path.ends_with("hash.wgsl") {
             source = format!("{hash}{source}");
+        }
+        if source.contains("turbulence_value(") && !path.ends_with("turbulence.wgsl") {
+            source = format!("{turbulence}{source}");
         }
         let module = naga::front::wgsl::parse_str(&source)
             .unwrap_or_else(|e| panic!("{}: {}", path.display(), e.emit_to_string(&source)));

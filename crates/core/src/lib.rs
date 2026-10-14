@@ -13,6 +13,7 @@ pub mod resolve;
 pub mod scene;
 pub mod shader;
 pub mod text;
+pub mod turbulence;
 
 #[cfg(test)]
 mod tests;
