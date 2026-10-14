@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/cli"]
+exclude = ["phase0"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"

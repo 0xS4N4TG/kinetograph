@@ -1,0 +1,13 @@
+[package]
+name = "kinetograph-core"
+description = "Scene graph and GPU compositor for Kinetograph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+vello = "0.11.0"
+parley = "0.12.0"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.154"
