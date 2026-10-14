@@ -1,0 +1,217 @@
+{
+ "width": 512,
+ "height": 288,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#14161d",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "photo",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 171,
+   "height": 128,
+   "transform": {
+    "x": 40,
+    "y": 16
+   },
+   "matte": {
+    "layer": "word"
+   }
+  },
+  {
+   "id": "word",
+   "type": "text",
+   "text": "Wave",
+   "font": "DM Sans",
+   "size": 84,
+   "color": "#ffffff",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": -40
+     },
+     {
+      "frame": 30,
+      "value": 60
+     }
+    ],
+    "y": 28
+   }
+  },
+  {
+   "id": "lum-src",
+   "type": "group",
+   "transform": {
+    "x": 272,
+    "y": 16
+   },
+   "children": [
+    {
+     "id": "lum-dark",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 224,
+      "height": 128
+     },
+     "fill": "#404040"
+    },
+    {
+     "id": "lum-disc",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 100,
+      "height": 100
+     },
+     "fill": "#ffffff",
+     "transform": {
+      "x": [
+       {
+        "frame": 0,
+        "value": 10
+       },
+       {
+        "frame": 30,
+        "value": 114
+       }
+      ],
+      "y": 14
+     }
+    }
+   ]
+  },
+  {
+   "id": "gold",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 224,
+    "height": 128
+   },
+   "fill": "#f6c177",
+   "transform": {
+    "x": 272,
+    "y": 16
+   },
+   "matte": {
+    "layer": "lum-src",
+    "mode": "luminance"
+   }
+  },
+  {
+   "id": "blue",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 224,
+    "height": 112
+   },
+   "fill": "#7aa2f7",
+   "transform": {
+    "x": 16,
+    "y": 164
+   },
+   "matte": {
+    "layer": "hole",
+    "mode": "alphaInverted"
+   }
+  },
+  {
+   "id": "hole",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 90,
+    "height": 90,
+    "radius": 18
+   },
+   "fill": "#ffffff",
+   "opacity": 0.8,
+   "transform": {
+    "x": 128,
+    "y": 220,
+    "anchorX": 45,
+    "anchorY": 45,
+    "rotation": [
+     {
+      "frame": 0,
+      "value": 0
+     },
+     {
+      "frame": 30,
+      "value": 90
+     }
+    ]
+   }
+  },
+  {
+   "id": "pink",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 224,
+    "height": 112
+   },
+   "fill": "#e05a9d",
+   "transform": {
+    "x": 272,
+    "y": 164
+   },
+   "matte": {
+    "layer": "soft",
+    "mode": "luminanceInverted"
+   }
+  },
+  {
+   "id": "soft",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 150,
+    "height": 150
+   },
+   "fill": "#ffffff",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": 300
+     },
+     {
+      "frame": 30,
+      "value": 380
+     }
+    ],
+    "y": 150
+   },
+   "effects": [
+    {
+     "type": "blur",
+     "radius": [
+      {
+       "frame": 0,
+       "value": 4
+      },
+      {
+       "frame": 30,
+       "value": 14
+      }
+     ]
+    }
+   ],
+   "clip": {
+    "kind": "ellipse",
+    "cx": 75,
+    "cy": 75,
+    "rx": 75,
+    "ry": 50
+   }
+  }
+ ]
+}

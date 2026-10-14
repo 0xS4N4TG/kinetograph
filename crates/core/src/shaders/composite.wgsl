@@ -15,6 +15,8 @@ struct Params {
 //   encode:    tex_a = linear premultiplied image
 //   mask:      tex_a = layer (linear premultiplied), tex_b = Vello output
 //              (Rgba8, sRGB-encoded, straight alpha) that says what to keep
+//   matte:     tex_a = layer, tex_b = matte source (linear premultiplied);
+//              `opacity` is the source layer's opacity
 // Unused bindings are bound to the same texture as tex_a.
 @group(0) @binding(0) var tex_a: texture_2d<f32>;
 @group(0) @binding(1) var tex_b: texture_2d<f32>;
@@ -221,9 +223,9 @@ fn fs_blend(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
 }
 
 // How much of the layer a mask colour keeps. `m` is linear premultiplied.
-// Modes: 0 alpha, 2 luminance (Rec. 709 on the linear colour; because `m` is
-// premultiplied this is already times alpha). Mode 1 and 3 are the inverses
-// of 0 and 2.
+// Modes: 0 alpha, 1 alpha inverted, 2 luminance (Rec. 709 on the linear
+// colour; because `m` is premultiplied this is already times alpha), 3
+// luminance inverted.
 fn coverage(m: vec4<f32>, mode: u32) -> f32 {
     var c = m.a;
     if mode >= 2u {
@@ -243,6 +245,16 @@ fn fs_mask(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let xy = vec2<i32>(p.xy);
     let v = textureLoad(tex_b, xy, 0);
     let m = vec4<f32>(srgb_to_linear(v.rgb) * v.a, v.a);
+    return textureLoad(tex_a, xy, 0) * coverage(m, params.mode);
+}
+
+// Multiplies the layer by what a matte source (another layer, already
+// rendered) keeps. The source's opacity counts, so a half-opaque source keeps
+// half.
+@fragment
+fn fs_matte(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let xy = vec2<i32>(p.xy);
+    let m = textureLoad(tex_b, xy, 0) * params.opacity;
     return textureLoad(tex_a, xy, 0) * coverage(m, params.mode);
 }
 

@@ -52,6 +52,8 @@ pub struct Layer {
     pub clip: Option<Clip>,
     /// Fades the layer by a gradient, after the clip.
     pub mask: Option<Mask>,
+    /// Cuts the layer by a sibling layer's pixels, after the mask.
+    pub matte: Option<Matte>,
     #[serde(flatten)]
     pub kind: LayerKind,
 }
@@ -186,6 +188,31 @@ pub enum MaskMode {
     /// Keep the layer where the gradient is light: Rec. 709 luminance of the
     /// linear-light colour, times its alpha.
     Luminance,
+}
+
+/// Multiplies the layer by another layer's rendered pixels. The source is not
+/// drawn on its own.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Matte {
+    /// The id of a layer in the same `layers` or `children` list.
+    pub layer: String,
+    #[serde(default)]
+    pub mode: MatteMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MatteMode {
+    /// Keep the layer where the source is opaque.
+    #[default]
+    Alpha,
+    /// Keep the layer where the source is transparent.
+    AlphaInverted,
+    /// Keep the layer where the source is light (see `MaskMode::Luminance`).
+    Luminance,
+    /// Keep the layer where the source is dark or transparent.
+    LuminanceInverted,
 }
 
 /// Colour stops along a line, around a point or around an angle. All
@@ -357,6 +384,9 @@ impl Scene {
             if let Some(clip) = &layer.clip {
                 validate_clip(&layer.id, clip, &layer.kind)?;
             }
+            if let Some(matte) = &layer.matte {
+                validate_matte(layer, matte, layers)?;
+            }
             if let Some(mask) = &layer.mask {
                 validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
             }
@@ -441,6 +471,23 @@ fn validate_clip(id: &str, clip: &Clip, kind: &LayerKind) -> Result<()> {
                 Error::Scene(format!("layer {id:?}: clip has a bad SVG path {d:?}: {e}"))
             })?;
         }
+    }
+    Ok(())
+}
+
+fn validate_matte(layer: &Layer, matte: &Matte, siblings: &[Layer]) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {:?}: matte {msg}", layer.id)));
+    if matte.layer == layer.id {
+        return bad("source cannot be the layer itself".into());
+    }
+    let Some(source) = siblings.iter().find(|l| l.id == matte.layer) else {
+        return bad(format!(
+            "source {:?} is not a sibling: it must be in the same layers or children list",
+            matte.layer
+        ));
+    };
+    if source.matte.is_some() {
+        return bad(format!("source {:?} has a matte of its own", source.id));
     }
     Ok(())
 }
@@ -612,5 +659,77 @@ mod tests {
         let msg =
             error(r#""mask": {"gradient": {"type": "conic", "cx": 0, "cy": 0, "stops": []}},"#);
         assert!(msg.contains("\"box\"") && msg.contains("2 stops"), "{msg}");
+    }
+
+    #[test]
+    fn parses_mattes_and_checks_the_source() {
+        // "grp" is the empty group beside "box" in `scene_with`.
+        let scene = scene_with(r#""matte": {"layer": "grp"},"#).unwrap();
+        let matte = scene.layers[0].matte.as_ref().unwrap();
+        assert_eq!(
+            (matte.layer.as_str(), matte.mode),
+            ("grp", MatteMode::Alpha)
+        );
+        for (name, mode) in [
+            ("alpha", MatteMode::Alpha),
+            ("alphaInverted", MatteMode::AlphaInverted),
+            ("luminance", MatteMode::Luminance),
+            ("luminanceInverted", MatteMode::LuminanceInverted),
+        ] {
+            let scene = scene_with(&format!(
+                r#""matte": {{"layer": "grp", "mode": "{name}"}},"#
+            ))
+            .unwrap();
+            assert_eq!(scene.layers[0].matte.as_ref().unwrap().mode, mode);
+        }
+
+        let cases = [
+            (r#""matte": {"layer": "box"},"#, "the layer itself"),
+            (
+                r#""matte": {"layer": "nope"},"#,
+                "\"nope\" is not a sibling",
+            ),
+        ];
+        for (matte, want) in cases {
+            let msg = error(matte);
+            assert!(
+                msg.contains(want) && msg.contains("\"box\""),
+                "{matte}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn matte_sources_must_be_siblings_without_mattes() {
+        let parse = |layers: &str| {
+            let json = format!(
+                r#"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": {layers}}}"#
+            );
+            Scene::from_json(&json, PathBuf::new()).map_err(|e| e.to_string())
+        };
+        let group = |id: &str, extra: &str, children: &str| {
+            format!(r#"{{"id": "{id}", "type": "group", {extra} "children": [{children}]}}"#)
+        };
+        // A source inside a group is not a sibling of a top-level layer.
+        let inner = group("inner", "", "");
+        let outer = group("outer", "", &inner);
+        let user = group("user", r#""matte": {"layer": "inner"},"#, "");
+        let msg = parse(&format!("[{outer}, {user}]")).unwrap_err();
+        assert!(msg.contains("not a sibling"), "{msg}");
+        // Siblings inside a group are fine, in either order.
+        let a = group("a", r#""matte": {"layer": "b"},"#, "");
+        let b = group("b", "", "");
+        parse(&format!("[{}]", group("g", "", &format!("{a}, {b}")))).unwrap();
+        parse(&format!("[{b}, {a}]")).unwrap();
+        // A source may not have a matte itself.
+        let c = group("c", r#""matte": {"layer": "a"},"#, "");
+        let msg = parse(&format!("[{a}, {b}, {c}]")).unwrap_err();
+        assert!(
+            msg.contains("matte of its own") && msg.contains("\"c\""),
+            "{msg}"
+        );
+        // Several layers can share one source.
+        let d = group("d", r#""matte": {"layer": "b"},"#, "");
+        parse(&format!("[{a}, {b}, {d}]")).unwrap();
     }
 }

@@ -6,6 +6,7 @@
 //! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
 //! - `mask`: layer x the alpha or luminance of a Vello-drawn clip or gradient
+//! - `matte`: layer x the alpha or luminance of another layer's texture
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
@@ -18,7 +19,7 @@ use vello::wgpu::{self, util::DeviceExt};
 use crate::blur::{self, Blur};
 use crate::error::{Error, Result};
 use crate::resolve::ResolvedEffect;
-use crate::scene::{BlendMode, MaskMode};
+use crate::scene::{BlendMode, MaskMode, MatteMode};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -38,6 +39,7 @@ pub struct Compositor {
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     mask: wgpu::RenderPipeline,
+    matte: wgpu::RenderPipeline,
     encode: wgpu::RenderPipeline,
     blur: Blur,
     pool: Vec<Tex>,
@@ -116,6 +118,7 @@ impl Compositor {
             to_linear: pipeline("fs_to_linear", LINEAR_FORMAT),
             blend: pipeline("fs_blend", LINEAR_FORMAT),
             mask: pipeline("fs_mask", LINEAR_FORMAT),
+            matte: pipeline("fs_matte", LINEAR_FORMAT),
             encode: pipeline("fs_encode", READBACK_FORMAT),
             blur: Blur::new(device),
             layout,
@@ -204,6 +207,30 @@ impl Compositor {
         let target = self.acquire();
         self.pass(&self.mask, &src.view, vello_output, 0.0, mode, &target.view);
         self.release(src);
+        target
+    }
+
+    /// Multiplies `src` by what the matte source `matte` keeps, after
+    /// scaling the matte by `matte_opacity`. Both inputs go back to the pool;
+    /// the result is a new texture.
+    pub fn matte(&mut self, src: Tex, matte: Tex, matte_opacity: f32, mode: MatteMode) -> Tex {
+        let mode = match mode {
+            MatteMode::Alpha => 0,
+            MatteMode::AlphaInverted => 1,
+            MatteMode::Luminance => 2,
+            MatteMode::LuminanceInverted => 3,
+        };
+        let target = self.acquire();
+        self.pass(
+            &self.matte,
+            &src.view,
+            &matte.view,
+            matte_opacity,
+            mode,
+            &target.view,
+        );
+        self.release(src);
+        self.release(matte);
         target
     }
 

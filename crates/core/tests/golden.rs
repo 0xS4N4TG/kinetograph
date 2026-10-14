@@ -95,6 +95,12 @@ fn gradient_masks_match_golden() {
 }
 
 #[test]
+fn track_mattes_match_golden() {
+    let frame = render_still(scene("tests/scenes/mattes.json"), 15).unwrap();
+    check("mattes", &frame);
+}
+
+#[test]
 fn rendering_is_deterministic() {
     // Mid-animation frame: keyframes, blur and multiply all in play.
     let card = || scene("../../examples/papercut-card.json");

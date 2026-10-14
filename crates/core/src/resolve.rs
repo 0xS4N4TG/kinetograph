@@ -6,7 +6,7 @@ use crate::color::Color;
 use crate::error::{Error, Result};
 use crate::scene::{
     BlendMode, Clip, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer, LayerKind,
-    MaskMode, Scene, Transform,
+    MaskMode, MatteMode, Scene, Transform,
 };
 
 #[derive(Clone, Debug)]
@@ -27,6 +27,7 @@ pub struct ResolvedLayer {
     pub effects: Vec<ResolvedEffect>,
     pub clip: Option<ResolvedClip>,
     pub mask: Option<ResolvedMask>,
+    pub matte: Option<ResolvedMatte>,
     pub kind: ResolvedKind,
 }
 
@@ -86,6 +87,13 @@ pub enum ResolvedClip {
 pub struct ResolvedMask {
     pub gradient: ResolvedGradient,
     pub mode: MaskMode,
+}
+
+#[derive(Clone, Debug)]
+pub struct ResolvedMatte {
+    /// The id of a sibling layer.
+    pub layer: String,
+    pub mode: MatteMode,
 }
 
 /// A gradient at one frame, in the space of whatever it paints.
@@ -240,6 +248,10 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
         clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
         mask: layer.mask.as_ref().map(|m| ResolvedMask {
             gradient: resolve_gradient(&m.gradient, f),
+            mode: m.mode,
+        }),
+        matte: layer.matte.as_ref().map(|m| ResolvedMatte {
+            layer: m.layer.clone(),
             mode: m.mode,
         }),
         kind,

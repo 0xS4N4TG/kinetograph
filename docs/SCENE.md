@@ -59,6 +59,7 @@ Every layer has these fields:
 | `effects` | array | `[]` | Applied in order to the layer's own pixels, before it is blended. See [Effects](#effects). |
 | `clip` | object | none | Cuts the layer to a shape. See [Clip paths](#clip-paths). |
 | `mask` | object | none | Fades the layer by a gradient. See [Gradient masks](#gradient-masks). |
+| `matte` | object | none | Cuts the layer by a sibling layer. See [Track mattes](#track-mattes). |
 
 `transform` fields, all animatable numbers:
 
@@ -160,8 +161,8 @@ position to within 0.01 pixel, so moving or resizing a blurred glow does not mak
 
 `clip` cuts a layer to a shape: pixels outside it become transparent, and the edge is anti-aliased (16x multisampled,
 like every shape). The shape is in the layer's own coordinates, so it follows the layer's `transform` (position,
-scale, rotation). A layer's pixels go through, in this order: its `effects`, its `clip`, its `mask`, then `opacity`
-and `blendMode`. So a blur is cut off by the clip, and the clip is not blurred. A group's clip applies to the composited
+scale, rotation). A layer's pixels go through, in this order: its `effects`, its `clip`, its `mask`, its `matte`,
+then `opacity` and `blendMode`. So a blur is cut off by the clip, and the clip is not blurred. A group's clip applies to the composited
 group. Every number is animatable.
 
 ```json
@@ -237,8 +238,39 @@ whose first and last stop have the same offset. The ramp between stops is sample
 Loading a scene rejects a gradient with fewer than 2 stops, a stop offset outside 0..1 at any keyframe, a negative
 radial `r`, and a `mode` other than `alpha` or `luminance`; the error names the layer.
 
+## Track mattes
+
+`matte` multiplies a layer by another layer's rendered pixels, after the `mask`. The other layer is the matte source;
+it can be anything (text, an image, a group of shapes).
+
+```json
+{ "id": "photo", "type": "image", "src": "photo.png", "width": 171, "height": 128,
+  "matte": { "layer": "word", "mode": "alpha" } },
+{ "id": "word", "type": "text", "text": "Wave", "font": "DM Sans", "size": 84, "color": "#ffffff" }
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `layer` | required | The `id` of the matte source. |
+| `mode` | `alpha` | `alpha` keeps the layer where the source is opaque; `alphaInverted` where it is transparent. `luminance` keeps it where the source is light (Rec. 709 luminance of the linear-light colour, times alpha, as in a gradient mask); `luminanceInverted` where it is dark or transparent. |
+
+Rules:
+
+- The source must be a sibling: in the same top-level `layers` list or the same group's `children`, before or after the
+  layer. It cannot be the layer itself, and it cannot have a `matte` of its own. Several layers can share one source.
+- A layer that is used as a matte source is not drawn on its own (as in After Effects). Its position in the list does
+  not matter.
+- The source is rendered with its own `transform`, `effects`, `clip`, `mask` and `opacity`, so it can be animated,
+  blurred (a soft matte) or half transparent (a half-strength matte). Its `blendMode` is ignored. It is positioned
+  with the same parent transforms as the layer it mattes, not the layer's own `transform`: the two move separately.
+- An `opacity` of 0 on the source hides the whole matted layer in the modes that keep the opaque part, and shows it
+  entirely in the inverted modes.
+
+Loading a scene rejects a source that is missing, not a sibling, the layer itself or itself matted; the error names the
+layer.
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - `blur` is the only effect.
-- No video layers, mattes, gradient fills or per-glyph text animation yet. Gradients are only used by `mask`.
+- No video layers, gradient fills or per-glyph text animation yet. Gradients are only used by `mask`.

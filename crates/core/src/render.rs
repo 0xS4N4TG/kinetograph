@@ -214,10 +214,11 @@ impl Renderer {
         mut canvas: Tex,
     ) -> Result<Tex> {
         for layer in layers {
-            if layer.opacity <= 0.0 {
+            // A matte source is only drawn through the layer it mattes.
+            if layer.opacity <= 0.0 || is_matte_source(layers, layer) {
                 continue;
             }
-            let src = self.layer_texture(layer, parent)?;
+            let src = self.layer_texture(layer, layers, parent)?;
             canvas = self.timed(Stage::Composite, |s| {
                 s.compositor
                     .blend(canvas, src, layer.opacity, layer.blend_mode)
@@ -227,8 +228,14 @@ impl Renderer {
     }
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
-    /// effects, clip and mask, in that order.
-    fn layer_texture(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<Tex> {
+    /// effects, clip, mask and matte, in that order. `siblings` is the list
+    /// `layer` is in, where its matte source is found.
+    fn layer_texture(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+    ) -> Result<Tex> {
         let src = match &layer.kind {
             ResolvedKind::Group { children } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
@@ -254,6 +261,24 @@ impl Renderer {
             self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix))?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor.mask(src, &s.vello_view, mask.mode)
+            });
+        }
+        if let Some(matte) = &layer.matte {
+            let source = siblings
+                .iter()
+                .find(|l| l.id == matte.layer)
+                .ok_or_else(|| {
+                    Error::Render(format!(
+                        "layer {:?}: matte source {:?} not found among its siblings",
+                        layer.id, matte.layer
+                    ))
+                })?;
+            // The source cannot have a matte (checked at load), so this
+            // recursion is one level deep.
+            let matte_tex = self.layer_texture(source, siblings, parent)?;
+            src = self.timed(Stage::Composite, |s| {
+                s.compositor
+                    .matte(src, matte_tex, source.opacity, matte.mode)
             });
         }
         Ok(src)
@@ -461,6 +486,13 @@ impl Renderer {
             )
             .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
+}
+
+/// Whether another layer in `layers` uses `layer` as its matte.
+fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
+    layers
+        .iter()
+        .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == layer.id))
 }
 
 /// A resolved gradient as a Vello brush, plus a transform to apply to the
@@ -679,6 +711,25 @@ mod tests {
 
     fn offsets(g: &peniko::Gradient) -> Vec<f32> {
         g.stops.iter().map(|s| s.offset).collect()
+    }
+
+    #[test]
+    fn only_matte_sources_are_skipped() {
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1,
+            "layers": [
+              {"id": "photo", "type": "group", "children": [], "matte": {"layer": "shape"}},
+              {"id": "shape", "type": "group", "children": []},
+              {"id": "other", "type": "group", "children": []}]}"##;
+        let scene = Scene::from_json(json, std::path::PathBuf::new()).unwrap();
+        let resolved = scene.resolve(0).unwrap();
+        let skipped: Vec<_> = resolved
+            .layers
+            .iter()
+            .map(|l| is_matte_source(&resolved.layers, l))
+            .collect();
+        assert_eq!(skipped, [false, true, false]);
+        let matte = resolved.layers[0].matte.as_ref().unwrap();
+        assert_eq!(matte.layer, "shape");
     }
 
     #[test]
