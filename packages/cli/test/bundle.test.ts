@@ -35,8 +35,14 @@ describe('resolveSpecifier', () => {
     expect(resolveSpecifier('@kinetograph/react')).toEqual({ kind: 'path', target: '@kinetograph/react' });
     expect(resolveSpecifier('@kinetograph/audio')).toEqual({ kind: 'path', target: '@kinetograph/audio' });
     expect(resolveSpecifier('@kinetograph/native')).toBeNull();
-    expect(resolveSpecifier('react')).toBeNull();
     expect(resolveSpecifier('./local')).toBeNull();
+    expect(resolveSpecifier('react-dom')).toBeNull();
+  });
+
+  it('re-resolves React from the CLI so a project has one React', () => {
+    expect(resolveSpecifier('react')).toEqual({ kind: 'path', target: 'react' });
+    expect(resolveSpecifier('react/jsx-runtime')).toEqual({ kind: 'path', target: 'react/jsx-runtime' });
+    expect(resolveSpecifier('react-reconciler')).toEqual({ kind: 'path', target: 'react-reconciler' });
   });
 
   it('humanises module names', () => {

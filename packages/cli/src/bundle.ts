@@ -56,6 +56,9 @@ export function resolveSpecifier(specifier: string): Resolution | null {
     };
   }
   if (/^@kinetograph\/(core|react|scene|audio)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
+  // React too: a project with its own copy of React would otherwise bundle two, and the core's hooks would run against
+  // a different React from the project's components.
+  if (/^react(-reconciler)?(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   return null;
 }
 
@@ -63,7 +66,7 @@ function aliasPlugin(): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@kinetograph\/(core|react|scene|audio)($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@kinetograph\/(core|react|scene|audio)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;
