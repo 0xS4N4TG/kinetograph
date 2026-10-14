@@ -214,3 +214,15 @@ fn grain_matches_golden() {
     let frame = render_still(scene("tests/scenes/grain.json"), 15).unwrap();
     check("grain", &frame);
 }
+
+#[test]
+fn dither_matches_golden() {
+    // Frame 15 of 30: the animated levels (5) and cell sizes are half way.
+    // Covers ordered and seeded random dithering of grey ramps, an image, a
+    // text gradient and a radial-filled group hanging off the left and
+    // bottom edges, a random pattern that animates per frame, one that does
+    // not (with the largest seed), and a half-transparent layer whose alpha
+    // must stay as it was.
+    let frame = render_still(scene("tests/scenes/dither.json"), 15).unwrap();
+    check("dither", &frame);
+}

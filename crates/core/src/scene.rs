@@ -67,6 +67,10 @@ fn zero() -> Num {
     Num::Const(0.0)
 }
 
+fn two() -> Num {
+    Num::Const(2.0)
+}
+
 fn yes() -> bool {
     true
 }
@@ -230,9 +234,40 @@ pub enum Effect {
         #[serde(default = "yes")]
         monochrome: bool,
     },
+    /// Quantises each sRGB channel to a few levels, with an ordered Bayer
+    /// pattern or seeded noise choosing between the two nearest.
+    Dither {
+        #[serde(default)]
+        mode: DitherMode,
+        /// Levels per channel, 2..=256 (rounded).
+        #[serde(default = "two")]
+        levels: Num,
+        /// Canvas pixels per dither cell, at least 1.
+        #[serde(default = "one")]
+        size: Num,
+        /// Required for `random`, 0..=u32::MAX; ignored by `ordered`.
+        seed: Option<i64>,
+        /// A new random pattern each output frame (`random` only).
+        #[serde(default)]
+        animate: bool,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DitherMode {
+    /// An 8x8 Bayer threshold matrix.
+    #[default]
+    Ordered,
+    /// A seeded white-noise threshold.
+    Random,
+}
+
+/// Fewest and most levels per channel a `dither` takes.
+pub const MIN_DITHER_LEVELS: f64 = 2.0;
+pub const MAX_DITHER_LEVELS: f64 = 256.0;
 
 /// Fewest and most stops a `gradientMap` takes; the shader's uniform block
 /// holds 16.
@@ -328,7 +363,10 @@ impl Effect {
             | Effect::Invert { .. }
             | Effect::HueRotate { .. } => 0.0,
             // Recolours pixels in place.
-            Effect::GradientMap { .. } | Effect::Lut { .. } | Effect::Grain { .. } => 0.0,
+            Effect::GradientMap { .. }
+            | Effect::Lut { .. }
+            | Effect::Grain { .. }
+            | Effect::Dither { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -650,6 +688,13 @@ impl Scene {
                             )));
                         }
                     }
+                    Effect::Dither {
+                        mode,
+                        levels,
+                        size,
+                        seed,
+                        ..
+                    } => validate_dither(&layer.id, *mode, levels, size, *seed)?,
                     Effect::Lut { src, .. } if src.trim().is_empty() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: lut needs a src, the path of a .cube file",
@@ -823,6 +868,29 @@ fn validate_seed(id: &str, what: &str, seed: i64) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn validate_dither(
+    id: &str,
+    mode: DitherMode,
+    levels: &Num,
+    size: &Num,
+    seed: Option<i64>,
+) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: dither {msg}")));
+    if levels.min() < MIN_DITHER_LEVELS || levels.max() > MAX_DITHER_LEVELS {
+        return bad(format!(
+            "levels must be between {MIN_DITHER_LEVELS} and {MAX_DITHER_LEVELS}"
+        ));
+    }
+    if size.min() < 1.0 {
+        return bad("size must be at least 1 canvas pixel".into());
+    }
+    match (mode, seed) {
+        (DitherMode::Random, None) => bad("mode \"random\" needs a seed".into()),
+        (_, Some(seed)) => validate_seed(id, "dither", seed),
+        _ => Ok(()),
+    }
 }
 
 fn validate_gradient_map(id: &str, stops: &[Stop]) -> Result<()> {
@@ -1456,6 +1524,87 @@ mod tests {
             scene_with(r#""effects": [{"type": "grain", "amount": 0.1, "seed": 4294967295}],"#)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn parses_dither_with_defaults() {
+        let scene = effects_of(
+            r#"[{"type": "dither"},
+                {"type": "dither", "mode": "random", "seed": 3, "animate": true,
+                 "levels": [{"frame": 0, "value": 2}, {"frame": 9, "value": 16}],
+                 "size": [{"frame": 0, "value": 1}, {"frame": 9, "value": 4}]}]"#,
+        );
+        let Effect::Dither {
+            mode,
+            levels,
+            size,
+            seed,
+            animate,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a dither");
+        };
+        assert_eq!(*mode, DitherMode::Ordered);
+        assert_eq!(
+            (levels.at(0.0), size.at(0.0), *seed, *animate),
+            (2.0, 1.0, None, false)
+        );
+        let Effect::Dither {
+            mode,
+            levels,
+            size,
+            seed,
+            animate,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a dither");
+        };
+        assert_eq!(*mode, DitherMode::Random);
+        assert_eq!(
+            (levels.at(9.0), size.at(9.0), *seed, *animate),
+            (16.0, 4.0, Some(3), true)
+        );
+        assert_eq!(scene.margin(), 0);
+        // An ordered dither may carry a seed; it is ignored.
+        assert!(scene_with(r#""effects": [{"type": "dither", "seed": 5}],"#).is_ok());
+    }
+
+    #[test]
+    fn rejects_bad_dither_naming_the_layer() {
+        let dither = |fields: &str| {
+            scene_with(&format!(r#""effects": [{{"type": "dither", {fields}}}],"#))
+                .unwrap_err()
+                .to_string()
+        };
+        for (fields, want) in [
+            (r#""mode": "random""#, "needs a seed"),
+            (
+                r#""mode": "random", "seed": -2"#,
+                "seed must be a whole number",
+            ),
+            (r#""seed": 4294967296"#, "seed must be a whole number"),
+            (r#""levels": 1"#, "levels must be between 2 and 256"),
+            (r#""levels": 257"#, "levels must be between 2 and 256"),
+            (
+                r#""levels": [{"frame": 0, "value": 8}, {"frame": 9, "value": 300}]"#,
+                "levels must be between 2 and 256",
+            ),
+            (r#""size": 0.5"#, "size must be at least 1"),
+        ] {
+            let msg = dither(fields);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The largest legal values.
+        assert!(
+            scene_with(r#""effects": [{"type": "dither", "levels": 256, "mode": "random", "seed": 4294967295}],"#)
+                .is_ok()
+        );
+        // An unknown mode is the JSON parser's complaint.
+        let msg = dither(r#""mode": "bayer""#);
+        assert!(msg.contains("bayer"), "{msg}");
     }
 
     const SHADER: &str =

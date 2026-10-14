@@ -1,8 +1,11 @@
-//! The integer hash behind seeded noise, mirrored from `shaders/hash.wgsl`.
+//! The integer hash behind seeded noise, mirrored from `shaders/hash.wgsl`,
+//! and in its tests small CPU models of the noise effects built on it (grain,
+//! dither).
 //!
 //! The GPU does all the noise work; this copy exists so tests can pin the
-//! hash's values and check noise maths on the CPU. A change to one side
-//! without the other fails `wgsl_uses_the_same_constants` or the value tests.
+//! hash's values and check the noise maths on the CPU. A change to the hash on
+//! one side without the other fails `wgsl_uses_the_same_constants` or the
+//! value tests.
 
 const MUL: u32 = 747_796_405;
 const ADD: u32 = 2_891_336_453;
@@ -174,5 +177,82 @@ mod tests {
         let (_, raw) = mean_and_std((0..64 * 64).map(|i| grain_at(2, 0, i % 64, i / 64, 1.0)));
         let (_, soft) = mean_and_std((0..64 * 64).map(|i| grain_at(2, 0, i % 64, i / 64, 8.0)));
         assert!(soft < raw);
+    }
+
+    /// `bayer8` in shaders/dither.wgsl.
+    fn bayer8(x: u32, y: u32) -> u32 {
+        (0..3).fold(0, |v, i| {
+            let (xb, yb) = ((x >> i) & 1, (y >> i) & 1);
+            v | ((2 * (xb ^ yb) + yb) << (2 * (2 - i)))
+        })
+    }
+
+    /// One channel of `fs_dither`: `v` in 0..=1 quantised to `levels` with
+    /// threshold `t` in 0..1.
+    fn quantise(v: f32, levels: u32, t: f32) -> f32 {
+        let steps = (levels - 1) as f32;
+        ((v * steps + t + 0.0001).floor() / steps).clamp(0.0, 1.0)
+    }
+
+    #[test]
+    fn bayer_matrix_is_the_classic_one() {
+        let row = |y| (0..8).map(|x| bayer8(x, y)).collect::<Vec<_>>();
+        assert_eq!(row(0), [0, 32, 8, 40, 2, 34, 10, 42]);
+        assert_eq!(row(1), [48, 16, 56, 24, 50, 18, 58, 26]);
+        assert_eq!(row(2), [12, 44, 4, 36, 14, 46, 6, 38]);
+        assert_eq!(row(7), [63, 31, 55, 23, 61, 29, 53, 21]);
+        // Every value 0..64 appears once, so every grey level has an exact
+        // share of "on" cells per 8x8 block.
+        let mut all: Vec<u32> = (0..64).map(|i| bayer8(i % 8, i / 8)).collect();
+        all.sort_unstable();
+        assert_eq!(all, (0..64).collect::<Vec<u32>>());
+        // And the pattern repeats every 8 cells.
+        assert_eq!(bayer8(9, 18), bayer8(1, 2));
+    }
+
+    #[test]
+    fn ordered_dither_keeps_the_ends_and_the_average() {
+        let threshold = |i: u32| (bayer8(i % 8, i / 8) as f32 + 0.5) / 64.0;
+        for levels in [2, 3, 4, 17, 256] {
+            for i in 0..64 {
+                assert_eq!(quantise(0.0, levels, threshold(i)), 0.0);
+                assert_eq!(quantise(1.0, levels, threshold(i)), 1.0);
+                // White that came back from a round trip a hair low is still 1.
+                assert_eq!(quantise(1.0 - 6e-8, levels, 0.0), 1.0);
+            }
+        }
+        // Two levels: a quarter grey is "on" in exactly 16 of 64 cells, and
+        // the output only ever holds the two levels.
+        let on = (0..64)
+            .map(|i| quantise(0.25, 2, threshold(i)))
+            .inspect(|v| assert!(*v == 0.0 || *v == 1.0))
+            .filter(|v| *v == 1.0)
+            .count();
+        assert_eq!(on, 16);
+        // Four levels: the block averages back to the input.
+        let mean = (0..64).map(|i| quantise(0.4, 4, threshold(i))).sum::<f32>() / 64.0;
+        assert!((mean - 0.4).abs() < 0.01, "{mean}");
+    }
+
+    #[test]
+    fn random_dither_averages_to_the_input_and_follows_the_seed() {
+        let on = |seed, frame| {
+            (0..64 * 64)
+                .map(|i| quantise(0.3, 2, unit_float(cell_hash(seed, i % 64, i / 64, frame))))
+                .sum::<f32>()
+                / 4096.0
+        };
+        assert!((on(3, 0) - 0.3).abs() < 0.03, "{}", on(3, 0));
+        // Same seed and frame, same pattern; either one changes it.
+        let pattern = |seed, frame| -> Vec<bool> {
+            (0..256)
+                .map(|i| unit_float(cell_hash(seed, i % 16, i / 16, frame)) < 0.5)
+                .collect()
+        };
+        assert_eq!(pattern(3, 0), pattern(3, 0));
+        assert_ne!(pattern(3, 0), pattern(4, 0));
+        assert_ne!(pattern(3, 0), pattern(3, 1));
+        let wgsl = include_str!("shaders/dither.wgsl");
+        assert!(wgsl.contains("(2u * (xb ^ yb) + yb) << (2u * (2u - i))"));
     }
 }

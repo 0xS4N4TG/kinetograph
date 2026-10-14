@@ -5,8 +5,9 @@ use vello::kurbo::Affine;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
-    BlendMode, Clip, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer, LayerKind,
-    MAX_SHADOW_SIZE, MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform,
+    BlendMode, Clip, DitherMode, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer,
+    LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, Paint,
+    Scene, Shadow, Stop, Transform,
 };
 
 /// The time a scene is evaluated at.
@@ -101,7 +102,23 @@ pub enum ResolvedEffect {
         amount: f32,
     },
     Grain(ResolvedGrain),
+    Dither(ResolvedDither),
     Shader(ResolvedShader),
+}
+
+/// A dither at one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedDither {
+    pub mode: DitherMode,
+    /// Whole, `MIN_DITHER_LEVELS..=MAX_DITHER_LEVELS`.
+    pub levels: u32,
+    /// Canvas pixels per cell, at least 1.
+    pub size: f32,
+    /// 0 for an ordered dither, which has no randomness.
+    pub seed: u32,
+    /// What a random pattern hashes with: the output frame, or 0 when it does
+    /// not animate (and always 0 for an ordered dither).
+    pub frame: u32,
 }
 
 /// Grain at one frame.
@@ -547,6 +564,30 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             frame: if *animate { clock.frame } else { 0 },
             monochrome: *monochrome,
         }),
+        Effect::Dither {
+            mode,
+            levels,
+            size,
+            seed,
+            animate,
+        } => ResolvedEffect::Dither(ResolvedDither {
+            mode: *mode,
+            levels: levels
+                .at(f)
+                .round()
+                .clamp(MIN_DITHER_LEVELS, MAX_DITHER_LEVELS) as u32,
+            size: size.at(f).max(1.0) as f32,
+            // Checked when the scene loaded; an ordered dither ignores it.
+            seed: match mode {
+                DitherMode::Random => seed.and_then(|s| u32::try_from(s).ok()).unwrap_or_default(),
+                DitherMode::Ordered => 0,
+            },
+            frame: if *animate && *mode == DitherMode::Random {
+                clock.frame
+            } else {
+                0
+            },
+        }),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
@@ -919,6 +960,50 @@ mod tests {
             fps: 30.0,
         });
         assert_eq!(a.amount, 1.0);
+    }
+
+    impl ResolvedEffect {
+        fn dither(self) -> ResolvedDither {
+            let ResolvedEffect::Dither(d) = self else {
+                panic!("not a dither: {self:?}");
+            };
+            d
+        }
+    }
+
+    #[test]
+    fn dither_rounds_levels_and_animates_only_when_random() {
+        let effects = effects_at(
+            r#"[{"type": "dither", "levels": [{"frame": 0, "value": 2}, {"frame": 10, "value": 9}],
+                 "size": [{"frame": 0, "value": 1}, {"frame": 10, "value": 5}], "seed": 8, "animate": true},
+                {"type": "dither", "mode": "random", "seed": 8, "animate": true},
+                {"type": "dither", "mode": "random", "seed": 8}]"#,
+            3,
+        );
+        // Ordered: levels 2 + 7 * 0.3 = 4.1 rounds to 4; the seed and the
+        // animate flag mean nothing.
+        assert_eq!(
+            effects[0].clone().dither(),
+            ResolvedDither {
+                mode: DitherMode::Ordered,
+                levels: 4,
+                size: 2.2,
+                seed: 0,
+                frame: 0
+            }
+        );
+        // The frame here is the scene's own: `effects_at` renders frame 3.
+        assert_eq!(
+            effects[1].clone().dither(),
+            ResolvedDither {
+                mode: DitherMode::Random,
+                levels: 2,
+                size: 1.0,
+                seed: 8,
+                frame: 3
+            }
+        );
+        assert_eq!(effects[2].clone().dither().frame, 0);
     }
 
     #[test]

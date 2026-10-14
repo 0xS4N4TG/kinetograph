@@ -48,10 +48,10 @@ use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::resolve::{
-    ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedGrain, ResolvedShader,
-    ResolvedShadow,
+    ResolvedDither, ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedGrain,
+    ResolvedShader, ResolvedShadow,
 };
-use crate::scene::{BlendMode, MAX_GRADIENT_MAP_STOPS, MaskMode, MatteMode};
+use crate::scene::{BlendMode, DitherMode, MAX_GRADIENT_MAP_STOPS, MaskMode, MatteMode};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -95,6 +95,7 @@ pub struct Compositor {
     aberration: wgpu::RenderPipeline,
     gradient_map: wgpu::RenderPipeline,
     grain: wgpu::RenderPipeline,
+    dither: wgpu::RenderPipeline,
     /// For `lut`: the layer, a 3D texture and the pass's uniforms.
     lut_layout: wgpu::BindGroupLayout,
     lut: wgpu::RenderPipeline,
@@ -146,6 +147,7 @@ impl Compositor {
             include_str!("shaders/gradient_map.wgsl"),
         );
         let grain_shader = shader_module(device, "grain", include_str!("shaders/grain.wgsl"));
+        let dither_shader = shader_module(device, "dither", include_str!("shaders/dither.wgsl"));
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -268,6 +270,7 @@ impl Compositor {
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
             gradient_map: pipeline(&gradient_map_shader, "fs_gradient_map", LINEAR_FORMAT),
             grain: pipeline(&grain_shader, "fs_grain", LINEAR_FORMAT),
+            dither: pipeline(&dither_shader, "fs_dither", LINEAR_FORMAT),
             lut_layout,
             lut,
             luts,
@@ -476,6 +479,7 @@ impl Compositor {
                     src = self.grain(src, &grain);
                 }
                 ResolvedEffect::Grain(_) => {}
+                ResolvedEffect::Dither(dither) => src = self.dither(src, &dither),
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -596,6 +600,21 @@ impl Compositor {
             &src.view,
             &src.view,
             &grain_values(grain, self.margin),
+            &target.view,
+        );
+        self.release(src);
+        target
+    }
+
+    /// Quantises `src` to a few levels per channel in one pass. `src` goes
+    /// back to the pool; the result is a new texture.
+    fn dither(&mut self, src: Tex, dither: &ResolvedDither) -> Tex {
+        let target = self.acquire();
+        self.run_pass(
+            &self.dither,
+            &src.view,
+            &src.view,
+            &dither_values(dither, self.margin),
             &target.view,
         );
         self.release(src);
@@ -1220,6 +1239,24 @@ fn grain_values(grain: &ResolvedGrain, margin: u32) -> Vec<u8> {
     bytes
 }
 
+/// A dither as `shaders/dither.wgsl` reads it: four floats (levels, size,
+/// 1 for random, unused), then four u32s (seed, frame, margin, unused).
+fn dither_values(dither: &ResolvedDither, margin: u32) -> Vec<u8> {
+    let random = dither.mode == DitherMode::Random;
+    let mut bytes = floats(&[
+        dither.levels as f32,
+        dither.size,
+        f32::from(u8::from(random)),
+        0.0,
+    ]);
+    bytes.extend(
+        [dither.seed, dither.frame, margin, 0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes()),
+    );
+    bytes
+}
+
 /// Little-endian bytes of a uniform block made of `f32`s.
 fn floats(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
@@ -1386,6 +1423,34 @@ mod tests {
             f32::from_le_bytes(<[u8; 4]>::try_from(&colour[8..12]).unwrap()),
             0.0
         );
+    }
+
+    #[test]
+    fn dither_values_say_which_threshold_to_use() {
+        let dither = ResolvedDither {
+            mode: DitherMode::Random,
+            levels: 5,
+            size: 2.0,
+            seed: 77,
+            frame: 4,
+        };
+        let word = |bytes: &[u8], i: usize| <[u8; 4]>::try_from(&bytes[i * 4..i * 4 + 4]).unwrap();
+        let bytes = dither_values(&dither, 9);
+        assert_eq!(bytes.len(), 32);
+        assert_eq!(f32::from_le_bytes(word(&bytes, 0)), 5.0);
+        assert_eq!(f32::from_le_bytes(word(&bytes, 1)), 2.0);
+        assert_eq!(f32::from_le_bytes(word(&bytes, 2)), 1.0);
+        assert_eq!(u32::from_le_bytes(word(&bytes, 4)), 77);
+        assert_eq!(u32::from_le_bytes(word(&bytes, 5)), 4);
+        assert_eq!(u32::from_le_bytes(word(&bytes, 6)), 9);
+        let ordered = dither_values(
+            &ResolvedDither {
+                mode: DitherMode::Ordered,
+                ..dither
+            },
+            0,
+        );
+        assert_eq!(f32::from_le_bytes(word(&ordered, 2)), 0.0);
     }
 
     #[test]

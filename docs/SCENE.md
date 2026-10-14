@@ -159,7 +159,7 @@ side.
   else is derived from the code.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
-- The colour filters, `gradientMap`, `lut` and `grain` count nothing: they change pixels in place.
+- The colour filters, `gradientMap`, `lut`, `grain` and `dither` count nothing: they change pixels in place.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -380,10 +380,11 @@ and the frame, so the noise comes from an explicit `seed`, not a random generato
 | `animate` | `true` | A new pattern on every output frame. `false` shows the same pattern on every frame. |
 | `monochrome` | `true` | One noise value for red, green and blue, so the grain only changes brightness. `false` gives each channel its own noise, which also changes hue. |
 
-- **The noise** at a pixel is triangular (the sum of two uniform values, minus 1, so in -1..1 with mean 0 and a standard
-  deviation of about 0.41), from an integer hash of `seed`, the pixel and the frame. It is added to the straight colour in
-  sRGB encoding, scaled by `amount`, and the result is clamped to 0..1, so grain cannot lift pure black or darken pure
-  white past the ends and looks slightly weaker there. Alpha is not changed and a fully transparent pixel stays empty.
+- **The noise** at a pixel is triangular (two uniform values summed, less 1: in -1..1, mean 0, standard deviation about
+  0.41), from an integer hash of `seed`, the pixel and the frame. It is added to the straight colour in sRGB encoding,
+  scaled by `amount`, and the result is clamped to 0..1. Pure black and pure white therefore lose the half of the
+  noise that would take them past the ends, and show weaker grain. Alpha is not changed and a fully transparent pixel
+  stays empty.
 - **Canvas space.** The pixel is the canvas pixel, not a position on the layer: the grain does not move, scale or
   rotate with the layer, and does not change when the scene's [margin](#canvas-margin) does. (A layer whose pixels
   move under a fixed pattern shows grain that crawls across them, as film does.)
@@ -391,6 +392,36 @@ and the frame, so the noise comes from an explicit `seed`, not a random generato
   rather than averaging the grain away.
 - Counts nothing in the [margin](#canvas-margin). Grain on a group grains the group's combined pixels; grain after a
   `blur` grains the blurred image.
+
+### dither
+
+```json
+{ "type": "dither", "levels": 2 }
+{ "type": "dither", "mode": "random", "levels": 4, "size": 2, "seed": 3, "animate": true }
+```
+
+Cuts each colour channel down to a few levels and uses a pattern to decide which of the two nearest levels each pixel
+gets, so gradients turn into the dotted look of a one-bit or low-colour display instead of bands.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `mode` | `ordered` | `ordered`: an 8x8 Bayer threshold matrix, the same crosshatch every frame. `random`: a seeded white-noise threshold. |
+| `levels` | `2` | Animatable, rounded to a whole number, from 2 to 256 (checked when the scene loads). Values per channel: `2` is black or full on each of red, green and blue (8 colours), `256` is no visible change. |
+| `size` | `1` | Animatable, at least 1 (checked when the scene loads): canvas pixels per dither cell, so `3` gives a coarse 3 x 3 pixel pattern. |
+| `seed` | none | Whole number from 0 to 4294967295. Required for `random` (an error naming the layer if missing); `ordered` ignores it. |
+| `animate` | `false` | `random` only: a new pattern on every output frame. `false` keeps one pattern. `ordered` has no randomness, so it ignores this. |
+
+- **The maths.** Each channel `v` of the straight colour, in sRGB encoding, becomes `floor(v * (levels - 1) + t) /
+  (levels - 1)`, where `t` in 0..1 is the cell's threshold: `(bayer + 0.5) / 64` for `ordered`, a seeded hash value for
+  `random`. So 0 and 1 are always kept, and over a Bayer block a flat colour comes out on average as itself (a quarter
+  grey at two levels is on in exactly 16 of the 64 cells). A tiny offset keeps a white that came back from the sRGB
+  round trip a hair low from falling to the level below.
+- **Alpha is kept, not dithered**: a translucent layer stays translucent, and a fully transparent pixel stays empty.
+  Only the colour is quantised, so the soft edge of a shape or of text dithers its colours but not its coverage.
+- **Canvas space.** Cells are `size` canvas pixels, laid on the screen from its top-left corner, not on the layer:
+  the pattern does not move with the layer and does not change with the scene's [margin](#canvas-margin). Random
+  thresholds come from an integer hash of `seed`, the cell and (if `animate`) the output frame.
+- Counts nothing in the [margin](#canvas-margin).
 
 ### backdropBlur
 
@@ -634,7 +665,8 @@ layer.
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
-  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `shader`.
+  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
+  `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
@@ -643,6 +675,13 @@ layer.
 - A shadow's spread uses a square window (see `dropShadow`), and its colour is not animated.
 - Colour filters clamp once per run of consecutive filters, not after each one as a browser does (see
   [Colour filters](#colour-filters)).
+- `gradientMap` takes 2 to 16 stops and maps luminance only (no per-channel curves). `lut` reads 3D `.cube` files of
+  size 2 to 64: no 1D tables, no `.3dl` or other formats, and a table's file cannot be swapped by keyframe (fade
+  between two layers instead). Both, like `grain` and `dither`, work on the sRGB-encoded straight colour of the layer
+  as it is after the effects before them.
+- `grain` and `dither` are in canvas space and seeded with whole numbers from 0 to 4294967295. A seed out of range,
+  or missing on a `random` dither, is an error naming the layer; a missing `grain` seed or one that is not a whole
+  number is rejected by the JSON parser with a line and column. `ordered` dithering has one fixed 8x8 Bayer pattern.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.
