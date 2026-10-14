@@ -641,7 +641,7 @@ fn linear_premultiplied(c: Color) -> [f64; 4] {
 }
 
 /// Decodes every image the scene refers to, so a missing file fails early.
-fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
+pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
     fn walk(layers: &[crate::scene::Layer], out: &mut Vec<String>) {
         for layer in layers {
             match &layer.kind {

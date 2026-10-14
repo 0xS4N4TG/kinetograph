@@ -1,9 +1,10 @@
 //! CPU-only checks that need no GPU: every built-in shader is valid WGSL,
-//! and every committed scene file loads.
+//! and every committed scene file loads, with its fonts and images.
 
 use std::path::{Path, PathBuf};
 
 use crate::Scene;
+use crate::text::TextEngine;
 
 fn files_with_extension(dir: &str, extension: &str) -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
@@ -39,6 +40,10 @@ fn committed_scenes_load() {
     scenes.extend(files_with_extension("../../examples", "json"));
     assert!(!scenes.is_empty(), "no scenes found");
     for path in scenes {
-        Scene::load(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let scene = Scene::load(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        // What `Renderer::new` reads before it touches the GPU.
+        TextEngine::new(&scene.fonts, &scene.base_dir)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        crate::render::load_images(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 }
