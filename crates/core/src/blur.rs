@@ -8,9 +8,7 @@
 //! original canvas-sized region.
 //!
 //! `plan` picks the largest `n` that leaves the Gaussian at least
-//! `MIN_SIGMA` texels wide, so the coarse grid is invisible. Shadows, which
-//! are soft and faint, ask for `SHADOW_MIN_SIGMA` instead and get one more
-//! level. Both the shrink
+//! `MIN_SIGMA` texels wide, so the coarse grid is invisible. Both the shrink
 //! and the enlarge keep the centre of mass, and the Gaussian is smooth at that
 //! scale, so a blurred layer tracks its position to a small fraction of a
 //! pixel (`tests/blur.rs` sweeps it). The two resampling filters add
@@ -153,78 +151,7 @@ impl Blur {
         input: PixelRect,
         output: PixelRect,
     ) {
-        self.run_with(
-            device, queue, src, dst, size, radius, MIN_SIGMA, input, output,
-        );
-    }
-
-    /// `run` for a shadow: the Gaussian may be as narrow as
-    /// `SHADOW_MIN_SIGMA` texels, so the pyramid has one more level and
-    /// every pass below the top works on a quarter of the pixels.
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_shadow(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        src: Input,
-        dst: Input,
-        size: (u32, u32),
-        radius: f32,
-        input: PixelRect,
-        output: PixelRect,
-    ) {
-        self.run_with(
-            device,
-            queue,
-            src,
-            dst,
-            size,
-            radius,
-            SHADOW_MIN_SIGMA,
-            input,
-            output,
-        );
-    }
-
-    /// Where a blur of `radius` over a `size` texture is non-zero when its
-    /// input is non-zero only inside `input`: the box to ask `run` for.
-    pub fn reach(size: (u32, u32), radius: f32, input: PixelRect) -> PixelRect {
-        let plan = Plan::new(size, radius, MIN_SIGMA);
-        plan.regions(size, input, PixelRect::whole(size.0, size.1))
-            .written
-    }
-
-    /// `reach` for `run_shadow`.
-    pub fn shadow_reach(size: (u32, u32), radius: f32, input: PixelRect) -> PixelRect {
-        let plan = Plan::new(size, radius, SHADOW_MIN_SIGMA);
-        plan.regions(size, input, PixelRect::whole(size.0, size.1))
-            .written
-    }
-
-    /// The box of a texture's pixels that a blur of `radius` (a shadow's if
-    /// `shadow`) must read to give the pixels `output`: the input texture
-    /// outside it makes no difference to them.
-    pub fn source_for(size: (u32, u32), radius: f32, shadow: bool, output: PixelRect) -> PixelRect {
-        let min_sigma = if shadow { SHADOW_MIN_SIGMA } else { MIN_SIGMA };
-        let plan = Plan::new(size, radius, min_sigma);
-        let whole = PixelRect::whole(size.0, size.1);
-        plan.regions(size, whole, output).read
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn run_with(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        src: Input,
-        dst: Input,
-        size: (u32, u32),
-        radius: f32,
-        min_sigma: f32,
-        input: PixelRect,
-        output: PixelRect,
-    ) {
-        let plan = Plan::new(size, radius, min_sigma);
+        let plan = Plan::new(size, radius);
         let levels = plan.levels;
         let regions = plan.regions(size, input, output);
         let (padded, sigma) = (plan.padded, plan.sigma);
@@ -333,6 +260,23 @@ impl Blur {
         }
     }
 
+    /// Where a blur of `radius` over a `size` texture is non-zero when its
+    /// input is non-zero only inside `input`: the box to ask `run` for.
+    pub fn reach(size: (u32, u32), radius: f32, input: PixelRect) -> PixelRect {
+        let plan = Plan::new(size, radius);
+        plan.regions(size, input, PixelRect::whole(size.0, size.1))
+            .written
+    }
+
+    /// The box of a texture's pixels that a blur of `radius` must read to
+    /// give the pixels `output`: the input texture outside it makes no
+    /// difference to them.
+    pub fn source_for(size: (u32, u32), radius: f32, output: PixelRect) -> PixelRect {
+        let plan = Plan::new(size, radius);
+        let whole = PixelRect::whole(size.0, size.1);
+        plan.regions(size, whole, output).read
+    }
+
     /// An image of the pyramid of exactly this size, from the last blur's if
     /// it left one. Its contents are whatever that blur wrote, which no
     /// pass reads: each clears its target all over first.
@@ -417,16 +361,11 @@ const NO_SOURCE: [i32; 4] = [0; 4];
 /// Smallest Gaussian width, in texels, that hides the coarse grid.
 const MIN_SIGMA: f32 = 4.0;
 
-/// Smallest Gaussian width for a shadow. A shadow is soft and at most as
-/// strong as its colour, so it can sit on a coarser grid than a blurred
-/// layer: from radius 4 on it has one more level than `MIN_SIGMA` gives.
-const SHADOW_MIN_SIGMA: f32 = 2.0;
-
 /// Number of down/up levels and the Gaussian's sigma (in texels of the
-/// smallest level) for a radius, keeping the sigma at least `min_sigma`.
-fn plan(radius: f32, min_sigma: f32) -> (u32, f32) {
+/// smallest level) for a radius, keeping the sigma at least `MIN_SIGMA`.
+fn plan(radius: f32) -> (u32, f32) {
     let mut levels = 0;
-    while radius / (2u32 << levels) as f32 >= min_sigma {
+    while radius / (2u32 << levels) as f32 >= MIN_SIGMA {
         levels += 1;
     }
     let scale = 4f32.powi(levels as i32);
@@ -472,8 +411,8 @@ struct Regions {
 }
 
 impl Plan {
-    fn new(size: (u32, u32), radius: f32, min_sigma: f32) -> Plan {
-        let (levels, sigma) = plan(radius, min_sigma);
+    fn new(size: (u32, u32), radius: f32) -> Plan {
+        let (levels, sigma) = plan(radius);
         let step = 1u32 << levels;
         let pad = (3.0 * radius).ceil() as u32;
         // Rounded up so every level is exactly half the size of the last.
@@ -606,30 +545,16 @@ fn double(r: PixelRect) -> PixelRect {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{MIN_SIGMA, Plan, SHADOW_MIN_SIGMA, double, halve, plan};
+    use super::{MIN_SIGMA, Plan, double, halve, plan};
     use crate::bounds::PixelRect;
 
     #[test]
     fn gaussian_stays_wide_enough() {
         for radius in [1.0, 2.0, 7.9, 8.0, 12.0, 44.0, 64.0, 127.0, 128.0] {
-            let (levels, sigma) = plan(radius, MIN_SIGMA);
+            let (levels, sigma) = plan(radius);
             let narrowest = if levels == 0 { 1.0 } else { MIN_SIGMA - 0.1 };
             assert!(sigma >= narrowest, "radius {radius}: {sigma}");
             assert!(sigma < 2.0 * MIN_SIGMA, "radius {radius}: {sigma}");
-        }
-    }
-
-    #[test]
-    fn a_shadow_gets_one_more_level_from_radius_4() {
-        for radius in [1.0, 2.0, 3.9] {
-            let (levels, _) = plan(radius, SHADOW_MIN_SIGMA);
-            assert_eq!(levels, plan(radius, MIN_SIGMA).0, "radius {radius}");
-        }
-        for radius in [4.0, 6.0, 7.9, 8.0, 12.0, 44.0, 64.0, 127.0, 128.0] {
-            let (levels, sigma) = plan(radius, SHADOW_MIN_SIGMA);
-            assert_eq!(levels, plan(radius, MIN_SIGMA).0 + 1, "radius {radius}");
-            assert!(sigma >= SHADOW_MIN_SIGMA - 0.2, "radius {radius}: {sigma}");
-            assert!(sigma < 2.0 * SHADOW_MIN_SIGMA, "radius {radius}: {sigma}");
         }
     }
 
@@ -704,23 +629,20 @@ pub(crate) mod tests {
         Y,
     }
 
-    /// A blur (a shadow's if `shadow`) of one row of a `size` canvas along
-    /// `axis`, as `blur_row` works it out: with the boxes `Blur::run` would
-    /// be given for a source that is zero outside `input` and the pixels
-    /// `output` wanted, drawing only those if `restricted`, or everywhere.
-    #[allow(clippy::too_many_arguments)]
+    /// A blur of one row of a `size` canvas along `axis`, as `blur_row`
+    /// works it out: with the boxes `Blur::run` would be given for a source
+    /// that is zero outside `input` and the pixels `output` wanted, drawing
+    /// only those if `restricted`, or everywhere.
     pub(crate) fn blur_axis(
         size: (u32, u32),
         radius: f32,
-        shadow: bool,
         src: &[f64],
         axis: Axis,
         input: PixelRect,
         output: PixelRect,
         restricted: bool,
     ) -> Vec<f64> {
-        let min_sigma = if shadow { SHADOW_MIN_SIGMA } else { MIN_SIGMA };
-        let plan = Plan::new(size, radius, min_sigma);
+        let plan = Plan::new(size, radius);
         let regions = restricted.then(|| plan.regions(size, input, output));
         blur_row(&plan, src, axis, regions.as_ref())
     }
@@ -817,86 +739,78 @@ pub(crate) mod tests {
     #[test]
     fn blurring_the_boxes_gives_the_pixels_of_the_full_blur() {
         let size = (53usize, 47usize);
-        for (min_sigma, radii) in [
-            (MIN_SIGMA, [1.0, 3.0, 5.5, 9.0, 12.0, 17.0, 33.0, 70.0]),
-            (
-                SHADOW_MIN_SIGMA,
-                [1.0, 3.0, 4.0, 6.5, 9.0, 21.0, 33.0, 70.0],
-            ),
-        ] {
-            for radius in radii {
-                let plan = Plan::new((size.0 as u32, size.1 as u32), radius, min_sigma);
-                // The layer sits in `input`; the pixels wanted are `output`,
-                // or all of them.
-                for (seed, input, output) in [
-                    (1, PixelRect::new(20, 15, 31, 30), None),
-                    (2, PixelRect::new(0, 0, 53, 47), None),
-                    (3, PixelRect::new(40, 30, 53, 47), None),
-                    (4, PixelRect::new(0, 0, 4, 3), None),
-                    (5, PixelRect::new(22, 21, 23, 22), None),
-                    (
-                        6,
-                        PixelRect::new(0, 0, 53, 47),
-                        Some(PixelRect::new(30, 2, 41, 19)),
-                    ),
-                    (
-                        7,
-                        PixelRect::new(0, 0, 53, 47),
-                        Some(PixelRect::new(0, 0, 3, 47)),
-                    ),
-                    (
-                        8,
-                        PixelRect::new(10, 10, 40, 35),
-                        Some(PixelRect::new(18, 20, 36, 24)),
-                    ),
-                ] {
-                    let canvas = PixelRect::whole(53, 47);
-                    let wanted = output.unwrap_or(canvas);
-                    let regions = plan.regions((53, 47), input, wanted);
-                    for axis in [Axis::X, Axis::Y] {
-                        let (len, lo, hi, wlo, whi, rlo, rhi) = match axis {
-                            Axis::X => (
-                                size.0,
-                                input.x0,
-                                input.x1,
-                                wanted.x0,
-                                wanted.x1,
-                                regions.written.x0,
-                                regions.written.x1,
-                            ),
-                            Axis::Y => (
-                                size.1,
-                                input.y0,
-                                input.y1,
-                                wanted.y0,
-                                wanted.y1,
-                                regions.written.y0,
-                                regions.written.y1,
-                            ),
-                        };
-                        let mut src = values(seed, len);
-                        for (i, v) in src.iter_mut().enumerate() {
-                            if (i as i32) < lo || (i as i32) >= hi {
-                                *v = 0.0;
-                            }
+        for radius in [1.0, 3.0, 5.5, 9.0, 12.0, 17.0, 33.0, 70.0] {
+            let plan = Plan::new((size.0 as u32, size.1 as u32), radius);
+            // The layer sits in `input`; the pixels wanted are `output`,
+            // or all of them.
+            for (seed, input, output) in [
+                (1, PixelRect::new(20, 15, 31, 30), None),
+                (2, PixelRect::new(0, 0, 53, 47), None),
+                (3, PixelRect::new(40, 30, 53, 47), None),
+                (4, PixelRect::new(0, 0, 4, 3), None),
+                (5, PixelRect::new(22, 21, 23, 22), None),
+                (
+                    6,
+                    PixelRect::new(0, 0, 53, 47),
+                    Some(PixelRect::new(30, 2, 41, 19)),
+                ),
+                (
+                    7,
+                    PixelRect::new(0, 0, 53, 47),
+                    Some(PixelRect::new(0, 0, 3, 47)),
+                ),
+                (
+                    8,
+                    PixelRect::new(10, 10, 40, 35),
+                    Some(PixelRect::new(18, 20, 36, 24)),
+                ),
+            ] {
+                let canvas = PixelRect::whole(53, 47);
+                let wanted = output.unwrap_or(canvas);
+                let regions = plan.regions((53, 47), input, wanted);
+                for axis in [Axis::X, Axis::Y] {
+                    let (len, lo, hi, wlo, whi, rlo, rhi) = match axis {
+                        Axis::X => (
+                            size.0,
+                            input.x0,
+                            input.x1,
+                            wanted.x0,
+                            wanted.x1,
+                            regions.written.x0,
+                            regions.written.x1,
+                        ),
+                        Axis::Y => (
+                            size.1,
+                            input.y0,
+                            input.y1,
+                            wanted.y0,
+                            wanted.y1,
+                            regions.written.y0,
+                            regions.written.y1,
+                        ),
+                    };
+                    let mut src = values(seed, len);
+                    for (i, v) in src.iter_mut().enumerate() {
+                        if (i as i32) < lo || (i as i32) >= hi {
+                            *v = 0.0;
                         }
-                        let full = blur_row(&plan, &src, axis, None);
-                        let drawn = blur_row(&plan, &src, axis, Some(&regions));
-                        let case = format!(
-                            "min sigma {min_sigma}, radius {radius}, seed {seed}, \
+                    }
+                    let full = blur_row(&plan, &src, axis, None);
+                    let drawn = blur_row(&plan, &src, axis, Some(&regions));
+                    let case = format!(
+                        "radius {radius}, seed {seed}, \
                              {} levels",
-                            plan.levels
-                        );
-                        for c in wlo.max(0)..whi.min(len as i32) {
-                            let c = c as usize;
-                            assert_eq!(full[c], drawn[c], "{case}: pixel {c}");
-                        }
-                        // The full blur is zero where no pass draws.
-                        for (c, v) in full.iter().enumerate() {
-                            let outside = (c as i32) < rlo || (c as i32) >= rhi;
-                            if outside && output.is_none() {
-                                assert_eq!(*v, 0.0, "{case}: pixel {c} is {v}");
-                            }
+                        plan.levels
+                    );
+                    for c in wlo.max(0)..whi.min(len as i32) {
+                        let c = c as usize;
+                        assert_eq!(full[c], drawn[c], "{case}: pixel {c}");
+                    }
+                    // The full blur is zero where no pass draws.
+                    for (c, v) in full.iter().enumerate() {
+                        let outside = (c as i32) < rlo || (c as i32) >= rhi;
+                        if outside && output.is_none() {
+                            assert_eq!(*v, 0.0, "{case}: pixel {c} is {v}");
                         }
                     }
                 }
@@ -924,15 +838,9 @@ pub(crate) mod tests {
         // A layer at the edge: the reach is cut to the texture.
         let corner = super::Blur::reach(size, 10.0, PixelRect::new(0, 0, 5, 5));
         assert_eq!((corner.x0, corner.y0), (0, 0));
-        // A shadow's finer pyramid reaches no less far.
-        let shadow = super::Blur::shadow_reach(size, 10.0, input);
-        assert!(
-            shadow.x0 <= reach.x0 + 2 && shadow.x1 >= reach.x1 - 2,
-            "{shadow:?}"
-        );
         // What a blur reads to make a few pixels: those and the radius's
         // worth of neighbours, never more than the pad around them.
-        let read = super::Blur::source_for(size, 10.0, false, PixelRect::new(100, 50, 104, 54));
+        let read = super::Blur::source_for(size, 10.0, PixelRect::new(100, 50, 104, 54));
         assert!(read.x0 < 100 - 20 && read.x0 > 100 - 50, "{read:?}");
         assert!(read.x1 > 104 + 20 && read.x1 < 104 + 50, "{read:?}");
     }

@@ -1543,7 +1543,7 @@ impl Compositor {
         if let Some((input, output)) = plan.blur {
             let target = self.target(output);
             let from = current.as_ref().map_or_else(|| src.input(), |t| t.input());
-            self.blur.run_shadow(
+            self.blur.run(
                 &self.device,
                 &self.queue,
                 from,
@@ -2626,7 +2626,7 @@ fn shadow_plan(
     let reach = spread.abs().ceil() as i32;
     let needed = match (invert, blurred) {
         (false, _) => PixelRect::EMPTY,
-        (true, true) => Blur::source_for(size, blur, true, wanted),
+        (true, true) => Blur::source_for(size, blur, wanted),
         (true, false) => wanted,
     }
     .intersect(whole);
@@ -2653,7 +2653,7 @@ fn shadow_plan(
             // The inverted alpha is non-zero everywhere.
             (whole, wanted.intersect(whole))
         } else {
-            (from_vertical, Blur::shadow_reach(size, blur, from_vertical))
+            (from_vertical, Blur::reach(size, blur, from_vertical))
         }
     });
     ShadowPlan {
@@ -3394,7 +3394,7 @@ mod tests {
             let (input, output) = plan
                 .and_then(|p| p.blur)
                 .unwrap_or((PixelRect::EMPTY, PixelRect::EMPTY));
-            v = blur_axis(size, blur, true, &v, axis, input, output, plan.is_some());
+            v = blur_axis(size, blur, &v, axis, input, output, plan.is_some());
         }
         v
     }

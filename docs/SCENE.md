@@ -344,11 +344,6 @@ Spread is done with a square window (a separate pass along each axis), not a rou
 corners of a round shape slightly square. It is exact for rectangles. Fractions of a pixel are
 interpolated, so animating the spread is smooth.
 
-A shadow's blur is run at a lower resolution than the `blur` effect's: the Gaussian may be as narrow as 2 texels
-(4 for `blur`), so from `blur: 4` up a shadow is blurred at half the size of the same-radius `blur`. The radius still
-means the standard deviation (the resampling's variance is subtracted as for `blur`); the shadow can show a little
-more of the coarse grid on its finest scale.
-
 A `dropShadow` that is the first effect of a `rect`, `roundedRect` or `ellipse` layer, filled with one colour and with
 no stroke, is not made by blurring at all (when `blur` is at least 1; below that nothing is blurred in any case). The
 renderer works the blurred shape out for each pixel from a formula, in the same pass that draws the layer over it: exact
