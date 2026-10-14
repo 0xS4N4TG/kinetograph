@@ -312,3 +312,17 @@ fn camera_matches_golden() {
     let frame = render_still(scene("tests/scenes/camera.json"), 15).unwrap();
     check("camera", &frame);
 }
+
+#[test]
+fn corner_pin_matches_golden() {
+    // Frame 15 of 30: the animated pins are half way. Covers an image with
+    // two corners pinned (the other two left on the box) and one corner of
+    // each animated, text with all four corners pinned, a rotated and scaled
+    // card hanging off the right and bottom edges with a drop shadow before
+    // the pin (so the shadow is pinned with it; the scene has a margin that
+    // the warp must account for), a pinned image that is then turned in 3D
+    // under a camera (the two warps compose), and a rectangle whose pins
+    // are exactly its own corners (drawn as if there were no effect).
+    let frame = render_still(scene("tests/scenes/corner-pin.json"), 15).unwrap();
+    check("corner-pin", &frame);
+}

@@ -17,9 +17,12 @@
 //! parent (with the margin offset) and `Proj` the camera. Restricted to the
 //! plane `z = 0` that is a 3x3 homography `H`: columns 0, 1 and 3 of the 4x4
 //! matrix and its x, y and w rows.
+//!
+//! The same warp serves `cornerPin`, whose homography comes from four point
+//! pairs.
 
 use glam::{DMat3, DMat4, DVec3};
-use vello::kurbo::Affine;
+use vello::kurbo::{Affine, Rect};
 
 use crate::resolve::{ResolvedCamera, ResolvedTransform};
 
@@ -128,6 +131,77 @@ pub fn sort_far_to_near<T>(items: &mut [T], z: impl Fn(&T) -> f64) {
         let step = |z: f64| (z / DEPTH_STEP).round();
         step(z(a)).total_cmp(&step(z(b)))
     });
+}
+
+/// The corners of `b` as `cornerPin` lists them: top left, top right, bottom
+/// right, bottom left.
+pub fn rect_corners(b: Rect) -> [[f64; 2]; 4] {
+    [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]]
+}
+
+/// The homography that takes the corners of the box `b` (as `rect_corners`
+/// lists them) to the points `to`, in the plane of `b`. The sign is chosen so
+/// that `w` is positive in the middle of the box, which is what the warp
+/// pass reads as "in front". `None` if the box or the quadrilateral has no
+/// area.
+pub fn corner_pin_homography(b: Rect, to: [[f64; 2]; 4]) -> Option<DMat3> {
+    let from = unit_square_to_quad(rect_corners(b))?;
+    let h = unit_square_to_quad(to)? * from.inverse();
+    if h.determinant().abs() <= SINGULAR {
+        return None;
+    }
+    let middle = h * DVec3::new(b.center().x, b.center().y, 1.0);
+    match middle.z {
+        w if w > 0.0 => Some(h),
+        w if w < 0.0 => Some(-h),
+        _ => None,
+    }
+}
+
+/// `m * h * m^-1`: the homography `h`, written in a layer's own space, moved
+/// to the texels the layer matrix `m` takes that space to. `None` if `m`
+/// cannot be inverted.
+pub fn in_texels(m: Affine, h: DMat3) -> Option<DMat3> {
+    if !invertible(m) {
+        return None;
+    }
+    let [a, b, c, d, e, f] = m.as_coeffs();
+    let m = DMat3::from_cols(
+        DVec3::new(a, b, 0.0),
+        DVec3::new(c, d, 0.0),
+        DVec3::new(e, f, 1.0),
+    );
+    Some(m * h * m.inverse())
+}
+
+/// The homography from the unit square to the quadrilateral whose corners
+/// are `q`, in the order (0,0), (1,0), (1,1), (0,1) (Heckbert's closed form).
+/// `None` if the quadrilateral has no area.
+fn unit_square_to_quad(q: [[f64; 2]; 4]) -> Option<DMat3> {
+    let [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
+    let (sx, sy) = (x0 - x1 + x2 - x3, y0 - y1 + y2 - y3);
+    let m = if sx == 0.0 && sy == 0.0 {
+        // A parallelogram: an affine map.
+        DMat3::from_cols(
+            DVec3::new(x1 - x0, y1 - y0, 0.0),
+            DVec3::new(x2 - x1, y2 - y1, 0.0),
+            DVec3::new(x0, y0, 1.0),
+        )
+    } else {
+        let (dx1, dx2, dy1, dy2) = (x1 - x2, x3 - x2, y1 - y2, y3 - y2);
+        let det = dx1 * dy2 - dx2 * dy1;
+        if det == 0.0 {
+            return None;
+        }
+        let g = (sx * dy2 - dx2 * sy) / det;
+        let h = (dx1 * sy - sx * dy1) / det;
+        DMat3::from_cols(
+            DVec3::new(x1 - x0 + g * x1, y1 - y0 + g * y1, g),
+            DVec3::new(x3 - x0 + h * x3, y3 - y0 + h * y3, h),
+            DVec3::new(x0, y0, 1.0),
+        )
+    };
+    (m.determinant().abs() > SINGULAR).then_some(m)
 }
 
 /// A layer's whole 3D matrix straight from the formula in the module docs, to
@@ -413,5 +487,85 @@ mod tests {
         let mut items = [1, 2, 3];
         sort_far_to_near(&mut items, |i| f64::from(*i));
         assert_eq!(items, [1, 2, 3]);
+    }
+
+    fn apply(h: &DMat3, p: [f64; 2]) -> [f64; 2] {
+        let q = *h * DVec3::new(p[0], p[1], 1.0);
+        [q.x / q.z, q.y / q.z]
+    }
+
+    fn close(a: [f64; 2], b: [f64; 2]) -> bool {
+        (a[0] - b[0]).abs() < 1e-8 && (a[1] - b[1]).abs() < 1e-8
+    }
+
+    #[test]
+    fn a_homography_maps_the_box_corners_to_the_pins() {
+        let b = Rect::new(10.0, 20.0, 210.0, 120.0);
+        let to = [[30.0, 10.0], [190.0, 40.0], [230.0, 150.0], [0.0, 110.0]];
+        let h = corner_pin_homography(b, to).expect("a real quadrilateral");
+        for (from, want) in rect_corners(b).into_iter().zip(to) {
+            assert!(close(apply(&h, from), want), "{from:?}");
+        }
+        // The middle of the box lands where the diagonals of the quad cross.
+        let ([ax, ay], [cx, cy], [bx, by], [dx, dy]) = (to[0], to[2], to[1], to[3]);
+        let t = ((bx - ax) * (dy - by) - (by - ay) * (dx - bx))
+            / ((cx - ax) * (dy - by) - (cy - ay) * (dx - bx));
+        let crossing = [ax + t * (cx - ax), ay + t * (cy - ay)];
+        assert!(close(apply(&h, [110.0, 70.0]), crossing));
+        // A straight line stays straight: the midpoint of an edge maps onto
+        // the line between its pinned ends.
+        let m = apply(&h, [110.0, 20.0]);
+        let (p, q) = (to[0], to[1]);
+        let cross = (q[0] - p[0]) * (m[1] - p[1]) - (q[1] - p[1]) * (m[0] - p[0]);
+        assert!(cross.abs() < 1e-6, "{cross}");
+        // The warp pass wants a positive w in front.
+        assert!((h * DVec3::new(110.0, 70.0, 1.0)).z > 0.0);
+    }
+
+    #[test]
+    fn pinning_to_the_corners_is_the_identity() {
+        let b = Rect::new(0.0, 0.0, 150.0, 90.0);
+        let h = corner_pin_homography(b, rect_corners(b)).unwrap();
+        assert!(h.abs_diff_eq(DMat3::IDENTITY, 1e-9), "{h:?}");
+    }
+
+    #[test]
+    fn a_parallelogram_pin_is_an_affine_map() {
+        let b = Rect::new(0.0, 0.0, 100.0, 50.0);
+        // Sheared right by 20 at the bottom.
+        let to = [[0.0, 0.0], [100.0, 0.0], [120.0, 50.0], [20.0, 50.0]];
+        let h = corner_pin_homography(b, to).unwrap();
+        assert!(close(apply(&h, [50.0, 25.0]), [60.0, 25.0]));
+        let q = h * DVec3::new(3.0, 4.0, 1.0);
+        assert!((q.z - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn degenerate_pins_are_refused() {
+        let b = Rect::new(0.0, 0.0, 100.0, 50.0);
+        // All four on a line.
+        let line = [[0.0, 0.0], [10.0, 10.0], [20.0, 20.0], [30.0, 30.0]];
+        assert!(corner_pin_homography(b, line).is_none());
+        // All on a point.
+        let point = [[5.0, 5.0]; 4];
+        assert!(corner_pin_homography(b, point).is_none());
+        // A box with no width.
+        let thin = Rect::new(0.0, 0.0, 0.0, 50.0);
+        assert!(corner_pin_homography(thin, rect_corners(b)).is_none());
+    }
+
+    #[test]
+    fn pins_are_moved_into_texels_by_the_layer_matrix() {
+        let b = Rect::new(0.0, 0.0, 100.0, 50.0);
+        let to = [[10.0, 5.0], [90.0, 0.0], [100.0, 50.0], [0.0, 40.0]];
+        let local = corner_pin_homography(b, to).unwrap();
+        let m = Affine::translate((40.0, 30.0)) * Affine::rotate(0.5) * Affine::scale(1.5);
+        let h = in_texels(m, local).unwrap();
+        for (from, want) in rect_corners(b).into_iter().zip(to) {
+            let p = m * vello::kurbo::Point::new(from[0], from[1]);
+            let w = m * vello::kurbo::Point::new(want[0], want[1]);
+            assert!(close(apply(&h, [p.x, p.y]), [w.x, w.y]), "{from:?}");
+        }
+        assert!(in_texels(Affine::scale(0.0), local).is_none());
     }
 }

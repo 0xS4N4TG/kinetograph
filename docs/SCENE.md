@@ -244,8 +244,8 @@ side.
   `scale` over the layer and its enclosing groups (a card scaled to 2 with a displacement of 10 counts 10).
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
-- 3D transforms (`rotateX`, `rotateY`, `z`) and the `camera` count nothing: they only move a finished layer (see
-  below for what that leaves out).
+- 3D transforms (`rotateX`, `rotateY`, `z`), the `camera` and `cornerPin` count nothing: they only move a finished
+  layer, and can only show what its texture holds (see below for what that leaves out).
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
   still drawn there. With a margin, the part of it that falls inside the margin is real and can bleed into effects.
 
@@ -627,6 +627,42 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
 - Effects after `displace` see the displaced layer; one before it (`glow`, a shadow) is displaced with it. For the
   papercut look put the shadow after: `[displace, dropShadow]` casts the shadow of the torn edge.
 
+### cornerPin
+
+```json
+{ "type": "cornerPin", "topRight": [200, 22], "bottomRight": [180, 128] }
+{ "type": "cornerPin",
+  "topLeft": [20, 0], "topRight": [150, [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 24 }]],
+  "bottomRight": [150, 92], "bottomLeft": [0, 80] }
+```
+
+Pins the four corners of the layer's box to four points, warping the layer into that quadrilateral with perspective:
+a billboard, a screen in a photo, a flag. The box is the one the `inset` clip uses (a shape's, image's, noise's or mesh's
+width by height, a text layer's layout box, a path's bounding box); a group has none, so a `cornerPin` on a group is a
+load error naming the layer.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `topLeft`, `topRight`, `bottomRight`, `bottomLeft` | the box's own corner | Where that corner of the box goes, `[x, y]` in the layer's own space (each number animatable). A corner left out stays on the box, so pinning one or two corners moves just those. |
+
+- **The map.** The homography taking the four box corners to the four points (computed exactly: the box's centre ends
+  up where the pinned quadrilateral's diagonals cross, and straight lines stay straight). It is applied in the layer's
+  space, so the pin moves, scales and rotates with the layer's `transform`; the layer is warped on the texture as
+  `M * H * M^-1`, `M` being its flat matrix, with the same warp pass as the [3D transforms](#3d-transforms-and-the-camera)
+  (bilinear, on premultiplied colour, transparent outside the texture).
+- **Order.** It is an effect, so it runs in its place in `effects`: effects before it are warped with the layer (a
+  `dropShadow` before it is pinned too), and effects after it see the warped layer (a shadow after it is cast by the
+  new shape). `clip`, `mask` and `matte` come after all effects and work in the layer's own space, not the pinned one.
+  A layer with a pin can also have `rotateX`, `rotateY` and `z`: the 3D warp then moves the pinned layer.
+- **Doing nothing.** A pin whose four points are the box's corners (all left out, or written out exactly) changes
+  nothing and costs no pass. Pinned corners that squeeze the box to a line or a point leave nothing to draw: the
+  layer is empty for those frames. A bow tie (the pins in the wrong order, so the sides cross) is not a plane; the part
+  of the layer that the map flips is not drawn.
+- Counts nothing in the [margin](#canvas-margin): the warp can only bring in what the layer's texture holds, which is
+  the canvas plus the margin. Pinning a corner far out stretches the layer's pixels, not new ones, and a layer that
+  hangs off the canvas is cut at the texture's edge before it is pinned.
+- Magnified parts are resampled (soft) and minified parts can alias, since there are no mipmaps.
+
 ### backdropBlur
 
 ```json
@@ -989,7 +1025,7 @@ Rules:
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
-  `halftone`, `dotMatrix`, `displace`, `shader`.
+  `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
@@ -1022,6 +1058,8 @@ Rules:
   fixed by the neighbouring points), no per-patch colour in another space, and the mesh is only as smooth as its 16 x 16
   quads per patch (a patch scaled up a great deal shows its facets). The edge is anti-aliased by 4 samples per pixel.
   Overlapping patches blend in document order without depth.
+- `cornerPin` needs a box (no groups), costs one pass each, and warps with bilinear sampling like the 3D transforms (no
+  mipmaps). It cannot bring in pixels from beyond the texture (canvas plus margin).
 - 3D is a warp of a flat layer, not a 3D renderer: no depth buffer, no intersecting layers, no lighting, one scene
   camera, no mipmaps (see [3D transforms and the camera](#3d-transforms-and-the-camera)), and a layer that hangs off the
   canvas is cut at the canvas edge (plus margin) before it is turned.

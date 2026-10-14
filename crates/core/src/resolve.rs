@@ -1,6 +1,6 @@
 //! A scene evaluated at one frame: every animated number is a plain value.
 
-use vello::kurbo::Affine;
+use vello::kurbo::{Affine, Rect};
 
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
@@ -11,6 +11,7 @@ use crate::scene::{
     Turbulence, TurbulenceKind,
 };
 use crate::turbulence::MAX_OCTAVES;
+use crate::warp;
 
 /// The time a scene is evaluated at.
 ///
@@ -125,7 +126,29 @@ pub enum ResolvedEffect {
     Halftone(ResolvedHalftone),
     DotMatrix(ResolvedDotMatrix),
     Displace(ResolvedDisplace),
+    CornerPin(ResolvedCornerPin),
     Shader(ResolvedShader),
+}
+
+/// A corner pin at one frame: where each corner of the layer's box goes, in
+/// layer space, or `None` to leave it where the box has it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedCornerPin {
+    /// Top left, top right, bottom right, bottom left.
+    pub corners: [Option<[f64; 2]>; 4],
+}
+
+impl ResolvedCornerPin {
+    /// The four points the box `b` is pinned to, in the same order.
+    pub fn points(&self, b: Rect) -> [[f64; 2]; 4] {
+        let mut points = warp::rect_corners(b);
+        for (point, pin) in points.iter_mut().zip(self.corners) {
+            if let Some(pin) = pin {
+                *point = pin;
+            }
+        }
+        points
+    }
 }
 
 /// A displacement at one frame.
@@ -783,6 +806,15 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             x_channel: *x_channel_selector,
             y_channel: *y_channel_selector,
             turbulence: resolve_turbulence(turbulence, f),
+        }),
+        Effect::CornerPin {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        } => ResolvedEffect::CornerPin(ResolvedCornerPin {
+            corners: [top_left, top_right, bottom_right, bottom_left]
+                .map(|c| c.as_ref().map(|[x, y]| [x.at(f), y.at(f)])),
         }),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
@@ -1633,5 +1665,32 @@ mod tests {
             })
             .collect();
         assert_eq!(flags, [false, true]);
+    }
+
+    #[test]
+    fn corner_pins_resolve_keyframes_and_default_to_the_box() {
+        let effects = effects_at(
+            r#"[{"type": "cornerPin", "topRight": [[{"frame": 0, "value": 100}, {"frame": 10, "value": 60}], 0],
+                 "bottomLeft": [10, [{"frame": 0, "value": 50}, {"frame": 10, "value": 30}]]}]"#,
+            5,
+        );
+        let ResolvedEffect::CornerPin(pin) = effects[0] else {
+            panic!("not a corner pin");
+        };
+        assert_eq!(
+            pin.corners,
+            [None, Some([80.0, 0.0]), None, Some([10.0, 40.0])]
+        );
+        // The corners left out are the box's own.
+        let b = Rect::new(0.0, 0.0, 100.0, 50.0);
+        assert_eq!(
+            pin.points(b),
+            [[0.0, 0.0], [80.0, 0.0], [100.0, 50.0], [10.0, 40.0]]
+        );
+        let none = effects_at(r#"[{"type": "cornerPin"}]"#, 0);
+        let ResolvedEffect::CornerPin(pin) = none[0] else {
+            panic!("not a corner pin");
+        };
+        assert_eq!(pin.points(b), warp::rect_corners(b));
     }
 }

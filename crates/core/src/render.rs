@@ -836,11 +836,12 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 }
 
 /// Whether any of `effects` measures across the layer's box, which then has
-/// to be worked out: a sweeping dot matrix.
+/// to be worked out: a sweeping dot matrix, a corner pin.
 fn needs_box(effects: &[ResolvedEffect]) -> bool {
-    effects
-        .iter()
-        .any(|e| matches!(e, ResolvedEffect::DotMatrix(d) if d.order == DotOrder::Sweep))
+    effects.iter().any(|e| {
+        matches!(e, ResolvedEffect::CornerPin(_))
+            || matches!(e, ResolvedEffect::DotMatrix(d) if d.order == DotOrder::Sweep)
+    })
 }
 
 /// Whether `effects` blur the backdrop.
@@ -1055,7 +1056,7 @@ mod tests {
     use vello::peniko::GradientKind;
 
     #[test]
-    fn only_a_sweep_needs_the_layer_box() {
+    fn only_a_sweep_and_a_corner_pin_need_the_layer_box() {
         let dots = |order| {
             ResolvedEffect::DotMatrix(crate::resolve::ResolvedDotMatrix {
                 size: 12.0,
@@ -1070,6 +1071,9 @@ mod tests {
         assert!(needs_box(&[dots(DotOrder::Sweep)]));
         assert!(!needs_box(&[dots(DotOrder::Random)]));
         assert!(!needs_box(&[]));
+        let pin =
+            ResolvedEffect::CornerPin(crate::resolve::ResolvedCornerPin { corners: [None; 4] });
+        assert!(needs_box(&[dots(DotOrder::Random), pin]));
     }
 
     const RED: Color = Color {

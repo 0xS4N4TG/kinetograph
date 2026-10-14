@@ -368,6 +368,15 @@ pub enum Effect {
         y_channel_selector: Channel,
         turbulence: Turbulence,
     },
+    /// Pins the layer's four box corners to four points, warping it into a
+    /// quadrilateral with perspective. A corner left out stays where it is.
+    #[serde(rename_all = "camelCase")]
+    CornerPin {
+        top_left: Option<[Num; 2]>,
+        top_right: Option<[Num; 2]>,
+        bottom_right: Option<[Num; 2]>,
+        bottom_left: Option<[Num; 2]>,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
@@ -623,6 +632,8 @@ impl Effect {
             Effect::Displace { scale, .. } => {
                 scale.max().abs().max(scale.min().abs()) / 2.0 * layer_scale
             }
+            // Warps what is in the texture, which paints nothing new.
+            Effect::CornerPin { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -1019,6 +1030,13 @@ impl Scene {
                     } => validate_dot_matrix(&layer.id, &layer.kind, size, stagger, *order, *seed)?,
                     Effect::Displace { turbulence, .. } => {
                         validate_turbulence(&layer.id, "displace", turbulence)?;
+                    }
+                    Effect::CornerPin { .. } if matches!(layer.kind, LayerKind::Group(_)) => {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: cornerPin needs a box, and a group has none; pin a \
+                             layer inside it, or put the group's children in a layer that has one",
+                            layer.id
+                        )));
                     }
                     Effect::Lut { src, .. } if src.trim().is_empty() => {
                         return Err(Error::Scene(format!(
@@ -3073,5 +3091,50 @@ mod tests {
             {"id": "inner", "type": "group", "preserve3d": true, "opacity": 0.5,
              "transform": {"rotateX": 30}, "children": []}]}]}"##;
         Scene::from_json(json, PathBuf::new()).unwrap();
+    }
+
+    #[test]
+    fn parses_a_corner_pin_with_corners_left_out() {
+        let scene = scene_with(
+            r#""effects": [{"type": "cornerPin", "topRight": [90, [{"frame": 0, "value": 4}, {"frame": 9, "value": 20}]],
+                            "bottomLeft": [-5, 60]}],"#,
+        )
+        .unwrap();
+        let Effect::CornerPin {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a corner pin");
+        };
+        assert!(top_left.is_none() && bottom_right.is_none());
+        let [x, y] = top_right.as_ref().unwrap();
+        assert_eq!((x.at(0.0), y.at(9.0)), (90.0, 20.0));
+        assert_eq!(bottom_left.as_ref().unwrap()[0].at(0.0), -5.0);
+        // None of them is allowed too: it pins nothing.
+        scene_with(r#""effects": [{"type": "cornerPin"}],"#).unwrap();
+    }
+
+    #[test]
+    fn a_corner_pin_needs_a_box_and_adds_no_margin() {
+        let msg = Scene::from_json(
+            r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                {"id": "g", "type": "group", "children": [],
+                 "effects": [{"type": "cornerPin", "topLeft": [1, 1]}]}]}"#,
+            PathBuf::new(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            msg.contains("\"g\"") && msg.contains("cornerPin") && msg.contains("group has none"),
+            "{msg}"
+        );
+        // A pin far outside the box still counts nothing: it only moves
+        // what the texture holds.
+        let scene =
+            scene_with(r#""effects": [{"type": "cornerPin", "topLeft": [-900, -900]}],"#).unwrap();
+        assert_eq!(scene.margin(), 0);
     }
 }

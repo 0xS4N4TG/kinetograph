@@ -1,0 +1,269 @@
+{
+ "width": 480,
+ "height": 270,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#14161d",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "camera": {
+  "perspective": 800
+ },
+ "layers": [
+  {
+   "id": "bg",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 480,
+    "height": 270
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 480,
+    "y1": 270,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#232a3d"
+     },
+     {
+      "offset": 1,
+      "color": "#10131c"
+     }
+    ]
+   }
+  },
+  {
+   "id": "billboard",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 200,
+   "height": 150,
+   "transform": {
+    "x": 24,
+    "y": 24
+   },
+   "effects": [
+    {
+     "type": "cornerPin",
+     "topRight": [
+      200,
+      [
+       {
+        "frame": 0,
+        "value": 0
+       },
+       {
+        "frame": 30,
+        "value": 44
+       }
+      ]
+     ],
+     "bottomRight": [
+      [
+       {
+        "frame": 0,
+        "value": 200
+       },
+       {
+        "frame": 30,
+        "value": 160
+       }
+      ],
+      128
+     ]
+    }
+   ]
+  },
+  {
+   "id": "slab",
+   "type": "text",
+   "text": "PIN",
+   "font": "DM Sans",
+   "size": 70,
+   "color": "#ffd166",
+   "transform": {
+    "x": 250,
+    "y": 18
+   },
+   "effects": [
+    {
+     "type": "cornerPin",
+     "topLeft": [
+      20,
+      0
+     ],
+     "topRight": [
+      150,
+      [
+       {
+        "frame": 0,
+        "value": 0
+       },
+       {
+        "frame": 30,
+        "value": 24
+       }
+      ]
+     ],
+     "bottomRight": [
+      150,
+      92
+     ],
+     "bottomLeft": [
+      0,
+      80
+     ]
+    }
+   ]
+  },
+  {
+   "id": "card",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 130,
+    "height": 90,
+    "radius": 12
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 130,
+    "y1": 90,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#ef476f"
+     },
+     {
+      "offset": 1,
+      "color": "#ffd166"
+     }
+    ]
+   },
+   "transform": {
+    "x": 385,
+    "y": 215,
+    "anchorX": 65,
+    "anchorY": 45,
+    "rotation": 18,
+    "scale": 1.15
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 6,
+     "y": 8,
+     "blur": 8,
+     "color": "#000000aa"
+    },
+    {
+     "type": "cornerPin",
+     "topLeft": [
+      0,
+      [
+       {
+        "frame": 0,
+        "value": 0
+       },
+       {
+        "frame": 30,
+        "value": 28
+       }
+      ]
+     ],
+     "bottomLeft": [
+      22,
+      90
+     ]
+    }
+   ]
+  },
+  {
+   "id": "tilted",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 160,
+   "height": 120,
+   "transform": {
+    "x": 120,
+    "y": 215,
+    "anchorX": 80,
+    "anchorY": 60,
+    "rotateY": [
+     {
+      "frame": 0,
+      "value": 0
+     },
+     {
+      "frame": 30,
+      "value": 40
+     }
+    ],
+    "z": 40
+   },
+   "effects": [
+    {
+     "type": "cornerPin",
+     "topLeft": [
+      28,
+      0
+     ],
+     "topRight": [
+      140,
+      10
+     ],
+     "bottomRight": [
+      160,
+      120
+     ],
+     "bottomLeft": [
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  {
+   "id": "still",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 80,
+    "height": 40
+   },
+   "fill": "#06d6a0",
+   "transform": {
+    "x": 262,
+    "y": 140
+   },
+   "effects": [
+    {
+     "type": "cornerPin",
+     "topLeft": [
+      0,
+      0
+     ],
+     "topRight": [
+      80,
+      0
+     ],
+     "bottomRight": [
+      80,
+      40
+     ],
+     "bottomLeft": [
+      0,
+      40
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -69,15 +69,16 @@ use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::mesh;
 use crate::resolve::{
-    ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect, ResolvedGlow,
-    ResolvedGradientMap, ResolvedGrain, ResolvedHalftone, ResolvedShader, ResolvedShadow,
-    ResolvedTurbulence,
+    ResolvedCornerPin, ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect,
+    ResolvedGlow, ResolvedGradientMap, ResolvedGrain, ResolvedHalftone, ResolvedShader,
+    ResolvedShadow, ResolvedTurbulence,
 };
 use crate::scene::{
     BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, MAX_GRADIENT_MAP_STOPS, MaskMode,
     MatteMode, NoiseChannels,
 };
 use crate::turbulence::{self, Tables};
+use crate::warp;
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -609,6 +610,9 @@ impl Compositor {
                     src = self.displace(src, layer_matrix, &displace);
                 }
                 ResolvedEffect::Displace(_) => {}
+                ResolvedEffect::CornerPin(ref pin) => {
+                    src = self.corner_pin(src, layer_matrix, layer_box, pin);
+                }
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -785,6 +789,35 @@ impl Compositor {
         );
         self.release(src);
         target
+    }
+
+    /// Pins the corners of the layer's box (`layer_box`, in the space
+    /// `layer_matrix` takes to texels) to the points of `pin`, with the warp
+    /// pass. `src` goes back to the pool; the result is a new texture. A pin
+    /// that leaves the box alone costs nothing, and one that squeezes it to a
+    /// line or a point (or a layer with no area) leaves nothing to draw.
+    fn corner_pin(
+        &mut self,
+        src: Tex,
+        layer_matrix: Affine,
+        layer_box: Option<Rect>,
+        pin: &ResolvedCornerPin,
+    ) -> Tex {
+        let Some(b) = layer_box else {
+            return src;
+        };
+        let points = pin.points(b);
+        if points == warp::rect_corners(b) {
+            return src;
+        }
+        match warp::corner_pin_homography(b, points).and_then(|h| warp::in_texels(layer_matrix, h))
+        {
+            Some(h) => self.warp(src, h.inverse()),
+            None => {
+                self.release(src);
+                self.filled([0.0; 4])
+            }
+        }
     }
 
     /// Moves `src` by the homography whose inverse is `inverse` (see
