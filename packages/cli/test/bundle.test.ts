@@ -1,0 +1,129 @@
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { bundleProject, cacheDir, familyFromModule, resolveSpecifier, syntheticEntry } from '../src/bundle.js';
+import { CliError } from '../src/errors.js';
+
+describe('resolveSpecifier', () => {
+  it('maps remotion to the core', () => {
+    expect(resolveSpecifier('remotion')).toEqual({ kind: 'path', target: '@kinetograph/core' });
+  });
+
+  it('maps @remotion/<pkg>[/sub] to the core subpath', () => {
+    expect(resolveSpecifier('@remotion/transitions')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions' });
+    expect(resolveSpecifier('@remotion/transitions/fade')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions/fade' });
+    for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie']) {
+      expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetograph/core/${pkg}` });
+    }
+    expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
+  });
+
+  it('turns @remotion/google-fonts/<Family> into a font module with the family name', () => {
+    expect(resolveSpecifier('@remotion/google-fonts/Inter')).toEqual({ kind: 'font', family: 'Inter' });
+    expect(resolveSpecifier('@remotion/google-fonts/DMSans')).toEqual({ kind: 'font', family: 'DM Sans' });
+    expect(resolveSpecifier('@remotion/google-fonts/BebasNeue')).toEqual({ kind: 'font', family: 'Bebas Neue' });
+  });
+
+  it('refuses the Remotion packages it has no equivalent for, pointing at doctor', () => {
+    const r = resolveSpecifier('@remotion/three');
+    expect(r?.kind).toBe('unsupported');
+    expect((r as { message: string }).message).toContain('doctor');
+  });
+
+  it('re-resolves the @kinetograph packages from the CLI and leaves everything else alone', () => {
+    expect(resolveSpecifier('@kinetograph/react')).toEqual({ kind: 'path', target: '@kinetograph/react' });
+    expect(resolveSpecifier('@kinetograph/audio')).toEqual({ kind: 'path', target: '@kinetograph/audio' });
+    expect(resolveSpecifier('@kinetograph/native')).toBeNull();
+    expect(resolveSpecifier('react')).toBeNull();
+    expect(resolveSpecifier('./local')).toBeNull();
+  });
+
+  it('humanises module names', () => {
+    expect(familyFromModule('PlayfairDisplay')).toBe('Playfair Display');
+    expect(familyFromModule('NotoSansJP')).toBe('Noto Sans JP');
+    expect(familyFromModule('Exo2')).toBe('Exo 2');
+    expect(familyFromModule('IBMPlexSans')).toBe('IBM Plex Sans');
+  });
+});
+
+describe('syntheticEntry', () => {
+  it('imports the determinism shim before the project, then re-exports the core', () => {
+    const lines = syntheticEntry('/p/index.tsx').trim().split('\n');
+    expect(lines).toEqual([
+      `import '@kinetograph/core/determinism/install';`,
+      `import "/p/index.tsx";`,
+      `export * from '@kinetograph/core';`,
+    ]);
+  });
+});
+
+function project(files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), 'kinetograph-bundle-test-'));
+  writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
+  for (const [name, text] of Object.entries(files)) {
+    mkdirSync(join(dir, name, '..'), { recursive: true });
+    writeFileSync(join(dir, name), text);
+  }
+  return dir;
+}
+
+describe('bundleProject', () => {
+  it('bundles a project with the aliases resolved, the shim first, and the output under node_modules/.cache', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot, interpolate } from 'remotion';`,
+        `import { fade } from '@remotion/transitions/fade';`,
+        `import { noise2D } from '@remotion/noise';`,
+        `import { loadFont } from '@remotion/google-fonts/DMSans';`,
+        `import { onFrame } from '@kinetograph/audio';`,
+        `import { helper } from './helper';`,
+        `registerRoot(() => null); loadFont(); onFrame(0, () => {});`,
+        `console.log(interpolate, fade, noise2D, helper);`,
+      ].join('\n'),
+      'helper.ts': `export const helper = 'PROJECT-HELPER';`,
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    expect(file.startsWith(join(dir, 'node_modules', '.cache', 'kinetograph'))).toBe(true);
+    expect(cacheDir(join(dir, 'index.ts'))).toBe(join(dir, 'node_modules', '.cache', 'kinetograph'));
+
+    const code = readFileSync(file, 'utf8');
+    // The shim's module is evaluated before the project's.
+    const shim = code.indexOf('determinism-install');
+    const projectAt = code.indexOf('PROJECT-HELPER');
+    expect(shim).toBeGreaterThan(-1);
+    expect(projectAt).toBeGreaterThan(shim);
+    // The aliases reached the core, not Remotion.
+    expect(code).toContain('packages/core/dist/index.js');
+    expect(code).toContain('packages/core/dist/transitions/fade.js');
+    expect(code).toContain('packages/core/dist/noise.js');
+    // The font module calls makeGoogleFont with the family name.
+    expect(code).toMatch(/makeGoogleFont\("DM Sans"\)/);
+    // The native audio library is never bundled (the render code that imports it is not even reached).
+    expect(code).not.toContain('NapiOfflineAudioContext');
+  });
+
+  it('leaves one file per entry, replaced when the code changes', async () => {
+    const dir = project({ 'index.ts': `console.log('v1');` });
+    const first = await bundleProject(join(dir, 'index.ts'));
+    writeFileSync(join(dir, 'index.ts'), `console.log('v2');`);
+    const second = await bundleProject(join(dir, 'index.ts'));
+    expect(second.file).not.toBe(first.file);
+    expect(readdirSync(join(dir, 'node_modules', '.cache', 'kinetograph'))).toHaveLength(1);
+    const same = await bundleProject(join(dir, 'index.ts'));
+    expect(same.file).toBe(second.file);
+  });
+
+  it('fails with BUNDLE_FAILED and the location for a syntax error', async () => {
+    const dir = project({ 'index.ts': `export const = ;` });
+    await expect(bundleProject(join(dir, 'index.ts'))).rejects.toMatchObject({ code: 'BUNDLE_FAILED' });
+  });
+
+  it('fails with BUNDLE_FAILED naming the unsupported package', async () => {
+    const dir = project({ 'index.ts': `import '@remotion/gif';` });
+    const error = (await bundleProject(join(dir, 'index.ts')).catch((e: unknown) => e)) as CliError;
+    expect(error.code).toBe('BUNDLE_FAILED');
+    expect(error.message).toContain('@remotion/gif');
+    expect(error.message).toContain('doctor');
+  });
+});
