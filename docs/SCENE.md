@@ -341,6 +341,11 @@ Spread is done with a square window (a separate pass along each axis), not a rou
 corners of a round shape slightly square. It is exact for rectangles. Fractions of a pixel are
 interpolated, so animating the spread is smooth.
 
+A shadow's blur is run at a lower resolution than the `blur` effect's: the Gaussian may be as narrow as 2 texels
+(4 for `blur`), so from `blur: 4` up a shadow is blurred at half the size of the same-radius `blur`. The radius still
+means the standard deviation (the resampling's variance is subtracted as for `blur`); the shadow can show a little
+more of the coarse grid on its finest scale.
+
 The shadow is computed on the layer as it is after the effects before it in the list, and effects after it (a `blur`,
 say) run on layer and shadow together. Shadow pixels past the canvas are real up to the [margin](#canvas-margin), so
 the shadow of a layer that hangs off the canvas, or lies wholly outside it, still falls on the canvas.

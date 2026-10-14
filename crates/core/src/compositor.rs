@@ -1140,7 +1140,7 @@ impl Compositor {
             let input = current.as_ref().map_or(&src.view, |t| &t.view);
             let size = (self.width, self.height);
             self.blur
-                .run(&self.device, &self.queue, input, &target.view, size, blur);
+                .run_shadow(&self.device, &self.queue, input, &target.view, size, blur);
             if let Some(done) = current.replace(target) {
                 self.release(done);
             }

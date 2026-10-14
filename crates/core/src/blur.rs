@@ -8,7 +8,9 @@
 //! original canvas-sized region.
 //!
 //! `plan` picks the largest `n` that leaves the Gaussian at least
-//! `MIN_SIGMA` texels wide, so the coarse grid is invisible. Both the shrink
+//! `MIN_SIGMA` texels wide, so the coarse grid is invisible. Shadows, which
+//! are soft and faint, ask for `SHADOW_MIN_SIGMA` instead and get one more
+//! level. Both the shrink
 //! and the enlarge keep the centre of mass, and the Gaussian is smooth at that
 //! scale, so a blurred layer tracks its position to a small fraction of a
 //! pixel (`tests/blur.rs` sweeps it). The two resampling filters add
@@ -121,10 +123,39 @@ impl Blur {
         queue: &wgpu::Queue,
         src: &wgpu::TextureView,
         dst: &wgpu::TextureView,
-        (width, height): (u32, u32),
+        size: (u32, u32),
         radius: f32,
     ) {
-        let (levels, sigma) = plan(radius);
+        self.run_with(device, queue, src, dst, size, radius, MIN_SIGMA);
+    }
+
+    /// `run` for a shadow: the Gaussian may be as narrow as
+    /// `SHADOW_MIN_SIGMA` texels, so the pyramid has one more level and
+    /// every pass below the top works on a quarter of the pixels.
+    pub fn run_shadow(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        src: &wgpu::TextureView,
+        dst: &wgpu::TextureView,
+        size: (u32, u32),
+        radius: f32,
+    ) {
+        self.run_with(device, queue, src, dst, size, radius, SHADOW_MIN_SIGMA);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        src: &wgpu::TextureView,
+        dst: &wgpu::TextureView,
+        (width, height): (u32, u32),
+        radius: f32,
+        min_sigma: f32,
+    ) {
+        let (levels, sigma) = plan(radius, min_sigma);
         let step = 1u32 << levels;
         let pad = (3.0 * radius).ceil() as u32;
         // Rounded up so every level is exactly half the size of the last.
@@ -249,11 +280,16 @@ impl Blur {
 /// Smallest Gaussian width, in texels, that hides the coarse grid.
 const MIN_SIGMA: f32 = 4.0;
 
+/// Smallest Gaussian width for a shadow. A shadow is soft and at most as
+/// strong as its colour, so it can sit on a coarser grid than a blurred
+/// layer: from radius 4 on it has one more level than `MIN_SIGMA` gives.
+const SHADOW_MIN_SIGMA: f32 = 2.0;
+
 /// Number of down/up levels and the Gaussian's sigma (in texels of the
-/// smallest level) for a radius.
-fn plan(radius: f32) -> (u32, f32) {
+/// smallest level) for a radius, keeping the sigma at least `min_sigma`.
+fn plan(radius: f32, min_sigma: f32) -> (u32, f32) {
     let mut levels = 0;
-    while radius / (2u32 << levels) as f32 >= MIN_SIGMA {
+    while radius / (2u32 << levels) as f32 >= min_sigma {
         levels += 1;
     }
     let scale = 4f32.powi(levels as i32);
@@ -263,15 +299,29 @@ fn plan(radius: f32) -> (u32, f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::{MIN_SIGMA, plan};
+    use super::{MIN_SIGMA, SHADOW_MIN_SIGMA, plan};
 
     #[test]
     fn gaussian_stays_wide_enough() {
         for radius in [1.0, 2.0, 7.9, 8.0, 12.0, 44.0, 64.0, 127.0, 128.0] {
-            let (levels, sigma) = plan(radius);
+            let (levels, sigma) = plan(radius, MIN_SIGMA);
             let narrowest = if levels == 0 { 1.0 } else { MIN_SIGMA - 0.1 };
             assert!(sigma >= narrowest, "radius {radius}: {sigma}");
             assert!(sigma < 2.0 * MIN_SIGMA, "radius {radius}: {sigma}");
+        }
+    }
+
+    #[test]
+    fn a_shadow_gets_one_more_level_from_radius_4() {
+        for radius in [1.0, 2.0, 3.9] {
+            let (levels, _) = plan(radius, SHADOW_MIN_SIGMA);
+            assert_eq!(levels, plan(radius, MIN_SIGMA).0, "radius {radius}");
+        }
+        for radius in [4.0, 6.0, 7.9, 8.0, 12.0, 44.0, 64.0, 127.0, 128.0] {
+            let (levels, sigma) = plan(radius, SHADOW_MIN_SIGMA);
+            assert_eq!(levels, plan(radius, MIN_SIGMA).0 + 1, "radius {radius}");
+            assert!(sigma >= SHADOW_MIN_SIGMA - 0.2, "radius {radius}: {sigma}");
+            assert!(sigma < 2.0 * SHADOW_MIN_SIGMA, "radius {radius}: {sigma}");
         }
     }
 }
