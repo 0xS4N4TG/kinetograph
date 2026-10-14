@@ -19,7 +19,8 @@ HANDOFF §8 Phase 1: Rust workspace, GPU compositor with shape/text/image/group 
 ## Open threads
 - [ ] Vello 0.11 image-atlas bug: workaround is a second vello::Renderer for image layers. Report upstream to linebender/vello.
 - [ ] Missing image file only detected at render time; error lacks resolved path (final review minor).
-- [ ] Blur allocates textures/bind groups per call, bypassing pool (perf, unmeasured).
+- [ ] Blur allocates textures/bind groups per call, bypassing pool. Measured 2026-10-14: peak RSS of `bench papercut-card` grows 169 MB (5 runs) → 282 (20) → 370 (60, plateau); basic.json (no blur) stays 75 MB. Fix in Phase 2a (pool reuse).
+- Memory vs Remotion (same M4, 2026-10-14, process-tree peak RSS): our still 128 MB vs Remotion still 1053 MB (8x); our bench steady state 370 MB vs Remotion S04 render 967 MB at concurrency 1, 1624 MB at 4 (2.6–4.4x). Different scenes (papercut-card vs ep13 S04); Node host will add ~50–80 MB to ours.
 - [ ] Every leaf is a full-canvas texture + 2 passes; composite is the largest stage. Optimise when Phase 2 adds more layers.
 - [ ] Unknown JSON keys silently ignored (serde flatten + tagged enum).
 - [x] HANDOFF roadmap rewritten (user approved 2026-10-14): Phase 2 split 2a (masks/clip paths first, shadows, colour, gradients, backdrop blur, glow, chromatic aberration, custom WGSL) / 2b (looks, 2.5D camera, motion blur, ffmpeg); Phase 3 runtime benchmark + §5 Remotion package table; cloud-session rules in §8.
