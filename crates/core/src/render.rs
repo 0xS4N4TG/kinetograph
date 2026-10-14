@@ -166,7 +166,7 @@ impl Renderer {
             let src = self.compositor.apply_effects(src, &layer.effects)?;
             canvas = self
                 .compositor
-                .blend(canvas, src, layer.opacity, layer.blend_mode)?;
+                .blend(canvas, src, layer.opacity, layer.blend_mode);
         }
         Ok(canvas)
     }

@@ -53,7 +53,7 @@ Every layer has these fields:
 | `type` | string | required | `shape`, `text`, `image` or `group`. |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
-| `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`. The parser accepts all of them. Only `normal` renders so far; the others fail with a "not supported yet" error. |
+| `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
 | `effects` | array | `[]` | Reserved. No effects exist yet. |
 
 `transform` fields, all animatable numbers:
@@ -130,5 +130,5 @@ coordinates.
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- `effects` is empty and only some blend modes are rendered.
+- `effects` is empty until the blur effect lands.
 - No video layers, masks, mattes, gradients or per-glyph text animation yet.

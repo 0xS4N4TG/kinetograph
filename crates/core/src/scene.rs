@@ -105,6 +105,10 @@ pub enum BlendMode {
     SoftLight,
     Difference,
     Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
 }
 
 /// Per-layer effects. None exist yet; each one added here gets a matching

@@ -187,8 +187,8 @@ impl Compositor {
 
     /// Composites `src` over `dst` with the layer's opacity and blend mode.
     /// Both inputs go back to the pool; the result is a new texture.
-    pub fn blend(&mut self, dst: Tex, src: Tex, opacity: f32, mode: BlendMode) -> Result<Tex> {
-        let mode = mode_index(mode)?;
+    pub fn blend(&mut self, dst: Tex, src: Tex, opacity: f32, mode: BlendMode) -> Tex {
+        let mode = mode_index(mode);
         let target = self.acquire();
         self.pass(
             &self.blend,
@@ -200,7 +200,7 @@ impl Compositor {
         );
         self.release(dst);
         self.release(src);
-        Ok(target)
+        target
     }
 
     /// Runs a layer's effects, in order, on its own texture before it is
@@ -346,9 +346,23 @@ impl Compositor {
 }
 
 /// The number the shader's `blend_fn` switches on.
-fn mode_index(mode: BlendMode) -> Result<u32> {
+fn mode_index(mode: BlendMode) -> u32 {
     match mode {
-        BlendMode::Normal => Ok(0),
-        other => Err(Error::Unsupported(format!("blend mode {other:?}"))),
+        BlendMode::Normal => 0,
+        BlendMode::Multiply => 1,
+        BlendMode::Screen => 2,
+        BlendMode::Overlay => 3,
+        BlendMode::Darken => 4,
+        BlendMode::Lighten => 5,
+        BlendMode::ColorDodge => 6,
+        BlendMode::ColorBurn => 7,
+        BlendMode::HardLight => 8,
+        BlendMode::SoftLight => 9,
+        BlendMode::Difference => 10,
+        BlendMode::Exclusion => 11,
+        BlendMode::Hue => 12,
+        BlendMode::Saturation => 13,
+        BlendMode::Color => 14,
+        BlendMode::Luminosity => 15,
     }
 }

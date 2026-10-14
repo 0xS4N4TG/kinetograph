@@ -14,8 +14,6 @@ pub enum Error {
     },
     /// The requested frame is outside `0..durationInFrames`.
     FrameOutOfRange { frame: u32, duration: u32 },
-    /// The scene uses something the renderer does not implement yet.
-    Unsupported(String),
     /// A GPU, font or image failure while rendering.
     Render(String),
 }
@@ -30,7 +28,6 @@ impl fmt::Display for Error {
                 "frame {frame} is out of range (scene has {duration} frames, valid frames are 0..={})",
                 duration.saturating_sub(1)
             ),
-            Error::Unsupported(msg) => write!(f, "not supported yet: {msg}"),
             Error::Render(msg) => write!(f, "render failed: {msg}"),
         }
     }

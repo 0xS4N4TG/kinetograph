@@ -102,16 +102,3 @@ fn opaque_colours_survive_the_linear_round_trip() {
     assert_eq!(&frame.rgba[4..8], [0xc0, 0xff, 0xee, 0xff]);
     assert_eq!(&frame.rgba[(5 * 4)..(5 * 4 + 4)], [0x7f, 0x3f, 0xbf, 0xff]);
 }
-
-#[test]
-fn unimplemented_blend_modes_error_cleanly() {
-    let json = r##"{
-        "width": 8, "height": 8, "fps": 30, "durationInFrames": 1,
-        "layers": [
-            {"id": "m", "type": "shape", "blendMode": "multiply",
-             "shape": {"kind": "rect", "width": 8, "height": 8}, "fill": "#ffffff"}
-        ]
-    }"##;
-    let scene = Scene::from_json(json, PathBuf::new()).unwrap();
-    assert!(matches!(render_still(scene, 0), Err(Error::Unsupported(_))));
-}
