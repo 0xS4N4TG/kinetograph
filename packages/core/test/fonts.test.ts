@@ -89,6 +89,10 @@ describe('familyFromModuleName', () => {
     ['JetBrainsMono', 'JetBrains Mono'],
     ['VT323', 'VT323'],
     ['Playfair Display', 'Playfair Display'],
+    ['DM Sans', 'DM Sans'],
+    ['Noto Sans JP', 'Noto Sans JP'],
+    ['Exo 2', 'Exo 2'],
+    ['Exo2', 'Exo 2'],
   ])('%s -> %s', (module, family) => {
     expect(familyFromModuleName(module)).toBe(family);
   });
@@ -123,6 +127,13 @@ function fakeNetwork(handler: (url: string) => { status: number; body: string | 
 }
 
 describe('google fonts', () => {
+  it('accepts the family name with spaces, as the CLI passes it', () => {
+    const font = makeGoogleFont('DM Sans');
+    expect(font.fontFamily).toBe('DM Sans');
+    expect(font.getInfo()).toEqual({ fontFamily: 'DM Sans', importName: 'DMSans' });
+    expect(makeGoogleFont('Exo 2').fontFamily).toBe('Exo 2');
+  });
+
   it('builds the CSS API URL with sorted weights and the italic axis', () => {
     expect(googleFontsCssUrl('Playfair Display', 'normal', ['700', '400'])).toBe(
       'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap',
