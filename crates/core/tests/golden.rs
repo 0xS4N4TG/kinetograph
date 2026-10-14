@@ -139,3 +139,13 @@ fn rendering_is_deterministic() {
     let y = render_still(blend(), 0).unwrap().encode_png().unwrap();
     assert_eq!(x, y, "blend-blur PNG bytes");
 }
+
+#[test]
+fn gradient_fills_match_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers linear,
+    // radial and conic fills, a repeating one on a rotated layer hanging off
+    // the canvas, reflecting and repeating gradients on text, and a path
+    // shape half off the left edge.
+    let frame = render_still(scene("tests/scenes/gradient-fills.json"), 15).unwrap();
+    check("gradient-fills", &frame);
+}

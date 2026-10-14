@@ -16,7 +16,7 @@ use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
 use crate::resolve::{
     ResolvedClip, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry, ResolvedKind,
-    ResolvedLayer, ResolvedMask, ResolvedScene,
+    ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
 use crate::scene::{Extend, LayerKind, MaskMode, Scene};
 use crate::text::TextEngine;
@@ -305,9 +305,10 @@ impl Renderer {
                 stroke,
             } => {
                 let path = geometry_path(geometry)?;
-                if let Some(color) = fill {
+                if let Some(paint) = fill {
+                    let (brush, brush_transform) = paint_brush(paint);
                     self.vello_scene
-                        .fill(Fill::NonZero, matrix, to_peniko(*color), None, &path);
+                        .fill(Fill::NonZero, matrix, &brush, brush_transform, &path);
                 }
                 if let Some((color, width)) = stroke {
                     self.vello_scene.stroke(
@@ -330,13 +331,15 @@ impl Renderer {
                 let laid_out = self
                     .text
                     .layout(text, font, *size, *line_height, *max_width);
+                let (brush, brush_transform) = paint_brush(color);
                 for run in &laid_out.runs {
                     self.vello_scene
                         .draw_glyphs(&run.font)
                         .transform(matrix)
+                        .brush_transform(brush_transform)
                         .font_size(run.font_size)
                         .hint(false)
-                        .brush(to_peniko(*color))
+                        .brush(&brush)
                         .draw(
                             Fill::NonZero,
                             run.glyphs.iter().map(|g| vello::Glyph {
@@ -509,6 +512,18 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
     layers
         .iter()
         .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == layer.id))
+}
+
+/// The brush for a fill or text colour, and the transform to apply to it on
+/// top of the transform of whatever it paints (`None` for a solid colour).
+fn paint_brush(paint: &ResolvedPaint) -> (peniko::Brush, Option<Affine>) {
+    match paint {
+        ResolvedPaint::Solid(color) => (peniko::Brush::Solid(to_peniko(*color)), None),
+        ResolvedPaint::Gradient(g) => {
+            let (brush, brush_transform) = gradient_brush(g);
+            (brush, Some(brush_transform))
+        }
+    }
 }
 
 /// A resolved gradient as a Vello brush, plus a transform to apply to the
@@ -901,5 +916,25 @@ mod tests {
                 .elements()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn paint_brush_only_transforms_gradients() {
+        let (brush, transform) = paint_brush(&ResolvedPaint::Solid(RED));
+        assert!(matches!(brush, peniko::Brush::Solid(_)) && transform.is_none());
+        let g = gradient(
+            ResolvedGradientGeometry::Conic {
+                cx: 10.0,
+                cy: 20.0,
+                angle: 90.0,
+            },
+            &[(0.0, RED), (1.0, Color::BLACK)],
+            Extend::Pad,
+        );
+        let (brush, transform) = paint_brush(&ResolvedPaint::Gradient(g));
+        assert!(matches!(brush, peniko::Brush::Gradient(_)));
+        // The conic turn about its centre leaves the centre where it is.
+        let moved = transform.unwrap() * Point::new(10.0, 20.0);
+        assert!(moved.distance(Point::new(10.0, 20.0)) < 1e-9);
     }
 }

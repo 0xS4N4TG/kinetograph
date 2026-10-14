@@ -6,7 +6,7 @@ use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
     BlendMode, Clip, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer, LayerKind,
-    MAX_SHADOW_SIZE, MaskMode, MatteMode, Scene, Shadow, Transform,
+    MAX_SHADOW_SIZE, MaskMode, MatteMode, Paint, Scene, Shadow, Transform,
 };
 
 #[derive(Clone, Debug)]
@@ -117,6 +117,13 @@ pub struct ResolvedMatte {
     pub mode: MatteMode,
 }
 
+/// What a shape's fill or a text's colour paints with, at one frame.
+#[derive(Clone, Debug)]
+pub enum ResolvedPaint {
+    Solid(Color),
+    Gradient(ResolvedGradient),
+}
+
 /// A gradient at one frame, in the space of whatever it paints.
 #[derive(Clone, Debug)]
 pub struct ResolvedGradient {
@@ -154,14 +161,14 @@ pub const MAX_BLUR_RADIUS: f64 = 128.0;
 pub enum ResolvedKind {
     Shape {
         geometry: ResolvedGeometry,
-        fill: Option<Color>,
+        fill: Option<ResolvedPaint>,
         stroke: Option<(Color, f64)>,
     },
     Text {
         text: String,
         font: String,
         size: f32,
-        color: Color,
+        color: ResolvedPaint,
         /// Multiple of the font size.
         line_height: Option<f32>,
         max_width: Option<f32>,
@@ -240,14 +247,14 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
                 },
                 Geometry::Path { d } => ResolvedGeometry::Path { d: d.clone() },
             },
-            fill: s.fill,
+            fill: s.fill.as_ref().map(|p| resolve_paint(p, f)),
             stroke: s.stroke.as_ref().map(|st| (st.color, st.width.at(f))),
         },
         LayerKind::Text(t) => ResolvedKind::Text {
             text: t.text.clone(),
             font: t.font.clone(),
             size: t.size.at(f) as f32,
-            color: t.color,
+            color: resolve_paint(&t.color, f),
             line_height: t.line_height.as_ref().map(|n| n.at(f) as f32),
             max_width: t.max_width.as_ref().map(|n| n.at(f) as f32),
         },
@@ -276,6 +283,13 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
             mode: m.mode,
         }),
         kind,
+    }
+}
+
+fn resolve_paint(paint: &Paint, f: f64) -> ResolvedPaint {
+    match paint {
+        Paint::Solid(color) => ResolvedPaint::Solid(*color),
+        Paint::Gradient(g) => ResolvedPaint::Gradient(resolve_gradient(g, f)),
     }
 }
 
@@ -631,5 +645,43 @@ mod tests {
             g.geometry,
             ResolvedGradientGeometry::Linear { x1, .. } if x1 == 50.0
         ));
+    }
+
+    #[test]
+    fn fills_and_text_colours_resolve_per_frame() {
+        let json = r##"{
+            "width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "fonts": {"F": "f.ttf"},
+            "layers": [
+              {"id": "a", "type": "shape",
+               "shape": {"kind": "rect", "width": 50, "height": 50},
+               "fill": {"type": "radial", "cx": 0, "cy": 0,
+                        "r": [{"frame": 0, "value": 0}, {"frame": 10, "value": 100}],
+                        "extend": "repeat",
+                        "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]}},
+              {"id": "b", "type": "shape",
+               "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#f00"},
+              {"id": "t", "type": "text", "text": "x", "font": "F", "size": 10, "color": "#0f0"}]
+        }"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let layers = scene.resolve(5).unwrap().layers;
+        let ResolvedKind::Shape { fill, .. } = &layers[0].kind else {
+            panic!("not a shape");
+        };
+        let Some(ResolvedPaint::Gradient(g)) = fill else {
+            panic!("fill is not a gradient");
+        };
+        assert!(matches!(g.geometry, ResolvedGradientGeometry::Radial { r, .. } if r == 50.0));
+        assert_eq!(g.extend, Extend::Repeat);
+        let ResolvedKind::Shape { fill, .. } = &layers[1].kind else {
+            panic!("not a shape");
+        };
+        assert!(
+            matches!(fill, Some(ResolvedPaint::Solid(c)) if *c == Color::parse("#f00").unwrap())
+        );
+        let ResolvedKind::Text { color, .. } = &layers[2].kind else {
+            panic!("not text");
+        };
+        assert!(matches!(color, ResolvedPaint::Solid(c) if *c == Color::parse("#0f0").unwrap()));
     }
 }

@@ -86,7 +86,8 @@ different from a browser).
 ```
 
 `fill` and `stroke` are both optional (a shape with neither draws nothing). The stroke is centred on the outline and
-is drawn over the fill.
+is drawn over the fill. `fill` is a colour string or a [gradient](#gradients) (see [Gradient fills](#gradient-fills));
+`stroke.color` is a colour string only.
 
 `shape.kind` and its fields (the shape's top-left corner is the layer's origin):
 
@@ -109,6 +110,7 @@ the text box.
 
 - `font`: a key of the scene's `fonts`.
 - `size`: font size in pixels.
+- `color`: a colour string or a [gradient](#gradients) (see [Gradient fills](#gradient-fills)).
 - `lineHeight`: multiple of `size`. Omitted: the font's own line height.
 - `maxWidth`: wrap width in pixels. Omitted: lines break only at `\n`.
 
@@ -295,7 +297,8 @@ keyframe, and `inset` on a group, and the error names the layer.
 
 ## Gradients
 
-A gradient is an object that appears wherever a scene paints with one (so far, `mask`). Its coordinates are in the
+A gradient is an object that appears wherever a scene paints with one: `mask`, a shape's `fill` and a text layer's
+`color`. Its coordinates are in the
 space of whatever it paints, so a mask gradient lives in the layer's own space and follows the layer's `transform`.
 Every number is animatable, including the stop offsets.
 
@@ -321,6 +324,36 @@ Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
 stop's colour everywhere: a linear gradient whose two points coincide, a radial one with `r` 0, or a repeating one
 whose first and last stop have the same offset. The ramp between stops is sampled at 512 steps.
+
+## Gradient fills
+
+A shape's `fill` and a text layer's `color` take a [gradient](#gradients) in place of a colour string. The gradient's
+coordinates are in the layer's own space, the same space as the shape's geometry (origin at the shape's top-left
+corner), or, for text, the text box (origin at its top-left corner, as for `clip`). The gradient therefore follows the
+layer's `transform` and moves with the layer when it is animated; to slide a gradient across a still shape, animate its
+coordinates.
+
+```json
+{ "id": "card", "type": "shape", "shape": { "kind": "roundedRect", "width": 400, "height": 240, "radius": 24 },
+  "fill": { "type": "linear", "x0": 0, "y0": 0, "x1": 400, "y1": 240,
+            "stops": [{ "offset": 0, "color": "#ff4d4d" }, { "offset": 1, "color": "#2f6bff" }] } }
+
+{ "id": "title", "type": "text", "text": "Gradient", "font": "DM Sans", "size": 56,
+  "color": { "type": "linear", "x0": 0, "y0": 0, "x1": 200, "y1": 0, "extend": "reflect",
+             "stops": [{ "offset": 0, "color": "#7aa2f7" }, { "offset": 1, "color": "#e05a9d" }] } }
+```
+
+- All four looks come from the one object: `linear`, `radial`, `conic`, and the repeating form of each with
+  `"extend": "repeat"` (CSS `repeating-linear-gradient` and friends) or `"reflect"`. Everything else in
+  [Gradients](#gradients) applies unchanged: `pad` by default, stop offsets 0..1, colours not animated, every number
+  animatable.
+- With `extend` `pad`, the fill covers the whole shape or all the glyphs, and the gradient holds its end colours past
+  the first and last stop.
+- Translucent stops make a translucent fill. The shape's `opacity` still multiplies the result.
+- The `stroke` stays a plain colour, drawn over the fill.
+- Loading a scene rejects a gradient with fewer than 2 stops, a stop offset outside 0..1 at any keyframe or a negative
+  radial `r`; the error names the layer ("fill gradient" or "color gradient"). A `fill` or `color` that is neither a
+  colour string nor an object is rejected with the parser's line and column.
 
 ## Gradient masks
 
@@ -377,7 +410,8 @@ layer.
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`, `grayscale`, `sepia`,
   `invert`, `hueRotate`.
-- No video layers, gradient fills or per-glyph text animation yet. Gradients are only used by `mask`.
+- No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
+  `color`; a `stroke` takes only a colour.
 - A shadow's spread uses a square window (see `dropShadow`), and its colour is not animated.
 - Colour filters clamp once per run of consecutive filters, not after each one as a browser does (see
   [Colour filters](#colour-filters)).

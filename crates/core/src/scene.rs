@@ -365,11 +365,40 @@ pub enum Extend {
     Reflect,
 }
 
+/// What a shape's `fill` or a text layer's `color` paints with: a colour
+/// string or a gradient object.
+#[derive(Clone, Debug)]
+pub enum Paint {
+    Solid(Color),
+    Gradient(Gradient),
+}
+
+impl<'de> Deserialize<'de> for Paint {
+    // Read by hand: an untagged enum would only say "did not match any
+    // variant", and not what was wrong with the colour or the gradient.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Paint, D::Error> {
+        use serde::de::Error as _;
+        let value = serde_json::Value::deserialize(d)?;
+        match value {
+            serde_json::Value::String(s) => {
+                Color::parse(&s).map(Paint::Solid).map_err(D::Error::custom)
+            }
+            serde_json::Value::Object(_) => Gradient::deserialize(value)
+                .map(Paint::Gradient)
+                .map_err(|e| D::Error::custom(format!("bad gradient: {e}"))),
+            other => Err(D::Error::custom(format!(
+                "expected a colour string like \"#f6c177\" or a gradient object, got {other}"
+            ))),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShapeLayer {
     pub shape: Geometry,
-    pub fill: Option<Color>,
+    /// A colour or a gradient, in the layer's own coordinates.
+    pub fill: Option<Paint>,
     pub stroke: Option<Stroke>,
 }
 
@@ -409,7 +438,8 @@ pub struct TextLayer {
     /// A key of the scene's `fonts` map.
     pub font: String,
     pub size: Num,
-    pub color: Color,
+    /// A colour or a gradient; a gradient's coordinates are in the text box.
+    pub color: Paint,
     /// Multiple of the font size. Omitted: the font's own line height.
     pub line_height: Option<Num>,
     /// Wrap width in pixels. Omitted: no wrapping.
@@ -518,6 +548,9 @@ impl Scene {
                             })?;
                         }
                     }
+                    if let Some(Paint::Gradient(g)) = &s.fill {
+                        validate_gradient(&layer.id, "fill gradient", g)?;
+                    }
                     if let Some(stroke) = &s.stroke {
                         non_negative("stroke width", &stroke.width)?;
                     }
@@ -534,6 +567,9 @@ impl Scene {
                             "layer {:?}: text size must be positive",
                             layer.id
                         )));
+                    }
+                    if let Paint::Gradient(g) = &t.color {
+                        validate_gradient(&layer.id, "color gradient", g)?;
                     }
                     if let Some(max_width) = &t.max_width {
                         non_negative("maxWidth", max_width)?;
@@ -1018,5 +1054,100 @@ mod tests {
         assert_eq!(margin_for(1e9, 100, 200), (MAX_SIDE - 200) / 2);
         assert_eq!(margin_for(1e9, 8000, 100), 96);
         assert_eq!(margin_for(50.0, MAX_SIDE, 10), 0);
+    }
+
+    const TWO_STOPS: &str =
+        r##""stops": [{"offset": 0, "color": "#f00"}, {"offset": 1, "color": "#00f"}]"##;
+
+    /// A scene with a text layer whose `color` is `color` (JSON).
+    fn text_scene(color: &str) -> Result<Scene> {
+        let json = format!(
+            r##"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10,
+                "fonts": {{"DM Sans": "f.ttf"}},
+                "layers": [{{"id": "words", "type": "text", "text": "hi", "font": "DM Sans",
+                             "size": 20, "color": {color}}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new())
+    }
+
+    fn fill_scene(fill: &str) -> Result<Scene> {
+        let json = format!(
+            r##"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10,
+                "layers": [{{"id": "box", "type": "shape",
+                  "shape": {{"kind": "rect", "width": 100, "height": 50}}, "fill": {fill}}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new())
+    }
+
+    #[test]
+    fn fill_and_text_colour_take_a_colour_or_a_gradient() {
+        let gradients = [
+            format!(r#"{{"type": "linear", "x0": 0, "y0": 0, "x1": 100, "y1": 0, {TWO_STOPS}}}"#),
+            format!(
+                r#"{{"type": "radial", "cx": 5, "cy": 5, "r": 40, "extend": "repeat", {TWO_STOPS}}}"#
+            ),
+            format!(r#"{{"type": "conic", "cx": 5, "cy": 5, "angle": 90, {TWO_STOPS}}}"#),
+        ];
+        let scene = fill_scene(r##""#336699""##).unwrap();
+        let LayerKind::Shape(shape) = &scene.layers[0].kind else {
+            panic!("not a shape");
+        };
+        assert!(
+            matches!(shape.fill, Some(Paint::Solid(c)) if c == Color::parse("#336699").unwrap())
+        );
+        for g in &gradients {
+            let scene = fill_scene(g).unwrap_or_else(|e| panic!("{g}: {e}"));
+            let LayerKind::Shape(shape) = &scene.layers[0].kind else {
+                panic!("not a shape");
+            };
+            assert!(matches!(shape.fill, Some(Paint::Gradient(_))), "{g}");
+            let scene = text_scene(g).unwrap_or_else(|e| panic!("{g}: {e}"));
+            let LayerKind::Text(text) = &scene.layers[0].kind else {
+                panic!("not text");
+            };
+            assert!(matches!(text.color, Paint::Gradient(_)), "{g}");
+        }
+        let scene = fill_scene("null").unwrap();
+        assert!(matches!(
+            &scene.layers[0].kind,
+            LayerKind::Shape(ShapeLayer { fill: None, .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_bad_paints_with_a_clear_message() {
+        let cases = [
+            ("42".to_string(), "colour string"),
+            ("[1, 2]".to_string(), "colour string"),
+            (r##""#12""##.to_string(), "3, 4, 6 or 8 hex digits"),
+            (
+                format!(r#"{{"type": "spiral", {TWO_STOPS}}}"#),
+                "bad gradient",
+            ),
+            (r#"{"type": "linear", "x0": 0}"#.to_string(), "bad gradient"),
+        ];
+        for (paint, want) in cases {
+            let msg = fill_scene(&paint).unwrap_err().to_string();
+            assert!(msg.contains(want), "{paint}: {msg}");
+            let msg = text_scene(&paint).unwrap_err().to_string();
+            assert!(msg.contains(want), "{paint}: {msg}");
+        }
+    }
+
+    #[test]
+    fn rejects_bad_fill_gradients_naming_the_layer() {
+        let one = r##""stops": [{"offset": 0, "color": "#fff"}]"##;
+        let g = format!(r#"{{"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, {one}}}"#);
+        let msg = fill_scene(&g).unwrap_err().to_string();
+        assert!(
+            msg.contains("\"box\"") && msg.contains("fill gradient") && msg.contains("2 stops"),
+            "{msg}"
+        );
+        let g = format!(r#"{{"type": "radial", "cx": 0, "cy": 0, "r": -1, {TWO_STOPS}}}"#);
+        let msg = text_scene(&g).unwrap_err().to_string();
+        assert!(
+            msg.contains("\"words\"") && msg.contains("color gradient") && msg.contains("radius"),
+            "{msg}"
+        );
     }
 }
