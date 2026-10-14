@@ -12,3 +12,6 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.154"
 pollster = "0.4"
+# The version wgpu 30 uses. Validates shaders on the CPU: the built-in ones in
+# tests, and users' custom effect shaders when a scene loads.
+naga = { version = "30.0.1", features = ["wgsl-in"] }

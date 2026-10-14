@@ -114,3 +114,71 @@ fn timing_a_frame_does_not_change_its_pixels() {
     // Timing is off again afterwards.
     assert_eq!(renderer.render_frame(20).unwrap().rgba, plain.rgba);
 }
+
+#[test]
+fn a_shadow_can_fall_on_the_canvas_from_a_layer_outside_it() {
+    // The red square is wholly left of the canvas, 20..40 pixels past its
+    // edge. Its opaque black shadow lands 40 pixels to the right, on the
+    // canvas, which needs the margin to have kept the square at all.
+    let json = r##"{
+        "width": 100, "height": 60, "fps": 30, "durationInFrames": 1,
+        "background": "#ffffff",
+        "layers": [
+            {"id": "square", "type": "shape", "transform": {"x": -30, "y": 20},
+             "shape": {"kind": "rect", "width": 20, "height": 20}, "fill": "#ff0000",
+             "effects": [{"type": "dropShadow", "x": 40, "color": "#000000"}]}
+        ]
+    }"##;
+    let frame = render_still(Scene::from_json(json, PathBuf::new()).unwrap(), 0).unwrap();
+    let px = |x: usize, y: usize| {
+        let i = (y * frame.width as usize + x) * 4;
+        [
+            frame.rgba[i],
+            frame.rgba[i + 1],
+            frame.rgba[i + 2],
+            frame.rgba[i + 3],
+        ]
+    };
+    assert_eq!((frame.width, frame.height), (100, 60));
+    assert_eq!(px(20, 30), [0, 0, 0, 255], "inside the shadow");
+    for (x, y) in [(5, 30), (50, 30), (20, 10), (20, 50)] {
+        assert_eq!(px(x, y), [255, 255, 255, 255], "outside it at ({x}, {y})");
+    }
+}
+
+#[test]
+fn a_margin_does_not_move_or_change_the_canvas() {
+    // The second scene adds an invisible shadow far from anything, which
+    // only gives it a margin. The canvas must come out identical.
+    let scene = |extra: &str| {
+        let json = format!(
+            r##"{{"width": 96, "height": 64, "fps": 30, "durationInFrames": 1,
+                "background": "#203040",
+                "layers": [
+                    {{"id": "disc", "type": "shape", "transform": {{"x": 10.5, "y": 8.25}},
+                     "shape": {{"kind": "ellipse", "width": 50, "height": 40}}, "fill": "#f6c177",
+                     "effects": [{{"type": "blur", "radius": 3}}]}}
+                    {extra}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new()).unwrap()
+    };
+    let shadow = r##", {"id": "ghost", "type": "shape",
+        "shape": {"kind": "rect", "width": 4, "height": 4}, "fill": "#fff",
+        "effects": [{"type": "dropShadow", "x": 24, "blur": 8, "color": "#00000000"}]}"##;
+    assert_eq!(scene("").margin(), 0);
+    assert!(scene(shadow).margin() > 0);
+    let plain = render_still(scene(""), 0).unwrap();
+    let padded = render_still(scene(shadow), 0).unwrap();
+    // The ghost layer is white on a dark background, so ignore its corner.
+    // With a margin Vello draws the disc at a translated position, where f32
+    // rounding of the edge can flip an MSAA sample; after the blur that is at
+    // most one level. A canvas moved by even one pixel differs by tens.
+    for (i, (a, b)) in plain.rgba.chunks(4).zip(padded.rgba.chunks(4)).enumerate() {
+        let (x, y) = (i % 96, i / 96);
+        if x < 4 && y < 4 {
+            continue;
+        }
+        let close = a.iter().zip(b).all(|(p, q)| p.abs_diff(*q) <= 1);
+        assert!(close, "pixel ({x}, {y}): {a:?} vs {b:?}");
+    }
+}

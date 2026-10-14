@@ -82,6 +82,43 @@ fn blend_and_blur_scene_matches_golden() {
 }
 
 #[test]
+fn clip_paths_match_golden() {
+    // Frame 15 of 30: halfway through every clip animation.
+    let frame = render_still(scene("tests/scenes/clip-paths.json"), 15).unwrap();
+    check("clip-paths", &frame);
+}
+
+#[test]
+fn gradient_masks_match_golden() {
+    let frame = render_still(scene("tests/scenes/masks.json"), 15).unwrap();
+    check("masks", &frame);
+}
+
+#[test]
+fn track_mattes_match_golden() {
+    let frame = render_still(scene("tests/scenes/mattes.json"), 15).unwrap();
+    check("mattes", &frame);
+}
+
+#[test]
+fn shadows_match_golden() {
+    // Frame 15 of 30: halfway through every shadow animation. The scene has a
+    // margin (its largest reach is the off-canvas layer's shadow), so this
+    // also covers drawing outside the canvas.
+    let frame = render_still(scene("tests/scenes/shadows.json"), 15).unwrap();
+    check("shadows", &frame);
+}
+
+#[test]
+fn colour_filters_match_golden() {
+    // Frame 15 of 30: halfway through every filter animation. Covers filter
+    // runs composed into one pass, a run split by a blur, a group, text,
+    // layers hanging off the canvas, and a filter after a drop shadow.
+    let frame = render_still(scene("tests/scenes/colour-filters.json"), 15).unwrap();
+    check("colour-filters", &frame);
+}
+
+#[test]
 fn rendering_is_deterministic() {
     // Mid-animation frame: keyframes, blur and multiply all in play.
     let card = || scene("../../examples/papercut-card.json");
@@ -101,4 +138,54 @@ fn rendering_is_deterministic() {
     let x = render_still(blend(), 0).unwrap().encode_png().unwrap();
     let y = render_still(blend(), 0).unwrap().encode_png().unwrap();
     assert_eq!(x, y, "blend-blur PNG bytes");
+}
+
+#[test]
+fn gradient_fills_match_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers linear,
+    // radial and conic fills, a repeating one on a rotated layer hanging off
+    // the canvas, reflecting and repeating gradients on text, and a path
+    // shape half off the left edge.
+    let frame = render_still(scene("tests/scenes/gradient-fills.json"), 15).unwrap();
+    check("gradient-fills", &frame);
+}
+
+#[test]
+fn backdrop_blur_matches_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers a frosted card
+    // inside a moving group (with a disc under it in the group), frosted text
+    // (alpha coverage), a frosted shape with a clip, and a card hanging off
+    // the right edge, all over stripes, an image and text.
+    let frame = render_still(scene("tests/scenes/backdrop-blur.json"), 15).unwrap();
+    check("backdrop-blur", &frame);
+}
+
+#[test]
+fn glow_matches_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers the layer's own
+    // colours and a tint, text, a stroke-only ring at the maximum intensity
+    // (the halo is capped), a half-transparent layer, a group, and layers
+    // hanging off the left and right edges.
+    let frame = render_still(scene("tests/scenes/glow.json"), 15).unwrap();
+    check("glow", &frame);
+}
+
+#[test]
+fn chromatic_aberration_matches_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers text, an image,
+    // a group with a negative amount, a half-transparent shape, and layers
+    // hanging off the top, right and left edges.
+    let frame = render_still(scene("tests/scenes/chromatic-aberration.json"), 15).unwrap();
+    check("chromatic-aberration", &frame);
+}
+
+#[test]
+fn shader_matches_golden() {
+    // Frame 15 of 30: halfway through the keyframed uniforms, 0.5 s in. Covers
+    // one shader on two layers with different uniforms (a ripple on a
+    // gradient card and on a bar hanging off the left edge, whose padding
+    // lets the off-canvas part ripple in), and a second shader that reads
+    // only the frame, on text and on a group.
+    let frame = render_still(scene("tests/scenes/shader.json"), 15).unwrap();
+    check("shader", &frame);
 }

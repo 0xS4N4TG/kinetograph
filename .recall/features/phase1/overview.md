@@ -24,7 +24,7 @@ HANDOFF §8 Phase 1: Rust workspace, GPU compositor with shape/text/image/group 
 - [ ] Every leaf is a full-canvas texture + 2 passes; composite is the largest stage. Optimise when Phase 2 adds more layers.
 - [ ] Unknown JSON keys silently ignored (serde flatten + tagged enum).
 - [x] HANDOFF roadmap rewritten (user approved 2026-10-14): Phase 2 split 2a (masks/clip paths first, shadows, colour, gradients, backdrop blur, glow, chromatic aberration, custom WGSL) / 2b (looks, 2.5D camera, motion blur, ffmpeg); Phase 3 runtime benchmark + §5 Remotion package table; cloud-session rules in §8.
-- [ ] Phase 2a runs in a Claude Code cloud session (user's call): cloud writes code and runs only build/fmt/clippy/`cargo test --lib`; GPU tests, goldens, still, bench on the M4 after pull.
+- [x] Phase 2a runs in a Claude Code cloud session (user's call): cloud writes code and runs only build/fmt/clippy/`cargo test --lib`; GPU tests, goldens, still, bench on the M4 after pull.
 - [x] 3D plan in HANDOFF §4: Three.js first (Node host), kiss3d 0.47 backup with r3f vocabulary mapping; `three` crate dead (2019).
 - [x] Runtime decided 2026-10-14: Node hosts, Rust engine as N-API addon (napi-rs). Deno runtime ends dev in a year (2026-10-09 news); rquickjs/Boa lose on coverage; Bun loads the addon. Measured: JS 0.78 ms/frame, GPU ~24, encode ~4.1 → ~29 ms serial (5.4x Remotion). 3D: real Three.js on Dawn (`webgpu` npm) first, kiss3d backup; headless unverified. Lottie: ThorVG via dotlottie-rs. All in HANDOFF §4/§8/§10.
 

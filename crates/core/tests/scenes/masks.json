@@ -1,0 +1,214 @@
+{
+ "width": 512,
+ "height": 288,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#14161d",
+ "layers": [
+  {
+   "id": "fade",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 224,
+    "height": 112
+   },
+   "fill": "#f6c177",
+   "transform": {
+    "x": 16,
+    "y": 16
+   },
+   "mask": {
+    "mode": "alpha",
+    "gradient": {
+     "type": "linear",
+     "x0": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 20
+      }
+     ],
+     "y0": 0,
+     "x1": [
+      {
+       "frame": 0,
+       "value": 112
+      },
+      {
+       "frame": 30,
+       "value": 160
+      }
+     ],
+     "y1": 0,
+     "extend": "reflect",
+     "stops": [
+      {
+       "offset": 0,
+       "color": "#ffffff"
+      },
+      {
+       "offset": 1,
+       "color": "#ffffff00"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "photo",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 160,
+   "height": 120,
+   "transform": {
+    "x": 272,
+    "y": 16
+   },
+   "mask": {
+    "mode": "luminance",
+    "gradient": {
+     "type": "radial",
+     "cx": 80,
+     "cy": 60,
+     "r": [
+      {
+       "frame": 0,
+       "value": 30
+      },
+      {
+       "frame": 30,
+       "value": 100
+      }
+     ],
+     "stops": [
+      {
+       "offset": 0,
+       "color": "#ffffff"
+      },
+      {
+       "offset": 0.6,
+       "color": "#808080"
+      },
+      {
+       "offset": 1,
+       "color": "#000000"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "stripes",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 224,
+    "height": 112
+   },
+   "fill": "#7aa2f7",
+   "transform": {
+    "x": 30,
+    "y": 166,
+    "rotation": 8
+   },
+   "mask": {
+    "mode": "luminance",
+    "gradient": {
+     "type": "linear",
+     "x0": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 28
+      }
+     ],
+     "y0": 0,
+     "x1": [
+      {
+       "frame": 0,
+       "value": 28
+      },
+      {
+       "frame": 30,
+       "value": 56
+      }
+     ],
+     "y1": 0,
+     "extend": "repeat",
+     "stops": [
+      {
+       "offset": 0,
+       "color": "#ffffff"
+      },
+      {
+       "offset": 0.5,
+       "color": "#ffffff"
+      },
+      {
+       "offset": 0.5,
+       "color": "#000000"
+      },
+      {
+       "offset": 1,
+       "color": "#000000"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "sweep",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 224,
+    "height": 112,
+    "radius": 20
+   },
+   "fill": "#e05a9d",
+   "transform": {
+    "x": 272,
+    "y": 166
+   },
+   "mask": {
+    "mode": "alpha",
+    "gradient": {
+     "type": "conic",
+     "cx": 112,
+     "cy": 56,
+     "angle": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 180
+      }
+     ],
+     "stops": [
+      {
+       "offset": 0,
+       "color": "#ffffffff"
+      },
+      {
+       "offset": 0.5,
+       "color": "#ffffff00"
+      },
+      {
+       "offset": 1,
+       "color": "#ffffffff"
+      }
+     ]
+    }
+   }
+  }
+ ]
+}
