@@ -6,3 +6,4 @@ export type * from './types.js';
 export * from './effects.js';
 export * from './paint.js';
 export * from './catalog.js';
+export * from './motion.js';
