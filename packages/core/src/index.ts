@@ -5,6 +5,10 @@
 // values recorded from the published package (test/fixtures).
 
 export * from '@kinetograph/scene';
+
+/** Remotion's `VERSION`: the release whose behaviour the numeric functions are checked against (test/fixtures). */
+export const VERSION = '4.0.535';
+
 export {
   Audio,
   Camera,

@@ -7,6 +7,7 @@
 // downloading, is an error rather than a measurement with a stand-in font.
 
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import type { TextLayout, TextLayoutRequest } from '@kinetograph/native';
 import { fontKey } from '@kinetograph/scene';
 import { getFonts, pendingFontLoads } from './font-registry.js';
@@ -21,10 +22,29 @@ export function setLayoutText(fn: LayoutText | null): void {
   layoutOverride = fn;
 }
 
+/**
+ * The addon's `layoutText`, found when first needed (a project that never measures text does not need the
+ * addon): from here, then from the working directory. A bundle in a project's cache may sit where neither
+ * reaches it; the host then calls `setLayoutText(native.layoutText)`.
+ */
+function loadNative(): LayoutText {
+  const failures: string[] = [];
+  for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
+    try {
+      return (createRequire(base)('@kinetograph/native') as { layoutText: LayoutText }).layoutText;
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
+    }
+  }
+  throw new Error(
+    `Text cannot be measured: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
+      'Build the addon, or pass its layoutText to setLayoutText() from @kinetograph/core/layout-utils.',
+  );
+}
+
 function layoutText(request: TextLayoutRequest): TextLayout {
   if (layoutOverride) return layoutOverride(request);
-  // Loaded when first needed, so a project that never measures text does not need the addon.
-  layoutNative ??= (createRequire(import.meta.url)('@kinetograph/native') as { layoutText: LayoutText }).layoutText;
+  layoutNative ??= loadNative();
   return layoutNative(request);
 }
 

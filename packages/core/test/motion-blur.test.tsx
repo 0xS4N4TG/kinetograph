@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LayerJson } from '@kinetograph/scene';
-import { CameraMotionBlur, Trail } from '../src/motion-blur.js';
+import { CameraMotionBlur, Trail, type TrailProps } from '../src/motion-blur.js';
 import { probe, renderAt, type Seen } from './scene-harness.js';
 
 /** Probe frames and the opacity of the layer around each, bottom (oldest) first. */
@@ -46,8 +46,8 @@ describe('Trail', () => {
   });
 
   it('needs all three numbers, as the published component does', () => {
-    expect(() => renderAt(<Trail {...({ layers: 3 } as never)} />)).toThrow('"lagInFrames" must be a number, but got undefined');
-    expect(() => renderAt(<Trail {...({ layers: 3, lagInFrames: 1 } as never)} />)).toThrow('"trailOpacity" must be a number, but got undefined');
+    expect(() => renderAt(<Trail {...({ layers: 3 } as unknown as TrailProps)} />)).toThrow('"lagInFrames" must be a number, but got undefined');
+    expect(() => renderAt(<Trail {...({ layers: 3, lagInFrames: 1 } as unknown as TrailProps)} />)).toThrow('"trailOpacity" must be a number, but got undefined');
   });
 
   it('is silent for audio: the lagging copies are frozen', () => {

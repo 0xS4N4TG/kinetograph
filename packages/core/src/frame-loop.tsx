@@ -18,7 +18,7 @@ import {
   type SceneJson,
 } from '@kinetograph/scene';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
-import { resolveComposition, type ResolvedComposition } from './compositions.js';
+import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, setVirtualFrame } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 
@@ -45,6 +45,8 @@ class Renderer implements FrameRenderer {
   private disposed = false;
 
   constructor(compositionId: string, inputProps: Record<string, unknown> | undefined) {
+    // Components that call getInputProps() see the props this render was given.
+    if (inputProps) setInputProps(inputProps);
     const { sync, ready } = resolveComposition(compositionId, { inputProps });
     this.resolved = sync;
     this.readyPromise = ready.then((value) => (this.resolved = value));

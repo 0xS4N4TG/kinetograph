@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cancelRender,
   continueRender,
@@ -14,6 +14,21 @@ import {
 afterEach(() => resetRenderState());
 
 describe('staticFile', () => {
+  it('looks in KINETOGRAPH_PUBLIC_DIR until setPublicDir says otherwise', async () => {
+    const before = process.env.KINETOGRAPH_PUBLIC_DIR;
+    try {
+      vi.resetModules();
+      process.env.KINETOGRAPH_PUBLIC_DIR = '/from/env';
+      const fresh = await import('../src/assets.js');
+      expect(fresh.staticFile('a.png')).toBe('/from/env/a.png');
+      fresh.setPublicDir('/explicit');
+      expect(fresh.staticFile('a.png')).toBe('/explicit/a.png');
+    } finally {
+      if (before === undefined) delete process.env.KINETOGRAPH_PUBLIC_DIR;
+      else process.env.KINETOGRAPH_PUBLIC_DIR = before;
+    }
+  });
+
   it('is an absolute path inside the public directory', () => {
     setPublicDir('/projects/demo/public');
     expect(staticFile('logo.png')).toBe('/projects/demo/public/logo.png');

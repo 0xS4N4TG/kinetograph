@@ -13,13 +13,19 @@ import { realTimers } from './determinism.js';
 
 let publicDir: string | null = null;
 
-/** Where `staticFile` looks (default `<cwd>/public`; the CLI sets it to `<entry directory>/public`). */
+/**
+ * Where `staticFile` looks. `setPublicDir` wins; then the `KINETOGRAPH_PUBLIC_DIR` environment variable, which a host
+ * sets before it imports the project so that a `staticFile()` call made while the project loads (a font, a module-level
+ * constant) already sees the right folder; then `<cwd>/public`.
+ */
 export function setPublicDir(dir: string): void {
   publicDir = resolve(dir);
 }
 
 export function getPublicDir(): string {
-  return publicDir ?? resolve('public');
+  if (publicDir !== null) return publicDir;
+  const fromEnvironment = process.env.KINETOGRAPH_PUBLIC_DIR;
+  return fromEnvironment ? resolve(fromEnvironment) : resolve('public');
 }
 
 /** The absolute path of `name` in the public directory. */

@@ -255,6 +255,9 @@ function TransitionSeriesImpl({ children }: { children?: ReactNode }): ReactNode
   );
 }
 
+/** The stub's name for the component, kept as an export. */
+export { TransitionSeriesImpl };
+
 export const TransitionSeries: ((props: { children?: ReactNode }) => ReactNode) & {
   Sequence: typeof TransitionSeriesSequence;
   Transition: typeof TransitionSeriesTransition;
