@@ -1,0 +1,25 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+.npm
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Secrets
+.env*
+
+# Render outputs
+out/
+*.mov
+
+# Third-party reference video: local only, never commit
+docs/reference/rajz-reference.mp4
