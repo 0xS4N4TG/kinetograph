@@ -781,7 +781,7 @@ no compilation happens per frame; the same shader on many layers, with different
 
 ## Clip paths
 
-`clip` cuts a layer to a shape: pixels outside it become transparent, and the edge is anti-aliased (8x multisampled,
+`clip` cuts a layer to a shape: pixels outside it become transparent, and the edge is anti-aliased (16x multisampled,
 like every shape). The shape is in the layer's own coordinates, so it follows the layer's `transform` (position,
 scale, rotation). A layer's pixels go through, in this order: its `effects`, its `clip`, its `mask`, its `matte`,
 then `opacity` and `blendMode`. So a blur is cut off by the clip, and the clip is not blurred. A group's clip applies to the composited
