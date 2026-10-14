@@ -348,6 +348,7 @@ impl Renderer {
             if let ResolvedKind::Group {
                 children,
                 preserve3d: true,
+                ..
             } = &layer.kind
             {
                 canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
@@ -849,6 +850,7 @@ impl Renderer {
                 ResolvedKind::Group {
                     children,
                     preserve3d: false,
+                    ..
                 } => self.collect_leaves(children, matrix, leaves)?,
                 ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {}
                 _ => {
@@ -1201,7 +1203,7 @@ impl Renderer {
     }
 
     /// The layer's own box in layer space, which `inset` clips are measured
-    /// from. A group has none.
+    /// from. A group has one only with a layout: the size the layout gave it.
     fn layer_box(&mut self, layer: &ResolvedLayer) -> Result<Option<Rect>> {
         Ok(match &layer.kind {
             ResolvedKind::Shape { geometry, .. } => Some(match geometry {
@@ -1232,7 +1234,7 @@ impl Renderer {
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
-            ResolvedKind::Group { .. } => None,
+            ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w, h)),
         })
     }
 
@@ -1337,6 +1339,7 @@ fn collect_preserve3d<'a>(
         if let ResolvedKind::Group {
             children: inner,
             preserve3d: true,
+            ..
         } = &child.kind
         {
             let inner_space = Space3d {
@@ -1480,6 +1483,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
     let ResolvedKind::Group {
         children,
         preserve3d: false,
+        ..
     } = &layer.kind
     else {
         return false;

@@ -386,6 +386,23 @@ fn motion_blur_frames_match_golden() {
 }
 
 #[test]
+fn flex_layout_matches_golden() {
+    // Frame 15 of 30: the stack's gap, the wrap width and the card's scale
+    // and turn are half way. Covers a space-between toolbar with padding, a
+    // centred title, a margin, an absolute background and badge (left where
+    // their transforms put them); a column that aligns to the end with a
+    // growing item and an `alignSelf`; a wrapping row whose width animates
+    // (the squares re-wrap) with a row and a column gap; baseline alignment
+    // of two text sizes and a box; a reversed, centred row; and a card, a
+    // layout group sized by its content, that is clipped by an `inset` clip
+    // and faded by a box-unit mask (a layout group has a box) and turns and
+    // scales about its centre by `originX`/`originY`, with a nested layout
+    // group inside it.
+    let frame = render_still(scene("tests/scenes/layout.json"), 15).unwrap();
+    check("layout", &frame);
+}
+
+#[test]
 fn origin_and_align_match_golden() {
     // Frame 15 of 30: the rotations, scale and tilt are half way. Covers a
     // rect turning and shrinking about its centre (its outline stays put), an

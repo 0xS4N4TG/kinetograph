@@ -16,3 +16,4 @@ pollster = "0.4"
 # tests, and users' custom effect shaders when a scene loads.
 naga = { version = "30.0.1", features = ["wgsl-in"] }
 glam = "0.34.1"
+taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox"] }

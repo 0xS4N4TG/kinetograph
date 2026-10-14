@@ -2,13 +2,16 @@
 
 use vello::kurbo::{Affine, BezPath, Rect, Shape};
 
+use crate::anim::Num;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
-    BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Fit, Geometry,
-    Gradient, GradientGeometry, HalftoneShape, ImageLayer, Layer, LayerKind, MAX_DITHER_LEVELS,
-    MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels, Paint, Scene, Shadow,
-    Stop, TextAlign, Transform, Turbulence, TurbulenceKind, Units,
+    AlignContent, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
+    Effect, Extend, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, Gradient, GradientGeometry,
+    HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout, LayoutItem,
+    MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels,
+    Paint, Position, Scene, Shadow, Spacing, Stop, TextAlign, Transform, Turbulence,
+    TurbulenceKind, Units,
 };
 use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
@@ -61,6 +64,10 @@ pub struct ResolvedLayer {
     pub mask: Option<ResolvedMask>,
     pub matte: Option<ResolvedMatte>,
     pub kind: ResolvedKind,
+    /// How the layer takes part in its parent's flex layout. Already applied
+    /// to `transform` (and to the transforms of the sub-frames) by the time
+    /// the scene is resolved; kept for the layout of the layers around it.
+    pub item: Option<ResolvedItem>,
     /// The layer's motion blur: one complete copy of it (and of its subtree)
     /// per sub-frame, in time order, each resolved at its own time. Empty
     /// when the layer has no motion blur or its shutter is shut. The fields
@@ -68,6 +75,42 @@ pub struct ResolvedLayer {
     /// these copies instead, and they have no sub-frames of their own
     /// (motion blur inside a blurred layer is ignored).
     pub motion: Vec<ResolvedLayer>,
+}
+
+/// A group's flex layout at one frame (`scene::Layout`), in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedLayout {
+    pub direction: FlexDirection,
+    pub wrap: FlexWrap,
+    pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    pub align_content: AlignContent,
+    /// Between rows, between columns; not negative.
+    pub gap: (f64, f64),
+    /// Top, right, bottom, left; not negative.
+    pub padding: [f64; 4],
+    /// The size the group asked for; `None` is from the content.
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    /// The group's transform origin as fractions of the size, which its
+    /// layout is yet to give (`ResolvedTransform::origin_x`).
+    pub origin: (f64, f64),
+}
+
+/// A layer's `layoutItem` at one frame, in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedItem {
+    /// Out of the flow: the layout leaves it where its transform puts it.
+    pub absolute: bool,
+    pub grow: f64,
+    pub shrink: f64,
+    /// `None` is `auto`.
+    pub basis: Option<f64>,
+    pub align_self: AlignSelf,
+    /// Top, right, bottom, left.
+    pub margin: [f64; 4],
+    pub width: Option<f64>,
+    pub height: Option<f64>,
 }
 
 /// The widest shutter, in frames.
@@ -440,6 +483,11 @@ pub enum ResolvedKind {
         children: Vec<ResolvedLayer>,
         /// The children are drawn straight into the parent, depth sorted.
         preserve3d: bool,
+        /// The flex layout the children were placed by.
+        layout: Option<ResolvedLayout>,
+        /// With a `layout`: the size it gave the group, whose box is
+        /// `(0, 0, width, height)`.
+        size: Option<(f64, f64)>,
     },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
@@ -516,6 +564,7 @@ impl Scene {
         for layer in &self.layers {
             layers.push(resolver.layer(layer, clock, true)?);
         }
+        resolver.lay_out(&mut layers)?;
         Ok(ResolvedScene {
             width: self.width,
             height: self.height,
@@ -543,13 +592,13 @@ enum TextHandle<'a> {
 }
 
 /// Evaluates the layers of one scene.
-struct Resolver<'a> {
-    scene: &'a Scene,
+pub(crate) struct Resolver<'a> {
+    pub(crate) scene: &'a Scene,
     text: TextHandle<'a>,
 }
 
 impl Resolver<'_> {
-    fn engine(&mut self) -> Result<&mut TextEngine> {
+    pub(crate) fn engine(&mut self) -> Result<&mut TextEngine> {
         match &mut self.text {
             TextHandle::Given(engine) => Ok(engine),
             TextHandle::Lazy(slot) => {
@@ -566,7 +615,7 @@ impl Resolver<'_> {
 
     /// The box of a resolved leaf layer in layer space (`docs/SCENE.md`,
     /// "Clip paths"), or `None` for a layer without one.
-    fn layer_box(&mut self, kind: &ResolvedKind) -> Result<Option<Rect>> {
+    pub(crate) fn layer_box(&mut self, kind: &ResolvedKind) -> Result<Option<Rect>> {
         Ok(match kind {
             ResolvedKind::Shape { geometry, .. } => Some(match geometry {
                 ResolvedGeometry::Rect { width, height }
@@ -598,7 +647,7 @@ impl Resolver<'_> {
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
-            ResolvedKind::Group { .. } => None,
+            ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w, h)),
         })
     }
 
@@ -666,6 +715,7 @@ impl Resolver<'_> {
                 mode: m.mode,
             }),
             kind,
+            item: layer.layout_item.as_ref().map(|i| resolve_item(i, f)),
             motion,
         })
     }
@@ -736,6 +786,11 @@ impl Resolver<'_> {
                 }
             }
             LayerKind::Group(g) => ResolvedKind::Group {
+                layout: g
+                    .layout
+                    .as_ref()
+                    .map(|l| resolve_layout(l, &layer.transform, f)),
+                size: None,
                 children: {
                     let mut children = Vec::with_capacity(g.children.len());
                     for child in &g.children {
@@ -803,6 +858,54 @@ fn resolve_paint(paint: &Paint, f: f64) -> ResolvedPaint {
     match paint {
         Paint::Solid(color) => ResolvedPaint::Solid(*color),
         Paint::Gradient(g) => ResolvedPaint::Gradient(resolve_gradient(g, f)),
+    }
+}
+
+/// Four lengths from a `Spacing` of one or four numbers: top, right,
+/// bottom, left. Not negative unless `signed`.
+fn edges(spacing: &Option<Spacing>, f: f64, signed: bool) -> [f64; 4] {
+    let at = |n: &Num| if signed { n.at(f) } else { n.at(f).max(0.0) };
+    match spacing.as_ref().map(|s| &s.0[..]) {
+        Some([all]) => [at(all); 4],
+        // Checked when the scene loaded.
+        Some([top, right, bottom, left]) => [at(top), at(right), at(bottom), at(left)],
+        _ => [0.0; 4],
+    }
+}
+
+fn resolve_layout(l: &Layout, t: &Transform, f: f64) -> ResolvedLayout {
+    ResolvedLayout {
+        direction: l.flex_direction,
+        wrap: l.flex_wrap,
+        justify_content: l.justify_content,
+        align_items: l.align_items,
+        align_content: l.align_content,
+        gap: match l.gap.as_ref().map(|s| &s.0[..]) {
+            Some([both]) => (both.at(f).max(0.0), both.at(f).max(0.0)),
+            // [row, column]
+            Some([row, column]) => (row.at(f).max(0.0), column.at(f).max(0.0)),
+            _ => (0.0, 0.0),
+        },
+        padding: edges(&l.padding, f, false),
+        width: l.width.as_ref().map(|n| n.at(f).max(0.0)),
+        height: l.height.as_ref().map(|n| n.at(f).max(0.0)),
+        origin: (t.origin_x.at(f), t.origin_y.at(f)),
+    }
+}
+
+fn resolve_item(i: &LayoutItem, f: f64) -> ResolvedItem {
+    ResolvedItem {
+        absolute: i.position == Position::Absolute,
+        grow: i.flex_grow.as_ref().map_or(0.0, |n| n.at(f).max(0.0)),
+        shrink: i.flex_shrink.as_ref().map_or(1.0, |n| n.at(f).max(0.0)),
+        basis: match &i.flex_basis {
+            Some(FlexBasis::Length(n)) => Some(n.at(f).max(0.0)),
+            _ => None,
+        },
+        align_self: i.align_self,
+        margin: edges(&i.margin, f, true),
+        width: i.width.as_ref().map(|n| n.at(f).max(0.0)),
+        height: i.height.as_ref().map(|n| n.at(f).max(0.0)),
     }
 }
 

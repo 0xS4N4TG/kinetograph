@@ -109,6 +109,8 @@ fn same_texture(a: &ResolvedLayer, b: &ResolvedLayer) -> bool {
         mask,
         matte,
         kind,
+        // Where the layer sits in a layout is in its transform already.
+        item: _,
         motion,
     } = a;
     *id == b.id
@@ -141,7 +143,7 @@ pub fn mentions_backdrop(layer: &ResolvedLayer) -> bool {
 pub fn uses_projection(layer: &ResolvedLayer) -> bool {
     warp::layer_world(&layer.transform).is_some()
         || layer.motion.iter().any(uses_projection)
-        || matches!(&layer.kind, ResolvedKind::Group { children, preserve3d }
+        || matches!(&layer.kind, ResolvedKind::Group { children, preserve3d, .. }
             if *preserve3d || children.iter().any(uses_projection))
 }
 

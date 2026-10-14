@@ -81,6 +81,9 @@ pub struct Layer {
     /// Averages the layer over the time the shutter is open, so what moves
     /// smears. A group blurs its whole subtree.
     pub motion_blur: Option<MotionBlur>,
+    /// How the layer takes part in the flex layout of the group it is in
+    /// (`Layout`). Ignored when that group has no `layout`.
+    pub layout_item: Option<LayoutItem>,
     #[serde(flatten)]
     pub kind: LayerKind,
 }
@@ -182,9 +185,13 @@ impl LayerKind {
     }
 
     /// Whether the layer has a box (`docs/SCENE.md`, "Clip paths"): every kind
-    /// but a group.
+    /// but a group without a `layout`, whose box is the size the layout gives
+    /// it.
     pub fn has_box(&self) -> bool {
-        !matches!(self, LayerKind::Group(_))
+        match self {
+            LayerKind::Group(g) => g.layout.is_some(),
+            _ => true,
+        }
     }
 }
 
@@ -987,6 +994,179 @@ pub struct GroupLayer {
     /// into the group's parent, in their own 3D positions, sorted by depth.
     #[serde(default)]
     pub preserve3d: bool,
+    /// Flex layout of the children, applied when the scene is resolved.
+    pub layout: Option<Layout>,
+}
+
+/// A group's flex layout (`docs/SCENE.md`, "Layout"). Names and values are
+/// CSS's.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Layout {
+    pub display: Display,
+    pub flex_direction: FlexDirection,
+    pub flex_wrap: FlexWrap,
+    pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    pub align_content: AlignContent,
+    /// One number, or `[row, column]`.
+    pub gap: Option<Spacing>,
+    /// One number, or `[top, right, bottom, left]`.
+    pub padding: Option<Spacing>,
+    /// The container's box. Omitted: from the content (or, for a container
+    /// that is a flex item, as its parent's layout makes it).
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+}
+
+/// How a layer sits in its parent's flex layout.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LayoutItem {
+    pub position: Position,
+    pub flex_grow: Option<Num>,
+    pub flex_shrink: Option<Num>,
+    pub flex_basis: Option<FlexBasis>,
+    pub align_self: AlignSelf,
+    /// One number, or `[top, right, bottom, left]`.
+    pub margin: Option<Spacing>,
+    /// The size the layout uses for this layer, instead of its box.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Display {
+    #[default]
+    Flex,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FlexDirection {
+    #[default]
+    Row,
+    Column,
+    RowReverse,
+    ColumnReverse,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FlexWrap {
+    #[default]
+    Nowrap,
+    Wrap,
+    WrapReverse,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum JustifyContent {
+    #[default]
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AlignItems {
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+    #[default]
+    Stretch,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AlignContent {
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+    #[default]
+    Stretch,
+}
+
+/// A layer's own `alignItems`, or its parent's when `Auto`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AlignSelf {
+    #[default]
+    Auto,
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+    Stretch,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Position {
+    #[default]
+    Relative,
+    Absolute,
+}
+
+/// `flexBasis`: a number of pixels, or `"auto"`.
+#[derive(Clone, Debug)]
+pub enum FlexBasis {
+    Auto,
+    Length(Num),
+}
+
+impl<'de> Deserialize<'de> for FlexBasis {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = serde_json::Value::deserialize(d)?;
+        if value.as_str() == Some("auto") {
+            return Ok(FlexBasis::Auto);
+        }
+        serde_json::from_value::<Num>(value)
+            .map(FlexBasis::Length)
+            .map_err(|e| D::Error::custom(format!("flexBasis takes a number or \"auto\": {e}")))
+    }
+}
+
+/// A list of lengths that is one number, or an array of them: `gap`,
+/// `padding` and `margin`. A list of keyframe objects is one number. How many
+/// it must have is the property's business (checked when the scene loads).
+#[derive(Clone, Debug)]
+pub struct Spacing(pub Vec<Num>);
+
+impl<'de> Deserialize<'de> for Spacing {
+    // Read by hand, as `BaseFrequency` is: `[8, 4]` and a keyframe list are
+    // both arrays.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = serde_json::Value::deserialize(d)?;
+        let num = |v: serde_json::Value| {
+            serde_json::from_value::<Num>(v)
+                .map_err(|e| D::Error::custom(format!("bad length: {e}")))
+        };
+        match value {
+            serde_json::Value::Array(items)
+                if !items.is_empty() && items.iter().all(|v| !v.is_object()) =>
+            {
+                items
+                    .into_iter()
+                    .map(num)
+                    .collect::<std::result::Result<_, _>>()
+                    .map(Spacing)
+            }
+            other => Ok(Spacing(vec![num(other)?])),
+        }
+    }
 }
 
 /// The raw `feTurbulence` image over a box at the layer's origin.
@@ -1192,9 +1372,9 @@ impl Scene {
                     Effect::Displace { turbulence, .. } => {
                         validate_turbulence(&layer.id, "displace", turbulence)?;
                     }
-                    Effect::CornerPin { .. } if matches!(layer.kind, LayerKind::Group(_)) => {
+                    Effect::CornerPin { .. } if !layer.kind.has_box() => {
                         return Err(Error::Scene(format!(
-                            "layer {:?}: cornerPin needs a box, and a group has none; pin a \
+                            "layer {:?}: cornerPin needs a box, and a group without a layout has none; pin a \
                              layer inside it, or put the group's children in a layer that has one",
                             layer.id
                         )));
@@ -1229,6 +1409,9 @@ impl Scene {
             if let Some(mask) = &layer.mask {
                 validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
                 validate_units(layer, "mask gradient", &mask.gradient)?;
+            }
+            if let Some(item) = &layer.layout_item {
+                validate_layout_item(&layer.id, item)?;
             }
             match &layer.kind {
                 LayerKind::Shape(s) => {
@@ -1284,6 +1467,9 @@ impl Scene {
                     }
                 }
                 LayerKind::Group(g) => {
+                    if let Some(layout) = &g.layout {
+                        validate_layout(&layer.id, layout)?;
+                    }
                     if g.preserve3d {
                         validate_preserve3d(layer, layers)?;
                         if let Some(child) = g.children.iter().find(|c| c.motion_blur.is_some()) {
@@ -1419,9 +1605,9 @@ fn validate_clip(id: &str, clip: &Clip, kind: &LayerKind) -> Result<()> {
             }
         }
         Clip::Inset { radius, .. } => {
-            if matches!(kind, LayerKind::Group(_)) {
+            if !kind.has_box() {
                 return bad(
-                    "inset needs a box, and a group has none; use a polygon or path clip".into(),
+                    "inset needs a box, and a group without a layout has none; use a polygon or path clip".into(),
                 );
             }
             if radius.min() < 0.0 {
@@ -1558,9 +1744,9 @@ fn validate_dot_matrix(
         (_, Some(seed)) => validate_seed(id, "dotMatrix", seed)?,
         _ => {}
     }
-    if order == DotOrder::Sweep && matches!(kind, LayerKind::Group(_)) {
+    if order == DotOrder::Sweep && !kind.has_box() {
         return bad(
-            "order \"sweep\" needs a box, and a group has none; use order \"random\"".into(),
+            "order \"sweep\" needs a box, and a group without a layout has none; use order \"random\"".into(),
         );
     }
     Ok(())
@@ -1628,12 +1814,78 @@ fn validate_mesh_gradient(id: &str, mesh: &MeshGradientLayer) -> Result<()> {
     Ok(())
 }
 
+/// The number of lengths `property` takes: `gap` one or two, `padding` and
+/// `margin` one or four. Not negative at any keyframe unless `signed`.
+fn validate_spacing(
+    id: &str,
+    what: &str,
+    spacing: &Option<Spacing>,
+    counts: [usize; 2],
+    signed: bool,
+) -> Result<()> {
+    let Some(Spacing(values)) = spacing else {
+        return Ok(());
+    };
+    if !counts.contains(&values.len()) {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: {what} takes {} or {} numbers, got {}",
+            counts[0],
+            counts[1],
+            values.len()
+        )));
+    }
+    if !signed && values.iter().any(|n| n.min() < 0.0) {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: {what} must not be negative"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_layout(id: &str, layout: &Layout) -> Result<()> {
+    validate_spacing(id, "layout gap", &layout.gap, [1, 2], false)?;
+    validate_spacing(id, "layout padding", &layout.padding, [1, 4], false)?;
+    for (what, size) in [("width", &layout.width), ("height", &layout.height)] {
+        if size.as_ref().is_some_and(|n| n.min() < 0.0) {
+            return Err(Error::Scene(format!(
+                "layer {id:?}: layout {what} must not be negative"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_layout_item(id: &str, item: &LayoutItem) -> Result<()> {
+    validate_spacing(id, "layoutItem margin", &item.margin, [1, 4], true)?;
+    let sizes = [
+        ("flexGrow", &item.flex_grow),
+        ("flexShrink", &item.flex_shrink),
+        ("width", &item.width),
+        ("height", &item.height),
+    ];
+    for (what, n) in sizes {
+        if n.as_ref().is_some_and(|n| n.min() < 0.0) {
+            return Err(Error::Scene(format!(
+                "layer {id:?}: layoutItem {what} must not be negative"
+            )));
+        }
+    }
+    if let Some(FlexBasis::Length(n)) = &item.flex_basis
+        && n.min() < 0.0
+    {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: layoutItem flexBasis must not be negative"
+        )));
+    }
+    Ok(())
+}
+
 /// A gradient in box units measures from the box of the layer it paints, so a
 /// layer without one cannot have it.
 fn validate_units(layer: &Layer, what: &str, g: &Gradient) -> Result<()> {
     if g.units == Units::Box && !layer.kind.has_box() {
         return Err(Error::Scene(format!(
-            "layer {:?}: {what} uses \"units\": \"box\", and a group has no box; use the default \
+            "layer {:?}: {what} uses \"units\": \"box\", and a group without a layout has no box; use the default \
              units, or put the group's children in a layer that has a box",
             layer.id
         )));
@@ -3383,7 +3635,7 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(
-            msg.contains("\"g\"") && msg.contains("cornerPin") && msg.contains("group has none"),
+            msg.contains("\"g\"") && msg.contains("cornerPin") && msg.contains("without a layout"),
             "{msg}"
         );
         // A pin far outside the box still counts nothing: it only moves
@@ -3627,6 +3879,170 @@ mod tests {
                 .unwrap_err()
                 .contains("justify")
         );
+    }
+
+    // --- Layout. --------------------------------------------------------------
+
+    fn layout_scene(layout: &str, item: &str) -> Result<Scene> {
+        scene_of(&format!(
+            r#"{{"id": "row", "type": "group", "layout": {layout}, "children": [
+                 {}]}}"#,
+            rect("a", &format!(r#""layoutItem": {item},"#))
+        ))
+    }
+
+    fn the_layout(scene: &Scene) -> &Layout {
+        match &scene.layers[0].kind {
+            LayerKind::Group(g) => g.layout.as_ref().unwrap(),
+            _ => panic!("not a group"),
+        }
+    }
+
+    #[test]
+    fn a_layout_has_css_defaults() {
+        let scene = layout_scene("{}", "{}").unwrap();
+        let l = the_layout(&scene);
+        assert_eq!(
+            (l.flex_direction, l.flex_wrap, l.justify_content),
+            (
+                FlexDirection::Row,
+                FlexWrap::Nowrap,
+                JustifyContent::FlexStart
+            )
+        );
+        assert_eq!(
+            (l.align_items, l.align_content),
+            (AlignItems::Stretch, AlignContent::Stretch)
+        );
+        assert!(l.gap.is_none() && l.padding.is_none() && l.width.is_none());
+        let LayerKind::Group(g) = &scene.layers[0].kind else {
+            panic!("not a group");
+        };
+        let item = g.children[0].layout_item.as_ref().unwrap();
+        assert_eq!(
+            (item.position, item.align_self),
+            (Position::Relative, AlignSelf::Auto)
+        );
+        assert!(item.flex_grow.is_none() && item.flex_basis.is_none());
+        // A group without a layout has none, and no layer needs an item.
+        assert!(scene_with("").unwrap().layers[1].layout_item.is_none());
+    }
+
+    #[test]
+    fn a_layout_parses_every_value() {
+        let scene = layout_scene(
+            r#"{"display": "flex", "flexDirection": "column-reverse", "flexWrap": "wrap-reverse",
+                "justifyContent": "space-evenly", "alignItems": "baseline", "alignContent": "space-around",
+                "gap": [4, [{"frame": 0, "value": 1}, {"frame": 9, "value": 5}]],
+                "padding": [1, 2, 3, 4], "width": 300, "height": [{"frame": 0, "value": 1}, {"frame": 9, "value": 90}]}"#,
+            r#"{"position": "absolute", "flexGrow": 2, "flexShrink": 0, "flexBasis": 40,
+                "alignSelf": "flex-end", "margin": [1, 2, 3, 4], "width": 5, "height": 6}"#,
+        )
+        .unwrap();
+        let l = the_layout(&scene);
+        assert_eq!(l.flex_direction, FlexDirection::ColumnReverse);
+        assert_eq!(l.flex_wrap, FlexWrap::WrapReverse);
+        assert_eq!(l.justify_content, JustifyContent::SpaceEvenly);
+        assert_eq!(l.align_items, AlignItems::Baseline);
+        assert_eq!(l.align_content, AlignContent::SpaceAround);
+        let gap = &l.gap.as_ref().unwrap().0;
+        assert_eq!((gap[0].at(0.0), gap[1].at(9.0)), (4.0, 5.0));
+        assert_eq!(l.padding.as_ref().unwrap().0.len(), 4);
+        assert_eq!(l.height.as_ref().unwrap().at(9.0), 90.0);
+        let LayerKind::Group(g) = &scene.layers[0].kind else {
+            panic!("not a group");
+        };
+        let item = g.children[0].layout_item.as_ref().unwrap();
+        assert_eq!(item.position, Position::Absolute);
+        assert_eq!(item.align_self, AlignSelf::FlexEnd);
+        assert!(matches!(&item.flex_basis, Some(FlexBasis::Length(n)) if n.at(0.0) == 40.0));
+        let auto = layout_scene("{}", r#"{"flexBasis": "auto"}"#).unwrap();
+        let LayerKind::Group(g) = &auto.layers[0].kind else {
+            panic!("not a group");
+        };
+        assert!(matches!(
+            g.children[0].layout_item.as_ref().unwrap().flex_basis,
+            Some(FlexBasis::Auto)
+        ));
+        // A single number or a keyframe list is one length.
+        for gap in [
+            "7",
+            r#"[{"frame": 0, "value": 1}, {"frame": 9, "value": 5}]"#,
+        ] {
+            let scene =
+                layout_scene(&format!(r#"{{"gap": {gap}, "padding": {gap}}}"#), "{}").unwrap();
+            assert_eq!(the_layout(&scene).gap.as_ref().unwrap().0.len(), 1);
+        }
+    }
+
+    #[test]
+    fn a_bad_layout_is_an_error_naming_the_layer() {
+        let cases = [
+            (r#"{"gap": [1, 2, 3]}"#, "{}", "\"row\"", "gap takes 1 or 2"),
+            (
+                r#"{"padding": [1, 2]}"#,
+                "{}",
+                "\"row\"",
+                "padding takes 1 or 4",
+            ),
+            (
+                r#"{"padding": -1}"#,
+                "{}",
+                "\"row\"",
+                "must not be negative",
+            ),
+            (
+                r#"{"gap": [1, -1]}"#,
+                "{}",
+                "\"row\"",
+                "must not be negative",
+            ),
+            (r#"{"width": -5}"#, "{}", "\"row\"", "layout width"),
+            (
+                "{}",
+                r#"{"margin": [1, 2, 3]}"#,
+                "\"a\"",
+                "margin takes 1 or 4",
+            ),
+            (
+                "{}",
+                r#"{"flexGrow": -1}"#,
+                "\"a\"",
+                "flexGrow must not be negative",
+            ),
+            (
+                "{}",
+                r#"{"flexBasis": -2}"#,
+                "\"a\"",
+                "flexBasis must not be negative",
+            ),
+            (
+                "{}",
+                r#"{"height": -2}"#,
+                "\"a\"",
+                "height must not be negative",
+            ),
+        ];
+        for (layout, item, layer, want) in cases {
+            let msg = layout_scene(layout, item).unwrap_err().to_string();
+            assert!(
+                msg.contains(layer) && msg.contains(want),
+                "{layout} {item}: {msg}"
+            );
+        }
+        // Negative margins are fine, as in CSS.
+        layout_scene("{}", r#"{"margin": -4}"#).unwrap();
+        // Unknown names are the parser's errors.
+        for (layout, item, word) in [
+            (r#"{"justifyContent": "start"}"#, "{}", "start"),
+            (r#"{"display": "grid"}"#, "{}", "grid"),
+            (r#"{"flexDirection": "diagonal"}"#, "{}", "diagonal"),
+            ("{}", r#"{"flexBasis": "content"}"#, "flexBasis"),
+            ("{}", r#"{"position": "fixed"}"#, "fixed"),
+        ] {
+            let msg = layout_scene(layout, item).unwrap_err().to_string();
+            assert!(msg.contains(word), "{layout} {item}: {msg}");
+        }
     }
 
     // --- Motion blur frames. --------------------------------------------------

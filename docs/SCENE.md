@@ -54,6 +54,7 @@ Every layer has these fields:
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
 | `type` | string | required | `shape`, `text`, `image`, `group`, `noise` or `meshGradient`. |
+| `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
 | `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
@@ -94,7 +95,8 @@ origin offset whatever `rotation` and `scale` do. The matrix is
 
 - Both are animatable numbers. The size is the box at that frame, so a text layer or an image whose size animates keeps
   turning about its middle.
-- A layer without a box (a group) ignores them.
+- A layer without a box (a group without a `layout`) ignores them. A group with a `layout` has its size as its box, and
+  an origin is a fraction of that.
 - A text layer's box is its laid-out box, so measuring it needs its font: a scene with an origin on text is resolved with
   the renderer's text engine.
 
@@ -174,7 +176,8 @@ matte, motion blur or 3D turn, whose drawn children all blend normally and none 
 the buffer and draws its children straight into its parent; the result is the same up to rounding.) Its
 `transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates. `"preserve3d": true` (default `false`) makes the group a 3D scene instead: see
-[preserve3d groups](#preserve3d-groups).
+[preserve3d groups](#preserve3d-groups). A group with a `layout` places its children with flexbox: see
+[Layout](#layout).
 
 ### noise
 
@@ -204,7 +207,7 @@ mask with, or to displace by. Like any layer it takes `effects`, `clip`, `mask`,
   `baseFrequency`, the transform or the box.
 - **The box edge** is anti-aliased: the box is drawn as a white shape through the layer matrix by the same rasteriser
   as a `shape` layer, and the noise fills its coverage. A box off the canvas is clipped as any layer is.
-- A group has no box, but a noise layer does: an `inset` clip or a `sweep` dot matrix on one measures from
+- A group without a `layout` has no box, but a noise layer does: an `inset` clip or a `sweep` dot matrix on one measures from
   `(0, 0, width, height)`.
 - Counts nothing in the [margin](#canvas-margin).
 
@@ -244,9 +247,82 @@ them. Like any layer it takes `effects`, `clip`, `mask`, `matte`, `blendMode` an
   triangles with vertex colours into a 4x multisampled texture, so the outer edge of the mesh is anti-aliased (the
   canvas edge is not, if the mesh fills the canvas exactly). Patches that fold over each other blend with "over", in
   document order; there is no depth.
-- A group has no box, but a mesh does: an `inset` clip or a `sweep` dot matrix on one measures from
+- A group without a `layout` has no box, but a mesh does: an `inset` clip or a `sweep` dot matrix on one measures from
   `(0, 0, width, height)`.
 - Counts nothing in the [margin](#canvas-margin).
+
+## Layout
+
+A `group` with a `layout` places its children with CSS flexbox (the `taffy` crate), and any layer can say how it takes
+part with `layoutItem`. Names and values are CSS's. Layout runs when a frame is resolved, after the fonts are
+registered, and moves the children by their transforms, so everything downstream sees the laid-out layers: bounds, the
+[margin](#canvas-margin) (layout changes none), the layer cache and `inspect`.
+
+```json
+{ "id": "row", "type": "group",
+  "layout": { "flexDirection": "row", "justifyContent": "center", "alignItems": "center", "gap": 24,
+              "padding": [0, 40, 0, 40], "width": 1080, "height": 400 },
+  "children": [
+    { "id": "a", "type": "shape", "shape": { "kind": "rect", "width": 200, "height": 120 }, "fill": "#f00" },
+    { "id": "b", "type": "text", "text": "hi", "font": "DM Sans", "size": 64, "color": "#fff",
+      "layoutItem": { "flexGrow": 1, "margin": 8 } },
+    { "id": "badge", "type": "shape", "shape": { "kind": "ellipse", "width": 20, "height": 20 }, "fill": "#0f0",
+      "layoutItem": { "position": "absolute" } } ] }
+```
+
+| `layout` field | Default | Values |
+|---|---|---|
+| `display` | `flex` | `flex`, the only one for now. |
+| `flexDirection` | `row` | `row`, `column`, `row-reverse`, `column-reverse`. |
+| `flexWrap` | `nowrap` | `nowrap`, `wrap`, `wrap-reverse`. |
+| `justifyContent` | `flex-start` | `flex-start`, `flex-end`, `center`, `space-between`, `space-around`, `space-evenly`. |
+| `alignItems` | `stretch` | `flex-start`, `flex-end`, `center`, `baseline`, `stretch`. |
+| `alignContent` | `stretch` | As `justifyContent`, plus `stretch`. |
+| `gap` | `0` | A number, or `[row, column]`: `row` is the space between rows, `column` between columns. |
+| `padding` | `0` | A number, or `[top, right, bottom, left]`. |
+| `width`, `height` | from the content | Pixels: the container's size. |
+
+| `layoutItem` field | Default | Values |
+|---|---|---|
+| `position` | `relative` | `relative`: in the flow. `absolute`: out of the flow, placed by its transform alone. |
+| `flexGrow`, `flexShrink` | `0`, `1` | Numbers, not negative. |
+| `flexBasis` | `auto` | A number of pixels, or `auto`. |
+| `alignSelf` | `auto` | `auto` (the container's `alignItems`), `flex-start`, `flex-end`, `center`, `baseline`, `stretch`. |
+| `margin` | `0` | A number, or `[top, right, bottom, left]`. May be negative. |
+| `width`, `height` | the layer's box | Pixels: the size the layout uses for this layer. |
+
+Every number is animatable. A `gap`, `padding` or `margin` given as a list is a list of numbers; a list of keyframe
+objects is one animated number. Loading a scene rejects a list of the wrong length, a negative gap, padding, size,
+`flexGrow`, `flexShrink` or `flexBasis`, and a value that is not in the tables; the error names the layer.
+
+- **Sizes.** A child's size for the layout is its box (the box `inset` clips use, see [Clip paths](#clip-paths): a
+  shape's width x height, a path's bounding box, an image's, a noise's or a mesh's box, a text layer's laid-out box). A
+  `layoutItem` `width` or `height` replaces that side. A group without a `layout` has no box and is 0 x 0 unless the
+  item gives a size. A child group that has a `layout` is a flex container and a flex item at once: it gets the size
+  the parent's layout gives it, from its content, its own `width` and `height`, the parent's `flexGrow` or stretching.
+  A `layoutItem` `width` or `height` on it wins over its `layout` ones. The container's own `width` and `height`
+  default to its content.
+- **Leaves keep their size.** A layer that is not a layout group is never resized: if the layout stretches or grows its
+  item, the layer is drawn at its own size from the item's top-left corner, and only its position changes. It also does
+  not shrink below its own size.
+- **Position.** The layout gives each child a position `(left, top)` in the container's space (inside the padding, after
+  the margin). The child is drawn as if its transform's `x` and `y` were `x + left - box.x + anchorX` and
+  `y + top - box.y + anchorY`, so with `x` and `y` at 0 its box's top-left corner lands at the position, and `scale`
+  and `rotation` pivot about its anchor and origin. Its own `x` and `y` are an offset from the laid-out place, as a CSS
+  `transform: translate()` is. Transforms never change the layout.
+- **Absolute items** take no part in the flow and no space: their transform is left alone, in the container's space. An
+  absolute child that is itself a layout group is laid out on its own.
+- **The box of a layout group** is `(0, 0, width, height)` of the size it was given, so an `inset` clip, a `sweep` dot
+  matrix, a `cornerPin`, a [box-unit gradient](#box-units) and a transform origin work on it, and a preserve3d group
+  sorts it by the middle of that box.
+- **Baselines.** `alignItems: baseline` (and `alignSelf`) lines up the first baselines of the items of a row: for text
+  the first line's baseline, for any other layer its bottom edge (as CSS treats a box with no text), and for a layout
+  group the baseline of its first item. In a column it does nothing, as in CSS.
+- **Motion blur.** A layer's sub-frames (including `frames`, see [Sub-frame layers](#sub-frame-layers)) are placed at
+  the position the frame's layer got, each from its own box and anchor. A layout group inside a blurred layer is laid out
+  separately in each sub-frame; a blurred layout group that is a flex item keeps the size its parent gave it in all of them.
+- A `layoutItem` on a layer whose parent has no `layout` does nothing.
+- Fractions are kept: positions are not rounded to pixels.
 
 ## Effects
 
@@ -835,10 +911,10 @@ The layer's own box, which `inset` is measured from:
 | `path` shape | The path's bounding box |
 | `image` | `0, 0, width, height` |
 | `text` | `0, 0, maxWidth` (or the laid-out width when there is no `maxWidth`) by the laid-out height |
-| `group` | None. `inset` on a group is a load error; use `polygon`, `ellipse` or `path`. |
+| `group` | None, unless it has a `layout`: then `0, 0, width, height` of the size the layout gave it. `inset` on a group without one is a load error; use `polygon`, `ellipse` or `path`. |
 
 Loading a scene rejects a polygon with fewer than 3 points, a bad path `d`, a negative `radius`, `rx` or `ry` at any
-keyframe, and `inset` on a group, and the error names the layer.
+keyframe, and `inset` on a group without a `layout`, and the error names the layer.
 
 ## Gradients
 
@@ -892,7 +968,8 @@ when the layer is resized or animated, without knowing its size.
 - A gradient in box units on a shape is measured from the shape's geometry, not counting its stroke. On a text layer the
   box is the text box. For a path the box is its bounding box, which need not start at `(0, 0)`.
 - A box with no width or no height has no extent, so the gradient paints the last stop's colour.
-- A layer without a box has nothing to measure from: a `mask` in box units on a group is a load error naming the layer.
+- A layer without a box has nothing to measure from: a `mask` in box units on a group without a `layout` is a load error
+  naming the layer. A group with a `layout` has a box, see [Layout](#layout).
 
 ## Gradient fills
 
@@ -1073,7 +1150,7 @@ groups nested in it, which sort together with them) are painted in **painter's o
 each layer's centre after its placement (before the camera's perspective, which does not change the order along a
 line of sight). A layer's centre is the middle of its box (the box an `inset` clip uses: a shape's, image's, noise's or
 mesh's width by height, a text layer's layout box, a path's bounding box), or its position `(x, y)` (where its anchor
-lands) for a group, which has no box. The sort is stable: layers at the same depth (within 1/1024 of a pixel) keep
+lands) for a group without a `layout`, which has no box. The sort is stable: layers at the same depth (within 1/1024 of a pixel) keep
 their document order. Only preserve3d groups sort. Every other list, a preserve3d group's parent and the children of an
 ordinary group inside it included, keeps document order; an ordinary group inside a preserve3d group is one layer to sort,
 at its position, and is drawn as a flat picture. The group as a whole is drawn at its place in its parent's list, so
@@ -1184,7 +1261,11 @@ constants) gives the sub-frames itself with `frames`:
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
   `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
-  `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group (a load error).
+  `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group without a `layout` (a load error).
+- Layout is flexbox only (`display: flex`; no grid, no block layout), with sizes in pixels (no percentages, `auto`
+  margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
+  size. Text is measured as one box of its own `maxWidth`, so it does not re-wrap to fit the container. Baseline
+  alignment is for rows; a non-text layer's baseline is its bottom edge. See [Layout](#layout).
 - An image's size is read from its header when the scene loads, only when a side is left out; `cover` cuts the picture
   with an anti-aliased clip and `contain` leaves the rest of the box empty (no background colour).
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
