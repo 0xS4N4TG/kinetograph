@@ -971,6 +971,8 @@ projection is orthographic: rotations foreshorten but nothing shrinks with dista
   layers that cross in 3D do not intersect, one is simply over the other.
 - `backdropBlur` on a layer that is turned frosts what is behind the layer *before* the turn, then turns the frosted
   picture with the layer.
+- `grain` and `dither` are laid on the canvas pixels of the flat layer, before the warp, so on a turned layer their
+  pattern turns and foreshortens with it (as it does under a `cornerPin` that comes after them).
 
 ### preserve3d groups
 

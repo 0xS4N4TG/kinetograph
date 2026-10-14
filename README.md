@@ -6,8 +6,8 @@ A programmatic video engine: agents write TypeScript, a Rust core renders it on 
 Remotion's API for visuals and the Web Audio API for sound, and puts a GPU compositor underneath them.
 
 **Status:** Phase 1 is done: a Rust workspace with a GPU compositor (shape, text, image and group layers; all 16 W3C
-blend modes; blur), PNG output, and a CLI with `still`, `bench` and `render` (video). Scenes are JSON for now; the
-TypeScript runtime comes in later phases (see the [roadmap](docs/HANDOFF.md)).
+blend modes; blur), PNG output, and a CLI with `still` and `bench`. Phase 2b adds `render` (video). Scenes are JSON
+for now; the TypeScript runtime comes in later phases (see the [roadmap](docs/HANDOFF.md)).
 
 - [Technical handoff](docs/HANDOFF.md)
 - [Research notes](docs/RESEARCH.md)
@@ -16,7 +16,8 @@ TypeScript runtime comes in later phases (see the [roadmap](docs/HANDOFF.md)).
 ## Build and run
 
 Use the rustup toolchain (stable, edition 2024). It needs a GPU that wgpu supports (Metal on macOS); no window or
-display is required.
+display is required. The CLI links FFmpeg for `render`, so building it needs the FFmpeg development libraries (see
+[Rendering video](#rendering-video)).
 
 ```sh
 # If Homebrew's rustc is first on PATH and fails to start, put rustup's first:
