@@ -136,7 +136,10 @@ PNG or JPEG, scaled to `width` x `height` from the layer origin. Colours are rea
 ```
 
 A group composites its children (bottom first) into its own buffer, then blends that result into its parent using the
-group's `opacity` and `blendMode`. Its `transform` applies to all children. `anchorX/anchorY` are in the group's
+group's `opacity` and `blendMode`. (A group that blends normally at opacity 1, with no effects, clip, mask,
+matte, motion blur or 3D turn, whose drawn children all blend normally and none of which reads the backdrop, skips
+the buffer and draws its children straight into its parent; the result is the same up to rounding.) Its
+`transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates. `"preserve3d": true` (default `false`) makes the group a 3D scene instead: see
 [preserve3d groups](#preserve3d-groups).
 

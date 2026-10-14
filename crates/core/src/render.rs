@@ -24,7 +24,7 @@ use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
     ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
-use crate::scene::{DotOrder, Extend, LayerKind, MaskMode, Scene};
+use crate::scene::{BlendMode, DotOrder, Extend, LayerKind, MaskMode, Scene};
 use crate::text::{LaidOutText, TextEngine};
 use crate::warp;
 
@@ -303,6 +303,18 @@ impl Renderer {
             } = &layer.kind
             {
                 canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
+                continue;
+            }
+            // A group that changes nothing about how its children are blended
+            // needs no buffer either (`needs_no_buffer`).
+            if let ResolvedKind::Group { children, .. } = &layer.kind
+                && needs_no_buffer(layer)
+            {
+                self.cache_path.push(layer.id.clone());
+                let drawn =
+                    self.draw_layers(children, parent * layer.transform.matrix(), canvas, below);
+                self.cache_path.pop();
+                canvas = drawn?;
                 continue;
             }
             // A layer turned in 3D is drawn flat and then warped about its
@@ -1207,6 +1219,46 @@ fn is_hidden(layer: &ResolvedLayer) -> bool {
     }
 }
 
+/// Whether `layer` is a flat group whose children can be drawn straight onto
+/// its parent's canvas, under its matrix, instead of into a buffer of its own
+/// that is then blended: it blends normally at opacity 1, with no effects,
+/// clip, mask, matte, motion blur or 3D turn, nothing in it reads the backdrop,
+/// and every child it draws blends normally and is not a preserve3d group
+/// (whose children would blend one by one). Its children are then blended
+/// onto the canvas in the same order, so the result is the same up to f16
+/// rounding: `(b over a) over canvas` against `b over (a over canvas)`.
+fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
+    let ResolvedKind::Group {
+        children,
+        preserve3d: false,
+    } = &layer.kind
+    else {
+        return false;
+    };
+    layer.blend_mode == BlendMode::Normal
+        && layer.opacity == 1.0
+        && layer.effects.is_empty()
+        && layer.clip.is_none()
+        && layer.mask.is_none()
+        && layer.matte.is_none()
+        && layer.motion.is_empty()
+        && warp::layer_world(&layer.transform).is_none()
+        && !needs_backdrop(layer)
+        && children
+            .iter()
+            .filter(|c| !is_hidden(c) && !is_matte_source(children, c))
+            .all(|c| {
+                c.blend_mode == BlendMode::Normal
+                    && !matches!(
+                        c.kind,
+                        ResolvedKind::Group {
+                            preserve3d: true,
+                            ..
+                        }
+                    )
+            })
+}
+
 /// Whether another layer in `layers` uses `layer` as its matte.
 fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
     layers
@@ -2007,6 +2059,80 @@ mod tests {
         assert_eq!(order[0].1, 0.5);
         assert_eq!(order[1].1, 0.25);
         assert_eq!(order[2].1, 0.5);
+    }
+
+    #[test]
+    fn only_groups_that_change_nothing_about_blending_skip_their_buffer() {
+        let group = |fields: &str, children: &str| {
+            let json =
+                format!(r##"[{{"id": "g", "type": "group"{fields}, "children": [{children}]}}]"##);
+            needs_no_buffer(&resolve_layers(&json)[0])
+        };
+        let plain = format!("{}, {}", card("a", "{}"), card("b", r##"{"x": 5}"##));
+        assert!(group("", &plain));
+        assert!(group(
+            r##", "transform": {"x": 10, "rotation": 30, "scale": 2}"##,
+            &plain
+        ));
+        // A faded child is blended by itself either way.
+        assert!(group(
+            "",
+            r##"{"id": "c", "type": "shape", "fill": "#fff", "opacity": 0.5,
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+        // A plain group inside: blended normally, whatever it does itself.
+        assert!(group(
+            "",
+            r##"{"id": "inner", "type": "group", "children": [
+            {"id": "m", "type": "shape", "fill": "#fff", "blendMode": "multiply",
+              "shape": {"kind": "rect", "width": 5, "height": 5}}]}"##
+        ));
+        // A hidden child, or a matte source, is not drawn by the group.
+        assert!(group(
+            "",
+            r##"{"id": "h", "type": "shape", "fill": "#fff", "opacity": 0,
+            "blendMode": "screen", "shape": {"kind": "rect", "width": 5, "height": 5}},
+            {"id": "cut", "type": "shape", "fill": "#fff", "matte": {"layer": "src"},
+            "shape": {"kind": "rect", "width": 5, "height": 5}},
+            {"id": "src", "type": "shape", "fill": "#fff", "blendMode": "multiply",
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+
+        for fields in [
+            r##", "opacity": 0.5"##,
+            r##", "blendMode": "multiply""##,
+            r##", "effects": [{"type": "blur", "radius": 4}]"##,
+            r##", "clip": {"kind": "polygon", "points": [[0, 0], [9, 0], [0, 9]]}"##,
+            r##", "transform": {"rotateY": 20}"##,
+            r##", "motionBlur": {"samples": 4, "shutter": 1}, "transform": {"x": [{"frame": 0, "value": 0}, {"frame": 1, "value": 10}]}"##,
+            r##", "preserve3d": true"##,
+        ] {
+            assert!(!group(fields, &plain), "{fields}");
+        }
+        // A child that blends against what is under it, or reads it.
+        assert!(!group(
+            "",
+            r##"{"id": "m", "type": "shape", "fill": "#fff", "blendMode": "multiply",
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+        assert!(!group(
+            "",
+            r##"{"id": "f", "type": "shape", "fill": "#fff",
+            "effects": [{"type": "backdropBlur", "radius": 8}],
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##
+        ));
+        assert!(!group(
+            "",
+            &format!(
+                r##"{{"id": "p", "type": "group", "preserve3d": true,
+            "children": [{}]}}"##,
+                card("a", "{}")
+            )
+        ));
+        // Not a group at all.
+        assert!(!needs_no_buffer(
+            &resolve_layers(&format!("[{}]", card("a", "{}")))[0]
+        ));
     }
 
     #[test]
