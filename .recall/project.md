@@ -1,16 +1,19 @@
 # kinetograph
 
 ## Stack
-- Language: Rust (engine, not started), TypeScript authoring layer later (Phase 3)
+- Language: Rust (core renderer: crates/core, CLI: crates/cli), TypeScript authoring layer later (Phase 3)
 - Planned crates: wgpu, vello, parley/swash/fontique, taffy, usvg/vello_svg, ffmpeg-next, web-audio-api-rs, rmcp (see docs/HANDOFF.md §4)
-- Repo: github.com/0xS4N4TG/kinetograph (private), branch main
+- Repo: github.com/0xS4N4TG/kinetograph (private, to be public), branch main
 - Licence: MIT OR Apache-2.0
 
 ## Entry points
-- None yet. Phase 1 creates a Cargo workspace + CLI `still`.
+- `cargo build --release`; `./target/release/kinetograph still <scene.json> <frame> -o out.png`; `bench <scene.json> --frame N --runs K`.
+- Scenes are JSON (docs/SCENE.md). Tests: `cargo test` (goldens in crates/core/tests/golden, regenerate with UPDATE_GOLDEN=1 after an eye check).
 
 ## Conventions
 - One Conventional Commit per logical change; push only when asked.
+- Branches `feat/<work>`, phase in the PR title, merge commits, no session links in commits/PRs (HANDOFF §8).
+- Coding happens in Claude Code cloud sessions; the M4 does rendering, goldens, benchmarks and ideation.
 - docs/reference/rajz-reference.mp4 is third-party and gitignored (local only).
 - Subagents: Sonnet 5.5 at high effort (global env CLAUDE_CODE_SUBAGENT_MODEL + project .claude/settings.json). Ask before using Opus. Don't stop/relaunch running agents without asking.
 - Speed claims need a benchmark; rendering is a pure function of (project, frame).

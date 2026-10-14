@@ -19,6 +19,6 @@ Status values: active | stable | blocked | archived
 - **phase1** [stable] — core renderer done: JSON scene graph, Vello raster, linear-light WGSL compositor, 16 blend modes, Gaussian blur, `still`, `bench`, golden tests
   - paths: `crates/**`, `examples/**`, `assets/**`, `docs/SCENE.md`, `docs/HANDOFF.md`
   - last: 2026-10-14 (phase1-workflow)
-- **phase2a** [active] — all 2a effects coded on branch phase2a (PR #1); unrendered, goldens + bench pending on the M4
+- **phase2a** [stable] — merged (PR #2, branch feat/compositing-effects); M4 tests + goldens pass; next 2b (cloud) and 2c perf
   - paths: `crates/core/**`, `docs/SCENE.md`
-  - last: 2026-10-14 (phase2a-cloud-workflow)
+  - last: 2026-10-14 (m4-verify-and-merge)

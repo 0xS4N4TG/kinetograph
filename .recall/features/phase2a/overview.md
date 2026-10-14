@@ -1,6 +1,6 @@
 # phase2a
 
-**Status:** active
+**Status:** stable
 **Paths:** `crates/core/**`, `docs/SCENE.md`
 **Last touched:** 2026-10-14
 
@@ -9,31 +9,22 @@ HANDOFF §8 Phase 2a (compositing basics): clip paths, gradient masks, track mat
 gradient fills, backdrop blur, glow, chromatic aberration, custom WGSL. Built in a Claude Code cloud session (no GPU).
 
 ## Current state
-- Code complete on branch `phase2a`, PR 0xS4N4TG/kinetograph#1 (open, base main). 18 commits ed39ad2..889f3a0.
-- Cloud checks pass: build, fmt --check, clippy -D warnings, `cargo test --lib` (88). NOTHING rendered yet.
-- Layer fields `clip`, `mask`, `matte`; effects `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`,
-  `grayscale`, `sepia`, `hueRotate`, `invert`, `backdropBlur`, `glow`, `chromaticAberration`, `shader`. Shape `fill` /
-  text `color` take a colour or `Gradient` (linear/radial/conic, extend pad/repeat/reflect).
-- Order per layer: effects -> clip -> mask -> matte -> opacity+blend. Matte sources are not drawn on their own.
-- Scene-wide canvas margin M = max effect reach (Phase 1 `blur` excluded), textures (w+2M)x(h+2M), readback crops.
-  Phase 1 scenes have M=0 and should stay byte-identical (argued, not run).
-- Colour filters merge consecutive entries into one 4x5 matrix, applied in sRGB (browser behaviour).
-- Custom shader: user writes `fn effect(px) -> vec4<f32>`; prelude gives `layer(px)`, `kg` (frame, time, size, margin),
-  `u.<name>` uniforms; validated at load with naga (layer id + line:col); pipelines built once in Compositor::new.
-  Sees only its own layer (no backdrop input).
-- CPU safety nets: naga validates every src/shaders/*.wgsl; every tests/scenes + examples JSON loads (fonts, images).
+- Done and merged: PR #2 (branch feat/compositing-effects, merge commit 0ca894b on main). PR #1 was closed by the
+  branch rename; same commits.
+- Verified on the M4: full `cargo test --release` passes; 10 new goldens checked by eye at frame 15 (d3f381f);
+  Phase 1 goldens byte-identical; both margin pixel tests pass.
+- Speed: a 34-layer papercut diorama with 30 effects (1080x1920) runs 213-313 ms/frame in `bench`, composite ~234 ms.
+  Too slow for Phase 3's 5x target; HANDOFF §8 now has a Phase 2c performance pass.
+- Layer fields `clip`, `mask`, `matte`; effects `dropShadow`, `insetShadow`, colour filters, `backdropBlur`, `glow`,
+  `chromaticAberration`, `shader`; gradient fills. Order per layer: effects -> clip -> mask -> matte -> opacity+blend.
+  Scene-wide canvas margin M = max effect reach; textures (w+2M)x(h+2M).
 
 ## Open threads
-- [ ] On the M4: `cargo test` (Phase 1 goldens must still match), render + eyeball 10 new scenes at frame 15, then
-  `UPDATE_GOLDEN=1 cargo test --test golden`: clip-paths, masks, mattes, shadows, colour-filters, gradient-fills,
-  backdrop-blur, glow, chromatic-aberration, shader.
-- [ ] New pixel tests in tests/render.rs: a_shadow_can_fall_on_the_canvas_from_a_layer_outside_it,
-  a_margin_does_not_move_or_change_the_canvas (1-level tolerance).
-- [ ] `bench` shadow/glow/backdrop-heavy scenes: Phase 1 Blur::run allocates textures per call, now called far more.
-- [ ] Riskiest unrun bits: custom shader bind group / uniform sizes on Metal; conic start at 12 o'clock clockwise;
-  chromatic aberration fringe direction; glow clamp at intensity 4; backdrop blur inside moving groups.
-- [ ] Possible follow-up offered: give custom shaders the backdrop as a second input (custom transitions).
-- [ ] PR body still contains the session link (user removed it from commit messages only; asked whether to strip it).
+- [ ] Phase 2b runs in a cloud session (kickoff prompt: branch feat/looks-camera-video from main); M4 then renders,
+  makes goldens, benches.
+- [ ] Phase 2c performance pass (HANDOFF §8 2c), including Phase 1's MSAA 16x / Gaussian / full-canvas textures.
+- [ ] Possible follow-up: give custom shaders the backdrop as a second input (custom transitions).
+- [ ] Remote branch feat/compositing-effects still exists (no auto-delete); delete if unwanted.
 
 ## Key files
 - crates/core/src/{scene,resolve,render,compositor,color}.rs, src/tests.rs
@@ -42,4 +33,5 @@ gradient fills, backdrop blur, glow, chromatic aberration, custom WGSL. Built in
 - docs/SCENE.md
 
 ## Recent sessions
+- 2026-10-14-m4-verify-and-merge — M4 tests + goldens, papercut demo + bench, 2c planned, merged as PR #2
 - 2026-10-14-phase2a-cloud-workflow — 10-agent workflow built all of 2a; history rewritten to drop Claude-Session trailer

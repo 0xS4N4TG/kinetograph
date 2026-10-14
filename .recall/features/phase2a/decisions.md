@@ -33,3 +33,15 @@ Keep `Co-Authored-By` only in future commits.
 ## Opus allowed as reviewer here
 **Date:** 2026-10-14
 **Call:** User asked for Sonnet 5.5 high implementers + Opus 5.5 high reviewers for this phase.
+
+## Branch names describe the work
+**Date:** 2026-10-14
+**Call:** Repo will be public: `feat/<work>` branches, phase number in the PR title, no session links in commits or PRs.
+
+## Merge phases with a merge commit
+**Date:** 2026-10-14
+**Call:** Keeps commit SHAs that notes and recall reference valid.
+
+## Cloud codes, M4 renders
+**Date:** 2026-10-14
+**Call:** User wants coding in cloud sessions (laptop closed); the M4 does rendering, goldens, benchmarks and ideation.
