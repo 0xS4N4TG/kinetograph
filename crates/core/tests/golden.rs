@@ -169,3 +169,12 @@ fn glow_matches_golden() {
     let frame = render_still(scene("tests/scenes/glow.json"), 15).unwrap();
     check("glow", &frame);
 }
+
+#[test]
+fn chromatic_aberration_matches_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers text, an image,
+    // a group with a negative amount, a half-transparent shape, and layers
+    // hanging off the top, right and left edges.
+    let frame = render_still(scene("tests/scenes/chromatic-aberration.json"), 15).unwrap();
+    check("chromatic-aberration", &frame);
+}

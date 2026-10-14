@@ -64,6 +64,12 @@ pub enum ResolvedEffect {
         radius: f32,
     },
     Glow(ResolvedGlow),
+    /// The red channel is read `amount` pixels along `angle` degrees
+    /// (clockwise from +x), the blue one the same distance the other way.
+    ChromaticAberration {
+        amount: f32,
+        angle: f32,
+    },
     /// Cast onto what is behind the layer.
     DropShadow(ResolvedShadow),
     /// Cast inside the layer's own shape.
@@ -423,6 +429,10 @@ fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
             color: *color,
             intensity: intensity.at(f).clamp(0.0, MAX_GLOW_INTENSITY) as f32,
         }),
+        Effect::ChromaticAberration { amount, angle } => ResolvedEffect::ChromaticAberration {
+            amount: amount.at(f) as f32,
+            angle: angle.at(f) as f32,
+        },
         Effect::DropShadow(s) => ResolvedEffect::DropShadow(resolve_shadow(s, f)),
         Effect::InsetShadow(s) => ResolvedEffect::InsetShadow(resolve_shadow(s, f)),
         Effect::Saturate { amount } => {
@@ -641,6 +651,20 @@ mod tests {
         };
         assert_eq!((second.radius, second.intensity), (0.0, 0.0));
         assert_eq!(second.color, None);
+    }
+
+    #[test]
+    fn chromatic_aberration_resolves_keyframes() {
+        let effects = effects_at(
+            r#"[{"type": "chromaticAberration",
+                 "amount": [{"frame": 0, "value": 0}, {"frame": 10, "value": 8}],
+                 "angle": [{"frame": 0, "value": 0}, {"frame": 10, "value": 90}]}]"#,
+            5,
+        );
+        assert!(matches!(
+            effects[..],
+            [ResolvedEffect::ChromaticAberration { amount, angle }] if amount == 4.0 && angle == 45.0
+        ));
     }
 
     #[test]

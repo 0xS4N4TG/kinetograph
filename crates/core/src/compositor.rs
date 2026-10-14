@@ -12,8 +12,8 @@
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
 //! `shaders/shadow.wgsl` holds the shadow effects' passes,
-//! `shaders/color.wgsl` the colour filter pass and `shaders/glow.wgsl` the
-//! glow pass; they share the bind group layout, so their passes go through
+//! `shaders/color.wgsl` the colour filter pass, `shaders/glow.wgsl` the glow
+//! pass and `shaders/aberration.wgsl` the chromatic aberration pass; they share the bind group layout, so their passes go through
 //! the same `run_pass`.
 //!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
@@ -58,6 +58,7 @@ pub struct Compositor {
     inset_shadow: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
+    aberration: wgpu::RenderPipeline,
     blur: Blur,
     pool: Vec<Tex>,
 }
@@ -87,6 +88,10 @@ impl Compositor {
         let glow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("glow"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/glow.wgsl").into()),
+        });
+        let aberration_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("aberration"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/aberration.wgsl").into()),
         });
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -164,6 +169,7 @@ impl Compositor {
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
+            aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
             blur: Blur::new(device),
             layout,
             pool: Vec::new(),
@@ -324,6 +330,10 @@ impl Compositor {
                 }
                 ResolvedEffect::BackdropBlur { .. } => {}
                 ResolvedEffect::Glow(glow) => src = self.glow(src, &glow),
+                ResolvedEffect::ChromaticAberration { amount, angle } if amount != 0.0 => {
+                    src = self.chromatic_aberration(src, aberration_offset(amount, angle));
+                }
+                ResolvedEffect::ChromaticAberration { .. } => {}
                 ResolvedEffect::DropShadow(shadow) => src = self.shadow(src, &shadow, false),
                 ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
                 ResolvedEffect::ColorMatrix(matrix) if matrix == ColorMatrix::IDENTITY => {}
@@ -387,6 +397,23 @@ impl Compositor {
             &target.view,
         );
         self.release(halo);
+        self.release(src);
+        target
+    }
+
+    /// Splits the colour channels of `src` apart in one pass: red is read
+    /// `offset` pixels away, blue the same distance the other way. `src` goes
+    /// back to the pool; the result is a new texture.
+    fn chromatic_aberration(&mut self, src: Tex, offset: [f32; 2]) -> Tex {
+        let target = self.acquire();
+        let params = floats(&[offset[0], offset[1], 0.0, 0.0]);
+        self.run_pass(
+            &self.aberration,
+            &src.view,
+            &src.view,
+            &params,
+            &target.view,
+        );
         self.release(src);
         target
     }
@@ -703,6 +730,13 @@ fn glow_values(glow: &ResolvedGlow) -> [f32; 8] {
     ]
 }
 
+/// Where the red channel is read from: `amount` pixels along `angle` degrees,
+/// clockwise from the +x axis (y points down).
+fn aberration_offset(amount: f32, angle: f32) -> [f32; 2] {
+    let (sin, cos) = angle.to_radians().sin_cos();
+    [amount * cos, amount * sin]
+}
+
 /// The number the shader's `blend_fn` switches on.
 fn mode_index(mode: BlendMode) -> u32 {
     match mode {
@@ -729,6 +763,16 @@ fn mode_index(mode: BlendMode) -> u32 {
 mod tests {
     use super::*;
     use crate::color::Color;
+
+    #[test]
+    fn aberration_angles_run_clockwise_from_the_x_axis() {
+        let near =
+            |got: [f32; 2], want: [f32; 2]| got.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-5);
+        assert!(near(aberration_offset(4.0, 0.0), [4.0, 0.0]));
+        assert!(near(aberration_offset(4.0, 90.0), [0.0, 4.0]));
+        assert!(near(aberration_offset(-3.0, 180.0), [3.0, 0.0]));
+        assert!(near(aberration_offset(0.0, 33.0), [0.0, 0.0]));
+    }
 
     #[test]
     fn glow_values_say_whether_to_tint() {

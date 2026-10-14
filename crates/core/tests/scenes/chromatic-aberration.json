@@ -1,0 +1,204 @@
+{
+ "width": 512,
+ "height": 288,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#14161f",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "title",
+   "type": "text",
+   "text": "SPLIT",
+   "font": "DM Sans",
+   "size": 84,
+   "color": "#ffffff",
+   "transform": {
+    "x": 24,
+    "y": 16
+   },
+   "effects": [
+    {
+     "type": "chromaticAberration",
+     "amount": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 12
+      }
+     ],
+     "angle": 0
+    }
+   ]
+  },
+  {
+   "id": "photo",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 160,
+   "height": 120,
+   "transform": {
+    "x": 300,
+    "y": 16
+   },
+   "effects": [
+    {
+     "type": "chromaticAberration",
+     "amount": 6,
+     "angle": [
+      {
+       "frame": 0,
+       "value": 0
+      },
+      {
+       "frame": 30,
+       "value": 90
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "bars",
+   "type": "group",
+   "transform": {
+    "x": 24,
+    "y": 150
+   },
+   "effects": [
+    {
+     "type": "chromaticAberration",
+     "amount": -5,
+     "angle": 30
+    }
+   ],
+   "children": [
+    {
+     "id": "bar-a",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 140,
+      "height": 22
+     },
+     "fill": "#ffffff"
+    },
+    {
+     "id": "bar-b",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 90,
+      "height": 22
+     },
+     "fill": "#f6c177",
+     "transform": {
+      "x": 30,
+      "y": 34
+     }
+    },
+    {
+     "id": "bar-c",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 50,
+      "height": 50
+     },
+     "fill": "#9ccfd8",
+     "transform": {
+      "x": 160,
+      "y": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "soft",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 120,
+    "height": 70,
+    "radius": 16
+   },
+   "fill": "#ffffff80",
+   "transform": {
+    "x": 250,
+    "y": 170
+   },
+   "effects": [
+    {
+     "type": "chromaticAberration",
+     "amount": 8,
+     "angle": 45
+    }
+   ]
+  },
+  {
+   "id": "edge",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 60,
+    "height": 60
+   },
+   "fill": "#ffffff",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": 468
+     },
+     {
+      "frame": 30,
+      "value": 452
+     }
+    ],
+    "y": [
+     {
+      "frame": 0,
+      "value": -20
+     },
+     {
+      "frame": 30,
+      "value": -10
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "chromaticAberration",
+     "amount": 10,
+     "angle": 0
+    }
+   ]
+  },
+  {
+   "id": "corner",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 80,
+    "height": 80
+   },
+   "fill": "#e0556b",
+   "transform": {
+    "x": -30,
+    "y": 240
+   },
+   "effects": [
+    {
+     "type": "chromaticAberration",
+     "amount": 6,
+     "angle": 0
+    }
+   ]
+  }
+ ]
+}

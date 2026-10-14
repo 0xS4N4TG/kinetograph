@@ -150,7 +150,7 @@ side.
 - A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
-- `glow` counts `3 * radius` as well.
+- `glow` counts `3 * radius` as well, and `chromaticAberration` counts `|amount|`.
 - `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge).
 - `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
   layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
@@ -206,6 +206,27 @@ The blur runs in linear light on premultiplied colour, so the halo is physically
 shifting hue). The halo is made from the layer as it is after the effects before it, and opacity fades layer and halo
 together. The halo reaches about three radii past the layer's edge, which the [margin](#canvas-margin) allows for, so
 the glow of a layer that hangs off the canvas still falls on it.
+
+### chromaticAberration
+
+```json
+{ "type": "chromaticAberration", "amount": 4 }
+{ "type": "chromaticAberration", "amount": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 12 }], "angle": 45 }
+```
+
+Pulls the red, green and blue images of the layer apart, like a cheap lens: edges grow a red fringe on one side and a
+blue one on the other, with the layer's centre unchanged.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `amount` | required | Animatable, in canvas pixels. The red channel is read from `amount` pixels along `angle`, the blue channel from `amount` pixels the other way, and green from the pixel itself. Reading from ahead means the red *image* appears shifted the opposite way (back along `angle`) and the blue image forwards. A negative `amount` swaps the two; 0 does nothing. Not limited, but the [margin](#canvas-margin) is. |
+| `angle` | `0` | Animatable, in degrees, clockwise from the +x axis: 0 splits left and right, 90 up and down. |
+
+The offsets are in canvas pixels, whatever the layer's `scale` or rotation. Reads are bilinear, so fractional amounts
+and animation are smooth. The channels are premultiplied, and the alpha is the largest of the three samples' alphas:
+a fringe at a layer's edge is a red or blue edge, not a black one, and the layer grows by up to `amount` pixels on
+each side (counted in the [margin](#canvas-margin)). Colour filters before it in the list recolour what it splits; ones
+after it recolour the fringes too.
 
 ### dropShadow
 
@@ -464,7 +485,7 @@ layer.
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- Effects so far: `blur`, `backdropBlur`, `glow`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`,
+- Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`,
   `grayscale`, `sepia`, `invert`, `hueRotate`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.

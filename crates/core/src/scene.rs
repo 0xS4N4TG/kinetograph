@@ -147,6 +147,14 @@ pub enum Effect {
         #[serde(default = "one")]
         intensity: Num,
     },
+    /// Splits the colour channels apart: red is read `amount` pixels along
+    /// `angle` (degrees, clockwise from the +x axis, so 90 is down) and blue
+    /// the same distance the other way. Negative `amount` swaps them.
+    ChromaticAberration {
+        amount: Num,
+        #[serde(default = "zero")]
+        angle: Num,
+    },
     /// The layer's shadow, cast onto what is behind it.
     DropShadow(Shadow),
     /// A shadow cast inside the layer's own shape.
@@ -238,6 +246,10 @@ impl Effect {
                 3.0 * radius.max().clamp(0.0, MAX_BLUR_RADIUS)
             }
             Effect::DropShadow(shadow) | Effect::InsetShadow(shadow) => shadow.reach(),
+            // Channels are shifted by up to `amount`, in either direction.
+            Effect::ChromaticAberration { amount, .. } => {
+                amount.max().abs().max(amount.min().abs())
+            }
             // Colour filters change pixels in place.
             Effect::Saturate { .. }
             | Effect::Contrast { .. }
@@ -1101,6 +1113,26 @@ mod tests {
         assert!(msg.contains("radius"), "{msg}");
         let msg = error(r#""effects": [{"type": "glow", "radius": 4, "color": "gold"}],"#);
         assert!(msg.contains("gold"), "{msg}");
+    }
+
+    #[test]
+    fn parses_chromatic_aberration_and_counts_the_amount_in_the_margin() {
+        let scene = effects_of(
+            r#"[{"type": "chromaticAberration", "amount": [{"frame": 0, "value": -9}, {"frame": 9, "value": 4}],
+                 "angle": 45}, {"type": "chromaticAberration", "amount": 2}]"#,
+        );
+        let Effect::ChromaticAberration { amount, angle } = &scene.layers[0].effects[0] else {
+            panic!("not an aberration");
+        };
+        assert_eq!((amount.at(0.0), angle.at(0.0)), (-9.0, 45.0));
+        let Effect::ChromaticAberration { angle, .. } = &scene.layers[0].effects[1] else {
+            panic!("not an aberration");
+        };
+        assert_eq!(angle.at(0.0), 0.0);
+        // The larger side of -9..4, plus the second effect's 2.
+        assert_eq!(scene.margin(), 11);
+        let msg = error(r#""effects": [{"type": "chromaticAberration"}],"#);
+        assert!(msg.contains("amount"), "{msg}");
     }
 
     #[test]
