@@ -104,21 +104,36 @@ pub fn render(
         return Err(e);
     }
 
+    // Each frame is started before the last one is collected, so the GPU
+    // draws one while the next is recorded.
     let mut failure = None;
-    for (done, frame) in (first..=last).enumerate() {
-        match renderer.render_frame(frame) {
-            // The encoder has stopped; its error is reported below.
-            Ok(rendered) => {
-                if frame_tx.send(rendered).is_err() {
-                    break;
-                }
-            }
-            Err(e) => {
+    let mut done = 0;
+    let mut in_flight = None;
+    for frame in (first..=last).map(Some).chain([None]) {
+        let started = match frame.map(|frame| (frame, renderer.start_frame(frame))) {
+            Some((frame, Err(e))) => {
                 failure = Some(format!("frame {frame}: {e}"));
                 break;
             }
+            Some((frame, Ok(pending))) => Some((frame, pending)),
+            None => None,
+        };
+        if let Some((frame, pending)) = std::mem::replace(&mut in_flight, started) {
+            match renderer.finish_frame(pending) {
+                // The encoder has stopped; its error is reported below.
+                Ok(rendered) => {
+                    if frame_tx.send(rendered).is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    failure = Some(format!("frame {frame}: {e}"));
+                    break;
+                }
+            }
+            done += 1;
+            progress(done, frames);
         }
-        progress(done as u32 + 1, frames);
     }
     drop(frame_tx);
     let encoded = encoder_thread

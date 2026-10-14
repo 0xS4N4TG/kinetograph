@@ -23,11 +23,12 @@
 //! the pixels that are not drawn are the ones a full blur leaves at zero, or
 //! that nothing drawn reads.
 
-use vello::wgpu::{self, util::DeviceExt};
+use vello::wgpu;
 
 use crate::bounds::PixelRect;
 use crate::compositor::{Input, LINEAR_FORMAT, Tex, new_texture};
 use crate::pool::Pool;
+use crate::uniforms::Uniforms;
 
 /// Blurs below this many pixels are skipped: the smallest chain already
 /// spreads by about one pixel.
@@ -144,6 +145,7 @@ impl Blur {
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
+        uniforms: &mut Uniforms,
         src: Input,
         dst: Input,
         size: (u32, u32),
@@ -175,6 +177,7 @@ impl Blur {
             self.draw(
                 device,
                 &mut *encoder,
+                &mut *uniforms,
                 pipeline,
                 input,
                 target,
@@ -292,6 +295,7 @@ impl Blur {
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
+        uniforms: &mut Uniforms,
         pipeline: &wgpu::RenderPipeline,
         input: &wgpu::TextureView,
         target: &wgpu::TextureView,
@@ -301,11 +305,7 @@ impl Blur {
     ) {
         let mut bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
         bytes.extend(source.iter().flat_map(|v| v.to_le_bytes()));
-        let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("blur params"),
-            contents: &bytes,
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform = uniforms.push(&bytes);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blur"),
             layout: &self.layout,
@@ -320,7 +320,7 @@ impl Blur {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: uniform.as_entire_binding(),
+                    resource: uniform.binding(),
                 },
             ],
         });

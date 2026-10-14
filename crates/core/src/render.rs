@@ -17,7 +17,7 @@ use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
-use crate::compositor::{Compositor, Tex};
+use crate::compositor::{Compositor, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::mesh;
 use crate::resolve::{
@@ -55,6 +55,13 @@ impl Frame {
             .map_err(|e| Error::Render(format!("PNG encode failed: {e}")))?;
         Ok(out)
     }
+}
+
+/// A frame the GPU is still drawing (`Renderer::start_frame`).
+pub struct PendingFrame {
+    readback: Readback,
+    width: u32,
+    height: u32,
 }
 
 /// Where one frame's time went, in milliseconds. Collected by
@@ -220,8 +227,26 @@ impl Renderer {
     }
 
     pub fn render_frame(&mut self, frame: u32) -> Result<Frame> {
+        let pending = self.start_frame(frame)?;
+        self.finish_frame(pending)
+    }
+
+    /// `render_frame` up to the readback: the GPU works on the frame while
+    /// the caller starts the next one, and `finish_frame` collects it.
+    /// Frames are finished in the order they were started.
+    pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
         let resolved = self.scene.resolve(frame)?;
-        self.render_resolved(&resolved)
+        self.start_resolved(&resolved)
+    }
+
+    /// The pixels of a frame from `start_frame`.
+    pub fn finish_frame(&mut self, pending: PendingFrame) -> Result<Frame> {
+        let rgba = self.compositor.finish_readback(pending.readback)?;
+        Ok(Frame {
+            width: pending.width,
+            height: pending.height,
+            rgba,
+        })
     }
 
     /// Like `render_frame`, but also reports where the time went. To make
@@ -263,11 +288,24 @@ impl Renderer {
     }
 
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
+        let pending = self.start_resolved(scene)?;
+        let rgba = self.timed(Stage::Readback, |s| {
+            s.compositor.finish_readback(pending.readback)
+        })?;
+        Ok(Frame {
+            width: pending.width,
+            height: pending.height,
+            rgba,
+        })
+    }
+
+    fn start_resolved(&mut self, scene: &ResolvedScene) -> Result<PendingFrame> {
         self.projection = warp::projection(scene.camera.as_ref(), self.margin);
         // A frame that failed may have left these half way.
         self.cache_path.clear();
         self.cache_paused = 0;
         self.cache.begin_frame();
+        self.compositor.begin_frame();
         self.clear_pages();
         self.plan_pages(&scene.layers)?;
         let color = scene.background.linear_premultiplied();
@@ -279,12 +317,12 @@ impl Renderer {
             self.compositor.release(tex);
         }
         self.clear_pages();
-        let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
+        let readback = self.timed(Stage::Readback, |s| s.compositor.start_readback(&canvas));
         self.compositor.release(canvas);
-        Ok(Frame {
+        Ok(PendingFrame {
+            readback,
             width: scene.width,
             height: scene.height,
-            rgba,
         })
     }
 
