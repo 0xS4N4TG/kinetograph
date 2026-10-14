@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use glam::DMat4;
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke};
 use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
@@ -22,6 +23,7 @@ use crate::resolve::{
 };
 use crate::scene::{DotOrder, Extend, LayerKind, MaskMode, Scene};
 use crate::text::TextEngine;
+use crate::warp;
 
 /// Curve flattening tolerance when converting shapes to paths.
 const SHAPE_TOLERANCE: f64 = 0.1;
@@ -99,6 +101,8 @@ pub struct Renderer {
     target_size: (u32, u32),
     /// See `Scene::margin`.
     margin: u32,
+    /// The camera of the frame being rendered (`warp::projection`).
+    projection: DMat4,
     compositor: Compositor,
     text: TextEngine,
     images: HashMap<String, ImageData>,
@@ -163,6 +167,7 @@ impl Renderer {
             vello_view,
             target_size,
             margin,
+            projection: DMat4::IDENTITY,
             compositor,
             text,
             images,
@@ -213,6 +218,7 @@ impl Renderer {
     }
 
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
+        self.projection = warp::projection(scene.camera.as_ref(), self.margin);
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas =
@@ -242,27 +248,74 @@ impl Renderer {
             if layer.opacity <= 0.0 || is_matte_source(layers, layer) {
                 continue;
             }
-            // The backdrop is only built for a layer that blurs it: the
-            // canvas so far, under anything the enclosing groups have behind
-            // them.
-            let needs_backdrop = uses_backdrop(layers, layer);
-            let combined = match below {
-                Some(below) if needs_backdrop => {
-                    Some(self.timed(Stage::Composite, |s| s.compositor.over(below, &canvas)))
-                }
-                _ => None,
-            };
-            let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
-            let src = self.layer_texture(layer, layers, parent, backdrop)?;
-            if let Some(combined) = combined {
-                self.compositor.release(combined);
-            }
-            canvas = self.timed(Stage::Composite, |s| {
-                s.compositor
-                    .blend(canvas, src, layer.opacity, layer.blend_mode)
-            });
+            // A layer turned in 3D is drawn flat and then warped about its
+            // own position, in its parent's plane.
+            let placement =
+                warp::layer_world(&layer.transform).map(|world| Placement { parent, world });
+            canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
         }
         Ok(canvas)
+    }
+
+    /// Draws one layer of `siblings` onto `canvas`: its own pixels
+    /// (`layer_texture`), warped into place if it has a `placement`, blended
+    /// with its opacity times `opacity_scale`. `parent` is the flat matrix of
+    /// the layer's parent, as in `draw_layers`.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_layer(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        placement: Option<Placement>,
+        opacity_scale: f32,
+        mut canvas: Tex,
+        below: Option<&Tex>,
+    ) -> Result<Tex> {
+        // The backdrop is only built for a layer that blurs it: the canvas so
+        // far, under anything the enclosing groups have behind them.
+        let needs_backdrop = uses_backdrop(siblings, layer);
+        let combined = match below {
+            Some(below) if needs_backdrop => {
+                Some(self.timed(Stage::Composite, |s| s.compositor.over(below, &canvas)))
+            }
+            _ => None,
+        };
+        let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
+        let src = self.layer_texture(layer, siblings, parent, backdrop)?;
+        if let Some(combined) = combined {
+            self.compositor.release(combined);
+        }
+        let src = match placement {
+            Some(placement) => match self.place(src, &placement) {
+                Some(src) => src,
+                // Seen edge on: nothing to blend.
+                None => return Ok(canvas),
+            },
+            None => src,
+        };
+        canvas = self.timed(Stage::Composite, |s| {
+            s.compositor
+                .blend(canvas, src, layer.opacity * opacity_scale, layer.blend_mode)
+        });
+        Ok(canvas)
+    }
+
+    /// Warps a finished layer texture to where its 3D placement puts it, as
+    /// seen by the camera. `None` (and `src` released) if the layer is seen
+    /// edge on.
+    fn place(&mut self, src: Tex, placement: &Placement) -> Option<Tex> {
+        let Some(h) = warp::plane_homography(self.projection, placement.parent, placement.world)
+        else {
+            self.compositor.release(src);
+            return None;
+        };
+        // A placement that changes nothing (a group at depth 0 in a flat
+        // stack) costs no pass.
+        if warp::is_identity(&h) {
+            return Some(src);
+        }
+        Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h.inverse())))
     }
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
@@ -621,6 +674,15 @@ impl Renderer {
             )
             .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
+}
+
+/// How a layer is moved in 3D: `world` is its `W` (see `warp.rs`; inside a
+/// `preserve3d` group, the accumulated one), acting on the plane of the
+/// space whose flat matrix is `parent`.
+#[derive(Clone, Copy)]
+struct Placement {
+    parent: Affine,
+    world: DMat4,
 }
 
 /// Where the canvas's top-left corner sits in the padded textures: `margin`

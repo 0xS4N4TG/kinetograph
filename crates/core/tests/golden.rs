@@ -290,3 +290,18 @@ fn mesh_gradient_matches_golden() {
     let frame = render_still(scene("tests/scenes/mesh-gradient.json"), 15).unwrap();
     check("mesh-gradient", &frame);
 }
+
+#[test]
+fn camera_matches_golden() {
+    // Frame 15 of 30: the animated rotations and depths are half way. Covers
+    // perspective (a camera at 700 px, origin in the middle), `rotateY` on a
+    // rotated image with a clip and a drop shadow (so the scene has a margin
+    // that the warp must account for), `rotateX` on text, a flat group turned
+    // past 90 degrees so its back shows mirrored, with a shadow, `z` alone
+    // magnifying a card until it hangs off the top and right edges, and a thin
+    // bar tipped toward the eye until its far end passes the eye plane (that
+    // end is cut off, not mirrored back), drawn half transparent under the
+    // rest.
+    let frame = render_still(scene("tests/scenes/camera.json"), 15).unwrap();
+    check("camera", &frame);
+}

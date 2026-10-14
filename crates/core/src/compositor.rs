@@ -22,6 +22,10 @@
 //! The halftone pass (`shaders/halftone.wgsl`) reads the layer at cell
 //! centres through the filtered layout, with the layer's matrix.
 //!
+//! The warp pass (`shaders/warp.wgsl`) moves a finished layer by a 3x3
+//! homography (`warp.rs`), through the same layout: a layer turned in 3D, or
+//! a corner pin.
+//!
 //! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`,
 //! `dot_matrix.wgsl`) are compiled with `shaders/hash.wgsl` in front of them
 //! (`shader_module`), and those that evaluate turbulence with
@@ -55,6 +59,7 @@
 
 use std::collections::HashMap;
 
+use glam::DMat3;
 use vello::kurbo::{Affine, Rect};
 use vello::wgpu::{self, util::DeviceExt};
 
@@ -124,6 +129,8 @@ pub struct Compositor {
     /// On `filtered_layout`: it reads the layer between texels.
     halftone: wgpu::RenderPipeline,
     dot_matrix: wgpu::RenderPipeline,
+    /// On `filtered_layout`: it reads the layer between texels.
+    warp: wgpu::RenderPipeline,
     /// On `filtered_layout` and then `turbulence_layout`.
     displace: wgpu::RenderPipeline,
     /// On the shared layout and then `turbulence_layout`.
@@ -197,6 +204,7 @@ impl Compositor {
         let halftone_shader =
             shader_module(device, "halftone", include_str!("shaders/halftone.wgsl"));
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
+        let warp_shader = shader_module(device, "warp", include_str!("shaders/warp.wgsl"));
         let displace_shader =
             shader_module(device, "displace", include_str!("shaders/displace.wgsl"));
         let noise_shader = shader_module(device, "noise", include_str!("shaders/noise.wgsl"));
@@ -247,6 +255,13 @@ impl Compositor {
             &filtered_pipeline_layout,
             &halftone_shader,
             "fs_halftone",
+            LINEAR_FORMAT,
+        );
+        let warp = fullscreen_pipeline(
+            device,
+            &filtered_pipeline_layout,
+            &warp_shader,
+            "fs_warp",
             LINEAR_FORMAT,
         );
         let turbulence_layout = turbulence_bind_group_layout(device);
@@ -363,6 +378,7 @@ impl Compositor {
             dither: pipeline(&dither_shader, "fs_dither", LINEAR_FORMAT),
             halftone,
             dot_matrix: pipeline(&dot_matrix_shader, "fs_dot_matrix", LINEAR_FORMAT),
+            warp,
             displace,
             noise,
             mesh,
@@ -765,6 +781,21 @@ impl Compositor {
             &src.view,
             &src.view,
             &dot_matrix_values(dots, layer_matrix, layer_box),
+            &target.view,
+        );
+        self.release(src);
+        target
+    }
+
+    /// Moves `src` by the homography whose inverse is `inverse` (see
+    /// `shaders/warp.wgsl`). `src` goes back to the pool; the result is a new
+    /// texture.
+    pub fn warp(&mut self, src: Tex, inverse: DMat3) -> Tex {
+        let target = self.acquire();
+        self.run_filtered_pass(
+            &self.warp,
+            &src.view,
+            &floats(&warp_values(inverse)),
             &target.view,
         );
         self.release(src);
@@ -1734,6 +1765,21 @@ fn halftone_values(halftone: &ResolvedHalftone, layer_matrix: Affine) -> [f32; 2
     ]
 }
 
+/// The inverse of a warp's homography as `shaders/warp.wgsl` reads it: its
+/// three rows, each padded to four floats.
+fn warp_values(inverse: DMat3) -> [f32; 12] {
+    let mut values = [0.0; 12];
+    for (i, row) in [inverse.row(0), inverse.row(1), inverse.row(2)]
+        .into_iter()
+        .enumerate()
+    {
+        values[i * 4] = row.x as f32;
+        values[i * 4 + 1] = row.y as f32;
+        values[i * 4 + 2] = row.z as f32;
+    }
+    values
+}
+
 /// A displacement as `shaders/displace.wgsl` reads it: the inverse of the
 /// layer matrix (linear part, then translation), the scale, the matrix's
 /// linear part, the base frequency, then the octaves, the two channels and
@@ -2539,6 +2585,24 @@ mod tests {
                 0.0, 0.0, -1.0, 0.0, //
                 0.0, 0.0, 0.0, 1.0, //
                 1.0, 1.0, 1.0, 0.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn warp_values_are_the_rows_of_the_inverse() {
+        let inverse = DMat3::from_cols_array(&[
+            1.0, 4.0, 7.0, //
+            2.0, 5.0, 8.0, //
+            3.0, 6.0, 9.0,
+        ]);
+        // The columns (1 4 7), (2 5 8), (3 6 9) make the rows (1 2 3), (4 5 6), (7 8 9).
+        assert_eq!(
+            warp_values(inverse),
+            [
+                1.0, 2.0, 3.0, 0.0, //
+                4.0, 5.0, 6.0, 0.0, //
+                7.0, 8.0, 9.0, 0.0,
             ]
         );
     }

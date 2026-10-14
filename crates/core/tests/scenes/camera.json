@@ -1,0 +1,210 @@
+{
+ "width": 480,
+ "height": 270,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#14161d",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "camera": {
+  "perspective": 700
+ },
+ "layers": [
+  {
+   "id": "bg",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 480,
+    "height": 270
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 0,
+    "y1": 270,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#1f2638"
+     },
+     {
+      "offset": 1,
+      "color": "#0d0f15"
+     }
+    ]
+   }
+  },
+  {
+   "id": "streak",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 6,
+    "height": 200
+   },
+   "fill": "#118ab2",
+   "opacity": 0.75,
+   "transform": {
+    "x": 206,
+    "y": 150,
+    "anchorX": 3,
+    "anchorY": 100,
+    "rotateX": [
+     {
+      "frame": 0,
+      "value": -30
+     },
+     {
+      "frame": 30,
+      "value": -70
+     }
+    ],
+    "z": 650
+   }
+  },
+  {
+   "id": "photo",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 150,
+   "height": 112,
+   "transform": {
+    "x": 105,
+    "y": 85,
+    "anchorX": 75,
+    "anchorY": 56,
+    "rotation": -6,
+    "rotateY": [
+     {
+      "frame": 0,
+      "value": 0
+     },
+     {
+      "frame": 30,
+      "value": 50
+     }
+    ]
+   },
+   "clip": {
+    "kind": "inset",
+    "radius": 10
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "y": 8,
+     "blur": 10,
+     "color": "#000000aa"
+    }
+   ]
+  },
+  {
+   "id": "title",
+   "type": "text",
+   "text": "TILT",
+   "font": "DM Sans",
+   "size": 56,
+   "color": "#ffd166",
+   "transform": {
+    "x": 270,
+    "y": 40,
+    "anchorX": 60,
+    "anchorY": 34,
+    "rotateX": [
+     {
+      "frame": 0,
+      "value": 20
+     },
+     {
+      "frame": 30,
+      "value": 50
+     }
+    ]
+   }
+  },
+  {
+   "id": "badge",
+   "type": "group",
+   "transform": {
+    "x": 400,
+    "y": 100,
+    "anchorX": 60,
+    "anchorY": 30,
+    "rotateY": [
+     {
+      "frame": 0,
+      "value": 120
+     },
+     {
+      "frame": 30,
+      "value": 180
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "dropShadow",
+     "x": 4,
+     "y": 6,
+     "blur": 6,
+     "color": "#00000088"
+    }
+   ],
+   "children": [
+    {
+     "id": "badge-plate",
+     "type": "shape",
+     "shape": {
+      "kind": "roundedRect",
+      "width": 120,
+      "height": 60,
+      "radius": 14
+     },
+     "fill": "#ef476f"
+    },
+    {
+     "id": "badge-text",
+     "type": "text",
+     "text": "FLIP",
+     "font": "DM Sans",
+     "size": 38,
+     "color": "#ffffff",
+     "transform": {
+      "x": 22,
+      "y": 6
+     }
+    }
+   ]
+  },
+  {
+   "id": "near",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 56,
+    "height": 36,
+    "radius": 8
+   },
+   "fill": "#06d6a0",
+   "transform": {
+    "x": 330,
+    "y": 70,
+    "anchorX": 28,
+    "anchorY": 18,
+    "z": [
+     {
+      "frame": 0,
+      "value": 180
+     },
+     {
+      "frame": 30,
+      "value": 420
+     }
+    ]
+   }
+  }
+ ]
+}

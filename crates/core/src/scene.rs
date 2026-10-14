@@ -27,6 +27,9 @@ pub struct Scene {
     /// Font family name -> font file path.
     #[serde(default)]
     pub fonts: BTreeMap<String, String>,
+    /// The viewpoint that layers with a 3D transform are drawn from. Without
+    /// one, 3D transforms are orthographic: no perspective.
+    pub camera: Option<Camera>,
     /// Bottom layer first.
     pub layers: Vec<Layer>,
     /// Directory that asset paths resolve against (the scene file's directory).
@@ -36,6 +39,20 @@ pub struct Scene {
 
 fn default_background() -> Color {
     Color::BLACK
+}
+
+/// CSS's `perspective` and `perspective-origin`, for the whole scene.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Camera {
+    /// Distance from the eye to the canvas plane, in canvas pixels, above 0.
+    /// A point `z` pixels toward the viewer is magnified by
+    /// `perspective / (perspective - z)`.
+    pub perspective: Num,
+    /// Where the eye looks at the canvas, in canvas pixels. Omitted: the
+    /// middle of the canvas.
+    pub x: Option<Num>,
+    pub y: Option<Num>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -121,6 +138,24 @@ pub struct Transform {
     pub rotation: Num,
     pub anchor_x: Num,
     pub anchor_y: Num,
+    /// Degrees. Turns the layer about the horizontal axis through its
+    /// position, as CSS's `rotateX`: positive tips the top away.
+    pub rotate_x: Num,
+    /// Degrees. Turns the layer about the vertical axis through its
+    /// position, as CSS's `rotateY`: positive swings the right edge away.
+    pub rotate_y: Num,
+    /// Pixels toward the viewer, as CSS's `translateZ`. Moves nothing on
+    /// screen without a camera, but still orders a `preserve3d` group.
+    pub z: Num,
+}
+
+impl Transform {
+    /// Whether the layer is moved in 3D at any keyframe.
+    pub fn is_3d(&self) -> bool {
+        [&self.rotate_x, &self.rotate_y, &self.z]
+            .iter()
+            .any(|n| n.min() != 0.0 || n.max() != 0.0)
+    }
 }
 
 impl Default for Transform {
@@ -132,6 +167,9 @@ impl Default for Transform {
             rotation: Num::Const(0.0),
             anchor_x: Num::Const(0.0),
             anchor_y: Num::Const(0.0),
+            rotate_x: Num::Const(0.0),
+            rotate_y: Num::Const(0.0),
+            z: Num::Const(0.0),
         }
     }
 }
@@ -914,6 +952,11 @@ impl Scene {
         if self.duration_in_frames == 0 {
             return bad("durationInFrames must be at least 1".into());
         }
+        if let Some(camera) = &self.camera
+            && camera.perspective.min() <= 0.0
+        {
+            return bad("camera perspective must be greater than 0".into());
+        }
         let mut ids = HashSet::new();
         self.validate_layers(&self.layers, &mut ids)
     }
@@ -1146,6 +1189,13 @@ fn validate_matte(layer: &Layer, matte: &Matte, siblings: &[Layer]) -> Result<()
     };
     if source.matte.is_some() {
         return bad(format!("source {:?} has a matte of its own", source.id));
+    }
+    if source.transform.is_3d() {
+        return bad(format!(
+            "source {:?} has a 3D transform (rotateX, rotateY or z); the matte moves with the \
+             layer it cuts, so put them on that layer instead",
+            source.id
+        ));
     }
     Ok(())
 }
@@ -2805,5 +2855,93 @@ mod tests {
             msg.contains("\"words\"") && msg.contains("color gradient") && msg.contains("radius"),
             "{msg}"
         );
+    }
+
+    /// A scene with the given top-level `camera` entry (or none).
+    fn camera_scene(camera: &str) -> Result<Scene> {
+        let json = format!(
+            r##"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, {camera}
+                "layers": [{{"id": "card", "type": "shape",
+                  "transform": {{"rotateX": 20, "rotateY": [{{"frame": 0, "value": 0}}, {{"frame": 9, "value": 45}}], "z": -30}},
+                  "shape": {{"kind": "rect", "width": 100, "height": 50}}, "fill": "#fff"}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new())
+    }
+
+    #[test]
+    fn parses_3d_transforms_with_zero_defaults() {
+        let scene = camera_scene("").unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!(t.rotate_x.at(0.0), 20.0);
+        assert_eq!(t.rotate_y.at(9.0), 45.0);
+        assert_eq!(t.z.at(0.0), -30.0);
+        assert!(t.is_3d());
+        assert!(scene.camera.is_none());
+        // A layer that names none of them is flat, and so is one that names
+        // them as zero.
+        let scene = scene_with("").unwrap();
+        assert!(!scene.layers[0].transform.is_3d());
+        let scene = scene_with(r#""transform": {"rotateX": 0, "z": [{"frame": 0, "value": 0}, {"frame": 5, "value": 0}]},"#)
+            .unwrap();
+        assert!(!scene.layers[0].transform.is_3d());
+        let scene = scene_with(
+            r#""transform": {"z": [{"frame": 0, "value": 0}, {"frame": 5, "value": 8}]},"#,
+        )
+        .unwrap();
+        assert!(scene.layers[0].transform.is_3d());
+    }
+
+    #[test]
+    fn parses_a_camera_whose_origin_defaults_to_the_middle() {
+        let scene = camera_scene(r#""camera": {"perspective": 800},"#).unwrap();
+        let camera = scene.camera.unwrap();
+        assert_eq!(camera.perspective.at(0.0), 800.0);
+        assert!(camera.x.is_none() && camera.y.is_none());
+        let scene = camera_scene(
+            r#""camera": {"perspective": [{"frame": 0, "value": 900}, {"frame": 9, "value": 400}], "x": 20, "y": 90},"#,
+        )
+        .unwrap();
+        let camera = scene.camera.unwrap();
+        assert_eq!(camera.perspective.at(9.0), 400.0);
+        assert_eq!(camera.x.unwrap().at(0.0), 20.0);
+    }
+
+    #[test]
+    fn rejects_a_camera_without_a_positive_perspective() {
+        for camera in [
+            r#""camera": {"perspective": 0},"#,
+            r#""camera": {"perspective": -50},"#,
+            r#""camera": {"perspective": [{"frame": 0, "value": 500}, {"frame": 5, "value": 0}]},"#,
+        ] {
+            let msg = camera_scene(camera).unwrap_err().to_string();
+            assert!(
+                msg.contains("perspective must be greater than 0"),
+                "{camera}: {msg}"
+            );
+        }
+        // The perspective is required.
+        assert!(camera_scene(r#""camera": {"x": 3},"#).is_err());
+    }
+
+    #[test]
+    fn a_matte_source_cannot_be_turned_in_3d() {
+        let parse = |source_transform: &str| {
+            let json = format!(
+                r#"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+                  {{"id": "photo", "type": "group", "children": [], "matte": {{"layer": "cut"}}}},
+                  {{"id": "cut", "type": "group", "children": [], "transform": {source_transform}}}]}}"#
+            );
+            Scene::from_json(&json, PathBuf::new()).map_err(|e| e.to_string())
+        };
+        assert!(parse(r#"{"x": 4, "rotation": 30}"#).is_ok());
+        for transform in [r#"{"rotateX": 10}"#, r#"{"rotateY": 10}"#, r#"{"z": 5}"#] {
+            let msg = parse(transform).unwrap_err();
+            assert!(
+                msg.contains("\"photo\"")
+                    && msg.contains("\"cut\"")
+                    && msg.contains("3D transform"),
+                "{transform}: {msg}"
+            );
+        }
     }
 }

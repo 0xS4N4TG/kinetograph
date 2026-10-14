@@ -33,7 +33,19 @@ pub struct ResolvedScene {
     pub height: u32,
     pub frame: u32,
     pub background: Color,
+    /// `None` draws 3D transforms without perspective.
+    pub camera: Option<ResolvedCamera>,
     pub layers: Vec<ResolvedLayer>,
+}
+
+/// The camera at one frame, in canvas pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedCamera {
+    /// Above 0.
+    pub perspective: f64,
+    /// Where the eye looks at the canvas.
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -57,6 +69,11 @@ pub struct ResolvedTransform {
     pub rotation: f64,
     pub anchor_x: f64,
     pub anchor_y: f64,
+    /// Degrees; see `scene::Transform`.
+    pub rotate_x: f64,
+    pub rotate_y: f64,
+    /// Pixels toward the viewer.
+    pub z: f64,
 }
 
 impl ResolvedTransform {
@@ -415,6 +432,15 @@ impl Scene {
             height: self.height,
             frame,
             background: self.background,
+            camera: self.camera.as_ref().map(|c| ResolvedCamera {
+                perspective: c.perspective.at(clock.t),
+                x: c.x
+                    .as_ref()
+                    .map_or(f64::from(self.width) / 2.0, |n| n.at(clock.t)),
+                y: c.y
+                    .as_ref()
+                    .map_or(f64::from(self.height) / 2.0, |n| n.at(clock.t)),
+            }),
             layers: self
                 .layers
                 .iter()
@@ -599,6 +625,9 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
         rotation: t.rotation.at(f),
         anchor_x: t.anchor_x.at(f),
         anchor_y: t.anchor_y.at(f),
+        rotate_x: t.rotate_x.at(f),
+        rotate_y: t.rotate_y.at(f),
+        z: t.z.at(f),
     }
 }
 
@@ -1522,5 +1551,60 @@ mod tests {
             panic!("not text");
         };
         assert!(matches!(color, ResolvedPaint::Solid(c) if *c == Color::parse("#0f0").unwrap()));
+    }
+
+    #[test]
+    fn resolves_3d_transforms_per_frame() {
+        let json = r##"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "card", "type": "shape", "fill": "#fff",
+              "shape": {"kind": "rect", "width": 40, "height": 20},
+              "transform": {"rotateX": [{"frame": 0, "value": 0}, {"frame": 10, "value": 60}],
+                            "rotateY": -25, "z": [{"frame": 0, "value": 100}, {"frame": 10, "value": 0}]}}]}"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let t = scene.resolve(5).unwrap().layers[0].transform;
+        assert_eq!((t.rotate_x, t.rotate_y, t.z), (30.0, -25.0, 50.0));
+        // The flat matrix is what it always was.
+        assert_eq!(t.matrix(), vello::kurbo::Affine::IDENTITY);
+    }
+
+    #[test]
+    fn the_camera_defaults_to_the_middle_of_the_canvas_and_is_keyframed() {
+        let json = |camera: &str| {
+            format!(
+                r#"{{"width": 300, "height": 120, "fps": 30, "durationInFrames": 11,
+                    "camera": {camera}, "layers": []}}"#
+            )
+        };
+        let scene = Scene::from_json(&json(r#"{"perspective": 700}"#), PathBuf::new()).unwrap();
+        assert_eq!(
+            scene.resolve(3).unwrap().camera,
+            Some(ResolvedCamera {
+                perspective: 700.0,
+                x: 150.0,
+                y: 60.0
+            })
+        );
+        let animated = json(
+            r#"{"perspective": [{"frame": 0, "value": 1000}, {"frame": 10, "value": 500}],
+                "x": [{"frame": 0, "value": 0}, {"frame": 10, "value": 100}], "y": 30}"#,
+        );
+        let scene = Scene::from_json(&animated, PathBuf::new()).unwrap();
+        assert_eq!(
+            scene.resolve(5).unwrap().camera,
+            Some(ResolvedCamera {
+                perspective: 750.0,
+                x: 50.0,
+                y: 30.0
+            })
+        );
+        let none = json("null");
+        assert!(
+            Scene::from_json(&none, PathBuf::new())
+                .unwrap()
+                .resolve(0)
+                .unwrap()
+                .camera
+                .is_none()
+        );
     }
 }

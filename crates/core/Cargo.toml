@@ -15,3 +15,4 @@ pollster = "0.4"
 # The version wgpu 30 uses. Validates shaders on the CPU: the built-in ones in
 # tests, and users' custom effect shaders when a scene loads.
 naga = { version = "30.0.1", features = ["wgsl-in"] }
+glam = "0.34.1"

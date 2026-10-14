@@ -19,6 +19,7 @@ same pixels. Phase 3's reconciler will emit this same shape from React.
 | `durationInFrames` | integer | At least 1. Valid frames are `0..durationInFrames`; anything else is an error. |
 | `background` | colour | Optional, default `#000000`. May be transparent. |
 | `fonts` | object | Optional. Font family name to font file path. Text layers refer to these names. |
+| `camera` | object | Optional. The viewpoint for layers with a 3D transform. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first, topmost last (the same order as SVG and DOM paint order). |
 
 Asset paths (`fonts`, image `src`, `lut` `src`) resolve relative to the directory of the scene file.
@@ -69,9 +70,12 @@ Every layer has these fields:
 | `scale` | `1` | Uniform scale about the anchor. |
 | `rotation` | `0` | Degrees, clockwise. |
 | `anchorX`, `anchorY` | `0` | Anchor point in the layer's own coordinates. Scale and rotation pivot here. |
+| `rotateX`, `rotateY` | `0` | Degrees. Turn the layer in 3D about the horizontal and the vertical axis through its position, as CSS's `rotateX` and `rotateY`. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
+| `z` | `0` | Pixels toward the viewer, as CSS's `translateZ`. |
 
 The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale) * translate(-anchorX, -anchorY)`. A child's
-matrix is applied inside its parent's.
+matrix is applied inside its parent's. `rotateX`, `rotateY` and `z` do not change it: they move the finished layer
+afterwards.
 
 Layers are blended bottom-up in linear light (not in sRGB as CSS does, so `multiply`, `screen` and `softLight` look
 different from a browser).
@@ -239,6 +243,8 @@ side.
   `scale` over the layer and its enclosing groups (a card scaled to 2 with a displacement of 10 counts 10).
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
+- 3D transforms (`rotateX`, `rotateY`, `z`) and the `camera` count nothing: they only move a finished layer (see
+  below for what that leaves out).
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
   still drawn there. With a margin, the part of it that falls inside the margin is real and can bleed into effects.
 
@@ -858,6 +864,73 @@ Rules:
 Loading a scene rejects a source that is missing, not a sibling, the layer itself or itself matted; the error names the
 layer.
 
+## 3D transforms and the camera
+
+A layer can be turned and moved in 3D, and seen through a perspective camera, without leaving the 2D renderer.
+
+```json
+{
+  "camera": { "perspective": 700 },
+  "layers": [
+    { "id": "photo", "type": "image", "src": "photo.png", "width": 150, "height": 112,
+      "transform": { "x": 105, "y": 85, "anchorX": 75, "anchorY": 56,
+                     "rotateY": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 50 }] } },
+    { "id": "near", "type": "shape", "shape": { "kind": "rect", "width": 56, "height": 36 }, "fill": "#06d6a0",
+      "transform": { "x": 330, "y": 70, "anchorX": 28, "anchorY": 18, "z": 300 } }
+  ]
+}
+```
+
+The `transform` fields `rotateX`, `rotateY` (degrees) and `z` (pixels) are all animatable numbers defaulting to 0. The
+axes are CSS's: x to the right, y down, z toward the viewer; `rotateX(a)` is `[1 0 0; 0 cos -sin; 0 sin cos]` and
+`rotateY(a)` is `[cos 0 sin; 0 1 0; -sin 0 cos]`, so a positive `rotateX` tips the top away and a positive `rotateY`
+swings the right edge away. The whole matrix of a layer is, rightmost first,
+
+```
+translate(x, y, z) * rotateX * rotateY * rotate(rotation) * scale(scale, scale, 1) * translate(-anchorX, -anchorY, 0)
+```
+
+The layer turns about its position `(x, y)` (where its anchor lands), in the plane of its parent. It is never rendered
+in 3D: it is drawn flat exactly as without these fields, run through its effects, clip, mask and matte, and then warped
+onto the canvas by one 3x3 homography (`Proj * P * W * P^-1` restricted to the layer's plane, where `W` is the part of
+the matrix above that the 2D matrix leaves out, `P` the flat matrix of its parent and `Proj` the camera). The order is
+effects, clip, mask, matte, **warp**, then opacity and blend mode: as in CSS, the 3D transform moves the element after
+its filters, so a `dropShadow` is flat and turns with the layer. A layer with none of the three fields is not warped
+and is rendered as before, byte for byte.
+
+`camera`, a field of the scene, is CSS's `perspective` and `perspective-origin`:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `perspective` | required | Animatable, canvas pixels, above 0 at every keyframe (checked when the scene loads). The distance from the eye to the canvas plane. A point `z` pixels toward the viewer is magnified by `perspective / (perspective - z)` about the origin. |
+| `x`, `y` | the middle of the canvas | Animatable, canvas pixels. Where the eye looks at the canvas, the point that perspective does not move. |
+
+There is one camera for the whole scene, and it applies to every layer with a 3D transform. Without a camera the
+projection is orthographic: rotations foreshorten but nothing shrinks with distance, and `z` moves nothing on screen.
+
+- **Groups** are flat: a group's children are drawn into the group's buffer as always, and the group is then turned as
+  one picture (CSS without `preserve-3d`). A child's own 3D transform works in its parent's plane, after the
+  parent's flat transforms: a child with `rotateX` in a group that is rotated 90 degrees turns about the group's
+  horizontal axis, which is on the canvas's vertical.
+- **Back faces** are drawn, mirrored, as in CSS's default: turn a layer past 90 degrees and you see it from behind.
+- **Behind the eye.** The part of a layer that `z` (or a rotation) takes past the eye, to `perspective` pixels or more
+  toward the viewer, is not drawn: it is cut off where it passes the eye plane, not mirrored back onto the screen.
+  Near that plane the rest is magnified enormously, as in a browser. A layer seen exactly edge on (a `rotateY` of 90)
+  is not drawn at all.
+- `z` is in the units of the parent's plane and is not scaled by any `scale`: a group at `scale` 2 enlarges its
+  children in the plane but not in depth (as `scale()` in CSS leaves z alone).
+- A matte source cannot have `rotateX`, `rotateY` or `z` (a load error naming both layers): the source is cut out in the
+  plane of the layer it mattes, and that layer is what moves. Put the 3D fields on the matted layer.
+- Counts nothing in the [margin](#canvas-margin). The warp only reads what is in the flat texture, which is the canvas
+  plus the margin: a layer that hangs off the canvas is cut at that edge before it is turned, and the cut shows once it
+  is. Give it a margin with an effect, or keep it on the canvas.
+- Sampling is bilinear on premultiplied colour. A layer magnified (toward the camera) is resampled and so soft; one
+  minified (turned steeply, or far from the camera) can alias, since there are no mipmaps.
+- There is no depth buffer: layers are drawn in document order (see `preserve3d` below for depth sorting), and two
+  layers that cross in 3D do not intersect, one is simply over the other.
+- `backdropBlur` on a layer that is turned frosts what is behind the layer *before* the turn, then turns the frosted
+  picture with the layer.
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
@@ -896,6 +969,9 @@ layer.
   fixed by the neighbouring points), no per-patch colour in another space, and the mesh is only as smooth as its 16 x 16
   quads per patch (a patch scaled up a great deal shows its facets). The edge is anti-aliased by 4 samples per pixel.
   Overlapping patches blend in document order without depth.
+- 3D is a warp of a flat layer, not a 3D renderer: no depth buffer, no intersecting layers, no lighting, one scene
+  camera, no mipmaps (see [3D transforms and the camera](#3d-transforms-and-the-camera)), and a layer that hangs off the
+  canvas is cut at the canvas edge (plus margin) before it is turned.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.
