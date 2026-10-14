@@ -13,6 +13,7 @@ interface ProjectModule {
   getCompositions(): CompositionInfo[];
   createFrameRenderer(id: string, options?: { inputProps?: Record<string, unknown> }): FrameRenderer;
   setPublicDir(dir: string): void;
+  setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
 }
 
 export interface FrameOutput {
@@ -68,6 +69,10 @@ function requireEntry(entry: string): string {
 async function loadProject(entry: string): Promise<ProjectModule> {
   const { file } = await bundleProject(entry);
   process.setSourceMapsEnabled(true);
+  // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
+  // before setPublicDir below can.
+  const publicDir = join(dirname(entry), 'public');
+  process.env.KINETOGRAPH_PUBLIC_DIR = publicDir;
   let mod: ProjectModule;
   try {
     mod = (await import(pathToFileURL(file).href)) as ProjectModule;
@@ -77,7 +82,8 @@ async function loadProject(entry: string): Promise<ProjectModule> {
       `${entry} failed while loading: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
     );
   }
-  mod.setPublicDir(join(dirname(entry), 'public'));
+  mod.setPublicDir(publicDir);
+  mod.setLayoutText(native().layoutText);
   return mod;
 }
 
@@ -130,7 +136,8 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
     );
   }
   const renderer = mod.createFrameRenderer(composition.id, { inputProps });
-  const config = renderer.config;
+  // calculateMetadata and lazy components resolve asynchronously.
+  const config = await renderer.ready();
   return {
     kind: 'project',
     entry: absolute,

@@ -60,6 +60,7 @@ describe('syntheticEntry', () => {
       `import '@kinetograph/core/determinism/install';`,
       `import "/p/index.tsx";`,
       `export * from '@kinetograph/core';`,
+      `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
     ]);
   });
 });

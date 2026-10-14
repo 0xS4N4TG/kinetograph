@@ -106,6 +106,8 @@ export function syntheticEntry(entry: string): string {
     `import '@kinetograph/core/determinism/install';`,
     `import ${JSON.stringify(entry)};`,
     `export * from '@kinetograph/core';`,
+    // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
+    `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
     '',
   ].join('\n');
 }
