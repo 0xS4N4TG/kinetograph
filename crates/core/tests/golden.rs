@@ -263,7 +263,8 @@ fn turbulence_matches_golden() {
     // channels on an image, a displaced group that is scaled and rotated so
     // the noise turns with it and hangs off the left and bottom edges, a bar
     // off the right edge (the margin lets its off-canvas part be pulled in),
-    // zero octaves on a half-transparent layer (a plain shift), fractional and
+    // zero octaves of `turbulence` on a half-transparent layer (a plain shift
+    // by half the scale; `fractalNoise` would leave it in place), fractional and
     // negative seeds, and a zero scale (the layer untouched). The same scene
     // has `noise` layers: a grey strip of `turbulence`-type noise whose
     // frequency is animated, an rgba block that turns while hanging off the

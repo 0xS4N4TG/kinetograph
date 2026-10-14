@@ -232,7 +232,7 @@
      "type": "displace",
      "scale": 20,
      "turbulence": {
-      "type": "fractalNoise",
+      "type": "turbulence",
       "baseFrequency": 0.05,
       "numOctaves": 0,
       "seed": 7

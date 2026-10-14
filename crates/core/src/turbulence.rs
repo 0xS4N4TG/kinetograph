@@ -146,8 +146,9 @@ impl Tables {
     /// noise from `frequency` (per axis): `fractal` is `fractalNoise`
     /// ((sum + 1) / 2), otherwise `turbulence` (the sum of absolute values).
     ///
-    /// No octaves is a transparent black image (the spec says a zero
-    /// `numOctaves` disables the primitive), not the formula's 0.5.
+    /// No octaves sums nothing, so it is the formula's value for 0: a middle
+    /// grey for `fractalNoise` and black for `turbulence`, as the reference
+    /// code (and a browser) draws it.
     pub fn turbulence(
         &self,
         channel: usize,
@@ -156,9 +157,6 @@ impl Tables {
         octaves: u32,
         fractal: bool,
     ) -> f32 {
-        if octaves == 0 {
-            return 0.0;
-        }
         let mut sum = 0.0f32;
         let mut v = [point[0] * frequency[0], point[1] * frequency[1]];
         let mut ratio = 1.0f32;
@@ -431,14 +429,18 @@ mod tests {
     }
 
     #[test]
-    fn more_octaves_add_detail_and_none_is_transparent_black() {
+    fn more_octaves_add_detail_and_none_is_the_formulas_zero() {
         let t = Tables::new(7);
         let p = [57.5, 31.5];
         let one = t.turbulence(0, p, [0.04, 0.04], 1, true);
         let four = t.turbulence(0, p, [0.04, 0.04], 4, true);
         assert_ne!(one, four);
-        assert_eq!(t.turbulence(0, p, [0.04, 0.04], 0, true), 0.0);
-        assert_eq!(t.turbulence(0, p, [0.04, 0.04], 0, false), 0.0);
+        // No octaves: a sum of 0, a middle grey for fractalNoise in every
+        // channel (alpha too) and black for turbulence.
+        for ch in 0..4 {
+            assert_eq!(t.turbulence(ch, p, [0.04, 0.04], 0, true), 0.5);
+            assert_eq!(t.turbulence(ch, p, [0.04, 0.04], 0, false), 0.0);
+        }
         // Zero frequency samples one point: noise 0 there, so fractalNoise is
         // a middle grey and turbulence is black.
         assert_eq!(t.turbulence(0, p, [0.0, 0.0], 4, true), 0.5);

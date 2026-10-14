@@ -66,11 +66,8 @@ fn noise2(channel: u32, v: vec2<f32>) -> f32 {
 // A channel's value in 0..1 at `point` (layer space), from `octaves` octaves of
 // noise starting at `frequency` per axis. `fractal` is fractalNoise,
 // (sum + 1) / 2; otherwise turbulence, the sum of absolute values. No octaves
-// is transparent black, as the spec says of numOctaves = 0.
+// sums nothing: a middle grey for fractalNoise, black for turbulence.
 fn turbulence_value(channel: u32, point: vec2<f32>, frequency: vec2<f32>, octaves: u32, fractal: bool) -> f32 {
-    if octaves == 0u {
-        return 0.0;
-    }
     var sum = 0.0;
     var v = point * frequency;
     var ratio = 1.0;

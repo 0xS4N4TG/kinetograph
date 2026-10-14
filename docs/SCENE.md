@@ -600,7 +600,7 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
 |---|---|---|
 | `type` | required | `fractalNoise` (soft clouds centred on grey) or `turbulence` (dark with bright veins). |
 | `baseFrequency` | required | Animatable, not negative (checked when the scene loads): cycles per layer pixel of the first octave. One number, or `[x, y]` for a different frequency per axis (each a number or keyframes). A list of keyframe objects is one animated number for both axes. |
-| `numOctaves` | `1` | Whole number from 0 to 10 (checked when the scene loads, an error naming the layer). Each octave doubles the frequency and halves the weight. Zero is a transparent black image, as the spec says, so a displacement with no octaves is a plain shift of `scale / 2` up and to the left. Not animated. |
+| `numOctaves` | `1` | Whole number from 0 to 10 (checked when the scene loads, an error naming the layer). Each octave doubles the frequency and halves the weight. Zero sums no noise, which the reference algorithm turns into a middle grey (0.5 in every channel, alpha too) for `fractalNoise` and transparent black for `turbulence`: a displacement with no octaves leaves a `fractalNoise` layer in place and moves a `turbulence` one `scale / 2` down and to the right. Not animated. |
 | `seed` | required | A number, truncated toward zero (`7.9` is `7`, `-4.9` is `-4`) and then brought into the generator's range by SVG's `setup_seed` (zero and negatives are folded into positive seeds, huge ones held at the top). The same seed draws the same noise on every machine. Not animated. |
 
 - **What a pixel does.** An output pixel at layer point `(x, y)` takes the layer's colour at
