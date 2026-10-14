@@ -1,5 +1,5 @@
 //! CPU-only checks that need no GPU: every built-in shader is valid WGSL,
-//! and every committed scene file loads, with its fonts and images.
+//! and every committed scene file loads, with its fonts, images and LUTs.
 
 use std::path::{Path, PathBuf};
 
@@ -50,5 +50,6 @@ fn committed_scenes_load() {
         TextEngine::new(&scene.fonts, &scene.base_dir)
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         crate::render::load_images(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        crate::lut::load_luts(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 }

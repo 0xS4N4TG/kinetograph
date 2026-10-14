@@ -94,6 +94,12 @@ pub enum ResolvedEffect {
     /// into a single matrix.
     ColorMatrix(ColorMatrix),
     GradientMap(ResolvedGradientMap),
+    /// `src` is the key of the table `lut::load_luts` read; `amount` is
+    /// clamped to 0..=1.
+    Lut {
+        src: String,
+        amount: f32,
+    },
     Shader(ResolvedShader),
 }
 
@@ -507,6 +513,10 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             stops: resolve_stops(stops, f),
             amount: amount.at(f).clamp(0.0, 1.0) as f32,
         }),
+        Effect::Lut { src, amount } => ResolvedEffect::Lut {
+            src: src.clone(),
+            amount: amount.at(f).clamp(0.0, 1.0) as f32,
+        },
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
@@ -812,6 +822,25 @@ mod tests {
             panic!("not a gradient map");
         };
         assert_eq!(map.amount, 0.0);
+    }
+
+    #[test]
+    fn lut_resolves_its_amount() {
+        let effects = effects_at(
+            r#"[{"type": "lut", "src": "a.cube", "amount": [{"frame": 0, "value": 2}, {"frame": 10, "value": -2}]},
+                {"type": "lut", "src": "b.cube"}]"#,
+            5,
+        );
+        assert!(matches!(
+            &effects[0],
+            ResolvedEffect::Lut { src, amount } if src == "a.cube" && *amount == 0.0
+        ));
+        assert!(matches!(&effects[1], ResolvedEffect::Lut { amount, .. } if *amount == 1.0));
+        let effects = effects_at(
+            r#"[{"type": "lut", "src": "a.cube", "amount": [{"frame": 0, "value": 0}, {"frame": 10, "value": 1}]}]"#,
+            2,
+        );
+        assert!(matches!(&effects[0], ResolvedEffect::Lut { amount, .. } if *amount == 0.2));
     }
 
     #[test]

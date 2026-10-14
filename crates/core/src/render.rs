@@ -110,6 +110,7 @@ impl Renderer {
         // Fonts first: nothing is measured before they are registered.
         let text = TextEngine::new(&scene.fonts, &scene.base_dir)?;
         let images = load_images(&scene)?;
+        let luts = crate::lut::load_luts(&scene)?;
 
         let mut context = RenderContext::new();
         let id = pollster::block_on(context.device(None))
@@ -147,6 +148,7 @@ impl Renderer {
             scene.height,
             margin,
             &scene.shader_sources(),
+            &luts,
         );
 
         Ok(Renderer {

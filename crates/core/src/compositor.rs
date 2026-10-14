@@ -22,6 +22,10 @@
 //! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`) are
 //! compiled with `shaders/hash.wgsl` in front of them (`shader_module`).
 //!
+//! The `lut` pass (`shaders/lut.wgsl`) reads a 3D texture as well, so it has
+//! a bind group layout of its own (`lut_layout`) and the scene's tables are
+//! uploaded once, when the compositor is made.
+//!
 //! `shaders/shadow.wgsl` holds the shadow effects' passes,
 //! `shaders/color.wgsl` the colour filter pass, `shaders/glow.wgsl` the glow
 //! pass, `shaders/aberration.wgsl` the chromatic aberration pass and
@@ -42,6 +46,7 @@ use vello::wgpu::{self, util::DeviceExt};
 use crate::blur::{self, Blur};
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
+use crate::lut::Lut;
 use crate::resolve::{
     ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedShader, ResolvedShadow,
 };
@@ -54,6 +59,16 @@ const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 pub struct Tex {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
+}
+
+/// A LUT on the GPU.
+struct LutTexture {
+    view: wgpu::TextureView,
+    /// What `Params` in `shaders/lut.wgsl` holds besides the amount: points
+    /// per axis and the input domain.
+    size: f32,
+    domain_min: [f32; 3],
+    domain_max: [f32; 3],
 }
 
 pub struct Compositor {
@@ -78,6 +93,11 @@ pub struct Compositor {
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
     gradient_map: wgpu::RenderPipeline,
+    /// For `lut`: the layer, a 3D texture and the pass's uniforms.
+    lut_layout: wgpu::BindGroupLayout,
+    lut: wgpu::RenderPipeline,
+    /// The scene's tables, by the `src` the scene spells them with.
+    luts: HashMap<String, LutTexture>,
     /// For custom shaders: the layer, a sampler, the frame clock and the
     /// scene's named uniforms.
     shader_layout: wgpu::BindGroupLayout,
@@ -99,7 +119,7 @@ pub struct Compositor {
 impl Compositor {
     /// `width` x `height` is the canvas; textures are `margin` pixels larger
     /// on every side. `shaders` are the scene's custom shader modules
-    /// (`Scene::shader_sources`).
+    /// (`Scene::shader_sources`); `luts` its tables (`lut::load_luts`).
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -107,6 +127,7 @@ impl Compositor {
         height: u32,
         margin: u32,
         shaders: &[String],
+        luts: &HashMap<String, Lut>,
     ) -> Compositor {
         let shader = shader_module(device, "composite", include_str!("shaders/composite.wgsl"));
         let shadow_shader = shader_module(device, "shadow", include_str!("shaders/shadow.wgsl"));
@@ -122,6 +143,7 @@ impl Compositor {
             "gradient map",
             include_str!("shaders/gradient_map.wgsl"),
         );
+        let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -164,6 +186,23 @@ impl Compositor {
                 bind_group_layouts: &[Some(&filtered_layout)],
                 immediate_size: 0,
             });
+        let lut_layout = lut_bind_group_layout(device);
+        let lut_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("lut"),
+            bind_group_layouts: &[Some(&lut_layout)],
+            immediate_size: 0,
+        });
+        let lut = fullscreen_pipeline(
+            device,
+            &lut_pipeline_layout,
+            &lut_shader,
+            "fs_lut",
+            LINEAR_FORMAT,
+        );
+        let luts = luts
+            .iter()
+            .map(|(src, lut)| (src.clone(), upload_lut(device, queue, lut)))
+            .collect();
         let shader_layout = shader_bind_group_layout(device);
         let shader_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -225,6 +264,9 @@ impl Compositor {
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
             gradient_map: pipeline(&gradient_map_shader, "fs_gradient_map", LINEAR_FORMAT),
+            lut_layout,
+            lut,
+            luts,
             shader_layout,
             shader_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("shader effect"),
@@ -419,6 +461,13 @@ impl Compositor {
                     src = self.gradient_map(src, map);
                 }
                 ResolvedEffect::GradientMap(_) => {}
+                ResolvedEffect::Lut {
+                    src: ref key,
+                    amount,
+                } if amount > 0.0 => {
+                    src = self.lut(src, key, amount);
+                }
+                ResolvedEffect::Lut { .. } => {}
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -526,6 +575,48 @@ impl Compositor {
             &floats(&gradient_map_values(map)),
             &target.view,
         );
+        self.release(src);
+        target
+    }
+
+    /// Grades `src` through the table loaded for `key`, faded in by `amount`.
+    /// `src` goes back to the pool; the result is a new texture. A table the
+    /// compositor was not given at creation is skipped.
+    fn lut(&mut self, src: Tex, key: &str, amount: f32) -> Tex {
+        if !self.luts.contains_key(key) {
+            return src;
+        }
+        let target = self.acquire();
+        let lut = &self.luts[key];
+        let [rx, ry, rz] = lut.domain_min;
+        let [sx, sy, sz] = lut.domain_max;
+        let params = floats(&[rx, ry, rz, 0.0, sx, sy, sz, 0.0, lut.size, amount, 0.0, 0.0]);
+        let uniform = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("lut params"),
+                contents: &params,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("lut"),
+            layout: &self.lut_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&src.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&lut.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform.as_entire_binding(),
+                },
+            ],
+        });
+        self.draw(&self.lut, &bind_group, &target.view);
         self.release(src);
         target
     }
@@ -952,6 +1043,68 @@ fn filtered_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             },
         ],
     })
+}
+
+/// The bind group of the `lut` pass: the layer, the table as a 3D texture
+/// (read with `textureLoad`, so not filterable) and one uniform block.
+fn lut_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let texture = |binding, view_dimension| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            view_dimension,
+            multisampled: false,
+        },
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("lut"),
+        entries: &[
+            texture(0, wgpu::TextureViewDimension::D2),
+            texture(1, wgpu::TextureViewDimension::D3),
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    })
+}
+
+/// Uploads a table as an Rgba32Float 3D texture: x is the red index, y green
+/// and z blue, which is the order of the file's rows.
+fn upload_lut(device: &wgpu::Device, queue: &wgpu::Queue, lut: &Lut) -> LutTexture {
+    let texture = device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("lut"),
+            size: wgpu::Extent3d {
+                width: lut.size,
+                height: lut.size,
+                depth_or_array_layers: lut.size,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D3,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        &floats(&lut.rgba()),
+    );
+    LutTexture {
+        view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+        size: lut.size as f32,
+        domain_min: lut.domain_min,
+        domain_max: lut.domain_max,
+    }
 }
 
 /// A shader module for a built-in pass. Passes that call `hash` or

@@ -196,7 +196,10 @@ fn gradient_map_matches_golden() {
     // stop is at its middle. Covers a four-stop map with a see-through first
     // stop and a translucent last one, a map on text with a gradient fill, on
     // a group hanging off the left edge, and on a half-opaque layer hanging
-    // off the right and bottom edges.
+    // off the right and bottom edges. The same scene has a `lut` (a .cube
+    // table in tests/scenes/looks) on an image whose cross-fade is half way,
+    // on text, and on a group hanging off the top and right edges, all
+    // sharing one table.
     let frame = render_still(scene("tests/scenes/gradient-map.json"), 15).unwrap();
     check("gradient-map", &frame);
 }

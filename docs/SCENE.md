@@ -21,7 +21,7 @@ same pixels. Phase 3's reconciler will emit this same shape from React.
 | `fonts` | object | Optional. Font family name to font file path. Text layers refer to these names. |
 | `layers` | array | Bottom layer first, topmost last (the same order as SVG and DOM paint order). |
 
-Asset paths (`fonts`, image `src`) resolve relative to the directory of the scene file.
+Asset paths (`fonts`, image `src`, `lut` `src`) resolve relative to the directory of the scene file.
 
 Only the fonts listed in `fonts` exist. There is no system font lookup and no fallback, so output does not depend on
 the machine.
@@ -159,7 +159,7 @@ side.
   else is derived from the code.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
-- The colour filters and `gradientMap` count nothing: they change pixels in place.
+- The colour filters, `gradientMap` and `lut` count nothing: they change pixels in place.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -337,6 +337,29 @@ colour along the stops, dark pixels the early stops and light ones the late ones
 - **Alpha** of the graded image is the layer's alpha times the stop's alpha, so a see-through stop makes the dark
   (or light) parts of the layer see-through. The cross-fade runs over colour and alpha together, in sRGB straight
   space. A fully transparent pixel stays empty.
+- Counts nothing in the [margin](#canvas-margin).
+
+### lut
+
+```json
+{ "type": "lut", "src": "looks/thermal.cube" }
+{ "type": "lut", "src": "looks/teal-orange.cube", "amount": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 1 }] }
+```
+
+Grades the layer through a 3D colour lookup table from an Adobe/Resolve `.cube` file, the format colourists export.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | Path of the `.cube` file, relative to the scene file like an image's `src`. The file is read and checked when the renderer is built, so a missing or malformed file fails before any frame; the error names the layer, the file and (for a bad file) the line. Several layers can share one file. |
+| `amount` | `1` | Animatable, clamped to 0..1. Cross-fades from the original layer (`0`) to the graded one (`1`), in sRGB straight space. At `0` the effect does nothing. |
+
+- **What is read.** `LUT_3D_SIZE` from 2 to 64, optional `DOMAIN_MIN` and `DOMAIN_MAX` (default 0 and 1), then
+  `size`^3 rows of `r g b`, red varying fastest. `TITLE` and `#` comments are ignored. A 1D table (`LUT_1D_SIZE`), any
+  other keyword and a wrong number of rows are errors.
+- **How it is applied.** To the layer's straight colour in sRGB encoding (what the file's author saw), mapped from the
+  domain to the table and clamped to it, with trilinear interpolation between the eight surrounding table points.
+  Outputs are clamped to 0..1. Alpha is unchanged and a fully transparent pixel stays empty. The interpolation is
+  done by hand on exact table reads, so the result does not depend on the GPU's filtering.
 - Counts nothing in the [margin](#canvas-margin).
 
 ### backdropBlur
@@ -581,7 +604,7 @@ layer.
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
-  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `shader`.
+  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a

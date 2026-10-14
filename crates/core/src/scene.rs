@@ -200,6 +200,14 @@ pub enum Effect {
         #[serde(default = "one")]
         amount: Num,
     },
+    /// Applies a `.cube` 3D colour lookup table (path relative to the scene
+    /// file) to the sRGB colours; `amount` cross-fades from the original (0)
+    /// to the graded image (1).
+    Lut {
+        src: String,
+        #[serde(default = "one")]
+        amount: Num,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
@@ -298,7 +306,7 @@ impl Effect {
             | Effect::Invert { .. }
             | Effect::HueRotate { .. } => 0.0,
             // Recolours pixels in place.
-            Effect::GradientMap { .. } => 0.0,
+            Effect::GradientMap { .. } | Effect::Lut { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -611,6 +619,12 @@ impl Scene {
                         crate::shader::validate(&layer.id, &shader.code, &shader.names())?;
                     }
                     Effect::GradientMap { stops, .. } => validate_gradient_map(&layer.id, stops)?,
+                    Effect::Lut { src, .. } if src.trim().is_empty() => {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: lut needs a src, the path of a .cube file",
+                            layer.id
+                        )));
+                    }
                     _ => {}
                 }
             }
@@ -1302,6 +1316,31 @@ mod tests {
         // A missing field is the JSON parser's complaint, with no layer.
         let msg = gradient_map(r#""amount": 1"#).unwrap_err().to_string();
         assert!(msg.contains("stops"), "{msg}");
+    }
+
+    #[test]
+    fn parses_a_lut_with_a_default_amount() {
+        let scene = effects_of(
+            r#"[{"type": "lut", "src": "looks/thermal.cube"},
+                {"type": "lut", "src": "b.cube", "amount": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]}]"#,
+        );
+        let Effect::Lut { src, amount } = &scene.layers[0].effects[0] else {
+            panic!("not a lut");
+        };
+        assert_eq!((src.as_str(), amount.at(0.0)), ("looks/thermal.cube", 1.0));
+        assert!(
+            matches!(&scene.layers[0].effects[1], Effect::Lut { amount, .. } if amount.at(4.5) == 0.5)
+        );
+        assert_eq!(scene.margin(), 0);
+        // The file is read when the renderer is built, not when the scene
+        // loads (like an image), so a missing file is not an error here.
+        let msg = error(r#""effects": [{"type": "lut"}],"#);
+        assert!(msg.contains("src"), "{msg}");
+        let msg = error(r#""effects": [{"type": "lut", "src": " "}],"#);
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains(".cube"),
+            "{msg}"
+        );
     }
 
     const SHADER: &str =
