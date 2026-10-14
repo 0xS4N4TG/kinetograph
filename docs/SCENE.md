@@ -40,6 +40,8 @@ Any property typed `number` below accepts either a constant or a keyframe list:
 - `easing` shapes the segment that starts at that keyframe. It is `linear` (default), `easeIn` (t^3), `easeOut`
   (1 - (1 - t)^3) or `easeInOut` (cubic, symmetric).
 - Colours, strings and paths are not animated.
+- Loading a scene rejects an unparsable path `d`, a non-positive text `size`, and a negative width, height, `maxWidth`
+  or stroke width, at any keyframe.
 
 Colours are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or `transparent`, in sRGB with straight alpha.
 

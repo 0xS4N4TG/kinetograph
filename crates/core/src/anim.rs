@@ -99,6 +99,15 @@ impl Num {
         let t = (frame - a.frame) / (b.frame - a.frame);
         a.value + (b.value - a.value) * a.easing.apply(t)
     }
+
+    /// Smallest value the number can take. Easing never overshoots, so this
+    /// is the smallest keyframe value.
+    pub fn min(&self) -> f64 {
+        match self {
+            Num::Const(v) => *v,
+            Num::Keys(keys) => keys.iter().map(|k| k.value).fold(f64::INFINITY, f64::min),
+        }
+    }
 }
 
 #[cfg(test)]

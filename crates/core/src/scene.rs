@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use vello::kurbo::BezPath;
 
 use crate::anim::Num;
 use crate::color::Color;
@@ -227,15 +228,59 @@ impl Scene {
             if !ids.insert(&layer.id) {
                 return Err(Error::Scene(format!("duplicate layer id {:?}", layer.id)));
             }
-            match &layer.kind {
-                LayerKind::Text(t) if !self.fonts.contains_key(&t.font) => {
+            let non_negative = |what: &str, n: &Num| {
+                if n.min() < 0.0 {
                     return Err(Error::Scene(format!(
-                        "layer {:?} uses font {:?}, which is not in \"fonts\"",
-                        layer.id, t.font
+                        "layer {:?}: {what} must not be negative",
+                        layer.id
                     )));
                 }
+                Ok(())
+            };
+            match &layer.kind {
+                LayerKind::Shape(s) => {
+                    match &s.shape {
+                        Geometry::Rect { width, height }
+                        | Geometry::RoundedRect { width, height, .. }
+                        | Geometry::Ellipse { width, height } => {
+                            non_negative("width", width)?;
+                            non_negative("height", height)?;
+                        }
+                        Geometry::Path { d } => {
+                            BezPath::from_svg(d).map_err(|e| {
+                                Error::Scene(format!(
+                                    "layer {:?}: bad SVG path {d:?}: {e}",
+                                    layer.id
+                                ))
+                            })?;
+                        }
+                    }
+                    if let Some(stroke) = &s.stroke {
+                        non_negative("stroke width", &stroke.width)?;
+                    }
+                }
+                LayerKind::Text(t) => {
+                    if !self.fonts.contains_key(&t.font) {
+                        return Err(Error::Scene(format!(
+                            "layer {:?} uses font {:?}, which is not in \"fonts\"",
+                            layer.id, t.font
+                        )));
+                    }
+                    if t.size.min() <= 0.0 {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: text size must be positive",
+                            layer.id
+                        )));
+                    }
+                    if let Some(max_width) = &t.max_width {
+                        non_negative("maxWidth", max_width)?;
+                    }
+                }
+                LayerKind::Image(i) => {
+                    non_negative("width", &i.width)?;
+                    non_negative("height", &i.height)?;
+                }
                 LayerKind::Group(g) => self.validate_layers(&g.children, ids)?,
-                _ => {}
             }
         }
         Ok(())

@@ -271,4 +271,18 @@ mod tests {
         let bad_type = SCENE.replace("\"type\": \"group\"", "\"type\": \"video\"");
         assert!(parse(&bad_type).is_err());
     }
+
+    #[test]
+    fn rejects_bad_geometry_and_text_sizes() {
+        let parse = |json: &str| Scene::from_json(json, PathBuf::new());
+        let negative_rect = SCENE.replace("\"width\": 100", "\"width\": -4");
+        assert!(parse(&negative_rect).is_err());
+        let zero_text = SCENE.replace("\"size\": 40", "\"size\": 0");
+        assert!(parse(&zero_text).is_err());
+        let bad_path = SCENE.replace(
+            "\"kind\": \"rect\"",
+            "\"kind\": \"path\", \"d\": \"M0 0 Q bogus\"",
+        );
+        assert!(parse(&bad_path).is_err());
+    }
 }
