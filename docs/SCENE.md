@@ -1062,6 +1062,9 @@ the layer's backdrop then happens once, with the layer's `blendMode`.
   has none of its own.
 - **Nesting**: `motionBlur` inside a layer that is blurred is ignored (its samples are already the average). A
   parent whose `shutter` is 0 does not stop its children's.
+- **Only the layer moves**: the samples are of the layer and its subtree. Its enclosing groups and the scene's `camera`
+  are taken at the frame itself, so a layer carried by a moving group, or seen by a moving camera, does not smear by
+  that motion. Put the `motionBlur` on the group that moves; a camera move is not blurred at all.
 - **preserve3d**: a `preserve3d` group, and the children it draws, cannot have `motionBlur` (a load error naming the
   layer): they are drawn straight into their parent, with no texture to average. Wrap the stack in an ordinary group and
   give that one `motionBlur` to blur the whole stack, an orbit included.
@@ -1121,7 +1124,8 @@ the layer's backdrop then happens once, with the layer's `blendMode`.
 - `motionBlur` averages 2 to 64 equally weighted samples of the shutter (no sample-weighting curve, no random
   jitter), so a very fast move over a wide shutter shows its steps as separate ghosts; raise `samples`. It cannot be
   used on a `preserve3d` group or its children, and nested `motionBlur` inside a blurred layer is ignored (see
-  [Motion blur](#motion-blur)). It multiplies the layer's cost by `samples`.
+  [Motion blur](#motion-blur)). It blurs the layer's own animation, not that of its enclosing groups or of the camera.
+  It multiplies the layer's cost by `samples`.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.
