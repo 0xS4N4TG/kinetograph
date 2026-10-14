@@ -88,6 +88,10 @@ fn stagger_default() -> Num {
     Num::Const(0.6)
 }
 
+fn three() -> u32 {
+    3
+}
+
 fn yes() -> bool {
     true
 }
@@ -104,6 +108,7 @@ pub enum LayerKind {
     Image(ImageLayer),
     Group(GroupLayer),
     Noise(NoiseLayer),
+    MeshGradient(MeshGradientLayer),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -475,6 +480,10 @@ pub const MAX_DITHER_LEVELS: f64 = 256.0;
 pub const MIN_GRADIENT_MAP_STOPS: usize = 2;
 pub const MAX_GRADIENT_MAP_STOPS: usize = 16;
 
+/// Fewest and most points a `meshGradient` has along each axis.
+pub const MIN_MESH_POINTS: u32 = 2;
+pub const MAX_MESH_POINTS: u32 = 8;
+
 /// The fields of `shader`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -833,6 +842,26 @@ pub enum NoiseChannels {
     Gray,
 }
 
+/// A grid of colour control points over a box at the layer's origin, blended
+/// smoothly between the points.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshGradientLayer {
+    pub width: Num,
+    pub height: Num,
+    /// Points per row, `MIN_MESH_POINTS..=MAX_MESH_POINTS`.
+    #[serde(default = "three")]
+    pub columns: u32,
+    /// Points per column, `MIN_MESH_POINTS..=MAX_MESH_POINTS`.
+    #[serde(default = "three")]
+    pub rows: u32,
+    /// Row-major positions in layer pixels. Omitted: a regular grid over the
+    /// box.
+    pub points: Option<Vec<[Num; 2]>>,
+    /// One per point, row-major.
+    pub colors: Vec<Color>,
+}
+
 impl Scene {
     pub fn load(path: &Path) -> Result<Scene> {
         let json = std::fs::read_to_string(path).map_err(|source| Error::Io {
@@ -1016,6 +1045,11 @@ impl Scene {
                     non_negative("width", &n.width)?;
                     non_negative("height", &n.height)?;
                     validate_turbulence(&layer.id, "noise", &n.turbulence)?;
+                }
+                LayerKind::MeshGradient(m) => {
+                    non_negative("width", &m.width)?;
+                    non_negative("height", &m.height)?;
+                    validate_mesh_gradient(&layer.id, m)?;
                 }
             }
         }
@@ -1210,6 +1244,33 @@ fn validate_gradient_map(id: &str, stops: &[Stop]) -> Result<()> {
         .any(|s| s.offset.min() < 0.0 || s.offset.max() > 1.0)
     {
         return bad("stop offsets must be between 0 and 1".into());
+    }
+    Ok(())
+}
+
+fn validate_mesh_gradient(id: &str, mesh: &MeshGradientLayer) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: meshGradient {msg}")));
+    for (what, n) in [("columns", mesh.columns), ("rows", mesh.rows)] {
+        if !(MIN_MESH_POINTS..=MAX_MESH_POINTS).contains(&n) {
+            return bad(format!(
+                "{what} must be a whole number from {MIN_MESH_POINTS} to {MAX_MESH_POINTS}, got {n}"
+            ));
+        }
+    }
+    let count = (mesh.columns * mesh.rows) as usize;
+    if mesh.colors.len() != count {
+        return bad(format!(
+            "needs {count} colors (columns x rows), got {}",
+            mesh.colors.len()
+        ));
+    }
+    if let Some(points) = &mesh.points
+        && points.len() != count
+    {
+        return bad(format!(
+            "needs {count} points (columns x rows), got {}",
+            points.len()
+        ));
     }
     Ok(())
 }
@@ -2438,6 +2499,94 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(msg.contains("turbulence"), "{msg}");
+    }
+
+    fn mesh_scene(fields: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                    {{"id": "m", "type": "meshGradient", {fields}}}]}}"##
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn parses_mesh_gradients_with_defaults() {
+        let scene = mesh_scene(
+            r##""width": 120, "height": 60,
+               "colors": ["#f00", "#0f0", "#00f", "#ff0", "#0ff", "#f0f", "#000", "#fff", "#888"]"##,
+        )
+        .unwrap();
+        let LayerKind::MeshGradient(mesh) = &scene.layers[0].kind else {
+            panic!("not a mesh gradient layer");
+        };
+        assert_eq!((mesh.columns, mesh.rows), (3, 3));
+        assert!(mesh.points.is_none());
+        assert_eq!(mesh.colors.len(), 9);
+        // It paints inside its box and nothing else.
+        assert_eq!(scene.margin(), 0);
+        let animated = mesh_scene(
+            r##""width": 120, "height": 60, "columns": 2, "rows": 3,
+               "points": [[0, 0], [[{"frame": 0, "value": 100}, {"frame": 9, "value": 120}], 0],
+                          [0, 30], [120, 30], [0, 60], [120, 60]],
+               "colors": ["#f00", "#0f0", "#00f", "#ff0", "#0ff", "#f0f"]"##,
+        )
+        .unwrap();
+        let LayerKind::MeshGradient(mesh) = &animated.layers[0].kind else {
+            panic!("not a mesh gradient layer");
+        };
+        let points = mesh.points.as_ref().unwrap();
+        assert_eq!(points.len(), 6);
+        assert_eq!(points[1][0].at(9.0), 120.0);
+    }
+
+    #[test]
+    fn rejects_bad_mesh_gradients_naming_the_layer() {
+        let colors = |n: usize| format!(r##""colors": [{}]"##, vec![r##""#fff""##; n].join(", "));
+        for (fields, want) in [
+            (
+                format!(r#""width": -1, "height": 5, {}"#, colors(9)),
+                "width must not be negative",
+            ),
+            (
+                format!(r#""width": 5, "height": 5, "columns": 1, {}"#, colors(3)),
+                "columns must be a whole number from 2 to 8, got 1",
+            ),
+            (
+                format!(r#""width": 5, "height": 5, "rows": 9, {}"#, colors(27)),
+                "rows must be a whole number from 2 to 8, got 9",
+            ),
+            (
+                format!(r#""width": 5, "height": 5, {}"#, colors(8)),
+                "needs 9 colors (columns x rows), got 8",
+            ),
+            (
+                format!(
+                    r#""width": 5, "height": 5, "columns": 2, "rows": 2, "points": [[0, 0], [1, 0], [0, 1]], {}"#,
+                    colors(4)
+                ),
+                "needs 4 points (columns x rows), got 3",
+            ),
+        ] {
+            let msg = mesh_scene(&fields).unwrap_err().to_string();
+            assert!(
+                msg.contains("layer \"m\"") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // The JSON parser's complaints.
+        let msg = mesh_scene(r#""width": 5, "height": 5"#)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("colors"), "{msg}");
+        let msg = mesh_scene(&format!(
+            r#""width": 5, "height": 5, "columns": 2.5, {}"#,
+            colors(9)
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("2.5"), "{msg}");
     }
 
     const SHADER: &str =

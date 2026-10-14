@@ -355,6 +355,17 @@ pub enum ResolvedKind {
     Group {
         children: Vec<ResolvedLayer>,
     },
+    /// A grid of coloured points; the box `(0, 0, width, height)` in layer
+    /// space is where the points are when none are given.
+    MeshGradient {
+        width: f64,
+        height: f64,
+        columns: usize,
+        rows: usize,
+        /// Row-major, in layer space.
+        points: Vec<[f64; 2]>,
+        colors: Vec<Color>,
+    },
     /// The noise over the box `(0, 0, width, height)` in layer space.
     Noise {
         width: f64,
@@ -456,6 +467,31 @@ fn resolve_layer(layer: &Layer, clock: Clock) -> ResolvedLayer {
         LayerKind::Group(g) => ResolvedKind::Group {
             children: g.children.iter().map(|c| resolve_layer(c, clock)).collect(),
         },
+        LayerKind::MeshGradient(m) => {
+            let (width, height) = (m.width.at(f), m.height.at(f));
+            let (columns, rows) = (m.columns as usize, m.rows as usize);
+            ResolvedKind::MeshGradient {
+                width,
+                height,
+                columns,
+                rows,
+                points: match &m.points {
+                    Some(points) => points.iter().map(|[x, y]| [x.at(f), y.at(f)]).collect(),
+                    // Evenly spaced over the box, a row at a time.
+                    None => (0..rows)
+                        .flat_map(|j| {
+                            (0..columns).map(move |i| {
+                                [
+                                    width * i as f64 / (columns - 1) as f64,
+                                    height * j as f64 / (rows - 1) as f64,
+                                ]
+                            })
+                        })
+                        .collect(),
+                },
+                colors: m.colors.clone(),
+            }
+        }
         LayerKind::Noise(n) => ResolvedKind::Noise {
             width: n.width.at(f),
             height: n.height.at(f),
@@ -1326,6 +1362,58 @@ mod tests {
                 seed: 11,
             }
         );
+    }
+
+    #[test]
+    fn mesh_gradients_default_to_a_regular_grid_over_the_box() {
+        let json = r##"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "m", "type": "meshGradient", "columns": 3, "rows": 2,
+              "width": [{"frame": 0, "value": 0}, {"frame": 10, "value": 80}], "height": 30,
+              "colors": ["#f00", "#0f0", "#00f", "#ff0", "#0ff", "#f0f"]}]}"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let resolved = scene.resolve(5).unwrap();
+        let ResolvedKind::MeshGradient {
+            width,
+            height,
+            columns,
+            rows,
+            points,
+            colors,
+        } = &resolved.layers[0].kind
+        else {
+            panic!("not a mesh gradient layer");
+        };
+        assert_eq!((*width, *height, *columns, *rows), (40.0, 30.0, 3, 2));
+        assert_eq!(
+            *points,
+            [
+                [0.0, 0.0],
+                [20.0, 0.0],
+                [40.0, 0.0],
+                [0.0, 30.0],
+                [20.0, 30.0],
+                [40.0, 30.0]
+            ]
+        );
+        assert_eq!(colors.len(), 6);
+    }
+
+    #[test]
+    fn mesh_gradient_points_are_keyframed() {
+        let json = r##"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "m", "type": "meshGradient", "columns": 2, "rows": 2,
+              "width": 50, "height": 50,
+              "points": [[0, 0], [[{"frame": 0, "value": 50}, {"frame": 10, "value": 90}], 5],
+                         [0, 50], [50, 50]],
+              "colors": ["#f00", "#0f0", "#00f", "#ff0"]}]}"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let at = |frame| match &scene.resolve(frame).unwrap().layers[0].kind {
+            ResolvedKind::MeshGradient { points, .. } => points.clone(),
+            _ => panic!("not a mesh gradient layer"),
+        };
+        assert_eq!(at(0)[1], [50.0, 5.0]);
+        assert_eq!(at(5)[1], [70.0, 5.0]);
+        assert_eq!(at(10)[3], [50.0, 50.0]);
     }
 
     #[test]

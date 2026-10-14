@@ -33,6 +33,10 @@
 //! pass (`shaders/noise.wgsl`), on the shared layout, which fills a box's
 //! coverage with the raw noise.
 //!
+//! A mesh gradient layer (`shaders/mesh.wgsl`) is not a full-screen pass: its
+//! triangles are tessellated on the CPU (`mesh.rs`) and drawn with vertex
+//! colours into a 4x multisampled target that resolves into a pooled texture.
+//!
 //! The `lut` pass (`shaders/lut.wgsl`) reads a 3D texture as well, so it has
 //! a bind group layout of its own (`lut_layout`) and the scene's tables are
 //! uploaded once, when the compositor is made.
@@ -58,6 +62,7 @@ use crate::blur::{self, Blur};
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
+use crate::mesh;
 use crate::resolve::{
     ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect, ResolvedGlow,
     ResolvedGradientMap, ResolvedGrain, ResolvedHalftone, ResolvedShader, ResolvedShadow,
@@ -77,6 +82,10 @@ pub struct Tex {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
 }
+
+/// Samples per pixel of a mesh gradient, whose outer edge is anti-aliased by
+/// multisampling.
+const MESH_SAMPLES: u32 = 4;
 
 /// A LUT on the GPU.
 struct LutTexture {
@@ -119,6 +128,13 @@ pub struct Compositor {
     displace: wgpu::RenderPipeline,
     /// On the shared layout and then `turbulence_layout`.
     noise: wgpu::RenderPipeline,
+    /// Vertex-colour triangles, for mesh gradients (`mesh_size` at group 0).
+    mesh: wgpu::RenderPipeline,
+    /// The padded texture size, which the mesh's vertex shader needs.
+    mesh_size: wgpu::BindGroup,
+    /// The multisampled target the mesh is drawn into, made the first time
+    /// a mesh is drawn and kept.
+    mesh_samples: Option<Tex>,
     /// For passes that evaluate turbulence: the storage buffer of one seed's
     /// tables, at bind group 1.
     turbulence_layout: wgpu::BindGroupLayout,
@@ -260,6 +276,11 @@ impl Compositor {
             "fs_noise",
             LINEAR_FORMAT,
         );
+        let (mesh, mesh_size) = mesh_pipeline(
+            device,
+            &shader_module(device, "mesh", include_str!("shaders/mesh.wgsl")),
+            (width + 2 * margin, height + 2 * margin),
+        );
         let lut_layout = lut_bind_group_layout(device);
         let lut_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("lut"),
@@ -344,6 +365,9 @@ impl Compositor {
             dot_matrix: pipeline(&dot_matrix_shader, "fs_dot_matrix", LINEAR_FORMAT),
             displace,
             noise,
+            mesh,
+            mesh_size,
+            mesh_samples: None,
             turbulence_layout,
             turbulence_tables: HashMap::new(),
             lut_layout,
@@ -786,6 +810,62 @@ impl Compositor {
             &target.view,
         );
         self.release(coverage);
+        target
+    }
+
+    /// Draws a mesh gradient's `vertices` (triangles in texels, from
+    /// `mesh::tessellate`) into a new texture. The triangles are drawn with
+    /// multisampling, so the mesh's outer edge is anti-aliased.
+    pub fn mesh_gradient(&mut self, vertices: &[mesh::Vertex]) -> Tex {
+        let target = self.acquire();
+        if self.mesh_samples.is_none() {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("mesh samples"),
+                size: wgpu::Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: MESH_SAMPLES,
+                dimension: wgpu::TextureDimension::D2,
+                format: LINEAR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.mesh_samples = Some(Tex { texture, view });
+        }
+        let samples = self.mesh_samples.as_ref().expect("made above");
+        let buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mesh vertices"),
+                contents: &mesh_vertex_bytes(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("mesh"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &samples.view,
+                    depth_slice: None,
+                    resolve_target: Some(&target.view),
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        // Only the resolved image is wanted.
+                        store: wgpu::StoreOp::Discard,
+                    },
+                })],
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.mesh);
+            pass.set_bind_group(0, &self.mesh_size, &[]);
+            pass.set_vertex_buffer(0, buffer.slice(..));
+            pass.draw(0..vertices.len() as u32, 0..1);
+        }
+        self.queue.submit([encoder.finish()]);
         target
     }
 
@@ -1282,6 +1362,95 @@ fn fullscreen_pipeline(
         multiview_mask: None,
         cache: None,
     })
+}
+
+/// The mesh gradient pipeline, drawing `mesh::Vertex` triangles into a
+/// multisampled target, and the bind group with the `size` of that target in
+/// texels that its vertex shader turns positions into clip space with. The
+/// output is premultiplied, so triangles that overlap (a folded mesh) blend
+/// with "over".
+fn mesh_pipeline(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    size: (u32, u32),
+) -> (wgpu::RenderPipeline, wgpu::BindGroup) {
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("mesh"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("mesh"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4];
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("mesh"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_mesh"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: MESH_VERTEX_BYTES,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &attributes,
+            })],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_mesh"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: LINEAR_FORMAT,
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: MESH_SAMPLES,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    });
+    let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("mesh size"),
+        contents: &floats(&[size.0 as f32, size.1 as f32, 0.0, 0.0]),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("mesh"),
+        layout: &layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform.as_entire_binding(),
+        }],
+    });
+    (pipeline, bind_group)
+}
+
+/// The bytes of one `mesh::Vertex`: position, then colour, as `f32`s.
+const MESH_VERTEX_BYTES: u64 = 24;
+
+fn mesh_vertex_bytes(vertices: &[mesh::Vertex]) -> Vec<u8> {
+    let flat: Vec<f32> = vertices
+        .iter()
+        .flat_map(|v| [v.position[0], v.position[1]].into_iter().chain(v.color))
+        .collect();
+    floats(&flat)
 }
 
 /// The bind group of passes that resample the layer: the layer as a
@@ -2118,6 +2287,27 @@ mod tests {
         let flat = displace_values(&plain, Affine::scale(0.0));
         assert!(flat[..24].iter().all(|b| *b == 0));
         assert_eq!(u32::from_le_bytes(flat[76..80].try_into().unwrap()), 0);
+    }
+
+    #[test]
+    fn mesh_vertices_are_position_then_colour() {
+        let vertices = [
+            mesh::Vertex {
+                position: [1.0, 2.0],
+                color: [0.1, 0.2, 0.3, 0.4],
+            },
+            mesh::Vertex {
+                position: [5.0, 6.0],
+                color: [0.5, 0.6, 0.7, 0.8],
+            },
+        ];
+        let bytes = mesh_vertex_bytes(&vertices);
+        assert_eq!(bytes.len() as u64, 2 * MESH_VERTEX_BYTES);
+        let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        assert_eq!(
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(float),
+            [1.0, 2.0, 0.1, 0.2, 0.3, 0.4, 5.0, 6.0, 0.5, 0.6, 0.7, 0.8]
+        );
     }
 
     #[test]

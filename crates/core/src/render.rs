@@ -15,6 +15,7 @@ use crate::blur::MIN_RADIUS;
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
+use crate::mesh;
 use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
     ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
@@ -282,6 +283,17 @@ impl Renderer {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
                 self.draw_layers(children, matrix, empty, backdrop)?
             }
+            // Triangles with vertex colours, not a Vello scene.
+            ResolvedKind::MeshGradient {
+                columns,
+                rows,
+                points,
+                colors,
+                ..
+            } => {
+                let vertices = mesh::tessellate(*columns, *rows, points, colors, matrix);
+                self.timed(Stage::Raster, |s| s.compositor.mesh_gradient(&vertices))
+            }
             _ => {
                 self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
                 let drawn =
@@ -433,7 +445,9 @@ impl Renderer {
                     &Rect::new(0.0, 0.0, *width, *height),
                 );
             }
-            ResolvedKind::Group { .. } => unreachable!("groups are composited, not rasterised"),
+            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {
+                unreachable!("groups and meshes are composited, not rasterised")
+            }
         }
         self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }))
     }
@@ -575,7 +589,8 @@ impl Renderer {
                 ))
             }
             ResolvedKind::Image { width, height, .. }
-            | ResolvedKind::Noise { width, height, .. } => {
+            | ResolvedKind::Noise { width, height, .. }
+            | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
             ResolvedKind::Group { .. } => None,

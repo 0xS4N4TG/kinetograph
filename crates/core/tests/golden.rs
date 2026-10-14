@@ -272,3 +272,20 @@ fn turbulence_matches_golden() {
     let frame = render_still(scene("tests/scenes/turbulence.json"), 15).unwrap();
     check("turbulence", &frame);
 }
+
+#[test]
+fn mesh_gradient_matches_golden() {
+    // Frame 15 of 30: the animated points, rotations and scales are half way.
+    // Covers a full-canvas 4 x 3 mesh whose interior and edge points have
+    // drifted (the background), a photo cut out by a mesh used as a track
+    // matte (colours fading to clear), a 5 x 2 ribbon whose points wave (and
+    // whose lower colours are half-transparent), a rotating 3 x 2 card cut to
+    // rounded corners by an inset clip with a drop shadow (so the scene has a
+    // margin and the mesh is placed inside it), a scaled group of meshes
+    // hanging off the left and bottom edges with a transparent middle column,
+    // a screen-blended mesh with a fully transparent corner rotating off the
+    // bottom-right corner (anti-aliased outer edge, straight-alpha colours),
+    // and text on top.
+    let frame = render_still(scene("tests/scenes/mesh-gradient.json"), 15).unwrap();
+    check("mesh-gradient", &frame);
+}

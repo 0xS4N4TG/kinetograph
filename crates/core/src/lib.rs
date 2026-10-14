@@ -8,6 +8,7 @@ pub mod error;
 #[cfg(test)]
 mod hash;
 pub mod lut;
+pub mod mesh;
 pub mod render;
 pub mod resolve;
 pub mod scene;

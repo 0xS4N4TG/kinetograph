@@ -52,7 +52,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group` or `noise`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise` or `meshGradient`. |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
 | `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
@@ -166,6 +166,46 @@ mask with, or to displace by. Like any layer it takes `effects`, `clip`, `mask`,
   `(0, 0, width, height)`.
 - Counts nothing in the [margin](#canvas-margin).
 
+### meshGradient
+
+```json
+{ "id": "bg", "type": "meshGradient", "width": 480, "height": 270, "columns": 3, "rows": 3,
+  "colors": ["#3a1c71", "#d76d77", "#ffaf7b",
+             "#0f2027", "#2c5364", "#ff6a88",
+             "#11998e", "#38ef7d", "#fc4a1a"] }
+{ "id": "drift", "type": "meshGradient", "width": 480, "height": 270, "columns": 3, "rows": 2,
+  "points": [[0, 0], [240, 0], [480, 0],
+             [0, 270], [[{ "frame": 0, "value": 240 }, { "frame": 60, "value": 360 }], 270], [480, 270]],
+  "colors": ["#f72585", "#7209b7", "#3a0ca3", "#4361ee", "#4cc9f0", "#fff"] }
+```
+
+An animated mesh gradient: a grid of colour control points joined by smooth patches, the soft many-coloured
+backgrounds of motion graphics. Move the points (every coordinate is an animatable number) and the colours flow with
+them. Like any layer it takes `effects`, `clip`, `mask`, `matte`, `blendMode` and `opacity`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `width`, `height` | required | Animatable, not negative: the box in layer pixels. It places the default points and is the box an `inset` clip or a `sweep` dot matrix measures from; moving the points does not change it. |
+| `columns`, `rows` | `3`, `3` | Points across and down, each a whole number from 2 to 8. |
+| `points` | regular grid | `columns x rows` `[x, y]` pairs, row by row (left to right, top to bottom), in layer pixels. Each coordinate is an animatable number. Omitted: points spread evenly over `(0, 0, width, height)`, so the box animates the grid. |
+| `colors` | required | One colour per point, in the same order. Not animated (a mesh that changes colour is two layers, cross-faded). |
+
+- **Interpolation.** Between four neighbouring points the surface is one bicubic Hermite patch, with Catmull-Rom
+  slopes: at each point the slope along a row or column is half the difference of the two neighbouring points (the
+  difference to the one neighbour at the border of the mesh), and the twist is the same rule applied to the slopes.
+  The surface passes through every point, is smooth (C1) across the edges between patches, and a regular grid comes
+  out exactly regular. Position and colour use the same patch, so colour is as smooth as the shape.
+- **Colour.** Interpolated in sRGB with straight alpha (a transparent point does not darken its neighbours' colour,
+  it only fades alpha), then clamped to 0..1; Catmull-Rom can overshoot a little where colours change sharply, and the
+  clamp is what stops that from going negative.
+- **Tessellation.** Each patch is drawn as 16 x 16 quads, on the CPU, in the layer's matrix; the GPU draws the
+  triangles with vertex colours into a 4x multisampled texture, so the outer edge of the mesh is anti-aliased (the
+  canvas edge is not, if the mesh fills the canvas exactly). Patches that fold over each other blend with "over", in
+  document order; there is no depth.
+- A group has no box, but a mesh does: an `inset` clip or a `sweep` dot matrix on one measures from
+  `(0, 0, width, height)`.
+- Counts nothing in the [margin](#canvas-margin).
+
 ## Effects
 
 Each entry in a layer's `effects` is an object with a `type`. A group's effects run on its composited result.
@@ -191,6 +231,8 @@ side.
   else is derived from the code.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
+- The `noise` and `meshGradient` layer kinds count nothing: they paint only inside their box or between their
+  points.
 - The colour filters, `gradientMap`, `lut`, `grain` and `dither` count nothing: they change pixels in place. `halftone`
   and `dotMatrix` count nothing either: their dots stay inside their cells.
 - `displace` counts `|scale| / 2` in layer pixels, so unlike the others it is multiplied by the largest product of
@@ -850,6 +892,10 @@ layer.
   (see [noise](#noise)). A rotated layer's displacement can reach 1.41 times past the margin it
   gets. The noise is evaluated at the output pixel in the layer's space, so a layer scaled up a lot shows its noise
   magnified (and one scaled far down aliases it); there are no mipmaps.
+- `meshGradient` takes 2 to 8 points along each axis and static colours; there is no twist control (the twist is
+  fixed by the neighbouring points), no per-patch colour in another space, and the mesh is only as smooth as its 16 x 16
+  quads per patch (a patch scaled up a great deal shows its facets). The edge is anti-aliased by 4 samples per pixel.
+  Overlapping patches blend in document order without depth.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.
