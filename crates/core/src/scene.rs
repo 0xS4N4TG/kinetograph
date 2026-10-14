@@ -9,6 +9,7 @@ use vello::kurbo::BezPath;
 use crate::anim::Num;
 use crate::color::Color;
 use crate::error::{Error, Result};
+use crate::resolve::MAX_BLUR_RADIUS;
 
 /// Largest canvas side; wgpu's default texture limit.
 pub const MAX_SIDE: u32 = 8192;
@@ -134,6 +135,9 @@ pub enum Effect {
     /// Gaussian-like blur; `radius` is roughly the standard deviation in
     /// pixels.
     Blur { radius: Num },
+    /// Frosted glass: what is behind the layer, blurred, shows through the
+    /// layer's shape. `radius` is like `blur`'s.
+    BackdropBlur { radius: Num },
     /// The layer's shadow, cast onto what is behind it.
     DropShadow(Shadow),
     /// A shadow cast inside the layer's own shape.
@@ -218,6 +222,9 @@ impl Effect {
             // leaving it out keeps scenes that use nothing else at margin 0,
             // which is exactly the canvas-sized rendering they had before.
             Effect::Blur { .. } => 0.0,
+            // Reads the canvas around the layer, so a layer at the canvas edge
+            // blurs in what lies beyond it.
+            Effect::BackdropBlur { radius } => 3.0 * radius.max().clamp(0.0, MAX_BLUR_RADIUS),
             Effect::DropShadow(shadow) | Effect::InsetShadow(shadow) => shadow.reach(),
             // Colour filters change pixels in place.
             Effect::Saturate { .. }
@@ -1027,6 +1034,27 @@ mod tests {
         );
         let msg = error(r#""effects": [{"type": "sepia", "amount": "lots"}],"#);
         assert!(msg.contains("did not match"), "{msg}");
+    }
+
+    #[test]
+    fn backdrop_blur_parses_and_counts_three_radii_in_the_margin() {
+        let scene = effects_of(
+            r#"[{"type": "backdropBlur", "radius": [{"frame": 0, "value": 4}, {"frame": 9, "value": 10}]}]"#,
+        );
+        assert!(
+            matches!(&scene.layers[0].effects[0], Effect::BackdropBlur { radius } if radius.at(9.0) == 10.0)
+        );
+        assert_eq!(scene.margin(), 30);
+        // The radius is limited to 128 as it is when drawn.
+        let scene = effects_of(r#"[{"type": "backdropBlur", "radius": 1000}]"#);
+        assert_eq!(scene.margin(), 384);
+        // It adds to a shadow on the same layer.
+        let scene = effects_of(
+            r#"[{"type": "backdropBlur", "radius": 5}, {"type": "dropShadow", "y": 4}]"#,
+        );
+        assert_eq!(scene.margin(), 19);
+        let msg = error(r#""effects": [{"type": "backdropBlur"}],"#);
+        assert!(msg.contains("radius"), "{msg}");
     }
 
     #[test]

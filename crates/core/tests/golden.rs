@@ -149,3 +149,13 @@ fn gradient_fills_match_golden() {
     let frame = render_still(scene("tests/scenes/gradient-fills.json"), 15).unwrap();
     check("gradient-fills", &frame);
 }
+
+#[test]
+fn backdrop_blur_matches_golden() {
+    // Frame 15 of 30: halfway through every animation. Covers a frosted card
+    // inside a moving group (with a disc under it in the group), frosted text
+    // (alpha coverage), a frosted shape with a clip, and a card hanging off
+    // the right edge, all over stripes, an image and text.
+    let frame = render_still(scene("tests/scenes/backdrop-blur.json"), 15).unwrap();
+    check("backdrop-blur", &frame);
+}

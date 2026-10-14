@@ -57,6 +57,8 @@ impl ResolvedTransform {
 pub enum ResolvedEffect {
     /// Standard deviation in pixels.
     Blur { radius: f32 },
+    /// Standard deviation in pixels of the blur applied to the backdrop.
+    BackdropBlur { radius: f32 },
     /// Cast onto what is behind the layer.
     DropShadow(ResolvedShadow),
     /// Cast inside the layer's own shape.
@@ -390,6 +392,9 @@ fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
         },
+        Effect::BackdropBlur { radius } => ResolvedEffect::BackdropBlur {
+            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+        },
         Effect::DropShadow(s) => ResolvedEffect::DropShadow(resolve_shadow(s, f)),
         Effect::InsetShadow(s) => ResolvedEffect::InsetShadow(resolve_shadow(s, f)),
         Effect::Saturate { amount } => {
@@ -575,6 +580,19 @@ mod tests {
         );
         let scene = Scene::from_json(&json, PathBuf::new()).unwrap();
         scene.resolve(frame).unwrap().layers[0].effects.clone()
+    }
+
+    #[test]
+    fn backdrop_blur_resolves_and_clamps_its_radius() {
+        let effects = effects_at(
+            r#"[{"type": "backdropBlur", "radius": [{"frame": 0, "value": 0}, {"frame": 10, "value": 400}]}]"#,
+            5,
+        );
+        assert!(
+            matches!(effects[..], [ResolvedEffect::BackdropBlur { radius }] if radius == 128.0)
+        );
+        let effects = effects_at(r#"[{"type": "backdropBlur", "radius": -3}]"#, 0);
+        assert!(matches!(effects[..], [ResolvedEffect::BackdropBlur { radius }] if radius == 0.0));
     }
 
     #[test]

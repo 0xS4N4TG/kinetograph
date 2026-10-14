@@ -1,0 +1,263 @@
+{
+ "width": 512,
+ "height": 288,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#10131c",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "stripes",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 512,
+    "height": 288
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 22,
+    "y1": 22,
+    "extend": "repeat",
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#e0556b"
+     },
+     {
+      "offset": 0.5,
+      "color": "#f6c177"
+     },
+     {
+      "offset": 0.5,
+      "color": "#2b6cb0"
+     },
+     {
+      "offset": 1,
+      "color": "#1b2a49"
+     }
+    ]
+   }
+  },
+  {
+   "id": "photo",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 180,
+   "height": 135,
+   "transform": {
+    "x": 296,
+    "y": 12
+   }
+  },
+  {
+   "id": "ring-a",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 90,
+    "height": 90
+   },
+   "stroke": {
+    "color": "#ffffff",
+    "width": 4
+   },
+   "transform": {
+    "x": 210,
+    "y": 24
+   }
+  },
+  {
+   "id": "ring-b",
+   "type": "shape",
+   "shape": {
+    "kind": "ellipse",
+    "width": 70,
+    "height": 70
+   },
+   "stroke": {
+    "color": "#101828",
+    "width": 5
+   },
+   "transform": {
+    "x": 150,
+    "y": 190
+   }
+  },
+  {
+   "id": "headline",
+   "type": "text",
+   "text": "Backdrop",
+   "font": "DM Sans",
+   "size": 58,
+   "color": "#ffffff",
+   "transform": {
+    "x": 300,
+    "y": 196
+   }
+  },
+  {
+   "id": "panel",
+   "type": "group",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": 20
+     },
+     {
+      "frame": 30,
+      "value": 60
+     }
+    ],
+    "y": 30
+   },
+   "children": [
+    {
+     "id": "panel-dot",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 56,
+      "height": 56
+     },
+     "fill": "#fff3a0",
+     "transform": {
+      "x": 150,
+      "y": 8
+     }
+    },
+    {
+     "id": "panel-card",
+     "type": "shape",
+     "shape": {
+      "kind": "roundedRect",
+      "width": 200,
+      "height": 110,
+      "radius": 16
+     },
+     "fill": "#ffffff30",
+     "stroke": {
+      "color": "#ffffff99",
+      "width": 1.5
+     },
+     "effects": [
+      {
+       "type": "backdropBlur",
+       "radius": [
+        {
+         "frame": 0,
+         "value": 2
+        },
+        {
+         "frame": 30,
+         "value": 14
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "panel-label",
+     "type": "text",
+     "text": "frosted",
+     "font": "DM Sans",
+     "size": 30,
+     "color": "#ffffff",
+     "transform": {
+      "x": 16,
+      "y": 16
+     }
+    }
+   ]
+  },
+  {
+   "id": "glass-text",
+   "type": "text",
+   "text": "GLASS",
+   "font": "DM Sans",
+   "size": 66,
+   "color": "#ffffff66",
+   "transform": {
+    "x": 14,
+    "y": 168
+   },
+   "effects": [
+    {
+     "type": "backdropBlur",
+     "radius": 8
+    }
+   ]
+  },
+  {
+   "id": "lens",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 120,
+    "height": 120
+   },
+   "fill": "#ffffff10",
+   "transform": {
+    "x": [
+     {
+      "frame": 0,
+      "value": 230
+     },
+     {
+      "frame": 30,
+      "value": 250
+     }
+    ],
+    "y": 150
+   },
+   "clip": {
+    "kind": "ellipse",
+    "cx": 60,
+    "cy": 60,
+    "rx": 58,
+    "ry": 58
+   },
+   "effects": [
+    {
+     "type": "backdropBlur",
+     "radius": 12
+    }
+   ]
+  },
+  {
+   "id": "edge-card",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 150,
+    "height": 100,
+    "radius": 14
+   },
+   "fill": "#2255aa40",
+   "transform": {
+    "x": 392,
+    "y": [
+     {
+      "frame": 0,
+      "value": 150
+     },
+     {
+      "frame": 30,
+      "value": 110
+     }
+    ]
+   },
+   "effects": [
+    {
+     "type": "backdropBlur",
+     "radius": 10
+    }
+   ]
+  }
+ ]
+}

@@ -271,10 +271,29 @@ impl Compositor {
         target
     }
 
+    /// Composites `above` over `below` (normal blend, full opacity) into a new
+    /// texture. Neither input is released.
+    pub fn over(&mut self, below: &Tex, above: &Tex) -> Tex {
+        let target = self.acquire();
+        self.pass(&self.blend, &below.view, &above.view, 1.0, 0, &target.view);
+        target
+    }
+
     /// Runs a layer's effects, in order, on its own texture before it is
     /// blended. Each effect should read `src`, draw into a texture from
     /// `acquire`, release `src` and return the new one.
-    pub fn apply_effects(&mut self, mut src: Tex, effects: &[ResolvedEffect]) -> Tex {
+    ///
+    /// `backdrop` is the canvas as it is behind the layer; it is `Some`
+    /// whenever the effects include a backdrop blur. `coverage` is a texture
+    /// whose alpha says where the layer is solid for that blur; without it
+    /// the layer's own alpha does. Neither is released.
+    pub fn apply_effects(
+        &mut self,
+        mut src: Tex,
+        effects: &[ResolvedEffect],
+        backdrop: Option<&Tex>,
+        coverage: Option<&Tex>,
+    ) -> Tex {
         for effect in effects {
             match *effect {
                 ResolvedEffect::Blur { radius } if radius >= blur::MIN_RADIUS => {
@@ -291,6 +310,12 @@ impl Compositor {
                     src = dst;
                 }
                 ResolvedEffect::Blur { .. } => {}
+                ResolvedEffect::BackdropBlur { radius } if radius >= blur::MIN_RADIUS => {
+                    if let Some(backdrop) = backdrop {
+                        src = self.backdrop_blur(src, radius, backdrop, coverage);
+                    }
+                }
+                ResolvedEffect::BackdropBlur { .. } => {}
                 ResolvedEffect::DropShadow(shadow) => src = self.shadow(src, &shadow, false),
                 ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
                 ResolvedEffect::ColorMatrix(matrix) if matrix == ColorMatrix::IDENTITY => {}
@@ -298,6 +323,35 @@ impl Compositor {
             }
         }
         src
+    }
+
+    /// Puts the blurred `backdrop` under `src`, kept to where `coverage`'s
+    /// alpha is (`src`'s own alpha if none). `src` goes back to the pool; the
+    /// result is a new texture.
+    fn backdrop_blur(
+        &mut self,
+        src: Tex,
+        radius: f32,
+        backdrop: &Tex,
+        coverage: Option<&Tex>,
+    ) -> Tex {
+        let blurred = self.acquire();
+        let size = (self.width, self.height);
+        self.blur.run(
+            &self.device,
+            &self.queue,
+            &backdrop.view,
+            &blurred.view,
+            size,
+            radius,
+        );
+        // The matte pass with opacity 1 and alpha mode multiplies its first
+        // input by the alpha of its second.
+        let frosted = self.acquire();
+        let coverage = coverage.map_or(&src.view, |t| &t.view);
+        self.pass(&self.matte, &blurred.view, coverage, 1.0, 0, &frosted.view);
+        self.release(blurred);
+        self.blend(frosted, src, 1.0, BlendMode::Normal)
     }
 
     /// Runs a colour filter over `src` in one pass. `src` goes back to the

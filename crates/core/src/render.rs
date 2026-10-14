@@ -11,12 +11,13 @@ use vello::util::RenderContext;
 use vello::wgpu;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 
+use crate::blur::MIN_RADIUS;
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
 use crate::resolve::{
-    ResolvedClip, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry, ResolvedKind,
-    ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
+    ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
+    ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
 };
 use crate::scene::{Extend, LayerKind, MaskMode, Scene};
 use crate::text::TextEngine;
@@ -204,7 +205,8 @@ impl Renderer {
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
-        let canvas = self.draw_layers(&scene.layers, margin_origin(self.margin), background)?;
+        let canvas =
+            self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?;
         let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
         self.compositor.release(canvas);
         Ok(Frame {
@@ -216,18 +218,35 @@ impl Renderer {
 
     /// Blends `layers` (bottom first) onto `canvas`. `parent` is the product
     /// of the enclosing groups' matrices, starting from the margin offset.
+    /// `below` is what lies behind `canvas` when it is a group's buffer (the
+    /// group's own backdrop), and `None` for the scene's canvas itself.
     fn draw_layers(
         &mut self,
         layers: &[ResolvedLayer],
         parent: Affine,
         mut canvas: Tex,
+        below: Option<&Tex>,
     ) -> Result<Tex> {
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
             if layer.opacity <= 0.0 || is_matte_source(layers, layer) {
                 continue;
             }
-            let src = self.layer_texture(layer, layers, parent)?;
+            // The backdrop is only built for a layer that blurs it: the
+            // canvas so far, under anything the enclosing groups have behind
+            // them.
+            let needs_backdrop = uses_backdrop(layers, layer);
+            let combined = match below {
+                Some(below) if needs_backdrop => {
+                    Some(self.timed(Stage::Composite, |s| s.compositor.over(below, &canvas)))
+                }
+                _ => None,
+            };
+            let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
+            let src = self.layer_texture(layer, layers, parent, backdrop)?;
+            if let Some(combined) = combined {
+                self.compositor.release(combined);
+            }
             canvas = self.timed(Stage::Composite, |s| {
                 s.compositor
                     .blend(canvas, src, layer.opacity, layer.blend_mode)
@@ -238,26 +257,40 @@ impl Renderer {
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
     /// effects, clip, mask and matte, in that order. `siblings` is the list
-    /// `layer` is in, where its matte source is found.
+    /// `layer` is in, where its matte source is found. `backdrop` is what is
+    /// behind the layer, given when it or its matte source blurs it.
     fn layer_texture(
         &mut self,
         layer: &ResolvedLayer,
         siblings: &[ResolvedLayer],
         parent: Affine,
+        backdrop: Option<&Tex>,
     ) -> Result<Tex> {
         let src = match &layer.kind {
             ResolvedKind::Group { children } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
-                self.draw_layers(children, parent * layer.transform.matrix(), empty)?
+                self.draw_layers(children, parent * layer.transform.matrix(), empty, backdrop)?
             }
             _ => {
                 self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
                 self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view))
             }
         };
+        // A shape frosts its whole geometry, however see-through its fill is.
+        let coverage = match (&layer.kind, backdrop) {
+            (ResolvedKind::Shape { .. }, Some(_)) if has_backdrop_blur(&layer.effects) => {
+                self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent))?;
+                Some(self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view)))
+            }
+            _ => None,
+        };
         let mut src = self.timed(Stage::Composite, |s| {
-            s.compositor.apply_effects(src, &layer.effects)
+            s.compositor
+                .apply_effects(src, &layer.effects, backdrop, coverage.as_ref())
         });
+        if let Some(coverage) = coverage {
+            self.compositor.release(coverage);
+        }
         if let Some(clip) = &layer.clip {
             let matrix = parent * layer.transform.matrix();
             self.timed(Stage::Raster, |s| s.rasterise_clip(clip, layer, matrix))?;
@@ -284,7 +317,7 @@ impl Renderer {
                 })?;
             // The source cannot have a matte (checked at load), so this
             // recursion is one level deep.
-            let matte_tex = self.layer_texture(source, siblings, parent)?;
+            let matte_tex = self.layer_texture(source, siblings, parent, backdrop)?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor
                     .matte(src, matte_tex, source.opacity, matte.mode)
@@ -361,6 +394,36 @@ impl Renderer {
             ResolvedKind::Group { .. } => unreachable!("groups are composited, not rasterised"),
         }
         self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }))
+    }
+
+    /// Draws a shape layer's fill and stroke in opaque white into the Vello
+    /// target, whatever their colours and alphas; its alpha is then where the
+    /// shape is solid.
+    fn rasterise_coverage(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<()> {
+        let matrix = parent * layer.transform.matrix();
+        self.vello_scene.reset();
+        if let ResolvedKind::Shape {
+            geometry,
+            fill,
+            stroke,
+        } = &layer.kind
+        {
+            let path = geometry_path(geometry)?;
+            if fill.is_some() {
+                self.vello_scene
+                    .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, &path);
+            }
+            if let Some((_, width)) = stroke {
+                self.vello_scene.stroke(
+                    &Stroke::new(*width),
+                    matrix,
+                    peniko::Color::WHITE,
+                    None,
+                    &path,
+                );
+            }
+        }
+        self.render_vello_scene(false)
     }
 
     /// Draws the layer's clip shape in opaque white into the Vello target;
@@ -512,6 +575,31 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
     layers
         .iter()
         .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == layer.id))
+}
+
+/// Whether `effects` blur the backdrop.
+fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
+    effects
+        .iter()
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius } if *radius >= MIN_RADIUS))
+}
+
+/// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
+/// or so does something inside it.
+fn needs_backdrop(layer: &ResolvedLayer) -> bool {
+    has_backdrop_blur(&layer.effects)
+        || matches!(&layer.kind, ResolvedKind::Group { children } if children.iter().any(needs_backdrop))
+}
+
+/// Like `needs_backdrop`, counting the layer's matte source, which is drawn
+/// through it.
+fn uses_backdrop(siblings: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
+    needs_backdrop(layer)
+        || layer
+            .matte
+            .as_ref()
+            .and_then(|m| siblings.iter().find(|l| l.id == m.layer))
+            .is_some_and(needs_backdrop)
 }
 
 /// The brush for a fill or text colour, and the transform to apply to it on
@@ -728,6 +816,41 @@ mod tests {
 
     fn offsets(g: &peniko::Gradient) -> Vec<f32> {
         g.stops.iter().map(|s| s.offset).collect()
+    }
+
+    #[test]
+    fn only_layers_that_blur_the_backdrop_need_it() {
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1,
+            "layers": [
+              {"id": "plain", "type": "group", "children": []},
+              {"id": "frost", "type": "group", "children": [],
+               "effects": [{"type": "backdropBlur", "radius": 8}]},
+              {"id": "faint", "type": "group", "children": [],
+               "effects": [{"type": "backdropBlur", "radius": 0.5}]},
+              {"id": "outer", "type": "group", "children": [
+                {"id": "inner", "type": "group", "children": [
+                  {"id": "deep", "type": "group", "children": [],
+                   "effects": [{"type": "backdropBlur", "radius": 8}]}]}]},
+              {"id": "uses", "type": "group", "children": [], "matte": {"layer": "frost"}},
+              {"id": "alone", "type": "group", "children": [], "matte": {"layer": "plain"}}]}"##;
+        let scene = Scene::from_json(json, std::path::PathBuf::new()).unwrap();
+        let layers = scene.resolve(0).unwrap().layers;
+        let needs: Vec<_> = layers
+            .iter()
+            .map(|l| (l.id.as_str(), uses_backdrop(&layers, l)))
+            .collect();
+        assert_eq!(
+            needs,
+            [
+                ("plain", false),
+                ("frost", true),
+                // Below the blur's minimum radius it does nothing.
+                ("faint", false),
+                ("outer", true),
+                ("uses", true),
+                ("alone", false)
+            ]
+        );
     }
 
     #[test]

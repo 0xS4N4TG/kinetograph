@@ -150,6 +150,7 @@ side.
 - A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
+- `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge).
 - `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
   layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
   a point as a positive one does.)
@@ -261,6 +262,38 @@ here it is a no-op, in a browser it is not. Any other effect between two filters
 
 Colour filters see the layer after the effects before them, so a filter after a `dropShadow` recolours the shadow too.
 A run whose combined matrix is exactly the identity (a lone `saturate` of `1`, say) is skipped.
+
+### backdropBlur
+
+```json
+{ "type": "backdropBlur", "radius": 16 }
+{ "type": "backdropBlur", "radius": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 20 }] }
+```
+
+Frosted glass. What is behind the layer is blurred and shown through the layer's shape, and the layer is drawn on
+top of it.
+
+| Field | Meaning |
+|---|---|
+| `radius` | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..128; below 1 it does nothing. Required. |
+
+- **The backdrop** is the canvas as it is when the layer is reached: the background and every layer below it. Inside a
+  group it is the backdrop of the group with the group's earlier children drawn over it (normal blend, full opacity),
+  so a frosted card inside a group still blurs the scene beneath the group. Layers above the card, and the card's own
+  siblings drawn later, are not in it.
+- **Where it shows.** For a `shape` layer, the whole shape: its fill area if it has a `fill` and its stroke area if it
+  has a `stroke`, each treated as fully opaque, so a see-through fill (`#ffffff30`) still frosts everything inside the
+  shape. For `text`, `image` and `group` layers, wherever the layer is painted, in proportion to its alpha (so frosted
+  text frosts only inside the letters, and a half-transparent image frosts half-strength).
+- **Order.** Like every effect it works on the layer as it is after the effects before it, then the clip, mask and
+  matte cut the result: a `clip` of an ellipse on a frosted square gives a round lens. `opacity` fades the layer and
+  its frosted backdrop together, and a `blendMode` applies to both.
+- A matte source (see [Track mattes](#track-mattes)) with a `backdropBlur` blurs the backdrop of the layer it mattes.
+- The backdrop is blurred as the canvas plus the [margin](#canvas-margin): at the canvas edge it blurs in the
+  background colour and whatever hangs past the edge up to the margin, and past that nothing (transparent). The
+  margin counts `3 * radius`, so the edge of the canvas is blurred from real pixels.
+- Cost: one extra full-canvas blur per frosted layer per frame, plus one canvas-sized copy when the layer is inside a
+  group.
 
 ## Clip paths
 
@@ -408,10 +441,13 @@ layer.
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- Effects so far: `blur`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`, `grayscale`, `sepia`,
-  `invert`, `hueRotate`.
+- Effects so far: `blur`, `backdropBlur`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`,
+  `grayscale`, `sepia`, `invert`, `hueRotate`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
+- `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
+  `dropShadow` before it is not frosted). Its backdrop edge is the canvas plus margin described above; there is no
+  edge-clamp mode as in browsers.
 - A shadow's spread uses a square window (see `dropShadow`), and its colour is not animated.
 - Colour filters clamp once per run of consecutive filters, not after each one as a browser does (see
   [Colour filters](#colour-filters)).
