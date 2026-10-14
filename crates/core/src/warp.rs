@@ -394,6 +394,19 @@ mod tests {
         let t = transform((100.0, 50.0), 0.0, 1.0, (0.0, 0.0), (10.0, 0.0, 0.0));
         let w = layer_world(&t).unwrap();
         assert!(plane_homography(DMat4::IDENTITY, Affine::scale(0.0), w).is_none());
+        // With a camera the same turn is edge on only when the plane runs
+        // through the eye; off to the side it is seen as a sliver.
+        let camera = ResolvedCamera {
+            perspective: 500.0,
+            x: 100.0,
+            y: 50.0,
+        };
+        let proj = projection(Some(&camera), 0);
+        for (x, drawn) in [(100.0, false), (160.0, true)] {
+            let t = transform((x, 50.0), 0.0, 1.0, (0.0, 0.0), (0.0, 90.0, 0.0));
+            let h = plane_homography(proj, Affine::IDENTITY, layer_world(&t).unwrap());
+            assert_eq!(h.is_some(), drawn, "x = {x}");
+        }
     }
 
     #[test]
