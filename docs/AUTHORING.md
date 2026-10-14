@@ -239,9 +239,12 @@ Numbers in both are animatable. Semantics:
 ### 4.2 Transform origin (stream 4)
 
 `transform.originX`, `transform.originY` (animatable, default `0`): a point of the layer's box as a fraction of its
-size, added to the anchor: the pivot is `(anchorX + originX × box.width, anchorY + originY × box.height)`. `0.5, 0.5`
-scales and turns a layer about its centre without knowing its size. A layer without a box (a group without `layout`)
-ignores them.
+size. Like CSS's `transform-origin`, it moves the pivot and not the layer: with `(ox, oy)` the origin in pixels the
+matrix is `translate(x + ox, y + oy) * rotate * scale * translate(-(anchorX + ox), -(anchorY + oy))`, so with no turn
+or scale the layer sits where it would without an origin, and `0.5, 0.5` scales and turns it about its centre without
+knowing its size. The 3D turn uses the same pivot. A layer without a box (a group without `layout`) ignores them.
+(Changed at stream 4's merge from "added to the anchor", which would have moved every layer given `origin: 'center'`
+by half its size; see SCENE.md, Transform origin.)
 
 ### 4.3 Text: `align` and per-character styles (stream 4)
 
