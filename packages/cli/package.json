@@ -19,6 +19,9 @@
     "@kinetograph/audio": "0.1.0",
     "@kinetograph/core": "0.1.0",
     "@kinetograph/native": "0.1.0",
-    "@kinetograph/scene": "0.1.0"
+    "@kinetograph/scene": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "esbuild": "0.28.2",
+    "zod": "4.6.7"
   }
 }
