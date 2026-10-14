@@ -78,6 +78,20 @@ pub enum ResolvedEffect {
     /// `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`) composed
     /// into a single matrix.
     ColorMatrix(ColorMatrix),
+    Shader(ResolvedShader),
+}
+
+/// A custom shader at one frame.
+#[derive(Clone, Debug)]
+pub struct ResolvedShader {
+    /// The whole WGSL module (`shader::compose`), which is also the key of
+    /// the compositor's pipeline for it.
+    pub source: String,
+    /// The uniforms' values, in the order of their sorted names.
+    pub values: Vec<f32>,
+    pub frame: f32,
+    /// Seconds: `frame / fps`.
+    pub time: f32,
 }
 
 /// A glow at one frame.
@@ -246,12 +260,16 @@ impl Scene {
             height: self.height,
             frame,
             background: self.background,
-            layers: self.layers.iter().map(|l| resolve_layer(l, f)).collect(),
+            layers: self
+                .layers
+                .iter()
+                .map(|l| resolve_layer(l, f, self.fps))
+                .collect(),
         })
     }
 }
 
-fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
+fn resolve_layer(layer: &Layer, f: f64, fps: f64) -> ResolvedLayer {
     let kind = match &layer.kind {
         LayerKind::Shape(s) => ResolvedKind::Shape {
             geometry: match &s.shape {
@@ -291,7 +309,11 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
             height: i.height.at(f),
         },
         LayerKind::Group(g) => ResolvedKind::Group {
-            children: g.children.iter().map(|c| resolve_layer(c, f)).collect(),
+            children: g
+                .children
+                .iter()
+                .map(|c| resolve_layer(c, f, fps))
+                .collect(),
         },
     };
     ResolvedLayer {
@@ -299,7 +321,7 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
         transform: resolve_transform(&layer.transform, f),
         opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
         blend_mode: layer.blend_mode,
-        effects: resolve_effects(&layer.effects, f),
+        effects: resolve_effects(&layer.effects, f, fps),
         clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
         mask: layer.mask.as_ref().map(|m| ResolvedMask {
             gradient: resolve_gradient(&m.gradient, f),
@@ -398,10 +420,10 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
 
 /// Resolves a layer's effects, composing each run of colour filters into one
 /// matrix so it takes a single pass.
-fn resolve_effects(effects: &[Effect], f: f64) -> Vec<ResolvedEffect> {
+fn resolve_effects(effects: &[Effect], f: f64, fps: f64) -> Vec<ResolvedEffect> {
     let mut out: Vec<ResolvedEffect> = Vec::with_capacity(effects.len());
     for effect in effects {
-        let resolved = resolve_effect(effect, f);
+        let resolved = resolve_effect(effect, f, fps);
         match (&resolved, out.last_mut()) {
             (ResolvedEffect::ColorMatrix(next), Some(ResolvedEffect::ColorMatrix(prev))) => {
                 *prev = prev.then(next);
@@ -412,7 +434,7 @@ fn resolve_effects(effects: &[Effect], f: f64) -> Vec<ResolvedEffect> {
     out
 }
 
-fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
+fn resolve_effect(effect: &Effect, f: f64, fps: f64) -> ResolvedEffect {
     match effect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
@@ -452,6 +474,12 @@ fn resolve_effect(effect: &Effect, f: f64) -> ResolvedEffect {
         Effect::HueRotate { angle } => {
             ResolvedEffect::ColorMatrix(ColorMatrix::hue_rotate(angle.at(f)))
         }
+        Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
+            source: crate::shader::compose(&s.code, &s.names()),
+            values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
+            frame: f as f32,
+            time: (f / fps) as f32,
+        }),
     }
 }
 
@@ -665,6 +693,28 @@ mod tests {
             effects[..],
             [ResolvedEffect::ChromaticAberration { amount, angle }] if amount == 4.0 && angle == 45.0
         ));
+    }
+
+    #[test]
+    fn shader_resolves_uniforms_in_name_order_and_the_clock() {
+        let code = r"fn effect(px: vec2<f32>) -> vec4<f32> { return layer(px) * u.a + u.z; }";
+        let effects = effects_at(
+            &format!(
+                r#"[{{"type": "shader", "code": "{code}", "uniforms": {{"z": 2,
+                    "a": [{{"frame": 0, "value": 0}}, {{"frame": 10, "value": 1}}]}}}}]"#
+            ),
+            3,
+        );
+        let [ResolvedEffect::Shader(shader)] = &effects[..] else {
+            panic!("not a shader");
+        };
+        // `a` is first although the scene listed `z` first.
+        assert_eq!(shader.values, [0.3, 2.0]);
+        assert_eq!(shader.frame, 3.0);
+        // The scene runs at 30 fps.
+        assert_eq!(shader.time, 0.1);
+        assert!(shader.source.contains(code));
+        assert!(shader.source.starts_with("struct U { a: f32, z: f32 }"));
     }
 
     #[test]

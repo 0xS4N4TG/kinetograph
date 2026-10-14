@@ -178,3 +178,14 @@ fn chromatic_aberration_matches_golden() {
     let frame = render_still(scene("tests/scenes/chromatic-aberration.json"), 15).unwrap();
     check("chromatic-aberration", &frame);
 }
+
+#[test]
+fn shader_matches_golden() {
+    // Frame 15 of 30: halfway through the keyframed uniforms, 0.5 s in. Covers
+    // one shader on two layers with different uniforms (a ripple on a
+    // gradient card and on a bar hanging off the left edge, whose padding
+    // lets the off-canvas part ripple in), and a second shader that reads
+    // only the frame, on text and on a group.
+    let frame = render_still(scene("tests/scenes/shader.json"), 15).unwrap();
+    check("shader", &frame);
+}

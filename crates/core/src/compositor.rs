@@ -11,6 +11,9 @@
 //! - `matte`: layer x the alpha or luminance of another layer's texture
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
+//! A scene's custom shader effects (`shader.rs`) have a pipeline each, made
+//! when the compositor is, on a bind group layout of their own.
+//!
 //! `shaders/shadow.wgsl` holds the shadow effects' passes,
 //! `shaders/color.wgsl` the colour filter pass, `shaders/glow.wgsl` the glow
 //! pass and `shaders/aberration.wgsl` the chromatic aberration pass; they
@@ -22,12 +25,14 @@
 //! `scene::Effect` and `resolve::ResolvedEffect`, write its pass, and call it
 //! from `apply_effects`.
 
+use std::collections::HashMap;
+
 use vello::wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
-use crate::resolve::{ResolvedEffect, ResolvedGlow, ResolvedShadow};
+use crate::resolve::{ResolvedEffect, ResolvedGlow, ResolvedShader, ResolvedShadow};
 use crate::scene::{BlendMode, MaskMode, MatteMode};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -60,19 +65,27 @@ pub struct Compositor {
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
+    /// For custom shaders: the layer, a sampler, the frame clock and the
+    /// scene's named uniforms.
+    shader_layout: wgpu::BindGroupLayout,
+    shader_sampler: wgpu::Sampler,
+    /// One pipeline per distinct custom shader, by `shader::compose` text.
+    shaders: HashMap<String, wgpu::RenderPipeline>,
     blur: Blur,
     pool: Vec<Tex>,
 }
 
 impl Compositor {
     /// `width` x `height` is the canvas; textures are `margin` pixels larger
-    /// on every side.
+    /// on every side. `shaders` are the scene's custom shader modules
+    /// (`Scene::shader_sources`).
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         width: u32,
         height: u32,
         margin: u32,
+        shaders: &[String],
     ) -> Compositor {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("composite"),
@@ -153,6 +166,48 @@ impl Compositor {
                 cache: None,
             })
         };
+        let shader_layout = shader_bind_group_layout(device);
+        let shader_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("shader effect"),
+                bind_group_layouts: &[Some(&shader_layout)],
+                immediate_size: 0,
+            });
+        let shaders = shaders
+            .iter()
+            .map(|source| {
+                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("shader effect"),
+                    source: wgpu::ShaderSource::Wgsl(source.as_str().into()),
+                });
+                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("shader effect"),
+                    layout: Some(&shader_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &module,
+                        entry_point: Some("kg_vs"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &module,
+                        entry_point: Some("kg_fs"),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: LINEAR_FORMAT,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                });
+                (source.clone(), pipeline)
+            })
+            .collect();
         Compositor {
             device: device.clone(),
             queue: queue.clone(),
@@ -171,6 +226,14 @@ impl Compositor {
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
+            shader_layout,
+            shader_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("shader effect"),
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }),
+            shaders,
             blur: Blur::new(device),
             layout,
             pool: Vec::new(),
@@ -339,6 +402,7 @@ impl Compositor {
                 ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
                 ResolvedEffect::ColorMatrix(matrix) if matrix == ColorMatrix::IDENTITY => {}
                 ResolvedEffect::ColorMatrix(matrix) => src = self.color_matrix(src, &matrix),
+                ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
         src
@@ -430,6 +494,67 @@ impl Compositor {
             &floats(&matrix_values(matrix)),
             &target.view,
         );
+        self.release(src);
+        target
+    }
+
+    /// Runs a scene's own fragment shader over `src`. `src` goes back to the
+    /// pool; the result is a new texture. A shader the compositor was not
+    /// given at creation is skipped.
+    fn custom_shader(&mut self, src: Tex, shader: &ResolvedShader) -> Tex {
+        if !self.shaders.contains_key(&shader.source) {
+            return src;
+        }
+        let target = self.acquire();
+        let pipeline = &self.shaders[&shader.source];
+        // `Globals` in `shader.rs`: the canvas, frame, time and margin.
+        let globals = floats(&[
+            self.canvas.0 as f32,
+            self.canvas.1 as f32,
+            shader.frame,
+            shader.time,
+            self.margin as f32,
+            0.0,
+            0.0,
+            0.0,
+        ]);
+        // `U`: one f32 each. The buffer is at least 16 bytes, which WGSL
+        // wants of a uniform block.
+        let mut values = shader.values.clone();
+        values.resize(values.len().next_multiple_of(4).max(4), 0.0);
+        let buffer = |label, contents: &[u8]| {
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents,
+                    usage: wgpu::BufferUsages::UNIFORM,
+                })
+        };
+        let globals = buffer("shader globals", &globals);
+        let uniforms = buffer("shader uniforms", &floats(&values));
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shader effect"),
+            layout: &self.shader_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&src.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.shader_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: globals.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: uniforms.as_entire_binding(),
+                },
+            ],
+        });
+        self.draw(pipeline, &bind_group, &target.view);
         self.release(src);
         target
     }
@@ -653,6 +778,17 @@ impl Compositor {
                 },
             ],
         });
+        self.draw(pipeline, &bind_group, target);
+    }
+
+    /// One full-screen triangle with `bind_group`, written over all of
+    /// `target`.
+    fn draw(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+        target: &wgpu::TextureView,
+    ) {
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -669,11 +805,50 @@ impl Compositor {
                 ..Default::default()
             });
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
         self.queue.submit([encoder.finish()]);
     }
+}
+
+/// The bind group of a custom shader (`shader::compose` declares the
+/// matching variables): the layer, a sampler for it, then the `Globals` and
+/// `U` uniform blocks.
+fn shader_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let uniform = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("shader effect"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            uniform(2),
+            uniform(3),
+        ],
+    })
 }
 
 /// A linear texture of any size that can be drawn to and read.

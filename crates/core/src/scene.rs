@@ -192,6 +192,32 @@ pub enum Effect {
         #[serde(default = "zero")]
         angle: Num,
     },
+    /// The user's own fragment shader.
+    Shader(ShaderEffect),
+}
+
+/// The fields of `shader`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShaderEffect {
+    /// WGSL defining `fn effect(px: vec2<f32>) -> vec4<f32>`; see
+    /// `shader::compose` for what surrounds it.
+    pub code: String,
+    /// Named values the code reads as `u.<name>`. Sorted by name, which is
+    /// the order they are packed in.
+    #[serde(default)]
+    pub uniforms: BTreeMap<String, Num>,
+    /// How far past the layer the shader paints, in canvas pixels; counted
+    /// in the margin.
+    #[serde(default = "zero")]
+    pub padding: Num,
+}
+
+impl ShaderEffect {
+    /// The uniform names in packing order.
+    pub fn names(&self) -> Vec<&str> {
+        self.uniforms.keys().map(String::as_str).collect()
+    }
 }
 
 /// The fields of `dropShadow` and `insetShadow`.
@@ -258,6 +284,8 @@ impl Effect {
             | Effect::Sepia { .. }
             | Effect::Invert { .. }
             | Effect::HueRotate { .. } => 0.0,
+            // Whatever the shader declares it paints.
+            Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
     }
 }
@@ -520,6 +548,15 @@ impl Scene {
         margin_for(max_reach(&self.layers), self.width, self.height)
     }
 
+    /// The WGSL module of every distinct custom shader in the scene, in the
+    /// order they are first used (`shader::compose`). The compositor builds
+    /// one pipeline per entry when the renderer is created.
+    pub fn shader_sources(&self) -> Vec<String> {
+        let mut sources = Vec::new();
+        collect_shader_sources(&self.layers, &mut sources);
+        sources
+    }
+
     fn validate(&self) -> Result<()> {
         let bad = |msg: String| Err(Error::Scene(msg));
         if self.width == 0 || self.height == 0 || self.width > MAX_SIDE || self.height > MAX_SIDE {
@@ -552,6 +589,12 @@ impl Scene {
                 }
                 Ok(())
             };
+            for effect in &layer.effects {
+                if let Effect::Shader(shader) = effect {
+                    non_negative("shader padding", &shader.padding)?;
+                    crate::shader::validate(&layer.id, &shader.code, &shader.names())?;
+                }
+            }
             if let Some(clip) = &layer.clip {
                 validate_clip(&layer.id, clip, &layer.kind)?;
             }
@@ -614,6 +657,22 @@ impl Scene {
             }
         }
         Ok(())
+    }
+}
+
+fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
+    for layer in layers {
+        for effect in &layer.effects {
+            if let Effect::Shader(shader) = effect {
+                let source = crate::shader::compose(&shader.code, &shader.names());
+                if !sources.contains(&source) {
+                    sources.push(source);
+                }
+            }
+        }
+        if let LayerKind::Group(g) = &layer.kind {
+            collect_shader_sources(&g.children, sources);
+        }
     }
 }
 
@@ -1133,6 +1192,102 @@ mod tests {
         assert_eq!(scene.margin(), 11);
         let msg = error(r#""effects": [{"type": "chromaticAberration"}],"#);
         assert!(msg.contains("amount"), "{msg}");
+    }
+
+    const SHADER: &str =
+        r#"fn effect(px: vec2<f32>) -> vec4<f32> {\n  return layer(px) * u.strength;\n}"#;
+
+    #[test]
+    fn parses_a_shader_and_counts_its_padding_in_the_margin() {
+        let scene = effects_of(&format!(
+            r#"[{{"type": "shader", "code": "{SHADER}", "padding": [{{"frame": 0, "value": 3}}, {{"frame": 9, "value": 20}}],
+                 "uniforms": {{"strength": 0.5, "angle": [{{"frame": 0, "value": 0}}, {{"frame": 9, "value": 1}}]}}}},
+                {{"type": "shader", "code": "fn effect(px: vec2<f32>) -> vec4<f32> {{ return layer(px); }}"}}]"#
+        ));
+        let Effect::Shader(shader) = &scene.layers[0].effects[0] else {
+            panic!("not a shader");
+        };
+        // Uniforms are sorted by name, whatever order the JSON gave.
+        assert_eq!(shader.names(), ["angle", "strength"]);
+        assert_eq!(shader.padding.at(9.0), 20.0);
+        let Effect::Shader(plain) = &scene.layers[0].effects[1] else {
+            panic!("not a shader");
+        };
+        assert!(plain.uniforms.is_empty());
+        assert_eq!(plain.padding.at(0.0), 0.0);
+        // Padding adds up along the list like any other reach.
+        assert_eq!(scene.margin(), 20);
+        // Two shaders with the same code and uniforms share a pipeline.
+        let twice = effects_of(&format!(
+            r#"[{{"type": "shader", "code": "{SHADER}", "uniforms": {{"strength": 1}}}},
+                {{"type": "shader", "code": "{SHADER}", "uniforms": {{"strength": 2}}}}]"#
+        ));
+        assert_eq!(twice.shader_sources().len(), 1);
+        assert_eq!(scene.shader_sources().len(), 2);
+    }
+
+    #[test]
+    fn shader_sources_include_those_in_groups() {
+        let json = format!(
+            r#"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 10,
+                "layers": [{{"id": "g", "type": "group", "children": [
+                  {{"id": "c", "type": "group", "children": [], "effects": [
+                    {{"type": "shader", "code": "{SHADER}", "uniforms": {{"strength": 1}}}}]}}]}}]}}"#
+        );
+        let scene = Scene::from_json(&json, PathBuf::new()).unwrap();
+        assert_eq!(scene.shader_sources().len(), 1);
+        assert!(scene.shader_sources()[0].contains(r"u.strength"));
+    }
+
+    #[test]
+    fn bad_shaders_fail_at_load_naming_the_layer() {
+        let shader = |code: &str, rest: &str| {
+            error(&format!(
+                r#""effects": [{{"type": "shader", "code": "{code}"{rest}}}],"#
+            ))
+        };
+        let msg = shader(SHADER, "");
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains("shader code 2:"),
+            "{msg}"
+        );
+        let msg = shader(
+            r"fn effect(px: vec2<f32>) -> vec4<f32> {\n  return vec4<f32>(1.0, 0.0;\n}",
+            "",
+        );
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains("shader code 2:"),
+            "{msg}"
+        );
+        let msg = shader(r"fn other() {}", "");
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains("fn effect"),
+            "{msg}"
+        );
+        let msg = shader(
+            r"fn effect(px: f32) -> vec4<f32> { return vec4<f32>(0.0); }",
+            "",
+        );
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains("wrong signature"),
+            "{msg}"
+        );
+        let good = r"fn effect(px: vec2<f32>) -> vec4<f32> { return layer(px); }";
+        let msg = shader(good, r#", "uniforms": {"not a name": 1}"#);
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains("uniform name"),
+            "{msg}"
+        );
+        let msg = shader(
+            good,
+            r#", "padding": [{"frame": 0, "value": -1}, {"frame": 9, "value": 4}]"#,
+        );
+        assert!(
+            msg.contains("layer \"box\"") && msg.contains("padding"),
+            "{msg}"
+        );
+        let msg = error(r#""effects": [{"type": "shader"}],"#);
+        assert!(msg.contains("code"), "{msg}");
     }
 
     #[test]

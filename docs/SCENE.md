@@ -155,6 +155,8 @@ side.
 - `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
   layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
   a point as a positive one does.)
+- `shader` counts its `padding`: it is how far you say the shader paints past the layer (or reads from), and nothing
+  else is derived from the code.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
 - The colour filters count nothing: they change pixels in place.
@@ -339,6 +341,70 @@ top of it.
 - Cost: one extra full-canvas blur per frosted layer per frame, plus one canvas-sized copy when the layer is inside a
   group.
 
+### shader
+
+A fragment shader of your own, in WGSL, run over the layer.
+
+```json
+{
+  "type": "shader",
+  "code": "fn effect(px: vec2<f32>) -> vec4<f32> {\n  let wave = sin(px.y * 0.1 + globals.time * 6.0) * u.strength;\n  return layer(px + vec2<f32>(wave, 0.0));\n}",
+  "uniforms": { "strength": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 12 }] },
+  "padding": 16
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `code` | required | WGSL that defines `fn effect(px: vec2<f32>) -> vec4<f32>`. May also define helper functions, constants and structs. |
+| `uniforms` | `{}` | Named values, each an animatable number. They reach the shader as `u.<name>`, all `f32`. A name is a WGSL identifier (letters, digits, underscore; not a keyword). |
+| `padding` | `0` | Animatable, in canvas pixels, not negative. How far past the layer the shader paints; counted in the [margin](#canvas-margin). |
+
+`effect` returns the colour of the output pixel `px` as **linear, premultiplied** RGBA (the compositor's own format,
+so an output with `rgb` above `a` is out of range and brightens when blended). `px` is in canvas pixels with (0, 0)
+at the canvas's top-left corner: the centre of the first pixel is (0.5, 0.5), and pixels in the margin have negative
+coordinates or ones past the canvas size. The effect runs over the whole padded canvas, so it can paint outside the
+layer (a halo, a smear) as far as the margin goes.
+
+What the engine puts before your code:
+
+| Name | Meaning |
+|---|---|
+| `fn layer(px: vec2<f32>) -> vec4<f32>` | Reads the layer (as it is after the effects before this one) at canvas pixel `px`, bilinear, linear premultiplied. `layer(px)` at the output pixel's own `px` is that pixel exactly. Outside the padded canvas it is transparent. |
+| `globals.frame` | The frame number, `f32`. |
+| `globals.time` | `frame / fps` in seconds, `f32`. |
+| `globals.canvas` | `vec2<f32>`: the canvas size in pixels (without the margin). |
+| `globals.margin` | `f32`: the margin in pixels (see [Canvas margin](#canvas-margin)). `layer` already accounts for it. |
+| `u.<name>` | One `f32` per key of `uniforms`, at this frame. |
+
+The names `layer`, `globals`, `u`, `U`, `Globals` and anything starting with `kg_` belong to the engine; defining one
+yourself is an error. Do not declare `@vertex`, `@fragment` or `@compute` entry points or your own `@group`/`@binding` variables (constants and
+`var<private>` are fine): the engine
+adds a full-screen vertex and a fragment entry point that calls `effect`. Nothing random or clock-based exists in WGSL
+here, so a shader is a pure function of the scene and the frame like the rest of the renderer; derive any noise from
+`px`, `globals.frame` and the uniforms.
+
+**Validation.** When the scene loads, the whole module (the engine's prelude, your code, the entry points) is parsed
+and validated with naga, on the CPU and without a GPU. Errors name the layer and the line and column within your
+`code`:
+
+```
+invalid scene: layer "card": shader code 2:30: expected `)`, found ";"
+```
+
+A missing `effect`, one with the wrong signature, a uniform name that is not an identifier, a negative `padding`, and
+entry points of your own are errors in the same form. Type errors and unknown names (including a `u.` field you did not
+list in `uniforms`) are reported at the place they occur. Each distinct shader (same `code` and same uniform names) is
+compiled to one pipeline when the renderer is created, so no compilation happens per frame; the same shader on many
+layers, with different uniform values, costs one pipeline.
+
+- The shader sees the layer texture, not the layers behind it, and not the layer's `transform`: `px` is always canvas
+  pixels. To work in the layer's own space, animate a uniform with the offset.
+- The padded canvas is the shader's whole domain, so the margin it implies costs every texture in the scene, like any
+  other effect's reach.
+- `layer` samples with a bilinear filter, so reading between pixels blurs slightly. Use `+ vec2<f32>(0.5)` after
+  `floor` to land on pixel centres.
+
 ## Clip paths
 
 `clip` cuts a layer to a shape: pixels outside it become transparent, and the edge is anti-aliased (16x multisampled,
@@ -486,7 +552,7 @@ layer.
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
-  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`.
+  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
@@ -498,3 +564,5 @@ layer.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.
+- A custom `shader` takes numbers only (`f32` uniforms), no extra textures, and it sees one layer, not the backdrop.
+  Its uniforms are `f32` even when the number is a whole frame count.

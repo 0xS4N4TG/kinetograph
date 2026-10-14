@@ -1,0 +1,155 @@
+{
+ "width": 512,
+ "height": 288,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#10131a",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "card",
+   "type": "shape",
+   "shape": {
+    "kind": "roundedRect",
+    "width": 220,
+    "height": 130,
+    "radius": 16
+   },
+   "fill": {
+    "type": "linear",
+    "x0": 0,
+    "y0": 0,
+    "x1": 220,
+    "y1": 130,
+    "stops": [
+     {
+      "offset": 0,
+      "color": "#f6c177"
+     },
+     {
+      "offset": 1,
+      "color": "#eb6f92"
+     }
+    ]
+   },
+   "transform": {
+    "x": 40,
+    "y": 30
+   },
+   "effects": [
+    {
+     "type": "shader",
+     "code": "fn effect(px: vec2<f32>) -> vec4<f32> {\n    // Sideways ripple that travels down the layer with time.\n    let wave = sin(px.y * u.frequency + globals.time * 6.0) * u.strength;\n    let c = layer(px + vec2<f32>(wave, 0.0));\n    // A tint that pulses with the frame and darkens toward the corners.\n    let d = length(px / globals.canvas - vec2<f32>(0.5));\n    let pulse = 0.5 + 0.5 * sin(globals.frame * 0.2);\n    let tint = vec3<f32>(1.0, 0.8 + 0.2 * pulse, 1.0 - 0.3 * d);\n    return vec4<f32>(c.rgb * tint, c.a);\n}",
+     "uniforms": {
+      "strength": [
+       {
+        "frame": 0,
+        "value": 0
+       },
+       {
+        "frame": 30,
+        "value": 10
+       }
+      ],
+      "frequency": 0.12
+     },
+     "padding": 16
+    }
+   ]
+  },
+  {
+   "id": "bar",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 140,
+    "height": 28
+   },
+   "fill": "#9ccfd8",
+   "transform": {
+    "x": -30,
+    "y": 200
+   },
+   "effects": [
+    {
+     "type": "shader",
+     "code": "fn effect(px: vec2<f32>) -> vec4<f32> {\n    // Sideways ripple that travels down the layer with time.\n    let wave = sin(px.y * u.frequency + globals.time * 6.0) * u.strength;\n    let c = layer(px + vec2<f32>(wave, 0.0));\n    // A tint that pulses with the frame and darkens toward the corners.\n    let d = length(px / globals.canvas - vec2<f32>(0.5));\n    let pulse = 0.5 + 0.5 * sin(globals.frame * 0.2);\n    let tint = vec3<f32>(1.0, 0.8 + 0.2 * pulse, 1.0 - 0.3 * d);\n    return vec4<f32>(c.rgb * tint, c.a);\n}",
+     "uniforms": {
+      "strength": [
+       {
+        "frame": 0,
+        "value": 4
+       },
+       {
+        "frame": 30,
+        "value": 24
+       }
+      ],
+      "frequency": 0.3
+     },
+     "padding": 24
+    }
+   ]
+  },
+  {
+   "id": "title",
+   "type": "text",
+   "text": "SHADER",
+   "font": "DM Sans",
+   "size": 72,
+   "color": "#e0def4",
+   "transform": {
+    "x": 280,
+    "y": 40
+   },
+   "effects": [
+    {
+     "type": "shader",
+     "code": "fn effect(px: vec2<f32>) -> vec4<f32> {\n    // Blocks that shrink from 16 to 2 pixels as the frames go by.\n    let size = max(2.0, 16.0 - globals.frame * 0.5);\n    return layer((floor(px / size) + vec2<f32>(0.5)) * size);\n}"
+    }
+   ]
+  },
+  {
+   "id": "badge",
+   "type": "group",
+   "transform": {
+    "x": 300,
+    "y": 170
+   },
+   "effects": [
+    {
+     "type": "shader",
+     "code": "fn effect(px: vec2<f32>) -> vec4<f32> {\n    // Blocks that shrink from 16 to 2 pixels as the frames go by.\n    let size = max(2.0, 16.0 - globals.frame * 0.5);\n    return layer((floor(px / size) + vec2<f32>(0.5)) * size);\n}"
+    }
+   ],
+   "children": [
+    {
+     "id": "badge-dot",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 80,
+      "height": 80
+     },
+     "fill": "#c4a7e7"
+    },
+    {
+     "id": "badge-dot2",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#31748f",
+     "transform": {
+      "x": 60,
+      "y": 30
+     }
+    }
+   ]
+  }
+ ]
+}

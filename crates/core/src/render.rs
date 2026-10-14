@@ -140,7 +140,14 @@ impl Renderer {
             view_formats: &[],
         });
         let vello_view = vello_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let compositor = Compositor::new(&device, &queue, scene.width, scene.height, margin);
+        let compositor = Compositor::new(
+            &device,
+            &queue,
+            scene.width,
+            scene.height,
+            margin,
+            &scene.shader_sources(),
+        );
 
         Ok(Renderer {
             scene,
