@@ -103,7 +103,12 @@ export function lintInspect(result: InspectResult): Finding[] {
       if (rect) texts.push({ layer, rect });
     }
 
-    if (rect && overlapArea(rect, canvas) === 0) {
+    // Where its pixels can be, as the renderer places them (3D turns, the turn of a group it is inside, effects),
+    // which the flat box through the 2D matrix does not know.
+    const seen = layer.bounds
+      ? { left: layer.bounds.x, top: layer.bounds.y, right: layer.bounds.x + layer.bounds.width, bottom: layer.bounds.y + layer.bounds.height }
+      : rect;
+    if (seen && overlapArea(seen, canvas) === 0) {
       findings.push({
         rule: 'off-canvas',
         severity: 'warning',

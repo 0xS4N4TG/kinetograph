@@ -70,12 +70,21 @@ describe('lintInspect', () => {
   });
 
   it('warns about a layer completely off the canvas, but not a partly visible one, a hidden one or a matte source', () => {
-    const off = layer({ id: 'off', matrix: [1, 0, 0, 1, 2000, 0] });
-    const partly = layer({ id: 'partly', matrix: [1, 0, 0, 1, 950, 0] });
-    const hidden = layer({ id: 'hidden', opacity: 0, matrix: [1, 0, 0, 1, 2000, 0] });
-    const source = layer({ id: 'src', matteSource: true, matrix: [1, 0, 0, 1, 2000, 0] });
+    const at = (x: number) => ({ matrix: [1, 0, 0, 1, x, 0] as InspectLayer['matrix'], bounds: { x, y: 0, width: 100, height: 50 } });
+    const off = layer({ id: 'off', ...at(2000) });
+    const partly = layer({ id: 'partly', ...at(950) });
+    const hidden = layer({ id: 'hidden', opacity: 0, ...at(2000) });
+    const source = layer({ id: 'src', matteSource: true, ...at(2000) });
     const findings = lintInspect(frame([off, partly, hidden, source]));
     expect(findings).toEqual([expect.objectContaining({ rule: 'off-canvas', severity: 'warning', layer: 'off' })]);
+  });
+
+  it('judges off-canvas by where the renderer puts a layer, not its flat matrix', () => {
+    // Inside a group turned in 3D: the flat matrix is off the canvas, the bounds (after the turn) are on it.
+    const turned = layer({ id: 'turned', matrix: [1, 0, 0, 1, -400, 0], bounds: { x: 20, y: 0, width: 30, height: 50 } });
+    expect(lintInspect(frame([turned]))).toEqual([]);
+    const gone = layer({ id: 'gone', bounds: { x: -400, y: 0, width: 100, height: 50 } });
+    expect(lintInspect(frame([gone]))).toEqual([expect.objectContaining({ rule: 'off-canvas', layer: 'gone' })]);
   });
 
   it('looks inside groups, using canvas matrices', () => {
