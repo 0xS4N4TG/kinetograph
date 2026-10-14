@@ -13,8 +13,9 @@
 //!
 //! `shaders/shadow.wgsl` holds the shadow effects' passes,
 //! `shaders/color.wgsl` the colour filter pass, `shaders/glow.wgsl` the glow
-//! pass and `shaders/aberration.wgsl` the chromatic aberration pass; they share the bind group layout, so their passes go through
-//! the same `run_pass`.
+//! pass and `shaders/aberration.wgsl` the chromatic aberration pass; they
+//! share the bind group layout, so their passes go through the same
+//! `run_pass`.
 //!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
 //! mapping in `mode_index`. Adding an effect: add a variant to

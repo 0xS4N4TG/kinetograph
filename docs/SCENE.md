@@ -150,7 +150,7 @@ side.
 - A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
-- `glow` counts `3 * radius` as well, and `chromaticAberration` counts `|amount|`.
+- `glow` counts `3 * radius`, and `chromaticAberration` counts `|amount|`.
 - `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge).
 - `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
   layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
@@ -485,8 +485,8 @@ layer.
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
-- Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`,
-  `grayscale`, `sepia`, `invert`, `hueRotate`.
+- Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
+  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
