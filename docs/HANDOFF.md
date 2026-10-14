@@ -288,6 +288,11 @@ per-glyph text animation. Open with two spikes: (1) the addon handoff cost per f
 `WebGPURenderer` headless on Dawn in Node (section 4), which decides Three.js vs kiss3d for the 3D layer.
 Rebuild the 5-second reference and the papercut scene. Compare frames and timing against Remotion. Go/no-go here:
 if it isn't clearly faster (5x+) and visually matching, rethink the wedge.
+**Built 2026-10-14 in one cloud session** (draft PR from `feat/node-authoring`, the five stream branches merged into it
+and kept): the contract is `docs/AUTHORING.md`; the TSX rebuild of the reference segment is `examples/rajz-cards/`. CPU
+checks green; nothing has rendered on a GPU yet. On the M4: the seven new goldens, the addon's GPU tests, spike 1
+(`crates/node/spike/handoff.mjs`), spike 2 (`spikes/three-dawn`), the reference rebuild, then the papercut port and
+the go/no-go timing.
 **3D layer (after Phase 3).** Three.js on Dawn, or the kiss3d mapping if the spike fails (section 4).
 **Phase 4: editor.** Tauri shell, WASM + WebGPU preview, timeline, video layers.
 **Phase 5: Remotion compat mode.** CSS subset mapped onto layers (possibly via Blitz/Stylo), Chrome fallback per frame

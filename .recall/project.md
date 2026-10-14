@@ -1,13 +1,14 @@
 # kinetograph
 
 ## Stack
-- Language: Rust (core renderer: crates/core, CLI: crates/cli), TypeScript authoring layer later (Phase 3)
+- Language: Rust (core renderer: crates/core, CLI: crates/cli, N-API addon: crates/node) and TypeScript (npm workspaces under packages/: scene, react, core, audio, cli; contract in docs/AUTHORING.md)
 - Planned crates: wgpu, vello, parley/swash/fontique, taffy, usvg/vello_svg, ffmpeg-next, web-audio-api-rs, rmcp (see docs/HANDOFF.md §4)
 - Repo: github.com/0xS4N4TG/kinetograph (private, to be public), branch main
 - Licence: MIT OR Apache-2.0
 
 ## Entry points
 - `cargo build --release`; `./target/release/kinetograph still <scene.json> <frame> -o out.png`; `bench <scene.json> --frame N --runs K`.
+- `npm ci && npm run build && npm test`; `npx kinetograph still|render|inspect|lint <project.tsx|scene.json>`.
 - Scenes are JSON (docs/SCENE.md). Tests: `cargo test` (goldens in crates/core/tests/golden, regenerate with UPDATE_GOLDEN=1 after an eye check).
 
 ## Conventions
