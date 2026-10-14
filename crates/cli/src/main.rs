@@ -1,8 +1,10 @@
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{Parser, Subcommand};
+use kinetograph_cli::render::{RenderRequest, render};
 use kinetograph_core::{Renderer, Scene, render_still};
 use serde_json::{Value, json};
 
@@ -30,6 +32,26 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
         /// Print the result as JSON: {output, width, height, frame, ms}
+        #[arg(long)]
+        json: bool,
+    },
+    /// Render frames of a scene to an H.264 video (.mp4 or .mov)
+    Render {
+        /// Scene JSON file (see docs/SCENE.md)
+        scene: PathBuf,
+        /// Output video path; the extension picks the container
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Frames to render: 10..40 (10 to 39) or 10..=40 (10 to 40); the
+        /// whole scene if left out
+        #[arg(long)]
+        range: Option<String>,
+        /// ffmpeg encoder name; default h264_videotoolbox on macOS when
+        /// ffmpeg has it, else libx264
+        #[arg(long)]
+        encoder: Option<String>,
+        /// Print the result as JSON: {output, encoder, width, height, fps,
+        /// frames, first, last, ms, ms_per_frame}
         #[arg(long)]
         json: bool,
     },
@@ -63,6 +85,16 @@ fn main() -> ExitCode {
             output,
             json,
         } => (json, still(&scene, frame, &output)),
+        Command::Render {
+            scene,
+            output,
+            range,
+            encoder,
+            json,
+        } => (
+            json,
+            render_video(&scene, &output, range.as_deref(), encoder.as_deref(), json),
+        ),
         Command::Bench {
             scene,
             frame,
@@ -120,6 +152,71 @@ fn still(scene_path: &Path, frame: i64, output: &Path) -> Result<Output, String>
             "height": height,
             "frame": frame,
             "ms": ms,
+        }),
+    })
+}
+
+fn render_video(
+    scene: &Path,
+    output: &Path,
+    range: Option<&str>,
+    encoder: Option<&str>,
+    as_json: bool,
+) -> Result<Output, String> {
+    // Progress goes to stderr and not at all for JSON, whose caller is a
+    // program. A terminal gets one line rewritten in place; anything else
+    // (a log) gets a line about every tenth of the way.
+    let tty = std::io::stderr().is_terminal();
+    let mut next_line = 0;
+    let summary = render(
+        &RenderRequest {
+            scene,
+            output,
+            range,
+            encoder,
+        },
+        |done, total| {
+            if as_json {
+                return;
+            }
+            if tty {
+                eprint!("\rrendering frame {done}/{total}");
+                let _ = std::io::stderr().flush();
+            } else if done * 10 >= next_line * total {
+                eprintln!("rendering frame {done}/{total}");
+                next_line = done * 10 / total + 1;
+            }
+        },
+    );
+    if tty && !as_json {
+        eprintln!();
+    }
+    let s = summary?;
+    Ok(Output {
+        text: format!(
+            "wrote {} ({}x{}, {} frames {}..={} at {} fps, {}, {:.1} ms, {:.2} ms/frame)",
+            s.output.display(),
+            s.width,
+            s.height,
+            s.frames,
+            s.first,
+            s.last,
+            s.fps,
+            s.encoder,
+            s.ms,
+            s.ms_per_frame
+        ),
+        json: json!({
+            "output": s.output,
+            "encoder": s.encoder,
+            "width": s.width,
+            "height": s.height,
+            "fps": s.fps,
+            "frames": s.frames,
+            "first": s.first,
+            "last": s.last,
+            "ms": s.ms,
+            "ms_per_frame": s.ms_per_frame,
         }),
     })
 }
