@@ -195,11 +195,12 @@ fn gradient_map_matches_golden() {
     // Frame 15 of 30: the cross-fade on the photo is half way and the moving
     // stop is at its middle. Covers a four-stop map with a see-through first
     // stop and a translucent last one, a map on text with a gradient fill, on
-    // a group hanging off the left edge, and on a half-opaque layer hanging
-    // off the right and bottom edges. The same scene has a `lut` (a .cube
-    // table in tests/scenes/looks) on an image whose cross-fade is half way,
-    // on text, and on a group hanging off the top and right edges, all
-    // sharing one table.
+    // a group hanging off the left edge, and on a translucent fill (so the
+    // map sees partial alpha) on a half-opaque layer hanging off the right
+    // and bottom edges. The same scene has a `lut` (a .cube table in
+    // tests/scenes/looks) on an image whose cross-fade is half way, on text,
+    // and on a group hanging off the top and right edges, all sharing one
+    // table.
     let frame = render_still(scene("tests/scenes/gradient-map.json"), 15).unwrap();
     check("gradient-map", &frame);
 }
@@ -209,8 +210,9 @@ fn grain_matches_golden() {
     // Frame 15 of 30: the animated amount and size are half way. Covers fine
     // monochrome grain on an image, coloured grain, large smooth grain on
     // flat grey, text with grain that does not animate, grain staying put on
-    // a rotating card, a half-transparent layer (alpha untouched), and a
-    // group at amount 1 hanging off the right and bottom edges.
+    // a rotating card, a translucent fill on a half-opaque layer (alpha
+    // untouched), and a group at amount 1 hanging off the right and bottom
+    // edges.
     let frame = render_still(scene("tests/scenes/grain.json"), 15).unwrap();
     check("grain", &frame);
 }
@@ -221,8 +223,8 @@ fn dither_matches_golden() {
     // Covers ordered and seeded random dithering of grey ramps, an image, a
     // text gradient and a radial-filled group hanging off the left and
     // bottom edges, a random pattern that animates per frame, one that does
-    // not (with the largest seed), and a half-transparent layer whose alpha
-    // must stay as it was.
+    // not (with the largest seed), and a translucent gradient fill on a
+    // half-opaque layer, whose alpha must stay as it was.
     let frame = render_still(scene("tests/scenes/dither.json"), 15).unwrap();
     check("dither", &frame);
 }

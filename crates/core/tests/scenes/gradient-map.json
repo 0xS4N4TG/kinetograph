@@ -232,7 +232,7 @@
     "height": 110,
     "radius": 16
    },
-   "fill": "#ddd",
+   "fill": "#dddddd99",
    "opacity": 0.6,
    "transform": {
     "x": 370,

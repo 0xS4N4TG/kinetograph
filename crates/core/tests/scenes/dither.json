@@ -302,11 +302,11 @@
     "stops": [
      {
       "offset": 0,
-      "color": "#7dffb0"
+      "color": "#7dffb099"
      },
      {
       "offset": 1,
-      "color": "#3a2f8f"
+      "color": "#3a2f8fcc"
      }
     ]
    },
