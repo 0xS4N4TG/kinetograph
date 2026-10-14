@@ -13,6 +13,8 @@ struct Params {
 //   to_linear: tex_a = Vello output (Rgba8, sRGB-encoded, straight alpha)
 //   blend:     tex_a = backdrop, tex_b = source
 //   encode:    tex_a = linear premultiplied image
+//   mask:      tex_a = layer (linear premultiplied), tex_b = Vello output
+//              whose alpha is the coverage to keep
 // Unused bindings are bound to the same texture as tex_a.
 @group(0) @binding(0) var tex_a: texture_2d<f32>;
 @group(0) @binding(1) var tex_b: texture_2d<f32>;
@@ -216,6 +218,14 @@ fn fs_blend(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
     let a = s.a + b.a * (1.0 - s.a);
     return vec4<f32>(rgb, a);
+}
+
+// Multiplies the layer by the alpha of a Vello output (a clip shape drawn in
+// opaque white, so its alpha is the anti-aliased coverage).
+@fragment
+fn fs_mask(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let xy = vec2<i32>(p.xy);
+    return textureLoad(tex_a, xy, 0) * textureLoad(tex_b, xy, 0).a;
 }
 
 // Linear premultiplied -> sRGB-encoded, straight alpha, for readback.

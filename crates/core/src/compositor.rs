@@ -5,6 +5,7 @@
 //!
 //! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
+//! - `mask`: layer x the alpha of a Vello-drawn clip shape
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
 //! Adding a blend mode: add a case to `blend_fn` in the shader and a
@@ -36,6 +37,7 @@ pub struct Compositor {
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    mask: wgpu::RenderPipeline,
     encode: wgpu::RenderPipeline,
     blur: Blur,
     pool: Vec<Tex>,
@@ -113,6 +115,7 @@ impl Compositor {
             height,
             to_linear: pipeline("fs_to_linear", LINEAR_FORMAT),
             blend: pipeline("fs_blend", LINEAR_FORMAT),
+            mask: pipeline("fs_mask", LINEAR_FORMAT),
             encode: pipeline("fs_encode", READBACK_FORMAT),
             blur: Blur::new(device),
             layout,
@@ -186,6 +189,16 @@ impl Compositor {
             &target.view,
         );
         self.release(dst);
+        self.release(src);
+        target
+    }
+
+    /// Multiplies `src` by the alpha of a Vello output texture (Rgba8, a
+    /// shape drawn in opaque white). `src` goes back to the pool; the result
+    /// is a new texture.
+    pub fn mask_with_alpha(&mut self, src: Tex, vello_output: &wgpu::TextureView) -> Tex {
+        let target = self.acquire();
+        self.pass(&self.mask, &src.view, vello_output, 0.0, 0, &target.view);
         self.release(src);
         target
     }

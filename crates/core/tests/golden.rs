@@ -82,6 +82,13 @@ fn blend_and_blur_scene_matches_golden() {
 }
 
 #[test]
+fn clip_paths_match_golden() {
+    // Frame 15 of 30: halfway through every clip animation.
+    let frame = render_still(scene("tests/scenes/clip-paths.json"), 15).unwrap();
+    check("clip-paths", &frame);
+}
+
+#[test]
 fn rendering_is_deterministic() {
     // Mid-animation frame: keyframes, blur and multiply all in play.
     let card = || scene("../../examples/papercut-card.json");

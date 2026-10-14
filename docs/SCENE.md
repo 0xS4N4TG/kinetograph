@@ -57,6 +57,7 @@ Every layer has these fields:
 | `opacity` | number | `1` | Clamped to 0..1. |
 | `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
 | `effects` | array | `[]` | Applied in order to the layer's own pixels, before it is blended. See [Effects](#effects). |
+| `clip` | object | none | Cuts the layer to a shape. See [Clip paths](#clip-paths). |
 
 `transform` fields, all animatable numbers:
 
@@ -153,6 +154,39 @@ position to within 0.01 pixel, so moving or resizing a blurred glow does not mak
 - Radii below 1 do nothing.
 - The layer is blurred as if it sat in transparent space: its edges fade out, and content that lies outside the canvas
   is not part of the layer, so it cannot bleed in.
+
+## Clip paths
+
+`clip` cuts a layer to a shape: pixels outside it become transparent, and the edge is anti-aliased (16x multisampled,
+like every shape). The shape is in the layer's own coordinates, so it follows the layer's `transform` (position,
+scale, rotation). A layer's pixels go through, in this order: its `effects`, its `clip`, then `opacity` and
+`blendMode`. So a blur is cut off by the clip, and the clip is not blurred. A group's clip applies to the composited
+group. Every number is animatable.
+
+```json
+{ "id": "photo", "type": "image", "src": "photo.png", "width": 160, "height": 120,
+  "clip": { "kind": "inset", "left": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 40 }], "radius": 12 } }
+```
+
+| `kind` | Fields | Notes |
+|---|---|---|
+| `polygon` | `points`: array of `[x, y]` pairs, at least 3 | Each coordinate is an animatable number. Non-zero fill rule, so a self-crossing star is filled throughout. |
+| `inset` | `top`, `right`, `bottom`, `left`, `radius` (all default `0`) | The layer's own box shrunk by the four distances, like CSS `inset()`. A negative distance grows the box. `radius` rounds the corners, is at least 0 and is limited to half the shorter side. If the sides cross, nothing is kept. |
+| `ellipse` | `cx`, `cy`, `rx`, `ry` | Centre and radii, at least 0. A radius of 0 keeps nothing. |
+| `path` | `d`: SVG path data | Non-zero fill rule. The path is not animated (like a shape's `path`). |
+
+The layer's own box, which `inset` is measured from:
+
+| Layer | Box |
+|---|---|
+| `rect`, `roundedRect`, `ellipse` shape | `0, 0, width, height` (a stroke is not part of the box) |
+| `path` shape | The path's bounding box |
+| `image` | `0, 0, width, height` |
+| `text` | `0, 0, maxWidth` (or the laid-out width when there is no `maxWidth`) by the laid-out height |
+| `group` | None. `inset` on a group is a load error; use `polygon`, `ellipse` or `path`. |
+
+Loading a scene rejects a polygon with fewer than 3 points, a bad path `d`, a negative `radius`, `rx` or `ry` at any
+keyframe, and `inset` on a group, and the error names the layer.
 
 ## Limits in this version
 

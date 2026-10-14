@@ -14,7 +14,7 @@ use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
-use crate::resolve::{ResolvedGeometry, ResolvedKind, ResolvedLayer, ResolvedScene};
+use crate::resolve::{ResolvedClip, ResolvedGeometry, ResolvedKind, ResolvedLayer, ResolvedScene};
 use crate::scene::{LayerKind, Scene};
 use crate::text::TextEngine;
 
@@ -214,23 +214,39 @@ impl Renderer {
             if layer.opacity <= 0.0 {
                 continue;
             }
-            let src = match &layer.kind {
-                ResolvedKind::Group { children } => {
-                    let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
-                    self.draw_layers(children, parent * layer.transform.matrix(), empty)?
-                }
-                _ => {
-                    self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
-                    self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view))
-                }
-            };
+            let src = self.layer_texture(layer, parent)?;
             canvas = self.timed(Stage::Composite, |s| {
-                let src = s.compositor.apply_effects(src, &layer.effects);
                 s.compositor
                     .blend(canvas, src, layer.opacity, layer.blend_mode)
             });
         }
         Ok(canvas)
+    }
+
+    /// One layer's own pixels, ready to blend: drawn, then run through its
+    /// effects and its clip, in that order.
+    fn layer_texture(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<Tex> {
+        let src = match &layer.kind {
+            ResolvedKind::Group { children } => {
+                let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
+                self.draw_layers(children, parent * layer.transform.matrix(), empty)?
+            }
+            _ => {
+                self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
+                self.timed(Stage::Composite, |s| s.compositor.from_srgb8(&s.vello_view))
+            }
+        };
+        let mut src = self.timed(Stage::Composite, |s| {
+            s.compositor.apply_effects(src, &layer.effects)
+        });
+        if let Some(clip) = &layer.clip {
+            let matrix = parent * layer.transform.matrix();
+            self.timed(Stage::Raster, |s| s.rasterise_clip(clip, layer, matrix))?;
+            src = self.timed(Stage::Composite, |s| {
+                s.compositor.mask_with_alpha(src, &s.vello_view)
+            });
+        }
+        Ok(src)
     }
 
     /// Draws one leaf layer, with all transforms applied, into the Vello
@@ -297,9 +313,106 @@ impl Renderer {
             }
             ResolvedKind::Group { .. } => unreachable!("groups are composited, not rasterised"),
         }
-        let renderer = match &layer.kind {
-            ResolvedKind::Image { .. } => self.vello_images.as_mut(),
-            _ => Some(&mut self.vello),
+        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }))
+    }
+
+    /// Draws the layer's clip shape in opaque white into the Vello target;
+    /// its alpha is then the clip's coverage.
+    fn rasterise_clip(
+        &mut self,
+        clip: &ResolvedClip,
+        layer: &ResolvedLayer,
+        matrix: Affine,
+    ) -> Result<()> {
+        let path = self.clip_path(clip, layer)?;
+        self.vello_scene.reset();
+        self.vello_scene
+            .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, &path);
+        self.render_vello_scene(false)
+    }
+
+    /// The clip as a path in layer space. Empty when it keeps nothing.
+    fn clip_path(&mut self, clip: &ResolvedClip, layer: &ResolvedLayer) -> Result<BezPath> {
+        Ok(match clip {
+            ResolvedClip::Polygon { points } => {
+                let mut path = BezPath::new();
+                for (i, &(x, y)) in points.iter().enumerate() {
+                    if i == 0 {
+                        path.move_to((x, y));
+                    } else {
+                        path.line_to((x, y));
+                    }
+                }
+                path.close_path();
+                path
+            }
+            ResolvedClip::Inset {
+                top,
+                right,
+                bottom,
+                left,
+                radius,
+            } => {
+                let b = self.layer_box(layer)?.ok_or_else(|| {
+                    Error::Render(format!("layer {:?}: inset clip on a group", layer.id))
+                })?;
+                inset_path(b, *top, *right, *bottom, *left, *radius)
+            }
+            ResolvedClip::Ellipse { cx, cy, rx, ry } => {
+                if *rx <= 0.0 || *ry <= 0.0 {
+                    BezPath::new()
+                } else {
+                    Ellipse::new((*cx, *cy), (*rx, *ry), 0.0).to_path(SHAPE_TOLERANCE)
+                }
+            }
+            ResolvedClip::Path { d } => BezPath::from_svg(d)
+                .map_err(|e| Error::Scene(format!("bad clip SVG path {d:?}: {e}")))?,
+        })
+    }
+
+    /// The layer's own box in layer space, which `inset` clips are measured
+    /// from. A group has none.
+    fn layer_box(&mut self, layer: &ResolvedLayer) -> Result<Option<Rect>> {
+        Ok(match &layer.kind {
+            ResolvedKind::Shape { geometry, .. } => Some(match geometry {
+                ResolvedGeometry::Rect { width, height }
+                | ResolvedGeometry::RoundedRect { width, height, .. }
+                | ResolvedGeometry::Ellipse { width, height } => {
+                    Rect::new(0.0, 0.0, *width, *height)
+                }
+                ResolvedGeometry::Path { .. } => geometry_path(geometry)?.bounding_box(),
+            }),
+            ResolvedKind::Text {
+                text,
+                font,
+                size,
+                line_height,
+                max_width,
+                ..
+            } => {
+                let laid_out = self
+                    .text
+                    .layout(text, font, *size, *line_height, *max_width);
+                let width = max_width.unwrap_or(laid_out.width);
+                Some(Rect::new(
+                    0.0,
+                    0.0,
+                    f64::from(width),
+                    f64::from(laid_out.height),
+                ))
+            }
+            ResolvedKind::Image { width, height, .. } => Some(Rect::new(0.0, 0.0, *width, *height)),
+            ResolvedKind::Group { .. } => None,
+        })
+    }
+
+    /// Renders `vello_scene` into the Vello target texture. Image layers
+    /// use their own renderer (see `vello_images`).
+    fn render_vello_scene(&mut self, has_images: bool) -> Result<()> {
+        let renderer = if has_images {
+            self.vello_images.as_mut()
+        } else {
+            Some(&mut self.vello)
         }
         .expect("scenes with image layers get an image renderer");
         renderer
@@ -317,6 +430,17 @@ impl Renderer {
             )
             .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
+}
+
+/// `b` shrunk by the four distances, with rounded corners. Empty when
+/// nothing is left. The radius is limited to half the shorter side.
+fn inset_path(b: Rect, top: f64, right: f64, bottom: f64, left: f64, radius: f64) -> BezPath {
+    let r = Rect::new(b.x0 + left, b.y0 + top, b.x1 - right, b.y1 - bottom);
+    if r.width() <= 0.0 || r.height() <= 0.0 {
+        return BezPath::new();
+    }
+    let radius = radius.min(r.width() / 2.0).min(r.height() / 2.0);
+    RoundedRect::from_rect(r, radius).to_path(SHAPE_TOLERANCE)
 }
 
 fn new_vello(device: &wgpu::Device) -> Result<vello::Renderer> {
@@ -415,4 +539,39 @@ fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
         );
     }
     Ok(images)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inset_shrinks_the_box_and_limits_the_radius() {
+        let b = Rect::new(0.0, 0.0, 100.0, 50.0);
+        let path = inset_path(b, 5.0, 10.0, 15.0, 20.0, 0.0);
+        assert_eq!(path.bounding_box(), Rect::new(20.0, 5.0, 90.0, 35.0));
+        // A huge radius turns the 70 x 30 rectangle into a stadium; its
+        // bounding box is unchanged.
+        let round = inset_path(b, 5.0, 10.0, 15.0, 20.0, 1000.0);
+        let bb = round.bounding_box();
+        assert!((bb.x0 - 20.0).abs() < 1e-9 && (bb.y1 - 35.0).abs() < 1e-9);
+        // A negative inset grows past the box.
+        let grown = inset_path(b, -4.0, -4.0, -4.0, -4.0, 0.0);
+        assert_eq!(grown.bounding_box(), Rect::new(-4.0, -4.0, 104.0, 54.0));
+    }
+
+    #[test]
+    fn inset_with_nothing_left_is_empty() {
+        let b = Rect::new(0.0, 0.0, 100.0, 50.0);
+        assert!(
+            inset_path(b, 0.0, 60.0, 0.0, 40.0, 0.0)
+                .elements()
+                .is_empty()
+        );
+        assert!(
+            inset_path(b, 25.0, 0.0, 25.0, 0.0, 0.0)
+                .elements()
+                .is_empty()
+        );
+    }
 }

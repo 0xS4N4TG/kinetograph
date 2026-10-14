@@ -1,0 +1,249 @@
+{
+ "width": 512,
+ "height": 288,
+ "fps": 30,
+ "durationInFrames": 30,
+ "background": "#14161d",
+ "fonts": {
+  "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"
+ },
+ "layers": [
+  {
+   "id": "star",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 120,
+    "height": 120
+   },
+   "fill": "#f6c177",
+   "transform": {
+    "x": 80,
+    "y": 80,
+    "anchorX": 60,
+    "anchorY": 60,
+    "rotation": [
+     {
+      "frame": 0,
+      "value": 0
+     },
+     {
+      "frame": 30,
+      "value": 60
+     }
+    ]
+   },
+   "clip": {
+    "kind": "polygon",
+    "points": [
+     [
+      60.0,
+      0.0
+     ],
+     [
+      [
+       {
+        "frame": 0,
+        "value": 75.28
+       },
+       {
+        "frame": 30,
+        "value": 89.28
+       }
+      ],
+      38.97
+     ],
+     [
+      117.06,
+      41.46
+     ],
+     [
+      84.73,
+      68.03
+     ],
+     [
+      95.27,
+      108.54
+     ],
+     [
+      60.0,
+      86.0
+     ],
+     [
+      24.73,
+      108.54
+     ],
+     [
+      35.27,
+      68.03
+     ],
+     [
+      2.94,
+      41.46
+     ],
+     [
+      44.72,
+      38.97
+     ]
+    ]
+   }
+  },
+  {
+   "id": "photo",
+   "type": "image",
+   "src": "../../../../examples/card-art.png",
+   "width": 160,
+   "height": 120,
+   "transform": {
+    "x": 170,
+    "y": 20
+   },
+   "clip": {
+    "kind": "inset",
+    "left": [
+     {
+      "frame": 0,
+      "value": 0
+     },
+     {
+      "frame": 30,
+      "value": 40
+     }
+    ],
+    "top": 6,
+    "right": 6,
+    "bottom": 6,
+    "radius": [
+     {
+      "frame": 0,
+      "value": 4
+     },
+     {
+      "frame": 30,
+      "value": 40
+     }
+    ]
+   }
+  },
+  {
+   "id": "split",
+   "type": "group",
+   "transform": {
+    "x": 350,
+    "y": 20
+   },
+   "clip": {
+    "kind": "ellipse",
+    "cx": 70,
+    "cy": 60,
+    "rx": 70,
+    "ry": [
+     {
+      "frame": 0,
+      "value": 20
+     },
+     {
+      "frame": 30,
+      "value": 60
+     }
+    ]
+   },
+   "children": [
+    {
+     "id": "split-top",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 140,
+      "height": 70
+     },
+     "fill": "#56d4dd"
+    },
+    {
+     "id": "split-bottom",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 140,
+      "height": 50
+     },
+     "fill": "#e05a9d",
+     "transform": {
+      "y": 70
+     }
+    }
+   ]
+  },
+  {
+   "id": "heart",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 160,
+    "height": 110
+   },
+   "fill": "#7aa2f7",
+   "stroke": {
+    "color": "#ffffff",
+    "width": 6
+   },
+   "transform": {
+    "x": 40,
+    "y": 170,
+    "rotation": 12
+   },
+   "clip": {
+    "kind": "path",
+    "d": "M80 10 C 130 -10 170 40 80 105 C -10 40 30 -10 80 10 Z"
+   }
+  },
+  {
+   "id": "title",
+   "type": "text",
+   "text": "Clip paths",
+   "font": "DM Sans",
+   "size": 52,
+   "color": "#ffffff",
+   "maxWidth": 280,
+   "transform": {
+    "x": 220,
+    "y": 165
+   },
+   "clip": {
+    "kind": "inset",
+    "right": [
+     {
+      "frame": 0,
+      "value": 280
+     },
+     {
+      "frame": 30,
+      "value": 0
+     }
+    ],
+    "radius": 8
+   }
+  },
+  {
+   "id": "edge",
+   "type": "shape",
+   "shape": {
+    "kind": "rect",
+    "width": 120,
+    "height": 120
+   },
+   "fill": "#9ece6a",
+   "transform": {
+    "x": 440,
+    "y": 225
+   },
+   "clip": {
+    "kind": "ellipse",
+    "cx": 60,
+    "cy": 60,
+    "rx": 90,
+    "ry": 50
+   }
+  }
+ ]
+}

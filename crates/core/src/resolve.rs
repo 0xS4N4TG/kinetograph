@@ -4,7 +4,7 @@ use vello::kurbo::Affine;
 
 use crate::color::Color;
 use crate::error::{Error, Result};
-use crate::scene::{BlendMode, Effect, Geometry, Layer, LayerKind, Scene, Transform};
+use crate::scene::{BlendMode, Clip, Effect, Geometry, Layer, LayerKind, Scene, Transform};
 
 #[derive(Clone, Debug)]
 pub struct ResolvedScene {
@@ -22,6 +22,7 @@ pub struct ResolvedLayer {
     pub opacity: f32,
     pub blend_mode: BlendMode,
     pub effects: Vec<ResolvedEffect>,
+    pub clip: Option<ResolvedClip>,
     pub kind: ResolvedKind,
 }
 
@@ -51,6 +52,30 @@ impl ResolvedTransform {
 pub enum ResolvedEffect {
     /// Standard deviation in pixels.
     Blur { radius: f32 },
+}
+
+/// A clip in layer space. Counterpart of `scene::Clip`.
+#[derive(Clone, Debug)]
+pub enum ResolvedClip {
+    Polygon {
+        points: Vec<(f64, f64)>,
+    },
+    Inset {
+        top: f64,
+        right: f64,
+        bottom: f64,
+        left: f64,
+        radius: f64,
+    },
+    Ellipse {
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+    },
+    Path {
+        d: String,
+    },
 }
 
 /// Largest blur radius; bigger values are clamped.
@@ -172,7 +197,36 @@ fn resolve_layer(layer: &Layer, f: f64) -> ResolvedLayer {
         opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
         blend_mode: layer.blend_mode,
         effects: layer.effects.iter().map(|e| resolve_effect(e, f)).collect(),
+        clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
         kind,
+    }
+}
+
+fn resolve_clip(clip: &Clip, f: f64) -> ResolvedClip {
+    match clip {
+        Clip::Polygon { points } => ResolvedClip::Polygon {
+            points: points.iter().map(|[x, y]| (x.at(f), y.at(f))).collect(),
+        },
+        Clip::Inset {
+            top,
+            right,
+            bottom,
+            left,
+            radius,
+        } => ResolvedClip::Inset {
+            top: top.at(f),
+            right: right.at(f),
+            bottom: bottom.at(f),
+            left: left.at(f),
+            radius: radius.at(f).max(0.0),
+        },
+        Clip::Ellipse { cx, cy, rx, ry } => ResolvedClip::Ellipse {
+            cx: cx.at(f),
+            cy: cy.at(f),
+            rx: rx.at(f).max(0.0),
+            ry: ry.at(f).max(0.0),
+        },
+        Clip::Path { d } => ResolvedClip::Path { d: d.clone() },
     }
 }
 
@@ -284,5 +338,31 @@ mod tests {
             "\"kind\": \"path\", \"d\": \"M0 0 Q bogus\"",
         );
         assert!(parse(&bad_path).is_err());
+    }
+
+    #[test]
+    fn resolves_animated_clips() {
+        let json = r##"{
+            "width": 100, "height": 100, "fps": 30, "durationInFrames": 11,
+            "layers": [{"id": "a", "type": "shape",
+              "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+              "clip": {"kind": "polygon",
+                       "points": [[0, 0], [[{"frame": 0, "value": 10}, {"frame": 10, "value": 30}], 0], [0, 40]]}},
+              {"id": "b", "type": "shape",
+              "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+              "clip": {"kind": "ellipse", "cx": 5, "cy": 5, "rx": [{"frame": 0, "value": 0}, {"frame": 10, "value": 8}], "ry": 4}}]
+        }"##;
+        let r = Scene::from_json(json, PathBuf::new())
+            .unwrap()
+            .resolve(5)
+            .unwrap();
+        let Some(ResolvedClip::Polygon { points }) = &r.layers[0].clip else {
+            panic!("not a polygon");
+        };
+        assert_eq!(points, &[(0.0, 0.0), (20.0, 0.0), (0.0, 40.0)]);
+        assert!(matches!(
+            &r.layers[1].clip,
+            Some(ResolvedClip::Ellipse { rx, ry, .. }) if *rx == 4.0 && *ry == 4.0
+        ));
     }
 }

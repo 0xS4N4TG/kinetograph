@@ -108,6 +108,17 @@ impl Num {
             Num::Keys(keys) => keys.iter().map(|k| k.value).fold(f64::INFINITY, f64::min),
         }
     }
+
+    /// Largest value the number can take (the largest keyframe value).
+    pub fn max(&self) -> f64 {
+        match self {
+            Num::Const(v) => *v,
+            Num::Keys(keys) => keys
+                .iter()
+                .map(|k| k.value)
+                .fold(f64::NEG_INFINITY, f64::max),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -165,6 +176,13 @@ mod tests {
         let n = num(r#"[{"frame":5,"value":1},{"frame":5,"value":9}]"#);
         assert_eq!(n.at(4.0), 1.0);
         assert_eq!(n.at(5.0), 9.0);
+    }
+
+    #[test]
+    fn min_and_max_cover_all_keyframes() {
+        let n = num(r#"[{"frame":0,"value":3},{"frame":5,"value":-2},{"frame":9,"value":7}]"#);
+        assert_eq!((n.min(), n.max()), (-2.0, 7.0));
+        assert_eq!((num("4").min(), num("4").max()), (4.0, 4.0));
     }
 
     #[test]
