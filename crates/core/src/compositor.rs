@@ -23,8 +23,8 @@
 //! centres through the filtered layout, with the layer's matrix.
 //!
 //! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`,
-//! `dot_matrix.wgsl`) are
-//! compiled with `shaders/hash.wgsl` in front of them (`shader_module`).
+//! `dot_matrix.wgsl`) are compiled with `shaders/hash.wgsl` in front of them
+//! (`shader_module`).
 //!
 //! The `lut` pass (`shaders/lut.wgsl`) reads a 3D texture as well, so it has
 //! a bind group layout of its own (`lut_layout`) and the scene's tables are
@@ -118,8 +118,6 @@ pub struct Compositor {
     /// For passes that resample the layer: the layer (filterable), a
     /// bilinear sampler and a uniform block.
     filtered_layout: wgpu::BindGroupLayout,
-    #[expect(dead_code, reason = "used by the first resampling pass (warp)")]
-    filtered_pipeline_layout: wgpu::PipelineLayout,
     filtered_sampler: wgpu::Sampler,
     /// One pipeline per distinct custom shader, by `shader::compose` text.
     shaders: HashMap<String, wgpu::RenderPipeline>,
@@ -307,7 +305,6 @@ impl Compositor {
             }),
             shaders,
             filtered_layout,
-            filtered_pipeline_layout,
             filtered_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("filtered"),
                 mag_filter: wgpu::FilterMode::Linear,
