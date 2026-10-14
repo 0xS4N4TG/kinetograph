@@ -256,7 +256,8 @@ two so each half is reviewable:
 - **2a: compositing basics** (what papercut and transitions lean on most). Masks and clip paths first (polygon,
   inset, ellipse, path; gradient masks; track mattes), then drop and inset shadow, colour filters (saturate,
   contrast, brightness, grayscale, sepia), linear/radial/conic/repeating gradients as fills for shapes and text,
-  backdrop blur, glow, chromatic aberration, custom WGSL effects.
+  backdrop blur, glow, chromatic aberration, custom WGSL effects. **Done 2026-10-14** (PR #2, merged): tests and
+  goldens pass on the M4.
 - **2b: looks, camera and video.** Gradient map / LUT, halftone, dither, dot-matrix reveal, turbulence +
   displacement (seeded), grain and noise, animated mesh gradient, corner-pin, 2.5D camera (perspective,
   rotateX/Y, translateZ, depth sort), motion blur, ffmpeg encode (`render`).
@@ -309,6 +310,10 @@ happens on the user's M4.
 - Commit per logical change and push the branch. On the M4: pull, `cargo test`, render and look at each new
   scene, `UPDATE_GOLDEN=1` for new goldens, `bench` for any speed claim.
 - Install ffmpeg (dev libraries) in the cloud environment before the encode work; compiling against it needs no GPU.
+- The repo will be public. Name branches after the work, not the phase (`feat/compositing-effects` was Phase 2a,
+  `feat/looks-camera-video` is 2b); the phase goes in the PR title. Keep session links and `Claude-Session:`
+  trailers out of commit messages and PR descriptions. Renaming a branch on GitHub closes its open PR rather than
+  moving it (PR #1 for 2a), so pick the name before opening the PR.
 
 ## 9. Rules for the build
 
