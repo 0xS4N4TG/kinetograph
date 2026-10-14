@@ -1,0 +1,354 @@
+//! Blends layer textures in linear light.
+//!
+//! Every intermediate image is a canvas-sized `Rgba16Float` texture holding
+//! linear, premultiplied colour. The passes live in `shaders/composite.wgsl`:
+//!
+//! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
+//! - `blend`: backdrop + source + opacity + blend mode -> new texture
+//! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
+//!
+//! Adding a blend mode: add a case to `blend_fn` in the shader and a
+//! mapping in `mode_index`. Adding an effect: add a variant to
+//! `scene::Effect` and `resolve::ResolvedEffect`, write its pass, and call it
+//! from `apply_effects`.
+
+use vello::wgpu::{self, util::DeviceExt};
+
+use crate::error::{Error, Result};
+use crate::resolve::ResolvedEffect;
+use crate::scene::BlendMode;
+
+pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+/// A canvas-sized linear premultiplied texture.
+pub struct Tex {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+}
+
+pub struct Compositor {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    width: u32,
+    height: u32,
+    layout: wgpu::BindGroupLayout,
+    to_linear: wgpu::RenderPipeline,
+    blend: wgpu::RenderPipeline,
+    encode: wgpu::RenderPipeline,
+    pool: Vec<Tex>,
+}
+
+impl Compositor {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, width: u32, height: u32) -> Compositor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("composite"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/composite.wgsl").into()),
+        });
+        let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("composite"),
+            entries: &[
+                texture_entry(0),
+                texture_entry(1),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("composite"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipeline = |entry: &str, format| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(entry),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        Compositor {
+            device: device.clone(),
+            queue: queue.clone(),
+            width,
+            height,
+            to_linear: pipeline("fs_to_linear", LINEAR_FORMAT),
+            blend: pipeline("fs_blend", LINEAR_FORMAT),
+            encode: pipeline("fs_encode", READBACK_FORMAT),
+            layout,
+            pool: Vec::new(),
+        }
+    }
+
+    /// A texture with undefined contents, from the pool when possible.
+    pub fn acquire(&mut self) -> Tex {
+        self.pool.pop().unwrap_or_else(|| {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("layer"),
+                size: wgpu::Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: LINEAR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            Tex { texture, view }
+        })
+    }
+
+    pub fn release(&mut self, tex: Tex) {
+        self.pool.push(tex);
+    }
+
+    /// A texture filled with `color` (linear, premultiplied).
+    pub fn filled(&mut self, color: [f64; 4]) -> Tex {
+        let tex = self.acquire();
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("clear"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &tex.view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: color[0],
+                        g: color[1],
+                        b: color[2],
+                        a: color[3],
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            ..Default::default()
+        });
+        self.queue.submit([encoder.finish()]);
+        tex
+    }
+
+    /// Converts a Vello output texture (Rgba8, sRGB-encoded, straight alpha)
+    /// to a linear premultiplied texture.
+    pub fn from_srgb8(&mut self, vello_output: &wgpu::TextureView) -> Tex {
+        let target = self.acquire();
+        self.pass(
+            &self.to_linear,
+            vello_output,
+            vello_output,
+            0.0,
+            0,
+            &target.view,
+        );
+        target
+    }
+
+    /// Composites `src` over `dst` with the layer's opacity and blend mode.
+    /// Both inputs go back to the pool; the result is a new texture.
+    pub fn blend(&mut self, dst: Tex, src: Tex, opacity: f32, mode: BlendMode) -> Result<Tex> {
+        let mode = mode_index(mode)?;
+        let target = self.acquire();
+        self.pass(
+            &self.blend,
+            &dst.view,
+            &src.view,
+            opacity,
+            mode,
+            &target.view,
+        );
+        self.release(dst);
+        self.release(src);
+        Ok(target)
+    }
+
+    /// Runs a layer's effects, in order, on its own texture before it is
+    /// blended. Each effect should read `src`, draw into a texture from
+    /// `acquire`, release `src` and return the new one.
+    pub fn apply_effects(&mut self, src: Tex, effects: &[ResolvedEffect]) -> Result<Tex> {
+        if let Some(effect) = effects.first() {
+            match *effect {}
+        }
+        Ok(src)
+    }
+
+    /// Encodes a linear texture to sRGB and reads it back as tightly packed
+    /// RGBA8 with straight alpha.
+    pub fn read_rgba8(&mut self, image: &Tex) -> Result<Vec<u8>> {
+        let target = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("readback"),
+            size: wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: READBACK_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        self.pass(&self.encode, &image.view, &image.view, 0.0, 0, &target_view);
+
+        let row_bytes = self.width * 4;
+        let padded_row = row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback"),
+            size: u64::from(padded_row) * u64::from(self.height),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_buffer(
+            target.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_row),
+                    rows_per_image: Some(self.height),
+                },
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| Error::Render(format!("GPU poll failed: {e}")))?;
+        rx.recv()
+            .map_err(|e| Error::Render(format!("readback channel closed: {e}")))?
+            .map_err(|e| Error::Render(format!("readback map failed: {e}")))?;
+
+        let mapped = buffer
+            .slice(..)
+            .get_mapped_range()
+            .map_err(|e| Error::Render(format!("readback range failed: {e}")))?;
+        let mut pixels = Vec::with_capacity((row_bytes * self.height) as usize);
+        for row in mapped.chunks(padded_row as usize) {
+            pixels.extend_from_slice(&row[..row_bytes as usize]);
+        }
+        drop(mapped);
+        buffer.unmap();
+        Ok(pixels)
+    }
+
+    /// One full-screen pass over `target` with `a` and `b` as inputs.
+    fn pass(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        a: &wgpu::TextureView,
+        b: &wgpu::TextureView,
+        opacity: f32,
+        mode: u32,
+        target: &wgpu::TextureView,
+    ) {
+        let mut bytes = [0u8; 16];
+        bytes[0..4].copy_from_slice(&opacity.to_le_bytes());
+        bytes[4..8].copy_from_slice(&mode.to_le_bytes());
+        let uniform = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: &bytes,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("composite"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(a),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(b),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform.as_entire_binding(),
+                },
+            ],
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("composite"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        self.queue.submit([encoder.finish()]);
+    }
+}
+
+/// The number the shader's `blend_fn` switches on.
+fn mode_index(mode: BlendMode) -> Result<u32> {
+    match mode {
+        BlendMode::Normal => Ok(0),
+        other => Err(Error::Unsupported(format!("blend mode {other:?}"))),
+    }
+}

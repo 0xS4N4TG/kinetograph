@@ -1,0 +1,71 @@
+{
+  "width": 640,
+  "height": 360,
+  "fps": 30,
+  "durationInFrames": 60,
+  "background": "#14171f",
+  "fonts": { "DM Sans": "../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    {
+      "id": "card",
+      "type": "shape",
+      "shape": { "kind": "roundedRect", "width": 360, "height": 200, "radius": 28 },
+      "fill": "#f6c177",
+      "stroke": { "color": "#ffffff", "width": 4 },
+      "transform": {
+        "x": [
+          { "frame": 0, "value": 200, "easing": "easeOut" },
+          { "frame": 30, "value": 230 }
+        ],
+        "y": 120,
+        "rotation": [
+          { "frame": 0, "value": -8, "easing": "easeInOut" },
+          { "frame": 59, "value": 8 }
+        ],
+        "anchorX": 180,
+        "anchorY": 100
+      }
+    },
+    {
+      "id": "dot",
+      "type": "shape",
+      "shape": { "kind": "ellipse", "width": 90, "height": 90 },
+      "fill": "#eb6f92cc",
+      "transform": { "x": 470, "y": 190 }
+    },
+    {
+      "id": "star",
+      "type": "shape",
+      "shape": { "kind": "path", "d": "M0 -40 L12 -12 L42 -12 L18 8 L26 38 L0 20 L-26 38 L-18 8 L-42 -12 L-12 -12 Z" },
+      "fill": "#9ccfd8",
+      "transform": { "x": 590, "y": 300, "rotation": [{ "frame": 0, "value": 0 }, { "frame": 59, "value": 90 }] }
+    },
+    {
+      "id": "picture",
+      "type": "image",
+      "src": "gradient.png",
+      "width": 128,
+      "height": 128,
+      "opacity": 0.9,
+      "transform": { "x": 470, "y": 30 }
+    },
+    {
+      "id": "caption",
+      "type": "group",
+      "opacity": [{ "frame": 0, "value": 0 }, { "frame": 20, "value": 1 }],
+      "transform": { "x": 50, "y": 240 },
+      "children": [
+        {
+          "id": "title",
+          "type": "text",
+          "text": "Kinetograph\nrenders on the GPU",
+          "font": "DM Sans",
+          "size": 40,
+          "color": "#ffffff",
+          "lineHeight": 1.15,
+          "maxWidth": 480
+        }
+      ]
+    }
+  ]
+}
