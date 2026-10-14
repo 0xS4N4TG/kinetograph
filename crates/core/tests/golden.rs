@@ -253,3 +253,18 @@ fn dot_matrix_matches_golden() {
     let frame = render_still(scene("tests/scenes/dot-matrix.json"), 15).unwrap();
     check("dot-matrix", &frame);
 }
+
+#[test]
+fn turbulence_matches_golden() {
+    // Frame 15 of 30: the keyframed scales, frequencies and rotations are half
+    // way. Covers papercut's `torn` (fractalNoise at 0.04, 4 octaves, seed 7)
+    // on a rotating card with a shadow, `rough` (seed 11) on text, a
+    // `turbulence`-type noise with per-axis frequencies and the B and A
+    // channels on an image, a displaced group that is scaled and rotated so
+    // the noise turns with it and hangs off the left and bottom edges, a bar
+    // off the right edge (the margin lets its off-canvas part be pulled in),
+    // zero octaves on a half-transparent layer (a plain shift), fractional and
+    // negative seeds, and a zero scale (the layer untouched).
+    let frame = render_still(scene("tests/scenes/turbulence.json"), 15).unwrap();
+    check("turbulence", &frame);
+}

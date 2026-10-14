@@ -24,7 +24,12 @@
 //!
 //! Shaders that draw seeded noise (`shaders/grain.wgsl`, `dither.wgsl`,
 //! `dot_matrix.wgsl`) are compiled with `shaders/hash.wgsl` in front of them
-//! (`shader_module`).
+//! (`shader_module`), and those that evaluate turbulence with
+//! `shaders/turbulence.wgsl`.
+//!
+//! The displace pass (`shaders/displace.wgsl`) also reads the layer through
+//! the filtered layout, and takes the noise tables of its seed (built on first
+//! use, `turbulence_tables`) as a second bind group.
 //!
 //! The `lut` pass (`shaders/lut.wgsl`) reads a 3D texture as well, so it has
 //! a bind group layout of its own (`lut_layout`) and the scene's tables are
@@ -52,13 +57,14 @@ use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::resolve::{
-    ResolvedDither, ResolvedDotMatrix, ResolvedEffect, ResolvedGlow, ResolvedGradientMap,
-    ResolvedGrain, ResolvedHalftone, ResolvedShader, ResolvedShadow,
+    ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect, ResolvedGlow,
+    ResolvedGradientMap, ResolvedGrain, ResolvedHalftone, ResolvedShader, ResolvedShadow,
 };
 use crate::scene::{
     BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, MAX_GRADIENT_MAP_STOPS, MaskMode,
     MatteMode,
 };
+use crate::turbulence::{self, Tables};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -106,6 +112,14 @@ pub struct Compositor {
     /// On `filtered_layout`: it reads the layer between texels.
     halftone: wgpu::RenderPipeline,
     dot_matrix: wgpu::RenderPipeline,
+    /// On `filtered_layout` and then `turbulence_layout`.
+    displace: wgpu::RenderPipeline,
+    /// For passes that evaluate turbulence: the storage buffer of one seed's
+    /// tables, at bind group 1.
+    turbulence_layout: wgpu::BindGroupLayout,
+    /// The tables' bind groups by `turbulence::setup_seed`, made the first
+    /// time a seed is drawn with.
+    turbulence_tables: HashMap<i64, wgpu::BindGroup>,
     /// For `lut`: the layer, a 3D texture and the pass's uniforms.
     lut_layout: wgpu::BindGroupLayout,
     lut: wgpu::RenderPipeline,
@@ -162,6 +176,8 @@ impl Compositor {
         let halftone_shader =
             shader_module(device, "halftone", include_str!("shaders/halftone.wgsl"));
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
+        let displace_shader =
+            shader_module(device, "displace", include_str!("shaders/displace.wgsl"));
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -209,6 +225,20 @@ impl Compositor {
             &filtered_pipeline_layout,
             &halftone_shader,
             "fs_halftone",
+            LINEAR_FORMAT,
+        );
+        let turbulence_layout = turbulence_bind_group_layout(device);
+        let displace_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("displace"),
+                bind_group_layouts: &[Some(&filtered_layout), Some(&turbulence_layout)],
+                immediate_size: 0,
+            });
+        let displace = fullscreen_pipeline(
+            device,
+            &displace_pipeline_layout,
+            &displace_shader,
+            "fs_displace",
             LINEAR_FORMAT,
         );
         let lut_layout = lut_bind_group_layout(device);
@@ -293,6 +323,9 @@ impl Compositor {
             dither: pipeline(&dither_shader, "fs_dither", LINEAR_FORMAT),
             halftone,
             dot_matrix: pipeline(&dot_matrix_shader, "fs_dot_matrix", LINEAR_FORMAT),
+            displace,
+            turbulence_layout,
+            turbulence_tables: HashMap::new(),
             lut_layout,
             lut,
             luts,
@@ -512,6 +545,10 @@ impl Compositor {
                     src = self.dot_matrix(src, layer_matrix, layer_box, &dots);
                 }
                 ResolvedEffect::DotMatrix(_) => {}
+                ResolvedEffect::Displace(displace) if displace.scale != 0.0 => {
+                    src = self.displace(src, layer_matrix, &displace);
+                }
+                ResolvedEffect::Displace(_) => {}
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -688,6 +725,48 @@ impl Compositor {
         );
         self.release(src);
         target
+    }
+
+    /// Displaces `src` by turbulence noise in the layer's space
+    /// (`layer_matrix` takes that to texels). `src` goes back to the pool; the
+    /// result is a new texture.
+    fn displace(&mut self, src: Tex, layer_matrix: Affine, displace: &ResolvedDisplace) -> Tex {
+        let key = self.turbulence_tables(displace.turbulence.seed);
+        let target = self.acquire();
+        self.run_filtered_pass_with(
+            &self.displace,
+            &src.view,
+            &displace_values(displace, layer_matrix),
+            Some(&self.turbulence_tables[&key]),
+            &target.view,
+        );
+        self.release(src);
+        target
+    }
+
+    /// Makes sure the noise tables of `seed` are on the GPU and returns the
+    /// key of their bind group in `turbulence_tables`.
+    fn turbulence_tables(&mut self, seed: i64) -> i64 {
+        let key = turbulence::setup_seed(seed);
+        if !self.turbulence_tables.contains_key(&key) {
+            let buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("turbulence tables"),
+                    contents: &Tables::new(seed).to_bytes(),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("turbulence tables"),
+                layout: &self.turbulence_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
+            self.turbulence_tables.insert(key, bind_group);
+        }
+        key
     }
 
     /// Grades `src` through the table loaded for `key`, faded in by `amount`.
@@ -1024,6 +1103,19 @@ impl Compositor {
         params: &[u8],
         target: &wgpu::TextureView,
     ) {
+        self.run_filtered_pass_with(pipeline, input, params, None, target);
+    }
+
+    /// Like `run_filtered_pass`, with a second bind group (at group 1) for
+    /// the passes that have one.
+    fn run_filtered_pass_with(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        input: &wgpu::TextureView,
+        params: &[u8],
+        extra: Option<&wgpu::BindGroup>,
+        target: &wgpu::TextureView,
+    ) {
         let uniform = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1049,7 +1141,7 @@ impl Compositor {
                 },
             ],
         });
-        self.draw(pipeline, &bind_group, target);
+        self.draw_with(pipeline, &bind_group, extra, target);
     }
 
     /// One full-screen triangle with `bind_group`, written over all of
@@ -1058,6 +1150,17 @@ impl Compositor {
         &self,
         pipeline: &wgpu::RenderPipeline,
         bind_group: &wgpu::BindGroup,
+        target: &wgpu::TextureView,
+    ) {
+        self.draw_with(pipeline, bind_group, None, target);
+    }
+
+    /// Like `draw`, with `extra` set as bind group 1 when given.
+    fn draw_with(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+        extra: Option<&wgpu::BindGroup>,
         target: &wgpu::TextureView,
     ) {
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -1077,6 +1180,9 @@ impl Compositor {
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
+            if let Some(extra) = extra {
+                pass.set_bind_group(1, extra, &[]);
+            }
             pass.draw(0..3, 0..1);
         }
         self.queue.submit([encoder.finish()]);
@@ -1187,6 +1293,24 @@ fn lut_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
+/// The bind group of a pass that evaluates turbulence, at group 1: one
+/// seed's tables as a read-only storage buffer (`turbulence::Tables`).
+fn turbulence_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("turbulence"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    })
+}
+
 /// Uploads a table as an Rgba32Float 3D texture: x is the red index, y green
 /// and z blue, which is the order of the file's rows.
 fn upload_lut(device: &wgpu::Device, queue: &wgpu::Queue, lut: &Lut) -> LutTexture {
@@ -1218,13 +1342,18 @@ fn upload_lut(device: &wgpu::Device, queue: &wgpu::Queue, lut: &Lut) -> LutTextu
 }
 
 /// A shader module for a built-in pass. Passes that call `hash` or
-/// `cell_hash` get `shaders/hash.wgsl` put in front of their source.
+/// `cell_hash` get `shaders/hash.wgsl` put in front of their source, and
+/// those that call `turbulence_value` get `shaders/turbulence.wgsl`.
 fn shader_module(device: &wgpu::Device, label: &str, source: &str) -> wgpu::ShaderModule {
-    let source = if source.contains("hash(") {
-        format!("{}{source}", include_str!("shaders/hash.wgsl"))
-    } else {
-        source.to_string()
-    };
+    let mut full = String::new();
+    if source.contains("hash(") {
+        full.push_str(include_str!("shaders/hash.wgsl"));
+    }
+    if source.contains("turbulence_value(") {
+        full.push_str(include_str!("shaders/turbulence.wgsl"));
+    }
+    full.push_str(source);
+    let source = full;
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
         source: wgpu::ShaderSource::Wgsl(source.into()),
@@ -1375,6 +1504,50 @@ fn halftone_values(halftone: &ResolvedHalftone, layer_matrix: Affine) -> [f32; 2
         tb as f32,
         ta as f32,
     ]
+}
+
+/// A displacement as `shaders/displace.wgsl` reads it: the inverse of the
+/// layer matrix (linear part, then translation), the scale, the matrix's
+/// linear part, the base frequency, then the octaves, the two channels and
+/// whether the noise is fractal, as u32s. A matrix that cannot be inverted has
+/// nothing to draw, so its inverse is zeros.
+fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine) -> Vec<u8> {
+    let m = layer_matrix.as_coeffs();
+    let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
+        layer_matrix.inverse().as_coeffs()
+    } else {
+        [0.0; 6]
+    };
+    let t = &displace.turbulence;
+    let mut bytes = floats(&[
+        inverse[0] as f32,
+        inverse[1] as f32,
+        inverse[2] as f32,
+        inverse[3] as f32,
+        inverse[4] as f32,
+        inverse[5] as f32,
+        displace.scale,
+        0.0,
+        m[0] as f32,
+        m[1] as f32,
+        m[2] as f32,
+        m[3] as f32,
+        t.frequency[0],
+        t.frequency[1],
+        0.0,
+        0.0,
+    ]);
+    bytes.extend(
+        [
+            t.octaves,
+            displace.x_channel.index(),
+            displace.y_channel.index(),
+            u32::from(t.fractal),
+        ]
+        .iter()
+        .flat_map(|v| v.to_le_bytes()),
+    );
+    bytes
 }
 
 /// A dot matrix as `shaders/dot_matrix.wgsl` reads it: the inverse of the
@@ -1785,6 +1958,66 @@ mod tests {
             seed: 41,
             shape,
         }
+    }
+
+    #[test]
+    fn displace_values_carry_the_matrix_the_noise_and_the_channels() {
+        use crate::resolve::ResolvedTurbulence;
+        use crate::scene::Channel;
+        use vello::kurbo::Point;
+
+        let displace = ResolvedDisplace {
+            scale: 12.0,
+            x_channel: Channel::B,
+            y_channel: Channel::A,
+            turbulence: ResolvedTurbulence {
+                fractal: true,
+                frequency: [0.04, 0.5],
+                octaves: 4,
+                seed: 7,
+            },
+        };
+        let matrix = Affine::translate((10.0, 20.0)) * Affine::rotate(0.5) * Affine::scale(2.0);
+        let bytes = displace_values(&displace, matrix);
+        assert_eq!(bytes.len(), 80);
+        let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        assert_eq!(float(6), 12.0);
+        assert_eq!([12, 13].map(float), [0.04, 0.5]);
+        // Octaves, the two channels, fractalNoise.
+        assert_eq!([16, 17, 18, 19].map(word), [4, 2, 3, 1]);
+
+        // The shader's two mappings, written out: a texel to the layer by the
+        // inverse, and a displacement in layer space to texels by the linear
+        // part. Together they take the pixel to where the matrix puts the
+        // displaced layer point.
+        let pixel = Point::new(123.5, 77.5);
+        let layer = Point::new(
+            f64::from(float(0)) * pixel.x + f64::from(float(2)) * pixel.y + f64::from(float(4)),
+            f64::from(float(1)) * pixel.x + f64::from(float(3)) * pixel.y + f64::from(float(5)),
+        );
+        let want = matrix.inverse() * pixel;
+        assert!((layer.x - want.x).abs() < 1e-4 && (layer.y - want.y).abs() < 1e-4);
+        let shift = (3.0_f64, -1.5_f64);
+        let texel = Point::new(
+            pixel.x + f64::from(float(8)) * shift.0 + f64::from(float(10)) * shift.1,
+            pixel.y + f64::from(float(9)) * shift.0 + f64::from(float(11)) * shift.1,
+        );
+        let want = matrix * (matrix.inverse() * pixel + vello::kurbo::Vec2::new(shift.0, shift.1));
+        assert!((texel.x - want.x).abs() < 1e-4 && (texel.y - want.y).abs() < 1e-4);
+
+        // Turbulence type, and a layer scaled to nothing has no inverse.
+        let plain = ResolvedDisplace {
+            turbulence: ResolvedTurbulence {
+                fractal: false,
+                ..displace.turbulence
+            },
+            ..displace
+        };
+        assert_eq!(word(19), 1);
+        let flat = displace_values(&plain, Affine::scale(0.0));
+        assert!(flat[..24].iter().all(|b| *b == 0));
+        assert_eq!(u32::from_le_bytes(flat[76..80].try_into().unwrap()), 0);
     }
 
     #[test]

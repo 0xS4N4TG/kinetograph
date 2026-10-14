@@ -5,10 +5,12 @@ use vello::kurbo::Affine;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
-    BlendMode, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Geometry, Gradient,
+    BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Geometry, Gradient,
     GradientGeometry, HalftoneShape, Layer, LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE,
-    MIN_DITHER_LEVELS, MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform,
+    MIN_DITHER_LEVELS, MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform, Turbulence,
+    TurbulenceKind,
 };
+use crate::turbulence::MAX_OCTAVES;
 
 /// The time a scene is evaluated at.
 ///
@@ -105,7 +107,32 @@ pub enum ResolvedEffect {
     Dither(ResolvedDither),
     Halftone(ResolvedHalftone),
     DotMatrix(ResolvedDotMatrix),
+    Displace(ResolvedDisplace),
     Shader(ResolvedShader),
+}
+
+/// A displacement at one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedDisplace {
+    /// Layer pixels; 0 leaves the layer alone.
+    pub scale: f32,
+    pub x_channel: Channel,
+    pub y_channel: Channel,
+    pub turbulence: ResolvedTurbulence,
+}
+
+/// `feTurbulence` at one frame, in layer space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedTurbulence {
+    /// `fractalNoise` rather than `turbulence`.
+    pub fractal: bool,
+    /// Per axis, not negative.
+    pub frequency: [f32; 2],
+    /// 0..=`turbulence::MAX_OCTAVES`.
+    pub octaves: u32,
+    /// The scene's number truncated toward zero; `turbulence::setup_seed`
+    /// brings it into the generator's range.
+    pub seed: i64,
 }
 
 /// A dot-matrix reveal at one frame.
@@ -665,12 +692,36 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             },
             shape: *shape,
         }),
+        Effect::Displace {
+            scale,
+            x_channel_selector,
+            y_channel_selector,
+            turbulence,
+        } => ResolvedEffect::Displace(ResolvedDisplace {
+            scale: scale.at(f) as f32,
+            x_channel: *x_channel_selector,
+            y_channel: *y_channel_selector,
+            turbulence: resolve_turbulence(turbulence, f),
+        }),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
             frame: f as f32,
             time: (f / clock.fps) as f32,
         }),
+    }
+}
+
+fn resolve_turbulence(t: &Turbulence, f: f64) -> ResolvedTurbulence {
+    ResolvedTurbulence {
+        fractal: t.kind == TurbulenceKind::FractalNoise,
+        frequency: [
+            t.base_frequency.x.at(f).max(0.0) as f32,
+            t.base_frequency.y.at(f).max(0.0) as f32,
+        ],
+        // Checked when the scene loaded.
+        octaves: t.num_octaves.clamp(0, i64::from(MAX_OCTAVES)) as u32,
+        seed: t.seed as i64,
     }
 }
 
@@ -1181,6 +1232,54 @@ mod tests {
             0,
         );
         assert_eq!(dm(&early[0]).progress, 0.0);
+    }
+
+    #[test]
+    fn displace_resolves_its_scale_and_turbulence_per_frame() {
+        let effects = effects_at(
+            r#"[{"type": "displace", "xChannelSelector": "B",
+                 "scale": [{"frame": 0, "value": 0}, {"frame": 10, "value": -20}],
+                 "turbulence": {"type": "turbulence", "numOctaves": 3, "seed": -4.9,
+                   "baseFrequency": [[{"frame": 0, "value": 0.02}, {"frame": 10, "value": 0.06}], 0.5]}},
+                {"type": "displace", "scale": 3,
+                 "turbulence": {"type": "fractalNoise", "baseFrequency": 0.04, "seed": 7.99}}]"#,
+            5,
+        );
+        let displace = |e: &ResolvedEffect| {
+            let ResolvedEffect::Displace(d) = e else {
+                panic!("not a displacement: {e:?}");
+            };
+            *d
+        };
+        assert_eq!(
+            displace(&effects[0]),
+            ResolvedDisplace {
+                scale: -10.0,
+                x_channel: Channel::B,
+                y_channel: Channel::G,
+                turbulence: ResolvedTurbulence {
+                    fractal: false,
+                    frequency: [0.04, 0.5],
+                    octaves: 3,
+                    // Truncated toward zero, not rounded or floored.
+                    seed: -4,
+                },
+            }
+        );
+        assert_eq!(
+            displace(&effects[1]),
+            ResolvedDisplace {
+                scale: 3.0,
+                x_channel: Channel::R,
+                y_channel: Channel::G,
+                turbulence: ResolvedTurbulence {
+                    fractal: true,
+                    frequency: [0.04, 0.04],
+                    octaves: 1,
+                    seed: 7,
+                },
+            }
+        );
     }
 
     #[test]

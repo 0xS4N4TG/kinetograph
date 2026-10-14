@@ -161,6 +161,8 @@ side.
   effects count on top of the largest reach among its children, because each works on what the one before painted.
 - The colour filters, `gradientMap`, `lut`, `grain` and `dither` count nothing: they change pixels in place. `halftone`
   and `dotMatrix` count nothing either: their dots stay inside their cells.
+- `displace` counts `|scale| / 2` in layer pixels, so unlike the others it is multiplied by the largest product of
+  `scale` over the layer and its enclosing groups (a card scaled to 2 with a displacement of 10 counts 10).
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -496,6 +498,54 @@ with the layer. `halftone` is the look that follows the layer's brightness; this
   `sweep` on a group is an error when the scene loads, naming the layer. Use `random` on a group.
 - Counts nothing in the [margin](#canvas-margin).
 
+### displace
+
+```json
+{ "type": "displace", "scale": 10,
+  "turbulence": { "type": "fractalNoise", "baseFrequency": 0.04, "numOctaves": 4, "seed": 7 } }
+{ "type": "displace", "scale": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 20 }],
+  "xChannelSelector": "B", "yChannelSelector": "A",
+  "turbulence": { "type": "turbulence", "baseFrequency": [0.02, 0.08], "numOctaves": 2, "seed": 11 } }
+```
+
+Pushes the layer's pixels around with noise: SVG's `feTurbulence` feeding `feDisplacementMap` on the source graphic, with
+the same attributes under the same names, so a filter like papercut's `url(#torn)` (a rough, ragged edge on a card)
+ports by copying its values. A torn paper edge is `fractalNoise` at about `0.04`, 4 octaves, `scale` around 10; a
+rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `scale` | required | Animatable, in layer pixels (SVG user units): how far the noise can move a pixel. Negative reverses the push; `0` leaves the layer alone and costs nothing. |
+| `xChannelSelector` | `R` | `R`, `G`, `B` or `A`: the noise channel that moves pixels sideways. SVG's own default is `A` for both selectors, which pushes only along the diagonal; here the defaults are `R` and `G`. |
+| `yChannelSelector` | `G` | The channel that moves pixels up and down. |
+| `turbulence` | required | The noise, below. |
+
+`turbulence` takes SVG's `feTurbulence` attributes:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `type` | required | `fractalNoise` (soft clouds centred on grey) or `turbulence` (dark with bright veins). |
+| `baseFrequency` | required | Animatable, not negative (checked when the scene loads): cycles per layer pixel of the first octave. One number, or `[x, y]` for a different frequency per axis (each a number or keyframes). A list of keyframe objects is one animated number for both axes. |
+| `numOctaves` | `1` | Whole number from 0 to 10 (checked when the scene loads, an error naming the layer). Each octave doubles the frequency and halves the weight. Zero is a transparent black image, as the spec says, so a displacement with no octaves is a plain shift of `scale / 2` up and to the left. Not animated. |
+| `seed` | required | A number, truncated toward zero (`7.9` is `7`, `-4.9` is `-4`) and then brought into the generator's range by SVG's `setup_seed` (zero and negatives are folded into positive seeds, huge ones held at the top). The same seed draws the same noise on every machine. Not animated. |
+
+- **What a pixel does.** An output pixel at layer point `(x, y)` takes the layer's colour at
+  `(x + scale * (XC - 0.5), y + scale * (YC - 0.5))`, where `XC` and `YC` are the selected noise channels, 0..1, at
+  the pixel's centre. The noise is computed in the layer's own space, so the pattern and the push move, scale and
+  rotate with the layer (as an SVG filter on a transformed element does), and a group is displaced in the group's
+  space. The channels are used as the noise gives them, with no colour conversion between the two primitives (SVG's
+  default `linearRGB` is the same for both).
+- **Sampling.** Bilinear, on premultiplied colour. What lies outside the texture (the canvas and its margin) is
+  transparent. The noise follows the spec's reference algorithm in 32-bit floats and, unlike a browser's, is not
+  quantised to 8 bits, so expect differences of about one 8-bit step against a browser, not a different pattern.
+- Counts `|scale| / 2` times the largest product of `scale` over the layer and its ancestors in the
+  [margin](#canvas-margin) (a pixel is read from that far away; at the largest keyframe, whichever way the scale
+  points), so the torn edge of a card that hangs off the canvas still pulls in what lies beyond it. Other effects' reaches
+  stay in canvas pixels and ignore `scale`. The factor is per axis: a rotated layer's diagonal push can reach up to
+  1.41 times further in the worst case, which a margin this size can cut off.
+- Effects after `displace` see the displaced layer; one before it (`glow`, a shadow) is displaced with it. For the
+  papercut look put the shadow after: `[displace, dropShadow]` casts the shadow of the torn edge.
+
 ### backdropBlur
 
 ```json
@@ -739,7 +789,7 @@ layer.
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
-  `halftone`, `dotMatrix`, `shader`.
+  `halftone`, `dotMatrix`, `displace`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
@@ -762,6 +812,11 @@ layer.
 - `dotMatrix` has dots that grow linearly in radius (so their area is quadratic in `progress`), no easing of its own
   (ease `progress`), circle or square only, and `sweep` is a straight wipe across the box (no radial
   wipe). Random delays are per cell and fixed for a seed; a new seed is a new pattern.
+- `displace` and the `turbulence` noise follow SVG's `feTurbulence` without `stitchTiles` (the noise does not tile
+  seamlessly over a region), take at most 10 octaves, and do not animate `seed` or `numOctaves` (animate
+  `baseFrequency` or `scale`, or swap layers). A rotated layer's displacement can reach 1.41 times past the margin it
+  gets. The noise is evaluated at the output pixel in the layer's space, so a layer scaled up a lot shows its noise
+  magnified (and one scaled far down aliases it); there are no mipmaps.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.

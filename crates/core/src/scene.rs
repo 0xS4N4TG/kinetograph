@@ -10,6 +10,7 @@ use crate::anim::Num;
 use crate::color::Color;
 use crate::error::{Error, Result};
 use crate::resolve::MAX_BLUR_RADIUS;
+use crate::turbulence::MAX_OCTAVES;
 
 /// Largest canvas side; wgpu's default texture limit.
 pub const MAX_SIDE: u32 = 8192;
@@ -309,8 +310,120 @@ pub enum Effect {
         #[serde(default)]
         shape: DotShape,
     },
+    /// SVG's `feTurbulence` -> `feDisplacementMap`: pulls each pixel from
+    /// somewhere else on the layer, as far as turbulence noise says.
+    Displace {
+        /// Layer pixels: a pixel is read from up to half of this away, in
+        /// each direction (the noise channel's 0..1 less a half, times it).
+        scale: Num,
+        /// Which noise channel moves a pixel across (default `R`).
+        #[serde(default = "red", rename = "xChannelSelector")]
+        x_channel_selector: Channel,
+        /// Which moves it down (default `G`).
+        #[serde(default = "green", rename = "yChannelSelector")]
+        y_channel_selector: Channel,
+        turbulence: Turbulence,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
+}
+
+/// One channel of a noise image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Channel {
+    R,
+    G,
+    B,
+    A,
+}
+
+impl Channel {
+    /// The channel's number in the noise tables.
+    pub fn index(self) -> u32 {
+        match self {
+            Channel::R => 0,
+            Channel::G => 1,
+            Channel::B => 2,
+            Channel::A => 3,
+        }
+    }
+}
+
+fn red() -> Channel {
+    Channel::R
+}
+
+fn green() -> Channel {
+    Channel::G
+}
+
+/// The attributes of SVG's `feTurbulence` (without `stitchTiles`), named as
+/// SVG names them. See `turbulence.rs`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Turbulence {
+    #[serde(rename = "type")]
+    pub kind: TurbulenceKind,
+    /// Cycles per layer pixel, one number or `[x, y]`; not negative.
+    pub base_frequency: BaseFrequency,
+    /// Octaves of noise, 0..=`turbulence::MAX_OCTAVES`.
+    #[serde(default = "one_octave")]
+    pub num_octaves: i64,
+    /// Truncated toward zero, then SVG's `setup_seed`.
+    pub seed: f64,
+}
+
+fn one_octave() -> i64 {
+    1
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TurbulenceKind {
+    /// Signed noise centred on a middle grey: (sum + 1) / 2.
+    FractalNoise,
+    /// The sum of the noise's absolute values: dark with bright veins.
+    Turbulence,
+}
+
+/// A noise frequency per axis. The JSON is a number (both axes) or `[x, y]`
+/// (each a number or keyframes); a list of keyframe objects is one number.
+#[derive(Clone, Debug)]
+pub struct BaseFrequency {
+    pub x: Num,
+    pub y: Num,
+}
+
+impl<'de> Deserialize<'de> for BaseFrequency {
+    // Read by hand: `[0.04, 0.08]` and a keyframe list are both arrays.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = serde_json::Value::deserialize(d)?;
+        let num = |v: serde_json::Value| {
+            serde_json::from_value::<Num>(v)
+                .map_err(|e| D::Error::custom(format!("bad baseFrequency: {e}")))
+        };
+        match value {
+            serde_json::Value::Array(items)
+                if !items.is_empty() && items.iter().all(|v| !v.is_object()) =>
+            {
+                let [x, y]: [serde_json::Value; 2] = items.try_into().map_err(|_| {
+                    D::Error::custom(
+                        "baseFrequency takes one number or [x, y], or a list of keyframes",
+                    )
+                })?;
+                Ok(BaseFrequency {
+                    x: num(x)?,
+                    y: num(y)?,
+                })
+            }
+            other => {
+                let n = num(other)?;
+                Ok(BaseFrequency { x: n.clone(), y: n })
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -424,7 +537,9 @@ pub const MAX_SHADOW_SIZE: f64 = 128.0;
 impl Effect {
     /// How far past the layer's own pixels the effect can paint, in pixels,
     /// at its largest keyframes. Sets the scene's margin (`Scene::margin`).
-    fn reach(&self) -> f64 {
+    /// `layer_scale` is the largest product of the `scale` of the layer and
+    /// its ancestors: only effects that measure in layer units use it.
+    fn reach(&self, layer_scale: f64) -> f64 {
         match self {
             // Not counted: blur only ever spreads the layer's own pixels, and
             // leaving it out keeps scenes that use nothing else at margin 0,
@@ -456,6 +571,10 @@ impl Effect {
             | Effect::Dither { .. } => 0.0,
             // Dots stay inside their cells, which only sample the layer.
             Effect::Halftone { .. } | Effect::DotMatrix { .. } => 0.0,
+            // A pixel is read from up to half of `scale` layer units away.
+            Effect::Displace { scale, .. } => {
+                scale.max().abs().max(scale.min().abs()) / 2.0 * layer_scale
+            }
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -717,7 +836,7 @@ impl Scene {
     /// padded canvas still fits
     /// in `MAX_SIDE`. A scene with no such effect has margin 0.
     pub fn margin(&self) -> u32 {
-        margin_for(max_reach(&self.layers), self.width, self.height)
+        margin_for(max_reach(&self.layers, 1.0), self.width, self.height)
     }
 
     /// The WGSL module of every distinct custom shader in the scene, in the
@@ -799,6 +918,9 @@ impl Scene {
                         seed,
                         ..
                     } => validate_dot_matrix(&layer.id, &layer.kind, size, stagger, *order, *seed)?,
+                    Effect::Displace { turbulence, .. } => {
+                        validate_turbulence(&layer.id, "displace", turbulence)?;
+                    }
                     Effect::Lut { src, .. } if src.trim().is_empty() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: lut needs a src, the path of a .cube file",
@@ -891,14 +1013,18 @@ fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
 
 /// The largest reach of any layer in `layers`. Reaches add up along a
 /// chain: each effect in a list works on what the ones before it painted,
-/// and a group's effects on what its children painted.
-fn max_reach(layers: &[Layer]) -> f64 {
+/// and a group's effects on what its children painted. `scale` is the
+/// largest product of the enclosing groups' `scale` (1 for the scene's own
+/// layers), which turns an effect's layer units into pixels.
+fn max_reach(layers: &[Layer], scale: f64) -> f64 {
     layers.iter().fold(0.0, |most, layer| {
+        let t = &layer.transform.scale;
+        let scale = scale * t.max().abs().max(t.min().abs());
         let children = match &layer.kind {
-            LayerKind::Group(g) => max_reach(&g.children),
+            LayerKind::Group(g) => max_reach(&g.children, scale),
             _ => 0.0,
         };
-        let own: f64 = layer.effects.iter().map(Effect::reach).sum();
+        let own: f64 = layer.effects.iter().map(|e| e.reach(scale)).sum();
         most.max(children + own)
     })
 }
@@ -1021,6 +1147,24 @@ fn validate_dot_matrix(
         return bad(
             "order \"sweep\" needs a box, and a group has none; use order \"random\"".into(),
         );
+    }
+    Ok(())
+}
+
+fn validate_turbulence(id: &str, what: &str, t: &Turbulence) -> Result<()> {
+    let bad = |msg: String| {
+        Err(Error::Scene(format!(
+            "layer {id:?}: {what} turbulence {msg}"
+        )))
+    };
+    if t.base_frequency.x.min() < 0.0 || t.base_frequency.y.min() < 0.0 {
+        return bad("baseFrequency must not be negative".into());
+    }
+    if !(0..=i64::from(MAX_OCTAVES)).contains(&t.num_octaves) {
+        return bad(format!(
+            "numOctaves must be a whole number from 0 to {MAX_OCTAVES}, got {}",
+            t.num_octaves
+        ));
     }
     Ok(())
 }
@@ -1953,6 +2097,237 @@ mod tests {
         // An unknown order or shape is the JSON parser's complaint.
         assert!(dots(r#""order": "spiral""#).contains("spiral"));
         assert!(dots(r#""seed": 1, "shape": "line""#).contains("line"));
+    }
+
+    const TORN: &str =
+        r#"{"type": "fractalNoise", "baseFrequency": 0.04, "numOctaves": 4, "seed": 7}"#;
+
+    #[test]
+    fn parses_displace_with_defaults() {
+        let scene = effects_of(&format!(
+            r#"[{{"type": "displace", "scale": 10, "turbulence": {TORN}}},
+                {{"type": "displace", "scale": [{{"frame": 0, "value": 0}}, {{"frame": 9, "value": 12}}],
+                  "xChannelSelector": "B", "yChannelSelector": "A",
+                  "turbulence": {{"type": "turbulence", "baseFrequency": [0.02, 0.08], "seed": -3.7}}}}]"#
+        ));
+        let Effect::Displace {
+            scale,
+            x_channel_selector,
+            y_channel_selector,
+            turbulence,
+        } = &scene.layers[0].effects[0]
+        else {
+            panic!("not a displacement");
+        };
+        // SVG's default channel would be A for both; these are R and G.
+        assert_eq!(
+            (scale.at(0.0), *x_channel_selector, *y_channel_selector),
+            (10.0, Channel::R, Channel::G)
+        );
+        assert_eq!(turbulence.kind, TurbulenceKind::FractalNoise);
+        assert_eq!(
+            (
+                turbulence.base_frequency.x.at(0.0),
+                turbulence.base_frequency.y.at(0.0),
+                turbulence.num_octaves,
+                turbulence.seed
+            ),
+            (0.04, 0.04, 4, 7.0)
+        );
+        let Effect::Displace {
+            scale,
+            x_channel_selector,
+            y_channel_selector,
+            turbulence,
+        } = &scene.layers[0].effects[1]
+        else {
+            panic!("not a displacement");
+        };
+        assert_eq!(scale.at(9.0), 12.0);
+        assert_eq!(
+            (*x_channel_selector, *y_channel_selector),
+            (Channel::B, Channel::A)
+        );
+        assert_eq!(turbulence.kind, TurbulenceKind::Turbulence);
+        // A pair is one frequency per axis; numOctaves defaults to 1 as in SVG.
+        assert_eq!(
+            (
+                turbulence.base_frequency.x.at(0.0),
+                turbulence.base_frequency.y.at(0.0),
+                turbulence.num_octaves,
+                turbulence.seed
+            ),
+            (0.02, 0.08, 1, -3.7)
+        );
+    }
+
+    #[test]
+    fn base_frequency_is_a_number_a_pair_or_keyframes() {
+        let frequency = |json: &str| {
+            let t = format!(r#"{{"type": "fractalNoise", "baseFrequency": {json}, "seed": 1}}"#);
+            let scene = effects_of(&format!(
+                r#"[{{"type": "displace", "scale": 1, "turbulence": {t}}}]"#
+            ));
+            let Effect::Displace { turbulence, .. } = &scene.layers[0].effects[0] else {
+                panic!("not a displacement");
+            };
+            let f = &turbulence.base_frequency;
+            ((f.x.at(0.0), f.x.at(9.0)), (f.y.at(0.0), f.y.at(9.0)))
+        };
+        assert_eq!(frequency("0.05"), ((0.05, 0.05), (0.05, 0.05)));
+        assert_eq!(frequency("[0.1, 0.2]"), ((0.1, 0.1), (0.2, 0.2)));
+        // Keyframes on one number: both axes.
+        assert_eq!(
+            frequency(r#"[{"frame": 0, "value": 0.1}, {"frame": 9, "value": 0.3}]"#),
+            ((0.1, 0.3), (0.1, 0.3))
+        );
+        // A pair of keyframe lists animates the axes apart.
+        assert_eq!(
+            frequency(r#"[[{"frame": 0, "value": 0.1}, {"frame": 9, "value": 0.3}], 0.5]"#),
+            ((0.1, 0.3), (0.5, 0.5))
+        );
+    }
+
+    #[test]
+    fn rejects_bad_turbulence_naming_the_layer() {
+        let displace = |turbulence: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "displace", "scale": 5, "turbulence": {turbulence}}}],"#
+            ))
+            .unwrap_err()
+            .to_string()
+        };
+        let t = |fields: &str| format!(r#"{{"type": "fractalNoise", "seed": 1, {fields}}}"#);
+        for (turbulence, want) in [
+            (
+                t(r#""baseFrequency": -0.1"#),
+                "baseFrequency must not be negative",
+            ),
+            (
+                t(r#""baseFrequency": [0.1, -0.1]"#),
+                "baseFrequency must not be negative",
+            ),
+            (
+                t(r#""baseFrequency": [{"frame": 0, "value": 0.1}, {"frame": 9, "value": -1}]"#),
+                "baseFrequency must not be negative",
+            ),
+            (
+                t(r#""baseFrequency": 0.1, "numOctaves": 11"#),
+                "numOctaves must be a whole number from 0 to 10, got 11",
+            ),
+            (
+                t(r#""baseFrequency": 0.1, "numOctaves": -1"#),
+                "numOctaves must be a whole number from 0 to 10, got -1",
+            ),
+        ] {
+            let msg = displace(&turbulence);
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains("displace") && msg.contains(want),
+                "{turbulence}: {msg}"
+            );
+        }
+        // These are the JSON parser's complaints: no layer, but a clear one.
+        assert!(displace(&t(r#""baseFrequency": [0.1, 0.2, 0.3]"#)).contains("[x, y]"));
+        assert!(displace(&t(r#""baseFrequency": []"#)).contains("keyframe list is empty"));
+        assert!(displace(&t(r#""baseFrequency": "high""#)).contains("baseFrequency"));
+        assert!(displace(&t(r#""baseFrequency": 0.1, "numOctaves": 2.5"#)).contains("2.5"));
+        assert!(displace(r#"{"type": "fractalNoise", "baseFrequency": 0.1}"#).contains("seed"));
+        assert!(displace(r#"{"baseFrequency": 0.1, "seed": 1}"#).contains("type"));
+        assert!(
+            displace(r#"{"type": "perlin", "baseFrequency": 0.1, "seed": 1}"#).contains("perlin")
+        );
+        let msg = scene_with(
+            r#""effects": [{"type": "displace", "scale": 5, "xChannelSelector": "X", "turbulence":
+                {"type": "fractalNoise", "baseFrequency": 0.1, "seed": 1}}],"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("X"), "{msg}");
+        // The largest legal values.
+        assert!(
+            scene_with(
+                r#""effects": [{"type": "displace", "scale": 5, "turbulence":
+                    {"type": "turbulence", "baseFrequency": 0, "numOctaves": 10, "seed": 1e30}}],"#
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn displace_counts_half_its_scale_times_the_layers_scale_in_the_margin() {
+        let displace = |scale: &str| {
+            format!(r#"{{"type": "displace", "scale": {scale}, "turbulence": {TORN}}}"#)
+        };
+        // Plain layer: half the largest |scale| at any keyframe, rounded up.
+        let scene = effects_of(&format!("[{}]", displace("10")));
+        assert_eq!(scene.margin(), 5);
+        let scene = effects_of(&format!(
+            "[{}]",
+            displace(r#"[{"frame": 0, "value": -30}, {"frame": 9, "value": 9}]"#)
+        ));
+        assert_eq!(scene.margin(), 15);
+        let scene = effects_of(&format!("[{}]", displace("9")));
+        assert_eq!(scene.margin(), 5);
+
+        // The layer's own scale multiplies it, at its largest keyframe and
+        // whichever way it faces; other effects ignore the scale.
+        let with_scale = |transform: &str, effects: &str| {
+            let json = format!(
+                r#"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                    {{"id": "a", "type": "shape", "shape": {{"kind": "rect", "width": 9, "height": 9}},
+                      "transform": {transform}, "effects": {effects}}}]}}"#
+            );
+            Scene::from_json(&json, PathBuf::new()).unwrap().margin()
+        };
+        assert_eq!(
+            with_scale(r#"{"scale": 3}"#, &format!("[{}]", displace("10"))),
+            15
+        );
+        assert_eq!(
+            with_scale(r#"{"scale": -3}"#, &format!("[{}]", displace("10"))),
+            15
+        );
+        assert_eq!(
+            with_scale(
+                r#"{"scale": [{"frame": 0, "value": 0.5}, {"frame": 9, "value": 4}]}"#,
+                &format!("[{}]", displace("10"))
+            ),
+            20
+        );
+        assert_eq!(
+            with_scale(r#"{"scale": 3}"#, r#"[{"type": "dropShadow", "x": 10}]"#),
+            10
+        );
+        // Reaches add up along the list; the shadow after the displacement
+        // casts the displaced layer, and neither is scaled by the other.
+        assert_eq!(
+            with_scale(
+                r#"{"scale": 2}"#,
+                &format!(r#"[{}, {{"type": "dropShadow", "x": 10}}]"#, displace("10"))
+            ),
+            20
+        );
+
+        // Ancestors' scales multiply in: the group's 2 and the child's 3
+        // make 6, and the group's own displacement uses its 2 (and its
+        // ancestors') but not the child's.
+        let json = format!(
+            r#"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                {{"id": "outer", "type": "group", "transform": {{"scale": 2}},
+                  "effects": [{outer}],
+                  "children": [
+                    {{"id": "inner", "type": "group", "transform": {{"scale": 5}}, "children": [
+                      {{"id": "leaf", "type": "group", "transform": {{"scale": 3}}, "children": [],
+                        "effects": [{leaf}]}}]}}]}}]}}"#,
+            outer = displace("4"),
+            leaf = displace("10"),
+        );
+        // leaf: 10 / 2 * (2 * 5 * 3) = 150; outer adds 4 / 2 * 2 = 4.
+        let scene = Scene::from_json(&json, PathBuf::new()).unwrap();
+        assert_eq!(scene.margin(), 154);
+
+        // A scale of 0 reaches nothing.
+        assert_eq!(effects_of(&format!("[{}]", displace("0"))).margin(), 0);
     }
 
     const SHADER: &str =
