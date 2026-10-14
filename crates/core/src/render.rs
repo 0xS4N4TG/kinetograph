@@ -922,10 +922,12 @@ fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
-/// or so does something inside it.
+/// or so does something inside it, or one of its motion blur sub-frames does
+/// (an animated radius can be under the minimum at the frame itself).
 fn needs_backdrop(layer: &ResolvedLayer) -> bool {
     has_backdrop_blur(&layer.effects)
         || matches!(&layer.kind, ResolvedKind::Group { children, .. } if children.iter().any(needs_backdrop))
+        || layer.motion.iter().any(needs_backdrop)
 }
 
 /// Like `needs_backdrop`, counting the layer's matte source, which is drawn
@@ -1699,5 +1701,19 @@ mod tests {
         assert_eq!(layers[0].opacity, 0.0);
         assert!(!is_hidden(&layers[0]));
         assert!(is_hidden(&layers[1]) && is_hidden(&layers[2]));
+    }
+
+    #[test]
+    fn a_blurred_layer_needs_the_backdrop_when_a_sub_frame_frosts_it() {
+        // The radius is 0 at frame 0 and grows after it; the shutter reaches
+        // past it.
+        let layers = resolve_layers(
+            r##"[{"id": "frost", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur",
+                    "radius": [{"frame": 0, "value": 0}, {"frame": 1, "value": 16}]}],
+                  "motionBlur": {"samples": 4, "shutter": 1}}]"##,
+        );
+        assert!(!has_backdrop_blur(&layers[0].effects));
+        assert!(uses_backdrop(&layers, &layers[0]));
     }
 }
