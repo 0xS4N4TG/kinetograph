@@ -194,12 +194,13 @@ pub struct Shadow {
 
 impl Shadow {
     /// Offset, spread and about three blur radii, at the largest keyframes.
+    /// A negative spread counts too: shrinking reads the pixels around a
+    /// point just as growing does, and a layer cut off at the texture edge
+    /// would shrink from there.
     fn reach(&self) -> f64 {
-        let offset = [&self.x, &self.y]
-            .into_iter()
-            .map(|n| n.max().abs().max(n.min().abs()))
-            .fold(0.0, f64::max);
-        let spread = self.spread.max().clamp(0.0, MAX_SHADOW_SIZE);
+        let largest = |n: &Num| n.max().abs().max(n.min().abs());
+        let offset = largest(&self.x).max(largest(&self.y));
+        let spread = largest(&self.spread).min(MAX_SHADOW_SIZE);
         let blur = self.blur.max().clamp(0.0, MAX_SHADOW_SIZE);
         offset + spread + 3.0 * blur
     }
@@ -450,8 +451,9 @@ impl Scene {
     /// Pixels of room kept on every side of the canvas while rendering, so
     /// that effects which paint outside a layer (a shadow, a glow) are not
     /// cut off at the canvas edge and layers that hang off the canvas still
-    /// feed them. It is the largest `reach` of any effect on any layer, at
-    /// any keyframe, rounded up, and limited so the padded canvas still fits
+    /// feed them. It is the largest `reach` of the effects on any layer
+    /// (see `max_reach`), at any keyframe, rounded up, and limited so the
+    /// padded canvas still fits
     /// in `MAX_SIDE`. A scene with no such effect has margin 0.
     pub fn margin(&self) -> u32 {
         margin_for(max_reach(&self.layers), self.width, self.height)
@@ -548,17 +550,17 @@ impl Scene {
     }
 }
 
+/// The largest reach of any layer in `layers`. Reaches add up along a
+/// chain: each effect in a list works on what the ones before it painted,
+/// and a group's effects on what its children painted.
 fn max_reach(layers: &[Layer]) -> f64 {
     layers.iter().fold(0.0, |most, layer| {
         let children = match &layer.kind {
             LayerKind::Group(g) => max_reach(&g.children),
             _ => 0.0,
         };
-        layer
-            .effects
-            .iter()
-            .map(Effect::reach)
-            .fold(most.max(children), f64::max)
+        let own: f64 = layer.effects.iter().map(Effect::reach).sum();
+        most.max(children + own)
     })
 }
 
@@ -920,15 +922,23 @@ mod tests {
                  "blur": 5, "spread": 2}]"#,
         );
         assert_eq!(scene.margin(), 47);
-        // Negative spread shrinks the shadow, so it adds no reach; blur and
-        // spread are limited to 128 as they are when drawn.
+        // A negative spread reads as far as a positive one; blur and spread
+        // are limited to 128 as they are when drawn.
         let scene = effects_of(
             r#"[{"type": "insetShadow", "y": 4, "blur": [{"frame": 0, "value": 1}, {"frame": 9, "value": 1000}],
                  "spread": -20}]"#,
         );
-        assert_eq!(scene.margin(), 4 + 3 * 128);
-        // The largest reach over layers wins, including layers in groups,
-        // and blur on the same layer adds nothing.
+        assert_eq!(scene.margin(), 4 + 20 + 3 * 128);
+        let scene = effects_of(r#"[{"type": "dropShadow", "spread": -900}]"#);
+        assert_eq!(scene.margin(), 128);
+        // Shadows in one list add up: the second is cast by the first too.
+        let scene = effects_of(
+            r#"[{"type": "dropShadow", "x": 7}, {"type": "blur", "radius": 50},
+                {"type": "insetShadow", "y": -5}]"#,
+        );
+        assert_eq!(scene.margin(), 12);
+        // The largest reach over layers wins. A group's own reach adds to
+        // its children's, and blur adds nothing.
         let json = r#"{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10,
             "layers": [
               {"id": "a", "type": "group", "effects": [{"type": "dropShadow", "blur": 2}],
@@ -939,7 +949,7 @@ mod tests {
               {"id": "d", "type": "group", "children": [],
                "effects": [{"type": "dropShadow", "y": -10}]}]}"#;
         let scene = Scene::from_json(json, PathBuf::new()).unwrap();
-        assert_eq!(scene.margin(), 20);
+        assert_eq!(scene.margin(), 6 + 20);
     }
 
     #[test]

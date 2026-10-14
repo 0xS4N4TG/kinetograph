@@ -141,15 +141,18 @@ Each entry in a layer's `effects` is an object with a `type`. A group's effects 
 An effect that paints outside its layer (a shadow, say) needs room beyond the canvas edge, and so does a layer that
 hangs off the canvas, whose shadow can fall back onto it. So the renderer draws on a canvas padded by a margin on every
 side and crops the margin off at the end. You do not set it; it is worked out when the scene loads: the largest distance
-any effect can reach past its layer, at any keyframe on any layer (nested layers included), rounded up to whole
+the effects can reach past a layer, at any keyframe on any layer (nested layers included), rounded up to whole
 pixels. Each effect below says what it counts. The margin is limited so the padded canvas is at most 8192 pixels on a
 side.
 
 - A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
-- `dropShadow` and `insetShadow` count `max(|x|, |y|) + spread + 3 * blur`, with spread counted only when positive.
-  (An inset shadow stays inside its layer, but it reads the space around the layer, so it needs the room too.)
+- `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
+  layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
+  a point as a positive one does.)
+- Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
+  effects count on top of the largest reach among its children, because each works on what the one before painted.
 - The colour filters count nothing: they change pixels in place.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
