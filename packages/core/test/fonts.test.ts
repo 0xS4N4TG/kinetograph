@@ -186,8 +186,9 @@ describe('google fonts', () => {
     expect(net.requests[0]!.headers?.['User-Agent']).toBeTruthy();
     expect((await readdir(dir)).length).toBe(3);
 
-    // A second load in the same process asks for nothing; a new module (a new process) reads the cache.
-    font.loadFont('normal', { weights: ['400', '700'] });
+    // A second load in the same process asks for nothing; a new module (a new process) reads the cache. Both are
+    // awaited: a load left running registers its fonts after the next test has cleared the registry.
+    await font.loadFont('normal', { weights: ['400', '700'] }).waitUntilDone();
     const again = makeGoogleFont('PlayfairDisplay', { fetch: net.fetch, cacheDir: dir });
     await again.loadFont('normal', { weights: ['400', '700'] }).waitUntilDone();
     expect(net.requests).toHaveLength(3);
