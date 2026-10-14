@@ -10,6 +10,7 @@ pub mod compositor;
 pub mod error;
 #[cfg(test)]
 mod hash;
+pub mod inspect;
 pub mod lut;
 pub mod mesh;
 pub mod pool;

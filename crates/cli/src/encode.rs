@@ -341,6 +341,274 @@ impl VideoEncoder {
     }
 }
 
+/// Sample rates the native AAC encoder takes.
+const AAC_RATES: [u32; 13] = [
+    96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
+];
+
+/// AAC bit rate per channel, bits per second.
+const AAC_BITS_PER_CHANNEL: usize = 96_000;
+
+/// Audio as the mixer hands it over: one slice of samples in -1..1 per
+/// channel, all the same length.
+#[derive(Clone, Copy)]
+pub struct AudioPcm<'a> {
+    pub sample_rate: u32,
+    pub channels: &'a [&'a [f32]],
+}
+
+impl AudioPcm<'_> {
+    /// Samples per channel.
+    pub fn len(&self) -> usize {
+        self.channels.first().map_or(0, |c| c.len())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether the native AAC encoder can take it.
+    pub fn validate(&self) -> Result<(), String> {
+        if !AAC_RATES.contains(&self.sample_rate) {
+            return Err(format!(
+                "audio sample rate {} is not one AAC has (48000, 44100, 32000 ...)",
+                self.sample_rate
+            ));
+        }
+        if !(1..=2).contains(&self.channels.len()) {
+            return Err(format!(
+                "audio has {} channels: AAC output takes 1 or 2",
+                self.channels.len()
+            ));
+        }
+        if self.channels.iter().any(|c| c.len() != self.len()) {
+            return Err("the audio channels differ in length".into());
+        }
+        Ok(())
+    }
+}
+
+/// Where the video is written to before `mux_audio` or a rename puts it
+/// under its real name: `.<name>.partial.<ext>` beside `output`, so a file
+/// that was not finished never has the final name.
+pub fn partial_path(output: &Path) -> std::path::PathBuf {
+    let name = output
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ext = output
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    output.with_file_name(format!(".{name}.partial.{ext}"))
+}
+
+/// Writes `video` (a file `VideoEncoder` made) to `output` with `audio`
+/// added as an AAC stream. The video packets are copied, not encoded again,
+/// and audio is encoded alongside them so that the two interleave in time.
+/// `audio` starts with the video; if it is longer, the file runs to the end
+/// of the audio.
+pub fn mux_audio(video: &Path, output: &Path, audio: &AudioPcm) -> Result<(), String> {
+    init();
+    audio.validate()?;
+    let container = container_for(output)?;
+    let err = |what: &str| {
+        let what = what.to_string();
+        move |e: ffmpeg::Error| format!("{what}: {e}")
+    };
+
+    let mut input =
+        format::input(video).map_err(err(&format!("cannot read {}", video.display())))?;
+    let (video_in, in_time_base, avg_frame_rate, parameters) = {
+        let stream = input
+            .streams()
+            .best(ffmpeg::media::Type::Video)
+            .ok_or_else(|| format!("{} has no video stream", video.display()))?;
+        (
+            stream.index(),
+            stream.time_base(),
+            stream.avg_frame_rate(),
+            stream.parameters(),
+        )
+    };
+
+    let mut octx = format::output_as(output, container)
+        .map_err(err(&format!("cannot create {}", output.display())))?;
+    let global_header = octx.format().flags().contains(format::Flags::GLOBAL_HEADER);
+    let video_out = {
+        let mut stream = octx
+            .add_stream(encoder::find(codec::Id::None))
+            .map_err(err("cannot add the video stream"))?;
+        stream.set_parameters(parameters);
+        stream.set_avg_frame_rate(avg_frame_rate);
+        // A tag from the temporary file's container may not fit this one.
+        // SAFETY: the stream's parameters are live and owned by `octx`.
+        unsafe {
+            (*stream.parameters().as_mut_ptr()).codec_tag = 0;
+        }
+        stream.index()
+    };
+
+    let aac = encoder::find_by_name("aac")
+        .ok_or("this ffmpeg has no aac encoder")?
+        .audio()
+        .map_err(err("the aac encoder is not an audio encoder"))?;
+    let rate = audio.sample_rate as i32;
+    let layout = if audio.channels.len() == 1 {
+        ffmpeg::ChannelLayout::MONO
+    } else {
+        ffmpeg::ChannelLayout::STEREO
+    };
+    let (audio_out, audio_encoder) = {
+        let mut stream = octx
+            .add_stream(aac)
+            .map_err(err("cannot add the audio stream"))?;
+        let context = codec::context::Context::from_parameters(stream.parameters())
+            .map_err(err("cannot set up the audio encoder"))?;
+        let mut encoder = context
+            .encoder()
+            .audio()
+            .map_err(err("cannot set up the audio encoder"))?;
+        encoder.set_rate(rate);
+        encoder.set_channel_layout(layout);
+        encoder.set_format(format::Sample::F32(format::sample::Type::Planar));
+        encoder.set_bit_rate(AAC_BITS_PER_CHANNEL * audio.channels.len());
+        encoder.set_time_base((1, rate));
+        if global_header {
+            encoder.set_flags(CodecFlags::GLOBAL_HEADER);
+        }
+        let encoder = encoder
+            .open_as(aac)
+            .map_err(err("cannot open the aac encoder"))?;
+        stream.set_parameters(&encoder);
+        stream.set_time_base((1, rate));
+        (stream.index(), encoder)
+    };
+
+    let mut header = Dictionary::new();
+    header.set("movflags", "+faststart");
+    octx.write_header_with(header)
+        .map_err(err("cannot write the file header"))?;
+    let video_out_time_base = octx
+        .stream(video_out)
+        .map(|s| s.time_base())
+        .unwrap_or(in_time_base);
+    let audio_out_time_base = octx
+        .stream(audio_out)
+        .map(|s| s.time_base())
+        .unwrap_or(Rational(1, rate));
+
+    let mut feed = AudioFeed {
+        encoder: audio_encoder,
+        pcm: *audio,
+        layout,
+        position: 0,
+        stream: audio_out,
+        time_base: audio_out_time_base,
+    };
+    for (stream, mut packet) in input.packets() {
+        if stream.index() != video_in {
+            continue;
+        }
+        // Audio up to this packet goes in first.
+        let ticks = packet.dts().or(packet.pts()).unwrap_or(0).max(0) as f64;
+        let seconds =
+            ticks * f64::from(in_time_base.numerator()) / f64::from(in_time_base.denominator());
+        feed.until(&mut octx, seconds)?;
+        packet.rescale_ts(in_time_base, video_out_time_base);
+        packet.set_position(-1);
+        packet.set_stream(video_out);
+        packet
+            .write_interleaved(&mut octx)
+            .map_err(err("cannot write to the file"))?;
+    }
+    feed.finish(&mut octx)?;
+    octx.write_trailer().map_err(err("cannot finish the file"))
+}
+
+/// The audio, encoded a frame at a time as the video goes by.
+struct AudioFeed<'a> {
+    encoder: encoder::Audio,
+    pcm: AudioPcm<'a>,
+    layout: ffmpeg::ChannelLayout,
+    /// Samples (per channel) sent to the encoder.
+    position: usize,
+    stream: usize,
+    time_base: Rational,
+}
+
+impl AudioFeed<'_> {
+    /// Encodes whole frames of audio up to `seconds`.
+    fn until(&mut self, octx: &mut format::context::Output, seconds: f64) -> Result<(), String> {
+        let wanted = (seconds * f64::from(self.pcm.sample_rate)).ceil() as usize;
+        let target = wanted.min(self.pcm.len());
+        let size = (self.encoder.frame_size() as usize).max(1);
+        while self.position + size <= target {
+            self.send(octx, size)?;
+        }
+        Ok(())
+    }
+
+    /// The rest of the audio, a short last frame included, and the encoder's
+    /// delay.
+    fn finish(&mut self, octx: &mut format::context::Output) -> Result<(), String> {
+        let size = (self.encoder.frame_size() as usize).max(1);
+        while self.position < self.pcm.len() {
+            let n = size.min(self.pcm.len() - self.position);
+            self.send(octx, n)?;
+        }
+        self.encoder
+            .send_eof()
+            .map_err(|e| format!("cannot flush the audio encoder: {e}"))?;
+        self.write_packets(octx)
+    }
+
+    fn send(&mut self, octx: &mut format::context::Output, n: usize) -> Result<(), String> {
+        let mut frame = frame::Audio::new(
+            format::Sample::F32(format::sample::Type::Planar),
+            n,
+            self.layout,
+        );
+        frame.set_rate(self.pcm.sample_rate);
+        frame.set_pts(Some(self.position as i64));
+        for (c, samples) in self.pcm.channels.iter().enumerate() {
+            let dst = &mut frame.plane_mut::<f32>(c)[..n];
+            for (d, s) in dst
+                .iter_mut()
+                .zip(&samples[self.position..self.position + n])
+            {
+                // NaN would reach the encoder as noise.
+                *d = if s.is_finite() { *s } else { 0.0 };
+            }
+        }
+        self.position += n;
+        self.encoder
+            .send_frame(&frame)
+            .map_err(|e| format!("audio encoder rejected a frame: {e}"))?;
+        self.write_packets(octx)
+    }
+
+    fn write_packets(&mut self, octx: &mut format::context::Output) -> Result<(), String> {
+        let mut packet = Packet::empty();
+        loop {
+            match self.encoder.receive_packet(&mut packet) {
+                Ok(()) => {
+                    packet.set_stream(self.stream);
+                    packet.rescale_ts(Rational(1, self.pcm.sample_rate as i32), self.time_base);
+                    packet
+                        .write_interleaved(octx)
+                        .map_err(|e| format!("cannot write to the file: {e}"))?;
+                }
+                Err(ffmpeg::Error::Eof) => return Ok(()),
+                Err(ffmpeg::Error::Other {
+                    errno: ffmpeg::error::EAGAIN,
+                }) => return Ok(()),
+                Err(e) => return Err(format!("audio encoder failed: {e}")),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -531,5 +799,131 @@ mod tests {
                 assert!((got - want).abs() < 6.0, "frame {i}: {got} vs {want}");
             }
         }
+    }
+
+    #[test]
+    fn audio_must_be_something_aac_can_take() {
+        let one = [0.0_f32; 10];
+        let two = [0.0_f32; 9];
+        let ok = |rate, channels: &[&[f32]]| {
+            AudioPcm {
+                sample_rate: rate,
+                channels,
+            }
+            .validate()
+        };
+        assert!(ok(48000, &[&one, &one]).is_ok());
+        assert!(ok(44100, &[&one]).is_ok());
+        for (result, want) in [
+            (ok(12345, &[&one]), "sample rate"),
+            (ok(48000, &[]), "0 channels"),
+            (ok(48000, &[&one, &one, &one]), "3 channels"),
+            (ok(48000, &[&one, &two]), "differ in length"),
+        ] {
+            let msg = result.unwrap_err();
+            assert!(msg.contains(want), "{msg}");
+        }
+    }
+
+    #[test]
+    fn the_partial_file_sits_beside_the_output_with_its_extension() {
+        assert_eq!(
+            partial_path(Path::new("/tmp/a/out.mp4")),
+            Path::new("/tmp/a/.out.mp4.partial.mp4")
+        );
+        assert_eq!(container_for(&partial_path(Path::new("x.MOV"))), Ok("mov"));
+    }
+
+    #[test]
+    fn audio_is_muxed_beside_the_copied_video() {
+        if !has_encoder("libx264") || !has_encoder("aac") {
+            panic!("this test needs an ffmpeg with libx264 and aac");
+        }
+        let dir = std::env::temp_dir().join(format!("kinetograph-mux-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (video, out) = (dir.join("video.mp4"), dir.join("out.mp4"));
+
+        // One second of video at 10 fps, and 1.5 s of a 440 Hz tone, louder
+        // on the left.
+        let mut encoder = VideoEncoder::create(&video, 64, 48, 10.0, "libx264").unwrap();
+        for _ in 0..10 {
+            encoder.push(&[128; 64 * 48 * 4]).unwrap();
+        }
+        encoder.finish().unwrap();
+        let rate = 48000_u32;
+        let tone: Vec<f32> = (0..rate as usize * 3 / 2)
+            .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin())
+            .collect();
+        let quiet: Vec<f32> = tone.iter().map(|s| s * 0.25).collect();
+        mux_audio(
+            &video,
+            &out,
+            &AudioPcm {
+                sample_rate: rate,
+                channels: &[&tone, &quiet],
+            },
+        )
+        .unwrap();
+
+        let mut input = format::input(&out).unwrap();
+        let audio_index = input
+            .streams()
+            .best(ffmpeg::media::Type::Audio)
+            .expect("no audio stream")
+            .index();
+        let parameters = input.stream(audio_index).unwrap().parameters();
+        assert_eq!(parameters.id(), codec::Id::AAC);
+        let mut decoder = codec::context::Context::from_parameters(parameters)
+            .unwrap()
+            .decoder()
+            .audio()
+            .unwrap();
+        assert_eq!((decoder.rate(), decoder.channels()), (rate, 2));
+        let mut samples = 0_usize;
+        let mut energy = [0.0_f64; 2];
+        let mut video_packets = 0;
+        let mut take = |decoder: &mut ffmpeg::decoder::Audio| {
+            let mut decoded = frame::Audio::empty();
+            while decoder.receive_frame(&mut decoded).is_ok() {
+                samples += decoded.samples();
+                for (c, e) in energy.iter_mut().enumerate() {
+                    *e += decoded.plane::<f32>(c)[..decoded.samples()]
+                        .iter()
+                        .map(|s| f64::from(*s).powi(2))
+                        .sum::<f64>();
+                }
+            }
+        };
+        for (stream, packet) in input.packets() {
+            if stream.index() == audio_index {
+                decoder.send_packet(&packet).unwrap();
+                take(&mut decoder);
+            } else {
+                video_packets += 1;
+            }
+        }
+        decoder.send_eof().unwrap();
+        take(&mut decoder);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(video_packets, 10, "the video is copied whole");
+        // The encoder's delay adds a little at the front.
+        assert!(
+            samples >= rate as usize * 3 / 2 && samples < rate as usize * 3 / 2 + 4096,
+            "{samples} samples"
+        );
+        // A tone of amplitude 1 has mean square 0.5; channel two is a
+        // quarter of that amplitude.
+        let mean = |e: f64| e / samples as f64;
+        assert!(
+            (mean(energy[0]) - 0.5).abs() < 0.1,
+            "left {}",
+            mean(energy[0])
+        );
+        assert!(
+            (mean(energy[1]) - 0.5 / 16.0).abs() < 0.02,
+            "right {}",
+            mean(energy[1])
+        );
     }
 }

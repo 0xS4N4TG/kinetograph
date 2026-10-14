@@ -2,7 +2,7 @@
 //! effect. Parsing is plain Rust; `compositor.rs` uploads the table and
 //! `shaders/lut.wgsl` applies it.
 
-use std::collections::HashMap;
+use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::scene::{Effect, Layer, LayerKind, Scene};
@@ -161,23 +161,36 @@ fn sources(layers: &[Layer], out: &mut Vec<(String, String)>) {
     }
 }
 
-/// Reads and parses every LUT file the scene refers to, once each, keyed by
-/// the `src` as the scene spells it. Like images they are loaded when the
-/// renderer is built, so a bad file fails before any frame. Errors name the
-/// layer, the file, and for a malformed file the line.
-pub(crate) fn load_luts(scene: &Scene) -> Result<HashMap<String, Lut>> {
+/// Every `lut` effect in the scene as (layer id, `src`), in order of use. A
+/// table used twice is listed twice.
+pub(crate) fn lut_sources(scene: &Scene) -> Vec<(String, String)> {
     let mut used = Vec::new();
     sources(&scene.layers, &mut used);
-    let mut luts = HashMap::new();
-    for (id, src) in used {
+    used
+}
+
+/// Reads and parses the LUT file `src` (relative to `base_dir`) that layer
+/// `id` uses. Errors name the layer, the file, and for a malformed file the
+/// line.
+pub(crate) fn read_lut(base_dir: &Path, id: &str, src: &str) -> Result<Lut> {
+    let path = base_dir.join(src);
+    let fail = |msg: String| Error::Scene(format!("layer {id:?}: lut {}: {msg}", path.display()));
+    let text = std::fs::read_to_string(&path).map_err(|e| fail(format!("cannot read: {e}")))?;
+    Lut::parse(&text).map_err(fail)
+}
+
+/// Reads and parses every LUT file the scene refers to, once each, keyed by
+/// the `src` as the scene spells it. The renderer reads them a file at a time
+/// (`render::read_assets`); this is for the test that every committed scene's
+/// files load.
+#[cfg(test)]
+pub(crate) fn load_luts(scene: &Scene) -> Result<std::collections::HashMap<String, Lut>> {
+    let mut luts = std::collections::HashMap::new();
+    for (id, src) in lut_sources(scene) {
         if luts.contains_key(&src) {
             continue;
         }
-        let path = scene.base_dir.join(&src);
-        let fail =
-            |msg: String| Error::Scene(format!("layer {id:?}: lut {}: {msg}", path.display()));
-        let text = std::fs::read_to_string(&path).map_err(|e| fail(format!("cannot read: {e}")))?;
-        let lut = Lut::parse(&text).map_err(fail)?;
+        let lut = read_lut(&scene.base_dir, &id, &src)?;
         luts.insert(src, lut);
     }
     Ok(luts)

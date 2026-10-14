@@ -11,6 +11,7 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
 
 /** One GPU setup, reused for every scene and frame given to it. */
 export declare class Renderer {
+  /** Opens the GPU and builds the pipelines, once. */
   constructor(options?: RendererOptions | undefined | null)
   /** One frame as a PNG. */
   still(sceneJson: string, frame: number, baseDir?: string | undefined | null): Buffer
@@ -24,7 +25,12 @@ export declare class Renderer {
   beginVideo(output: string, options: VideoOptions): VideoWriter
 }
 
-/** A video being written frame by frame (`Renderer.beginVideo`). */
+/**
+ * A video being written frame by frame (`Renderer.beginVideo`).
+ *
+ * A failed `pushFrame` ends the video: the partial file is deleted, as
+ * `abort` does, and later calls fail.
+ */
 export declare class VideoWriter {
   /** Renders `frame` of this scene and queues it for encoding. */
   pushFrame(sceneJson: string, frame: number, baseDir?: string | undefined | null): void
@@ -73,7 +79,10 @@ export interface BenchStages {
 /** The scene resolved at `frame`, as an `InspectResult` JSON string. */
 export declare function inspect(sceneJson: string, frame: number, baseDir?: string | undefined | null): string
 
-/** Shapes text with the renderer's text engine. */
+/**
+ * Shapes text with the renderer's text engine. Engines are cached per
+ * `fonts` map.
+ */
 export declare function layoutText(request: TextLayoutRequest): TextLayout
 
 /** `"10..40"` or `"10..=40"` -> `[first, last]`, inclusive. */
@@ -168,6 +177,9 @@ export interface TextLine {
 /**
  * Parses and validates scene JSON; asset paths resolve against `baseDir`
  * (default: the current directory).
+ *
+ * Beyond what loading a scene checks, the files it names (fonts, images,
+ * tables, Lottie files) are checked to exist, without reading them.
  */
 export declare function validateScene(sceneJson: string, baseDir?: string | undefined | null): SceneInfo
 
