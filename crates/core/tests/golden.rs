@@ -326,3 +326,20 @@ fn corner_pin_matches_golden() {
     let frame = render_still(scene("tests/scenes/corner-pin.json"), 15).unwrap();
     check("corner-pin", &frame);
 }
+
+#[test]
+fn motion_blur_matches_golden() {
+    // Frame 15 of 30: the whip is at its fastest. Covers a group moving ~80
+    // px a frame (a card with a drop shadow, so the scene has a margin, and
+    // text) whose shutter is animated from 0.2 to 1.6 frames, a three-spoke
+    // fan spinning 20 degrees a frame, hanging off the right edge, an ellipse
+    // whose opacity steps from 0 to 1 across the frame under a two-frame
+    // shutter (the fade is averaged too), an image cut by a moving ellipse
+    // matte that is blurred with the same sample count (the matte smears with
+    // it), a card spinning about the vertical axis under the camera (each
+    // sub-frame is warped on its own), a square with a shut shutter (drawn
+    // exactly as without motion blur) and text that does not move (stays
+    // sharp).
+    let frame = render_still(scene("tests/scenes/motion-blur.json"), 15).unwrap();
+    check("motion-blur", &frame);
+}

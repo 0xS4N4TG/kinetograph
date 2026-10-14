@@ -9,6 +9,8 @@
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
 //! - `mask`: layer x the alpha or luminance of a Vello-drawn clip or gradient
 //! - `matte`: layer x the alpha or luminance of another layer's texture
+//! - `accumulate`: running sum + sample x weight, to average a motion-blurred
+//!   layer's sub-frames
 //! - `encode`: linear texture -> sRGB 8-bit, read back to the CPU
 //!
 //! A scene's custom shader effects (`shader.rs`) have a pipeline each, made
@@ -117,6 +119,7 @@ pub struct Compositor {
     blend: wgpu::RenderPipeline,
     mask: wgpu::RenderPipeline,
     matte: wgpu::RenderPipeline,
+    accumulate: wgpu::RenderPipeline,
     encode: wgpu::RenderPipeline,
     spread: wgpu::RenderPipeline,
     drop_shadow: wgpu::RenderPipeline,
@@ -367,6 +370,7 @@ impl Compositor {
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
             mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
             matte: pipeline(&shader, "fs_matte", LINEAR_FORMAT),
+            accumulate: pipeline(&shader, "fs_accumulate", LINEAR_FORMAT),
             encode: pipeline(&shader, "fs_encode", READBACK_FORMAT),
             spread: pipeline(&shadow_shader, "fs_spread", LINEAR_FORMAT),
             drop_shadow: pipeline(&shadow_shader, "fs_drop", LINEAR_FORMAT),
@@ -516,6 +520,25 @@ impl Compositor {
         );
         self.release(src);
         self.release(matte);
+        target
+    }
+
+    /// Adds `src` times `weight` to `sum`, for averaging a motion-blurred
+    /// layer's sub-frames. Both inputs go back to the pool; the result is a
+    /// new texture. Callers add in a fixed order, so the result is the same
+    /// every time.
+    pub fn accumulate(&mut self, sum: Tex, src: Tex, weight: f32) -> Tex {
+        let target = self.acquire();
+        self.pass(
+            &self.accumulate,
+            &sum.view,
+            &src.view,
+            weight,
+            0,
+            &target.view,
+        );
+        self.release(sum);
+        self.release(src);
         target
     }
 

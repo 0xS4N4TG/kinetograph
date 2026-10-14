@@ -61,6 +61,7 @@ Every layer has these fields:
 | `clip` | object | none | Cuts the layer to a shape. See [Clip paths](#clip-paths). |
 | `mask` | object | none | Fades the layer by a gradient. See [Gradient masks](#gradient-masks). |
 | `matte` | object | none | Cuts the layer by a sibling layer. See [Track mattes](#track-mattes). |
+| `motionBlur` | object | none | Averages the layer over the time the shutter is open. See [Motion blur](#motion-blur). |
 
 `transform` fields, all animatable numbers:
 
@@ -246,6 +247,8 @@ side.
   value for one frame makes the whole scene pay for it.
 - 3D transforms (`rotateX`, `rotateY`, `z`), the `camera` and `cornerPin` count nothing: they only move a finished
   layer, and can only show what its texture holds (see below for what that leaves out).
+- `motionBlur` counts nothing: it averages whole textures. Its sub-frames' effects still count like any other
+  (a blurred layer's shadow is in the margin).
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
   still drawn there. With a margin, the part of it that falls inside the margin is real and can bleed into effects.
 
@@ -1020,6 +1023,54 @@ Rules:
 - A preserve3d group scaled to nothing draws nothing. Its `scale` enlarges its children in the plane only, not in
   depth (see above).
 
+## Motion blur
+
+```json
+{ "id": "whip", "type": "group",
+  "transform": { "x": [{ "frame": 0, "value": -300, "easing": "easeInOut" }, { "frame": 30, "value": 560 }], "y": 30 },
+  "motionBlur": { "samples": 12, "shutter": 0.5 },
+  "children": [ ... ] }
+```
+
+`motionBlur` on any layer renders it as a camera would: the layer is drawn at several moments inside the time the
+shutter is open and the pictures are averaged, so what moves smears along its path. On a group it blurs the whole
+subtree, children included, and what the children do relative to one another blurs too.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `samples` | `8` | Whole number, 2 to 64 (checked when the scene loads, naming the layer). Not animated. More is smoother and slower: the layer is drawn, run through its effects and warped once per sample. |
+| `shutter` | `0.5` | Animatable, in frames, clamped to 0..2. How long the shutter is open: `0.5` is a 180 degree shutter, `1` a 360 degree one. `0` is exactly the layer without motion blur. |
+
+The sub-frame times are `t_i = frame + shutter * ((i + 0.5) / samples - 0.5)` for `i` in `0..samples`: the shutter is
+cut into equal slots centred on the frame and each sample sits in the middle of its slot. Every sample is resolved by
+the same keyframe evaluation as a whole frame, just at a fractional `t`, so *everything* animated on the layer and
+its subtree blurs: position, rotation, scale, 3D fields, opacity, effects' parameters, shape and clip animation. The
+layer's texture (drawn, effects, clip, mask, matte, then the 3D or `cornerPin` warp) is made for each sample and the
+samples are added with equal weights in order, in linear light, so the result is the same every time. The blend onto
+the layer's backdrop then happens once, with the layer's `blendMode`.
+
+- **Opacity** of each sample is applied before averaging, and the blend then uses opacity 1. A layer that fades in
+  across the frame is blurred by its fade, and a layer that is invisible at some of its sub-frames only shows for the
+  ones where it is not. A frame whose own `opacity` is 0 is still drawn when a sample is not.
+- **Seeded noise** (`grain`, a random `dither`, ...) that animates per frame uses the output frame, not the
+  sub-frame time, so a blurred layer's samples share one pattern instead of averaging it away. A custom `shader`'s
+  `kg.frame` and `kg.time` are the sub-frame's time, so they blur.
+- **Mattes**: a layer's matte source is drawn through the layer it cuts, so it blurs with it when it has a
+  `motionBlur` with the same `samples` (sample `i` of the layer uses sample `i` of the source). A source without one, or with a
+  different number of samples, stays at the frame itself. A matte source's `motionBlur` does nothing for a layer that
+  has none of its own.
+- **Nesting**: `motionBlur` inside a layer that is blurred is ignored (its samples are already the average). A
+  parent whose `shutter` is 0 does not stop its children's.
+- **preserve3d**: a `preserve3d` group, and the children it draws, cannot have `motionBlur` (a load error naming the
+  layer): they are drawn straight into their parent, with no texture to average. Wrap the stack in an ordinary group and
+  give that one `motionBlur` to blur the whole stack, an orbit included.
+- **Precision**: the sum is kept in the compositor's half-float textures, so the average of many samples carries a
+  rounding error of about one part in a thousand; a layer that does not move is not byte-identical to the same layer
+  without `motionBlur`. Use `shutter: 0` (or leave the field out) for that.
+- A sample that is seen edge on (a 3D rotation of 90 degrees) adds nothing but still counts in the average, so the
+  layer fades as it turns edge on.
+- Counts nothing in the [margin](#canvas-margin).
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
@@ -1066,6 +1117,10 @@ Rules:
 - A `preserve3d` group sorts whole layers by the depth of their centre (painter's order); it cannot have effects, a
   clip, a mask, a matte or a blend mode, and multiplies its `opacity` into its children instead of fading them as one
   picture (see [preserve3d groups](#preserve3d-groups)).
+- `motionBlur` averages 2 to 64 equally weighted samples of the shutter (no sample-weighting curve, no random
+  jitter), so a very fast move over a wide shutter shows its steps as separate ghosts; raise `samples`. It cannot be
+  used on a `preserve3d` group or its children, and nested `motionBlur` inside a blurred layer is ignored (see
+  [Motion blur](#motion-blur)). It multiplies the layer's cost by `samples`.
 - Clip and mask coverage goes through an 8-bit texture, so a clip edge or a mask fade has 256 levels.
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.

@@ -73,8 +73,37 @@ pub struct Layer {
     pub mask: Option<Mask>,
     /// Cuts the layer by a sibling layer's pixels, after the mask.
     pub matte: Option<Matte>,
+    /// Averages the layer over the time the shutter is open, so what moves
+    /// smears. A group blurs its whole subtree.
+    pub motion_blur: Option<MotionBlur>,
     #[serde(flatten)]
     pub kind: LayerKind,
+}
+
+/// Fewest and most sub-frames a layer's motion blur averages.
+pub const MIN_MOTION_SAMPLES: i64 = 2;
+pub const MAX_MOTION_SAMPLES: i64 = 64;
+
+/// A layer's motion blur: `samples` copies of it, spread over `shutter`
+/// frames centred on the frame, each evaluated at its own time and averaged.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MotionBlur {
+    /// Whole, `MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES`; not animated.
+    #[serde(default = "default_motion_samples")]
+    pub samples: i64,
+    /// How long the shutter is open, in frames; 0.5 is a 180 degree shutter.
+    /// Clamped to 0..=2 when resolved; 0 is no blur.
+    #[serde(default = "half")]
+    pub shutter: Num,
+}
+
+fn default_motion_samples() -> i64 {
+    8
+}
+
+fn half() -> Num {
+    Num::Const(0.5)
 }
 
 fn one() -> Num {
@@ -1053,6 +1082,15 @@ impl Scene {
             if let Some(matte) = &layer.matte {
                 validate_matte(layer, matte, layers)?;
             }
+            if let Some(blur) = &layer.motion_blur
+                && !(MIN_MOTION_SAMPLES..=MAX_MOTION_SAMPLES).contains(&blur.samples)
+            {
+                return Err(Error::Scene(format!(
+                    "layer {:?}: motionBlur samples must be a whole number from \
+                     {MIN_MOTION_SAMPLES} to {MAX_MOTION_SAMPLES}, got {}",
+                    layer.id, blur.samples
+                )));
+            }
             if let Some(mask) = &layer.mask {
                 validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
             }
@@ -1108,6 +1146,15 @@ impl Scene {
                 LayerKind::Group(g) => {
                     if g.preserve3d {
                         validate_preserve3d(layer, layers)?;
+                        if let Some(child) = g.children.iter().find(|c| c.motion_blur.is_some()) {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: motionBlur is not supported on the children of a \
+                                 preserve3d group, which are drawn straight into its parent; \
+                                 put the preserve3d group inside another group and give that one \
+                                 the motionBlur",
+                                child.id
+                            )));
+                        }
                     }
                     self.validate_layers(&g.children, ids)?;
                 }
@@ -1237,6 +1284,9 @@ fn validate_preserve3d(group: &Layer, siblings: &[Layer]) -> Result<()> {
             group.id
         )))
     };
+    if group.motion_blur.is_some() {
+        return bad("cannot have motionBlur");
+    }
     if !group.effects.is_empty() {
         return bad("cannot have effects");
     }
@@ -3136,5 +3186,63 @@ mod tests {
         let scene =
             scene_with(r#""effects": [{"type": "cornerPin", "topLeft": [-900, -900]}],"#).unwrap();
         assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn parses_motion_blur_with_defaults() {
+        assert!(scene_with("").unwrap().layers[0].motion_blur.is_none());
+        let scene = scene_with(r#""motionBlur": {},"#).unwrap();
+        let blur = scene.layers[0].motion_blur.as_ref().unwrap();
+        assert_eq!((blur.samples, blur.shutter.at(0.0)), (8, 0.5));
+        let scene = scene_with(
+            r#""motionBlur": {"samples": 24, "shutter": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]},"#,
+        )
+        .unwrap();
+        let blur = scene.layers[0].motion_blur.as_ref().unwrap();
+        assert_eq!((blur.samples, blur.shutter.at(9.0)), (24, 1.0));
+        // A blurred layer needs no margin.
+        assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn rejects_motion_blur_samples_out_of_range_naming_the_layer() {
+        for samples in ["1", "0", "65", "-3"] {
+            let json = format!(r#""motionBlur": {{"samples": {samples}}},"#);
+            let msg = error(&json);
+            assert!(
+                msg.contains("motionBlur") && msg.contains("\"box\""),
+                "{samples}: {msg}"
+            );
+        }
+        for samples in ["2", "64"] {
+            scene_with(&format!(r#""motionBlur": {{"samples": {samples}}},"#)).unwrap();
+        }
+    }
+
+    #[test]
+    fn preserve3d_groups_and_their_children_cannot_be_motion_blurred() {
+        let blur = r#""motionBlur": {"samples": 4},"#;
+        let msg = group_scene(blur).unwrap_err();
+        assert!(
+            msg.contains("\"stack\"") && msg.contains("motionBlur"),
+            "{msg}"
+        );
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+          {"id": "stack", "type": "group", "preserve3d": true, "children": [
+            {"id": "card", "type": "group", "children": [], "motionBlur": {}}]}]}"##;
+        let msg = Scene::from_json(json, PathBuf::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"card\"") && msg.contains("preserve3d"),
+            "{msg}"
+        );
+        // A group around the whole stack is the way to blur it.
+        let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [
+          {"id": "outer", "type": "group", "motionBlur": {}, "children": [
+            {"id": "stack", "type": "group", "preserve3d": true, "children": [
+              {"id": "card", "type": "group", "children": [
+                {"id": "inner", "type": "group", "children": [], "motionBlur": {}}]}]}]}]}"##;
+        Scene::from_json(json, PathBuf::new()).unwrap();
     }
 }

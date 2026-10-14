@@ -60,6 +60,25 @@ pub struct ResolvedLayer {
     pub mask: Option<ResolvedMask>,
     pub matte: Option<ResolvedMatte>,
     pub kind: ResolvedKind,
+    /// The layer's motion blur: one complete copy of it (and of its subtree)
+    /// per sub-frame, in time order, each resolved at its own time. Empty
+    /// when the layer has no motion blur or its shutter is shut. The fields
+    /// above are for the frame itself; a layer with sub-frames is drawn from
+    /// these copies instead, and they have no sub-frames of their own
+    /// (motion blur inside a blurred layer is ignored).
+    pub motion: Vec<ResolvedLayer>,
+}
+
+/// The widest shutter, in frames.
+pub const MAX_SHUTTER: f64 = 2.0;
+
+/// The times of a motion blur's `samples` sub-frames around `t`: the shutter
+/// is cut into equal slots, centred on `t`, and each sub-frame sits in the
+/// middle of its slot.
+pub fn motion_times(t: f64, samples: u32, shutter: f64) -> Vec<f64> {
+    (0..samples)
+        .map(|i| t + shutter * ((f64::from(i) + 0.5) / f64::from(samples) - 0.5))
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -469,14 +488,34 @@ impl Scene {
             layers: self
                 .layers
                 .iter()
-                .map(|l| resolve_layer(l, clock))
+                .map(|l| resolve_layer(l, clock, true))
                 .collect(),
         })
     }
 }
 
-fn resolve_layer(layer: &Layer, clock: Clock) -> ResolvedLayer {
+/// `blur` is whether a motion blur on `layer` or below counts; a sub-frame's
+/// copy is resolved without it.
+fn resolve_layer(layer: &Layer, clock: Clock, blur: bool) -> ResolvedLayer {
     let f = clock.t;
+    let motion = match &layer.motion_blur {
+        Some(mb) if blur => {
+            let shutter = mb.shutter.at(f).clamp(0.0, MAX_SHUTTER);
+            // A shut shutter is exactly the layer without motion blur.
+            if shutter > 0.0 {
+                // Checked when the scene loaded.
+                motion_times(f, mb.samples as u32, shutter)
+                    .into_iter()
+                    .map(|t| resolve_layer(layer, Clock { t, ..clock }, false))
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        }
+        _ => Vec::new(),
+    };
+    // The frame's own children are not drawn when the layer has sub-frames.
+    let blur = blur && motion.is_empty();
     let kind = match &layer.kind {
         LayerKind::Shape(s) => ResolvedKind::Shape {
             geometry: match &s.shape {
@@ -516,7 +555,11 @@ fn resolve_layer(layer: &Layer, clock: Clock) -> ResolvedLayer {
             height: i.height.at(f),
         },
         LayerKind::Group(g) => ResolvedKind::Group {
-            children: g.children.iter().map(|c| resolve_layer(c, clock)).collect(),
+            children: g
+                .children
+                .iter()
+                .map(|c| resolve_layer(c, clock, blur))
+                .collect(),
             preserve3d: g.preserve3d,
         },
         LayerKind::MeshGradient(m) => {
@@ -567,6 +610,7 @@ fn resolve_layer(layer: &Layer, clock: Clock) -> ResolvedLayer {
             mode: m.mode,
         }),
         kind,
+        motion,
     }
 }
 
@@ -1089,7 +1133,7 @@ mod tests {
             frame: 2,
             fps: scene.fps,
         };
-        let layer = resolve_layer(&scene.layers[0], clock);
+        let layer = resolve_layer(&scene.layers[0], clock, true);
         assert_eq!(layer.transform.x, 25.0);
         let [ResolvedEffect::Shader(shader)] = &layer.effects[..] else {
             panic!("not a shader");
@@ -1101,7 +1145,10 @@ mod tests {
             frame: 4,
             fps: scene.fps,
         };
-        assert_eq!(resolve_layer(&scene.layers[0], whole).transform.x, 40.0);
+        assert_eq!(
+            resolve_layer(&scene.layers[0], whole, true).transform.x,
+            40.0
+        );
         assert_eq!(scene.resolve(4).unwrap().layers[0].transform.x, 40.0);
     }
 
@@ -1168,7 +1215,7 @@ mod tests {
         }"##;
         let scene = Scene::from_json(json, PathBuf::new()).unwrap();
         let grain = |clock: Clock| {
-            let layer = resolve_layer(&scene.layers[0], clock);
+            let layer = resolve_layer(&scene.layers[0], clock, true);
             let [ResolvedEffect::Grain(a), ResolvedEffect::Grain(b)] = layer.effects[..] else {
                 panic!("not two grains");
             };
@@ -1692,5 +1739,107 @@ mod tests {
             panic!("not a corner pin");
         };
         assert_eq!(pin.points(b), warp::rect_corners(b));
+    }
+
+    #[test]
+    fn sub_frame_times_are_centred_on_the_frame() {
+        // Equal slots of the shutter, each sampled in the middle.
+        assert_eq!(motion_times(10.0, 2, 1.0), [9.75, 10.25]);
+        assert_eq!(motion_times(10.0, 4, 2.0), [9.25, 9.75, 10.25, 10.75]);
+        // Whatever the count, the samples average to the frame.
+        for samples in [2, 3, 8, 64] {
+            let times = motion_times(7.0, samples, 0.5);
+            assert_eq!(times.len(), samples as usize);
+            let mean = times.iter().sum::<f64>() / f64::from(samples);
+            assert!((mean - 7.0).abs() < 1e-12, "{samples}: {mean}");
+            assert!(times.windows(2).all(|w| w[0] < w[1]));
+            assert!(times[0] > 6.75 && times[times.len() - 1] < 7.25);
+        }
+    }
+
+    fn blur_scene(blur: &str) -> Scene {
+        let json = format!(
+            r##"{{"width": 100, "height": 50, "fps": 30, "durationInFrames": 20,
+                "layers": [
+                  {{"id": "a", "type": "shape", {blur}
+                    "shape": {{"kind": "rect", "width": 10, "height": 10}}, "fill": "#fff",
+                    "transform": {{"x": [{{"frame": 0, "value": 0}}, {{"frame": 10, "value": 100}}]}},
+                    "opacity": [{{"frame": 5, "value": 1}}, {{"frame": 15, "value": 0}}]}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new()).unwrap()
+    }
+
+    #[test]
+    fn sub_frames_are_resolved_at_their_own_times() {
+        let scene = blur_scene(r#""motionBlur": {"samples": 4, "shutter": 2},"#);
+        let resolved = scene.resolve(5).unwrap();
+        let layer = &resolved.layers[0];
+        // The frame itself stays at frame 5.
+        assert_eq!((layer.transform.x, layer.opacity), (50.0, 1.0));
+        let xs: Vec<f64> = layer.motion.iter().map(|m| m.transform.x).collect();
+        let want = [4.25, 4.75, 5.25, 5.75].map(|t| t * 10.0);
+        assert!(
+            xs.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-9),
+            "{xs:?}"
+        );
+        // The fade starts at frame 5, so the earlier sub-frames are still
+        // fully opaque and the later ones less.
+        let opacities: Vec<f32> = layer.motion.iter().map(|m| m.opacity).collect();
+        assert_eq!(opacities[..2], [1.0, 1.0]);
+        assert!(opacities[2] < 1.0 && opacities[3] < opacities[2]);
+        // A copy has no sub-frames of its own.
+        assert!(layer.motion.iter().all(|m| m.motion.is_empty()));
+    }
+
+    #[test]
+    fn a_shut_shutter_or_no_motion_blur_has_no_sub_frames() {
+        for blur in [
+            "",
+            r#""motionBlur": {"samples": 8, "shutter": 0},"#,
+            r#""motionBlur": {"samples": 8, "shutter": -1},"#,
+        ] {
+            let resolved = blur_scene(blur).resolve(5).unwrap();
+            assert!(resolved.layers[0].motion.is_empty(), "{blur}");
+        }
+    }
+
+    #[test]
+    fn the_shutter_is_clamped_and_animatable() {
+        let blur = r#""motionBlur": {"samples": 2, "shutter": [{"frame": 0, "value": 0}, {"frame": 10, "value": 5}]},"#;
+        let scene = blur_scene(blur);
+        // Frame 10: a shutter of 5 frames is cut to 2.
+        let layer = &scene.resolve(10).unwrap().layers[0];
+        let xs: Vec<f64> = layer.motion.iter().map(|m| m.transform.x).collect();
+        assert_eq!(xs, [95.0, 100.0]);
+        // Frame 0: the shutter has not opened yet.
+        assert!(scene.resolve(0).unwrap().layers[0].motion.is_empty());
+        // Frame 5: half way, 2.5 clamped to 2 as well.
+        assert_eq!(scene.resolve(5).unwrap().layers[0].motion.len(), 2);
+    }
+
+    #[test]
+    fn motion_blur_inside_a_blurred_group_is_ignored() {
+        let json = r##"{"width": 100, "height": 50, "fps": 30, "durationInFrames": 20, "layers": [
+          {"id": "g", "type": "group", "motionBlur": {"samples": 3, "shutter": 1}, "children": [
+            {"id": "c", "type": "group", "motionBlur": {"samples": 5, "shutter": 1},
+             "children": []}]},
+          {"id": "g0", "type": "group", "motionBlur": {"shutter": 0}, "children": [
+            {"id": "c0", "type": "group", "motionBlur": {"samples": 5}, "children": []}]}]}"##;
+        let resolved = Scene::from_json(json, PathBuf::new())
+            .unwrap()
+            .resolve(3)
+            .unwrap();
+        let children = |l: &ResolvedLayer| match &l.kind {
+            ResolvedKind::Group { children, .. } => children.clone(),
+            _ => panic!("not a group"),
+        };
+        let g = &resolved.layers[0];
+        assert_eq!(g.motion.len(), 3);
+        assert!(children(g)[0].motion.is_empty());
+        for sub in &g.motion {
+            assert!(children(sub)[0].motion.is_empty());
+        }
+        // A parent whose shutter is shut does not stop its children's.
+        assert_eq!(children(&resolved.layers[1])[0].motion.len(), 5);
     }
 }

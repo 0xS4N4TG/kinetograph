@@ -245,7 +245,7 @@ impl Renderer {
     ) -> Result<Tex> {
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
-            if layer.opacity <= 0.0 || is_matte_source(layers, layer) {
+            if is_hidden(layer) || is_matte_source(layers, layer) {
                 continue;
             }
             // No buffer of its own: the children go straight onto the canvas.
@@ -305,7 +305,9 @@ impl Renderer {
     /// Draws one layer of `siblings` onto `canvas`: its own pixels
     /// (`layer_texture`), warped into place if it has a `placement`, blended
     /// with its opacity times `opacity_scale`. `parent` is the flat matrix of
-    /// the layer's parent, as in `draw_layers`.
+    /// the layer's parent, as in `draw_layers`. A layer with motion blur
+    /// ignores `placement` and works its own out for each sub-frame, so it
+    /// cannot be drawn by `draw_preserve3d` (the scene refuses it).
     #[allow(clippy::too_many_arguments)]
     fn draw_layer(
         &mut self,
@@ -327,23 +329,72 @@ impl Renderer {
             _ => None,
         };
         let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(&canvas));
-        let src = self.layer_texture(layer, siblings, parent, backdrop)?;
+        let drawn = if layer.motion.is_empty() {
+            self.layer_texture(layer, siblings, parent, backdrop, None)
+                .map(|src| (src, layer.opacity * opacity_scale))
+        } else {
+            // Each sub-frame's opacity is already in the average.
+            self.motion_blurred(layer, siblings, parent, backdrop, opacity_scale)
+                .map(|src| (src, 1.0))
+        };
         if let Some(combined) = combined {
             self.compositor.release(combined);
         }
+        let (src, opacity) = drawn?;
         let src = match placement {
-            Some(placement) => match self.place(src, &placement) {
+            // The sub-frames of a blurred layer were placed one by one.
+            Some(placement) if layer.motion.is_empty() => match self.place(src, &placement) {
                 Some(src) => src,
                 // Seen edge on: nothing to blend.
                 None => return Ok(canvas),
             },
-            None => src,
+            _ => src,
         };
         canvas = self.timed(Stage::Composite, |s| {
-            s.compositor
-                .blend(canvas, src, layer.opacity * opacity_scale, layer.blend_mode)
+            s.compositor.blend(canvas, src, opacity, layer.blend_mode)
         });
         Ok(canvas)
+    }
+
+    /// The average of `layer`'s sub-frames (`ResolvedLayer::motion`), each
+    /// drawn and warped into place as `draw_layer` would draw it at that
+    /// time and weighted by its own opacity times `opacity_scale`. A
+    /// sub-frame seen edge on adds nothing but still counts in the average.
+    fn motion_blurred(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        backdrop: Option<&Tex>,
+        opacity_scale: f32,
+    ) -> Result<Tex> {
+        let weight = opacity_scale / layer.motion.len() as f32;
+        let mut sum = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
+        for (i, sub) in layer.motion.iter().enumerate() {
+            if sub.opacity <= 0.0 {
+                continue;
+            }
+            let src = self.layer_texture(
+                sub,
+                siblings,
+                parent,
+                backdrop,
+                Some((i, layer.motion.len())),
+            )?;
+            let placement =
+                warp::layer_world(&sub.transform).map(|world| Placement { parent, world });
+            let src = match placement {
+                Some(placement) => match self.place(src, &placement) {
+                    Some(src) => src,
+                    None => continue,
+                },
+                None => src,
+            };
+            sum = self.timed(Stage::Composite, |s| {
+                s.compositor.accumulate(sum, src, sub.opacity * weight)
+            });
+        }
+        Ok(sum)
     }
 
     /// Warps a finished layer texture to where its 3D placement puts it, as
@@ -367,12 +418,18 @@ impl Renderer {
     /// effects, clip, mask and matte, in that order. `siblings` is the list
     /// `layer` is in, where its matte source is found. `backdrop` is what is
     /// behind the layer, given when it or its matte source blurs it.
+    ///
+    /// `sub` is `layer`'s sub-frame number and the count when it is one of a
+    /// blurred layer's copies: its matte source is then the source's copy at the
+    /// same time, if the source is blurred the same number of times (a
+    /// source that is not, or not as many, stays at the frame).
     fn layer_texture(
         &mut self,
         layer: &ResolvedLayer,
         siblings: &[ResolvedLayer],
         parent: Affine,
         backdrop: Option<&Tex>,
+        sub: Option<(usize, usize)>,
     ) -> Result<Tex> {
         // Layer space to padded texture pixels.
         let matrix = parent * layer.transform.matrix();
@@ -457,9 +514,13 @@ impl Renderer {
                         layer.id, matte.layer
                     ))
                 })?;
+            let source = match sub {
+                Some((i, count)) if source.motion.len() == count => &source.motion[i],
+                _ => source,
+            };
             // The source cannot have a matte (checked at load), so this
             // recursion is one level deep.
-            let matte_tex = self.layer_texture(source, siblings, parent, backdrop)?;
+            let matte_tex = self.layer_texture(source, siblings, parent, backdrop, None)?;
             src = self.timed(Stage::Composite, |s| {
                 s.compositor
                     .matte(src, matte_tex, source.opacity, matte.mode)
@@ -826,6 +887,15 @@ fn collect_preserve3d<'a>(
 /// margin 0 it is bit for bit `Affine::IDENTITY`.
 fn margin_origin(margin: u32) -> Affine {
     Affine::translate((f64::from(margin), f64::from(margin)))
+}
+
+/// Whether `layer` draws nothing at any time of its frame.
+fn is_hidden(layer: &ResolvedLayer) -> bool {
+    if layer.motion.is_empty() {
+        layer.opacity <= 0.0
+    } else {
+        layer.motion.iter().all(|sub| sub.opacity <= 0.0)
+    }
 }
 
 /// Whether another layer in `layers` uses `layer` as its matte.
@@ -1609,5 +1679,25 @@ mod tests {
             card("a", r#"{"z": 5}"#)
         ));
         assert!(painting_order(&layers).0.is_empty());
+    }
+
+    #[test]
+    fn a_blurred_layer_is_hidden_only_when_every_sub_frame_is() {
+        // Fades in across frames 0..2; the shutter reaches back to before it.
+        let layers = resolve_layers(
+            r##"[{"id": "fade", "type": "shape", "fill": "#fff",
+                  "shape": {"kind": "rect", "width": 20, "height": 10},
+                  "opacity": [{"frame": 0, "value": 0}, {"frame": 2, "value": 1}],
+                  "motionBlur": {"samples": 4, "shutter": 1}},
+                 {"id": "gone", "type": "shape", "fill": "#fff",
+                  "shape": {"kind": "rect", "width": 20, "height": 10},
+                  "opacity": 0, "motionBlur": {"samples": 4, "shutter": 1}},
+                 {"id": "plain", "type": "shape", "fill": "#fff",
+                  "shape": {"kind": "rect", "width": 20, "height": 10}, "opacity": 0}]"##,
+        );
+        // Frame 0 itself is invisible, but frame 0.375 is not.
+        assert_eq!(layers[0].opacity, 0.0);
+        assert!(!is_hidden(&layers[0]));
+        assert!(is_hidden(&layers[1]) && is_hidden(&layers[2]));
     }
 }
