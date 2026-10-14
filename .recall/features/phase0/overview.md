@@ -15,7 +15,7 @@ Validation before building the engine (docs/HANDOFF.md §8 Phase 0): Remotion sp
 - phase0/ is untracked (not committed yet).
 
 ## Open threads
-- [ ] Verify the active Rust toolchain after the user's rustup install (rustc/cargo/rustup on PATH come from /opt/homebrew/bin). User rejected my last check — wait for their go.
+- [x] Rust toolchain: rustup stable 1.99.0 active via ~/.zshrc PATH (2026-10-14). The first rustup install had been interrupted (no rustc); reinstalled.
 - [ ] Decide what to commit from phase0/: keep remotion-baseline.md, fframes LOG/RESULTS/compare/reference src; drop unused papercut/ template and skill-installer clutter (.agents, .claude, .hermes, .kiro, .zcode, skills-lock.json).
 - [ ] Start Phase 1 (workspace, compositor layers, blur, blend modes, PNG `still`, `bench`) once the user says go.
 

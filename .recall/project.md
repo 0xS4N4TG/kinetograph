@@ -17,7 +17,7 @@
 
 ## Machine
 - Apple M4, 10 CPU, 24 GiB, macOS 26.5.2. Node v26.7.0. Remotion 4.0.530 in the papercut project.
-- Homebrew rustc 1.97.1 was broken (llvm wants libz3.4.15, z3 is 5.1.0). User installed rustup (2026-10-14); PATH still resolves rustc/cargo/rustup from /opt/homebrew/bin — not yet verified which toolchain is active.
+- Rust: use rustup (Homebrew `rustup` formula, stable 1.99.0). ~/.zshrc puts ~/.cargo/bin and /opt/homebrew/opt/rustup/bin ahead of /opt/homebrew/bin. Homebrew `rust` 1.97.1 is still installed but broken (llvm wants libz3.4.15, z3 is 5.1.0); never use /opt/homebrew/bin/rustc.
 
 ## External corpora
 - Papercut Remotion kit: $KINETOGRAPH_CORPUS/lib/papercut/
