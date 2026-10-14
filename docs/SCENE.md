@@ -378,11 +378,10 @@ What the engine puts before your code:
 | `u.<name>` | One `f32` per key of `uniforms`, at this frame. |
 
 The names `layer`, `globals`, `u`, `U`, `Globals` and anything starting with `kg_` belong to the engine; defining one
-yourself is an error. Do not declare `@vertex`, `@fragment` or `@compute` entry points or your own `@group`/`@binding` variables (constants and
-`var<private>` are fine): the engine
-adds a full-screen vertex and a fragment entry point that calls `effect`. Nothing random or clock-based exists in WGSL
-here, so a shader is a pure function of the scene and the frame like the rest of the renderer; derive any noise from
-`px`, `globals.frame` and the uniforms.
+yourself is an error. Do not declare `@vertex`, `@fragment` or `@compute` entry points or your own `@group`/`@binding`
+variables (constants and `var<private>` are fine): the engine adds a full-screen vertex and a fragment entry point that
+calls `effect`. Nothing random or clock-based exists in WGSL here, so a shader is a pure function of the scene and the
+frame like the rest of the renderer; derive any noise from `px`, `globals.frame` and the uniforms.
 
 **Validation.** When the scene loads, the whole module (the engine's prelude, your code, the entry points) is parsed
 and validated with naga, on the CPU and without a GPU. Errors name the layer and the line and column within your
@@ -392,11 +391,11 @@ and validated with naga, on the CPU and without a GPU. Errors name the layer and
 invalid scene: layer "card": shader code 2:30: expected `)`, found ";"
 ```
 
-A missing `effect`, one with the wrong signature, a uniform name that is not an identifier, a negative `padding`, and
-entry points of your own are errors in the same form. Type errors and unknown names (including a `u.` field you did not
-list in `uniforms`) are reported at the place they occur. Each distinct shader (same `code` and same uniform names) is
-compiled to one pipeline when the renderer is created, so no compilation happens per frame; the same shader on many
-layers, with different uniform values, costs one pipeline.
+A missing `effect`, one with the wrong signature, a uniform name that is not an identifier, a negative `padding`, a
+name of your own starting with `kg_`, and entry points or bindings of your own are errors too, naming the layer. Type
+errors and unknown names (including a `u.` field you did not list in `uniforms`) are reported at the place they occur.
+Each distinct shader (same `code` and same uniform names) is compiled to one pipeline when the renderer is created, so
+no compilation happens per frame; the same shader on many layers, with different uniform values, costs one pipeline.
 
 - The shader sees the layer texture, not the layers behind it, and not the layer's `transform`: `px` is always canvas
   pixels. To work in the layer's own space, animate a uniform with the offset.

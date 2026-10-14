@@ -109,6 +109,25 @@ pub fn validate(id: &str, code: &str, names: &[&str]) -> Result<()> {
             .map(|l| at(l.line_number, l.line_position));
         wgsl_error(id, place, error_chain(&e))
     })?;
+    // Names starting with kg_ are the engine's; the prelude's own two are
+    // the only ones allowed (`kg_vs` and `kg_fs` would clash once the entry
+    // points are added).
+    let names_used = module
+        .functions
+        .iter()
+        .map(|(_, f)| &f.name)
+        .chain(module.global_variables.iter().map(|(_, v)| &v.name))
+        .chain(module.constants.iter().map(|(_, c)| &c.name))
+        .chain(module.overrides.iter().map(|(_, o)| &o.name))
+        .chain(module.types.iter().map(|(_, t)| &t.name));
+    if let Some(name) = names_used
+        .flatten()
+        .find(|n| n.starts_with("kg_") && !["kg_layer_tex", "kg_layer_smp"].contains(&n.as_str()))
+    {
+        return bad(format!(
+            "must not define {name:?}: names starting with kg_ are the engine's"
+        ));
+    }
     if !module.entry_points.is_empty() {
         return bad(
             "must not declare entry points (@vertex, @fragment, @compute); the engine adds them"
@@ -346,5 +365,17 @@ mod tests {
         );
         let msg = message(&code, &[]);
         assert!(msg.contains("shader code 1:"), "{msg}");
+        // kg_ names are reserved, including the entry points added later.
+        for code in [
+            format!("fn kg_fs() {{}}\n{IDENTITY}"),
+            format!("const kg_k: f32 = 1.0;\n{IDENTITY}"),
+            format!("struct kg_s {{ a: f32 }}\n{IDENTITY}"),
+        ] {
+            let msg = message(&code, &[]);
+            assert!(
+                msg.contains("layer \"fx\"") && msg.contains("names starting with kg_"),
+                "{msg}"
+            );
+        }
     }
 }
