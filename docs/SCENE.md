@@ -145,6 +145,48 @@ One font per layer, no fallback, no bidi. `\n` starts a new line. The layer orig
 
 Fonts are registered before any text is measured.
 
+### Per-character styles
+
+`chars` styles single characters, for kinetic type:
+
+```json
+{ "id": "word", "type": "text", "text": "Hi!", "font": "DM Sans", "size": 80, "color": "#fff",
+  "chars": [ { "y": [{ "frame": 0, "value": 40 }, { "frame": 12, "value": 0 }], "opacity": [{ "frame": 0, "value": 0 }, { "frame": 12, "value": 1 }] },
+             null,
+             { "scale": 1.4, "rotation": -10, "color": "#ff4d4d" } ] }
+```
+
+It is an array with one entry per Unicode code point of `text` (what JavaScript's `Array.from(text)` counts, so a `\n`
+has an entry, which is ignored). An entry is `null`, a character drawn as the layer is, or an object whose fields are all
+optional:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `x`, `y` | `0` | Offset of the character, in text-box pixels. |
+| `scale` | `1` | About the character's centre. |
+| `rotation` | `0` | Degrees clockwise, about the character's centre. |
+| `opacity` | `1` | 0..1, multiplies the layer's `opacity`. |
+| `color` | the layer's | A colour string; replaces the layer's `color` (a colour or a gradient) for this character. |
+
+All but `color` are animatable. The offset is applied first, then the turn and the scale about the centre.
+
+- **The centre of a character** is the middle of its glyph's advance, horizontally, and the middle of its line box,
+  vertically (the line's `top` and `bottom`, which `lineHeight` sets). A character of several glyphs takes the middle of
+  all their advances.
+- **Clusters.** Characters are the code points of the text, but glyphs belong to clusters: a cluster of several code
+  points (a ligature, a letter and its combining mark) takes the entry of its first code point, and the others' entries
+  do nothing. A code point with no glyph (a newline, the later letters of a ligature) shows nothing, whatever its entry
+  says.
+- A list shorter than the text styles the first characters only, and entries past its end are ignored.
+- **The text box** (for `inset` clips, `sweep` dot matrices, [box-unit gradients](#box-units), a transform origin and
+  layout) is the box without the offsets, so styling characters never changes it. The bounds of the layer, which the
+  renderer uses to size the layer's texture, do follow the characters.
+- A gradient `color` is in the text box and moves with the character: a letter keeps the colours it had where it was laid
+  out. A character's `color` replaces the gradient for that character, with a plain colour.
+- Characters are drawn in text order. Effects, clips, masks and mattes work on the layer as a whole, after its
+  characters.
+- Glyph positions are what the addon's `layoutText` returns, with `charIndex` the index into `chars`.
+
 ### image
 
 ```json
@@ -1260,12 +1302,16 @@ constants) gives the sub-frames itself with `frames`:
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
   `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
-- No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
+- No video layers yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group without a `layout` (a load error).
 - Layout is flexbox only (`display: flex`; no grid, no block layout), with sizes in pixels (no percentages, `auto`
   margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
   size. Text is measured as one box of its own `maxWidth`, so it does not re-wrap to fit the container. Baseline
   alignment is for rows; a non-text layer's baseline is its bottom edge. See [Layout](#layout).
+- Per-character styling moves, scales, turns, fades and recolours whole glyphs. There is no per-character blur or
+  effect, no outline or gradient of its own (a plain colour only), and characters are not re-flowed: the text box and
+  the line breaks are those of the unstyled text. Text has one font per layer, no fallback and no bidi, so the clusters
+  are those of left-to-right text.
 - An image's size is read from its header when the scene loads, only when a side is left out; `cover` cuts the picture
   with an anti-aliased clip and `contain` leaves the rest of the box empty (no background colour).
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a

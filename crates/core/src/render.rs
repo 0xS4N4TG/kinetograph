@@ -1,7 +1,7 @@
 //! Scene -> pixels. Vello rasterises each leaf layer into an sRGB texture;
 //! the compositor blends them in linear light.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
 use glam::DMat4;
@@ -21,8 +21,9 @@ use crate::compositor::{Compositor, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::mesh;
 use crate::resolve::{
-    ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry,
-    ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint, ResolvedScene,
+    ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient,
+    ResolvedGradientGeometry, ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint,
+    ResolvedScene,
 };
 use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
@@ -959,12 +960,13 @@ impl Renderer {
                 line_height,
                 max_width,
                 align,
+                chars,
                 ..
             } => {
                 let laid_out =
                     self.text
                         .layout(text, font, *size, *line_height, *max_width, *align);
-                text_bounds(&laid_out, *size, *max_width)
+                text_bounds(&laid_out, *size, *max_width, chars)
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
@@ -1026,6 +1028,7 @@ impl Renderer {
                 line_height,
                 max_width,
                 align,
+                chars,
             } => {
                 let laid_out =
                     self.text
@@ -1033,22 +1036,78 @@ impl Renderer {
                 let (box_width, box_height) = laid_out.box_size(*max_width);
                 let text_box = Rect::new(0.0, 0.0, box_width, box_height);
                 let (brush, brush_transform) = paint_brush(color, Some(text_box));
+                let centres = if chars.iter().any(Option::is_some) {
+                    laid_out.char_centres()
+                } else {
+                    BTreeMap::new()
+                };
                 for run in &laid_out.runs {
-                    self.vello_scene
-                        .draw_glyphs(&run.font)
-                        .transform(matrix)
-                        .brush_transform(brush_transform)
-                        .font_size(run.font_size)
-                        .hint(false)
-                        .brush(&brush)
-                        .draw(
-                            Fill::NonZero,
-                            run.glyphs.iter().map(|g| vello::Glyph {
-                                id: g.id,
-                                x: g.x,
-                                y: g.y,
-                            }),
+                    let mut plain = Vec::new();
+                    let draw = |scene: &mut vello::Scene,
+                                matrix: Affine,
+                                brush: &peniko::Brush,
+                                brush_transform: Option<Affine>,
+                                glyphs: &mut Vec<vello::Glyph>| {
+                        if glyphs.is_empty() {
+                            return;
+                        }
+                        scene
+                            .draw_glyphs(&run.font)
+                            .transform(matrix)
+                            .brush_transform(brush_transform)
+                            .font_size(run.font_size)
+                            .hint(false)
+                            .brush(brush)
+                            .draw(Fill::NonZero, glyphs.drain(..));
+                    };
+                    for g in &run.glyphs {
+                        let glyph = vello::Glyph {
+                            id: g.id,
+                            x: g.x,
+                            y: g.y,
+                        };
+                        let Some(style) = char_style(chars, g.char_index) else {
+                            plain.push(glyph);
+                            continue;
+                        };
+                        // The characters before this one are drawn first, to
+                        // keep the order of the text.
+                        draw(
+                            &mut self.vello_scene,
+                            matrix,
+                            &brush,
+                            brush_transform,
+                            &mut plain,
                         );
+                        if style.opacity <= 0.0 {
+                            continue;
+                        }
+                        let centre = centres.get(&g.char_index).copied().unwrap_or_default();
+                        let own = match style.color {
+                            Some(c) => peniko::Brush::Solid(to_peniko(c)),
+                            None => brush.clone(),
+                        }
+                        .multiply_alpha(style.opacity);
+                        let own_transform = if style.color.is_some() {
+                            None
+                        } else {
+                            brush_transform
+                        };
+                        draw(
+                            &mut self.vello_scene,
+                            matrix * char_matrix(style, centre),
+                            &own,
+                            own_transform,
+                            &mut vec![glyph],
+                        );
+                    }
+                    draw(
+                        &mut self.vello_scene,
+                        matrix,
+                        &brush,
+                        brush_transform,
+                        &mut plain,
+                    );
                 }
             }
             ResolvedKind::Image {
@@ -1400,7 +1459,16 @@ fn device_bounds(matrix: Affine, local: Rect) -> PixelRect {
 /// baseline or overhangs its advance by less (descenders, accents, italic
 /// slants). A word wider than `max_width` hangs out of the box, so the glyphs
 /// count as well.
-fn text_bounds(laid_out: &LaidOutText, size: f32, max_width: Option<f32>) -> Rect {
+///
+/// A character with its own style (`chars`) is moved, scaled and turned about
+/// its centre: its glyphs' box, grown by the same font size, goes through the
+/// character's matrix and is added.
+fn text_bounds(
+    laid_out: &LaidOutText,
+    size: f32,
+    max_width: Option<f32>,
+    chars: &[Option<ResolvedChar>],
+) -> Rect {
     let width = max_width.unwrap_or(0.0).max(laid_out.width);
     let mut b = Rect::new(0.0, 0.0, f64::from(width), f64::from(laid_out.height));
     for glyph in laid_out.runs.iter().flat_map(|run| &run.glyphs) {
@@ -1409,7 +1477,40 @@ fn text_bounds(laid_out: &LaidOutText, size: f32, max_width: Option<f32>) -> Rec
             .union_pt((f64::from(glyph.x + glyph.advance), f64::from(glyph.y)));
     }
     let em = f64::from(size).abs();
-    b.inflate(em, em)
+    let mut b = b.inflate(em, em);
+    if chars.iter().any(Option::is_some) {
+        let centres = laid_out.char_centres();
+        for glyph in laid_out.runs.iter().flat_map(|run| &run.glyphs) {
+            let Some(style) = char_style(chars, glyph.char_index) else {
+                continue;
+            };
+            let centre = centres.get(&glyph.char_index).copied().unwrap_or_default();
+            let ink = Rect::new(
+                f64::from(glyph.x),
+                f64::from(glyph.y),
+                f64::from(glyph.x + glyph.advance),
+                f64::from(glyph.y),
+            )
+            .inflate(em, em);
+            b = b.union(bounds::transformed(char_matrix(style, centre), ink));
+        }
+    }
+    b
+}
+
+/// The style of the character at code point `index`, if it has one.
+fn char_style(chars: &[Option<ResolvedChar>], index: u32) -> Option<&ResolvedChar> {
+    chars.get(index as usize).and_then(Option::as_ref)
+}
+
+/// Where a styled character goes, in text-box space: moved by its offset,
+/// then scaled and turned about its centre.
+fn char_matrix(style: &ResolvedChar, centre: (f64, f64)) -> Affine {
+    Affine::translate((style.x, style.y))
+        * Affine::translate(centre)
+        * Affine::rotate(style.rotation.to_radians())
+        * Affine::scale(style.scale)
+        * Affine::translate((-centre.0, -centre.1))
 }
 
 /// `matrix` (layer space to padded-canvas pixels) for a draw of the pixels
@@ -2643,7 +2744,7 @@ mod tests {
     fn text_is_bounded_by_its_layout_and_its_glyphs_a_font_size_wider() {
         let mut engine = text_engine();
         let laid_out = engine.layout("Hello world", "DM Sans", 40.0, None, None, TextAlign::Left);
-        let b = text_bounds(&laid_out, 40.0, None);
+        let b = text_bounds(&laid_out, 40.0, None, &[]);
         assert_eq!(b.x0, -40.0);
         assert_eq!(b.y0, -40.0);
         assert!((b.x1 - (f64::from(laid_out.width) + 40.0)).abs() < 1e-3);
@@ -2663,7 +2764,7 @@ mod tests {
             Some(60.0),
             TextAlign::Left,
         );
-        let b = text_bounds(&wide, 40.0, Some(60.0));
+        let b = text_bounds(&wide, 40.0, Some(60.0), &[]);
         assert!(
             f64::from(wide.width) > 60.0,
             "the word fits: {}",
@@ -2671,7 +2772,59 @@ mod tests {
         );
         assert!(b.x1 >= f64::from(wide.width) + 40.0 - 1e-3, "{b:?}");
         // A box wider than the text (a wrap width) counts as it is.
-        let b = text_bounds(&laid_out, 40.0, Some(500.0));
+        let b = text_bounds(&laid_out, 40.0, Some(500.0), &[]);
         assert_eq!(b.x1, 540.0);
+    }
+
+    fn style(x: f64, y: f64, scale: f64, rotation: f64) -> ResolvedChar {
+        ResolvedChar {
+            x,
+            y,
+            scale,
+            rotation,
+            opacity: 1.0,
+            color: None,
+        }
+    }
+
+    #[test]
+    fn a_character_turns_and_scales_about_its_centre_after_its_offset() {
+        let centre = (30.0, 20.0);
+        // Nothing set: the identity.
+        assert_eq!(
+            char_matrix(&style(0.0, 0.0, 1.0, 0.0), centre),
+            Affine::IDENTITY
+        );
+        // Scale and turn leave the centre where it is.
+        let m = char_matrix(&style(0.0, 0.0, 2.5, 70.0), centre);
+        assert!((m * Point::new(30.0, 20.0)).distance(Point::new(30.0, 20.0)) < 1e-9);
+        // 90 degrees clockwise (y down): the point to the right of the centre
+        // goes below it, at twice the distance for a scale of 2.
+        let m = char_matrix(&style(0.0, 0.0, 2.0, 90.0), centre);
+        assert!((m * Point::new(40.0, 20.0)).distance(Point::new(30.0, 40.0)) < 1e-9);
+        // The offset moves the centre.
+        let m = char_matrix(&style(5.0, -7.0, 2.0, 90.0), centre);
+        assert!((m * Point::new(30.0, 20.0)).distance(Point::new(35.0, 13.0)) < 1e-9);
+    }
+
+    #[test]
+    fn styled_characters_widen_the_text_bounds_and_the_rest_do_not() {
+        let mut engine = text_engine();
+        let laid_out = engine.layout("Hello", "DM Sans", 40.0, None, None, TextAlign::Left);
+        let plain = text_bounds(&laid_out, 40.0, None, &[]);
+        // Only null entries: the same box.
+        assert_eq!(
+            text_bounds(&laid_out, 40.0, None, &[None, None, None]),
+            plain
+        );
+        // Styled but not moved: inside it.
+        let b = text_bounds(&laid_out, 40.0, None, &[Some(style(0.0, 0.0, 1.0, 0.0))]);
+        assert_eq!(b, plain);
+        // The last letter thrown 300 px down and made twice as big.
+        let chars = [None, None, None, None, Some(style(0.0, 300.0, 2.0, 0.0))];
+        let b = text_bounds(&laid_out, 40.0, None, &chars);
+        assert!(b.y1 > plain.y1 + 250.0, "{b:?} vs {plain:?}");
+        assert!(b.x1 > plain.x1, "{b:?} vs {plain:?}");
+        assert_eq!((b.x0, b.y0), (plain.x0, plain.y0));
     }
 }

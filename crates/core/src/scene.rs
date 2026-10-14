@@ -947,6 +947,37 @@ pub struct TextLayer {
     /// How lines sit in the box: within `maxWidth`, or within the widest line.
     #[serde(default)]
     pub align: TextAlign,
+    /// One entry per Unicode code point of `text` (a `\n` has one too, which
+    /// is ignored): `null` for a character drawn as the layer is, or its own
+    /// style. Entries past the end of the text are ignored; a list shorter
+    /// than the text styles the first characters only.
+    #[serde(default)]
+    pub chars: Vec<Option<CharStyle>>,
+}
+
+/// How one character of a text layer differs from the layer, in text-box
+/// pixels and about the character's centre (`docs/SCENE.md`, "Per-character
+/// styles").
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CharStyle {
+    /// Offset of the character.
+    #[serde(default = "zero")]
+    pub x: Num,
+    #[serde(default = "zero")]
+    pub y: Num,
+    /// About the character's centre.
+    #[serde(default = "one")]
+    pub scale: Num,
+    /// Degrees clockwise about the character's centre.
+    #[serde(default = "zero")]
+    pub rotation: Num,
+    /// 0..1, multiplies the layer's `opacity`; clamped when resolved.
+    #[serde(default = "one")]
+    pub opacity: Num,
+    /// Replaces the layer's `color` (a colour or a gradient) for this
+    /// character.
+    pub color: Option<Color>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -3879,6 +3910,59 @@ mod tests {
                 .unwrap_err()
                 .contains("justify")
         );
+    }
+
+    // --- Per-character styles. ------------------------------------------------
+
+    fn chars_scene(chars: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 10,
+                    "fonts": {{"DM Sans": "f.ttf"}}, "layers": [
+                  {{"id": "t", "type": "text", "text": "abc", "font": "DM Sans", "size": 9,
+                    "color": "#fff", "chars": {chars}}}]}}"##
+            ),
+            PathBuf::new(),
+        )
+    }
+
+    #[test]
+    fn characters_take_null_or_a_style_with_defaults() {
+        let scene = chars_scene(
+            r##"[null, {}, {"x": 4, "y": [{"frame": 0, "value": 0}, {"frame": 9, "value": 9}],
+                          "scale": 2, "rotation": 45, "opacity": 0.5, "color": "#ff0000"}]"##,
+        )
+        .unwrap();
+        let LayerKind::Text(t) = &scene.layers[0].kind else {
+            panic!("not text");
+        };
+        assert_eq!(t.chars.len(), 3);
+        assert!(t.chars[0].is_none());
+        let plain = t.chars[1].as_ref().unwrap();
+        let values = [
+            &plain.x,
+            &plain.y,
+            &plain.scale,
+            &plain.rotation,
+            &plain.opacity,
+        ];
+        assert_eq!(values.map(|n| n.at(0.0)), [0.0, 0.0, 1.0, 0.0, 1.0]);
+        assert!(plain.color.is_none());
+        let full = t.chars[2].as_ref().unwrap();
+        assert_eq!(
+            (full.x.at(0.0), full.y.at(9.0), full.scale.at(0.0)),
+            (4.0, 9.0, 2.0)
+        );
+        assert_eq!(full.color, Some(Color::parse("#ff0000").unwrap()));
+        // An empty list, and lists longer and shorter than the text, are fine.
+        chars_scene("[]").unwrap();
+        chars_scene(r#"[null, null, null, null, {"x": 1}]"#).unwrap();
+        let bad = chars_scene(r#"[{"color": "red"}]"#)
+            .unwrap_err()
+            .to_string();
+        assert!(bad.contains("red") || bad.contains("colour"), "{bad}");
+        let bad = chars_scene(r#"["x"]"#).unwrap_err().to_string();
+        assert!(bad.contains("invalid type"), "{bad}");
     }
 
     // --- Layout. --------------------------------------------------------------

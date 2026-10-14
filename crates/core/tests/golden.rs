@@ -403,6 +403,20 @@ fn flex_layout_matches_golden() {
 }
 
 #[test]
+fn glyph_text_matches_golden() {
+    // Frame 15 of 30: the staggered rise and fade-in of the first line are
+    // under way, and the animated offset on the last character is half way.
+    // Covers per-character offsets and opacity, scale and rotation about the
+    // character's centre, a character in its own colour, a box-unit gradient
+    // that moves with each character, centred two-line text where the
+    // newline has an entry (ignored, its scale and offset must not show) and
+    // an invisible character, and a drop shadow on text whose letters are
+    // moved.
+    let frame = render_still(scene("tests/scenes/glyph-text.json"), 15).unwrap();
+    check("glyph-text", &frame);
+}
+
+#[test]
 fn origin_and_align_match_golden() {
     // Frame 15 of 30: the rotations, scale and tilt are half way. Covers a
     // rect turning and shrinking about its centre (its outline stays put), an

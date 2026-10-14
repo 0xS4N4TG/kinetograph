@@ -77,6 +77,21 @@ pub struct ResolvedLayer {
     pub motion: Vec<ResolvedLayer>,
 }
 
+/// A character's own style at one frame (`scene::CharStyle`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedChar {
+    /// Offset in text-box pixels.
+    pub x: f64,
+    pub y: f64,
+    /// About the character's centre.
+    pub scale: f64,
+    /// Degrees clockwise, about the character's centre.
+    pub rotation: f64,
+    /// 0..=1.
+    pub opacity: f32,
+    pub color: Option<Color>,
+}
+
 /// A group's flex layout at one frame (`scene::Layout`), in pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedLayout {
@@ -471,6 +486,9 @@ pub enum ResolvedKind {
         line_height: Option<f32>,
         max_width: Option<f32>,
         align: TextAlign,
+        /// One entry per code point of `text` that has one: its own style, or
+        /// `None` for a character drawn as the layer is.
+        chars: Vec<Option<ResolvedChar>>,
     },
     Image {
         src: String,
@@ -775,6 +793,20 @@ impl Resolver<'_> {
                 line_height: t.line_height.as_ref().map(|n| n.at(f) as f32),
                 max_width: t.max_width.as_ref().map(|n| n.at(f) as f32),
                 align: t.align,
+                chars: t
+                    .chars
+                    .iter()
+                    .map(|c| {
+                        c.as_ref().map(|c| ResolvedChar {
+                            x: c.x.at(f),
+                            y: c.y.at(f),
+                            scale: c.scale.at(f),
+                            rotation: c.rotation.at(f),
+                            opacity: c.opacity.at(f).clamp(0.0, 1.0) as f32,
+                            color: c.color,
+                        })
+                    })
+                    .collect(),
             },
             LayerKind::Image(i) => {
                 let (width, height) = self.image_size(layer, i, f)?;
@@ -2301,6 +2333,37 @@ mod tests {
         // The same answers through an engine the caller owns.
         let again = scene.resolve_with_text(5, &mut engine).unwrap().layers;
         assert_eq!(again, layers);
+    }
+
+    #[test]
+    fn character_styles_are_resolved_per_frame_and_opacity_is_clamped() {
+        let scene = scene_with_font(
+            r##"[{"id": "t", "type": "text", "text": "abc", "font": "DM Sans", "size": 20,
+                  "color": "#fff", "chars": [
+                    null,
+                    {"x": [{"frame": 0, "value": 0}, {"frame": 10, "value": 20}],
+                     "scale": 2, "rotation": 90, "opacity": [{"frame": 0, "value": -1}, {"frame": 10, "value": 3}],
+                     "color": "#ff0000"}]},
+                 {"id": "u", "type": "text", "text": "abc", "font": "DM Sans", "size": 20,
+                  "color": "#fff"}]"##,
+        );
+        let layers = scene.resolve(5).unwrap().layers;
+        let chars = |l: &ResolvedLayer| match &l.kind {
+            ResolvedKind::Text { chars, .. } => chars.clone(),
+            _ => panic!("not text"),
+        };
+        let styled = chars(&layers[0]);
+        assert_eq!(styled.len(), 2);
+        assert!(styled[0].is_none());
+        let c = styled[1].unwrap();
+        assert_eq!((c.x, c.y, c.scale, c.rotation), (10.0, 0.0, 2.0, 90.0));
+        assert_eq!(c.opacity, 1.0);
+        assert_eq!(c.color, Some(Color::parse("#ff0000").unwrap()));
+        // At frame 0 the opacity is -1 and clamps to 0.
+        let first = chars(&scene.resolve(0).unwrap().layers[0]);
+        assert_eq!(first[1].unwrap().opacity, 0.0);
+        // A layer without chars has none, so it resolves as before.
+        assert!(chars(&layers[1]).is_empty());
     }
 
     #[test]

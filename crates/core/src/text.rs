@@ -33,6 +33,32 @@ pub struct LaidOutText {
 }
 
 impl LaidOutText {
+    /// The centre of each character, by code point index, in text-box space:
+    /// the middle of its glyphs' advance across, and the middle of its line
+    /// box (`top` to `bottom`) down. Characters with no glyph (a newline, a
+    /// ligature's later letters) have none.
+    pub fn char_centres(&self) -> BTreeMap<u32, (f64, f64)> {
+        let mut spans: BTreeMap<u32, (f64, f64, usize)> = BTreeMap::new();
+        for run in &self.runs {
+            for glyph in &run.glyphs {
+                let (left, right) = (f64::from(glyph.x), f64::from(glyph.x + glyph.advance));
+                let span = spans
+                    .entry(glyph.char_index)
+                    .or_insert((left, right, run.line));
+                span.0 = span.0.min(left);
+                span.1 = span.1.max(right);
+            }
+        }
+        spans
+            .into_iter()
+            .map(|(index, (left, right, line))| {
+                let line = &self.lines[line];
+                let middle = f64::from(line.top + line.bottom) / 2.0;
+                (index, ((left + right) / 2.0, middle))
+            })
+            .collect()
+    }
+
     /// The text box (`docs/SCENE.md`, "Clip paths"): `max_width`, or the
     /// widest line without one, by the height.
     pub fn box_size(&self, max_width: Option<f32>) -> (f64, f64) {
@@ -83,6 +109,10 @@ pub struct PositionedGlyph {
     pub x: f32,
     pub y: f32,
     pub advance: f32,
+    /// The index, in Unicode code points, of the character the glyph shows:
+    /// the first code point of its cluster (a ligature's glyph belongs to the
+    /// first letter of the ligature, a mark's base letter to the base).
+    pub char_index: u32,
 }
 
 impl TextEngine {
@@ -152,6 +182,13 @@ impl TextEngine {
             TextAlign::Right => layout.align(Alignment::Right, AlignmentOptions::default()),
         }
 
+        // Code point index of each byte of `text`, for the clusters' ranges.
+        let mut char_at = vec![0_u32; text.len() + 1];
+        for (index, (start, c)) in text.char_indices().enumerate() {
+            char_at[start..start + c.len_utf8()].fill(index as u32);
+        }
+        char_at[text.len()] = text.chars().count() as u32;
+
         let mut lines = Vec::new();
         let mut runs = Vec::new();
         for (index, line) in layout.lines().enumerate() {
@@ -167,6 +204,13 @@ impl TextEngine {
                     continue;
                 };
                 let run = glyph_run.run();
+                // The glyphs of a run come in the order of its visual
+                // clusters, which hold them: one code point index for each.
+                let mut chars = Vec::new();
+                for cluster in run.visual_clusters() {
+                    let first = char_at[cluster.text_range().start];
+                    chars.extend(std::iter::repeat_n(first, cluster.glyphs().count()));
+                }
                 runs.push(LaidOutRun {
                     line: index,
                     font: run.font().clone(),
@@ -174,11 +218,13 @@ impl TextEngine {
                     text_range: run.text_range(),
                     glyphs: glyph_run
                         .positioned_glyphs()
-                        .map(|g| PositionedGlyph {
+                        .enumerate()
+                        .map(|(i, g)| PositionedGlyph {
                             id: g.id,
                             x: g.x,
                             y: g.y,
                             advance: g.advance,
+                            char_index: chars.get(i).or(chars.last()).copied().unwrap_or_default(),
                         })
                         .collect(),
                 });
@@ -245,6 +291,75 @@ mod tests {
         assert!(wrapped.width <= 150.0);
         let broken = e.layout("a\nb", "DM Sans", 32.0, None, None, TextAlign::Left);
         assert_eq!(broken.lines.len(), 2);
+    }
+
+    fn char_indices(t: &LaidOutText) -> Vec<u32> {
+        t.runs
+            .iter()
+            .flat_map(|r| &r.glyphs)
+            .map(|g| g.char_index)
+            .collect()
+    }
+
+    #[test]
+    fn glyphs_know_their_code_point_index() {
+        let mut e = engine();
+        let plain = e.layout("Hello", "DM Sans", 32.0, None, None, TextAlign::Left);
+        assert_eq!(char_indices(&plain), [0, 1, 2, 3, 4]);
+        // A newline is a code point of its own with no glyph.
+        let lines = e.layout("ab\ncd", "DM Sans", 32.0, None, None, TextAlign::Left);
+        assert_eq!(char_indices(&lines), [0, 1, 3, 4]);
+        // Code points, not bytes: 'é' is two bytes.
+        let wide = e.layout("é!x", "DM Sans", 32.0, None, None, TextAlign::Left);
+        assert_eq!(char_indices(&wide), [0, 1, 2]);
+        // A wrapped line carries on counting.
+        let wrapped = e.layout(
+            "aa bb cc",
+            "DM Sans",
+            32.0,
+            None,
+            Some(60.0),
+            TextAlign::Left,
+        );
+        assert!(wrapped.lines.len() > 1);
+        let indices = char_indices(&wrapped);
+        assert!(indices.windows(2).all(|w| w[1] > w[0]));
+        assert_eq!(*indices.last().unwrap(), 7);
+    }
+
+    #[test]
+    fn a_ligature_or_a_mark_belongs_to_its_first_code_point() {
+        let mut e = engine();
+        // A base letter and a combining acute: one cluster, however many
+        // glyphs the font makes of it; every glyph is the base letter's.
+        let marked = e.layout("xe\u{301}y", "DM Sans", 32.0, None, None, TextAlign::Left);
+        let indices = char_indices(&marked);
+        assert_eq!(indices.first(), Some(&0));
+        assert_eq!(indices.last(), Some(&3));
+        assert!(!indices.contains(&2), "{indices:?}");
+        // Ligatures: whatever the font joins, no glyph is attributed past
+        // the end of the text, and the indices never go backwards.
+        let joined = e.layout("office fifi", "DM Sans", 32.0, None, None, TextAlign::Left);
+        let indices = char_indices(&joined);
+        assert!(indices.windows(2).all(|w| w[1] >= w[0]), "{indices:?}");
+        assert!(indices.iter().all(|&i| i < 11));
+    }
+
+    #[test]
+    fn character_centres_are_the_middle_of_the_advance_and_of_the_line() {
+        let mut e = engine();
+        let t = e.layout("ab\ncd", "DM Sans", 32.0, None, None, TextAlign::Left);
+        let centres = t.char_centres();
+        // No centre for the newline.
+        assert_eq!(centres.keys().copied().collect::<Vec<_>>(), [0, 1, 3, 4]);
+        let glyph = |i: usize| t.runs.iter().flat_map(|r| &r.glyphs).nth(i).unwrap();
+        let (a, b) = (glyph(0), glyph(1));
+        assert!((centres[&0].0 - f64::from(a.x + a.advance / 2.0)).abs() < 1e-4);
+        assert!((centres[&1].0 - f64::from(b.x + b.advance / 2.0)).abs() < 1e-4);
+        let line = |i: usize| f64::from(t.lines[i].top + t.lines[i].bottom) / 2.0;
+        assert!((centres[&0].1 - line(0)).abs() < 1e-4);
+        assert!((centres[&3].1 - line(1)).abs() < 1e-4);
+        assert!(centres[&3].1 > centres[&0].1);
     }
 
     /// The left edge of the first glyph of each line and the line's width.
