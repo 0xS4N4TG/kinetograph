@@ -40,7 +40,7 @@ enum Command {
         /// Frame number, 0-based
         #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
         frame: i64,
-        /// Timed runs after one warm-up run
+        /// Timed runs after two warm-up renders (one per timing path)
         #[arg(long, default_value_t = 10)]
         runs: u32,
         /// Print the result as JSON
@@ -195,7 +195,7 @@ fn bench(scene_path: &Path, frame: i64, runs: u32) -> Result<Output, String> {
         ("total", Stats::of(&total)),
     ];
     let mut text = format!(
-        "{}  {width}x{height}  frame {frame}  {runs} runs after 1 warm-up\n\
+        "{}  {width}x{height}  frame {frame}  {runs} runs after 2 warm-up renders\n\
          setup (GPU, shaders, fonts; once per process): {setup_ms:.1} ms\n\n\
          {:<11}{:>10}{:>10}{:>10}\n",
         scene_path.display(),

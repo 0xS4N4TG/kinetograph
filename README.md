@@ -27,7 +27,7 @@ cargo build --release
 # Render frame 30 of the example scene to a PNG (add --json for machine-readable output)
 ./target/release/kinetograph still examples/papercut-card.json 30 -o out/card.png
 
-# Time one frame: one warm-up, then K runs; per-stage mean/min/max in ms
+# Time one frame: two warm-up renders, then K runs; per-stage mean/min/max in ms
 ./target/release/kinetograph bench examples/papercut-card.json --frame 30 --runs 10
 ```
 
