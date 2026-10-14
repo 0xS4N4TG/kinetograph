@@ -489,7 +489,7 @@ mod tests {
     fn mean(rgba: &[u8]) -> [f64; 3] {
         let n = (rgba.len() / 4) as f64;
         let mut sum = [0.0; 3];
-        for px in rgba.chunks_exact(4) {
+        for px in rgba.as_chunks::<4>().0 {
             for c in 0..3 {
                 sum[c] += f64::from(px[c]);
             }
