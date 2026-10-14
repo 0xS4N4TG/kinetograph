@@ -271,10 +271,22 @@ two so each half is reviewable:
     re-blurred every frame).
   - Frame-range rendering that keeps one GPU setup and overlaps encoding with the next frame (fold into 2b's
     `render`).
-  - Measure what Phase 1's choices cost and whether to keep them: 16x MSAA (chosen over Vello's `Area` mode for
-    byte-identical frames, see §10), the resampled Gaussian blur (more passes than the dual Kawase it replaced, for
-    position stability), and a full padded-canvas texture per layer.
-  Measure each change with `bench` before and after; none of the gains above are measured yet.
+  - Phase 1's three costly choices, each kept for a reason that any replacement must still meet:
+    - **16x MSAA** (chosen over Vello's `Area` mode for byte-identical frames, see §10). Try 8x MSAA (Vello has an
+      `msaa8` config) and keep it if frames stay byte-identical and the goldens pass by eye; rasterise only each
+      layer's bounds (follows from the per-layer textures below); revisit `Area` if Vello makes its coverage order
+      deterministic.
+    - **The resampled Gaussian blur** (replaced dual Kawase in `139171a` because Kawase snapped small moving layers to
+      a coarse grid). Halve the taps with the bilinear trick (one fetch between two texels weighted for both);
+      draw the shadow of a `rect`, `roundedRect` or `ellipse` with no blur at all, as a closed-form Gaussian (an erf
+      expression in the fragment shader, exact for rectangles and close for rounded ones), which covers most papercut
+      shadows; blur only the layer's bounds plus reach.
+    - **A full padded-canvas texture per layer** (the pool hands out one size, canvas plus twice the margin). Size
+      each layer texture to its bounds plus its effects' reach and composite it at an offset; pool by size class;
+      skip the separate buffer for a group that does not need one (normal blend, opacity 1, no effects, clip, mask
+      or matte) and draw its children straight into the parent.
+  Measure each change with `bench` before and after, and keep the blur position and sigma tests (`tests/blur.rs`) and
+  the goldens passing; none of the gains above are measured yet.
 **Phase 3: authoring + agents.** The N-API addon (napi-rs) exposing the Rust core; the `@kinetograph/core` TS
 package: Remotion shim, `react-reconciler` host config emitting the scene graph, determinism shim; Web Audio via
 `node-web-audio-api`; the `kinetograph` CLI in TS and the MCP server; the Remotion package table in section 5;
