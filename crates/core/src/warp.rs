@@ -126,11 +126,9 @@ pub fn depth(world: &DMat4, point: (f64, f64)) -> f64 {
 /// rotation leaves at the same depth up to rounding error stay in document
 /// order instead of swapping on the last bit.
 pub fn sort_far_to_near<T>(items: &mut [T], z: impl Fn(&T) -> f64) {
-    // `sort_by` is stable.
-    items.sort_by(|a, b| {
-        let step = |z: f64| (z / DEPTH_STEP).round();
-        step(z(a)).total_cmp(&step(z(b)))
-    });
+    // `sort_by_key` is stable. Whole steps, so that a depth rounded to -0.0
+    // ties with 0.0 (`total_cmp` on floats would put it first).
+    items.sort_by_key(|item| (z(item) / DEPTH_STEP).round() as i64);
 }
 
 /// The corners of `b` as `cornerPin` lists them: top left, top right, bottom
@@ -493,6 +491,11 @@ mod tests {
         assert_eq!(order, ["far", "mid", "a", "b", "c", "near"]);
         // Depths that differ by rounding error stay in document order.
         let mut items = [("x", 1.0 + 1e-13), ("y", 1.0), ("z", 1.0 - 1e-13)];
+        sort_far_to_near(&mut items, |i| i.1);
+        let order: Vec<_> = items.iter().map(|i| i.0).collect();
+        assert_eq!(order, ["x", "y", "z"]);
+        // Also around 0, where the error has either sign.
+        let mut items = [("x", 1e-13), ("y", 0.0), ("z", -1e-13)];
         sort_far_to_near(&mut items, |i| i.1);
         let order: Vec<_> = items.iter().map(|i| i.0).collect();
         assert_eq!(order, ["x", "y", "z"]);
