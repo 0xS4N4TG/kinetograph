@@ -136,6 +136,23 @@ coordinates.
 
 Each entry in a layer's `effects` is an object with a `type`. A group's effects run on its composited result.
 
+### Canvas margin
+
+An effect that paints outside its layer (a shadow, say) needs room beyond the canvas edge, and so does a layer that
+hangs off the canvas, whose shadow can fall back onto it. So the renderer draws on a canvas padded by a margin on every
+side and crops the margin off at the end. You do not set it; it is worked out when the scene loads: the largest distance
+any effect can reach past its layer, at any keyframe on any layer (nested layers included), rounded up to whole
+pixels. Each effect below says what it counts. The margin is limited so the padded canvas is at most 8192 pixels on a
+side.
+
+- A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
+- `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
+  only `blur` keeps margin 0.
+- A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
+  value for one frame makes the whole scene pay for it.
+- Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
+  still drawn there. With a margin, the part of it that falls inside the margin is real and can bleed into effects.
+
 ### blur
 
 ```json
@@ -154,8 +171,9 @@ position to within 0.01 pixel, so moving or resizing a blurred glow does not mak
 
 - It does not scale with the layer's `scale` or a parent group's `scale`; the radius is always in canvas pixels.
 - Radii below 1 do nothing.
-- The layer is blurred as if it sat in transparent space: its edges fade out, and content that lies outside the canvas
-  is not part of the layer, so it cannot bleed in.
+- The layer is blurred as if it sat in transparent space: its edges fade out. Content that lies outside the canvas is
+  part of the layer only as far as the scene's [margin](#canvas-margin) reaches, so in a scene with no margin (blur
+  alone) it cannot bleed in, and in a scene with a margin it can, from at most that far out.
 
 ## Clip paths
 

@@ -92,6 +92,11 @@ pub struct Renderer {
     vello_images: Option<vello::Renderer>,
     vello_scene: vello::Scene,
     vello_view: wgpu::TextureView,
+    /// Size of the Vello target and of every compositor texture: the canvas
+    /// plus `margin` pixels on every side.
+    target_size: (u32, u32),
+    /// See `Scene::margin`.
+    margin: u32,
     compositor: Compositor,
     text: TextEngine,
     images: HashMap<String, ImageData>,
@@ -117,11 +122,13 @@ impl Renderer {
         } else {
             Some(new_vello(&device)?)
         };
+        let margin = scene.margin();
+        let target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
         let vello_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("vello target"),
             size: wgpu::Extent3d {
-                width: scene.width,
-                height: scene.height,
+                width: target_size.0,
+                height: target_size.1,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -132,7 +139,7 @@ impl Renderer {
             view_formats: &[],
         });
         let vello_view = vello_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let compositor = Compositor::new(&device, &queue, scene.width, scene.height);
+        let compositor = Compositor::new(&device, &queue, scene.width, scene.height, margin);
 
         Ok(Renderer {
             scene,
@@ -143,6 +150,8 @@ impl Renderer {
             vello_images,
             vello_scene: vello::Scene::new(),
             vello_view,
+            target_size,
+            margin,
             compositor,
             text,
             images,
@@ -195,7 +204,7 @@ impl Renderer {
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
         let color = linear_premultiplied(scene.background);
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
-        let canvas = self.draw_layers(&scene.layers, Affine::IDENTITY, background)?;
+        let canvas = self.draw_layers(&scene.layers, margin_origin(self.margin), background)?;
         let rgba = self.timed(Stage::Readback, |s| s.compositor.read_rgba8(&canvas))?;
         self.compositor.release(canvas);
         Ok(Frame {
@@ -206,7 +215,7 @@ impl Renderer {
     }
 
     /// Blends `layers` (bottom first) onto `canvas`. `parent` is the product
-    /// of the enclosing groups' matrices.
+    /// of the enclosing groups' matrices, starting from the margin offset.
     fn draw_layers(
         &mut self,
         layers: &[ResolvedLayer],
@@ -366,15 +375,15 @@ impl Renderer {
         self.render_vello_scene(false)
     }
 
-    /// Fills the whole canvas with the mask's gradient, which lives in layer
-    /// space, into the Vello target.
+    /// Fills the whole target (canvas and margin) with the mask's gradient,
+    /// which lives in layer space, into the Vello target.
     fn rasterise_mask(&mut self, mask: &ResolvedMask, matrix: Affine) -> Result<()> {
         let (brush, brush_transform) = gradient_brush(&mask.gradient);
         let canvas = Rect::new(
             0.0,
             0.0,
-            f64::from(self.scene.width),
-            f64::from(self.scene.height),
+            f64::from(self.target_size.0),
+            f64::from(self.target_size.1),
         );
         self.vello_scene.reset();
         self.vello_scene.fill(
@@ -479,13 +488,20 @@ impl Renderer {
                 &self.vello_view,
                 &RenderParams {
                     base_color: peniko::Color::TRANSPARENT,
-                    width: self.scene.width,
-                    height: self.scene.height,
+                    width: self.target_size.0,
+                    height: self.target_size.1,
                     antialiasing_method: AaConfig::Msaa16,
                 },
             )
             .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
+}
+
+/// Where the canvas's top-left corner sits in the padded textures: `margin`
+/// pixels in from the corner. Every layer is drawn inside this transform. At
+/// margin 0 it is bit for bit `Affine::IDENTITY`.
+fn margin_origin(margin: u32) -> Affine {
+    Affine::translate((f64::from(margin), f64::from(margin)))
 }
 
 /// Whether another layer in `layers` uses `layer` as its matte.
@@ -711,6 +727,16 @@ mod tests {
 
     fn offsets(g: &peniko::Gradient) -> Vec<f32> {
         g.stops.iter().map(|s| s.offset).collect()
+    }
+
+    #[test]
+    fn no_margin_is_the_identity() {
+        let bits = |a: Affine| a.as_coeffs().map(f64::to_bits);
+        assert_eq!(bits(margin_origin(0)), bits(Affine::IDENTITY));
+        assert_eq!(
+            margin_origin(7) * Point::new(1.0, 2.0),
+            Point::new(8.0, 9.0)
+        );
     }
 
     #[test]

@@ -132,6 +132,19 @@ pub enum Effect {
     Blur { radius: Num },
 }
 
+impl Effect {
+    /// How far past the layer's own pixels the effect can paint, in pixels,
+    /// at its largest keyframes. Sets the scene's margin (`Scene::margin`).
+    fn reach(&self) -> f64 {
+        match self {
+            // Not counted: blur only ever spreads the layer's own pixels, and
+            // leaving it out keeps scenes that use nothing else at margin 0,
+            // which is exactly the canvas-sized rendering they had before.
+            Effect::Blur { .. } => 0.0,
+        }
+    }
+}
+
 /// A shape the layer is cut to, in the layer's own coordinates, so it moves
 /// with the layer's transform. Pixels outside it become transparent; the edge
 /// is anti-aliased.
@@ -349,6 +362,16 @@ impl Scene {
         Ok(scene)
     }
 
+    /// Pixels of room kept on every side of the canvas while rendering, so
+    /// that effects which paint outside a layer (a shadow, a glow) are not
+    /// cut off at the canvas edge and layers that hang off the canvas still
+    /// feed them. It is the largest `reach` of any effect on any layer, at
+    /// any keyframe, rounded up, and limited so the padded canvas still fits
+    /// in `MAX_SIDE`. A scene with no such effect has margin 0.
+    pub fn margin(&self) -> u32 {
+        margin_for(max_reach(&self.layers), self.width, self.height)
+    }
+
     fn validate(&self) -> Result<()> {
         let bad = |msg: String| Err(Error::Scene(msg));
         if self.width == 0 || self.height == 0 || self.width > MAX_SIDE || self.height > MAX_SIDE {
@@ -438,6 +461,27 @@ impl Scene {
         }
         Ok(())
     }
+}
+
+fn max_reach(layers: &[Layer]) -> f64 {
+    layers.iter().fold(0.0, |most, layer| {
+        let children = match &layer.kind {
+            LayerKind::Group(g) => max_reach(&g.children),
+            _ => 0.0,
+        };
+        layer
+            .effects
+            .iter()
+            .map(Effect::reach)
+            .fold(most.max(children), f64::max)
+    })
+}
+
+/// `reach` rounded up to whole pixels, limited so a `width` x `height` canvas
+/// plus the margin on both sides stays within `MAX_SIDE`.
+fn margin_for(reach: f64, width: u32, height: u32) -> u32 {
+    let room = (MAX_SIDE - width.max(height)) / 2;
+    (reach.ceil() as u32).min(room)
 }
 
 fn validate_clip(id: &str, clip: &Clip, kind: &LayerKind) -> Result<()> {
@@ -731,5 +775,23 @@ mod tests {
         // Several layers can share one source.
         let d = group("d", r#""matte": {"layer": "b"},"#, "");
         parse(&format!("[{a}, {b}, {d}]")).unwrap();
+    }
+
+    #[test]
+    fn margin_is_zero_without_reaching_effects() {
+        let scene = scene_with(r#""effects": [{"type": "blur", "radius": 90}],"#).unwrap();
+        assert_eq!(scene.margin(), 0);
+        assert_eq!(scene_with("").unwrap().margin(), 0);
+    }
+
+    #[test]
+    fn margin_is_rounded_up_and_limited_to_the_max_side() {
+        assert_eq!(margin_for(0.0, 100, 100), 0);
+        assert_eq!(margin_for(12.2, 100, 100), 13);
+        assert_eq!(margin_for(12.0, 100, 100), 12);
+        // The longer side decides how much room is left.
+        assert_eq!(margin_for(1e9, 100, 200), (MAX_SIDE - 200) / 2);
+        assert_eq!(margin_for(1e9, 8000, 100), 96);
+        assert_eq!(margin_for(50.0, MAX_SIDE, 10), 0);
     }
 }

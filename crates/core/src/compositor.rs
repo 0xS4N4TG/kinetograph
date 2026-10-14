@@ -1,7 +1,9 @@
 //! Blends layer textures in linear light.
 //!
-//! Every intermediate image is a canvas-sized `Rgba16Float` texture holding
-//! linear, premultiplied colour. The passes live in `shaders/composite.wgsl`:
+//! Every intermediate image is a `Rgba16Float` texture holding linear,
+//! premultiplied colour. It covers the canvas plus a margin on every side
+//! (`Scene::margin`, 0 unless an effect paints outside its layer). The
+//! passes live in `shaders/composite.wgsl`:
 //!
 //! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
@@ -24,7 +26,7 @@ use crate::scene::{BlendMode, MaskMode, MatteMode};
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
-/// A canvas-sized linear premultiplied texture.
+/// A linear premultiplied texture the size of the canvas plus its margin.
 pub struct Tex {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -33,8 +35,12 @@ pub struct Tex {
 pub struct Compositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    /// Size of every pooled texture: the canvas plus twice the margin.
     width: u32,
     height: u32,
+    /// The canvas, which `read_rgba8` copies out of the middle of a texture.
+    canvas: (u32, u32),
+    margin: u32,
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
@@ -46,7 +52,15 @@ pub struct Compositor {
 }
 
 impl Compositor {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, width: u32, height: u32) -> Compositor {
+    /// `width` x `height` is the canvas; textures are `margin` pixels larger
+    /// on every side.
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        margin: u32,
+    ) -> Compositor {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("composite"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/composite.wgsl").into()),
@@ -113,8 +127,10 @@ impl Compositor {
         Compositor {
             device: device.clone(),
             queue: queue.clone(),
-            width,
-            height,
+            width: width + 2 * margin,
+            height: height + 2 * margin,
+            canvas: (width, height),
+            margin,
             to_linear: pipeline("fs_to_linear", LINEAR_FORMAT),
             blend: pipeline("fs_blend", LINEAR_FORMAT),
             mask: pipeline("fs_mask", LINEAR_FORMAT),
@@ -262,6 +278,7 @@ impl Compositor {
     /// Encodes a linear texture to sRGB and reads it back as tightly packed
     /// RGBA8 with straight alpha.
     pub fn read_rgba8(&mut self, image: &Tex) -> Result<Vec<u8>> {
+        let (canvas_width, canvas_height) = self.canvas;
         let target = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("readback"),
             size: wgpu::Extent3d {
@@ -279,28 +296,35 @@ impl Compositor {
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
         self.pass(&self.encode, &image.view, &image.view, 0.0, 0, &target_view);
 
-        let row_bytes = self.width * 4;
+        let row_bytes = canvas_width * 4;
         let padded_row = row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("readback"),
-            size: u64::from(padded_row) * u64::from(self.height),
+            size: u64::from(padded_row) * u64::from(canvas_height),
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        // Only the canvas, which sits in the middle of the margin.
+        let mut source = target.as_image_copy();
+        source.origin = wgpu::Origin3d {
+            x: self.margin,
+            y: self.margin,
+            z: 0,
+        };
         encoder.copy_texture_to_buffer(
-            target.as_image_copy(),
+            source,
             wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(padded_row),
-                    rows_per_image: Some(self.height),
+                    rows_per_image: Some(canvas_height),
                 },
             },
             wgpu::Extent3d {
-                width: self.width,
-                height: self.height,
+                width: canvas_width,
+                height: canvas_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -321,7 +345,7 @@ impl Compositor {
             .slice(..)
             .get_mapped_range()
             .map_err(|e| Error::Render(format!("readback range failed: {e}")))?;
-        let mut pixels = Vec::with_capacity((row_bytes * self.height) as usize);
+        let mut pixels = Vec::with_capacity((row_bytes * canvas_height) as usize);
         for row in mapped.chunks(padded_row as usize) {
             pixels.extend_from_slice(&row[..row_bytes as usize]);
         }
@@ -391,7 +415,7 @@ impl Compositor {
     }
 }
 
-/// A canvas-sized (or any size) linear texture that can be drawn to and read.
+/// A linear texture of any size that can be drawn to and read.
 pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("layer"),
