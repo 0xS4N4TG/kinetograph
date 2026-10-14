@@ -3,3 +3,6 @@
 // (AUTHORING.md §5). Pure TypeScript, no dependencies.
 
 export type * from './types.js';
+export * from './effects.js';
+export * from './paint.js';
+export * from './catalog.js';
