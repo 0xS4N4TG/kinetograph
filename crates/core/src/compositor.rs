@@ -86,6 +86,7 @@
 //! `scene::Effect` and `resolve::ResolvedEffect`, write its pass, and call it
 //! from `apply_effects`.
 
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 
 use glam::DMat3;
@@ -110,6 +111,7 @@ use crate::scene::{
     MatteMode, NoiseChannels,
 };
 use crate::turbulence::{self, Tables};
+use crate::uniforms::{Block, Uniforms};
 use crate::warp;
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -195,6 +197,18 @@ struct LutTexture {
     domain_max: [f32; 3],
 }
 
+/// A frame's pixels on their way back from the GPU (`start_readback`).
+pub struct Readback {
+    buffer: wgpu::Buffer,
+    /// Says when the buffer is mapped.
+    mapped: std::sync::mpsc::Receiver<std::result::Result<(), wgpu::BufferAsyncError>>,
+    /// The submit the copy went in.
+    submission: Option<wgpu::SubmissionIndex>,
+    row_bytes: u32,
+    padded_row: u32,
+    height: u32,
+}
+
 pub struct Compositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -261,6 +275,12 @@ pub struct Compositor {
     shaders: HashMap<String, wgpu::RenderPipeline>,
     blur: Blur,
     pool: Pool<Tex>,
+    /// What the passes have recorded since the last `submit`. Passes record
+    /// here instead of submitting one by one, which costs the driver far
+    /// more than the passes themselves.
+    pending: RefCell<Option<wgpu::CommandEncoder>>,
+    /// The passes' uniform blocks.
+    uniforms: RefCell<Uniforms>,
 }
 
 impl Compositor {
@@ -513,7 +533,37 @@ impl Compositor {
             blur: Blur::new(device),
             layout,
             pool: Pool::new(POOL_BYTES),
+            pending: RefCell::new(None),
+            uniforms: RefCell::new(Uniforms::new(device, queue)),
         }
+    }
+
+    /// The encoder the passes record into, until the next `submit`.
+    fn encoder(&self) -> RefMut<'_, wgpu::CommandEncoder> {
+        RefMut::map(self.pending.borrow_mut(), |pending| {
+            pending.get_or_insert_with(|| self.device.create_command_encoder(&Default::default()))
+        })
+    }
+
+    /// Submits what the passes have recorded. Whatever else writes to the
+    /// textures they read (Vello drawing into its target) must come after,
+    /// and whatever waits for their results (a readback) too.
+    pub fn submit(&self) -> Option<wgpu::SubmissionIndex> {
+        self.uniforms.borrow_mut().upload();
+        let encoder = self.pending.borrow_mut().take()?;
+        Some(self.queue.submit([encoder.finish()]))
+    }
+
+    /// Starts a frame: the uniform blocks of the last one are no longer
+    /// needed once it is submitted, which it is by its readback.
+    pub fn begin_frame(&self) {
+        self.submit();
+        self.uniforms.borrow_mut().rewind();
+    }
+
+    /// A uniform block holding `bytes`, for a pass about to be recorded.
+    fn uniform(&self, bytes: &[u8]) -> Block {
+        self.uniforms.borrow_mut().push(bytes)
     }
 
     /// A texture of exactly `size` texels, from the pool when possible, with
@@ -571,14 +621,14 @@ impl Compositor {
             return None;
         }
         let full = self.target_full(src.bounds);
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = self.encoder();
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear"),
             color_attachments: &[Some(clear_attachment(&full.view, wgpu::Color::TRANSPARENT))],
             ..Default::default()
         });
         copy_box(&mut encoder, src, &full, src.bounds);
-        self.queue.submit([encoder.finish()]);
+        drop(encoder);
         Some(full)
     }
 
@@ -625,13 +675,12 @@ impl Compositor {
     }
 
     fn clear(&self, tex: &Tex, color: wgpu::Color) {
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("clear"),
-            color_attachments: &[Some(clear_attachment(&tex.view, color))],
-            ..Default::default()
-        });
-        self.queue.submit([encoder.finish()]);
+        self.encoder()
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear"),
+                color_attachments: &[Some(clear_attachment(&tex.view, color))],
+                ..Default::default()
+            });
     }
 
     /// Converts the box `region` of a Vello output texture (Rgba8,
@@ -656,6 +705,25 @@ impl Compositor {
         };
         self.pass(&self.to_linear, input, input, 0.0, 0, &target);
         target
+    }
+
+    /// `from_srgb8` for each of `regions` of a Vello output that was drawn
+    /// over the whole canvas, as one texture each.
+    pub fn from_srgb8_many(
+        &mut self,
+        vello_output: &wgpu::TextureView,
+        regions: &[PixelRect],
+    ) -> Vec<Tex> {
+        let input = self.vello_input(vello_output);
+        regions
+            .iter()
+            .map(|&region| {
+                let target = self.target(region);
+                let bind_group = self.composite_bind_group(input, input, &[0u8; 16], &target);
+                self.encode_draw(&mut self.encoder(), &self.to_linear, &bind_group, &target);
+                target
+            })
+            .collect()
     }
 
     /// Composites `src` over `dst` with the layer's opacity and blend mode.
@@ -708,9 +776,7 @@ impl Compositor {
         );
         let temp = self.target(region);
         draw(self, dst, &temp);
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        copy_box(&mut encoder, &temp, dst, region);
-        self.queue.submit([encoder.finish()]);
+        copy_box(&mut self.encoder(), &temp, dst, region);
         self.release(temp);
     }
 
@@ -897,7 +963,10 @@ impl Compositor {
         let dst = self.target(reach);
         self.blur.run(
             &self.device,
-            &self.queue,
+            self.pending
+                .get_mut()
+                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
+            self.uniforms.get_mut(),
             src.input(),
             dst.input(),
             size,
@@ -930,7 +999,10 @@ impl Compositor {
         let size = (self.width, self.height);
         self.blur.run(
             &self.device,
-            &self.queue,
+            self.pending
+                .get_mut()
+                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
+            self.uniforms.get_mut(),
             backdrop.input(),
             blurred.input(),
             size,
@@ -961,7 +1033,10 @@ impl Compositor {
         let halo = self.target(Blur::reach(size, glow.radius, src.bounds));
         self.blur.run(
             &self.device,
-            &self.queue,
+            self.pending
+                .get_mut()
+                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
+            self.uniforms.get_mut(),
             src.input(),
             halo.input(),
             size,
@@ -1267,8 +1342,8 @@ impl Compositor {
                 contents: &mesh_vertex_bytes(vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-        let mut encoder = self.device.create_command_encoder(&Default::default());
         {
+            let mut encoder = self.encoder();
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("mesh"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1288,7 +1363,6 @@ impl Compositor {
             pass.set_vertex_buffer(0, buffer.slice(..));
             pass.draw(0..vertices.len() as u32, 0..1);
         }
-        self.queue.submit([encoder.finish()]);
         // Nothing is drawn outside the triangles, and a pixel they touch
         // only partly is inside the box of their corners grown by a pixel.
         target.bounds = mesh_bounds(vertices).intersect(self.whole());
@@ -1332,13 +1406,7 @@ impl Compositor {
         let [rx, ry, rz] = lut.domain_min;
         let [sx, sy, sz] = lut.domain_max;
         let params = floats(&[rx, ry, rz, 0.0, sx, sy, sz, 0.0, lut.size, amount, 0.0, 0.0]);
-        let uniform = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("lut params"),
-                contents: &params,
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let uniform = self.uniform(&params);
         let place = self.place_buffer(&target, src.input(), src.input());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lut"),
@@ -1354,11 +1422,11 @@ impl Compositor {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: uniform.as_entire_binding(),
+                    resource: uniform.binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: place.as_entire_binding(),
+                    resource: place.binding(),
                 },
             ],
         });
@@ -1399,16 +1467,8 @@ impl Compositor {
         // wants of a uniform block.
         let mut values = shader.values.clone();
         values.resize(values.len().next_multiple_of(4).max(4), 0.0);
-        let buffer = |label, contents: &[u8]| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(label),
-                    contents,
-                    usage: wgpu::BufferUsages::UNIFORM,
-                })
-        };
-        let globals = buffer("shader globals", &globals);
-        let uniforms = buffer("shader uniforms", &floats(&values));
+        let globals = self.uniform(&globals);
+        let uniforms = self.uniform(&floats(&values));
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("shader effect"),
             layout: &self.shader_layout,
@@ -1423,11 +1483,11 @@ impl Compositor {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: globals.as_entire_binding(),
+                    resource: globals.binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: uniforms.as_entire_binding(),
+                    resource: uniforms.binding(),
                 },
             ],
         });
@@ -1545,7 +1605,10 @@ impl Compositor {
             let from = current.as_ref().map_or_else(|| src.input(), |t| t.input());
             self.blur.run(
                 &self.device,
-                &self.queue,
+                self.pending
+                    .get_mut()
+                    .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
+                self.uniforms.get_mut(),
                 from,
                 target.input(),
                 size,
@@ -1582,6 +1645,14 @@ impl Compositor {
     /// Encodes a linear texture to sRGB and reads it back as tightly packed
     /// RGBA8 with straight alpha.
     pub fn read_rgba8(&mut self, image: &Tex) -> Result<Vec<u8>> {
+        let readback = self.start_readback(image);
+        self.finish_readback(readback)
+    }
+
+    /// `read_rgba8` up to the copy, which is submitted with everything
+    /// recorded before it: the pixels are fetched by `finish_readback`, and
+    /// the GPU can work on them while other passes are recorded.
+    pub fn start_readback(&mut self, image: &Tex) -> Readback {
         let (canvas_width, canvas_height) = self.canvas;
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("readback"),
@@ -1618,7 +1689,7 @@ impl Compositor {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = self.encoder();
         // Only the canvas, which sits in the middle of the margin.
         let mut source = target.texture.as_image_copy();
         source.origin = wgpu::Origin3d {
@@ -1642,14 +1713,39 @@ impl Compositor {
                 depth_or_array_layers: 1,
             },
         );
-        self.queue.submit([encoder.finish()]);
+        drop(encoder);
+        let submission = self.submit();
 
         let (tx, rx) = std::sync::mpsc::channel();
         buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
+        Readback {
+            buffer,
+            mapped: rx,
+            submission,
+            row_bytes,
+            padded_row,
+            height: canvas_height,
+        }
+    }
+
+    /// Waits for the GPU to finish what `readback` needs (not anything
+    /// submitted since) and returns its pixels.
+    pub fn finish_readback(&self, readback: Readback) -> Result<Vec<u8>> {
+        let Readback {
+            buffer,
+            mapped: rx,
+            submission,
+            row_bytes,
+            padded_row,
+            height: canvas_height,
+        } = readback;
         self.device
-            .poll(wgpu::PollType::wait_indefinitely())
+            .poll(wgpu::PollType::Wait {
+                submission_index: submission,
+                timeout: None,
+            })
             .map_err(|e| Error::Render(format!("GPU poll failed: {e}")))?;
         rx.recv()
             .map_err(|e| Error::Render(format!("readback channel closed: {e}")))?
@@ -1669,13 +1765,47 @@ impl Compositor {
     }
 
     /// The `Place` uniform of a pass (`shaders/place.wgsl`).
-    fn place_buffer(&self, target: &Tex, a: Input, b: Input) -> wgpu::Buffer {
-        self.device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("place"),
-                contents: &place_bytes(target.origin, (a.origin, a.size), (b.origin, b.size)),
-                usage: wgpu::BufferUsages::UNIFORM,
-            })
+    fn place_buffer(&self, target: &Tex, a: Input, b: Input) -> Block {
+        self.uniform(&place_bytes(
+            target.origin,
+            (a.origin, a.size),
+            (b.origin, b.size),
+        ))
+    }
+
+    /// The bind group of a pass on the shared layout that draws into
+    /// `target` with `a` and `b` as inputs and `params` as its uniforms.
+    fn composite_bind_group(
+        &self,
+        a: Input,
+        b: Input,
+        params: &[u8],
+        target: &Tex,
+    ) -> wgpu::BindGroup {
+        let uniform = self.uniform(params);
+        let place = self.place_buffer(target, a, b);
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("composite"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(a.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(b.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform.binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: place.binding(),
+                },
+            ],
+        })
     }
 
     /// One full-screen pass over `target` with `a` and `b` as inputs. Only
@@ -1718,13 +1848,7 @@ impl Compositor {
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
     ) {
-        let uniform = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("params"),
-                contents: params,
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let uniform = self.uniform(params);
         let place = self.place_buffer(target, a, b);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("composite"),
@@ -1740,11 +1864,11 @@ impl Compositor {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: uniform.as_entire_binding(),
+                    resource: uniform.binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: place.as_entire_binding(),
+                    resource: place.binding(),
                 },
             ],
         });
@@ -1778,13 +1902,7 @@ impl Compositor {
             target.origin == [0, 0] && target.size == [self.width, self.height],
             "a filtered pass draws on a texture the size of the canvas"
         );
-        let uniform = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("params"),
-                contents: params,
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let uniform = self.uniform(params);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("filtered"),
             layout: &self.filtered_layout,
@@ -1799,7 +1917,7 @@ impl Compositor {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: uniform.as_entire_binding(),
+                    resource: uniform.binding(),
                 },
             ],
         });
@@ -1828,6 +1946,29 @@ impl Compositor {
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
     ) {
+        self.encode_draw_with(&mut self.encoder(), pipeline, bind_group, extra, target);
+    }
+
+    /// `draw`, recorded into `encoder` to be submitted with other work.
+    fn encode_draw(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+        target: &Tex,
+    ) {
+        self.encode_draw_with(encoder, pipeline, bind_group, None, target);
+    }
+
+    /// `draw_with`, recorded into `encoder`.
+    fn encode_draw_with(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+        extra: Option<&wgpu::BindGroup>,
+        target: &Tex,
+    ) {
         let region = target
             .bounds
             .translate(-target.origin[0], -target.origin[1])
@@ -1837,32 +1978,28 @@ impl Compositor {
                 target.size[0] as i32,
                 target.size[1] as i32,
             ));
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("composite"),
-                color_attachments: &[Some(clear_attachment(
-                    &target.view,
-                    wgpu::Color::TRANSPARENT,
-                ))],
-                ..Default::default()
-            });
-            if !region.is_empty() {
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, bind_group, &[]);
-                if let Some(extra) = extra {
-                    pass.set_bind_group(1, extra, &[]);
-                }
-                pass.set_scissor_rect(
-                    region.x0 as u32,
-                    region.y0 as u32,
-                    region.width(),
-                    region.height(),
-                );
-                pass.draw(0..3, 0..1);
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("composite"),
+            color_attachments: &[Some(clear_attachment(
+                &target.view,
+                wgpu::Color::TRANSPARENT,
+            ))],
+            ..Default::default()
+        });
+        if !region.is_empty() {
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            if let Some(extra) = extra {
+                pass.set_bind_group(1, extra, &[]);
             }
+            pass.set_scissor_rect(
+                region.x0 as u32,
+                region.y0 as u32,
+                region.width(),
+                region.height(),
+            );
+            pass.draw(0..3, 0..1);
         }
-        self.queue.submit([encoder.finish()]);
     }
 }
 

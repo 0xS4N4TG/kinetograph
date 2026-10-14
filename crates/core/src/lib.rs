@@ -19,11 +19,12 @@ pub mod scene;
 pub mod shader;
 pub mod text;
 pub mod turbulence;
+pub mod uniforms;
 pub mod warp;
 
 #[cfg(test)]
 mod tests;
 
 pub use error::{Error, Result};
-pub use render::{Frame, Renderer, Timings, render_still};
+pub use render::{Frame, PendingFrame, Renderer, Timings, render_still};
 pub use scene::Scene;
