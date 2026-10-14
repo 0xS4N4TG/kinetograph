@@ -210,4 +210,7 @@ range, `doctor`.
 - Own reconciler vs `react-dom` on a DOM shim. Own reconciler is likely simpler for native elements.
 - Vello's filter/text quality vs Skia. Test early with the papercut grain + torn edge.
 - Licence for Kinetograph itself (MIT/Apache-2.0 matches the ecosystem; fframes is MIT).
+- Blend space. The compositor blends in linear light (section 4). CSS, and so Remotion, blends in sRGB space, so
+  `multiply`, `screen` and `softLight` will look different from a Remotion render of the same layers. Decide before
+  Phase 3's comparison whether Remotion-compat needs an sRGB blend path.
 - Final name.
