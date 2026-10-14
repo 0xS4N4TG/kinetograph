@@ -14,6 +14,7 @@ use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 
 use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
+use crate::box_shadow::BoxShadow;
 use crate::color::Color;
 use crate::compositor::{Compositor, Tex};
 use crate::error::{Error, Result};
@@ -498,6 +499,8 @@ impl Renderer {
         } else {
             None
         };
+        // The first effect, if it is a drop shadow with a formula.
+        let box_shadow = BoxShadow::plan(layer, matrix);
         let mut src = self.timed(Stage::Composite, |s| {
             s.compositor.apply_effects(
                 src,
@@ -506,6 +509,7 @@ impl Renderer {
                 &layer.effects,
                 backdrop,
                 coverage.as_ref(),
+                box_shadow.as_ref(),
             )
         });
         if let Some(coverage) = coverage {

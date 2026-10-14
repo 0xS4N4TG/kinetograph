@@ -346,6 +346,16 @@ A shadow's blur is run at a lower resolution than the `blur` effect's: the Gauss
 means the standard deviation (the resampling's variance is subtracted as for `blur`); the shadow can show a little
 more of the coarse grid on its finest scale.
 
+A `dropShadow` that is the first effect of a `rect`, `roundedRect` or `ellipse` layer, filled with one colour and with
+no stroke, is not made by blurring at all (when `blur` is at least 1; below that nothing is blurred in any case). The
+renderer works the blurred shape out for each pixel from a formula, in the same pass that draws the layer over it: exact
+for a rectangle, within about 0.002 of full alpha for the others, and it has no coarse grid. `blur` means the same
+standard deviation, the offset is in canvas pixels, and the shadow's alpha is the fill's alpha, as above. The layer may
+be rotated and uniformly scaled; a skewed or stretched one keeps the blurred path. So does an ellipse more than four
+times as long as it is wide, and a `spread` unless the shape is a `rect` or `roundedRect` with its sides along the
+canvas axes (a `rotation` of 0, 90, 180 or 270), where the spread grows it on every side. A layer that hangs off the
+canvas casts the shadow of the whole shape, not just of the part inside the [margin](#canvas-margin).
+
 The shadow is computed on the layer as it is after the effects before it in the list, and effects after it (a `blur`,
 say) run on layer and shadow together. Shadow pixels past the canvas are real up to the [margin](#canvas-margin), so
 the shadow of a layer that hangs off the canvas, or lies wholly outside it, still falls on the canvas.

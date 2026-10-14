@@ -73,6 +73,7 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
     for file in [
         "composite.wgsl",
         "shadow.wgsl",
+        "shadow_box.wgsl",
         "color.wgsl",
         "glow.wgsl",
         "aberration.wgsl",

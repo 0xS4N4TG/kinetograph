@@ -71,8 +71,11 @@
 //! a bind group layout of its own (`lut_layout`) and the scene's tables are
 //! uploaded once, when the compositor is made.
 //!
-//! `shaders/shadow.wgsl` holds the shadow effects' passes,
-//! `shaders/color.wgsl` the colour filter pass, `shaders/glow.wgsl` the glow
+//! `shaders/shadow.wgsl` holds the shadow effects' passes. A drop shadow of
+//! a rectangle, rounded rectangle or ellipse that `box_shadow::BoxShadow`
+//! covers skips them: `shaders/shadow_box.wgsl` draws the layer over its
+//! blurred shadow, worked out from a formula, in one pass.
+//! `shaders/color.wgsl` holds the colour filter pass, `shaders/glow.wgsl` the glow
 //! pass, `shaders/aberration.wgsl` the chromatic aberration pass and
 //! `shaders/gradient_map.wgsl` the gradient map pass; they
 //! share the bind group layout, so their passes go through the same
@@ -91,6 +94,7 @@ use vello::wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
 use crate::bounds::{self, PixelRect};
+use crate::box_shadow::BoxShadow;
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
@@ -209,6 +213,8 @@ pub struct Compositor {
     encode: wgpu::RenderPipeline,
     spread: wgpu::RenderPipeline,
     drop_shadow: wgpu::RenderPipeline,
+    /// The layer over its shadow in closed form (`shaders/shadow_box.wgsl`).
+    drop_box: wgpu::RenderPipeline,
     inset_shadow: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
@@ -272,6 +278,11 @@ impl Compositor {
     ) -> Compositor {
         let shader = shader_module(device, "composite", include_str!("shaders/composite.wgsl"));
         let shadow_shader = shader_module(device, "shadow", include_str!("shaders/shadow.wgsl"));
+        let shadow_box_shader = shader_module(
+            device,
+            "shadow box",
+            include_str!("shaders/shadow_box.wgsl"),
+        );
         let color_shader = shader_module(device, "color", include_str!("shaders/color.wgsl"));
         let glow_shader = shader_module(device, "glow", include_str!("shaders/glow.wgsl"));
         let aberration_shader = shader_module(
@@ -463,6 +474,7 @@ impl Compositor {
             encode: pipeline(&shader, "fs_encode", READBACK_FORMAT),
             spread: pipeline(&shadow_shader, "fs_spread", LINEAR_FORMAT),
             drop_shadow: pipeline(&shadow_shader, "fs_drop", LINEAR_FORMAT),
+            drop_box: pipeline(&shadow_box_shader, "fs_drop_box", LINEAR_FORMAT),
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
@@ -785,6 +797,10 @@ impl Compositor {
     /// `layer_box` is the layer's own box in layer space (none for a group),
     /// which effects that measure across the layer need; the caller only has
     /// to work it out when one does (`needs_box`).
+    ///
+    /// `box_shadow` is `BoxShadow::plan` of the layer, which is only ever
+    /// the first effect's: that drop shadow is drawn in closed form.
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_effects(
         &mut self,
         mut src: Tex,
@@ -793,8 +809,9 @@ impl Compositor {
         effects: &[ResolvedEffect],
         backdrop: Option<&Tex>,
         coverage: Option<&Tex>,
+        box_shadow: Option<&BoxShadow>,
     ) -> Tex {
-        for effect in effects {
+        for (i, effect) in effects.iter().enumerate() {
             match *effect {
                 ResolvedEffect::Blur { radius } if radius >= blur::MIN_RADIUS => {
                     src = self.blur_layer(src, radius);
@@ -811,7 +828,12 @@ impl Compositor {
                     src = self.chromatic_aberration(src, aberration_offset(amount, angle));
                 }
                 ResolvedEffect::ChromaticAberration { .. } => {}
-                ResolvedEffect::DropShadow(shadow) => src = self.shadow(src, &shadow, false),
+                ResolvedEffect::DropShadow(shadow) => {
+                    src = match box_shadow {
+                        Some(closed) if i == 0 => self.box_shadow(src, closed),
+                        _ => self.shadow(src, &shadow, false),
+                    };
+                }
                 ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
                 ResolvedEffect::ColorMatrix(matrix) if matrix == ColorMatrix::IDENTITY => {}
                 ResolvedEffect::ColorMatrix(matrix) => src = self.color_matrix(src, &matrix),
@@ -1398,6 +1420,22 @@ impl Compositor {
         if let Some(scratch) = scratch {
             self.release(scratch);
         }
+        self.release(src);
+        target
+    }
+
+    /// Adds a drop shadow under `src`, a layer that `closed` plans in closed
+    /// form: `src` is the shape itself, and one pass composites it over its
+    /// shadow, which is drawn where the shadow can be non-zero and not
+    /// blurred. `src` goes back to the pool; the result is a new texture.
+    fn box_shadow(&mut self, src: Tex, closed: &BoxShadow) -> Tex {
+        // As `shadow`: a layer with nothing in it casts nothing.
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let target = self.target(src.bounds.union(closed.extent().intersect(self.whole())));
+        let params = floats(&closed.uniform());
+        self.run_pass(&self.drop_box, src.input(), src.input(), &params, &target);
         self.release(src);
         target
     }
@@ -3521,6 +3559,7 @@ mod tests {
         let on_layout = [
             include_str!("shaders/composite.wgsl"),
             include_str!("shaders/shadow.wgsl"),
+            include_str!("shaders/shadow_box.wgsl"),
             include_str!("shaders/color.wgsl"),
             include_str!("shaders/glow.wgsl"),
             include_str!("shaders/aberration.wgsl"),
