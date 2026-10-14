@@ -351,11 +351,11 @@
     "rotation": [
      {
       "frame": 0,
-      "value": -8
+      "value": 0
      },
      {
       "frame": 30,
-      "value": 8
+      "value": 16
      }
     ]
    },
