@@ -10,9 +10,10 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetograph/scene": "0.1.0"
+    "@kinetograph/scene": "0.1.0",
+    "node-web-audio-api": "2.2.0"
   }
 }

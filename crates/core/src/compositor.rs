@@ -249,6 +249,7 @@ pub struct Compositor {
     mesh: wgpu::RenderPipeline,
     /// The padded texture size, which the mesh's vertex shader needs.
     mesh_size: wgpu::BindGroup,
+    mesh_layout: wgpu::BindGroupLayout,
     /// The multisampled target the mesh is drawn into, made the first time
     /// a mesh is drawn and kept.
     mesh_samples: Option<Tex>,
@@ -273,6 +274,7 @@ pub struct Compositor {
     filtered_sampler: wgpu::Sampler,
     /// One pipeline per distinct custom shader, by `shader::compose` text.
     shaders: HashMap<String, wgpu::RenderPipeline>,
+    shader_pipeline_layout: wgpu::PipelineLayout,
     blur: Blur,
     pool: Pool<Tex>,
     /// What the passes have recorded since the last `submit`. Passes record
@@ -415,9 +417,13 @@ impl Compositor {
             "fs_noise",
             LINEAR_FORMAT,
         );
-        let (mesh, mesh_size) = mesh_pipeline(
+        let (mesh, mesh_layout) = mesh_pipeline(
             device,
             &shader_module(device, "mesh", include_str!("shaders/mesh.wgsl")),
+        );
+        let mesh_size = mesh_size_group(
+            device,
+            &mesh_layout,
             (width + 2 * margin, height + 2 * margin),
         );
         let lut_layout = lut_bind_group_layout(device);
@@ -447,36 +453,10 @@ impl Compositor {
         let shaders = shaders
             .iter()
             .map(|source| {
-                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("shader effect"),
-                    source: wgpu::ShaderSource::Wgsl(source.as_str().into()),
-                });
-                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("shader effect"),
-                    layout: Some(&shader_pipeline_layout),
-                    vertex: wgpu::VertexState {
-                        module: &module,
-                        entry_point: Some("kg_vs"),
-                        compilation_options: Default::default(),
-                        buffers: &[],
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &module,
-                        entry_point: Some("kg_fs"),
-                        compilation_options: Default::default(),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: LINEAR_FORMAT,
-                            blend: None,
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                    }),
-                    primitive: wgpu::PrimitiveState::default(),
-                    depth_stencil: None,
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview_mask: None,
-                    cache: None,
-                });
-                (source.clone(), pipeline)
+                (
+                    source.clone(),
+                    shader_effect_pipeline(device, &shader_pipeline_layout, source),
+                )
             })
             .collect();
         Compositor {
@@ -509,6 +489,7 @@ impl Compositor {
             noise,
             mesh,
             mesh_size,
+            mesh_layout,
             mesh_samples: None,
             turbulence_layout,
             turbulence_tables: HashMap::new(),
@@ -523,6 +504,7 @@ impl Compositor {
                 ..Default::default()
             }),
             shaders,
+            shader_pipeline_layout,
             filtered_layout,
             filtered_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("filtered"),
@@ -535,6 +517,41 @@ impl Compositor {
             pool: Pool::new(POOL_BYTES),
             pending: RefCell::new(None),
             uniforms: RefCell::new(Uniforms::new(device, queue)),
+        }
+    }
+
+    /// Makes the textures `width` x `height` (the canvas) plus `margin` on
+    /// every side, keeping the pipelines, tables and the rest of what the
+    /// compositor holds. The pool is emptied: its textures are the old size.
+    /// The caller gives back the textures it holds (the layer cache's) first.
+    pub fn resize(&mut self, width: u32, height: u32, margin: u32) {
+        self.width = width + 2 * margin;
+        self.height = height + 2 * margin;
+        self.canvas = (width, height);
+        self.margin = margin;
+        self.mesh_size =
+            mesh_size_group(&self.device, &self.mesh_layout, (self.width, self.height));
+        self.mesh_samples = None;
+        self.pool = Pool::new(POOL_BYTES);
+    }
+
+    /// Adds a pipeline for each custom shader module that has none yet
+    /// (`Scene::shader_sources`).
+    pub fn add_shaders(&mut self, sources: &[String]) {
+        for source in sources {
+            if !self.shaders.contains_key(source) {
+                let pipeline =
+                    shader_effect_pipeline(&self.device, &self.shader_pipeline_layout, source);
+                self.shaders.insert(source.clone(), pipeline);
+            }
+        }
+    }
+
+    /// Uploads `luts`, replacing a table that has the same `src`.
+    pub fn set_luts(&mut self, luts: &HashMap<String, Lut>) {
+        for (src, lut) in luts {
+            let texture = upload_lut(&self.device, &self.queue, lut);
+            self.luts.insert(src.clone(), texture);
         }
     }
 
@@ -2098,16 +2115,52 @@ fn fullscreen_pipeline(
     })
 }
 
+/// The pipeline of one custom shader module (`shader::compose`).
+fn shader_effect_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    source: &str,
+) -> wgpu::RenderPipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("shader effect"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("shader effect"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("kg_vs"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("kg_fs"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: LINEAR_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 /// The mesh gradient pipeline, drawing `mesh::Vertex` triangles into a
-/// multisampled target, and the bind group with the `size` of that target in
-/// texels that its vertex shader turns positions into clip space with. The
-/// output is premultiplied, so triangles that overlap (a folded mesh) blend
-/// with "over".
+/// multisampled target, and the layout of the bind group (`mesh_size_group`)
+/// that its vertex shader turns positions into clip space with. The output
+/// is premultiplied, so triangles that overlap (a folded mesh) blend with
+/// "over".
 fn mesh_pipeline(
     device: &wgpu::Device,
     shader: &wgpu::ShaderModule,
-    size: (u32, u32),
-) -> (wgpu::RenderPipeline, wgpu::BindGroup) {
+) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("mesh"),
         entries: &[wgpu::BindGroupLayoutEntry {
@@ -2160,20 +2213,28 @@ fn mesh_pipeline(
         multiview_mask: None,
         cache: None,
     });
+    (pipeline, layout)
+}
+
+/// The padded texture size as the mesh's vertex shader reads it.
+fn mesh_size_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    size: (u32, u32),
+) -> wgpu::BindGroup {
     let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("mesh size"),
         contents: &floats(&[size.0 as f32, size.1 as f32, 0.0, 0.0]),
         usage: wgpu::BufferUsages::UNIFORM,
     });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("mesh"),
-        layout: &layout,
+        layout,
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: uniform.as_entire_binding(),
         }],
-    });
-    (pipeline, bind_group)
+    })
 }
 
 /// The bytes of one `mesh::Vertex`: position, then colour, as `f32`s.

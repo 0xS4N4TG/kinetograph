@@ -1,0 +1,164 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import type { AudioBuffer, OfflineAudioContext } from 'node-web-audio-api';
+import type { AudioClipTimeline } from './clips.js';
+import { registeredCallbacks } from './registry.js';
+
+export interface AudioPcm {
+  sampleRate: number;
+  /** One array per channel, equal lengths, samples in -1..1. */
+  channels: Float32Array[];
+}
+
+const CHANNELS = 2;
+
+/**
+ * Renders the audio of frames `first..=last` as one `OfflineAudioContext`: time 0 is the start of frame `first`. It
+ * calls each `onFrame` callback registered for a frame in the range with `time = (frame - first) / fps`, and plays
+ * each clip with its trim, rate and loop and a gain that steps to the clip's volume at every frame. Sound that an
+ * `onFrame` callback started before `first` is not heard: only callbacks inside the range run.
+ *
+ * The mix is returned as the graph made it, so a loud mix can pass 1.0 (which `analyzeAudio` counts as clipping); use
+ * `clampPcm` before handing it to an encoder.
+ */
+export async function renderAudio(options: {
+  fps: number;
+  first: number;
+  last: number;
+  sampleRate?: number;
+  clips: AudioClipTimeline[];
+  baseDir?: string;
+}): Promise<AudioPcm> {
+  const { fps, first, last, clips } = options;
+  const sampleRate = options.sampleRate ?? 48000;
+  if (!(fps > 0)) throw new RangeError(`renderAudio: fps must be above 0, got ${fps}`);
+  if (!Number.isInteger(first) || !Number.isInteger(last) || first < 0 || last < first) {
+    throw new RangeError(`renderAudio: need whole frames 0 <= first <= last, got ${first}..=${last}`);
+  }
+  const length = Math.max(1, Math.round(((last - first + 1) / fps) * sampleRate));
+
+  // Loaded here, not at the top, so that a project's bundle (which carries this file but never renders) can be
+  // imported without the native audio library being resolvable from the project.
+  const { OfflineAudioContext } = await import('node-web-audio-api');
+  const ctx = new OfflineAudioContext(CHANNELS, length, sampleRate);
+  const timeOf = (frame: number): number => (frame - first) / fps;
+
+  for (const { frame, callback } of registeredCallbacks(first, last)) {
+    try {
+      await callback(ctx, timeOf(frame));
+    } catch (error) {
+      throw new Error(`onFrame(${frame}) callback threw: ${error instanceof Error ? error.message : String(error)}`, {
+        cause: error,
+      });
+    }
+  }
+
+  const decoded = new Map<string, AudioBuffer>();
+  for (const clip of clips) {
+    const path = resolve(options.baseDir ?? process.cwd(), clip.src);
+    let buffer = decoded.get(path);
+    if (!buffer) {
+      buffer = await decode(ctx, path);
+      decoded.set(path, buffer);
+    }
+    scheduleClip(ctx, buffer, clip, { fps, first, last, timeOf });
+  }
+
+  const rendered = await ctx.startRendering();
+  const channels: Float32Array[] = [];
+  for (let c = 0; c < rendered.numberOfChannels; c++) channels.push(Float32Array.from(rendered.getChannelData(c)));
+  return { sampleRate: rendered.sampleRate, channels };
+}
+
+async function decode(ctx: OfflineAudioContext, path: string): Promise<AudioBuffer> {
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(path);
+  } catch (error) {
+    throw new Error(`cannot read audio file ${path}: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    });
+  }
+  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  try {
+    return await ctx.decodeAudioData(arrayBuffer);
+  } catch (error) {
+    throw new Error(`cannot decode audio file ${path}: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    });
+  }
+}
+
+function scheduleClip(
+  ctx: OfflineAudioContext,
+  buffer: AudioBuffer,
+  clip: AudioClipTimeline,
+  range: { fps: number; first: number; last: number; timeOf: (frame: number) => number },
+): void {
+  const { fps, first, last, timeOf } = range;
+  const rate = clip.playbackRate;
+  if (clip.muted || !(rate > 0) || clip.volumes.size === 0) return;
+
+  // The part of the file that plays, in seconds of the file. The trims are frames of the composition.
+  const segStart = clip.trimBefore / fps;
+  const segEnd = clip.trimAfter === null ? buffer.duration : Math.min(clip.trimAfter / fps, buffer.duration);
+  if (!(segEnd > segStart)) return;
+
+  const frames = [...clip.volumes.keys()];
+  const winStart = Math.max(Math.min(...frames), first);
+  const winEnd = Math.min(Math.max(...frames), last);
+  if (winEnd < winStart) return;
+
+  // Where in the file the clip is at the first frame it is heard in. A clip's own frame 0 is `from`.
+  const heard = Math.max(0, winStart - clip.from) / fps;
+  const travelled = heard * rate;
+  const when = timeOf(winStart);
+  const stopAt = timeOf(winEnd + 1);
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.playbackRate.value = rate;
+  let end = stopAt;
+  if (clip.loop) {
+    // Loops the trimmed part, like Remotion's `loop` after its trims.
+    const span = segEnd - segStart;
+    source.loop = true;
+    source.loopStart = segStart;
+    source.loopEnd = segEnd;
+    source.start(when, segStart + (travelled % span));
+  } else {
+    const offset = segStart + travelled;
+    if (offset >= segEnd) return;
+    source.start(when, offset);
+    end = Math.min(stopAt, when + (segEnd - offset) / rate);
+  }
+  source.stop(end);
+
+  // A gain that holds each frame's volume for that frame's duration. A frame the clip is missing from is silent.
+  const gain = ctx.createGain();
+  let previous = Number.NaN;
+  for (let frame = winStart; frame <= winEnd; frame++) {
+    const raw = clip.volumes.get(frame) ?? 0;
+    const volume = Number.isFinite(raw) && raw > 0 ? raw : 0;
+    if (volume !== previous) {
+      gain.gain.setValueAtTime(volume, timeOf(frame));
+      previous = volume;
+    }
+  }
+  source.connect(gain).connect(ctx.destination);
+}
+
+/** Clamps every sample to -1..1, which is what the encoder is promised (`AudioPcm`). */
+export function clampPcm(pcm: AudioPcm): AudioPcm {
+  return {
+    sampleRate: pcm.sampleRate,
+    channels: pcm.channels.map((channel) => {
+      const out = new Float32Array(channel.length);
+      for (let i = 0; i < channel.length; i++) {
+        const v = channel[i]!;
+        out[i] = v > 1 ? 1 : v < -1 ? -1 : v;
+      }
+      return out;
+    }),
+  };
+}
