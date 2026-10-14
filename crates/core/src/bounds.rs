@@ -284,9 +284,63 @@ pub fn placement(region: PixelRect, full: (u32, u32)) -> ([i32; 2], [u32; 2]) {
     ([x, y], [width, height])
 }
 
+/// The side of the squares Vello cuts its target into (`TILE_WIDTH` in
+/// vello_encoding's config.rs, `TILE_WIDTH` in fine.wgsl).
+pub const VELLO_TILE: i32 = 16;
+
+/// The pixels to ask Vello to draw to get the pixels `region`: `region` with
+/// its top and left sides moved out to a multiple of Vello's tile, and its
+/// bottom and right as they are (Vello rounds the size up to whole tiles
+/// itself and writes only the pixels asked for). Vello splits what it draws
+/// at the edges of its tiles, so with the corner at a multiple of the tile
+/// the tiles are the very squares of the padded canvas that a draw of the
+/// whole canvas has, and a pixel is worked out from the same pieces of the
+/// same outlines. An empty `region` stays empty.
+pub fn vello_area(region: PixelRect) -> PixelRect {
+    if region.is_empty() {
+        return PixelRect::EMPTY;
+    }
+    PixelRect::new(
+        region.x0 - region.x0.rem_euclid(VELLO_TILE),
+        region.y0 - region.y0.rem_euclid(VELLO_TILE),
+        region.x1,
+        region.y1,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vello_draws_from_the_tile_corner_at_or_before_the_region() {
+        let area = vello_area(PixelRect::new(100, 37, 340, 90));
+        assert_eq!(area, PixelRect::new(96, 32, 340, 90));
+        // A corner on the tile grid stays where it is, as does the far side.
+        assert_eq!(
+            vello_area(PixelRect::new(32, 0, 33, 16)),
+            PixelRect::new(32, 0, 33, 16)
+        );
+        assert_eq!(vello_area(PixelRect::EMPTY), PixelRect::EMPTY);
+        assert_eq!(vello_area(PixelRect::new(5, 5, 5, 9)), PixelRect::EMPTY);
+        // Whatever the region: it is inside, less than a tile of it is
+        // added at the top and left, and the corner is on the grid.
+        for x0 in 0..70 {
+            for y0 in [0, 1, 15, 16, 17, 250] {
+                let region = PixelRect::new(x0, y0, x0 + 3, y0 + 5);
+                let area = vello_area(region);
+                assert_eq!(area.intersect(region), region, "{region:?}");
+                assert!(area.x0 % VELLO_TILE == 0 && area.y0 % VELLO_TILE == 0);
+                assert!(region.x0 - area.x0 < VELLO_TILE && region.y0 - area.y0 < VELLO_TILE);
+                assert_eq!((area.x1, area.y1), (region.x1, region.y1));
+            }
+        }
+        // Negative sides (a box that is not cut to the canvas) round down.
+        assert_eq!(
+            vello_area(PixelRect::new(-1, -16, 4, 4)),
+            PixelRect::new(-16, -16, 4, 4)
+        );
+    }
 
     #[test]
     fn boxes_round_outwards_and_empty_ones_are_alike() {

@@ -122,6 +122,8 @@ pub struct Renderer {
     cache_path: Vec<String>,
     /// Above 0 while the samples of a motion-blurred layer are drawn: they are
     /// copies of one layer with the same ids, and only their average is kept.
+    /// Their leaves are also rasterised into the box they cover, not the
+    /// whole target (`vello_area`).
     cache_paused: u32,
 }
 
@@ -607,9 +609,10 @@ impl Renderer {
             }
             _ => {
                 let region = raster.unwrap_or_else(|| self.whole());
-                self.timed(Stage::Raster, |s| s.rasterise(layer, parent))?;
+                let area = self.vello_area(region);
+                self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
                 let drawn = self.timed(Stage::Composite, |s| {
-                    s.compositor.from_srgb8(&s.vello_view, region)
+                    s.compositor.from_srgb8(&s.vello_view, area, region)
                 });
                 match &layer.kind {
                     // What was drawn is the box's coverage; the noise fills it.
@@ -631,9 +634,10 @@ impl Renderer {
                 if region.is_empty() {
                     Some(self.timed(Stage::Composite, |s| s.compositor.empty()))
                 } else {
-                    self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent))?;
+                    let area = self.vello_area(region);
+                    self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent, area))?;
                     Some(self.timed(Stage::Composite, |s| {
-                        s.compositor.from_srgb8(&s.vello_view, region)
+                        s.compositor.from_srgb8(&s.vello_view, area, region)
                     }))
                 }
             }
@@ -713,6 +717,18 @@ impl Renderer {
         PixelRect::whole(self.target_size.0, self.target_size.1)
     }
 
+    /// The pixels Vello is asked to draw for a leaf whose pixels are in
+    /// `region`. The whole target, except for the leaves of a motion-blurred
+    /// layer's samples (`cache_paused`), which are drawn many times a frame
+    /// and are drawn into the box they cover (`bounds::vello_area`).
+    fn vello_area(&self, region: PixelRect) -> PixelRect {
+        if self.cache_paused > 0 && !region.is_empty() {
+            bounds::vello_area(region)
+        } else {
+            self.whole()
+        }
+    }
+
     /// The pixels that rasterising the leaf `layer` under `matrix` can touch:
     /// the box of what it draws in layer space, through the matrix, a pixel
     /// more all round for the anti-aliased edge (Vello draws nothing else),
@@ -766,9 +782,10 @@ impl Renderer {
     }
 
     /// Draws one leaf layer, with all transforms applied, into the Vello
-    /// target texture.
-    fn rasterise(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<()> {
-        let matrix = parent * layer.transform.matrix();
+    /// target texture: the pixels `area` of the canvas, from the texture's
+    /// top left corner.
+    fn rasterise(&mut self, layer: &ResolvedLayer, parent: Affine, area: PixelRect) -> Result<()> {
+        let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
         match &layer.kind {
             ResolvedKind::Shape {
@@ -844,14 +861,19 @@ impl Renderer {
                 unreachable!("groups and meshes are composited, not rasterised")
             }
         }
-        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }))
+        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }), area)
     }
 
     /// Draws a shape layer's fill and stroke in opaque white into the Vello
-    /// target, whatever their colours and alphas; its alpha is then where the
-    /// shape is solid.
-    fn rasterise_coverage(&mut self, layer: &ResolvedLayer, parent: Affine) -> Result<()> {
-        let matrix = parent * layer.transform.matrix();
+    /// target (the pixels `area`, as in `rasterise`), whatever their colours
+    /// and alphas; its alpha is then where the shape is solid.
+    fn rasterise_coverage(
+        &mut self,
+        layer: &ResolvedLayer,
+        parent: Affine,
+        area: PixelRect,
+    ) -> Result<()> {
+        let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
         if let ResolvedKind::Shape {
             geometry,
@@ -874,7 +896,7 @@ impl Renderer {
                 );
             }
         }
-        self.render_vello_scene(false)
+        self.render_vello_scene(false, area)
     }
 
     /// Draws the layer's clip shape (`path`, in layer space) in opaque white
@@ -883,7 +905,7 @@ impl Renderer {
         self.vello_scene.reset();
         self.vello_scene
             .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, path);
-        self.render_vello_scene(false)
+        self.render_vello_scene(false, self.whole())
     }
 
     /// Fills the whole target (canvas and margin) with the mask's gradient,
@@ -904,7 +926,7 @@ impl Renderer {
             Some(matrix * brush_transform),
             &canvas,
         );
-        self.render_vello_scene(false)
+        self.render_vello_scene(false, self.whole())
     }
 
     /// The clip as a path in layer space. Empty when it keeps nothing.
@@ -986,9 +1008,13 @@ impl Renderer {
         })
     }
 
-    /// Renders `vello_scene` into the Vello target texture. Image layers
-    /// use their own renderer (see `vello_images`).
-    fn render_vello_scene(&mut self, has_images: bool) -> Result<()> {
+    /// Renders `vello_scene` into the top left corner of the Vello target
+    /// texture, `area` pixels across and down (`area` is a box of the padded
+    /// canvas, and the scene's matrices already put its corner at (0, 0), see
+    /// `in_area`). Vello writes only the pixels of that size, so the rest of
+    /// the texture keeps what it held and is not read (`from_srgb8`). Image
+    /// layers use their own renderer (see `vello_images`).
+    fn render_vello_scene(&mut self, has_images: bool, area: PixelRect) -> Result<()> {
         let renderer = if has_images {
             self.vello_images.as_mut()
         } else {
@@ -1003,8 +1029,8 @@ impl Renderer {
                 &self.vello_view,
                 &RenderParams {
                     base_color: peniko::Color::TRANSPARENT,
-                    width: self.target_size.0,
-                    height: self.target_size.1,
+                    width: area.width(),
+                    height: area.height(),
                     antialiasing_method: AaConfig::Msaa8,
                 },
             )
@@ -1151,6 +1177,18 @@ fn text_bounds(laid_out: &LaidOutText, size: f32, max_width: Option<f32>) -> Rec
     }
     let em = f64::from(size).abs();
     b.inflate(em, em)
+}
+
+/// `matrix` (layer space to padded-canvas pixels) for a draw of the pixels
+/// `area` of the canvas, whose corner Vello takes for (0, 0): moved back by
+/// that corner, a whole number of pixels. A draw from the canvas's own corner
+/// gets `matrix` itself.
+fn in_area(area: PixelRect, matrix: Affine) -> Affine {
+    if area.x0 == 0 && area.y0 == 0 {
+        matrix
+    } else {
+        Affine::translate((-f64::from(area.x0), -f64::from(area.y0))) * matrix
+    }
 }
 
 /// Where the canvas's top-left corner sits in the padded textures: `margin`
@@ -1492,6 +1530,33 @@ mod tests {
             margin_origin(7) * Point::new(1.0, 2.0),
             Point::new(8.0, 9.0)
         );
+    }
+
+    #[test]
+    fn a_draw_of_part_of_the_canvas_puts_its_corner_at_the_origin() {
+        let bits = |a: Affine| a.as_coeffs().map(f64::to_bits);
+        let matrix = Affine::translate((130.25, 77.5)) * Affine::rotate(0.3) * Affine::scale(1.5);
+        // From the canvas's own corner: the matrix itself, not a product.
+        assert_eq!(
+            bits(in_area(PixelRect::new(0, 0, 500, 300), matrix)),
+            bits(matrix)
+        );
+        // From a corner on the tile grid: the same matrix moved back by the
+        // corner, a whole number of pixels, so the linear part keeps its bits.
+        let area = bounds::vello_area(PixelRect::new(133, 85, 200, 150));
+        assert_eq!((area.x0, area.y0), (128, 80));
+        let moved = in_area(area, matrix);
+        assert_eq!(bits(moved)[..4], bits(matrix)[..4]);
+        for p in [Point::new(0.0, 0.0), Point::new(40.5, 12.25)] {
+            let (at, in_draw) = (matrix * p, moved * p);
+            assert!((in_draw.x - (at.x - 128.0)).abs() < 1e-9, "{p:?}");
+            assert!((in_draw.y - (at.y - 80.0)).abs() < 1e-9, "{p:?}");
+        }
+        // A corner on one axis only moves along the other.
+        let moved = in_area(PixelRect::new(0, 48, 10, 60), matrix);
+        let (at, in_draw) = (matrix * Point::new(3.0, 4.0), moved * Point::new(3.0, 4.0));
+        assert_eq!(in_draw.x, at.x);
+        assert!((in_draw.y - (at.y - 48.0)).abs() < 1e-9);
     }
 
     #[test]

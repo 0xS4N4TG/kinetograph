@@ -637,10 +637,23 @@ impl Compositor {
     /// Converts the box `region` of a Vello output texture (Rgba8,
     /// sRGB-encoded, straight alpha) to a linear premultiplied texture.
     /// Vello leaves what it did not draw transparent, so `region` is the box
-    /// of what it drew.
-    pub fn from_srgb8(&mut self, vello_output: &wgpu::TextureView, region: PixelRect) -> Tex {
+    /// of what it drew. Vello drew `area` of the canvas (the whole canvas, or
+    /// a smaller box from `bounds::vello_area`) into the texture's top left
+    /// corner, so the canvas pixel (`area.x0`, `area.y0`) is the texel
+    /// (0, 0); `region` is inside `area`, and what is read outside `area`
+    /// is transparent, never what an earlier draw left in the texture.
+    pub fn from_srgb8(
+        &mut self,
+        vello_output: &wgpu::TextureView,
+        area: PixelRect,
+        region: PixelRect,
+    ) -> Tex {
         let target = self.target(region);
-        let input = self.vello_input(vello_output);
+        let input = Input {
+            view: vello_output,
+            origin: [area.x0, area.y0],
+            size: [area.width(), area.height()],
+        };
         self.pass(&self.to_linear, input, input, 0.0, 0, &target);
         target
     }
