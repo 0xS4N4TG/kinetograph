@@ -1,0 +1,25 @@
+# kinetograph
+
+## Stack
+- Language: Rust (engine, not started), TypeScript authoring layer later (Phase 3)
+- Planned crates: wgpu, vello, parley/swash/fontique, taffy, usvg/vello_svg, ffmpeg-next, web-audio-api-rs, rmcp (see docs/HANDOFF.md §4)
+- Repo: github.com/0xS4N4TG/kinetograph (private), branch main
+- Licence: MIT OR Apache-2.0
+
+## Entry points
+- None yet. Phase 1 creates a Cargo workspace + CLI `still`.
+
+## Conventions
+- One Conventional Commit per logical change; push only when asked.
+- docs/reference/rajz-reference.mp4 is third-party and gitignored (local only).
+- Subagents: Sonnet 5.5 at high effort (global env CLAUDE_CODE_SUBAGENT_MODEL + project .claude/settings.json). Ask before using Opus. Don't stop/relaunch running agents without asking.
+- Speed claims need a benchmark; rendering is a pure function of (project, frame).
+
+## Machine
+- Apple M4, 10 CPU, 24 GiB, macOS 26.5.2. Node v26.7.0. Remotion 4.0.530 in the papercut project.
+- Homebrew rustc 1.97.1 was broken (llvm wants libz3.4.15, z3 is 5.1.0). User installed rustup (2026-10-14); PATH still resolves rustc/cargo/rustup from /opt/homebrew/bin — not yet verified which toolchain is active.
+
+## External corpora
+- Papercut Remotion kit: $KINETOGRAPH_CORPUS/lib/papercut/
+- Ep 13 papercut: .../tiny-agent/episodes/13-mods/papercut/src/ (composition ModsPapercut, S04Meter = frames 317–405, 1080x1920@30)
+- SFX corpus: $KINETOGRAPH_CORPUS/lib/audio/sfx/
