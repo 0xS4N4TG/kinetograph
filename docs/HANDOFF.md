@@ -260,6 +260,21 @@ two so each half is reviewable:
 - **2b: looks, camera and video.** Gradient map / LUT, halftone, dither, dot-matrix reveal, turbulence +
   displacement (seeded), grain and noise, animated mesh gradient, corner-pin, 2.5D camera (perspective,
   rotateX/Y, translateZ, depth sort), motion blur, ffmpeg encode (`render`).
+- **2c: performance** (before Phase 3's comparison, whose go/no-go needs 5x+ over Remotion). A papercut diorama
+  using the 2a effects (1080x1920, 34 layers, 30 effects, most layers with two drop shadows) measured 213–313 ms per
+  frame in `bench` on the M4 (2026-10-14, two runs of frame 60), of which composite was ~234 ms, raster ~64 ms and
+  PNG encode ~36 ms. Rendering 90 frames with one `still` process per frame took 37 s (~410 ms/frame). Work items:
+  - Run each effect pass only over the layer's bounding box plus the effect's reach, not the whole padded canvas.
+    Today a 200 px layer's shadow blurs as many pixels as a full-screen layer's.
+  - Blur shadows at lower resolution.
+  - Cache layers that stop changing (the diorama's hills are still from frame 41 but are re-rasterised and
+    re-blurred every frame).
+  - Frame-range rendering that keeps one GPU setup and overlaps encoding with the next frame (fold into 2b's
+    `render`).
+  - Measure what Phase 1's choices cost and whether to keep them: 16x MSAA (chosen over Vello's `Area` mode for
+    byte-identical frames, see §10), the resampled Gaussian blur (more passes than the dual Kawase it replaced, for
+    position stability), and a full padded-canvas texture per layer.
+  Measure each change with `bench` before and after; none of the gains above are measured yet.
 **Phase 3: authoring + agents.** The N-API addon (napi-rs) exposing the Rust core; the `@kinetograph/core` TS
 package: Remotion shim, `react-reconciler` host config emitting the scene graph, determinism shim; Web Audio via
 `node-web-audio-api`; the `kinetograph` CLI in TS and the MCP server; the Remotion package table in section 5;
