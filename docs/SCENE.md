@@ -53,7 +53,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group`, `noise` or `meshGradient`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient` or `lottie`. |
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
@@ -292,6 +292,46 @@ them. Like any layer it takes `effects`, `clip`, `mask`, `matte`, `blendMode` an
 - A group without a `layout` has no box, but a mesh does: an `inset` clip or a `sweep` dot matrix on one measures from
   `(0, 0, width, height)`.
 - Counts nothing in the [margin](#canvas-margin).
+
+### lottie
+
+```json
+{ "id": "confetti", "type": "lottie", "src": "anims/confetti.json", "width": 400, "height": 400, "time": 1.2, "loop": true }
+```
+
+A [Lottie](https://lottiefiles.com) animation (After Effects, through Bodymovin, or any LottieFiles download), painted
+by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like any layer it takes `effects`, `clip`,
+`mask`, `matte`, `blendMode` and `opacity`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | A Lottie `.json` file or a `.lottie` archive, relative to the scene like an image's `src`. Read when the scene is loaded into a renderer (and, for its size, when the scene loads). |
+| `width`, `height` | the animation's own size | Animatable, not negative: the box in layer pixels. Both left out: the size the file declares. One left out: the other side, with the animation's aspect ratio. |
+| `time` | the frame's time, `frame / fps` | Animatable. Seconds into the animation. |
+| `loop` | `false` | Past the end of the animation, `false` holds its last frame and `true` wraps round. |
+
+- **Fitting.** The animation is fitted inside the box, centred, keeping its aspect ratio, as lottie-web's
+  `xMidYMid meet` does. A box with the animation's shape is filled; any other has empty space on two sides. The box is
+  what `inset` clips, `sweep` dot matrices, box-unit gradients, layout and the transform origin measure.
+- **Time.** The animation's frame is `time` times the file's frame rate, counted from the file's first frame, up to
+  its last (the one before `op`). A time below 0 is the first frame. With `loop` the time wraps modulo the
+  animation's duration instead of holding the last frame. `time` is in seconds of the animation, not of the scene: to
+  slow an animation down, scale the time (`time` at half the rate of `frame / fps`), as the authoring layer's
+  `playbackRate` does. Frames between two whole frames are interpolated, and a motion blur's sub-frames are at their own
+  times.
+- **Rasterising.** ThorVG's CPU renderer paints the animation straight into a picture the size of the box times the
+  largest stretch of the layer's matrix (at most 4096 pixels a side), rounded up, so a layer drawn at twice its size is
+  painted at twice its size and stays sharp, rather than upscaled. The picture is straight-alpha sRGB and goes in like an
+  [image](#image): drawn through the layer's matrix, so a layer that is turned is resampled. Painting is a pure function
+  of `time`: the same time gives the same pixels whatever was drawn before. An expression in the file that uses
+  randomness must be seeded, or it is not.
+- **What ThorVG draws.** Shape, solid, null, precomposition, image and text layers, the usual masks, mattes, trim paths
+  and gradient fills, layer effects of the kinds ThorVG supports, and JavaScript expressions (ThorVG's own interpreter).
+  Text in the file uses the fonts it embeds and ThorVG's built-in one; the scene's `fonts` are not used. What ThorVG
+  leaves out, this leaves out.
+- Counts nothing in the [margin](#canvas-margin).
+- A missing or unreadable file, or one that is not an animation, is an error naming the layer, when the scene loads (if
+  the box needs the file's size) or when a renderer is built from it.
 
 ## Layout
 
@@ -951,7 +991,7 @@ The layer's own box, which `inset` is measured from:
 |---|---|
 | `rect`, `roundedRect`, `ellipse` shape | `0, 0, width, height` (a stroke is not part of the box) |
 | `path` shape | The path's bounding box |
-| `image` | `0, 0, width, height` |
+| `image`, `lottie` | `0, 0, width, height` |
 | `text` | `0, 0, maxWidth` (or the laid-out width when there is no `maxWidth`) by the laid-out height |
 | `group` | None, unless it has a `layout`: then `0, 0, width, height` of the size the layout gave it. `inset` on a group without one is a load error; use `polygon`, `ellipse` or `path`. |
 
@@ -1308,6 +1348,10 @@ constants) gives the sub-frames itself with `frames`:
   margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
   size. Text is measured as one box of its own `maxWidth`, so it does not re-wrap to fit the container. Baseline
   alignment is for rows; a non-text layer's baseline is its bottom edge. See [Layout](#layout).
+- `lottie` is whatever ThorVG's CPU renderer draws (see [lottie](#lottie)); it is painted at the size the layer is
+  drawn at, up to 4096 pixels a side, so a layer scaled up beyond that is resampled, and a layer that is turned or skewed
+  is resampled from an upright picture. Layers cannot be overridden (no theming, slots or state machines), a file's
+  text uses ThorVG's own font, and its sound is ignored. Building ThorVG needs a C++ toolchain.
 - Per-character styling moves, scales, turns, fades and recolours whole glyphs. There is no per-character blur or
   effect, no outline or gradient of its own (a plain colour only), and characters are not re-flowed: the text box and
   the line breaks are those of the unstyled text. Text has one font per layer, no fallback and no bidi, so the clusters

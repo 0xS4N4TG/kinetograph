@@ -403,6 +403,21 @@ fn flex_layout_matches_golden() {
 }
 
 #[test]
+fn lottie_matches_golden() {
+    // Frame 15 of 60 (0.5 s): the animation's own time follows the frame
+    // unless a layer gives `time`. Covers a Lottie JSON at its own size and a
+    // `.lottie` archive fitted into a wide box (centred, aspect ratio kept,
+    // outlined), a layer scaled to 2x (painted at the size it is drawn, not
+    // upscaled), animated `time`, a held last frame (time past the end) and a
+    // looped one, a turned, half-transparent layer with a drop shadow and an
+    // inset clip, a box-unit mask, and two layers in a flex row sized by their
+    // height alone (the aspect ratio gives the width), the second with motion
+    // blur.
+    let frame = render_still(scene("tests/scenes/lottie.json"), 15).unwrap();
+    check("lottie", &frame);
+}
+
+#[test]
 fn glyph_text_matches_golden() {
     // Frame 15 of 30: the staggered rise and fade-in of the first line are
     // under way, and the animated offset on the last character is half way.

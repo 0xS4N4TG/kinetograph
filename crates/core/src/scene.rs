@@ -169,6 +169,7 @@ pub enum LayerKind {
     Group(GroupLayer),
     Noise(NoiseLayer),
     MeshGradient(MeshGradientLayer),
+    Lottie(LottieLayer),
 }
 
 impl LayerKind {
@@ -181,6 +182,7 @@ impl LayerKind {
             LayerKind::Group(_) => "group",
             LayerKind::Noise(_) => "noise",
             LayerKind::MeshGradient(_) => "meshGradient",
+            LayerKind::Lottie(_) => "lottie",
         }
     }
 
@@ -1003,6 +1005,26 @@ pub struct ImageLayer {
     pub fit: Fit,
 }
 
+/// A Lottie animation, rasterised by ThorVG at the size it is drawn at.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LottieLayer {
+    /// A `.json` or `.lottie` file, relative to the scene.
+    pub src: String,
+    /// The box the animation is fitted into, centred, keeping its aspect
+    /// ratio. Omitted: the animation's own size, or, with the other side
+    /// given, the size that keeps its aspect ratio.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+    /// Seconds into the animation. Omitted: the time of the frame
+    /// (`frame / fps`).
+    pub time: Option<Num>,
+    /// Past the end of the animation: wrap round (`true`), or hold its last
+    /// frame (`false`).
+    #[serde(default, rename = "loop")]
+    pub looped: bool,
+}
+
 /// How an image is fitted to its box (CSS's `object-fit`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1265,26 +1287,37 @@ impl Scene {
     /// `height` out, from the file's header, into `asset_sizes`.
     fn measure_assets(&mut self) -> Result<()> {
         let mut wanted = Vec::new();
-        walk_layers(&self.layers, &mut |layer| {
-            if let LayerKind::Image(i) = &layer.kind
-                && (i.width.is_none() || i.height.is_none())
-            {
-                wanted.push((layer.id.clone(), i.src.clone()));
+        walk_layers(&self.layers, &mut |layer| match &layer.kind {
+            LayerKind::Image(i) if i.width.is_none() || i.height.is_none() => {
+                wanted.push((layer.id.clone(), i.src.clone(), false));
             }
+            LayerKind::Lottie(l) if l.width.is_none() || l.height.is_none() => {
+                wanted.push((layer.id.clone(), l.src.clone(), true));
+            }
+            _ => {}
         });
-        for (id, src) in wanted {
+        for (id, src, lottie) in wanted {
             if self.asset_sizes.contains_key(&src) {
                 continue;
             }
             let path = self.base_dir.join(&src);
-            let (width, height) = image::image_dimensions(&path).map_err(|e| {
-                Error::Scene(format!(
-                    "layer {id:?}: cannot read the size of image {}: {e}",
-                    path.display()
-                ))
-            })?;
-            self.asset_sizes
-                .insert(src, (f64::from(width), f64::from(height)));
+            let size = if lottie {
+                crate::lottie::natural_size(&path).map_err(|e| {
+                    Error::Scene(format!(
+                        "layer {id:?}: cannot read the size of lottie {}: {e}",
+                        path.display()
+                    ))
+                })?
+            } else {
+                let (width, height) = image::image_dimensions(&path).map_err(|e| {
+                    Error::Scene(format!(
+                        "layer {id:?}: cannot read the size of image {}: {e}",
+                        path.display()
+                    ))
+                })?;
+                (f64::from(width), f64::from(height))
+            };
+            self.asset_sizes.insert(src, size);
         }
         Ok(())
     }
@@ -1524,6 +1557,19 @@ impl Scene {
                     non_negative("width", &m.width)?;
                     non_negative("height", &m.height)?;
                     validate_mesh_gradient(&layer.id, m)?;
+                }
+                LayerKind::Lottie(l) => {
+                    if l.src.trim().is_empty() {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: lottie needs a src, the path of a .json or .lottie file",
+                            layer.id
+                        )));
+                    }
+                    for (what, side) in [("width", &l.width), ("height", &l.height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
+                    }
                 }
             }
         }
@@ -3909,6 +3955,81 @@ mod tests {
             align(r#", "align": "justify""#)
                 .unwrap_err()
                 .contains("justify")
+        );
+    }
+
+    // --- Lottie. --------------------------------------------------------------
+
+    fn anims() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/anims")
+    }
+
+    fn lottie_scene(layer: &str, base: PathBuf) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 10, "layers": [
+                  {{"id": "anim", "type": "lottie", {layer}}}]}}"##
+            ),
+            base,
+        )
+    }
+
+    #[test]
+    fn a_lottie_layer_takes_a_file_a_box_a_time_and_a_loop() {
+        let scene = lottie_scene(
+            r#""src": "burst.json", "width": 40, "height": 30, "time": [{"frame": 0, "value": 0}, {"frame": 9, "value": 2}], "loop": true"#,
+            PathBuf::new(),
+        )
+        .unwrap();
+        let LayerKind::Lottie(l) = &scene.layers[0].kind else {
+            panic!("not a lottie layer");
+        };
+        assert_eq!(l.src, "burst.json");
+        assert_eq!(l.time.as_ref().unwrap().at(9.0), 2.0);
+        assert!(l.looped);
+        // With both sides given, the file is not read.
+        assert!(scene.asset_sizes.is_empty());
+        assert_eq!(scene.layers[0].kind.name(), "lottie");
+        assert!(scene.layers[0].kind.has_box());
+        // The defaults.
+        let scene = lottie_scene(
+            r#""src": "burst.json", "width": 1, "height": 1"#,
+            PathBuf::new(),
+        )
+        .unwrap();
+        let LayerKind::Lottie(l) = &scene.layers[0].kind else {
+            panic!("not a lottie layer");
+        };
+        assert!(l.time.is_none() && !l.looped);
+    }
+
+    #[test]
+    fn a_lottie_layer_without_sides_is_measured_from_its_file() {
+        let scene = lottie_scene(r#""src": "burst.json""#, anims()).unwrap();
+        assert_eq!(scene.asset_sizes["burst.json"], (120.0, 120.0));
+        let scene = lottie_scene(r#""src": "burst.lottie", "height": 50"#, anims()).unwrap();
+        assert_eq!(scene.asset_sizes["burst.lottie"], (120.0, 120.0));
+    }
+
+    #[test]
+    fn a_bad_lottie_layer_is_an_error_naming_it() {
+        let msg = lottie_scene(r#""src": "nope.json", "width": 5"#, anims())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"anim\"") && msg.contains("nope.json") && msg.contains("size of lottie"),
+            "{msg}"
+        );
+        let msg = lottie_scene(r#""src": " ""#, anims())
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("\"anim\"") && msg.contains("src"), "{msg}");
+        let msg = lottie_scene(r#""src": "a.json", "width": -4, "height": 4"#, anims())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("\"anim\"") && msg.contains("negative"),
+            "{msg}"
         );
     }
 

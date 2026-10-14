@@ -19,6 +19,7 @@ use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
 use crate::compositor::{Compositor, Readback, Tex};
 use crate::error::{Error, Result};
+use crate::lottie::{Lotties, load_lotties};
 use crate::mesh;
 use crate::resolve::{
     ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient,
@@ -123,6 +124,8 @@ pub struct Renderer {
     compositor: Compositor,
     text: TextEngine,
     images: HashMap<String, ImageData>,
+    /// The Lottie animations of the scene, painted at the size each is drawn at.
+    lotties: Lotties,
     /// `Some` while `render_timed` runs.
     timings: Option<Timings>,
     /// The textures of layers that stopped changing, kept for the next frame.
@@ -145,6 +148,7 @@ impl Renderer {
         // Fonts first: nothing is measured before they are registered.
         let text = TextEngine::new(&scene.fonts, &scene.base_dir)?;
         let images = load_images(&scene)?;
+        let lotties = load_lotties(&scene)?;
         let luts = crate::lut::load_luts(&scene)?;
 
         let mut context = RenderContext::new();
@@ -154,7 +158,7 @@ impl Renderer {
         let queue = context.devices[id].queue.clone();
 
         let vello = new_vello(&device)?;
-        let vello_images = if images.is_empty() {
+        let vello_images = if images.is_empty() && lotties.is_empty() {
             None
         } else {
             Some(new_vello(&device)?)
@@ -201,6 +205,7 @@ impl Renderer {
             compositor,
             text,
             images,
+            lotties,
             timings: None,
             cache: LayerCache::new(CACHE_BYTES),
             cache_path: Vec::new(),
@@ -816,7 +821,7 @@ impl Renderer {
             for i in page {
                 let (layer, matrix, region) = leaves[i];
                 self.encode_leaf(layer, matrix)?;
-                has_images |= matches!(layer.kind, ResolvedKind::Image { .. });
+                has_images |= draws_image(&layer.kind);
                 let key = leaf_key(layer, matrix);
                 self.pages.page_of.insert(key, self.pages.pages.len());
                 drawn.push((key, region));
@@ -969,6 +974,7 @@ impl Renderer {
                 text_bounds(&laid_out, *size, *max_width, chars)
             }
             ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
             ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
         };
@@ -991,7 +997,7 @@ impl Renderer {
         let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
         self.encode_leaf(layer, matrix)?;
-        self.render_vello_scene(matches!(layer.kind, ResolvedKind::Image { .. }), area)
+        self.render_vello_scene(draws_image(&layer.kind), area)
     }
 
     /// Adds the leaf `layer`, drawn with `matrix`, to `vello_scene`.
@@ -1132,6 +1138,26 @@ impl Renderer {
                     if cut {
                         self.vello_scene.pop_layer();
                     }
+                }
+            }
+            // ThorVG paints the animation at the size it is drawn at, and
+            // it goes in like an image.
+            ResolvedKind::Lottie {
+                src,
+                width,
+                height,
+                time,
+                looped,
+            } => {
+                if let Some((pixels_wide, pixels_high)) = lottie_pixels((*width, *height), matrix) {
+                    let image =
+                        self.lotties
+                            .image(src, *time, *looped, pixels_wide, pixels_high)?;
+                    let to_box = Affine::scale_non_uniform(
+                        width / f64::from(pixels_wide),
+                        height / f64::from(pixels_high),
+                    );
+                    self.vello_scene.draw_image(&image, matrix * to_box);
                 }
             }
             // The box in opaque white: the noise pass fills its coverage.
@@ -1289,6 +1315,7 @@ impl Renderer {
                 Some(Rect::new(0.0, 0.0, width, height))
             }
             ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
@@ -1761,6 +1788,33 @@ fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorSto
         out.push(at(1.0, last.1));
     }
     out
+}
+
+/// Whether a leaf is drawn with an image (the image renderer, `vello_images`).
+fn draws_image(kind: &ResolvedKind) -> bool {
+    matches!(
+        kind,
+        ResolvedKind::Image { .. } | ResolvedKind::Lottie { .. }
+    )
+}
+
+/// Largest side, in pixels, ThorVG is asked to paint a Lottie layer at.
+const MAX_LOTTIE_SIDE: f64 = 4096.0;
+
+/// The size in pixels to paint a Lottie layer whose box is `size`, drawn under
+/// `matrix`: the box through the matrix's largest stretch, rounded up, and cut
+/// down to `MAX_LOTTIE_SIDE` a side. `None` for a box with no area.
+fn lottie_pixels(size: (f64, f64), matrix: Affine) -> Option<(u32, u32)> {
+    let stretch = bounds::max_stretch(matrix);
+    let (width, height) = (size.0 * stretch, size.1 * stretch);
+    if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
+        return None;
+    }
+    let down = (MAX_LOTTIE_SIDE / width.max(height)).min(1.0);
+    Some((
+        (width * down).ceil().max(1.0) as u32,
+        (height * down).ceil().max(1.0) as u32,
+    ))
 }
 
 /// Where a picture of `image` pixels sits in a box of `size`, as the matrix

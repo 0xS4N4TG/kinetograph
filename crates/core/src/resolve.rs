@@ -507,6 +507,15 @@ pub enum ResolvedKind {
         /// `(0, 0, width, height)`.
         size: Option<(f64, f64)>,
     },
+    /// A Lottie animation fitted into the box `(0, 0, width, height)`.
+    Lottie {
+        src: String,
+        width: f64,
+        height: f64,
+        /// Seconds into the animation.
+        time: f64,
+        looped: bool,
+    },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
     MeshGradient {
@@ -661,6 +670,7 @@ impl Resolver<'_> {
                 Some(Rect::new(0.0, 0.0, width, height))
             }
             ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
@@ -832,6 +842,16 @@ impl Resolver<'_> {
                 },
                 preserve3d: g.preserve3d,
             },
+            LayerKind::Lottie(l) => {
+                let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;
+                ResolvedKind::Lottie {
+                    src: l.src.clone(),
+                    width,
+                    height,
+                    time: l.time.as_ref().map_or(clock.t / clock.fps, |n| n.at(f)),
+                    looped: l.looped,
+                }
+            }
             LayerKind::MeshGradient(m) => {
                 let (width, height) = (m.width.at(f), m.height.at(f));
                 let (columns, rows) = (m.columns as usize, m.rows as usize);
@@ -870,14 +890,26 @@ impl Resolver<'_> {
     /// leaves out the file's size (both left out), or the size that keeps the
     /// file's aspect ratio (one left out).
     fn image_size(&self, layer: &Layer, image: &ImageLayer, f: f64) -> Result<(f64, f64)> {
+        self.box_size(layer, &image.src, &image.width, &image.height, f)
+    }
+
+    /// The box of a layer with a file behind it: see `image_size`.
+    fn box_size(
+        &self,
+        layer: &Layer,
+        src: &str,
+        width: &Option<Num>,
+        height: &Option<Num>,
+        f: f64,
+    ) -> Result<(f64, f64)> {
         let (width, height) = (
-            image.width.as_ref().map(|n| n.at(f)),
-            image.height.as_ref().map(|n| n.at(f)),
+            width.as_ref().map(|n| n.at(f)),
+            height.as_ref().map(|n| n.at(f)),
         );
         if let (Some(width), Some(height)) = (width, height) {
             return Ok((width, height));
         }
-        let (natural_width, natural_height) = self.natural_size(layer, &image.src)?;
+        let (natural_width, natural_height) = self.natural_size(layer, src)?;
         Ok(match (width, height) {
             (Some(width), None) => (width, width * natural_height / natural_width),
             (None, Some(height)) => (height * natural_width / natural_height, height),
@@ -2364,6 +2396,62 @@ mod tests {
         assert_eq!(first[1].unwrap().opacity, 0.0);
         // A layer without chars has none, so it resolves as before.
         assert!(chars(&layers[1]).is_empty());
+    }
+
+    /// The resolved lottie layer `anim` of a 30 fps scene with `layer`'s
+    /// fields, at `frame`.
+    fn lottie_at(layer: &str, frame: u32) -> ResolvedKind {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 30, "layers": [
+              {{"id": "anim", "type": "lottie", "src": "burst.json", {layer}}}]}}"##
+        );
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/anims");
+        let scene = Scene::from_json(&json, base).unwrap();
+        scene.resolve(frame).unwrap().layers.remove(0).kind
+    }
+
+    #[test]
+    fn a_lottie_box_is_the_animations_size_or_keeps_its_aspect_ratio() {
+        let boxed = |layer: &str| match lottie_at(layer, 0) {
+            ResolvedKind::Lottie { width, height, .. } => (width, height),
+            _ => panic!("not a lottie layer"),
+        };
+        // burst.json is 120 x 120.
+        assert_eq!(boxed(r#""loop": false"#), (120.0, 120.0));
+        assert_eq!(boxed(r#""width": 60"#), (60.0, 60.0));
+        assert_eq!(boxed(r#""height": 30"#), (30.0, 30.0));
+        assert_eq!(boxed(r#""width": 60, "height": 20"#), (60.0, 20.0));
+    }
+
+    #[test]
+    fn a_lottie_time_follows_the_frame_unless_given() {
+        let time = |layer: &str, frame: u32| match lottie_at(layer, frame) {
+            ResolvedKind::Lottie { time, looped, .. } => (time, looped),
+            _ => panic!("not a lottie layer"),
+        };
+        assert_eq!(time(r#""loop": true"#, 15), (0.5, true));
+        assert_eq!(time(r#""width": 1, "height": 1"#, 0), (0.0, false));
+        assert_eq!(time(r#""time": 1.25"#, 15), (1.25, false));
+        let keyed = r#""time": [{"frame": 0, "value": 0}, {"frame": 30, "value": 3}]"#;
+        assert_eq!(time(keyed, 15), (1.5, false));
+        // A sub-frame is at its own time.
+        let json = r##"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 30, "layers": [
+          {"id": "a", "type": "lottie", "src": "x.json", "width": 5, "height": 5,
+           "motionBlur": {"samples": 2, "shutter": 1}}]}"##;
+        let layers = Scene::from_json(json, std::path::PathBuf::new())
+            .unwrap()
+            .resolve(15)
+            .unwrap()
+            .layers;
+        let times: Vec<f64> = layers[0]
+            .motion
+            .iter()
+            .map(|m| match &m.kind {
+                ResolvedKind::Lottie { time, .. } => *time,
+                _ => panic!("not a lottie layer"),
+            })
+            .collect();
+        assert_eq!(times, [(15.0 - 0.25) / 30.0, (15.0 + 0.25) / 30.0]);
     }
 
     #[test]

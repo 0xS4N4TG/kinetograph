@@ -11,6 +11,7 @@ pub mod error;
 #[cfg(test)]
 mod hash;
 mod layout;
+pub mod lottie;
 pub mod lut;
 pub mod mesh;
 pub mod pool;

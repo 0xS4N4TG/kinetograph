@@ -16,4 +16,19 @@ pollster = "0.4"
 # tests, and users' custom effect shaders when a scene loads.
 naga = { version = "30.0.1", features = ["wgsl-in"] }
 glam = "0.34.1"
+# LottieFiles' own player, which builds ThorVG (C++) from a submodule. Its
+# crates.io release is a stale 2024 alpha, so this is pinned to a git tag. CPU
+# renderer only, no threads (a frame is then painted by one thread in one
+# order); expressions, embedded images and fonts on.
+dotlottie-rs = { git = "https://github.com/LottieFiles/dotlottie-rs", tag = "v0.1.58", default-features = false, features = [
+    "tvg",
+    "tvg-cpu",
+    "tvg-lottie-expressions",
+    "tvg-png",
+    "tvg-jpg",
+    "tvg-webp",
+    "tvg-ttf",
+    "tvg-otf",
+    "dotlottie",
+] }
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox"] }
