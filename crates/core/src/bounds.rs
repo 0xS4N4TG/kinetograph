@@ -248,6 +248,42 @@ pub fn warped(h: DMat3, from: PixelRect) -> Option<PixelRect> {
     pixel_rect(image?.inflate(1.0, 1.0))
 }
 
+/// A texture's sides are multiples of this many texels (or the canvas's own
+/// side, if that is less), so that the textures of layers of different sizes
+/// fall into a few classes that the pool can hand out again.
+pub const SIZE_STEP: u32 = 64;
+
+/// Texels a texture needs along one axis to hold `len` pixels of a canvas
+/// `full` pixels across: `len` rounded up to a multiple of `SIZE_STEP`, but
+/// no more than `full`, and not less than one step.
+pub fn size_class(len: u32, full: u32) -> u32 {
+    len.max(1).next_multiple_of(SIZE_STEP).min(full)
+}
+
+/// Where and how big a texture is that holds the pixels `region` of a
+/// `full`-sized canvas: its top-left pixel and its size in texels. A side
+/// that comes to the canvas's own starts at the canvas's edge; any other
+/// starts at the region's, moved back if need be to stay inside the canvas.
+pub fn placement(region: PixelRect, full: (u32, u32)) -> ([i32; 2], [u32; 2]) {
+    let axis = |lo: i32, len: u32, full: u32| {
+        let size = size_class(len, full);
+        let origin = if size == full {
+            0
+        } else {
+            lo.clamp(0, (full - size) as i32)
+        };
+        (origin, size)
+    };
+    let region = if region.is_empty() {
+        PixelRect::new(0, 0, 0, 0)
+    } else {
+        region
+    };
+    let (x, width) = axis(region.x0, region.width(), full.0);
+    let (y, height) = axis(region.y0, region.height(), full.1);
+    ([x, y], [width, height])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,5 +461,52 @@ mod tests {
             warped(mirror, PixelRect::new(0, 0, 10, 10)).unwrap(),
             PixelRect::new(88, -2, 102, 12)
         );
+    }
+
+    #[test]
+    fn sizes_round_up_to_a_step_but_never_past_the_canvas() {
+        assert_eq!(size_class(0, 1000), 64);
+        assert_eq!(size_class(1, 1000), 64);
+        assert_eq!(size_class(64, 1000), 64);
+        assert_eq!(size_class(65, 1000), 128);
+        assert_eq!(size_class(900, 1000), 960);
+        // 961..1000 would round to 1024: the canvas's own side instead.
+        assert_eq!(size_class(961, 1000), 1000);
+        assert_eq!(size_class(1000, 1000), 1000);
+        // A canvas narrower than a step.
+        assert_eq!(size_class(5, 20), 20);
+    }
+
+    #[test]
+    fn a_texture_covers_its_region_inside_the_canvas() {
+        let full = (500, 300);
+        // A small region: its own corner, a class big enough.
+        let (origin, size) = placement(PixelRect::new(100, 50, 130, 70), full);
+        assert_eq!((origin, size), ([100, 50], [64, 64]));
+        // Near the far edge it is moved back so that the texture stays in.
+        let (origin, size) = placement(PixelRect::new(480, 290, 500, 300), full);
+        assert_eq!((origin, size), ([436, 236], [64, 64]));
+        // As wide as the canvas: it starts at its edge.
+        let (origin, size) = placement(PixelRect::new(10, 20, 495, 40), full);
+        assert_eq!((origin, size), ([0, 20], [500, 64]));
+        // The whole canvas.
+        let (origin, size) = placement(PixelRect::whole(500, 300), full);
+        assert_eq!((origin, size), ([0, 0], [500, 300]));
+        // Nothing: the smallest class.
+        assert_eq!(placement(PixelRect::EMPTY, full), ([0, 0], [64, 64]));
+        // Every region of the canvas is inside what it gets.
+        for x0 in (0..500).step_by(37) {
+            for w in [1, 20, 63, 64, 65, 200, 500 - x0] {
+                let x1 = (x0 + w).min(500);
+                let region = PixelRect::new(x0, 10, x1, 90);
+                let (origin, size) = placement(region, full);
+                assert!(
+                    origin[0] >= 0 && origin[0] + size[0] as i32 <= 500,
+                    "{region:?}"
+                );
+                assert!(origin[0] <= region.x0 && region.x1 <= origin[0] + size[0] as i32);
+                assert!(origin[1] <= 10 && 90 <= origin[1] + size[1] as i32);
+            }
+        }
     }
 }

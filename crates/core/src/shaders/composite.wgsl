@@ -1,6 +1,8 @@
 // Compositor passes. All intermediate textures are Rgba16Float, linear light,
 // premultiplied alpha. Every pass draws one full-screen triangle and reads its
-// inputs with textureLoad, so no samplers or filtering are involved.
+// inputs with textureLoad, so no samplers or filtering are involved. The
+// textures need not be the size of the canvas: place.wgsl, put in front of
+// this file, says where each sits on it.
 
 struct Params {
     opacity: f32,
@@ -22,6 +24,15 @@ struct Params {
 @group(0) @binding(0) var tex_a: texture_2d<f32>;
 @group(0) @binding(1) var tex_b: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> params: Params;
+
+// The pixel `xy` of the canvas in tex_b: transparent outside the texture.
+fn load_b(xy: vec2<i32>) -> vec4<f32> {
+    let q = xy - place.b.xy;
+    if any(q < vec2<i32>(0)) || any(q >= place.b.zw) {
+        return vec4<f32>(0.0);
+    }
+    return textureLoad(tex_b, q, 0);
+}
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
@@ -205,7 +216,7 @@ fn blend_fn(mode: u32, cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_to_linear(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let c = textureLoad(tex_a, vec2<i32>(p.xy), 0);
+    let c = load_a(canvas_xy(p));
     return vec4<f32>(srgb_to_linear(c.rgb) * c.a, c.a);
 }
 
@@ -214,9 +225,9 @@ fn fs_to_linear(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
 // `opacity` scales the source before compositing.
 @fragment
 fn fs_blend(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = vec2<i32>(p.xy);
-    let b = textureLoad(tex_a, xy, 0);
-    let s = textureLoad(tex_b, xy, 0) * params.opacity;
+    let xy = canvas_xy(p);
+    let b = load_a(xy);
+    let s = load_b(xy) * params.opacity;
     let mixed = blend_fn(params.mode, unpremultiply(b), unpremultiply(s));
     let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
     let a = s.a + b.a * (1.0 - s.a);
@@ -243,10 +254,10 @@ fn coverage(m: vec4<f32>, mode: u32) -> f32 {
 // is read by `mode`.
 @fragment
 fn fs_mask(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = vec2<i32>(p.xy);
-    let v = textureLoad(tex_b, xy, 0);
+    let xy = canvas_xy(p);
+    let v = load_b(xy);
     let m = vec4<f32>(srgb_to_linear(v.rgb) * v.a, v.a);
-    return textureLoad(tex_a, xy, 0) * coverage(m, params.mode);
+    return load_a(xy) * coverage(m, params.mode);
 }
 
 // Multiplies the layer by what a matte source (another layer, already
@@ -254,23 +265,23 @@ fn fs_mask(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
 // half.
 @fragment
 fn fs_matte(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = vec2<i32>(p.xy);
-    let m = textureLoad(tex_b, xy, 0) * params.opacity;
-    return textureLoad(tex_a, xy, 0) * coverage(m, params.mode);
+    let xy = canvas_xy(p);
+    let m = load_b(xy) * params.opacity;
+    return load_a(xy) * coverage(m, params.mode);
 }
 
 // Adds one sample of an average. The sum is premultiplied linear light, so a
 // weighted sum of premultiplied pixels is the premultiplied average.
 @fragment
 fn fs_accumulate(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = vec2<i32>(p.xy);
-    return textureLoad(tex_a, xy, 0) + textureLoad(tex_b, xy, 0) * params.opacity;
+    let xy = canvas_xy(p);
+    return load_a(xy) + load_b(xy) * params.opacity;
 }
 
 // Linear premultiplied -> sRGB-encoded, straight alpha, for readback.
 @fragment
 fn fs_encode(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let c = textureLoad(tex_a, vec2<i32>(p.xy), 0);
+    let c = load_a(canvas_xy(p));
     let rgb = clamp(unpremultiply(c), vec3<f32>(0.0), vec3<f32>(1.0));
     return vec4<f32>(linear_to_srgb(rgb), clamp(c.a, 0.0, 1.0));
 }

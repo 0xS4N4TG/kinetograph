@@ -28,11 +28,17 @@
 use vello::wgpu::{self, util::DeviceExt};
 
 use crate::bounds::PixelRect;
-use crate::compositor::{LINEAR_FORMAT, new_texture};
+use crate::compositor::{Input, LINEAR_FORMAT, Tex, new_texture};
+use crate::pool::Pool;
 
 /// Blurs below this many pixels are skipped: the smallest chain already
 /// spreads by about one pixel.
 pub const MIN_RADIUS: f32 = 1.0;
+
+/// How many bytes of the pyramid textures of finished blurs are kept for the
+/// next. Their sizes follow the radius, so a blur whose radius changes every
+/// frame lets the oldest go.
+const SCRATCH_BYTES: u64 = 512 << 20;
 
 pub struct Blur {
     layout: wgpu::BindGroupLayout,
@@ -41,6 +47,8 @@ pub struct Blur {
     down: wgpu::RenderPipeline,
     gauss: wgpu::RenderPipeline,
     up: wgpu::RenderPipeline,
+    /// The images of the pyramid, by size.
+    scratch: Pool<Tex>,
 }
 
 impl Blur {
@@ -123,21 +131,23 @@ impl Blur {
             gauss: pipeline("fs_gauss"),
             up: pipeline("fs_up"),
             layout,
+            scratch: Pool::new(SCRATCH_BYTES),
         }
     }
 
-    /// Blurs `src` into `dst`, both `width` x `height` linear textures.
-    /// `input` is the box `src` can be non-zero in (the box of the
-    /// whole texture for one that is not), and `output` the part of the
-    /// result that is wanted; the rest of `dst` is left transparent, as is
-    /// all of it where `src` is transparent and the blur could not reach.
+    /// Blurs `src` into `dst`, linear textures that hold parts of the
+    /// `size` canvas (`Input`: where each sits). `input` is the box `src` can
+    /// be non-zero in (the box of the whole canvas for one that is not), and
+    /// `output` the part of the result that is wanted, which `dst` must hold;
+    /// the rest of `dst` is left transparent, as is all of it where `src` is
+    /// transparent and the blur could not reach.
     #[allow(clippy::too_many_arguments)]
     pub fn run(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        src: &wgpu::TextureView,
-        dst: &wgpu::TextureView,
+        src: Input,
+        dst: Input,
         size: (u32, u32),
         radius: f32,
         input: PixelRect,
@@ -153,11 +163,11 @@ impl Blur {
     /// every pass below the top works on a quarter of the pixels.
     #[allow(clippy::too_many_arguments)]
     pub fn run_shadow(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        src: &wgpu::TextureView,
-        dst: &wgpu::TextureView,
+        src: Input,
+        dst: Input,
         size: (u32, u32),
         radius: f32,
         input: PixelRect,
@@ -203,11 +213,11 @@ impl Blur {
 
     #[allow(clippy::too_many_arguments)]
     fn run_with(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        src: &wgpu::TextureView,
-        dst: &wgpu::TextureView,
+        src: Input,
+        dst: Input,
         size: (u32, u32),
         radius: f32,
         min_sigma: f32,
@@ -219,17 +229,23 @@ impl Blur {
         let regions = plan.regions(size, input, output);
         let (padded, sigma) = (plan.padded, plan.sigma);
         let origin = plan.pad as f32;
+        // `dst` holds some of the canvas, and the passes that write it work
+        // in its texels: a canvas pixel is the texel at `p - dst.origin`, and
+        // the pixel of the padded image that it stands for is `p + pad`.
+        let to_dst = |r: PixelRect| r.translate(-dst.origin[0], -dst.origin[1]);
+        let dst_shift = [origin + dst.origin[0] as f32, origin + dst.origin[1] as f32];
 
         // chain[k] is the padded image shrunk 2^k times; `spare` takes the
-        // horizontal Gaussian pass at the smallest size.
-        let chain: Vec<_> = (0..=levels)
-            .map(|k| new_texture(device, padded.0 >> k, padded.1 >> k))
+        // horizontal Gaussian pass at the smallest size. They have the
+        // sizes of a blur of the whole canvas whatever the boxes are.
+        let chain: Vec<Tex> = (0..=levels)
+            .map(|k| self.scratch_texture(device, padded.0 >> k, padded.1 >> k))
             .collect();
-        let spare = new_texture(device, padded.0 >> levels, padded.1 >> levels);
+        let spare = self.scratch_texture(device, padded.0 >> levels, padded.1 >> levels);
         let size = |k: u32| [(padded.0 >> k) as f32, (padded.1 >> k) as f32];
 
         let mut encoder = device.create_command_encoder(&Default::default());
-        let mut draw = |pipeline, input, target, params, region| {
+        let mut draw = |pipeline, input, target, params, source, region| {
             self.draw(
                 device,
                 &mut encoder,
@@ -237,15 +253,23 @@ impl Blur {
                 input,
                 target,
                 params,
+                source,
                 region,
             );
         };
         let [w0, h0] = size(0);
+        let source = [
+            src.origin[0],
+            src.origin[1],
+            src.size[0] as i32,
+            src.size[1] as i32,
+        ];
         draw(
             &self.pad,
-            src,
+            src.view,
             &chain[0].view,
             [0.0, origin, origin, 0.0, w0, h0, 0.0, 0.0],
+            source,
             regions.pad,
         );
         for k in 1..=levels {
@@ -257,14 +281,15 @@ impl Blur {
                 input,
                 &chain[k as usize].view,
                 params,
+                NO_SOURCE,
                 regions.down[k as usize - 1],
             );
         }
         // At level 0 the vertical pass is the one that writes `dst`.
-        let (last, shift) = if levels == 0 {
-            (dst, origin)
+        let (last, shift, region) = if levels == 0 {
+            (dst.view, dst_shift, to_dst(regions.vertical))
         } else {
-            (&chain[levels as usize].view, 0.0)
+            (&chain[levels as usize].view, [0.0, 0.0], regions.vertical)
         };
         let [w, h] = size(levels);
         let horizontal = [sigma, 0.0, 0.0, 0.0, w, h, 1.0, 0.0];
@@ -273,10 +298,11 @@ impl Blur {
             &chain[levels as usize].view,
             &spare.view,
             horizontal,
+            NO_SOURCE,
             regions.horizontal,
         );
-        let vertical = [sigma, shift, shift, 0.0, w, h, 0.0, 1.0];
-        draw(&self.gauss, &spare.view, last, vertical, regions.vertical);
+        let vertical = [sigma, shift[0], shift[1], 0.0, w, h, 0.0, 1.0];
+        draw(&self.gauss, &spare.view, last, vertical, NO_SOURCE, region);
         for k in (1..=levels).rev() {
             let [w, h] = size(k - 1);
             let input = &chain[k as usize].view;
@@ -284,9 +310,10 @@ impl Blur {
                 draw(
                     &self.up,
                     input,
-                    dst,
-                    [0.0, origin, origin, 0.0, w, h, 0.0, 0.0],
-                    regions.up[0],
+                    dst.view,
+                    [0.0, dst_shift[0], dst_shift[1], 0.0, w, h, 0.0, 0.0],
+                    NO_SOURCE,
+                    to_dst(regions.up[0]),
                 );
             } else {
                 let params = [0.0, 0.0, 0.0, 0.0, w, h, 0.0, 0.0];
@@ -295,15 +322,29 @@ impl Blur {
                     input,
                     &chain[k as usize - 1].view,
                     params,
+                    NO_SOURCE,
                     regions.up[k as usize - 1],
                 );
             }
         }
         queue.submit([encoder.finish()]);
+        for texture in chain.into_iter().chain([spare]) {
+            self.scratch.put(texture);
+        }
     }
 
-    /// One full-screen pass over the box `region` of `target`, which is
-    /// cleared all over first. `params` fills the shader's `Params`.
+    /// An image of the pyramid of exactly this size, from the last blur's if
+    /// it left one. Its contents are whatever that blur wrote, which no
+    /// pass reads: each clears its target all over first.
+    fn scratch_texture(&mut self, device: &wgpu::Device, width: u32, height: u32) -> Tex {
+        self.scratch
+            .take([width, height])
+            .unwrap_or_else(|| new_texture(device, width, height))
+    }
+
+    /// One full-screen pass over the box `region` (in texels) of `target`,
+    /// which is cleared all over first. `params` and `source` fill the
+    /// shader's `Params`.
     #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
@@ -313,9 +354,11 @@ impl Blur {
         input: &wgpu::TextureView,
         target: &wgpu::TextureView,
         params: [f32; 8],
+        source: [i32; 4],
         region: PixelRect,
     ) {
-        let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let mut bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
+        bytes.extend(source.iter().flat_map(|v| v.to_le_bytes()));
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("blur params"),
             contents: &bytes,
@@ -366,6 +409,10 @@ impl Blur {
         pass.draw(0..3, 0..1);
     }
 }
+
+/// What `fs_pad` is told of the texture it copies from when no pass reads
+/// one.
+const NO_SOURCE: [i32; 4] = [0; 4];
 
 /// Smallest Gaussian width, in texels, that hides the coarse grid.
 const MIN_SIGMA: f32 = 4.0;

@@ -10,6 +10,7 @@ pub mod error;
 mod hash;
 pub mod lut;
 pub mod mesh;
+pub mod pool;
 pub mod render;
 pub mod resolve;
 pub mod scene;

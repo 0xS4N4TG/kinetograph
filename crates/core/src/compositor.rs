@@ -1,13 +1,33 @@
 //! Blends layer textures in linear light.
 //!
 //! Every intermediate image is a `Rgba16Float` texture holding linear,
-//! premultiplied colour. It covers the canvas plus a margin on every side
-//! (`Scene::margin`, 0 unless an effect paints outside its layer). A texture
-//! also says where it can be non-zero (`Tex::bounds`, see `bounds.rs`), and
-//! a pass draws only where its result can be: the input's box grown by what
-//! the pass reads around a pixel. Every pass clears its target all over
-//! first, so what it does not draw is transparent, which is what the pass
-//! would have written there. The passes live in `shaders/composite.wgsl`:
+//! premultiplied colour. The canvas is the canvas plus a margin on every side
+//! (`Scene::margin`, 0 unless an effect paints outside its layer), and the
+//! buffer of a group is the same size, because what is blended into it can
+//! be anywhere. A layer's texture holds only the part of that its pixels need
+//! (`Tex::origin`, `Tex::size`), rounded up to a size class
+//! (`bounds::size_class`) and pooled by size (`pool.rs`). A texture also says
+//! where it can be non-zero (`Tex::bounds`, see `bounds.rs`), and a pass
+//! draws only where its result can be: the input's box grown by what the pass
+//! reads around a pixel. Every pass clears its target all over first, so
+//! what it does not draw is transparent, which is what the pass would have
+//! written there, and what a pass reads outside a texture is transparent
+//! too.
+//!
+//! A pass finds its pixels on the canvas through `Place` (put in front of its
+//! shader by `shader_source`, `shaders/place.wgsl`): the canvas pixel of the
+//! fragment, and where each input sits. Everything a shader works out from
+//! a position, a seeded pattern, a layer's own coordinates, uses the canvas
+//! pixel, so it does not depend on the size of the texture.
+//!
+//! The passes that read the layer through the hardware's bilinear filter
+//! (halftone, warp, displace, a custom shader, and the blur's pyramid) are
+//! the exception. The weights of a filtered read are worked out from the
+//! texture's size, so they must read a texture of the size they always did:
+//! `full_copy` puts a smaller layer into one first, and they write textures
+//! of the canvas's size (the blur keeps the pyramid of a blur of the whole
+//! canvas, and only draws part of it). The passes live in
+//! `shaders/composite.wgsl`:
 //!
 //! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
@@ -75,6 +95,7 @@ use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::mesh;
+use crate::pool::{Pool, Pooled};
 use crate::resolve::{
     ResolvedCornerPin, ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect,
     ResolvedGlow, ResolvedGradientMap, ResolvedGrain, ResolvedHalftone, ResolvedShader,
@@ -90,16 +111,71 @@ use crate::warp;
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
-/// A linear premultiplied texture the size of the canvas plus its margin.
+/// A linear premultiplied texture that holds some of the canvas plus its
+/// margin: the pixels from `origin` to `origin + size` of it. Textures come in
+/// the sizes of `bounds::size_class`, and in the size of the whole canvas,
+/// which is the size the canvas and the buffers of groups have.
 pub struct Tex {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
-    /// Where the texture can be non-zero: outside this box it is exactly
-    /// transparent. A texture from the pool holds whatever it held before
-    /// until a pass clears it, so the producer of a texture sets this to
-    /// what it drew.
+    /// The canvas pixel that texel (0, 0) is.
+    pub origin: [i32; 2],
+    /// Texels across and down.
+    pub size: [u32; 2],
+    /// Where the texture can be non-zero, in canvas pixels: outside this box
+    /// it is exactly transparent, and the box is inside the texture. A
+    /// texture from the pool holds whatever it held before until a pass
+    /// clears it, so the producer of a texture sets this to what it drew.
     pub bounds: PixelRect,
 }
+
+impl Tex {
+    /// The canvas pixels the texture covers.
+    pub fn rect(&self) -> PixelRect {
+        PixelRect::new(
+            self.origin[0],
+            self.origin[1],
+            self.origin[0] + self.size[0] as i32,
+            self.origin[1] + self.size[1] as i32,
+        )
+    }
+
+    /// The texture as the input of a pass.
+    pub fn input(&self) -> Input<'_> {
+        Input {
+            view: &self.view,
+            origin: self.origin,
+            size: self.size,
+        }
+    }
+}
+
+impl Pooled for Tex {
+    fn dims(&self) -> [u32; 2] {
+        self.size
+    }
+
+    fn bytes(&self) -> u64 {
+        // Rgba16Float: eight bytes a texel.
+        u64::from(self.size[0]) * u64::from(self.size[1]) * 8
+    }
+}
+
+/// A texture a pass reads, and where it sits on the canvas (the `a` or `b` of
+/// `Place` in `shaders/place.wgsl`). What a pass reads outside it is
+/// transparent.
+#[derive(Clone, Copy)]
+pub struct Input<'a> {
+    pub view: &'a wgpu::TextureView,
+    pub origin: [i32; 2],
+    pub size: [u32; 2],
+}
+
+/// How many bytes of released textures the compositor keeps for reuse. More
+/// than a frame of a busy scene holds, so that a scene whose textures are
+/// the same from frame to frame never allocates after the first; a scene
+/// that keeps changing their sizes lets the oldest go.
+const POOL_BYTES: u64 = 1 << 30;
 
 /// Samples per pixel of a mesh gradient, whose outer edge is anti-aliased by
 /// multisampling.
@@ -118,7 +194,7 @@ struct LutTexture {
 pub struct Compositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    /// Size of every pooled texture: the canvas plus twice the margin.
+    /// Size of the canvas texture: the canvas plus twice the margin.
     width: u32,
     height: u32,
     /// The canvas, which `read_rgba8` copies out of the middle of a texture.
@@ -178,7 +254,7 @@ pub struct Compositor {
     /// One pipeline per distinct custom shader, by `shader::compose` text.
     shaders: HashMap<String, wgpu::RenderPipeline>,
     blur: Blur,
-    pool: Vec<Tex>,
+    pool: Pool<Tex>,
 }
 
 impl Compositor {
@@ -232,21 +308,24 @@ impl Compositor {
             },
             count: None,
         };
+        let uniform_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        // The two inputs, the pass's own uniforms and the placement.
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("composite"),
             entries: &[
                 texture_entry(0),
                 texture_entry(1),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                uniform_entry(2),
+                uniform_entry(3),
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -421,67 +500,126 @@ impl Compositor {
             }),
             blur: Blur::new(device),
             layout,
-            pool: Vec::new(),
+            pool: Pool::new(POOL_BYTES),
         }
     }
 
-    /// A texture with undefined contents, from the pool when possible. Its
-    /// bounds are empty until the pass that draws it sets them.
-    pub fn acquire(&mut self) -> Tex {
+    /// A texture of exactly `size` texels, from the pool when possible, with
+    /// undefined contents and empty bounds.
+    fn acquire_sized(&mut self, size: [u32; 2]) -> Tex {
         let mut tex = self
             .pool
-            .pop()
-            .unwrap_or_else(|| new_texture(&self.device, self.width, self.height));
+            .take(size)
+            .unwrap_or_else(|| new_texture(&self.device, size[0], size[1]));
+        tex.origin = [0, 0];
         tex.bounds = PixelRect::EMPTY;
         tex
     }
 
     pub fn release(&mut self, tex: Tex) {
-        self.pool.push(tex);
+        self.pool.put(tex);
     }
 
-    /// The box of the whole texture.
+    /// The box of the whole canvas texture.
     fn whole(&self) -> PixelRect {
         PixelRect::whole(self.width, self.height)
     }
 
-    /// A texture for a pass to draw the box `region` of (cut to the
-    /// texture): the box is the texture's bounds, and the pass draws it.
+    /// A texture for a pass to draw the box `region` of (cut to the canvas):
+    /// the box is the texture's bounds, and the pass draws it. The texture is
+    /// the smallest class (`bounds::placement`) that holds it, placed on the
+    /// canvas at the box's corner. Its contents are undefined until the
+    /// pass clears it.
     fn target(&mut self, region: PixelRect) -> Tex {
-        let mut tex = self.acquire();
+        let region = region.intersect(self.whole());
+        let (origin, size) = bounds::placement(region, (self.width, self.height));
+        let mut tex = self.acquire_sized(size);
+        tex.origin = origin;
+        tex.bounds = region;
+        tex
+    }
+
+    /// Like `target`, but a texture the size of the whole canvas at its
+    /// origin, whatever `region` is. The passes that read through a filter
+    /// (and the mesh's multisampled draw) work on this size only.
+    fn target_full(&mut self, region: PixelRect) -> Tex {
+        let mut tex = self.acquire_sized([self.width, self.height]);
         tex.bounds = region.intersect(self.whole());
         tex
     }
 
-    /// A texture filled with `color` (linear, premultiplied).
-    pub fn filled(&mut self, color: [f64; 4]) -> Tex {
-        let mut tex = self.acquire();
+    /// `src` as a texture the size of the canvas at its origin, for a pass
+    /// that reads it through a bilinear filter: the hardware works out the
+    /// weights of a filtered read from the texture's size, so a pass that is
+    /// to give what it always gave must read a texture of that size. `None`
+    /// if `src` is one already; otherwise a copy of what `src` holds in a
+    /// cleared pooled texture, for the caller to release.
+    fn full_copy(&mut self, src: &Tex) -> Option<Tex> {
+        if src.origin == [0, 0] && src.size == [self.width, self.height] {
+            return None;
+        }
+        let full = self.target_full(src.bounds);
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &tex.view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: color[0],
-                        g: color[1],
-                        b: color[2],
-                        a: color[3],
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &[Some(clear_attachment(&full.view, wgpu::Color::TRANSPARENT))],
+            ..Default::default()
+        });
+        copy_box(&mut encoder, src, &full, src.bounds);
+        self.queue.submit([encoder.finish()]);
+        Some(full)
+    }
+
+    /// The Vello output texture, which is the size of the canvas, as a pass
+    /// input.
+    fn vello_input<'a>(&self, view: &'a wgpu::TextureView) -> Input<'a> {
+        Input {
+            view,
+            origin: [0, 0],
+            size: [self.width, self.height],
+        }
+    }
+
+    /// A texture filled with `color` (linear, premultiplied), the size of
+    /// the canvas: the canvas itself, or the buffer a group's children are
+    /// blended into, which they may go anywhere in.
+    pub fn filled(&mut self, color: [f64; 4]) -> Tex {
+        // Transparent black is zero everywhere, which is what empty bounds
+        // promise.
+        let region = if color == [0.0; 4] {
+            PixelRect::EMPTY
+        } else {
+            self.whole()
+        };
+        let tex = self.target_full(region);
+        self.clear(
+            &tex,
+            wgpu::Color {
+                r: color[0],
+                g: color[1],
+                b: color[2],
+                a: color[3],
+            },
+        );
+        tex
+    }
+
+    /// A transparent texture of the smallest class, for a layer that draws
+    /// nothing.
+    pub fn empty(&mut self) -> Tex {
+        let tex = self.target(PixelRect::EMPTY);
+        self.clear(&tex, wgpu::Color::TRANSPARENT);
+        tex
+    }
+
+    fn clear(&self, tex: &Tex, color: wgpu::Color) {
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("clear"),
+            color_attachments: &[Some(clear_attachment(&tex.view, color))],
             ..Default::default()
         });
         self.queue.submit([encoder.finish()]);
-        // Transparent black is zero everywhere, which is what empty bounds
-        // promise.
-        if color != [0.0; 4] {
-            tex.bounds = self.whole();
-        }
-        tex
     }
 
     /// Converts the box `region` of a Vello output texture (Rgba8,
@@ -490,7 +628,8 @@ impl Compositor {
     /// of what it drew.
     pub fn from_srgb8(&mut self, vello_output: &wgpu::TextureView, region: PixelRect) -> Tex {
         let target = self.target(region);
-        self.pass(&self.to_linear, vello_output, vello_output, 0.0, 0, &target);
+        let input = self.vello_input(vello_output);
+        self.pass(&self.to_linear, input, input, 0.0, 0, &target);
         target
     }
 
@@ -506,6 +645,8 @@ impl Compositor {
     /// luminosity) divide in `clip_color`, which a backdrop outside 0..1 or a
     /// grey that rounds a hair below zero can make a division by zero, so
     /// they are drawn over the whole texture as they always were.
+    ///
+    /// `dst` must hold the box drawn.
     pub fn blend(&mut self, mut dst: Tex, src: Tex, opacity: f32, mode: BlendMode) -> Tex {
         let mode = mode_index(mode);
         let region = if mode >= FIRST_NON_SEPARABLE_MODE {
@@ -514,7 +655,7 @@ impl Compositor {
             src.bounds
         };
         self.update(&mut dst, region, |c, dst, temp| {
-            c.pass(&c.blend, &dst.view, &src.view, opacity, mode, temp);
+            c.pass(&c.blend, dst.input(), src.input(), opacity, mode, temp);
         });
         dst.bounds = dst.bounds.union(src.bounds);
         self.release(src);
@@ -522,9 +663,9 @@ impl Compositor {
     }
 
     /// Draws `region` of a new texture with `draw`, which is given `dst` and
-    /// that texture, and copies the result over the same box of `dst`. It is
-    /// how a pass that reads `dst` changes it in place: it cannot be its own
-    /// target. The copy is exact.
+    /// that texture, and copies the result over the same box of `dst`, which
+    /// must hold it. It is how a pass that reads `dst` changes it in place:
+    /// it cannot be its own target. The copy is exact.
     fn update(
         &mut self,
         dst: &mut Tex,
@@ -535,26 +676,15 @@ impl Compositor {
         if region.is_empty() {
             return;
         }
+        assert!(
+            dst.rect().intersect(region) == region,
+            "a texture over {:?} cannot take {region:?}",
+            dst.rect()
+        );
         let temp = self.target(region);
         draw(self, dst, &temp);
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        let corner = wgpu::Origin3d {
-            x: region.x0 as u32,
-            y: region.y0 as u32,
-            z: 0,
-        };
-        let (mut from, mut to) = (temp.texture.as_image_copy(), dst.texture.as_image_copy());
-        from.origin = corner;
-        to.origin = corner;
-        encoder.copy_texture_to_texture(
-            from,
-            to,
-            wgpu::Extent3d {
-                width: region.width(),
-                height: region.height(),
-                depth_or_array_layers: 1,
-            },
-        );
+        copy_box(&mut encoder, &temp, dst, region);
         self.queue.submit([encoder.finish()]);
         self.release(temp);
     }
@@ -575,7 +705,8 @@ impl Compositor {
             MaskMode::Luminance => 2,
         };
         let target = self.target(src.bounds.intersect(keep));
-        self.pass(&self.mask, &src.view, vello_output, 0.0, mode, &target);
+        let vello = self.vello_input(vello_output);
+        self.pass(&self.mask, src.input(), vello, 0.0, mode, &target);
         self.release(src);
         target
     }
@@ -604,8 +735,8 @@ impl Compositor {
         let target = self.target(region);
         self.pass(
             &self.matte,
-            &src.view,
-            &matte.view,
+            src.input(),
+            matte.input(),
             matte_opacity,
             mode,
             &target,
@@ -617,12 +748,12 @@ impl Compositor {
 
     /// Adds `src` times `weight` to `sum`, for averaging a motion-blurred
     /// layer's sub-frames. `src` goes back to the pool; the result is `sum`,
-    /// changed under the box of `src` only, where it is `sum` plus nothing
-    /// anywhere else. Callers add in a fixed order, so the result is the same
-    /// every time.
+    /// changed under the box of `src` only (anywhere else `src` adds nothing).
+    /// `sum` must hold that box. Callers add in a fixed order, so the result
+    /// is the same every time.
     pub fn accumulate(&mut self, mut sum: Tex, src: Tex, weight: f32) -> Tex {
         self.update(&mut sum, src.bounds, |c, sum, temp| {
-            c.pass(&c.accumulate, &sum.view, &src.view, weight, 0, temp);
+            c.pass(&c.accumulate, sum.input(), src.input(), weight, 0, temp);
         });
         sum.bounds = sum.bounds.union(src.bounds);
         self.release(src);
@@ -633,7 +764,7 @@ impl Compositor {
     /// texture. Neither input is released.
     pub fn over(&mut self, below: &Tex, above: &Tex) -> Tex {
         let target = self.target(below.bounds.union(above.bounds));
-        self.pass(&self.blend, &below.view, &above.view, 1.0, 0, &target);
+        self.pass(&self.blend, below.input(), above.input(), 1.0, 0, &target);
         target
     }
 
@@ -732,8 +863,8 @@ impl Compositor {
         self.blur.run(
             &self.device,
             &self.queue,
-            &src.view,
-            &dst.view,
+            src.input(),
+            dst.input(),
             size,
             radius,
             src.bounds,
@@ -765,18 +896,20 @@ impl Compositor {
         self.blur.run(
             &self.device,
             &self.queue,
-            &backdrop.view,
-            &blurred.view,
+            backdrop.input(),
+            blurred.input(),
             size,
             radius,
             backdrop.bounds,
             blurred.bounds,
         );
         // The matte pass with opacity 1 and alpha mode multiplies its first
-        // input by the alpha of its second.
-        let frosted = self.target(frost);
-        let coverage = coverage.map_or(&src.view, |t| &t.view);
-        self.pass(&self.matte, &blurred.view, coverage, 1.0, 0, &frosted);
+        // input by the alpha of its second. `src` is blended over the result
+        // in place, so the texture holds its box as well as the frost.
+        let mut frosted = self.target(frost.union(src.bounds));
+        frosted.bounds = frost;
+        let coverage = coverage.map_or_else(|| src.input(), |t| t.input());
+        self.pass(&self.matte, blurred.input(), coverage, 1.0, 0, &frosted);
         self.release(blurred);
         self.blend(frosted, src, 1.0, BlendMode::Normal)
     }
@@ -792,8 +925,8 @@ impl Compositor {
         self.blur.run(
             &self.device,
             &self.queue,
-            &src.view,
-            &halo.view,
+            src.input(),
+            halo.input(),
             size,
             glow.radius,
             src.bounds,
@@ -802,8 +935,8 @@ impl Compositor {
         let target = self.target(src.bounds.union(halo.bounds));
         self.run_pass(
             &self.glow,
-            &src.view,
-            &halo.view,
+            src.input(),
+            halo.input(),
             &floats(&glow_values(glow)),
             &target,
         );
@@ -822,7 +955,7 @@ impl Compositor {
         let (dx, dy) = bounds::aberration_growth(offset);
         let target = self.target(src.bounds.grow(dx, dy));
         let params = floats(&[offset[0], offset[1], 0.0, 0.0]);
-        self.run_pass(&self.aberration, &src.view, &src.view, &params, &target);
+        self.run_pass(&self.aberration, src.input(), src.input(), &params, &target);
         self.release(src);
         target
     }
@@ -836,8 +969,8 @@ impl Compositor {
         let target = self.target(src.bounds);
         self.run_pass(
             &self.color,
-            &src.view,
-            &src.view,
+            src.input(),
+            src.input(),
             &floats(&matrix_values(matrix)),
             &target,
         );
@@ -854,8 +987,8 @@ impl Compositor {
         let target = self.target(src.bounds);
         self.run_pass(
             &self.gradient_map,
-            &src.view,
-            &src.view,
+            src.input(),
+            src.input(),
             &floats(&gradient_map_values(map)),
             &target,
         );
@@ -872,8 +1005,8 @@ impl Compositor {
         let target = self.target(src.bounds);
         self.run_pass(
             &self.grain,
-            &src.view,
-            &src.view,
+            src.input(),
+            src.input(),
             &grain_values(grain, self.margin),
             &target,
         );
@@ -890,8 +1023,8 @@ impl Compositor {
         let target = self.target(src.bounds);
         self.run_pass(
             &self.dither,
-            &src.view,
-            &src.view,
+            src.input(),
+            src.input(),
             &dither_values(dither, self.margin),
             &target,
         );
@@ -910,13 +1043,18 @@ impl Compositor {
             Some(g) => src.bounds.grow(g, g),
             None => self.whole(),
         };
-        let target = self.target(region);
+        let scratch = self.full_copy(&src);
+        let input = scratch.as_ref().unwrap_or(&src);
+        let target = self.target_full(region);
         self.run_filtered_pass(
             &self.halftone,
-            &src.view,
+            &input.view,
             &floats(&halftone_values(halftone, layer_matrix)),
             &target,
         );
+        if let Some(scratch) = scratch {
+            self.release(scratch);
+        }
         self.release(src);
         target
     }
@@ -937,8 +1075,8 @@ impl Compositor {
         let target = self.target(src.bounds);
         self.run_pass(
             &self.dot_matrix,
-            &src.view,
-            &src.view,
+            src.input(),
+            src.input(),
             &dot_matrix_values(dots, layer_matrix, layer_box),
             &target,
         );
@@ -970,7 +1108,7 @@ impl Compositor {
             Some(h) => self.warp(src, h),
             None => {
                 self.release(src);
-                self.filled([0.0; 4])
+                self.empty()
             }
         }
     }
@@ -983,13 +1121,18 @@ impl Compositor {
             return src;
         }
         let region = bounds::warped(h, src.bounds).unwrap_or(self.whole());
-        let target = self.target(region);
+        let scratch = self.full_copy(&src);
+        let input = scratch.as_ref().unwrap_or(&src);
+        let target = self.target_full(region);
         self.run_filtered_pass(
             &self.warp,
-            &src.view,
+            &input.view,
             &floats(&warp_values(h.inverse())),
             &target,
         );
+        if let Some(scratch) = scratch {
+            self.release(scratch);
+        }
         self.release(src);
         target
     }
@@ -1006,14 +1149,19 @@ impl Compositor {
             None => self.whole(),
         };
         let key = self.turbulence_tables(displace.turbulence.seed);
-        let target = self.target(region);
+        let scratch = self.full_copy(&src);
+        let input = scratch.as_ref().unwrap_or(&src);
+        let target = self.target_full(region);
         self.run_filtered_pass_with(
             &self.displace,
-            &src.view,
+            &input.view,
             &displace_values(displace, layer_matrix),
             Some(&self.turbulence_tables[&key]),
             &target,
         );
+        if let Some(scratch) = scratch {
+            self.release(scratch);
+        }
         self.release(src);
         target
     }
@@ -1033,8 +1181,8 @@ impl Compositor {
         let target = self.target(coverage.bounds);
         self.run_pass_with(
             &self.noise,
-            &coverage.view,
-            &coverage.view,
+            coverage.input(),
+            coverage.input(),
             &noise_values(turbulence, channels, layer_matrix),
             Some(&self.turbulence_tables[&key]),
             &target,
@@ -1045,9 +1193,11 @@ impl Compositor {
 
     /// Draws a mesh gradient's `vertices` (triangles in texels, from
     /// `mesh::tessellate`) into a new texture. The triangles are drawn with
-    /// multisampling, so the mesh's outer edge is anti-aliased.
+    /// multisampling, so the mesh's outer edge is anti-aliased. The target is
+    /// the size of the canvas: a multisampled target resolves into a texture
+    /// of its own size.
     pub fn mesh_gradient(&mut self, vertices: &[mesh::Vertex]) -> Tex {
-        let mut target = self.acquire();
+        let mut target = self.target_full(PixelRect::EMPTY);
         if self.mesh_samples.is_none() {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("mesh samples"),
@@ -1067,6 +1217,8 @@ impl Compositor {
             self.mesh_samples = Some(Tex {
                 texture,
                 view,
+                origin: [0, 0],
+                size: [self.width, self.height],
                 bounds: PixelRect::EMPTY,
             });
         }
@@ -1150,6 +1302,7 @@ impl Compositor {
                 contents: &params,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
+        let place = self.place_buffer(&target, src.input(), src.input());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lut"),
             layout: &self.lut_layout,
@@ -1166,6 +1319,10 @@ impl Compositor {
                     binding: 2,
                     resource: uniform.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: place.as_entire_binding(),
+                },
             ],
         });
         self.draw(&self.lut, &bind_group, &target);
@@ -1179,12 +1336,16 @@ impl Compositor {
     ///
     /// The shader may paint anywhere (`padding` only sizes the margin), even
     /// where `src` is transparent, so it runs over the whole texture and
-    /// its result is bounded by nothing.
+    /// its result is bounded by nothing. It reads the layer through a
+    /// bilinear filter, so, like the other filtered passes, from a texture the
+    /// size of the canvas.
     fn custom_shader(&mut self, src: Tex, shader: &ResolvedShader) -> Tex {
         if !self.shaders.contains_key(&shader.source) {
             return src;
         }
-        let target = self.target(self.whole());
+        let scratch = self.full_copy(&src);
+        let input = scratch.as_ref().unwrap_or(&src);
+        let target = self.target_full(self.whole());
         let pipeline = &self.shaders[&shader.source];
         // `Globals` in `shader.rs`: the canvas, frame, time and margin.
         let globals = floats(&[
@@ -1217,7 +1378,7 @@ impl Compositor {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&src.view),
+                    resource: wgpu::BindingResource::TextureView(&input.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -1234,6 +1395,9 @@ impl Compositor {
             ],
         });
         self.draw(pipeline, &bind_group, &target);
+        if let Some(scratch) = scratch {
+            self.release(scratch);
+        }
         self.release(src);
         target
     }
@@ -1280,8 +1444,8 @@ impl Compositor {
             &self.drop_shadow
         };
         // With no spread, inversion or blur the shadow is just `src`'s alpha.
-        let alpha_view = alpha.as_ref().map_or(&src.view, |t| &t.view);
-        self.run_pass(pipeline, &src.view, alpha_view, &params, &target);
+        let alpha_input = alpha.as_ref().map_or_else(|| src.input(), |t| t.input());
+        self.run_pass(pipeline, src.input(), alpha_input, &params, &target);
         if let Some(alpha) = alpha {
             self.release(alpha);
         }
@@ -1312,12 +1476,12 @@ impl Compositor {
         let mut current: Option<Tex> = None;
         if let Some(region) = plan.horizontal {
             let horizontal = self.target(region);
-            self.spread_pass(&src.view, spread, [1.0, 0.0], false, &horizontal);
+            self.spread_pass(src.input(), spread, [1.0, 0.0], false, &horizontal);
             current = Some(horizontal);
         }
         if let Some(region) = plan.vertical {
             let target = self.target(region);
-            let input = current.as_ref().map_or(&src.view, |t| &t.view);
+            let input = current.as_ref().map_or_else(|| src.input(), |t| t.input());
             self.spread_pass(input, spread, [0.0, 1.0], invert, &target);
             if let Some(done) = current.replace(target) {
                 self.release(done);
@@ -1325,12 +1489,12 @@ impl Compositor {
         }
         if let Some((input, output)) = plan.blur {
             let target = self.target(output);
-            let input_view = current.as_ref().map_or(&src.view, |t| &t.view);
+            let from = current.as_ref().map_or_else(|| src.input(), |t| t.input());
             self.blur.run_shadow(
                 &self.device,
                 &self.queue,
-                input_view,
-                &target.view,
+                from,
+                target.input(),
                 size,
                 blur,
                 input,
@@ -1344,14 +1508,7 @@ impl Compositor {
     }
 
     /// One axis of the spread filter (see `shaders/shadow.wgsl`).
-    fn spread_pass(
-        &self,
-        input: &wgpu::TextureView,
-        spread: f32,
-        axis: [f32; 2],
-        invert: bool,
-        target: &Tex,
-    ) {
+    fn spread_pass(&self, input: Input, spread: f32, axis: [f32; 2], invert: bool, target: &Tex) {
         let params = floats(&[
             spread,
             axis[0],
@@ -1390,9 +1547,15 @@ impl Compositor {
         let target = Tex {
             view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
             texture,
+            origin: [0, 0],
+            size: [self.width, self.height],
             bounds: self.whole(),
         };
-        self.pass(&self.encode, &image.view, &image.view, 0.0, 0, &target);
+        assert!(
+            image.origin == [0, 0] && image.size == [self.width, self.height],
+            "the image to read back is the size of the canvas"
+        );
+        self.pass(&self.encode, image.input(), image.input(), 0.0, 0, &target);
 
         let row_bytes = canvas_width * 4;
         let padded_row = row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
@@ -1452,13 +1615,23 @@ impl Compositor {
         Ok(pixels)
     }
 
+    /// The `Place` uniform of a pass (`shaders/place.wgsl`).
+    fn place_buffer(&self, target: &Tex, a: Input, b: Input) -> wgpu::Buffer {
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("place"),
+                contents: &place_bytes(target.origin, (a.origin, a.size), (b.origin, b.size)),
+                usage: wgpu::BufferUsages::UNIFORM,
+            })
+    }
+
     /// One full-screen pass over `target` with `a` and `b` as inputs. Only
     /// the target's bounds are drawn (see `draw_with`).
     fn pass(
         &self,
         pipeline: &wgpu::RenderPipeline,
-        a: &wgpu::TextureView,
-        b: &wgpu::TextureView,
+        a: Input,
+        b: Input,
         opacity: f32,
         mode: u32,
         target: &Tex,
@@ -1473,8 +1646,8 @@ impl Compositor {
     fn run_pass(
         &self,
         pipeline: &wgpu::RenderPipeline,
-        a: &wgpu::TextureView,
-        b: &wgpu::TextureView,
+        a: Input,
+        b: Input,
         params: &[u8],
         target: &Tex,
     ) {
@@ -1486,8 +1659,8 @@ impl Compositor {
     fn run_pass_with(
         &self,
         pipeline: &wgpu::RenderPipeline,
-        a: &wgpu::TextureView,
-        b: &wgpu::TextureView,
+        a: Input,
+        b: Input,
         params: &[u8],
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
@@ -1499,21 +1672,26 @@ impl Compositor {
                 contents: params,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
+        let place = self.place_buffer(target, a, b);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("composite"),
             layout: &self.layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(a),
+                    resource: wgpu::BindingResource::TextureView(a.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(b),
+                    resource: wgpu::BindingResource::TextureView(b.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: place.as_entire_binding(),
                 },
             ],
         });
@@ -1521,7 +1699,8 @@ impl Compositor {
     }
 
     /// Like `run_pass`, for a pipeline on `filtered_layout`: `input` is read
-    /// through a bilinear sampler.
+    /// through a bilinear sampler, so it and the target are the size of the
+    /// canvas (see `full_copy`) and no placement is needed.
     fn run_filtered_pass(
         &self,
         pipeline: &wgpu::RenderPipeline,
@@ -1542,6 +1721,10 @@ impl Compositor {
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
     ) {
+        assert!(
+            target.origin == [0, 0] && target.size == [self.width, self.height],
+            "a filtered pass draws on a texture the size of the canvas"
+        );
         let uniform = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1583,7 +1766,8 @@ impl Compositor {
     /// inside it (`x0 <= x < x1`), so the first and last row and column of
     /// the box are drawn and the pixel just past them is not. What is not
     /// drawn is transparent, which is what the full pass writes outside the
-    /// bounds.
+    /// bounds. The box is in canvas pixels, and the scissor rectangle in
+    /// texels of the target.
     fn draw_with(
         &self,
         pipeline: &wgpu::RenderPipeline,
@@ -1591,20 +1775,23 @@ impl Compositor {
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
     ) {
-        let region = target.bounds.intersect(self.whole());
+        let region = target
+            .bounds
+            .translate(-target.origin[0], -target.origin[1])
+            .intersect(PixelRect::new(
+                0,
+                0,
+                target.size[0] as i32,
+                target.size[1] as i32,
+            ));
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("composite"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target.view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[Some(clear_attachment(
+                    &target.view,
+                    wgpu::Color::TRANSPARENT,
+                ))],
                 ..Default::default()
             });
             if !region.is_empty() {
@@ -1624,6 +1811,65 @@ impl Compositor {
         }
         self.queue.submit([encoder.finish()]);
     }
+}
+
+/// What the `Place` of `shaders/place.wgsl` holds: the canvas pixel of the
+/// target's texel (0, 0), then the pixel and size of each of the two inputs
+/// (`(origin, size)`), as little-endian `i32`s.
+fn place_bytes(
+    target_origin: [i32; 2],
+    a: ([i32; 2], [u32; 2]),
+    b: ([i32; 2], [u32; 2]),
+) -> Vec<u8> {
+    let vec4 = |(origin, size): ([i32; 2], [u32; 2])| {
+        [origin[0], origin[1], size[0] as i32, size[1] as i32]
+    };
+    [[target_origin[0], target_origin[1], 0, 0], vec4(a), vec4(b)]
+        .iter()
+        .flatten()
+        .flat_map(|v| v.to_le_bytes())
+        .collect()
+}
+
+/// A colour attachment that is cleared to `color` and kept.
+fn clear_attachment(
+    view: &wgpu::TextureView,
+    color: wgpu::Color,
+) -> wgpu::RenderPassColorAttachment<'_> {
+    wgpu::RenderPassColorAttachment {
+        view,
+        depth_slice: None,
+        resolve_target: None,
+        ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(color),
+            store: wgpu::StoreOp::Store,
+        },
+    }
+}
+
+/// Copies the canvas pixels `region` of `from` over the same pixels of `to`,
+/// both of which must hold them. Exact.
+fn copy_box(encoder: &mut wgpu::CommandEncoder, from: &Tex, to: &Tex, region: PixelRect) {
+    if region.is_empty() {
+        return;
+    }
+    let at = |tex: &Tex| wgpu::Origin3d {
+        x: (region.x0 - tex.origin[0]) as u32,
+        y: (region.y0 - tex.origin[1]) as u32,
+        z: 0,
+    };
+    let (mut source, mut destination) = (from.texture.as_image_copy(), to.texture.as_image_copy());
+    source.origin = at(from);
+    destination.origin = at(to);
+    encoder.copy_texture_to_texture(
+        source,
+        destination,
+        wgpu::Extent3d {
+            width: region.width(),
+            height: region.height(),
+            depth_or_array_layers: 1,
+        },
+    );
 }
 
 /// A pipeline that draws one full-screen triangle (`vs`) and runs the
@@ -1788,8 +2034,19 @@ fn filtered_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 }
 
 /// The bind group of the `lut` pass: the layer, the table as a 3D texture
-/// (read with `textureLoad`, so not filterable) and one uniform block.
+/// (read with `textureLoad`, so not filterable), one uniform block and the
+/// placement.
 fn lut_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let uniform = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
     let texture = |binding, view_dimension| wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -1805,16 +2062,8 @@ fn lut_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         entries: &[
             texture(0, wgpu::TextureViewDimension::D2),
             texture(1, wgpu::TextureViewDimension::D3),
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
+            uniform(2),
+            uniform(3),
         ],
     })
 }
@@ -1867,10 +2116,12 @@ fn upload_lut(device: &wgpu::Device, queue: &wgpu::Queue, lut: &Lut) -> LutTextu
     }
 }
 
-/// A shader module for a built-in pass. Passes that call `hash` or
-/// `cell_hash` get `shaders/hash.wgsl` put in front of their source, and
-/// those that call `turbulence_value` get `shaders/turbulence.wgsl`.
-fn shader_module(device: &wgpu::Device, label: &str, source: &str) -> wgpu::ShaderModule {
+/// The source of a built-in pass as the compositor compiles it. Passes that
+/// call `hash` or `cell_hash` get `shaders/hash.wgsl` put in front of their
+/// source, those that call `turbulence_value` get `shaders/turbulence.wgsl`,
+/// and those that place their textures on the canvas (`canvas_xy`,
+/// `canvas_pos` or `load_a`) get `shaders/place.wgsl`.
+pub(crate) fn shader_source(source: &str) -> String {
     let mut full = String::new();
     if source.contains("hash(") {
         full.push_str(include_str!("shaders/hash.wgsl"));
@@ -1878,11 +2129,20 @@ fn shader_module(device: &wgpu::Device, label: &str, source: &str) -> wgpu::Shad
     if source.contains("turbulence_value(") {
         full.push_str(include_str!("shaders/turbulence.wgsl"));
     }
+    if ["canvas_xy(", "canvas_pos(", "load_a("]
+        .iter()
+        .any(|name| source.contains(name))
+    {
+        full.push_str(include_str!("shaders/place.wgsl"));
+    }
     full.push_str(source);
-    let source = full;
+    full
+}
+
+fn shader_module(device: &wgpu::Device, label: &str, source: &str) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
+        source: wgpu::ShaderSource::Wgsl(shader_source(source).into()),
     })
 }
 
@@ -1949,6 +2209,8 @@ pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex
     Tex {
         texture,
         view,
+        origin: [0, 0],
+        size: [width, height],
         bounds: PixelRect::EMPTY,
     }
 }
@@ -3212,5 +3474,84 @@ mod tests {
         // The box is cut to the texture.
         let off = shadow_plan(size, src, 0.0, 0.0, true, PixelRect::new(-50, -50, 400, 20));
         assert_eq!(off.vertical, Some(PixelRect::new(0, 0, 100, 20)));
+    }
+
+    #[test]
+    fn place_is_the_target_origin_then_each_inputs_origin_and_size() {
+        let bytes = place_bytes([3, -4], ([10, 20], [30, 40]), ([0, 0], [7, 8]));
+        assert_eq!(bytes.len(), 48);
+        let word = |i: usize| i32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        let words: Vec<i32> = (0..12).map(word).collect();
+        assert_eq!(words, [3, -4, 0, 0, 10, 20, 30, 40, 0, 0, 7, 8]);
+        // The struct in the shader: three vec4<i32>s in that order.
+        let wgsl = include_str!("shaders/place.wgsl");
+        let fields: Vec<_> = wgsl
+            .lines()
+            .filter(|l| {
+                l.trim_start().starts_with("target_origin:")
+                    || l.trim_start().starts_with("a:")
+                    || l.trim_start().starts_with("b:")
+            })
+            .map(str::trim)
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                "target_origin: vec4<i32>,",
+                "a: vec4<i32>,",
+                "b: vec4<i32>,"
+            ]
+        );
+    }
+
+    #[test]
+    fn shaders_that_place_their_textures_get_the_helper_and_the_others_do_not() {
+        let place = include_str!("shaders/place.wgsl");
+        let hash = include_str!("shaders/hash.wgsl");
+        assert_eq!(shader_source("fn f() {}"), "fn f() {}");
+        assert!(shader_source("fn f() { load_a(xy); }").starts_with(place));
+        assert!(shader_source("fn f() { canvas_pos(p); }").starts_with(place));
+        // After the other helpers, before the shader itself.
+        let both = shader_source("fn f() { hash(1u); canvas_xy(p); }");
+        assert!(both.starts_with(hash) && both.contains(place) && both.ends_with("}"));
+        assert!(both.find(place).unwrap() < both.find("fn f()").unwrap());
+
+        // The shaders on the shared layouts, which have the placement at
+        // binding 3...
+        let on_layout = [
+            include_str!("shaders/composite.wgsl"),
+            include_str!("shaders/shadow.wgsl"),
+            include_str!("shaders/color.wgsl"),
+            include_str!("shaders/glow.wgsl"),
+            include_str!("shaders/aberration.wgsl"),
+            include_str!("shaders/gradient_map.wgsl"),
+            include_str!("shaders/grain.wgsl"),
+            include_str!("shaders/dither.wgsl"),
+            include_str!("shaders/dot_matrix.wgsl"),
+            include_str!("shaders/noise.wgsl"),
+            include_str!("shaders/lut.wgsl"),
+        ];
+        for source in on_layout {
+            assert!(
+                shader_source(source).contains("@group(0) @binding(3) var<uniform> place: Place;"),
+                "{}",
+                source.lines().next().unwrap()
+            );
+        }
+        // ...and those on layouts that do not.
+        let off_layout = [
+            include_str!("shaders/halftone.wgsl"),
+            include_str!("shaders/warp.wgsl"),
+            include_str!("shaders/displace.wgsl"),
+            include_str!("shaders/mesh.wgsl"),
+            include_str!("shaders/blur.wgsl"),
+        ];
+        for source in off_layout {
+            assert!(
+                !shader_source(source).contains("place: Place"),
+                "{}",
+                source.lines().next().unwrap()
+            );
+        }
     }
 }

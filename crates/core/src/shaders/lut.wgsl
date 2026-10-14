@@ -5,7 +5,10 @@
 //           `textureLoad`s (no sampler, so no filterable-format question and
 //           the result is the same on every GPU), then cross-fades from the
 //           original to that by `amount` in sRGB straight space. Alpha is
-//           unchanged and fully transparent pixels stay empty.
+//           unchanged and fully transparent pixels stay empty. place.wgsl is
+//           put in front of this file by the compositor (the layer is
+//           `tex_a`, at binding 0; the table and the parameters sit at 1 and
+//           2 as before, and the placement at 3).
 //
 // The table is an Rgba32Float 3D texture with the file's order: x is the red
 // index, y green, z blue. Inputs are mapped from [domain_min, domain_max] to
@@ -66,7 +69,7 @@ fn lookup(rgb: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_lut(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let c = textureLoad(tex_a, vec2<i32>(p.xy), 0);
+    let c = load_a(canvas_xy(p));
     if c.a <= 0.0 {
         return vec4<f32>(0.0);
     }

@@ -15,6 +15,8 @@
 //               rgba  the four channels are red, green, blue and alpha, not
 //                     premultiplied; the pass premultiplies them
 //               gray  the red channel as grey, fully opaque
+//
+//             place.wgsl is put in front of this file by the compositor.
 
 struct Params {
     // The inverse of the layer matrix (texel -> layer): its linear part
@@ -43,15 +45,16 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
 
 @fragment
 fn fs_noise(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let coverage = textureLoad(tex_a, vec2<i32>(p.xy), 0).a;
+    let coverage = load_a(canvas_xy(p)).a;
     if coverage <= 0.0 {
         return vec4<f32>(0.0);
     }
     let inv = params.inverse;
+    let pos = canvas_pos(p);
     // The pixel's centre in layer space.
     let layer = vec2<f32>(
-        inv.x * p.x + inv.z * p.y + params.offset.x,
-        inv.y * p.x + inv.w * p.y + params.offset.y,
+        inv.x * pos.x + inv.z * pos.y + params.offset.x,
+        inv.y * pos.x + inv.w * pos.y + params.offset.y,
     );
     let frequency = params.frequency.xy;
     let octaves = params.options.x;

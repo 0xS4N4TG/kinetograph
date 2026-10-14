@@ -1,6 +1,8 @@
 // Blur passes. Textures are Rgba16Float, linear, premultiplied.
 //
-//   fs_pad:   copy the layer into the middle of a larger transparent texture
+//   fs_pad:   copy the layer into the middle of a larger transparent texture.
+//             The layer's texture holds only part of the canvas (its origin and
+//             size come in `c`), and what is outside it is transparent
 //   fs_down:  2x downsample with the [1 3 3 1] / 8 filter per axis (4 bilinear
 //             taps). This tent filter keeps the centre of mass of whatever it
 //             shrinks, so a moving layer moves its blur by the same amount.
@@ -18,6 +20,8 @@ struct Params {
     a: vec4<f32>,
     // xy: size of the (virtual) output in pixels, zw: gauss axis
     b: vec4<f32>,
+    // pad: xy: the canvas pixel of the source's texel (0, 0), zw: its size
+    c: vec4<i32>,
 }
 
 @group(0) @binding(0) var tex: texture_2d<f32>;
@@ -37,9 +41,10 @@ fn tap(uv: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_pad(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let q = vec2<i32>(p.xy) - vec2<i32>(params.a.yz);
-    let size = vec2<i32>(textureDimensions(tex));
-    if any(q < vec2<i32>(0)) || any(q >= size) {
+    // The canvas pixel that this texel of the padded image stands for, and
+    // the texel of the source that is.
+    let q = vec2<i32>(p.xy) - vec2<i32>(params.a.yz) - params.c.xy;
+    if any(q < vec2<i32>(0)) || any(q >= params.c.zw) {
         return vec4<f32>(0.0);
     }
     return textureLoad(tex, q, 0);

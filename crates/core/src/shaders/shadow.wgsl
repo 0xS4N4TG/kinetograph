@@ -1,6 +1,8 @@
 // Shadow passes. Textures are Rgba16Float, linear, premultiplied, and are
 // read with exact texel loads; nothing outside a texture is part of the
-// layer, so out-of-range reads give 0.
+// layer, so out-of-range reads give 0. A texture holds only part of the
+// canvas (see place.wgsl, put in front of this file), and the pixels are the
+// canvas's: the spread and the offset are in canvas pixels.
 //
 //   fs_spread: one axis of a square grow (spread > 0) or shrink (spread < 0)
 //              of the alpha channel, with a fractional radius blended in so
@@ -35,18 +37,21 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
     return vec4<f32>(x, y, 0.0, 1.0);
 }
 
-fn alpha_a(xy: vec2<i32>) -> f32 {
-    if any(xy < vec2<i32>(0)) || any(xy >= vec2<i32>(textureDimensions(tex_a))) {
-        return 0.0;
+// The pixel `xy` of the canvas in tex_b: transparent outside the texture.
+fn load_b(xy: vec2<i32>) -> vec4<f32> {
+    let q = xy - place.b.xy;
+    if any(q < vec2<i32>(0)) || any(q >= place.b.zw) {
+        return vec4<f32>(0.0);
     }
-    return textureLoad(tex_a, xy, 0).a;
+    return textureLoad(tex_b, q, 0);
+}
+
+fn alpha_a(xy: vec2<i32>) -> f32 {
+    return load_a(xy).a;
 }
 
 fn alpha_b(xy: vec2<i32>) -> f32 {
-    if any(xy < vec2<i32>(0)) || any(xy >= vec2<i32>(textureDimensions(tex_b))) {
-        return 0.0;
-    }
-    return textureLoad(tex_b, xy, 0).a;
+    return load_b(xy).a;
 }
 
 fn extreme(a: f32, b: f32, grow: bool) -> f32 {
@@ -55,7 +60,7 @@ fn extreme(a: f32, b: f32, grow: bool) -> f32 {
 
 @fragment
 fn fs_spread(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = vec2<i32>(p.xy);
+    let xy = canvas_xy(p);
     let axis = vec2<i32>(params.spread.yz);
     let grow = params.spread.x > 0.0;
     let radius = abs(params.spread.x);
@@ -90,14 +95,14 @@ fn shadow_alpha(p: vec2<f32>) -> f32 {
 
 @fragment
 fn fs_drop(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let layer = textureLoad(tex_a, vec2<i32>(p.xy), 0);
-    let shadow = params.color * shadow_alpha(p.xy);
+    let layer = load_a(canvas_xy(p));
+    let shadow = params.color * shadow_alpha(canvas_pos(p));
     return layer + shadow * (1.0 - layer.a);
 }
 
 @fragment
 fn fs_inset(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let layer = textureLoad(tex_a, vec2<i32>(p.xy), 0);
-    let shadow = params.color * (shadow_alpha(p.xy) * layer.a);
+    let layer = load_a(canvas_xy(p));
+    let shadow = params.color * (shadow_alpha(canvas_pos(p)) * layer.a);
     return shadow + layer * (1.0 - shadow.a);
 }

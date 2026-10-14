@@ -14,6 +14,8 @@
 // `size` 1 every pixel is a lattice point. A larger size spaces the lattice
 // `size` pixels apart and smooths between points with a smoothstep (value
 // noise), so grain gets softer and fainter as it grows, but is not blocky.
+// place.wgsl is put in front of this file by the compositor: the canvas pixel
+// is the same whatever size the layer's texture has.
 
 struct Params {
     // x: amount, y: size, z: 1 for monochrome grain, else 0
@@ -82,8 +84,8 @@ fn grain_at(pixel: vec2<i32>) -> vec3<f32> {
 
 @fragment
 fn fs_grain(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = vec2<i32>(p.xy);
-    let c = textureLoad(tex_a, xy, 0);
+    let xy = canvas_xy(p);
+    let c = load_a(xy);
     if c.a <= 0.0 {
         return vec4<f32>(0.0);
     }

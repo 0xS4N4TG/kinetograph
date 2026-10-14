@@ -457,7 +457,7 @@ impl Renderer {
             }
             // Nothing lands on the texture: nothing to draw.
             _ if raster.is_some_and(|r| r.is_empty()) => {
-                self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]))
+                self.timed(Stage::Composite, |s| s.compositor.empty())
             }
             _ => {
                 let region = raster.unwrap_or_else(|| self.whole());
@@ -483,7 +483,7 @@ impl Renderer {
             (ResolvedKind::Shape { .. }, Some(_)) if has_backdrop_blur(&layer.effects) => {
                 let region = raster.unwrap_or_else(|| self.whole());
                 if region.is_empty() {
-                    Some(self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4])))
+                    Some(self.timed(Stage::Composite, |s| s.compositor.empty()))
                 } else {
                     self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent))?;
                     Some(self.timed(Stage::Composite, |s| {
@@ -517,7 +517,7 @@ impl Renderer {
             if keep.is_empty() {
                 // Nothing is kept.
                 self.compositor.release(src);
-                src = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
+                src = self.timed(Stage::Composite, |s| s.compositor.empty());
             } else if !src.bounds.is_empty() {
                 self.timed(Stage::Raster, |s| s.rasterise_clip(&path, matrix))?;
                 src = self.timed(Stage::Composite, |s| {

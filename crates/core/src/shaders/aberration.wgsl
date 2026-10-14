@@ -6,7 +6,8 @@
 //                  bilinear and on premultiplied values, so a channel taken
 //                  from a faint edge stays faint. The alpha is the largest of
 //                  the three samples' alphas, which keeps every channel at
-//                  or below it.
+//                  or below it. place.wgsl is put in front of this file by
+//                  the compositor.
 
 struct Params {
     // xy: offset in pixels of the red sample
@@ -27,10 +28,7 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
 
 // Nothing outside the texture is part of the layer.
 fn texel(xy: vec2<i32>) -> vec4<f32> {
-    if any(xy < vec2<i32>(0)) || any(xy >= vec2<i32>(textureDimensions(tex_a))) {
-        return vec4<f32>(0.0);
-    }
-    return textureLoad(tex_a, xy, 0);
+    return load_a(xy);
 }
 
 // Bilinear read at p, a position in pixels where texel centres are at
@@ -46,8 +44,8 @@ fn sample_at(p: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_aberration(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let red = sample_at(p.xy + params.offset.xy);
-    let green = textureLoad(tex_a, vec2<i32>(p.xy), 0);
-    let blue = sample_at(p.xy - params.offset.xy);
+    let red = sample_at(canvas_pos(p) + params.offset.xy);
+    let green = load_a(canvas_xy(p));
+    let blue = sample_at(canvas_pos(p) - params.offset.xy);
     return vec4<f32>(red.r, green.g, blue.b, max(red.a, max(green.a, blue.a)));
 }

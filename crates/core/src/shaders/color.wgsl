@@ -4,6 +4,7 @@
 //             browser applies CSS filters: to straight alpha, sRGB-encoded
 //             values, clamped to 0..1 afterwards. The result goes back to
 //             linear premultiplied. Fully transparent pixels stay empty.
+//             place.wgsl is put in front of this file by the compositor.
 
 struct Params {
     // m[0..4]: the four coefficients of the output r, g, b, a rows.
@@ -37,7 +38,7 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_color(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let c = textureLoad(tex_a, vec2<i32>(p.xy), 0);
+    let c = load_a(canvas_xy(p));
     if c.a <= 0.0 {
         return vec4<f32>(0.0);
     }
