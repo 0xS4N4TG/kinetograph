@@ -6,7 +6,7 @@ use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
     BlendMode, Clip, Effect, Extend, Geometry, Gradient, GradientGeometry, Layer, LayerKind,
-    MAX_SHADOW_SIZE, MaskMode, MatteMode, Paint, Scene, Shadow, Transform,
+    MAX_SHADOW_SIZE, MaskMode, MatteMode, Paint, Scene, Shadow, Stop, Transform,
 };
 
 /// The time a scene is evaluated at.
@@ -93,7 +93,18 @@ pub enum ResolvedEffect {
     /// `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`) composed
     /// into a single matrix.
     ColorMatrix(ColorMatrix),
+    GradientMap(ResolvedGradientMap),
     Shader(ResolvedShader),
+}
+
+/// A gradient map at one frame.
+#[derive(Clone, Debug)]
+pub struct ResolvedGradientMap {
+    /// `MIN_GRADIENT_MAP_STOPS..=MAX_GRADIENT_MAP_STOPS` stops, offsets in
+    /// 0..=1 and never decreasing.
+    pub stops: Vec<(f64, Color)>,
+    /// 0..=1: how much of the graded image replaces the original.
+    pub amount: f32,
 }
 
 /// A custom shader at one frame.
@@ -377,22 +388,23 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
             angle: angle.at(f),
         },
     };
-    // Stops that go backwards are held at the largest offset so far, as in
-    // CSS.
+    ResolvedGradient {
+        geometry,
+        stops: resolve_stops(&g.stops, f),
+        extend: g.extend,
+    }
+}
+
+/// Stops that go backwards are held at the largest offset so far, as in CSS.
+fn resolve_stops(stops: &[Stop], f: f64) -> Vec<(f64, Color)> {
     let mut highest = 0.0_f64;
-    let stops = g
-        .stops
+    stops
         .iter()
         .map(|s| {
             highest = highest.max(s.offset.at(f).clamp(0.0, 1.0));
             (highest, s.color)
         })
-        .collect();
-    ResolvedGradient {
-        geometry,
-        stops,
-        extend: g.extend,
-    }
+        .collect()
 }
 
 fn resolve_clip(clip: &Clip, f: f64) -> ResolvedClip {
@@ -491,6 +503,10 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
         Effect::HueRotate { angle } => {
             ResolvedEffect::ColorMatrix(ColorMatrix::hue_rotate(angle.at(f)))
         }
+        Effect::GradientMap { stops, amount } => ResolvedEffect::GradientMap(ResolvedGradientMap {
+            stops: resolve_stops(stops, f),
+            amount: amount.at(f).clamp(0.0, 1.0) as f32,
+        }),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
@@ -765,6 +781,37 @@ mod tests {
         };
         assert_eq!(resolve_layer(&scene.layers[0], whole).transform.x, 40.0);
         assert_eq!(scene.resolve(4).unwrap().layers[0].transform.x, 40.0);
+    }
+
+    #[test]
+    fn gradient_map_resolves_stops_and_clamps_the_amount() {
+        let effects = effects_at(
+            r##"[{"type": "gradientMap",
+                  "amount": [{"frame": 0, "value": -1}, {"frame": 10, "value": 3}],
+                  "stops": [{"offset": 0.5, "color": "#000"},
+                            {"offset": [{"frame": 0, "value": 1}, {"frame": 10, "value": 0}], "color": "#f00"},
+                            {"offset": 1, "color": "#ffffff80"}]}]"##,
+            5,
+        );
+        let [ResolvedEffect::GradientMap(map)] = &effects[..] else {
+            panic!("not a gradient map");
+        };
+        // The second offset is 0.5 at frame 5; the first holds 0.5 and the
+        // last is 1.
+        let offsets: Vec<f64> = map.stops.iter().map(|s| s.0).collect();
+        assert_eq!(offsets, [0.5, 0.5, 1.0]);
+        assert_eq!(map.stops[2].1, Color::parse("#ffffff80").unwrap());
+        // The amount at frame 5 of -1..3 is 1.0 after clamping.
+        assert_eq!(map.amount, 1.0);
+        let effects = effects_at(
+            r##"[{"type": "gradientMap", "amount": [{"frame": 0, "value": -1}, {"frame": 10, "value": 3}],
+                  "stops": [{"offset": 0, "color": "#000"}, {"offset": 1, "color": "#fff"}]}]"##,
+            1,
+        );
+        let [ResolvedEffect::GradientMap(map)] = &effects[..] else {
+            panic!("not a gradient map");
+        };
+        assert_eq!(map.amount, 0.0);
     }
 
     #[test]

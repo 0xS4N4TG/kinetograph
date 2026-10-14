@@ -24,7 +24,8 @@
 //!
 //! `shaders/shadow.wgsl` holds the shadow effects' passes,
 //! `shaders/color.wgsl` the colour filter pass, `shaders/glow.wgsl` the glow
-//! pass and `shaders/aberration.wgsl` the chromatic aberration pass; they
+//! pass, `shaders/aberration.wgsl` the chromatic aberration pass and
+//! `shaders/gradient_map.wgsl` the gradient map pass; they
 //! share the bind group layout, so their passes go through the same
 //! `run_pass`.
 //!
@@ -41,8 +42,10 @@ use vello::wgpu::{self, util::DeviceExt};
 use crate::blur::{self, Blur};
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
-use crate::resolve::{ResolvedEffect, ResolvedGlow, ResolvedShader, ResolvedShadow};
-use crate::scene::{BlendMode, MaskMode, MatteMode};
+use crate::resolve::{
+    ResolvedEffect, ResolvedGlow, ResolvedGradientMap, ResolvedShader, ResolvedShadow,
+};
+use crate::scene::{BlendMode, MAX_GRADIENT_MAP_STOPS, MaskMode, MatteMode};
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -74,6 +77,7 @@ pub struct Compositor {
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
+    gradient_map: wgpu::RenderPipeline,
     /// For custom shaders: the layer, a sampler, the frame clock and the
     /// scene's named uniforms.
     shader_layout: wgpu::BindGroupLayout,
@@ -112,6 +116,11 @@ impl Compositor {
             device,
             "aberration",
             include_str!("shaders/aberration.wgsl"),
+        );
+        let gradient_map_shader = shader_module(
+            device,
+            "gradient map",
+            include_str!("shaders/gradient_map.wgsl"),
         );
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -215,6 +224,7 @@ impl Compositor {
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
+            gradient_map: pipeline(&gradient_map_shader, "fs_gradient_map", LINEAR_FORMAT),
             shader_layout,
             shader_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("shader effect"),
@@ -405,6 +415,10 @@ impl Compositor {
                 ResolvedEffect::InsetShadow(shadow) => src = self.shadow(src, &shadow, true),
                 ResolvedEffect::ColorMatrix(matrix) if matrix == ColorMatrix::IDENTITY => {}
                 ResolvedEffect::ColorMatrix(matrix) => src = self.color_matrix(src, &matrix),
+                ResolvedEffect::GradientMap(ref map) if map.amount > 0.0 => {
+                    src = self.gradient_map(src, map);
+                }
+                ResolvedEffect::GradientMap(_) => {}
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -495,6 +509,21 @@ impl Compositor {
             &src.view,
             &src.view,
             &floats(&matrix_values(matrix)),
+            &target.view,
+        );
+        self.release(src);
+        target
+    }
+
+    /// Recolours `src` by luminance in one pass. `src` goes back to the pool;
+    /// the result is a new texture.
+    fn gradient_map(&mut self, src: Tex, map: &ResolvedGradientMap) -> Tex {
+        let target = self.acquire();
+        self.run_pass(
+            &self.gradient_map,
+            &src.view,
+            &src.view,
+            &floats(&gradient_map_values(map)),
             &target.view,
         );
         self.release(src);
@@ -1016,6 +1045,21 @@ fn matrix_values(matrix: &ColorMatrix) -> [f32; 20] {
     values
 }
 
+/// A gradient map as `shaders/gradient_map.wgsl` reads it: the stop count
+/// and amount, the 16 offsets, then the 16 straight sRGB colours. Unused
+/// slots repeat the last stop.
+fn gradient_map_values(map: &ResolvedGradientMap) -> Vec<f32> {
+    let last = map.stops.len() - 1;
+    let stop = |i: usize| map.stops[i.min(last)];
+    let mut values = vec![map.stops.len() as f32, map.amount, 0.0, 0.0];
+    values.extend((0..MAX_GRADIENT_MAP_STOPS).map(|i| stop(i).0 as f32));
+    for i in 0..MAX_GRADIENT_MAP_STOPS {
+        let color = stop(i).1;
+        values.extend([color.r, color.g, color.b, color.a].map(|v| f32::from(v) / 255.0));
+    }
+    values
+}
+
 /// A glow as `shaders/glow.wgsl` reads it: intensity and whether to tint,
 /// then the linear premultiplied tint.
 fn glow_values(glow: &ResolvedGlow) -> [f32; 8] {
@@ -1096,6 +1140,28 @@ mod tests {
         let alpha = 128.0 / 255.0;
         assert!((values[4] - alpha).abs() < 1e-6 && values[5] == 0.0);
         assert!((values[7] - alpha).abs() < 1e-6);
+    }
+
+    #[test]
+    fn gradient_map_values_pad_with_the_last_stop() {
+        let map = ResolvedGradientMap {
+            stops: vec![
+                (0.0, Color::parse("#000000").unwrap()),
+                (0.25, Color::parse("#ff000080").unwrap()),
+                (0.75, Color::parse("#ffffff").unwrap()),
+            ],
+            amount: 0.5,
+        };
+        let values = gradient_map_values(&map);
+        // header, 16 offsets, 16 colours of 4: 21 vec4s.
+        assert_eq!(values.len(), 4 + 16 + 64);
+        assert_eq!(&values[..4], [3.0, 0.5, 0.0, 0.0]);
+        assert_eq!(&values[4..8], [0.0, 0.25, 0.75, 0.75]);
+        assert!(values[8..20].iter().all(|v| *v == 0.75));
+        // The second colour is red at half alpha.
+        assert_eq!(&values[24..28], [1.0, 0.0, 0.0, 128.0 / 255.0]);
+        // A padded colour is the last stop's.
+        assert_eq!(&values[20 + 15 * 4..], [1.0; 4]);
     }
 
     #[test]

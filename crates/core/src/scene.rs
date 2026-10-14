@@ -192,9 +192,22 @@ pub enum Effect {
         #[serde(default = "zero")]
         angle: Num,
     },
+    /// Maps each pixel's luminance through colour stops (the thermal look).
+    /// `amount` cross-fades from the original (0) to the graded image (1).
+    GradientMap {
+        /// `MIN_GRADIENT_MAP_STOPS..=MAX_GRADIENT_MAP_STOPS`, offsets in 0..=1.
+        stops: Vec<Stop>,
+        #[serde(default = "one")]
+        amount: Num,
+    },
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
+
+/// Fewest and most stops a `gradientMap` takes; the shader's uniform block
+/// holds 16.
+pub const MIN_GRADIENT_MAP_STOPS: usize = 2;
+pub const MAX_GRADIENT_MAP_STOPS: usize = 16;
 
 /// The fields of `shader`.
 #[derive(Clone, Debug, Deserialize)]
@@ -284,6 +297,8 @@ impl Effect {
             | Effect::Sepia { .. }
             | Effect::Invert { .. }
             | Effect::HueRotate { .. } => 0.0,
+            // Recolours pixels in place.
+            Effect::GradientMap { .. } => 0.0,
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -590,9 +605,13 @@ impl Scene {
                 Ok(())
             };
             for effect in &layer.effects {
-                if let Effect::Shader(shader) = effect {
-                    non_negative("shader padding", &shader.padding)?;
-                    crate::shader::validate(&layer.id, &shader.code, &shader.names())?;
+                match effect {
+                    Effect::Shader(shader) => {
+                        non_negative("shader padding", &shader.padding)?;
+                        crate::shader::validate(&layer.id, &shader.code, &shader.names())?;
+                    }
+                    Effect::GradientMap { stops, .. } => validate_gradient_map(&layer.id, stops)?,
+                    _ => {}
                 }
             }
             if let Some(clip) = &layer.clip {
@@ -745,6 +764,23 @@ fn validate_matte(layer: &Layer, matte: &Matte, siblings: &[Layer]) -> Result<()
     };
     if source.matte.is_some() {
         return bad(format!("source {:?} has a matte of its own", source.id));
+    }
+    Ok(())
+}
+
+fn validate_gradient_map(id: &str, stops: &[Stop]) -> Result<()> {
+    let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: gradientMap {msg}")));
+    if !(MIN_GRADIENT_MAP_STOPS..=MAX_GRADIENT_MAP_STOPS).contains(&stops.len()) {
+        return bad(format!(
+            "needs {MIN_GRADIENT_MAP_STOPS} to {MAX_GRADIENT_MAP_STOPS} stops, got {}",
+            stops.len()
+        ));
+    }
+    if stops
+        .iter()
+        .any(|s| s.offset.min() < 0.0 || s.offset.max() > 1.0)
+    {
+        return bad("stop offsets must be between 0 and 1".into());
     }
     Ok(())
 }
@@ -1192,6 +1228,80 @@ mod tests {
         assert_eq!(scene.margin(), 11);
         let msg = error(r#""effects": [{"type": "chromaticAberration"}],"#);
         assert!(msg.contains("amount"), "{msg}");
+    }
+
+    #[test]
+    fn parses_a_gradient_map_with_a_default_amount() {
+        let scene = effects_of(
+            r##"[{"type": "gradientMap", "stops": [{"offset": 0, "color": "#000"},
+                  {"offset": [{"frame": 0, "value": 0.4}, {"frame": 9, "value": 0.8}], "color": "#ff000080"},
+                  {"offset": 1, "color": "#fff"}]},
+                {"type": "gradientMap", "amount": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}],
+                 "stops": [{"offset": 0, "color": "#000"}, {"offset": 1, "color": "#fff"}]}]"##,
+        );
+        let effects = &scene.layers[0].effects;
+        let Effect::GradientMap { stops, amount } = &effects[0] else {
+            panic!("not a gradient map");
+        };
+        assert_eq!(stops.len(), 3);
+        assert_eq!(stops[1].offset.at(9.0), 0.8);
+        assert_eq!(stops[1].color, Color::parse("#ff000080").unwrap());
+        assert_eq!(amount.at(0.0), 1.0);
+        let Effect::GradientMap { amount, .. } = &effects[1] else {
+            panic!("not a gradient map");
+        };
+        assert_eq!(amount.at(4.5), 0.5);
+        // It recolours in place: no margin.
+        assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn rejects_bad_gradient_maps_naming_the_layer() {
+        let stops = |n: u32| {
+            let last = f64::from(n.max(2) - 1);
+            let stops: Vec<String> = (0..n)
+                .map(|i| {
+                    format!(
+                        r##"{{"offset": {}, "color": "#fff"}}"##,
+                        f64::from(i) / last
+                    )
+                })
+                .collect();
+            format!(r#""stops": [{}]"#, stops.join(","))
+        };
+        let gradient_map = |fields: &str| {
+            scene_with(&format!(
+                r#""effects": [{{"type": "gradientMap", {fields}}}],"#
+            ))
+        };
+        // 16 stops is the most.
+        assert!(gradient_map(&stops(16)).is_ok());
+        let cases = [
+            (stops(1), "2 to 16 stops, got 1"),
+            (stops(0), "2 to 16 stops, got 0"),
+            (stops(17), "2 to 16 stops, got 17"),
+            (
+                r##""stops": [{"offset": 0, "color": "#000"}, {"offset": 1.2, "color": "#fff"}]"##
+                    .to_string(),
+                "between 0 and 1",
+            ),
+            (
+                r##""stops": [{"offset": [{"frame": 0, "value": -0.1}, {"frame": 9, "value": 0.5}], "color": "#000"},
+                    {"offset": 1, "color": "#fff"}]"##
+                    .to_string(),
+                "between 0 and 1",
+            ),
+        ];
+        for (fields, want) in cases {
+            let msg = gradient_map(&fields).unwrap_err().to_string();
+            assert!(
+                msg.contains("layer \"box\"") && msg.contains("gradientMap") && msg.contains(want),
+                "{fields}: {msg}"
+            );
+        }
+        // A missing field is the JSON parser's complaint, with no layer.
+        let msg = gradient_map(r#""amount": 1"#).unwrap_err().to_string();
+        assert!(msg.contains("stops"), "{msg}");
     }
 
     const SHADER: &str =

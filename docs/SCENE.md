@@ -159,7 +159,7 @@ side.
   else is derived from the code.
 - Reaches add up along a chain: two shadows in one `effects` list count the sum of their reaches, and a group's
   effects count on top of the largest reach among its children, because each works on what the one before painted.
-- The colour filters count nothing: they change pixels in place.
+- The colour filters and `gradientMap` count nothing: they change pixels in place.
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - Layer coordinates do not change: (0, 0) is still the canvas's top-left corner, and a layer at a negative position is
@@ -308,6 +308,36 @@ here it is a no-op, in a browser it is not. Any other effect between two filters
 
 Colour filters see the layer after the effects before them, so a filter after a `dropShadow` recolours the shadow too.
 A run whose combined matrix is exactly the identity (a lone `saturate` of `1`, say) is skipped.
+
+### gradientMap
+
+```json
+{ "type": "gradientMap", "stops": [
+    { "offset": 0, "color": "#0a0030" }, { "offset": 0.4, "color": "#c2185b" },
+    { "offset": 0.7, "color": "#ff9800" }, { "offset": 1, "color": "#fff8c4" } ] }
+{ "type": "gradientMap", "amount": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 1 }],
+  "stops": [{ "offset": 0, "color": "#000" }, { "offset": 1, "color": "#3cf" }] }
+```
+
+Replaces the layer's colours with colours looked up by brightness, the thermal-camera look. A pixel's luminance picks a
+colour along the stops, dark pixels the early stops and light ones the late ones.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `stops` | required | 2 to 16 `{ "offset", "color" }` objects, the same as a [gradient's](#gradients) stops: `offset` is an animatable number in 0..1 and `color` may have alpha. A stop that goes backwards is held at the largest offset so far. Luminance below the first offset takes the first colour and above the last offset the last colour. |
+| `amount` | `1` | Animatable, clamped to 0..1. Cross-fades from the original layer (`0`) to the graded one (`1`). At `0` the effect does nothing. |
+
+- **Luminance** is Rec. 709 (0.2126, 0.7152, 0.0722) of the layer's straight colour in sRGB encoding, the same weights
+  as `grayscale` and applied to the same values, so a white-to-black ramp as it looks in an image editor maps linearly
+  along the stops. (The `luminance` mask and matte modes weigh the linear-light colour instead; they answer how much
+  light there is, this answers how bright it looks.)
+- **Colours** are interpolated in sRGB with straight alpha, not premultiplied: a stop at alpha 0 between two opaque
+  ones fades the layer out along the way, and its own colour tints the fade. The result goes back to linear
+  premultiplied like every colour filter.
+- **Alpha** of the graded image is the layer's alpha times the stop's alpha, so a see-through stop makes the dark
+  (or light) parts of the layer see-through. The cross-fade runs over colour and alpha together, in sRGB straight
+  space. A fully transparent pixel stays empty.
+- Counts nothing in the [margin](#canvas-margin).
 
 ### backdropBlur
 
@@ -551,7 +581,7 @@ layer.
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
-  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `shader`.
+  `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `shader`.
 - No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour.
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a

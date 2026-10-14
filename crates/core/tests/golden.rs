@@ -189,3 +189,14 @@ fn shader_matches_golden() {
     let frame = render_still(scene("tests/scenes/shader.json"), 15).unwrap();
     check("shader", &frame);
 }
+
+#[test]
+fn gradient_map_matches_golden() {
+    // Frame 15 of 30: the cross-fade on the photo is half way and the moving
+    // stop is at its middle. Covers a four-stop map with a see-through first
+    // stop and a translucent last one, a map on text with a gradient fill, on
+    // a group hanging off the left edge, and on a half-opaque layer hanging
+    // off the right and bottom edges.
+    let frame = render_still(scene("tests/scenes/gradient-map.json"), 15).unwrap();
+    check("gradient-map", &frame);
+}
