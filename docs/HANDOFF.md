@@ -293,10 +293,16 @@ two so each half is reviewable:
   - Numbers on the M4: diorama `render` 294 (2b) → 36.5 ms/frame. The ep 13 S04Meter papercut scene, hand-ported to
     scene JSON (89 frames, 1080x1920): 3.95–4.14 s for the whole `render`, ~40 ms/frame, against 16.1–16.8 s in
     Remotion 4.0.530 (with `--concurrency` 1 or 5): **about 4.1x**. 200 small rects without effects: 167 → 40 ms.
-  - Not yet at Phase 3's 5x on that scene: 16.3 s / 5 = 3.26 s, so ~32 ms/frame after ~0.45 s of GPU setup. Most of the
-    remaining time is CPU spent encoding ~400 GPU passes per frame. Next, all byte-identical: cut out a whole page in
-    one pass, merge consecutive blends of layers that do not overlap, closed-form inset shadows for rect shapes. These
-    need the M4 to measure, so they are not cloud work.
+  - Not yet at Phase 3's 5x on that scene: 16.3 s / 5 = 3.26 s, so ~32 ms/frame after ~0.45 s of GPU setup. Next,
+    all byte-identical: cut out a whole page in one pass, merge consecutive blends of layers that do not overlap,
+    closed-form inset shadows for rect shapes. These need the M4 to measure, so they are not cloud work.
+  - **Corrected 2026-10-15: the GPU is the limit, not the CPU.** Splitting S04 across 2 processes takes as long as 1
+    (2.91 vs 2.92 s), and 3–4 take longer. `bench --passes` on S04 (89 frames): ~278 passes a frame, and a pass costs
+    ~140–300 µs of GPU time whatever its size (a `blend` averages 0.16 Mtexels and 200 µs), so the cost is per pass, not
+    per pixel. By kind: `blend` 82 passes and 16.7 ms, `to linear` 83 and 15.5 ms, the blur steps 5.1 + 2.5 ms,
+    `shadow spread` 27 and 4.0 ms, `inset shadow` 27 and 3.6 ms, `displace` 8.5 and 2.1 ms. Fewer passes is the lever.
+    Re-time Remotion in the same session as Kinetograph: Low Power Mode or battery changes both, by different amounts
+    (S04 in Remotion 16.1–16.8 s with it on, 9.2–9.5 s off; Kinetograph ~4.3 and ~2.9 s).
 **Phase 3: authoring + agents.** The N-API addon (napi-rs) exposing the Rust core; the `@kinetograph/core` TS
 package: Remotion shim, `react-reconciler` host config emitting the scene graph, determinism shim; Web Audio via
 `node-web-audio-api`; the `kinetograph` CLI in TS and the MCP server; the Remotion package table in section 5;
