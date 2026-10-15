@@ -23,6 +23,7 @@ import type {
   MotionBlurMarker,
   Num,
   Paint,
+  SequenceJson,
   Stroke,
   Turbulence,
 } from '@kinetograph/scene';
@@ -189,6 +190,25 @@ export function MeshGradient(props: MeshGradientProps) {
 }
 export function Camera(props: CameraProps) {
   return createElement('kg-camera', props);
+}
+
+// ---- the host element of <Sequence> (docs/AUTHORING.md §11.4) ----
+
+export interface SequenceHostProps {
+  /** What the timeline records; `layer` is filled in by `emit`. */
+  sequence: Omit<SequenceJson, 'layer'>;
+  /** The children are in a `<Layer>` (false for `layout="none"`): its id becomes `layer`. */
+  wrapped: boolean;
+  /** The Sequence's content while it is showing; nothing while it is not. */
+  children?: ReactNode;
+}
+
+/**
+ * `<Sequence>` renders this whether or not it is showing, so the timeline sees every Sequence. It emits no layer
+ * of its own: what is inside it stands where it does (automatic ids are unchanged).
+ */
+export function SequenceHost(props: SequenceHostProps) {
+  return createElement('kg-sequence', props);
 }
 
 // ---- <Lottie> ----

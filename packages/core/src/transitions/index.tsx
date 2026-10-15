@@ -237,9 +237,9 @@ function TransitionSeriesImpl({ children }: { children?: ReactNode }): ReactNode
   });
 
   sceneProps.forEach((scene) => {
-    const { layout } = scene.element.props;
+    const { layout, name } = scene.element.props;
     scenes.push(
-      <Sequence key={`scene-${scene.index}`} from={scene.start} durationInFrames={scene.duration} layout={layout}>
+      <Sequence key={`scene-${scene.index}`} from={scene.start} durationInFrames={scene.duration} name={name} layout={layout}>
         <Scene enter={scene.enter} exit={scene.exit} duration={scene.duration}>
           {scene.element.props.children}
         </Scene>

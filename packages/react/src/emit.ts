@@ -53,6 +53,7 @@ export const ELEMENT_NAMES: Record<string, string> = {
   'kg-lottie': 'Lottie',
   'kg-camera': 'Camera',
   'kg-audio': 'Audio',
+  'kg-sequence': 'Sequence',
 };
 
 type Props = Record<string, any>;
@@ -145,6 +146,7 @@ class Emitter {
   readonly layers: LayerJson[] = [];
   readonly cameras: CameraJson[] = [];
   readonly audio: AudioClipJson[] = [];
+  readonly sequences: SequenceJson[] = [];
   private readonly ids = new Set<string>();
 
   /** The element's id: explicit (checked) or `$` + its index path among the host elements. */
@@ -167,15 +169,34 @@ class Emitter {
 
   children(nodes: HostNode[], parentPath: string, parentName: string): LayerJson[] {
     const out: LayerJson[] = [];
-    nodes.forEach((node, index) => {
+    this.collect(nodes, parentPath, parentName, out, { next: 0 });
+    return out;
+  }
+
+  /**
+   * Emits `nodes` into `out`. A `kg-sequence` is transparent: it is recorded in `sequences` (before what is inside it,
+   * so the list is in tree order) and its children are emitted as if they stood where it does, taking no place in
+   * the index path themselves, so a `<Sequence>` never moves an automatic id (docs/AUTHORING.md §11.4).
+   */
+  private collect(nodes: HostNode[], parentPath: string, parentName: string, out: LayerJson[], place: { next: number }): void {
+    for (const node of nodes) {
       if (node.kind === 'text') {
         // The reconciler refuses these on the way in; this keeps `emit` honest on its own.
         throw new Error(`Raw text "${node.text}" is not allowed inside <${parentName}>; wrap it in <Text>`);
       }
-      const layer = this.element(node, `${parentPath}${parentPath === '' ? '$' : '.'}${index}`);
+      if (node.type === 'kg-sequence') {
+        const { sequence, wrapped } = node.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
+        const record: SequenceJson = { ...sequence, layer: null };
+        this.sequences.push(record);
+        const before = out.length;
+        this.collect(node.children, parentPath, parentName, out, place);
+        // The group its children are in: the `<Layer>` a Sequence renders, unless it has `layout="none"`.
+        if (wrapped && out.length > before) record.layer = out[before]!.id;
+        continue;
+      }
+      const layer = this.element(node, `${parentPath}${parentPath === '' ? '$' : '.'}${place.next++}`);
       if (layer !== null) out.push(layer);
-    });
-    return out;
+    }
   }
 
   /** A layer, or null for `<Camera>` and `<Audio>`, which land in `cameras` and `audio` instead. */
@@ -282,5 +303,5 @@ export function emit(roots: HostNode[]): RenderedTree {
   if (emitter.cameras.length > 1) {
     throw new Error(`Only one <Camera> is allowed per tree, found ${emitter.cameras.length}`);
   }
-  return { layers, camera: emitter.cameras[0] ?? null, audio: emitter.audio, sequences: [] };
+  return { layers, camera: emitter.cameras[0] ?? null, audio: emitter.audio, sequences: emitter.sequences };
 }
