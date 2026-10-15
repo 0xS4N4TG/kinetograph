@@ -426,7 +426,8 @@ branch with a draft PR against `feat/node-authoring` (PR #11). The cloud rules a
   move image goldens; then #13 and #14 together, then #15. Merge the fixes into `feat/node-authoring`, then #11 into
   `main`.
 
-**Phase 4 in a cloud session** (decided 2026-10-15; the GPU-pass performance work waits until after it, on the M4).
+**Phase 4 in a cloud session** (decided 2026-10-15). Phases 4 and 5 run back to back in one cloud session (Phase 5
+below); the GPU-pass performance work waits until after both, on the M4.
 Same shape as Phase 3: one Opus 5.5 orchestrator at high effort and four Sonnet 5.5 subagents at high effort, started
 with the Agent tool (not a Workflow), each in its own git worktree. The cloud rules above hold: code and CPU checks
 only (`cargo build`, `fmt --check`, `clippy --all-targets -D warnings`, `cargo test --lib`, `npm ci`, `npm run build`,
@@ -485,6 +486,59 @@ opens a GPU device. Install Node 22+, a C++ toolchain and the ffmpeg dev librari
   - Run `kinetograph studio` on `examples/rajz-cards` and the S04 port, driven in a browser.
   - Time a footage-heavy scene against Remotion with the same clip, since this is where the speed gain should be
     smallest.
+
+**Phase 5 in the same cloud session** (decided 2026-10-15): Remotion compat mode, so an unported Remotion project
+renders without a hand port. It runs after Phase 4's four streams are merged, the way 2c followed 2b.
+- Branch: `feat/remotion-compat`, cut from the tip of `feat/studio-video`, with a draft PR against
+  `feat/studio-video` so the diff shows only Phase 5. Neither phase merges before the M4 tests it. Phase 4 is
+  tested first, and fixes to it are merged into the Phase 5 branch.
+- Scope comes from the first real corpus, the papercut kit (38 `.tsx` files). It uses inline `style` objects only
+  (no `className`, no stylesheets), about 500 `<div>`s, `AbsoluteFill`, `<span>`, `<svg>` and `<path>`, `Img` and
+  one `OffthreadVideo`. The CSS properties that need work: `filter`, `transform`, `clipPath`, `boxShadow`,
+  `mixBlendMode` and `backgroundImage`, then `maskImage`/`WebkitMaskImage`, `textShadow` and `perspective`.
+  Inline styles and SVG come first; `className` and stylesheets (Tailwind) are out of scope for this pass.
+- Decided: the mapping is done in TS, onto the layers the engine already has, with taffy (§4.1 of AUTHORING) for
+  flexbox and absolute positioning. No Blitz/Stylo for now; revisit it only if the subset falls short on real
+  projects.
+- The orchestrator goes first again. It commits the contract in `docs/COMPAT.md`:
+  - which elements and CSS properties map to which SCENE.md layers and effects;
+  - what counts as unsupported;
+  - the fallback rule.
+
+  Then it starts four Sonnet 5.5 subagents at high effort, one worktree each, with draft PRs against
+  `feat/remotion-compat`.
+  1. `feat/compat-css` (TS, pure functions with unit tests): parse inline style values into layer props.
+     - Colours, lengths (px, %, em), `transform` lists, `boxShadow` lists (drop and inset), `filter` lists (blur,
+       drop-shadow, brightness, contrast, saturate, hue-rotate, grayscale, sepia, invert, opacity).
+     - `mixBlendMode`, `clipPath` (inset, circle, ellipse, polygon, path), and `backgroundImage` (linear,
+       radial and conic gradients, `url()`).
+     - `maskImage`, `opacity`, `borderRadius`, `border`, `overflow`, and the text properties.
+     - Anything it cannot map is reported, not dropped silently.
+  2. `feat/compat-dom` (TS): the reconciler accepts DOM host elements: `div`, `span`, `p`, `h1`–`h6`, `img`,
+     `svg` and its children, and `video` (mapped to Phase 4's video layer).
+     - It lays them out with flex layers and absolute positioning, as Chrome would for these styles, using stream 1
+       for the values.
+     - SVG is turned into path layers (`usvg` in Rust if parsing in TS falls short).
+     - `@remotion` components that render DOM (`AbsoluteFill`, `Img`) work unchanged.
+  3. `feat/chrome-fallback`: frames the native path cannot draw are rendered in headless Chrome.
+     - Uses puppeteer-core with a pinned Chrome for Testing: a browser bundle of the project with React DOM and
+       this repo's Remotion shim, the frame set through the frame clock, and a screenshot.
+     - Written from the documented behaviour of Remotion's renderer, not its source (§9).
+     - `render` splits the range into native and Chrome runs and feeds both to one encoder, in order. The rule is
+       per frame, never per scene (§9).
+     - Chrome may run in the cloud on the CPU for unit tests; its pixel comparisons happen on the M4.
+  4. `feat/doctor`: `kinetograph doctor <entry>` (`--json` too).
+     - Lists each unsupported element or property with the frame ranges it appears in and the share of frames
+       that will render natively.
+     - `--compare N` renders N sampled frames both ways and reports the pixel difference (run on the M4).
+     - It is also wired into `lint` and the MCP server.
+- The orchestrator merges the four, adds a Remotion-style example under `examples/compat/` written for the repo
+  (none of the papercut source, which is private), and opens `feat/remotion-compat` as a draft PR titled Phase 5.
+- On the M4:
+  - The CPU and GPU tests.
+  - `doctor` on the papercut ep 13 project.
+  - Render S04 straight from its Remotion source in compat mode. Compare it with Remotion's output (`--compare`
+    and a look at the frames) and with the hand port, then time all three back to back.
 
 ## 9. Rules for the build
 

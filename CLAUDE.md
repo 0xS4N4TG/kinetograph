@@ -11,9 +11,9 @@ built; see `README.md` and `docs/SCENE.md`. Before doing anything, read:
 - `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.
 
 Decided 2026-10-14: own the engine, built from scratch (`HANDOFF.md` §3). fframes is a reference only. Phase 2 (2a,
-2b, 2c) done 2026-10-14. Phase 3 (`HANDOFF.md` §8) done 2026-10-15 (PR #11, with its fixes #18–#21). Next: Phase 4 (studio
-and video layers) in a cloud session ("Phase 4 in a cloud session" in §8); after it, fewer GPU passes per frame on the
-M4. Cloud sessions write code only; all
+2b, 2c) done 2026-10-14. Phase 3 (`HANDOFF.md` §8) done 2026-10-15 (PR #11, with its fixes #18–#21). Next: Phases 4 (studio
+and video layers) and 5 (Remotion compat mode) back to back in one cloud session ("Phase 4 in a cloud session" and
+"Phase 5 in the same cloud session" in §8); after them, fewer GPU passes per frame on the M4. Cloud sessions write code only; all
 GPU tests, goldens and `bench` run on the M4 (see "Building a phase in a Claude Code cloud session" in §8).
 
 Use the rustup toolchain (`~/.cargo/bin`, `/opt/homebrew/opt/rustup/bin`); Homebrew's `/opt/homebrew/bin/rustc` is
