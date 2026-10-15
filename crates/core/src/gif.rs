@@ -72,17 +72,12 @@ pub struct GifInfo {
     pub duration_ms: f64,
 }
 
-/// The pictures of a GIF file, one at a time, with the delay each shows for.
-fn decode(
-    path: &Path,
-) -> std::result::Result<
-    (
-        u32,
-        u32,
-        impl Iterator<Item = std::result::Result<(Vec<u8>, u32), String>>,
-    ),
-    String,
-> {
+/// A GIF's pictures, one at a time: full-screen RGBA8 and the delay each
+/// shows for, in milliseconds (`delay_ms`).
+type Pictures = Box<dyn Iterator<Item = std::result::Result<(Vec<u8>, u32), String>>>;
+
+/// Opens a GIF: its logical screen and its pictures.
+fn decode(path: &Path) -> std::result::Result<(u32, u32, Pictures), String> {
     let file = File::open(path).map_err(|e| format!("cannot read: {e}"))?;
     let decoder = GifDecoder::new(BufReader::new(file)).map_err(|e| format!("not a GIF ({e})"))?;
     let (width, height) = decoder.dimensions();
@@ -92,7 +87,7 @@ fn decode(
         let raw = (f64::from(numerator) / f64::from(denominator.max(1))).round() as u32;
         Ok((frame.into_buffer().into_raw(), delay_ms(raw)))
     });
-    Ok((width, height, frames))
+    Ok((width, height, Box::new(frames)))
 }
 
 /// Reads how many pictures a GIF has and how long they last. (This decodes

@@ -720,7 +720,6 @@ fn open_streams(
     let decoder = decoder
         .video()
         .map_err(|e| format!("cannot open the decoder: {e}"))?;
-    drop(stream);
     Ok((input, index, decoder))
 }
 

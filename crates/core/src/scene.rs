@@ -1,5 +1,6 @@
 //! The JSON scene graph. See docs/SCENE.md for the format.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1368,15 +1369,14 @@ impl Scene {
         for (id, video, src) in wanted {
             let path = self.base_dir.join(&src);
             let Some(video) = video else {
-                if !self.asset_sizes.contains_key(&src) {
+                if let Entry::Vacant(slot) = self.asset_sizes.entry(src) {
                     let (width, height) = image::image_dimensions(&path).map_err(|e| {
                         Error::Scene(format!(
                             "layer {id:?}: cannot read the size of gif {}: {e}",
                             path.display()
                         ))
                     })?;
-                    self.asset_sizes
-                        .insert(src, (f64::from(width), f64::from(height)));
+                    slot.insert((f64::from(width), f64::from(height)));
                 }
                 continue;
             };
