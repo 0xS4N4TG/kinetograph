@@ -1,0 +1,2597 @@
+{
+ "width": 525,
+ "height": 1305,
+ "fps": 30,
+ "durationInFrames": 1,
+ "background": "#ffffff",
+ "layers": [
+  {
+   "id": "t0",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 5
+   },
+   "children": [
+    {
+     "id": "c0",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r0",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feOffset",
+       "dx": 0,
+       "dy": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t1",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 5
+   },
+   "children": [
+    {
+     "id": "c1",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r1",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feOffset",
+       "dx": 12,
+       "dy": 7
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t2",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 5
+   },
+   "children": [
+    {
+     "id": "c2",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r2",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feGaussianBlur",
+       "stdDeviation": 6
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t3",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 5
+   },
+   "children": [
+    {
+     "id": "c3",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r3",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feGaussianBlur",
+       "stdDeviation": [
+        8,
+        2
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t4",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 135
+   },
+   "children": [
+    {
+     "id": "c4",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r4",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "colorInterpolationFilters": "sRGB",
+     "primitives": [
+      {
+       "primitive": "feGaussianBlur",
+       "stdDeviation": 6
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t5",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 135
+   },
+   "children": [
+    {
+     "id": "c5",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r5",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#ff8800",
+       "floodOpacity": 0.5,
+       "x": 20,
+       "y": 20,
+       "width": 60,
+       "height": 50
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t6",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 135
+   },
+   "children": [
+    {
+     "id": "c6",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r6",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#3355ff",
+       "result": "f"
+      },
+      {
+       "primitive": "feComposite",
+       "in": "f",
+       "in2": "SourceGraphic",
+       "operator": "in"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t7",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 135
+   },
+   "children": [
+    {
+     "id": "c7",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r7",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#00ff00",
+       "floodOpacity": 0.5,
+       "result": "f"
+      },
+      {
+       "primitive": "feComposite",
+       "in": "SourceGraphic",
+       "in2": "f",
+       "operator": "arithmetic",
+       "k1": 0,
+       "k2": 1,
+       "k3": 0.5,
+       "k4": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t8",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 265
+   },
+   "children": [
+    {
+     "id": "c8",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r8",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#ffaa00",
+       "result": "f",
+       "x": 30,
+       "y": 30,
+       "width": 70,
+       "height": 70
+      },
+      {
+       "primitive": "feComposite",
+       "in": "SourceGraphic",
+       "in2": "f",
+       "operator": "xor"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t9",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 265
+   },
+   "children": [
+    {
+     "id": "c9",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r9",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#ffaa00",
+       "result": "f",
+       "x": 30,
+       "y": 30,
+       "width": 70,
+       "height": 70
+      },
+      {
+       "primitive": "feComposite",
+       "in": "f",
+       "in2": "SourceGraphic",
+       "operator": "atop"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t10",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 265
+   },
+   "children": [
+    {
+     "id": "c10",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r10",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#ffaa00",
+       "result": "f",
+       "x": 30,
+       "y": 30,
+       "width": 70,
+       "height": 70
+      },
+      {
+       "primitive": "feComposite",
+       "in": "SourceGraphic",
+       "in2": "f",
+       "operator": "out"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t11",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 265
+   },
+   "children": [
+    {
+     "id": "c11",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r11",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#ffaa00",
+       "result": "f",
+       "x": 30,
+       "y": 30,
+       "width": 70,
+       "height": 70
+      },
+      {
+       "primitive": "feBlend",
+       "in": "SourceGraphic",
+       "in2": "f",
+       "mode": "multiply"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t12",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 395
+   },
+   "children": [
+    {
+     "id": "c12",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r12",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#3366aa",
+       "result": "f",
+       "x": 30,
+       "y": 30,
+       "width": 70,
+       "height": 70
+      },
+      {
+       "primitive": "feBlend",
+       "in": "SourceGraphic",
+       "in2": "f",
+       "mode": "screen"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t13",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 395
+   },
+   "children": [
+    {
+     "id": "c13",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r13",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#3366aa",
+       "result": "f",
+       "x": 30,
+       "y": 30,
+       "width": 70,
+       "height": 70
+      },
+      {
+       "primitive": "feBlend",
+       "in": "SourceGraphic",
+       "in2": "f",
+       "mode": "difference"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t14",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 395
+   },
+   "children": [
+    {
+     "id": "c14",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r14",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#3366aa",
+       "result": "f",
+       "x": 30,
+       "y": 30,
+       "width": 70,
+       "height": 70
+      },
+      {
+       "primitive": "feBlend",
+       "in": "SourceGraphic",
+       "in2": "f",
+       "mode": "hue"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t15",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 395
+   },
+   "children": [
+    {
+     "id": "c15",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r15",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feOffset",
+       "dx": 10,
+       "dy": 10,
+       "in": "SourceAlpha",
+       "result": "o"
+      },
+      {
+       "primitive": "feFlood",
+       "floodColor": "#000",
+       "floodOpacity": 0.5,
+       "result": "c"
+      },
+      {
+       "primitive": "feComposite",
+       "in": "c",
+       "in2": "o",
+       "operator": "in",
+       "result": "s"
+      },
+      {
+       "primitive": "feMerge",
+       "nodes": [
+        "s",
+        "SourceGraphic"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t16",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 525
+   },
+   "children": [
+    {
+     "id": "c16",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r16",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feColorMatrix",
+       "type": "saturate",
+       "values": [
+        0.2
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t17",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 525
+   },
+   "children": [
+    {
+     "id": "c17",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r17",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feColorMatrix",
+       "type": "hueRotate",
+       "values": [
+        90
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t18",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 525
+   },
+   "children": [
+    {
+     "id": "c18",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r18",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feColorMatrix",
+       "type": "luminanceToAlpha"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t19",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 525
+   },
+   "children": [
+    {
+     "id": "c19",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r19",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feColorMatrix",
+       "type": "matrix",
+       "values": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t20",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 655
+   },
+   "children": [
+    {
+     "id": "c20",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r20",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "colorInterpolationFilters": "sRGB",
+     "primitives": [
+      {
+       "primitive": "feColorMatrix",
+       "type": "matrix",
+       "values": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0.2,
+        0,
+        0,
+        0,
+        1,
+        0
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t21",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 655
+   },
+   "children": [
+    {
+     "id": "c21",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r21",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feComponentTransfer",
+       "funcR": {
+        "type": "table",
+        "tableValues": [
+         0,
+         0.5,
+         1,
+         0.2
+        ]
+       },
+       "funcG": {
+        "type": "discrete",
+        "tableValues": [
+         0,
+         1,
+         0,
+         1
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t22",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 655
+   },
+   "children": [
+    {
+     "id": "c22",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r22",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feComponentTransfer",
+       "funcR": {
+        "type": "linear",
+        "slope": 0.5,
+        "intercept": 0.25
+       },
+       "funcB": {
+        "type": "gamma",
+        "amplitude": 1,
+        "exponent": 0.5,
+        "offset": 0
+       },
+       "funcA": {
+        "type": "linear",
+        "slope": 0.5
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t23",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 655
+   },
+   "children": [
+    {
+     "id": "c23",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r23",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feMorphology",
+       "operator": "dilate",
+       "radius": [
+        4,
+        2
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t24",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 785
+   },
+   "children": [
+    {
+     "id": "c24",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r24",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feMorphology",
+       "operator": "erode",
+       "radius": 3
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t25",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 785
+   },
+   "children": [
+    {
+     "id": "d25",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 4,
+      "height": 4
+     },
+     "fill": "#ffffff",
+     "transform": {
+      "x": 60,
+      "y": 60
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feOffset",
+       "x": 50,
+       "y": 50,
+       "width": 20,
+       "height": 20
+      },
+      {
+       "primitive": "feTile"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t26",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 785
+   },
+   "children": [
+    {
+     "id": "c26",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r26",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feDropShadow",
+       "dx": 6,
+       "dy": 8,
+       "stdDeviation": 4,
+       "floodColor": "#000066",
+       "floodOpacity": 0.7
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t27",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 785
+   },
+   "children": [
+    {
+     "id": "c27",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r27",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feTurbulence",
+       "type": "fractalNoise",
+       "baseFrequency": 0.05,
+       "numOctaves": 3,
+       "seed": 3
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t28",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 915
+   },
+   "children": [
+    {
+     "id": "c28",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r28",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feTurbulence",
+       "type": "turbulence",
+       "baseFrequency": [
+        0.05,
+        0.1
+       ],
+       "numOctaves": 2,
+       "seed": 9
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t29",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 915
+   },
+   "children": [
+    {
+     "id": "c29",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r29",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feTurbulence",
+       "type": "fractalNoise",
+       "baseFrequency": 0.04,
+       "numOctaves": 2,
+       "seed": 5,
+       "stitchTiles": true,
+       "x": 10,
+       "y": 10,
+       "width": 64,
+       "height": 64
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t30",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 915
+   },
+   "children": [
+    {
+     "id": "c30",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r30",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feTurbulence",
+       "type": "fractalNoise",
+       "baseFrequency": 0.06,
+       "numOctaves": 2,
+       "seed": 2,
+       "result": "n"
+      },
+      {
+       "primitive": "feDisplacementMap",
+       "in": "SourceGraphic",
+       "in2": "n",
+       "scale": 20,
+       "xChannelSelector": "R",
+       "yChannelSelector": "B"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t31",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 915
+   },
+   "children": [
+    {
+     "id": "c31",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r31",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feConvolveMatrix",
+       "order": 3,
+       "kernelMatrix": [
+        0,
+        -1,
+        0,
+        -1,
+        5,
+        -1,
+        0,
+        -1,
+        0
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t32",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 1045
+   },
+   "children": [
+    {
+     "id": "c32",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r32",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feConvolveMatrix",
+       "order": 3,
+       "kernelMatrix": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+       ],
+       "edgeMode": "wrap"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t33",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 1045
+   },
+   "children": [
+    {
+     "id": "c33",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r33",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feDiffuseLighting",
+       "surfaceScale": 3,
+       "diffuseConstant": 1,
+       "lightingColor": "#ffffff",
+       "light": {
+        "type": "distant",
+        "azimuth": 45,
+        "elevation": 50
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t34",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 1045
+   },
+   "children": [
+    {
+     "id": "c34",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r34",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feGaussianBlur",
+       "in": "SourceAlpha",
+       "stdDeviation": 3,
+       "result": "b"
+      },
+      {
+       "primitive": "feSpecularLighting",
+       "in": "b",
+       "surfaceScale": 5,
+       "specularConstant": 1,
+       "specularExponent": 20,
+       "lightingColor": "#ffffff",
+       "result": "s",
+       "light": {
+        "type": "point",
+        "x": 30,
+        "y": 20,
+        "z": 40
+       }
+      },
+      {
+       "primitive": "feComposite",
+       "in": "s",
+       "in2": "SourceAlpha",
+       "operator": "in"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t35",
+   "type": "group",
+   "transform": {
+    "x": 395,
+    "y": 1045
+   },
+   "children": [
+    {
+     "id": "c35",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r35",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feGaussianBlur",
+       "in": "SourceAlpha",
+       "stdDeviation": 2,
+       "result": "b"
+      },
+      {
+       "primitive": "feDiffuseLighting",
+       "in": "b",
+       "surfaceScale": 4,
+       "diffuseConstant": 1.2,
+       "lightingColor": "#ffeecc",
+       "light": {
+        "type": "spot",
+        "x": 10,
+        "y": 10,
+        "z": 60,
+        "pointsAtX": 60,
+        "pointsAtY": 60,
+        "pointsAtZ": 0,
+        "specularExponent": 5,
+        "limitingConeAngle": 40
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t36",
+   "type": "group",
+   "transform": {
+    "x": 5,
+    "y": 1175
+   },
+   "children": [
+    {
+     "id": "c36",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r36",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feGaussianBlur",
+       "stdDeviation": 20
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t37",
+   "type": "group",
+   "transform": {
+    "x": 135,
+    "y": 1175
+   },
+   "children": [
+    {
+     "id": "c37",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r37",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "colorInterpolationFilters": "sRGB",
+     "primitives": [
+      {
+       "primitive": "feFlood",
+       "floodColor": "#ff0000",
+       "floodOpacity": 0.5,
+       "result": "f"
+      },
+      {
+       "primitive": "feMerge",
+       "nodes": [
+        "f",
+        "SourceGraphic"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t38",
+   "type": "group",
+   "transform": {
+    "x": 265,
+    "y": 1175
+   },
+   "children": [
+    {
+     "id": "c38",
+     "type": "shape",
+     "shape": {
+      "kind": "ellipse",
+      "width": 60,
+      "height": 60
+     },
+     "fill": "#e63946",
+     "stroke": {
+      "color": "#1d3557",
+      "width": 6
+     },
+     "transform": {
+      "x": 30,
+      "y": 30
+     }
+    },
+    {
+     "id": "r38",
+     "type": "shape",
+     "shape": {
+      "kind": "rect",
+      "width": 30,
+      "height": 20
+     },
+     "fill": "#2a9d8f",
+     "transform": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   ],
+   "effects": [
+    {
+     "type": "filterGraph",
+     "x": 0,
+     "y": 0,
+     "width": 120,
+     "height": 120,
+     "filterUnits": "userSpaceOnUse",
+     "primitives": [
+      {
+       "primitive": "feOffset",
+       "dx": 20,
+       "dy": 0,
+       "x": 40,
+       "y": 10,
+       "width": 60,
+       "height": 100
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

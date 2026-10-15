@@ -82,7 +82,8 @@ function pixels(value: string | number | undefined, fontSize: number): number {
   return match[2] === 'em' ? Number(match[1]) * fontSize : Number(match[1]);
 }
 
-function layoutOf(options: MeasureTextOptions, text: string, maxWidth?: number): TextLayout {
+/** Checks the size and that the font is registered and loaded; returns the font key. */
+function checkedFont(options: MeasureTextOptions, text: string): string {
   const { fontFamily, fontSize, fontWeight, fontStyle } = options;
   if (typeof fontSize !== 'number' || !(fontSize > 0)) {
     throw new TypeError(`fontSize must be a positive number, but got ${JSON.stringify(fontSize)}`);
@@ -102,12 +103,36 @@ function layoutOf(options: MeasureTextOptions, text: string, maxWidth?: number):
       }`,
     );
   }
-  return layoutText({ text, font: key, size: fontSize, fonts, ...(maxWidth === undefined ? {} : { maxWidth }) });
+  return key;
+}
+
+function layoutOf(options: MeasureTextOptions, text: string, maxWidth?: number): TextLayout {
+  const key = checkedFont(options, text);
+  return layoutText({ text, font: key, size: options.fontSize, fonts: getFonts(), ...(maxWidth === undefined ? {} : { maxWidth }) });
+}
+
+/**
+ * Measures text as the DOM engine lays out a `span` (docs/ENGINE.md §10): the node bundle installs this, so that
+ * `measureText` and `fitText` give what `getBoundingClientRect` gives in Chrome, with `letterSpacing`, `textTransform`
+ * and `additionalStyles` applied by CSS. It returns null where the DOM engine is not there; the text engine's own
+ * measure (`layoutText`) answers then.
+ */
+export type DomTextMeasure = (options: MeasureTextOptions, fonts: Record<string, string>) => TextMetrics | null;
+
+let domMeasure: DomTextMeasure | null = null;
+
+export function setDomTextMeasure(fn: DomTextMeasure | null): void {
+  domMeasure = fn;
 }
 
 /** The size of `text` in one font, as the renderer lays it out. A newline starts another line. */
 export function measureText(options: MeasureTextOptions): TextMetrics {
   const { text, fontSize, letterSpacing, textTransform } = options;
+  if (domMeasure !== null) {
+    checkedFont(options, text);
+    const measured = domMeasure(options, getFonts());
+    if (measured !== null) return measured;
+  }
   const shown = transformed(text, textTransform);
   // Space at either end counts (CSS `white-space: pre`); the engine trims it, so measure with a marker either side.
   const padded = /^\s|\s$/.test(shown);

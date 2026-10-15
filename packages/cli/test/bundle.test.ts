@@ -24,6 +24,9 @@ describe('resolveSpecifier', () => {
     expect(resolveSpecifier('@remotion/google-fonts/Inter')).toEqual({ kind: 'font', family: 'Inter' });
     expect(resolveSpecifier('@remotion/google-fonts/DMSans')).toEqual({ kind: 'font', family: 'DM Sans' });
     expect(resolveSpecifier('@remotion/google-fonts/BebasNeue')).toEqual({ kind: 'font', family: 'Bebas Neue' });
+    // Names the capitals-and-digits rule gets wrong come from the core's exception list.
+    expect(resolveSpecifier('@remotion/google-fonts/JetBrainsMono')).toEqual({ kind: 'font', family: 'JetBrains Mono' });
+    expect(familyFromModule('PressStart2P')).toBe('Press Start 2P');
   });
 
   it('refuses the Remotion packages it has no equivalent for, pointing at doctor', () => {
@@ -59,11 +62,12 @@ describe('syntheticEntry', () => {
     const lines = syntheticEntry('/p/index.tsx').trim().split('\n');
     expect(lines).toEqual([
       `import '@kinetograph/core/determinism/install';`,
+      `import '@kinetograph/core/web/install';`,
       `import "/p/index.tsx";`,
       `export * from '@kinetograph/core';`,
       `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
       `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
-      `export { setLayoutDom } from '@kinetograph/compat/dom';`,
+      `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
     ]);
   });
 });
@@ -145,7 +149,7 @@ describe('bundleProject', () => {
     expect(code.match(/^(?:var|let) probeOverride\b/gm)).toHaveLength(1);
   });
 
-  it('maps @remotion/media, bundles stylesheets to nothing, and keeps an entry a package.json says has no side effects', async () => {
+  it('maps @remotion/media, registers stylesheets (Tailwind that cannot be built is warned about), and keeps an entry a package.json says has no side effects', async () => {
     const dir = project({
       'package.json': JSON.stringify({ name: 'p', sideEffects: ['*.css'] }),
       'src/index.ts': [
@@ -157,10 +161,12 @@ describe('bundleProject', () => {
       ].join('\n'),
       'src/index.css': `@import 'tailwindcss';`,
     });
-    const { file } = await bundleProject(join(dir, 'src', 'index.ts'));
+    const { file, warnings } = await bundleProject(join(dir, 'src', 'index.ts'));
     const code = readFileSync(file, 'utf8');
     expect(code).toContain('ENTRY-RAN');
-    expect(code).not.toContain('tailwindcss');
+    // No Tailwind in this project: the file is registered as it is, and the problem is reported (doctor prints it).
+    expect(code).toContain('noteStylesheetProblem(');
+    expect(warnings.join('\n')).toContain('uses Tailwind, but the project has none that can build it');
   });
 
   it('leaves one file per entry, replaced when the code changes', async () => {

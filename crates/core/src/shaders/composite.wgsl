@@ -228,9 +228,22 @@ fn fs_blend(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let xy = canvas_xy(p);
     let b = load_a(xy);
     let s = load_b(xy) * params.opacity;
-    let mixed = blend_fn(params.mode, unpremultiply(b), unpremultiply(s));
-    let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
+    let mode = params.mode & 0xffffu;
     let a = s.a + b.a * (1.0 - s.a);
+    if (params.mode >> 16u) == 1u {
+        // CSS composites sRGB-encoded values: the same formulas on the
+        // encoded colours, then back to linear light for the next pass.
+        let cb = linear_to_srgb(clamp(unpremultiply(b), vec3<f32>(0.0), vec3<f32>(1.0)));
+        let cs = linear_to_srgb(clamp(unpremultiply(s), vec3<f32>(0.0), vec3<f32>(1.0)));
+        let mixed_e = blend_fn(mode, cb, cs);
+        let rgb_e = cs * s.a * (1.0 - b.a) + cb * b.a * (1.0 - s.a) + s.a * b.a * mixed_e;
+        if a <= 0.0 {
+            return vec4<f32>(0.0);
+        }
+        return vec4<f32>(srgb_to_linear(rgb_e / a) * a, a);
+    }
+    let mixed = blend_fn(mode, unpremultiply(b), unpremultiply(s));
+    let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
     return vec4<f32>(rgb, a);
 }
 

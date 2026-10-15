@@ -476,16 +476,19 @@ from the published package (§10).
 
 Mapping onto the engine:
 
-- `Sequence` renders its children inside a plain `<Layer>` (no layout), only while `from <= frame < from +
-  durationInFrames`, and shifts the timeline by `from`. It does not lay its children out (Remotion's
-  `layout="absolute-fill"` wraps them in a flex box; here native elements keep their own positions). `name` becomes
-  nothing; `layout="none"` is accepted.
+- `Sequence` renders its children inside a `<Layer>` (no layout), only while `from <= frame < from +
+  durationInFrames`, and shifts the timeline by `from`. `name` becomes nothing; `layout="none"` is accepted. With
+  DOM elements inside it, or around it, that layer is Remotion's wrapper, an `AbsoluteFill` `div`, in the same CSS tree
+  as the DOM around it (COMPAT.md §2, ENGINE.md §10.1); a `Sequence` of native elements keeps its own positions.
 - `AbsoluteFill` is `<Layer layout={{ flexDirection: 'column', width, height }} layoutItem={{ position: 'absolute' }}>`
-  covering the composition, so its children stack in a column as in CSS and it overlays its siblings. `style` maps
-  `backgroundColor`/`background` (a colour) to a full-size rect drawn first, `opacity`, and the flex properties
-  (`display`, `flexDirection`, `justifyContent`, `alignItems`, `flexWrap`, `gap`, `padding`) to `layout`; other keys
-  are ignored with one `console.warn` per key.
-- `Img` is `<Image>` with `style.width`, `style.height`, `style.objectFit` mapped to `width`, `height`, `fit`.
+  covering the composition, so its children stack in a column as in CSS and it overlays its siblings, as long as
+  everything inside it is a native element. `style` maps `backgroundColor`/`background` (a colour) to a full-size rect
+  drawn first, `opacity`, and the flex properties (`display`, `flexDirection`, `justifyContent`, `alignItems`,
+  `flexWrap`, `gap`, `padding`) to `layout`. With any other style key, a value the layers cannot take (a gradient
+  `background`, `display: grid`, a `gap` in `em`), a `className`, or DOM elements anywhere inside it, it is the `div` it is in Remotion (`position: absolute; inset: 0; display: flex; flex-direction: column`, the
+  author's style on top), drawn by the CSS engine.
+- `Img` is `<Image>` with `style.width`, `style.height`, `style.objectFit` mapped to `width`, `height`, `fit`; with any
+  other style key, a percentage size, an `objectFit` the image layer lacks, or a `className` it is an `img`.
 - `staticFile(name)` is the absolute path of `name` in the public directory, `setPublicDir(dir)` (default
   `<entry directory>/public`, set by the CLI).
 - `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s
@@ -561,7 +564,15 @@ Once installed:
 - `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval` and `requestAnimationFrame` run on the virtual clock:
   callbacks fire, in due order, when `setVirtualFrame` moves the clock past their time; `requestAnimationFrame`
   callbacks run once per frame with the virtual `performance.now()`. The shim keeps the real functions for itself.
+- `crypto.getRandomValues()` and `crypto.randomUUID()` draw from the same seeded generator.
 - Nothing else is patched (`setImmediate`, promises and I/O are real).
+
+`@kinetograph/core/web/install` (imported by the Node bundle right after it; not part of the Chrome bundle) adds the
+browser globals a project commonly touches: `window` and its sizes (the composition's), `matchMedia`, `new Image()` for
+project files, `fetch` of project files (remote URLs fail saying Kinetograph renders offline), `document` queries over
+the host tree, `getComputedStyle`, `ResizeObserver` and `IntersectionObserver`, and a `<canvas>` that fails saying it is
+not supported yet (ENGINE.md §10.4). Refs to DOM elements answer `getBoundingClientRect`, `offsetWidth`, … from the CSS
+engine (ENGINE.md §10.3).
 
 ### 7.5 Remotion packages (subpath exports)
 
@@ -628,7 +639,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
-| `doctor [entry] [--range] [--compare N]` | without an entry, the install report; with one, which frames render natively and which go to Chrome, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
+| `doctor [entry] [--range] [--compare N \| --compare-every N] [--compare-dir DIR]` | without an entry, the install report; with one, which frames render natively and which go to Chrome, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
 

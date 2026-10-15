@@ -39,14 +39,24 @@ const DEPTH_STEP: f64 = 1.0 / 1024.0;
 
 /// `W` for a layer, or `None` when it has no 3D transform of its own.
 pub fn layer_world(t: &ResolvedTransform) -> Option<DMat4> {
-    if t.rotate_x == 0.0 && t.rotate_y == 0.0 && t.z == 0.0 {
+    let css = t.matrix.filter(|m| !crate::scene::matrix_is_affine_2d(m));
+    if t.rotate_x == 0.0 && t.rotate_y == 0.0 && t.z == 0.0 && css.is_none() {
         return None;
     }
     let pivot = DVec3::new(t.x + t.origin_x, t.y + t.origin_y, 0.0);
+    // A `matrix3d()` that is not a 2D affine sits innermost, next to the
+    // anchor, so conjugated by the layer's 2D turn and scale it is part of
+    // `W`, which acts after them.
+    let inner = css.map_or(DMat4::IDENTITY, |m| {
+        let turn = DMat4::from_rotation_z(t.rotation.to_radians())
+            * DMat4::from_scale(DVec3::new(t.scale, t.scale, 1.0));
+        turn * DMat4::from_cols_array(&m) * turn.inverse()
+    });
     Some(
         DMat4::from_translation(pivot + DVec3::new(0.0, 0.0, t.z))
             * DMat4::from_rotation_x(t.rotate_x.to_radians())
             * DMat4::from_rotation_y(t.rotate_y.to_radians())
+            * inner
             * DMat4::from_translation(-pivot),
     )
 }
@@ -245,6 +255,8 @@ mod tests {
             z,
             origin_x: 0.0,
             origin_y: 0.0,
+            matrix: None,
+            backface_hidden: false,
         }
     }
 

@@ -36,6 +36,9 @@ pub struct Scene {
     /// The viewpoint that layers with a 3D transform are drawn from. Without
     /// one, 3D transforms are orthographic: no perspective.
     pub camera: Option<Camera>,
+    /// The colour space layers are blended in.
+    #[serde(default)]
+    pub blend_space: BlendSpace,
     /// Bottom layer first.
     pub layers: Vec<Layer>,
     /// Directory that asset paths resolve against (the scene file's directory).
@@ -51,6 +54,19 @@ pub struct Scene {
     /// `src`, read when the scene loads.
     #[serde(skip)]
     pub videos: BTreeMap<String, Arc<VideoInfo>>,
+}
+
+/// The colour space a layer is composited and blended in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlendSpace {
+    /// Linear light: physically right, and what the scene format has always
+    /// done.
+    #[default]
+    Linear,
+    /// sRGB-encoded values, as CSS and every browser composite: a half
+    /// transparent black over white is mid grey (128), not light grey (188).
+    Srgb,
 }
 
 fn default_background() -> Color {
@@ -237,6 +253,32 @@ pub struct Transform {
     /// move the layer.
     pub origin_x: Num,
     pub origin_y: Num,
+    /// A CSS `matrix3d()` (sixteen numbers, column-major) applied about the
+    /// anchor, after `scale` and `rotation`: the whole CSS transform of a box
+    /// in one matrix (skew, per-axis scale, 3D, `perspective()`). A matrix
+    /// that only moves the plane (no z, no perspective) is folded into the 2D
+    /// matrix, so the layer stays sharp; any other warps the finished layer
+    /// like `rotateX` does. Not animated.
+    pub matrix: Option<[f64; 16]>,
+    /// CSS's `backface-visibility: hidden`: the layer is not drawn while its
+    /// back faces the viewer (its 3D placement has turned it over).
+    pub backface_hidden: bool,
+}
+
+/// Whether `m` (a `matrix3d()`) moves the z = 0 plane within itself and has
+/// no perspective: it is a 2D affine.
+pub fn matrix_is_affine_2d(m: &[f64; 16]) -> bool {
+    let zero = |v: f64| v.abs() < 1e-12;
+    zero(m[2])
+        && zero(m[3])
+        && zero(m[6])
+        && zero(m[7])
+        && zero(m[8])
+        && zero(m[9])
+        && (m[10] - 1.0).abs() < 1e-12
+        && zero(m[11])
+        && zero(m[14])
+        && (m[15] - 1.0).abs() < 1e-12
 }
 
 impl Transform {
@@ -245,6 +287,10 @@ impl Transform {
         [&self.rotate_x, &self.rotate_y, &self.z]
             .iter()
             .any(|n| n.min() != 0.0 || n.max() != 0.0)
+            || self
+                .matrix
+                .as_ref()
+                .is_some_and(|m| !matrix_is_affine_2d(m))
     }
 }
 
@@ -262,6 +308,8 @@ impl Default for Transform {
             z: Num::Const(0.0),
             origin_x: Num::Const(0.0),
             origin_y: Num::Const(0.0),
+            matrix: None,
+            backface_hidden: false,
         }
     }
 }
@@ -469,6 +517,8 @@ pub enum Effect {
         bottom_right: Option<[Num; 2]>,
         bottom_left: Option<[Num; 2]>,
     },
+    /// An SVG `<filter>`: a graph of primitives. See `filter.rs`.
+    FilterGraph(crate::filter::FilterGraph),
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
@@ -726,6 +776,7 @@ impl Effect {
             }
             // Warps what is in the texture, which paints nothing new.
             Effect::CornerPin { .. } => 0.0,
+            Effect::FilterGraph(graph) => graph.reach(layer_scale),
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -828,6 +879,11 @@ pub struct Gradient {
     /// What the coordinates are measured in.
     #[serde(default)]
     pub units: Units,
+    /// `[a, b, c, d, e, f]`: an affine applied to the finished gradient, in
+    /// the space of its coordinates (before box units map them onto the
+    /// box). A circle squashed by `[1, 0, 0, k, 0, cy * (1 - k)]` is an
+    /// ellipse: CSS's `radial-gradient(ellipse ...)`. Not animated.
+    pub matrix: Option<[f64; 6]>,
 }
 
 /// The space a gradient's coordinates are in.
@@ -888,6 +944,30 @@ pub enum Extend {
 pub enum Paint {
     Solid(Color),
     Gradient(Gradient),
+    /// A picture, once or tiled: CSS's `background-image: url()` with
+    /// `background-repeat`.
+    Image(ImagePaint),
+}
+
+/// A picture as a paint: drawn `width` x `height` with its top-left corner at
+/// (`x`, `y`) in the painted layer's space, and repeated across the plane in
+/// the directions that repeat; in the others its edge pixels are held (so cut
+/// the shape to the tile). `{ "type": "image", "src": "tile.png", "width": 64,
+/// "height": 64, "repeatX": true, "repeatY": true }`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePaint {
+    pub src: String,
+    #[serde(default = "zero")]
+    pub x: Num,
+    #[serde(default = "zero")]
+    pub y: Num,
+    pub width: Num,
+    pub height: Num,
+    #[serde(default)]
+    pub repeat_x: bool,
+    #[serde(default)]
+    pub repeat_y: bool,
 }
 
 impl<'de> Deserialize<'de> for Paint {
@@ -899,6 +979,13 @@ impl<'de> Deserialize<'de> for Paint {
         match value {
             serde_json::Value::String(s) => {
                 Color::parse(&s).map(Paint::Solid).map_err(D::Error::custom)
+            }
+            serde_json::Value::Object(ref o)
+                if o.get("type").and_then(serde_json::Value::as_str) == Some("image") =>
+            {
+                ImagePaint::deserialize(value)
+                    .map(Paint::Image)
+                    .map_err(|e| D::Error::custom(format!("bad image paint: {e}")))
             }
             serde_json::Value::Object(_) => Gradient::deserialize(value)
                 .map(Paint::Gradient)
@@ -951,9 +1038,12 @@ pub struct Stroke {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextLayer {
+    #[serde(default)]
     pub text: String,
     /// A key of the scene's `fonts` map.
+    #[serde(default)]
     pub font: String,
+    #[serde(default = "one")]
     pub size: Num,
     /// A colour or a gradient; a gradient's coordinates are in the text box.
     pub color: Paint,
@@ -970,6 +1060,43 @@ pub struct TextLayer {
     /// than the text styles the first characters only.
     #[serde(default)]
     pub chars: Vec<Option<CharStyle>>,
+    /// Glyphs shaped and positioned by someone else (the DOM painter, from
+    /// Blitz's Parley layouts). When there are any, `text`, `font`, `size`,
+    /// `maxWidth`, `align`, `lineHeight` and `chars` are not used; the box is
+    /// `boxWidth` x `boxHeight`.
+    #[serde(default)]
+    pub runs: Vec<GlyphRun>,
+    /// The box of a layer with `runs`, in pixels.
+    pub box_width: Option<Num>,
+    pub box_height: Option<Num>,
+}
+
+/// A run of glyphs that share a font file and size, already positioned
+/// (`docs/SCENE.md`, "Glyph runs").
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlyphRun {
+    /// The font file, relative to the scene (an absolute path works too).
+    pub src: String,
+    /// The face in a font collection.
+    #[serde(default)]
+    pub index: u32,
+    /// Font size in pixels.
+    pub size: f32,
+    /// Variable-font coordinates, normalised (F2Dot14 as an integer).
+    #[serde(default)]
+    pub coords: Vec<i16>,
+    /// Synthetic italic: degrees the glyphs lean to the right (CSS's 14 for
+    /// `font-style: italic` on a face without one).
+    #[serde(default)]
+    pub skew: f32,
+    /// Synthetic bold: how many pixels the outlines grow on each side
+    /// (about a 24th of the size for a face that has no bold).
+    #[serde(default)]
+    pub embolden: f32,
+    /// `[glyph id, x, y]` for each glyph, `x` and `y` the origin of the glyph
+    /// (on the baseline) in the layer's box.
+    pub glyphs: Vec<[f32; 3]>,
 }
 
 /// How one character of a text layer differs from the layer, in text-box
@@ -1436,7 +1563,7 @@ impl Scene {
                     ))
                 })?
             } else {
-                let (width, height) = image::image_dimensions(&path).map_err(|e| {
+                let (width, height) = image_dimensions(&self.base_dir, &src).map_err(|e| {
                     Error::Scene(format!(
                         "layer {id:?}: cannot read the size of image {}: {e}",
                         path.display()
@@ -1568,6 +1695,9 @@ impl Scene {
                     Effect::Displace { turbulence, .. } => {
                         validate_turbulence(&layer.id, "displace", turbulence)?;
                     }
+                    Effect::FilterGraph(graph) => {
+                        graph.validate(&layer.id, layer.kind.has_box())?
+                    }
                     Effect::CornerPin { .. } if !layer.kind.has_box() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: cornerPin needs a box, and a group without a layout has none; pin a \
@@ -1630,8 +1760,40 @@ impl Scene {
                     if let Some(Paint::Gradient(g)) = &s.fill {
                         validate_gradient(&layer.id, "fill gradient", g)?;
                     }
+                    if let Some(Paint::Image(i)) = &s.fill {
+                        validate_image_paint(&layer.id, i)?;
+                    }
                     if let Some(stroke) = &s.stroke {
                         non_negative("stroke width", &stroke.width)?;
+                    }
+                }
+                LayerKind::Text(t) if !t.runs.is_empty() => {
+                    for run in &t.runs {
+                        let path = self.base_dir.join(&run.src);
+                        if !path.is_file() {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: glyph run font {} is not a file",
+                                layer.id,
+                                path.display()
+                            )));
+                        }
+                        if run.size.is_nan() || run.size <= 0.0 {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: glyph run size must be positive",
+                                layer.id
+                            )));
+                        }
+                    }
+                    if let Paint::Gradient(g) = &t.color {
+                        validate_gradient(&layer.id, "color gradient", g)?;
+                    }
+                    if let Paint::Image(i) = &t.color {
+                        validate_image_paint(&layer.id, i)?;
+                    }
+                    for (what, side) in [("boxWidth", &t.box_width), ("boxHeight", &t.box_height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
                     }
                 }
                 LayerKind::Text(t) => {
@@ -1649,6 +1811,9 @@ impl Scene {
                     }
                     if let Paint::Gradient(g) = &t.color {
                         validate_gradient(&layer.id, "color gradient", g)?;
+                    }
+                    if let Paint::Image(i) = &t.color {
+                        validate_image_paint(&layer.id, i)?;
                     }
                     if let Some(max_width) = &t.max_width {
                         non_negative("maxWidth", max_width)?;
@@ -2142,6 +2307,21 @@ fn validate_units(layer: &Layer, what: &str, g: &Gradient) -> Result<()> {
             "layer {:?}: {what} uses \"units\": \"box\", and a group without a layout has no box; use the default \
              units, or put the group's children in a layer that has a box",
             layer.id
+        )));
+    }
+    Ok(())
+}
+
+/// Checks an image paint: it has a file and a size to draw it at.
+fn validate_image_paint(id: &str, i: &ImagePaint) -> Result<()> {
+    if i.src.trim().is_empty() {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: image paint needs a src"
+        )));
+    }
+    if i.width.min() <= 0.0 || i.height.min() <= 0.0 {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: image paint width and height must be above 0"
         )));
     }
     Ok(())
@@ -4748,5 +4928,80 @@ mod tests {
             ),
         );
         assert_eq!(scene_of(&big).unwrap().margin(), 50);
+    }
+}
+
+/// The bytes of a `data:` URL (`data:image/png;base64,...` or percent-encoded
+/// text), decoded in memory: a picture that needs no file.
+pub(crate) fn data_uri_bytes(src: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    let rest = src.strip_prefix("data:")?;
+    let (meta, data) = rest.split_once(',')?;
+    if meta.ends_with(";base64") {
+        let clean: Vec<u8> = percent_decode(data)
+            .into_iter()
+            .filter(|b| !b.is_ascii_whitespace())
+            .collect();
+        base64::engine::general_purpose::STANDARD.decode(clean).ok()
+    } else {
+        Some(percent_decode(data))
+    }
+}
+
+fn percent_decode(s: &str) -> Vec<u8> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let (Some(h), Some(l)) = (
+                (b[i + 1] as char).to_digit(16),
+                (b[i + 2] as char).to_digit(16),
+            )
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The pixel size of the image `src` (a file relative to `base_dir`, or a
+/// `data:` URL), from its header.
+pub(crate) fn image_dimensions(
+    base_dir: &Path,
+    src: &str,
+) -> std::result::Result<(u32, u32), String> {
+    if let Some(bytes) = data_uri_bytes(src) {
+        return image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?
+            .into_dimensions()
+            .map_err(|e| e.to_string());
+    }
+    image::image_dimensions(base_dir.join(src)).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod data_uri_tests {
+    use super::*;
+
+    // A 1x1 PNG.
+    const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    #[test]
+    fn a_data_uri_is_decoded_in_memory() {
+        let bytes = data_uri_bytes(PNG).unwrap();
+        assert_eq!(&bytes[1..4], b"PNG");
+        assert_eq!(
+            image_dimensions(Path::new("/nowhere"), PNG).unwrap(),
+            (1, 1)
+        );
+        assert!(data_uri_bytes("tile.png").is_none());
+        assert_eq!(data_uri_bytes("data:text/plain,a%20b").unwrap(), b"a b");
     }
 }

@@ -9,6 +9,7 @@ pub mod color;
 pub mod compositor;
 pub mod dom_layout;
 pub mod error;
+pub mod filter;
 pub mod gif;
 #[cfg(test)]
 mod hash;

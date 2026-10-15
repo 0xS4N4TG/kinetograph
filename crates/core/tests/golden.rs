@@ -70,6 +70,21 @@ fn check(name: &str, frame: &Frame) {
 }
 
 #[test]
+fn filter_graphs_match_golden() {
+    // 39 SVG filters on one source, in a grid, checked against Chrome's
+    // rendering of the same <filter> elements (docs/SCENE.md, "filterGraph").
+    let frame = render_still(scene("tests/scenes/filter-graph.json"), 0).unwrap();
+    check("filter-graph", &frame);
+}
+
+#[test]
+fn filter_graphs_on_turned_layers_match_golden() {
+    // The same kind of filters on layers that are rotated and scaled.
+    let frame = render_still(scene("tests/scenes/filter-graph-turned.json"), 0).unwrap();
+    check("filter-graph-turned", &frame);
+}
+
+#[test]
 fn papercut_card_matches_golden() {
     let frame = render_still(scene("../../examples/papercut-card.json"), 30).unwrap();
     check("papercut-card-f30", &frame);
