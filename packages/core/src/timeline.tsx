@@ -39,8 +39,10 @@ function checkNumber(component: string, prop: string, value: unknown, { allowInf
 }
 
 function Scoped({ state, layout, children }: { state: TimelineState; layout?: LayoutProp; children: ReactNode }) {
-  // `layout="none"` is Remotion's "no wrapper": the children go straight into the parent.
-  const inner = layout === 'none' ? <>{children}</> : <Layer>{children}</Layer>;
+  // `layout="none"` is Remotion's "no wrapper": the children go straight into the parent. The wrapper is Remotion's
+  // AbsoluteFill: with DOM elements inside it is that `div` (docs/ENGINE.md §10), else a plain layer.
+  const inner =
+    layout === 'none' ? <>{children}</> : <Layer domFill={{ style: {}, background: false }}>{children}</Layer>;
   return <TimelineContext.Provider value={state}>{inner}</TimelineContext.Provider>;
 }
 

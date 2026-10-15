@@ -169,15 +169,17 @@ function holdsDom(nodes: HostNode[]): boolean {
 }
 
 /**
- * `<AbsoluteFill>` as the `div` it is in Remotion, when what is inside it holds DOM elements: a column flex box over
+ * `<AbsoluteFill>` (and the wrapper of a `<Sequence>` or `<Loop>`, which is one in Remotion) as the `div` it is in
+ * Remotion, when what is inside it holds DOM elements or it sits inside DOM already: a column flex box over
  * the whole page with the author's style laid over it, so that `justifyContent`, `alignItems` and the rest place the
  * DOM children as CSS does. A tree of native elements only keeps the layer mapping (the hand ports render as before).
  * Null for any other element.
  */
-export function domFillOf(element: HostElement): HostElement | null {
+export function domFillOf(element: HostElement, insideDom = false): HostElement | null {
   if (element.type !== 'kg-layer') return null;
   const fill = element.props.domFill as { style: Record<string, unknown>; id?: string; background: boolean } | undefined;
-  if (fill === undefined || !holdsDom(element.children)) return null;
+  // Inside DOM it always is the `div` (CSS has no native layer to put in a flow); outside, only when DOM is inside it.
+  if (fill === undefined || (!insideDom && !holdsDom(element.children))) return null;
   return {
     kind: 'element',
     type: 'div',
@@ -219,7 +221,7 @@ function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next
     } else {
       const path = `${parentPath}.${place.next++}`;
       // An `<AbsoluteFill>` that holds DOM elements, inside DOM, is part of the same CSS tree: its `div`.
-      const node = isDomElement(child.type) ? child : (domFillOf(child) ?? child);
+      const node = isDomElement(child.type) ? child : (domFillOf(child, true) ?? child);
       out.push(isDomElement(node.type) ? flattenDomElement(node, path, sequences) : node);
     }
   }

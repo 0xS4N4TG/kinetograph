@@ -96,13 +96,22 @@ export function createReadback(container: Container, options: EmitOptions): Read
 
   const isDom = (node: HostElement | null): node is HostElement => node !== null && isDomElement(node.type);
 
-  /** The DOM element at the top of the run of DOM elements `host` is in: the root of its island. */
+  /**
+   * Whether `node` is part of a CSS tree: a DOM element, or an `<AbsoluteFill>` / `<Sequence>` wrapper that `emit`
+   * draws as a `div` (see `domFillOf`): inside DOM always, at the top only when DOM is inside it.
+   */
+  const inCss = (node: HostElement | null): boolean => {
+    if (node === null) return false;
+    if (isDomElement(node.type)) return true;
+    if (node.type !== 'kg-layer' || node.props.domFill === undefined) return false;
+    return inCss(effectiveParent(node)) || domFillOf(node) !== null;
+  };
+
+  /** The element at the top of the CSS tree `host` is in: the root of its island. */
   const islandRootOf = (host: HostElement): HostElement => {
     let top = host;
-    for (let p = effectiveParent(top); isDom(p); p = effectiveParent(top)) top = p;
-    // An `<AbsoluteFill>` holding DOM elements is the island's root `div` (see `domFillOf`).
-    const parent = effectiveParent(top);
-    return parent !== null && domFillOf(parent) !== null ? parent : top;
+    for (let p = effectiveParent(top); inCss(p); p = effectiveParent(top)) top = p!;
+    return top;
   };
 
   const islandOf = (host: HostElement): Island | null => {
