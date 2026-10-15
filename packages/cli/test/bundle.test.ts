@@ -24,6 +24,9 @@ describe('resolveSpecifier', () => {
     expect(resolveSpecifier('@remotion/google-fonts/Inter')).toEqual({ kind: 'font', family: 'Inter' });
     expect(resolveSpecifier('@remotion/google-fonts/DMSans')).toEqual({ kind: 'font', family: 'DM Sans' });
     expect(resolveSpecifier('@remotion/google-fonts/BebasNeue')).toEqual({ kind: 'font', family: 'Bebas Neue' });
+    // Names the capitals-and-digits rule gets wrong come from the core's exception list.
+    expect(resolveSpecifier('@remotion/google-fonts/JetBrainsMono')).toEqual({ kind: 'font', family: 'JetBrains Mono' });
+    expect(familyFromModule('PressStart2P')).toBe('Press Start 2P');
   });
 
   it('refuses the Remotion packages it has no equivalent for, pointing at doctor', () => {

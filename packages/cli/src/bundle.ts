@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
+import { familyFromModuleName } from '@kinetograph/core/google-fonts';
 import { cssPlugin } from './css.js';
 import { CliError } from './errors.js';
 
@@ -32,13 +33,11 @@ export type Resolution =
   | { kind: 'font'; family: string }
   | { kind: 'unsupported'; message: string };
 
-/** `DMSans` → `DM Sans`, `NotoSansJP` → `Noto Sans JP`, `Exo2` → `Exo 2`: the family name of a Google Fonts module. */
-export function familyFromModule(name: string): string {
-  return name
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .replace(/([A-Za-z])(\d)/g, '$1 $2');
-}
+/**
+ * `DMSans` → `DM Sans`, `NotoSansJP` → `Noto Sans JP`, `JetBrainsMono` → `JetBrains Mono`: the family name of a Google
+ * Fonts module. The core's function, so its list of names the splitting rule gets wrong is shared.
+ */
+export const familyFromModule = familyFromModuleName;
 
 /**
  * Where an import of a project goes, or null if the bundle resolves it as usual. `remotion` and `@remotion/*` become
