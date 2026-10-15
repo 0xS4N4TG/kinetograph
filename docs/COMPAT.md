@@ -373,6 +373,9 @@ class VideoWriter {
 }
 ```
 
+- **The driver** is `openChromeRenderer(source, options)` in `packages/cli/src/fallback/index.ts` (typed stub committed
+  with this file): `frame(f)` gives straight-alpha RGBA, `close()` stops Chrome. `render`, `still`, `strip` and
+  `doctor --compare` use it, and `FrameOutput.unsupported` (`packages/cli/src/source.ts`) carries each frame's items.
 - **The cloud.** Chrome may run in the cloud on the CPU, for unit tests only. Pixel comparisons between the two
   paths happen on the M4.
 - **Blend space.** Chrome blends in sRGB and the engine in linear light (HANDOFF §10), so frames that use

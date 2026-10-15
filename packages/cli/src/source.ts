@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CompositionInfo, FrameRenderer } from '@kinetograph/core';
-import type { AudioClipJson, SequenceJson } from '@kinetograph/scene';
+import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetograph/scene';
 import { bundleProject } from './bundle.js';
 import { CliError } from './errors.js';
 import { native } from './native.js';
@@ -23,6 +23,8 @@ export interface FrameOutput {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree (docs/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
+  /** What compat mode cannot draw natively on this frame (docs/COMPAT.md §6.1); none for a scene file. */
+  unsupported?: Unsupported[];
   /** ms spent in `renderFrame` and in `JSON.stringify` (0 for a scene file), for `bench`. */
   jsMs: number;
   stringifyMs: number;
@@ -124,7 +126,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       entry: absolute,
       baseDir,
       composition: sceneComposition(absolute, text),
-      frame: async () => ({ sceneJson: text, audio: [], sequences: [], jsMs: 0, stringifyMs: 0 }),
+      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: [], jsMs: 0, stringifyMs: 0 }),
       dispose: () => {},
     };
   }
@@ -161,7 +163,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const result = await renderer.renderFrame(frame);
       const rendered = nowMs();
       const sceneJson = JSON.stringify(result.scene);
-      return { sceneJson, audio: result.audio, sequences: result.sequences, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
+      return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported: result.unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
     dispose: () => renderer.dispose(),
   };
