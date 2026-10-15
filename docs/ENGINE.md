@@ -3,13 +3,14 @@
 Decided 2026-10-15 (`DECISION_RENDERING_CRITICAL.md` §6, approved by the user the same day): compat mode stops
 parsing CSS in TypeScript. A DOM island is handed to Rust, styled by Stylo, laid out by taffy and Parley through
 Blitz's DOM (`blitz-dom` 0.3.0-beta.3, which uses the same Parley 0.12 and taffy 0.15 as the core), and painted by our
-own compositor. Blitz's painter (`blitz-paint`) is not used. No Chrome in the render path, ever; Chrome for Testing
-may be used only by tests and `doctor --compare` to make reference images.
+own compositor. Blitz's painter (`blitz-paint`) is not used. No Chrome in the render path, ever (the Phase 5
+Chrome fallback was removed on 2026-10-16); Chrome for Testing is used only by tests and tools to make reference
+images.
 
 Success, measured on the M4:
 - The tiny-agent episode 13 papercut project (`$KINETOGRAPH_CORPUS/tiny-agent/episodes/13-mods/papercut/src/index.ts`,
   `ModsPapercut`, 988 frames) renders with every frame native, today 0 of 988.
-- Each frame looks like Chrome's: `doctor --compare` against Chrome references within a per-pixel threshold (text and
+- Each frame looks like Chrome's: the golden cases and `scripts/corpus.mjs --reference` against Chrome and Remotion references within a per-pixel threshold (text and
   anti-aliasing differ; byte equality is not the goal).
 - `cargo test`, clippy, fmt and every npm suite pass; `bench` does not regress against `feat/remotion-compat`.
 
@@ -24,7 +25,7 @@ React tree (DOM host elements + native kg-* ones)
       Rust (stream 2): paint(doc) → scene layers in CSS paint order; core gains what boxes need
       Rust (stream 3): <svg> subtrees and filter graphs → scene layers and a filterGraph effect
     → IslandOutput JSON: layers, unsupported, camera
-  frame loop, render: unchanged (frames with unsupported items still go to Chrome until the fallback is removed)
+  frame loop, render: every frame is drawn by the addon; unsupported items are warned about, `--strict` fails (COMPAT.md §6)
 ```
 
 Readback (`getBoundingClientRect`, `offsetWidth`, `getComputedStyle`, `ResizeObserver`) goes through the same
@@ -191,7 +192,6 @@ The CLI's bundler (`cli/src/css.ts`) no longer drops `.css`: each import becomes
   papercut episode), PostCSS with `@tailwindcss/postcss` or v3's plugin. If none works the file is registered as it
   is, the bundle warns, and `doctor` prints a "stylesheets:" note.
 - A project's already-built CSS file is any other stylesheet.
-- The Chrome fallback bundle puts the same text in `<style>` elements, so `doctor --compare` references have the CSS.
 
 ### 10.3 Readback
 
@@ -227,7 +227,7 @@ until the tree changes (`generation`: bumped by every commit, before layout effe
 
 ### 10.4 Web APIs and time
 
-`@kinetograph/core/web/install` (imported by the Node bundle after the determinism shim; not in the Chrome bundle) puts
+`@kinetograph/core/web/install` (imported by the Node bundle after the determinism shim) puts
 these on the global object where they are missing:
 
 - `window` (is `globalThis`), `self`, `innerWidth/Height` and `outerWidth/Height` (the composition's size, set by
@@ -257,13 +257,12 @@ renders. CSS `@keyframes` animations and transitions read `request.time`; nothin
 ### 10.5 doctor and the corpus harness
 
 `doctor` reports the unsupported items Rust returns, plus a "stylesheets" note for what the bundle could not do.
-`--compare-every N` samples the first frame of the range and every Nth after it; `--compare-dir DIR` writes each sampled
-frame's native picture, Chrome's, and their difference (x4) as PNGs; the comparison counts pixels more than 2 levels
-apart and, separately, more than 48 (what is left after anti-aliasing and text rasterisation).
+(`doctor --compare`, which drew sampled frames natively and in the Chrome fallback, went with the fallback.)
 
-`scripts/corpus.mjs` runs `doctor` on the episode 13 papercut project and prints: native frames of the total, the
-unsupported items with their frame counts, and with `--compare` (default every 30th frame) the per-frame differences;
-it writes `out/corpus/report.json` and the pictures.
+`scripts/corpus.mjs` runs `doctor` on the episode 13 papercut project and prints: frames with nothing unsupported of
+the total, the unsupported items with their frame counts, and with `--reference` (default every 30th frame) the
+per-frame differences from a real Remotion render (pixels more than 2 levels apart and, separately, more than 48:
+what is left after anti-aliasing and text rasterisation); it writes `out/corpus/report.json` and the pictures.
 
 #### Numbers (2026-10-15, M4)
 
@@ -295,7 +294,7 @@ The `native` placeholder was not the cause: stream 2's content-box version (`rep
 for a `kg-*` element without padding, and it comes before the empty-box return, so zero-size natives (`Sequence`,
 `Camera`) still get one.
 
-- **Native frames: 988 of 988**, Chrome frames 0. This counts frames, not fidelity: the painter reports no
+- **Native frames: 988 of 988** (Chrome frames 0; no Chrome fallback exists any more, and the count is the same after its removal). This counts frames, not fidelity: the painter reports no
   unsupported item on any frame yet.
 - **Against the real Remotion render** (`out/mods-papercut.mp4` in the project; same sources and frame count; H.264, so
   a few levels of noise everywhere): mean difference 3.1 to 15.3 levels (median 3.8), PSNR 17.8 to 33.6 dB, 2919 to
@@ -327,7 +326,7 @@ for a `kg-*` element without padding, and it comes before the empty-box return, 
      perspective is 400 to 500 px, where the rounding was a few percent); each is closer to or as close to Chrome's
      picture of the case as before (more than 48 levels apart: 62 to 1, 0 to 0, 23 to 23; mean 0.22 to 0.13, 0.28 to
      0.22, 0.17 to 0.17), so they are updated.
-- **Against the Chrome fallback's own picture** (`--compare --every 120`, 9 frames; a page of our own, not Remotion's):
+- **Against the Chrome fallback's own picture** (`--compare --every 120`, 9 frames; a page of our own, not Remotion's; the option is removed with the fallback):
   pixels more than 48 levels apart 2 204 458 summed, mostly frame 840 (1 595 312), where that page is shifted down by half
   the height (its `Sequence` wrapper is a zero-size positioned `div`); the others 8 thousand to 267 thousand.
 - **JS stage** (React, emit, request, Rust style/layout/paint, JSON) for all 988 frames through `doctor`: about 60 s, 60

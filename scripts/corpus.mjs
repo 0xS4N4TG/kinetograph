@@ -1,16 +1,12 @@
 #!/usr/bin/env node
-// The corpus harness (docs/ENGINE.md §10.5): how much of the tiny-agent episode 13 papercut project the engine draws
-// natively, what it cannot draw yet, and how far the native frames are from the real thing.
+// The corpus harness (docs/ENGINE.md §10.5): how many frames of the tiny-agent episode 13 papercut project have nothing
+// unsupported, what the engine cannot draw yet, and how far the native frames are from the real thing.
 //
 //   node scripts/corpus.mjs                         coverage of all 988 frames (no GPU, about a minute)
 //   node scripts/corpus.mjs --range 0..150          part of the episode
 //   node scripts/corpus.mjs --reference             also draw every 30th frame natively and compare it with the same
 //                                                   frame of a real Remotion render: the project's out/*.mp4
 //   node scripts/corpus.mjs --reference path.mp4    another render of the same project
-//   node scripts/corpus.mjs --compare               also compare with the Chrome fallback's picture (`doctor --compare`;
-//                                                   needs KINETOGRAPH_CHROME or Chrome for Testing in
-//                                                   ~/.cache/kinetograph/chrome; that picture is our own Chrome page,
-//                                                   not Remotion's, so it differs from a Remotion render)
 //   --every 60         another step for the samples (default 30)
 //   --entry <file> --comp <id>     another project
 //
@@ -40,7 +36,6 @@ const entry = option(
 );
 const comp = option('comp', 'ModsPapercut');
 const range = option('range');
-const compare = args.includes('--compare');
 const every = Number(option('every', '30'));
 const out = resolve(option('out', join(root, 'out', 'corpus')));
 const top = Number(option('top', '25'));
@@ -71,7 +66,6 @@ function run(command, commandArgs, options = {}) {
 const started = Date.now();
 const doctorArgs = ['doctor', entry, '--comp', comp, '--json'];
 if (range) doctorArgs.push('--range', range);
-if (compare) doctorArgs.push('--compare-every', String(every), '--compare-dir', out);
 const doctor = await run(process.execPath, [cli, ...doctorArgs]);
 if (doctor.code !== 0) {
   console.error(doctor.stdout.trim() || `doctor exited with ${doctor.code}`);
@@ -118,8 +112,7 @@ function pixelStats(a, b) {
 }
 
 async function againstReference() {
-  const { decodePng } = await import(pathToFileURL(join(cliDir, 'png.js')).href);
-  const { encodePng } = await import(pathToFileURL(join(cliDir, 'fallback', 'png.js')).href);
+  const { decodePng, encodePng } = await import(pathToFileURL(join(cliDir, 'png.js')).href);
   const frames = sampledFrames();
   const pad = (f) => String(f).padStart(5, '0');
   // The Remotion frames: one ffmpeg pass.
@@ -167,7 +160,7 @@ const seconds = (Date.now() - started) / 1000;
 const pct = (n, of) => `${((100 * n) / of).toFixed(1)}%`;
 const lines = [];
 lines.push(`${report.comp}: frames ${report.first}..${report.last} (${report.frames})`);
-lines.push(`native: ${report.nativeFrames} of ${report.frames} (${pct(report.nativeFrames, report.frames)}); not native: ${report.chromeFrames}`);
+lines.push(`native: ${report.cleanFrames} of ${report.frames} (${pct(report.cleanFrames, report.frames)}); with unsupported content: ${report.unsupportedFrames}`);
 if (report.notes?.length) lines.push('', 'stylesheet problems:', ...report.notes.map((n) => `  ${n}`));
 if (report.issues.length > 0) {
   lines.push('', `${report.issues.length} kinds of unsupported item, most frames first (frames, element property: reason):`);
@@ -191,7 +184,6 @@ function table(title, rows) {
   lines.push(`  pixels more than 48 levels apart, summed: ${total}`);
 }
 if (report.reference?.frames.length) table(`native against the Remotion render ${report.reference.file}, every ${every}th frame`, report.reference.frames);
-if (report.compare?.length) table(`native against the Chrome fallback's picture, every ${every}th frame`, report.compare);
 lines.push('', `took ${seconds.toFixed(0)} s; report: ${join(out, 'report.json')}`);
 console.log(lines.join('\n'));
 

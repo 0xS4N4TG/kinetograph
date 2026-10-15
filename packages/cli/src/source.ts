@@ -20,7 +20,6 @@ interface ProjectModule {
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
   stylesheetNotes(): string[];
-  getFonts(): Record<string, string>;
 }
 
 export interface FrameOutput {
@@ -29,7 +28,7 @@ export interface FrameOutput {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree (docs/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
-  /** What compat mode cannot draw natively on this frame (docs/COMPAT.md §6.1); none for a scene file. */
+  /** What the engine cannot draw on this frame (docs/COMPAT.md §6.1); none for a scene file. */
   unsupported?: Unsupported[];
   /** ms spent in `renderFrame` and in `JSON.stringify` (0 for a scene file), for `bench`. */
   jsMs: number;
@@ -45,12 +44,6 @@ export interface Source {
   composition: CompositionInfo;
   /** Frames can be asked for in any order, but a project's clock only runs forward, so ascending is cheapest. */
   frame(frame: number): Promise<FrameOutput>;
-  /** `--props`: what the composition was opened with, for the Chrome fallback to open it with too (docs/COMPAT.md §6.2). */
-  inputProps?: Record<string, unknown>;
-  /** The fonts registered so far (`getFonts()`): key to file. Downloaded ones are in it once a frame has been drawn. */
-  fonts?(): Record<string, string>;
-  /** Where `staticFile` reads from. */
-  publicDir?: string;
   /** Problems with the project's stylesheets, for `doctor`. */
   notes?(): string[];
   dispose(): void;
@@ -200,9 +193,6 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const sceneJson = JSON.stringify(result.scene);
       return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported: result.unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
-    inputProps,
-    fonts: () => mod.getFonts(),
-    publicDir: publicDirOf(absolute),
     notes: () => mod.stylesheetNotes(),
     dispose: () => renderer.dispose(),
   };

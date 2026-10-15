@@ -2,16 +2,15 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { whole } from '../args.js';
-import { parseCompat } from '../compat-report.js';
 import { CliError } from '../errors.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { buildOnionScene, buildStripScene, stripLayout, type SheetFrame } from '../scenes.js';
 import { evenFrames, frameRange, type Source } from '../source.js';
 import { nowMs } from '../time.js';
 import {
-  COMPAT_OPTION,
   ENTRY,
   OUTPUT_OPTION,
+  STRICT_OPTION,
   ensureParentDir,
   newRenderer,
   openFromArgs,
@@ -21,14 +20,14 @@ import {
 
 const MAX_FRAMES = 64;
 
-/** Renders `frames` of the source to PNGs in a fresh temp directory, each the way `drawer` draws it. */
+/** Renders `frames` of the source to PNGs in a fresh temp directory, drawn by `drawer`. */
 async function renderFrames(frames: number[], drawer: FrameDrawer): Promise<{ dir: string; files: SheetFrame[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'kinetograph-sheet-'));
   try {
     const files: SheetFrame[] = [];
     for (const frame of frames) {
       const file = `frame-${frame}.png`;
-      writeFileSync(join(dir, file), (await drawer.png(frame)).png);
+      writeFileSync(join(dir, file), await drawer.png(frame));
       files.push({ file, frame });
     }
     return { dir, files };
@@ -48,16 +47,15 @@ export const strip: Command = {
     OUTPUT_OPTION,
     { name: 'range', type: 'string', description: 'Frames to sample, as 10..40; default all' },
     { name: 'cols', type: 'number', description: 'Columns of the sheet (default 4 for landscape, 6 for portrait)' },
-    COMPAT_OPTION,
+    STRICT_OPTION,
   ],
   async run(args, context) {
     const output = requireOutput(args);
     const count = whole('-n', args.options.count as number | undefined, 1, 12);
     if (count > MAX_FRAMES) throw new CliError('INVALID_ARG', `-n is at most ${MAX_FRAMES}`);
     const cols = args.options.cols === undefined ? undefined : whole('--cols', args.options.cols as number, 1);
-    const compat = parseCompat(args.options.compat);
     const source = await openFromArgs(args);
-    const drawer = new FrameDrawer(source, { mode: compat, renderer: newRenderer, progress: context.progress });
+    const drawer = new FrameDrawer(source, { renderer: newRenderer, progress: context.progress, strict: args.options.strict === true });
     const started = nowMs();
     let dir: string | undefined;
     try {
@@ -76,7 +74,6 @@ export const strip: Command = {
         text: `wrote ${output} (${scene.width}x${scene.height}, frames ${frames.join(', ')}, ${ms.toFixed(0)} ms)`,
       };
     } finally {
-      await drawer.close();
       if (dir) rmSync(dir, { recursive: true, force: true });
       source.dispose();
     }
@@ -97,8 +94,7 @@ export const onion: Command = {
     const count = whole('-n', args.options.count as number | undefined, 1, 6);
     if (count > MAX_FRAMES) throw new CliError('INVALID_ARG', `-n is at most ${MAX_FRAMES}`);
     const source = await openFromArgs(args);
-    // `onion` is native only (docs/COMPAT.md §6.1).
-    const drawer = new FrameDrawer(source, { mode: 'native', renderer: newRenderer });
+    const drawer = new FrameDrawer(source, { renderer: newRenderer });
     const started = nowMs();
     let dir: string | undefined;
     try {

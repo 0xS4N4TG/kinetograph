@@ -1,8 +1,7 @@
 // `@kinetograph/compat/doctor` (docs/COMPAT.md §7): the report `kinetograph
 // doctor` prints, built from each frame's unsupported items. Stream 4.
 
-import { pathFor, planRuns } from './runs.js';
-import type { RenderPath, Run, Unsupported } from './types.js';
+import type { Unsupported } from './types.js';
 
 export interface DoctorIssue {
   element: string;
@@ -17,34 +16,19 @@ export interface DoctorIssue {
   frames: number;
 }
 
-export interface DoctorCompare {
-  frame: number;
-  path: RenderPath;
-  /** Per channel, 0..255. */
-  maxDiff: number;
-  meanDiff: number;
-  /** Pixels with any channel more than 2 levels apart. */
-  differingPixels: number;
-  /** Pixels with any channel more than 48 levels apart: what is left once anti-aliasing noise is set aside. */
-  largeDiffPixels?: number;
-  /** The pictures written for this frame (`--compare-dir`). */
-  files?: { native: string; chrome: string; diff: string };
-}
-
 export interface DoctorReport {
   comp: string;
   first: number;
   last: number;
   frames: number;
-  nativeFrames: number;
-  chromeFrames: number;
-  /** 0..1. */
-  nativeShare: number;
-  /** `planRuns(…, 'auto')`. */
-  runs: Run[];
+  /** Frames with nothing unsupported: drawn in full. */
+  cleanFrames: number;
+  /** Frames holding at least one unsupported item: drawn without it, or approximated. */
+  unsupportedFrames: number;
+  /** `cleanFrames / frames`, 0..1. */
+  cleanShare: number;
   /** Most frames first. */
   issues: DoctorIssue[];
-  compare?: DoctorCompare[];
   /** Problems with the project's stylesheets that no frame shows (Tailwind that could not be built, a remote font). */
   notes?: string[];
 }
@@ -69,9 +53,9 @@ function toRanges(frames: readonly number[]): [number, number][] {
 }
 
 /**
- * What the frames of composition `comp` need from Chrome (docs/COMPAT.md §7): the share drawn natively, the runs
- * (`planRuns(…, 'auto')`) and the unsupported items grouped by (element, property, reason), the group on the most
- * frames first. A frame listed twice is one frame with both lists' items.
+ * What the engine cannot draw in the frames of composition `comp` (docs/COMPAT.md §7): the share of frames with
+ * nothing unsupported and the unsupported items grouped by (element, property, reason), the group on the most frames
+ * first. A frame listed twice is one frame with both lists' items.
  */
 export function summarize(
   comp: string,
@@ -87,9 +71,9 @@ export function summarize(
 
   // Frames are ascending, so each group's frame list is too; a frame counts once however many items it has.
   const groups = new Map<string, { issue: DoctorIssue; frames: number[] }>();
-  let nativeFrames = 0;
+  let cleanFrames = 0;
   for (const { frame, unsupported } of merged) {
-    if (pathFor(unsupported, 'auto') === 'native') nativeFrames++;
+    if (unsupported.length === 0) cleanFrames++;
     for (const item of unsupported) {
       const key = JSON.stringify([item.element, item.property, item.reason]);
       let group = groups.get(key);
@@ -122,11 +106,10 @@ export function summarize(
     first: merged[0]?.frame ?? 0,
     last: merged[total - 1]?.frame ?? 0,
     frames: total,
-    nativeFrames,
-    chromeFrames: total - nativeFrames,
-    // With no frames nothing needs Chrome.
-    nativeShare: total === 0 ? 1 : nativeFrames / total,
-    runs: planRuns(merged, 'auto'),
+    cleanFrames,
+    unsupportedFrames: total - cleanFrames,
+    // With no frames nothing is unsupported.
+    cleanShare: total === 0 ? 1 : cleanFrames / total,
     issues,
   };
 }

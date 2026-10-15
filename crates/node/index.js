@@ -792,4 +792,3 @@ module.exports.renderCanvas = nativeBinding.renderCanvas
 module.exports.renderDomIsland = nativeBinding.renderDomIsland
 module.exports.validateScene = nativeBinding.validateScene
 module.exports.version = nativeBinding.version
-module.exports.videoFrame = nativeBinding.videoFrame

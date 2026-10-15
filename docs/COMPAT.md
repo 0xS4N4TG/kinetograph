@@ -1,12 +1,13 @@
 # Remotion compat mode (Phase 5)
 
-Written 2026-10-15 by the Phase 5 orchestrator (`HANDOFF.md` §8, "Phase 5 in the same cloud session").
+Written 2026-10-15 by the Phase 5 orchestrator (`HANDOFF.md` §8, "Phase 5 in the same cloud session"). The Chrome
+fallback this file used to define was removed on 2026-10-16 (Phase 6); §6 is now what happens to unsupported content.
 
 **Status (2026-10-15, the full engine, `ENGINE.md`).** DOM elements are no longer mapped onto layers in TypeScript. A
 DOM island is handed to the addon as an `IslandRequest` and styled, laid out and painted in Rust (Stylo, taffy,
 Parley through Blitz's DOM, our compositor): `className`, stylesheets, `<style>`, Tailwind, `calc()`, `var()`, grid,
 selectors and everything else the CSS engine knows are drawn or reported by it. What this file still defines is the
-compat contract around that: the pipeline (§2), the Chrome fallback (§6) and `doctor` (§7). The old §3 to §5, the
+compat contract around that: the pipeline (§2), what happens to unsupported content (§6) and `doctor` (§7). The old §3 to §5, the
 TypeScript mapping with its tables of supported properties, are **removed**: `packages/compat/src/css` and
 `src/dom/{box,map,paint,svg,text,…}.ts` were deleted on `engine/runtime` (the last commit that has them is
 `feat/full-engine`'s parent, `e082bad`). What the Rust side draws and what it reports is in `ENGINE.md` §4 and §5
@@ -16,22 +17,21 @@ and in the painter's own notes; how the TypeScript side builds the request, read
 `AUTHORING.md` §1's rules hold.
 
 Compat mode is not a switch. The reconciler accepts DOM host elements (`div`, `span`, `svg`, …) next to the native
-`kg-*` ones, so an unported Remotion project renders as it is. What the engine draws natively is drawn natively; while
-the Chrome fallback exists, a frame holding anything it reports as unsupported is drawn by Chrome.
+`kg-*` ones, so an unported Remotion project renders as it is. What the engine cannot draw is reported as
+unsupported and left out or approximated; no frame is ever drawn by a browser.
 
 ## 1. Layout and ownership
 
 | Path | Owner | What |
 |---|---|---|
-| `packages/compat` (`@kinetograph/compat`): `src/types.ts`, `src/runs.ts`, `src/index.ts` | orchestrator (complete) | `Unsupported`, `DomNode`, the run planner (§6.1) |
+| `packages/compat` (`@kinetograph/compat`): `src/types.ts`, `src/index.ts` | orchestrator (complete) | `Unsupported`, `DomNode` |
 | `packages/compat/src/css/` | stream 1 `feat/compat-css` | removed (the CSS parsers of the TypeScript mapping) |
 | `packages/compat/src/dom/` (`/dom`), `src/request/`, `src/shim/`; the DOM parts of `packages/react/src/{root,emit,readback}.ts`; `packages/core/src/{fill,web-install}.tsx` | stream 2 `feat/compat-dom`, then `engine/runtime` | DOM host elements → `IslandRequest` → the addon (`ENGINE.md` §10); the addon's old `layoutDom` is no longer called from TypeScript |
-| `packages/compat/src/browser/` (`/browser`); `packages/cli/src/fallback/`; the `--compat` option of `render`, `still`, `strip`; `crates/node/src/raw.rs` | stream 3 `feat/chrome-fallback` | the Chrome bundle and driver, `videoFrame`, `VideoWriter.pushRgba`, the split render (§6) |
+| `packages/cli/src/compat-report.ts`; the `--strict` option of `render`, `still`, `strip` | Phase 6 | the warning for unsupported content and `--strict` (§6). The Chrome bundle and driver, `videoFrame`, `VideoWriter.pushRgba` and `--compat` of stream 3 `feat/chrome-fallback` were removed |
 | `packages/compat/src/doctor.ts`; `packages/cli/src/commands/doctor.ts`; the `lint` and MCP wiring | stream 4 `feat/doctor` | `kinetograph doctor` (§7) |
 
 Dependencies point one way: `scene` ← `compat` ← `react` ← `core`. `compat` imports no React and no addon; the
-addon's `layoutDom` is handed to it with `setLayoutDom`, as `layoutText` is handed to core. `/browser` takes `react`
-and `react-dom` as peers.
+addon's `layoutDom` is handed to it with `setLayoutDom`, as `layoutText` is handed to core.
 
 ## 2. The pipeline
 
@@ -44,7 +44,7 @@ React tree with DOM host elements (div, span, svg, …) and native ones (kg-*)
      fill:    the `native` placeholders in the answer → the kg-* elements' own layers at those boxes
      report:  what the painter could not draw → RenderedTree.unsupported
   frame loop: FrameResult.unsupported
-  render: frames with no unsupported item → the addon; the others → Chrome (§6); one encoder, in order
+  render: every frame → the addon, in order, one encoder; unsupported items are warned about (§6)
 ```
 
 ```ts
@@ -93,12 +93,18 @@ property tables, the `layoutDom` request and the paint order rules. They are rep
 selectors), taffy and Parley (layout, text) and the painter in Rust (`ENGINE.md` §1 to §5). The unsupported items of a
 frame are now whatever the painter reports (`IslandOutput.unsupported`), with the same shape as before (§6.1).
 
-## 6. Chrome fallback (stream 3)
+## 6. Unsupported content
+
+Phase 5 drew a frame holding an unsupported item in headless Chrome. Kinetograph ships no browser, so that fallback
+is gone (`DECISION_RENDERING_CRITICAL.md`). Canvas 2D, the CSS gaps, WebGL fragment shaders and the own 3D layer are
+ported, and the papercut corpus draws 988 of 988 frames with nothing unsupported. What is still missing is ported
+natively, never worked around.
 
 ### 6.1 The rule
 
-A frame is drawn natively when its `FrameResult.unsupported` is empty, and by Chrome otherwise. The decision is per
-frame, never per scene (HANDOFF §9).
+Every frame is drawn by the engine. `FrameResult.unsupported` lists what the painter could not draw as a browser
+would; it is drawn without it, or approximated as the painter's notes say. The decision is never per frame or per
+scene: there is only one path.
 
 ```ts
 // @kinetograph/scene
@@ -109,95 +115,44 @@ interface Unsupported {
   value: string | null;
   reason: string;
 }
-// @kinetograph/compat (runs.ts, complete)
-type RenderPath = 'native' | 'chrome';
-type CompatMode = 'auto' | 'native' | 'chrome';
-interface Run { first: number; last: number; path: RenderPath }
-function pathFor(unsupported: readonly Unsupported[], mode: CompatMode): RenderPath;
-function planRuns(frames: readonly { frame: number; unsupported: readonly Unsupported[] }[], mode: CompatMode): Run[];
 ```
 
-- **`render`.** It splits its range into runs with `planRuns` and feeds both kinds, in frame order, into one
-  `VideoWriter`.
-- **`--compat`.** `auto` is the default and does the above. `native` draws every frame natively, leaving out what
-  is unsupported, and lists it on stderr. `chrome` draws every frame in Chrome.
-- **Other commands.** `still` and `strip` follow the same rule per frame, with the same option. `bench`, `onion` and
-  the studio preview are native only; the studio shows a frame's unsupported items as a warning.
+- **The warning.** `render`, `still` and `strip` print one line per kind of unsupported content on stderr after
+  drawing (element, property, values, reason, the frames), at most 12 kinds, and nothing when there is none. `--json`
+  keeps stderr quiet and puts the full list in the result: `compat: { unsupportedFrames, leftOut: [{ element,
+  property, reason, values, frames, firstFrame, lastFrame }] }`. The text of `render` adds `unsupported content left
+  out of N frames`.
+- **`--strict`.** `render`, `still` and `strip` take `--strict`: the first frame that holds an unsupported item fails
+  the command with the error code `UNSUPPORTED_CONTENT` (exit code 1, like every error), naming the frame and up to
+  five items. `render` aborts the video, so no output file is left. It is off by default, because an approximate video
+  is more useful than none while the port is not finished; CI and finished projects pass `--strict` to keep them
+  exact. It is checked as the frames come, so a `--strict` render stops at the first bad frame, not after the last.
+- **Other commands.** `bench`, `onion` and `snapshot` draw as they are and do not warn. The studio shows a frame's
+  unsupported items as a warning.
 - **What counts.** An unsupported item counts only on frames where its element is in the tree. Subtrees with
   `display: none` and boxes with `visibility: hidden` are not checked.
 
-### 6.2 The browser render
+### 6.2 Chrome as a test oracle
 
-This is written from the documented behaviour of Remotion's renderer, never from its source (HANDOFF §9).
-
-- **Chrome.** `puppeteer-core` drives Chrome for Testing at a pinned version, installed with `@puppeteer/browsers`
-  into `~/.cache/kinetograph/chrome`. `KINETOGRAPH_CHROME` overrides the executable; the cloud uses it with the
-  pre-installed Chromium for unit tests. Chrome runs headless at `deviceScaleFactor` 1 with a viewport the
-  composition's size. GPU compositing is off (`--disable-gpu`), so pixels do not depend on the machine's GPU, and
-  the sRGB colour profile is forced.
-- **The bundle.** esbuild bundles the project for the browser: React DOM and this repo's `@kinetograph/core`, with
-  `@kinetograph/react` aliased to `@kinetograph/compat/browser`. Its native elements render DOM:
-  - `Layer` → a positioned `div` with CSS transforms;
-  - shapes → `svg`;
-  - `Text` → a `div` with the font;
-  - `Image` → `img`;
-  - `Video` → an `img` of the picture the engine would show, served by the driver's local server from the addon's
-    `videoFrame`;
-  - `Lottie` → an error naming the frame (no Lottie in Chrome in this pass);
-  - effects that CSS has → `filter` and `box-shadow`; the others are left out with one warning each.
-
-  The determinism shim is installed in the page before the project.
-- **Fonts** are the registered ones (`getFonts()`). The driver serves them and loads them with `@font-face` before
-  the first frame.
-- **Per frame.** `window.__kinetograph.setFrame(f)` renders the composition at `f` and resolves once `delayRender`
-  handles and fonts are done. The driver then takes a PNG screenshot of the viewport (`omitBackground` when the
-  composition's background is transparent) and decodes it to straight-alpha RGBA.
-- **Encoding.** Chrome frames go into the writer with `VideoWriter.pushRgba`, in order with the native `pushFrame`s.
-
-```ts
-// @kinetograph/native additions (stream 3, crates/node/src/raw.rs)
-/** CPU: the picture a video layer shows at `time` seconds after the stream's first picture (SCENE.md "video"). */
-export function videoFrame(path: string, time: number, baseDir?: string): RgbaFrame;
-class VideoWriter {
-  /** Queues an already-drawn frame: straight-alpha sRGB RGBA8 of the writer's size. Same ordering rule as pushFrame. */
-  pushRgba(rgba: Buffer, width: number, height: number, frame: number): void;
-}
-```
-
-- **The driver** is `openChromeRenderer(source, options)` in `packages/cli/src/fallback/index.ts` (typed stub committed
-  with this file): `frame(f)` gives straight-alpha RGBA, `close()` stops Chrome. `render`, `still`, `strip` and
-  `doctor --compare` use it, and `FrameOutput.unsupported` (`packages/cli/src/source.ts`) carries each frame's items.
-- **The cloud.** Chrome may run in the cloud on the CPU, for unit tests only. Pixel comparisons between the two
-  paths happen on the M4.
-- **Blend space.** Chrome blends in sRGB and the engine in linear light (HANDOFF §10), so frames that use
-  `mixBlendMode` differ between the paths. `doctor --compare` shows by how much.
-
-As built (Phase 5 merge):
-
-- `render` decides each frame's path with `pathFor` as it renders, in one pass, so the JS stage runs once per frame;
-  `planRuns` builds the summary.
-- Chrome starts only at the first frame that needs it, and `videoFrame` also serves `gif` pictures (by the gif
-  rule).
-- `@kinetograph/compat/browser` keeps its own copy of the timeline context, since `compat` cannot import
-  `@kinetograph/react`.
-- Chrome for Testing is pinned at 154.0.8037.57; puppeteer-core is 25.12.0 and @puppeteer/browsers 3.2.3.
-- Left out of Chrome frames, with one warning each: `mask`, `matte`, `motionBlur`, `insetShadow`, `glow` without a
-  colour, conic gradients, gradient text, `noise` and `meshGradient` layers. `lottie` fails the frame.
+Chrome for Testing is used only by tests and tools that check the engine, never by `render`: the golden cases of
+`crates/dom/tests` (a headless Chrome whose path is in `KINETOGRAPH_CHROME`, else under `~/.cache/kinetograph/chrome/chrome`),
+`crates/dom/tools/chrome-compare.mjs` (puppeteer-core, a root dev dependency) and the comparison of `scripts/corpus.mjs
+--reference` with Remotion's own mp4. Get Chrome for Testing 154 (the build the goldens were made with) with
+`npx @puppeteer/browsers install chrome@154.0.8037.57 --path ~/.cache/kinetograph/chrome`; nothing in the CLI downloads it any more.
 
 ## 7. `doctor` (stream 4)
 
-`kinetograph doctor <entry> [--comp] [--props] [--range] [--json] [--compare N | --compare-every N] [--compare-dir DIR]` runs the JS stage for every frame of
-the range (no GPU) and reports:
+`kinetograph doctor <entry> [--comp] [--props] [--range] [--json]` runs the JS stage for every frame of the range (no
+GPU) and reports:
 
 ```ts
 // @kinetograph/compat (doctor.ts)
 interface DoctorReport {
   comp: string; first: number; last: number; frames: number;
-  nativeFrames: number; chromeFrames: number; nativeShare: number;   // 0..1
-  runs: Run[];                                                        // planRuns(…, 'auto')
+  cleanFrames: number;          // frames with nothing unsupported: drawn in full
+  unsupportedFrames: number;    // frames with at least one unsupported item
+  cleanShare: number;           // 0..1
   issues: DoctorIssue[];                                              // most frames first
-  compare?: { frame: number; path: RenderPath; maxDiff: number; meanDiff: number; differingPixels: number;
-              largeDiffPixels?: number; files?: { native: string; chrome: string; diff: string } }[];
   notes?: string[];   // problems with the project's stylesheets that no frame shows (Tailwind that could not be built, …)
 }
 interface DoctorIssue {
@@ -210,11 +165,10 @@ interface DoctorIssue {
 function summarize(comp: string, frames: readonly { frame: number; unsupported: readonly Unsupported[] }[]): DoctorReport;
 ```
 
-- **`--compare N`** renders N frames sampled evenly over the range, both natively and in Chrome, and reports the
-  per-channel difference: `maxDiff` and `meanDiff` in 0..255 levels, and the number of pixels with any difference
-  above 2 levels (`largeDiffPixels`: above 48, what is left after anti-aliasing and text rasterisation). It runs on
-  the M4, since it opens a GPU. `--compare-every N` samples the range's first frame and every Nth after it instead, and
-  `--compare-dir DIR` writes each sampled frame's native picture, Chrome's and their difference (x4) there as PNGs.
-  `scripts/corpus.mjs` runs this on the papercut episode (`ENGINE.md` §10.5).
-- **`lint`** adds one finding per issue group, rule `compat`, severity `warning`: a Chrome frame still renders.
-- **MCP.** The MCP server gets a `doctor` tool with the same arguments.
+- **`lint`** adds one finding per issue group, rule `compat`, severity `warning`: the frame still renders, without
+  the item or approximated.
+- **MCP.** The MCP server gets a `doctor` tool with the same arguments, and `still`, `strip` and `render` take
+  `strict`.
+- **Against a reference.** `doctor --compare` (native against Chrome) is gone with the fallback.
+  `scripts/corpus.mjs` (`ENGINE.md` §10.5) reports the coverage of the papercut episode, and with `--reference` how far
+  its native frames are from Remotion's own render.

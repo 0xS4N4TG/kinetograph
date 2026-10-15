@@ -222,46 +222,6 @@ test('a video of the wrong size, or aborted, leaves no file', { skip }, () => {
   rejects(() => renderer.beginVideo(path.join(dir, 'c.mp4'), { width: 321, height: 180, fps: 30 }), 'INVALID_ARG');
 });
 
-test('pushRgba interleaves already-drawn frames with pushFrame, in order', { skip }, () => {
-  const dir = tmp();
-  const out = path.join(dir, 'mixed.mp4');
-  const renderer = new native.Renderer();
-  const grey = Buffer.alloc(320 * 180 * 4, 128);
-
-  const writer = renderer.beginVideo(out, { width: 320, height: 180, fps: 30 });
-  writer.pushFrame(sceneA(), 0, repo);
-  // The native frame still on the GPU is encoded before this one.
-  writer.pushRgba(grey, 320, 180, 1);
-  writer.pushRgba(grey, 320, 180, 2);
-  writer.pushFrame(sceneA(), 3, repo);
-  writer.pushFrame(sceneA(), 4, repo);
-  writer.pushRgba(grey, 320, 180, 5);
-  // A wrong size is INVALID_ARG, and ends the video like a failed pushFrame.
-  rejects(() => writer.pushRgba(grey, 160, 90, 6), 'INVALID_ARG', /160x90/);
-  rejects(() => writer.finish(), 'INVALID_ARG');
-  assert.deepEqual(fs.readdirSync(dir), []);
-
-  // A wrong length, an out-of-order frame (raw after raw, raw after native).
-  const second = renderer.beginVideo(out, { width: 320, height: 180, fps: 30 });
-  second.pushRgba(grey, 320, 180, 0);
-  second.pushFrame(sceneA(), 1, repo);
-  rejects(() => second.pushRgba(grey.subarray(0, 100), 320, 180, 2), 'INVALID_ARG', /bytes of RGBA/);
-  const third = renderer.beginVideo(out, { width: 320, height: 180, fps: 30 });
-  third.pushRgba(grey, 320, 180, 3);
-  rejects(() => third.pushRgba(grey, 320, 180, 3), 'INVALID_ARG', /increasing order/);
-  const fourth = renderer.beginVideo(out, { width: 320, height: 180, fps: 30 });
-  fourth.pushFrame(sceneA(), 3, repo);
-  rejects(() => fourth.pushRgba(grey, 320, 180, 2), 'INVALID_ARG', /increasing order/);
-
-  const last = renderer.beginVideo(out, { width: 320, height: 180, fps: 30 });
-  last.pushFrame(sceneA(), 0, repo);
-  last.pushRgba(grey, 320, 180, 1);
-  const summary = last.finish();
-  assert.equal(summary.frames, 2);
-  assert.deepEqual([summary.first, summary.last], [0, 1]);
-  assert.ok(fs.statSync(out).size > 0);
-});
-
 test('renderCanvas draws a canvas layer on a transparent canvas, as RGBA or a PNG', { skip }, () => {
   const request = (extra = {}) =>
     JSON.stringify({

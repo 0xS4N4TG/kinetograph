@@ -234,8 +234,9 @@ export function mergeFindings(perFrame: { frame: number; findings: Finding[] }[]
 }
 
 /**
- * What compat mode cannot draw natively in the checked frames (docs/COMPAT.md §7): one warning per issue group of
- * `kinetograph doctor`, since a Chrome frame still renders. The ranges are of the checked frames only.
+ * What the engine cannot draw in the checked frames (docs/COMPAT.md §7): one warning per issue group of
+ * `kinetograph doctor`, since the frame still renders, without it or approximated. The ranges are of the checked
+ * frames only.
  */
 export function lintCompat(perFrame: { frame: number; unsupported: readonly Unsupported[] }[]): LintIssue[] {
   return summarize('', perFrame).issues.map((issue) => {
@@ -245,7 +246,7 @@ export function lintCompat(perFrame: { frame: number; unsupported: readonly Unsu
       rule: 'compat',
       severity: 'warning' as const,
       layer: null,
-      message: `not drawn natively, so Chrome renders the frame: ${describeIssue(issue)}${values} at ${issue.paths.join(', ')}`,
+      message: `not supported, so the frame is drawn without it or approximated: ${describeIssue(issue)}${values} at ${issue.paths.join(', ')}`,
       frames,
     };
   });

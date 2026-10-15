@@ -162,15 +162,15 @@ const IMPORT = /@import\s+(?:url\(\s*)?(['"]?)([^'")\s;]+)\1\s*\)?([^;]*);/g;
 
 const isRemote = (target: string): boolean => /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(target) || target.startsWith('#');
 
-/** Rewrites `url(relative)` to `url("<absolute>")` when the file exists next to `base`; `rewrite` maps it from there. */
-export function absolutizeUrls(css: string, base: string, rewrite: (absolute: string) => string = (a) => a): string {
+/** Rewrites `url(relative)` to `url("<absolute>")` when the file exists next to `base`. */
+export function absolutizeUrls(css: string, base: string): string {
   return css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/g, (match, _quote: string, target: string) => {
     const t = target.trim();
     if (t === '' || isRemote(t)) return match;
     const absolute = isAbsolute(t) ? t : resolve(base, t.split(/[?#]/)[0]!);
     if (!existsSync(absolute.split(/[?#]/)[0]!)) return match;
     const suffix = /[?#].*$/.exec(t)?.[0] ?? '';
-    return `url("${rewrite(absolute) + suffix}")`;
+    return `url("${absolute + suffix}")`;
   });
 }
 
@@ -182,7 +182,7 @@ export interface ReadCss {
 }
 
 /** The stylesheet at `file` with its local `@import`s inlined (media queries on an import wrap the inlined text). */
-export function readStylesheet(file: string, rewriteUrl?: (absolute: string) => string, seen = new Set<string>()): ReadCss {
+export function readStylesheet(file: string, seen = new Set<string>()): ReadCss {
   const files = [file];
   const warnings: string[] = [];
   seen.add(file);
@@ -208,13 +208,13 @@ export function readStylesheet(file: string, rewriteUrl?: (absolute: string) => 
       return '';
     }
     if (seen.has(path)) return '';
-    const inner = readStylesheet(path, rewriteUrl, seen);
+    const inner = readStylesheet(path, seen);
     files.push(...inner.files);
     warnings.push(...inner.warnings);
     const media = tail.trim();
     return media === '' ? inner.css : `@media ${media} {\n${inner.css}\n}`;
   });
-  return { css: absolutizeUrls(css, dirname(file), rewriteUrl), files, warnings };
+  return { css: absolutizeUrls(css, dirname(file)), files, warnings };
 }
 
 // ---- CSS modules ----
@@ -251,35 +251,25 @@ export function scopeModule(css: string, file: string): { css: string; exports: 
 
 // ---- the esbuild plugin ----
 
-export type CssTarget = 'node' | 'browser';
-
-export interface CssPluginOptions {
-  target: CssTarget;
-  /** For `browser`: the URL a local file is served at (the driver's `/@file`). */
-  fileUrl?: (absolute: string) => string;
-}
-
-/** Turns each imported `.css` into a module that registers its text (Node) or adds a `<style>` (Chrome). */
-export function cssPlugin(options: CssPluginOptions): Plugin {
+/** Turns each imported `.css` into a module that registers its text. */
+export function cssPlugin(): Plugin {
   return {
     name: 'kinetograph-css',
     setup(b) {
       b.onLoad({ filter: /\.css$/ }, async (args) => {
         const warnings: { text: string }[] = [];
-        const read = readStylesheet(args.path, options.target === 'browser' ? options.fileUrl : undefined);
+        const read = readStylesheet(args.path);
         for (const text of read.warnings) warnings.push({ text });
         let css = read.css;
         const files = [...read.files];
         if (usesTailwind(readFileSync(args.path, 'utf8'))) {
           const built = await buildTailwind(args.path);
           if ('css' in built) {
-            css = absolutizeUrls(built.css, dirname(args.path), options.target === 'browser' ? options.fileUrl : undefined);
+            css = absolutizeUrls(built.css, dirname(args.path));
           } else {
             warnings.push({ text: built.error });
-            if (options.target === 'node') {
-              const note = `noteStylesheetProblem(${JSON.stringify(built.error)});`;
-              return finish(options, args.path, css, {}, files, warnings, note);
-            }
+            const note = `noteStylesheetProblem(${JSON.stringify(built.error)});`;
+            return finish(args.path, css, {}, files, warnings, note);
           }
         }
         let exports: Record<string, string> = {};
@@ -288,14 +278,13 @@ export function cssPlugin(options: CssPluginOptions): Plugin {
           css = scoped.css;
           exports = scoped.exports;
         }
-        return finish(options, args.path, css, exports, files, warnings, '');
+        return finish(args.path, css, exports, files, warnings, '');
       });
     },
   };
 }
 
 function finish(
-  options: CssPluginOptions,
   file: string,
   css: string,
   exports: Record<string, string>,
@@ -305,17 +294,10 @@ function finish(
 ) {
   const text = JSON.stringify(css);
   const lines: string[] = [];
-  if (options.target === 'node') {
-    lines.push(`import { registerStylesheet, noteStylesheetProblem } from '@kinetograph/compat/dom';`);
-    lines.push(`void noteStylesheetProblem;`);
-    if (extra) lines.push(extra);
-    lines.push(`registerStylesheet(${text}, ${JSON.stringify(file)});`);
-  } else {
-    lines.push(`const style = document.createElement('style');`);
-    lines.push(`style.setAttribute('data-kg-file', ${JSON.stringify(file)});`);
-    lines.push(`style.textContent = ${text};`);
-    lines.push(`document.head.appendChild(style);`);
-  }
+  lines.push(`import { registerStylesheet, noteStylesheetProblem } from '@kinetograph/compat/dom';`);
+  lines.push(`void noteStylesheetProblem;`);
+  if (extra) lines.push(extra);
+  lines.push(`registerStylesheet(${text}, ${JSON.stringify(file)});`);
   lines.push(`const classes = ${JSON.stringify(exports)};`, `export default classes;`);
   for (const name of Object.keys(exports)) {
     if (/^[A-Za-z_$][\w$]*$/.test(name)) lines.push(`export const ${name} = classes[${JSON.stringify(name)}];`);
