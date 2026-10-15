@@ -44,7 +44,7 @@ function stopsOf(segs: Tok[][], conic: boolean): ColorStop[] {
     if (seg.length === 1) stops.push({ color, position: null });
     else for (const t of seg.slice(1)) stops.push({ color, position: position(t) });
   }
-  if (stops.length < 2) return fail('a gradient needs at least two colour stops');
+  if (stops.length === 0) return fail('a gradient needs a colour stop');
   return stops;
 }
 

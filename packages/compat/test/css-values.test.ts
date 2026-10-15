@@ -139,6 +139,28 @@ describe('parseLength', () => {
   });
 });
 
+describe('the tokenizer, through the public parsers', () => {
+  it('skips comments and extra whitespace', () => {
+    expect(parseLength('  /* a */ 5px /* b */ ')).toEqual(px(5));
+    expect(parseColor('rgb(/* r */ 1,\n\t2 ,3)')).toEqual({ r: 1, g: 2, b: 3, a: 1 });
+  });
+
+  it('reads signs, exponents and leading dots in numbers', () => {
+    expect(parseLength('+5px')).toEqual(px(5));
+    expect(parseLength('-.5em')).toEqual({ unit: 'em', value: -0.5 });
+    expect(parseLength('1.5E1px')).toEqual(px(15));
+    expect(parseLength('1e-1px')).toEqual(px(0.1));
+    expect(parseLength('2em')).toEqual({ unit: 'em', value: 2 });
+  });
+
+  it('is null for unbalanced or unterminated input', () => {
+    expect(parseColor('rgb(1, 2, 3')).toBeNull();
+    expect(parseColor('rgb(1, 2, 3))')).toBeNull();
+    expect(parseColor('"red')).toBeNull();
+    expect(parseLength('url(')).toBeNull();
+  });
+});
+
 describe('resolveLength', () => {
   const context = { percentOf: 400, fontSize: 20, rootFontSize: 16, viewport: { width: 1920, height: 1080 } };
   it('resolves every unit against the context', () => {

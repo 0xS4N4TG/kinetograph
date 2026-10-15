@@ -18,11 +18,12 @@ const GENERIC_FAMILIES = new Set([
 export function fontFamilyOf(toks: Tok[]): string[] {
   return splitCommas(toks).map((seg) => {
     if (seg.length === 1 && seg[0]!.type === 'string') {
-      const str = (seg[0] as Extract<Tok, { type: 'string' }>).str;
-      if (str === '') return fail('a font family name is empty');
-      return str;
+      return (seg[0] as Extract<Tok, { type: 'string' }>).str;
     }
     if (!seg.every((t) => t.type === 'ident')) return fail(`\`${seg.map((t) => t.text).join(' ')}\` is not a font family name`);
+    if (seg.length === 1 && ['inherit', 'initial', 'unset', 'revert', 'revert-layer', 'default'].includes(nameOf(seg[0]))) {
+      return fail(`\`${seg.map((t) => t.text).join(' ')}\` is a reserved word, not a font family name`);
+    }
     const name = seg.map((t) => t.text).join(' ');
     return seg.length === 1 && GENERIC_FAMILIES.has(name.toLowerCase()) ? name.toLowerCase() : name;
   });
@@ -45,6 +46,7 @@ const FONT_SIZE_KEYWORDS = ['xx-small', 'x-small', 'small', 'medium', 'large', '
 function fontSizeTok(t: Tok | undefined): FontSize {
   if (t && t.type === 'ident') {
     if (FONT_SIZE_KEYWORDS.includes(t.name)) return t.name as FontSize;
+    if (t.name === 'xxx-large' || t.name === 'math') return fail(`the font size keyword \`${t.text}\` is not supported`);
     return fail(`\`${t.text}\` is not a font size`);
   }
   return lengthOf(t, { negative: false });
@@ -78,7 +80,7 @@ export function fontStyleOf(toks: Tok[]): 'normal' | 'italic' | 'oblique' {
 export function spacingOf(toks: Tok[]): Length | 'normal' {
   const t = single(toks);
   if (isKw(t, 'normal')) return 'normal';
-  return lengthOf(t);
+  return lengthOf(t, { percent: false });
 }
 
 const STRETCH_KEYWORDS = [
@@ -119,6 +121,7 @@ export function fontShorthandOf(toks: Tok[]): FontShorthand {
       break;
     }
   }
+  if (i > 4) return fail('too many values before the font size');
   const sizeTok = toks[i];
   if (!sizeTok || !(isLengthLike(sizeTok) || sizeTok.type === 'ident')) return fail('the font shorthand needs a font size');
   const fontSize = fontSizeTok(sizeTok);

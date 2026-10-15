@@ -178,7 +178,7 @@ export interface ParsedStyle {
   /** A bare number is px, as SVG takes it. */
   strokeWidth?: Length;
   strokeLinecap?: 'butt' | 'round' | 'square';
-  strokeLinejoin?: 'miter' | 'round' | 'bevel' | 'arcs' | 'miter-clip';
+  strokeLinejoin?: 'miter' | 'round' | 'bevel';
   strokeDasharray?: Length[] | 'none';
   fillRule?: 'nonzero' | 'evenodd';
 }

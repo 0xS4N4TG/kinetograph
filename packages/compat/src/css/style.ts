@@ -64,6 +64,7 @@ const enumProp = (name: string, allowed: readonly string[]): void => prop(name, 
 /** Keyword values Chrome has but this pass does not read. */
 const unsupportedKeywords = (name: string, supported: readonly string[], unsupported: readonly string[]): void =>
   prop(name, (toks) => {
+    if (toks.length > 1) return fail(`${name}: \`${toks.map((t) => t.text).join(' ')}\` (several keywords) is not supported`);
     const t = single(toks);
     if (t.type === 'ident' && unsupported.includes(t.name)) return fail(`${name}: \`${t.text}\` is not supported`);
     return keyword(toks, supported);
@@ -71,12 +72,27 @@ const unsupportedKeywords = (name: string, supported: readonly string[], unsuppo
 
 const colorProp = (name: string): void => prop(name, (toks) => requireColor(single(toks)));
 
-/** Alignment keywords, validated word by word and kept as the written words. */
-const alignmentProp = (name: string, words: readonly string[]): void =>
+interface AlignmentGrammar {
+  /** Keywords that stand alone. */
+  alone: readonly string[];
+  /** `baseline`, `first baseline`, `last baseline`. */
+  baseline: boolean;
+  /** Keywords that may follow `safe` or `unsafe`. */
+  positions: readonly string[];
+}
+
+/** An alignment value (CSS Box Alignment 3), validated against the property's grammar and kept as its words. */
+const alignmentProp = (name: string, grammar: AlignmentGrammar): void =>
   prop(name, (toks) => {
-    if (toks.length > 3) return fail('too many values');
-    for (const t of toks) if (!isKw(t, ...words)) return fail(`\`${t.text}\` is not an alignment value`);
-    return toks.map((t) => (t as Extract<Tok, { type: 'ident' }>).name).join(' ');
+    const words = toks.map((t) => (t.type === 'ident' ? t.name : ''));
+    const text = words.join(' ');
+    const bad = (): never => fail(`\`${toks.map((t) => t.text).join(' ')}\` is not an alignment value of ${name}`);
+    if (words.length === 0 || words.includes('')) return bad();
+    if (words.length === 1 && grammar.alone.includes(words[0]!)) return text;
+    if (grammar.baseline && (text === 'baseline' || text === 'first baseline' || text === 'last baseline')) return text;
+    const rest = words.length === 2 && (words[0] === 'safe' || words[0] === 'unsafe') ? words.slice(1) : words;
+    if (rest.length === 1 && grammar.positions.includes(rest[0]!)) return text;
+    return bad();
   });
 
 // ---- layout ----
@@ -128,18 +144,13 @@ on('flex', (toks, o) => {
   o.flexShrink = shrink;
   o.flexBasis = basis;
 });
-const CONTENT_WORDS = [
-  'normal', 'stretch', 'start', 'end', 'center', 'flex-start', 'flex-end', 'left', 'right', 'space-between', 'space-around',
-  'space-evenly', 'baseline', 'first', 'last', 'safe', 'unsafe',
-];
-const ITEM_WORDS = [
-  'normal', 'stretch', 'start', 'end', 'center', 'flex-start', 'flex-end', 'self-start', 'self-end', 'baseline', 'first',
-  'last', 'safe', 'unsafe',
-];
-alignmentProp('justifyContent', CONTENT_WORDS);
-alignmentProp('alignContent', CONTENT_WORDS);
-alignmentProp('alignItems', ITEM_WORDS);
-alignmentProp('alignSelf', ['auto', ...ITEM_WORDS]);
+const DISTRIBUTION = ['normal', 'stretch', 'space-between', 'space-around', 'space-evenly'];
+const CONTENT_POSITIONS = ['center', 'start', 'end', 'flex-start', 'flex-end'];
+const SELF_POSITIONS = [...CONTENT_POSITIONS, 'self-start', 'self-end'];
+alignmentProp('justifyContent', { alone: DISTRIBUTION, baseline: false, positions: [...CONTENT_POSITIONS, 'left', 'right'] });
+alignmentProp('alignContent', { alone: DISTRIBUTION, baseline: true, positions: CONTENT_POSITIONS });
+alignmentProp('alignItems', { alone: ['normal', 'stretch'], baseline: true, positions: SELF_POSITIONS });
+alignmentProp('alignSelf', { alone: ['auto', 'normal', 'stretch'], baseline: true, positions: SELF_POSITIONS });
 prop('rowGap', oneGapOf);
 prop('columnGap', oneGapOf);
 on('gap', (toks, o) => {
@@ -271,7 +282,7 @@ prop('boxShadow', boxShadowOf);
 prop('filter', filterOf);
 enumProp('mixBlendMode', [
   'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light',
-  'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity', 'plus-lighter', 'plus-darker',
+  'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity', 'plus-lighter',
 ]);
 prop('transform', transformOf);
 prop('transformOrigin', transformOriginOf);
@@ -328,11 +339,23 @@ prop('fillOpacity', (toks) => Math.min(1, Math.max(0, numberOrPercent(single(tok
 prop('strokeOpacity', (toks) => Math.min(1, Math.max(0, numberOrPercent(single(toks)))));
 prop('strokeWidth', (toks) => lengthOf(single(toks), { negative: false, unitless: true }));
 enumProp('strokeLinecap', ['butt', 'round', 'square']);
-enumProp('strokeLinejoin', ['miter', 'round', 'bevel', 'arcs', 'miter-clip']);
+enumProp('strokeLinejoin', ['miter', 'round', 'bevel']);
 enumProp('fillRule', ['nonzero', 'evenodd']);
 prop('strokeDasharray', (toks): Length[] | 'none' => {
   if (toks.length === 1 && isKw(toks[0], 'none')) return 'none';
-  return toks.filter((t) => t.type !== 'comma').map((t) => lengthOf(t, { negative: false, unitless: true }));
+  // Lengths separated by commas and/or spaces; a comma needs a length on each side.
+  const out: Length[] = [];
+  let afterComma = false;
+  toks.forEach((t, i) => {
+    if (t.type === 'comma') {
+      if (i === 0 || afterComma || i === toks.length - 1) fail('a comma in a dash array needs a value on each side');
+      afterComma = true;
+    } else {
+      out.push(lengthOf(t, { negative: false, unitless: true }));
+      afterComma = false;
+    }
+  });
+  return out;
 });
 
 // ---- ignored properties, and name handling ----

@@ -35,6 +35,10 @@ describe('linear-gradient', () => {
     });
   });
 
+  it('reads a single colour stop, as Chrome does', () => {
+    expect(one('linear-gradient(red)')).toMatchObject({ stops: [{ color: rgba(255, 0, 0), position: null }] });
+  });
+
   it('reads angles in every unit', () => {
     expect(one('linear-gradient(45deg, red, blue)')).toMatchObject({ angle: 45 });
     expect(one('linear-gradient(0.25turn, red, blue)')).toMatchObject({ angle: 90 });
@@ -88,9 +92,8 @@ describe('linear-gradient', () => {
   });
 
   it('gives a reason for bad gradients', () => {
-    expect(reason(parseBackgroundImage('linear-gradient(red)'))).toMatch(/at least two/);
+    expect(reason(parseBackgroundImage('linear-gradient(45deg)'))).toMatch(/needs a colour stop/);
     expect(reason(parseBackgroundImage('linear-gradient()'))).toMatch(/needs colour stops/);
-    expect(reason(parseBackgroundImage('linear-gradient(45deg)'))).toMatch(/at least two/);
     expect(reason(parseBackgroundImage('linear-gradient(red, 50%, blue)'))).toMatch(/colour hints/);
     expect(reason(parseBackgroundImage('linear-gradient(red 1 2 3, blue)'))).toMatch(/at most two positions/);
     expect(reason(parseBackgroundImage('linear-gradient(to, red, blue)'))).toMatch(/one side or one vertical/);

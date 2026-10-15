@@ -112,6 +112,7 @@ describe('display, position and the other keywords', () => {
     expect(reasonOf('display', 'contents')).toMatch(/not supported/);
     expect(reasonOf('position', 'sticky')).toMatch(/sticky.*not supported/);
     expect(reasonOf('display', 'sideways')).toMatch(/not one of/);
+    expect(reasonOf('display', 'block flex')).toMatch(/several keywords/);
   });
 
   it('reads overflow in one or two values, and the longhands', () => {
@@ -181,6 +182,14 @@ describe('flex', () => {
     expect(reasonOf('flexDirection', 'diagonal')).toMatch(/not one of/);
     expect(reasonOf('justifyContent', 'middle')).toMatch(/not an alignment value/);
     expect(reasonOf('alignItems', 'auto')).toMatch(/not an alignment value/);
+    expect(reasonOf('justifyContent', 'baseline')).toMatch(/not an alignment value/);
+    expect(reasonOf('justifyContent', 'center center')).toMatch(/not an alignment value/);
+    expect(reasonOf('alignContent', 'left')).toMatch(/not an alignment value/);
+    expect(reasonOf('alignItems', 'safe')).toMatch(/not an alignment value/);
+    expect(parse({ alignContent: 'last baseline', justifyContent: 'unsafe right' }).style).toEqual({
+      alignContent: 'last baseline',
+      justifyContent: 'unsafe right',
+    });
   });
 
   it('reads gap in one or two values, and the longhands', () => {

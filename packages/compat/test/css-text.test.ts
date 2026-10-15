@@ -24,7 +24,9 @@ describe('font-family', () => {
   it('gives a reason for bad lists', () => {
     expect(reasonOf('fontFamily', 'Inter,')).toMatch(/empty item/);
     expect(reasonOf('fontFamily', '12px')).toMatch(/not a font family name/);
-    expect(reasonOf('fontFamily', '""')).toMatch(/empty/);
+    expect(reasonOf('fontFamily', 'Inter, inherit')).toMatch(/reserved word/);
+    expect(reasonOf('fontFamily', 'default')).toMatch(/reserved word/);
+    expect(parse({ fontFamily: '""' }).style.fontFamily).toEqual(['']);
     expect(reasonOf('fontFamily', 'Inter, 3d')).toMatch(/not a font family name/);
   });
 });
@@ -39,6 +41,7 @@ describe('font-size, weight, style and line-height', () => {
     expect(parse({ fontSize: '12pt' }).style.fontSize).toEqual(px(16));
     expect(reasonOf('fontSize', -1)).toMatch(/negative/);
     expect(reasonOf('fontSize', 'huge')).toMatch(/not a font size/);
+    expect(reasonOf('fontSize', 'xxx-large')).toMatch(/not supported/);
     expect(reasonOf('fontSize', '12')).toMatch(/needs a unit/);
     expect(reasonOf('fontSize', 'calc(1rem + 2px)')).toBe('calc() is not supported');
   });
@@ -106,6 +109,7 @@ describe('font shorthand', () => {
     expect(reasonOf('font', 'condensed 16px Arial')).toMatch(/stretch/);
     expect(reasonOf('font', 'caption')).toMatch(/system font/);
     expect(reasonOf('font', 'oblique 10deg 16px Arial')).toMatch(/oblique angle/);
+    expect(reasonOf('font', 'normal normal normal normal normal 16px Arial')).toMatch(/too many/);
     expect(reasonOf('font', '16px/ Arial')).toMatch(/length|number|expected/);
   });
 });
@@ -138,6 +142,8 @@ describe('text properties', () => {
     expect(reasonOf('textTransform', 'full-width')).toMatch(/not one of/);
     expect(reasonOf('whiteSpace', 'wrap')).toMatch(/not one of/);
     expect(reasonOf('letterSpacing', '2')).toMatch(/needs a unit/);
+    expect(reasonOf('letterSpacing', '10%')).toMatch(/percentage/);
+    expect(reasonOf('wordSpacing', '10%')).toMatch(/percentage/);
   });
 
   it('reads textDecoration as its words', () => {
@@ -197,5 +203,9 @@ describe('SVG presentation properties', () => {
     expect(reasonOf('fill', 'url(#a) url(#b)')).toMatch(/not a colour|expected a colour/);
     expect(reasonOf('strokeWidth', -1)).toMatch(/negative/);
     expect(reasonOf('strokeLinecap', 'pointy')).toMatch(/not one of/);
+    expect(reasonOf('strokeLinejoin', 'arcs')).toMatch(/not one of/);
+    expect(reasonOf('strokeDasharray', '4,')).toMatch(/comma/);
+    expect(reasonOf('strokeDasharray', ',4')).toMatch(/comma/);
+    expect(reasonOf('strokeDasharray', '4,,2')).toMatch(/comma/);
   });
 });
