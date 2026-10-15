@@ -349,11 +349,34 @@ goldens. `cargo test` and the GPU npm tests pass except `renderer_reuse` (#12).
 (`@remotion/three`, react-three-fiber, drei, pixi) is dropped for now. Spike 2 showed Three.js runs on Dawn, but
 running it means a second GPU API in the process, a pixel readback per frame and a browser library's behaviour to
 match; our own layer is native, shares the wgpu device and stays a pure function of the frame.
-- A `3d` scene layer drawn in Rust on the compositor's wgpu device, no readback. kiss3d 0.47 (section 4) is the
-  starting point to evaluate; its feature list (meshes, metallic-roughness PBR, lights, shadows, glTF) is the scope.
-- Authoring: our own components (`<Scene3D>`, `<Mesh>`, primitives, `<Model src="x.glb">`, lights, a camera), not
-  the Three.js API. Their names may follow react-three-fiber's where that costs nothing, so agents guess right.
-- Extruded text and SVG paths as meshes, since the motion-graphics use is mostly 3D type and logos.
+- **Built 2026-10-16 on `feat/3d-layer`** (not yet merged). A `scene3d` layer (SCENE.md, "scene3d"; AUTHORING.md §6.6)
+  drawn in Rust on the compositor's wgpu device, no readback: `crates/core/src/scene3d/` (scene types, resolution,
+  primitives, glTF, extrusion, draw list), `compositor/scene3d.rs` and `shaders/scene3d.wgsl` (the pass),
+  `<Scene3D>`, `<Mesh>`, `<Model>`, `<Text3D>`, `<Extrude>`, `<Group3D>`, `<Camera3D>` and the lights in
+  `@kinetograph/react`.
+- **Renderer choice: our own, lean, on wgpu.** kiss3d 0.47 was evaluated from its source. It does use wgpu 30 and has
+  glTF, PBR and lights, but it is built around a window (winit is a hard dependency; its canvas, frame loop and
+  post-processing own the target), keeps its device in a global `Context`, brings its own maths crate (glamx), shader
+  tooling (wesl) and font stack (rusttype), and renders to its own surface-format targets rather than our linear
+  premultiplied `Rgba16Float` layer textures. Making it draw into a compositor texture on the compositor's device, with
+  our layer matrix and a transparent background, would mean working around most of it. The lean renderer is a few
+  thousand lines with its tests, and one WGSL file on crates we already use (wgpu, glam, skrifa) plus `gltf` and `lyon_tessellation`
+  (the cap triangulation of extruded outlines). It shares the device by construction, has no hidden global state, and
+  is deterministic: no clocks, no randomness, f64 maths on the CPU, one f32 draw.
+- Tests: unit tests for the types, primitives (winding, closed surfaces), extrusion (holes, fill rules, smooth and hard
+  walls, text), glTF loading, camera matrices and the placement matrix; `crates/core/tests/scene3d.rs` pins the pixel
+  rules (depth, culling, mirroring, transparency order, MSAA, box clipping, light laws, determinism); seven goldens:
+  primitives, lights, materials, material kinds, glTF model, extruded text and paths, composite with 2D layers. React
+  tests for the components.
+- Benchmark (`examples/scene3d-reference.json`: 1920x1080, 14 objects including extruded text, a glTF model and a
+  translucent set, 5 lights, MSAA 4; M4, release): 1.2 ms raster plus 1.7 ms composite for the layer, 6.7 ms the whole
+  frame with PNG encoding, `bench --frame 10 --runs 20`; 7.8 ms a frame over `--range 0..60`.
+- **Deferred:** shadow maps; image-based lighting and environment maps (metals look dark away from a light); spot
+  lights; normal, occlusion, metallic-roughness and emissive maps; glTF animation, skins and morph targets; bevels on
+  extrusions; `KHR_*` glTF extensions; sorting within a translucent object; animated primitive sizes (animate `scale`);
+  fog and depth of field; more than 8 lights; automatic model fit; the `doctor` report for projects that import
+  `three`; the studio's scene tree showing 3D objects. Not decided yet: a 3D layer that shares one depth buffer with
+  `preserve3d` groups.
 - Projects that import `three` or `@remotion/three` are reported by `doctor`; nothing falls back to Chrome.
 **Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
@@ -382,7 +405,7 @@ browser in it. Streams in progress on their own branches are marked (building); 
    - WebGL fragment shaders, GLSL to WGSL through naga (next).
 2. Corpus leftovers (`docs/ENGINE.md` §10.5) and the painter suggestions (§11) (building), plus issues #16
    (`kinetograph check`) and #17 (rajz-cards speed) (building).
-3. The own 3D layer (see "3D layer" above), after the ports.
+3. The own 3D layer (see "3D layer" above): built on `feat/3d-layer`, to merge after the ports.
 4. Last: remove the Phase 5 Chrome fallback (`--compat`, `packages/cli/src/fallback/`, Chrome for Testing). No Chrome
    in the render path, canvas and WebGL included. `doctor` then reports what is unsupported instead of falling back.
 The showcase (`examples/showcase`) shots 3 to 10 redo is deferred by the user and is not part of Phase 6.
