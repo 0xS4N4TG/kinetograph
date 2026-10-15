@@ -18,9 +18,11 @@ import type {
   Clip,
   ColorString,
   Effect,
+  Geometry3D,
   Layout,
   LayoutItem,
   Mask,
+  Material3D,
   Matte,
   MotionBlurMarker,
   Num,
@@ -28,6 +30,7 @@ import type {
   SequenceJson,
   Stroke,
   Turbulence,
+  Vec3,
 } from '@kinetograph/scene';
 import { useTimeline } from './timeline.js';
 
@@ -174,6 +177,93 @@ export interface GlslShaderProps extends CommonProps {
   textures?: Record<string, string | GlslTextureOptions>;
 }
 
+// ---- the 3D layer (docs/AUTHORING.md §6.6) ----
+
+export interface Scene3DProps extends CommonProps {
+  /** The layer's box in layer pixels; the camera's aspect ratio is its width over its height. */
+  width: Num;
+  height: Num;
+  /** Samples per pixel, 1 or 4 (default 4). */
+  msaa?: 1 | 4;
+  /** `<Camera3D>`, lights and the objects. */
+  children?: ReactNode;
+}
+
+export interface Camera3DProps {
+  type?: 'perspective' | 'orthographic';
+  fov?: Num;
+  height?: Num;
+  near?: Num;
+  far?: Num;
+  position?: Vec3;
+  target?: Vec3;
+  up?: [number, number, number];
+}
+
+export interface AmbientLightProps {
+  color?: ColorString;
+  intensity?: Num;
+}
+export interface DirectionalLightProps {
+  /** The way the light travels. Default `[-1, -1, -1]`. */
+  direction?: Vec3;
+  color?: ColorString;
+  intensity?: Num;
+}
+export interface PointLightProps {
+  position: Vec3;
+  color?: ColorString;
+  intensity?: Num;
+  /** Above 0: the distance at which the light has faded to nothing. */
+  range?: Num;
+}
+
+/** What every 3D object takes. */
+export interface Object3DProps {
+  id?: string;
+  position?: Vec3;
+  /** Degrees, XYZ Euler angles. */
+  rotation?: Vec3;
+  scale?: Num | Vec3;
+  visible?: boolean;
+}
+export interface MeshProps extends Object3DProps {
+  geometry: Geometry3D;
+  material?: Material3D;
+}
+export interface ModelProps extends Object3DProps {
+  /** A `.gltf` or `.glb` file. */
+  src: string;
+  /** Replaces the file's own materials. */
+  material?: Material3D;
+}
+export interface Text3DProps extends Object3DProps {
+  /** The text: strings and numbers, as for `<Text>`. */
+  children?: ReactNode;
+  font: string;
+  weight?: number | string;
+  fontStyle?: 'normal' | 'italic';
+  /** The em size in world units. */
+  size?: number;
+  /** Extrusion along z. */
+  depth?: number;
+  align?: 'left' | 'center' | 'right';
+  lineHeight?: number;
+  material?: Material3D;
+}
+export interface ExtrudeProps extends Object3DProps {
+  /** SVG path data. */
+  path: string;
+  /** The longer side of the path's box in world units. */
+  size?: number;
+  depth?: number;
+  fillRule?: 'nonzero' | 'evenodd';
+  material?: Material3D;
+}
+export interface Group3DProps extends Object3DProps {
+  children?: ReactNode;
+}
+
 export interface CameraProps {
   perspective: Num;
   x?: Num;
@@ -254,6 +344,40 @@ export interface SequenceHostProps {
  */
 export function SequenceHost(props: SequenceHostProps) {
   return createElement('kg-sequence', props);
+}
+
+// ---- the 3D layer ----
+
+/** A 3D scene drawn natively into a box of `width` x `height` (docs/SCENE.md, "scene3d"). */
+export function Scene3D(props: Scene3DProps) {
+  return createElement('kg-scene3d', props);
+}
+export function Camera3D(props: Camera3DProps) {
+  return createElement('kg-camera3d', props);
+}
+export function AmbientLight(props: AmbientLightProps) {
+  return createElement('kg-ambient-light', props);
+}
+export function DirectionalLight(props: DirectionalLightProps) {
+  return createElement('kg-directional-light', props);
+}
+export function PointLight(props: PointLightProps) {
+  return createElement('kg-point-light', props);
+}
+export function Mesh(props: MeshProps) {
+  return createElement('kg-mesh', props);
+}
+export function Model(props: ModelProps) {
+  return createElement('kg-model', props);
+}
+export function Text3D(props: Text3DProps) {
+  return createElement('kg-text3d', props);
+}
+export function Extrude(props: ExtrudeProps) {
+  return createElement('kg-extrude', props);
+}
+export function Group3D(props: Group3DProps) {
+  return createElement('kg-group3d', props);
 }
 
 // ---- <Canvas> ----

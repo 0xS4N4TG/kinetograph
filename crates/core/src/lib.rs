@@ -25,6 +25,7 @@ pub mod pool;
 pub mod render;
 pub mod resolve;
 pub mod scene;
+pub mod scene3d;
 pub mod shader;
 pub mod text;
 pub mod turbulence;

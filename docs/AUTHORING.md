@@ -472,7 +472,7 @@ The context and the globals around it:
 Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `shadowColor`, `shadowOffsetX/Y`,
 `filter`, `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`,
 `direction`, `imageSmoothingQuality`. `isPointInPath` and `isPointInStroke` return `false`. `getContext('webgl')` and
-`'webgl2'` return a recording WebGL context (§6.6); `'webgpu'` throws `unsupported:`; another context type returns `null`.
+`'webgl2'` return a recording WebGL context (§6.7); `'webgpu'` throws `unsupported:`; another context type returns `null`.
 
 - **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family
   (the first of the list that has a face), then the nearest weight and the right style of it; a family with no face
@@ -489,7 +489,41 @@ Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `sh
   `object-fit: fill` does. The commands are drawn at the box's size, not resampled from the bitmap, so a stretched canvas
   is sharp where Chrome's is blurred (ENGINE.md §4, "`<canvas>`").
 
-### 6.6 WebGL and GLSL shaders
+### 6.6 The 3D layer
+
+`<Scene3D width height msaa?>` is a `scene3d` layer (SCENE.md, "scene3d"); it takes the common layer props
+(`x`, `rotateY`, `effects`, `blendMode`, ...) and these children, all of which must be inside it:
+
+| Element | Props |
+|---|---|
+| `<Camera3D>` | `type`, `fov`, `height`, `near`, `far`, `position`, `target`, `up`. At most one. |
+| `<AmbientLight>`, `<DirectionalLight>`, `<PointLight>` | `color`, `intensity`; `direction`; `position`, `range`. |
+| `<Mesh geometry material?>` | `geometry` is `{ kind: 'box' \| 'sphere' \| 'plane' \| 'cylinder' \| 'torus', ... }`. |
+| `<Model src material?>` | A glTF or GLB file. |
+| `<Text3D font size depth align lineHeight material>` | The text is the children (strings and numbers); `weight` and `fontStyle` pick the font key as for `<Text>`. |
+| `<Extrude path size depth fillRule material>` | SVG path data. |
+| `<Group3D>` | Objects that move together. |
+
+Every object takes `position`, `rotation` (degrees), `scale` (a number or `[x, y, z]`), `visible` and `id`. Every
+number is an animatable `Num`, so a frame-driven value is `useCurrentFrame()` arithmetic or `interpolate`d, as anywhere.
+
+```tsx
+const frame = useCurrentFrame();
+<Scene3D id="hero" width={960} height={540} effects={[dropShadow({ x: 0, y: 12, blur: 16 })]}>
+  <Camera3D fov={40} position={[0, 2, 8]} target={[0, 0.5, 0]} />
+  <AmbientLight intensity={0.3} />
+  <DirectionalLight direction={[-1, -1, -1]} intensity={1.6} />
+  <Mesh geometry={{ kind: 'torus' }} material={{ color: '#c77dff', roughness: 0.3 }} rotation={[60, frame * 3, 0]} />
+  <Text3D font="DM Sans" size={1} depth={0.3} position={[0, 1.6, 0]}>Hello</Text3D>
+</Scene3D>
+```
+
+Names follow react-three-fiber's where it costs nothing (`position`, `rotation`, `scale`, `visible`, `Mesh`, `Group`);
+materials and geometries are plain props, not child elements, and there is no Three.js API behind them. The element
+mapping is in `emit.ts` (`scene3d`, `object3d`); a 3D element outside a `<Scene3D>`, or a 2D one inside, is an error
+naming both.
+
+### 6.7 WebGL and GLSL shaders
 
 A WebGL context records, as a Canvas 2D one does, and the renderer replays the recording on the GPU with the page's
 own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involved.

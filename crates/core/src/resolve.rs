@@ -652,6 +652,12 @@ pub enum ResolvedKind {
         height: f64,
         recording: crate::glsl::GlslRecording,
     },
+    /// A 3D scene drawn into the box `(0, 0, width, height)`.
+    Scene3d {
+        width: f64,
+        height: f64,
+        scene: Arc<crate::scene3d::Resolved3d>,
+    },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
     MeshGradient {
@@ -821,6 +827,7 @@ impl Resolver<'_> {
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::Glsl { width, height, .. }
+            | ResolvedKind::Scene3d { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
@@ -1076,6 +1083,11 @@ impl Resolver<'_> {
                 width: g.width.at(f),
                 height: g.height.at(f),
                 recording: g.recording.clone(),
+            },
+            LayerKind::Scene3d(s) => ResolvedKind::Scene3d {
+                width: s.width.at(f),
+                height: s.height.at(f),
+                scene: Arc::new(s.resolve(&layer.id, f)?),
             },
             LayerKind::Noise(n) => ResolvedKind::Noise {
                 width: n.width.at(f),

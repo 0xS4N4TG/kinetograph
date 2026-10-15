@@ -12,6 +12,12 @@ export type RequestNode =
   | { kind: 'text'; text: string }
   | { kind: 'native'; path: string; width?: number; height?: number };
 
+/** `Snapshot` of `crates/dom/src/request.rs`: the island's tree as it was at `time` seconds. */
+export interface IslandSnapshotJson {
+  time: number;
+  root: RequestNode;
+}
+
 /** `IslandRequest` of `crates/dom/src/request.rs`. */
 export interface IslandRequestJson {
   root: RequestNode;
@@ -22,6 +28,11 @@ export interface IslandRequestJson {
   publicDir?: string;
   time: number;
   path: string;
+  /**
+   * Earlier states of the island, oldest first, for CSS transitions (docs/ENGINE.md §7.12). The frame loop fills it (history.ts): with
+   * none, no transition runs and every value is its final one.
+   */
+  history?: IslandSnapshotJson[];
 }
 
 type ElementNode = Extract<DomNode, { kind: 'element' }>;

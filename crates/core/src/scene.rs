@@ -201,6 +201,7 @@ pub enum LayerKind {
     Gif(GifLayer),
     Canvas(CanvasLayer),
     Glsl(GlslLayer),
+    Scene3d(crate::scene3d::Scene3dLayer),
 }
 
 impl LayerKind {
@@ -218,6 +219,7 @@ impl LayerKind {
             LayerKind::Gif(_) => "gif",
             LayerKind::Canvas(_) => "canvas",
             LayerKind::Glsl(_) => "glsl",
+            LayerKind::Scene3d(_) => "scene3d",
         }
     }
 
@@ -1963,6 +1965,9 @@ impl Scene {
                     non_negative("width", &g.width)?;
                     non_negative("height", &g.height)?;
                     crate::glsl::validate(&layer.id, &g.recording.0)?;
+                }
+                LayerKind::Scene3d(s) => {
+                    s.validate(&layer.id, &|font| self.fonts.contains_key(font))?;
                 }
                 LayerKind::Lottie(l) => {
                     if l.src.trim().is_empty() {

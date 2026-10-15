@@ -85,6 +85,7 @@ pub fn shim_html(html: &str) -> String {
 }
 
 pub fn document(html: &str, width: u32, height: u32) -> BaseDocument {
+    kinetograph_dom::document::enable_css_features();
     let config = DocumentConfig {
         viewport: Some(Viewport::new(width, height, 1.0, ColorScheme::Light)),
         font_ctx: Some(font_ctx()),
@@ -93,6 +94,8 @@ pub fn document(html: &str, width: u32, height: u32) -> BaseDocument {
     let mut doc = HtmlDocument::from_html(&shim_html(html), config).into_inner();
     kinetograph_dom::paint::register_properties(&mut doc);
     doc.resolve(0.0);
+    kinetograph_dom::collapse::settle(&mut doc, 0.0);
+    kinetograph_dom::clamp::settle(&mut doc, 0.0);
     doc
 }
 

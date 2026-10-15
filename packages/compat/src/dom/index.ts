@@ -9,6 +9,7 @@ import { buildIslandRequest, type IslandRequestJson } from '../request/build.js'
 import { isDomElement } from '../request/tags.js';
 import type { DomNode, IslandContext, IslandResult } from '../types.js';
 import { fillNatives, nativeSize } from './native.js';
+import { historyFor, isWarming, noteTransitions, recordIsland } from './history.js';
 
 export { isDomElement };
 export { setDomAddon, hasAddonFunction, addonFunction } from '../addon.js';
@@ -32,6 +33,12 @@ export type { IslandRequestJson, RequestNode, BuildOptions, BuiltRequest } from 
 export { styleToCss } from '../request/style.js';
 export { attributesOf } from '../request/attrs.js';
 export { nativeSize } from './native.js';
+export {
+  clearHistory,
+  resetTransitionWindow,
+  setHistoryMode,
+  transitionWindowSeconds,
+} from './history.js';
 
 /** What `renderDomIsland` returns (`IslandOutput` of `crates/dom/src/request.rs`). */
 interface IslandOutputJson {
@@ -75,6 +82,12 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
   if (INVISIBLE.has(root.type)) return { layers: [], unsupported: [], camera: null };
 
   const { request, natives } = requestFor(root, context);
+  // A CSS transition needs the island's earlier states (docs/ENGINE.md §7.12).
+  noteTransitions(request.root, request.stylesheets);
+  const history = historyFor(request.path, request.time);
+  recordIsland(request.path, request.time, request.root);
+  if (history.length > 0) request.history = history;
+  if (isWarming()) return { layers: [], unsupported: [], camera: null };
   const output = JSON.parse(addonFunction('renderDomIsland')(JSON.stringify(request))) as IslandOutputJson;
 
   const placed = fillNatives(output.layers, (path) => {

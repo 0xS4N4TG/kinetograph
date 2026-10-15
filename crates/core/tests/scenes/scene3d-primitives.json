@@ -1,0 +1,72 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#14161d",
+  "layers": [
+    {
+      "id": "stage",
+      "type": "scene3d",
+      "width": 480,
+      "height": 270,
+      "camera": {
+        "fov": 40,
+        "position": [0, 2.2, 7.5],
+        "target": [0, 0, 0]
+      },
+      "lights": [
+        { "type": "ambient", "color": "#9fb0ff", "intensity": 0.25 },
+        { "type": "directional", "direction": [-0.6, -1, -0.8], "intensity": 1.6 }
+      ],
+      "objects": [
+        {
+          "id": "box",
+          "type": "mesh",
+          "geometry": { "kind": "box", "width": 1.2, "height": 1.2, "depth": 1.2 },
+          "material": { "color": "#e76f51", "roughness": 0.6 },
+          "position": [-3.2, 0.3, 0],
+          "rotation": [20, [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 90 }], 0]
+        },
+        {
+          "id": "sphere",
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 0.75 },
+          "material": { "color": "#2a9d8f", "roughness": 0.35 },
+          "position": [-1.6, 0.3, 0]
+        },
+        {
+          "id": "cylinder",
+          "type": "mesh",
+          "geometry": { "kind": "cylinder", "radiusTop": 0.5, "radiusBottom": 0.5, "height": 1.4 },
+          "material": { "color": "#e9c46a", "roughness": 0.5 },
+          "position": [0, 0.3, 0],
+          "rotation": [[{ "frame": 0, "value": 0 }, { "frame": 30, "value": 60 }], 0, 15]
+        },
+        {
+          "id": "cone",
+          "type": "mesh",
+          "geometry": { "kind": "cylinder", "radiusTop": 0, "radiusBottom": 0.7, "height": 1.4, "segments": 40 },
+          "material": { "color": "#8ecae6", "roughness": 0.4 },
+          "position": [1.6, 0.3, 0]
+        },
+        {
+          "id": "torus",
+          "type": "mesh",
+          "geometry": { "kind": "torus", "radius": 0.55, "tube": 0.22, "tubeSegments": 24, "ringSegments": 48 },
+          "material": { "color": "#c77dff", "roughness": 0.3 },
+          "position": [3.2, 0.3, 0],
+          "rotation": [60, 0, 0]
+        },
+        {
+          "id": "floor",
+          "type": "mesh",
+          "geometry": { "kind": "plane", "width": 10, "height": 5 },
+          "material": { "color": "#2b2f3a", "roughness": 0.9 },
+          "position": [0, -0.7, 0],
+          "rotation": [-90, 0, 0]
+        }
+      ]
+    }
+  ]
+}

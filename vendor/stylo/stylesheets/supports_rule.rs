@@ -1,0 +1,486 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+//! [@supports rules](https://drafts.csswg.org/css-conditional-3/#at-supports)
+
+use crate::derives::*;
+use crate::font_face::{FontFaceSourceFormatKeyword, FontFaceSourceTechFlags};
+use crate::parser::ParserContext;
+use crate::properties::{PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
+use crate::selector_parser::{SelectorImpl, SelectorParser};
+use crate::shared_lock::{DeepCloneWithLock, Locked};
+use crate::shared_lock::{SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard};
+use crate::stylesheets::rule_parser::AtRuleType;
+use crate::stylesheets::{CssRuleType, CssRules};
+use cssparser::{Delimiter, Parser, SourceLocation, Token};
+use cssparser::{ParseError as CssParseError, match_ignore_ascii_case};
+use cssparser::{parse_important, serialize_identifier};
+#[cfg(feature = "gecko")]
+use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
+use selectors::parser::{Selector, SelectorParseErrorKind};
+use servo_arc::Arc;
+use std::fmt::{self, Write};
+use std::str;
+use style_traits::{CssStringWriter, CssWriter, ParseError, StyleParseErrorKind, ToCss};
+
+/// An [`@supports`][supports] rule.
+///
+/// [supports]: https://drafts.csswg.org/css-conditional-3/#at-supports
+#[derive(Debug, ToShmem)]
+pub struct SupportsRule {
+    /// The parsed condition
+    pub condition: SupportsCondition,
+    /// Child rules
+    pub rules: Arc<Locked<CssRules>>,
+    /// The result of evaluating the condition
+    pub enabled: bool,
+    /// The line and column of the rule's source code.
+    pub source_location: SourceLocation,
+}
+
+impl SupportsRule {
+    /// Measure heap usage.
+    #[cfg(feature = "gecko")]
+    pub fn size_of(&self, guard: &SharedRwLockReadGuard, ops: &mut MallocSizeOfOps) -> usize {
+        // Measurement of other fields may be added later.
+        self.rules.unconditional_shallow_size_of(ops)
+            + self.rules.read_with(guard).size_of(guard, ops)
+    }
+}
+
+impl ToCssWithGuard for SupportsRule {
+    fn to_css(&self, guard: &SharedRwLockReadGuard, dest: &mut CssStringWriter) -> fmt::Result {
+        dest.write_str("@supports ")?;
+        self.condition.to_css(&mut CssWriter::new(dest))?;
+        self.rules.read_with(guard).to_css_block(guard, dest)
+    }
+}
+
+impl DeepCloneWithLock for SupportsRule {
+    fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Self {
+        let rules = self.rules.read_with(guard);
+        SupportsRule {
+            condition: self.condition.clone(),
+            rules: Arc::new(lock.wrap(rules.deep_clone_with_lock(lock, guard))),
+            enabled: self.enabled,
+            source_location: self.source_location,
+        }
+    }
+}
+
+/// An @supports condition
+///
+/// <https://drafts.csswg.org/css-conditional-3/#at-supports>
+#[derive(Clone, Debug, ToShmem)]
+pub enum SupportsCondition {
+    /// `not (condition)`
+    Not(Box<SupportsCondition>),
+    /// `(condition)`
+    Parenthesized(Box<SupportsCondition>),
+    /// `(condition) and (condition) and (condition) ..`
+    And(Vec<SupportsCondition>),
+    /// `(condition) or (condition) or (condition) ..`
+    Or(Vec<SupportsCondition>),
+    /// `property-ident: value` (value can be any tokens)
+    Declaration(Declaration),
+    /// `at-rule(<at-keyword-token>)`
+    AtRule(AtRuleKeyword),
+    /// A `selector()` function.
+    Selector(RawSelector),
+    /// `font-format(<font-format>)`
+    FontFormat(FontFaceSourceFormatKeyword),
+    /// `font-tech(<font-tech>)`
+    FontTech(FontFaceSourceTechFlags),
+    /// `named-feature(<ident>)`
+    NamedFeature(NamedFeature),
+    /// `(any tokens)` or `func(any tokens)`
+    FutureSyntax(String),
+}
+
+impl SupportsCondition {
+    /// Parse a condition
+    ///
+    /// <https://drafts.csswg.org/css-conditional/#supports_condition>
+    pub fn parse(input: &mut Parser) -> Result<Self, ParseError> {
+        if input.try_parse(|i| i.expect_ident_matching("not")).is_ok() {
+            let inner = SupportsCondition::parse_in_parens(input)?;
+            return Ok(SupportsCondition::Not(Box::new(inner)));
+        }
+
+        let in_parens = SupportsCondition::parse_in_parens(input)?;
+
+        let (keyword, wrapper) = match input.next() {
+            // End of input
+            Err(..) => return Ok(in_parens),
+            Ok(Token::Ident(ident)) => {
+                match_ignore_ascii_case! { &ident,
+                    "and" => ("and", SupportsCondition::And as fn(_) -> _),
+                    "or" => ("or", SupportsCondition::Or as fn(_) -> _),
+                    _ => return Err(ParseError::custom(SelectorParseErrorKind::UnexpectedIdent))
+                }
+            },
+            Ok(_) => return Err(ParseError::unexpected_token()),
+        };
+
+        let mut conditions = Vec::with_capacity(2);
+        conditions.push(in_parens);
+        loop {
+            conditions.push(SupportsCondition::parse_in_parens(input)?);
+            if input
+                .try_parse(|input| input.expect_ident_matching(keyword))
+                .is_err()
+            {
+                // Did not find the expected keyword.
+                // If we found some other token, it will be rejected by
+                // `Parser::parse_entirely` somewhere up the stack.
+                return Ok(wrapper(conditions));
+            }
+        }
+    }
+
+    /// Parses a functional supports condition.
+    fn parse_functional(function: &str, input: &mut Parser) -> Result<Self, ParseError> {
+        match_ignore_ascii_case! { function,
+            "at-rule" if crate::pref!("layout.css.supports.at-rule.enabled") => {
+                let kw = AtRuleKeyword::parse(input)?;
+                Ok(SupportsCondition::AtRule(kw))
+            },
+            "selector" => {
+                let pos = input.position();
+                consume_any_value(input)?;
+                Ok(SupportsCondition::Selector(RawSelector(
+                    input.slice_from(pos).to_owned()
+                )))
+            },
+            "font-format" if crate::pref!("layout.css.font-tech.enabled", gecko = true) => {
+                let kw = FontFaceSourceFormatKeyword::parse(input)?;
+                Ok(SupportsCondition::FontFormat(kw))
+            },
+            "font-tech" if crate::pref!("layout.css.font-tech.enabled", gecko = true) => {
+                let flag = FontFaceSourceTechFlags::parse_one(input)?;
+                Ok(SupportsCondition::FontTech(flag))
+            },
+            "named-feature" => {
+                let feature = NamedFeature::parse(input)?;
+                Ok(SupportsCondition::NamedFeature(feature))
+            },
+            _ => {
+                Err(ParseError::custom(StyleParseErrorKind::UnspecifiedError))
+            },
+        }
+    }
+
+    /// Parses an `@import` condition as per
+    /// https://drafts.csswg.org/css-cascade-5/#typedef-import-conditions
+    pub fn parse_for_import(input: &mut Parser) -> Result<Self, ParseError> {
+        input.expect_function_matching("supports")?;
+        input.parse_nested_block(parse_condition_or_declaration)
+    }
+
+    /// <https://drafts.csswg.org/css-conditional-3/#supports_condition_in_parens>
+    fn parse_in_parens(input: &mut Parser) -> Result<Self, ParseError> {
+        // Whitespace is normally taken care of in `Parser::next`, but we want to not include it in
+        // `pos` for the SupportsCondition::FutureSyntax cases.
+        input.skip_whitespace();
+        let pos = input.position();
+        match *input.next()? {
+            Token::ParenthesisBlock => {
+                let nested = input
+                    .try_parse(|input| input.parse_nested_block(parse_condition_or_declaration));
+                if let Ok(nested) = nested {
+                    return Ok(Self::Parenthesized(Box::new(nested)));
+                }
+            },
+            Token::Function(ref ident) => {
+                let ident = ident.clone();
+                let nested = input.try_parse(|input| {
+                    input.parse_nested_block(|input| {
+                        SupportsCondition::parse_functional(&ident, input)
+                    })
+                });
+                if nested.is_ok() {
+                    return nested;
+                }
+            },
+            _ => return Err(ParseError::unexpected_token()),
+        }
+        input.parse_nested_block(consume_any_value)?;
+        Ok(SupportsCondition::FutureSyntax(
+            input.slice_from(pos).to_owned(),
+        ))
+    }
+
+    /// Evaluate a supports condition
+    pub fn eval(&self, cx: &ParserContext) -> bool {
+        match *self {
+            SupportsCondition::Not(ref cond) => !cond.eval(cx),
+            SupportsCondition::Parenthesized(ref cond) => cond.eval(cx),
+            SupportsCondition::And(ref vec) => vec.iter().all(|c| c.eval(cx)),
+            SupportsCondition::Or(ref vec) => vec.iter().any(|c| c.eval(cx)),
+            SupportsCondition::AtRule(ref kw) => kw.eval(cx),
+            SupportsCondition::Declaration(ref decl) => decl.eval(cx),
+            SupportsCondition::Selector(ref selector) => selector.eval(cx),
+            SupportsCondition::FontFormat(ref format) => eval_font_format(format),
+            SupportsCondition::FontTech(ref tech) => eval_font_tech(tech),
+            SupportsCondition::NamedFeature(ref feature) => feature.eval(),
+            SupportsCondition::FutureSyntax(_) => false,
+        }
+    }
+}
+
+#[cfg(feature = "gecko")]
+fn eval_font_format(kw: &FontFaceSourceFormatKeyword) -> bool {
+    use crate::gecko_bindings::bindings;
+    unsafe { bindings::Gecko_IsFontFormatSupported(*kw) }
+}
+
+#[cfg(feature = "gecko")]
+fn eval_font_tech(flag: &FontFaceSourceTechFlags) -> bool {
+    use crate::gecko_bindings::bindings;
+    unsafe { bindings::Gecko_IsFontTechSupported(*flag) }
+}
+
+#[cfg(feature = "servo")]
+fn eval_font_format(_: &FontFaceSourceFormatKeyword) -> bool {
+    false
+}
+
+#[cfg(feature = "servo")]
+fn eval_font_tech(_: &FontFaceSourceTechFlags) -> bool {
+    false
+}
+
+/// supports_condition | declaration
+/// <https://drafts.csswg.org/css-conditional/#dom-css-supports-conditiontext-conditiontext>
+pub fn parse_condition_or_declaration(input: &mut Parser) -> Result<SupportsCondition, ParseError> {
+    if let Ok(condition) = input.try_parse(SupportsCondition::parse) {
+        Ok(condition)
+    } else {
+        Declaration::parse(input).map(SupportsCondition::Declaration)
+    }
+}
+
+impl ToCss for SupportsCondition {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        match *self {
+            SupportsCondition::Not(ref cond) => {
+                dest.write_str("not ")?;
+                cond.to_css(dest)
+            },
+            SupportsCondition::Parenthesized(ref cond) => {
+                dest.write_char('(')?;
+                cond.to_css(dest)?;
+                dest.write_char(')')
+            },
+            SupportsCondition::And(ref vec) => {
+                let mut first = true;
+                for cond in vec {
+                    if !first {
+                        dest.write_str(" and ")?;
+                    }
+                    first = false;
+                    cond.to_css(dest)?;
+                }
+                Ok(())
+            },
+            SupportsCondition::Or(ref vec) => {
+                let mut first = true;
+                for cond in vec {
+                    if !first {
+                        dest.write_str(" or ")?;
+                    }
+                    first = false;
+                    cond.to_css(dest)?;
+                }
+                Ok(())
+            },
+            SupportsCondition::AtRule(ref kw) => {
+                dest.write_str("at-rule(")?;
+                kw.to_css(dest)?;
+                dest.write_char(')')
+            },
+            SupportsCondition::Declaration(ref decl) => decl.to_css(dest),
+            SupportsCondition::Selector(ref selector) => {
+                dest.write_str("selector(")?;
+                selector.to_css(dest)?;
+                dest.write_char(')')
+            },
+            SupportsCondition::FontFormat(ref kw) => {
+                dest.write_str("font-format(")?;
+                kw.to_css(dest)?;
+                dest.write_char(')')
+            },
+            SupportsCondition::FontTech(ref flag) => {
+                dest.write_str("font-tech(")?;
+                flag.to_css(dest)?;
+                dest.write_char(')')
+            },
+            SupportsCondition::NamedFeature(ref feature) => {
+                dest.write_str("named-feature(")?;
+                feature.to_css(dest)?;
+                dest.write_char(')')
+            },
+            SupportsCondition::FutureSyntax(ref s) => dest.write_str(s),
+        }
+    }
+}
+
+#[derive(Clone, Debug, ToShmem)]
+/// A possibly-invalid CSS selector.
+pub struct RawSelector(pub String);
+
+impl ToCss for RawSelector {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        dest.write_str(&self.0)
+    }
+}
+
+impl RawSelector {
+    /// Tries to evaluate a `selector()` function.
+    pub fn eval(&self, context: &ParserContext) -> bool {
+        let mut input = Parser::new(&self.0);
+        input
+            .parse_entirely(|input| -> Result<(), CssParseError<()>> {
+                let parser = SelectorParser {
+                    namespaces: &context.namespaces,
+                    stylesheet_origin: context.stylesheet_origin,
+                    url_data: context.url_data,
+                    for_supports_rule: true,
+                };
+
+                Selector::<SelectorImpl>::parse(&parser, input)
+                    .map_err(|_| CssParseError::custom(()))?;
+
+                Ok(())
+            })
+            .is_ok()
+    }
+}
+
+#[derive(Clone, Debug, ToShmem)]
+/// A possibly-invalid property declaration
+pub struct Declaration(pub String);
+
+impl ToCss for Declaration {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        dest.write_str(&self.0)
+    }
+}
+
+/// <https://drafts.csswg.org/css-syntax-3/#typedef-any-value>
+fn consume_any_value(input: &mut Parser) -> Result<(), ParseError> {
+    input.expect_no_error_token().map_err(|err| err.into())
+}
+
+impl Declaration {
+    /// Parse a declaration
+    pub fn parse(input: &mut Parser) -> Result<Declaration, ParseError> {
+        let pos = input.position();
+        input.expect_ident()?;
+        input.expect_colon()?;
+        consume_any_value(input)?;
+        Ok(Declaration(input.slice_from(pos).to_owned()))
+    }
+
+    /// Determine if a declaration parses
+    ///
+    /// <https://drafts.csswg.org/css-conditional-3/#support-definition>
+    pub fn eval(&self, context: &ParserContext) -> bool {
+        debug_assert!(context.rule_types().contains(CssRuleType::Style));
+
+        let mut input = Parser::new(&self.0);
+        input
+            .parse_entirely(|input| -> Result<(), CssParseError<()>> {
+                let prop = input.expect_ident_cloned().unwrap();
+                input.expect_colon().unwrap();
+
+                let id =
+                    PropertyId::parse(&prop, context).map_err(|_| CssParseError::custom(()))?;
+
+                let mut declarations = SourcePropertyDeclaration::default();
+                input.parse_until_before(Delimiter::Bang, |input| {
+                    PropertyDeclaration::parse_into(&mut declarations, id, context, input)
+                        .map_err(|_| CssParseError::custom(()))
+                })?;
+                let _ = input.try_parse(parse_important);
+                Ok(())
+            })
+            .is_ok()
+    }
+}
+
+/// A possibly-invalid at-rule keyword
+#[derive(Clone, Debug, ToShmem)]
+pub struct AtRuleKeyword(pub Box<str>);
+
+impl AtRuleKeyword {
+    /// Parse an <at-keyword-token>.
+    pub fn parse(input: &mut Parser) -> Result<Self, ParseError> {
+        match input.next()? {
+            Token::AtKeyword(kw) => Ok(Self(kw.as_ref().into())),
+            _ => Err(ParseError::unexpected_token()),
+        }
+    }
+
+    /// Determine if an at-rule is supported.
+    /// https://drafts.csswg.org/css-conditional-5/#dfn-support-at-rule
+    pub fn eval(&self, context: &ParserContext) -> bool {
+        AtRuleType::is_supported(&self.0, context)
+    }
+}
+
+impl ToCss for AtRuleKeyword {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        dest.write_char('@')?;
+        serialize_identifier(&self.0, dest)
+    }
+}
+
+/// List of named features.
+///
+/// <https://drafts.csswg.org/css-conditional-5/#support-definition-named-features>
+#[derive(Clone, Copy, Debug, Parse, ToCss, ToShmem)]
+#[repr(u8)]
+pub enum NamedFeature {
+    /// Anchoring to a transformed element takes the anchor's transforms into account.
+    AnchorPositionFollowsTransforms,
+    /// A scroll container that scrolls in one axis and clips in the other.
+    SingleAxisScrollContainer,
+}
+
+impl NamedFeature {
+    /// Determine if a named feature is supported.
+    ///
+    /// <https://drafts.csswg.org/css-conditional-5/#typedef-supports-named-feature-fn>
+    #[cfg(feature = "gecko")]
+    pub fn eval(self) -> bool {
+        match self {
+            Self::AnchorPositionFollowsTransforms => {
+                crate::pref!("layout.css.anchor-positioning.follows-transforms.enabled")
+            },
+            // Not implemented. See Bug 2044147.
+            Self::SingleAxisScrollContainer => false,
+        }
+    }
+
+    /// Determine if a named feature is supported.
+    ///
+    /// <https://drafts.csswg.org/css-conditional-5/#typedef-supports-named-feature-fn>
+    #[cfg(feature = "servo")]
+    pub fn eval(self) -> bool {
+        false
+    }
+}
