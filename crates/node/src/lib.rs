@@ -10,6 +10,7 @@
 //! `Error` whose `code` is one of `error::Code`.
 
 mod bench;
+mod canvas;
 mod dom;
 mod error;
 mod layout;
@@ -272,6 +273,15 @@ pub fn video_frame(path: String, time: f64, base_dir: Option<String>) -> Result<
 }
 
 // ---- GPU ----
+
+/// A Canvas 2D context's commands drawn on a transparent canvas (docs/SCENE.md,
+/// "canvas"): `{ width, height, commands, fonts, baseDir, format }` as JSON in,
+/// straight-alpha RGBA (`format: "rgba"`, the default) or a PNG out. For
+/// `getImageData` and `toDataURL`; opens the GPU for each call.
+#[napi]
+pub fn render_canvas(request_json: String) -> Result<Buffer> {
+    canvas::render_canvas(&request_json)
+}
 
 #[napi(object)]
 pub struct RendererOptions {
