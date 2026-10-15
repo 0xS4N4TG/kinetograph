@@ -12,6 +12,7 @@ import { createElement, type ReactNode } from 'react';
 import type {
   AudioClipJson,
   BlendMode,
+  CanvasContext2D,
   CharStyle,
   Clip,
   ColorString,
@@ -146,6 +147,18 @@ export interface LottieProps extends CommonProps {
   playbackRate?: number;
 }
 
+export interface CanvasProps extends CommonProps {
+  /** The canvas's size in layer pixels, whole, not animated. */
+  width: number;
+  height: number;
+  /**
+   * Draws the canvas with a Canvas 2D context. It is called with a fresh, empty context each time the frame is read,
+   * and everything it draws is the frame's canvas (docs/SCENE.md, "canvas"), so what it draws must come from the
+   * props and the frame it closes over, not from what was drawn before.
+   */
+  draw: (context: CanvasContext2D) => void;
+}
+
 export interface CameraProps {
   perspective: Num;
   x?: Num;
@@ -226,6 +239,13 @@ export interface SequenceHostProps {
  */
 export function SequenceHost(props: SequenceHostProps) {
   return createElement('kg-sequence', props);
+}
+
+// ---- <Canvas> ----
+
+/** A canvas drawn with `draw(context)`: a Canvas 2D context's commands, drawn natively (docs/SCENE.md, "canvas"). */
+export function Canvas(props: CanvasProps) {
+  return createElement('kg-canvas', props);
 }
 
 // ---- <Lottie> ----

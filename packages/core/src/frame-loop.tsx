@@ -9,6 +9,7 @@
 //      sub-frame time it needs and attach those trees to it.
 
 import type { ReactNode } from 'react';
+import { resetCanvasStates } from '@kinetograph/compat/shim';
 import { createSceneRoot, TimelineContext, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetograph/react';
 import {
   attachMotionFrames,
@@ -109,10 +110,10 @@ class Renderer implements FrameRenderer {
       // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
       // frame looks the same whether the render began there or somewhere later.
       setVirtualFrame(0, config.fps);
-      await this.settle(scene, () => scene.update(this.element(component, config, 0)));
+      await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
     }
     setVirtualFrame(frame, config.fps);
-    const main = await this.settle(scene, () => scene.update(this.element(component, config, frame)));
+    const main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
     let layers = main.layers;
@@ -125,7 +126,7 @@ class Renderer implements FrameRenderer {
         }
         // The clock sits on the sub-frame, but timers and Math.random() stay with the frame.
         setVirtualFrame(time, config.fps, { seedFrame: frame, fireTimers: false });
-        const tree = await this.settle(scene, () => scene.update(this.element(component, config, time)));
+        const tree = await this.settle(scene, () => this.update(scene, this.element(component, config, time)));
         treesAt.set(time, tree.layers);
       }
       setVirtualFrame(frame, config.fps, { fireTimers: false });
@@ -148,6 +149,12 @@ class Renderer implements FrameRenderer {
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
     return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: main.unsupported };
+  }
+
+  /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */
+  private update(scene: SceneRoot, element: ReactNode): void {
+    resetCanvasStates();
+    scene.update(element);
   }
 
   private element(component: ResolvedComposition['component'], config: VideoConfig, frame: number): ReactNode {

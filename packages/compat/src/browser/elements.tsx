@@ -4,11 +4,12 @@
 // the rest are left out with one warning each. Every number is read at the frame being drawn, so the markup is a pure
 // function of (props, frame).
 
-import { Children, createElement, Fragment, useId, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { Children, createElement, Fragment, useId, useLayoutEffect, useRef, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import { evalNum, type CharStyle, type Gradient, type Num, type Paint } from '@kinetograph/scene';
 import type {
   AudioProps,
   CameraProps,
+  CanvasProps,
   CommonProps,
   EllipseProps,
   GifProps,
@@ -373,6 +374,25 @@ export function Noise(props: NoiseProps): ReactElement {
 }
 export function MeshGradient(props: MeshGradientProps): ReactElement {
   return <Placeholder props={props} what="MeshGradient" />;
+}
+
+/** A canvas Chrome draws itself: the real 2D context is handed to `draw` after every render, as `<Canvas>` hands the native one. */
+export function Canvas(props: CanvasProps): ReactElement {
+  const element = useRef<HTMLCanvasElement>(null);
+  const { width, height, draw } = props;
+  useLayoutEffect(() => {
+    const canvas = element.current;
+    if (canvas === null) return;
+    // Setting the size clears the canvas, so each render draws on an empty one.
+    canvas.width = width;
+    canvas.height = height;
+    draw(canvas.getContext('2d'));
+  });
+  return (
+    <Leaf common={props} tag="div" style={{ width: px(width), height: px(height) }}>
+      <canvas ref={element} width={width} height={height} style={{ display: 'block' }} />
+    </Leaf>
+  );
 }
 
 /** There is no Lottie in Chrome in this pass: the frame fails, naming itself. */

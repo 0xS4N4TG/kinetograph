@@ -54,7 +54,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `video` or `gif`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `canvas`, `video` or `gif`. |
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
@@ -353,6 +353,74 @@ by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like an
 - Counts nothing in the [margin](#canvas-margin).
 - A missing or unreadable file, or one that is not an animation, is an error naming the layer, when the scene loads (if
   the box needs the file's size) or when a renderer is built from it.
+
+### canvas
+
+```json
+{ "id": "chart", "type": "canvas", "width": 640, "height": 360, "commands": [
+  { "op": "fill", "path": "M0 0H640V360H0Z", "paint": { "type": "color", "color": "#10131a" } },
+  { "op": "stroke", "path": "M20 300L200 120L400 220L620 40", "paint": { "type": "color", "color": "#7aa2f7" },
+    "width": 4, "cap": "round", "join": "round" },
+  { "op": "text", "text": "Revenue", "font": "DM Sans", "size": 24, "x": 20, "y": 40,
+    "paint": { "type": "color", "color": "#ffffff" } }
+] }
+```
+
+What a Canvas 2D context drew: the list of commands a `CanvasRenderingContext2D` was given, drawn into the box
+`(0, 0, width, height)` with Vello, under the layer's transform. The authoring layer's `<Canvas>` and a Remotion
+project's `<canvas>` (`getContext('2d')`) both make one; the context object is `createCanvasContext` of
+`@kinetograph/scene` (AUTHORING.md §6.5). Like any layer it takes `effects`, `clip`, `mask`, `matte`,
+`blendMode` and `opacity`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `width`, `height` | required | Animatable, not negative: the box in layer pixels. What the commands draw outside it is cut off. |
+| `commands` | `[]` | The drawing, in order. Not animated: a canvas that changes from frame to frame has a layer with other commands at each. |
+
+The context keeps the canvas's state (transform, `globalAlpha`, `globalCompositeOperation`, styles, the line style, the
+text state) and writes each command with the state it is drawn in, so the renderer holds none. Every drawing command
+takes `m` (default the identity: the matrix that takes the command's own space, where its path or text is, to the
+canvas, `[a, b, c, d, e, f]` as `setTransform`), `a` (`globalAlpha`, default 1) and `blend` (`globalCompositeOperation`,
+default `source-over`).
+
+| `op` | Fields | Draws |
+|---|---|---|
+| `fill` | `path`, `rule` (`nonzero`, `evenodd`), `paint` | The path, as `fill()` does. `path` is SVG path data. |
+| `stroke` | `path`, `paint`, `width` (1), `cap` (`butt`), `join` (`miter`), `miterLimit` (10), `dash`, `dashOffset` | The path's outline, as `stroke()` does. |
+| `text` | `text`, `font`, `size`, `x`, `y`, `align`, `baseline`, `paint`, `line`, `maxWidth` | The text from `(x, y)`. `font` is a key of the scene's `fonts`. With a `line` (`width`, `cap`, `join`, `miterLimit`, `dash`, `dashOffset`) the glyph outlines are stroked, as `strokeText` does; else filled. |
+| `image` | `source`, `sx`, `sy`, `sw`, `sh`, `dx`, `dy`, `dw`, `dh`, `smooth` (true) | `drawImage`: the part `sx, sy, sw, sh` of the source (default all of it) into `dx, dy, dw, dh`. |
+| `clip` | `path`, `rule`, `m` | Intersects the clip with the path, until the matching `unclip`. |
+| `unclip` | | Ends the innermost `clip`. The context writes it for the `restore` that undoes a `clip()`; clips still open at the end of the list end with it. |
+
+- **`paint`** is `{ "type": "color", "color" }`, `linear` (`x0 y0 x1 y1`), `radial` (`x0 y0 r0 x1 y1 r1`, two circles,
+  as `createRadialGradient`), `conic` (`x y angle`, radians from 3 o'clock, as `createConicGradient`), each with `stops`
+  (`[offset, colour]`, offsets 0 to 1 in order, none paints nothing), or `{ "type": "pattern", "source", "repeatX",
+  "repeatY" }`. A gradient's coordinates are in the space of the command's `m`, as a canvas gradient's are in the
+  transform in force when it paints. `globalAlpha` multiplies the paint's alpha.
+- **`source`** is `{ "kind": "src", "src" }` (an image file of the scene, loaded like an image layer's, so it is
+  among the files the renderer holds), `{ "kind": "pixels", "width", "height", "data" }` (straight-alpha RGBA8 in
+  base64: an `ImageData`), or `{ "kind": "canvas", "width", "height", "commands" }` (another canvas, drawn as a
+  whole: its commands are drawn into a layer that takes the `globalAlpha` and blend). A pattern takes the first two.
+- **`blend`** is any `globalCompositeOperation`: `source-over`, `source-in`, `source-out`, `source-atop`,
+  `destination-over`, `destination-in`, `destination-out`, `destination-atop`, `lighter`, `copy`, `xor`, `multiply`,
+  `screen`, `overlay`, `darken`, `lighten`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`,
+  `exclusion`, `hue`, `saturation`, `color` and `luminosity`; and `clear`, which `clearRect` writes. The Porter-Duff
+  operations that change pixels outside the shape (`source-in`, `source-out`, `destination-in`, `destination-atop`,
+  `copy`) act on the whole canvas, as they do in a browser.
+- **Text** is shaped by the engine's text engine with the scene's fonts, so a measurement made with `measureText` is
+  what is drawn. `align` is `start`, `end`, `left`, `right` or `center`, `baseline` is `alphabetic` (default), `top`,
+  `hanging`, `middle`, `ideographic` or `bottom`, worked out from the font's ascent and descent. Text wider than
+  `maxWidth` is squeezed to it. Letter spacing, word spacing and right-to-left `direction` are not applied.
+- **Blending space.** Inside the canvas, colours blend in sRGB, as a browser's canvas does (`globalAlpha`, gradients,
+  composite operations). The finished canvas is a layer like any other, and is blended with the layers around it in
+  the scene's `blendSpace`.
+- **Not drawn.** Shadows (`shadowBlur`, `shadowColor`, `shadowOffset*`), `filter`, `imageSmoothingQuality` above the
+  default, `fontKerning`, `textRendering`, `fontStretch` and hit testing (`isPointInPath`) are not part of a layer;
+  the context accepts the assignments and draws nothing for them.
+- The pictures a canvas draws from files (`kind: "src"`) are read when a renderer is built from the scene, as an image
+  layer's are. A bad path or block of pixels is an error naming the layer when the scene loads.
+- Rendering is a pure function of the commands, the fonts and the files they name.
+- Counts nothing in the [margin](#canvas-margin).
 
 ### video
 
@@ -1177,7 +1245,7 @@ The layer's own box, which `inset` is measured from:
 |---|---|
 | `rect`, `roundedRect`, `ellipse` shape | `0, 0, width, height` (a stroke is not part of the box) |
 | `path` shape | The path's bounding box |
-| `image`, `lottie` | `0, 0, width, height` |
+| `image`, `lottie`, `canvas` | `0, 0, width, height` |
 | `text` | `0, 0, maxWidth` (or the laid-out width when there is no `maxWidth`) by the laid-out height |
 | `group` | None, unless it has a `layout`: then `0, 0, width, height` of the size the layout gave it. `inset` on a group without one is a load error; use `polygon`, `ellipse` or `path`. |
 
@@ -1613,6 +1681,9 @@ numbers. Blurs, colour filters and everything inside one layer are unchanged. Th
   margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
   size. Text is measured as one box of its own `maxWidth`, so it does not re-wrap to fit the container. Baseline
   alignment is for rows; a non-text layer's baseline is its bottom edge. See [Layout](#layout).
+- `canvas` draws the commands of a Canvas 2D context (see [canvas](#canvas)): no shadows, no `filter`, no letter or word
+  spacing, and a font is one face per key like a text layer's. Commands are drawn at the size the layer is drawn at
+  (they are vectors), not from a bitmap.
 - `lottie` is whatever ThorVG's CPU renderer draws (see [lottie](#lottie)); it is painted at the size the layer is
   drawn at, up to 4096 pixels a side, so a layer scaled up beyond that is resampled, and a layer that is turned or skewed
   is resampled from an upright picture. Layers cannot be overridden (no theming, slots or state machines), a file's

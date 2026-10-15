@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM"],
+    "paths": {
+      "remotion": ["../../packages/core/dist/index.d.ts"]
+    }
+  },
+  "include": ["index.tsx"]
+}

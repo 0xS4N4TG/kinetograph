@@ -199,6 +199,7 @@ pub enum LayerKind {
     Lottie(LottieLayer),
     Video(VideoLayer),
     Gif(GifLayer),
+    Canvas(CanvasLayer),
 }
 
 impl LayerKind {
@@ -214,6 +215,7 @@ impl LayerKind {
             LayerKind::Lottie(_) => "lottie",
             LayerKind::Video(_) => "video",
             LayerKind::Gif(_) => "gif",
+            LayerKind::Canvas(_) => "canvas",
         }
     }
 
@@ -1228,6 +1230,18 @@ pub struct LottieLayer {
     pub looped: bool,
 }
 
+/// What a Canvas 2D context drew in a frame (`docs/SCENE.md`, "canvas"): the
+/// box `(0, 0, width, height)`, drawn with Vello from `commands`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLayer {
+    pub width: Num,
+    pub height: Num,
+    /// In drawing order (`crate::canvas`).
+    #[serde(default)]
+    pub commands: crate::canvas::CanvasOps,
+}
+
 /// A video file, one picture per frame (`docs/SCENE.md`, "video").
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1923,6 +1937,13 @@ impl Scene {
                     non_negative("width", &m.width)?;
                     non_negative("height", &m.height)?;
                     validate_mesh_gradient(&layer.id, m)?;
+                }
+                LayerKind::Canvas(c) => {
+                    non_negative("width", &c.width)?;
+                    non_negative("height", &c.height)?;
+                    if let Some(bad) = crate::canvas::bad_path(&c.commands.0) {
+                        return Err(Error::Scene(format!("layer {:?}: canvas: {bad}", layer.id)));
+                    }
                 }
                 LayerKind::Lottie(l) => {
                     if l.src.trim().is_empty() {

@@ -116,6 +116,14 @@ fn track_mattes_match_golden() {
 }
 
 #[test]
+fn canvas_commands_match_golden() {
+    // Fills, strokes, gradients, a clip, composite operations, pixels, a canvas
+    // drawn into a canvas and text, in one canvas layer (docs/SCENE.md, "canvas").
+    let frame = render_still(scene("tests/scenes/canvas.json"), 0).unwrap();
+    check("canvas", &frame);
+}
+
+#[test]
 fn shadows_match_golden() {
     // Frame 15 of 30: halfway through every shadow animation. The scene has a
     // margin (its largest reach is the off-canvas layer's shadow), so this

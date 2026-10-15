@@ -111,7 +111,7 @@ pub struct InspectMedia {
 pub struct InspectLayer {
     pub id: String,
     /// `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`,
-    /// `video` or `gif`.
+    /// `video`, `gif` or `canvas`.
     #[serde(rename = "type")]
     pub kind: &'static str,
     pub opacity: f64,
@@ -447,6 +447,7 @@ impl Walk<'_> {
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
+            | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. }
             | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Video { width, height, .. }
@@ -757,6 +758,7 @@ fn kind_name(kind: &LayerKind) -> &'static str {
         LayerKind::Lottie(_) => "lottie",
         LayerKind::Video(_) => "video",
         LayerKind::Gif(_) => "gif",
+        LayerKind::Canvas(_) => "canvas",
     }
 }
 

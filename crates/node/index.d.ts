@@ -163,6 +163,14 @@ export interface PreviewOptions {
 export declare function probeMedia(path: string, baseDir?: string | undefined | null): MediaInfo
 
 /**
+ * A Canvas 2D context's commands drawn on a transparent canvas (docs/SCENE.md,
+ * "canvas"): `{ width, height, commands, fonts, baseDir, format }` as JSON in,
+ * straight-alpha RGBA (`format: "rgba"`, the default) or a PNG out. For
+ * `getImageData` and `toDataURL`; opens the GPU for each call.
+ */
+export declare function renderCanvas(requestJson: string): Buffer
+
+/**
  * One DOM island at one frame (docs/ENGINE.md §2): an `IslandRequest` as
  * JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
  * Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then

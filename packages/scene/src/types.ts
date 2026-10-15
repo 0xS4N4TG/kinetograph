@@ -500,6 +500,122 @@ export interface LottieLayer extends LayerBase {
   loop?: boolean;
 }
 
+// ---- canvas (docs/SCENE.md, "canvas") ----
+
+/** `[a, b, c, d, e, f]`, as a canvas's `setTransform` and SVG's `matrix()`. */
+export type CanvasMatrix = [number, number, number, number, number, number];
+
+/** Colour stops of a canvas gradient: `[offset, colour]`, offsets 0 to 1 in order. */
+export type CanvasStops = [number, ColorString][];
+
+export type CanvasPaint =
+  | { type: 'color'; color: ColorString }
+  | { type: 'linear'; x0: number; y0: number; x1: number; y1: number; stops: CanvasStops }
+  | { type: 'radial'; x0: number; y0: number; r0: number; x1: number; y1: number; r1: number; stops: CanvasStops }
+  /** `angle` in radians, clockwise from 3 o'clock. */
+  | { type: 'conic'; x: number; y: number; angle: number; stops: CanvasStops }
+  | { type: 'pattern'; source: CanvasSource; repeatX?: boolean; repeatY?: boolean };
+
+export type CanvasSource =
+  /** An image file of the scene, by its `src`. */
+  | { kind: 'src'; src: string }
+  /** Straight-alpha RGBA8, base64: an `ImageData`. */
+  | { kind: 'pixels'; width: number; height: number; data: string }
+  /** Another canvas, drawn as a whole. */
+  | { kind: 'canvas'; width: number; height: number; commands: CanvasCommand[] };
+
+export type CanvasBlend =
+  | 'source-over'
+  | 'source-in'
+  | 'source-out'
+  | 'source-atop'
+  | 'destination-over'
+  | 'destination-in'
+  | 'destination-out'
+  | 'destination-atop'
+  | 'lighter'
+  | 'copy'
+  | 'xor'
+  | 'multiply'
+  | 'screen'
+  | 'overlay'
+  | 'darken'
+  | 'lighten'
+  | 'color-dodge'
+  | 'color-burn'
+  | 'hard-light'
+  | 'soft-light'
+  | 'difference'
+  | 'exclusion'
+  | 'hue'
+  | 'saturation'
+  | 'color'
+  | 'luminosity'
+  /** What `clearRect` writes. */
+  | 'clear';
+
+/** What every drawing command is drawn with; the defaults are the identity, 1 and `source-over`. */
+export interface CanvasState {
+  /** Takes the command's own space to the canvas. */
+  m?: CanvasMatrix;
+  /** `globalAlpha`. */
+  a?: number;
+  blend?: CanvasBlend;
+}
+
+export interface CanvasLine {
+  /** Default 1. */
+  width?: number;
+  cap?: 'butt' | 'round' | 'square';
+  join?: 'miter' | 'round' | 'bevel';
+  /** Default 10. */
+  miterLimit?: number;
+  dash?: number[];
+  dashOffset?: number;
+}
+
+export type CanvasCommand =
+  | ({ op: 'fill'; path: string; rule?: 'nonzero' | 'evenodd'; paint: CanvasPaint } & CanvasState)
+  | ({ op: 'stroke'; path: string; paint: CanvasPaint } & CanvasLine & CanvasState)
+  | ({
+      op: 'text';
+      text: string;
+      /** A key of the scene's `fonts`. */
+      font: string;
+      size: number;
+      x: number;
+      y: number;
+      align?: 'start' | 'end' | 'left' | 'right' | 'center';
+      baseline?: 'top' | 'hanging' | 'middle' | 'alphabetic' | 'ideographic' | 'bottom';
+      /** Stroked glyph outlines instead of filled ones. */
+      line?: CanvasLine;
+      paint: CanvasPaint;
+      maxWidth?: number;
+    } & CanvasState)
+  | ({
+      op: 'image';
+      source: CanvasSource;
+      sx?: number;
+      sy?: number;
+      sw?: number;
+      sh?: number;
+      dx: number;
+      dy: number;
+      dw: number;
+      dh: number;
+      /** Default true. */
+      smooth?: boolean;
+    } & CanvasState)
+  | { op: 'clip'; path: string; rule?: 'nonzero' | 'evenodd'; m?: CanvasMatrix }
+  | { op: 'unclip' };
+
+export interface CanvasLayer extends LayerBase {
+  type: 'canvas';
+  width: Num;
+  height: Num;
+  commands?: CanvasCommand[];
+}
+
 export interface VideoLayer extends LayerBase {
   type: 'video';
   /** Any file FFmpeg reads with a video stream, relative to the scene. */
@@ -545,6 +661,7 @@ export type LayerJson =
   | NoiseLayer
   | MeshGradientLayer
   | LottieLayer
+  | CanvasLayer
   | VideoLayer
   | GifLayer;
 export type LayerType = LayerJson['type'];

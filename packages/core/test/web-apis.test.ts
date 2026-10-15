@@ -130,9 +130,53 @@ describe('fetch', () => {
 });
 
 describe('canvas and the clock', () => {
-  it('document.createElement("canvas") fails saying canvas is not supported yet', () => {
-    expect(() => g.document.createElement('canvas')).toThrow('canvas is not supported yet');
+  it('document.createElement("canvas") is a 300 x 150 canvas with a 2D context that records', () => {
+    const canvas = g.document.createElement('canvas');
+    expect([canvas.width, canvas.height, canvas.tagName]).toEqual([300, 150, 'CANVAS']);
+    const ctx = canvas.getContext('2d');
+    expect(canvas.getContext('2d')).toBe(ctx);
+    expect(ctx.canvas).toBe(canvas.getContext('2d').canvas);
+    ctx.fillStyle = '#336699';
+    ctx.fillRect(1, 2, 3, 4);
+    expect(ctx.commands).toEqual([{ op: 'fill', path: 'M1 2L4 2L4 6L1 6Z', paint: { type: 'color', color: '#336699' } }]);
+    // A new width empties the canvas and puts the state back.
+    canvas.width = 50;
+    expect([canvas.width, ctx.commands.length, ctx.fillStyle]).toEqual([50, 0, '#000000']);
     expect(g.document.createElement('div').tagName).toBe('DIV');
+  });
+
+  it('draws one canvas onto another as the commands it holds, an OffscreenCanvas too', () => {
+    const source = new g.OffscreenCanvas(10, 8);
+    source.getContext('2d').fillRect(0, 0, 4, 4);
+    const target = g.document.createElement('canvas');
+    target.getContext('2d').drawImage(source, 5, 6);
+    expect(target.getContext('2d').commands).toMatchObject([
+      { op: 'image', dx: 5, dy: 6, dw: 10, dh: 8, source: { kind: 'canvas', width: 10, height: 8, commands: [{ op: 'fill' }] } },
+    ]);
+  });
+
+  it('draws a project image by its file, and refuses one it cannot read', () => {
+    const image = new g.Image();
+    image.src = 'pic.png';
+    const ctx = g.document.createElement('canvas').getContext('2d');
+    ctx.drawImage(image, 1, 1);
+    expect(ctx.commands).toMatchObject([{ op: 'image', source: { kind: 'src', src: join(dir, 'public', 'pic.png') }, dw: 7, dh: 5 }]);
+    expect(() => ctx.drawImage(new g.Image(), 0, 0)).toThrow(/not a picture/);
+  });
+
+  it('says WebGL is not available instead of returning a context that would draw nothing', () => {
+    const canvas = g.document.createElement('canvas');
+    expect(() => canvas.getContext('webgl')).toThrow(/WebGL and WebGPU are not available yet/);
+    expect(() => canvas.getContext('webgl2')).toThrow(/not available yet/);
+    expect(canvas.getContext('bitmaprenderer')).toBeNull();
+  });
+
+  it('has the canvas classes as globals', () => {
+    const ctx = g.document.createElement('canvas').getContext('2d');
+    expect(ctx).toBeInstanceOf(g.CanvasRenderingContext2D);
+    expect(ctx.createLinearGradient(0, 0, 1, 1)).toBeInstanceOf(g.CanvasGradient);
+    expect(new g.Path2D('M0 0L1 1')).toBeInstanceOf(g.Path2D);
+    expect(new g.ImageData(2, 2).data).toHaveLength(16);
   });
 
   it('runs requestAnimationFrame once per frame, with the frame time', () => {

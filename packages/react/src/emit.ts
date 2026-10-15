@@ -5,8 +5,9 @@
 // for. Nothing here reads time: `<Lottie>` and `<Audio>` already resolved it.
 
 import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
-import { propsWithOverlay } from '@kinetograph/compat/shim';
+import { canvasEnvironment, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
 import {
+  createCanvasContext,
   fontKey,
   type AudioClipJson,
   type CameraJson,
@@ -72,6 +73,7 @@ export const ELEMENT_NAMES: Record<string, string> = {
   'kg-noise': 'Noise',
   'kg-mesh-gradient': 'MeshGradient',
   'kg-lottie': 'Lottie',
+  'kg-canvas': 'Canvas',
   'kg-video': 'Video',
   'kg-gif': 'Gif',
   'kg-camera': 'Camera',
@@ -201,7 +203,8 @@ export function domFillOf(element: HostElement, insideDom = false): HostElement 
  */
 export function flattenDomElement(element: HostElement, path: string, sequences: SequenceJson[] | null): HostElement {
   // A script's writes to `style` and attributes (through a ref) are laid over the props.
-  return { ...element, props: propsWithOverlay(element), children: flattenDomChildren(element.children, path, { next: 0 }, sequences) };
+  // A `<canvas>` carries what its 2D context drew, which the painter makes a canvas layer of.
+  return { ...element, props: withCanvasCommands(element, propsWithOverlay(element)), children: flattenDomChildren(element.children, path, { next: 0 }, sequences) };
 }
 
 function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next: number }, sequences: SequenceJson[] | null): HostNode[] {
@@ -440,6 +443,19 @@ class Emitter {
           ...pick(props, ['src', 'width', 'height', 'time', 'loop']),
           ...commonOf(props, name),
         } as LayerJson;
+      case 'kg-canvas': {
+        const { width, height, draw } = props;
+        for (const [side, value] of [['width', width], ['height', height]] as const) {
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+            throw new Error(`<Canvas> ${side} must be a number of pixels, 0 or more, got ${JSON.stringify(value)}`);
+          }
+        }
+        if (typeof draw !== 'function') throw new Error('<Canvas> needs a draw(context) function');
+        // The function draws on a context of its own, made empty for this frame: a canvas is a function of its props.
+        const context = createCanvasContext({ size: () => ({ width, height }), ...canvasEnvironment(this.options.fonts) });
+        draw(context);
+        return { id, type: 'canvas', width, height, commands: context.commands, ...commonOf(props, name) } as LayerJson;
+      }
       case 'kg-video':
         // The sound is not part of the layer: it is an audio clip with the layer's id.
         this.audio.push({ id, ...props.sound });

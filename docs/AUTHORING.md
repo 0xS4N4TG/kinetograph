@@ -430,11 +430,64 @@ Numbers may be plain numbers or keyframe lists (they pass through). Unknown prop
 | `<Image>` | `src`, `width?`, `height?`, `fit?` | `image` |
 | `<Noise>` | `width`, `height`, `turbulence`, `channels` | `noise` |
 | `<MeshGradient>` | `width`, `height`, `columns`, `rows`, `points`, `colors` | `meshGradient` |
+| `<Canvas>` | `width`, `height` (whole numbers, not animated), `draw(context)` | `canvas`: `draw` is called with a fresh, empty `CanvasContext2D` (§6.5) each time the tree is read, and the commands it drew are the layer's `commands` |
 | `<Lottie>` | `src` or `animationData` (parsed JSON, written once to a content-addressed cache file), `width?`, `height?`, `loop?`, `playbackRate?` (default 1) | `lottie` with `time = frame / fps * playbackRate` from the timeline |
 | `<Camera>` | `perspective`, `x?`, `y?` | the scene's `camera` (at most one per tree; anywhere in it) |
 | `<Audio>` | Remotion's: `src`, `volume` (number or `(frame) => number`), `trimBefore`/`trimAfter` (and the older `startFrom`/`endAt`), `playbackRate`, `loop`, `muted` | an `AudioClipJson` in `RenderedTree.audio`, not a layer |
 
 Raw text outside `<Text>` is an error naming the parent element. Duplicate explicit ids are an error naming the id.
+
+### 6.5 Canvas 2D
+
+A Canvas 2D context that records instead of rasterising (`createCanvasContext` of `@kinetograph/scene`,
+`packages/scene/src/canvas.ts`). It keeps the canvas's state as a browser's does (transform, `fillStyle` and the
+other styles, line and text state, `save`/`restore`, clips) and writes each drawing call as a `canvas` layer command
+with the state it is drawn in (SCENE.md, "canvas"); Rust draws the commands with Vello. Nothing in it reads a clock,
+so what a context holds is a function of the calls it was given.
+
+Two ways to draw:
+
+- **`<Canvas width height draw={(ctx) => …} />`** is the native element: `draw` gets a fresh context each time the
+  tree is read, so the canvas is a function of its props and the frame `draw` closes over.
+- **`<canvas ref>` with `getContext('2d')`**, as a Remotion project writes it (usually in a `useEffect`). The host
+  element keeps its context across frames, as a browser's canvas keeps its bitmap, and the commands reach the painter in
+  the element's `data-kg-canvas` attribute (ENGINE.md §4), so CSS sizes, rounds, clips and transforms the canvas box like
+  any element's. A project redraws every frame: `clearRect(0, 0, w, h)` (or an opaque `fillRect` of the whole canvas)
+  empties the command list, so it never grows past one frame's drawing. Before each frame the frame loop puts every
+  context's **state** back to a new canvas's (open clips are closed, `save`d states dropped) and keeps what was drawn, so
+  a project that forgets a `restore()` does not make a frame depend on the frame rendered before it.
+
+The context and the globals around it:
+
+| API | Support |
+|---|---|
+| Paths | `beginPath`, `closePath`, `moveTo`, `lineTo`, `bezierCurveTo`, `quadraticCurveTo`, `arc`, `arcTo`, `ellipse`, `rect`, `roundRect`, `fill(rule)`, `stroke`, `clip(rule)`, `Path2D` (SVG path data, `addPath` with a matrix) as an argument to all three. Each point is taken through the transform in force when it was added, as the spec has it. |
+| Rectangles | `fillRect`, `strokeRect`, `clearRect` |
+| Styles | `fillStyle`, `strokeStyle` as CSS colours (named, hex, `rgb()`, `hsl()`; no `lab()`, `oklch()`, `color()`: such an assignment is ignored, as an invalid one is), `createLinearGradient`, `createRadialGradient`, `createConicGradient`, `createPattern` of an image or `ImageData`, `globalAlpha`, `globalCompositeOperation` (all 26 plus `clear` for `clearRect`), `lineWidth`, `lineCap`, `lineJoin`, `miterLimit`, `setLineDash`, `lineDashOffset`, `imageSmoothingEnabled` |
+| Transform | `scale`, `rotate`, `translate`, `transform`, `setTransform` (six numbers or a matrix), `resetTransform`, `getTransform`, `save`, `restore`, `reset` |
+| Text | `fillText`, `strokeText` (with `maxWidth`), `measureText` (width from the text engine; the other metrics from the line's ascent and descent), `font` (the shorthand: style, weight, size in `px`, `pt`, `em`, `%` or a keyword, a family list), `textAlign`, `textBaseline` |
+| Pictures | `drawImage` (three forms) of an `<img>`, `new Image()` (a project file or a `data:` URL), another canvas (`<canvas>`, `document.createElement('canvas')`, `OffscreenCanvas`: its commands, drawn as a whole) or `ImageData`; `createImageData`, `putImageData` (with a dirty rectangle), `getImageData` |
+| Elsewhere | `canvas.width`/`height` (setting either empties the canvas and resets the context), `toDataURL()` (always PNG), `toBlob`, `OffscreenCanvas`, `Path2D`, `ImageData`, `CanvasGradient`, `CanvasPattern`, `CanvasRenderingContext2D` as globals |
+
+Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `shadowColor`, `shadowOffsetX/Y`,
+`filter`, `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`,
+`direction`, `imageSmoothingQuality`. `isPointInPath` and `isPointInStroke` return `false`. `getContext('webgl')`,
+`'webgl2'` and `'webgpu'` throw a message saying so (HANDOFF §8); another context type returns `null`.
+
+- **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family
+  (the first of the list that has a face), then the nearest weight and the right style of it; a family with no face
+  registered gives the key a `<Text>` of that font would (`'Unknown:700'`), which the scene then lacks, like a `<Text>`.
+  The text engine measures and draws with the same face, so `measureText` is what is drawn.
+- **`getImageData`, `toDataURL`, `toBlob`.** They need the pixels of what has been drawn, so they ask the addon to draw
+  the commands on a transparent canvas (`renderCanvas`: it opens the GPU on each call, about 100 ms, so not in a per-frame
+  loop) and read it back; without the addon they throw. A canvas drawn into another with `drawImage` is not drawn to
+  pixels: its commands are copied in, which keeps it sharp.
+- **Images.** `drawImage` of an `<img>` or `new Image()` names the file; it is read when the renderer is built, as an
+  `<Image>` layer's is. `putImageData` replaces what is under it (it ignores the transform, alpha and composite
+  operation, but not an open clip).
+- **Sizes.** The bitmap is `width` x `height` (300 x 150 by default); CSS stretches it to the element's box as
+  `object-fit: fill` does. The commands are drawn at the box's size, not resampled from the bitmap, so a stretched canvas
+  is sharp where Chrome's is blurred (ENGINE.md §4, "`<canvas>`").
 
 ### 6.4 Audio clips
 
@@ -570,8 +623,8 @@ Once installed:
 `@kinetograph/core/web/install` (imported by the Node bundle right after it; not part of the Chrome bundle) adds the
 browser globals a project commonly touches: `window` and its sizes (the composition's), `matchMedia`, `new Image()` for
 project files, `fetch` of project files (remote URLs fail saying Kinetograph renders offline), `document` queries over
-the host tree, `getComputedStyle`, `ResizeObserver` and `IntersectionObserver`, and a `<canvas>` that fails saying it is
-not supported yet (ENGINE.md §10.4). Refs to DOM elements answer `getBoundingClientRect`, `offsetWidth`, … from the CSS
+the host tree, `getComputedStyle`, `ResizeObserver` and `IntersectionObserver`, and `<canvas>`, `OffscreenCanvas`,
+`Path2D` and `ImageData` (§6.5). Refs to DOM elements answer `getBoundingClientRect`, `offsetWidth`, … from the CSS
 engine (ENGINE.md §10.3).
 
 ### 7.5 Remotion packages (subpath exports)

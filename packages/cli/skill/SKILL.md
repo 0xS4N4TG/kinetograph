@@ -128,8 +128,9 @@ holding anything it cannot draw yet and, while the Chrome fallback exists, hands
 frames cost far more time and may differ slightly from native ones (Chrome blends in sRGB, the engine in linear
 light), so find out what falls back before a long render. Refs to DOM elements answer `getBoundingClientRect` and
 friends from the same CSS engine, `useLayoutEffect` measure-then-render code settles within the frame, and `fetch`,
-`new Image()` and `matchMedia` work for project files and the composition's size; there is no network and no
-`<canvas>` yet.
+`new Image()` and `matchMedia` work for project files and the composition's size, and `<canvas>` with
+`getContext('2d')` is drawn natively (paths, gradients, text, `drawImage`, `getImageData`; no shadows and no WebGL);
+there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native element for the same drawing.
 
 `kinetograph doctor src/index.tsx` runs the JS stage for every frame (no GPU) and reports:
 

@@ -125,6 +125,8 @@ pub fn scene_json(out: &IslandOutput, w: u32, h: u32) -> Value {
     let mut scene = json!({
         "width": w, "height": h, "fps": 30, "durationInFrames": 1,
         "background": "#ffffff",
+        // The font a canvas's text layers name (`ctx.font = '20px "DM Sans"'`).
+        "fonts": { "DM Sans": font_path().to_string_lossy() },
         "layers": out.layers,
     });
     if let Some(camera) = &out.camera {

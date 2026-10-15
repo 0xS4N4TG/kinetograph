@@ -609,10 +609,16 @@ Phase 6 (above); status as of 2026-10-16: items 1 and 2 are being built, item 3 
    transitions: a transition starts when a value changes, which depends on the previous frame; to stay a pure
    function of the frame, look back over the transition's duration for the frame the value changed and
    interpolate from there.
-2. **Canvas 2D** (medium; the most common custom drawing in Remotion projects). A `CanvasRenderingContext2D` shim
-   records each frame's calls (paths, fill/stroke, gradients, `drawImage`, `fillText`, transforms, clips,
-   `globalAlpha`, `globalCompositeOperation`); Rust draws them as one canvas layer with Vello, whose model maps
-   almost one to one. `getImageData`/`toDataURL` need pixels at once, so those draw on the CPU.
+2. **Canvas 2D: done** (2026-10-16, branch `feat/canvas2d`). A `CanvasRenderingContext2D` that records
+   (`createCanvasContext`, `@kinetograph/scene`) keeps the canvas's state and writes each call as a command; Rust draws
+   the commands as one `canvas` layer with Vello (SCENE.md, "canvas"). A `<canvas>` in a Remotion project, `<Canvas
+   draw>`, `document.createElement('canvas')`, `OffscreenCanvas`, `Path2D` and `ImageData` all work, with every
+   composite operation, gradients, patterns, clips, text in the registered fonts, and `drawImage` of images and
+   canvases; `getImageData`/`toDataURL` draw the commands on a transparent canvas through the addon (`renderCanvas`).
+   API table in AUTHORING.md §6.5, painter notes in ENGINE.md §4. Not done: shadows (`shadowBlur` and the rest are kept
+   and draw nothing; Vello has no blur but a rounded rectangle's, so a path's shadow needs a blur pass of its own),
+   `filter`, letter and word spacing, right-to-left `direction`, `isPointInPath`, patterns of a canvas, and a pattern's
+   transform.
 3. **WebGL fragment shaders** (shader transitions, Shadertoy ports): the slice of WebGL they use (one full-screen
    quad, uniforms, textures, `drawArrays`), with their GLSL ES translated to WGSL by naga and run as a `shader`
    pass. naga reads desktop GLSL, so GLSL ES 100 / 300 es probably needs a small rewrite step first.

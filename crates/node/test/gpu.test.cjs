@@ -261,3 +261,29 @@ test('pushRgba interleaves already-drawn frames with pushFrame, in order', { ski
   assert.deepEqual([summary.first, summary.last], [0, 1]);
   assert.ok(fs.statSync(out).size > 0);
 });
+
+test('renderCanvas draws a canvas layer on a transparent canvas, as RGBA or a PNG', { skip }, () => {
+  const request = (extra = {}) =>
+    JSON.stringify({
+      width: 8,
+      height: 4,
+      commands: [{ op: 'fill', path: 'M0 0H4V4H0Z', paint: { type: 'color', color: '#ff0000' } }],
+      fonts: {},
+      baseDir: repo,
+      ...extra,
+    });
+  const rgba = native.renderCanvas(request());
+  assert.equal(rgba.length, 8 * 4 * 4);
+  const px = (x, y) => [...rgba.subarray((y * 8 + x) * 4, (y * 8 + x) * 4 + 4)];
+  assert.deepEqual(px(1, 1), [255, 0, 0, 255]);
+  assert.deepEqual(px(6, 1), [0, 0, 0, 0], 'the rest is transparent');
+  const png = native.renderCanvas(request({ format: 'png' }));
+  assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  rejects(() => native.renderCanvas(request({ width: 0 })), 'INVALID_ARG', /width/);
+  rejects(() => native.renderCanvas(request({ format: 'gif' })), 'INVALID_ARG', /format/);
+  rejects(
+    () => native.renderCanvas(request({ commands: [{ op: 'fill', path: 'M0 0 Q', paint: { type: 'color', color: '#fff' } }] })),
+    'SCENE_INVALID',
+    /bad path/,
+  );
+});
