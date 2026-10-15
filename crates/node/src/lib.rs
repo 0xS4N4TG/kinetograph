@@ -10,10 +10,12 @@
 //! `Error` whose `code` is one of `error::Code`.
 
 mod bench;
+mod dom;
 mod error;
 mod layout;
 mod media;
 mod preview;
+mod raw;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -223,6 +225,20 @@ pub fn decode_audio(
 ) -> Result<Option<AudioPcm>> {
     let sample_rate = count("sampleRate", sample_rate)?;
     media::decode_audio(&resolve_base(base_dir).join(path), sample_rate)
+}
+
+/// CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a
+/// `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out.
+#[napi]
+pub fn layout_dom(request_json: String) -> Result<String> {
+    dom::layout_dom(&request_json)
+}
+
+/// The picture a video layer shows `time` seconds after the stream's first
+/// picture, decoded on the CPU (docs/COMPAT.md §6.2).
+#[napi]
+pub fn video_frame(path: String, time: f64, base_dir: Option<String>) -> Result<RgbaFrame> {
+    raw::video_frame(&resolve_base(base_dir).join(path), time)
 }
 
 // ---- GPU ----
@@ -583,6 +599,23 @@ impl Drop for VideoWriter {
 
 #[napi]
 impl VideoWriter {
+    /// Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
+    /// §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
+    /// ordering rule as `pushFrame`.
+    #[napi]
+    pub fn push_rgba(
+        &mut self,
+        _rgba: Buffer,
+        _width: u32,
+        _height: u32,
+        _frame: f64,
+    ) -> Result<()> {
+        Err(error(
+            Code::Render,
+            "not implemented: pushRgba (docs/COMPAT.md §6.2)",
+        ))
+    }
+
     /// Renders `frame` of this scene and queues it for encoding.
     #[napi]
     pub fn push_frame(

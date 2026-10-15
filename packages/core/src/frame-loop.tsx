@@ -17,6 +17,7 @@ import {
   type LayerJson,
   type SceneJson,
   type SequenceJson,
+  type Unsupported,
 } from '@kinetograph/scene';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
@@ -28,6 +29,8 @@ export interface FrameResult {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree, showing or not (docs/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
+  /** Empty when the frame can be drawn natively; otherwise it is drawn by Chrome (docs/COMPAT.md §6.1). */
+  unsupported: Unsupported[];
 }
 
 export interface FrameRenderer {
@@ -135,7 +138,7 @@ class Renderer implements FrameRenderer {
     };
     if (main.camera !== null) sceneJson.camera = main.camera;
     if (margin !== undefined) sceneJson.margin = margin;
-    return { scene: sceneJson, audio: main.audio, sequences: main.sequences };
+    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: main.unsupported };
   }
 
   private element(component: ResolvedComposition['component'], config: VideoConfig, frame: number): ReactNode {

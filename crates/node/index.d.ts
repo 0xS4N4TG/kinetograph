@@ -37,6 +37,12 @@ export declare class Renderer {
  * `abort` does, and later calls fail.
  */
 export declare class VideoWriter {
+  /**
+   * Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
+   * §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
+   * ordering rule as `pushFrame`.
+   */
+  pushRgba(rgba: Buffer, width: number, height: number, frame: number): void
   /** Renders `frame` of this scene and queues it for encoding. */
   pushFrame(sceneJson: string, frame: number, baseDir?: string | undefined | null): void
   /** Flushes, muxes `audio` if given, closes the file. */
@@ -89,6 +95,12 @@ export declare function decodeAudio(path: string, sampleRate: number, baseDir?: 
 
 /** The scene resolved at `frame`, as an `InspectResult` JSON string. */
 export declare function inspect(sceneJson: string, frame: number, baseDir?: string | undefined | null): string
+
+/**
+ * CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a
+ * `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out.
+ */
+export declare function layoutDom(requestJson: string): string
 
 /**
  * Shapes text with the renderer's text engine. Engines are cached per
@@ -232,6 +244,12 @@ export declare function validateScene(sceneJson: string, baseDir?: string | unde
 
 /** The version of the addon, which is the workspace version. */
 export declare function version(): string
+
+/**
+ * The picture a video layer shows `time` seconds after the stream's first
+ * picture, decoded on the CPU (docs/COMPAT.md §6.2).
+ */
+export declare function videoFrame(path: string, time: number, baseDir?: string | undefined | null): RgbaFrame
 
 export interface VideoOptions {
   width: number

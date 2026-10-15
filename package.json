@@ -5,6 +5,7 @@
   "workspaces": [
     "crates/node",
     "packages/scene",
+    "packages/compat",
     "packages/react",
     "packages/core",
     "packages/audio",

@@ -10,6 +10,7 @@ import {
   type CameraJson,
   type CharStyle,
   type SequenceJson,
+  type Unsupported,
   type Effect,
   type LayerJson,
   type MotionBlurJson,
@@ -37,6 +38,8 @@ export interface RenderedTree {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the tree, showing or not, in tree order (docs/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
+  /** What DOM elements in the tree ask for that compat mode cannot draw natively (docs/COMPAT.md §6.1). */
+  unsupported: Unsupported[];
 }
 
 /** The name of an element as a user writes it, for error messages. */
@@ -321,5 +324,5 @@ export function emit(roots: HostNode[]): RenderedTree {
   if (emitter.cameras.length > 1) {
     throw new Error(`Only one <Camera> is allowed per tree, found ${emitter.cameras.length}`);
   }
-  return { layers, camera: emitter.cameras[0] ?? null, audio: emitter.audio, sequences: emitter.sequences };
+  return { layers, camera: emitter.cameras[0] ?? null, audio: emitter.audio, sequences: emitter.sequences, unsupported: [] };
 }

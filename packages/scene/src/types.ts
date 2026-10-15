@@ -545,6 +545,18 @@ export interface AudioClipJson {
   video?: boolean;
 }
 
+/** Something compat mode cannot draw natively (docs/COMPAT.md §6.1); a frame holding one is drawn by Chrome. */
+export interface Unsupported {
+  /** The element's host-tree path and tag: `'$0.2.1 <div>'`. */
+  path: string;
+  /** `'div'`, `'svg > text'`, … */
+  element: string;
+  /** `'transform'`; null for an unsupported element. */
+  property: string | null;
+  value: string | null;
+  reason: string;
+}
+
 /** A `<Sequence>` as the timeline sees it (docs/AUTHORING.md §11.4). */
 export interface SequenceJson {
   /** `${parent key ?? ''}/${name ?? 'Sequence'}@${from}+${durationInFrames}`, stable across frames. */
