@@ -309,17 +309,18 @@ and kept): the contract is `docs/AUTHORING.md`; the TSX rebuild of the reference
 checks green; nothing has rendered on a GPU yet. On the M4: the seven new goldens, the addon's GPU tests, spike 1
 (`crates/node/spike/handoff.mjs`), spike 2 (`spikes/three-dawn`), the reference rebuild, then the papercut port and
 the go/no-go timing.
-**Tested on the M4 2026-10-15** (PR #11, not merged). Fixed on the branch: a ThorVG use-after-free across threads (the
+**Tested on the M4 and merged into `main` 2026-10-15** (PR #11). Fixed on the branch: a ThorVG use-after-free across threads (the
 Lottie tests crashed about half the runs), transform origins measured from the box's top-left corner, the seven new
 goldens. `cargo test` and the GPU npm tests pass except `renderer_reuse` (#12).
 - Spike 1: handoff 0.58 ms a frame on the papercut card, 1.6–2.9 ms on the S04 port. Spike 2: Three.js
   `WebGPURenderer` runs on Dawn (Metal), ~0.44 ms a frame at 512², 1.3–1.4 ms with readback. Three.js it is.
-- Go/no-go: the S04Meter TSX port matches the JSON port byte for byte on all 89 frames and renders 3.6–3.9x faster
-  than Remotion (the JSON port 4.1–4.5x). Below the 5x bar; 4x accepted for now (decided 2026-10-15). No `bench`
-  regression against `main`.
+- Go/no-go: the S04Meter TSX port matches the JSON port byte for byte on all 89 frames. Timed back to back with
+  Remotion on battery, Low Power Mode off (the earlier 3.6–4.5x had Low Power Mode on, which slows Remotion more):
+  Remotion 9.2–9.5 s, the JSON port 2.72–2.74 s (3.4–3.5x), the TSX port 2.86–2.92 s (3.2–3.3x). Below the 5x bar,
+  accepted for now (decided 2026-10-15); fewer GPU passes is the next lever. No `bench` regression against `main`.
 - The reference rebuild works but is slow (429 ms a frame) and matches loosely (#17).
-- Merge blockers, fixed in the cloud before #11 merges: #12, #13, #14, #15 (see "Phase 3 fixes in a cloud session").
-  Later: #16 (`kinetograph check`), #17.
+- Merge blockers #12–#15, fixed in the cloud (see "Phase 3 fixes in a cloud session") and tested on the M4 as PRs
+  #18–#21 before #11 merged. Open: #16 (`kinetograph check`), #17.
 **3D layer (after Phase 3).** Three.js on Dawn, or the kiss3d mapping if the spike fails (section 4).
 **Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
