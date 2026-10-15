@@ -57,7 +57,7 @@ export function resolveSpecifier(specifier: string): Resolution | null {
       message: `"${specifier}" is not supported by Kinetograph yet. Run \`kinetograph doctor\` for what is.`,
     };
   }
-  if (/^@kinetograph\/(core|react|scene|audio)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
+  if (/^@kinetograph\/(core|react|scene|audio|compat)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   // React too: a project with its own copy of React would otherwise bundle two, and the core's hooks would run against
   // a different React from the project's components.
   if (/^react(-reconciler)?(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
@@ -68,7 +68,7 @@ function aliasPlugin(): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@kinetograph\/(core|react|scene|audio)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@kinetograph\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;
@@ -111,6 +111,8 @@ export function syntheticEntry(entry: string): string {
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
     `export { setMediaProbe } from '@kinetograph/core/media-utils';`,
+    // DOM elements are laid out by the addon too (docs/COMPAT.md §5.1).
+    `export { setLayoutDom } from '@kinetograph/compat/dom';`,
     '',
   ].join('\n');
 }

@@ -7,6 +7,7 @@ pub mod box_shadow;
 pub mod cache;
 pub mod color;
 pub mod compositor;
+pub mod dom_layout;
 pub mod error;
 pub mod gif;
 #[cfg(test)]

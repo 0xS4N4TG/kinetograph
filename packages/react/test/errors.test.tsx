@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { Camera, createSceneRoot, Layer, Rect, Text } from '../src/index.js';
 import { at, renderAt } from './harness.js';
@@ -77,8 +78,9 @@ describe('elements', () => {
     expect(() => renderAt(<><Camera perspective={1} /><Camera perspective={2} /></>)).toThrow(/Only one <Camera>/);
   });
 
-  it('a DOM element is an error that says what is allowed', () => {
-    expect(() => renderAt(<div />)).toThrow(/Unknown element <div>/);
+  it('an element that is neither native nor DOM is an error that says what is allowed', () => {
+    expect(() => renderAt(createElement('bogus'))).toThrow(/Unknown element <bogus>/);
+    expect(() => renderAt(createElement('kg-bogus'))).toThrow(/Unknown element <kg-bogus>/);
   });
 
   it('an element cannot sit inside <Text>', () => {

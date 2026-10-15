@@ -7,9 +7,10 @@
 import { createContext, type ReactNode } from 'react';
 import Reconciler from 'react-reconciler';
 import { ConcurrentRoot, DiscreteEventPriority, NoEventPriority } from 'react-reconciler/constants.js';
-import { ELEMENT_NAMES, emit, type HostElement, type HostNode, type HostText, type RenderedTree } from './emit.js';
+import { isDomElement } from '@kinetograph/compat/dom';
+import { ELEMENT_NAMES, emit, type EmitOptions, type HostElement, type HostNode, type HostText, type RenderedTree } from './emit.js';
 
-export type { RenderedTree } from './emit.js';
+export type { EmitOptions, RenderedTree } from './emit.js';
 
 export interface SceneRoot {
   /** Renders `element` synchronously (effects flushed) and returns the emitted tree. */
@@ -40,6 +41,8 @@ function checkChild(parentType: string, child: HostNode): void {
     }
     return;
   }
+  // A DOM element takes text and elements (DOM or native) as children (docs/COMPAT.md §4.1).
+  if (isDomElement(parentType)) return;
   if (child.kind === 'text') {
     throw new Error(`Raw text "${child.text}" is not allowed inside ${describeParent(parentType)}; wrap it in <Text>`);
   }
@@ -72,8 +75,8 @@ const hostConfig = {
   // A `kg-sequence` is transparent: what is inside it answers to the element it stands in.
   getChildHostContext: (parent: HostContext, type: string): HostContext => (type === 'kg-sequence' ? parent : type),
   createInstance(type: string, props: Record<string, any>, _root: Container, hostContext: HostContext): HostElement {
-    if (!(type in ELEMENT_NAMES)) {
-      throw new Error(`Unknown element <${type}>: only the Kinetograph elements (Layer, Rect, Text, ...) can be rendered`);
+    if (!(type in ELEMENT_NAMES) && !isDomElement(type)) {
+      throw new Error(`Unknown element <${type}>: only the Kinetograph elements (Layer, Rect, Text, ...) and DOM elements (div, span, svg, ...) can be rendered`);
     }
     const element: HostElement = { kind: 'element', type, props, children: [] };
     // A <Text> child that is an element is caught here, before it is attached, so the error names the element.
@@ -197,7 +200,7 @@ const MAX_SETTLE_PASSES = 100;
  * Remotion tab keeps its page, so state, refs and effects live across `render` calls and a `delayRender` that
  * resolves later can update the tree seen by `snapshot`.
  */
-export function createSceneRoot(): SceneRoot {
+export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
   const container: Container = { children: [] };
   let error: { value: unknown } | undefined;
   const remember = (value: unknown): void => {
@@ -237,7 +240,7 @@ export function createSceneRoot(): SceneRoot {
   }
 
   function tree(): RenderedTree {
-    return emit(container.children);
+    return emit(container.children, options);
   }
 
   return {
