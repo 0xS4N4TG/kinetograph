@@ -54,6 +54,10 @@ pub(super) struct FilterPipelines {
     passes: HashMap<&'static str, wgpu::RenderPipeline>,
 }
 
+/// Standard deviation, in canvas pixels, from which an isotropic blur uses
+/// the pyramid of the `blur` effect instead of two direct passes.
+const WIDE_BLUR: f64 = 12.0;
+
 /// A rectangle so large that nothing is cut by it.
 fn everywhere() -> Rect {
     Rect::new(-1e9, -1e9, 1e9, 1e9)
@@ -76,7 +80,7 @@ struct Fe {
 impl Fe {
     fn new(matrix: Affine, margin: u32) -> Option<Fe> {
         let m = Affine::translate((-f64::from(margin), -f64::from(margin))) * matrix;
-        if !(m.determinant().abs() > 1e-12) {
+        if m.determinant().abs().partial_cmp(&1e-12) != Some(std::cmp::Ordering::Greater) {
             return None;
         }
         let inv = m.inverse().as_coeffs();
@@ -779,6 +783,20 @@ impl Compositor {
                 input.bounds.intersect(sub_px),
                 None,
             );
+        }
+        // A wide round blur goes through the pyramid the `blur` effect uses,
+        // which costs the same at any radius.
+        if axes.len() == 2 && sx >= WIDE_BLUR && (sx - sy).abs() <= 0.01 * sx {
+            let copy = self.fe_pass(
+                "fs_copy",
+                input,
+                input,
+                fe.params(everywhere(), &[]),
+                input.bounds,
+                None,
+            );
+            let blurred = self.blur_layer(copy, ((sx + sy) / 2.0) as f32);
+            return self.clip_to(fe, blurred, sub, true);
         }
         let mut current: Option<Tex> = None;
         let last = axes.len() - 1;

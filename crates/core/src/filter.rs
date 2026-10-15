@@ -1394,11 +1394,7 @@ impl ResolvedFilterGraph {
                         radius[1] *= sy as f32;
                     }
                     FeOp::DisplacementMap { scale, .. } => *scale *= sd as f32,
-                    FeOp::Lighting {
-                        light,
-                        surface_scale: _,
-                        ..
-                    } => {
+                    FeOp::Lighting { light, .. } => {
                         if let Some(b) = bbox {
                             let place = |p: &mut [f32; 3]| {
                                 p[0] = (b.x0 + f64::from(p[0]) * b.width()) as f32;
