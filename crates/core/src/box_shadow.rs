@@ -98,6 +98,7 @@ impl BoxShadow {
             geometry,
             fill: Some(ResolvedPaint::Solid(fill)),
             stroke: None,
+            ..
         } = &layer.kind
         else {
             return None;

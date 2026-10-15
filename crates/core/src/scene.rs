@@ -864,6 +864,9 @@ pub enum MatteMode {
     Luminance,
     /// Keep the layer where the source is dark or transparent.
     LuminanceInverted,
+    /// Like `Luminance`, but the luminance is taken from the sRGB-encoded
+    /// colour (SVG's `<mask>`, whose `color-interpolation` is `sRGB`).
+    SrgbLuminance,
 }
 
 /// Colour stops along a line, around a point or around an angle. All
@@ -879,11 +882,10 @@ pub struct Gradient {
     /// What the coordinates are measured in.
     #[serde(default)]
     pub units: Units,
-    /// `[a, b, c, d, e, f]`: an affine applied to the finished gradient, in
-    /// the space of its coordinates (before box units map them onto the
-    /// box). A circle squashed by `[1, 0, 0, k, 0, cy * (1 - k)]` is an
-    /// ellipse: CSS's `radial-gradient(ellipse ...)`. Not animated.
-    pub matrix: Option<[f64; 6]>,
+    /// A matrix `[a, b, c, d, e, f]` (SVG's `matrix()`) that takes the
+    /// gradient's space to the space of what it paints, after `units`
+    /// (SVG's `gradientTransform`).
+    pub transform: Option<[f64; 6]>,
 }
 
 /// The space a gradient's coordinates are in.
@@ -905,7 +907,17 @@ pub enum GradientGeometry {
     /// Offset 0 is at (x0, y0), offset 1 at (x1, y1).
     Linear { x0: Num, y0: Num, x1: Num, y1: Num },
     /// Offset 1 is at distance `r` from the centre.
-    Radial { cx: Num, cy: Num, r: Num },
+    Radial {
+        cx: Num,
+        cy: Num,
+        r: Num,
+        /// A focal circle the gradient starts from instead of the centre's
+        /// (SVG's `fx`, `fy`, `fr`): offset 0 is on it, offset 1 on the
+        /// circle of `cx`, `cy`, `r`.
+        fx: Option<Num>,
+        fy: Option<Num>,
+        fr: Option<Num>,
+    },
     /// Offset 0 is `angle` degrees clockwise from 12 o'clock (as in CSS);
     /// offset 1 is a full turn later.
     Conic {
@@ -941,6 +953,7 @@ pub enum Extend {
 /// What a shape's `fill` or a text layer's `color` paints with: a colour
 /// string or a gradient object.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Paint {
     Solid(Color),
     Gradient(Gradient),
@@ -1004,6 +1017,10 @@ pub struct ShapeLayer {
     /// A colour or a gradient, in the layer's own coordinates.
     pub fill: Option<Paint>,
     pub stroke: Option<Stroke>,
+    /// Which parts of a path with crossings or holes the fill covers
+    /// (default `nonzero`).
+    #[serde(default)]
+    pub fill_rule: FillRule,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1033,6 +1050,50 @@ pub enum Geometry {
 pub struct Stroke {
     pub color: Color,
     pub width: Num,
+    /// How an open end is finished (default `butt`).
+    #[serde(default)]
+    pub cap: StrokeCap,
+    /// How a corner is finished (default `round`).
+    #[serde(default)]
+    pub join: StrokeJoin,
+    /// A `miter` join longer than this many stroke widths is bevelled
+    /// (default 4, as in SVG).
+    pub miter_limit: Option<Num>,
+    /// Lengths of the dashes and the gaps between them, alternating, starting
+    /// with a dash and repeating; an odd count is repeated to make it even,
+    /// as in SVG. Empty: a solid line.
+    #[serde(default)]
+    pub dash_array: Vec<Num>,
+    /// How far into the pattern the stroke starts.
+    pub dash_offset: Option<Num>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StrokeCap {
+    #[default]
+    Butt,
+    Round,
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StrokeJoin {
+    #[default]
+    Round,
+    Miter,
+    Bevel,
+}
+
+/// SVG's `fill-rule`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum FillRule {
+    #[default]
+    #[serde(rename = "nonzero")]
+    NonZero,
+    #[serde(rename = "evenodd")]
+    EvenOdd,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1246,6 +1307,14 @@ pub struct GroupLayer {
     /// into the group's parent, in their own 3D positions, sorted by depth.
     #[serde(default)]
     pub preserve3d: bool,
+    /// The group does not isolate its children: one that blends with a mode
+    /// other than `normal` blends with what is behind the group, as if the
+    /// group were not there (CSS's `isolation: auto` on an element that is not
+    /// a stacking context). Only a group that is otherwise plain (opacity 1,
+    /// `normal` blending, no effects, clip, mask or matte) can be passed
+    /// through; any other still has a buffer.
+    #[serde(default)]
+    pub pass_through: bool,
     /// Flex layout of the children, applied when the scene is resolved.
     pub layout: Option<Layout>,
 }

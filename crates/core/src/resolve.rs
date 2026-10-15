@@ -7,11 +7,11 @@ use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
     AlignContent, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
-    Effect, Extend, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun, Gradient,
-    GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout,
-    LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
-    NoiseChannels, Paint, Position, Scene, Shadow, Spacing, Stop, TextAlign, Transform, Turbulence,
-    TurbulenceKind, Units,
+    Effect, Extend, FillRule, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun,
+    Gradient, GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind,
+    Layout, LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
+    NoiseChannels, Paint, Position, Scene, Shadow, ShapeLayer, Spacing, Stop, StrokeCap,
+    StrokeJoin, TextAlign, Transform, Turbulence, TurbulenceKind, Units,
 };
 use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
@@ -438,6 +438,58 @@ pub struct ResolvedMatte {
     pub mode: MatteMode,
 }
 
+/// How a shape is filled and stroked, beyond its colours and the stroke's
+/// width, at one frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeStyle {
+    pub fill_rule: FillRule,
+    pub cap: StrokeCap,
+    pub join: StrokeJoin,
+    pub miter_limit: f64,
+    /// Dash lengths and gaps, alternating; empty for a solid line.
+    pub dash: Vec<f64>,
+    pub dash_offset: f64,
+}
+
+impl Default for ShapeStyle {
+    fn default() -> ShapeStyle {
+        ShapeStyle {
+            fill_rule: FillRule::NonZero,
+            cap: StrokeCap::Butt,
+            join: StrokeJoin::Round,
+            miter_limit: 4.0,
+            dash: Vec::new(),
+            dash_offset: 0.0,
+        }
+    }
+}
+
+impl ShapeStyle {
+    fn resolve(shape: &ShapeLayer, f: f64) -> ShapeStyle {
+        let mut style = ShapeStyle {
+            fill_rule: shape.fill_rule,
+            ..ShapeStyle::default()
+        };
+        if let Some(stroke) = &shape.stroke {
+            style.cap = stroke.cap;
+            style.join = stroke.join;
+            style.miter_limit = stroke
+                .miter_limit
+                .as_ref()
+                .map_or(4.0, |n| n.at(f))
+                .max(1.0);
+            let dash: Vec<f64> = stroke.dash_array.iter().map(|n| n.at(f)).collect();
+            // A pattern that is empty, has a negative or no length is a solid
+            // line, as in SVG.
+            if dash.iter().all(|d| d.is_finite() && *d >= 0.0) && dash.iter().sum::<f64>() > 0.0 {
+                style.dash = dash;
+                style.dash_offset = stroke.dash_offset.as_ref().map_or(0.0, |n| n.at(f));
+            }
+        }
+        style
+    }
+}
+
 /// What a shape's fill or a text's colour paints with, at one frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedPaint {
@@ -468,8 +520,9 @@ pub struct ResolvedGradient {
     /// Whether the coordinates are pixels of the painted layer or fractions
     /// of its box.
     pub units: Units,
-    /// An affine applied to the finished gradient (`scene::Gradient::matrix`).
-    pub matrix: Option<[f64; 6]>,
+    /// Takes the gradient's space (after `units`) to the painted layer's
+    /// (`Gradient::transform`).
+    pub transform: Affine,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -484,6 +537,15 @@ pub enum ResolvedGradientGeometry {
         cx: f64,
         cy: f64,
         r: f64,
+    },
+    /// A radial gradient that starts on the focal circle (`fx`, `fy`, `fr`).
+    FocalRadial {
+        cx: f64,
+        cy: f64,
+        r: f64,
+        fx: f64,
+        fy: f64,
+        fr: f64,
     },
     /// `angle` in degrees clockwise from 12 o'clock.
     Conic {
@@ -505,6 +567,8 @@ pub enum ResolvedKind {
         geometry: ResolvedGeometry,
         fill: Option<ResolvedPaint>,
         stroke: Option<(Color, f64)>,
+        /// The fill rule and how the stroke is drawn.
+        style: ShapeStyle,
     },
     Text {
         text: String,
@@ -535,6 +599,8 @@ pub enum ResolvedKind {
         children: Vec<ResolvedLayer>,
         /// The children are drawn straight into the parent, depth sorted.
         preserve3d: bool,
+        /// `GroupLayer::pass_through`.
+        pass_through: bool,
         /// The flex layout the children were placed by.
         layout: Option<ResolvedLayout>,
         /// With a `layout`: the size it gave the group, whose box is
@@ -862,6 +928,7 @@ impl Resolver<'_> {
                 },
                 fill: s.fill.as_ref().map(|p| resolve_paint(p, f)),
                 stroke: s.stroke.as_ref().map(|st| (st.color, st.width.at(f))),
+                style: ShapeStyle::resolve(s, f),
             },
             LayerKind::Text(t) => ResolvedKind::Text {
                 text: t.text.clone(),
@@ -914,6 +981,7 @@ impl Resolver<'_> {
                     children
                 },
                 preserve3d: g.preserve3d,
+                pass_through: g.pass_through,
             },
             LayerKind::Lottie(l) => {
                 let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;
@@ -1095,10 +1163,32 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
             x1: x1.at(f),
             y1: y1.at(f),
         },
-        GradientGeometry::Radial { cx, cy, r } => ResolvedGradientGeometry::Radial {
+        GradientGeometry::Radial {
+            cx,
+            cy,
+            r,
+            fx: None,
+            fy: None,
+            fr: None,
+        } => ResolvedGradientGeometry::Radial {
             cx: cx.at(f),
             cy: cy.at(f),
             r: r.at(f).max(0.0),
+        },
+        GradientGeometry::Radial {
+            cx,
+            cy,
+            r,
+            fx,
+            fy,
+            fr,
+        } => ResolvedGradientGeometry::FocalRadial {
+            cx: cx.at(f),
+            cy: cy.at(f),
+            r: r.at(f).max(0.0),
+            fx: fx.as_ref().map_or_else(|| cx.at(f), |n| n.at(f)),
+            fy: fy.as_ref().map_or_else(|| cy.at(f), |n| n.at(f)),
+            fr: fr.as_ref().map_or(0.0, |n| n.at(f).max(0.0)),
         },
         GradientGeometry::Conic { cx, cy, angle } => ResolvedGradientGeometry::Conic {
             cx: cx.at(f),
@@ -1111,7 +1201,7 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         stops: resolve_stops(&g.stops, f),
         extend: g.extend,
         units: g.units,
-        matrix: g.matrix,
+        transform: g.transform.map_or(Affine::IDENTITY, Affine::new),
     }
 }
 

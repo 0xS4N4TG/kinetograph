@@ -7,7 +7,7 @@ use std::time::{Instant, SystemTime};
 
 use glam::DMat4;
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
-use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke};
+use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
 use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
 use vello::util::RenderContext;
 use vello::wgpu;
@@ -27,7 +27,7 @@ use crate::mesh;
 use crate::resolve::{
     ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient,
     ResolvedGradientGeometry, ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint,
-    ResolvedScene,
+    ResolvedScene, ShapeStyle,
 };
 use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Paint, Scene, ShapeLayer, TextLayer,
@@ -1082,11 +1082,12 @@ impl Renderer {
                 geometry,
                 fill,
                 stroke,
+                style,
             } => {
                 if fill.is_none() && stroke.is_none() {
                     return Ok(PixelRect::EMPTY);
                 }
-                shape_box(geometry, stroke.map(|(_, width)| width))?
+                shape_box(geometry, stroke.map(|(_, width)| (width, style)))?
             }
             ResolvedKind::Text {
                 text,
@@ -1148,6 +1149,7 @@ impl Renderer {
                 geometry,
                 fill,
                 stroke,
+                style,
             } => {
                 let path = geometry_path(geometry)?;
                 if let Some(paint) = fill {
@@ -1156,11 +1158,11 @@ impl Renderer {
                     let (brush, brush_transform) =
                         paint_brush_in(paint, Some(path.bounding_box()), &self.images);
                     self.vello_scene
-                        .fill(Fill::NonZero, matrix, &brush, brush_transform, &path);
+                        .fill(fill_rule(style), matrix, &brush, brush_transform, &path);
                 }
                 if let Some((color, width)) = stroke {
                     self.vello_scene.stroke(
-                        &Stroke::new(*width),
+                        &stroke_of(*width, style),
                         matrix,
                         to_peniko(*color),
                         None,
@@ -1377,16 +1379,17 @@ impl Renderer {
             geometry,
             fill,
             stroke,
+            style,
         } = &layer.kind
         {
             let path = geometry_path(geometry)?;
             if fill.is_some() {
                 self.vello_scene
-                    .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, &path);
+                    .fill(fill_rule(style), matrix, peniko::Color::WHITE, None, &path);
             }
             if let Some((_, width)) = stroke {
                 self.vello_scene.stroke(
-                    &Stroke::new(*width),
+                    &stroke_of(*width, style),
                     matrix,
                     peniko::Color::WHITE,
                     None,
@@ -1656,17 +1659,68 @@ fn collect_preserve3d<'a>(
     Ok(())
 }
 
+/// The fill rule of a shape as Vello has it.
+fn fill_rule(style: &ShapeStyle) -> Fill {
+    match style.fill_rule {
+        crate::scene::FillRule::NonZero => Fill::NonZero,
+        crate::scene::FillRule::EvenOdd => Fill::EvenOdd,
+    }
+}
+
+/// The stroke of a shape: `width` wide, finished as `style` says.
+fn stroke_of(width: f64, style: &ShapeStyle) -> Stroke {
+    use crate::scene::{StrokeCap, StrokeJoin};
+    let cap = match style.cap {
+        StrokeCap::Butt => vello::kurbo::Cap::Butt,
+        StrokeCap::Round => vello::kurbo::Cap::Round,
+        StrokeCap::Square => vello::kurbo::Cap::Square,
+    };
+    let join = match style.join {
+        StrokeJoin::Miter => vello::kurbo::Join::Miter,
+        StrokeJoin::Round => vello::kurbo::Join::Round,
+        StrokeJoin::Bevel => vello::kurbo::Join::Bevel,
+    };
+    let stroke = Stroke::new(width)
+        .with_caps(cap)
+        .with_join(join)
+        .with_miter_limit(style.miter_limit);
+    if style.dash.is_empty() {
+        stroke
+    } else {
+        stroke.with_dashes(style.dash_offset, style.dash.iter().copied())
+    }
+}
+
+/// How many half stroke widths past the path a stroke finished as `style`
+/// reaches: a miter join as far as its limit, a square cap a corner.
+fn stroke_reach(style: &ShapeStyle) -> f64 {
+    use crate::scene::{StrokeCap, StrokeJoin};
+    let join = if style.join == StrokeJoin::Miter {
+        style.miter_limit.max(1.0)
+    } else {
+        1.0
+    };
+    let cap = if style.cap == StrokeCap::Square {
+        std::f64::consts::SQRT_2
+    } else {
+        1.0
+    };
+    join.max(cap)
+}
+
 /// The box of a shape in layer space: its geometry, and, if it has a stroke
-/// of `stroke_width`, half the width more all round, which is as far as the
-/// stroke's round joins and caps (the default) reach.
-fn shape_box(geometry: &ResolvedGeometry, stroke_width: Option<f64>) -> Result<Rect> {
+/// of that width, half the width more all round (times `stroke_reach`), which
+/// is as far as its joins and caps reach.
+fn shape_box(geometry: &ResolvedGeometry, stroke: Option<(f64, &ShapeStyle)>) -> Result<Rect> {
     let shape = match geometry {
         ResolvedGeometry::Rect { width, height }
         | ResolvedGeometry::RoundedRect { width, height, .. }
         | ResolvedGeometry::Ellipse { width, height } => Rect::new(0.0, 0.0, *width, *height),
         ResolvedGeometry::Path { .. } => geometry_path(geometry)?.bounding_box(),
     };
-    let half = stroke_width.map_or(0.0, |width| width.max(0.0) / 2.0);
+    let half = stroke.map_or(0.0, |(width, style)| {
+        width.max(0.0) / 2.0 * stroke_reach(style)
+    });
     Ok(shape.inflate(half, half))
 }
 
@@ -1802,14 +1856,16 @@ fn is_hidden(layer: &ResolvedLayer) -> bool {
 /// its parent's canvas, under its matrix, instead of into a buffer of its own
 /// that is then blended: it blends normally at opacity 1, with no effects,
 /// clip, mask, matte, motion blur or 3D turn, nothing in it reads the backdrop,
-/// and every child it draws blends normally and is not a preserve3d group
-/// (whose children would blend one by one). Its children are then blended
+/// and every child it draws blends normally (unless the group is
+/// `pass_through`: then they blend with the canvas as they would without it)
+/// and is not a preserve3d group (whose children would blend one by one). Its children are then blended
 /// onto the canvas in the same order, so the result is the same up to f16
 /// rounding: `(b over a) over canvas` against `b over (a over canvas)`.
 fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
     let ResolvedKind::Group {
         children,
         preserve3d: false,
+        pass_through,
         ..
     } = &layer.kind
     else {
@@ -1828,7 +1884,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
             .iter()
             .filter(|c| !is_hidden(c) && !is_matte_source(children, c))
             .all(|c| {
-                c.blend_mode == BlendMode::Normal
+                (*pass_through || c.blend_mode == BlendMode::Normal)
                     && !matches!(
                         c.kind,
                         ResolvedKind::Group {
@@ -1946,15 +2002,97 @@ fn paint_brush_in(
 /// paints the last stop's colour, like any gradient without one.
 fn gradient_brush_in(g: &ResolvedGradient, layer_box: Option<Rect>) -> (peniko::Brush, Affine) {
     let (brush, turn) = gradient_brush(g);
+    let turn = g.transform * turn;
     let (Units::Box, Some(b)) = (g.units, layer_box) else {
-        return (brush, turn);
+        return (
+            linear_in_layer_space(g, brush, Affine::IDENTITY, turn),
+            linear_transform(g, turn),
+        );
     };
     if !(b.width() > 0.0 && b.height() > 0.0) {
         let last = g.stops[g.stops.len() - 1].1;
         return (peniko::Brush::Solid(to_peniko(last)), Affine::IDENTITY);
     }
     let to_box = Affine::translate((b.x0, b.y0)) * Affine::scale_non_uniform(b.width(), b.height());
-    (brush, to_box * turn)
+    (
+        linear_in_layer_space(g, brush, to_box, turn),
+        linear_transform(g, to_box * turn),
+    )
+}
+
+/// Vello places a linear gradient by moving its two end points, so a matrix
+/// that stretches or skews does not tilt the lines of one colour as it should
+/// (SVG's `gradientTransform` on a diagonal gradient, or `objectBoundingBox`
+/// on a box that is not square). The same gradient, for any matrix, is the
+/// one whose line runs along the direction its colour changes fastest in the
+/// painted space; the brush for that has no matrix of its own
+/// (`linear_transform`). Everything else goes through Vello's matrix as it is.
+fn linear_in_layer_space(
+    g: &ResolvedGradient,
+    brush: peniko::Brush,
+    to_box: Affine,
+    turn: Affine,
+) -> peniko::Brush {
+    let ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } = g.geometry else {
+        return brush;
+    };
+    let m = to_box * turn;
+    if !moves_by_matrix(g, m) {
+        return brush;
+    }
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let len2 = dx * dx + dy * dy;
+    if len2 < 1e-12 {
+        return brush;
+    }
+    // t at a layer point p is ((m^-1 p - start) . d) / |d|^2: a plane, with
+    // this slope and its value at the origin.
+    let [a, b, c, d, e, f] = m.inverse().as_coeffs();
+    let slope = Vec2::new((a * dx + b * dy) / len2, (c * dx + d * dy) / len2);
+    let at_origin = ((e - x0) * dx + (f - y0) * dy) / len2;
+    let slope2 = slope.hypot2();
+    if slope2 < 1e-18 {
+        return brush;
+    }
+    let start = Point::ZERO - slope * (at_origin / slope2);
+    let end = start + slope / slope2;
+    let mut moved = g.clone();
+    moved.geometry = ResolvedGradientGeometry::Linear {
+        x0: start.x,
+        y0: start.y,
+        x1: end.x,
+        y1: end.y,
+    };
+    gradient_brush(&moved).0
+}
+
+/// The matrix to give the brush `linear_in_layer_space` made, or `m` for any
+/// other.
+fn linear_transform(g: &ResolvedGradient, m: Affine) -> Affine {
+    if moves_by_matrix(g, m) {
+        Affine::IDENTITY
+    } else {
+        m
+    }
+}
+
+/// Whether `linear_in_layer_space` applies: a linear gradient with a matrix
+/// of its own (`Gradient::transform`) that Vello would place wrongly. One
+/// without keeps the placement it always had.
+fn moves_by_matrix(g: &ResolvedGradient, m: Affine) -> bool {
+    matches!(g.geometry, ResolvedGradientGeometry::Linear { .. })
+        && g.transform != Affine::IDENTITY
+        && !m.is_nan()
+        && m.determinant().abs() >= 1e-12
+        && !is_similarity(m)
+}
+
+/// Whether `m` is a rotation, a uniform scale and a move: Vello then places a
+/// linear gradient exactly.
+fn is_similarity(m: Affine) -> bool {
+    let [a, b, c, d, _, _] = m.as_coeffs();
+    let s = a.hypot(b);
+    (a - d).abs() < 1e-9 * s.max(1.0) && (b + c).abs() < 1e-9 * s.max(1.0)
 }
 
 /// A resolved gradient as a Vello brush, plus a transform to apply to the
@@ -1979,36 +2117,11 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
         return solid;
     }
     let mut turn = Affine::IDENTITY;
-    let mut linear_exact = false;
     let gradient = match g.geometry {
         ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } => {
-            let (mut p0, mut p1) = (Point::new(x0, y0), Point::new(x1, y1));
+            let (p0, p1) = (Point::new(x0, y0), Point::new(x1, y1));
             if p0.distance(p1) < 1e-6 {
                 return solid;
-            }
-            // Vello puts a linear gradient's end points through the brush
-            // transform, which is only right for a turn and a uniform scale.
-            // An affine `matrix` maps the field exactly: the points go through
-            // it, and the line is carried to the field's new gradient (which
-            // transforms by the inverse transpose).
-            if let Some(m) = g.matrix {
-                let a = Affine::new(m);
-                let d = p1 - p0;
-                let covector = d / d.hypot2();
-                let inv = a.inverse().as_coeffs();
-                // The inverse transpose applied to the covector.
-                let g2 = vello::kurbo::Vec2::new(
-                    inv[0] * covector.x + inv[1] * covector.y,
-                    inv[2] * covector.x + inv[3] * covector.y,
-                );
-                if g2.hypot2() > 0.0 {
-                    let q0 = a * p0;
-                    p0 = q0;
-                    p1 = q0 + g2 / g2.hypot2();
-                    // `p0..p1` is the whole field now: `lo` and `hi` below
-                    // still cut it as before.
-                    linear_exact = true;
-                }
             }
             peniko::Gradient::new_linear(p0 + (p1 - p0) * lo, p0 + (p1 - p0) * hi)
         }
@@ -2019,6 +2132,28 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
             let c = Point::new(cx, cy);
             peniko::Gradient::new_two_point_radial(c, (r * lo) as f32, c, (r * hi) as f32)
         }
+        ResolvedGradientGeometry::FocalRadial {
+            cx,
+            cy,
+            r,
+            fx,
+            fy,
+            fr,
+        } => {
+            // The circles run from the focal one (offset 0) to the outer one
+            // (offset 1); the span `lo..hi` is what is drawn.
+            let at = |t: f64| {
+                (
+                    Point::new(fx + (cx - fx) * t, fy + (cy - fy) * t),
+                    (fr + (r - fr) * t) as f32,
+                )
+            };
+            let ((c0, r0), (c1, r1)) = (at(lo), at(hi));
+            if c0.distance(c1) < 1e-6 && (r1 - r0).abs() < 1e-6 {
+                return solid;
+            }
+            peniko::Gradient::new_two_point_radial(c0, r0, c1, r1)
+        }
         ResolvedGradientGeometry::Conic { cx, cy, angle } => {
             let c = Point::new(cx, cy);
             // Vello's sweep starts at 3 o'clock; CSS starts at 12.
@@ -2027,11 +2162,6 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
             peniko::Gradient::new_sweep(c, (lo * turns) as f32, (hi * turns) as f32)
         }
     };
-    if let Some(m) = g.matrix
-        && !linear_exact
-    {
-        turn = Affine::new(m) * turn;
-    }
     let extend = match g.extend {
         Extend::Pad => peniko::Extend::Pad,
         Extend::Repeat => peniko::Extend::Repeat,
@@ -2527,7 +2657,7 @@ mod tests {
             stops: stops.to_vec(),
             extend,
             units: Units::User,
-            matrix: None,
+            transform: Affine::IDENTITY,
         }
     }
 
@@ -3293,10 +3423,27 @@ mod tests {
             shape_box(&rect, None).unwrap(),
             Rect::new(0.0, 0.0, 40.0, 20.0)
         );
+        let plain = ShapeStyle::default();
         assert_eq!(
-            shape_box(&rect, Some(10.0)).unwrap(),
+            shape_box(&rect, Some((10.0, &plain))).unwrap(),
             Rect::new(-5.0, -5.0, 45.0, 25.0)
         );
+        // A miter join reaches as far as its limit, a square cap a corner.
+        let miter = ShapeStyle {
+            join: crate::scene::StrokeJoin::Miter,
+            miter_limit: 3.0,
+            ..ShapeStyle::default()
+        };
+        assert_eq!(
+            shape_box(&rect, Some((10.0, &miter))).unwrap(),
+            Rect::new(-15.0, -15.0, 55.0, 35.0)
+        );
+        let square = ShapeStyle {
+            cap: crate::scene::StrokeCap::Square,
+            ..ShapeStyle::default()
+        };
+        let reach = 5.0 * std::f64::consts::SQRT_2;
+        assert!((shape_box(&rect, Some((10.0, &square))).unwrap().x0 + reach).abs() < 1e-9);
         // A rounded corner or an ellipse stays in the box.
         let round = ResolvedGeometry::RoundedRect {
             width: 40.0,

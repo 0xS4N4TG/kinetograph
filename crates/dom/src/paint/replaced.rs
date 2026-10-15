@@ -50,7 +50,7 @@ impl<'a> Painter<'a> {
             let painted = super::svg::paint_svg(
                 self.doc,
                 self.req,
-                node.id.as_u64() as usize,
+                node.id,
                 [content.w, content.h],
                 &id,
                 &path,

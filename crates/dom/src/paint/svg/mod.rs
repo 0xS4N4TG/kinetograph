@@ -5,11 +5,28 @@
 //!
 //! - [`paint_svg`] for an `<svg>` element's content, and
 //! - [`filter_graph`] for a `url(#id)` in a `filter` property.
+//!
+//! How it is made: `serialize` writes the subtree as SVG source (resolving what
+//! only the document knows: `currentColor`, CSS transforms, definitions in
+//! another `<svg>`), usvg resolves it, and `emit` maps the result onto layers.
+//! Filters are not taken from usvg: `filter` reads the `<filter>` element
+//! itself, so the scene's `filterGraph` gets the attributes as authored.
 
-use blitz_dom::BaseDocument;
-use serde_json::Value;
+mod assets;
+mod css;
+mod emit;
+mod filter;
+mod fonts;
+mod serialize;
+
+use std::sync::Arc;
+
+use blitz_dom::{BaseDocument, NodeId};
+use kurbo::Affine;
+use serde_json::{Value, json};
 
 use crate::request::{IslandRequest, Unsupported};
+use serialize::Note;
 
 /// What [`paint_svg`] drew.
 #[derive(Clone, Debug, Default)]
@@ -33,6 +50,19 @@ pub struct FilterEffect {
     pub unsupported: Vec<Unsupported>,
 }
 
+fn unsupported(path: &str, notes: Vec<Note>) -> Vec<Unsupported> {
+    notes
+        .into_iter()
+        .map(|n| Unsupported {
+            path: format!("{path} <{}>", n.element),
+            element: n.element,
+            property: n.property,
+            value: n.value,
+            reason: n.reason,
+        })
+        .collect()
+}
+
 /// Paints the `<svg>` element `node_id` (a node of `doc`, styled by
 /// `resolve`) into scene layers.
 ///
@@ -43,13 +73,86 @@ pub struct FilterEffect {
 pub fn paint_svg(
     doc: &BaseDocument,
     request: &IslandRequest,
-    node_id: usize,
+    node_id: NodeId,
     size: [f64; 2],
     id: &str,
     path: &str,
 ) -> SvgPaint {
-    let _ = (doc, request, node_id, size, id, path);
-    SvgPaint::default()
+    let serialized = serialize::serialize(doc, node_id, size);
+    let mut notes = serialized.notes.clone();
+    let fail = |notes: Vec<Note>, reason: String| SvgPaint {
+        layer: None,
+        unsupported: unsupported(
+            path,
+            notes
+                .into_iter()
+                .chain([Note {
+                    element: "svg".into(),
+                    property: None,
+                    value: None,
+                    reason,
+                }])
+                .collect(),
+        ),
+    };
+    let options = options(request);
+    let tree = match usvg::Tree::from_str(&serialized.xml, &options) {
+        Ok(tree) => tree,
+        Err(e) => return fail(notes, format!("the SVG could not be read: {e}")),
+    };
+    let mut emitter = emit::Emitter {
+        doc,
+        id: id.to_string(),
+        counter: 0,
+        notes: Vec::new(),
+        filters: serialized
+            .filters
+            .iter()
+            .map(|f| (f.group.clone(), f.urls.clone()))
+            .collect(),
+        viewport: [request.viewport.width, request.viewport.height],
+        coverage: false,
+    };
+    let children = emitter.group(tree.root(), Affine::IDENTITY);
+    notes.append(&mut emitter.notes);
+    // Text with no font to set it in is dropped by usvg without a word.
+    if serialized.xml.contains("<text") && request.fonts.is_empty() {
+        notes.push(Note {
+            element: "text".into(),
+            property: Some("font-family".into()),
+            value: None,
+            reason: "no registered font matches, so the text is not drawn".into(),
+        });
+    }
+    if children.is_empty() {
+        return SvgPaint {
+            layer: None,
+            unsupported: unsupported(path, notes),
+        };
+    }
+    let mut layer = json!({"id": id, "type": "group", "children": children});
+    // `overflow: hidden` on the replaced box. A group with a clip has a buffer
+    // of its own, which children that blend (mix-blend-mode) would blend into
+    // instead of what is behind the SVG, so the clip is only made when
+    // something reaches outside the box (a filter's region counts); otherwise
+    // the group passes its children's blending through.
+    let reach = tree.root().abs_layer_bounding_box();
+    let outside = reach.left() < -0.5
+        || reach.top() < -0.5
+        || reach.right() > size[0] as f32 + 0.5
+        || reach.bottom() > size[1] as f32 + 0.5;
+    if outside && !serialized.overflow_visible {
+        layer["clip"] = json!({
+            "kind": "polygon",
+            "points": [[0, 0], [size[0], 0], [size[0], size[1]], [0, size[1]]],
+        });
+    } else {
+        layer["passThrough"] = json!(true);
+    }
+    SvgPaint {
+        layer: Some(layer),
+        unsupported: unsupported(path, notes),
+    }
 }
 
 /// The `filterGraph` effect for `filter: url(<fragment>)`.
@@ -73,6 +176,199 @@ pub fn filter_graph(
     id: &str,
     path: &str,
 ) -> Option<FilterEffect> {
-    let _ = (doc, request, fragment, bbox, id, path);
-    None
+    let _ = id;
+    let name = fragment.trim();
+    let name = name
+        .strip_prefix("url(")
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap_or(name)
+        .trim()
+        .trim_matches(['"', '\''])
+        .trim_start_matches('#');
+    let mut notes = Vec::new();
+    let effect = filter::effect(
+        doc,
+        name,
+        Some(bbox),
+        [request.viewport.width, request.viewport.height],
+        &mut notes,
+    )?;
+    Some(FilterEffect {
+        effect,
+        unsupported: unsupported(path, notes),
+    })
+}
+
+/// usvg's options for a request: its fonts and its asset directories.
+///
+/// An `<image href>` is read only from inside `base_dir` or `public_dir`
+/// (`assets::resolve_under`): usvg's own resolver would read any path, an
+/// absolute one or one with `..` included.
+fn options(request: &IslandRequest) -> usvg::Options<'static> {
+    let roots: Vec<std::path::PathBuf> = [
+        Some(request.base_dir.as_str()),
+        request.public_dir.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(std::path::PathBuf::from)
+    .collect();
+    let mut options = usvg::Options {
+        // Nothing reads through this: the resolver below does not use it.
+        resources_dir: None,
+        font_family: fonts::default_family(&request.fonts),
+        font_size: 16.0,
+        fontdb: fonts::database(&request.fonts),
+        style_sheet: (!request.stylesheets.is_empty()).then(|| request.stylesheets.join("\n")),
+        ..usvg::Options::default()
+    };
+    options.image_href_resolver.resolve_string =
+        Box::new(move |href: &str, opts: &usvg::Options| {
+            let roots: Vec<&std::path::Path> =
+                roots.iter().map(std::path::PathBuf::as_path).collect();
+            let bytes = std::fs::read(assets::resolve_under(&roots, href)?).ok()?;
+            let data = Arc::new(bytes);
+            match data.as_slice() {
+                [0x89, b'P', b'N', b'G', ..] => Some(usvg::ImageKind::PNG(data)),
+                [0xff, 0xd8, 0xff, ..] => Some(usvg::ImageKind::JPEG(data)),
+                [b'G', b'I', b'F', ..] => Some(usvg::ImageKind::GIF(data)),
+                [
+                    b'R',
+                    b'I',
+                    b'F',
+                    b'F',
+                    _,
+                    _,
+                    _,
+                    _,
+                    b'W',
+                    b'E',
+                    b'B',
+                    b'P',
+                    ..,
+                ] => Some(usvg::ImageKind::WEBP(data)),
+                _ => usvg::Tree::from_data_nested(&data, opts)
+                    .ok()
+                    .map(usvg::ImageKind::SVG),
+            }
+        });
+    options
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+
+    use crate::request::{DomNode, Size};
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really a picture";
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("kg-svg-mod-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.canonicalize().unwrap()
+    }
+
+    fn request(base: &Path, public: Option<&Path>) -> IslandRequest {
+        IslandRequest {
+            root: DomNode::Text {
+                text: String::new(),
+            },
+            stylesheets: Vec::new(),
+            viewport: Size {
+                width: 100.0,
+                height: 100.0,
+            },
+            fonts: BTreeMap::new(),
+            base_dir: base.to_string_lossy().into_owned(),
+            public_dir: public.map(|p| p.to_string_lossy().into_owned()),
+            time: 0.0,
+            path: "$0".into(),
+        }
+    }
+
+    fn resolve(request: &IslandRequest, href: &str) -> Option<usvg::ImageKind> {
+        let options = options(request);
+        (options.image_href_resolver.resolve_string)(href, &options)
+    }
+
+    #[test]
+    fn an_href_is_read_from_the_project_directories_only() {
+        let root = scratch("href");
+        let (base, public, other) = (root.join("base"), root.join("public"), root.join("other"));
+        for d in [&base, &public, &other] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(base.join("a.png"), PNG).unwrap();
+        std::fs::write(public.join("b.png"), PNG).unwrap();
+        std::fs::write(other.join("secret.png"), PNG).unwrap();
+        let r = request(&base, Some(&public));
+        assert!(matches!(
+            resolve(&r, "a.png"),
+            Some(usvg::ImageKind::PNG(_))
+        ));
+        // Falls back to the public directory.
+        assert!(matches!(
+            resolve(&r, "b.png"),
+            Some(usvg::ImageKind::PNG(_))
+        ));
+        // Out of both: `..`, an absolute path, a link to outside.
+        assert!(resolve(&r, "../other/secret.png").is_none());
+        assert!(resolve(&r, "sub/../../other/secret.png").is_none());
+        assert!(resolve(&r, other.join("secret.png").to_str().unwrap()).is_none());
+        std::os::unix::fs::symlink(other.join("secret.png"), public.join("l.png")).unwrap();
+        assert!(resolve(&r, "l.png").is_none());
+        assert!(resolve(&r, "missing.png").is_none());
+    }
+
+    #[test]
+    fn a_data_picture_reaches_the_scene_in_memory() {
+        use blitz_dom::DocumentConfig;
+        use blitz_html::HtmlDocument;
+        use blitz_traits::shell::{ColorScheme, Viewport};
+        // A 1x1 PNG.
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        let html = format!(
+            r##"<svg id="s" width="20" height="20"><image href="data:image/png;base64,{png}" width="20" height="20"/></svg>"##
+        );
+        let mut doc = HtmlDocument::from_html(
+            &html,
+            DocumentConfig {
+                viewport: Some(Viewport::new(50, 50, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            },
+        )
+        .into_inner();
+        doc.resolve(0.0);
+        let id = doc.get_element_by_id("s").unwrap();
+        let r = request(&scratch("data"), None);
+        let painted = paint_svg(&doc, &r, id, [20.0, 20.0], "s", "$0");
+        let layer = painted.layer.expect("drawn").to_string();
+        assert!(layer.contains(r#""type":"image""#), "{layer}");
+        assert!(
+            layer.contains(r#""src":"data:image/png;base64,"#),
+            "{layer}"
+        );
+        // And the scene reads it from memory.
+        let scene = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [{layer}]}}"##
+        );
+        kinetograph_core::Scene::from_json(&scene, PathBuf::from("/nowhere")).unwrap();
+    }
+
+    #[test]
+    fn an_svg_image_cannot_read_outside_either() {
+        // The same resolver serves an <image> inside a nested SVG file.
+        let root = scratch("nested");
+        let (base, other) = (root.join("base"), root.join("other"));
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("secret.png"), PNG).unwrap();
+        let r = request(&base, None);
+        let absolute = other.join("secret.png");
+        assert!(resolve(&r, absolute.to_str().unwrap()).is_none());
+    }
 }

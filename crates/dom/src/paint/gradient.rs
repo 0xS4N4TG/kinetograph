@@ -294,7 +294,7 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
             }
             if (rx - ry).abs() > 1e-6 * rx.max(1.0) {
                 let k = ry / rx;
-                g["matrix"] = json!([1, 0, 0, num4(k), 0, num4(cy * (1.0 - k))]);
+                g["transform"] = json!([1, 0, 0, num4(k), 0, num4(cy * (1.0 - k))]);
             }
             Ok(g)
         }

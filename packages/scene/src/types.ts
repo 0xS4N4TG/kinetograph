@@ -51,9 +51,10 @@ interface GradientBase {
   extend?: Extend;
   /** `box`: coordinates are fractions of the painted layer's box (AUTHORING.md §4.5). Default `user`. */
   units?: 'user' | 'box';
-  /** `[a, b, c, d, e, f]`: an affine applied to the finished gradient, in the space of its coordinates (before box
-   *  units). `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about `(cx, cy)` into an ellipse. Not animated. */
-  matrix?: [number, number, number, number, number, number];
+  /** `[a, b, c, d, e, f]`: an affine from the gradient's space (after `units`) to the painted layer's: SVG's
+   *  `gradientTransform`. `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about `(cx, cy)` into an ellipse.
+   *  Not animated. */
+  transform?: [number, number, number, number, number, number];
 }
 export interface LinearGradient extends GradientBase {
   type: 'linear';

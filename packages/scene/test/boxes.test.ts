@@ -38,7 +38,7 @@ describe('the fields of the DOM painter', () => {
           id: 'glow',
           type: 'shape',
           shape: { kind: 'rect', width: 100, height: 50 },
-          fill: { type: 'radial', cx: 50, cy: 25, r: 50, matrix: [1, 0, 0, 0.5, 0, 12.5], stops: [{ offset: 0, color: '#fff' }, { offset: 1, color: '#000' }] },
+          fill: { type: 'radial', cx: 50, cy: 25, r: 50, transform: [1, 0, 0, 0.5, 0, 12.5], stops: [{ offset: 0, color: '#fff' }, { offset: 1, color: '#000' }] },
         },
         { id: 'words', type: 'text', text: '', font: '', size: 1, color: tile, runs: [run], boxWidth: 176.4, boxHeight: 21, transform },
       ],

@@ -302,7 +302,7 @@ impl<'a> Painter<'a> {
                                 Ok(mut fill) => {
                                     if let Some(o) = fill.as_object_mut() {
                                         let own = o
-                                            .get("matrix")
+                                            .get("transform")
                                             .and_then(|m| m.as_array())
                                             .map(|m| {
                                                 let mut a = [0.0; 6];
@@ -314,7 +314,7 @@ impl<'a> Painter<'a> {
                                             .unwrap_or([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
                                         let m = mul6(to_shape, own);
                                         o.insert(
-                                            "matrix".into(),
+                                            "transform".into(),
                                             json!(m.iter().map(|v| num4(*v)).collect::<Vec<_>>()),
                                         );
                                     }

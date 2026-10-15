@@ -84,7 +84,9 @@ fn a_radial_ellipse_that_is_not_the_box_squashes_a_circle() {
     let fill = &find(&out.layers, "a.bg.0")["fill"];
     assert_eq!(fill["type"], "radial");
     assert_eq!(fill["r"], 40);
-    let m = fill["matrix"].as_array().expect("an ellipse has a matrix");
+    let m = fill["transform"]
+        .as_array()
+        .expect("an ellipse has a transform");
     assert_eq!(m[3], 0.5);
 }
 

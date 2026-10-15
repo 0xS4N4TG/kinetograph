@@ -97,7 +97,7 @@ Two functions in `crates/dom/src/paint/svg/mod.rs` are what the box painter (str
 styled, laid-out `BaseDocument` and the `IslandRequest` (for fonts and asset directories).
 
 ```rust
-pub fn paint_svg(doc: &BaseDocument, request: &IslandRequest, node_id: usize, size: [f64; 2],
+pub fn paint_svg(doc: &BaseDocument, request: &IslandRequest, node_id: NodeId, size: [f64; 2],
                  id: &str, path: &str) -> SvgPaint;          // SvgPaint { layer: Option<Value>, unsupported }
 pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str, bbox: [f64; 4],
                     id: &str, path: &str) -> Option<FilterEffect>;  // FilterEffect { effect: Value, unsupported }
@@ -386,3 +386,128 @@ islands for it. Chrome is for the tools only; the engine never starts one.
 What to fix first, from the pictures (not from `doctor`, which has nothing yet): `filter: url(#...)` on the tape banners
 and signs (the text is clipped to the filter region, "DELET" and "GUAR"), the SVG filters (`rough`, `torn`), the grain
 texture and multiply blend of the paper, and the rip transition's clip.
+
+What is drawn (stream 3, as built):
+
+- **SVG** (`paint_svg`): usvg resolves the subtree (shapes, `use`/`symbol`, nested `<svg>` with `viewBox` and
+  `preserveAspectRatio`, gradients with `gradientTransform` and focus, text to paths with the request's fonts only,
+  markers, `currentColor` from Stylo, `<style>` rules from the request's stylesheets); we map it to layers: paths with
+  fill, fill rule, stroke width, caps, joins, miter limit and dashes (also `pathLength`), gradient and pattern paints
+  (a pattern is its tile drawn once, repeated by `feTile`, cut to the shape by a matte), strokes with a gradient or
+  under a stretched matrix as filled outlines, clip paths (one plain path is the scene's `clip`, anything else a
+  matte), masks (`srgbLuminance` matte), `opacity` and `mix-blend-mode` on groups, `<image>` (PNG and JPEG, as `data:`
+  URLs, nothing written to disk), CSS `transform`, `rotate`, `scale`, `translate`, `transform-origin` on inner elements
+  (`transform-box: view-box` only), and `filter="url(#id)"` on any element, including a `<filter>` defined in another
+  `<svg>` of the page. The group returned is `passThrough` (no clip, no isolation) unless something reaches outside
+  the box, so a `mix-blend-mode` inside blends with what is behind the `<svg>`.
+- **Filters** (`filterGraph`, `filter_graph`): all 17 primitives but `feImage`, which becomes a transparent flood and an
+  `Unsupported` item. CSS filter functions on an element inside an `<svg>` are `Unsupported` (the box painter does
+  them for HTML boxes).
+- `Unsupported` items: `feImage`; CSS filter functions on SVG elements; `transform-box` other than `view-box`; a
+  skewed or mirrored pattern, image, or filtered element (drawn unturned for the filter); a GIF or WebP `<image>`;
+  text when the request registers no font.
+- Reads of files (`<image href>`) are limited to `base_dir` and `public_dir`: relative, no `..`, canonical path
+  inside the root.
+- **Checked against Chrome for Testing 154** (mean difference over the picture, of 255; a pixel counts as different
+  above 16): `filterGraph` sheet of 39 filters, per tile 0.0 to 1.9 (the noise ones 1.2 to 2.9; Chrome rounds noise
+  positions to whole pixels, and so do we); the same on turned and scaled layers 1.0 to 6.0; the papercut `torn` and
+  `rough` filters on `div`s 0.06; the SVG pages: shapes 1.9, features 2.6, text and transforms 1.7. What is left is
+  edge anti-aliasing and **blending in linear light**: a translucent layer over another (an `opacity` of 0.93 with
+  `multiply`, a mask's fade, the soft edge of a shape) is mixed in linear light here and in sRGB by Chrome, which
+  darkens or lightens it by up to 20 levels. That is the engine's rule for layers (`SCENE.md`), not the SVG painter's;
+  it needs a compositor-level option to go away.
+- `crates/dom/tests/svg_golden.rs` and `crates/core/tests/{filter,svg_paint,golden}.rs` hold the tests; the goldens
+  are in `crates/dom/tests/golden` and `crates/core/tests/golden`. `cargo run -p kinetograph-dom --example svg_scene
+  -- page.html scene.json W H` makes a scene from the `<svg>`s of an HTML page, to compare with a browser.
+
+## 8. Stream 2 notes (paint)
+
+`crates/dom/src/paint/` turns a styled, laid-out Blitz document into scene layers. `paint(doc, request)` returns the
+`IslandOutput`: `layers`, `unsupported`, `camera` (never set: perspective is folded into matrices), and two new
+optional fields, `margin` (the least scene `margin`: how far its blurs reach, so a shadow near the canvas edge is
+blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that holds the island's layers must set
+`blendSpace: "srgb"`**, see below).
+
+### What the front half must do
+
+- Every element carries `data-kg-path` (done). The painter takes the layer id from an explicit `id` attribute, else the
+  path, and adds `.bg`, `.border`, `.text`, `.shadowN`, `.marker`, ... suffixes, unique per island.
+- Run every stylesheet and `style` attribute through `paint::shim_css` and call `paint::register_properties(&mut doc)`
+  once per document (`document.rs` does both). This Stylo is the Servo build: it drops `filter: url()`,
+  `background-clip: text`, `-webkit-text-stroke`, `-webkit-text-fill-color` and `paint-order` as invalid. The shim
+  writes the same value into a non-inherited custom property (`--kg-filter`, ...) that the painter reads back.
+- Fonts: a glyph run needs the font file. The painter matches a run's font bytes to a file of `request.fonts` (once per
+  font), or to a path registered with `paint::register_font_path(blob_id, path)`.
+
+### Paint order
+
+The walk in `paint/mod.rs` is CSS 2.1 Appendix E over Blitz's own paint tree (`paint_children`, `stacking_context`): each
+stacking context collects, in `Phases`, block backgrounds, floats, inline content (glyphs, atomic inline boxes, flex
+items, replaced content), normal-flow layers (blocks that clip their overflow, painted after the parent's content as
+Chrome's paint layers are), outlines, then positioned boxes and z-index lists. Floats, inline-blocks, flex items and
+positioned boxes are painted whole. A stacking context is an element Blitz says is one, plus `mix-blend-mode`,
+`perspective`, `preserve-3d` and `backdrop-filter`. Positioned boxes and z-indexed contexts inside an `overflow`
+container stay inside its clip. The canvas takes the root's (or the body's) background.
+
+### CSS to scene
+
+| CSS | Scene |
+|---|---|
+| box background colour, solid uniform opaque border | one `shape` with `fill` and `stroke` (centre line) |
+| background colour / images, `background-blend-mode` | shapes per layer; a `group` (isolated) when a layer blends |
+| `background-size/position/repeat/clip/origin` | `Paint::Image` fill (tiles repeat in the image sampler); one shape per tile for `space`, gradients tiles (up to 150) |
+| gradients (linear, radial incl. ellipse, conic, repeating, hints) | scene gradients; an ellipse is a circle with `transform` |
+| `background-clip: text` | the layers get a `matte` whose source is white glyph runs |
+| `box-shadow` outer / inset | a blurred shape of the shadow colour, cut with `clip` to outside the border box / inside the padding box |
+| `border` per side, radii (elliptical), `double`, `groove`, `ridge`, `inset`, `outset`, `dashed`, `dotted` | filled ring paths, side shapes cut by mitre polygons, dashes made with kurbo |
+| `border-image` | nine slices as shapes with an image or gradient fill (stretch, repeat, round, space) |
+| `outline`, `outline-offset` | a ring outside the border box |
+| text, `letter-spacing`, `white-space`, `vertical-align`, inline-block | `text` layers with `runs` (Blitz's Parley glyph positions) |
+| `text-shadow`, `text-decoration` | blurred copies of the run; decoration lines as shapes |
+| `transform`, `translate`, `rotate`, `scale`, `transform-origin`, `perspective`, `preserve-3d`, `backface-visibility` | `transform.matrix` about the origin; parent perspective folded into the child's matrix; `preserve3d` group; `backfaceHidden` |
+| `opacity`, `mix-blend-mode`, `filter`, `backdrop-filter: blur()` | group fields, effects, a see-through shape with `backdropBlur` |
+| `filter: url(#id)` | `svg::filter_graph` |
+| `clip-path` (inset, circle, ellipse, polygon, `path()`, geometry boxes), `overflow` | scene `clip` (path / polygon / ellipse) |
+| `mask-image` (gradients, pictures, size/position/repeat/origin/clip/mode) | a source group of the mask layers and a `matte` |
+| `<img>`, `object-fit`, `object-position`, `<video>` | `image` / `video` layers sized and clipped to the content box |
+| `<svg>` | `svg::paint_svg` |
+| list markers | disc, circle, square as shapes sized as Chrome does; numbers as glyph runs |
+| `kg-native` | `{"type": "native", ...}` at the content box |
+
+A last pass (`opt.rs`) drops layers that draw nothing, flattens stacking-context groups that only move their children,
+and turns a group of one leaf into the leaf: 280 layers become 200 on a page of 60 transformed cards and 20 boxes.
+
+### Not drawn (reported as `Unsupported`, `audit.rs`)
+
+`text-overflow: ellipsis`, `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
+`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`, `-webkit-text-stroke`, `paint-order`,
+form controls, iframes, `<canvas>`, SVG pictures (`<img src=x.svg>`, `url(x.svg)`), `evenodd` clip paths, `shape()`,
+`mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
+`conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list
+markers in the bundled bullet font.
+
+### Against Chrome (`crates/dom/tests/features.rs`, `target/paint-tests`)
+
+Each case renders the same HTML in our painter and in Chrome for Testing 154 (a test oracle only) and prints the mean
+per-pixel largest-channel difference (0 to 255) over the whole picture; text and anti-aliasing differ by design.
+With `blendSpace: srgb`: blend modes 0.35, clip paths 0.21, preserve-3d cubes and backface 0.22, paint order 0.17,
+clipped positioned boxes 0.16, transforms 0.28, tiled backgrounds 0.38, shadows 0.55, filters 1.1, lists and outline
+1.3, gradients 1.6, border images 2.6, borders 3.6 (dotted dot spacing), `background-clip: text` 5.0 (synthetic bold),
+text 13 (Chrome's heavier text rendering), masks 22 (Chrome blocks a `file:` mask picture, so the other three agree).
+The same cases blended in linear light were 3 to 15 times worse for anything translucent (shadows 8.4, filters 4.6).
+
+### Scene changes
+
+`TextLayer.runs` / `boxWidth` / `boxHeight`, `Transform.matrix` / `backfaceHidden`, `Paint::Image`, scene
+`blendSpace` (all in docs/SCENE.md, "Boxes from the DOM painter"), `data:` URLs as image sources, `Gradient.transform`
+(stream 3's, also used here). Core goldens are unchanged byte for byte.
+
+### Known gaps and findings
+
+- Gradient tiles and `space` tiles are one layer each, limited to 150; a CSS grid made of `linear-gradient` tiles over a
+  big box is reported. A tile pattern needs a pattern paint of a rendered tile.
+- `blendSpace: srgb` converts at every composite (a power function per pixel in the blend pass); blurs and colour filters
+  stay in linear light, so a blurred translucent shape is not exactly Chrome's.
+- Synthetic bold is a stroke of a 48th of the size; Chrome's is a little heavier.
+- A hoisted z-index context inside a context that Blitz does not know (`mix-blend-mode` only) is listed in the nearest
+  context Blitz does know.

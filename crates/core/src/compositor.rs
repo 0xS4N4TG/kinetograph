@@ -858,6 +858,7 @@ impl Compositor {
             MatteMode::AlphaInverted => 1,
             MatteMode::Luminance => 2,
             MatteMode::LuminanceInverted => 3,
+            MatteMode::SrgbLuminance => 4,
         };
         let region = if inverted {
             src.bounds

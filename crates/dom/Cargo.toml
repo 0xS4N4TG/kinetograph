@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[dev-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
 [dependencies]
 kinetograph-core = { path = "../core" }
 # Blitz's DOM: Stylo for CSS, taffy for layout, Parley for text. No system fonts:
@@ -32,10 +35,9 @@ percent-encoding = "2.3"
 # Decoding images the way Blitz does, and SVG images without system fonts.
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif"] }
 usvg = "0.48.1"
+# CSS colour and number syntax (the SVG painter).
+svgtypes = "0.16.1"
 # Transform matrices for readback.
 euclid = "0.22"
 # CSS features Chrome has that Stylo ships switched off (:has(), @container, ...).
 style_config = { package = "stylo_static_prefs", version = "0.22.0" }
-
-[dev-dependencies]
-image = { version = "0.25.10", default-features = false, features = ["png"] }
