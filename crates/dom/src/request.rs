@@ -17,7 +17,7 @@ pub struct IslandRequest {
     pub stylesheets: Vec<String>,
     /// The composition's size: the box the island is laid out in.
     pub viewport: Size,
-    /// fontKey (`family:weight:style`) → absolute font file.
+    /// `fontKey` of `@kinetograph/scene` (`Inter`, `Inter:800`, `Inter:400i`) → absolute font file.
     #[serde(default)]
     pub fonts: BTreeMap<String, String>,
     /// Relative paths in `src`/`url()` resolve against this, then `public_dir`.
