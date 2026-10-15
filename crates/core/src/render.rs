@@ -351,6 +351,13 @@ impl Renderer {
         self.compositor.set_pass_timing(on)
     }
 
+    /// Turns the compositor's passes that do the work of several off
+    /// (`false`) or back on (they are on in a new renderer). Either way the
+    /// pixels are the same, byte for byte; the switch exists for tests.
+    pub fn set_pass_fusion(&mut self, on: bool) {
+        self.compositor.set_fusion(on);
+    }
+
     /// The compositing passes since the last call, with their GPU times.
     /// Vello's rasterising and the copies between textures are not passes
     /// that can be timed, so they are not in it.

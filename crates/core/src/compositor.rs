@@ -233,6 +233,9 @@ pub struct Compositor {
     /// The layer over its shadow in closed form (`shaders/shadow_box.wgsl`).
     drop_box: wgpu::RenderPipeline,
     inset_shadow: wgpu::RenderPipeline,
+    /// An inset shadow with no spread and no blur, which inverts the layer's
+    /// alpha itself.
+    inset_inverted: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
@@ -288,6 +291,8 @@ pub struct Compositor {
     uniforms: RefCell<Uniforms>,
     /// Times each pass when `bench --passes` asks (`set_pass_timing`).
     timer: Option<Arc<PassTimer>>,
+    /// Whether passes that do the work of several are used (`set_fusion`).
+    fusion: bool,
     /// What the pass timer calls each built-in pipeline's passes; a custom
     /// shader's are "shader".
     names: HashMap<wgpu::RenderPipeline, &'static str>,
@@ -484,6 +489,7 @@ impl Compositor {
             drop_shadow: pipeline(&shadow_shader, "fs_drop", LINEAR_FORMAT),
             drop_box: pipeline(&shadow_box_shader, "fs_drop_box", LINEAR_FORMAT),
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
+            inset_inverted: pipeline(&shadow_shader, "fs_inset_inverted", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
@@ -526,6 +532,7 @@ impl Compositor {
             pending: RefCell::new(None),
             uniforms: RefCell::new(Uniforms::new(device, queue)),
             timer: None,
+            fusion: true,
             names: HashMap::new(),
         };
         let c = &compositor;
@@ -540,6 +547,7 @@ impl Compositor {
             (&c.drop_shadow, "drop shadow"),
             (&c.drop_box, "drop shadow (box)"),
             (&c.inset_shadow, "inset shadow"),
+            (&c.inset_inverted, "inset shadow"),
             (&c.color, "colour filter"),
             (&c.glow, "glow"),
             (&c.aberration, "aberration"),
@@ -567,6 +575,13 @@ impl Compositor {
             .flatten();
         self.blur.timer = self.timer.clone();
         self.timer.is_some()
+    }
+
+    /// Turns the passes that do the work of several off (`false`) or back on.
+    /// They draw exactly what the passes they replace draw, bit for bit; the
+    /// switch is for tests that check that.
+    pub fn set_fusion(&mut self, on: bool) {
+        self.fusion = on;
     }
 
     /// The GPU time of every pass recorded since the last call (or since
@@ -1611,6 +1626,40 @@ impl Compositor {
             return src;
         }
         let spread = if inset { -shadow.spread } else { shadow.spread };
+        // An inset shadow with no spread and no blur is the layer's alpha
+        // inverted and shifted: one pass reads the inversion where it needs it
+        // instead of a pass writing it out first.
+        if self.fusion
+            && inset
+            && spread == 0.0
+            && (shadow.blur.is_nan() || shadow.blur < blur::MIN_RADIUS)
+        {
+            let [r, g, b, a] = shadow.color.linear_premultiplied();
+            let params = floats(&[
+                self.width as f32,
+                self.height as f32,
+                0.0,
+                0.0,
+                shadow.x,
+                shadow.y,
+                0.0,
+                0.0,
+                r as f32,
+                g as f32,
+                b as f32,
+                a as f32,
+            ]);
+            let target = self.target(src.bounds);
+            self.run_pass(
+                &self.inset_inverted,
+                src.input(),
+                src.input(),
+                &params,
+                &target,
+            );
+            self.release(src);
+            return target;
+        }
         // The shadow of a drop shadow is wherever it is non-zero. An inset
         // shadow is only seen inside the layer, where the shadow alpha is
         // read around the layer by the offset.
