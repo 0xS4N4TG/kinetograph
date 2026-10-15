@@ -1863,11 +1863,11 @@ dependencies = [
  "image",
  "kinetograph-core",
  "parley",
- "percent-encoding",
  "serde",
  "serde_json",
  "stylo",
  "url",
+ "usvg",
 ]
 
 [[package]]
