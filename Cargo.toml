@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/cli", "crates/node"]
+members = ["crates/core", "crates/cli", "crates/node", "crates/dom"]
 exclude = ["phase0"]
 
 [workspace.package]
