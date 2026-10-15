@@ -245,7 +245,8 @@ CLI first (`npx kinetograph …`, TS, calling the addon), MCP server wrapping th
 | `strip <comp> -n 12` | labelled contact sheet |
 | `onion <range> -n 6` | blended frames showing a motion path |
 | `inspect <comp> [--frame N]` | scene graph as JSON: layers, bounds, resolved styles |
-| `lint` | text overflow, off-canvas layers, overlaps, missing fonts/assets, with frame and layer |
+| `lint` | text overflow, off-canvas layers, overlaps, missing fonts/assets, type errors, with frame and layer |
+| `check` | `tsc --noEmit` on the project; type errors as JSON |
 | `render [--range a..b] [--draft]` | video; draft = half size, fast |
 | `audio analyze` | LUFS, true peak, clipping, silence per scene |
 | `snapshot` | diff against approved PNGs |

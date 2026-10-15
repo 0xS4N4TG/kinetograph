@@ -23,6 +23,9 @@ command (except `studio`) with the same arguments; `still`, `strip` and `onion` 
    layers off the canvas, overlapping text, missing fonts and assets, each with the frame and layer id. Fix what it
    says. It only checks what a frame can show: a layer at opacity 0 (or inside a group at opacity 0) and one that its
    clip cuts away completely are skipped at that frame, so a toast fading in off the canvas is not reported while hidden.
+   Rendering never type-checks, so a misspelled prop (`opactiy={0.5}`) draws at full opacity without an error;
+   `kinetograph check src/index.tsx` runs `tsc --noEmit` on the project (its nearest `tsconfig.json`) and `lint` reports
+   the same errors as `type-error`.
 4. **Fix** and repeat from 2. A still takes well under a second.
 5. **Render.** `kinetograph render src/index.tsx -o out/video.mp4`. Use `--draft` for a half-size quick look,
    `--range 0..90` for a part (`a..b` is a to b-1, `a..=b` includes b).
