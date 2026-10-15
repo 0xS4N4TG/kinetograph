@@ -26,6 +26,7 @@ use blitz_dom::{
 use blitz_traits::shell::{ColorScheme, Viewport};
 
 use crate::clamp;
+use crate::collapse;
 use crate::fonts;
 use crate::inline;
 use crate::net::{self, LocalFiles};
@@ -222,6 +223,11 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     // those widths out of the text, so give the text the widths (inline.rs).
     if inline::add_edge_spacers(&mut island.doc) > 0 {
         island.doc.resolve(request.time);
+    }
+    // A collapsed table's cells give up their borders for half of each in their
+    // padding, as Chrome lays it out (collapse.rs).
+    if collapse::requested(request) {
+        collapse::settle(&mut island.doc, request.time);
     }
     // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
     // only known once the text is laid out.

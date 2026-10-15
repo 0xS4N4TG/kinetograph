@@ -7,6 +7,7 @@
 //! stream 3's.
 
 pub mod clamp;
+pub mod collapse;
 pub mod document;
 pub mod fonts;
 pub mod inline;

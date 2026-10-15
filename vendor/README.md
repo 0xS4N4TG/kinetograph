@@ -148,7 +148,7 @@ Gecko. The change is small enough to offer upstream.
   `5890fab3afb087d8c0c5b0652b8b635f161f3a13` per `.cargo_vcs_info.json`). Licence: MIT OR Apache-2.0. Wired in by
   `[patch.crates-io]` in the root `Cargo.toml`. The unchanged copy was committed first.
 - Changed files: `src/stylo.rs`, `src/resolve.rs`, `src/node/node.rs` (container queries), `src/layout/inline.rs`
-  (floats).
+  (floats), `src/layout/table.rs` and `src/layout/mod.rs` (tables).
 
 ### Why
 
@@ -159,6 +159,27 @@ Floats: inline layout beside a float broke each line at the width of the slot be
 word that is wider than the slot overflow it ("TODO: revert state and retry layout if a line doesn't fit"), so a line
 that CSS 2.1 9.5 moves down past the float stayed beside it, on top of it. Parley's layout height is the sum of the
 lines' heights, so the gap above a line that had moved down was not part of its block's height.
+
+Tables: a table is a taffy grid of its cells, so its `auto` columns shared the free width equally where CSS (and
+Chrome) share it in proportion to what the columns want; a `<caption>` was dropped; a cell's `height` was its content
+box's and fixed the cell's size, so a rowspan cell did not fill its rows.
+
+### The change (tables)
+
+- `auto_columns` (`table.rs`): the automatic layout algorithm gives the grid fixed column widths. Each cell is measured
+  for its min-content and max-content width (`compute_child_layout`, `ContentSize`); a column needs the widest min and
+  wants the widest max, a cell or `<col>` width fixes what it wants (never below what it needs), a spanning cell asks
+  the columns without a width for what they lack. The table's width (given, or shrink-to-fit) is shared: the minimums
+  if it is no more, the minimums plus an equal share of each range if it is less than the wants, the wants plus the
+  rest in proportion to the wants (to the columns without a given width first) if it is more; a percentage column
+  takes its share first. Fixed layout is untouched.
+- Captions (`measure_captions`, `place_captions`): taken out of the cells, laid out as blocks as wide as the grid
+  box above (`caption-side: top`) and below it, the grid's cells and row tracks moved down by those above, the table's
+  box taking them in (`TableContext::captions`, `caption_extent`).
+- A cell's `height` is its border box's and a minimum for its row (`min_size`), as in Chrome; the cell's own `width`
+  and `height` no longer size it (`SizingMode::ContentSize`), its column and row do.
+- `TableCell::colspan` and `TableContext::is_fixed` are new fields. Not done: a caption wider than the grid does not
+  widen the table, `<col span>` widths other than at the first row's cells are not read from percentages.
 
 ### The change (floats)
 

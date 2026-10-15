@@ -33,11 +33,13 @@ mod replaced;
 mod shadow;
 mod shim;
 pub mod svg;
+mod table;
 mod text;
 mod util;
 
 pub use fonts::register_font_path;
 pub use shim::{kg_properties, register_properties, shim_css};
+pub(crate) use util::{current_color, rgba};
 
 use std::collections::HashSet;
 
@@ -410,6 +412,10 @@ impl<'a> Painter<'a> {
             let display = style.clone_display();
             let position = style.clone_position();
             let floated = style.clone_float() != Float::None;
+            if display.inside() == DisplayInside::TableCell && self.is_visible(child) {
+                // Column, row group and row backgrounds go under the cell's own.
+                ph.blocks.extend(self.table_cell_backgrounds(child, at));
+            }
             let positioned = !matches!(position, Position::Static);
             let is_sc = self.is_sc(child, parent_flex);
             let inline_level = display.outside() == DisplayOutside::Inline;
@@ -444,6 +450,9 @@ impl<'a> Painter<'a> {
                 }
                 self.walk(child, at, ph, pos);
             }
+        }
+        if node.flags.is_table_root() && self.is_visible(node) {
+            ph.blocks.extend(self.collapsed_borders(node, origin));
         }
         // Outline of the box itself (steps 10).
         if node.element_data().is_some() {

@@ -214,6 +214,38 @@ case!(floats, 340, 410, {
         .to_string()
 });
 
+// Tables, separate borders: the backgrounds of rows, row groups, columns and column groups (under
+// the cells', cut to them), spans, vertical alignment, captions above and below.
+case!(tables, 340, 330, {
+    r#"<table style="position:absolute;left:10px;top:10px;font-size:13px;border-spacing:3px;border:2px solid #666;background:#eef"><thead style="background:#fc9"><tr><th style="padding:3px 8px">Item</th><th style="padding:3px 8px">Qty</th><th style="padding:3px 8px">Price</th></tr></thead><tbody style="background:#cfc"><tr><td style="padding:3px 8px">Apple</td><td style="padding:3px 8px;text-align:right">12</td><td style="padding:3px 8px;text-align:right">1.20</td></tr><tr style="background:linear-gradient(90deg,#9cf,#fcf)"><td style="padding:3px 8px">Watermelon</td><td style="padding:3px 8px;text-align:right">3</td><td style="padding:3px 8px;text-align:right">4.50</td></tr></tbody><tfoot style="background:#ccc"><tr><td colspan="2" style="padding:3px 8px">Total</td><td style="padding:3px 8px;text-align:right">5.70</td></tr></tfoot></table>
+<table style="position:absolute;left:10px;top:130px;font-size:13px;border-spacing:0;width:320px;table-layout:fixed"><colgroup style="background:#fdd"><col style="width:60px"><col style="background:#dfd;width:80px"></colgroup><col style="background:#ddf"><tr><td style="height:30px;padding:2px">a</td><td style="padding:2px;vertical-align:bottom">bottom</td><td rowspan="2" style="padding:2px;vertical-align:middle;background:#ff9">span 2 rows</td></tr><tr><td colspan="2" style="padding:2px;background:#fff;border:1px dashed #666">wide</td></tr></table>
+<table style="position:absolute;left:10px;top:210px;font-size:13px;border-collapse:separate;border-spacing:2px"><caption style="background:#fdb;padding:3px;text-align:left">Top caption</caption><tr><td style="background:#cdf;padding:4px 20px">Wide cell</td><td style="background:#cfd;padding:4px">B</td></tr><caption style="caption-side:bottom;background:#dfc;text-align:center">Bottom</caption></table>
+<table style="position:absolute;left:210px;top:210px;font-size:13px;border-spacing:0"><tr><td style="padding:6px;border:1px solid #333;background:#eee"></td><td style="padding:6px;border:1px solid #333;background:#eee">x</td></tr></table>"#
+        .to_string()
+});
+
+// Tables, collapsed borders: the widest border wins a line, then the style, then the element; a
+// cell's border is half in it; `hidden`, dashed and double, row and table borders.
+case!(tables_collapsed, 340, 250, {
+    r#"<style>td,th{border:1px solid #333;padding:4px 8px}</style><table style="position:absolute;left:10px;top:10px;border-collapse:collapse;font-size:13px"><tr><th style="background:#ddd">Name</th><th style="background:#ddd">Qty</th></tr><tr><td>Apple</td><td style="text-align:right">12</td></tr><tr><td>Watermelon</td><td style="text-align:right">3</td></tr></table>
+<table style="position:absolute;left:190px;top:10px;border-collapse:collapse;font-size:13px;border:3px solid #a00"><tr><td style="border:2px solid #00a">A</td><td style="border:none">B</td></tr><tr><td style="border:1px dashed #0a0">C</td><td style="border-bottom:4px double #a0a">D</td></tr></table>
+<table style="position:absolute;left:10px;top:120px;border-collapse:collapse;font-size:13px"><tr style="border-bottom:3px solid #06c"><td style="border:1px solid #999">1</td><td style="border:1px solid #999;border-right:hidden">2</td><td style="border:1px solid #999">3</td></tr><tr><td style="border:1px solid #999;background:#fed" colspan="2">span</td><td style="border:1px dotted #c00;border-width:2px">5</td></tr></table>
+<table style="position:absolute;left:190px;top:120px;border-collapse:collapse;font-size:13px;border:2px groove #555"><colgroup><col style="border-left:3px solid #0a6"><col></colgroup><tr><td style="padding:6px 10px;border:1px solid #bbb">x</td><td style="padding:6px 10px;border:1px solid #bbb;background:#eef">y</td></tr><tr style="background:#fee"><td style="padding:6px 10px;border:1px inset #888">z</td><td style="padding:6px 10px;border:1px outset #888">w</td></tr></table>
+<table style="position:absolute;left:10px;top:200px;width:320px;border-collapse:collapse;font-size:13px"><tr><td style="border:1px solid #333;padding:4px">width 100%</td><td style="border:1px solid #333;padding:4px;text-align:right">ends here</td></tr></table>"#
+        .to_string()
+});
+
+// Tables, automatic column widths: extra width in proportion to what the columns want, spans, a given
+// width, a percentage, nowrap, inline-table and display: table-cell on any element.
+case!(tables_auto, 340, 260, {
+    r#"<table style="position:absolute;left:10px;top:10px;width:320px;border-collapse:collapse;font-size:13px"><tr><td style="background:#eee;border:1px solid #666;padding:4px">short</td><td style="background:#ddd;border:1px solid #666;padding:4px">a considerably longer cell that wraps onto lines</td><td style="background:#ccc;border:1px solid #666;padding:4px;width:20%">20%</td></tr></table>
+<table style="position:absolute;left:10px;top:90px;font-size:13px;border-spacing:2px"><tr><td style="background:#eee;padding:4px;white-space:nowrap">nowrap cell content</td><td style="background:#ddd;padding:4px">b</td></tr><tr><td colspan="2" style="background:#cdf;padding:4px">spans both columns of the table</td></tr></table>
+<div style="position:absolute;left:230px;top:90px;display:inline-table;font-size:13px;background:#fed"><div style="display:table-row"><span style="display:table-cell;padding:3px">cell1</span><span style="display:table-cell;padding:3px">cell2</span></div></div>
+<table style="position:absolute;left:10px;top:160px;width:320px;font-size:13px;border-spacing:0"><tr><td style="background:#fdd;padding:4px;width:60px">fixed 60</td><td style="background:#dfd;padding:4px">auto, short</td><td style="background:#ddf;padding:4px">auto and a lot longer text</td></tr></table>
+<table style="position:absolute;left:10px;top:210px;width:320px;font-size:13px;border-spacing:0;table-layout:fixed"><tr><td style="background:#fdd;padding:4px">fixed layout</td><td style="background:#dfd;padding:4px;width:100px">100px</td><td style="background:#ddf;padding:4px">rest</td></tr></table>"#
+        .to_string()
+});
+
 // `-webkit-line-clamp`: the height is the bottom of the Nth line, the ellipsis ends it.
 case!(line_clamp, 340, 300, {
     r#"<div style="position:absolute;left:10px;top:10px;width:150px;font-size:16px;line-height:20px;background:#eef;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">The quick brown fox jumps over the lazy dog and keeps running far away</div>

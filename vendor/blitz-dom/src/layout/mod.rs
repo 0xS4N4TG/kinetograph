@@ -534,8 +534,41 @@ impl LayoutPassState<'_> {
                     let mut table_wrapper = TableTreeWrapper {
                         doc: self,
                         ctx: context,
+                        columns_style: None,
                     };
-                    let mut output = compute_grid_layout(&mut table_wrapper, node_id, inputs);
+                    table_wrapper.columns_style = table::auto_columns(&mut table_wrapper, inputs);
+                    // The captions are as wide as the table's grid and the grid takes the
+                    // height they leave.
+                    let ctx = Arc::clone(&table_wrapper.ctx);
+                    let mut grid_inputs = inputs;
+                    let mut captions = None;
+                    if !ctx.captions.is_empty() {
+                        let width = inputs.known_dimensions.width.unwrap_or_else(|| {
+                            let mut probe = inputs;
+                            probe.run_mode = RunMode::ComputeSize;
+                            probe.axis = taffy::RequestedAxis::Horizontal;
+                            probe.known_dimensions.height = None;
+                            compute_grid_layout(&mut table_wrapper, node_id, probe).size.width
+                        });
+                        captions =
+                            table::measure_captions(table_wrapper.doc, &ctx, width, inputs.run_mode);
+                        if let Some(c) = &captions {
+                            grid_inputs.known_dimensions.height = inputs
+                                .known_dimensions
+                                .height
+                                .map(|h| (h - c.above - c.below).max(0.0));
+                        }
+                    }
+                    let mut output = compute_grid_layout(&mut table_wrapper, node_id, grid_inputs);
+                    if let Some(captions) = captions {
+                        table::place_captions(
+                            table_wrapper.doc,
+                            &ctx,
+                            captions,
+                            inputs.run_mode,
+                            &mut output,
+                        );
+                    }
 
                     // Absolutely positioned children take no part in the table grid. Their
                     // static position is the top-left of the table's content box.

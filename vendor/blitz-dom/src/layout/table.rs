@@ -33,6 +33,9 @@ use super::resolve_calc_value;
 pub struct TableTreeWrapper<'a, 'doc> {
     pub(crate) doc: &'a mut LayoutPassState<'doc>,
     pub(crate) ctx: Arc<TableContext>,
+    /// The table's style with the columns' widths worked out (`auto_columns`), in place
+    /// of `ctx.style` for this layout.
+    pub(crate) columns_style: Option<taffy::Style<Atom>>,
 }
 
 // Deliberately not `Clone`: `style` may hold raw pointers into `calc_values`.
@@ -45,9 +48,16 @@ pub struct TableContext {
     pub oof_children: Vec<(NodeId, taffy::Position)>,
     pub rows: Vec<TableRow>,
     pub columns: Vec<TableColumn>,
+    /// The table's `<caption>`s (and `display: table-caption` boxes), in tree order. They
+    /// sit in the table's box above (`caption-side: top`) and below the grid.
+    pub captions: Vec<NodeId>,
+    /// How much of the table's box the captions above and below the grid take (set by layout)
+    pub caption_extent: AtomicRefCell<[f32; 2]>,
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo<Atom>>>,
     pub border_style: Option<ServoArc<Border>>,
     pub border_collapse: BorderCollapse,
+    /// Whether the table uses the fixed layout algorithm (`table-layout: fixed` and a width)
+    pub is_fixed: bool,
     /// Backing storage for `calc()` track sizes synthesised by the table layout code.
     /// Taffy stores calc values as raw pointers, so these must outlive the `style`.
     #[allow(dead_code)]
@@ -68,6 +78,8 @@ pub struct TableCell {
     pub row: u16,
     /// Index of the column the cell originates in
     pub column: u16,
+    /// How many columns the cell spans
+    pub colspan: u16,
     style: taffy::Style<Atom>,
 }
 
@@ -240,6 +252,16 @@ pub(crate) fn build_table_context(
 
     drop(stylo_styles);
 
+    let is_caption = |doc: &BaseDocument, id: NodeId| {
+        doc.nodes[id]
+            .display_style()
+            .is_some_and(|d| d.outside() == DisplayOutside::TableCaption)
+    };
+    let captions: Vec<NodeId> = children
+        .iter()
+        .copied()
+        .filter(|id| is_caption(doc, *id))
+        .collect();
     let mut columns: Vec<TableColumn> = Vec::new();
     let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
     for child_id in children.iter().copied() {
@@ -270,7 +292,7 @@ pub(crate) fn build_table_context(
     };
     for order in 0..3 {
         for child_id in children.iter().copied() {
-            if row_group_order(doc, child_id) != order {
+            if row_group_order(doc, child_id) != order || captions.contains(&child_id) {
                 continue;
             }
             collect_table_cells(
@@ -413,6 +435,7 @@ pub(crate) fn build_table_context(
     let layout_children = cells
         .iter()
         .map(|cell| cell.node_id)
+        .chain(captions.iter().copied())
         .chain(oof_children.iter().map(|(node_id, _)| *node_id))
         .collect();
     let root_node = &mut doc.nodes[table_root_node_id];
@@ -425,8 +448,11 @@ pub(crate) fn build_table_context(
             oof_children,
             rows,
             columns,
+            captions,
+            caption_extent: AtomicRefCell::new([0.0, 0.0]),
             computed_grid_info: AtomicRefCell::new(None),
             border_collapse,
+            is_fixed,
             border_style: first_cell_border,
             calc_values,
         },
@@ -726,10 +752,27 @@ fn collect_table_cells(
             }
 
             style.size.width = style_helpers::auto();
+            // A cell's `height` is its border box's (Chrome and Gecko size a row so that it holds
+            // the cell's whole box, where `width` stays the content box's), and a minimum for its
+            // row: the cell fills the row (a rowspan cell all its rows), so the height does not
+            // size the item itself.
+            if style.size.height.tag() == taffy::CompactLength::LENGTH_TAG {
+                let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+                let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                let edges = padding.top + padding.bottom + border.top + border.bottom;
+                let height = style.size.height.value();
+                let content = match style.box_sizing {
+                    taffy::BoxSizing::ContentBox => (height - edges).max(0.0),
+                    taffy::BoxSizing::BorderBox => height,
+                };
+                style.min_size.height = style_helpers::length(content);
+                style.size.height = style_helpers::auto();
+            }
             cells.push(TableCell {
                 node_id,
                 row: row.saturating_sub(1),
                 column: col,
+                colspan,
                 style,
             });
 
@@ -799,7 +842,7 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_, '_> {
     type CustomIdent = Atom;
 
     fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style<Atom> {
-        &self.ctx.style
+        self.columns_style.as_ref().unwrap_or(&self.ctx.style)
     }
 
     fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
@@ -818,6 +861,10 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_, '_> {
     ) -> taffy::LayoutOutput {
         let cell = &self.ctx.cells[usize::from(node_id)];
         let node_id = crate::taffy_node_id(cell.node_id);
+        // The cell's own `width` and `height` do not size it: its column and row do (the
+        // item style above carries the `height` as the row's minimum, a border box's).
+        let mut inputs = inputs;
+        inputs.sizing_mode = taffy::SizingMode::ContentSize;
         self.doc.compute_child_layout(node_id, inputs)
     }
 }
@@ -848,4 +895,415 @@ impl taffy::LayoutGridContainer for TableTreeWrapper<'_, '_> {
     ) {
         *self.ctx.computed_grid_info.borrow_mut() = Some(detailed_grid_info);
     }
+}
+
+
+/// A column of the automatic table layout: what its cells ask of it.
+#[derive(Clone, Copy, Default)]
+struct ColumnDemand {
+    /// The narrowest it can be (the widest min-content of its cells)
+    min: f32,
+    /// The width it wants (the widest max-content of its cells)
+    max: f32,
+    /// A width a cell or `<col>` gave it
+    fixed: Option<f32>,
+    /// A percentage of the table's width a cell or `<col>` gave it
+    percent: Option<f32>,
+}
+
+/// The length of a track that `build_table_context` made from a `<col>` or a first-row cell.
+fn track_length(t: &taffy::GridTemplateComponent<Atom>) -> Option<f32> {
+    match t {
+        taffy::GridTemplateComponent::Single(f) => {
+            let max = f.max.into_raw();
+            (max.tag() == taffy::CompactLength::LENGTH_TAG).then(|| max.value())
+        }
+        _ => None,
+    }
+}
+
+/// The widths of a table's columns by the automatic table layout algorithm
+/// (CSS 2.1 17.5.2.2, distributed as Chrome does), as the table's style with
+/// those widths for its columns. `None` for a fixed layout or a table without columns.
+///
+/// Each column wants the widest max-content of its cells (a cell's `width`
+/// raises that, to at least its min-content) and needs the widest min-content. A
+/// cell that spans columns asks the rest of what its columns lack in proportion to
+/// their max widths. The table's width (given, or shrink-to-fit between the sum of
+/// the minimums and of the wants within the space it has) is then shared: all
+/// minimums if it is not more; the minimums plus the same share of each column's
+/// range (max less min) if it is less than the wants; the wants plus the rest in
+/// proportion to the wants, to the columns without a given width first, if it is
+/// more. A column with a percentage is at least that part of the table.
+/// Grid's `auto` tracks share the rest equally instead.
+pub(crate) fn auto_columns(
+    wrapper: &mut TableTreeWrapper<'_, '_>,
+    inputs: taffy::tree::LayoutInput,
+) -> Option<taffy::Style<Atom>> {
+    let ctx = Arc::clone(&wrapper.ctx);
+    if ctx.is_fixed {
+        return None;
+    }
+    let n = ctx.style.grid_template_columns.len();
+    if n == 0 {
+        return None;
+    }
+    let calc = |ptr: *const (), basis: f32| resolve_calc_value(ptr, basis);
+
+    // What each cell asks of its columns.
+    let mut demands = vec![ColumnDemand::default(); n];
+    for (i, t) in ctx.style.grid_template_columns.iter().enumerate() {
+        demands[i].fixed = track_length(t);
+    }
+    let mut spans: Vec<(usize, usize, f32, f32)> = Vec::new();
+    for (index, cell) in ctx.cells.iter().enumerate() {
+        let id: taffy::NodeId = index.into();
+        let measure = |w: &mut TableTreeWrapper<'_, '_>, space: taffy::AvailableSpace| {
+            w.compute_child_layout(
+                id,
+                taffy::tree::LayoutInput {
+                    known_dimensions: taffy::Size::NONE,
+                    known_dimensions_are_definite: taffy::Size {
+                        width: true,
+                        height: true,
+                    },
+                    parent_size: taffy::Size::NONE,
+                    available_space: taffy::Size {
+                        width: space,
+                        height: taffy::AvailableSpace::MaxContent,
+                    },
+                    sizing_mode: taffy::SizingMode::ContentSize,
+                    axis: taffy::RequestedAxis::Horizontal,
+                    run_mode: taffy::RunMode::ComputeSize,
+                    vertical_margins_are_collapsible: taffy::Line::FALSE,
+                },
+            )
+            .size
+            .width
+        };
+        let min = measure(wrapper, taffy::AvailableSpace::MinContent);
+        let max = measure(wrapper, taffy::AvailableSpace::MaxContent).max(min);
+        let (c0, cs) = (cell.column as usize, (cell.colspan as usize).max(1));
+        if c0 >= n {
+            continue;
+        }
+        // A `width` on the cell: a length (of the content box, unless border-box) or a percentage.
+        let width = wrapper.doc.nodes[cell.node_id]
+            .primary_styles()
+            .map(|s| stylo_taffy::convert::dimension(&s.clone_width()));
+        let (mut fixed, mut percent) = (None, None);
+        if let Some(width) = width {
+            let pb = {
+                let padding = cell.style.padding.resolve_or_zero(None, calc);
+                let border = cell.style.border.resolve_or_zero(None, calc);
+                padding.left + padding.right + border.left + border.right
+            };
+            // (`cell.style` is border-box for its `height`; the author's `box-sizing` is the node's.)
+            let border_box = wrapper.doc.nodes[cell.node_id]
+                .primary_styles()
+                .is_some_and(|s| s.get_position().box_sizing == style::computed_values::box_sizing::T::BorderBox);
+            match width.tag() {
+                taffy::CompactLength::LENGTH_TAG => {
+                    fixed = Some(if border_box {
+                        width.value()
+                    } else {
+                        width.value() + pb
+                    });
+                }
+                taffy::CompactLength::PERCENT_TAG => percent = Some(width.value()),
+                _ => {}
+            }
+        }
+        if cs == 1 {
+            let d = &mut demands[c0];
+            d.min = d.min.max(min);
+            d.max = d.max.max(max);
+            if let Some(f) = fixed {
+                d.fixed = Some(d.fixed.map_or(f, |g| g.max(f)));
+            }
+            if let Some(p) = percent {
+                d.percent = Some(d.percent.map_or(p, |q| q.max(p)));
+            }
+        } else {
+            spans.push((c0, cs.min(n - c0), min, max));
+        }
+    }
+    for d in demands.iter_mut() {
+        if let Some(f) = d.fixed {
+            // A given width is the width it wants, but never less than it needs.
+            d.max = f.max(d.min);
+        }
+        d.max = d.max.max(d.min);
+    }
+    // Cells that span columns: the narrower spans first. A span's minimum is met inside the
+    // range its columns already have (each column grows towards what it wants, by how much it
+    // has to give), and beyond that, and for what it wants, by the columns without a given width
+    // (all of them if every one has a given width), in proportion to what they want.
+    spans.sort_by_key(|s| s.1);
+    for (c0, cs, min, max) in spans {
+        let cols: Vec<usize> = (c0..c0 + cs).collect();
+        let free: Vec<usize> = cols
+            .iter()
+            .copied()
+            .filter(|c| demands[*c].fixed.is_none())
+            .collect();
+        let takers = if free.is_empty() { cols.clone() } else { free };
+        let spread = |demands: &mut Vec<ColumnDemand>, extra: f32, what: usize| {
+            let weight: f32 = takers.iter().map(|c| demands[*c].max).sum();
+            for c in &takers {
+                let share = if weight > 0.0 {
+                    demands[*c].max / weight
+                } else {
+                    1.0 / takers.len() as f32
+                };
+                if what == 0 {
+                    demands[*c].min += extra * share;
+                } else {
+                    demands[*c].max += extra * share;
+                }
+            }
+        };
+        let have_min: f32 = cols.iter().map(|c| demands[*c].min).sum();
+        let have_max: f32 = cols.iter().map(|c| demands[*c].max).sum();
+        if min > have_min {
+            if min <= have_max {
+                let range: f32 = cols.iter().map(|c| demands[*c].max - demands[*c].min).sum();
+                for c in &cols {
+                    let give = demands[*c].max - demands[*c].min;
+                    demands[*c].min += (min - have_min) * give / range;
+                }
+            } else {
+                for c in &cols {
+                    demands[*c].min = demands[*c].max;
+                }
+                spread(&mut demands, min - have_max, 0);
+            }
+        }
+        for c in &cols {
+            demands[*c].max = demands[*c].max.max(demands[*c].min);
+        }
+        let have_max: f32 = cols.iter().map(|c| demands[*c].max).sum();
+        if max > have_max {
+            spread(&mut demands, max - have_max, 1);
+        }
+    }
+
+    // The width the tracks share: the table's less its padding, border and the gaps.
+    let style = &ctx.style;
+    let parent_width = inputs.parent_size.width;
+    let padding = style.padding.resolve_or_zero(parent_width, calc);
+    let border = style.border.resolve_or_zero(parent_width, calc);
+    let gap = style.gap.width.resolve_or_zero(parent_width, calc);
+    let frame = padding.left + padding.right + border.left + border.right + gap * n.saturating_sub(1) as f32;
+    let given = inputs.known_dimensions.width.or_else(|| match style.size.width.tag() {
+        taffy::CompactLength::LENGTH_TAG => Some(style.size.width.value()),
+        taffy::CompactLength::PERCENT_TAG => parent_width.map(|w| w * style.size.width.value()),
+        taffy::CompactLength::AUTO_TAG => None,
+        _ => Some(calc(style.size.width.calc_value(), parent_width.unwrap_or(0.0))),
+    });
+    let sum_min: f32 = demands.iter().map(|d| d.min).sum();
+    let sum_max: f32 = demands.iter().map(|d| d.max).sum();
+    let tracks = match given {
+        // A given width is the table's border box, or its content box with `content-box`.
+        Some(w) => match style.box_sizing {
+            taffy::BoxSizing::BorderBox => (w - frame).max(0.0),
+            taffy::BoxSizing::ContentBox => w.max(0.0),
+        },
+        None => match inputs.available_space.width {
+            taffy::AvailableSpace::MinContent => sum_min,
+            taffy::AvailableSpace::MaxContent => sum_max,
+            taffy::AvailableSpace::Definite(a) => (a - frame).max(sum_min).min(sum_max),
+        },
+    };
+
+    // A percentage is a share of a table whose width is given: those columns take it (but not
+    // less than they need) and the others share what is left.
+    let mut widths = vec![0.0_f32; n];
+    let mut rest: Vec<usize> = (0..n).collect();
+    let mut room = tracks;
+    if given.is_some() {
+        rest.retain(|i| {
+            let Some(p) = demands[*i].percent else {
+                return true;
+            };
+            widths[*i] = (p * tracks).max(demands[*i].min);
+            room -= widths[*i];
+            false
+        });
+    }
+    let room = room.max(0.0);
+    let min_sum: f32 = rest.iter().map(|i| demands[*i].min).sum();
+    let max_sum: f32 = rest.iter().map(|i| demands[*i].max).sum();
+    if room <= min_sum {
+        for i in &rest {
+            widths[*i] = demands[*i].min;
+        }
+    } else if room < max_sum {
+        let t = (room - min_sum) / (max_sum - min_sum);
+        for i in &rest {
+            widths[*i] = demands[*i].min + (demands[*i].max - demands[*i].min) * t;
+        }
+    } else {
+        // More room than the columns want: those without a given width take it, in proportion
+        // to what they want; if every column has one, all of them.
+        let free = |i: &usize| demands[*i].fixed.is_none();
+        let grows: Vec<usize> = if rest.iter().any(free) {
+            rest.iter().copied().filter(free).collect()
+        } else {
+            rest.clone()
+        };
+        let weight: f32 = grows.iter().map(|i| demands[*i].max).sum();
+        for i in &rest {
+            widths[*i] = demands[*i].max;
+        }
+        for i in &grows {
+            widths[*i] += if weight > 0.0 {
+                (room - max_sum) * demands[*i].max / weight
+            } else {
+                (room - max_sum) / grows.len() as f32
+            };
+        }
+    }
+
+    let mut out = style.clone();
+    out.grid_template_columns = widths
+        .into_iter()
+        .map(|w| style_helpers::length::<f32, TrackSizingFunction>(w).into())
+        .collect();
+    Some(out)
+}
+
+/// A caption laid out for a table of a given width.
+pub(crate) struct PlacedCaption {
+    node: NodeId,
+    output: taffy::LayoutOutput,
+    margin: taffy::Rect<f32>,
+    padding: taffy::Rect<f32>,
+    border: taffy::Rect<f32>,
+    above: bool,
+}
+
+/// The table's captions laid out as blocks of the table's width, and how much of
+/// its box those above and below the grid take.
+pub(crate) struct Captions {
+    placed: Vec<PlacedCaption>,
+    pub above: f32,
+    pub below: f32,
+}
+
+/// Lays out the table's captions for a table box `width` wide. `None` without captions.
+pub(crate) fn measure_captions(
+    doc: &mut LayoutPassState<'_>,
+    ctx: &TableContext,
+    width: f32,
+    run_mode: taffy::RunMode,
+) -> Option<Captions> {
+    use style::computed_values::caption_side::T as CaptionSide;
+    use taffy::CoreStyle as _;
+
+    if ctx.captions.is_empty() {
+        return None;
+    }
+    let mut placed = Vec::new();
+    for &caption in &ctx.captions {
+        let above = doc.nodes[caption]
+            .primary_styles()
+            .is_none_or(|s| s.get_inherited_table().caption_side == CaptionSide::Top);
+        let (margin, padding, border) = {
+            let style = doc.child_layout_style(&doc.nodes[caption]);
+            let basis = Some(width);
+            (
+                style.margin().resolve_or_zero(basis, resolve_calc_value),
+                style.padding().resolve_or_zero(basis, resolve_calc_value),
+                style.border().resolve_or_zero(basis, resolve_calc_value),
+            )
+        };
+        let avail = (width - margin.left - margin.right).max(0.0);
+        let output = doc.compute_child_layout(
+            crate::taffy_node_id(caption),
+            taffy::tree::LayoutInput {
+                known_dimensions: taffy::Size {
+                    width: Some(avail),
+                    height: None,
+                },
+                known_dimensions_are_definite: taffy::Size {
+                    width: true,
+                    height: true,
+                },
+                parent_size: taffy::Size {
+                    width: Some(width),
+                    height: None,
+                },
+                available_space: taffy::Size {
+                    width: taffy::AvailableSpace::Definite(avail),
+                    height: taffy::AvailableSpace::MaxContent,
+                },
+                sizing_mode: taffy::SizingMode::InherentSize,
+                axis: taffy::RequestedAxis::Both,
+                run_mode,
+                vertical_margins_are_collapsible: taffy::Line::FALSE,
+            },
+        );
+        placed.push(PlacedCaption {
+            node: caption,
+            output,
+            margin,
+            padding,
+            border,
+            above,
+        });
+    }
+    let outer = |c: &PlacedCaption| c.output.size.height + c.margin.top + c.margin.bottom;
+    let above = placed.iter().filter(|c| c.above).map(outer).sum();
+    let below = placed.iter().filter(|c| !c.above).map(outer).sum();
+    Some(Captions {
+        placed,
+        above,
+        below,
+    })
+}
+
+/// Puts the captions around the grid whose layout `output` is: the cells and the
+/// grid's rows move down by the height of the captions above, the captions
+/// take their places, and the table's size takes them in.
+pub(crate) fn place_captions(
+    doc: &mut LayoutPassState<'_>,
+    ctx: &TableContext,
+    captions: Captions,
+    run_mode: taffy::RunMode,
+    output: &mut taffy::LayoutOutput,
+) {
+    let (above, below) = (captions.above, captions.below);
+    if run_mode == taffy::RunMode::PerformLayout {
+        if above != 0.0 {
+            for cell in &ctx.cells {
+                doc.nodes[cell.node_id].unrounded_layout_mut().location.y += above;
+            }
+            if let Some(info) = ctx.computed_grid_info.borrow_mut().as_mut() {
+                for line in info.rows.positions.iter_mut() {
+                    line.start += above;
+                    line.end += above;
+                }
+            }
+        }
+        *ctx.caption_extent.borrow_mut() = [above, below];
+        let (mut y_above, mut y_below) = (0.0, above + output.size.height);
+        for (order, c) in captions.placed.into_iter().enumerate() {
+            let y = if c.above { &mut y_above } else { &mut y_below };
+            let layout = doc.nodes[c.node].unrounded_layout_mut();
+            layout.order = (ctx.cells.len() + order) as u32;
+            layout.location = taffy::Point {
+                x: c.margin.left,
+                y: *y + c.margin.top,
+            };
+            layout.size = c.output.size;
+            layout.scrollable_overflow_rect = c.output.scrollable_overflow_rect;
+            layout.margin = c.margin;
+            layout.padding = c.padding;
+            layout.border = c.border;
+            *y += c.output.size.height + c.margin.top + c.margin.bottom;
+        }
+    }
+    output.size.height += above + below;
+    output.scrollable_overflow_rect.bottom += above + below;
 }
