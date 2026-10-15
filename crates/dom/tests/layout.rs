@@ -171,6 +171,41 @@ fn stylesheets_and_style_elements_apply_in_document_order() {
 }
 
 #[test]
+fn selectors_chrome_has_and_stylo_ships_off_work() {
+    // :has(), :nth-child(of S), @media on the viewport, @supports, @layer order.
+    let mut req = request(el(
+        "div",
+        "$0",
+        "",
+        vec![
+            el_attrs("p", "$0.0", json!({ "class": "a" }), "", vec![]),
+            el_attrs("p", "$0.1", json!({ "class": "b" }), "", vec![]),
+            el_attrs("p", "$0.2", json!({ "class": "a" }), "", vec![]),
+        ],
+    ));
+    req["stylesheets"] = json!([
+        "p { margin: 0; height: 10px } p.b { height: 20px }
+         p:has(+ p.b) { height: 30px }
+         p:nth-child(2 of .a) { width: 77px }
+         @media (min-width: 900px) { p.b { width: 55px } }
+         @media (min-width: 1100px) { p.b { width: 11px } }
+         @supports (display: grid) { p.b { margin-left: 3px } }
+         @layer base, over; @layer over { p.b { height: 25px } } @layer base { p.b { height: 99px !important } }"
+    ]);
+    let island = resolve(&req);
+    assert_eq!(bounds(&island, "$0.0").3, 30.0, ":has");
+    assert_eq!(bounds(&island, "$0.2").2, 77.0, ":nth-child(2 of .a)");
+    let b = bounds(&island, "$0.1");
+    assert_eq!(
+        (b.0, b.2),
+        (3.0, 55.0),
+        "@media on the 1000px viewport, @supports"
+    );
+    // `!important` in an earlier layer beats a later layer.
+    assert_eq!(b.3, 99.0, "@layer");
+}
+
+#[test]
 fn svg_elements_are_in_the_svg_namespace() {
     use blitz_dom::{local_name, ns};
     let root = el_attrs(

@@ -27,6 +27,8 @@ usvg = "0.48.1"
 euclid = "0.22"
 # Computed values (getComputedStyle, transforms): the version Blitz uses.
 style = { package = "stylo", version = "0.22.0" }
+# CSS features Chrome has that Stylo ships switched off (:has(), @container, ...).
+style_config = { package = "stylo_static_prefs", version = "0.22.0" }
 
 [dev-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] }

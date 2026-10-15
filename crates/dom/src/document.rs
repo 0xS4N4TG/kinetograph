@@ -71,12 +71,24 @@ impl std::fmt::Display for BuildError {
 
 impl std::error::Error for BuildError {}
 
+/// Switches on the CSS features Chrome has and Stylo ships off. They are
+/// process-wide and must be set before a document (its style system) is made.
+fn enable_css_features() {
+    style_config::set_pref!("layout.css.has-selector.enabled", true);
+    style_config::set_pref!("layout.container-queries.enabled", true);
+    style_config::set_pref!("layout.css.nth-child-of.enabled", true);
+    style_config::set_pref!("layout.css.at-scope.enabled", true);
+    style_config::set_pref!("layout.css.light-dark.images.enabled", true);
+    style_config::set_pref!("layout.css.starting-style-at-rules.enabled", true);
+}
+
 /// Builds the DOM of `request` (no style or layout yet).
 pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>), BuildError> {
     let base_dir = PathBuf::from(&request.base_dir);
     let public_dir = request.public_dir.as_deref().map(Path::new);
     let files = Arc::new(LocalFiles::new(&base_dir, public_dir));
 
+    enable_css_features();
     let font_ctx = fonts::font_context(&request.fonts, &base_dir).map_err(BuildError)?;
     let width = request.viewport.width.max(0.0).round() as u32;
     let height = request.viewport.height.max(0.0).round() as u32;

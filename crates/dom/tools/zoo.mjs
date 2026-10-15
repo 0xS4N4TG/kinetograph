@@ -356,4 +356,116 @@ write(
   ),
 );
 
+// ---- selectors, pseudo-elements, at-rules: each rule changes a size ----
+write(
+  'selectors',
+  div(
+    `${base} width: 600px`,
+    ...Array.from({ length: 6 }, (_, i) => el('p', '', [text(`row ${i}`)], { class: i % 2 ? 'odd' : 'even' })),
+    el('div', '', [el('span', '', [text('child')])], { id: 'host', 'data-kind': 'card' }),
+    el('ul', '', [el('li', '', [text('a')]), el('li', '', [text('b')]), el('li', '', [text('c')])], { class: 'list' }),
+    el('div', '', [text('counter')], { class: 'counted' }),
+    el('div', '', [el('div', '', [text('inner')], { class: 'inner' })], { class: 'outer' }),
+  ),
+  {
+    stylesheets: [
+      `.odd { height: 30px; margin: 0 } .even { height: 50px; margin: 0 }
+       p:nth-child(3n) { height: 70px } p:first-child { padding-top: 5px } p:last-of-type { border-bottom: 3px solid }
+       #host[data-kind="card"] > span { display: block; padding: 11px }
+       .list li:not(:last-child)::after { content: " |"; }
+       .list li::before { content: counter(item) ". "; counter-increment: item }
+       .counted::before { content: "[" attr(class) "]"; display: block; height: 17px }
+       @media (min-width: 500px) { .even { width: 300px } }
+       @media (max-width: 200px) { .even { width: 10px } }
+       @supports (display: grid) { .odd { width: 123px } }
+       @supports not (display: grid) { .odd { width: 7px } }
+       .outer { container-type: inline-size; width: 400px }
+       @container (min-width: 300px) { .inner { padding: 9px } }
+       .inner { --gap: 3px; margin: var(--gap) var(--missing, 6px) }
+       :is(h1, h2, p).even { letter-spacing: 1px }
+       p:has(+ p.even) { margin-left: 4px }
+       @layer a, b; @layer b { .odd { height: 33px } } @layer a { .odd { height: 99px !important } }
+       .nest { color: red; & .deep { height: 12px } }`,
+    ],
+  },
+);
+
+// One island per feature, so one that Blitz lacks does not move the rest.
+const misc = {
+  columns: div('column-count: 2; column-gap: 20px', text(LOREM + ' ' + LOREM + ' ' + LOREM)),
+  'line-clamp': div('display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; width: 300px', text(LOREM + ' ' + LOREM)),
+  underline: div('text-decoration: underline; text-decoration-thickness: 3px', text('underlined')),
+  'huge-text': div('font-size: 120px; line-height: 1', text('Aa')),
+  'normal-line-height': div('font-size: 14px; line-height: normal', text('normal line height')),
+  borders: div('border: 4px double; border-radius: 10px; padding: 3px', text('borders')),
+  contain: el('div', 'height: 20px; contain: layout', [text('contain')]),
+  'content-visibility': el('div', 'height: 20px; content-visibility: auto', [text('visibility')]),
+  zoom: el('div', 'zoom: 2; width: 50px; height: 10px'),
+  'font-shorthand': el('div', 'font: italic bold 16px/22px "DM Sans", serif', [text('font shorthand')]),
+  'text-wrap-balance': div('text-wrap: balance; width: 300px', text(LOREM)),
+  'text-wrap-pretty': div('text-wrap: pretty; width: 300px', text(LOREM)),
+  'sup-sub': div('', text('x'), el('sup', '', [text('2')]), text(' y'), el('sub', '', [text('i')])),
+  'vertical-align-length': div('', text('a'), span('vertical-align: 10px', text('up')), span('vertical-align: -6px', text('down'))),
+  'valign-inline-block': div('', ...['baseline', 'top', 'text-top', 'middle', 'bottom', 'text-bottom', 'sub', 'super', '5px'].flatMap((v) => [text('x'), span(`display: inline-block; width: 14px; height: 20px; background: #ccc; vertical-align: ${v}`, text('')), text(' ')])),
+  'valign-img': div('', ...['baseline', 'middle', 'text-bottom', 'text-top', 'top'].flatMap((v) => [text('x'), el('svg', `vertical-align: ${v}`, [], { width: '16', height: '16' }), text(' ')])),
+  'valign-tall-line': div('line-height: 60px', ...['baseline', 'middle', 'text-bottom'].flatMap((v) => [text('x'), span(`display: inline-block; width: 14px; height: 20px; vertical-align: ${v}`, text('')), text(' ')])),
+  'initial-letter': el('p', '', [text(LOREM)], { class: 'drop' }),
+  'first-line': el('p', '', [text(LOREM + ' ' + LOREM)], { class: 'fl' }),
+  'first-letter': el('p', '', [text(LOREM)], { class: 'fletter' }),
+  'br-lines': div('', text('one'), el('br'), text('two'), el('br'), el('br'), text('four')),
+  'nbsp-and-entities': div('width: 200px', text('a\u00a0b\u00a0c\u00a0d\u00a0e\u00a0f\u00a0g\u00a0h\u00a0i')),
+  'tab-size': div('white-space: pre; tab-size: 4', text('a\tb\tc')),
+  'ruby-like': div('', text('漢字 and 日本語')),
+  'ltr-bidi': div('', text('abc שלום def')),
+  'emoji-text': div('', text('smile 😀 text')),
+  'combining': div('', text('e\u0301 a\u0300 ffi fl')),
+};
+for (const [name, root] of Object.entries(misc)) {
+  write(`misc-${name}`, div(`${base} width: 700px`, root), {
+    stylesheets: ['.drop::first-letter { font-size: 3em; float: left } .fl::first-line { font-size: 30px } .fletter::first-letter { font-size: 40px }'],
+  });
+}
+
+write(
+  'pseudo',
+  div(
+    `${base} width: 600px`,
+    ...['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((k) => el('div', '', [text('x')], { class: `p-${k}` })),
+  ),
+  {
+    stylesheets: [
+      `.p-a::before { content: "ab"; display: block; height: 17px }
+       .p-b::before { content: attr(class); display: block; height: 17px }
+       .p-c::before { content: "[" attr(class) "]"; display: block; height: 17px }
+       .p-d::after { content: ""; display: block; height: 9px }
+       .p-e::before { content: counter(n) "."; counter-increment: n; display: block; height: 11px }
+       .p-f::before { content: "\\201C"; font-size: 40px }
+       .p-g::before { content: url(none.png); display: block; height: 7px }`,
+    ],
+  },
+);
+
+write(
+  'captions',
+  div(
+    `${base} width: 900px; font-size: 64px; text-align: center; line-height: 1.2; font-family: "Inter"; font-weight: 800`,
+    ...['Make', 'every', 'word', 'pop', 'with', 'padded', 'highlights', 'on', 'long', 'lines'].flatMap((w, i) => [
+      span(i % 3 === 0 ? 'background: #ffd400; color: #000; padding: 4px 14px; border-radius: 12px; margin: 0 4px' : i % 3 === 1 ? 'display: inline-block; padding: 0 10px; transform: rotate(-3deg)' : 'letter-spacing: 2px; text-transform: uppercase', text(w)),
+      text(' '),
+    ]),
+  ),
+  { viewport: { width: 1080, height: 800 } },
+);
+
+write(
+  'abs-fill-layouts',
+  div(
+    `${base} position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center`,
+    div('font-size: 96px; font-weight: 800; font-family: "Inter"; letter-spacing: -2px; line-height: 0.95; text-align: center; max-width: 80%', text('Big centered headline wraps')),
+    div('margin-top: 24px; display: flex; gap: 16px', ...['One', 'Two', 'Three'].map((t) => div('padding: 12px 28px; border-radius: 999px; border: 3px solid; font-size: 28px', text(t)))),
+    div('position: absolute; bottom: 60px; left: 60px; right: 60px; display: flex; justify-content: space-between; font-size: 22px', span('', text('left')), span('', text('right'))),
+  ),
+  { viewport: { width: 1080, height: 1920 } },
+);
+
 console.log(`wrote ${counter} islands to ${out}`);

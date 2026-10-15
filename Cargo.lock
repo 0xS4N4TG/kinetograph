@@ -1864,6 +1864,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stylo",
+ "stylo_static_prefs",
  "url",
  "usvg",
 ]
