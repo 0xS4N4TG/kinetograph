@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[dev-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
 [dependencies]
 kinetograph-core = { path = "../core" }
 # Blitz's DOM: Stylo for CSS, taffy for layout, Parley for text. No system fonts:

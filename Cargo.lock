@@ -1859,6 +1859,7 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "image",
  "kinetograph-core",
  "kurbo",
  "serde",

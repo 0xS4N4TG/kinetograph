@@ -1,0 +1,15 @@
+<!doctype html>
+<html><head><style>html,body{margin:0;background:#fff}</style></head><body>
+<!-- PaperDefs of the papercut kit (lib/papercut/kit/paper/kit.tsx), mounted once. -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <filter id="rough" x="-4%" y="-4%" width="108%" height="108%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="torn" x="-6%" y="-10%" width="112%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.11" numOctaves="3" seed="11" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+  </filter></defs></svg>
+<div style="position:absolute;left:60px;top:50px;width:300px;height:160px;background:#f3e6c8;filter:url(#torn)"></div>
+<div style="position:absolute;left:100px;top:240px;width:200px;height:80px;background:#e9c46a;filter:url(#rough);transform:rotate(-4deg)"></div>
+</body></html>

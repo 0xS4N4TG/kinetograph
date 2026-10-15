@@ -131,12 +131,23 @@ pub fn paint_svg(
         };
     }
     let mut layer = json!({"id": id, "type": "group", "children": children});
-    if !serialized.overflow_visible {
-        // `overflow: hidden` on the replaced box.
+    // `overflow: hidden` on the replaced box. A group with a clip has a buffer
+    // of its own, which children that blend (mix-blend-mode) would blend into
+    // instead of what is behind the SVG, so the clip is only made when
+    // something reaches outside the box (a filter's region counts); otherwise
+    // the group passes its children's blending through.
+    let reach = tree.root().abs_layer_bounding_box();
+    let outside = reach.left() < -0.5
+        || reach.top() < -0.5
+        || reach.right() > size[0] as f32 + 0.5
+        || reach.bottom() > size[1] as f32 + 0.5;
+    if outside && !serialized.overflow_visible {
         layer["clip"] = json!({
             "kind": "polygon",
             "points": [[0, 0], [size[0], 0], [size[0], size[1]], [0, size[1]]],
         });
+    } else {
+        layer["passThrough"] = json!(true);
     }
     SvgPaint {
         layer: Some(layer),
