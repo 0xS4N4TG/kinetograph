@@ -26,6 +26,20 @@ impl<'a> Painter<'a> {
         let tag = &el.name.local;
         let geom = box_geom(node, &style);
         let (content, radii) = geom.region(Region::Content);
+
+        // A native `kg-*` element of the TS side: a replaced box whose layers
+        // the caller puts where this placeholder is (docs/ENGINE.md section 2).
+        if &**tag == "kg-native" {
+            let path = self.path_of(node);
+            return vec![serde_json::json!({
+                "type": "native",
+                "path": path,
+                "x": num(origin.0 + content.x),
+                "y": num(origin.1 + content.y),
+                "width": num(content.w),
+                "height": num(content.h),
+            })];
+        }
         if content.is_empty() {
             return Vec::new();
         }
