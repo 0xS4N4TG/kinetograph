@@ -10,6 +10,8 @@ import { openSource, type Source } from '../source.js';
 export interface Context {
   /** Progress for people (stderr). Silent for `--json`. */
   progress(message: string): void;
+  /** For commands that serve until stopped: prints `data` (with `--json`) or `text` now, not when the command returns. */
+  announce(data: object, text: string): void;
 }
 
 export interface CommandResult {

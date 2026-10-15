@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CompositionInfo, FrameRenderer } from '@kinetograph/core';
-import type { AudioClipJson } from '@kinetograph/scene';
+import type { AudioClipJson, SequenceJson } from '@kinetograph/scene';
 import { bundleProject } from './bundle.js';
 import { CliError } from './errors.js';
 import { native } from './native.js';
@@ -20,6 +20,8 @@ export interface FrameOutput {
   /** The frame's scene as the addon takes it. */
   sceneJson: string;
   audio: AudioClipJson[];
+  /** Every `<Sequence>` in the frame's tree (docs/AUTHORING.md §11.4); none for a scene file. */
+  sequences?: SequenceJson[];
   /** ms spent in `renderFrame` and in `JSON.stringify` (0 for a scene file), for `bench`. */
   jsMs: number;
   stringifyMs: number;
@@ -40,6 +42,8 @@ export interface Source {
 export interface OpenOptions {
   comp?: string;
   props?: string;
+  /** An already built bundle of the entry (the studio's): used instead of bundling again. */
+  bundleFile?: string;
 }
 
 export function isSceneFile(entry: string): boolean {
@@ -66,8 +70,8 @@ function requireEntry(entry: string): string {
   return absolute;
 }
 
-async function loadProject(entry: string): Promise<ProjectModule> {
-  const { file } = await bundleProject(entry);
+async function loadProject(entry: string, bundleFile?: string): Promise<ProjectModule> {
+  const file = bundleFile ?? (await bundleProject(entry)).file;
   process.setSourceMapsEnabled(true);
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
   // before setPublicDir below can.
@@ -88,10 +92,10 @@ async function loadProject(entry: string): Promise<ProjectModule> {
 }
 
 /** The compositions a project (or a scene file, which is one) offers. */
-export async function listCompositions(entry: string): Promise<CompositionInfo[]> {
+export async function listCompositions(entry: string, options: { bundleFile?: string } = {}): Promise<CompositionInfo[]> {
   const absolute = requireEntry(entry);
   if (isSceneFile(absolute)) return [sceneComposition(absolute, readFileSync(absolute, 'utf8'))];
-  return (await loadProject(absolute)).getCompositions();
+  return (await loadProject(absolute, options.bundleFile)).getCompositions();
 }
 
 function sceneComposition(file: string, text: string): CompositionInfo {
@@ -117,13 +121,13 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       entry: absolute,
       baseDir,
       composition: sceneComposition(absolute, text),
-      frame: async () => ({ sceneJson: text, audio: [], jsMs: 0, stringifyMs: 0 }),
+      frame: async () => ({ sceneJson: text, audio: [], sequences: [], jsMs: 0, stringifyMs: 0 }),
       dispose: () => {},
     };
   }
 
   const inputProps = parseProps(options.props);
-  const mod = await loadProject(absolute);
+  const mod = await loadProject(absolute, options.bundleFile);
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);
@@ -154,7 +158,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const result = await renderer.renderFrame(frame);
       const rendered = nowMs();
       const sceneJson = JSON.stringify(result.scene);
-      return { sceneJson, audio: result.audio, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
+      return { sceneJson, audio: result.audio, sequences: result.sequences, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
     dispose: () => renderer.dispose(),
   };
