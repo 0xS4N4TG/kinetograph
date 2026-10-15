@@ -2,7 +2,7 @@
 //! what a layer can say itself: fewer layers for the compositor, the same
 //! picture.
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use super::util::num;
 
@@ -24,6 +24,66 @@ pub fn optimize(layers: Vec<Value>) -> Vec<Value> {
         .collect()
 }
 
+/// A group that says nothing but its children, none of which blends with what
+/// lies outside the group, is its children in the list it is in; one that only
+/// moves them (`x`, `y`) is its children moved. The compositor draws such a
+/// group straight onto the canvas anyway (`needs_no_buffer`), so the picture is
+/// the same and the group's walk and cache key are saved. Not when the group is
+/// a matte source (it is found by its id), or a child blends, is matted, or is
+/// a pass-through or `preserve3d` group: those see the group's own buffer, or
+/// the groups round them.
+///
+/// Returns the children, moved by the group's position.
+fn flatten_group(layer: &mut Value, keep: bool) -> Option<Vec<Value>> {
+    let g = layer.as_object()?;
+    if keep
+        || g.get("type").and_then(Value::as_str) != Some("group")
+        || !g
+            .keys()
+            .all(|k| matches!(k.as_str(), "id" | "type" | "children" | "transform"))
+    {
+        return None;
+    }
+    // Only a move: `x` and `y`, numbers.
+    let (gx, gy) = match g.get("transform") {
+        None => (0.0, 0.0),
+        Some(Value::Object(t)) if t.keys().all(|k| k == "x" || k == "y") => (
+            t.get("x").map_or(Some(0.0), Value::as_f64)?,
+            t.get("y").map_or(Some(0.0), Value::as_f64)?,
+        ),
+        Some(_) => return None,
+    };
+    let plain = g.get("children")?.as_array()?.iter().all(|c| {
+        c.get("blendMode")
+            .and_then(Value::as_str)
+            .is_none_or(|m| m == "normal")
+            && c.get("matte").is_none()
+            && c.get("passThrough").is_none()
+            && c.get("preserve3d").is_none()
+            // A position the move can be added to.
+            && c.get("transform").is_none_or(|t| {
+                t.is_object() && ["x", "y"].iter().all(|k| t.get(k).is_none_or(Value::is_number))
+            })
+    });
+    if !plain {
+        return None;
+    }
+    let Some(Value::Array(mut children)) = layer.get_mut("children").map(Value::take) else {
+        return None;
+    };
+    if gx != 0.0 || gy != 0.0 {
+        for c in &mut children {
+            let mut t = c.get("transform").cloned().unwrap_or_else(|| json!({}));
+            let at = |k: &str| t.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+            let (x, y) = (at("x") + gx, at("y") + gy);
+            t["x"] = num(x);
+            t["y"] = num(y);
+            c["transform"] = t;
+        }
+    }
+    Some(children)
+}
+
 fn optimize_layer(mut layer: Value, keep: bool) -> Vec<Value> {
     if let Some(children) = layer.get_mut("children") {
         let list = std::mem::take(children);
@@ -33,6 +93,9 @@ fn optimize_layer(mut layer: Value, keep: bool) -> Vec<Value> {
     }
     if !keep && draws_nothing(&layer) {
         return Vec::new();
+    }
+    if let Some(children) = flatten_group(&mut layer, keep) {
+        return children;
     }
     vec![merge_single_child(layer)]
 }
@@ -203,7 +266,6 @@ fn merge_single_child(group: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn empty_shapes_and_groups_go() {
@@ -245,5 +307,79 @@ mod tests {
         let m = json!({ "id": "g", "type": "group", "children": [
             { "id": "a", "type": "shape", "shape": {"kind":"rect","width":1,"height":1}, "fill": "#000", "matte": {"layer":"x"} } ] });
         assert_eq!(optimize(vec![m.clone()]), vec![m]);
+    }
+    fn rect(id: &str) -> Value {
+        json!({ "id": id, "type": "shape", "shape": {"kind":"rect","width":1,"height":1}, "fill": "#000" })
+    }
+
+    #[test]
+    fn a_group_with_nothing_but_children_is_its_children() {
+        let out = optimize(vec![
+            rect("a"),
+            json!({ "id": "g", "type": "group", "children": [
+                rect("b"),
+                json!({ "id": "h", "type": "group", "children": [rect("c"), rect("d")] }),
+            ] }),
+            rect("e"),
+        ]);
+        let ids: Vec<_> = out.iter().map(|l| l["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["a", "b", "c", "d", "e"]);
+    }
+
+    #[test]
+    fn a_group_that_only_moves_its_children_moves_them() {
+        let mut turned = rect("b");
+        turned["transform"] = json!({ "x": 5, "y": 1, "rotation": 30, "anchorX": 2 });
+        let out = optimize(vec![
+            json!({ "id": "g", "type": "group", "transform": {"x": 10, "y": 20},
+            "children": [rect("a"), turned,
+                json!({ "id": "h", "type": "group", "transform": {"x": 1}, "children": [rect("c"), rect("d")] })] }),
+        ]);
+        let at = |i: usize| {
+            (
+                out[i]["transform"]["x"].as_f64(),
+                out[i]["transform"]["y"].as_f64(),
+            )
+        };
+        let ids: Vec<_> = out.iter().map(|l| l["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["a", "b", "c", "d"]);
+        assert_eq!(at(0), (Some(10.0), Some(20.0)));
+        assert_eq!(at(1), (Some(15.0), Some(21.0)));
+        assert_eq!(out[1]["transform"]["rotation"], 30);
+        assert_eq!(out[1]["transform"]["anchorX"], 2);
+        // The inner group moved by 1 and then both by 10, 20.
+        assert_eq!(at(2), (Some(11.0), Some(20.0)));
+        assert_eq!(at(3), (Some(11.0), Some(20.0)));
+    }
+
+    #[test]
+    fn a_group_that_does_something_stays() {
+        let mut blends = rect("b");
+        blends["blendMode"] = json!("multiply");
+        let cases = [
+            // Its own opacity, transform, clip or effects.
+            json!({ "id": "g", "type": "group", "opacity": 0.5, "children": [rect("a"), rect("b")] }),
+            json!({ "id": "g", "type": "group", "transform": {"x": 3, "rotation": 5}, "children": [rect("a"), rect("b")] }),
+            json!({ "id": "g", "type": "group", "transform": {"x": 3, "anchorX": 1}, "children": [rect("a"), rect("b")] }),
+            json!({ "id": "g", "type": "group", "layoutItem": {}, "children": [rect("a"), rect("b")] }),
+            // A child that blends with what is under the group would blend with its own buffer.
+            json!({ "id": "g", "type": "group", "children": [rect("a"), blends] }),
+            // A child that blends inside a pass-through or preserve3d group.
+            json!({ "id": "g", "type": "group", "children": [rect("a"),
+                { "id": "p", "type": "group", "passThrough": true, "children": [rect("b"), rect("c")] }] }),
+            json!({ "id": "g", "type": "group", "children": [rect("a"),
+                { "id": "p", "type": "group", "preserve3d": true, "children": [rect("b"), rect("c")] }] }),
+        ];
+        for g in cases {
+            assert_eq!(optimize(vec![g.clone()]), vec![g]);
+        }
+    }
+
+    #[test]
+    fn a_matte_source_group_stays_in_the_list_that_names_it() {
+        let src = json!({ "id": "src", "type": "group", "children": [rect("a"), rect("b")] });
+        let mut user = rect("u");
+        user["matte"] = json!({ "layer": "src" });
+        assert_eq!(optimize(vec![src.clone(), user.clone()]), vec![src, user]);
     }
 }
