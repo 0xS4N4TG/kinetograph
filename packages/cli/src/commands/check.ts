@@ -1,7 +1,7 @@
-import type { SceneJson } from '@kinetograph/scene';
+import type { SceneJson, Unsupported } from '@kinetograph/scene';
 import { parseFrameList } from '../args.js';
 import { toErrorObject } from '../errors.js';
-import { lintAudio, lintInspect, lintScene, mergeFindings, type Finding } from '../lint.js';
+import { lintAudio, lintCompat, lintInspect, lintScene, mergeFindings, sortIssues, type Finding } from '../lint.js';
 import { native, type InspectLayer, type InspectResult } from '../native.js';
 import { checkFrame, evenFrames } from '../source.js';
 import { ENTRY, openFromArgs, type Command } from './types.js';
@@ -51,7 +51,7 @@ function describe(result: InspectResult): string {
 
 export const lint: Command = {
   name: 'lint',
-  summary: 'Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets',
+  summary: 'Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, and what compat mode draws in Chrome',
   project: true,
   positionals: [ENTRY],
   options: [{ name: 'frames', type: 'string', description: 'Frames to check, comma separated (default 8 spread over the composition)' }],
@@ -68,8 +68,10 @@ export const lint: Command = {
         .sort((a, b) => a - b);
 
       const perFrame: { frame: number; findings: Finding[] }[] = [];
+      const unsupportedFrames: { frame: number; unsupported: Unsupported[] }[] = [];
       for (const frame of frames) {
-        const { sceneJson, audio } = await source.frame(frame);
+        const { sceneJson, audio, unsupported } = await source.frame(frame);
+        unsupportedFrames.push({ frame, unsupported: unsupported ?? [] });
         const findings = [
           ...lintScene(JSON.parse(sceneJson) as SceneJson, source.baseDir),
           ...lintAudio(audio, source.baseDir),
@@ -82,7 +84,7 @@ export const lint: Command = {
         }
         perFrame.push({ frame, findings });
       }
-      const issues = mergeFindings(perFrame);
+      const issues = sortIssues([...mergeFindings(perFrame), ...lintCompat(unsupportedFrames)]);
       const errors = issues.filter((i) => i.severity === 'error').length;
       const warnings = issues.length - errors;
       const text = issues.length
