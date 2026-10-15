@@ -338,6 +338,12 @@ impl<'a> Painter<'a> {
             let child = self.node(cid);
             let loc = child.final_layout().location;
             let at = (origin.0 + f64::from(loc.x), origin.1 + f64::from(loc.y));
+            if child.is_anonymous() {
+                // A box Blitz made to hold inline content among blocks: no box
+                // of its own to paint.
+                self.walk(child, at, ph, pos);
+                continue;
+            }
             let Some(style) = child.primary_styles() else {
                 // An anonymous block: no box of its own.
                 self.walk(child, at, ph, pos);

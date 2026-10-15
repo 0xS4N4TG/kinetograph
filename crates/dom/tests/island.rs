@@ -48,6 +48,12 @@ fn a_papercut_style_card_paints_end_to_end() {
     assert!(text.contains("\"repeatX\":true"), "{text}");
     assert!(text.contains("\"blendMode\":\"multiply\""), "{text}");
     assert!(text.contains("\"runs\""), "glyph runs: {text}");
+    std::fs::create_dir_all(paintkit::out_dir()).unwrap();
+    std::fs::write(
+        paintkit::out_dir().join("island-card-scene.json"),
+        serde_json::to_string_pretty(&paintkit::scene_json(&out, 1000, 500)).unwrap(),
+    )
+    .unwrap();
     // And it renders.
     let frame = paintkit::render_output(&out, 1000, 500);
     paintkit::save_frame(&frame, &paintkit::out_dir().join("island-card-ours.png"));
