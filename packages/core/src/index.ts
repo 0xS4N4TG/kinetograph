@@ -12,6 +12,7 @@ export const VERSION = '4.0.535';
 export {
   Audio,
   Camera,
+  Canvas,
   Ellipse,
   Image,
   Layer,
@@ -30,6 +31,7 @@ export {
 export type {
   AudioProps,
   CameraProps,
+  CanvasProps,
   CommonProps,
   EllipseProps,
   ImageProps,

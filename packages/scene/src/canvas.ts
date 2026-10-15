@@ -331,6 +331,17 @@ export class CanvasContext2D {
     this.state = back;
   }
 
+  /**
+   * Ends a frame's drawing: the state goes back to a new canvas's (the clips still open are closed), and what is
+   * drawn stays. A canvas that is redrawn each frame is then drawn from the same state whichever frame came before.
+   */
+  resetState(): void {
+    for (let i = this.state.clips; i > 0; i -= 1) this.log.push({ op: 'unclip' });
+    this.saved.length = 0;
+    this.state = initial();
+    this.path.clear();
+  }
+
   reset(): void {
     this.log = [];
     this.saved.length = 0;

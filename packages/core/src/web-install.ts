@@ -4,8 +4,9 @@
 // bundle, where the page has the real ones.
 
 import { hasAddonFunction, measureSpan, resolveProjectFile, setCssFontFaceHandler, type CssFontFace } from '@kinetograph/compat/dom';
-import { installDomGlobals, setPathMeasure } from '@kinetograph/compat/shim';
+import { installDomGlobals, setCanvasFonts, setPathMeasure } from '@kinetograph/compat/shim';
 import { addFace, NodeFontFace } from './font-face.js';
+import { getFonts } from './font-registry.js';
 import { setDomTextMeasure } from './layout-utils.js';
 import { getBoundingBox, getLength, getPointAtLength } from './paths.js';
 
@@ -28,6 +29,8 @@ export function registerCssFontFace(face: CssFontFace): void {
 installDomGlobals();
 setCssFontFaceHandler(registerCssFontFace);
 setPathMeasure({ getLength, getPointAtLength, getBoundingBox });
+// A canvas's `font` is matched against the registered fonts.
+setCanvasFonts(getFonts);
 
 // `measureText` and `fitText` ask the DOM engine for the box of a `span`, as Remotion asks Chrome.
 setDomTextMeasure((options, fonts) => {

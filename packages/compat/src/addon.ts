@@ -14,8 +14,10 @@ export interface DomAddon {
   domComputedStyle(requestJson: string, path: string, properties: string[]): string[];
   /** A video's or GIF's header (`probeMedia` of the addon), for `<video>` load events and `duration`. */
   probeMedia?(path: string, baseDir?: string): { width: number; height: number; durationInSeconds: number };
-  /** The text engine, for the size of native text in an island. */
-  layoutText?(request: unknown): { width: number; height: number };
+  /** The text engine, for the size of native text in an island and of a canvas's `measureText`. */
+  layoutText?(request: unknown): { width: number; height: number; lines?: { top: number; bottom: number; baseline: number }[] };
+  /** A canvas's commands drawn on a transparent canvas: `{ width, height, commands, fonts, baseDir, format }` as JSON in, straight-alpha RGBA (`format: "rgba"`) or a PNG out. Needs the GPU. */
+  renderCanvas?(requestJson: string): Uint8Array;
 }
 
 let override: Partial<DomAddon> | null = null;

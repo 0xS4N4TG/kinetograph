@@ -1,15 +1,17 @@
 // The browser globals a Remotion project commonly touches, as far as rendering is a pure function of (project, frame)
 // (docs/ENGINE.md §10): `window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, `document` queries over
 // the host tree, `getComputedStyle`, the observers. There is no network and no clock: remote URLs fail with a message
-// that says so, and `<canvas>` fails saying it is not supported yet. Installed in Node only where the globals are missing.
+// that says so. `<canvas>` is the native 2D canvas (`./canvas.ts`). Installed in Node only where the globals are missing.
 
 import { readFile } from 'node:fs/promises';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, type CanvasPicture } from '@kinetograph/scene';
 import { resolveProjectFile } from '../environment.js';
-import { DomElement, domElementFor, isDomElementShim, selectorContextOf, setImageSizeReader, setProjectFileResolver } from './element.js';
+import { CanvasSurface, OffscreenCanvasShim } from './canvas.js';
+import { DomElement, domElementFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
 import { matches, queryAll } from './selector.js';
@@ -149,6 +151,15 @@ function imageSizeAt(src: string): { width: number; height: number } | null {
   }
 }
 
+/** What `drawImage` reads of an image at `src`: a project file (by its path) or a `data:` URL, with its size. */
+function imagePicture(src: string): CanvasPicture | null {
+  const size = imageSizeAt(src);
+  if (size === null) return null;
+  if (src.startsWith('data:')) return { source: { kind: 'src', src }, ...size };
+  const file = projectFileOf(src);
+  return file === null ? null : { source: { kind: 'src', src: file }, ...size };
+}
+
 // ---- Image ----
 
 class ImageShim extends EventTarget {
@@ -242,6 +253,10 @@ class ImageShim extends EventTarget {
     this.onerror?.call(this, { type: 'error', target: this, message: error.message, error });
     this.dispatchEvent(new Event('error'));
   }
+  /** The file is read when `src` is set, so it can be drawn before its `load` event, as a decoded one can. */
+  [CANVAS_SOURCE](): CanvasPicture | null {
+    return this.source !== '' && !this.failure ? imagePicture(this.source) : null;
+  }
   async decode(): Promise<void> {
     if (this.failure) throw new DOMExceptionLike(this.failure.message);
     if (this.complete) return;
@@ -327,14 +342,43 @@ class DetachedElement extends EventTarget {
   get clientHeight(): number { return 0; }
   querySelector(): null { return null; }
   querySelectorAll(): [] { return []; }
-  getContext(): never { throw canvasError(); }
 }
 
-function canvasError(): Error {
-  return new Error(
-    'canvas is not supported yet: <canvas>, 2D contexts and WebGL are a later phase of Kinetograph (there is no Chrome to ' +
-      'fall back to). Draw with SVG or DOM elements, or a native layer, for now.',
-  );
+/** `document.createElement('canvas')`: a canvas outside the tree, drawn into and then drawn onto another with `drawImage`. */
+class DetachedCanvas extends DetachedElement {
+  private readonly surface = new CanvasSurface();
+  constructor() {
+    super('CANVAS');
+  }
+  get width(): number {
+    return this.surface.width;
+  }
+  set width(value: number) {
+    this.surface.width = value;
+  }
+  get height(): number {
+    return this.surface.height;
+  }
+  set height(value: number) {
+    this.surface.height = value;
+  }
+  override setAttribute(name: string, value: unknown): void {
+    if (name === 'width') this.surface.width = Number(value);
+    else if (name === 'height') this.surface.height = Number(value);
+    super.setAttribute(name, value);
+  }
+  getContext(type: string): CanvasContext2D | null {
+    return this.surface.getContext(type);
+  }
+  toDataURL(): string {
+    return this.surface.toDataURL();
+  }
+  toBlob(callback: (blob: Blob | null) => void): void {
+    this.surface.toBlob(callback);
+  }
+  [CANVAS_SOURCE](): CanvasPicture | null {
+    return this.surface[CANVAS_SOURCE]();
+  }
 }
 
 /** The width and height of the page, as `body` and `documentElement` report them. */
@@ -369,6 +413,7 @@ function defineGetter(target: Record<string, unknown>, name: string, get: () => 
 export function installDomGlobals(): void {
   const g = globalThis as Record<string, unknown>;
   setImageSizeReader(imageSizeAt);
+  setImagePictureReader(imagePicture);
   setProjectFileResolver(projectFileOf);
 
   if (!('window' in g)) Object.defineProperty(g, 'window', { value: globalThis, configurable: true, writable: true, enumerable: false });
@@ -415,6 +460,13 @@ export function installDomGlobals(): void {
 
   define(g, 'Image', ImageShim);
   define(g, 'HTMLImageElement', ImageShim);
+  define(g, 'HTMLCanvasElement', DomElement);
+  define(g, 'OffscreenCanvas', OffscreenCanvasShim);
+  define(g, 'CanvasRenderingContext2D', CanvasContext2D);
+  define(g, 'CanvasGradient', CanvasGradient);
+  define(g, 'CanvasPattern', CanvasPattern);
+  define(g, 'Path2D', Path2D);
+  define(g, 'ImageData', ImageData);
   define(g, 'Element', DomElement);
   define(g, 'HTMLElement', DomElement);
   define(g, 'SVGElement', DomElement);
@@ -457,14 +509,10 @@ export function installDomGlobals(): void {
   define(doc, 'body', body);
   define(doc, 'head', head);
   define(doc, 'scrollingElement', html);
-  define(doc, 'createElement', (tag: string) => {
-    if (String(tag).toLowerCase() === 'canvas') throw canvasError();
-    return new DetachedElement(String(tag).toUpperCase());
-  });
-  define(doc, 'createElementNS', (_ns: string, tag: string) => {
-    if (String(tag).toLowerCase() === 'canvas') throw canvasError();
-    return new DetachedElement(String(tag));
-  });
+  define(doc, 'createElement', (tag: string) =>
+    String(tag).toLowerCase() === 'canvas' ? new DetachedCanvas() : new DetachedElement(String(tag).toUpperCase()),
+  );
+  define(doc, 'createElementNS', (_ns: string, tag: string) => (String(tag).toLowerCase() === 'canvas' ? new DetachedCanvas() : new DetachedElement(String(tag))));
   define(doc, 'createTextNode', (text: string) => ({ nodeType: 3, nodeName: '#text', textContent: String(text), data: String(text) }));
   define(doc, 'getElementById', (id: string) => documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
   define(doc, 'querySelector', (selector: string) => documentQuery(selector, true)[0] ?? null);

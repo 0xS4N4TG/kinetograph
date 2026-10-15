@@ -8,6 +8,18 @@ import { cssPropertyName, styleToCss } from '../request/style.js';
 import { isDomElement } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
+import { CANVAS_SOURCE, type CanvasContext2D, type CanvasPicture } from '@kinetograph/scene';
+import {
+  bitmapSide,
+  canvasCommandsOf,
+  canvasPictureOf,
+  canvasToBlob,
+  canvasToDataUrl,
+  contextOfHost,
+  DEFAULT_HEIGHT,
+  DEFAULT_WIDTH,
+  resetCanvasOf,
+} from './canvas.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
 import { overlayOf, propsWithOverlay, type BoxInfo, type HostElement, type Readback } from './host.js';
 import { matches, queryAll, type SelectorContext } from './selector.js';
@@ -456,12 +468,22 @@ export class DomElement {
   // ---- images, canvas ----
 
   get width(): number {
+    if (this.host.type === 'canvas') return bitmapSide(this.getAttribute('width'), DEFAULT_WIDTH);
     const attr = this.getAttribute('width');
     return attr !== null && Number.isFinite(parseFloat(attr)) ? parseFloat(attr) : this.offsetWidth;
   }
+  set width(value: number) {
+    this.setAttribute('width', String(Math.max(0, Math.floor(Number(value)) || 0)));
+    if (this.host.type === 'canvas') resetCanvasOf(this.host);
+  }
   get height(): number {
+    if (this.host.type === 'canvas') return bitmapSide(this.getAttribute('height'), DEFAULT_HEIGHT);
     const attr = this.getAttribute('height');
     return attr !== null && Number.isFinite(parseFloat(attr)) ? parseFloat(attr) : this.offsetHeight;
+  }
+  set height(value: number) {
+    this.setAttribute('height', String(Math.max(0, Math.floor(Number(value)) || 0)));
+    if (this.host.type === 'canvas') resetCanvasOf(this.host);
   }
   get src(): string {
     return this.getAttribute('src') ?? '';
@@ -506,8 +528,22 @@ export class DomElement {
   pause(): void {}
   load(): void {}
   async decode(): Promise<void> {}
-  getContext(): never {
-    throw new Error('canvas is not supported yet: <canvas> and WebGL are a later phase of Kinetograph, and there is no Chrome to fall back to');
+  // `<canvas>`: the 2D context records what is drawn, and the painter draws it (docs/SCENE.md, "canvas").
+  getContext(type: string): CanvasContext2D | null {
+    if (this.host.type !== 'canvas') throw new TypeError(`getContext is not a function: <${this.host.type}> is not a canvas`);
+    return contextOfHost(this.host, String(type), () => ({ width: this.width, height: this.height }), this);
+  }
+  toDataURL(): string {
+    return canvasToDataUrl(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height });
+  }
+  toBlob(callback: (blob: Blob | null) => void): void {
+    callback(canvasToBlob(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height }));
+  }
+  /** What `drawImage` reads of this element: a canvas's commands, an image's file. */
+  [CANVAS_SOURCE](): CanvasPicture | null {
+    if (this.host.type === 'canvas') return canvasPictureOf(this.host, { width: this.width, height: this.height });
+    if (this.host.type === 'img') return pictureOfImage(this.src);
+    return null;
   }
 
   // ---- SVG ----
@@ -630,6 +666,7 @@ export function affineOf(transform: string | null): [number, number, number, num
 // ---- image sizes (for `img.naturalWidth` and `new Image()`) ----
 
 let imageSizeOf: (src: string) => { width: number; height: number } | null = () => null;
+let pictureOfImage: (src: string) => CanvasPicture | null = () => null;
 let fileOf: (src: string) => string | null = () => null;
 
 /** The web-API module hands over how a `src` names a project file. */
@@ -643,6 +680,10 @@ function projectFileOf(src: string): string | null {
 /** The web-API module hands over how to read an image file's size (it knows the project's directories). */
 export function setImageSizeReader(fn: (src: string) => { width: number; height: number } | null): void {
   imageSizeOf = fn;
+}
+/** The web-API module hands over how `drawImage` reads an image: its file and size. */
+export function setImagePictureReader(fn: (src: string) => CanvasPicture | null): void {
+  pictureOfImage = fn;
 }
 function imageSize(src: string): { width: number; height: number } | null {
   return imageSizeOf(src);

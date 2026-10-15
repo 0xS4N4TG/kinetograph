@@ -6,6 +6,7 @@
 export {
   Audio,
   Camera,
+  Canvas,
   Ellipse,
   Gif,
   Image,
@@ -24,6 +25,7 @@ export {
 export type {
   AudioProps,
   CameraProps,
+  CanvasProps,
   CharStyleFn,
   CommonProps,
   EllipseProps,

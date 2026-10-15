@@ -130,6 +130,13 @@ export interface LottieProps extends CommonProps {
   playbackRate?: number;
 }
 
+export interface CanvasProps extends CommonProps {
+  width: number;
+  height: number;
+  /** Called with the canvas's real 2D context after each render: Chrome draws it natively. */
+  draw: (context: any) => void;
+}
+
 export interface CameraProps {
   perspective: Num;
   x?: Num;

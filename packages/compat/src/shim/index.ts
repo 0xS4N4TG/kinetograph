@@ -19,6 +19,7 @@ export {
 export { deliverMediaEvents } from './media-events.js';
 export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf } from './web.js';
 export { setPathMeasure } from './geometry.js';
+export { canvasEnvironment, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';
 export { imageSizeOfBytes } from './image-size.js';
 export { matches, queryAll, parseSelectorList } from './selector.js';
