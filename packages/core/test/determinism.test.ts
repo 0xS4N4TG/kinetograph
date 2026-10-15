@@ -77,6 +77,19 @@ describe('Math.random', () => {
   });
 });
 
+describe('crypto', () => {
+  it('draws getRandomValues and randomUUID from the seeded generator', () => {
+    setVirtualFrame(7, 30);
+    const a = [crypto.randomUUID(), Array.from(crypto.getRandomValues(new Uint8Array(4)))];
+    setVirtualFrame(7, 30);
+    const b = [crypto.randomUUID(), Array.from(crypto.getRandomValues(new Uint8Array(4)))];
+    expect(a).toEqual(b);
+    expect(a[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    setVirtualFrame(8, 30);
+    expect(crypto.randomUUID()).not.toBe(a[0]);
+  });
+});
+
 describe('virtual timers', () => {
   it('fires setTimeout callbacks in due order when the clock passes them', () => {
     const log: string[] = [];
