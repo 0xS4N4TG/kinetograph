@@ -620,7 +620,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
-| `doctor` | reports that compat mode is not built yet (Phase 5) |
+| `doctor [entry] [--range] [--compare N]` | without an entry, the install report; with one, which frames render natively and which go to Chrome, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
 
