@@ -181,7 +181,8 @@ function discover(): CompositionEntry[] {
   }
   const Root = root;
   const collector: Collector = { entries: [] };
-  const scene = createSceneRoot();
+  // Only the compositions are wanted: whatever DOM the Root renders is not drawn.
+  const scene = createSceneRoot({ ignoreDom: true });
   try {
     scene.render(
       <DiscoveryContext.Provider value={collector}>

@@ -1,6 +1,9 @@
 // AbsoluteFill and Img: Remotion's two CSS-shaped components, mapped onto the
 // engine's layers (docs/AUTHORING.md §7.1). Only the style keys that mean
-// something to a layer are read; any other key is ignored with one warning.
+// something to a layer are read, and with only those keys the mapping is the
+// layers' (the hand ports render as they did). With any other key they are the
+// DOM elements they are in Remotion, `div` and `img`, which compat mode maps
+// (docs/COMPAT.md §4.1).
 
 import type { ReactNode } from 'react';
 import { Image, Layer, Rect } from '@kinetograph/react';
@@ -25,6 +28,16 @@ export function resetStyleWarnings(): void {
 }
 
 const FLEX_KEYS = ['flexDirection', 'justifyContent', 'alignItems', 'flexWrap'] as const;
+
+/** The `AbsoluteFill` style keys the layer mapping reads. */
+const FILL_KEYS = new Set<string>([...FLEX_KEYS, 'display', 'gap', 'padding', 'opacity', 'backgroundColor', 'background']);
+/** The `Img` style keys the layer mapping reads. */
+const IMG_KEYS = new Set<string>(['width', 'height', 'objectFit']);
+
+/** Whether `style` sets a key outside `keys` (a key set to undefined or null is not set). */
+function hasOtherKeys(style: FillStyle, keys: ReadonlySet<string>): boolean {
+  return Object.entries(style).some(([key, value]) => value !== undefined && value !== null && !keys.has(key));
+}
 
 /** `10`, `'10px'` -> 10; anything else -> null. */
 function px(value: unknown): number | null {
@@ -55,6 +68,8 @@ function isTransparent(color: string): boolean {
 export interface AbsoluteFillProps {
   style?: FillStyle;
   id?: string;
+  /** Not read by the layer mapping: with it, `AbsoluteFill` is a `div` (and compat mode reports the class). */
+  className?: string;
   children?: ReactNode;
 }
 
@@ -62,8 +77,16 @@ export interface AbsoluteFillProps {
  * Covers the whole composition and stacks its children in a column, as the
  * CSS box does; it overlays its siblings instead of sharing the flow with them.
  */
-export function AbsoluteFill({ style = {}, id, children }: AbsoluteFillProps): ReactNode {
+export function AbsoluteFill({ style = {}, id, className, children }: AbsoluteFillProps): ReactNode {
   const { width, height } = useVideoConfig();
+  if (className !== undefined || hasOtherKeys(style, FILL_KEYS)) {
+    // Remotion's own: a column flex box over the whole page, the author's style laid over it.
+    return (
+      <div id={id} className={className} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...style }}>
+        {children}
+      </div>
+    );
+  }
   const layout: Layout = { flexDirection: 'column', width, height };
   let opacity: number | undefined;
   let background: string | undefined;
@@ -89,8 +112,6 @@ export function AbsoluteFill({ style = {}, id, children }: AbsoluteFillProps): R
     } else if (key === 'backgroundColor' || key === 'background') {
       if (typeof value === 'string' && parseColor(value) !== null) background = value;
       else warnOnce('AbsoluteFill', key, `only a plain colour is supported, got "${value}"`);
-    } else {
-      warnOnce('AbsoluteFill', key, 'the engine has no such style; use a native element prop instead');
     }
   }
 
@@ -110,10 +131,15 @@ export interface ImgProps {
   width?: number;
   height?: number;
   id?: string;
+  /** Not read by the layer mapping: with it, `Img` is an `img` (and compat mode reports the class). */
+  className?: string;
 }
 
 /** An image whose CSS-style `width`, `height` and `objectFit` become the layer's box and fit. */
-export function Img({ src, style = {}, width, height, id }: ImgProps): ReactNode {
+export function Img({ src, style = {}, width, height, id, className }: ImgProps): ReactNode {
+  if (className !== undefined || hasOtherKeys(style, IMG_KEYS)) {
+    return <img id={id} className={className} src={src} width={width} height={height} style={style} />;
+  }
   const w = px(style.width) ?? width;
   const h = px(style.height) ?? height;
   const objectFit = style.objectFit;
@@ -121,10 +147,5 @@ export function Img({ src, style = {}, width, height, id }: ImgProps): ReactNode
   if (objectFit === 'fill' || objectFit === 'contain' || objectFit === 'cover') fit = objectFit;
   else if (objectFit === 'scale-down') fit = 'contain';
   else if (objectFit !== undefined) warnOnce('Img', 'objectFit', `"${objectFit}" is not supported, using the default`);
-  for (const key of Object.keys(style)) {
-    if (key !== 'width' && key !== 'height' && key !== 'objectFit') {
-      warnOnce('Img', key, 'the engine has no such style; use a native element prop instead');
-    }
-  }
   return <Image id={id} src={src} width={w} height={h} fit={fit} />;
 }

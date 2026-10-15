@@ -62,6 +62,7 @@ describe('syntheticEntry', () => {
       `export * from '@kinetograph/core';`,
       `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
       `export { setMediaProbe } from '@kinetograph/core/media-utils';`,
+      `export { setLayoutDom } from '@kinetograph/compat/dom';`,
     ]);
   });
 });

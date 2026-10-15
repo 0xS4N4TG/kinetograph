@@ -15,6 +15,7 @@ interface ProjectModule {
   setPublicDir(dir: string): void;
   setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
   setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
+  setLayoutDom(fn: typeof import('@kinetograph/native').layoutDom | null): void;
 }
 
 export interface FrameOutput {
@@ -91,6 +92,7 @@ async function loadProject(entry: string, bundleFile?: string): Promise<ProjectM
   }
   mod.setPublicDir(publicDir);
   mod.setLayoutText(native().layoutText);
+  mod.setLayoutDom(native().layoutDom);
   // A relative `src` is read from where the scenes' assets are (the entry's directory), not the working directory.
   mod.setMediaProbe((path, baseDir) => native().probeMedia(path, baseDir ?? dirname(entry)));
   return mod;

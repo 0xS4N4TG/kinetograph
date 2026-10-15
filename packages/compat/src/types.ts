@@ -18,6 +18,11 @@ export interface IslandContext {
   fonts: Record<string, string>;
   /** Emits a native (`kg-*`) element found inside the island, as the reconciler would at `path`. */
   emitNative(node: DomNode, path: string): LayerJson | null;
+  /**
+   * Claims an explicit `id` of a DOM element as a layer id: true when it is free (and so is used), false when another
+   * layer has it. Without it every explicit id is taken. (An addition to the contract: ids are unique across a tree.)
+   */
+  claimId?(id: string): boolean;
 }
 
 export interface IslandResult {

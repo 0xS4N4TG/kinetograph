@@ -75,12 +75,11 @@ describe('AbsoluteFill', () => {
     expect(b.children ?? []).toHaveLength(0);
   });
 
-  it('warns once per ignored key, however often it renders', () => {
-    renderAt(<AbsoluteFill style={{ zIndex: 3, fontFamily: 'x' }} />);
-    renderAt(<AbsoluteFill style={{ zIndex: 4 }} />);
-    expect(warn).toHaveBeenCalledTimes(2);
-    expect(String(warn.mock.calls[0]![0])).toContain('style.zIndex');
-    expect(String(warn.mock.calls[1]![0])).toContain('style.fontFamily');
+  it('warns once about a value it cannot map, however often it renders', () => {
+    renderAt(<AbsoluteFill style={{ gap: '2em' }} />);
+    renderAt(<AbsoluteFill style={{ gap: '3em' }} />);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain('style.gap');
   });
 
   it('warns about a background that is not a colour, and about display values it cannot do', () => {
@@ -113,9 +112,9 @@ describe('Img', () => {
     expect(img.fit).toBeUndefined();
   });
 
-  it('warns about style it cannot honour', () => {
-    renderAt(<Img src="/a.png" style={{ objectFit: 'none', borderRadius: 8 }} />);
-    expect(warn).toHaveBeenCalledTimes(2);
+  it('warns about an object fit it cannot do', () => {
+    renderAt(<Img src="/a.png" style={{ objectFit: 'none' }} />);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
 

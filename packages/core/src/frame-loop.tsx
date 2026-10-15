@@ -91,7 +91,7 @@ class Renderer implements FrameRenderer {
     // React state and virtual timers only move forward. Going back means starting the composition over.
     if (frame < this.lastFrame || this.scene === null) {
       this.scene?.unmount();
-      this.scene = createSceneRoot();
+      this.scene = createSceneRoot({ viewport: { width: config.width, height: config.height }, fonts: getFonts });
       this.lastFrame = -1;
       resetVirtualClock();
     }
