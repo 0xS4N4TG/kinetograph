@@ -71,6 +71,18 @@ impl std::fmt::Display for BuildError {
 
 impl std::error::Error for BuildError {}
 
+/// Parses an `IslandRequest`. A tree of elements can be deeper than serde_json's
+/// default limit of 128 levels, so the limit is off; the caller needs a stack
+/// for the depth (the addon runs islands on a thread with a large one).
+pub fn parse_request(json: &str) -> Result<IslandRequest, serde_json::Error> {
+    use serde::Deserialize as _;
+    let mut de = serde_json::Deserializer::from_str(json);
+    de.disable_recursion_limit();
+    let request = IslandRequest::deserialize(&mut de)?;
+    de.end()?;
+    Ok(request)
+}
+
 /// Switches on the CSS features Chrome has and Stylo ships off. They are
 /// process-wide and must be set before a document (its style system) is made.
 fn enable_css_features() {
