@@ -263,3 +263,59 @@ export function Audio(props: AudioProps) {
   };
   return createElement('kg-audio', { id: props.id, clip });
 }
+
+// ---- <Video>, <OffthreadVideo>, <Gif> (docs/AUTHORING.md §11.3, stream 2) ----
+
+export interface VideoProps extends CommonProps {
+  src: string;
+  width?: Num;
+  height?: Num;
+  fit?: 'fill' | 'contain' | 'cover';
+  /** Remotion's: `width`, `height` and `objectFit` are read; other keys are ignored. */
+  style?: Record<string, unknown>;
+  trimBefore?: number;
+  trimAfter?: number;
+  /** Older names of `trimBefore` and `trimAfter`. */
+  startFrom?: number;
+  endAt?: number;
+  playbackRate?: number;
+  loop?: boolean;
+  /** A number, or a function of the frame within the video's Sequence. */
+  volume?: number | ((frame: number) => number);
+  muted?: boolean;
+  /** Accepted and ignored. */
+  transparent?: boolean;
+  toneMapped?: boolean;
+  pauseWhenBuffering?: boolean;
+  acceptableTimeShiftInSeconds?: number;
+  onError?: (error: Error) => void;
+  showInTimeline?: boolean;
+  name?: string;
+  delayRenderTimeoutInMilliseconds?: number;
+}
+
+export function Video(_props: VideoProps): ReactNode {
+  throw new Error('not implemented: <Video> (docs/AUTHORING.md §11.3)');
+}
+
+/** The same element as `<Video>`: every frame is decoded off the main thread anyway. */
+export const OffthreadVideo = Video;
+
+export interface GifProps extends CommonProps {
+  src: string;
+  width?: Num;
+  height?: Num;
+  fit?: 'fill' | 'contain' | 'cover';
+  style?: Record<string, unknown>;
+  /** Default 1. */
+  playbackRate?: number;
+  /** Default `loop`. */
+  loopBehavior?: 'loop' | 'pause-after-finish' | 'unmount-after-finish';
+  /** Accepted and ignored. */
+  onLoad?: (info: unknown) => void;
+  onError?: (error: Error) => void;
+}
+
+export function Gif(_props: GifProps): ReactNode {
+  throw new Error('not implemented: <Gif> (docs/AUTHORING.md §11.3)');
+}

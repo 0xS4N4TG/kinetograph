@@ -1,4 +1,4 @@
-# Authoring contract (Phase 3)
+# Authoring contract (Phases 3 and 4)
 
 Written 2026-10-14 by the Phase 3 orchestrator. This is the contract the five Phase 3 streams build against
 (`HANDOFF.md` §8, "Phase 3 in a cloud session"): the package layout, the addon's JS API, the authoring API, and how
@@ -156,7 +156,7 @@ interface InspectResult {
   layers: InspectLayer[];                    // bottom first, as in the scene
 }
 interface InspectLayer {
-  id: string; type: string;                  // 'shape' | 'text' | 'image' | 'group' | 'noise' | 'meshGradient' | 'lottie'
+  id: string; type: string;                  // 'shape' | 'text' | 'image' | 'group' | 'noise' | 'meshGradient' | 'lottie' | 'video' | 'gif'
   opacity: number; blendMode: string;
   transform: { x: number; y: number; scale: number; rotation: number; anchorX: number; anchorY: number;
                rotateX: number; rotateY: number; z: number };   // resolved, after layout (§4.1)
@@ -170,7 +170,8 @@ interface InspectLayer {
   motionBlur: { samples: number; shutter: number } | null;
   text?: { text: string; font: string; size: number; width: number; height: number; maxWidth: number | null;
            lines: { text: string; top: number; bottom: number; baseline: number }[] };
-  src?: string;                              // image, lottie
+  src?: string;                              // image, lottie, video, gif
+  media?: { time: number };                  // video, gif: the source time in seconds (§11.1)
   children?: InspectLayer[];                 // group
 }
 ```
@@ -620,6 +621,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
 | `doctor` | reports that compat mode is not built yet (Phase 5) |
+| `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
 
 Bundling: esbuild bundles the entry with a synthetic entry that imports `@kinetograph/core/determinism/install` first,
@@ -653,3 +655,183 @@ fallback), writes PNGs and prints timings as JSON. Run on the M4.
 - `@kinetograph/react` has snapshot tests of the emitted JSON; `@kinetograph/core` renders small compositions to
   `FrameResult`s and checks them; the CLI's GPU-free paths (bundling, `compositions`, `inspect`, `lint`, `effects`,
   argument parsing) are tested in the cloud.
+
+## 11. Phase 4: video layers and the studio
+
+Written 2026-10-15 by the Phase 4 orchestrator (`HANDOFF.md` §8, "Phase 4 in a cloud session"). §1's rules hold:
+the stubs committed with this section have final names and types; streams fill the bodies, may add exports, and do
+not edit another stream's files. `packages/studio/src/protocol.ts` is complete and belongs to the orchestrator.
+
+| Path | Owner | What |
+|---|---|---|
+| `crates/core` (`video.rs`, `gif.rs`, scene, resolve, render, inspect), `crates/core/tests/` | stream 1 `feat/video-layers` | the `video` and `gif` layers of SCENE.md; `ffmpeg-next` 9 becomes a dependency of `kinetograph-core`, and `image` gets its `gif` feature |
+| `crates/node/src/media.rs` | stream 1 | `probeMedia`, `decodeAudio` (§11.2) |
+| `packages/react` (`<Video>`, `<OffthreadVideo>`, `<Gif>`), `packages/core` (`/gif`, `/media-utils`), `packages/audio` (video sound) | stream 2 `feat/video-elements` | §11.3 |
+| `crates/node/src/preview.rs`, `packages/studio/src/` but `protocol.ts`, the CLI's `studio` command, `kg-sequence` in `packages/react` and its use in `packages/core` | stream 3 `feat/studio-server` | §11.2 `preview`, §11.4, §11.5 |
+| `packages/studio/ui` | stream 4 `feat/studio-ui` | §11.6 |
+
+`crates/node/src/lib.rs` declares the new exports with their final signatures, calling `media.rs` and `preview.rs`,
+whose committed bodies return a `not implemented` error; `index.d.ts` is regenerated from it.
+
+### 11.1 Scene: `video` and `gif` layers
+
+As SCENE.md's [video](SCENE.md#video) and [gif](SCENE.md#gif) sections, typed as `VideoLayer` and `GifLayer` in
+`@kinetograph/scene`. `InspectLayer.type` gains `'video' | 'gif'`; both have `src`, and `media: { time: number }`,
+the source time in seconds that SCENE.md's rules give at the inspected frame (computed, nothing decoded).
+`inspect` and `validateScene` read containers (sizes, durations) but never decode a picture.
+
+### 11.2 Addon additions
+
+```ts
+// ---- CPU only ----
+export interface MediaInfo {
+  kind: 'video' | 'gif';
+  width: number; height: number;           // the stream's coded size; a GIF's logical screen
+  durationInSeconds: number;               // video: the stream's, else the container's; gif: the sum of the delays
+  fps: number | null;                      // video: the stream's average frame rate; gif: null
+  frames: number | null;                   // video: the container's count if it has one; gif: the picture count
+  hasAudio: boolean;                       // gif: false
+  videoCodec: string | null;               // FFmpeg's codec name ('h264'); gif: 'gif'
+  audioCodec: string | null;
+}
+/** Reads a video's or GIF's header (no decoding). `IO` for a missing file, `INVALID_ARG` for one that is neither. */
+export function probeMedia(path: string, baseDir?: string): MediaInfo;
+/** The first audio stream of any file FFmpeg reads, decoded and resampled (swresample) to `sampleRate`, keeping its
+ *  channel count (mono or stereo; more channels are downmixed to stereo). null when the file has no audio stream. */
+export function decodeAudio(path: string, sampleRate: number, baseDir?: string): AudioPcm | null;
+
+// ---- GPU ----
+export interface PreviewOptions {
+  /** 0 < scale <= 1, default 1. The output is round(width * scale) x round(height * scale), at least 1 x 1. */
+  scale?: number;
+  /** Default 'jpeg'. JPEG is flattened over black; PNG keeps alpha. */
+  format?: 'jpeg' | 'png';
+  /** JPEG quality 1..=100, default 80. */
+  quality?: number;
+}
+export interface PreviewImage { width: number; height: number; mime: 'image/jpeg' | 'image/png'; data: Buffer }
+class Renderer {
+  /** One frame rendered at full size, exactly as `rgba`, then box-filtered down to `scale` (premultiplied sRGB
+   *  values averaged over each output pixel's footprint) and encoded. Pixels are the render's. */
+  preview(sceneJson: string, frame: number, options?: PreviewOptions, baseDir?: string): PreviewImage;
+}
+```
+
+Errors are §3's codes: a bad `scale`, `format` or `quality` is `INVALID_ARG`. As in §3, the committed `index.d.ts`
+wins where its form differs from this sketch: there a `null` above is an absent field, and the string unions are
+`string`.
+
+### 11.3 `<Video>`, `<OffthreadVideo>`, `<Gif>` (stream 2)
+
+Written from Remotion's documented props. Exported from `@kinetograph/react` and re-exported by `@kinetograph/core`
+(so `remotion`'s `Video` and `OffthreadVideo` resolve to them); `<OffthreadVideo>` is the same component.
+
+| Prop | JSON |
+|---|---|
+| common props of §6.3 | as there |
+| `src` | `src` (a `staticFile` path is absolute) |
+| `width`, `height`, `fit`, or `style.width`, `style.height`, `style.objectFit` (as `Img`) | `width`, `height`, `fit` |
+| (the timeline) | `from` = the absolute frame of the clip's frame 0 (as `<Audio>`); `frame` = the absolute frame, set only inside a `<Freeze>` |
+| `trimBefore`, `trimAfter` (and the older `startFrom`, `endAt`) | `trimBefore`, `trimAfter` |
+| `playbackRate` | `playbackRate` |
+| `loop` | `loop` |
+| `volume` (number or `(frame) => number`), `muted` | not in the layer: an `AudioClipJson` with `video: true` in `RenderedTree.audio`, with the same `id` |
+| `transparent`, `toneMapped`, `pauseWhenBuffering`, `acceptableTimeShiftInSeconds`, `onError`, `showInTimeline`, `name`, `delayRenderTimeoutInMilliseconds` | accepted and ignored |
+
+`AudioClipJson` gains `video?: boolean`. `renderAudio` (§8) decodes a clip with `video: true` through
+`decodeAudio(src, sampleRate)` instead of `decodeAudioData`; a file without sound plays silence. Volume, mute,
+trims, rate, loop and `<Freeze>` work as for `<Audio>`.
+
+`@kinetograph/core/gif` is `@remotion/gif`: `Gif` (`src`, `width`, `height`, `fit` (default `fill`), `style`,
+`playbackRate` (default 1), `loopBehavior`: `loop` (default), `pause-after-finish`, `unmount-after-finish`; `onLoad`,
+`onError` accepted) emits a `gif` layer with `time = frame / fps * playbackRate` and `loop = loopBehavior ===
+'loop'`, and renders nothing past the GIF's duration with `unmount-after-finish`. `getGifDurationInSeconds(src):
+Promise<number>`. `@kinetograph/core/media-utils` is `@remotion/media-utils`' `getVideoMetadata(src): Promise<{
+durationInSeconds, width, height, aspectRatio, isRemote: false, fps }>`. Both read `probeMedia`, which the host
+passes in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the
+CLI's synthetic entry re-exports next to `setLayoutText`.
+
+### 11.4 Timeline data (stream 3)
+
+`<Sequence>` (and so `Series`, `Loop` and `TransitionSeries`) records itself in the tree whether or not it is
+showing, as a `kg-sequence` host element:
+
+```ts
+interface SequenceJson {
+  key: string;              // `${parent key ?? ''}/${name ?? 'Sequence'}@${from}+${durationInFrames}`, stable across frames
+  name: string | null;      // the `name` prop
+  from: number;             // the absolute frame of the Sequence's frame 0
+  durationInFrames: number; // clamped to what is left of the parent's, so always finite
+  parent: string | null;    // key of the enclosing Sequence
+  layer: string | null;     // id of the group its children are in on this frame; null when not showing or layout="none"
+}
+```
+
+`TimelineState` gains `sequence?: string | null` (the enclosing Sequence's key; unset or null outside one). `RenderedTree` and `FrameResult`
+gain `sequences: SequenceJson[]` (tree order). Automatic ids do not change: `kg-sequence` elements of Sequences that
+are not showing take no place in the index path, a showing one takes the place its `<Layer>` took, and one with
+`layout="none"` passes its children's places to its parent. Sequences of a Sequence that is not showing are not
+rendered, so a whole timeline is the union over frames; two entries with one `key` are one.
+
+### 11.5 The studio server (stream 3)
+
+`kinetograph studio <entry> [--port 3000] [--host 127.0.0.1] [--no-open] [--props <json>]` (the CLI command loads
+`@kinetograph/studio` with a dynamic import) calls `startStudio({ entry, port, host, open, props })` from
+`@kinetograph/studio`, which resolves to `{ url, close() }`. A taken port is an `INVALID_ARG` error.
+
+- **Isolation.** The project runs in a `worker_threads` worker, so the determinism shim patches only the worker's
+  globals; the server thread keeps real timers. The worker owns the preview `Renderer` (one GPU setup) and a
+  `FrameRenderer` per (composition, props). Render jobs run in a second worker, one job at a time, with their own
+  `Renderer`, so preview stays live while a job runs.
+- **Build and reload.** esbuild (the CLI's `bundleProject` options, in watch mode) rebuilds on every save of a file
+  the bundle reads. Each successful build gets the next `buildId` (from 1); the worker is replaced by one loading the
+  new bundle, then `reload` is broadcast. A failed build keeps the last good one running and broadcasts
+  `buildError`; the next good build clears it.
+- **Frames.** Preview frames come from `Renderer.preview`: the UI asks for scale 0.5 JPEG while playing or
+  scrubbing and scale 1 PNG when paused. Per connection, a frame request that has not started when a newer one
+  arrives is dropped without a reply (latest wins).
+- **Timeline.** `/api/timeline` runs the JS stage for every frame of the composition (no addon) and returns the
+  union of `sequences` and each layer's frame ranges, cached per (buildId, composition, props).
+- The UI's built files (`packages/studio/ui/dist`) are served at `/`, with `index.html` for unknown non-API paths.
+
+The routes and messages are typed in `packages/studio/src/protocol.ts`; that file is the contract:
+
+| Route | Answer |
+|---|---|
+| `GET /api/project` | `ProjectInfo` |
+| `GET /api/compositions` | `CompositionInfo[]` (§7.2) |
+| `GET /api/frame?comp&frame&scale&format&props` | the image (`Content-Type` its mime, headers `X-Build`, `X-Frame`) |
+| `GET /api/inspect?comp&frame&props` | `InspectResult` (§3) |
+| `GET /api/timeline?comp&props` | `TimelineData` |
+| `GET /api/renders` | `RenderJob[]`, oldest first |
+| `POST /api/renders` (`RenderRequest`) | `RenderJob`, status 201 |
+| `DELETE /api/renders/:id` | `RenderJob` (cancelled; a finished job is left as it is) |
+| `WS /ws` | `ServerMessage`s out, `ClientMessage`s in |
+
+`props` is URL-encoded JSON merged over the composition's `defaultProps` (as `--props`). Errors are a JSON
+`{ error: StudioError }` with status 400 (`INVALID_ARG`), 404 (`NOT_FOUND`: route, composition or job), 409
+(`BUILD`: no good build yet) or 500 (anything else, with the addon's or CLI's code).
+
+### 11.6 The studio UI (stream 4)
+
+`packages/studio/ui` (`@kinetograph/studio-ui`, private): React 19 + Vite, Tailwind CSS v4 utilities only (no
+hand-written CSS beyond the Tailwind entry and shadcn's theme variables), shadcn/ui components (default style, zinc
+base colour, dark theme) under `src/components/ui/`, used wherever one fits; the timeline and the preview canvas are
+the only custom components. It imports the protocol types from `../src/protocol.ts` (type-only) and talks to the
+server through one client module (`src/api.ts`), so tests swap in a mock server.
+
+- Layout (shadcn resizable panels): composition list (left), preview with transport controls (centre), scene tree
+  and props panel (right, tabs), timeline (bottom), render queue (a tab or a dialog).
+- Transport: play and pause (space), frame step (arrow keys, shift for 10), scrub on the timeline ruler, loop
+  toggle, a frame counter and timecode, and the fps the preview actually reaches. Playing paces frames at the
+  composition's fps and skips frames the server cannot keep up with; it never shows a frame older than the last.
+- Timeline: one row per Sequence (nested under its parent, labelled with `name`) and layer rows below, a playhead,
+  a ruler in frames; clicking a row selects that layer in the scene tree.
+- Scene tree: the `InspectResult` of the current frame; selecting a layer shows its resolved fields.
+- Props panel: a form for the composition's `defaultProps` (strings, numbers, booleans, colours as text; nested
+  objects as JSON); an edit re-renders the preview with the new `props`; reset restores the defaults.
+- Render queue: start a render of the current composition (range, output, props), the job list with progress, ETA
+  from `msPerFrame`, cancel, and the output path when done.
+- A `reload` message refetches compositions and re-renders the current frame; `buildError` shows the error over the
+  preview until the next good build.
+- Built by `vite build` into `ui/dist`. Tests: vitest + Testing Library + jsdom against the mock server.

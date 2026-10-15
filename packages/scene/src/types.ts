@@ -451,6 +451,43 @@ export interface LottieLayer extends LayerBase {
   loop?: boolean;
 }
 
+export interface VideoLayer extends LayerBase {
+  type: 'video';
+  /** Any file FFmpeg reads with a video stream, relative to the scene. */
+  src: string;
+  /** Both left out: the stream's size; one left out keeps its aspect ratio. */
+  width?: Num;
+  height?: Num;
+  /** Default `fill`. */
+  fit?: 'fill' | 'contain' | 'cover';
+  /** The scene frame the clip's clock reads. Default: the frame being rendered. */
+  frame?: Num;
+  /** The scene frame of the clip's frame 0. Default 0. */
+  from?: number;
+  /** Scene frames skipped at the start of the file. Default 0. */
+  trimBefore?: number;
+  /** Scene frames from the start of the file at which the clip ends. Default: the stream's end. */
+  trimAfter?: number;
+  /** Above 0, default 1. */
+  playbackRate?: number;
+  /** Default false. */
+  loop?: boolean;
+}
+
+export interface GifLayer extends LayerBase {
+  type: 'gif';
+  /** A `.gif`, relative to the scene. */
+  src: string;
+  width?: Num;
+  height?: Num;
+  /** Default `fill`. */
+  fit?: 'fill' | 'contain' | 'cover';
+  /** Seconds into the animation. Default: the frame's time. */
+  time?: Num;
+  /** Default true. */
+  loop?: boolean;
+}
+
 export type LayerJson =
   | ShapeLayer
   | TextLayer
@@ -458,7 +495,9 @@ export type LayerJson =
   | GroupLayer
   | NoiseLayer
   | MeshGradientLayer
-  | LottieLayer;
+  | LottieLayer
+  | VideoLayer
+  | GifLayer;
 export type LayerType = LayerJson['type'];
 
 // ---- scene ----
@@ -502,4 +541,21 @@ export interface AudioClipJson {
   volume: number;
   loop: boolean;
   muted: boolean;
+  /** The sound of a `<Video>`: decoded with the addon's `decodeAudio` (docs/AUTHORING.md §11.3). */
+  video?: boolean;
+}
+
+/** A `<Sequence>` as the timeline sees it (docs/AUTHORING.md §11.4). */
+export interface SequenceJson {
+  /** `${parent key ?? ''}/${name ?? 'Sequence'}@${from}+${durationInFrames}`, stable across frames. */
+  key: string;
+  name: string | null;
+  /** The absolute frame of the Sequence's frame 0. */
+  from: number;
+  /** Clamped to what is left of the parent's, so always finite. */
+  durationInFrames: number;
+  /** Key of the enclosing Sequence. */
+  parent: string | null;
+  /** Id of the group its children are in on this frame; null when not showing or with `layout="none"`. */
+  layer: string | null;
 }

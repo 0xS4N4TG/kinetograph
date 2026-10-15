@@ -9,6 +9,7 @@ import { CliError, toErrorObject } from './errors.js';
 export { createMcpServer, toolCommands, toolName } from './mcp.js';
 export { bundleProject, resolveSpecifier, syntheticEntry } from './bundle.js';
 export { CliError } from './errors.js';
+export type { InspectLayer, InspectResult } from './native.js';
 
 export interface Io {
   out(text: string): void;

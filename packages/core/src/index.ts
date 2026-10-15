@@ -24,6 +24,9 @@ export {
   Text,
   TimelineContext,
   useTimeline,
+  Video,
+  OffthreadVideo,
+  Gif,
 } from '@kinetograph/react';
 export type {
   AudioProps,
@@ -41,6 +44,8 @@ export type {
   TextProps,
   TimelineState,
   VideoConfig,
+  VideoProps,
+  GifProps,
 } from '@kinetograph/react';
 
 // ---- time ----

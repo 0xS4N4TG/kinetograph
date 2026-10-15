@@ -9,6 +9,7 @@ import {
   type AudioClipJson,
   type CameraJson,
   type CharStyle,
+  type SequenceJson,
   type Effect,
   type LayerJson,
   type MotionBlurJson,
@@ -34,6 +35,8 @@ export interface RenderedTree {
   layers: LayerJson[];
   camera: CameraJson | null;
   audio: AudioClipJson[];
+  /** Every `<Sequence>` in the tree, showing or not, in tree order (docs/AUTHORING.md §11.4). */
+  sequences: SequenceJson[];
 }
 
 /** The name of an element as a user writes it, for error messages. */
@@ -279,5 +282,5 @@ export function emit(roots: HostNode[]): RenderedTree {
   if (emitter.cameras.length > 1) {
     throw new Error(`Only one <Camera> is allowed per tree, found ${emitter.cameras.length}`);
   }
-  return { layers, camera: emitter.cameras[0] ?? null, audio: emitter.audio };
+  return { layers, camera: emitter.cameras[0] ?? null, audio: emitter.audio, sequences: [] };
 }

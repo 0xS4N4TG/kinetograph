@@ -3,7 +3,7 @@
 //! is specified in `docs/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
-//! `parseRange`, `version`) never open a device; `new Renderer()` does, once,
+//! `parseRange`, `probeMedia`, `decodeAudio`, `version`) never open a device; `new Renderer()` does, once,
 //! and every scene given to it afterwards reuses that setup.
 //!
 //! Every call is synchronous and runs on the JS thread. A thrown error is an
@@ -12,6 +12,8 @@
 mod bench;
 mod error;
 mod layout;
+mod media;
+mod preview;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -188,6 +190,41 @@ pub fn parse_range(range: String, duration_in_frames: f64) -> Result<Vec<u32>> {
     Ok(vec![first, last])
 }
 
+/// What `probeMedia` reads from a video's or GIF's header (docs/AUTHORING.md §11.2).
+#[napi(object)]
+pub struct MediaInfo {
+    /// `video` or `gif`.
+    pub kind: String,
+    pub width: u32,
+    pub height: u32,
+    pub duration_in_seconds: f64,
+    /// A video stream's average frame rate; `null` for a GIF.
+    pub fps: Option<f64>,
+    /// The container's picture count, if it has one; a GIF's picture count.
+    pub frames: Option<u32>,
+    pub has_audio: bool,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+}
+
+/// Reads a video's or GIF's header, without decoding a picture.
+#[napi]
+pub fn probe_media(path: String, base_dir: Option<String>) -> Result<MediaInfo> {
+    media::probe_media(&resolve_base(base_dir).join(path))
+}
+
+/// The first audio stream of a file, decoded and resampled to `sampleRate`;
+/// `null` when the file has none.
+#[napi]
+pub fn decode_audio(
+    path: String,
+    sample_rate: f64,
+    base_dir: Option<String>,
+) -> Result<Option<AudioPcm>> {
+    let sample_rate = count("sampleRate", sample_rate)?;
+    media::decode_audio(&resolve_base(base_dir).join(path), sample_rate)
+}
+
 // ---- GPU ----
 
 #[napi(object)]
@@ -281,6 +318,26 @@ pub struct RgbaFrame {
     pub width: u32,
     pub height: u32,
     /// Straight-alpha sRGB RGBA8, `width * height * 4` bytes.
+    pub data: Buffer,
+}
+
+#[napi(object)]
+#[derive(Default)]
+pub struct PreviewOptions {
+    /// 0 < scale <= 1, default 1.
+    pub scale: Option<f64>,
+    /// `jpeg` (default) or `png`.
+    pub format: Option<String>,
+    /// JPEG quality 1..=100, default 80.
+    pub quality: Option<f64>,
+}
+
+#[napi(object)]
+pub struct PreviewImage {
+    pub width: u32,
+    pub height: u32,
+    /// `image/jpeg` or `image/png`.
+    pub mime: String,
     pub data: Buffer,
 }
 
@@ -378,6 +435,25 @@ impl Renderer {
             .and_then(|f| f.encode_png())
             .map_err(from_core)?;
         Ok(Buffer::from(png))
+    }
+
+    /// One frame rendered at full size, box-filtered down to `scale` and
+    /// encoded as JPEG or PNG, for the studio's preview.
+    #[napi]
+    pub fn preview(
+        &mut self,
+        scene_json: String,
+        frame: f64,
+        options: Option<PreviewOptions>,
+        base_dir: Option<String>,
+    ) -> Result<PreviewImage> {
+        let frame = count("frame", frame)?;
+        let options = options.unwrap_or_default();
+        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let mut gpu = self.shared.idle()?;
+        gpu.set_scene(scene).map_err(from_core)?;
+        let rendered = gpu.render_frame(frame).map_err(from_core)?;
+        preview::preview(&rendered.rgba, rendered.width, rendered.height, &options)
     }
 
     /// One frame as straight-alpha sRGB RGBA8.
