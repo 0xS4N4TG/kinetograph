@@ -15,6 +15,7 @@
 //! Anything that cannot be drawn as Chrome would is reported through
 //! `Painter::unsupported`, never drawn wrongly.
 
+mod audit;
 mod background;
 mod border;
 mod border_image;
@@ -102,6 +103,8 @@ pub(crate) struct Painter<'a> {
     pub canvas_node: Option<NodeId>,
     /// The farthest a blur reaches past its layer, for the scene's margin.
     pub margin_reach: f64,
+    /// Nodes `audit` has looked at.
+    audited: HashSet<u64>,
     /// The mode (`alpha` or `luminance`) of each mask source group, by id.
     pub mask_modes: std::collections::HashMap<String, &'static str>,
 }
@@ -120,6 +123,7 @@ impl<'a> Painter<'a> {
             camera: None,
             canvas_node: None,
             margin_reach: 0.0,
+            audited: HashSet::new(),
             mask_modes: Default::default(),
         }
     }

@@ -49,6 +49,7 @@ impl<'a> Painter<'a> {
         let Some(style) = node.primary_styles() else {
             return Vec::new();
         };
+        self.audit(node, &style);
         if !self.is_visible(node) {
             return Vec::new();
         }
