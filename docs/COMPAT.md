@@ -63,6 +63,8 @@ function mapDomIsland(root: DomNode, context: IslandContext): IslandResult;     
 - **The containing box.** A DOM island is laid out as CSS would lay it out in a box the composition's size, as
   Remotion's root `div` is. A layout box from an enclosing native `<Layer layout>` is not known in TS (taffy computes
   it in Rust at resolve time), so an island inside one is laid out in the composition's box all the same.
+  Every top-level layer an island emits carries `layoutItem: { position: 'absolute' }`, so a native flex parent
+  (`AbsoluteFill`'s column, for one) does not move it again.
 - **Native elements inside DOM.** A native element inside a DOM element is a replaced box of its own box's size. A
   layer without a box (a group without `layout`) is 0 × 0. It is placed by CSS and drawn as it is.
 - **Constants.** Every number the mapping emits is a constant. DOM styles are read at the frame, so animation comes
