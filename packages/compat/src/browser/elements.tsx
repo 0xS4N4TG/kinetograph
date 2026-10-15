@@ -128,6 +128,17 @@ function gradientDef(gradient: Gradient, id: string, frame: number): ReactElemen
 function paintOf(paint: Paint | undefined, id: string, frame: number): { value: string; def: ReactElement | null } {
   if (paint === undefined) return { value: 'none', def: null };
   if (typeof paint === 'string') return { value: paint, def: null };
+  if (paint.type === 'image') {
+    // A picture fill: one tile of the pattern is the picture at its box. A side that does not repeat still tiles here.
+    const w = num(paint.width, frame, 1);
+    const h = num(paint.height, frame, 1);
+    const def = (
+      <pattern id={id} patternUnits="userSpaceOnUse" x={num(paint.x, frame, 0)} y={num(paint.y, frame, 0)} width={w} height={h}>
+        <image href={fileUrl(paint.src)} width={w} height={h} preserveAspectRatio="none" />
+      </pattern>
+    );
+    return { value: `url(#${id})`, def };
+  }
   const def = gradientDef(paint, id, frame);
   if (def === null) {
     warnOnce('gradient.conic', 'a conic gradient has no SVG form; the first stop colour is used in Chrome frames');
@@ -259,7 +270,7 @@ export function Text(props: TextProps): ReactElement {
     fontStyle: props.fontStyle ?? 'normal',
     fontSize: px(num(props.size, frame, 16)),
     lineHeight: props.lineHeight === undefined ? 'normal' : fmt(num(props.lineHeight, frame, 1)),
-    color: typeof colour === 'string' ? colour : (colour.stops[0]?.color ?? '#000000'),
+    color: typeof colour === 'string' ? colour : colour.type === 'image' ? '#000000' : (colour.stops[0]?.color ?? '#000000'),
     textAlign: props.align ?? 'left',
     whiteSpace: maxWidth === null ? 'pre' : 'pre-wrap',
     width: maxWidth === null ? 'max-content' : px(maxWidth),
