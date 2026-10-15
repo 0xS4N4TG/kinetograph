@@ -204,6 +204,42 @@ describe('the frame loop', () => {
     expect(getCompositions().find((c) => c.id === 'FromProps')).not.toHaveProperty('margin');
   });
 
+  it('puts the composition\'s background in every frame\'s scene, transparent when it has none', async () => {
+    registerRoot(() => (
+      <>
+        <Composition id="Dark" component={Mover} width={100} height={50} fps={24} durationInFrames={10} background="#14161c" />
+        <Composition
+          id="Lazy"
+          lazyComponent={async () => ({ default: Mover })}
+          width={100}
+          height={50}
+          fps={24}
+          durationInFrames={10}
+          background="white"
+          calculateMetadata={async () => ({ width: 64 })}
+        />
+        <Composition id="Plain" component={Mover} width={100} height={50} fps={24} durationInFrames={10} />
+      </>
+    ));
+    const dark = createFrameRenderer('Dark');
+    for (const frame of [0, 7, 3]) {
+      const { scene } = await dark.renderFrame(frame);
+      expect(scene.background).toBe('#14161c');
+      expect(JSON.parse(JSON.stringify(scene)).background).toBe('#14161c');
+    }
+    expect((await createFrameRenderer('Lazy').renderFrame(1)).scene.background).toBe('white');
+    expect((await createFrameRenderer('Plain').renderFrame(1)).scene.background).toBe('transparent');
+  });
+
+  it('rejects a background that is not a colour string', () => {
+    for (const background of ['', 0x14161c, null]) {
+      registerRoot(() => (
+        <Composition id="B" component={Mover} width={10} height={10} fps={30} durationInFrames={5} background={background as string} />
+      ));
+      expect(() => getCompositions()).toThrow(/"background" of composition "B".*colour string/);
+    }
+  });
+
   it('passes input props over the defaults', async () => {
     registerOne();
     const renderer = createFrameRenderer('Main', { inputProps: { label: 'override' } });
