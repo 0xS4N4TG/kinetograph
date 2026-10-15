@@ -89,7 +89,7 @@ pub struct IslandOutput {
     /// Scene layers (docs/SCENE.md) in paint order. `{"type": "native", "path", "x", "y", "width", "height"}` marks
     /// where a `Native` node's layers go.
     pub layers: Vec<Value>,
-    /// What could not be drawn as Chrome would draw it; the frame then goes to the Chrome fallback while it exists.
+    /// What could not be drawn as Chrome would draw it; the frame is drawn without it, or approximated, and the CLI warns.
     pub unsupported: Vec<Unsupported>,
     /// A scene camera, when the island needs one.
     pub camera: Option<Value>,
