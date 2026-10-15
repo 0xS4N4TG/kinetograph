@@ -33,6 +33,11 @@ export interface CompositionProps<P extends Record<string, unknown> = Record<str
    * the room it needs. A whole number, not negative. Default: none, each frame's margin is what its effects reach.
    */
   margin?: number;
+  /**
+   * The scene's background colour (SCENE.md `background`), the same in every frame. Unlike a full-size rect at the
+   * bottom, it also fills the margin, which `backdropBlur` at the canvas edge reads. Default: transparent.
+   */
+  background?: string;
   calculateMetadata?: (options: {
     defaultProps: P;
     props: P;
@@ -51,6 +56,7 @@ export type StillProps<P extends Record<string, unknown> = Record<string, unknow
 /** A registered composition, with what is needed to render it. */
 export interface CompositionEntry extends CompositionInfo {
   margin?: number;
+  background?: string;
   component?: ComponentType<any>;
   lazyComponent?: () => Promise<{ default: ComponentType<any> }>;
   calculateMetadata?: CompositionProps<any>['calculateMetadata'];
@@ -92,6 +98,13 @@ function checkMargin(id: string, value: unknown): number {
   return value;
 }
 
+function checkBackground(id: string, value: unknown): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`The "background" of composition "${id}" must be a colour string, but got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function checkFps(id: string, value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new TypeError(`The "fps" of composition "${id}" must be a positive number, but got ${JSON.stringify(value)}`);
@@ -112,6 +125,7 @@ function entryFrom(props: CompositionProps<any>, folder: string[], isStill: bool
     durationInFrames: isStill ? 1 : checkPositiveInteger(id, 'durationInFrames', props.durationInFrames),
     defaultProps: (props.defaultProps as Record<string, unknown> | undefined) ?? {},
     margin: props.margin === undefined ? undefined : checkMargin(id, props.margin),
+    background: props.background === undefined ? undefined : checkBackground(id, props.background),
     component: props.component,
     lazyComponent: props.lazyComponent,
     calculateMetadata: props.calculateMetadata,
@@ -224,6 +238,8 @@ export interface ResolvedComposition {
   component: ComponentType<any>;
   /** The `margin` prop, if the composition has one. */
   margin?: number;
+  /** The `background` prop, if the composition has one. */
+  background?: string;
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -261,6 +277,7 @@ export function resolveComposition(
     config,
     component,
     margin: entry.margin,
+    background: entry.background,
   });
   const metadata = entry.calculateMetadata
     ? entry.calculateMetadata({

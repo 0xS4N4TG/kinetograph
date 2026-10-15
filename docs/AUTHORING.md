@@ -485,7 +485,8 @@ Mapping onto the engine:
 ```ts
 export interface CompositionInfo { id: string; width: number; height: number; fps: number; durationInFrames: number;
                                    defaultProps: Record<string, unknown> }
-/** <Composition> also takes `margin?: number`: see "Pinning the margin" below. */
+/** <Composition> also takes `margin?: number` and `background?: string`: see "Pinning the margin" and "Background"
+    below. */
 export function getCompositions(): CompositionInfo[];         // after registerRoot ran
 export function registerFont(font: { family: string; path: string; weight?: number | string; style?: 'normal' | 'italic' }): void;
 export function getFonts(): Record<string, string>;           // fontKey → absolute path, every font registered
@@ -502,6 +503,12 @@ correctly, only with a rebuild. Set it to the largest reach of any frame. To fin
 (or, for an empty-layer trick like `dropShadow({ x: 44, blur: 0 })` that pins it, replace the trick with the prop).
 It depends on nothing but the composition, so any frame, in any order or range, is the same scene as in a full
 render. The prop is not a `calculateMetadata` result.
+
+**Background.** `<Composition background="#14161c">` (also `<Still>`; a colour string as SCENE.md's `background`
+takes it, checked to be a non-empty string when the composition is found, its syntax by the engine) puts that
+`background` in every frame's scene. Default `"transparent"`. Prefer it to a full-size rect at the bottom: the
+background also fills the margin, which `backdropBlur` and the other effects that read past the canvas edge see, and a
+rect does not.
 
 `registerFont` is also behind `@kinetograph/core/fonts` as `loadFont({ family, url, weight, style })` (Remotion's
 `@remotion/fonts`, with `url` a path). `@kinetograph/core/google-fonts` provides `makeGoogleFont(familyName)`, which
@@ -525,8 +532,8 @@ export function createFrameRenderer(compositionId: string, options?: { inputProp
 one `SceneRoot`, waits for open `delayRender` handles and font downloads (rendering again from `snapshot()` after
 they close), then, if `collectMotionTimes(layers, f)` is not empty, renders the whole composition at each of those
 times and calls `attachMotionFrames`, so a layer's own animated props blur too. The result's `scene` has the
-composition's `width`, `height`, `fps`, `durationInFrames`, `background: "transparent"`, `fonts: getFonts()`, the
-composition's `margin` when it has one, the tree's `camera` and `layers`.
+composition's `width`, `height`, `fps`, `durationInFrames`, its `background` (`"transparent"` without one),
+`fonts: getFonts()`, the composition's `margin` when it has one, the tree's `camera` and `layers`.
 
 ### 7.4 Determinism shim
 

@@ -75,7 +75,7 @@ class Renderer implements FrameRenderer {
 
   async renderFrame(frame: number): Promise<FrameResult> {
     if (this.disposed) throw new Error('This FrameRenderer was disposed');
-    const { config, component, margin } = await this.readyPromise;
+    const { config, component, margin, background } = await this.readyPromise;
     if (!Number.isInteger(frame) || frame < 0 || frame >= config.durationInFrames) {
       throw new RangeError(
         `Frame ${frame} is outside composition "${config.id}", which has ${config.durationInFrames} frames (0 to ${config.durationInFrames - 1})`,
@@ -126,7 +126,7 @@ class Renderer implements FrameRenderer {
       height: config.height,
       fps: config.fps,
       durationInFrames: config.durationInFrames,
-      background: 'transparent',
+      background: background ?? 'transparent',
       fonts: getFonts(),
       layers,
     };
