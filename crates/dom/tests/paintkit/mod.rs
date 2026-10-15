@@ -137,6 +137,14 @@ pub fn scene_json(out: &IslandOutput, w: u32, h: u32) -> Value {
     scene
 }
 
+/// Every layer, nested ones included.
+pub fn count_layers(layers: &[Value]) -> usize {
+    layers
+        .iter()
+        .map(|l| 1 + l["children"].as_array().map_or(0, |c| count_layers(c)))
+        .sum()
+}
+
 pub fn render_output(out: &IslandOutput, w: u32, h: u32) -> Frame {
     let json = scene_json(out, w, h).to_string();
     let scene = Scene::from_json(&json, repo_root().join("crates/dom/tests/assets"))

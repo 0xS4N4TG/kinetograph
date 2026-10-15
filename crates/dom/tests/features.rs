@@ -24,8 +24,9 @@ macro_rules! case {
         fn $name() {
             let body: String = $body;
             let (out, _frame, diff) = compare(stringify!($name), &body, $w, $h);
+            let n = paintkit::count_layers(&out.layers);
             println!(
-                "{}: unsupported {:?}; diff {:?}",
+                "{}: layers {n}; unsupported {:?}; diff {:?}",
                 stringify!($name),
                 out.unsupported,
                 diff
