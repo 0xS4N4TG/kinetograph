@@ -1,7 +1,7 @@
-// mapDomIsland end to end: React-shaped host nodes, the real parseStyle, the real layout.
+// mapLegacyIsland end to end: React-shaped host nodes, the real parseStyle, the real layout.
 
 import { describe, expect, it } from 'vitest';
-import { isDomElement, mapDomIsland, setLayoutDom } from '../../src/dom/index.js';
+import { isDomElement, mapLegacyIsland, setLayoutDom } from '../../src/dom/index.js';
 import type { DomNode } from '../../src/types.js';
 import { context, find, hasAddon, nativeLayout } from './helpers.js';
 
@@ -17,10 +17,10 @@ describe('isDomElement', () => {
   });
 });
 
-describe.skipIf(!hasAddon)('mapDomIsland', () => {
+describe.skipIf(!hasAddon)('mapLegacyIsland', () => {
   it('reads inline style objects as React passes them', () => {
     setLayoutDom(nativeLayout());
-    const result = mapDomIsland(
+    const result = mapLegacyIsland(
       node(
         'div',
         { style: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', backgroundColor: '#112233' } },
@@ -39,7 +39,7 @@ describe.skipIf(!hasAddon)('mapDomIsland', () => {
 
   it('draws text with a registered font and reports a class name', () => {
     setLayoutDom(nativeLayout());
-    const result = mapDomIsland(
+    const result = mapLegacyIsland(
       node('div', { className: 'title', style: { fontFamily: 'DM Sans, sans-serif', fontSize: 40, color: 'white', width: 500 } }, [text('Hello  world')]),
       context(),
     );
@@ -51,7 +51,7 @@ describe.skipIf(!hasAddon)('mapDomIsland', () => {
 
   it('reports what parseStyle cannot read, and skips the diagnostics of a display: none subtree', () => {
     setLayoutDom(nativeLayout());
-    const result = mapDomIsland(
+    const result = mapLegacyIsland(
       node('div', { style: { float: 'left', width: 10, height: 10 } }, [node('div', { style: { display: 'none', outline: '1px solid red' } })]),
       context(),
     );
@@ -61,7 +61,7 @@ describe.skipIf(!hasAddon)('mapDomIsland', () => {
   it('claims explicit ids, and falls back to the path for one that is taken', () => {
     setLayoutDom(nativeLayout());
     const taken = new Set<string>(['dup']);
-    const result = mapDomIsland(
+    const result = mapLegacyIsland(
       node('div', { id: 'card', style: { width: 10, height: 10, backgroundColor: 'red' } }, [
         node('div', { id: 'dup', style: { width: 5, height: 5, backgroundColor: 'red' } }),
         node('div', { id: '$reserved', style: { width: 5, height: 5, backgroundColor: 'red' } }),
@@ -77,7 +77,7 @@ describe.skipIf(!hasAddon)('mapDomIsland', () => {
   it('numbers native children among the element children, and lays the island out in the composition', () => {
     setLayoutDom(nativeLayout());
     const seen: string[] = [];
-    const result = mapDomIsland(
+    const result = mapLegacyIsland(
       node('div', { style: { padding: 10 } }, [
         text('  '),
         node('kg-rect', {}),
@@ -97,7 +97,7 @@ describe.skipIf(!hasAddon)('mapDomIsland', () => {
 
   it('is empty for a root with display none, and needs an element', () => {
     setLayoutDom(nativeLayout());
-    expect(mapDomIsland(node('div', { style: { display: 'none' } }), context())).toEqual({ layers: [], unsupported: [], camera: null });
-    expect(() => mapDomIsland(text('x'), context())).toThrow(/DOM element/);
+    expect(mapLegacyIsland(node('div', { style: { display: 'none' } }), context())).toEqual({ layers: [], unsupported: [], camera: null });
+    expect(() => mapLegacyIsland(text('x'), context())).toThrow(/DOM element/);
   });
 });

@@ -22,7 +22,11 @@ function loadLayout(): ((json: string) => string) | null {
 }
 const layoutDom = loadLayout();
 
-beforeAll(() => setLayoutDom(layoutDom));
+// These tests are about the Phase 5 mapping's output until the Rust path is verified (KINETOGRAPH_DOM_MAPPER).
+beforeAll(() => {
+  process.env.KINETOGRAPH_DOM_MAPPER = 'legacy';
+  setLayoutDom(layoutDom);
+});
 afterEach(() => setLayoutDom(layoutDom));
 
 /** Renders in a 1000 x 800 composition with one registered font. */

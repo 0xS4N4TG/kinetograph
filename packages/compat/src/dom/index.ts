@@ -1,100 +1,94 @@
-// `@kinetograph/compat/dom` (docs/COMPAT.md §4, §5): a DOM island parsed (`css`), laid out by the addon's
-// `layoutDom` and mapped onto plain layers. Parse, layout and map are separate steps so that the mapping can be
-// tested from `ParsedStyle` values (`mapStyledIsland`).
+// `@kinetograph/compat/dom` (docs/ENGINE.md §1, §2): a DOM island is handed to the addon as an `IslandRequest`; Stylo,
+// taffy and Parley style and lay it out, our compositor paints it, and the layers come back as scene JSON. Native
+// (`kg-*`) elements inside the island are drawn here and put where Rust placed their boxes.
+//
+// The Phase 5 TypeScript mapping is still in `legacy.ts`; `KINETOGRAPH_DOM_MAPPER=legacy` selects it.
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import type { CameraJson, LayerJson, Unsupported } from '@kinetograph/scene';
-import { parseStyle } from '../css/index.js';
+import { addonFunction } from '../addon.js';
+import { getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStylesheet } from '../environment.js';
+import { buildIslandRequest, type IslandRequestJson } from '../request/build.js';
+import { isDomElement } from '../request/tags.js';
 import type { DomNode, IslandContext, IslandResult } from '../types.js';
-import { buildIsland, place, type BuildContext, type DomLayoutBox, type DomLayoutNode } from './box.js';
-import { isDomElement } from './elements.js';
-import { mapRoot, type MapContext } from './map.js';
-import { parseTree, Report, type StyledElement } from './tree.js';
+import { fillNatives, nativeSize } from './native.js';
+import { mapLegacyIsland } from './legacy.js';
 
 export { isDomElement };
+export { mapLegacyIsland, mapStyledIsland, setLayoutDom } from './legacy.js';
+export type { LayoutDom } from './legacy.js';
 export type { StyledElement, StyledNode, StyledNative, StyledText } from './tree.js';
+export { setDomAddon, hasAddonFunction } from '../addon.js';
+export type { DomAddon } from '../addon.js';
+export {
+  setDomEnvironment,
+  getDomEnvironment,
+  registerStylesheet,
+  noteStylesheet,
+  noteStylesheetProblem,
+  importedStylesheets,
+  stylesheetNotes,
+  resetStylesheets,
+  setCssFontFaceHandler,
+  parseFontFaces,
+  resolveProjectFile,
+} from '../environment.js';
+export type { DomEnvironment, CssFontFace } from '../environment.js';
+export { buildIslandRequest, collectStyleElements, styleText } from '../request/build.js';
+export type { IslandRequestJson, RequestNode, BuildOptions, BuiltRequest } from '../request/build.js';
+export { styleToCss } from '../request/style.js';
+export { attributesOf } from '../request/attrs.js';
+export { nativeSize } from './native.js';
 
-/** The addon's `layoutDom`: a `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out (docs/COMPAT.md §5.1). */
-export type LayoutDom = (requestJson: string) => string;
-
-let layoutOverride: LayoutDom | null = null;
-let layoutNative: LayoutDom | null = null;
-
-/** Hands over the addon's `layoutDom` (the host does, as with `setLayoutText`; tests pass a stub, `null` goes back). */
-export function setLayoutDom(fn: LayoutDom | null): void {
-  layoutOverride = fn;
+/** What `renderDomIsland` returns (`IslandOutput` of `crates/dom/src/request.rs`). */
+interface IslandOutputJson {
+  layers: unknown[];
+  unsupported?: Unsupported[];
+  camera?: CameraJson | null;
 }
 
-/**
- * The addon's `layoutDom`, found when first needed (a project with no DOM elements does not need the addon): from
- * here, then from the working directory. A bundle in a project's cache may sit where neither reaches it; the host
- * then calls `setLayoutDom(native.layoutDom)`.
- */
-function loadNative(): LayoutDom {
-  const failures: string[] = [];
-  for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
-    try {
-      return (createRequire(base)('@kinetograph/native') as { layoutDom: LayoutDom }).layoutDom;
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
-    }
-  }
-  throw new Error(
-    `DOM elements cannot be laid out: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
-      'Build the addon, or pass its layoutDom to setLayoutDom() from @kinetograph/compat/dom.',
-  );
-}
+/** `style`, `script` and friends draw nothing: an island that is only one of them needs no trip to Rust. */
+const INVISIBLE = new Set(['style', 'script', 'link', 'meta', 'title', 'base', 'head', 'noscript', 'template']);
 
-function layoutDom(requestJson: string): string {
-  if (layoutOverride) return layoutOverride(requestJson);
-  layoutNative ??= loadNative();
-  return layoutNative(requestJson);
-}
-
-/** Lays out the island's boxes (one `layoutDom` call) and returns the root's `DomLayoutBox`. */
-function lay(root: DomLayoutNode, context: IslandContext): DomLayoutBox {
-  const request = {
-    root,
-    available: { width: context.viewport.width, height: context.viewport.height },
-    fonts: context.fonts,
-  };
-  return JSON.parse(layoutDom(JSON.stringify(request))) as DomLayoutBox;
-}
-
-/**
- * Lays out and maps an island whose styles are parsed: the part of `mapDomIsland` after `parseStyle`. `report` holds
- * what `parseTree` has already reported (nothing, from hand-built trees).
- */
-export function mapStyledIsland(root: StyledElement, context: IslandContext, report = new Report()): IslandResult {
-  const build: BuildContext = {
+/** The request for an island and where the `readStylesheet` of `<link>` and fonts of `<style>` come from. */
+export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context: IslandContext) {
+  const environment = getDomEnvironment();
+  const publicDir = context.publicDir ?? environment.publicDir;
+  const stylesheets = context.stylesheets ?? importedStylesheets();
+  for (const css of stylesheets) noteStylesheet(css);
+  return buildIslandRequest(root, {
+    path: context.path,
     viewport: context.viewport,
     fonts: context.fonts,
-    report,
-    emitNative: (node, path) => context.emitNative(node, path),
-  };
-  const box = buildIsland(root, build);
-  if (box === null) return { layers: [], unsupported: report.items, camera: null };
-
-  place(box, lay(box.layout, context));
-  const mc: MapContext = { report, viewport: context.viewport, camera: null };
-  const layer = mapRoot(box, mc);
-  const layers: LayerJson[] = [];
-  if (layer !== null) {
-    // The island is laid out in the composition's box already: a flex layout around it must not place it again.
-    layers.push({ ...layer, layoutItem: { position: 'absolute' } } as LayerJson);
-  }
-  const camera: CameraJson | null = mc.camera;
-  return { layers, unsupported: report.items as Unsupported[], camera };
+    baseDir: context.baseDir ?? environment.baseDir,
+    ...(publicDir !== undefined ? { publicDir } : {}),
+    time: context.time ?? 0,
+    stylesheets,
+    nativeSize,
+    readStylesheet: (href) => {
+      const css = readLocalStylesheet(href);
+      if (css !== null) noteStylesheet(css);
+      return css;
+    },
+  });
 }
 
 export function mapDomIsland(root: DomNode, context: IslandContext): IslandResult {
   if (root.kind !== 'element' || !isDomElement(root.type)) {
     throw new Error('mapDomIsland needs a DOM element as the root of an island');
   }
-  const styled = parseTree(root, context.path, {
-    parseStyle,
-    claimId: context.claimId ?? (() => true),
-  }) as StyledElement;
-  return mapStyledIsland(styled, context);
+  if (process.env.KINETOGRAPH_DOM_MAPPER === 'legacy') return mapLegacyIsland(root, context);
+  if (INVISIBLE.has(root.type)) return { layers: [], unsupported: [], camera: null };
+
+  const { request, natives } = requestFor(root, context);
+  const output = JSON.parse(addonFunction('renderDomIsland')(JSON.stringify(request))) as IslandOutputJson;
+
+  const placed = fillNatives(output.layers, (path) => {
+    const node = natives.get(path);
+    return node === undefined ? null : context.emitNative(node, path);
+  });
+  // The island is laid out in the composition's box already: a flex layout around it must not place it again.
+  const layers = placed.map((layer) => (layer.layoutItem === undefined ? ({ ...layer, layoutItem: { position: 'absolute' } } as LayerJson) : layer));
+  return { layers, unsupported: output.unsupported ?? [], camera: output.camera ?? null };
 }
+
+export type { IslandRequestJson as IslandRequest };

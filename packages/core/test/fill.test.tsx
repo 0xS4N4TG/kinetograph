@@ -165,7 +165,11 @@ function renderDom(node: ReactNode) {
 }
 
 describe.skipIf(layoutDom === null)('as DOM elements', () => {
-  beforeAll(() => setLayoutDom(layoutDom));
+  // The Phase 5 mapping's output, until the Rust path is verified (KINETOGRAPH_DOM_MAPPER).
+  beforeAll(() => {
+    process.env.KINETOGRAPH_DOM_MAPPER = 'legacy';
+    setLayoutDom(layoutDom);
+  });
   afterAll(() => setLayoutDom(null));
 
   it('AbsoluteFill with a style key the layers have no use for is a div over the whole page', () => {

@@ -23,6 +23,13 @@ export interface IslandContext {
    * layer has it. Without it every explicit id is taken. (An addition to the contract: ids are unique across a tree.)
    */
   claimId?(id: string): boolean;
+  /** Seconds (frame / fps): the clock CSS animations and transitions read. Default 0. */
+  time?: number;
+  /** Where relative `src` and `url()` resolve, then `publicDir`. Default: the DOM environment's. */
+  baseDir?: string;
+  publicDir?: string;
+  /** Document-wide CSS: imported files, then every `<style>` element of the tree. Default: the imported ones. */
+  stylesheets?: readonly string[];
 }
 
 export interface IslandResult {
