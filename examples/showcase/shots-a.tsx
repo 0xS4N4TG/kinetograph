@@ -15,14 +15,47 @@ import { WIDTHS as M } from './widths.js';
 export const MELT_AT = 57;
 const MELT_FRAMES = 34;
 
-const FIGURE_MAP = [
-  { offset: 0.0, color: '#8a84f4' },
-  { offset: 0.3, color: '#b48af2' },
-  { offset: 0.5, color: '#de6fcc' },
-  { offset: 0.68, color: '#f592b2' },
-  { offset: 0.85, color: '#fbbd8e' },
-  { offset: 1.0, color: '#fde8a8' },
+// The reference's figure barely moves; its colours do. The gradient map runs
+// through these palettes (shadow, body, upper body, head light), and the sky
+// goes flat mauve at 1.2 s and then turns over, violet above peach.
+const PALETTES: [number, string[]][] = [
+  [0, ['#9c8cf2', '#f6d9a6', '#f7b9a0', '#ee6aa8']],
+  [10, ['#9c8cf2', '#ef8fb0', '#f5b08a', '#fbe08a']],
+  [20, ['#8a84f4', '#c070e0', '#e070c0', '#f070a8']],
+  [30, ['#8a84f4', '#c068d8', '#d070d0', '#c27ef0']],
+  [40, ['#9c8cf2', '#f2c4a8', '#ec90b4', '#d85cb0']],
+  [50, ['#9c8cf2', '#ee98b0', '#f6b494', '#fde08c']],
+  [70, ['#9c8cf2', '#e884b4', '#f4a890', '#fbd58c']],
 ];
+const SKIES: [number, string[]][] = [
+  [0, ['#f8c898', '#d9b0c6', '#9c8cf2']],
+  [24, ['#f4c29a', '#d4aec8', '#a492ee']],
+  [29, ['#c8a2c4', '#c8a0c4', '#c6a0c6']],
+  [33, ['#c8a2c4', '#c8a0c4', '#c6a0c6']],
+  [38, ['#a890ec', '#c8a2c8', '#f0b098']],
+  [70, ['#a48cee', '#d0a0b8', '#ee9c80']],
+];
+
+/** The colours of `keys` at `frame`: each colour eased from one key to the next. */
+function keyed(frame: number, keys: [number, string[]][]): string[] {
+  let i = 0;
+  while (i < keys.length - 1 && frame >= keys[i + 1]![0]) i++;
+  const [f0, c0] = keys[i]!;
+  const next = keys[i + 1];
+  if (!next) return c0;
+  const t = Easing.inOut(Easing.quad)(clamp((frame - f0) / (next[0] - f0)));
+  return c0.map((c, j) => mix(c, next[1][j]!, t));
+}
+
+function figureMap(frame: number) {
+  const [shadow, body, upper, head] = keyed(frame, PALETTES);
+  return [
+    { offset: 0.0, color: shadow! },
+    { offset: 0.55, color: body! },
+    { offset: 0.75, color: upper! },
+    { offset: 1.0, color: head! },
+  ];
+}
 
 /** The picture: a warm-to-violet sky and a blurred grey profile whose greys are mapped to colours. */
 const Figure: React.FC<{ frame: number }> = ({ frame }) => {
@@ -30,8 +63,8 @@ const Figure: React.FC<{ frame: number }> = ({ frame }) => {
   const drift = interpolate(frame, [0, 92], [0, 46]);
   return (
     <>
-      <Rect width={W} height={H} fill={linearGradient(['#f8c898', '#d9b0c6', '#9c8cf2'], { angle: 180 })} />
-      <Layer x={W / 2} y={H / 2 + drift} scale={push} origin="center" effects={[gradientMap({ stops: FIGURE_MAP })]}>
+      <Rect width={W} height={H} fill={linearGradient(keyed(frame, SKIES), { angle: 180 })} />
+      <Layer x={W / 2} y={H / 2 + drift} scale={push} origin="center" effects={[gradientMap({ stops: figureMap(frame) })]}>
         <Layer x={-W / 2} y={-H / 2} effects={[blur(12)]}>
           <Path d={PROFILE_PATH} fill={linearGradient(['#d0d0d0', '#a4a4a4', '#9c9c9c'], { angle: 180 })} />
         </Layer>
