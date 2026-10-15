@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use blitz_dom::net::ResourceLoadResponse;
 use blitz_dom::{
     Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, NodeId, QualName, ns,
 };
@@ -84,8 +85,6 @@ pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>
         ua_stylesheets: Some(ua::sheets()),
         net_provider: Some(files.clone()),
         font_ctx: Some(font_ctx),
-        // Every frame is built fresh: nothing to be incremental about.
-        incremental: Some(false),
         ..DocumentConfig::default()
     });
 
@@ -145,18 +144,23 @@ pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>
 /// Builds the document, styles it and lays it out at `request.time`.
 pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     let (mut island, files) = build(request)?;
-    // Images and `@font-face` files are answered while the tree is built and
-    // while styles are computed (`background-image`), and enter the document at
-    // the start of the next resolve. Resolve until nothing new arrives.
+    // Images and `@font-face` files are answered while the tree is built
+    // (`<img>`) and while styles are computed (`background-image`, `@import`),
+    // and enter the document before the next resolve. Resolve until nothing
+    // new arrives; the passes after the first only redo what the new resource
+    // touched.
     //
     // CSS animations start at the first style computation, with the clock
     // there. Starting it at 0 and then moving to `time` makes the animation's
     // progress `time`, whatever the frame.
+    deliver(&mut island.doc, &files);
     for _ in 0..4 {
+        files.take_served();
         island.doc.resolve(0.0);
         if files.take_served() == 0 {
             break;
         }
+        deliver(&mut island.doc, &files);
     }
     if request.time != 0.0 && island.doc.is_animating() {
         // Stylo moves an animation on by one iteration per style pass, so a
@@ -168,6 +172,18 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     }
     island.missing = files.missing();
     Ok(island)
+}
+
+/// Hands the images the net provider has decoded to the document.
+fn deliver(doc: &mut BaseDocument, files: &LocalFiles) {
+    for (url, resource) in files.take_deliveries() {
+        doc.load_resource(ResourceLoadResponse {
+            request_id: 0,
+            node_id: None,
+            resolved_url: Some(url),
+            result: Ok(resource),
+        });
+    }
 }
 
 /// A bound on the style passes spent catching an animation up to a late time
