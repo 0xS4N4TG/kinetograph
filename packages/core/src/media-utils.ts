@@ -26,7 +26,11 @@ let probeNative: ProbeMedia | null = null;
 /** Sets the addon's `probeMedia` (the host does, as with `setLayoutText`; tests pass a stub, `null` goes back). */
 export function setMediaProbe(fn: ProbeMedia | null): void {
   probeOverride = fn;
+  cached.clear();
 }
+
+// Answers kept for callers that ask every frame (a GIF's duration walks all its pictures); a new probe empties it.
+const cached = new Map<string, MediaInfo>();
 
 /**
  * The addon's `probeMedia`, found when first needed: from here, then from the working directory. A bundle in a
@@ -47,8 +51,16 @@ function loadNative(): ProbeMedia {
   );
 }
 
-/** What the addon reads from the header of the video or GIF at `src`. */
-export function probeMedia(src: string): MediaInfo {
+/** What the addon reads from the header of the video or GIF at `src`; with `cache`, read once per `src`. */
+export function probeMedia(src: string, options: { cache?: boolean } = {}): MediaInfo {
+  if (options.cache) {
+    let info = cached.get(src);
+    if (info === undefined) {
+      info = probeMedia(src);
+      cached.set(src, info);
+    }
+    return info;
+  }
   if (typeof src !== 'string' || src === '') throw new TypeError(`src must be a file path, but got ${JSON.stringify(src)}`);
   if (/^https?:\/\//i.test(src)) {
     throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);

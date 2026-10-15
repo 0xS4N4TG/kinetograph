@@ -8,15 +8,15 @@ import { probeMedia } from './media-utils.js';
 
 export type { GifProps } from '@kinetograph/react';
 
-function probeGif(src: string) {
-  const info = probeMedia(src);
+function gifDuration(src: string): number {
+  const info = probeMedia(src, { cache: true });
   if (info.kind !== 'gif') throw new Error(`${src} is not a GIF (the file reads as a ${info.kind})`);
-  return info;
+  return info.durationInSeconds;
 }
 
 /** How long one run of the GIF at `src` lasts, in seconds: the sum of its pictures' delays. */
 export async function getGifDurationInSeconds(src: string): Promise<number> {
-  return probeGif(src).durationInSeconds;
+  return gifDuration(src);
 }
 
 /**
@@ -26,7 +26,7 @@ export async function getGifDurationInSeconds(src: string): Promise<number> {
  */
 export function Gif(props: GifProps): ReactNode {
   if (props.loopBehavior === 'unmount-after-finish' && props.durationInSeconds === undefined) {
-    return createElement(NativeGif, { ...props, durationInSeconds: probeGif(props.src).durationInSeconds });
+    return createElement(NativeGif, { ...props, durationInSeconds: gifDuration(props.src) });
   }
   return createElement(NativeGif, props);
 }

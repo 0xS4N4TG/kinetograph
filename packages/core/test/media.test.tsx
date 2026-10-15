@@ -110,6 +110,8 @@ describe('@kinetograph/core/gif', () => {
     expect(renderAt(gif, 29).layers).toEqual([{ id: 'g', type: 'gif', src: 'spin.gif', time: 29 / 30, loop: false }]);
     expect(renderAt(gif, 30).layers).toEqual([]);
     expect(calls.every((c) => c.path === 'spin.gif')).toBe(true);
+    // The duration is read once, not on every frame.
+    expect(calls).toHaveLength(1);
   });
 
   it('<Gif> inside a Sequence starts at the Sequence\'s frame 0 and is gone before it starts', () => {
