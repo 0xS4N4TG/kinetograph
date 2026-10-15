@@ -149,10 +149,9 @@ describe('compositions, effects, doctor', () => {
     expect((await cli('effects')).text).toContain('dropShadow:');
   });
 
-  it('reports the addon and that compat mode is not built', async () => {
+  it('reports the addon when given no entry (the compat report is in doctor.test.ts)', async () => {
     const r = await cli('doctor', '--json');
     expect(r.json.addon).toEqual({ loaded: true, version: '0.0.0-test' });
-    expect(r.json.compat).toMatchObject({ built: false, phase: 5 });
   });
 });
 

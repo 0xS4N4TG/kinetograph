@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build, type Plugin } from 'esbuild';
+import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { CliError } from './errors.js';
 
 /** The package directory of the CLI: the bundle's `@kinetograph/*` imports resolve from here, so one copy of each. */
@@ -21,6 +21,9 @@ const REMOTION_PACKAGES = new Set([
   'google-fonts',
   'fonts',
   'lottie',
+  'gif',
+  'media-utils',
+  'media',
 ]);
 
 export type Resolution =
@@ -55,7 +58,7 @@ export function resolveSpecifier(specifier: string): Resolution | null {
       message: `"${specifier}" is not supported by Kinetograph yet. Run \`kinetograph doctor\` for what is.`,
     };
   }
-  if (/^@kinetograph\/(core|react|scene|audio)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
+  if (/^@kinetograph\/(core|react|scene|audio|compat)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   // React too: a project with its own copy of React would otherwise bundle two, and the core's hooks would run against
   // a different React from the project's components.
   if (/^react(-reconciler)?(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
@@ -66,7 +69,7 @@ function aliasPlugin(): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@kinetograph\/(core|react|scene|audio)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@kinetograph\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;
@@ -100,6 +103,19 @@ function aliasPlugin(): Plugin {
   };
 }
 
+/**
+ * The project's entry file always runs: the synthetic entry imports it only for its side effects (`registerRoot`), and
+ * a package.json with `"sideEffects": [...]` that leaves it out (as Remotion's templates do) would let esbuild drop it.
+ */
+export function entryPlugin(absolute: string): Plugin {
+  return {
+    name: 'kinetograph-entry',
+    setup(b) {
+      b.onResolve({ filter: /.*/ }, (args) => (args.path === absolute ? { path: absolute, sideEffects: true } : undefined));
+    },
+  };
+}
+
 /** The synthetic entry (docs/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
 export function syntheticEntry(entry: string): string {
   return [
@@ -108,6 +124,9 @@ export function syntheticEntry(entry: string): string {
     `export * from '@kinetograph/core';`,
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
+    `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
+    // DOM elements are laid out by the addon too (docs/COMPAT.md §5.1).
+    `export { setLayoutDom } from '@kinetograph/compat/dom';`,
     '',
   ].join('\n');
 }
@@ -133,6 +152,40 @@ export interface BundleResult {
   warnings: string[];
 }
 
+/** The esbuild options that bundle the project at `absolute` (docs/AUTHORING.md §9). */
+function bundleOptions(absolute: string): BuildOptions {
+  return {
+    stdin: {
+      contents: syntheticEntry(absolute),
+      resolveDir: dirname(absolute),
+      sourcefile: 'kinetograph-entry.ts',
+      loader: 'ts',
+    },
+    absWorkingDir: dirname(absolute),
+    bundle: true,
+    write: false,
+    outfile: 'bundle.mjs',
+    format: 'esm',
+    platform: 'node',
+    target: 'node22',
+    jsx: 'automatic',
+    sourcemap: 'inline',
+    logLevel: 'silent',
+    external: EXTERNAL,
+    // Stylesheets are not read (docs/COMPAT.md §2): an `import './index.css'` (Tailwind's, say) bundles to nothing.
+    loader: { '.css': 'empty' },
+    plugins: [entryPlugin(absolute), aliasPlugin()],
+    // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
+    banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
+  };
+}
+
+/** The error for esbuild's `errors`: one line per message, with its file and line when it has them. */
+function bundleFailure(errors: Message[], fallback: unknown): CliError {
+  const messages = errors.map((e) => (e.location ? `${e.location.file}:${e.location.line}: ${e.text}` : e.text));
+  return new CliError('BUNDLE_FAILED', messages.length ? messages.join('\n') : String(fallback));
+}
+
 /**
  * Bundles the project at `entry` with esbuild into `node_modules/.cache/kinetograph/`. The file name carries a hash of
  * the entry's path and one of the output, so it only changes when the code does and a changed project is re-imported
@@ -142,35 +195,12 @@ export async function bundleProject(entry: string): Promise<BundleResult> {
   const absolute = resolve(entry);
   let result;
   try {
-    result = await build({
-      stdin: {
-        contents: syntheticEntry(absolute),
-        resolveDir: dirname(absolute),
-        sourcefile: 'kinetograph-entry.ts',
-        loader: 'ts',
-      },
-      absWorkingDir: dirname(absolute),
-      bundle: true,
-      write: false,
-      outfile: 'bundle.mjs',
-      format: 'esm',
-      platform: 'node',
-      target: 'node22',
-      jsx: 'automatic',
-      sourcemap: 'inline',
-      logLevel: 'silent',
-      external: EXTERNAL,
-      plugins: [aliasPlugin()],
-      // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
-      banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
-    });
+    result = await build(bundleOptions(absolute));
   } catch (error) {
-    const failure = error as { errors?: { text: string; location?: { file: string; line: number } | null }[] };
-    const messages = (failure.errors ?? []).map((e) => (e.location ? `${e.location.file}:${e.location.line}: ${e.text}` : e.text));
-    throw new CliError('BUNDLE_FAILED', messages.length ? messages.join('\n') : String(error));
+    throw bundleFailure((error as { errors?: Message[] }).errors ?? [], error);
   }
 
-  const code = result.outputFiles[0]!.text;
+  const code = result.outputFiles![0]!.text;
   const dir = cacheDir(absolute);
   mkdirSync(dir, { recursive: true });
   const entryHash = createHash('sha256').update(absolute).digest('hex').slice(0, 10);
@@ -182,4 +212,31 @@ export async function bundleProject(entry: string): Promise<BundleResult> {
   }
   writeFileSync(file, code);
   return { file, warnings: result.warnings.map((w) => w.text) };
+}
+
+/** One build of a watched project: the bundle's code, or why it failed. */
+export type ProjectBuild = { code: string; warnings: string[] } | { error: CliError };
+
+/**
+ * Bundles the project at `entry` as `bundleProject` does, writes nothing, and keeps watching the files the bundle
+ * reads: `onBuild` is called after the first build and after every rebuild with the code or the error. A failed
+ * rebuild does not stop the watching. Resolves once watching has started (the first `onBuild` has been called by then).
+ */
+export async function watchProject(
+  entry: string,
+  onBuild: (build: ProjectBuild) => void,
+): Promise<{ dispose(): Promise<void> }> {
+  const options = bundleOptions(resolve(entry));
+  const notify: Plugin = {
+    name: 'kinetograph-notify',
+    setup(b) {
+      b.onEnd((result) => {
+        if (result.errors.length > 0) onBuild({ error: bundleFailure(result.errors, 'build failed') });
+        else onBuild({ code: result.outputFiles![0]!.text, warnings: result.warnings.map((w) => w.text) });
+      });
+    },
+  };
+  const watching = await context({ ...options, plugins: [...(options.plugins ?? []), notify] });
+  await watching.watch();
+  return { dispose: () => watching.dispose() };
 }

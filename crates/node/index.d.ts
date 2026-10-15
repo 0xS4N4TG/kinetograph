@@ -15,6 +15,11 @@ export declare class Renderer {
   constructor(options?: RendererOptions | undefined | null)
   /** One frame as a PNG. */
   still(sceneJson: string, frame: number, baseDir?: string | undefined | null): Buffer
+  /**
+   * One frame rendered at full size, box-filtered down to `scale` and
+   * encoded as JPEG or PNG, for the studio's preview.
+   */
+  preview(sceneJson: string, frame: number, options?: PreviewOptions | undefined | null, baseDir?: string | undefined | null): PreviewImage
   /** One frame as straight-alpha sRGB RGBA8. */
   rgba(sceneJson: string, frame: number, baseDir?: string | undefined | null): RgbaFrame
   /** Times one frame or successive frames, as the Rust `bench`. */
@@ -32,6 +37,13 @@ export declare class Renderer {
  * `abort` does, and later calls fail.
  */
 export declare class VideoWriter {
+  /**
+   * Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
+   * §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
+   * ordering rule as `pushFrame`. Like a failed `pushFrame`, a failed
+   * `pushRgba` ends the video.
+   */
+  pushRgba(rgba: Buffer, width: number, height: number, frame: number): void
   /** Renders `frame` of this scene and queues it for encoding. */
   pushFrame(sceneJson: string, frame: number, baseDir?: string | undefined | null): void
   /** Flushes, muxes `audio` if given, closes the file. */
@@ -76,8 +88,20 @@ export interface BenchStages {
   total: Stats
 }
 
+/**
+ * The first audio stream of a file, decoded and resampled to `sampleRate`;
+ * `null` when the file has none.
+ */
+export declare function decodeAudio(path: string, sampleRate: number, baseDir?: string | undefined | null): AudioPcm | null
+
 /** The scene resolved at `frame`, as an `InspectResult` JSON string. */
 export declare function inspect(sceneJson: string, frame: number, baseDir?: string | undefined | null): string
+
+/**
+ * CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a
+ * `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out.
+ */
+export declare function layoutDom(requestJson: string): string
 
 /**
  * Shapes text with the renderer's text engine. Engines are cached per
@@ -85,8 +109,44 @@ export declare function inspect(sceneJson: string, frame: number, baseDir?: stri
  */
 export declare function layoutText(request: TextLayoutRequest): TextLayout
 
+/** What `probeMedia` reads from a video's or GIF's header (docs/AUTHORING.md §11.2). */
+export interface MediaInfo {
+  /** `video` or `gif`. */
+  kind: string
+  width: number
+  height: number
+  durationInSeconds: number
+  /** A video stream's average frame rate; `null` for a GIF. */
+  fps?: number
+  /** The container's picture count, if it has one; a GIF's picture count. */
+  frames?: number
+  hasAudio: boolean
+  videoCodec?: string
+  audioCodec?: string
+}
+
 /** `"10..40"` or `"10..=40"` -> `[first, last]`, inclusive. */
 export declare function parseRange(range: string, durationInFrames: number): Array<number>
+
+export interface PreviewImage {
+  width: number
+  height: number
+  /** `image/jpeg` or `image/png`. */
+  mime: string
+  data: Buffer
+}
+
+export interface PreviewOptions {
+  /** 0 < scale <= 1, default 1. */
+  scale?: number
+  /** `jpeg` (default) or `png`. */
+  format?: string
+  /** JPEG quality 1..=100, default 80. */
+  quality?: number
+}
+
+/** Reads a video's or GIF's header, without decoding a picture. */
+export declare function probeMedia(path: string, baseDir?: string | undefined | null): MediaInfo
 
 export interface RendererOptions {
   /** Default true. */
@@ -185,6 +245,13 @@ export declare function validateScene(sceneJson: string, baseDir?: string | unde
 
 /** The version of the addon, which is the workspace version. */
 export declare function version(): string
+
+/**
+ * The picture a video layer shows `time` seconds after the stream's first
+ * picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
+ * a gif layer shows at `time` seconds (the last one is held past the end).
+ */
+export declare function videoFrame(path: string, time: number, baseDir?: string | undefined | null): RgbaFrame
 
 export interface VideoOptions {
   width: number

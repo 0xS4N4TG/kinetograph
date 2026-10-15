@@ -18,6 +18,9 @@
     "./google-fonts": { "types": "./dist/google-fonts.d.ts", "default": "./dist/google-fonts.js" },
     "./fonts": { "types": "./dist/fonts.d.ts", "default": "./dist/fonts.js" },
     "./lottie": { "types": "./dist/lottie.d.ts", "default": "./dist/lottie.js" },
+    "./gif": { "types": "./dist/gif.d.ts", "default": "./dist/gif.js" },
+    "./media-utils": { "types": "./dist/media-utils.d.ts", "default": "./dist/media-utils.js" },
+    "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
     "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
     "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" }
   },

@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "remotion": ["../../packages/core/dist/index.d.ts"],
+      "@remotion/gif": ["../../packages/core/dist/gif.d.ts"],
+      "@remotion/captions": ["../../packages/core/dist/captions.d.ts"]
+    }
+  },
+  "include": ["index.tsx", "../rajz-cards/google-fonts.d.ts"]
+}

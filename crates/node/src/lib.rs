@@ -3,15 +3,19 @@
 //! is specified in `docs/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
-//! `parseRange`, `version`) never open a device; `new Renderer()` does, once,
+//! `parseRange`, `probeMedia`, `decodeAudio`, `version`) never open a device; `new Renderer()` does, once,
 //! and every scene given to it afterwards reuses that setup.
 //!
 //! Every call is synchronous and runs on the JS thread. A thrown error is an
 //! `Error` whose `code` is one of `error::Code`.
 
 mod bench;
+mod dom;
 mod error;
 mod layout;
+mod media;
+mod preview;
+mod raw;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -188,6 +192,56 @@ pub fn parse_range(range: String, duration_in_frames: f64) -> Result<Vec<u32>> {
     Ok(vec![first, last])
 }
 
+/// What `probeMedia` reads from a video's or GIF's header (docs/AUTHORING.md §11.2).
+#[napi(object)]
+pub struct MediaInfo {
+    /// `video` or `gif`.
+    pub kind: String,
+    pub width: u32,
+    pub height: u32,
+    pub duration_in_seconds: f64,
+    /// A video stream's average frame rate; `null` for a GIF.
+    pub fps: Option<f64>,
+    /// The container's picture count, if it has one; a GIF's picture count.
+    pub frames: Option<u32>,
+    pub has_audio: bool,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+}
+
+/// Reads a video's or GIF's header, without decoding a picture.
+#[napi]
+pub fn probe_media(path: String, base_dir: Option<String>) -> Result<MediaInfo> {
+    media::probe_media(&resolve_base(base_dir).join(path))
+}
+
+/// The first audio stream of a file, decoded and resampled to `sampleRate`;
+/// `null` when the file has none.
+#[napi]
+pub fn decode_audio(
+    path: String,
+    sample_rate: f64,
+    base_dir: Option<String>,
+) -> Result<Option<AudioPcm>> {
+    let sample_rate = count("sampleRate", sample_rate)?;
+    media::decode_audio(&resolve_base(base_dir).join(path), sample_rate)
+}
+
+/// CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a
+/// `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out.
+#[napi]
+pub fn layout_dom(request_json: String) -> Result<String> {
+    dom::layout_dom(&request_json)
+}
+
+/// The picture a video layer shows `time` seconds after the stream's first
+/// picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
+/// a gif layer shows at `time` seconds (the last one is held past the end).
+#[napi]
+pub fn video_frame(path: String, time: f64, base_dir: Option<String>) -> Result<RgbaFrame> {
+    raw::video_frame(&resolve_base(base_dir).join(path), time)
+}
+
 // ---- GPU ----
 
 #[napi(object)]
@@ -281,6 +335,26 @@ pub struct RgbaFrame {
     pub width: u32,
     pub height: u32,
     /// Straight-alpha sRGB RGBA8, `width * height * 4` bytes.
+    pub data: Buffer,
+}
+
+#[napi(object)]
+#[derive(Default)]
+pub struct PreviewOptions {
+    /// 0 < scale <= 1, default 1.
+    pub scale: Option<f64>,
+    /// `jpeg` (default) or `png`.
+    pub format: Option<String>,
+    /// JPEG quality 1..=100, default 80.
+    pub quality: Option<f64>,
+}
+
+#[napi(object)]
+pub struct PreviewImage {
+    pub width: u32,
+    pub height: u32,
+    /// `image/jpeg` or `image/png`.
+    pub mime: String,
     pub data: Buffer,
 }
 
@@ -378,6 +452,25 @@ impl Renderer {
             .and_then(|f| f.encode_png())
             .map_err(from_core)?;
         Ok(Buffer::from(png))
+    }
+
+    /// One frame rendered at full size, box-filtered down to `scale` and
+    /// encoded as JPEG or PNG, for the studio's preview.
+    #[napi]
+    pub fn preview(
+        &mut self,
+        scene_json: String,
+        frame: f64,
+        options: Option<PreviewOptions>,
+        base_dir: Option<String>,
+    ) -> Result<PreviewImage> {
+        let frame = count("frame", frame)?;
+        let options = options.unwrap_or_default();
+        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let mut gpu = self.shared.idle()?;
+        gpu.set_scene(scene).map_err(from_core)?;
+        let rendered = gpu.render_frame(frame).map_err(from_core)?;
+        preview::preview(&rendered.rgba, rendered.width, rendered.height, &options)
     }
 
     /// One frame as straight-alpha sRGB RGBA8.
@@ -507,6 +600,28 @@ impl Drop for VideoWriter {
 
 #[napi]
 impl VideoWriter {
+    /// Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
+    /// §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
+    /// ordering rule as `pushFrame`. Like a failed `pushFrame`, a failed
+    /// `pushRgba` ends the video.
+    #[napi]
+    pub fn push_rgba(&mut self, rgba: Buffer, width: f64, height: f64, frame: f64) -> Result<()> {
+        let pushed = (|| {
+            let width = count("width", width)?;
+            let height = count("height", height)?;
+            let frame = count("frame", frame)?;
+            let shared = self.shared.clone();
+            let mut gpu = shared.lock();
+            self.writer()?
+                .push_rgba(&mut gpu, rgba.to_vec(), width, height, frame)
+                .map_err(from_render)
+        })();
+        if pushed.is_err() {
+            self.close();
+        }
+        pushed
+    }
+
     /// Renders `frame` of this scene and queues it for encoding.
     #[napi]
     pub fn push_frame(

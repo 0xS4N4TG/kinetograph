@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { bundleProject, cacheDir, familyFromModule, resolveSpecifier, syntheticEntry } from '../src/bundle.js';
 import { CliError } from '../src/errors.js';
+import { publicDirOf } from '../src/source.js';
 
 describe('resolveSpecifier', () => {
   it('maps remotion to the core', () => {
@@ -13,7 +14,7 @@ describe('resolveSpecifier', () => {
   it('maps @remotion/<pkg>[/sub] to the core subpath', () => {
     expect(resolveSpecifier('@remotion/transitions')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions' });
     expect(resolveSpecifier('@remotion/transitions/fade')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions/fade' });
-    for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie']) {
+    for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie', 'gif', 'media-utils', 'media']) {
       expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetograph/core/${pkg}` });
     }
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
@@ -61,6 +62,8 @@ describe('syntheticEntry', () => {
       `import "/p/index.tsx";`,
       `export * from '@kinetograph/core';`,
       `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
+      `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
+      `export { setLayoutDom } from '@kinetograph/compat/dom';`,
     ]);
   });
 });
@@ -74,6 +77,17 @@ function project(files: Record<string, string>): string {
   }
   return dir;
 }
+
+describe('publicDirOf', () => {
+  it('is public/ beside the entry, else beside the nearest package.json (Remotion keeps the entry in src/)', () => {
+    const remotion = project({ 'src/index.ts': '', 'public/a.png': '' });
+    expect(publicDirOf(join(remotion, 'src', 'index.ts'))).toBe(join(remotion, 'public'));
+    const flat = project({ 'index.tsx': '', 'public/a.png': '' });
+    expect(publicDirOf(join(flat, 'index.tsx'))).toBe(join(flat, 'public'));
+    const none = project({ 'src/index.ts': '' });
+    expect(publicDirOf(join(none, 'src', 'index.ts'))).toBe(join(none, 'src', 'public'));
+  });
+});
 
 describe('bundleProject', () => {
   it('bundles a project with the aliases resolved, the shim first, and the output under node_modules/.cache', async () => {
@@ -110,6 +124,45 @@ describe('bundleProject', () => {
     expect(code).not.toContain('NapiOfflineAudioContext');
   });
 
+  it('resolves Video, OffthreadVideo, @remotion/gif and @remotion/media-utils to the one copy of the core, probe included', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { Video, OffthreadVideo, registerRoot } from 'remotion';`,
+        `import { Gif, getGifDurationInSeconds } from '@remotion/gif';`,
+        `import { getVideoMetadata } from '@remotion/media-utils';`,
+        `registerRoot(() => null);`,
+        `console.log(Video, OffthreadVideo, Gif, getGifDurationInSeconds, getVideoMetadata);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/gif.js');
+    expect(code).toContain('packages/core/dist/media-utils.js');
+    // `setMediaProbe` (re-exported by the synthetic entry) and `getVideoMetadata` (the project's) share one module.
+    expect(code.match(/function setMediaProbe\(/g)).toHaveLength(1);
+    expect(code).toMatch(/export \{[^}]*setMediaProbe[^}]*\}/);
+    // And the module's state, the probe, is declared once.
+    expect(code.match(/^(?:var|let) probeOverride\b/gm)).toHaveLength(1);
+  });
+
+  it('maps @remotion/media, bundles stylesheets to nothing, and keeps an entry a package.json says has no side effects', async () => {
+    const dir = project({
+      'package.json': JSON.stringify({ name: 'p', sideEffects: ['*.css'] }),
+      'src/index.ts': [
+        `import './index.css';`,
+        `import { registerRoot } from 'remotion';`,
+        `import { Audio, Video } from '@remotion/media';`,
+        `registerRoot(() => null);`,
+        `console.log('ENTRY-RAN', Audio, Video);`,
+      ].join('\n'),
+      'src/index.css': `@import 'tailwindcss';`,
+    });
+    const { file } = await bundleProject(join(dir, 'src', 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('ENTRY-RAN');
+    expect(code).not.toContain('tailwindcss');
+  });
+
   it('leaves one file per entry, replaced when the code changes', async () => {
     const dir = project({ 'index.ts': `console.log('v1');` });
     const first = await bundleProject(join(dir, 'index.ts'));
@@ -127,10 +180,10 @@ describe('bundleProject', () => {
   });
 
   it('fails with BUNDLE_FAILED naming the unsupported package', async () => {
-    const dir = project({ 'index.ts': `import '@remotion/gif';` });
+    const dir = project({ 'index.ts': `import '@remotion/three';` });
     const error = (await bundleProject(join(dir, 'index.ts')).catch((e: unknown) => e)) as CliError;
     expect(error.code).toBe('BUNDLE_FAILED');
-    expect(error.message).toContain('@remotion/gif');
+    expect(error.message).toContain('@remotion/three');
     expect(error.message).toContain('doctor');
   });
 });

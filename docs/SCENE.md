@@ -23,7 +23,7 @@ same pixels. Phase 3's reconciler will emit this same shape from React.
 | `camera` | object | Optional. The viewpoint for layers with a 3D transform. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first, topmost last (the same order as SVG and DOM paint order). |
 
-Asset paths (`fonts`, image `src`, `lut` `src`) resolve relative to the directory of the scene file.
+Asset paths (`fonts`, image, lottie, video and gif `src`, `lut` `src`) resolve relative to the directory of the scene file.
 
 Only the fonts listed in `fonts` exist. There is no system font lookup and no fallback, so output does not depend on
 the machine.
@@ -54,7 +54,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient` or `lottie`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `video` or `gif`. |
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
@@ -335,6 +335,90 @@ by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like an
 - Counts nothing in the [margin](#canvas-margin).
 - A missing or unreadable file, or one that is not an animation, is an error naming the layer, when the scene loads (if
   the box needs the file's size) or when a renderer is built from it.
+
+### video
+
+```json
+{ "id": "clip", "type": "video", "src": "clips/city.mp4", "width": 1080, "height": 608, "fit": "cover",
+  "from": 30, "trimBefore": 15, "playbackRate": 1.5, "loop": true }
+```
+
+A video file, decoded by FFmpeg (`ffmpeg-next`), one picture per frame. The picture goes in like an
+[image](#image): same box, `fit` and sampling. Like any layer it takes `effects`, `clip`, `mask`, `matte`,
+`blendMode` and `opacity`. Its sound is not part of the scene: the authoring layer plays it (AUTHORING §11.3).
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | Any file FFmpeg demuxes with a video stream (`.mp4`, `.mov`, `.webm`, `.mkv`, …), relative to the scene. Its first video stream is used. |
+| `width`, `height` | the stream's size | Animatable, not negative. As an image's: both left out is the stream's pixel size, one left out keeps its aspect ratio (of the coded size; the sample aspect ratio is ignored). |
+| `fit` | `fill` | As an image's. |
+| `frame` | the frame being rendered | Animatable. The scene frame the clip's clock reads, so a fractional motion-blur sub-frame time is the sub-frame's own time. The authoring layer sets it only to hold a picture (inside `<Freeze>`). |
+| `from` | `0` | A number, not animated. The scene frame on which the clip's own frame 0 falls. |
+| `trimBefore` | `0` | A number of scene frames, not animated, not negative. Skipped at the start of the file. |
+| `trimAfter` | none | A number of scene frames from the start of the file, not animated, greater than `trimBefore`. The clip ends there. |
+| `playbackRate` | `1` | A number above 0, not animated. |
+| `loop` | `false` | Past the end, `false` holds the last picture and `true` starts again at `trimBefore`. |
+
+Which picture is shown, for scene frame `f` (`frame`, or the frame being rendered) and the scene's `fps`:
+
+1. The clip's frame is `n = (f − from) × playbackRate`.
+2. The clip's end is `end = trimAfter`, or without it the stream's duration times `fps`, and its length is
+   `L = end − trimBefore` (scene frames).
+3. With `loop`, `n` wraps into `0 ≤ n < L` (modulo, so frames before `from` wrap too); without it `n` is clamped to
+   `0 ≤ n ≤ L`.
+4. The source time is `t = (trimBefore + n) / fps` seconds from the stream's first picture (a file whose first
+   timestamp is not 0 is measured from that first picture).
+5. The picture shown is the last one whose timestamp is at or before `t`, compared in the stream's time base
+   (`t` rounded to the nearest tick). A `t` before the first picture shows the first; a `t` at or past `end`
+   shows the last picture before `end`.
+
+- **Purity.** The picture depends only on (scene, frame): never on what was decoded before. A renderer keeps one
+  decoder per `src` that decodes forward from where it is and seeks (to the keyframe at or before the target, then
+  decodes forward) on a jump back or a jump forward of more than a second of stream time, and decoded pictures may be
+  cached; neither changes a pixel. Rendering frames out of order gives the same bytes as rendering them in order.
+- **Colour.** Pictures are converted to straight-alpha sRGB RGBA8 by `swscale` at their own size with bit-exact
+  flags (`SWS_BICUBIC | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT | SWS_BITEXACT`), using the stream's colour matrix and
+  range. An untagged matrix is BT.709 for a stream at least 720 lines tall and BT.601 below that, an untagged range
+  is limited (TV) range, as browsers do. A pixel format with alpha (VP9 or ProRes 4444 with alpha) keeps it; others
+  are opaque. Colours are then read as sRGB, as an image's are.
+- The stream's size, duration, time base and first timestamp are read when the scene loads (from the container, no
+  decoding; a file's probe is remembered while the file is unchanged, so a scene per frame does not open it per frame).
+  The first video stream that is not a cover picture is used. A stream's own duration is its length; a container that
+  gives only its own (Matroska, where it is where the last picture ends) is not trusted, and the last packets say where
+  the stream ends instead. A missing or unreadable file, one without a video stream, a `trimAfter` not above
+  `trimBefore`, a `trimBefore` at or past the end of the stream, or a `playbackRate` not above 0 is a load error naming
+  the layer.
+- Decoded pictures are cached per file (the last 64 MiB, and at least 4 pictures), and a picture reaches Vello as one
+  image, so the image atlas holds only the pictures drawn lately: Vello drops those unused for two frames when it needs
+  the room. The layer cache redraws a video layer whenever the timestamp it asks for changes, which is when its
+  picture changes and, for a clip slower than the scene, also between two frames of one picture.
+- Counts nothing in the [margin](#canvas-margin).
+
+### gif
+
+```json
+{ "id": "spinner", "type": "gif", "src": "spinner.gif", "width": 120, "height": 120, "fit": "contain", "time": 0.4 }
+```
+
+An animated GIF, decoded by the `image` crate. The picture goes in like an [image](#image) (same box, `fit` and
+sampling) and takes every layer field.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | A `.gif`, relative to the scene. |
+| `width`, `height` | the GIF's logical screen size | As an image's. |
+| `fit` | `fill` | As an image's. |
+| `time` | the frame's time, `frame / fps` | Animatable. Seconds into the animation. |
+| `loop` | `true` | Past the end, `true` wraps round and `false` holds the last picture. A file's own loop count is ignored. |
+
+- **Timing.** Picture `i` shows from the sum of the delays of pictures `0..i` up to that plus its own delay. A delay
+  of 10 ms or less counts as 100 ms, as browsers do. The duration is the sum of all delays. A `time` below 0 shows
+  the first picture.
+- **Pictures** are the full logical screen after each frame's disposal method (none, background, previous), as the
+  `image` crate composes them, straight-alpha sRGB.
+- A missing file, or one `image` cannot read the header of, is a load error naming the layer (its logical screen is read
+  when the scene loads). A file with no pictures, or whose pictures cannot be decoded, is an error naming the layer when
+  a renderer opens it, which decodes every picture. Counts nothing in the margin.
 
 ## Layout
 
@@ -1357,7 +1441,7 @@ constants) gives the sub-frames itself with `frames`:
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
   `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
-- No video layers yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
+- Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group without a `layout` (a load error).
 - Layout is flexbox only (`display: flex`; no grid, no block layout), with sizes in pixels (no percentages, `auto`
   margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
@@ -1371,6 +1455,10 @@ constants) gives the sub-frames itself with `frames`:
   effect, no outline or gradient of its own (a plain colour only), and characters are not re-flowed: the text box and
   the line breaks are those of the unstyled text. Text has one font per layer, no fallback and no bidi, so the clusters
   are those of left-to-right text.
+- `video` uses the first video stream only; rotation metadata (a phone's display matrix), the sample aspect ratio,
+  HDR transfer functions and interlacing are ignored, and a variable-frame-rate file is read by its timestamps (so it
+  plays at its recorded pace, not a constant rate). Its audio is played by the authoring layer, not by the scene.
+  `gif` ignores a file's loop count and keeps every decoded picture of a file in memory.
 - An image's size is read from its header when the scene loads, only when a side is left out; `cover` cuts the picture
   with an anti-aliased clip and `contain` leaves the rest of the box empty (no background colour).
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a

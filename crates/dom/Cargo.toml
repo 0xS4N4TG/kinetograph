@@ -1,0 +1,16 @@
+[package]
+name = "kinetograph-dom"
+description = "CSS styling and layout of a DOM (Blitz: Stylo, taffy, Parley), painted as Kinetograph scene layers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kinetograph-core = { path = "../core" }
+# Blitz's DOM: Stylo for CSS, taffy for layout, Parley for text. No system fonts:
+# a frame only sees the fonts the project registered (determinism).
+blitz-dom = { version = "=0.3.0-beta.3", default-features = false, features = ["svg", "woff", "floats", "text-transform-icu"] }
+blitz-html = { version = "=0.3.0-beta.3", default-features = false }
+blitz-traits = "=0.3.0-beta.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.154"

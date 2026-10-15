@@ -23,6 +23,7 @@ import type {
   MotionBlurMarker,
   Num,
   Paint,
+  SequenceJson,
   Stroke,
   Turbulence,
 } from '@kinetograph/scene';
@@ -158,6 +159,17 @@ export interface AudioProps {
   playbackRate?: number;
   loop?: boolean;
   muted?: boolean;
+  /** The pitch times this, 0.01 to 2 (Remotion's); the speed is unchanged. */
+  toneFrequency?: number;
+}
+
+/** `toneFrequency` as a clip field: left out when it is 1 (or not given), so clips without it are as before. */
+function toneOf(label: string, toneFrequency: number | undefined): { toneFrequency?: number } {
+  if (toneFrequency === undefined || toneFrequency === 1) return {};
+  if (!(typeof toneFrequency === 'number' && toneFrequency >= 0.01 && toneFrequency <= 2)) {
+    throw new Error(`${label} toneFrequency must be between 0.01 and 2, got ${String(toneFrequency)}`);
+  }
+  return { toneFrequency };
 }
 
 export function Layer(props: LayerProps) {
@@ -189,6 +201,25 @@ export function MeshGradient(props: MeshGradientProps) {
 }
 export function Camera(props: CameraProps) {
   return createElement('kg-camera', props);
+}
+
+// ---- the host element of <Sequence> (docs/AUTHORING.md §11.4) ----
+
+export interface SequenceHostProps {
+  /** What the timeline records; `layer` is filled in by `emit`. */
+  sequence: Omit<SequenceJson, 'layer'>;
+  /** The children are in a `<Layer>` (false for `layout="none"`): its id becomes `layer`. */
+  wrapped: boolean;
+  /** The Sequence's content while it is showing; nothing while it is not. */
+  children?: ReactNode;
+}
+
+/**
+ * `<Sequence>` renders this whether or not it is showing, so the timeline sees every Sequence. It emits no layer
+ * of its own: what is inside it stands where it does (automatic ids are unchanged).
+ */
+export function SequenceHost(props: SequenceHostProps) {
+  return createElement('kg-sequence', props);
 }
 
 // ---- <Lottie> ----
@@ -260,6 +291,170 @@ export function Audio(props: AudioProps) {
     volume,
     loop: props.loop ?? false,
     muted: (props.muted ?? false) || timeline.frozen,
+    ...toneOf(`<Audio src="${props.src}">`, props.toneFrequency),
   };
   return createElement('kg-audio', { id: props.id, clip });
+}
+
+// ---- <Video>, <OffthreadVideo>, <Gif> (docs/AUTHORING.md §11.3, stream 2) ----
+
+export interface VideoProps extends CommonProps {
+  src: string;
+  width?: Num;
+  height?: Num;
+  fit?: 'fill' | 'contain' | 'cover';
+  /** Remotion's: `width`, `height` and `objectFit` are read; other keys are ignored. */
+  style?: Record<string, unknown>;
+  trimBefore?: number;
+  trimAfter?: number;
+  /** Older names of `trimBefore` and `trimAfter`. */
+  startFrom?: number;
+  endAt?: number;
+  playbackRate?: number;
+  loop?: boolean;
+  /** A number, or a function of the frame within the video's Sequence. */
+  volume?: number | ((frame: number) => number);
+  muted?: boolean;
+  /** The pitch of the video's sound times this, 0.01 to 2 (Remotion's); the speed is unchanged. */
+  toneFrequency?: number;
+  /** Accepted and ignored. */
+  transparent?: boolean;
+  toneMapped?: boolean;
+  pauseWhenBuffering?: boolean;
+  acceptableTimeShiftInSeconds?: number;
+  onError?: (error: Error) => void;
+  showInTimeline?: boolean;
+  name?: string;
+  delayRenderTimeoutInMilliseconds?: number;
+}
+
+/** `10` and `'10px'` are 10; anything else (a percentage, `auto`) is null. */
+function px(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const match = /^\s*(-?\d*\.?\d+)(px)?\s*$/.exec(value);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
+/**
+ * The box and fit of a `<Video>` or `<Gif>`, read as `Img` reads them: `style.width`, `style.height` and
+ * `style.objectFit` win over the props, `scale-down` is `contain`, other style keys are ignored.
+ */
+function boxOf(props: {
+  width?: Num;
+  height?: Num;
+  fit?: 'fill' | 'contain' | 'cover';
+  style?: Record<string, unknown>;
+}): { width?: Num; height?: Num; fit?: 'fill' | 'contain' | 'cover' } {
+  const style = props.style ?? {};
+  const box: { width?: Num; height?: Num; fit?: 'fill' | 'contain' | 'cover' } = {};
+  const width = px(style.width) ?? props.width;
+  const height = px(style.height) ?? props.height;
+  if (width !== undefined) box.width = width;
+  if (height !== undefined) box.height = height;
+  const objectFit = style.objectFit;
+  if (objectFit === 'fill' || objectFit === 'contain' || objectFit === 'cover') box.fit = objectFit;
+  else if (objectFit === 'scale-down') box.fit = 'contain';
+  else if (props.fit !== undefined) box.fit = props.fit;
+  return box;
+}
+
+export function Video(props: VideoProps): ReactNode {
+  const timeline = useTimeline();
+  const { src, playbackRate } = props;
+  const label = `<Video src=${JSON.stringify(src)}>`;
+  if (typeof src !== 'string' || src === '') throw new Error(`<Video> needs a src, got ${JSON.stringify(src)}`);
+  if (playbackRate !== undefined && !(playbackRate > 0 && Number.isFinite(playbackRate))) {
+    throw new Error(`${label} playbackRate must be above 0, got ${String(playbackRate)}`);
+  }
+  const trimBefore = props.trimBefore ?? props.startFrom;
+  const trimAfter = props.trimAfter ?? props.endAt;
+  if (trimBefore !== undefined && !(trimBefore >= 0)) {
+    throw new Error(`${label} trimBefore must not be negative, got ${String(trimBefore)}`);
+  }
+  if (trimAfter !== undefined && !(trimAfter > (trimBefore ?? 0))) {
+    throw new Error(`${label} trimAfter (${String(trimAfter)}) must be greater than trimBefore (${trimBefore ?? 0})`);
+  }
+  const volumeProp = props.volume ?? 1;
+  // Remotion hands a volume callback the frame within the video's own Sequence.
+  const volume = typeof volumeProp === 'function' ? volumeProp(timeline.frame) : volumeProp;
+  if (typeof volume !== 'number' || !Number.isFinite(volume)) {
+    throw new Error(`${label} volume must be a finite number, got ${String(volume)}`);
+  }
+  // As <Audio>: the absolute frame at which the clip's own frame 0 falls.
+  const from = snapToFrame(timeline.absoluteFrame - timeline.frame);
+  const sound: Omit<AudioClipJson, 'id'> = {
+    src,
+    from,
+    trimBefore: trimBefore ?? 0,
+    trimAfter: trimAfter ?? null,
+    playbackRate: playbackRate ?? 1,
+    volume,
+    loop: props.loop ?? false,
+    muted: (props.muted ?? false) || timeline.frozen,
+    video: true,
+    ...toneOf(label, props.toneFrequency),
+  };
+  // `emit` reads the common props and the layer's fields from here; `volume`, `muted` and the ignored props stay behind.
+  return createElement('kg-video', {
+    ...props,
+    ...boxOf(props),
+    from,
+    trimBefore,
+    trimAfter,
+    // Inside a <Freeze> the clock reads the composition's frame; `from` is shifted so that frame is the frozen one.
+    frame: timeline.frozen ? timeline.absoluteFrame : undefined,
+    sound,
+  });
+}
+
+/** The same element as `<Video>`: every frame is decoded off the main thread anyway. */
+export const OffthreadVideo = Video;
+
+export interface GifProps extends CommonProps {
+  src: string;
+  width?: Num;
+  height?: Num;
+  fit?: 'fill' | 'contain' | 'cover';
+  style?: Record<string, unknown>;
+  /** Default 1. */
+  playbackRate?: number;
+  /** Default `loop`. */
+  loopBehavior?: 'loop' | 'pause-after-finish' | 'unmount-after-finish';
+  /**
+   * The GIF's duration, which `loopBehavior="unmount-after-finish"` needs. Set by `Gif` from `@kinetograph/core/gif`,
+   * which probes the file (this package cannot).
+   */
+  durationInSeconds?: number;
+  /** Accepted and ignored. */
+  onLoad?: (info: unknown) => void;
+  onError?: (error: Error) => void;
+}
+
+export function Gif(props: GifProps): ReactNode {
+  const { frame, config } = useTimeline();
+  const { src, playbackRate = 1, loopBehavior = 'loop' } = props;
+  const label = `<Gif src=${JSON.stringify(src)}>`;
+  if (typeof src !== 'string' || src === '') throw new Error(`<Gif> needs a src, got ${JSON.stringify(src)}`);
+  if (!(playbackRate > 0 && Number.isFinite(playbackRate))) {
+    throw new Error(`${label} playbackRate must be above 0, got ${String(playbackRate)}`);
+  }
+  if (loopBehavior !== 'loop' && loopBehavior !== 'pause-after-finish' && loopBehavior !== 'unmount-after-finish') {
+    throw new Error(
+      `${label} loopBehavior must be loop, pause-after-finish or unmount-after-finish, got ${JSON.stringify(loopBehavior)}`,
+    );
+  }
+  // Remotion's <Gif> reads useCurrentFrame(), so the time is relative to the enclosing Sequence.
+  const time = (frame / config.fps) * playbackRate;
+  if (loopBehavior === 'unmount-after-finish') {
+    if (props.durationInSeconds === undefined) {
+      throw new Error(
+        `${label} with loopBehavior="unmount-after-finish" needs the GIF's duration, which this package cannot read: import Gif from @kinetograph/core/gif (or @remotion/gif), which probes the file`,
+      );
+    }
+    if (time >= props.durationInSeconds) return null;
+  }
+  return createElement('kg-gif', { ...props, ...boxOf(props), time, loop: loopBehavior === 'loop' });
 }

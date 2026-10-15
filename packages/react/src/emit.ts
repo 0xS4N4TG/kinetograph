@@ -4,11 +4,14 @@
 // concatenation) is worked out here, in one pass, each time a tree is asked
 // for. Nothing here reads time: `<Lottie>` and `<Audio>` already resolved it.
 
+import { isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
 import {
   fontKey,
   type AudioClipJson,
   type CameraJson,
   type CharStyle,
+  type SequenceJson,
+  type Unsupported,
   type Effect,
   type LayerJson,
   type MotionBlurJson,
@@ -34,6 +37,20 @@ export interface RenderedTree {
   layers: LayerJson[];
   camera: CameraJson | null;
   audio: AudioClipJson[];
+  /** Every `<Sequence>` in the tree, showing or not, in tree order (docs/AUTHORING.md §11.4). */
+  sequences: SequenceJson[];
+  /** What DOM elements in the tree ask for that compat mode cannot draw natively (docs/COMPAT.md §6.1). */
+  unsupported: Unsupported[];
+}
+
+/** What `emit` needs to know to draw DOM elements (docs/COMPAT.md §2). */
+export interface EmitOptions {
+  /** The composition's size: the box a DOM island is laid out in. */
+  viewport?: { width: number; height: number };
+  /** The registered fonts, read when an island is mapped (fonts may be registered after the root is made). */
+  fonts?: () => Record<string, string>;
+  /** Leave DOM elements out instead of drawing them (composition discovery, which wants only the `<Composition>`s). */
+  ignoreDom?: boolean;
 }
 
 /** The name of an element as a user writes it, for error messages. */
@@ -48,8 +65,11 @@ export const ELEMENT_NAMES: Record<string, string> = {
   'kg-noise': 'Noise',
   'kg-mesh-gradient': 'MeshGradient',
   'kg-lottie': 'Lottie',
+  'kg-video': 'Video',
+  'kg-gif': 'Gif',
   'kg-camera': 'Camera',
   'kg-audio': 'Audio',
+  'kg-sequence': 'Sequence',
 };
 
 type Props = Record<string, any>;
@@ -142,7 +162,73 @@ class Emitter {
   readonly layers: LayerJson[] = [];
   readonly cameras: CameraJson[] = [];
   readonly audio: AudioClipJson[] = [];
+  readonly sequences: SequenceJson[] = [];
+  readonly unsupported: Unsupported[] = [];
   private readonly ids = new Set<string>();
+
+  constructor(private readonly options: EmitOptions = {}) {}
+
+  /** Claims an explicit id for a DOM element's layer: false when it is reserved or taken. */
+  private claim(id: string): boolean {
+    if (id.startsWith('$') || this.ids.has(id)) return false;
+    this.ids.add(id);
+    return true;
+  }
+
+  /**
+   * An island: a DOM element, with everything inside it, drawn by the compat mapping (docs/COMPAT.md §2). Its
+   * `<Sequence>`s are taken out first, as `collect` does, so that they take no place in the paths.
+   */
+  private island(root: HostElement, path: string): LayerJson[] {
+    const { viewport } = this.options;
+    if (this.options.ignoreDom) return [];
+    if (viewport === undefined) {
+      throw new Error(
+        `<${root.type}> is a DOM element, which is laid out in the composition's box: create the root with createSceneRoot({ viewport: { width, height } })`,
+      );
+    }
+    const result = mapDomIsland(this.flattenElement(root, path), {
+      path,
+      viewport,
+      fonts: this.options.fonts?.() ?? {},
+      emitNative: (node, at) => this.element(node as HostElement, at),
+      claimId: (id) => this.claim(id),
+    });
+    this.unsupported.push(...result.unsupported);
+    // One camera serves the tree: the same one asked for twice is one.
+    const { camera } = result;
+    if (camera !== null && !this.cameras.some((c) => JSON.stringify(c) === JSON.stringify(camera))) this.cameras.push(camera);
+    return result.layers;
+  }
+
+  private flattenElement(element: HostElement, path: string): HostElement {
+    return { ...element, children: this.flattenChildren(element.children, path, { next: 0 }) };
+  }
+
+  /** The children of a DOM element with each `<Sequence>` replaced by what is inside it (and recorded). */
+  private flattenChildren(nodes: HostNode[], parentPath: string, place: { next: number }): HostNode[] {
+    const out: HostNode[] = [];
+    for (const child of nodes) {
+      if (child.kind === 'text') {
+        out.push(child);
+      } else if (child.type === 'kg-sequence') {
+        const { sequence, wrapped } = child.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
+        const record: SequenceJson = { ...sequence, layer: null };
+        this.sequences.push(record);
+        const first = place.next;
+        const inner = this.flattenChildren(child.children, parentPath, place);
+        out.push(...inner);
+        if (wrapped && place.next > first) {
+          const head = inner.find((n): n is HostElement => n.kind === 'element');
+          if (head !== undefined) record.layer = typeof head.props.id === 'string' ? head.props.id : `${parentPath}.${first}`;
+        }
+      } else {
+        const path = `${parentPath}.${place.next++}`;
+        out.push(isDomElement(child.type) ? this.flattenElement(child, path) : child);
+      }
+    }
+    return out;
+  }
 
   /** The element's id: explicit (checked) or `$` + its index path among the host elements. */
   private idOf(element: HostElement, path: string): string {
@@ -164,15 +250,39 @@ class Emitter {
 
   children(nodes: HostNode[], parentPath: string, parentName: string): LayerJson[] {
     const out: LayerJson[] = [];
-    nodes.forEach((node, index) => {
+    this.collect(nodes, parentPath, parentName, out, { next: 0 });
+    return out;
+  }
+
+  /**
+   * Emits `nodes` into `out`. A `kg-sequence` is transparent: it is recorded in `sequences` (before what is inside it,
+   * so the list is in tree order) and its children are emitted as if they stood where it does, taking no place in
+   * the index path themselves, so a `<Sequence>` never moves an automatic id (docs/AUTHORING.md §11.4).
+   */
+  private collect(nodes: HostNode[], parentPath: string, parentName: string, out: LayerJson[], place: { next: number }): void {
+    for (const node of nodes) {
       if (node.kind === 'text') {
         // The reconciler refuses these on the way in; this keeps `emit` honest on its own.
         throw new Error(`Raw text "${node.text}" is not allowed inside <${parentName}>; wrap it in <Text>`);
       }
-      const layer = this.element(node, `${parentPath}${parentPath === '' ? '$' : '.'}${index}`);
+      if (node.type === 'kg-sequence') {
+        const { sequence, wrapped } = node.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
+        const record: SequenceJson = { ...sequence, layer: null };
+        this.sequences.push(record);
+        const before = out.length;
+        this.collect(node.children, parentPath, parentName, out, place);
+        // The group its children are in: the `<Layer>` a Sequence renders, unless it has `layout="none"`.
+        if (wrapped && out.length > before) record.layer = out[before]!.id;
+        continue;
+      }
+      const path = `${parentPath}${parentPath === '' ? '$' : '.'}${place.next++}`;
+      if (isDomElement(node.type)) {
+        out.push(...this.island(node, path));
+        continue;
+      }
+      const layer = this.element(node, path);
       if (layer !== null) out.push(layer);
-    });
-    return out;
+    }
   }
 
   /** A layer, or null for `<Camera>` and `<Audio>`, which land in `cameras` and `audio` instead. */
@@ -266,6 +376,22 @@ class Emitter {
           ...pick(props, ['src', 'width', 'height', 'time', 'loop']),
           ...commonOf(props, name),
         } as LayerJson;
+      case 'kg-video':
+        // The sound is not part of the layer: it is an audio clip with the layer's id.
+        this.audio.push({ id, ...props.sound });
+        return {
+          id,
+          type: 'video',
+          ...pick(props, ['src', 'width', 'height', 'fit', 'frame', 'from', 'trimBefore', 'trimAfter', 'playbackRate', 'loop']),
+          ...commonOf(props, name),
+        } as LayerJson;
+      case 'kg-gif':
+        return {
+          id,
+          type: 'gif',
+          ...pick(props, ['src', 'width', 'height', 'fit', 'time', 'loop']),
+          ...commonOf(props, name),
+        } as LayerJson;
       default:
         throw new Error(`Unknown element <${type}>`);
     }
@@ -273,11 +399,17 @@ class Emitter {
 }
 
 /** The scene JSON of a host tree (the children of the root). */
-export function emit(roots: HostNode[]): RenderedTree {
-  const emitter = new Emitter();
+export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
+  const emitter = new Emitter(options);
   const layers = emitter.children(roots, '', 'the root of the tree');
   if (emitter.cameras.length > 1) {
     throw new Error(`Only one <Camera> is allowed per tree, found ${emitter.cameras.length}`);
   }
-  return { layers, camera: emitter.cameras[0] ?? null, audio: emitter.audio };
+  return {
+    layers,
+    camera: emitter.cameras[0] ?? null,
+    audio: emitter.audio,
+    sequences: emitter.sequences,
+    unsupported: emitter.unsupported,
+  };
 }

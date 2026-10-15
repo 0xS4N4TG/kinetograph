@@ -158,3 +158,198 @@ test('parseRange follows the Rust CLI', () => {
   rejects(() => native.parseRange('5..5', 90), 'INVALID_ARG', /no frames/);
   rejects(() => native.parseRange('1..2', -1), 'INVALID_ARG', /durationInFrames/);
 });
+
+const media = 'crates/core/tests/scenes/media';
+
+test('probeMedia reads a video header without decoding', () => {
+  const clip = native.probeMedia(`${media}/clip.mp4`, repo);
+  assert.equal(clip.kind, 'video');
+  assert.deepEqual([clip.width, clip.height], [64, 36]);
+  assert.equal(clip.fps, 24);
+  assert.equal(clip.frames, 48);
+  assert.ok(Math.abs(clip.durationInSeconds - 2) < 1e-3, clip.durationInSeconds);
+  assert.equal(clip.hasAudio, false);
+  assert.equal(clip.videoCodec, 'h264');
+  assert.ok(!clip.audioCodec);
+
+  // A file with sound; the path may also be absolute (baseDir is then ignored).
+  const talking = native.probeMedia(path.join(repo, media, 'with-audio.mp4'));
+  assert.equal(talking.hasAudio, true);
+  assert.equal(talking.audioCodec, 'aac');
+  assert.ok(Math.abs(talking.durationInSeconds - 1) < 0.05, talking.durationInSeconds);
+
+  // A WebM has no frame count; its duration is its length, not where it ends.
+  const webm = native.probeMedia(`${media}/offset.webm`, repo);
+  assert.equal(webm.videoCodec, 'vp9');
+  assert.ok(!webm.frames);
+  assert.ok(Math.abs(webm.durationInSeconds - 1.2) < 0.05, webm.durationInSeconds);
+});
+
+test('probeMedia reads a GIF: its screen, pictures and summed delays', () => {
+  const gif = native.probeMedia(`${media}/spinner.gif`, repo);
+  assert.equal(gif.kind, 'gif');
+  assert.deepEqual([gif.width, gif.height], [32, 24]);
+  assert.equal(gif.frames, 5);
+  // Delays 0, 10, 40, 200 and 60 ms; a delay of 10 ms or less counts as 100.
+  assert.ok(Math.abs(gif.durationInSeconds - 0.5) < 1e-9, gif.durationInSeconds);
+  assert.ok(!gif.fps);
+  assert.equal(gif.hasAudio, false);
+  assert.equal(gif.videoCodec, 'gif');
+});
+
+test('probeMedia errors', () => {
+  rejects(() => native.probeMedia(`${media}/nope.mp4`, repo), 'IO', /nope\.mp4/);
+  // Neither a video nor a GIF: a sound, and a script.
+  rejects(() => native.probeMedia(`${media}/tone-mono.wav`, repo), 'INVALID_ARG', /no video stream/);
+  rejects(() => native.probeMedia(`${media}/make_gif.py`, repo), 'INVALID_ARG', /make_gif\.py/);
+});
+
+const peak = (samples) => samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+
+test('decodeAudio resamples and keeps mono or stereo', () => {
+  // 0.25 s of a mono 8 kHz sine, to 48 kHz.
+  const mono = native.decodeAudio(`${media}/tone-mono.wav`, 48000, repo);
+  assert.equal(mono.sampleRate, 48000);
+  assert.equal(mono.channels.length, 1);
+  assert.ok(mono.channels[0] instanceof Float32Array);
+  assert.ok(Math.abs(mono.channels[0].length - 12000) <= 16, mono.channels[0].length);
+  assert.ok(peak(mono.channels[0]) > 0.1 && peak(mono.channels[0]) <= 1.01);
+  // The same rate: the 2000 samples as they are.
+  const same = native.decodeAudio(`${media}/tone-mono.wav`, 8000, repo);
+  assert.equal(same.channels[0].length, 2000);
+
+  // The stereo AAC track of an MP4, 1 s; both channels carry the tone.
+  const stereo = native.decodeAudio(`${media}/with-audio.mp4`, 44100, repo);
+  assert.equal(stereo.channels.length, 2);
+  assert.equal(stereo.channels[0].length, stereo.channels[1].length);
+  assert.ok(Math.abs(stereo.channels[0].length - 44100) <= 2048, stereo.channels[0].length);
+  assert.ok(peak(stereo.channels[0]) > 0.1 && peak(stereo.channels[1]) > 0.1);
+
+  // Six channels are downmixed to two, and the front left reaches both.
+  const surround = native.decodeAudio(`${media}/surround.wav`, 8000, repo);
+  assert.equal(surround.channels.length, 2);
+  assert.equal(surround.channels[0].length, 800);
+  assert.ok(peak(surround.channels[0]) > 0.05);
+});
+
+test('decodeAudio returns null without an audio stream, and errors', () => {
+  assert.equal(native.decodeAudio(`${media}/clip.mp4`, 48000, repo), null);
+  rejects(() => native.decodeAudio(`${media}/nope.wav`, 48000, repo), 'IO', /nope\.wav/);
+  rejects(() => native.decodeAudio(`${media}/make_gif.py`, 48000, repo), 'INVALID_ARG', /make_gif\.py/);
+  rejects(() => native.decodeAudio(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /sampleRate/);
+});
+
+// ---- layoutDom (docs/COMPAT.md §5.1) ----
+
+const domRequest = (root, extra = {}) =>
+  JSON.stringify({
+    root,
+    available: { width: 400, height: 300 },
+    fonts: { 'DM Sans': font },
+    baseDir: repo,
+    ...extra,
+  });
+
+test('layoutDom lays out blocks, flex and absolute boxes', () => {
+  const box = JSON.parse(
+    native.layoutDom(
+      domRequest({
+        style: { display: 'flex', flexDirection: 'column', padding: [10, 10, 10, 10], position: 'relative', height: 300, boxSizing: 'border-box' },
+        children: [
+          { style: { height: 40, margin: [0, 'auto', 0, 'auto'], width: { percent: 50 } } },
+          { style: { flexGrow: 1 } },
+          { style: { position: 'absolute', inset: [0, 0, 'auto', 'auto'], width: 20, height: 20 } },
+        ],
+      }),
+    ),
+  );
+  assert.deepEqual([box.x, box.y, box.width, box.height], [0, 0, 400, 300]);
+  assert.deepEqual(box.padding, [10, 10, 10, 10]);
+  assert.equal(box.children.length, 3);
+  // 50% of the 380 px content box, centred by its auto margins.
+  assert.deepEqual(
+    [box.children[0].x, box.children[0].y, box.children[0].width, box.children[0].height],
+    [105, 10, 190, 40],
+  );
+  assert.equal(box.children[1].height, 300 - 20 - 40);
+  // Absolute: against the padding box, out of the flow.
+  assert.deepEqual(
+    [box.children[2].x, box.children[2].y, box.children[2].width, box.children[2].height],
+    [380, 0, 20, 20],
+  );
+});
+
+test('layoutDom measures text with the renderer engine, at the width on offer', () => {
+  const text = 'alpha beta gamma delta';
+  const leaf = (width) => ({
+    style: width === undefined ? {} : { width },
+    measure: { text: { text, font: 'DM Sans', size: 24 } },
+  });
+  const wide = JSON.parse(native.layoutDom(domRequest({ children: [leaf()] })));
+  const narrow = JSON.parse(native.layoutDom(domRequest({ children: [leaf(150)] })));
+  // The same lines layoutText makes at that width.
+  const one = native.layoutText({ text, font: 'DM Sans', size: 24, fonts: { 'DM Sans': font }, baseDir: repo });
+  const wrapped = native.layoutText({
+    text,
+    font: 'DM Sans',
+    size: 24,
+    maxWidth: 150,
+    fonts: { 'DM Sans': font },
+    baseDir: repo,
+  });
+  assert.equal(wide.children[0].width, 400);
+  assert.ok(Math.abs(wide.children[0].height - one.height) < 1e-3);
+  assert.ok(wrapped.lines.length > 1);
+  assert.ok(Math.abs(narrow.children[0].height - wrapped.height) < 1e-3);
+});
+
+test('layoutDom errors', () => {
+  rejects(() => native.layoutDom('{ nope'), 'INVALID_ARG', /layoutDom request/);
+  rejects(() => native.layoutDom(domRequest({ style: { colour: 'red' } })), 'INVALID_ARG', /unknown style property/);
+  rejects(
+    () => native.layoutDom(domRequest({ measure: { text: { text: 'a', font: 'Nope', size: 10 } } })),
+    'INVALID_ARG',
+    /Nope/,
+  );
+  rejects(
+    () => native.layoutDom(domRequest({}, { available: { width: -1, height: 10 } })),
+    'INVALID_ARG',
+    /available width/,
+  );
+});
+
+test('videoFrame decodes the picture a video layer shows, as straight RGBA', () => {
+  const first = native.videoFrame(`${media}/clip.mp4`, 0, repo);
+  assert.deepEqual([first.width, first.height], [64, 36]);
+  assert.equal(first.data.length, 64 * 36 * 4);
+  assert.ok(Buffer.isBuffer(first.data));
+  // An opaque clip.
+  for (let i = 3; i < first.data.length; i += 4) assert.equal(first.data[i], 255);
+
+  // Out of order or in order, a time gives the same bytes (the picture is a function of the time).
+  const times = [1.5, 0.25, 1.0, 0.25, 1.9];
+  const seen = times.map((t) => native.videoFrame(`${media}/clip.mp4`, t, repo).data);
+  assert.ok(seen[1].equals(seen[3]));
+  assert.ok(!seen[0].equals(seen[1]), 'the clip changes along its length');
+  // A time before the start shows the first picture; one past the end, the last (held).
+  assert.ok(native.videoFrame(`${media}/clip.mp4`, -2, repo).data.equals(first.data));
+  const last = native.videoFrame(`${media}/clip.mp4`, 2, repo).data;
+  assert.ok(native.videoFrame(`${media}/clip.mp4`, 99, repo).data.equals(last));
+  // The path may be absolute.
+  assert.ok(native.videoFrame(path.join(repo, media, 'clip.mp4'), 0).data.equals(first.data));
+});
+
+test('videoFrame also gives the picture of a GIF at a time', () => {
+  const at = (t) => native.videoFrame(`${media}/spinner.gif`, t, repo);
+  assert.deepEqual([at(0).width, at(0).height], [32, 24]);
+  assert.ok(at(0).data.equals(at(-1).data));
+  assert.ok(!at(0).data.equals(at(0.15).data));
+  // Past the end the last picture is held.
+  assert.ok(at(0.7).data.equals(at(60).data));
+});
+
+test('videoFrame errors', () => {
+  rejects(() => native.videoFrame(`${media}/nope.mp4`, 0, repo), 'IO', /nope\.mp4/);
+  rejects(() => native.videoFrame(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /no video stream/);
+  rejects(() => native.videoFrame(`${media}/clip.mp4`, Number.NaN, repo), 'INVALID_ARG', /time/);
+});

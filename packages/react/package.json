@@ -13,6 +13,7 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@kinetograph/compat": "0.1.0",
     "@kinetograph/scene": "0.1.0",
     "react-reconciler": "0.34.0"
   },

@@ -1,6 +1,6 @@
 //! CPU-only checks that need no GPU: every built-in shader is valid WGSL,
-//! and every committed scene file loads, with its fonts, images, animations and
-//! LUTs.
+//! and every committed scene file loads, with its fonts, images, animations,
+//! videos, GIFs and LUTs.
 
 use std::path::{Path, PathBuf};
 
@@ -110,6 +110,8 @@ fn committed_scenes_load() {
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         crate::render::load_images(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         crate::lottie::load_lotties(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        crate::video::load_videos(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        crate::gif::load_gifs(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         crate::lut::load_luts(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 }

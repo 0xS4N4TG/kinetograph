@@ -1,7 +1,9 @@
 //! The JSON scene graph. See docs/SCENE.md for the format.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use vello::kurbo::BezPath;
@@ -11,6 +13,7 @@ use crate::color::Color;
 use crate::error::{Error, Result};
 use crate::resolve::MAX_BLUR_RADIUS;
 use crate::turbulence::MAX_OCTAVES;
+use crate::video::VideoInfo;
 
 /// Largest canvas side; wgpu's default texture limit.
 pub const MAX_SIDE: u32 = 8192;
@@ -39,10 +42,15 @@ pub struct Scene {
     #[serde(skip)]
     pub base_dir: PathBuf,
     /// The natural size in pixels of the image (and Lottie) files that a layer
-    /// leaves a size out for, by `src`. Read from the files' headers when the
-    /// scene loads, so that resolving a frame needs no I/O.
+    /// leaves a size out for, and of every video and GIF, by `src`. Read from
+    /// the files' headers when the scene loads, so that resolving a frame
+    /// needs no I/O.
     #[serde(skip)]
     pub asset_sizes: BTreeMap<String, (f64, f64)>,
+    /// What the container of every video file says (`video::probe`), by
+    /// `src`, read when the scene loads.
+    #[serde(skip)]
+    pub videos: BTreeMap<String, Arc<VideoInfo>>,
 }
 
 fn default_background() -> Color {
@@ -173,6 +181,8 @@ pub enum LayerKind {
     Noise(NoiseLayer),
     MeshGradient(MeshGradientLayer),
     Lottie(LottieLayer),
+    Video(VideoLayer),
+    Gif(GifLayer),
 }
 
 impl LayerKind {
@@ -186,6 +196,8 @@ impl LayerKind {
             LayerKind::Noise(_) => "noise",
             LayerKind::MeshGradient(_) => "meshGradient",
             LayerKind::Lottie(_) => "lottie",
+            LayerKind::Video(_) => "video",
+            LayerKind::Gif(_) => "gif",
         }
     }
 
@@ -1028,6 +1040,63 @@ pub struct LottieLayer {
     pub looped: bool,
 }
 
+/// A video file, one picture per frame (`docs/SCENE.md`, "video").
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoLayer {
+    /// Any file FFmpeg reads with a video stream, relative to the scene.
+    pub src: String,
+    /// The box the picture is fitted into; omitted sides are the stream's
+    /// size, or keep its aspect ratio, as an image's do.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+    #[serde(default)]
+    pub fit: Fit,
+    /// The scene frame the clip's clock reads. Omitted: the frame being
+    /// rendered.
+    pub frame: Option<Num>,
+    /// The scene frame on which the clip's own frame 0 falls.
+    #[serde(default)]
+    pub from: f64,
+    /// Scene frames skipped at the start of the file.
+    #[serde(default)]
+    pub trim_before: f64,
+    /// Scene frames from the start of the file at which the clip ends.
+    /// Omitted: the end of the stream.
+    pub trim_after: Option<f64>,
+    /// How many clip frames pass per scene frame, above 0.
+    #[serde(default = "one_f64")]
+    pub playback_rate: f64,
+    /// Past the end: start again at `trimBefore` (`true`), or hold the last
+    /// picture (`false`).
+    #[serde(default, rename = "loop")]
+    pub looped: bool,
+}
+
+/// An animated GIF (`docs/SCENE.md`, "gif").
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifLayer {
+    /// A `.gif`, relative to the scene.
+    pub src: String,
+    /// The box the picture is fitted into; omitted sides are the logical
+    /// screen's size, or keep its aspect ratio.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+    #[serde(default)]
+    pub fit: Fit,
+    /// Seconds into the animation. Omitted: the time of the frame
+    /// (`frame / fps`).
+    pub time: Option<Num>,
+    /// Past the end: wrap round (`true`), or hold the last picture (`false`).
+    #[serde(default = "yes", rename = "loop")]
+    pub looped: bool,
+}
+
+fn one_f64() -> f64 {
+    1.0
+}
+
 /// How an image is fitted to its box (CSS's `object-fit`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1283,7 +1352,62 @@ impl Scene {
         scene.base_dir = base_dir;
         scene.validate()?;
         scene.measure_assets()?;
+        scene.measure_media()?;
         Ok(scene)
+    }
+
+    /// Reads the container of every video and the header of every GIF into
+    /// `videos` and `asset_sizes` (no picture is decoded), and checks what
+    /// only the file can tell: that a video's `trimBefore` is inside it.
+    fn measure_media(&mut self) -> Result<()> {
+        let mut wanted = Vec::new();
+        walk_layers(&self.layers, &mut |layer| match &layer.kind {
+            LayerKind::Video(v) => wanted.push((layer.id.clone(), Some(v.clone()), v.src.clone())),
+            LayerKind::Gif(g) => wanted.push((layer.id.clone(), None, g.src.clone())),
+            _ => {}
+        });
+        for (id, video, src) in wanted {
+            let path = self.base_dir.join(&src);
+            let Some(video) = video else {
+                if let Entry::Vacant(slot) = self.asset_sizes.entry(src) {
+                    let (width, height) = image::image_dimensions(&path).map_err(|e| {
+                        Error::Scene(format!(
+                            "layer {id:?}: cannot read the size of gif {}: {e}",
+                            path.display()
+                        ))
+                    })?;
+                    slot.insert((f64::from(width), f64::from(height)));
+                }
+                continue;
+            };
+            let info = match self.videos.get(&src) {
+                Some(info) => info.clone(),
+                None => {
+                    let info = crate::video::probe(&path).map_err(|e| {
+                        Error::Scene(format!(
+                            "layer {id:?}: cannot read video {}: {e}",
+                            path.display()
+                        ))
+                    })?;
+                    self.videos.insert(src.clone(), info.clone());
+                    self.asset_sizes
+                        .insert(src.clone(), (f64::from(info.width), f64::from(info.height)));
+                    info
+                }
+            };
+            if video.trim_before / self.fps >= info.duration {
+                return Err(Error::Scene(format!(
+                    "layer {id:?}: trimBefore {} is at or past the end of video {} \
+                     (it lasts {:.3} s, {:.1} frames at {} fps)",
+                    video.trim_before,
+                    path.display(),
+                    info.duration,
+                    info.duration * self.fps,
+                    self.fps
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Reads the pixel size of every image that leaves its `width` or
@@ -1574,6 +1698,51 @@ impl Scene {
                         )));
                     }
                     for (what, side) in [("width", &l.width), ("height", &l.height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
+                    }
+                }
+                LayerKind::Video(v) => {
+                    let bad =
+                        |msg: String| Err(Error::Scene(format!("layer {:?}: {msg}", layer.id)));
+                    if v.src.trim().is_empty() {
+                        return bad("video needs a src, the path of a video file".into());
+                    }
+                    for (what, side) in [("width", &v.width), ("height", &v.height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
+                    }
+                    if !(v.from.is_finite() && v.trim_before.is_finite() && v.trim_before >= 0.0) {
+                        return bad(format!(
+                            "video from must be a number and trimBefore a number not below 0, got {} and {}",
+                            v.from, v.trim_before
+                        ));
+                    }
+                    if let Some(after) = v.trim_after
+                        && !(after.is_finite() && after > v.trim_before)
+                    {
+                        return bad(format!(
+                            "video trimAfter must be above trimBefore ({}), got {after}",
+                            v.trim_before
+                        ));
+                    }
+                    if !(v.playback_rate.is_finite() && v.playback_rate > 0.0) {
+                        return bad(format!(
+                            "video playbackRate must be above 0, got {}",
+                            v.playback_rate
+                        ));
+                    }
+                }
+                LayerKind::Gif(g) => {
+                    if g.src.trim().is_empty() {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: gif needs a src, the path of a .gif file",
+                            layer.id
+                        )));
+                    }
+                    for (what, side) in [("width", &g.width), ("height", &g.height)] {
                         if let Some(side) = side {
                             non_negative(what, side)?;
                         }
@@ -4074,6 +4243,159 @@ mod tests {
             msg.contains("\"anim\"") && msg.contains("negative"),
             "{msg}"
         );
+    }
+
+    // --- Video and GIF. ---------------------------------------------------------
+
+    fn media() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media")
+    }
+
+    /// A 24 fps scene with one layer of `kind`.
+    fn media_scene(kind: &str, layer: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 100, "height": 100, "fps": 24, "durationInFrames": 10, "layers": [
+                  {{"id": "m", "type": "{kind}", {layer}}}]}}"##
+            ),
+            media(),
+        )
+    }
+
+    fn media_error(kind: &str, layer: &str) -> String {
+        media_scene(kind, layer).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn a_video_layer_takes_a_file_a_box_and_a_clip() {
+        let scene = media_scene(
+            "video",
+            r#""src": "clip.mp4", "width": 40, "fit": "cover", "from": 6, "trimBefore": 12,
+               "trimAfter": 36, "playbackRate": 1.5, "loop": true,
+               "frame": [{"frame": 0, "value": 0}, {"frame": 9, "value": 18}]"#,
+        )
+        .unwrap();
+        let LayerKind::Video(v) = &scene.layers[0].kind else {
+            panic!("not a video layer");
+        };
+        assert_eq!(v.src, "clip.mp4");
+        assert_eq!(v.fit, Fit::Cover);
+        assert_eq!(
+            (v.from, v.trim_before, v.trim_after, v.playback_rate),
+            (6.0, 12.0, Some(36.0), 1.5)
+        );
+        assert!(v.looped);
+        assert_eq!(v.frame.as_ref().unwrap().at(9.0), 18.0);
+        assert_eq!(scene.layers[0].kind.name(), "video");
+        assert!(scene.layers[0].kind.has_box());
+        // The container is read when the scene loads, not decoded: the size
+        // is there for a layer that leaves a side out, and so is the clip.
+        assert_eq!(scene.asset_sizes["clip.mp4"], (64.0, 36.0));
+        assert_eq!(scene.videos["clip.mp4"].video_codec, "h264");
+        // The defaults.
+        let scene = media_scene("video", r#""src": "clip.mp4""#).unwrap();
+        let LayerKind::Video(v) = &scene.layers[0].kind else {
+            panic!("not a video layer");
+        };
+        assert!(v.width.is_none() && v.frame.is_none() && v.trim_after.is_none());
+        assert_eq!(
+            (v.from, v.trim_before, v.playback_rate, v.looped, v.fit),
+            (0.0, 0.0, 1.0, false, Fit::Fill)
+        );
+    }
+
+    #[test]
+    fn a_bad_video_layer_is_an_error_naming_it() {
+        let named = |msg: String, words: &[&str]| {
+            assert!(msg.contains("\"m\""), "{msg}");
+            for word in words {
+                assert!(msg.contains(word), "{word}: {msg}");
+            }
+        };
+        named(
+            media_error("video", r#""src": "nope.mp4""#),
+            &["nope.mp4", "cannot read video"],
+        );
+        // A file with no video stream.
+        named(
+            media_error("video", r#""src": "tone-mono.wav""#),
+            &["no video stream"],
+        );
+        named(media_error("video", r#""src": " ""#), &["src"]);
+        named(
+            media_error("video", r#""src": "clip.mp4", "width": -2"#),
+            &["negative"],
+        );
+        named(
+            media_error("video", r#""src": "clip.mp4", "playbackRate": 0"#),
+            &["playbackRate"],
+        );
+        named(
+            media_error("video", r#""src": "clip.mp4", "trimBefore": -1"#),
+            &["trimBefore"],
+        );
+        named(
+            media_error(
+                "video",
+                r#""src": "clip.mp4", "trimBefore": 10, "trimAfter": 10"#,
+            ),
+            &["trimAfter"],
+        );
+        // clip.mp4 lasts 2 s: 48 frames at 24 fps.
+        named(
+            media_error("video", r#""src": "clip.mp4", "trimBefore": 48"#),
+            &["trimBefore", "past the end", "clip.mp4"],
+        );
+        assert!(media_scene("video", r#""src": "clip.mp4", "trimBefore": 47"#).is_ok());
+        // `trimAfter` beyond the file is allowed: the last picture is held.
+        assert!(media_scene("video", r#""src": "clip.mp4", "trimAfter": 500"#).is_ok());
+    }
+
+    #[test]
+    fn a_gif_layer_takes_a_file_a_box_a_time_and_a_loop() {
+        let scene = media_scene(
+            "gif",
+            r#""src": "spinner.gif", "width": 40, "fit": "contain", "time": 0.25, "loop": false"#,
+        )
+        .unwrap();
+        let LayerKind::Gif(g) = &scene.layers[0].kind else {
+            panic!("not a gif layer");
+        };
+        assert_eq!(
+            (g.src.as_str(), g.fit, g.looped),
+            ("spinner.gif", Fit::Contain, false)
+        );
+        assert_eq!(g.time.as_ref().unwrap().at(0.0), 0.25);
+        assert_eq!(scene.layers[0].kind.name(), "gif");
+        // The logical screen is read when the scene loads.
+        assert_eq!(scene.asset_sizes["spinner.gif"], (32.0, 24.0));
+        // Looping is the default.
+        let scene = media_scene("gif", r#""src": "spinner.gif""#).unwrap();
+        let LayerKind::Gif(g) = &scene.layers[0].kind else {
+            panic!("not a gif layer");
+        };
+        assert!(g.looped && g.time.is_none());
+        // Errors name the layer.
+        for (layer, word) in [
+            (r#""src": "nope.gif""#, "nope.gif"),
+            (r#""src": " ""#, "src"),
+            (r#""src": "spinner.gif", "height": -1"#, "negative"),
+        ] {
+            let msg = media_error("gif", layer);
+            assert!(msg.contains("\"m\"") && msg.contains(word), "{msg}");
+        }
+    }
+
+    #[test]
+    fn video_and_gif_count_nothing_in_the_margin() {
+        let scene = media_scene(
+            "video",
+            r#""src": "clip.mp4", "effects": [{"type": "blur", "radius": 9}]"#,
+        )
+        .unwrap();
+        assert_eq!(scene.margin(), 0);
+        let scene = media_scene("gif", r#""src": "spinner.gif""#).unwrap();
+        assert_eq!(scene.margin(), 0);
     }
 
     // --- Per-character styles. ------------------------------------------------

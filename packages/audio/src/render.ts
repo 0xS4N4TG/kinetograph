@@ -1,7 +1,10 @@
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { AudioBuffer, OfflineAudioContext } from 'node-web-audio-api';
 import type { AudioClipTimeline } from './clips.js';
+import { shiftPitch } from './pitch.js';
 import { registeredCallbacks } from './registry.js';
 
 export interface AudioPcm {
@@ -28,6 +31,8 @@ export async function renderAudio(options: {
   sampleRate?: number;
   clips: AudioClipTimeline[];
   baseDir?: string;
+  /** Decodes the sound of `video: true` clips; default: the addon's `decodeAudio` (tests pass a stub). */
+  decodeAudio?: DecodeAudio;
 }): Promise<AudioPcm> {
   const { fps, first, last, clips } = options;
   const sampleRate = options.sampleRate ?? 48000;
@@ -54,12 +59,38 @@ export async function renderAudio(options: {
   }
 
   const decoded = new Map<string, AudioBuffer>();
+  // The sound of a video file, by path; null for a file with none.
+  const videoSound = new Map<string, AudioBuffer | null>();
+  // `toneFrequency`: a file's sound shifted once per pitch.
+  const pitched = new Map<string, AudioBuffer>();
   for (const clip of clips) {
     const path = resolve(options.baseDir ?? process.cwd(), clip.src);
-    let buffer = decoded.get(path);
-    if (!buffer) {
-      buffer = await decode(ctx, path);
-      decoded.set(path, buffer);
+    let buffer: AudioBuffer | null | undefined;
+    if (clip.video) {
+      // A muted video's file is never opened for its sound.
+      if (clip.muted || clip.volumes.size === 0) continue;
+      buffer = videoSound.get(path);
+      if (buffer === undefined) {
+        buffer = await decodeVideoSound(ctx, clip.src, options.baseDir, options.decodeAudio ?? addonDecodeAudio());
+        videoSound.set(path, buffer);
+      }
+      if (buffer === null) continue;
+    } else {
+      buffer = decoded.get(path);
+      if (!buffer) {
+        buffer = await decode(ctx, path);
+        decoded.set(path, buffer);
+      }
+    }
+    const tone = clip.toneFrequency ?? 1;
+    if (tone !== 1) {
+      const key = `${clip.video ? 'video' : 'audio'}:${path}@${tone}`;
+      let shifted = pitched.get(key);
+      if (!shifted) {
+        shifted = pitchBuffer(ctx, buffer, tone);
+        pitched.set(key, shifted);
+      }
+      buffer = shifted;
     }
     scheduleClip(ctx, buffer, clip, { fps, first, last, timeOf });
   }
@@ -68,6 +99,66 @@ export async function renderAudio(options: {
   const channels: Float32Array[] = [];
   for (let c = 0; c < rendered.numberOfChannels; c++) channels.push(Float32Array.from(rendered.getChannelData(c)));
   return { sampleRate: rendered.sampleRate, channels };
+}
+
+/**
+ * Decodes the first audio stream of a video file to `sampleRate` and its channel count (the addon's `decodeAudio`).
+ * `null` when the file has none.
+ */
+export type DecodeAudio = (path: string, sampleRate: number, baseDir?: string) => AudioPcm | null | Promise<AudioPcm | null>;
+
+let addonDecoder: DecodeAudio | undefined;
+
+/**
+ * The addon's `decodeAudio`, loaded when the first video with sound is mixed (a project without videos never needs the
+ * addon here): from this package, then from the working directory.
+ */
+function addonDecodeAudio(): DecodeAudio {
+  if (addonDecoder) return addonDecoder;
+  const failures: string[] = [];
+  for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
+    try {
+      const native = createRequire(base)('@kinetograph/native') as { decodeAudio: DecodeAudio };
+      addonDecoder = native.decodeAudio;
+      return addonDecoder;
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
+    }
+  }
+  throw new Error(
+    `The sound of a video cannot be decoded: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
+      'Build the addon, or pass its decodeAudio to renderAudio().',
+  );
+}
+
+async function decodeVideoSound(
+  ctx: OfflineAudioContext,
+  src: string,
+  baseDir: string | undefined,
+  decoder: DecodeAudio,
+): Promise<AudioBuffer | null> {
+  let pcm: AudioPcm | null;
+  try {
+    pcm = await decoder(src, ctx.sampleRate, baseDir);
+  } catch (error) {
+    throw new Error(`cannot decode the sound of video ${src}: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    });
+  }
+  const length = pcm?.channels[0]?.length ?? 0;
+  if (pcm === null || length === 0) return null;
+  const buffer = ctx.createBuffer(pcm.channels.length, length, pcm.sampleRate);
+  pcm.channels.forEach((channel, index) => buffer.copyToChannel(channel as Float32Array<ArrayBuffer>, index));
+  return buffer;
+}
+
+/** `buffer` with its pitch times `tone`, the same length and rate. */
+function pitchBuffer(ctx: OfflineAudioContext, buffer: AudioBuffer, tone: number): AudioBuffer {
+  const channels: Float32Array[] = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+  const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+  shiftPitch(channels, tone).forEach((channel, index) => out.copyToChannel(channel as Float32Array<ArrayBuffer>, index));
+  return out;
 }
 
 async function decode(ctx: OfflineAudioContext, path: string): Promise<AudioBuffer> {

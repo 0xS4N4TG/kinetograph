@@ -16,6 +16,8 @@ import {
   type AudioClipJson,
   type LayerJson,
   type SceneJson,
+  type SequenceJson,
+  type Unsupported,
 } from '@kinetograph/scene';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
@@ -25,6 +27,10 @@ import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 export interface FrameResult {
   scene: SceneJson;
   audio: AudioClipJson[];
+  /** Every `<Sequence>` in the frame's tree, showing or not (docs/AUTHORING.md §11.4). */
+  sequences: SequenceJson[];
+  /** Empty when the frame can be drawn natively; otherwise it is drawn by Chrome (docs/COMPAT.md §6.1). */
+  unsupported: Unsupported[];
 }
 
 export interface FrameRenderer {
@@ -85,7 +91,7 @@ class Renderer implements FrameRenderer {
     // React state and virtual timers only move forward. Going back means starting the composition over.
     if (frame < this.lastFrame || this.scene === null) {
       this.scene?.unmount();
-      this.scene = createSceneRoot();
+      this.scene = createSceneRoot({ viewport: { width: config.width, height: config.height }, fonts: getFonts });
       this.lastFrame = -1;
       resetVirtualClock();
     }
@@ -132,7 +138,7 @@ class Renderer implements FrameRenderer {
     };
     if (main.camera !== null) sceneJson.camera = main.camera;
     if (margin !== undefined) sceneJson.margin = margin;
-    return { scene: sceneJson, audio: main.audio };
+    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: main.unsupported };
   }
 
   private element(component: ResolvedComposition['component'], config: VideoConfig, frame: number): ReactNode {

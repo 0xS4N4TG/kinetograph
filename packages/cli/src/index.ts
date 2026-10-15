@@ -7,8 +7,20 @@ import { commands, findCommand } from './commands/index.js';
 import { CliError, toErrorObject } from './errors.js';
 
 export { createMcpServer, toolCommands, toolName } from './mcp.js';
-export { bundleProject, resolveSpecifier, syntheticEntry } from './bundle.js';
-export { CliError } from './errors.js';
+export { bundleProject, cacheDir, resolveSpecifier, syntheticEntry, watchProject } from './bundle.js';
+export type { BundleResult, ProjectBuild } from './bundle.js';
+export { CliError, toErrorObject } from './errors.js';
+export { native } from './native.js';
+export type { InspectLayer, InspectResult, Native } from './native.js';
+export { renderSource } from './render-job.js';
+export type { RenderJobOptions } from './render-job.js';
+export { checkFrame, frameRange, isSceneFile, listCompositions, openSource, parseProps } from './source.js';
+export type { FrameOutput, OpenOptions, Source } from './source.js';
+
+/** The `kinetograph` package version. */
+export function cliVersion(): string {
+  return (createRequire(import.meta.url)('../package.json') as { version: string }).version;
+}
 
 export interface Io {
   out(text: string): void;
@@ -51,7 +63,7 @@ export async function run(argv: string[], io: Io = processIo): Promise<number> {
     return 0;
   }
   if (argv[0] === '--version' || argv[0] === '-v') {
-    io.out(`${(createRequire(import.meta.url)('../package.json') as { version: string }).version}\n`);
+    io.out(`${cliVersion()}\n`);
     return 0;
   }
 
@@ -66,10 +78,14 @@ export async function run(argv: string[], io: Io = processIo): Promise<number> {
 
   try {
     const args = parseCommandArgs(spec, rest);
-    const context: Context = { progress: (message) => (args.json ? undefined : io.err(`${message}\n`)) };
+    const context: Context = {
+      progress: (message) => (args.json ? undefined : io.err(`${message}\n`)),
+      announce: (data, text) => io.out(`${args.json ? JSON.stringify(data) : text}\n`),
+    };
     const result = await command.run(args, context);
-    // The MCP server owns stdout (it is the protocol) and has returned only because the client went away.
-    if (command.name !== 'mcp') io.out(`${args.json ? JSON.stringify(result.data) : result.text}\n`);
+    // The MCP server owns stdout (it is the protocol) and has returned only because the client went away; the
+    // studio has said what it had to (`announce`) and returns only when it is stopped.
+    if (command.name !== 'mcp' && command.name !== 'studio') io.out(`${args.json ? JSON.stringify(result.data) : result.text}\n`);
     return result.exitCode ?? 0;
   } catch (error) {
     return fail(error);

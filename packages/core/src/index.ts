@@ -24,6 +24,8 @@ export {
   Text,
   TimelineContext,
   useTimeline,
+  Video,
+  OffthreadVideo,
 } from '@kinetograph/react';
 export type {
   AudioProps,
@@ -41,7 +43,12 @@ export type {
   TextProps,
   TimelineState,
   VideoConfig,
+  VideoProps,
+  GifProps,
 } from '@kinetograph/react';
+
+// <Gif> with the duration lookup that `loopBehavior="unmount-after-finish"` needs (AUTHORING.md §11.3).
+export { Gif } from './gif.js';
 
 // ---- time ----
 export { useCurrentFrame, useVideoConfig, Sequence, Series, Loop, Freeze } from './timeline.js';

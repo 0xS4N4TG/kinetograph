@@ -7,7 +7,9 @@ pub mod box_shadow;
 pub mod cache;
 pub mod color;
 pub mod compositor;
+pub mod dom_layout;
 pub mod error;
+pub mod gif;
 #[cfg(test)]
 mod hash;
 pub mod inspect;
@@ -24,6 +26,7 @@ pub mod shader;
 pub mod text;
 pub mod turbulence;
 pub mod uniforms;
+pub mod video;
 pub mod warp;
 
 #[cfg(test)]

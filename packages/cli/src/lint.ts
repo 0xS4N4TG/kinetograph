@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { AudioClipJson, LayerJson, SceneJson } from '@kinetograph/scene';
+import { describeIssue, summarize } from '@kinetograph/compat/doctor';
+import type { AudioClipJson, LayerJson, SceneJson, Unsupported } from '@kinetograph/scene';
 import type { InspectLayer, InspectResult } from './native.js';
 
 export interface Finding {
@@ -187,7 +188,9 @@ export function lintScene(scene: SceneJson, baseDir: string, exists: (path: stri
         message: `font "${layer.font}" is not registered (registered: ${Object.keys(fonts).join(', ') || 'none'})`,
       });
     }
-    if (layer.type === 'image' || layer.type === 'lottie') asset(layer.id, layer.type, layer.src);
+    if (layer.type === 'image' || layer.type === 'lottie' || layer.type === 'video' || layer.type === 'gif') {
+      asset(layer.id, layer.type, layer.src);
+    }
     for (const effect of layer.effects ?? []) {
       if (effect.type === 'lut' && typeof effect.src === 'string') asset(layer.id, 'lut', effect.src);
     }
@@ -195,16 +198,21 @@ export function lintScene(scene: SceneJson, baseDir: string, exists: (path: stri
   return findings;
 }
 
-/** `<Audio>` clips whose file is missing. */
+/** `<Audio>` clips whose file is missing. A `<Video>`'s sound is left out: its layer reports the missing file. */
 export function lintAudio(clips: AudioClipJson[], baseDir: string, exists: (path: string) => boolean = existsSync): Finding[] {
   return clips
-    .filter((clip) => !exists(resolve(baseDir, clip.src)))
+    .filter((clip) => !clip.video && !exists(resolve(baseDir, clip.src)))
     .map((clip) => ({
       rule: 'missing-asset',
       severity: 'error' as const,
       layer: clip.id,
       message: `audio file not found: ${clip.src}`,
     }));
+}
+
+/** Sorts in place: errors first, then by the first frame each was seen at. */
+export function sortIssues(issues: LintIssue[]): LintIssue[] {
+  return issues.sort((a, b) => Number(b.severity === 'error') - Number(a.severity === 'error') || (a.frames[0]! - b.frames[0]!));
 }
 
 /** One issue per distinct finding, with every frame it was seen at; errors first. */
@@ -218,7 +226,23 @@ export function mergeFindings(perFrame: { frame: number; findings: Finding[] }[]
       issues.set(key, issue);
     }
   }
-  return [...issues.values()].sort(
-    (a, b) => Number(b.severity === 'error') - Number(a.severity === 'error') || (a.frames[0]! - b.frames[0]!),
-  );
+  return sortIssues([...issues.values()]);
+}
+
+/**
+ * What compat mode cannot draw natively in the checked frames (docs/COMPAT.md §7): one warning per issue group of
+ * `kinetograph doctor`, since a Chrome frame still renders. The ranges are of the checked frames only.
+ */
+export function lintCompat(perFrame: { frame: number; unsupported: readonly Unsupported[] }[]): LintIssue[] {
+  return summarize('', perFrame).issues.map((issue) => {
+    const frames = issue.ranges.flatMap(([first, last]) => Array.from({ length: last - first + 1 }, (_, i) => first + i));
+    const values = issue.values.length > 0 ? ` (${issue.values.join('; ')})` : '';
+    return {
+      rule: 'compat',
+      severity: 'warning' as const,
+      layer: null,
+      message: `not drawn natively, so Chrome renders the frame: ${describeIssue(issue)}${values} at ${issue.paths.join(', ')}`,
+      frames,
+    };
+  });
 }

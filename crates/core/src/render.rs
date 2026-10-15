@@ -20,6 +20,7 @@ use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
 use crate::compositor::{Compositor, Readback, Tex};
 use crate::error::{Error, Result};
+use crate::gif::{Gif, Gifs, gif_sources, open_gif};
 use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
 use crate::lut::Lut;
 use crate::mesh;
@@ -32,6 +33,7 @@ use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
 };
 use crate::text::{LaidOutText, TextEngine};
+use crate::video::{VideoDecoder, Videos, open_video, video_sources};
 use crate::warp;
 
 /// Curve flattening tolerance when converting shapes to paths.
@@ -132,6 +134,12 @@ pub struct Renderer {
     loaded: Loaded,
     /// The Lottie animations of the scene, painted at the size each is drawn at.
     lotties: Lotties,
+    /// The video files of the scene, one decoder each. A decoder keeps its
+    /// place and a few recent pictures between frames; the picture of a frame
+    /// does not depend on them (`video.rs`).
+    videos: Videos,
+    /// The GIFs of the scene, all their pictures decoded.
+    gifs: Gifs,
     /// `Some` while `render_timed` runs.
     timings: Option<Timings>,
     /// The textures of layers that stopped changing, kept for the next frame.
@@ -196,6 +204,8 @@ impl Renderer {
             text,
             images: HashMap::new(),
             lotties: Lotties::default(),
+            videos: Videos::default(),
+            gifs: Gifs::default(),
             loaded: Loaded::default(),
             timings: None,
             cache: LayerCache::new(CACHE_BYTES),
@@ -203,7 +213,7 @@ impl Renderer {
             pages: Pages::default(),
             cache_paused: 0,
         };
-        renderer.ensure_image_renderer(!fresh.images.is_empty() || !fresh.lotties.is_empty())?;
+        renderer.ensure_image_renderer(fresh.has_pictures())?;
         renderer.install_assets(fresh);
         renderer.add_shaders();
         Ok(renderer)
@@ -229,7 +239,7 @@ impl Renderer {
     /// that is edited between scenes is read again.
     pub fn set_scene(&mut self, scene: Scene) -> Result<()> {
         let fresh = read_assets(&scene, &self.loaded, true)?;
-        self.ensure_image_renderer(!fresh.images.is_empty() || !fresh.lotties.is_empty())?;
+        self.ensure_image_renderer(fresh.has_pictures())?;
         // Nothing fails from here on.
         let margin = scene.margin();
         let resized = (scene.width, scene.height, margin)
@@ -259,7 +269,11 @@ impl Renderer {
     /// (see `vello_images`), or when `will_have_images`.
     fn ensure_image_renderer(&mut self, will_have_images: bool) -> Result<()> {
         if self.vello_images.is_none()
-            && (will_have_images || !self.images.is_empty() || !self.lotties.is_empty())
+            && (will_have_images
+                || !self.images.is_empty()
+                || !self.lotties.is_empty()
+                || !self.videos.is_empty()
+                || !self.gifs.is_empty())
         {
             self.vello_images = Some(new_vello(&self.device)?);
         }
@@ -279,6 +293,14 @@ impl Renderer {
         for (src, id, lottie) in fresh.lotties {
             self.lotties.insert(src.clone(), lottie);
             self.loaded.lotties.insert(src, id);
+        }
+        for (src, id, video) in fresh.videos {
+            self.videos.insert(src.clone(), video);
+            self.loaded.videos.insert(src, id);
+        }
+        for (src, id, gif) in fresh.gifs {
+            self.gifs.insert(src.clone(), gif);
+            self.loaded.gifs.insert(src, id);
         }
         let mut luts = HashMap::new();
         for (src, id, lut) in fresh.luts {
@@ -1077,6 +1099,8 @@ impl Renderer {
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Lottie { width, height, .. }
+            | ResolvedKind::Video { width, height, .. }
+            | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
             ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
         };
@@ -1224,23 +1248,47 @@ impl Renderer {
                 height,
                 fit,
             } => {
-                let image = &self.images[src];
-                let size = (f64::from(image.width), f64::from(image.height));
-                if let Some(placed) = fit_image(*fit, (*width, *height), size) {
-                    // `cover` overhangs the box; the clip cuts it to the box.
-                    let cut = *fit == Fit::Cover;
-                    if cut {
-                        self.vello_scene.push_clip_layer(
-                            Fill::NonZero,
-                            matrix,
-                            &Rect::new(0.0, 0.0, *width, *height),
-                        );
-                    }
-                    self.vello_scene.draw_image(image, matrix * placed);
-                    if cut {
-                        self.vello_scene.pop_layer();
-                    }
-                }
+                draw_picture(
+                    &mut self.vello_scene,
+                    &self.images[src],
+                    matrix,
+                    (*width, *height),
+                    *fit,
+                );
+            }
+            // A video's picture and a GIF's go in like an image.
+            ResolvedKind::Video {
+                src,
+                width,
+                height,
+                fit,
+                time,
+            } => {
+                let image = self.videos.image(src, *time)?;
+                draw_picture(
+                    &mut self.vello_scene,
+                    &image,
+                    matrix,
+                    (*width, *height),
+                    *fit,
+                );
+            }
+            ResolvedKind::Gif {
+                src,
+                width,
+                height,
+                fit,
+                time,
+                looped,
+            } => {
+                let image = self.gifs.image(src, *time, *looped)?;
+                draw_picture(
+                    &mut self.vello_scene,
+                    &image,
+                    matrix,
+                    (*width, *height),
+                    *fit,
+                );
             }
             // ThorVG paints the animation at the size it is drawn at, and
             // it goes in like an image.
@@ -1418,6 +1466,8 @@ impl Renderer {
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Lottie { width, height, .. }
+            | ResolvedKind::Video { width, height, .. }
+            | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
@@ -1896,8 +1946,34 @@ fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorSto
 fn draws_image(kind: &ResolvedKind) -> bool {
     matches!(
         kind,
-        ResolvedKind::Image { .. } | ResolvedKind::Lottie { .. }
+        ResolvedKind::Image { .. }
+            | ResolvedKind::Lottie { .. }
+            | ResolvedKind::Video { .. }
+            | ResolvedKind::Gif { .. }
     )
+}
+
+/// Adds `image` to `scene`, fitted to the box `size` at the layer origin as
+/// `fit` says, under `matrix`. `cover` overhangs the box, so a clip cuts it
+/// to the box.
+fn draw_picture(
+    scene: &mut vello::Scene,
+    image: &ImageData,
+    matrix: Affine,
+    size: (f64, f64),
+    fit: Fit,
+) {
+    let natural = (f64::from(image.width), f64::from(image.height));
+    if let Some(placed) = fit_image(fit, size, natural) {
+        let cut = fit == Fit::Cover;
+        if cut {
+            scene.push_clip_layer(Fill::NonZero, matrix, &Rect::new(0.0, 0.0, size.0, size.1));
+        }
+        scene.draw_image(image, matrix * placed);
+        if cut {
+            scene.pop_layer();
+        }
+    }
 }
 
 /// Largest side, in pixels, ThorVG is asked to paint a Lottie layer at.
@@ -2121,6 +2197,8 @@ struct Loaded {
     fonts: BTreeMap<String, FileId>,
     images: HashMap<String, FileId>,
     lotties: HashMap<String, FileId>,
+    videos: HashMap<String, FileId>,
+    gifs: HashMap<String, FileId>,
     luts: HashMap<String, FileId>,
 }
 
@@ -2134,13 +2212,25 @@ struct NewAssets {
     fonts: BTreeMap<String, FileId>,
     images: Vec<(String, FileId, ImageData)>,
     lotties: Vec<(String, FileId, Lottie)>,
+    videos: Vec<(String, FileId, VideoDecoder)>,
+    gifs: Vec<(String, FileId, Gif)>,
     luts: Vec<(String, FileId, Lut)>,
     /// A name the renderer already held now stands for another file, so what
     /// the layer cache drew from the old one is out of date.
     rebound: bool,
 }
 
-/// Reads the fonts, images, Lottie animations and tables of `scene` that
+impl NewAssets {
+    /// Whether any of it is drawn with Vello's image renderer.
+    fn has_pictures(&self) -> bool {
+        !(self.images.is_empty()
+            && self.lotties.is_empty()
+            && self.videos.is_empty()
+            && self.gifs.is_empty())
+    }
+}
+
+/// Reads the fonts, images, Lottie animations, videos, GIFs and tables of `scene` that
 /// `loaded` does not have
 /// (or has from another file). It changes nothing, so a failure leaves the
 /// renderer as it was; `Renderer::install_assets` keeps the result. With
@@ -2211,6 +2301,38 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         lotties.push((src, id, lottie));
     }
 
+    let mut videos = Vec::new();
+    let mut seen = HashSet::new();
+    for (layer, src) in video_sources(scene) {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.videos.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let video = open_video(&scene.base_dir, &layer, &src)?;
+        videos.push((src, id, video));
+    }
+
+    let mut gifs = Vec::new();
+    let mut seen = HashSet::new();
+    for (layer, src) in gif_sources(scene) {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.gifs.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let gif = open_gif(&scene.base_dir, &layer, &src)?;
+        gifs.push((src, id, gif));
+    }
+
     let mut luts = Vec::new();
     let mut seen = HashSet::new();
     for (layer, src) in crate::lut::lut_sources(scene) {
@@ -2232,6 +2354,8 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         fonts,
         images,
         lotties,
+        videos,
+        gifs,
         luts,
         rebound,
     })
@@ -3173,6 +3297,12 @@ mod tests {
         for (src, id, _) in &fresh.lotties {
             loaded.lotties.insert(src.clone(), id.clone());
         }
+        for (src, id, _) in &fresh.videos {
+            loaded.videos.insert(src.clone(), id.clone());
+        }
+        for (src, id, _) in &fresh.gifs {
+            loaded.gifs.insert(src.clone(), id.clone());
+        }
         for (src, id, _) in &fresh.luts {
             loaded.luts.insert(src.clone(), id.clone());
         }
@@ -3258,6 +3388,31 @@ mod tests {
         // The next frame's scene names it again: nothing is read.
         let fresh = read_assets(&scene, &loaded, true).unwrap();
         assert!(fresh.lotties.is_empty() && !fresh.rebound);
+    }
+
+    #[test]
+    fn video_and_gif_files_are_opened_once_per_file() {
+        let media = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+        let json = serde_json::json!({
+            "width": 64, "height": 64, "fps": 24, "durationInFrames": 2,
+            "layers": [
+                { "id": "a", "type": "video", "src": "clip.mp4" },
+                { "id": "b", "type": "video", "src": "clip.mp4", "trimBefore": 12 },
+                { "id": "c", "type": "gif", "src": "spinner.gif" },
+                { "id": "d", "type": "gif", "src": "spinner.gif", "loop": false },
+            ],
+        });
+        let scene = Scene::from_json(&json.to_string(), media).unwrap();
+        let mut loaded = Loaded::default();
+        let fresh = read_assets(&scene, &loaded, false).unwrap();
+        // Four layers, two files.
+        assert_eq!((fresh.videos.len(), fresh.gifs.len()), (1, 1));
+        assert!(fresh.has_pictures());
+        hold(&mut loaded, &fresh);
+        // The next frame's scene names them again: nothing is read.
+        let fresh = read_assets(&scene, &loaded, true).unwrap();
+        assert!(fresh.videos.is_empty() && fresh.gifs.is_empty() && !fresh.rebound);
+        assert!(!fresh.has_pictures());
     }
 
     #[test]
