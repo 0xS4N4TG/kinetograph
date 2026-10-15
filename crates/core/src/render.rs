@@ -891,8 +891,8 @@ impl Renderer {
             _ => {
                 let region = raster.unwrap_or_else(|| self.whole());
                 let drawn = match self.page_target(layer, matrix)? {
-                    Some(page) => self.timed(Stage::Composite, |s| {
-                        s.compositor.from_srgb8(&page, s.whole(), region)
+                    Some((page, area)) => self.timed(Stage::Composite, |s| {
+                        s.compositor.from_srgb8(&page, area, region)
                     }),
                     None => {
                         let area = self.vello_area(region);
@@ -1018,25 +1018,19 @@ impl Renderer {
     fn plan_pages(&mut self, layers: &[ResolvedLayer]) -> Result<()> {
         let mut leaves = Vec::new();
         self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
-        // First fit: each leaf goes on the first page it overlaps nothing on.
-        let mut members: Vec<Vec<usize>> = Vec::new();
-        for (i, (_, _, region)) in leaves.iter().enumerate() {
-            let fits = |page: &Vec<usize>| {
-                page.iter()
-                    .all(|&j| leaves[j].2.intersect(*region).is_empty())
-            };
-            match members.iter_mut().find(|page| fits(page)) {
-                Some(page) => page.push(i),
-                None => members.push(vec![i]),
-            }
-        }
-        for page in members {
+        let regions: Vec<PixelRect> = leaves.iter().map(|(_, _, region)| *region).collect();
+        for page in pack_pages(&regions) {
             self.vello_scene.reset();
             let mut has_images = false;
+            // Vello draws from the canvas's top left corner, as a draw of the
+            // whole canvas does; only the box up to the page's farthest
+            // leaf is asked for.
+            let mut reach = PixelRect::EMPTY;
             for i in page {
-                let (layer, matrix, _) = leaves[i];
+                let (layer, matrix, region) = leaves[i];
                 self.encode_leaf(layer, matrix)?;
                 has_images |= draws_image(&layer.kind);
+                reach = reach.union(region);
                 let key = leaf_key(layer, matrix);
                 self.pages.page_of.insert(key, self.pages.pages.len());
             }
@@ -1046,6 +1040,7 @@ impl Renderer {
                     vello::Scene::new(),
                 )),
                 has_images,
+                area: PixelRect::new(0, 0, reach.x1, reach.y1).intersect(self.whole()),
                 target: None,
             });
         }
@@ -1085,42 +1080,42 @@ impl Renderer {
     }
 
     /// The Vello texture that holds the leaf `layer` under `matrix`, from
-    /// its page, if it is on one: the page's, drawn now if this is the first
-    /// leaf of it that is wanted. `from_srgb8` cuts the leaf out of it. It
-    /// holds the whole padded canvas, so the pixels of the other leaves of
+    /// its page, if it is on one, and the pixels of it that Vello drew: the
+    /// page's, drawn now if this is the first leaf of it that is wanted.
+    /// `from_srgb8` cuts the leaf out of it. The pixels of the other leaves of
     /// the page are in it too, outside this leaf's box.
     fn page_target(
         &mut self,
         layer: &ResolvedLayer,
         matrix: Affine,
-    ) -> Result<Option<wgpu::TextureView>> {
+    ) -> Result<Option<(wgpu::TextureView, PixelRect)>> {
         if self.cache_paused > 0 {
             return Ok(None);
         }
         let Some(&page) = self.pages.page_of.get(&leaf_key(layer, matrix)) else {
             return Ok(None);
         };
+        let area = self.pages.pages[page].area;
         if let Some(target) = &self.pages.pages[page].target {
-            return Ok(Some(target.clone()));
+            return Ok(Some((target.clone(), area)));
         }
         let scene = self.pages.pages[page]
             .scene
             .take()
             .expect("a page that is not drawn has its scene");
         let has_images = self.pages.pages[page].has_images;
-        let whole = self.whole();
         let target = self
             .page_targets
             .pop()
             .unwrap_or_else(|| new_vello_target(&self.device, self.target_size));
         let previous = std::mem::replace(&mut self.vello_scene, scene);
         let rendered = self.timed(Stage::Raster, |s| {
-            s.render_vello_scene_to(has_images, whole, &target)
+            s.render_vello_scene_to(has_images, area, &target)
         });
         self.vello_scene = previous;
         rendered?;
         self.pages.pages[page].target = Some(target.clone());
-        Ok(Some(target))
+        Ok(Some((target, area)))
     }
 
     /// Forgets the pages, keeping their Vello textures for the next frame's.
@@ -1838,10 +1833,71 @@ struct Page {
     scene: Option<vello::Scene>,
     /// Whether it has an image, which picks the renderer (`vello_images`).
     has_images: bool,
+    /// The pixels Vello draws of it: the canvas's top left corner and what
+    /// reaches as far as the page's leaves do.
+    area: PixelRect,
     /// The texture Vello drew it into, once it is drawn. Each page has one
     /// of its own for the rest of the frame, so a leaf is cut out of it
     /// whenever the leaf is wanted.
     target: Option<wgpu::TextureView>,
+}
+
+/// Groups the leaves whose pixels are in `regions` into pages, so that no
+/// two leaves of a page overlap: each page is drawn by one Vello render. The
+/// pages are lists of indices into `regions`, in order. Few pages is what is
+/// wanted, and finding the fewest is hard, so this colours the overlap graph
+/// with DSATUR (the leaf that has the most colours among the leaves it
+/// overlaps, then the most overlaps, takes the first colour free of them),
+/// which comes within a page or two of the deepest stack of leaves. Past
+/// `DSATUR_LEAVES` leaves, where its quadratic cost is not worth it, each leaf
+/// goes on the first page it fits on.
+fn pack_pages(regions: &[PixelRect]) -> Vec<Vec<usize>> {
+    const DSATUR_LEAVES: usize = 600;
+    let n = regions.len();
+    let overlaps = |i: usize, j: usize| !regions[i].intersect(regions[j]).is_empty();
+    let mut pages: Vec<Vec<usize>> = Vec::new();
+    if n > DSATUR_LEAVES {
+        for i in 0..n {
+            match pages
+                .iter_mut()
+                .find(|page| page.iter().all(|&j| !overlaps(i, j)))
+            {
+                Some(page) => page.push(i),
+                None => pages.push(vec![i]),
+            }
+        }
+        return pages;
+    }
+    let neighbours: Vec<Vec<usize>> = (0..n)
+        .map(|i| (0..n).filter(|&j| j != i && overlaps(i, j)).collect())
+        .collect();
+    let mut colour: Vec<Option<usize>> = vec![None; n];
+    for _ in 0..n {
+        // The saturation of a leaf is how many colours its neighbours have.
+        let saturation = |i: usize| {
+            let mut seen: Vec<usize> = neighbours[i].iter().filter_map(|&j| colour[j]).collect();
+            seen.sort_unstable();
+            seen.dedup();
+            seen.len()
+        };
+        let next = (0..n)
+            .filter(|&i| colour[i].is_none())
+            .max_by_key(|&i| (saturation(i), neighbours[i].len(), std::cmp::Reverse(i)))
+            .expect("a leaf without a colour is left");
+        let taken: Vec<usize> = neighbours[next].iter().filter_map(|&j| colour[j]).collect();
+        let free = (0..)
+            .find(|c| !taken.contains(c))
+            .expect("a colour is free");
+        colour[next] = Some(free);
+        if free == pages.len() {
+            pages.push(Vec::new());
+        }
+        pages[free].push(next);
+    }
+    for page in &mut pages {
+        page.sort_unstable();
+    }
+    pages
 }
 
 /// A layer drawn and waiting to be blended onto its canvas.
@@ -3609,5 +3665,68 @@ mod tests {
         assert!(b.y1 > plain.y1 + 250.0, "{b:?} vs {plain:?}");
         assert!(b.x1 > plain.x1, "{b:?} vs {plain:?}");
         assert_eq!((b.x0, b.y0), (plain.x0, plain.y0));
+    }
+
+    /// Whether `pages` holds each of the `n` leaves once and no page has two
+    /// that overlap.
+    fn is_a_packing(pages: &[Vec<usize>], regions: &[PixelRect]) -> bool {
+        let mut seen = vec![0; regions.len()];
+        for page in pages {
+            for (k, &i) in page.iter().enumerate() {
+                seen[i] += 1;
+                for &j in &page[k + 1..] {
+                    if !regions[i].intersect(regions[j]).is_empty() {
+                        return false;
+                    }
+                }
+            }
+        }
+        seen.iter().all(|&n| n == 1)
+    }
+
+    #[test]
+    fn leaves_that_overlap_go_on_different_pages() {
+        // Five boxes in a stack, and five more at its sides, each on only one
+        // of the stack's boxes.
+        let mut regions: Vec<PixelRect> = (0..5)
+            .map(|k| PixelRect::new(10 + k, 10 + k, 60, 60))
+            .collect();
+        regions.extend((0..5).map(|k| PixelRect::new(50 + 10 * k, 5, 54 + 10 * k, 12)));
+        let pages = pack_pages(&regions);
+        assert!(is_a_packing(&pages, &regions));
+        assert_eq!(pages.len(), 5, "five deep at most: {pages:?}");
+        // Each page lists its leaves in order.
+        assert!(pages.iter().all(|p| p.windows(2).all(|w| w[0] < w[1])));
+    }
+
+    #[test]
+    fn leaves_that_overlap_nothing_share_a_page_and_nothing_gives_no_pages() {
+        let spread: Vec<PixelRect> = (0..20)
+            .map(|k| PixelRect::new(10 * k, 0, 10 * k + 9, 9))
+            .collect();
+        assert_eq!(pack_pages(&spread), vec![(0..20).collect::<Vec<_>>()]);
+        assert!(pack_pages(&[]).is_empty());
+    }
+
+    #[test]
+    fn a_chain_of_overlaps_needs_two_pages() {
+        // 0-1, 1-2, 2-3 and 3-4 overlap and nothing else does: {0, 2, 4} and
+        // {1, 3}.
+        let chain: Vec<PixelRect> = (0..5)
+            .map(|k| PixelRect::new(20 * k, 0, 20 * k + 30, 10))
+            .collect();
+        let pages = pack_pages(&chain);
+        assert!(is_a_packing(&pages, &chain));
+        assert_eq!(pages.len(), 2, "{pages:?}");
+    }
+
+    #[test]
+    fn many_leaves_are_still_packed() {
+        // More than DSATUR is used for.
+        let regions: Vec<PixelRect> = (0..700)
+            .map(|k| PixelRect::new(k % 50, 0, k % 50 + 8, 8))
+            .collect();
+        let pages = pack_pages(&regions);
+        assert!(is_a_packing(&pages, &regions));
     }
 }
