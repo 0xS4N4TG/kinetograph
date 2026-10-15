@@ -9,6 +9,7 @@
     "./css": { "types": "./dist/css/index.d.ts", "default": "./dist/css/index.js" },
     "./dom": { "types": "./dist/dom/index.d.ts", "default": "./dist/dom/index.js" },
     "./browser": { "types": "./dist/browser/index.d.ts", "default": "./dist/browser/index.js" },
+    "./browser/prelude": { "types": "./dist/browser/prelude.d.ts", "default": "./dist/browser/prelude.js" },
     "./doctor": { "types": "./dist/doctor.d.ts", "default": "./dist/doctor.js" }
   },
   "files": ["dist"],
@@ -18,5 +19,15 @@
   },
   "dependencies": {
     "@kinetograph/scene": "0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react-dom": "19.3.0",
+    "jsdom": "30.1.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }
