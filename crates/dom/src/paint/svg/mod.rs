@@ -12,6 +12,7 @@
 //! Filters are not taken from usvg: `filter` reads the `<filter>` element
 //! itself, so the scene's `filterGraph` gets the attributes as authored.
 
+mod assets;
 mod css;
 mod emit;
 mod filter;
@@ -188,11 +189,22 @@ pub fn filter_graph(
 }
 
 /// usvg's options for a request: its fonts and its asset directories.
+///
+/// An `<image href>` is read only from inside `base_dir` or `public_dir`
+/// (`assets::resolve_under`): usvg's own resolver would read any path, an
+/// absolute one or one with `..` included.
 fn options(request: &IslandRequest) -> usvg::Options<'static> {
-    let default = usvg::ImageHrefResolver::default_string_resolver();
-    let public = request.public_dir.clone();
+    let roots: Vec<std::path::PathBuf> = [
+        Some(request.base_dir.as_str()),
+        request.public_dir.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(std::path::PathBuf::from)
+    .collect();
     let mut options = usvg::Options {
-        resources_dir: Some(request.base_dir.clone().into()),
+        // Nothing reads through this: the resolver below does not use it.
+        resources_dir: None,
         font_family: fonts::default_family(&request.fonts),
         font_size: 16.0,
         fontdb: fonts::database(&request.fonts),
@@ -201,17 +213,151 @@ fn options(request: &IslandRequest) -> usvg::Options<'static> {
     };
     options.image_href_resolver.resolve_string =
         Box::new(move |href: &str, opts: &usvg::Options| {
-            default(href, opts).or_else(|| {
-                let bytes =
-                    std::fs::read(std::path::Path::new(public.as_deref()?).join(href)).ok()?;
-                let data = Arc::new(bytes);
-                match data.as_slice() {
-                    [0x89, b'P', b'N', b'G', ..] => Some(usvg::ImageKind::PNG(data)),
-                    [0xff, 0xd8, 0xff, ..] => Some(usvg::ImageKind::JPEG(data)),
-                    [b'G', b'I', b'F', ..] => Some(usvg::ImageKind::GIF(data)),
-                    _ => None,
-                }
-            })
+            let roots: Vec<&std::path::Path> =
+                roots.iter().map(std::path::PathBuf::as_path).collect();
+            let bytes = std::fs::read(assets::resolve_under(&roots, href)?).ok()?;
+            let data = Arc::new(bytes);
+            match data.as_slice() {
+                [0x89, b'P', b'N', b'G', ..] => Some(usvg::ImageKind::PNG(data)),
+                [0xff, 0xd8, 0xff, ..] => Some(usvg::ImageKind::JPEG(data)),
+                [b'G', b'I', b'F', ..] => Some(usvg::ImageKind::GIF(data)),
+                [
+                    b'R',
+                    b'I',
+                    b'F',
+                    b'F',
+                    _,
+                    _,
+                    _,
+                    _,
+                    b'W',
+                    b'E',
+                    b'B',
+                    b'P',
+                    ..,
+                ] => Some(usvg::ImageKind::WEBP(data)),
+                _ => usvg::Tree::from_data_nested(&data, opts)
+                    .ok()
+                    .map(usvg::ImageKind::SVG),
+            }
         });
     options
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+
+    use crate::request::{DomNode, Size};
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really a picture";
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("kg-svg-mod-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.canonicalize().unwrap()
+    }
+
+    fn request(base: &Path, public: Option<&Path>) -> IslandRequest {
+        IslandRequest {
+            root: DomNode::Text {
+                text: String::new(),
+            },
+            stylesheets: Vec::new(),
+            viewport: Size {
+                width: 100.0,
+                height: 100.0,
+            },
+            fonts: BTreeMap::new(),
+            base_dir: base.to_string_lossy().into_owned(),
+            public_dir: public.map(|p| p.to_string_lossy().into_owned()),
+            time: 0.0,
+            path: "$0".into(),
+        }
+    }
+
+    fn resolve(request: &IslandRequest, href: &str) -> Option<usvg::ImageKind> {
+        let options = options(request);
+        (options.image_href_resolver.resolve_string)(href, &options)
+    }
+
+    #[test]
+    fn an_href_is_read_from_the_project_directories_only() {
+        let root = scratch("href");
+        let (base, public, other) = (root.join("base"), root.join("public"), root.join("other"));
+        for d in [&base, &public, &other] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(base.join("a.png"), PNG).unwrap();
+        std::fs::write(public.join("b.png"), PNG).unwrap();
+        std::fs::write(other.join("secret.png"), PNG).unwrap();
+        let r = request(&base, Some(&public));
+        assert!(matches!(
+            resolve(&r, "a.png"),
+            Some(usvg::ImageKind::PNG(_))
+        ));
+        // Falls back to the public directory.
+        assert!(matches!(
+            resolve(&r, "b.png"),
+            Some(usvg::ImageKind::PNG(_))
+        ));
+        // Out of both: `..`, an absolute path, a link to outside.
+        assert!(resolve(&r, "../other/secret.png").is_none());
+        assert!(resolve(&r, "sub/../../other/secret.png").is_none());
+        assert!(resolve(&r, other.join("secret.png").to_str().unwrap()).is_none());
+        std::os::unix::fs::symlink(other.join("secret.png"), public.join("l.png")).unwrap();
+        assert!(resolve(&r, "l.png").is_none());
+        assert!(resolve(&r, "missing.png").is_none());
+    }
+
+    #[test]
+    fn a_data_picture_reaches_the_scene_in_memory() {
+        use blitz_dom::DocumentConfig;
+        use blitz_html::HtmlDocument;
+        use blitz_traits::shell::{ColorScheme, Viewport};
+        // A 1x1 PNG.
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        let html = format!(
+            r##"<svg id="s" width="20" height="20"><image href="data:image/png;base64,{png}" width="20" height="20"/></svg>"##
+        );
+        let mut doc = HtmlDocument::from_html(
+            &html,
+            DocumentConfig {
+                viewport: Some(Viewport::new(50, 50, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            },
+        )
+        .into_inner();
+        doc.resolve(0.0);
+        let id = doc.get_element_by_id("s").unwrap();
+        let r = request(&scratch("data"), None);
+        let painted = paint_svg(&doc, &r, id, [20.0, 20.0], "s", "$0");
+        let layer = painted.layer.expect("drawn").to_string();
+        assert!(layer.contains(r#""type":"image""#), "{layer}");
+        assert!(
+            layer.contains(r#""src":"data:image/png;base64,"#),
+            "{layer}"
+        );
+        // And the scene reads it from memory.
+        let scene = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [{layer}]}}"##
+        );
+        kinetograph_core::Scene::from_json(&scene, PathBuf::from("/nowhere")).unwrap();
+    }
+
+    #[test]
+    fn an_svg_image_cannot_read_outside_either() {
+        // The same resolver serves an <image> inside a nested SVG file.
+        let root = scratch("nested");
+        let (base, other) = (root.join("base"), root.join("other"));
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("secret.png"), PNG).unwrap();
+        let r = request(&base, None);
+        let absolute = other.join("secret.png");
+        assert!(resolve(&r, absolute.to_str().unwrap()).is_none());
+    }
 }
