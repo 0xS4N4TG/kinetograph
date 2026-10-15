@@ -12,6 +12,7 @@ pub mod dom_layout;
 pub mod error;
 pub mod filter;
 pub mod gif;
+pub mod glsl;
 #[cfg(test)]
 mod hash;
 pub mod inspect;
