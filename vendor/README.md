@@ -114,3 +114,58 @@ Remove `vendor/vello`, its `[patch.crates-io]` entry and this section once a vel
 
 The same file's `render.rs` also keeps the MSAA mask tables: `make_mask_lut_16` was computed again for every
 `render_to_texture` (a twentieth of a frame's CPU time on a busy scene), and is now computed once (`OnceLock`).
+
+## stylo 0.22.0
+
+- Upstream: crates.io `stylo` 0.22.0 (`servo/stylo`, `style`, commit `34d25f741765a0bdb894f8271852e633299352d8` per
+  `.cargo_vcs_info.json`). Licence: MPL-2.0. Wired in by `[patch.crates-io]` in the root `Cargo.toml`, so `blitz-dom` and
+  `kinetograph-dom` build against it. The unchanged copy was committed first.
+- Changed files: `stylesheets/rule_parser.rs`, `values/specified/length.rs`, `properties/shorthands.rs`,
+  `properties/shorthands.toml`.
+
+### Why
+
+Stylo's Servo build parses the `container-type` and `container-name` properties (behind the
+`layout.container-queries.enabled` pref) but not `@container`, the `container` shorthand or the container length units
+(`cqw`, `cqh`, `cqi`, `cqb`, `cqmin`, `cqmax`): those are `cfg(feature = "gecko")`. The matching code
+(`stylesheets/container_rule.rs`, the stylist, the cascade) is built in both and asks the embedder for a container's size
+through `TElement::query_container_size`.
+
+### The change
+
+The three gates take the same pref the properties use: `@container` in `AtRuleType::from_name`, the six `cq*` units in
+`LengthUnit::from_name`, and the `container` shorthand (its `engine = "gecko"` line becomes `servo_pref`, and its
+`pub mod container` loses the `cfg`). `kinetograph-dom` switches the pref on (`document::enable_css_features`).
+
+### Dropping the patch
+
+Remove `vendor/stylo`, its `[patch.crates-io]` entry and this section once a stylo release parses `@container` without
+Gecko. The change is small enough to offer upstream.
+
+## blitz-dom 0.3.0-beta.3
+
+- Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, `packages/blitz-dom`, commit
+  `5890fab3afb087d8c0c5b0652b8b635f161f3a13` per `.cargo_vcs_info.json`). Licence: MIT OR Apache-2.0. Wired in by
+  `[patch.crates-io]` in the root `Cargo.toml`. The unchanged copy was committed first.
+- Changed files: `src/stylo.rs`, `src/resolve.rs`, `src/node/node.rs`.
+
+### Why
+
+`TElement::query_container_size` returned `Default::default()` ("FIXME: Implement container queries"), so no
+`@container` condition could be evaluated.
+
+### The change
+
+- `query_container_size` returns the content box of the node's last layout (`Node::container_size`), and remembers it in
+  `Node::container_size_seen`.
+- `BaseDocument::resolve` is now `resolve_pass` plus a loop: after a pass, each node whose content box is not the size
+  its queries saw has its subtree restyled (`RestyleHint::restyle_subtree`) and the tree is laid out again, until none
+  changes or `MAX_CONTAINER_PASSES` (4) is reached. A document without a container query pays for one scan of the node
+  slab. The first style pass sees empty containers; the loop corrects it.
+- Not done: `contain: inline-size` does not make a container's own width ignore its content (an `inline-block` container
+  without a width is as wide as its text, where Chrome has it 0 wide).
+
+### Dropping the patch
+
+Remove `vendor/blitz-dom`, its `[patch.crates-io]` entry and this section once Blitz answers container queries. The change
+is small enough to offer upstream.

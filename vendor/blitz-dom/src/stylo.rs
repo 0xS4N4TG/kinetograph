@@ -1211,8 +1211,12 @@ impl<'a> TElement for BlitzNode<'a> {
         &self,
         _display: &style::values::specified::Display,
     ) -> euclid::default::Size2D<Option<app_units::Au>> {
-        // FIXME: Implement container queries. For now this effectively disables them without panicking.
-        Default::default()
+        // The content box of the container's last layout; the first style pass
+        // sees an empty box, and `BaseDocument::resolve` restyles the container's
+        // subtree once layout has given it a size.
+        let (width, height) = self.container_size();
+        self.container_size_seen.set(Some((width, height)));
+        euclid::default::Size2D::new(Some(width), Some(height))
     }
 
     fn each_custom_state<F>(&self, _callback: F)

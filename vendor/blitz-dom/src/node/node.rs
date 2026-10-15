@@ -119,6 +119,11 @@ pub struct Node {
     /// stacking context on its last (non-skipped) paint-tree build. Replayed
     /// when the subtree is skipped as clean. Empty for stacking-context roots.
     pub sc_contribution_cache: RefCell<ThinVec<HoistedPaintChild>>,
+    /// The content-box size a container query lookup last saw on this node
+    /// (`TElement::query_container_size`), so that `BaseDocument::resolve` can
+    /// restyle the container's descendants when layout changes it. `None` until
+    /// a query asked.
+    pub container_size_seen: Cell<Option<(app_units::Au, app_units::Au)>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -416,6 +421,7 @@ impl Node {
             paint_children: RefCell::new(None),
             stacking_context: None,
             sc_contribution_cache: RefCell::new(ThinVec::new()),
+            container_size_seen: Cell::new(None),
 
             flags: NodeFlags::empty(),
             data,
@@ -555,6 +561,17 @@ impl Node {
             .downcast_element()
             .map(|el| el.is_focussable)
             .unwrap_or(false)
+    }
+
+    /// The size a container query sees: the content box of the node's last
+    /// layout (width, height).
+    pub fn container_size(&self) -> (app_units::Au, app_units::Au) {
+        let l = self.final_layout();
+        let au = app_units::Au::from_f32_px;
+        (
+            au((l.size.width - l.border.left - l.border.right - l.padding.left - l.padding.right).max(0.0)),
+            au((l.size.height - l.border.top - l.border.bottom - l.padding.top - l.padding.bottom).max(0.0)),
+        )
     }
 
     pub fn set_restyle_hint(&mut self, hint: RestyleHint) {

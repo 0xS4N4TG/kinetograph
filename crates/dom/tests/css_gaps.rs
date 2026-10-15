@@ -90,3 +90,58 @@ fn line_clamp_counts_lines_across_paragraphs() {
     // 6 + 2 lines (40) + 6 + 1 line (20): the bottom of the third line.
     assert_eq!(bounds(&island, "$0").3, 72.0);
 }
+
+/// A container of `width` with a child that `@container` rules style.
+fn container_island(width: &str, css: &str) -> kinetograph_dom::document::IslandDocument {
+    let mut req = request(el(
+        "div",
+        "$0",
+        "",
+        vec![el_attrs(
+            "div",
+            "$0.0",
+            serde_json::json!({ "class": "c" }),
+            &format!("width: {width}; padding: 10px"),
+            vec![el_attrs(
+                "div",
+                "$0.0.0",
+                serde_json::json!({ "class": "i" }),
+                "",
+                vec![],
+            )],
+        )],
+    ));
+    req["stylesheets"] = serde_json::json!([css]);
+    resolve(&req)
+}
+
+#[test]
+fn container_query_matches_the_containers_content_box_after_layout() {
+    let css = ".c{container-type:inline-size}.i{height:10px}\
+               @container (min-width:200px){.i{height:50px}}";
+    // 320 px of content is wide, 100 px is not: the rule needs the size layout gave.
+    assert_eq!(bounds(&container_island("320px", css), "$0.0.0").3, 50.0);
+    assert_eq!(bounds(&container_island("100px", css), "$0.0.0").3, 10.0);
+    // The padding is not part of what a query sees.
+    assert_eq!(bounds(&container_island("190px", css), "$0.0.0").3, 10.0);
+}
+
+#[test]
+fn container_query_takes_the_nearest_named_container_and_the_container_units() {
+    let css = ".c{container:card / inline-size}.i{height:10cqh;width:50cqw}\
+               @container card (width >= 300px){.i{height:50px}}";
+    let island = container_island("320px", css);
+    let (_, _, w, h) = bounds(&island, "$0.0.0");
+    // 50cqw of 320; the named query matches and its height wins over `cqh`.
+    assert_eq!((w, h), (160.0, 50.0));
+}
+
+#[test]
+fn container_query_that_reshapes_its_content_settles() {
+    // The container's own size does not depend on the query it feeds.
+    let css = ".c{container-type:inline-size}\
+               @container (min-width:200px){.i{padding:20px}}\
+               @container (max-width:199px){.i{padding:5px}}";
+    let island = container_island("320px", css);
+    assert_eq!(bounds(&island, "$0.0.0").2, 320.0);
+}

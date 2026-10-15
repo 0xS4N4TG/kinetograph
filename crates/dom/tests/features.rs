@@ -222,6 +222,39 @@ case!(text_overflow, 340, 140, {
         .to_string()
 });
 
+// `@container`: Stylo matches the rules once layout has given each container its size, and the
+// container units (`cqw`) and the `container` shorthand work as in Chrome.
+case!(container_queries, 340, 350, {
+    r#"<style>
+.c{container-type:inline-size;position:absolute;background:#eee}
+.i{padding:6px;background:#f66;color:#fff;font-size:14px}
+@container (min-width:200px){.i{background:#36c}.i:after{content:' wide'}}
+@container (max-width:199px){.i{background:#6a4}}
+.card{container:card / inline-size;position:absolute;background:#eee;padding:6px}
+.t{font-size:14px;padding:4px;background:#f66;color:#fff}
+@container card (min-width:200px){.t{background:#36c;font-size:20px}}
+@container card (width < 200px){.t:before{content:'narrow '}}
+@container (400px > width >= 100px) and (min-height: 0px){.t{outline:2px solid #fc0}}
+.cq{font-size:8cqw;background:#cfc;padding:2px;white-space:nowrap}
+.size{container-type:size;position:absolute;background:#ddd}
+.h{height:20px;background:#9c3}
+@container (min-height:60px){.h{background:#c93}}
+.outer{container-type:inline-size;position:absolute;background:#ccd;padding:4px}
+.inner{container-type:inline-size;background:#dde;padding:4px}
+.leaf{color:#060}
+@container (min-width:250px){.leaf{color:#c00;font-weight:bold}}
+</style>
+<div class="c" style="left:10px;top:10px;width:120px"><div class="i">narrow</div></div>
+<div class="c" style="left:150px;top:10px;width:180px"><div class="i">mid</div></div>
+<div class="card" style="left:10px;top:50px;width:120px"><div class="t">narrow</div></div>
+<div class="card" style="left:150px;top:50px;width:180px"><div class="t">wider</div></div>
+<div class="card" style="left:10px;top:100px;width:300px"><div class="t">wide</div><div class="cq">cq 8cqw</div></div>
+<div class="size" style="left:10px;top:190px;width:100px;height:40px"><div class="h"></div></div>
+<div class="size" style="left:130px;top:190px;width:100px;height:80px"><div class="h"></div></div>
+<div class="outer" style="left:10px;top:285px;width:320px"><div class="inner" style="width:150px"><span class="leaf">inner 150</span></div><span class="leaf">outer 320</span></div>"#
+        .to_string()
+});
+
 case!(borders, 340, 260, {
     r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:50px;border:3px solid;border-color:#f00 #0a0 #00f #fa0"></div>
 <div style="position:absolute;left:120px;top:10px;width:90px;height:50px;border-style:solid;border-width:2px 8px 14px 4px;border-color:#234;border-radius:12px 30px 5px 20px"></div>

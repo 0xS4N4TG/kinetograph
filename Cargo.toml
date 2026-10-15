@@ -19,8 +19,8 @@ license = "MIT OR Apache-2.0"
 # vello starts a compute pass for each of its dispatches, about 17 for each
 # page; see vendor/README.md.
 #
-# blitz-dom answers no container query: its `query_container_size` returns
-# nothing, so no `@container` rule ever matches (vendor/README.md).
+# stylo's Servo build does not parse `@container`, and blitz-dom answers no
+# container query: its `query_container_size` returns nothing (vendor/README.md).
 [patch.crates-io]
 blitz-dom = { path = "vendor/blitz-dom" }
 stylo = { path = "vendor/stylo" }

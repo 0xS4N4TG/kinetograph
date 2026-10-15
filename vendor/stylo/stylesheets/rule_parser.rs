@@ -282,7 +282,7 @@ impl AtRuleType {
             "counter-style" if cfg!(feature = "gecko") => Self::CounterStyle,
             "media" => Self::Media,
             "custom-media" if crate::pref!("layout.css.custom-media.enabled") => Self::CustomMedia,
-            "container" if cfg!(feature = "gecko") => Self::Container,
+            "container" if crate::pref!("layout.container-queries.enabled") => Self::Container,
             "supports" => Self::Supports,
             "keyframes" => Self::Keyframes(None),
             "-webkit-keyframes" => Self::Keyframes(Some(VendorPrefix::WebKit)),

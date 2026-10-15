@@ -8,6 +8,7 @@ use kurbo::{Affine, Rect};
 use parley::LayoutContext;
 use selectors::Element as _;
 use style::dom::TDocument;
+use style::invalidation::element::restyle_hints::RestyleHint;
 
 #[cfg(feature = "parallel-construct")]
 use rayon::prelude::*;
@@ -34,9 +35,48 @@ use crate::{
     node::TextBrush,
 };
 
+/// The most extra passes a container query may cost: a container whose size
+/// depends on what its queries style (a cycle) stops here.
+const MAX_CONTAINER_PASSES: usize = 4;
+
 impl BaseDocument {
     /// Restyle the tree and then relayout it
+    ///
+    /// A container query is evaluated against the container's last layout, so a
+    /// container whose size changed in a pass has its subtree restyled and the
+    /// tree laid out again, until no container changes (or the cap).
     pub fn resolve(&mut self, current_time_for_animations: f64) {
+        self.resolve_pass(current_time_for_animations);
+        for _ in 0..MAX_CONTAINER_PASSES {
+            if !self.restyle_resized_containers() {
+                break;
+            }
+            self.resolve_pass(current_time_for_animations);
+        }
+    }
+
+    /// Marks the subtree of every container whose content box is not the one
+    /// its queries last saw. Returns whether there was one.
+    fn restyle_resized_containers(&mut self) -> bool {
+        let resized: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .filter(|(_, node)| {
+                node.container_size_seen
+                    .get()
+                    .is_some_and(|seen| seen != node.container_size())
+            })
+            .map(|(id, _)| id)
+            .collect();
+        for id in &resized {
+            let node = &mut self.nodes[*id];
+            node.container_size_seen.set(Some(node.container_size()));
+            node.set_restyle_hint(RestyleHint::restyle_subtree());
+        }
+        !resized.is_empty()
+    }
+
+    fn resolve_pass(&mut self, current_time_for_animations: f64) {
         if TDocument::as_node(&self.root_node())
             .first_element_child()
             .is_none()

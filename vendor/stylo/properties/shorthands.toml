@@ -209,7 +209,7 @@ spec = "https://wicg.github.io/overscroll-behavior/#overscroll-behavior-properti
 kind = "two_properties"
 
 [container]
-engine = "gecko"
+servo_pref = "layout.container-queries.enabled"
 sub_properties = ["container-name", "container-type"]
 spec = "https://drafts.csswg.org/css-contain-3/#container-shorthand"
 
