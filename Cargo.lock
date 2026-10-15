@@ -3301,8 +3301,6 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a255e46af2478628c48daab3774090caabd7812b1dd3ca98801c2b9c53491ed"
 dependencies = [
  "app_units",
  "arrayvec",

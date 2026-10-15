@@ -23,6 +23,7 @@ license = "MIT OR Apache-2.0"
 # nothing, so no `@container` rule ever matches (vendor/README.md).
 [patch.crates-io]
 blitz-dom = { path = "vendor/blitz-dom" }
+stylo = { path = "vendor/stylo" }
 vello = { path = "vendor/vello" }
 vello_shaders = { path = "vendor/vello_shaders" }
 fontique = { path = "vendor/fontique" }

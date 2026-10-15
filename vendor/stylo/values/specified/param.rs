@@ -1,0 +1,121 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+//! Common handling for the specified value CSS param() values.
+
+use crate::custom_properties::VariableValue;
+use crate::parser::{Parse, ParserContext};
+use crate::values::fmt;
+use crate::values::CssWriter;
+use crate::{derives::*, values::DashedIdent};
+use cssparser::Parser;
+use std::fmt::Write;
+use style_traits::arc_slice::ArcSlice;
+use style_traits::owned_str::OwnedStr;
+use style_traits::{ParseError, ToCss};
+
+/// A struct to hold a specific '<declaration-value>'.
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(transparent)]
+pub struct LinkParamValue(pub OwnedStr);
+
+/// A single param(--ident, value) entry: https://drafts.csswg.org/css-link-params-1/#funcdef-param
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+pub struct LinkParam {
+    /// link-parameters' param name, in the form of an <dashed-ident>: https://drafts.csswg.org/css-values-4/#typedef-dashed-ident
+    pub name: DashedIdent,
+    /// link-parameters' value, in the form of a <declaration-value>: https://drafts.csswg.org/css-syntax-3/#typedef-declaration-value
+    pub value: LinkParamValue,
+}
+
+/// A struct to hold all specified link-parameters: https://drafts.csswg.org/css-link-params-1/
+///
+/// We treat `none` as an empty slice and vis-versa
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(C)]
+#[css(comma)]
+#[typed(skip_derive_fields)]
+pub struct LinkParameters(
+    /// Slice of specified link-parameters properties: https://drafts.csswg.org/css-link-params-1/#link-param-prop
+    #[css(iterable, if_empty = "none")]
+    #[ignore_malloc_size_of = "Arc"]
+    pub ArcSlice<LinkParam>,
+);
+
+impl LinkParameters {
+    /// Returns the `none` value.
+    pub fn none() -> Self {
+        Self(ArcSlice::default())
+    }
+}
+
+impl Parse for LinkParameters {
+    fn parse(context: &ParserContext, input: &mut Parser) -> Result<Self, ParseError> {
+        if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
+            return Ok(Self::none());
+        }
+
+        let params = input.parse_comma_separated(|input| {
+            input.expect_function_matching("param")?;
+            input.parse_nested_block(|input| {
+                let name = DashedIdent::parse(context, input)?;
+                input.expect_comma()?;
+                // if a comma exists then parse it and set value as specified, even if no value provided
+                // need to handle url references properly https://bugzilla.mozilla.org/show_bug.cgi?id=2028998
+                let parsed = VariableValue::parse(input, None, context.url_data)?;
+                let value = LinkParamValue(OwnedStr::from(parsed.css));
+                Ok(LinkParam { name, value })
+            })
+        })?;
+
+        Ok(Self(crate::ArcSlice::from_iter(params.into_iter())))
+    }
+}
+
+impl ToCss for LinkParam {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        dest.write_str("param(")?;
+        self.name.to_css(dest)?;
+        dest.write_str(", ")?;
+        if !self.value.0.is_empty() {
+            // Don't use to_css, instead write the raw CSS value without extra quoting.
+            dest.write_str(&self.value.0)?;
+        }
+        dest.write_char(')')
+    }
+}
