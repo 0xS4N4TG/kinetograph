@@ -7,3 +7,4 @@ export * from './effects.js';
 export * from './paint.js';
 export * from './catalog.js';
 export * from './motion.js';
+export * from './canvas.js';
