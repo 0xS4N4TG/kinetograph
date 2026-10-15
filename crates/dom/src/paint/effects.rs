@@ -30,15 +30,18 @@ impl<'a> Painter<'a> {
 
         // ---- transform ----
         let transform = self.transform_of(node, &style, &geom, at);
-        if let Some(t) = transform.transform {
+        let mut transform_obj = transform.transform;
+        if transform.backface_hidden {
+            let t = transform_obj.get_or_insert_with(|| json!({}));
+            t["backfaceHidden"] = json!(true);
+        }
+        if let Some(t) = transform_obj {
             group = group.set("transform", t);
         }
         if transform.preserve3d {
             group = group.set("preserve3d", json!(true));
         }
-        if transform.backface_hidden {
-            group = group.set("backfaceHidden", json!(true));
-        }
+
 
         // ---- opacity, blend ----
         let mut opacity = f64::from(fx.opacity);

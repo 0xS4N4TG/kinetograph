@@ -151,6 +151,20 @@ case!(lists_and_outline, 340, 200, {
         .to_string()
 });
 
+case!(preserve_3d, 360, 220, {
+    r#"<div style="position:absolute;left:30px;top:30px;width:120px;height:120px;perspective:500px">
+<div style="position:relative;width:120px;height:120px;transform-style:preserve-3d;transform:rotateY(35deg) rotateX(-15deg)">
+<div style="position:absolute;width:80px;height:80px;left:20px;top:20px;background:#f66;transform:translateZ(-40px)"></div>
+<div style="position:absolute;width:80px;height:80px;left:20px;top:20px;background:#6c6;transform:translateZ(40px)"></div>
+<div style="position:absolute;width:80px;height:80px;left:20px;top:20px;background:#66f;transform:rotateY(90deg) translateZ(40px)"></div>
+</div></div>
+<div style="position:absolute;left:210px;top:30px;width:120px;height:120px;perspective:400px">
+<div style="width:100px;height:100px;background:#fc3;transform:rotateY(180deg);backface-visibility:hidden"></div></div>
+<div style="position:absolute;left:210px;top:140px;width:120px;height:70px;perspective:400px">
+<div style="width:100px;height:60px;background:#3cf;transform:rotateY(160deg)"></div></div>"#
+        .to_string()
+});
+
 case!(borders, 340, 260, {
     r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:50px;border:3px solid;border-color:#f00 #0a0 #00f #fa0"></div>
 <div style="position:absolute;left:120px;top:10px;width:90px;height:50px;border-style:solid;border-width:2px 8px 14px 4px;border-color:#234;border-radius:12px 30px 5px 20px"></div>

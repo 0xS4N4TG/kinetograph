@@ -244,6 +244,9 @@ pub struct Transform {
     /// matrix, so the layer stays sharp; any other warps the finished layer
     /// like `rotateX` does. Not animated.
     pub matrix: Option<[f64; 16]>,
+    /// CSS's `backface-visibility: hidden`: the layer is not drawn while its
+    /// back faces the viewer (its 3D placement has turned it over).
+    pub backface_hidden: bool,
 }
 
 /// Whether `m` (a `matrix3d()`) moves the z = 0 plane within itself and has
@@ -287,6 +290,7 @@ impl Default for Transform {
             origin_x: Num::Const(0.0),
             origin_y: Num::Const(0.0),
             matrix: None,
+            backface_hidden: false,
         }
     }
 }

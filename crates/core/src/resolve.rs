@@ -161,6 +161,8 @@ pub struct ResolvedTransform {
     pub origin_y: f64,
     /// `scene::Transform::matrix`.
     pub matrix: Option<[f64; 16]>,
+    /// `scene::Transform::backface_hidden`.
+    pub backface_hidden: bool,
 }
 
 impl ResolvedTransform {
@@ -1167,6 +1169,7 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
         origin_x: 0.0,
         origin_y: 0.0,
         matrix: t.matrix,
+        backface_hidden: t.backface_hidden,
     }
 }
 

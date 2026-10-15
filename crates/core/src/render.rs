@@ -489,7 +489,11 @@ impl Renderer {
             // A layer turned in 3D is drawn flat and then warped about its
             // own position, in its parent's plane.
             let placement =
-                warp::layer_world(&layer.transform).map(|world| Placement { parent, world });
+                warp::layer_world(&layer.transform).map(|world| Placement {
+                    parent,
+                    world,
+                    backface_hidden: layer.transform.backface_hidden,
+                });
             canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
         }
         Ok(canvas)
@@ -709,7 +713,11 @@ impl Renderer {
                 Some((i, layer.motion.len())),
             )?;
             let placement =
-                warp::layer_world(&sub.transform).map(|world| Placement { parent, world });
+                warp::layer_world(&sub.transform).map(|world| Placement {
+                    parent,
+                    world,
+                    backface_hidden: sub.transform.backface_hidden,
+                });
             let src = match placement {
                 Some(placement) => match self.place(src, &placement) {
                     Some(src) => src,
@@ -733,6 +741,11 @@ impl Renderer {
             self.compositor.release(src);
             return None;
         };
+        // The plane is seen from behind when the map flips it over.
+        if placement.backface_hidden && h.determinant() < 0.0 {
+            self.compositor.release(src);
+            return None;
+        }
         // A placement that changes nothing (a group at depth 0 in a flat
         // stack) costs no pass.
         if warp::is_identity(&h) {
@@ -1544,6 +1557,8 @@ impl Renderer {
 struct Placement {
     parent: Affine,
     world: DMat4,
+    /// Not drawn when turned to show its back (`Transform::backface_hidden`).
+    backface_hidden: bool,
 }
 
 /// Where a `preserve3d` group's children are, while they are being placed.
@@ -1630,6 +1645,7 @@ fn collect_preserve3d<'a>(
             placement: Placement {
                 parent: space.parent,
                 world,
+                backface_hidden: child.transform.backface_hidden,
             },
             opacity: space.opacity,
             depth: warp::depth(&world, (centre.x, centre.y)),
