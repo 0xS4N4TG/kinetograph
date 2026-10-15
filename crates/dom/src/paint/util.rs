@@ -29,6 +29,19 @@ pub fn num4(v: f64) -> Value {
     }
 }
 
+/// Every digit, for the entries of a 3D matrix: the perspective terms are of
+/// the order of 1e-5 (a w of `sin(angle) / perspective`), so rounding them to
+/// four decimals changes the slope of a warped layer by whole multiples.
+/// Float noise below 1e-12 is a zero.
+pub fn num_exact(v: f64) -> Value {
+    let v = if v.abs() < 1e-12 { 0.0 } else { v };
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        Value::Number(Number::from(v as i64))
+    } else {
+        Number::from_f64(v).map_or(Value::Null, Value::Number)
+    }
+}
+
 /// sRGB components (0..1) and alpha of a resolved colour.
 pub fn rgba(c: &AbsoluteColor) -> [f32; 4] {
     let s = c.to_color_space(ColorSpace::Srgb);
