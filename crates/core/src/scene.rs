@@ -24,6 +24,9 @@ pub struct Scene {
     pub duration_in_frames: u32,
     #[serde(default = "default_background")]
     pub background: Color,
+    /// The least margin to render with, in pixels (`Scene::margin`). Without
+    /// it the margin is only what the effects reach.
+    pub margin: Option<u32>,
     /// Font family name -> font file path.
     #[serde(default)]
     pub fonts: BTreeMap<String, String>,
@@ -1326,11 +1329,16 @@ impl Scene {
     /// that effects which paint outside a layer (a shadow, a glow) are not
     /// cut off at the canvas edge and layers that hang off the canvas still
     /// feed them. It is the largest `reach` of the effects on any layer
-    /// (see `max_reach`), at any keyframe, rounded up, and limited so the
-    /// padded canvas still fits
-    /// in `MAX_SIDE`. A scene with no such effect has margin 0.
+    /// (see `max_reach`), at any keyframe, rounded up, or the scene's own
+    /// `margin` if that is more, and limited so the padded canvas still fits
+    /// in `MAX_SIDE`. A scene with no such effect and no `margin` has margin 0.
     pub fn margin(&self) -> u32 {
-        margin_for(max_reach(&self.layers, 1.0), self.width, self.height)
+        let least = f64::from(self.margin.unwrap_or(0));
+        margin_for(
+            max_reach(&self.layers, 1.0).max(least),
+            self.width,
+            self.height,
+        )
     }
 
     /// The WGSL module of every distinct custom shader in the scene, in the
@@ -3387,6 +3395,41 @@ mod tests {
                 {"type": "contrast", "amount": 1000}]"#,
         );
         assert_eq!(scene.margin(), 0);
+    }
+
+    #[test]
+    fn an_explicit_margin_is_the_least_and_reach_can_raise_it() {
+        let with = |margin: &str, effects: &str| {
+            let json = format!(
+                r##"{{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10 {margin},
+                    "layers": [{{"id": "a", "type": "group", "children": [], "effects": {effects}}}]}}"##
+            );
+            Scene::from_json(&json, PathBuf::new()).unwrap()
+        };
+        let shadow = |x: u32| format!(r#"[{{"type": "dropShadow", "x": {x}}}]"#);
+        // It makes a margin where the effects reach nothing.
+        assert_eq!(with(r#", "margin": 44"#, "[]").margin(), 44);
+        // It is a floor: a shadow that reaches further wins, a shorter one
+        // does not shrink it, so the margin is the same on every frame that
+        // reaches no further than the field.
+        assert_eq!(with(r#", "margin": 44"#, &shadow(10)).margin(), 44);
+        assert_eq!(with(r#", "margin": 44"#, &shadow(43)).margin(), 44);
+        assert_eq!(with(r#", "margin": 44"#, &shadow(60)).margin(), 60);
+        assert_eq!(with("", &shadow(43)).margin(), 43);
+        assert_eq!(with(r#", "margin": 0"#, &shadow(43)).margin(), 43);
+        // Like the reach, it leaves the padded canvas within MAX_SIDE.
+        assert_eq!(
+            with(r#", "margin": 100000"#, "[]").margin(),
+            (MAX_SIDE - 200) / 2
+        );
+        // A whole number, not negative.
+        for bad in ["-1", "4.5", r#""4""#] {
+            let json = format!(
+                r##"{{"width": 20, "height": 10, "fps": 30, "durationInFrames": 1,
+                    "margin": {bad}, "layers": []}}"##
+            );
+            assert!(Scene::from_json(&json, PathBuf::new()).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -74,7 +74,8 @@ export function version(): string;
 // ---- CPU only: safe anywhere, never open a GPU device ----
 
 export interface SceneInfo { width: number; height: number; fps: number; durationInFrames: number; margin: number }
-/** Parses and validates scene JSON (SCENE.md); asset paths resolve against `baseDir` (default: cwd). */
+/** Parses and validates scene JSON (SCENE.md); asset paths resolve against `baseDir` (default: cwd).
+ *  `margin` is the margin the scene renders with: the scene's `margin` field or what its effects reach, if more. */
 export function validateScene(sceneJson: string, baseDir?: string): SceneInfo;
 
 /** The scene resolved at `frame`, as an `InspectResult` JSON string (below). Loads fonts (for text boxes), not images. */
@@ -306,6 +307,11 @@ function of `time`: expressions that use randomness must be seeded. Counts nothi
   and layer cache: fonts, images, LUTs and shader pipelines are loaded only when the new scene has ones not seen yet;
   size-dependent textures are rebuilt only when the size or margin changes. Frames are byte-identical to a fresh
   `Renderer` on the same scene.
+- A scene may carry `margin`, a whole number of pixels, the least margin to render with (SCENE.md "Canvas margin"): the
+  margin is `max(margin, the effects' reach)`. The reach follows each TSX frame's constants, so without it the margin
+  changes from frame to frame (one frame of a port had a 44 pixel shadow reach among frames of 43), and every change
+  rebuilds the textures and empties the layer cache. `displace` no longer depends on the margin, so the pixels do not
+  change either way; only the time does.
 - `crates/core/src/inspect.rs`: the CPU-only `InspectResult` of §3, from the resolve that the renderer uses.
 - `kinetograph-cli`'s `render` takes a `Scene` (not only a path) so the addon can drive it, and the encoder can mux an
   AAC audio stream from PCM.
@@ -481,11 +487,24 @@ Mapping onto the engine:
 ```ts
 export interface CompositionInfo { id: string; width: number; height: number; fps: number; durationInFrames: number;
                                    defaultProps: Record<string, unknown> }
+/** <Composition> also takes `margin?: number`: see "Pinning the margin" below. */
 export function getCompositions(): CompositionInfo[];         // after registerRoot ran
 export function registerFont(font: { family: string; path: string; weight?: number | string; style?: 'normal' | 'italic' }): void;
 export function getFonts(): Record<string, string>;           // fontKey → absolute path, every font registered
 export function setPublicDir(dir: string): void;
 ```
+
+**Pinning the margin.** Each frame is its own scene, so its margin is the reach of the effects at that frame's values
+(SCENE.md "Canvas margin"), and when it differs from the previous frame's, the renderer rebuilds its size-dependent
+textures and empties the layer cache. `<Composition margin={44}>` (also `<Still>`; a whole number of pixels, not
+negative, checked when the composition is found) puts `margin: 44` in every frame's scene. It is a floor: the margin
+is `max(44, reach)`, so no effect is ever cut off, and a frame that reaches further than the prop says still renders
+correctly, only with a rebuild. Set it to the largest reach of any frame. To find that, leave the prop off and read
+`margin` from `kinetograph inspect <entry> --frame N` at the frames with the biggest shadows, glows and displacements
+(or, for an empty-layer trick like `dropShadow({ x: 44, blur: 0 })` that pins it, replace the trick with the prop).
+It depends on nothing but the composition, so any frame, in any order or range, is the same scene as in a full
+render. When the reach depends on the input props (a shadow size passed in), `calculateMetadata` can return `margin`
+as well, checked the same way; it wins over the prop, and like the prop it is the same for every frame.
 
 `registerFont` is also behind `@kinetograph/core/fonts` as `loadFont({ family, url, weight, style })` (Remotion's
 `@remotion/fonts`, with `url` a path). `@kinetograph/core/google-fonts` provides `makeGoogleFont(familyName)`, which
@@ -510,7 +529,7 @@ one `SceneRoot`, waits for open `delayRender` handles and font downloads (render
 they close), then, if `collectMotionTimes(layers, f)` is not empty, renders the whole composition at each of those
 times and calls `attachMotionFrames`, so a layer's own animated props blur too. The result's `scene` has the
 composition's `width`, `height`, `fps`, `durationInFrames`, `background: "transparent"`, `fonts: getFonts()`, the
-tree's `camera` and `layers`.
+composition's `margin` when it has one, the tree's `camera` and `layers`.
 
 ### 7.4 Determinism shim
 

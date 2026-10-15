@@ -479,6 +479,11 @@ export interface SceneJson {
   durationInFrames: number;
   /** Default `#000000`. */
   background?: ColorString;
+  /**
+   * The least margin, in pixels, to render with: a whole number, not negative. The margin is this or what the effects
+   * reach, whichever is more (SCENE.md "Canvas margin"). Default 0.
+   */
+  margin?: number;
   /** Font key to font file. */
   fonts?: Record<string, string>;
   camera?: CameraJson;

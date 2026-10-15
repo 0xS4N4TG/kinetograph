@@ -75,7 +75,7 @@ class Renderer implements FrameRenderer {
 
   async renderFrame(frame: number): Promise<FrameResult> {
     if (this.disposed) throw new Error('This FrameRenderer was disposed');
-    const { config, component } = await this.readyPromise;
+    const { config, component, margin } = await this.readyPromise;
     if (!Number.isInteger(frame) || frame < 0 || frame >= config.durationInFrames) {
       throw new RangeError(
         `Frame ${frame} is outside composition "${config.id}", which has ${config.durationInFrames} frames (0 to ${config.durationInFrames - 1})`,
@@ -131,6 +131,7 @@ class Renderer implements FrameRenderer {
       layers,
     };
     if (main.camera !== null) sceneJson.camera = main.camera;
+    if (margin !== undefined) sceneJson.margin = margin;
     return { scene: sceneJson, audio: main.audio };
   }
 

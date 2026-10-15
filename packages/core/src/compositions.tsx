@@ -16,7 +16,7 @@ export interface CompositionInfo {
   defaultProps: Record<string, unknown>;
 }
 
-type Metadata<P> = Partial<Omit<CompositionInfo, 'id'> & { props: P }>;
+type Metadata<P> = Partial<Omit<CompositionInfo, 'id'> & { props: P; margin: number }>;
 
 export interface CompositionProps<P extends Record<string, unknown> = Record<string, unknown>> {
   id: string;
@@ -27,6 +27,13 @@ export interface CompositionProps<P extends Record<string, unknown> = Record<str
   width: number;
   height: number;
   defaultProps?: P;
+  /**
+   * The least margin, in pixels, the engine renders every frame with (SCENE.md "Canvas margin"). Set it to the
+   * largest reach of any frame's effects and the textures are built once; a frame that reaches further still gets
+   * the room it needs. A whole number, not negative. Default: none, each frame's margin is what its effects reach.
+   * `calculateMetadata` may return a `margin` too, which wins over this prop.
+   */
+  margin?: number;
   calculateMetadata?: (options: {
     defaultProps: P;
     props: P;
@@ -44,6 +51,7 @@ export type StillProps<P extends Record<string, unknown> = Record<string, unknow
 
 /** A registered composition, with what is needed to render it. */
 export interface CompositionEntry extends CompositionInfo {
+  margin?: number;
   component?: ComponentType<any>;
   lazyComponent?: () => Promise<{ default: ComponentType<any> }>;
   calculateMetadata?: CompositionProps<any>['calculateMetadata'];
@@ -78,6 +86,13 @@ function checkPositiveInteger(id: string, name: string, value: unknown): number 
   return value;
 }
 
+function checkMargin(id: string, value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new TypeError(`The "margin" of composition "${id}" must be a whole number of pixels, not negative, but got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function checkFps(id: string, value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new TypeError(`The "fps" of composition "${id}" must be a positive number, but got ${JSON.stringify(value)}`);
@@ -97,6 +112,7 @@ function entryFrom(props: CompositionProps<any>, folder: string[], isStill: bool
     fps: checkFps(id, isStill ? (props.fps ?? 30) : props.fps),
     durationInFrames: isStill ? 1 : checkPositiveInteger(id, 'durationInFrames', props.durationInFrames),
     defaultProps: (props.defaultProps as Record<string, unknown> | undefined) ?? {},
+    margin: props.margin === undefined ? undefined : checkMargin(id, props.margin),
     component: props.component,
     lazyComponent: props.lazyComponent,
     calculateMetadata: props.calculateMetadata,
@@ -207,6 +223,8 @@ export function setInputProps(props: Record<string, unknown>): void {
 export interface ResolvedComposition {
   config: VideoConfig;
   component: ComponentType<any>;
+  /** The `margin` from `calculateMetadata`, else the `margin` prop, if either is set. */
+  margin?: number;
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -240,7 +258,11 @@ export function resolveComposition(
   const entry = getCompositionEntry(id);
   const props = { ...entry.defaultProps, ...(options.inputProps ?? inputProps) };
 
-  const finish = (config: VideoConfig, component: ComponentType<any>): ResolvedComposition => ({ config, component });
+  const finish = (result: Metadata<any>, component: ComponentType<any>): ResolvedComposition => ({
+    config: applyMetadata(entry, props, result),
+    component,
+    margin: result.margin === undefined ? entry.margin : checkMargin(entry.id, result.margin),
+  });
   const metadata = entry.calculateMetadata
     ? entry.calculateMetadata({
         defaultProps: entry.defaultProps,
@@ -255,12 +277,12 @@ export function resolveComposition(
     entry.component ?? entry.lazyComponent!().then((module) => module.default);
 
   if (!isThenable(metadata) && entry.component) {
-    const resolved = finish(applyMetadata(entry, props, metadata), entry.component);
+    const resolved = finish(metadata, entry.component);
     return { sync: resolved, ready: Promise.resolve(resolved) };
   }
   const ready = (async () => {
     const result = await metadata;
-    return finish(applyMetadata(entry, props, result), await componentOf());
+    return finish(result, await componentOf());
   })();
   return { sync: null, ready };
 }
