@@ -221,7 +221,8 @@ pub fn chrome(name: &str, body: &str, w: u32, h: u32) -> Option<RgbaImage> {
     );
     std::fs::write(&html_path, html).ok()?;
     let _ = std::fs::remove_file(&png_path);
-    let _ = std::process::Command::new(bin)
+    let mut command = std::process::Command::new(bin);
+    command
         .arg("--headless=new")
         // Never ask for the macOS keychain ("Chromium Safe Storage").
         .arg("--use-mock-keychain")
@@ -230,8 +231,16 @@ pub fn chrome(name: &str, body: &str, w: u32, h: u32) -> Option<RgbaImage> {
         .arg(format!("--window-size={w},{h}"))
         .arg("--hide-scrollbars")
         .arg("--force-device-scale-factor=1")
-        .arg("--default-background-color=ffffffff")
-        .arg("--disable-gpu")
+        .arg("--default-background-color=ffffffff");
+    // WebGL needs a GL: SwiftShader, the same on every machine, not the GPU.
+    if body.contains("getContext('webgl") {
+        command
+            .arg("--use-angle=swiftshader")
+            .arg("--enable-unsafe-swiftshader");
+    } else {
+        command.arg("--disable-gpu");
+    }
+    let _ = command
         .arg(format!(
             "file://{}",
             html_path.canonicalize().ok()?.display()

@@ -163,7 +163,7 @@ impl<'a> Painter<'a> {
         vec![layer]
     }
 
-    /// What a `<canvas>`'s 2D context drew: the commands the TS side puts in
+    /// What a `<canvas>`'s context drew: the 2D commands the TS side puts in
     /// `data-kg-canvas` (docs/SCENE.md, "canvas"), as one canvas layer the size
     /// of the canvas's bitmap (`width` and `height`, 300 x 150 without them),
     /// stretched to the content box as `object-fit: fill` does. A canvas
@@ -175,11 +175,17 @@ impl<'a> Painter<'a> {
         content: Rect,
         radii: super::geom::Radii,
     ) -> Vec<Value> {
-        let Some(commands) = super::attr(node, "data-kg-canvas") else {
+        // A WebGL context's recording (`data-kg-webgl`, docs/SCENE.md, "glsl") is
+        // a glsl layer the same way; a 2D context's commands a canvas layer.
+        let (kind, text) = if let Some(recording) = super::attr(node, "data-kg-webgl") {
+            ("glsl", recording)
+        } else if let Some(commands) = super::attr(node, "data-kg-canvas") {
+            ("canvas", commands)
+        } else {
             return Vec::new();
         };
-        let Ok(commands) = serde_json::from_str::<Value>(commands) else {
-            self.report_element(node, "the commands drawn on this <canvas> are not JSON");
+        let Ok(drawn) = serde_json::from_str::<Value>(text) else {
+            self.report_element(node, "what was drawn on this <canvas> is not JSON");
             return Vec::new();
         };
         let side = |name: &str, default: f64| {
@@ -192,12 +198,20 @@ impl<'a> Painter<'a> {
         if !(width > 0.0 && height > 0.0) {
             return Vec::new();
         }
-        let id = self.layer_id(node, "canvas");
-        let mut layer = Layer::new(&id, "canvas")
+        let id = self.layer_id(node, kind);
+        let mut layer = Layer::new(&id, kind)
             .set("width", num(width))
-            .set("height", num(height))
-            .set("commands", commands)
-            .build();
+            .set("height", num(height));
+        layer = if kind == "glsl" {
+            // The recording's fields are the layer's.
+            let fields = drawn.as_object().cloned().unwrap_or_default();
+            fields
+                .into_iter()
+                .fold(layer, |layer, (key, value)| layer.set(&key, value))
+        } else {
+            layer.set("commands", drawn)
+        };
+        let mut layer = layer.build();
         let (sx, sy) = (content.w / width, content.h / height);
         if sx != 1.0 || sy != 1.0 {
             // A flat scale: drawn sharp, not resampled.
