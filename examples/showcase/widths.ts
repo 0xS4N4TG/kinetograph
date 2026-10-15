@@ -3,7 +3,11 @@
 export const WIDTHS = {
   // shot 2, Inter at 84 px: braces 400, words 500
   brace: 35.8,
-  without: 721.2,
+  space: 22.4,
+  rendered: 364.2,
+  without: 299.9,
+  a: 47.7,
+  browser: 328.9,
   kine: 179.9,
   tograph: 312.8,
   // shot 10, Inter 600 at 168 px

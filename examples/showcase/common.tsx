@@ -50,7 +50,7 @@ export const VO = {
 /** Where each shot starts, in seconds. A voiceover line starts 0.15 s into its shot, except line 01, which spans two. */
 export const T = {
   s1: 0,
-  s2: 3.2, // `{ without a browser }` under the end of line 01; line 02 at 4.55
+  s2: 2.4, // under the melt of shot 1: `{ rendered without a browser }`, then `{ Kinetograph }` on line 02 (4.55)
   s3: 6.4,
   s4: 8.7,
   s5: 14.7,

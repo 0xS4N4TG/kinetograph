@@ -59,13 +59,12 @@ export const Portrait: React.FC<{ palette?: PortraitPalette } & CommonProps> = (
   </Layer>
 );
 
-// ---- the profile in shot 1: only its outline matters, it is blurred to a glow ----
+// ---- the profile in shot 1, facing right, long hair down the back; blurred to a glow, in canvas pixels ----
 
 export const PROFILE_PATH =
-  'M 250 1100 L 262 900 C 272 800 330 760 400 735 L 400 680 C 330 650 290 560 300 450 ' +
-  'C 305 300 400 200 530 200 C 650 205 720 290 725 380 C 727 410 735 430 760 470 L 800 540 ' +
-  'C 805 555 790 565 770 568 L 765 590 C 772 598 772 608 764 614 C 774 622 772 636 762 640 ' +
-  'C 770 655 765 670 750 690 C 740 710 715 725 690 735 L 700 800 C 760 830 860 870 950 900 L 1000 1100 Z';
+  'M 540 1080 C 600 800 680 520 720 360 C 740 230 840 160 960 160 C 1080 160 1140 230 1148 320 L 1140 345 ' +
+  'L 1175 385 L 1150 412 L 1160 432 L 1148 452 L 1152 495 C 1140 520 1100 540 1080 560 ' +
+  'C 1040 610 1010 660 1000 700 C 1060 750 1240 860 1330 1080 Z';
 
 // ---- cards for shot 7: 220 x 300, centred on (0, 0) ----
 

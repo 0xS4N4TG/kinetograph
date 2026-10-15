@@ -35,12 +35,12 @@ const VOICE: [string, number][] = [
 
 export const Showcase: React.FC = () => (
   <>
-    {/* Shot 1 runs 0.6 s into shot 2 so that it fades out under it. */}
-    <Sequence {...shot(T.s1, T.s2 + 0.6)}>
-      <Shot1 />
-    </Sequence>
+    {/* Shot 2 starts under shot 1, which drains away in the pixel melt to show it. */}
     <Sequence {...shot(T.s2, T.s3)}>
       <Shot2 />
+    </Sequence>
+    <Sequence {...shot(T.s1, T.s2 + 1.3)}>
+      <Shot1 />
     </Sequence>
     <Sequence {...shot(T.s3, T.s4)}>
       <Shot3 />

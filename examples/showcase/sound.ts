@@ -84,9 +84,12 @@ const at = (shotStart: number, local: number): number => fr(shotStart) + local;
 
 // ---- ticks where things land ----
 const landings = [
-  at(T.s1, 10), // first word
-  at(T.s2, 8), // the brackets
-  at(T.s2, 52), // the card inside Kinetograph
+  at(T.s1, 4), // first word
+  at(T.s2, 4), // the brackets
+  at(T.s2, 17),
+  at(T.s2, 33),
+  at(T.s2, 52), // the cut to Kinetograph
+  at(T.s2, 67), // the pictures inside it
   at(T.s3, 0), // the code card
   at(T.s5, 20),
   at(T.s5, 36),
