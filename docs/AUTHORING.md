@@ -685,7 +685,7 @@ Once installed:
 - `crypto.getRandomValues()` and `crypto.randomUUID()` draw from the same seeded generator.
 - Nothing else is patched (`setImmediate`, promises and I/O are real).
 
-`@kinetograph/core/web/install` (imported by the Node bundle right after it; not part of the Chrome bundle) adds the
+`@kinetograph/core/web/install` (imported by the Node bundle right after it) adds the
 browser globals a project commonly touches: `window` and its sizes (the composition's), `matchMedia`, `new Image()` for
 project files, `fetch` of project files (remote URLs fail saying Kinetograph renders offline), `document` queries over
 the host tree, `getComputedStyle`, `ResizeObserver` and `IntersectionObserver`, and `<canvas>`, `OffscreenCanvas`,
@@ -747,9 +747,9 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | Command | Does |
 |---|---|
 | `compositions <entry>` | lists compositions |
-| `still <entry> <frame> -o out.png [--compat auto\|native\|chrome]` | one PNG; a frame the native path cannot draw comes from Chrome (COMPAT.md §6) |
-| `render <entry> -o out.mp4 [--range a..b] [--encoder] [--draft] [--compat auto\|native\|chrome]` | video with audio; `--draft` renders at half size; Chrome draws the frames the native path cannot (COMPAT.md §6) |
-| `strip <entry> -n 12 -o sheet.png [--compat …]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
+| `still <entry> <frame> -o out.png [--strict]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (COMPAT.md §6) |
+| `render <entry> -o out.mp4 [--range a..b] [--encoder] [--draft] [--strict]` | video with audio; `--draft` renders at half size; unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (COMPAT.md §6) |
+| `strip <entry> -n 12 -o sheet.png [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
 | `onion <entry> <range> -n 6 -o onion.png` | frames of the range blended over one another |
 | `inspect <entry> [--frame N]` | `InspectResult` |
 | `lint <entry>` | text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts or assets, type errors (`type-error`, no frame), with frame and layer id |
@@ -758,7 +758,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
-| `doctor [entry] [--range] [--compare N \| --compare-every N] [--compare-dir DIR]` | without an entry, the install report; with one, which frames render natively and which go to Chrome, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
+| `doctor [entry] [--range]` | without an entry, the install report; with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
 
@@ -982,8 +982,7 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
   `getAudioDurationInSeconds(src)`. The file is decoded once by the addon's `decodeAudio` (ffmpeg: any file with an
   audio stream, video files included) at 48 kHz and kept per `src`. Decoding is synchronous, so `useAudioData` returns
   the data on the first frame (Remotion's is null until it loads), and the windowed hook's window is the whole file
-  with `dataOffsetInSeconds: 0`. The host passes the decoder in with `setAudioDecoder`, as it does `setMediaProbe`; in
-  a Chrome frame the page asks the driver (`GET /@audio`).
+  with `dataOffsetInSeconds: 0`. The host passes the decoder in with `setAudioDecoder`, as it does `setMediaProbe`.
 - `visualizeAudio({ audioData, frame, fps, numberOfSamples, smoothing, dataOffsetInSeconds })`: `numberOfSamples`
   (a power of two) values 0..1, low frequencies first, in equal bands from 0 Hz to half the sample rate. Each is the
   peak magnitude in its band of a 2048-sample (or `2 × numberOfSamples`, if more) Hann-windowed FFT of the channels'

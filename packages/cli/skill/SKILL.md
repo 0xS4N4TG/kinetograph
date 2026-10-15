@@ -32,8 +32,8 @@ command (except `studio`) with the same arguments; `still`, `strip` and `onion` 
 
 Also: `compositions <entry>` lists compositions (pick one with `--comp <id>`; pass props with `--props '{"title":"Hi"}'`),
 `audio analyze <entry>` measures the sound, `snapshot <entry> --update` approves frames and `snapshot <entry>` later
-diffs against them, `bench <entry>` times the stages, `effects` lists effects, `doctor <entry>` says which frames need
-Chrome (see "Compat mode and doctor"; `doctor` alone says what this install can do).
+diffs against them, `bench <entry>` times the stages, `effects` lists effects, `doctor <entry>` says what the engine
+cannot draw and in which frames (see "Compat mode and doctor"; `doctor` alone says what this install can do).
 `studio <entry>` starts the local studio (preview, timeline, scene tree, props, render queue) at `http://127.0.0.1:3000`
 and opens a browser; it is for the person at the screen, runs until stopped, and is not an MCP tool. Use `--no-open`
 when you start it yourself.
@@ -72,7 +72,7 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   `fonts`, `lottie` and `@remotion/google-fonts/<Family>` import as usual. Other `@remotion/*` packages do not exist yet.
   For new work, use the elements below. `<div>`s, `className`, stylesheets (`.css` imports, `<style>`, Tailwind) and SVG
   also work (compat mode, see "Compat mode and doctor"): the engine's own CSS engine styles, lays out and draws them,
-  and a frame holding something it cannot draw yet is drawn by Chrome, more slowly.
+  and a frame holding something it cannot draw yet is drawn without it (or approximated) and the command warns.
 - Rendering is a pure function of the frame number. `Math.random()`, `Date.now()` and timers are driven by the frame;
   use `random(seed)` for jitter. Never read the real clock.
 - Register fonts before text is laid out. Text with a font that is not registered is a lint error.
@@ -123,10 +123,12 @@ both into the video. Check it with `kinetograph audio analyze src/index.tsx`: `i
 ## Compat mode and doctor
 
 A project written for Remotion may use DOM elements, `style`, `className` and stylesheets next to the native ones. The
-engine styles and lays them out with its own CSS engine (docs/ENGINE.md) and draws what it can; it reports every frame
-holding anything it cannot draw yet and, while the Chrome fallback exists, hands that frame to headless Chrome. Chrome
-frames cost far more time and may differ slightly from native ones (Chrome blends in sRGB, the engine in linear
-light), so find out what falls back before a long render. Refs to DOM elements answer `getBoundingClientRect` and
+engine styles and lays them out with its own CSS engine (docs/ENGINE.md) and draws what it can. There is no browser:
+a frame holding anything it cannot draw yet is still drawn, without that item or approximated, and `still`, `strip`
+and `render` print a `warning:` on stderr naming each kind (element, property, values, reason, frames); with `--json`
+the same list is in the result under `compat.leftOut`. Pass `--strict` to `still`, `strip` or `render` to fail with
+`UNSUPPORTED_CONTENT` on the first such frame instead of getting an approximate picture. Find out what is missing
+before a long render. Refs to DOM elements answer `getBoundingClientRect` and
 friends from the same CSS engine, `useLayoutEffect` measure-then-render code settles within the frame, and `fetch`,
 `new Image()` and `matchMedia` work for project files and the composition's size, and `<canvas>` with
 `getContext('2d')` is drawn natively (paths, gradients, text, `drawImage`, `getImageData`; no shadows and no WebGL);
@@ -134,20 +136,15 @@ there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native
 
 `kinetograph doctor src/index.tsx` runs the JS stage for every frame (no GPU) and reports:
 
-- the share of frames drawn natively, and the **runs**: consecutive frames drawn natively or by Chrome;
+- how many frames have nothing unsupported (`cleanFrames`, `unsupportedFrames`, `cleanShare`);
 - each **issue**, grouped by element, property and reason, the one on the most frames first: `values` it was seen with,
   the element `paths` (`$0.2 <div>`, the host-tree position) and the inclusive frame `ranges`.
 
-`--range 0..90` limits the frames, `--comp` and `--props` choose the composition and its props. `--compare 4` also
-draws four frames spread over the range natively and in Chrome and gives `maxDiff` and `meanDiff` (0..255 levels per
-channel), `differingPixels` (pixels with a channel more than 2 levels apart) and `largeDiffPixels` (more than 48 apart:
-what is left after anti-aliasing). `--compare-every 30` samples every 30th frame instead, and `--compare-dir out/cmp`
-saves each sampled frame's native picture, Chrome's and their difference. It opens the GPU and Chrome, so run it last,
-and only on a project (a `.json` scene has no DOM, so it is always 100% native). A `stylesheets:` note in the report
-says a stylesheet could not be used (Tailwind that could not be built, a remote font).
+`--range 0..90` limits the frames, `--comp` and `--props` choose the composition and its props. A `stylesheets:` note
+in the report says a stylesheet could not be used (Tailwind that could not be built, a remote font).
 
 How to read it: an issue with a `property` is that CSS property on that element; one with `null` is the element itself
-(unsupported). 100% native means nothing falls back. To bring the share up, remove or replace what the top issues name
+(unsupported). 100% clean means nothing is left out. To bring the share up, remove or replace what the top issues name
 (a property the painter does not draw yet becomes one it does), then run `doctor` again. `lint` also lists each
 issue as a `compat` warning (it does not fail), but only for the frames it samples; `doctor` checks them all.
 
@@ -157,5 +154,5 @@ issue as a `compat` warning (it does not fail), but only for the frames it sampl
 - When a layer is in the wrong place, `inspect` it instead of guessing from the picture: `bounds` and `matrix` are in canvas pixels.
 - Give an explicit `id` to matte sources and to anything an `<Audio>` or matte refers to.
 - `snapshot --update` once a look is approved, so a later change that moves a pixel by more than 2 levels shows up.
-- Run `doctor` on a project that uses DOM elements or CSS, before `render`: it shows what will be drawn by Chrome.
+- Run `doctor` on a project that uses DOM elements or CSS, before `render`: it shows what the render will leave out or approximate.
 - A task that fails prints the cause: read `error.message` and `error.code` before changing anything.

@@ -41,8 +41,10 @@ Kinetograph's differences, ranked by how defensible they are:
 1. **Remotion-shaped TS/TSX authoring with hot reload.** `useCurrentFrame`, `interpolate`, `spring`, `Easing`,
    `random`, `<Sequence>`, `<Series>`, `<AbsoluteFill>`, `<Img>`, `<Audio>`, `delayRender`, `staticFile`. No compile
    step.
-2. **Runs existing Remotion projects** (compat mode), with automatic fallback to Remotion's own Chrome renderer for
-   frame ranges that use unsupported features, and a `doctor` command that reports what fell back and why.
+2. **Runs existing Remotion projects** (compat mode) with the engine's own CSS/SVG/Canvas/WebGL port and no browser;
+   what it cannot draw is left out or approximated with a warning (`--strict` fails instead), and a `doctor` command
+   reports what and why. (The first plan, a fallback to Chrome per frame range, was built in Phase 5 and removed in
+   Phase 6.)
 3. **Built-in Web Audio synthesis.** fframes mixes files and analyses loudness but cannot synthesise (its own audio
    guide says to use `sox` for placeholder sounds). Kinetograph ships the Web Audio API through
    `node-web-audio-api` (the npm build of `web-audio-api-rs`), so the oscillator/envelope/filter code Claude already writes runs unchanged
@@ -94,8 +96,7 @@ Decisions and why:
   exist as packages instead of bindings we write. Deno announced on 2026-10-09 that development of its runtime
   ends after one year (rusty_v8 continues under Cloudflare, `deno_core`/`deno_runtime` unaddressed), which removed
   the embedded-V8 option; rquickjs and Boa lose on coverage; Bun cannot be embedded but loads the same addon
-  (its Node-API coverage is ~95%), so `bunx kinetograph` works too. Node is foundation-governed, and Phase 5's
-  Chrome fallback is a Node program anyway. Costs: no single self-contained binary (users need Node); prebuilt
+  (its Node-API coverage is ~95%), so `bunx kinetograph` works too. Node is foundation-governed. Costs: no single self-contained binary (users need Node); prebuilt
   addons per platform via napi-rs CI; determinism moves into the TS shim, which overrides `Date`, `Math.random`
   and timers exactly as Remotion's contract already does. Measured on the M4 (2026-10-14): JS stage (React render
   + real Remotion `interpolate`/`spring`, 80 layers, Node 26) 0.78 ms/frame; GPU raster + composite + readback
@@ -183,7 +184,8 @@ Native elements: `<Layer>`, `<Shape>`/`<Path>`, `<Text>`, `<Image>`, `<Video>`, 
 property names so models write it without a skill.
 
 Remotion packages beyond the core API. "Shim" means reimplemented in the TS layer from Remotion's documented
-behaviour on top of engine primitives; "fallback" means compat mode renders it through Chrome.
+behaviour on top of engine primitives; "fallback" meant compat mode rendered it through Chrome (removed in Phase 6:
+such content is ported natively, or left out with a warning).
 
 | Package | Plan | Needs from the engine | Phase |
 |---|---|---|---|
@@ -196,7 +198,7 @@ behaviour on top of engine primitives; "fallback" means compat mode renders it t
 | `@remotion/gif`, `<Video>`, `<OffthreadVideo>` | native | ffmpeg decode | 4 |
 | `@remotion/three` | dropped for now (2026-10-15): `doctor` reports it; the engine's own 3D layer replaces it (§8, "3D layer") | 3D layer | deferred |
 | `@remotion/captions` | shim | per-glyph text | 3 |
-| Anything else (arbitrary HTML/CSS) | fallback | `doctor` | 5 |
+| Anything else (arbitrary HTML/CSS) | the DOM engine (`ENGINE.md`); what it cannot draw is reported | `doctor` | 5, 6 |
 
 Audio:
 
@@ -251,7 +253,7 @@ CLI first (`npx kinetograph …`, TS, calling the addon), MCP server wrapping th
 | `audio analyze` | LUFS, true peak, clipping, silence per scene |
 | `snapshot` | diff against approved PNGs |
 | `effects` | list of effects and their parameters |
-| `doctor` | compat-mode report: what fell back to Chrome and why |
+| `doctor` | compat-mode report: what the engine cannot draw, in which frames, and why |
 | `bench` | ms/frame per stage (JS, layout, raster, readback, encode) |
 | `studio` | local web server and browser UI: preview, timeline, props, render queue (Phase 4) |
 
@@ -377,7 +379,7 @@ match; our own layer is native, shares the wgpu device and stays a pure function
   fog and depth of field; more than 8 lights; automatic model fit; the `doctor` report for projects that import
   `three`; the studio's scene tree showing 3D objects. Not decided yet: a 3D layer that shares one depth buffer with
   `preserve3d` groups.
-- Projects that import `three` or `@remotion/three` are reported by `doctor`; nothing falls back to Chrome.
+- Projects that import `three` or `@remotion/three` are reported by `doctor`; nothing is drawn by Chrome.
 **Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
 of sequences and layers, scene tree from `inspect`, props panel, render queue calling `render`, hot reload on save.
@@ -394,20 +396,25 @@ where `doctor` reports 126 of 150 frames native and one Chrome run (96..119, the
 Tested on the M4 and **merged into `main` 2026-10-16** (merge `449a639`). The native DOM engine (Stylo, taffy, Parley,
 our compositor as the painter; `docs/ENGINE.md`) replaced the TS CSS mapper this phase first shipped with. On the
 papercut corpus 988 of 988 frames now draw natively, and pixels more than 48 levels off Chrome summed over the
-corpus fell from 5,312,576 to 1,276,162. Papercut ep13 frame 30 went from 990 to 500 ms. The Chrome fallback still
-exists and is removed in Phase 6.
+corpus fell from 5,312,576 to 1,276,162. Papercut ep13 frame 30 went from 990 to 500 ms. The Chrome fallback was
+removed in Phase 6.
 
-**Phase 6: finish the port, remove Chrome** (started 2026-10-16). Everything left before the render path has no
-browser in it. Streams in progress on their own branches are marked (building); the rest are queued in this order.
+**Phase 6: finish the port, remove Chrome** (started 2026-10-16, **done 2026-10-16**). Everything left before the render path has no
+browser in it. Items 1 to 3 landed on their own branches; item 4 is branch `chore/remove-chrome-fallback`.
 1. Deferred browser-API ports (see "Deferred" below):
-   - Canvas 2D, native (building).
-   - CSS gaps: `line-clamp`, floats, tables, `@container`, transitions (building).
+   - Canvas 2D, native (done).
+   - CSS gaps: `line-clamp`, floats, tables, `@container`, transitions (done).
    - WebGL fragment shaders, GLSL to WGSL through naga (done 2026-10-16, branch `feat/webgl-shaders`).
 2. Corpus leftovers (`docs/ENGINE.md` §10.5) and the painter suggestions (§11) (building), plus issues #16
-   (`kinetograph check`) and #17 (rajz-cards speed) (building).
-3. The own 3D layer (see "3D layer" above): built on `feat/3d-layer`, to merge after the ports.
-4. Last: remove the Phase 5 Chrome fallback (`--compat`, `packages/cli/src/fallback/`, Chrome for Testing). No Chrome
-   in the render path, canvas and WebGL included. `doctor` then reports what is unsupported instead of falling back.
+   (`kinetograph check`) and #17 (rajz-cards speed).
+3. The own 3D layer (see "3D layer" above): `feat/3d-layer`.
+4. Last, done: the Phase 5 Chrome fallback is removed (`--compat`, `doctor --compare`, `packages/cli/src/fallback/`,
+   `packages/compat/src/browser/`, `puppeteer-core` in the CLI, the addon's `videoFrame` and `VideoWriter.pushRgba`).
+   No Chrome in the render path, canvas and WebGL included. A frame holding something unsupported is drawn natively
+   without it and the command warns; `--strict` on `render`, `still` and `strip` fails instead (`COMPAT.md` §6).
+   `doctor` and `lint` keep reporting it. Chrome for Testing remains only as a test oracle: the dom goldens,
+   `crates/dom/tools/chrome-compare.mjs` (puppeteer-core as a root dev dependency) and `scripts/corpus.mjs
+   --reference` against Remotion's mp4. Papercut corpus: 988 of 988 frames with nothing unsupported before and after.
 The showcase (`examples/showcase`) shots 3 to 10 redo is deferred by the user and is not part of Phase 6.
 
 **Building a phase in a Claude Code cloud session** (Phase 2 onwards). The cloud session writes code; all testing
@@ -601,7 +608,7 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
        for the values.
      - SVG is turned into path layers (`usvg` in Rust if parsing in TS falls short).
      - `@remotion` components that render DOM (`AbsoluteFill`, `Img`) work unchanged.
-  3. `feat/chrome-fallback`: frames the native path cannot draw are rendered in headless Chrome.
+  3. `feat/chrome-fallback` (removed in Phase 6): frames the native path cannot draw were rendered in headless Chrome.
      - Uses puppeteer-core with a pinned Chrome for Testing: a browser bundle of the project with React DOM and
        this repo's Remotion shim, the frame set through the frame clock, and a screenshot.
      - Written from the documented behaviour of Remotion's renderer, not its source (§9).
@@ -611,7 +618,7 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
   4. `feat/doctor`: `kinetograph doctor <entry>` (`--json` too).
      - Lists each unsupported element or property with the frame ranges it appears in and the share of frames
        that will render natively.
-     - `--compare N` renders N sampled frames both ways and reports the pixel difference (run on the M4).
+     - `--compare N` rendered N sampled frames both ways and reported the pixel difference (removed in Phase 6 with Chrome).
      - It is also wired into `lint` and the MCP server.
 - The orchestrator merges the four, adds a Remotion-style example under `examples/compat/` written for the repo
   (none of the papercut source, which is private), and opens `feat/remotion-compat` as a draft PR titled Phase 5.
@@ -625,7 +632,7 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
 
 Remotion projects work unchanged when their effects are CSS, SVG or plain JS. These do not, and `doctor` reports
 them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only. This is
-Phase 6 (above); status as of 2026-10-16: items 1, 2 and 3 are done, item 4 stays dropped.
+Phase 6 (above), done 2026-10-16: items 1, 2 and 3 are done, item 4 stays dropped.
 1. **CSS gaps** (done 2026-10-16, `feat/css-gaps`; the design and what is left are in `docs/ENGINE.md` §7.12).
    - `-webkit-line-clamp` (the box's height is the Nth line's bottom, the ellipsis ends that line) and
      `text-overflow: ellipsis`, which shares the ellipsis code.
@@ -671,7 +678,7 @@ it sees only its own layer (no backdrop), runs one pass, samples no other textur
 - Rendering is a pure function of (project, frame). Nothing reads the wall clock.
 - Never measure text before fonts are registered (the papercut pipeline had a banner jitter bug from this).
 - Speed claims are measured, never assumed. `bench` exists from Phase 1.
-- Fallback must work per frame range, not per scene: transitions overlap two scenes.
+- Anything per-frame (warnings, `--strict`) is decided per frame, never per scene: transitions overlap two scenes.
 
 ## 10. Open questions
 

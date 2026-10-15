@@ -3,21 +3,30 @@
 Read this before any work on compat mode, Chrome, CSS support or performance. It records what happened when
 Phases 4 and 5 were tested on the M4 against a real papercut episode, and what the user decided because of it.
 
+**Status, 2026-10-16 (later): the Chrome fallback is removed.** Phase 6 is done (HANDOFF §8). The render path has
+no Chrome and no browser dependency: `--compat`, `doctor --compare`, `packages/cli/src/fallback/`,
+`packages/compat/src/browser/`, `puppeteer-core` in the CLI, `videoFrame` and `VideoWriter.pushRgba` are gone. A frame
+holding something unsupported is drawn natively without it, with a warning; `--strict` fails instead
+(COMPAT.md §6). Chrome for Testing stays only as a test oracle (dom goldens, `chrome-compare.mjs`, `corpus.mjs
+--reference` against Remotion's mp4). Corpus: 988 of 988 frames with nothing unsupported before and after the removal.
+The sections below are the record of 2026-10-15 and 2026-10-16.
+
 **Status, 2026-10-16.** The full-engine direction (section 6) and the GPU-pass work were approved and are done, and
 everything is merged into `main` (merge `449a639`, pushed). Results: S04 renders 7.0 to 7.1x faster than Remotion
 (Kinetograph 1.28 s median, Remotion 8.96 s median, 89 frames, byte-identical to the build before). Papercut ep13
 frame 30 went from 990 to 500 ms. 988 of 988 frames of the papercut corpus draw natively; pixels more than 48 levels
 off summed 5,312,576 before and 1,276,162 after. Sections 2 to 4 and 8 below are the state on 2026-10-15 and are kept
 as the record. Still true: no Chrome ever, port rather than work around. Three.js, `@remotion/three`,
-react-three-fiber, drei and pixi compatibility was dropped on 2026-10-15 for an own native 3D layer. Remaining work
-is Phase 6 (HANDOFF §8): Canvas 2D, CSS gaps, corpus leftovers, WebGL fragment shaders, the 3D layer, then removing
-the Chrome fallback.
+react-three-fiber, drei and pixi compatibility was dropped on 2026-10-15 for an own native 3D layer. Phase 6 (HANDOFF §8) then
+did Canvas 2D, the CSS gaps, corpus leftovers, WebGL fragment shaders and the 3D layer, and removed the Chrome
+fallback.
 
 ## 1. Decisions
 
 1. **No Chrome, ever.** Kinetograph ships with no browser, including for `<canvas>`, WebGL and three.js projects.
-   The Phase 5 Chrome fallback (`--compat`, `packages/cli/src/fallback/`, Chrome for Testing) is temporary: it is
-   removed once the native path covers the papercut corpus. Never propose Chrome as the answer for a feature.
+   The Phase 5 Chrome fallback (`--compat`, `packages/cli/src/fallback/`, Chrome for Testing) was temporary and is
+   removed (Phase 6, 2026-10-16). Chrome for Testing remains only as a test oracle. Never propose Chrome as the
+   answer for a feature.
 2. **Port, do not work around.** Every CSS and SVG feature a project uses is drawn by our own compositor (Vello).
    These were proposed and rejected; do not build them:
    - several Chrome pages in parallel (what Remotion does with tabs);
@@ -217,7 +226,7 @@ same as Chrome's, not match it byte for byte (text and anti-aliasing differ).
 | Dawn (three.js on WebGPU) | not installed | 15 to 30 MB (a guess) |
 | FFmpeg | 16 MB (Homebrew dylibs) | 16 MB, or about 10 MB as a trimmed static build |
 | TS packages and studio UI | a few MB (UI 0.5 MB) | about the same |
-| Chrome | 375 MB (temporary fallback) | **0** |
+| Chrome | 375 MB (temporary fallback, removed 2026-10-16) | **0** |
 | **Total** | | **about 60 to 75 MB** |
 
 The repo's 410 MB `node_modules` is development tooling (Vite, Vitest, esbuild, test libraries), not what a user
@@ -226,7 +235,7 @@ installs. Measure the real addon size once Stylo is in.
 ## 8. Open items
 
 1. ~~Push `feat/studio-video` and `feat/remotion-compat`~~ Done: merged into `main` and pushed 2026-10-16.
-2. The broken `stampCut` transition at frame ~140 of episode 13 (Chrome path).
+2. The broken `stampCut` transition at frame ~140 of episode 13 was a Chrome-path problem; the Chrome path no longer exists.
 3. No Rust unit test for WOFF2 unpacking; the episode render is its only check.
 4. Studio UI checklist (#23) and server checklist (#25); S04 in the studio.
 5. The port (section 4), on the user's go-ahead, then the full-engine direction (section 6) if approved.
