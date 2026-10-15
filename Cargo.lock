@@ -1399,6 +1399,7 @@ dependencies = [
 name = "kinetograph-node"
 version = "0.1.0"
 dependencies = [
+ "image",
  "kinetograph-cli",
  "kinetograph-core",
  "napi",
