@@ -209,6 +209,11 @@ impl<'a> Painter<'a> {
                         }
                         let child_id = NodeId::from_u64(ib.id);
                         let child = self.node(child_id);
+                        // The front half's zero-height boxes that give inline
+                        // edges their width (`inline::SPACER_TAG`).
+                        if self.tag_of(child) == crate::inline::SPACER_TAG {
+                            continue;
+                        }
                         let Some(style) = child.primary_styles() else {
                             continue;
                         };
@@ -509,38 +514,6 @@ impl<'a> Painter<'a> {
         }
         if !any_deco {
             return out;
-        }
-        // Blitz's inline layout gives a span's horizontal padding, border and
-        // margin no room, so a box drawn round it would overlap its text.
-        {
-            let b = style.get_border();
-            let p = style.get_padding();
-            let m = style.get_margin();
-            let px = |l: &style::values::computed::LengthPercentage| super::util::lp(l, 0.0).abs();
-            let bw = border_widths(&style);
-            let _ = b;
-            let horizontal = [
-                bw[3],
-                bw[1],
-                px(&p.padding_left.0),
-                px(&p.padding_right.0),
-                match &m.margin_left {
-                    style::values::generics::length::GenericMargin::LengthPercentage(l) => px(l),
-                    _ => 0.0,
-                },
-                match &m.margin_right {
-                    style::values::generics::length::GenericMargin::LengthPercentage(l) => px(l),
-                    _ => 0.0,
-                },
-            ];
-            if horizontal.iter().any(|v| *v > 0.0) {
-                self.report(
-                    node,
-                    "padding/border/margin",
-                    format!("{horizontal:?}"),
-                    "horizontal padding, border and margin of an inline element take no room in Blitz's line layout; use display: inline-block",
-                );
-            }
         }
         for (i, r) in rects.iter().enumerate() {
             let geom = self.inline_fragment_geom(node, &style, *r, i == 0, i + 1 == count);
