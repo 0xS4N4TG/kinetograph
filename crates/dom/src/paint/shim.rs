@@ -123,7 +123,10 @@ fn without_urls(value: &str) -> String {
     if kept.is_empty() {
         "none".to_string()
     } else {
-        kept.iter().map(|w| w.as_str()).collect::<Vec<_>>().join(" ")
+        kept.iter()
+            .map(|w| w.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -178,7 +181,9 @@ pub fn shim_css(css: &str) -> String {
         if at_decl_start && (c.is_ascii_alphabetic() || c == '-') {
             // A property name?
             let mut j = i;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == '-' || bytes[j] == '_') {
+            while j < bytes.len()
+                && (bytes[j].is_ascii_alphanumeric() || bytes[j] == '-' || bytes[j] == '_')
+            {
                 j += 1;
             }
             let name: String = bytes[i..j].iter().collect();
@@ -186,7 +191,8 @@ pub fn shim_css(css: &str) -> String {
             while k < bytes.len() && bytes[k].is_whitespace() {
                 k += 1;
             }
-            if bytes.get(k) == Some(&':') && MIRRORED.contains(&name.to_ascii_lowercase().as_str()) {
+            if bytes.get(k) == Some(&':') && MIRRORED.contains(&name.to_ascii_lowercase().as_str())
+            {
                 // The value runs to the next top-level `;` or `}`.
                 let vstart = k + 1;
                 let mut e = vstart;
@@ -220,11 +226,12 @@ pub fn shim_css(css: &str) -> String {
                 };
                 let lname = name.to_ascii_lowercase();
                 // What Stylo is given: the value, less the `url()`s of a filter.
-                let for_stylo = if (lname == "filter" || lname == "-webkit-filter") && value.contains("url(") {
-                    without_urls(value)
-                } else {
-                    value.to_string()
-                };
+                let for_stylo =
+                    if (lname == "filter" || lname == "-webkit-filter") && value.contains("url(") {
+                        without_urls(value)
+                    } else {
+                        value.to_string()
+                    };
                 out.push_str(&format!("{name}:{for_stylo}{important};"));
                 out.push_str(&format!("{}:{}{}", kg_name(&lname), value, important));
                 i = e;

@@ -783,7 +783,14 @@ impl Compositor {
             src.bounds
         };
         self.update(&mut dst, region, |c, dst, temp| {
-            c.pass(&c.blend, dst.input(), src.input(), opacity, mode | space_bit, temp);
+            c.pass(
+                &c.blend,
+                dst.input(),
+                src.input(),
+                opacity,
+                mode | space_bit,
+                temp,
+            );
         });
         dst.bounds = dst.bounds.union(src.bounds);
         dst

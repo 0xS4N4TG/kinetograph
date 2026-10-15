@@ -287,7 +287,10 @@ impl Transform {
         [&self.rotate_x, &self.rotate_y, &self.z]
             .iter()
             .any(|n| n.min() != 0.0 || n.max() != 0.0)
-            || self.matrix.as_ref().is_some_and(|m| !matrix_is_affine_2d(m))
+            || self
+                .matrix
+                .as_ref()
+                .is_some_and(|m| !matrix_is_affine_2d(m))
     }
 }
 
@@ -1774,7 +1777,7 @@ impl Scene {
                                 path.display()
                             )));
                         }
-                        if !(run.size > 0.0) {
+                        if run.size.is_nan() || run.size <= 0.0 {
                             return Err(Error::Scene(format!(
                                 "layer {:?}: glyph run size must be positive",
                                 layer.id
@@ -2312,7 +2315,9 @@ fn validate_units(layer: &Layer, what: &str, g: &Gradient) -> Result<()> {
 /// Checks an image paint: it has a file and a size to draw it at.
 fn validate_image_paint(id: &str, i: &ImagePaint) -> Result<()> {
     if i.src.trim().is_empty() {
-        return Err(Error::Scene(format!("layer {id:?}: image paint needs a src")));
+        return Err(Error::Scene(format!(
+            "layer {id:?}: image paint needs a src"
+        )));
     }
     if i.width.min() <= 0.0 || i.height.min() <= 0.0 {
         return Err(Error::Scene(format!(
@@ -4967,7 +4972,10 @@ fn percent_decode(s: &str) -> Vec<u8> {
 
 /// The pixel size of the image `src` (a file relative to `base_dir`, or a
 /// `data:` URL), from its header.
-pub(crate) fn image_dimensions(base_dir: &Path, src: &str) -> std::result::Result<(u32, u32), String> {
+pub(crate) fn image_dimensions(
+    base_dir: &Path,
+    src: &str,
+) -> std::result::Result<(u32, u32), String> {
     if let Some(bytes) = data_uri_bytes(src) {
         return image::ImageReader::new(std::io::Cursor::new(bytes))
             .with_guessed_format()
@@ -4989,7 +4997,10 @@ mod data_uri_tests {
     fn a_data_uri_is_decoded_in_memory() {
         let bytes = data_uri_bytes(PNG).unwrap();
         assert_eq!(&bytes[1..4], b"PNG");
-        assert_eq!(image_dimensions(Path::new("/nowhere"), PNG).unwrap(), (1, 1));
+        assert_eq!(
+            image_dimensions(Path::new("/nowhere"), PNG).unwrap(),
+            (1, 1)
+        );
         assert!(data_uri_bytes("tile.png").is_none());
         assert_eq!(data_uri_bytes("data:text/plain,a%20b").unwrap(), b"a b");
     }

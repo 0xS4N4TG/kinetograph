@@ -34,9 +34,22 @@ fn a_papercut_style_card_paints_end_to_end() {
              rotate:-3deg;letter-spacing:2px;color:#2a2018;font-family:'DM Sans';font-size:28px",
             tile()
         ),
-        vec![text("Paper card"), el("span", "$0.0.1", "display:block;font-size:16px;letter-spacing:0", vec![text("second line, no spacing")])],
+        vec![
+            text("Paper card"),
+            el(
+                "span",
+                "$0.0.1",
+                "display:block;font-size:16px;letter-spacing:0",
+                vec![text("second line, no spacing")],
+            ),
+        ],
     );
-    let req = request(el("div", "$0", "width:1000px;height:500px;background:#8aa", vec![card]));
+    let req = request(el(
+        "div",
+        "$0",
+        "width:1000px;height:500px;background:#8aa",
+        vec![card],
+    ));
     let parsed = common::parse(&req);
     let island = document::resolve(&parsed).expect("resolves");
     let out = paint(&island.doc, &parsed);
@@ -44,7 +57,10 @@ fn a_papercut_style_card_paints_end_to_end() {
     let text = serde_json::to_string(&out.layers).unwrap();
     // The card is a group (it turns), its texture is tiled, and the id is the explicit one.
     assert!(text.contains("\"id\":\"card\""), "{text}");
-    assert!(text.contains("\"type\":\"image\""), "the tiled background paint: {text}");
+    assert!(
+        text.contains("\"type\":\"image\""),
+        "the tiled background paint: {text}"
+    );
     assert!(text.contains("\"repeatX\":true"), "{text}");
     assert!(text.contains("\"blendMode\":\"multiply\""), "{text}");
     assert!(text.contains("\"runs\""), "glyph runs: {text}");

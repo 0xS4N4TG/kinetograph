@@ -24,7 +24,12 @@ macro_rules! case {
         fn $name() {
             let body: String = $body;
             let (out, _frame, diff) = compare(stringify!($name), &body, $w, $h);
-            println!("{}: unsupported {:?}; diff {:?}", stringify!($name), out.unsupported, diff);
+            println!(
+                "{}: unsupported {:?}; diff {:?}",
+                stringify!($name),
+                out.unsupported,
+                diff
+            );
         }
     };
 }

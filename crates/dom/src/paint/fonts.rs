@@ -45,7 +45,9 @@ impl<'a> Painter<'a> {
         let bytes = font.data.data();
         let mut found = None;
         for path in self.req.fonts.values() {
-            let Ok(file) = std::fs::read(path) else { continue };
+            let Ok(file) = std::fs::read(path) else {
+                continue;
+            };
             let file = blitz_dom::decode_font_bytes(&file);
             if file.as_ref() == bytes {
                 found = Some(path.clone());

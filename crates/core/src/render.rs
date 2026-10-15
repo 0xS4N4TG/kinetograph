@@ -493,12 +493,11 @@ impl Renderer {
             }
             // A layer turned in 3D is drawn flat and then warped about its
             // own position, in its parent's plane.
-            let placement =
-                warp::layer_world(&layer.transform).map(|world| Placement {
-                    parent,
-                    world,
-                    backface_hidden: layer.transform.backface_hidden,
-                });
+            let placement = warp::layer_world(&layer.transform).map(|world| Placement {
+                parent,
+                world,
+                backface_hidden: layer.transform.backface_hidden,
+            });
             canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
         }
         Ok(canvas)
@@ -717,12 +716,11 @@ impl Renderer {
                 backdrop,
                 Some((i, layer.motion.len())),
             )?;
-            let placement =
-                warp::layer_world(&sub.transform).map(|world| Placement {
-                    parent,
-                    world,
-                    backface_hidden: sub.transform.backface_hidden,
-                });
+            let placement = warp::layer_world(&sub.transform).map(|world| Placement {
+                parent,
+                world,
+                backface_hidden: sub.transform.backface_hidden,
+            });
             let src = match placement {
                 Some(placement) => match self.place(src, &placement) {
                     Some(src) => src,
@@ -1214,16 +1212,15 @@ impl Renderer {
                             .draw_glyphs(&run.font)
                             .transform(matrix)
                             .glyph_transform(
-                                (run.skew != 0.0)
-                                    .then(|| Affine::skew(f64::from(run.skew).to_radians().tan(), 0.0)),
+                                (run.skew != 0.0).then(|| {
+                                    Affine::skew(f64::from(run.skew).to_radians().tan(), 0.0)
+                                }),
                             )
                             .normalized_coords(&run.coords)
-                            .font_embolden(vello::FontEmbolden::new(
-                                vello::kurbo::Diagonal2::new(
-                                    f64::from(run.embolden),
-                                    f64::from(run.embolden),
-                                ),
-                            ))
+                            .font_embolden(vello::FontEmbolden::new(vello::kurbo::Diagonal2::new(
+                                f64::from(run.embolden),
+                                f64::from(run.embolden),
+                            )))
                             .brush_transform(brush_transform)
                             .font_size(run.font_size)
                             .hint(false)

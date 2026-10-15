@@ -8,9 +8,9 @@ use crate::error::{Error, Result};
 use crate::scene::{
     AlignContent, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
     Effect, Extend, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun, Gradient,
-    GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout, LayoutItem,
-    MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels,
-    Paint, Position, Scene, Shadow, Spacing, Stop, TextAlign, Transform, Turbulence,
+    GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout,
+    LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
+    NoiseChannels, Paint, Position, Scene, Shadow, Spacing, Stop, TextAlign, Transform, Turbulence,
     TurbulenceKind, Units,
 };
 use crate::text::TextEngine;

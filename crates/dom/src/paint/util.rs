@@ -143,7 +143,9 @@ pub fn rect_shape(id: &str, w: f64, h: f64, radius: f64, fill: Value) -> Layer {
     } else {
         json!({ "kind": "rect", "width": num(w), "height": num(h) })
     };
-    Layer::new(id, "shape").set("shape", shape).set("fill", fill)
+    Layer::new(id, "shape")
+        .set("shape", shape)
+        .set("fill", fill)
 }
 
 /// A filled path shape layer; the path is in the layer's own space.
@@ -168,21 +170,40 @@ pub fn parse_css_color(s: &str) -> Option<[f32; 4]> {
         _ => {}
     }
     if let Some(h) = s.strip_prefix('#') {
-        let d: Vec<u8> = h.chars().filter_map(|c| c.to_digit(16).map(|v| v as u8)).collect();
+        let d: Vec<u8> = h
+            .chars()
+            .filter_map(|c| c.to_digit(16).map(|v| v as u8))
+            .collect();
         if d.len() != h.len() {
             return None;
         }
         let two = |a: u8, b: u8| f32::from(a * 16 + b) / 255.0;
         return match d.len() {
             3 => Some([two(d[0], d[0]), two(d[1], d[1]), two(d[2], d[2]), 1.0]),
-            4 => Some([two(d[0], d[0]), two(d[1], d[1]), two(d[2], d[2]), two(d[3], d[3])]),
+            4 => Some([
+                two(d[0], d[0]),
+                two(d[1], d[1]),
+                two(d[2], d[2]),
+                two(d[3], d[3]),
+            ]),
             6 => Some([two(d[0], d[1]), two(d[2], d[3]), two(d[4], d[5]), 1.0]),
-            8 => Some([two(d[0], d[1]), two(d[2], d[3]), two(d[4], d[5]), two(d[6], d[7])]),
+            8 => Some([
+                two(d[0], d[1]),
+                two(d[2], d[3]),
+                two(d[4], d[5]),
+                two(d[6], d[7]),
+            ]),
             _ => None,
         };
     }
-    let inner = s.strip_prefix("rgba(").or_else(|| s.strip_prefix("rgb("))?.strip_suffix(')')?;
-    let parts: Vec<&str> = inner.split(|c: char| c == ',' || c == '/' || c.is_whitespace()).filter(|p| !p.is_empty()).collect();
+    let inner = s
+        .strip_prefix("rgba(")
+        .or_else(|| s.strip_prefix("rgb("))?
+        .strip_suffix(')')?;
+    let parts: Vec<&str> = inner
+        .split(|c: char| c == ',' || c == '/' || c.is_whitespace())
+        .filter(|p| !p.is_empty())
+        .collect();
     if parts.len() < 3 {
         return None;
     }
@@ -203,5 +224,10 @@ pub fn parse_css_color(s: &str) -> Option<[f32; 4]> {
         }
         None => 1.0,
     };
-    Some([chan(parts[0])?.clamp(0.0, 1.0), chan(parts[1])?.clamp(0.0, 1.0), chan(parts[2])?.clamp(0.0, 1.0), a.clamp(0.0, 1.0)])
+    Some([
+        chan(parts[0])?.clamp(0.0, 1.0),
+        chan(parts[1])?.clamp(0.0, 1.0),
+        chan(parts[2])?.clamp(0.0, 1.0),
+        a.clamp(0.0, 1.0),
+    ])
 }

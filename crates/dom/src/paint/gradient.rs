@@ -2,11 +2,11 @@
 
 use serde_json::{Value, json};
 use style::color::AbsoluteColor;
+use style::values::computed::AngleOrPercentage;
 use style::values::computed::image::{EndingShape, Gradient, LineDirection};
 use style::values::generics::image::{
     Circle, Ellipse, GenericGradientItem as Item, GradientFlags, ShapeExtent,
 };
-use style::values::computed::AngleOrPercentage;
 use style::values::specified::position::{HorizontalPositionKeyword, VerticalPositionKeyword};
 
 use super::geom::Rect;
@@ -98,7 +98,8 @@ fn with_hints(items: Vec<Entry>, full: f64) -> Vec<Stop> {
         match e.kind {
             EntryKind::Stop(color) => out.push(Stop { pos, color }),
             EntryKind::Hint => {
-                let (Some(prev), Some(next)) = (out.last().copied(), next_stop(&items, &positions, i))
+                let (Some(prev), Some(next)) =
+                    (out.last().copied(), next_stop(&items, &positions, i))
                 else {
                     continue;
                 };
@@ -182,11 +183,7 @@ fn solid(stops: &[Stop]) -> Value {
 
 /// The result of converting a gradient: a scene paint (`fill`) in the
 /// coordinates of the box `tile`, which is the gradient's image.
-pub fn gradient_paint(
-    g: &Gradient,
-    tile: Rect,
-    current: &AbsoluteColor,
-) -> Result<Value, String> {
+pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Result<Value, String> {
     if !plain_interpolation(g) {
         return Err("a gradient that interpolates in a colour space other than sRGB".into());
     }
@@ -204,16 +201,32 @@ pub fn gradient_paint(
                     (dx, dy, (tile.w * dx).abs() + (tile.h * dy).abs())
                 }
                 LineDirection::Horizontal(h) => {
-                    let dx = if h == HorizontalPositionKeyword::Right { 1.0 } else { -1.0 };
+                    let dx = if h == HorizontalPositionKeyword::Right {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     (dx, 0.0, tile.w)
                 }
                 LineDirection::Vertical(v) => {
-                    let dy = if v == VerticalPositionKeyword::Bottom { 1.0 } else { -1.0 };
+                    let dy = if v == VerticalPositionKeyword::Bottom {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     (0.0, dy, tile.h)
                 }
                 LineDirection::Corner(h, v) => {
-                    let sx = if h == HorizontalPositionKeyword::Right { 1.0 } else { -1.0 };
-                    let sy = if v == VerticalPositionKeyword::Bottom { 1.0 } else { -1.0 };
+                    let sx = if h == HorizontalPositionKeyword::Right {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    let sy = if v == VerticalPositionKeyword::Bottom {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     let norm = tile.w.hypot(tile.h);
                     let (dx, dy) = if norm > 0.0 {
                         (sx * tile.h / norm, sy * tile.w / norm)
@@ -392,12 +405,14 @@ fn radial_radii(shape: &EndingShape, tile: Rect, cx: f64, cy: f64) -> Result<(f6
             match kw {
                 ClosestSide => closest,
                 FarthestSide => farthest,
-                ClosestCorner | Contain => {
-                    (closest.0 * std::f64::consts::SQRT_2, closest.1 * std::f64::consts::SQRT_2)
-                }
-                FarthestCorner | Cover => {
-                    (farthest.0 * std::f64::consts::SQRT_2, farthest.1 * std::f64::consts::SQRT_2)
-                }
+                ClosestCorner | Contain => (
+                    closest.0 * std::f64::consts::SQRT_2,
+                    closest.1 * std::f64::consts::SQRT_2,
+                ),
+                FarthestCorner | Cover => (
+                    farthest.0 * std::f64::consts::SQRT_2,
+                    farthest.1 * std::f64::consts::SQRT_2,
+                ),
             }
         }
     };

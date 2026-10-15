@@ -19,7 +19,13 @@ impl<'a> Painter<'a> {
     /// origin at its border-box corner) wrapped in the element's transform,
     /// opacity, filter, blend mode, clip-path and mask. `at` is where the
     /// border box is in the parent's frame.
-    pub fn context_group(&mut self, node: &'a Node, id: &str, at: Origin, children: Vec<Value>) -> Option<Value> {
+    pub fn context_group(
+        &mut self,
+        node: &'a Node,
+        id: &str,
+        at: Origin,
+        children: Vec<Value>,
+    ) -> Option<Value> {
         let style = node.primary_styles()?;
         let geom = box_geom(node, &style);
         let current = current_color(&style);
@@ -41,7 +47,6 @@ impl<'a> Painter<'a> {
         if transform.preserve3d {
             group = group.set("preserve3d", json!(true));
         }
-
 
         // ---- opacity, blend ----
         let mut opacity = f64::from(fx.opacity);
@@ -141,7 +146,13 @@ impl<'a> Painter<'a> {
     /// The layer `transform` object that puts an element's border box at
     /// `at` and applies `translate`, `rotate`, `scale` and `transform` about
     /// its `transform-origin`, with the `perspective` of its parent folded in.
-    pub fn transform_of(&mut self, node: &'a Node, style: &style::properties::ComputedValues, geom: &BoxGeom, at: Origin) -> TransformFields {
+    pub fn transform_of(
+        &mut self,
+        node: &'a Node,
+        style: &style::properties::ComputedValues,
+        geom: &BoxGeom,
+        at: Origin,
+    ) -> TransformFields {
         let b = style.get_box();
         let (w, h) = (geom.w, geom.h);
         let mut m = Mat4::IDENTITY;
@@ -159,7 +170,12 @@ impl<'a> Painter<'a> {
                 any = true;
             }
             Rotate::Rotate3D(x, y, z, a) => {
-                m = m.mul(&Mat4::rotate3d(f64::from(*x), f64::from(*y), f64::from(*z), f64::from(a.radians())));
+                m = m.mul(&Mat4::rotate3d(
+                    f64::from(*x),
+                    f64::from(*y),
+                    f64::from(*z),
+                    f64::from(a.radians()),
+                ));
                 any = true;
             }
         }
@@ -176,14 +192,19 @@ impl<'a> Painter<'a> {
             match b.transform.to_transform_3d_matrix_f64(Some(&reference)) {
                 Ok((t, _is_3d)) => {
                     let arr = [
-                        t.m11, t.m12, t.m13, t.m14, t.m21, t.m22, t.m23, t.m24, t.m31, t.m32, t.m33, t.m34,
-                        t.m41, t.m42, t.m43, t.m44,
+                        t.m11, t.m12, t.m13, t.m14, t.m21, t.m22, t.m23, t.m24, t.m31, t.m32,
+                        t.m33, t.m34, t.m41, t.m42, t.m43, t.m44,
                     ];
                     m = m.mul(&Mat4(arr));
                     any = true;
                 }
                 Err(()) => {
-                    self.report(node, "transform", "list", "a transform that cannot be turned into a matrix");
+                    self.report(
+                        node,
+                        "transform",
+                        "list",
+                        "a transform that cannot be turned into a matrix",
+                    );
                 }
             }
         }
@@ -195,7 +216,8 @@ impl<'a> Painter<'a> {
 
         if !any && persp.is_none() {
             return TransformFields {
-                transform: (at.0 != 0.0 || at.1 != 0.0).then(|| json!({ "x": num(at.0), "y": num(at.1) })),
+                transform: (at.0 != 0.0 || at.1 != 0.0)
+                    .then(|| json!({ "x": num(at.0), "y": num(at.1) })),
                 preserve3d,
                 backface_hidden,
             };
@@ -219,7 +241,8 @@ impl<'a> Painter<'a> {
         }
         if m.is_identity() {
             return TransformFields {
-                transform: (at.0 != 0.0 || at.1 != 0.0).then(|| json!({ "x": num(at.0), "y": num(at.1) })),
+                transform: (at.0 != 0.0 || at.1 != 0.0)
+                    .then(|| json!({ "x": num(at.0), "y": num(at.1) })),
                 preserve3d,
                 backface_hidden,
             };
@@ -260,7 +283,13 @@ impl<'a> Painter<'a> {
     /// `backdrop-filter`: a see-through shape of the border box whose
     /// effect blurs what is behind it. Only `blur()` is drawn; the colour
     /// functions are reported.
-    fn backdrop_layer(&mut self, node: &'a Node, style: &style::properties::ComputedValues, geom: &BoxGeom, id: &str) -> Option<Value> {
+    fn backdrop_layer(
+        &mut self,
+        node: &'a Node,
+        style: &style::properties::ComputedValues,
+        geom: &BoxGeom,
+        id: &str,
+    ) -> Option<Value> {
         use style::values::generics::effects::Filter as F;
         let list = &style.get_effects().backdrop_filter.0;
         if list.is_empty() {
@@ -270,14 +299,24 @@ impl<'a> Painter<'a> {
         for f in list.iter() {
             match f {
                 F::Blur(r) => sigma += f64::from(r.0.px()),
-                other => self.report(node, "backdrop-filter", format!("{other:?}"), "only blur() is drawn in a backdrop filter"),
+                other => self.report(
+                    node,
+                    "backdrop-filter",
+                    format!("{other:?}"),
+                    "only blur() is drawn in a backdrop filter",
+                ),
             }
         }
         if sigma <= 0.0 {
             return None;
         }
         self.note_reach(3.0 * sigma);
-        let shape = self.region_shape(&format!("{id}.backdrop"), geom.border_box(), geom.radii, json!("#00000000"));
+        let shape = self.region_shape(
+            &format!("{id}.backdrop"),
+            geom.border_box(),
+            geom.radii,
+            json!("#00000000"),
+        );
         let mut shape = shape;
         shape["effects"] = json!([{ "type": "backdropBlur", "radius": num(sigma) }]);
         Some(shape)
@@ -294,13 +333,23 @@ impl<'a> Painter<'a> {
         use style::values::generics::effects::Filter as F;
         match f {
             F::Blur(r) => out.push(json!({ "type": "blur", "radius": num(f64::from(r.0.px())) })),
-            F::Brightness(a) => out.push(json!({ "type": "brightness", "amount": num4(f64::from(a.0)) })),
-            F::Contrast(a) => out.push(json!({ "type": "contrast", "amount": num4(f64::from(a.0)) })),
-            F::Grayscale(a) => out.push(json!({ "type": "grayscale", "amount": num4(f64::from(a.0)) })),
+            F::Brightness(a) => {
+                out.push(json!({ "type": "brightness", "amount": num4(f64::from(a.0)) }))
+            }
+            F::Contrast(a) => {
+                out.push(json!({ "type": "contrast", "amount": num4(f64::from(a.0)) }))
+            }
+            F::Grayscale(a) => {
+                out.push(json!({ "type": "grayscale", "amount": num4(f64::from(a.0)) }))
+            }
             F::Invert(a) => out.push(json!({ "type": "invert", "amount": num4(f64::from(a.0)) })),
-            F::Saturate(a) => out.push(json!({ "type": "saturate", "amount": num4(f64::from(a.0)) })),
+            F::Saturate(a) => {
+                out.push(json!({ "type": "saturate", "amount": num4(f64::from(a.0)) }))
+            }
             F::Sepia(a) => out.push(json!({ "type": "sepia", "amount": num4(f64::from(a.0)) })),
-            F::HueRotate(a) => out.push(json!({ "type": "hueRotate", "angle": num4(f64::from(a.degrees())) })),
+            F::HueRotate(a) => {
+                out.push(json!({ "type": "hueRotate", "angle": num4(f64::from(a.degrees())) }))
+            }
             F::Opacity(a) => *opacity *= f64::from(a.0),
             F::DropShadow(s) => {
                 let color = resolve_color(&s.color, current);
@@ -333,7 +382,10 @@ impl<'a> Painter<'a> {
         let mut seen_function = false;
         for w in super::shim::top_level_words(&value) {
             if let Some(inner) = w.strip_prefix("url(").and_then(|r| r.strip_suffix(')')) {
-                let inner = inner.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+                let inner = inner
+                    .trim()
+                    .trim_matches(|c| c == '"' || c == '\'')
+                    .to_string();
                 if seen_function {
                     tail.push(inner);
                 } else {
@@ -347,11 +399,25 @@ impl<'a> Painter<'a> {
     }
 
     /// `filter: url(#id)`: the SVG painter builds the filter graph.
-    fn url_filter(&mut self, node: &Node, fragment: &str, geom: &BoxGeom, id: &str, out: &mut Vec<Value>) {
+    fn url_filter(
+        &mut self,
+        node: &Node,
+        fragment: &str,
+        geom: &BoxGeom,
+        id: &str,
+        out: &mut Vec<Value>,
+    ) {
         let path = self.path_of(node);
         let bbox = [0.0, 0.0, geom.w, geom.h];
         // CSS ignores a reference to nothing.
-        if let Some(fe) = super::svg::filter_graph(self.doc, self.req, fragment, bbox, &format!("{id}.filter"), &path) {
+        if let Some(fe) = super::svg::filter_graph(
+            self.doc,
+            self.req,
+            fragment,
+            bbox,
+            &format!("{id}.filter"),
+            &path,
+        ) {
             out.push(fe.effect);
             self.unsupported.extend(fe.unsupported);
         }

@@ -13,7 +13,9 @@ use style::values::specified::background::BackgroundRepeatKeyword as Rep;
 use super::geom::{BoxGeom, Radii, Rect, Region, path_d, rounded_rect_path};
 use super::gradient::gradient_paint;
 use super::images::Source;
-use super::util::{Layer, hex, lp, num, path_shape, rect_shape, resolve_color, rgba, hex_of, current_color};
+use super::util::{
+    Layer, current_color, hex, hex_of, lp, num, path_shape, rect_shape, resolve_color, rgba,
+};
 use super::{Origin, Painter};
 
 /// How a background layer repeats along one axis.
@@ -66,7 +68,12 @@ const MAX_TILES: usize = 600;
 impl<'a> Painter<'a> {
     /// `background-color` and `background-image`, bottom first, as one layer
     /// or (with `background-blend-mode`) a group, in the box's own space.
-    pub fn background(&mut self, node: &'a Node, style: &ComputedValues, geom: &BoxGeom) -> Vec<Value> {
+    pub fn background(
+        &mut self,
+        node: &'a Node,
+        style: &ComputedValues,
+        geom: &BoxGeom,
+    ) -> Vec<Value> {
         let bg = style.get_background();
         let current = current_color(style);
         let color = rgba(&resolve_color(&bg.background_color, &current));
@@ -96,7 +103,10 @@ impl<'a> Painter<'a> {
         // `background-clip: text` is not parsed by this Stylo; the mirror
         // property carries it (see `shim`).
         let text_clip: Vec<bool> = match self.kg_value(node, "--kg-background-clip") {
-            Some(v) => super::shim::split_commas(&v).iter().map(|w| w.trim() == "text").collect(),
+            Some(v) => super::shim::split_commas(&v)
+                .iter()
+                .map(|w| w.trim() == "text")
+                .collect(),
             None => Vec::new(),
         };
         let is_text = |i: usize| !text_clip.is_empty() && text_clip[i % text_clip.len()];
@@ -113,7 +123,12 @@ impl<'a> Painter<'a> {
         // The colour fills the painting area of the lowest layer.
         if color[3] > 0.0 {
             let (rect, radii) = geom.region(clip_of(n - 1));
-            let mut shape = self.region_shape(&format!("{id}.color"), rect, radii, Value::String(hex_of(color)));
+            let mut shape = self.region_shape(
+                &format!("{id}.color"),
+                rect,
+                radii,
+                Value::String(hex_of(color)),
+            );
             if is_text(n - 1) {
                 add_mask(self, &mut layers);
                 shape["matte"] = json!({ "layer": mask_id, "mode": "alpha" });
@@ -130,7 +145,11 @@ impl<'a> Painter<'a> {
             let px_list = &bg.background_position_x.0;
             let py_list = &bg.background_position_y.0;
             let rep_list = &bg.background_repeat.0;
-            if size_list.is_empty() || px_list.is_empty() || py_list.is_empty() || rep_list.is_empty() {
+            if size_list.is_empty()
+                || px_list.is_empty()
+                || py_list.is_empty()
+                || rep_list.is_empty()
+            {
                 continue;
             }
             let BackgroundRepeat(rx, ry) = rep_list[pick(rep_list.len(), i)];
@@ -146,7 +165,8 @@ impl<'a> Painter<'a> {
                 property: "background",
             };
             let layer_id = format!("{id}.{i}");
-            let Some(mut layer) = self.image_layer(node, geom, &current, &spec, &layer_id, false) else {
+            let Some(mut layer) = self.image_layer(node, geom, &current, &spec, &layer_id, false)
+            else {
                 continue;
             };
             if is_text(i) {
@@ -185,13 +205,19 @@ impl<'a> Painter<'a> {
         }
         let radii = radii.fitted(rect.w, rect.h);
         if radii.is_zero() {
-            return rect_shape(id, rect.w, rect.h, 0.0, fill).at(rect.x, rect.y).build();
+            return rect_shape(id, rect.w, rect.h, 0.0, fill)
+                .at(rect.x, rect.y)
+                .build();
         }
         if let Some(r) = radii.uniform_circle() {
-            return rect_shape(id, rect.w, rect.h, r, fill).at(rect.x, rect.y).build();
+            return rect_shape(id, rect.w, rect.h, r, fill)
+                .at(rect.x, rect.y)
+                .build();
         }
         let path = rounded_rect_path(Rect::new(0.0, 0.0, rect.w, rect.h), radii);
-        path_shape(id, &path_d(&path), fill).at(rect.x, rect.y).build()
+        path_shape(id, &path_d(&path), fill)
+            .at(rect.x, rect.y)
+            .build()
     }
 
     /// One image layer: a gradient or a picture sized, positioned and tiled
@@ -231,7 +257,12 @@ impl<'a> Painter<'a> {
                 }
             }
             other => {
-                self.report(node, spec.property, format!("{other:?}"), "this kind of image is not drawn");
+                self.report(
+                    node,
+                    spec.property,
+                    format!("{other:?}"),
+                    "this kind of image is not drawn",
+                );
                 return None;
             }
         };
@@ -253,12 +284,29 @@ impl<'a> Painter<'a> {
             th = area.h / (area.h / th).round().max(1.0);
         }
 
-        let xs = axis_tiles(area.x, area.w, tw, lp(spec.pos_x, area.w - tw), spec.repeat.0, paint.x, paint.right());
-        let ys = axis_tiles(area.y, area.h, th, lp(spec.pos_y, area.h - th), spec.repeat.1, paint.y, paint.bottom());
+        let (xs, x_total) = axis_tiles(
+            area.x,
+            area.w,
+            tw,
+            lp(spec.pos_x, area.w - tw),
+            spec.repeat.0,
+            paint.x,
+            paint.right(),
+        );
+        let (ys, y_total) = axis_tiles(
+            area.y,
+            area.h,
+            th,
+            lp(spec.pos_y, area.h - th),
+            spec.repeat.1,
+            paint.y,
+            paint.bottom(),
+        );
         if xs.is_empty() || ys.is_empty() {
             return None;
         }
-        let count = xs.len() * ys.len();
+        // The real count (the lists are cut short), as a whole number.
+        let count = (x_total * y_total).min(1e9) as usize;
 
         match img {
             Img::Gradient(g) => {
@@ -276,11 +324,7 @@ impl<'a> Painter<'a> {
                 for (yi, &ty) in ys.iter().enumerate() {
                     for (xi, &tx) in xs.iter().enumerate() {
                         let tile = Rect::new(tx, ty, tw, th);
-                        let shape_rect = if single {
-                            tile.intersect(&paint)
-                        } else {
-                            tile
-                        };
+                        let shape_rect = if single { tile.intersect(&paint) } else { tile };
                         if shape_rect.is_empty() {
                             continue;
                         }
@@ -294,7 +338,11 @@ impl<'a> Painter<'a> {
                                 return None;
                             }
                         };
-                        let sid = if single { id.to_string() } else { format!("{id}.{xi}-{yi}") };
+                        let sid = if single {
+                            id.to_string()
+                        } else {
+                            format!("{id}.{xi}-{yi}")
+                        };
                         let whole = single && tile.contains_rect(&paint);
                         let shape = if whole {
                             self.region_shape(&sid, paint, paint_radii, fill)
@@ -309,7 +357,8 @@ impl<'a> Painter<'a> {
                 if shapes.is_empty() {
                     return None;
                 }
-                let whole_single = count == 1 && Rect::new(xs[0], ys[0], tw, th).contains_rect(&paint);
+                let whole_single =
+                    count == 1 && Rect::new(xs[0], ys[0], tw, th).contains_rect(&paint);
                 if whole_single {
                     return shapes.pop();
                 }
@@ -327,7 +376,12 @@ impl<'a> Painter<'a> {
                 let repeat_y = matches!(spec.repeat.1, Repeat::Repeat | Repeat::Round);
                 let space = spec.repeat.0 == Repeat::Space || spec.repeat.1 == Repeat::Space;
                 if space && count > MAX_TILES {
-                    self.report(node, spec.property, "background-repeat: space", "too many tiles");
+                    self.report(
+                        node,
+                        spec.property,
+                        "background-repeat: space",
+                        "too many tiles",
+                    );
                     return None;
                 }
                 if space || (!repeat_x && !repeat_y && count == 1) {
@@ -340,19 +394,37 @@ impl<'a> Painter<'a> {
                             if vis.is_empty() {
                                 continue;
                             }
-                            let sid = if count == 1 { id.to_string() } else { format!("{id}.{xi}-{yi}") };
-                            let fill = image_paint(&path, tx - vis.x, ty - vis.y, tw, th, false, false);
-                            shapes.push(rect_shape(&sid, vis.w, vis.h, 0.0, fill).at(vis.x, vis.y).build());
+                            let sid = if count == 1 {
+                                id.to_string()
+                            } else {
+                                format!("{id}.{xi}-{yi}")
+                            };
+                            let fill =
+                                image_paint(&path, tx - vis.x, ty - vis.y, tw, th, false, false);
+                            shapes.push(
+                                rect_shape(&sid, vis.w, vis.h, 0.0, fill)
+                                    .at(vis.x, vis.y)
+                                    .build(),
+                            );
                         }
                     }
                     if shapes.is_empty() {
                         return None;
                     }
-                    let whole_single = count == 1 && Rect::new(xs[0], ys[0], tw, th).contains_rect(&paint);
+                    let whole_single =
+                        count == 1 && Rect::new(xs[0], ys[0], tw, th).contains_rect(&paint);
                     if whole_single {
                         // One picture covering the painting area: shape it
                         // like the area, so a radius rounds it.
-                        let fill = image_paint(&path, xs[0] - paint.x, ys[0] - paint.y, tw, th, false, false);
+                        let fill = image_paint(
+                            &path,
+                            xs[0] - paint.x,
+                            ys[0] - paint.y,
+                            tw,
+                            th,
+                            false,
+                            false,
+                        );
                         return Some(self.region_shape(id, paint, paint_radii, fill));
                     }
                     if shapes.len() == 1 {
@@ -425,7 +497,11 @@ impl<'a> Painter<'a> {
 /// The offset of a layer in its parent.
 pub fn layer_origin(layer: &Value) -> (f64, f64) {
     let t = layer.get("transform");
-    let g = |k: &str| t.and_then(|t| t.get(k)).and_then(Value::as_f64).unwrap_or(0.0);
+    let g = |k: &str| {
+        t.and_then(|t| t.get(k))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+    };
     (g("x"), g("y"))
 }
 
@@ -477,7 +553,11 @@ fn tile_size(size: &BackgroundSize, natural: Option<(f64, f64)>, area: Rect) -> 
                 return (area.w, area.h);
             }
             let (sx, sy) = (area.w / nw, area.h / nh);
-            let s = if matches!(size, BackgroundSize::Cover) { sx.max(sy) } else { sx.min(sy) };
+            let s = if matches!(size, BackgroundSize::Cover) {
+                sx.max(sy)
+            } else {
+                sx.min(sy)
+            };
             (nw * s, nh * s)
         }
         BackgroundSize::ExplicitSize { width, height } => {
@@ -514,29 +594,39 @@ fn axis_tiles(
     repeat: Repeat,
     paint_start: f64,
     paint_end: f64,
-) -> Vec<f64> {
-    if !(tile > 0.0) {
-        return Vec::new();
+) -> (Vec<f64>, f64) {
+    // The list is cut to what any caller draws one by one (`MAX_TILES`, and
+    // one more so that "too many" shows); the count is the real one, worked
+    // out before anything is listed, so a near-zero tile costs nothing.
+    let keep = MAX_TILES + 1;
+    if tile.is_nan() || tile <= 0.0 || !(area_start + off).is_finite() {
+        return (Vec::new(), 0.0);
     }
     match repeat {
-        Repeat::NoRepeat => vec![area_start + off],
+        Repeat::NoRepeat => (vec![area_start + off], 1.0),
         Repeat::Repeat | Repeat::Round => {
             let start = area_start + off;
             let first = ((paint_start - start) / tile).floor();
             let last = ((paint_end - start) / tile).ceil();
-            let n = (last - first).max(0.0) as usize;
-            // A guard against absurd counts (a 1px tile on a huge area is
-            // handled by the picture paint, not by listing tiles).
-            let n = n.min(1_000_000);
-            (0..n).map(|k| start + (first + k as f64) * tile).collect()
+            let total = (last - first).max(0.0);
+            if !total.is_finite() {
+                return (Vec::new(), 0.0);
+            }
+            let starts = (0..(total as usize).min(keep))
+                .map(|k| start + (first + k as f64) * tile)
+                .collect();
+            (starts, total)
         }
         Repeat::Space => {
             let n = (area_len / tile).floor();
-            if n < 2.0 {
-                return vec![area_start + off];
+            if !n.is_finite() || n < 2.0 {
+                return (vec![area_start + off], 1.0);
             }
             let gap = (area_len - n * tile) / (n - 1.0);
-            (0..n as usize).map(|k| area_start + k as f64 * (tile + gap)).collect()
+            let starts = (0..(n as usize).min(keep))
+                .map(|k| area_start + k as f64 * (tile + gap))
+                .collect();
+            (starts, n)
         }
     }
 }
@@ -552,16 +642,35 @@ mod tests {
 
     #[test]
     fn repeat_tiles_cover_the_paint_area() {
-        let xs = axis_tiles(0.0, 100.0, 30.0, 0.0, Repeat::Repeat, 0.0, 100.0);
+        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 0.0, Repeat::Repeat, 0.0, 100.0);
         assert_eq!(xs, vec![0.0, 30.0, 60.0, 90.0]);
         // Offset: a tile starts before the area and the first one is included.
-        let xs = axis_tiles(0.0, 100.0, 30.0, 10.0, Repeat::Repeat, 0.0, 100.0);
-        assert_eq!(xs, vec![-20.0, 10.0, 40.0, 70.0, 100.0 - 0.0].into_iter().take(4).collect::<Vec<_>>());
+        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 10.0, Repeat::Repeat, 0.0, 100.0);
+        assert_eq!(
+            xs,
+            vec![-20.0, 10.0, 40.0, 70.0, 100.0 - 0.0]
+                .into_iter()
+                .take(4)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_tiny_tile_is_counted_not_listed() {
+        for repeat in [Repeat::Repeat, Repeat::Round, Repeat::Space] {
+            let (xs, total) = axis_tiles(0.0, 1000.0, 0.0001, 0.0, repeat, 0.0, 1000.0);
+            assert!(xs.len() <= MAX_TILES + 1, "{repeat:?}");
+            assert!(total > MAX_TILES as f64, "{repeat:?}");
+        }
+        for bad in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+            let (xs, total) = axis_tiles(0.0, 100.0, bad, 0.0, Repeat::Repeat, 0.0, 100.0);
+            assert!(xs.len() <= MAX_TILES + 1 && total.is_finite());
+        }
     }
 
     #[test]
     fn space_distributes_the_gap() {
-        let xs = axis_tiles(0.0, 100.0, 30.0, 0.0, Repeat::Space, 0.0, 100.0);
+        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 0.0, Repeat::Space, 0.0, 100.0);
         assert_eq!(xs.len(), 3);
         assert!((xs[1] - 35.0).abs() < 1e-9 && (xs[2] - 70.0).abs() < 1e-9);
     }
@@ -569,7 +678,13 @@ mod tests {
     #[test]
     fn cover_and_contain_keep_the_ratio() {
         let area = Rect::new(0.0, 0.0, 200.0, 100.0);
-        assert_eq!(tile_size(&BackgroundSize::Cover, Some((50.0, 50.0)), area), (200.0, 200.0));
-        assert_eq!(tile_size(&BackgroundSize::Contain, Some((50.0, 50.0)), area), (100.0, 100.0));
+        assert_eq!(
+            tile_size(&BackgroundSize::Cover, Some((50.0, 50.0)), area),
+            (200.0, 200.0)
+        );
+        assert_eq!(
+            tile_size(&BackgroundSize::Contain, Some((50.0, 50.0)), area),
+            (100.0, 100.0)
+        );
     }
 }

@@ -148,7 +148,11 @@ impl Radii {
     pub fn inner(&self, top: f64, right: f64, bottom: f64, left: f64) -> Radii {
         let c = |r: (f64, f64), dx: f64, dy: f64| {
             let (h, v) = ((r.0 - dx).max(0.0), (r.1 - dy).max(0.0));
-            if h > 0.0 && v > 0.0 { (h, v) } else { (0.0, 0.0) }
+            if h > 0.0 && v > 0.0 {
+                (h, v)
+            } else {
+                (0.0, 0.0)
+            }
         };
         Radii {
             tl: c(self.tl, left, top),
@@ -178,7 +182,11 @@ impl Radii {
                 }
             };
             let (h, v) = (f(r.0), f(r.1));
-            if h > 0.0 && v > 0.0 { (h, v) } else { (0.0, 0.0) }
+            if h > 0.0 && v > 0.0 {
+                (h, v)
+            } else {
+                (0.0, 0.0)
+            }
         };
         Radii {
             tl: c(self.tl),
@@ -289,7 +297,15 @@ mod tests {
     #[test]
     fn rounded_rect_bounds_and_area() {
         let r = Rect::new(10.0, 20.0, 100.0, 50.0);
-        let p = rounded_rect_path(r, Radii { tl: (10.0, 10.0), tr: (10.0, 10.0), br: (10.0, 10.0), bl: (10.0, 10.0) });
+        let p = rounded_rect_path(
+            r,
+            Radii {
+                tl: (10.0, 10.0),
+                tr: (10.0, 10.0),
+                br: (10.0, 10.0),
+                bl: (10.0, 10.0),
+            },
+        );
         let b = p.bounding_box();
         assert!((b.x0 - 10.0).abs() < 1e-9 && (b.x1 - 110.0).abs() < 1e-9);
         // 100x50 less the four corner cutouts (a square minus a quarter circle each).
@@ -300,7 +316,12 @@ mod tests {
 
     #[test]
     fn overlapping_radii_scale_down() {
-        let r = Radii { tl: (60.0, 60.0), tr: (60.0, 60.0), br: (0.0, 0.0), bl: (0.0, 0.0) };
+        let r = Radii {
+            tl: (60.0, 60.0),
+            tr: (60.0, 60.0),
+            br: (0.0, 0.0),
+            bl: (0.0, 0.0),
+        };
         let f = r.fitted(100.0, 100.0);
         assert!((f.tl.0 - 50.0).abs() < 1e-9);
     }

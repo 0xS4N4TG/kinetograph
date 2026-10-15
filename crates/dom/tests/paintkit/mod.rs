@@ -61,11 +61,22 @@ pub fn font_ctx() -> FontContext {
 pub fn shim_html(html: &str) -> String {
     let mut out = String::new();
     let mut rest = html;
-    while let Some(i) = rest.find("style=\"").map(|i| (i, 7, '"')).into_iter().chain(rest.find("<style>").map(|i| (i, 7, '<'))).min_by_key(|t| t.0) {
+    while let Some(i) = rest
+        .find("style=\"")
+        .map(|i| (i, 7, '"'))
+        .into_iter()
+        .chain(rest.find("<style>").map(|i| (i, 7, '<')))
+        .min_by_key(|t| t.0)
+    {
         let (pos, len, kind) = i;
         out.push_str(&rest[..pos + len]);
         rest = &rest[pos + len..];
-        let end = if kind == '"' { rest.find('"') } else { rest.find("</style>") }.unwrap_or(rest.len());
+        let end = if kind == '"' {
+            rest.find('"')
+        } else {
+            rest.find("</style>")
+        }
+        .unwrap_or(rest.len());
         out.push_str(&kinetograph_dom::paint::shim_css(&rest[..end]));
         rest = &rest[end..];
     }
@@ -144,7 +155,12 @@ pub fn save_frame(frame: &Frame, path: &Path) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let file = std::fs::File::create(path).unwrap();
     png::PngEncoder::new_with_quality(file, png::CompressionType::Best, png::FilterType::Adaptive)
-        .write_image(&frame.rgba, frame.width, frame.height, ExtendedColorType::Rgba8)
+        .write_image(
+            &frame.rgba,
+            frame.width,
+            frame.height,
+            ExtendedColorType::Rgba8,
+        )
         .unwrap();
 }
 
@@ -203,12 +219,16 @@ pub fn chrome(name: &str, body: &str, w: u32, h: u32) -> Option<RgbaImage> {
         .arg("--force-device-scale-factor=1")
         .arg("--default-background-color=ffffffff")
         .arg("--disable-gpu")
-        .arg(format!("file://{}", html_path.canonicalize().ok()?.display()))
+        .arg(format!(
+            "file://{}",
+            html_path.canonicalize().ok()?.display()
+        ))
         .output()
         .ok()?;
     let img = image::open(&png_path).ok()?.to_rgba8();
     // The screenshot may be taller than asked on some builds; crop.
-    let img = image::imageops::crop_imm(&img, 0, 0, w.min(img.width()), h.min(img.height())).to_image();
+    let img =
+        image::imageops::crop_imm(&img, 0, 0, w.min(img.width()), h.min(img.height())).to_image();
     Some(img)
 }
 
@@ -230,13 +250,12 @@ pub fn diff(a: &RgbaImage, b: &RgbaImage) -> Diff {
     let mut bad = 0u64;
     let n = u64::from(a.width()) * u64::from(a.height());
     for (pa, pb) in a.pixels().zip(b.pixels()) {
-        let d = pa
-            .0
-            .iter()
-            .zip(pb.0.iter())
-            .map(|(x, y)| x.abs_diff(*y))
-            .max()
-            .unwrap();
+        let d =
+            pa.0.iter()
+                .zip(pb.0.iter())
+                .map(|(x, y)| x.abs_diff(*y))
+                .max()
+                .unwrap();
         max = max.max(d);
         sum += u64::from(d);
         if d > 32 {
@@ -255,8 +274,18 @@ pub fn diff_image(a: &RgbaImage, b: &RgbaImage) -> RgbaImage {
     let mut out = RgbaImage::new(a.width(), a.height());
     for (x, y, p) in out.enumerate_pixels_mut() {
         let (pa, pb) = (a.get_pixel(x, y), b.get_pixel(x, y));
-        let d = pa.0.iter().zip(pb.0.iter()).map(|(x, y)| x.abs_diff(*y)).max().unwrap();
-        *p = image::Rgba([d.saturating_mul(4), d.saturating_mul(4), d.saturating_mul(4), 255]);
+        let d =
+            pa.0.iter()
+                .zip(pb.0.iter())
+                .map(|(x, y)| x.abs_diff(*y))
+                .max()
+                .unwrap();
+        *p = image::Rgba([
+            d.saturating_mul(4),
+            d.saturating_mul(4),
+            d.saturating_mul(4),
+            255,
+        ]);
     }
     out
 }

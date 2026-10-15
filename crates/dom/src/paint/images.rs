@@ -59,7 +59,9 @@ impl<'a> Painter<'a> {
             match u.scheme() {
                 "file" => u.to_file_path().ok(),
                 "http" | "https" => {
-                    return Source::Unsupported(format!("{s} is a remote picture; a render reads no network"));
+                    return Source::Unsupported(format!(
+                        "{s} is a remote picture; a render reads no network"
+                    ));
                 }
                 _ => None,
             }
@@ -101,7 +103,10 @@ impl<'a> Painter<'a> {
             }
         }
         let bytes = if is_base64 {
-            let clean: String = percent_decode(data).chars().filter(|c| !c.is_whitespace()).collect();
+            let clean: String = percent_decode(data)
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
             match base64::engine::general_purpose::STANDARD.decode(clean.as_bytes()) {
                 Ok(b) => b,
                 Err(e) => return Source::Unsupported(format!("a data: URL with bad base64: {e}")),

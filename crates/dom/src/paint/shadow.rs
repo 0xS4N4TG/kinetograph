@@ -10,9 +10,11 @@ use kurbo::BezPath;
 use serde_json::{Value, json};
 use style::properties::ComputedValues;
 
-use super::geom::{BoxGeom, Radii, Rect, Region, path_d, rounded_rect_path, rounded_rect_path_reversed};
-use super::util::{Layer, current_color, hex, num, path_shape, resolve_color};
 use super::Painter;
+use super::geom::{
+    BoxGeom, Radii, Rect, Region, path_d, rounded_rect_path, rounded_rect_path_reversed,
+};
+use super::util::{Layer, current_color, hex, num, path_shape, resolve_color};
 
 /// A rectangle that holds a shape and everything a blur of `sigma` spreads
 /// out of it.
@@ -22,7 +24,13 @@ fn room(r: Rect, sigma: f64, extra: f64) -> Rect {
 
 impl<'a> Painter<'a> {
     /// The box's shadows of one kind (`inset` or outer), first shadow on top.
-    pub fn box_shadows(&mut self, node: &'a Node, style: &ComputedValues, geom: &BoxGeom, inset: bool) -> Vec<Value> {
+    pub fn box_shadows(
+        &mut self,
+        node: &'a Node,
+        style: &ComputedValues,
+        geom: &BoxGeom,
+        inset: bool,
+    ) -> Vec<Value> {
         let shadows = &style.get_effects().box_shadow.0;
         if shadows.is_empty() {
             return Vec::new();
@@ -43,7 +51,10 @@ impl<'a> Painter<'a> {
             let blur = f64::from(s.base.blur.0.px());
             let spread = f64::from(s.spread.px());
             let sigma = blur / 2.0;
-            let id = self.layer_id(node, &format!("{}shadow{i}", if inset { "inset" } else { "" }));
+            let id = self.layer_id(
+                node,
+                &format!("{}shadow{i}", if inset { "inset" } else { "" }),
+            );
             let layer = if inset {
                 inset_shadow(&id, geom, (dx, dy), sigma, spread, &hex(&color))
             } else {
@@ -60,7 +71,14 @@ impl<'a> Painter<'a> {
 
 /// An outer shadow: the border box offset and grown by the spread, filled,
 /// blurred, and cut to what lies outside the border box.
-fn outer_shadow(id: &str, geom: &BoxGeom, (dx, dy): (f64, f64), sigma: f64, spread: f64, color: &str) -> Option<Value> {
+fn outer_shadow(
+    id: &str,
+    geom: &BoxGeom,
+    (dx, dy): (f64, f64),
+    sigma: f64,
+    spread: f64,
+    color: &str,
+) -> Option<Value> {
     let b = geom.border_box();
     let rect = b.translate(dx, dy).inflate(spread);
     if rect.is_empty() && spread >= 0.0 {
@@ -71,8 +89,14 @@ fn outer_shadow(id: &str, geom: &BoxGeom, (dx, dy): (f64, f64), sigma: f64, spre
     let shape = rounded_rect_path(rect, radii);
     let big = room(rect.union(&b), sigma, 0.0);
     let mut clip = rounded_rect_path(big, Radii::ZERO);
-    clip.extend(rounded_rect_path_reversed(b, geom.radii).elements().iter().copied());
-    let mut layer = path_shape(id, &path_d(&shape), json!(color)).set("clip", json!({ "kind": "path", "d": path_d(&clip) }));
+    clip.extend(
+        rounded_rect_path_reversed(b, geom.radii)
+            .elements()
+            .iter()
+            .copied(),
+    );
+    let mut layer = path_shape(id, &path_d(&shape), json!(color))
+        .set("clip", json!({ "kind": "path", "d": path_d(&clip) }));
     if sigma >= 0.05 {
         layer = layer.set("effects", json!([{ "type": "blur", "radius": num(sigma) }]));
     }
@@ -81,7 +105,14 @@ fn outer_shadow(id: &str, geom: &BoxGeom, (dx, dy): (f64, f64), sigma: f64, spre
 
 /// An inset shadow: the padding box less a hole (the padding box offset and
 /// shrunk by the spread) is filled, blurred, and cut to the padding box.
-fn inset_shadow(id: &str, geom: &BoxGeom, (dx, dy): (f64, f64), sigma: f64, spread: f64, color: &str) -> Option<Value> {
+fn inset_shadow(
+    id: &str,
+    geom: &BoxGeom,
+    (dx, dy): (f64, f64),
+    sigma: f64,
+    spread: f64,
+    color: &str,
+) -> Option<Value> {
     let (pad, pad_radii) = geom.region(Region::Padding);
     if pad.is_empty() {
         return None;
@@ -92,10 +123,16 @@ fn inset_shadow(id: &str, geom: &BoxGeom, (dx, dy): (f64, f64), sigma: f64, spre
     let mut path = rounded_rect_path(big, Radii::ZERO);
     if !hole.is_empty() {
         let hole_radii = pad_radii.spread(-spread).fitted(hole.w, hole.h);
-        path.extend(rounded_rect_path_reversed(hole, hole_radii).elements().iter().copied());
+        path.extend(
+            rounded_rect_path_reversed(hole, hole_radii)
+                .elements()
+                .iter()
+                .copied(),
+        );
     }
     let clip: BezPath = rounded_rect_path(pad, pad_radii);
-    let mut layer = path_shape(id, &path_d(&path), json!(color)).set("clip", json!({ "kind": "path", "d": path_d(&clip) }));
+    let mut layer = path_shape(id, &path_d(&path), json!(color))
+        .set("clip", json!({ "kind": "path", "d": path_d(&clip) }));
     if sigma >= 0.05 {
         layer = layer.set("effects", json!([{ "type": "blur", "radius": num(sigma) }]));
     }

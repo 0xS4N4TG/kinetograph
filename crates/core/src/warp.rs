@@ -39,9 +39,7 @@ const DEPTH_STEP: f64 = 1.0 / 1024.0;
 
 /// `W` for a layer, or `None` when it has no 3D transform of its own.
 pub fn layer_world(t: &ResolvedTransform) -> Option<DMat4> {
-    let css = t
-        .matrix
-        .filter(|m| !crate::scene::matrix_is_affine_2d(m));
+    let css = t.matrix.filter(|m| !crate::scene::matrix_is_affine_2d(m));
     if t.rotate_x == 0.0 && t.rotate_y == 0.0 && t.z == 0.0 && css.is_none() {
         return None;
     }

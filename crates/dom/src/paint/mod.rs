@@ -155,8 +155,8 @@ impl<'a> Painter<'a> {
     /// A layer id for `node` and `suffix`: the node's explicit `id` attribute
     /// if it is usable, else its path; unique in the island.
     pub fn layer_id(&mut self, node: &Node, suffix: &str) -> String {
-        let explicit = attr(node, "id")
-            .filter(|id| !id.is_empty() && !id.contains(char::is_whitespace));
+        let explicit =
+            attr(node, "id").filter(|id| !id.is_empty() && !id.contains(char::is_whitespace));
         let base = match explicit {
             Some(id) if !self.ids.contains(id) || !suffix.is_empty() => id.to_string(),
             _ => self.path_of(node),
@@ -288,10 +288,7 @@ impl<'a> Painter<'a> {
         let child = self.node(hc.node_id);
         let offset = hc.position(self.doc.tree(), sc.id);
         let loc = child.final_layout().location;
-        let at = (
-            f64::from(offset.x + loc.x),
-            f64::from(offset.y + loc.y),
-        );
+        let at = (f64::from(offset.x + loc.x), f64::from(offset.y + loc.y));
         let layers = self.paint_context(child, at);
         self.clip_by_containing_blocks(sc, child, layers)
     }
@@ -299,7 +296,12 @@ impl<'a> Painter<'a> {
     /// A box hoisted into `sc`'s frame is still cut by the overflow of the
     /// boxes it is contained in (the chain of its containing blocks up to
     /// `sc`): each clipping one wraps it in a clip group, outermost last.
-    fn clip_by_containing_blocks(&mut self, sc: &'a Node, child: &'a Node, mut layers: Vec<Value>) -> Vec<Value> {
+    fn clip_by_containing_blocks(
+        &mut self,
+        sc: &'a Node,
+        child: &'a Node,
+        mut layers: Vec<Value>,
+    ) -> Vec<Value> {
         // The containing blocks from the child's up to (not including) `sc`.
         let mut chain: Vec<&'a Node> = Vec::new();
         let mut cur = child.containing_block();
@@ -328,7 +330,9 @@ impl<'a> Painter<'a> {
             if !self.clips_overflow(n) {
                 continue;
             }
-            let Some(clip) = self.overflow_clip(n, origin) else { continue };
+            let Some(clip) = self.overflow_clip(n, origin) else {
+                continue;
+            };
             let id = self.layer_id(n, "clipped");
             layers = vec![util::group(&id, layers).set("clip", clip).build()];
         }
@@ -351,13 +355,7 @@ impl<'a> Painter<'a> {
     /// Collects what `node` (a block-level box or the root of an element
     /// painted atomically) holds into `ph`, and positioned descendants into
     /// `pos`. `origin` is `node`'s border-box corner in the frame.
-    fn walk(
-        &mut self,
-        node: &'a Node,
-        origin: Origin,
-        ph: &mut Phases,
-        pos: &mut Vec<Value>,
-    ) {
+    fn walk(&mut self, node: &'a Node, origin: Origin, ph: &mut Phases, pos: &mut Vec<Value>) {
         let parent_flex = node
             .primary_styles()
             .map(|s| {

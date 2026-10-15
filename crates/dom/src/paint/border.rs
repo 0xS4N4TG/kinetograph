@@ -6,9 +6,9 @@ use serde_json::{Value, json};
 use style::properties::ComputedValues;
 use style::values::specified::BorderStyle;
 
+use super::Painter;
 use super::geom::{BoxGeom, Radii, Rect, path_d, rounded_rect_path, rounded_rect_path_reversed};
 use super::util::{Layer, current_color, hex_of, num, path_shape, resolve_color, rgba};
-use super::Painter;
 
 /// What a border side is painted as.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,7 +59,8 @@ fn darker(c: Rgba) -> Rgba {
 /// The lighter colour: each channel scaled so the brightest gains a third
 /// (black becomes a dark grey). A colour already near white stays.
 fn lighter(c: Rgba) -> Rgba {
-    let near_white = (1.0 - c[0]).powi(2) + (1.0 - c[1]).powi(2) + (1.0 - c[2]).powi(2) < 3.0 * 0.078 * 0.078;
+    let near_white =
+        (1.0 - c[0]).powi(2) + (1.0 - c[1]).powi(2) + (1.0 - c[2]).powi(2) < 3.0 * 0.078 * 0.078;
     if near_white {
         return c;
     }
@@ -68,7 +69,12 @@ fn lighter(c: Rgba) -> Rgba {
         return [0.329, 0.329, 0.329, c[3]];
     }
     let m = (v + 0.33).min(1.0) / v;
-    [(c[0] * m).min(1.0), (c[1] * m).min(1.0), (c[2] * m).min(1.0), c[3]]
+    [
+        (c[0] * m).min(1.0),
+        (c[1] * m).min(1.0),
+        (c[2] * m).min(1.0),
+        c[3],
+    ]
 }
 
 /// One side of a box: top, right, bottom, left.
@@ -107,7 +113,12 @@ impl Ring {
 
 impl<'a> Painter<'a> {
     /// The element's `border`, in its own space.
-    pub fn borders(&mut self, node: &'a Node, style: &ComputedValues, geom: &BoxGeom) -> Vec<Value> {
+    pub fn borders(
+        &mut self,
+        node: &'a Node,
+        style: &ComputedValues,
+        geom: &BoxGeom,
+    ) -> Vec<Value> {
         if !geom.has_border() {
             return Vec::new();
         }
@@ -215,10 +226,14 @@ impl<'a> Painter<'a> {
         }
         let first = live[0].index();
         let same_paint = live.len() == 4
-            && live
-                .iter()
-                .all(|s| ring.kinds[s.index()] == ring.kinds[first] && ring.colors[s.index()] == ring.colors[first]);
-        let uniform_width = ring.widths.iter().all(|w| (*w - ring.widths[0]).abs() < 1e-9);
+            && live.iter().all(|s| {
+                ring.kinds[s.index()] == ring.kinds[first]
+                    && ring.colors[s.index()] == ring.colors[first]
+            });
+        let uniform_width = ring
+            .widths
+            .iter()
+            .all(|w| (*w - ring.widths[0]).abs() < 1e-9);
 
         // One paint on every side.
         if same_paint {
@@ -261,7 +276,9 @@ impl<'a> Painter<'a> {
                         kinds: [kind; 4],
                         colors: [color; 4],
                     };
-                    self.dashed_ring(&sid, &own, kind, color, Some(clip)).into_iter().collect()
+                    self.dashed_ring(&sid, &own, kind, color, Some(clip))
+                        .into_iter()
+                        .collect()
                 }
                 Kind::Groove | Kind::Ridge => {
                     let (outer_c, inner_c) = relief_pair(kind, s, color);
@@ -285,13 +302,25 @@ impl<'a> Painter<'a> {
         let (inner, inner_radii) = ring.inner();
         let mut path = rounded_rect_path(ring.outer, ring.radii);
         if !inner.is_empty() {
-            path.extend(rounded_rect_path_reversed(inner, inner_radii).elements().iter().copied());
+            path.extend(
+                rounded_rect_path_reversed(inner, inner_radii)
+                    .elements()
+                    .iter()
+                    .copied(),
+            );
         }
         self.finish(id, &path, ring.outer, color, clip)
     }
 
     /// A path shape of `path` (in the box's space) filled with `color`.
-    fn finish(&self, id: &str, path: &BezPath, _bounds: Rect, color: Rgba, clip: Option<Value>) -> Value {
+    fn finish(
+        &self,
+        id: &str,
+        path: &BezPath,
+        _bounds: Rect,
+        color: Rgba,
+        clip: Option<Value>,
+    ) -> Value {
         let mut layer = path_shape(id, &path_d(path), Value::String(hex_of(color)));
         if let Some(c) = clip {
             layer = layer.set("clip", c);
@@ -307,8 +336,18 @@ impl<'a> Painter<'a> {
         let (ix0, iy0, ix1, iy1) = (o.x + l, o.y + t, o.right() - r, o.bottom() - b);
         let pts: [(f64, f64); 4] = match side {
             Side::Top => [(o.x, o.y), (o.right(), o.y), (ix1, iy0), (ix0, iy0)],
-            Side::Right => [(o.right(), o.y), (o.right(), o.bottom()), (ix1, iy1), (ix1, iy0)],
-            Side::Bottom => [(o.right(), o.bottom()), (o.x, o.bottom()), (ix0, iy1), (ix1, iy1)],
+            Side::Right => [
+                (o.right(), o.y),
+                (o.right(), o.bottom()),
+                (ix1, iy1),
+                (ix1, iy0),
+            ],
+            Side::Bottom => [
+                (o.right(), o.bottom()),
+                (o.x, o.bottom()),
+                (ix0, iy1),
+                (ix1, iy1),
+            ],
             Side::Left => [(o.x, o.bottom()), (o.x, o.y), (ix0, iy0), (ix0, iy1)],
         };
         json!({ "kind": "polygon", "points": pts.iter().map(|p| json!([num(p.0), num(p.1)])).collect::<Vec<_>>() })
@@ -316,7 +355,13 @@ impl<'a> Painter<'a> {
 
     /// `double`: two rings of a third of the width, with a gap between.
     fn double_ring(&self, id: &str, ring: &Ring, color: Rgba, clip: Option<Value>) -> Vec<Value> {
-        let band = |w: f64| if w >= 3.0 { (w / 3.0).round().max(1.0) } else { 0.0 };
+        let band = |w: f64| {
+            if w >= 3.0 {
+                (w / 3.0).round().max(1.0)
+            } else {
+                0.0
+            }
+        };
         let b = ring.widths.map(band);
         if b.iter().all(|w| *w == 0.0) {
             // Thinner than 3px: a double border is drawn solid.
@@ -348,7 +393,15 @@ impl<'a> Painter<'a> {
     }
 
     /// `groove` and `ridge` for one side: the outer half and the inner half.
-    fn relief_rings(&self, id: &str, ring: &Ring, side: Side, outer_c: Rgba, inner_c: Rgba, clip: Value) -> Vec<Value> {
+    fn relief_rings(
+        &self,
+        id: &str,
+        ring: &Ring,
+        side: Side,
+        outer_c: Rgba,
+        inner_c: Rgba,
+        clip: Value,
+    ) -> Vec<Value> {
         let w = ring.widths;
         let half = w.map(|v| v / 2.0);
         let outer_half = Ring {
@@ -376,7 +429,14 @@ impl<'a> Painter<'a> {
 
     /// A dashed or dotted border: the centre line of the ring, dashed and
     /// stroked as wide as the border.
-    fn dashed_ring(&self, id: &str, ring: &Ring, kind: Kind, color: Rgba, clip: Option<Value>) -> Option<Value> {
+    fn dashed_ring(
+        &self,
+        id: &str,
+        ring: &Ring,
+        kind: Kind,
+        color: Rgba,
+        clip: Option<Value>,
+    ) -> Option<Value> {
         let w = ring.widths[0];
         if w <= 0.0 {
             return None;
@@ -394,12 +454,17 @@ impl<'a> Painter<'a> {
             let step = length / n;
             (vec![0.001, (step - 0.001).max(0.001)], Cap::Round)
         } else {
-            let (d, g) = if w >= 3.0 { (2.0 * w, w) } else { (3.0 * w, 2.0 * w) };
+            let (d, g) = if w >= 3.0 {
+                (2.0 * w, w)
+            } else {
+                (3.0 * w, 2.0 * w)
+            };
             let n = (length / (d + g)).round().max(1.0);
             let scale = length / (n * (d + g));
             (vec![d * scale, g * scale], Cap::Butt)
         };
-        let dashed: BezPath = kurbo::dash(center.elements().iter().copied(), 0.0, &pattern).collect();
+        let dashed: BezPath =
+            kurbo::dash(center.elements().iter().copied(), 0.0, &pattern).collect();
         let outline = kurbo::stroke(
             dashed.elements().iter().copied(),
             &Stroke::new(w).with_caps(cap).with_join(Join::Miter),
@@ -442,8 +507,16 @@ mod tests {
         let c = darker([1.0, 0.0, 0.0, 1.0]);
         assert!((c[0] - 0.67).abs() < 0.01, "{c:?}");
         // #48c lightens to #5af.
-        let l = lighter([0x44 as f32 / 255.0, 0x88 as f32 / 255.0, 0xcc as f32 / 255.0, 1.0]);
-        assert!((l[0] * 255.0 - 85.0).abs() < 1.0 && (l[2] - 1.0).abs() < 1e-6, "{l:?}");
+        let l = lighter([
+            0x44 as f32 / 255.0,
+            0x88 as f32 / 255.0,
+            0xcc as f32 / 255.0,
+            1.0,
+        ]);
+        assert!(
+            (l[0] * 255.0 - 85.0).abs() < 1.0 && (l[2] - 1.0).abs() < 1e-6,
+            "{l:?}"
+        );
         assert_eq!(darker([1.0, 1.0, 1.0, 1.0])[0], 0.671);
     }
 }
