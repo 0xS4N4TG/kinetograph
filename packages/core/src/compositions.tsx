@@ -16,7 +16,7 @@ export interface CompositionInfo {
   defaultProps: Record<string, unknown>;
 }
 
-type Metadata<P> = Partial<Omit<CompositionInfo, 'id'> & { props: P }>;
+type Metadata<P> = Partial<Omit<CompositionInfo, 'id'> & { props: P; margin: number }>;
 
 export interface CompositionProps<P extends Record<string, unknown> = Record<string, unknown>> {
   id: string;
@@ -31,6 +31,7 @@ export interface CompositionProps<P extends Record<string, unknown> = Record<str
    * The least margin, in pixels, the engine renders every frame with (SCENE.md "Canvas margin"). Set it to the
    * largest reach of any frame's effects and the textures are built once; a frame that reaches further still gets
    * the room it needs. A whole number, not negative. Default: none, each frame's margin is what its effects reach.
+   * `calculateMetadata` may return a `margin` too, which wins over this prop.
    */
   margin?: number;
   /**
@@ -236,7 +237,7 @@ export function setInputProps(props: Record<string, unknown>): void {
 export interface ResolvedComposition {
   config: VideoConfig;
   component: ComponentType<any>;
-  /** The `margin` prop, if the composition has one. */
+  /** The `margin` from `calculateMetadata`, else the `margin` prop, if either is set. */
   margin?: number;
   /** The `background` prop, if the composition has one. */
   background?: string;
@@ -273,10 +274,10 @@ export function resolveComposition(
   const entry = getCompositionEntry(id);
   const props = { ...entry.defaultProps, ...(options.inputProps ?? inputProps) };
 
-  const finish = (config: VideoConfig, component: ComponentType<any>): ResolvedComposition => ({
-    config,
+  const finish = (result: Metadata<any>, component: ComponentType<any>): ResolvedComposition => ({
+    config: applyMetadata(entry, props, result),
     component,
-    margin: entry.margin,
+    margin: result.margin === undefined ? entry.margin : checkMargin(entry.id, result.margin),
     background: entry.background,
   });
   const metadata = entry.calculateMetadata
@@ -293,12 +294,12 @@ export function resolveComposition(
     entry.component ?? entry.lazyComponent!().then((module) => module.default);
 
   if (!isThenable(metadata) && entry.component) {
-    const resolved = finish(applyMetadata(entry, props, metadata), entry.component);
+    const resolved = finish(metadata, entry.component);
     return { sync: resolved, ready: Promise.resolve(resolved) };
   }
   const ready = (async () => {
     const result = await metadata;
-    return finish(applyMetadata(entry, props, result), await componentOf());
+    return finish(result, await componentOf());
   })();
   return { sync: null, ready };
 }

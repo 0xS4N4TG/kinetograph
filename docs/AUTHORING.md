@@ -502,7 +502,8 @@ correctly, only with a rebuild. Set it to the largest reach of any frame. To fin
 `margin` from `kinetograph inspect <entry> --frame N` at the frames with the biggest shadows, glows and displacements
 (or, for an empty-layer trick like `dropShadow({ x: 44, blur: 0 })` that pins it, replace the trick with the prop).
 It depends on nothing but the composition, so any frame, in any order or range, is the same scene as in a full
-render. The prop is not a `calculateMetadata` result.
+render. When the reach depends on the input props (a shadow size passed in), `calculateMetadata` can return `margin`
+as well, checked the same way; it wins over the prop, and like the prop it is the same for every frame.
 
 **Background.** `<Composition background="#14161c">` (also `<Still>`; a colour string as SCENE.md's `background`
 takes it, checked to be a non-empty string when the composition is found, its syntax by the engine) puts that
