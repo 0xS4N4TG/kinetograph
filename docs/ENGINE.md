@@ -132,7 +132,10 @@ domComputedStyle(requestJson: string, path: string, properties: string[]): strin
 ```
 
 A request is parsed, a document built and resolved, and the answer made; nothing is kept between calls, so each is a
-pure function of its request. `renderDomIsland` appends one `unsupported` item (`element: "resource"`, the reason
+pure function of its request. The three functions run on one persistent thread with a 512 MB stack (reserved, not
+committed) and parse without serde_json's 128-level limit, because Stylo and Blitz recurse over the tree: a default
+stack overflows at about 1500 levels, this one lays out 3000 (tested). The calls of several Node worker threads are
+served one after another. `renderDomIsland` appends one `unsupported` item (`element: "resource"`, the reason
 naming the file) for every image, stylesheet or font the island named that could not be read. A panic inside Stylo or
 Blitz is a `RENDER` error, a bad request `INVALID_ARG`, a font file that cannot be read `RENDER`.
 
