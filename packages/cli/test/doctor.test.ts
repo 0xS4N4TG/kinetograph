@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -224,9 +224,9 @@ describe('doctor --compare', () => {
     const r = await cli('doctor', 'index.tsx', '--compare', '3', '--json');
     expect(r.code).toBe(0);
     expect(r.json.compare).toEqual([
-      { frame: 0, path: 'native', maxDiff: 0, meanDiff: 0, differingPixels: 0 },
-      { frame: 10, path: 'chrome', maxDiff: 0, meanDiff: 0, differingPixels: 0 },
-      { frame: 19, path: 'chrome', maxDiff: 10, meanDiff: 2.5, differingPixels: 16 },
+      { frame: 0, path: 'native', maxDiff: 0, meanDiff: 0, differingPixels: 0, largeDiffPixels: 0 },
+      { frame: 10, path: 'chrome', maxDiff: 0, meanDiff: 0, differingPixels: 0, largeDiffPixels: 0 },
+      { frame: 19, path: 'chrome', maxDiff: 10, meanDiff: 2.5, differingPixels: 16, largeDiffPixels: 0 },
     ]);
     // The scenes come from the single pass over the frames: the project is not run twice.
     expect(asked).toEqual(Array.from({ length: 20 }, (_, i) => i));
@@ -244,6 +244,32 @@ describe('doctor --compare', () => {
     const r = await cli('doctor', 'index.tsx', '--range', '4..=8', '--compare', '2', '--json');
     expect(r.json.compare.map((c: { frame: number }) => c.frame)).toEqual([4, 8]);
     expect(sides.chromeCalls).toEqual([4, 8]);
+  });
+
+  it('samples every Nth frame of the range with --compare-every', async () => {
+    const sides = stubSides(() => 0);
+    seam.project = () => stubProject(() => []).source;
+    const r = await cli('doctor', 'index.tsx', '--range', '3..=14', '--compare-every', '5', '--json');
+    expect(r.json.compare.map((c: { frame: number }) => c.frame)).toEqual([3, 8, 13]);
+    expect(sides.chromeCalls).toEqual([3, 8, 13]);
+    const both = await cli('doctor', 'index.tsx', '--compare', '2', '--compare-every', '5', '--json');
+    expect(both.json.error.code).toBe('INVALID_ARG');
+    expect(both.json.error.message).toContain('alternatives');
+  });
+
+  it('writes the native and Chrome pictures and their difference with --compare-dir', async () => {
+    stubSides((f) => (f === 0 ? 100 : 0));
+    seam.project = () => stubProject(() => []).source;
+    const dir = join(scratch(), 'pics');
+    const r = await cli('doctor', 'index.tsx', '--compare', '2', '--compare-dir', dir, '--json');
+    expect(r.code).toBe(0);
+    const first = r.json.compare[0];
+    expect(first.largeDiffPixels).toBe(16);
+    expect(Object.keys(first.files)).toEqual(['native', 'chrome', 'diff']);
+    for (const file of Object.values(first.files) as string[]) expect(readFileSync(file).subarray(1, 4).toString()).toBe('PNG');
+    expect(first.files.diff).toBe(join(dir, 'frame-00000-diff.png'));
+    const bare = await cli('doctor', 'index.tsx', '--compare-dir', dir, '--json');
+    expect(bare.json.error).toEqual({ code: 'INVALID_ARG', message: '--compare-dir needs --compare or --compare-every' });
   });
 
   it('prints the comparison as text', async () => {

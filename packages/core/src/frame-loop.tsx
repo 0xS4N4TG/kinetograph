@@ -109,10 +109,10 @@ class Renderer implements FrameRenderer {
       // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
       // frame looks the same whether the render began there or somewhere later.
       setVirtualFrame(0, config.fps);
-      await this.settle(scene, () => scene.render(this.element(component, config, 0)));
+      await this.settle(scene, () => scene.update(this.element(component, config, 0)));
     }
     setVirtualFrame(frame, config.fps);
-    const main = await this.settle(scene, () => scene.render(this.element(component, config, frame)));
+    const main = await this.settle(scene, () => scene.update(this.element(component, config, frame)));
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
     let layers = main.layers;
@@ -125,7 +125,7 @@ class Renderer implements FrameRenderer {
         }
         // The clock sits on the sub-frame, but timers and Math.random() stay with the frame.
         setVirtualFrame(time, config.fps, { seedFrame: frame, fireTimers: false });
-        const tree = await this.settle(scene, () => scene.render(this.element(component, config, time)));
+        const tree = await this.settle(scene, () => scene.update(this.element(component, config, time)));
         treesAt.set(time, tree.layers);
       }
       setVirtualFrame(frame, config.fps, { fireTimers: false });
@@ -164,10 +164,9 @@ class Renderer implements FrameRenderer {
   }
 
   /** Renders, then waits until nothing is pending and returns the tree as it stands. */
-  private async settle(scene: SceneRoot, render: () => RenderedTree): Promise<RenderedTree> {
-    let tree: RenderedTree;
+  private async settle(scene: SceneRoot, render: () => void): Promise<RenderedTree> {
     try {
-      tree = render();
+      render();
     } catch (error) {
       // `cancelRender` is the better explanation when the code after it went on to fail.
       throw renderFailure() ?? error;
@@ -179,7 +178,7 @@ class Renderer implements FrameRenderer {
       await tick();
       if (openRenderHandles() === 0 && pendingFontLoads() === 0) break;
     }
-    tree = scene.snapshot();
+    const tree = scene.snapshot();
     const failure = renderFailure();
     if (failure) throw failure;
     return tree;

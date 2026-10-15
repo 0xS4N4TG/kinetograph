@@ -55,7 +55,7 @@ describe('the tool list', () => {
       properties: Record<string, { type: string }>;
       required?: string[];
     };
-    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'compare', 'entry', 'props', 'range']);
+    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'compare', 'compare-dir', 'compare-every', 'entry', 'props', 'range']);
     expect(doctor.properties.compare!.type).toBe('number');
     expect(doctor.required ?? []).toEqual([]);
   });

@@ -20,6 +20,8 @@ export interface RenderedTree {
 export interface SceneRoot {
   /** Renders `element` synchronously (effects flushed). A component that throws makes this throw. */
   render(element: ReactNode): RenderedTree;
+  /** `render` without the tree (the frame loop reads it with `snapshot`). */
+  update(element: ReactNode): void;
   snapshot(): RenderedTree;
   unmount(): void;
 }
@@ -53,14 +55,19 @@ export function createSceneRoot(): SceneRoot {
   });
   let mounted = true;
 
+  function update(element: ReactNode): void {
+    caught.failure = null;
+    flushSync(() => root.render(element));
+    const failure = caught.failure as { error: unknown } | null;
+    if (failure) throw failure.error;
+  }
+
   return {
     render(element) {
-      caught.failure = null;
-      flushSync(() => root.render(element));
-      const failure = caught.failure as { error: unknown } | null;
-      if (failure) throw failure.error;
+      update(element);
       return EMPTY;
     },
+    update,
     snapshot: () => EMPTY,
     unmount() {
       if (!mounted) return;

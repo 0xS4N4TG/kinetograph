@@ -226,11 +226,12 @@ describe.skipIf(layoutDom === null)('as DOM elements', () => {
         </AbsoluteFill>
       </AbsoluteFill>,
     );
+    // The fills hold DOM, so the outer one is the island's `div` (docs/ENGINE.md §10), the Rect a box inside it, and the
+    // inner fill its absolutely positioned `div`: out of the column's flow, as in CSS.
     const [outer] = tree.layers as any[];
-    expect(outer.layout).toBeDefined();
+    expect(outer.id).toBe('$0');
+    expect(outer.layoutItem).toEqual({ position: 'absolute' });
     const island = outer.children.find((c: any) => c.id === '$0.1');
-    // The inner AbsoluteFill is the island: out of the column's flow.
-    expect(island.layoutItem).toEqual({ position: 'absolute' });
     const dot = island.children.find((c: any) => c.id === '$0.1.0');
     expect(dot.transform).toEqual({ x: 50, y: 100 });
     expect(island.transform).toBeUndefined();

@@ -216,7 +216,9 @@ function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next
       }
     } else {
       const path = `${parentPath}.${place.next++}`;
-      out.push(isDomElement(child.type) ? flattenDomElement(child, path, sequences) : child);
+      // An `<AbsoluteFill>` that holds DOM elements, inside DOM, is part of the same CSS tree: its `div`.
+      const node = isDomElement(child.type) ? child : (domFillOf(child) ?? child);
+      out.push(isDomElement(node.type) ? flattenDomElement(node, path, sequences) : node);
     }
   }
   return out;

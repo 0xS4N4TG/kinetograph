@@ -25,6 +25,8 @@ export type { EmitOptions, RenderedTree } from './emit.js';
 export interface SceneRoot {
   /** Renders `element` synchronously (effects flushed) and returns the emitted tree. */
   render(element: ReactNode): RenderedTree;
+  /** Renders `element` and settles the tree without emitting it (read it with `snapshot()`): a DOM island is drawn by the addon, so emitting a tree nobody reads is wasted work. */
+  update(element: ReactNode): void;
   /** The tree as it is now, after state updates since the last render. */
   snapshot(): RenderedTree;
   unmount(): void;
@@ -292,6 +294,11 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
       reconciler.updateContainerSync(element, root, null, null);
       settle();
       return tree();
+    },
+    update(element) {
+      if (unmounted) throw new Error('This SceneRoot is unmounted');
+      reconciler.updateContainerSync(element, root, null, null);
+      settle();
     },
     snapshot() {
       if (unmounted) throw new Error('This SceneRoot is unmounted');
