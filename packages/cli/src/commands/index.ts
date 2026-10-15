@@ -1,6 +1,7 @@
 import { audioAnalyze } from './audio.js';
 import { bench } from './bench.js';
-import { compositions, doctor, effects } from './basic.js';
+import { compositions, effects } from './basic.js';
+import { doctor } from './doctor.js';
 import { inspect, lint } from './check.js';
 import { mcp } from './mcp.js';
 import { render, still } from './render.js';
