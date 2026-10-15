@@ -74,3 +74,33 @@ fn an_inset_shadow_with_no_blur_or_spread_is_one_pass() {
     assert_eq!(count(&plain, "shadow spread"), 7);
     assert_eq!(count(&fused, "shadow spread"), 0);
 }
+
+#[test]
+fn runs_of_blends_draw_the_same_pixels() {
+    // Thirty overlapping shapes at opacities and in every kind of blend mode,
+    // spread-out small ones, a hue and a luminosity blend among the others, a
+    // backdrop blur between runs, groups without a buffer, nested, and layers
+    // that stay the same from frame to frame (the layer cache). Frames in
+    // order, so the cache has something to supply.
+    same_with_and_without_fusion(
+        "tests/scenes/blend-runs.json",
+        &[0, 1, 2, 3, 4, 5, 6, 15, 16, 29],
+    );
+}
+
+#[test]
+fn a_run_of_blends_is_a_few_passes() {
+    let path = "tests/scenes/blend-runs.json";
+    let (Some(fused), Some(plain)) = (pass_names(path, 15, true), pass_names(path, 15, false))
+    else {
+        eprintln!("this GPU cannot time passes; skipped");
+        return;
+    };
+    let blends = |names: &[&str]| names.iter().filter(|n| **n == "blend").count();
+    assert!(
+        blends(&fused) * 2 < blends(&plain),
+        "{} blend passes fused, {} not",
+        blends(&fused),
+        blends(&plain)
+    );
+}

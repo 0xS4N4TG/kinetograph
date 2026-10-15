@@ -170,6 +170,23 @@ impl Pooled for Tex {
     }
 }
 
+/// A layer for `Compositor::blend_many`: the texture, its opacity and blend
+/// mode.
+#[derive(Clone, Copy)]
+pub struct BlendLayer<'a> {
+    pub texture: &'a Tex,
+    pub opacity: f32,
+    pub mode: BlendMode,
+}
+
+/// How many layers one `blend_many` pass composites (`SLOTS` in
+/// `shaders/blend_many.wgsl`).
+const BLEND_SLOTS: usize = 8;
+
+/// Texels that a `blend_many` pass may draw beyond twice what its layers
+/// cover, so that small layers still go together.
+const BLEND_SLACK: i64 = 64 * 64;
+
 /// A texture a pass reads, and where it sits on the canvas (the `a` or `b` of
 /// `Place` in `shaders/place.wgsl`). What a pass reads outside it is
 /// transparent.
@@ -224,6 +241,10 @@ pub struct Compositor {
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    /// Up to `BLEND_SLOTS` blends in one pass (`shaders/blend_many.wgsl`),
+    /// on its own bind group layout: the canvas, the layers, the uniforms.
+    blend_many: wgpu::RenderPipeline,
+    blend_many_layout: wgpu::BindGroupLayout,
     mask: wgpu::RenderPipeline,
     matte: wgpu::RenderPipeline,
     accumulate: wgpu::RenderPipeline,
@@ -312,6 +333,11 @@ impl Compositor {
         luts: &HashMap<String, Lut>,
     ) -> Compositor {
         let shader = shader_module(device, "composite", include_str!("shaders/composite.wgsl"));
+        let blend_many_shader = shader_module(
+            device,
+            "blend many",
+            include_str!("shaders/blend_many.wgsl"),
+        );
         let shadow_shader = shader_module(device, "shadow", include_str!("shaders/shadow.wgsl"));
         let shadow_box_shader = shader_module(
             device,
@@ -403,6 +429,18 @@ impl Compositor {
             "fs_warp",
             LINEAR_FORMAT,
         );
+        let blend_many_layout = blend_many_bind_group_layout(device);
+        let blend_many = fullscreen_pipeline(
+            device,
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blend many"),
+                bind_group_layouts: &[Some(&blend_many_layout)],
+                immediate_size: 0,
+            }),
+            &blend_many_shader,
+            "fs_blend_many",
+            LINEAR_FORMAT,
+        );
         let turbulence_layout = turbulence_bind_group_layout(device);
         let displace_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -481,6 +519,8 @@ impl Compositor {
             margin,
             to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
+            blend_many,
+            blend_many_layout,
             mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
             matte: pipeline(&shader, "fs_matte", LINEAR_FORMAT),
             accumulate: pipeline(&shader, "fs_accumulate", LINEAR_FORMAT),
@@ -539,6 +579,7 @@ impl Compositor {
         compositor.names = [
             (&c.to_linear, "to linear"),
             (&c.blend, "blend"),
+            (&c.blend_many, "blend"),
             (&c.mask, "mask"),
             (&c.matte, "matte"),
             (&c.accumulate, "accumulate"),
@@ -831,6 +872,108 @@ impl Compositor {
         });
         dst.bounds = dst.bounds.union(src.bounds);
         dst
+    }
+
+    /// Composites each of `layers` over `dst`, in order: what `blend` does
+    /// for each, in fewer passes. Layers that are next to each other, blend
+    /// separably and together cover little more than they do apart go through
+    /// one pass, which composites them one after the other for each pixel and
+    /// rounds to a half float in between, as the texture the separate passes
+    /// write would. So the result is the same, bit for bit.
+    pub fn blend_many(&mut self, mut dst: Tex, layers: &[BlendLayer]) -> Tex {
+        let alone = |l: &BlendLayer| {
+            mode_index(l.mode) >= FIRST_NON_SEPARABLE_MODE || l.texture.bounds.is_empty()
+        };
+        let area = |r: PixelRect| i64::from(r.width()) * i64::from(r.height());
+        let mut i = 0;
+        while i < layers.len() {
+            let first = &layers[i];
+            let mut end = i + 1;
+            if self.fusion && !alone(first) {
+                let (mut region, mut covered) = (first.texture.bounds, area(first.texture.bounds));
+                while end < layers.len() && end - i < BLEND_SLOTS && !alone(&layers[end]) {
+                    let bounds = layers[end].texture.bounds;
+                    let (joined, together) = (region.union(bounds), covered + area(bounds));
+                    // Not so spread out that the pass draws mostly what none
+                    // of the layers touches.
+                    if area(joined) > 2 * together + BLEND_SLACK {
+                        break;
+                    }
+                    (region, covered, end) = (joined, together, end + 1);
+                }
+            }
+            if end - i == 1 {
+                dst = self.blend(dst, first.texture, first.opacity, first.mode);
+            } else {
+                let group = &layers[i..end];
+                let region = group
+                    .iter()
+                    .fold(PixelRect::EMPTY, |r, l| r.union(l.texture.bounds));
+                self.update(&mut dst, region, |c, dst, temp| {
+                    c.blend_many_pass(dst, group, temp);
+                });
+                dst.bounds = group
+                    .iter()
+                    .fold(dst.bounds, |r, l| r.union(l.texture.bounds));
+            }
+            i = end;
+        }
+        dst
+    }
+
+    /// The pass of `blend_many`: `layers` (at most `BLEND_SLOTS`) over `dst`
+    /// into `target`.
+    fn blend_many_pass(&self, dst: &Tex, layers: &[BlendLayer], target: &Tex) {
+        let mut bytes = Vec::with_capacity(48 + 48 * BLEND_SLOTS);
+        let mut put = |values: &[[u8; 4]]| bytes.extend(values.iter().flatten());
+        let int = |v: i32| v.to_le_bytes();
+        put(&[int(target.origin[0]), int(target.origin[1]), int(0), int(0)]);
+        put(&[
+            int(dst.origin[0]),
+            int(dst.origin[1]),
+            int(dst.size[0] as i32),
+            int(dst.size[1] as i32),
+        ]);
+        put(&[(layers.len() as u32).to_le_bytes(), [0; 4], [0; 4], [0; 4]]);
+        for slot in 0..BLEND_SLOTS {
+            match layers.get(slot) {
+                Some(l) => {
+                    let (t, b) = (l.texture, l.texture.bounds);
+                    put(&[
+                        int(t.origin[0]),
+                        int(t.origin[1]),
+                        int(t.size[0] as i32),
+                        int(t.size[1] as i32),
+                    ]);
+                    put(&[int(b.x0), int(b.y0), int(b.x1), int(b.y1)]);
+                    put(&[
+                        l.opacity.to_le_bytes(),
+                        mode_index(l.mode).to_le_bytes(),
+                        [0; 4],
+                        [0; 4],
+                    ]);
+                }
+                None => put(&[[0; 4]; 12]),
+            }
+        }
+        let uniform = self.uniform(&bytes);
+        let layer_view = |slot: usize| layers.get(slot).map_or(&dst.view, |l| &l.texture.view);
+        let entry = |binding, view| wgpu::BindGroupEntry {
+            binding,
+            resource: wgpu::BindingResource::TextureView(view),
+        };
+        let mut entries = vec![entry(0, &dst.view)];
+        entries.extend((0..BLEND_SLOTS).map(|slot| entry(slot as u32 + 1, layer_view(slot))));
+        entries.push(wgpu::BindGroupEntry {
+            binding: BLEND_SLOTS as u32 + 1,
+            resource: uniform.binding(),
+        });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blend many"),
+            layout: &self.blend_many_layout,
+            entries: &entries,
+        });
+        self.draw(&self.blend_many, &bind_group, target);
     }
 
     /// Draws `region` of a new texture with `draw`, which is given `dst` and
@@ -2314,6 +2457,36 @@ fn mesh_vertex_bytes(vertices: &[mesh::Vertex]) -> Vec<u8> {
     floats(&flat)
 }
 
+/// The bind group of `blend_many`: the canvas, `BLEND_SLOTS` layers (all read
+/// with `textureLoad`) and the uniform block.
+fn blend_many_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let texture = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    };
+    let mut entries: Vec<_> = (0..=BLEND_SLOTS as u32).map(texture).collect();
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: BLEND_SLOTS as u32 + 1,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    });
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("blend many"),
+        entries: &entries,
+    })
+}
+
 /// The bind group of passes that resample the layer: the layer as a
 /// filterable texture, a filtering sampler and one uniform block.
 fn filtered_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -2437,7 +2610,9 @@ fn upload_lut(device: &wgpu::Device, queue: &wgpu::Queue, lut: &Lut) -> LutTextu
 /// call `hash` or `cell_hash` get `shaders/hash.wgsl` put in front of their
 /// source, those that call `turbulence_value` get `shaders/turbulence.wgsl`,
 /// and those that place their textures on the canvas (`canvas_xy`,
-/// `canvas_pos` or `load_a`) get `shaders/place.wgsl`.
+/// `canvas_pos` or `load_a`) get `shaders/place.wgsl`, those that call
+/// `blend_fn` get `shaders/blend_math.wgsl` (with the sRGB conversions it
+/// uses), and those that call `store_f16` get `shaders/f16.wgsl`.
 pub(crate) fn shader_source(source: &str) -> String {
     let mut full = String::new();
     if source.contains("hash(") {
@@ -2451,6 +2626,12 @@ pub(crate) fn shader_source(source: &str) -> String {
         .any(|name| source.contains(name))
     {
         full.push_str(include_str!("shaders/place.wgsl"));
+    }
+    if source.contains("blend_fn(") {
+        full.push_str(include_str!("shaders/blend_math.wgsl"));
+    }
+    if source.contains("store_f16(") {
+        full.push_str(include_str!("shaders/f16.wgsl"));
     }
     full.push_str(source);
     full

@@ -18,7 +18,7 @@ use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
-use crate::compositor::{Compositor, Readback, Tex};
+use crate::compositor::{BlendLayer, Compositor, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::gif::{Gif, Gifs, gif_sources, open_gif};
 use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
@@ -478,8 +478,25 @@ impl Renderer {
         &mut self,
         layers: &[ResolvedLayer],
         parent: Affine,
+        canvas: Tex,
+        below: Option<&Tex>,
+    ) -> Result<Tex> {
+        let mut pending = Vec::new();
+        let canvas = self.draw_layers_into(layers, parent, canvas, below, &mut pending)?;
+        Ok(self.blend_pending(canvas, &mut pending))
+    }
+
+    /// `draw_layers`, leaving the layers it has drawn in `pending` instead of
+    /// blending them: they are blended together, in as few passes as
+    /// possible, when something needs the canvas as it would be with them on
+    /// it (`blend_pending`), which the caller does at the end.
+    fn draw_layers_into<'a>(
+        &mut self,
+        layers: &'a [ResolvedLayer],
+        parent: Affine,
         mut canvas: Tex,
         below: Option<&Tex>,
+        pending: &mut Vec<Pending<'a>>,
     ) -> Result<Tex> {
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
@@ -493,6 +510,7 @@ impl Renderer {
                 ..
             } = &layer.kind
             {
+                canvas = self.blend_pending(canvas, pending);
                 canvas = self.draw_preserve3d(layer, children, parent, canvas, below)?;
                 continue;
             }
@@ -502,8 +520,13 @@ impl Renderer {
                 && needs_no_buffer(layer)
             {
                 self.cache_path.push(layer.id.clone());
-                let drawn =
-                    self.draw_layers(children, parent * layer.transform.matrix(), canvas, below);
+                let drawn = self.draw_layers_into(
+                    children,
+                    parent * layer.transform.matrix(),
+                    canvas,
+                    below,
+                    pending,
+                );
                 self.cache_path.pop();
                 canvas = drawn?;
                 continue;
@@ -512,9 +535,51 @@ impl Renderer {
             // own position, in its parent's plane.
             let placement =
                 warp::layer_world(&layer.transform).map(|world| Placement { parent, world });
-            canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
+            canvas = self.draw_layer(
+                layer, layers, parent, placement, 1.0, canvas, below, pending,
+            )?;
+            if pending.len() >= MAX_PENDING {
+                canvas = self.blend_pending(canvas, pending);
+            }
         }
         Ok(canvas)
+    }
+
+    /// Blends the layers in `pending`, oldest first, onto `canvas`, and does
+    /// with each what its drawing left to do: gives the layer cache the
+    /// texture, or the pool.
+    fn blend_pending(&mut self, canvas: Tex, pending: &mut Vec<Pending<'_>>) -> Tex {
+        if pending.is_empty() {
+            return canvas;
+        }
+        let layers: Vec<BlendLayer> = pending
+            .iter()
+            .map(|p| BlendLayer {
+                texture: p.texture(),
+                opacity: p.opacity,
+                mode: p.mode,
+            })
+            .collect();
+        let canvas = self.timed(Stage::Composite, |s| {
+            s.compositor.blend_many(canvas, &layers)
+        });
+        drop(layers);
+        for waiting in pending.drain(..) {
+            match waiting.what {
+                Waiting::Cached { id, hit } => self.cache.put_back(id, hit),
+                Waiting::Kept {
+                    id,
+                    inputs,
+                    texture,
+                } => {
+                    for tex in self.cache.put(id, &inputs, texture) {
+                        self.compositor.release(tex);
+                    }
+                }
+                Waiting::Loose(texture) => self.compositor.release(texture),
+            }
+        }
+        canvas
     }
 
     /// Draws a `preserve3d` group: its children, and those of the preserve3d
@@ -541,6 +606,8 @@ impl Renderer {
         warp::sort_far_to_near(&mut items, |item| item.depth);
         self.cache_path.push(group.id.clone());
         for item in items {
+            // One at a time: each is placed in 3D and blended before the next.
+            let mut pending = Vec::new();
             let drawn = self.draw_layer(
                 item.layer,
                 item.siblings,
@@ -549,9 +616,10 @@ impl Renderer {
                 item.opacity,
                 canvas,
                 below,
+                &mut pending,
             );
             canvas = match drawn {
-                Ok(canvas) => canvas,
+                Ok(canvas) => self.blend_pending(canvas, &mut pending),
                 Err(e) => {
                     self.cache_path.pop();
                     return Err(e);
@@ -562,25 +630,28 @@ impl Renderer {
         Ok(canvas)
     }
 
-    /// Draws one layer of `siblings` onto `canvas`: its own pixels
-    /// (`layer_texture`), warped into place if it has a `placement`, blended
-    /// with its opacity times `opacity_scale`. `parent` is the flat matrix of
-    /// the layer's parent, as in `draw_layers`. A layer with motion blur
-    /// ignores `placement` and works its own out for each sub-frame, so it
-    /// cannot be drawn by `draw_preserve3d` (the scene refuses it).
+    /// Draws one layer of `siblings` for `canvas`: its own pixels
+    /// (`layer_texture`), warped into place if it has a `placement`, to be
+    /// blended with its opacity times `opacity_scale`. The blend waits in
+    /// `pending` (see `draw_layers_into`), unless the layer needs the canvas
+    /// as it is: then what is pending is blended first. `parent` is the flat
+    /// matrix of the layer's parent, as in `draw_layers`. A layer with motion
+    /// blur ignores `placement` and works its own out for each sub-frame, so
+    /// it cannot be drawn by `draw_preserve3d` (the scene refuses it).
     ///
     /// The texture it blends is the layer cache's when the layer is what it
     /// was in the last frame (`cache.rs`), and is kept there when it is not.
     #[allow(clippy::too_many_arguments)]
-    fn draw_layer(
+    fn draw_layer<'a>(
         &mut self,
-        layer: &ResolvedLayer,
-        siblings: &[ResolvedLayer],
+        layer: &'a ResolvedLayer,
+        siblings: &'a [ResolvedLayer],
         parent: Affine,
         placement: Option<Placement>,
         opacity_scale: f32,
         mut canvas: Tex,
         below: Option<&Tex>,
+        pending: &mut Vec<Pending<'a>>,
     ) -> Result<Tex> {
         // Each sub-frame's opacity is already in a blurred layer's average.
         let opacity = if layer.motion.is_empty() {
@@ -614,11 +685,14 @@ impl Renderer {
         if let Some(id) = &id {
             match self.cache.take(id, &inputs) {
                 Ok(hit) => {
-                    canvas = self.timed(Stage::Composite, |s| {
-                        s.compositor
-                            .blend(canvas, hit.texture(), opacity, layer.blend_mode)
+                    pending.push(Pending {
+                        what: Waiting::Cached {
+                            id: id.clone(),
+                            hit,
+                        },
+                        opacity,
+                        mode: layer.blend_mode,
                     });
-                    self.cache.put_back(id.clone(), hit);
                     return Ok(canvas);
                 }
                 Err(Some(stale)) => self.compositor.release(stale),
@@ -629,6 +703,9 @@ impl Renderer {
         // The backdrop is only built for a layer that blurs it: the canvas so
         // far, under anything the enclosing groups have behind them.
         let needs_backdrop = uses_backdrop(siblings, layer);
+        if needs_backdrop {
+            canvas = self.blend_pending(canvas, pending);
+        }
         let combined = match below {
             Some(below) if needs_backdrop => {
                 Some(self.timed(Stage::Composite, |s| s.compositor.over(below, &canvas)))
@@ -642,20 +719,21 @@ impl Renderer {
             self.compositor.release(combined);
         }
         // Seen edge on: nothing to blend.
-        let Some(src) = drawn? else {
+        let Some(texture) = drawn? else {
             return Ok(canvas);
         };
-        canvas = self.timed(Stage::Composite, |s| {
-            s.compositor.blend(canvas, &src, opacity, layer.blend_mode)
+        pending.push(Pending {
+            what: match id {
+                Some(id) => Waiting::Kept {
+                    id,
+                    inputs,
+                    texture,
+                },
+                None => Waiting::Loose(texture),
+            },
+            opacity,
+            mode: layer.blend_mode,
         });
-        match id {
-            Some(id) => {
-                for tex in self.cache.put(id, &inputs, src) {
-                    self.compositor.release(tex);
-                }
-            }
-            None => self.compositor.release(src),
-        }
         Ok(canvas)
     }
 
@@ -1765,6 +1843,47 @@ struct Page {
     /// whenever the leaf is wanted.
     target: Option<wgpu::TextureView>,
 }
+
+/// A layer drawn and waiting to be blended onto its canvas.
+struct Pending<'a> {
+    what: Waiting<'a>,
+    opacity: f32,
+    mode: BlendMode,
+}
+
+/// The texture of a `Pending` layer, and what is to be done with it once it
+/// is blended.
+// A `Tex` is large, and so is a cache entry; a few of these exist at a time.
+#[allow(clippy::large_enum_variant)]
+enum Waiting<'a> {
+    /// The layer cache had it from the last frame: put it back.
+    Cached {
+        id: Vec<String>,
+        hit: cache::Hit<Tex>,
+    },
+    /// Drawn now, and made from `inputs`: the layer cache keeps it.
+    Kept {
+        id: Vec<String>,
+        inputs: Inputs<'a>,
+        texture: Tex,
+    },
+    /// Drawn now, not for the layer cache: the pool has it back.
+    Loose(Tex),
+}
+
+impl Pending<'_> {
+    fn texture(&self) -> &Tex {
+        match &self.what {
+            Waiting::Cached { hit, .. } => hit.texture(),
+            Waiting::Kept { texture, .. } | Waiting::Loose(texture) => texture,
+        }
+    }
+}
+
+/// How many drawn layers may wait to be blended before they are. A flush
+/// costs the passes that `blend_many` makes of them; more waiting layers
+/// would hold more textures than the pool is likely to have.
+const MAX_PENDING: usize = 16;
 
 fn is_hidden(layer: &ResolvedLayer) -> bool {
     if layer.motion.is_empty() {

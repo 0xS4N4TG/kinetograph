@@ -23,12 +23,20 @@ fn builtin_shaders_are_valid_wgsl() {
     let shaders = files_with_extension("src/shaders", "wgsl");
     assert!(!shaders.is_empty(), "no shaders found");
     // The helpers the compositor puts in front of the shaders that call them
-    // (`compositor::shader_source`). hash.wgsl and turbulence.wgsl stand
-    // alone; place.wgsl reads the `tex_a` of the shader it is put in front
+    // (`compositor::shader_source`). hash.wgsl, turbulence.wgsl,
+    // blend_math.wgsl and f16.wgsl stand alone; place.wgsl reads the `tex_a` of the shader it is put in front
     // of, so it is checked with a declaration of its own.
     for path in shaders {
         let source = std::fs::read_to_string(&path).unwrap();
-        let source = if path.ends_with("hash.wgsl") || path.ends_with("turbulence.wgsl") {
+        let source = if [
+            "hash.wgsl",
+            "turbulence.wgsl",
+            "blend_math.wgsl",
+            "f16.wgsl",
+        ]
+        .iter()
+        .any(|name| path.ends_with(name))
+        {
             source
         } else if path.ends_with("place.wgsl") {
             format!("@group(0) @binding(0) var tex_a: texture_2d<f32>;\n{source}")
