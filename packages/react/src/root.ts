@@ -88,6 +88,7 @@ const hostConfig = {
     }
     const element: HostElement = { kind: 'element', type, props, children: [] };
     hostMeta.set(element, { parent: null, container: _root });
+    if (type === 'img' || type === 'video' || type === 'audio') _root.media.add(element);
     // A <Text> child that is an element is caught here, before it is attached, so the error names the element.
     checkChild(hostContext, element);
     return element;
@@ -234,7 +235,7 @@ const MAX_SETTLE_PASSES = 100;
  * resolves later can update the tree seen by `snapshot`.
  */
 export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
-  const container: Container = { children: [], generation: 0, readback: null, measuredGenerations: new Set() };
+  const container: Container = { children: [], generation: 0, readback: null, measuredGenerations: new Set(), media: new Set() };
   container.readback = createReadback(container, options);
   registerReadbackRoot(container.readback);
   // `window.innerWidth`, `matchMedia` and `document.documentElement` report the composition's size.
@@ -272,7 +273,7 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
       const effects = reconciler.flushPassiveEffects();
       if (rendered || effects) continue;
       // Files that loaded: the `onLoad` of an <img> or <video> (a project may hold the frame until it fires).
-      if (container.readback !== null && deliverMediaEvents(container.readback)) continue;
+      if (container.readback !== null && container.media.size > 0 && deliverMediaEvents(container.readback, container.media)) continue;
       // Layout is settled: tell the observers what changed (a callback may set state, which renders again).
       if (hasObservers() && observerRounds < MAX_OBSERVER_DEPTH && deliverObservations()) {
         observerRounds += 1;

@@ -23,6 +23,8 @@ export interface Container {
   readback: Readback | null;
   /** The tree generations measured since the frame's work began (see `settle`): one per pass of measuring. */
   measuredGenerations: Set<number>;
+  /** The `<img>`, `<video>` and `<audio>` elements made so far (their load events are delivered, see `settle`). */
+  media: Set<HostElement>;
 }
 
 /** What the reconciler learns about a host node as it is placed: where it hangs, and in which root. */

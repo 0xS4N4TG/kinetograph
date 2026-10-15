@@ -51,13 +51,16 @@ function imageLoads(src: string): { ok: true } | { ok: false; message: string } 
 }
 
 /**
- * Calls the load handlers of the `<img>`, `<video>` and `<audio>` elements that have not had them for their current
- * `src`. Returns true when one ran (it may have set state, so the root renders again).
+ * Calls the load handlers of the `<img>`, `<video>` and `<audio>` elements among `hosts` (the root keeps them) that have
+ * not had them for their current `src`. Returns true when one ran (it may have set state, so the root renders again).
  */
-export function deliverMediaEvents(readback: Readback): boolean {
+export function deliverMediaEvents(readback: Readback, hosts: Set<HostElement>): boolean {
   let any = false;
-  for (const host of readback.descendants()) {
-    if (host.type !== 'img' && host.type !== 'video' && host.type !== 'audio') continue;
+  for (const host of [...hosts]) {
+    if (!readback.isConnected(host)) {
+      hosts.delete(host);
+      continue;
+    }
     const props = propsWithOverlay(host);
     const names = host.type === 'img' ? IMAGE_EVENTS : MEDIA_EVENTS;
     if (!names.some((name) => typeof props[name] === 'function')) continue;
