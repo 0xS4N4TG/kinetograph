@@ -1,7 +1,7 @@
 //! What makes an element a group: transform, opacity, filter, blend mode,
 //! isolation, clip-path, mask; and the clip of `overflow`.
 
-use blitz_dom::Node;
+use blitz_dom::{Node, NodeId};
 use serde_json::{Value, json};
 use style::computed_values::backface_visibility::T as Backface;
 use style::computed_values::transform_style::T as TransformStyle;
@@ -371,6 +371,60 @@ fn unused(_: &mut Value) {
 }
 
 impl<'a> Painter<'a> {
+    /// `[x, y, width, height]` of what a `url()` filter's percentages and
+    /// `objectBoundingBox` units are of: the border box, or, for a box with no
+    /// area (a `width: 0; height: 0` wrapper whose content overflows it, as
+    /// papercut's props are), the box of what is inside it. A filter region
+    /// of 108% of nothing would draw nothing, and Chrome draws the content.
+    fn filter_bbox(&self, node: &Node, geom: &BoxGeom) -> [f64; 4] {
+        if geom.w > 0.0 && geom.h > 0.0 {
+            return [0.0, 0.0, geom.w, geom.h];
+        }
+        let mut found: Option<(f64, f64, f64, f64)> = None;
+        self.union_descendant_boxes(node, (0.0, 0.0), &mut found, 0);
+        match found {
+            Some((x0, y0, x1, y1)) => [x0, y0, x1 - x0, y1 - y0],
+            None => [0.0, 0.0, geom.w, geom.h],
+        }
+    }
+
+    /// The union of the border boxes of `node`'s descendants that have an
+    /// area, in the frame of `node`'s border box (`origin` is that of `node`).
+    fn union_descendant_boxes(
+        &self,
+        node: &Node,
+        origin: (f64, f64),
+        found: &mut Option<(f64, f64, f64, f64)>,
+        depth: usize,
+    ) {
+        if depth > 64 {
+            return;
+        }
+        let children: Vec<NodeId> = node
+            .layout_children
+            .borrow()
+            .as_ref()
+            .map(|c| c.iter().copied().collect())
+            .unwrap_or_default();
+        for cid in children {
+            let child = self.node(cid);
+            let l = child.final_layout();
+            let at = (
+                origin.0 + f64::from(l.location.x),
+                origin.1 + f64::from(l.location.y),
+            );
+            let (w, h) = (f64::from(l.size.width), f64::from(l.size.height));
+            if w > 0.0 && h > 0.0 {
+                let (x1, y1) = (at.0 + w, at.1 + h);
+                *found = Some(match *found {
+                    Some((a, b, c, d)) => (a.min(at.0), b.min(at.1), c.max(x1), d.max(y1)),
+                    None => (at.0, at.1, x1, y1),
+                });
+            }
+            self.union_descendant_boxes(child, at, found, depth + 1);
+        }
+    }
+
     /// The `url(...)` references of the element's `filter`, split into the
     /// ones before the first filter function and the ones after.
     fn filter_urls(&mut self, node: &Node) -> (Vec<String>, Vec<String>) {
@@ -408,7 +462,7 @@ impl<'a> Painter<'a> {
         out: &mut Vec<Value>,
     ) {
         let path = self.path_of(node);
-        let bbox = [0.0, 0.0, geom.w, geom.h];
+        let bbox = self.filter_bbox(node, geom);
         // CSS ignores a reference to nothing.
         if let Some(fe) = super::svg::filter_graph(
             self.doc,

@@ -55,6 +55,67 @@ fn a_native_element_leaves_a_placeholder_where_its_layers_go() {
     assert_eq!(placeholder["height"], 40);
 }
 
+/// Papercut's props sit in `width: 0; height: 0` wrappers and a `Paper` div
+/// (`inset: 0`, `filter: url(#rough)`) over them: the filter is on a box with no
+/// area whose content overflows it. Its region must be the content's, or the
+/// whole prop disappears (the barrier arm, the file cards and the trash chute
+/// of the episode 13 corpus did).
+#[test]
+fn a_url_filter_on_an_empty_box_takes_the_box_of_its_content() {
+    let filter = el_attrs(
+        "filter",
+        "$0.0",
+        json!({ "id": "rough", "x": "-4%", "y": "-4%", "width": "108%", "height": "108%" }),
+        "",
+        vec![el_attrs(
+            "feTurbulence",
+            "$0.0.0",
+            json!({ "type": "fractalNoise", "baseFrequency": "0.035", "numOctaves": "2" }),
+            "",
+            vec![],
+        )],
+    );
+    let defs = el_attrs(
+        "svg",
+        "$0.0",
+        json!({ "width": "0", "height": "0" }),
+        "position:absolute",
+        vec![el("defs", "$0.0.0", "", vec![filter])],
+    );
+    let arm = el(
+        "div",
+        "$0.1.0.0",
+        "position:absolute;left:-110px;top:-23px;width:670px;height:46px;background:#d63a2b",
+        vec![],
+    );
+    let paper = el(
+        "div",
+        "$0.1.0",
+        "position:absolute;inset:0;filter:url(#rough) drop-shadow(2px 4px 8px rgba(0,0,0,0.4))",
+        vec![arm],
+    );
+    let at = el(
+        "div",
+        "$0.1",
+        "position:absolute;left:350px;top:200px;width:0;height:0;rotate:-46deg;transform-origin:0 0",
+        vec![paper],
+    );
+    let req = request(el("div", "$0", "width:1000px;height:500px", vec![defs, at]));
+    let parsed = common::parse(&req);
+    let island = document::resolve(&parsed).expect("resolves");
+    let out = paint(&island.doc, &parsed);
+    fn graph(layers: &[serde_json::Value]) -> Option<&serde_json::Value> {
+        layers.iter().find_map(|l| {
+            l["effects"]
+                .as_array()
+                .and_then(|e| e.iter().find(|e| e["type"] == "filterGraph"))
+                .or_else(|| graph(l["children"].as_array().map_or(&[], |c| c.as_slice())))
+        })
+    }
+    let g = graph(&out.layers).unwrap_or_else(|| panic!("no filterGraph in {:?}", out.layers));
+    assert_eq!(g["bbox"], json!([-110, -23, 670, 46]), "{g}");
+}
+
 #[test]
 fn a_papercut_style_card_paints_end_to_end() {
     let card = el_attrs(
