@@ -332,6 +332,11 @@ the example is `examples/video-overlay/`. CPU checks green; nothing has rendered
 "Phase 4 in a cloud session" below.
 **Phase 5: Remotion compat mode.** CSS subset mapped onto layers (possibly via Blitz/Stylo), Chrome fallback per frame
 range, `doctor`.
+**Built 2026-10-15 in the same cloud session** (draft PR from `feat/remotion-compat` against `feat/studio-video`, the
+four stream branches merged into it and kept): the contract is `docs/COMPAT.md`; the example is `examples/compat/`,
+where `doctor` reports 126 of 150 frames native and one Chrome run (96..119, the `textDecoration` it uses on purpose).
+CPU checks green, plus a Chromium-on-CPU integration test of the fallback; nothing has rendered on a GPU yet. On the
+M4: the list in "Phase 5 in the same cloud session" below.
 
 **Building a phase in a Claude Code cloud session** (Phase 2 onwards). The cloud session writes code; all testing
 happens on the user's M4.

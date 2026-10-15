@@ -148,7 +148,7 @@ a layer with constant numbers:
 |---|---|---|
 | `<node>.bg` | `shape` of the border box: a `rect`, a `roundedRect` (one uniform radius), or a `path` (per-corner or elliptical radii). Filled with `backgroundColor`, or transparent, with one `dropShadow` effect per outer `boxShadow`, last first (as CSS paints them). Left out when it has no fill and no shadow. | `backgroundColor`, `borderRadius`, `boxShadow` without `inset` |
 | `<node>.bg-N` | for each `backgroundImage` layer, last first: the border-box shape filled with a gradient (box units over the background positioning area), or an `image` layer clipped to the padding box for `url()` | `backgroundImage`; `backgroundSize` (`auto`, `cover`, `contain`, lengths); `backgroundPosition`; `backgroundRepeat: no-repeat` (other repeats unsupported); `backgroundClip` / `backgroundOrigin` `border-box` or `padding-box` |
-| `<node>.inset` | the padding-box shape, filled transparent, with one `insetShadow` effect per inset shadow | `boxShadow` with `inset` |
+| (on `<node>.bg`) | one `insetShadow` effect per inset shadow, after its drop shadows. The engine keeps an inset shadow inside where the layer is opaque, so this is supported only on a box with an opaque `backgroundColor`, no border and no background image; an outer `boxShadow` likewise needs an opaque `backgroundColor`. Anything else is unsupported. | `boxShadow` with `inset` |
 | `<node>.border` | the border-box shape shrunk by half the border width, stroked at that width | `border*` when all four sides have one width, one colour and style `solid` (or no border) |
 | children | the box's content, at their laid-out positions | |
 
@@ -162,10 +162,10 @@ Fields on the group:
 - `transform` and `transformOrigin` (§4.3).
 - `clipPath` → `clip`: `inset()`, `circle()` → `ellipse`, `ellipse()`, `polygon()`, `path()`. Percentages are of
   the border box; a reference box other than `border-box` is unsupported.
-- `overflow` `hidden` or `clip` → a `path` clip of the padding box with its inner radii (on the children's group
-  when the box also has a `clipPath`).
-- `maskImage` / `WebkitMaskImage`: a gradient → `mask` (box units); a `url()` → an alpha `matte` from an `image`
-  layer `<node>.mask`.
+- `overflow` `hidden` or `clip` → a `path` clip of the padding box with its inner radii, on a sub-group
+  `<node>.content` holding the children, so the box's own border and shadows are not cut.
+- `maskImage` / `WebkitMaskImage`: a gradient → `mask` (box units); a `url()` → an `image` layer `<node>.mask` and a
+  group `<node>.masked` holding everything the box paints, with an alpha `matte` on the mask.
 - `visibility: hidden` draws nothing but keeps the box; `display: none` makes no box.
 
 Layout properties (§5):
@@ -190,7 +190,8 @@ It maps onto the layer transform when the list reduces to one translation, one u
 in the order the layer transform applies them (SCENE.md "Layers": rotate Z, then rotateX, rotateY, then translate Z):
 - `x` and `y` are the box position plus the translation; `translate` percentages are of the border box;
 - `scale`, `rotation`, `rotateX`, `rotateY` and `z` come from the list;
-- `originX` and `originY` are `transformOrigin` as fractions of the border box.
+- `transformOrigin` becomes the pivot through `anchorX`/`anchorY` (and the matching shift of `x`, `y`), since a group
+  without a `layout` has no box for `originX`/`originY` to measure.
 
 Unsupported: non-uniform scale, `skew`, `matrix` and `matrix3d` (unless they decompose to the above), a rotation
 order the layer transform cannot express, and the `perspective()` function.
@@ -382,6 +383,18 @@ class VideoWriter {
   paths happen on the M4.
 - **Blend space.** Chrome blends in sRGB and the engine in linear light (HANDOFF §10), so frames that use
   `mixBlendMode` differ between the paths. `doctor --compare` shows by how much.
+
+As built (Phase 5 merge):
+
+- `render` decides each frame's path with `pathFor` as it renders, in one pass, so the JS stage runs once per frame;
+  `planRuns` builds the summary.
+- Chrome starts only at the first frame that needs it, and `videoFrame` also serves `gif` pictures (by the gif
+  rule).
+- `@kinetograph/compat/browser` keeps its own copy of the timeline context, since `compat` cannot import
+  `@kinetograph/react`.
+- Chrome for Testing is pinned at 154.0.8037.57; puppeteer-core is 25.12.0 and @puppeteer/browsers 3.2.3.
+- Left out of Chrome frames, with one warning each: `mask`, `matte`, `motionBlur`, `insetShadow`, `glow` without a
+  colour, conic gradients, gradient text, `noise` and `meshGradient` layers. `lottie` fails the frame.
 
 ## 7. `doctor` (stream 4)
 

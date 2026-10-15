@@ -66,8 +66,9 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   `Easing`, `random`, `Sequence`, `Series`, `Loop`, `Freeze`, `AbsoluteFill`, `Img`, `staticFile`, `delayRender`.
   `staticFile('x.png')` is `public/x.png` next to the entry file.
 - `@remotion/transitions`, `motion-blur`, `noise`, `paths`, `shapes`, `layout-utils`, `animation-utils`, `captions`,
-  `fonts`, `lottie` and `@remotion/google-fonts/<Family>` import as usual. Other `@remotion/*` packages and arbitrary
-  HTML/CSS do not exist yet: do not use `<div>`, `style`, CSS or the DOM; use the elements below.
+  `fonts`, `lottie` and `@remotion/google-fonts/<Family>` import as usual. Other `@remotion/*` packages do not exist yet.
+  For new work, use the elements below. `<div>`s with inline `style` and SVG also work (compat mode, see "Compat mode
+  and doctor"), but frames holding CSS the engine does not map are drawn by Chrome, more slowly.
 - Rendering is a pure function of the frame number. `Math.random()`, `Date.now()` and timers are driven by the frame;
   use `random(seed)` for jitter. Never read the real clock.
 - Register fonts before text is laid out. Text with a font that is not registered is a lint error.
