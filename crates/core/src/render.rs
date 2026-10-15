@@ -1827,6 +1827,7 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 fn needs_box(effects: &[ResolvedEffect]) -> bool {
     effects.iter().any(|e| {
         matches!(e, ResolvedEffect::CornerPin(_))
+            || matches!(e, ResolvedEffect::FilterGraph(g) if g.needs_box())
             || matches!(e, ResolvedEffect::DotMatrix(d) if d.order == DotOrder::Sweep)
     })
 }

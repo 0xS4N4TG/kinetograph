@@ -234,6 +234,7 @@ pub enum ResolvedEffect {
     DotMatrix(ResolvedDotMatrix),
     Displace(ResolvedDisplace),
     CornerPin(ResolvedCornerPin),
+    FilterGraph(Box<crate::filter::ResolvedFilterGraph>),
     Shader(ResolvedShader),
 }
 
@@ -1328,6 +1329,7 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             corners: [top_left, top_right, bottom_right, bottom_left]
                 .map(|c| c.as_ref().map(|[x, y]| [x.at(f), y.at(f)])),
         }),
+        Effect::FilterGraph(g) => ResolvedEffect::FilterGraph(Box::new(g.resolve(f))),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),

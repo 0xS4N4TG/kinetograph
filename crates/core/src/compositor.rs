@@ -115,6 +115,8 @@ use crate::turbulence::{self, Tables};
 use crate::uniforms::{Block, Uniforms};
 use crate::warp;
 
+mod filter_graph;
+
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -246,6 +248,8 @@ pub struct Compositor {
     displace: wgpu::RenderPipeline,
     /// On the shared layout and then `turbulence_layout`.
     noise: wgpu::RenderPipeline,
+    /// The passes of `filterGraph`, made the first time one is drawn.
+    filter: Option<filter_graph::FilterPipelines>,
     /// Vertex-colour triangles, for mesh gradients (`mesh_size` at group 0).
     mesh: wgpu::RenderPipeline,
     /// The padded texture size, which the mesh's vertex shader needs.
@@ -488,6 +492,7 @@ impl Compositor {
             warp,
             displace,
             noise,
+            filter: None,
             mesh,
             mesh_size,
             mesh_layout,
@@ -963,6 +968,9 @@ impl Compositor {
                 ResolvedEffect::Displace(_) => {}
                 ResolvedEffect::CornerPin(ref pin) => {
                     src = self.corner_pin(src, layer_matrix, layer_box, pin);
+                }
+                ResolvedEffect::FilterGraph(ref graph) => {
+                    src = self.filter_graph(src, layer_matrix, layer_box, graph);
                 }
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
