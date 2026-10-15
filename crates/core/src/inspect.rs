@@ -423,11 +423,20 @@ impl Walk<'_> {
                 line_height,
                 max_width,
                 align,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let width = max_width.unwrap_or(laid_out.width);
                 let b = Rect::new(0.0, 0.0, f64::from(width), f64::from(laid_out.height));
                 Boxes {

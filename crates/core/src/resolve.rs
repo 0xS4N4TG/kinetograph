@@ -7,8 +7,8 @@ use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
     AlignContent, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
-    Effect, Extend, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, Gradient, GradientGeometry,
-    HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout, LayoutItem,
+    Effect, Extend, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun, Gradient,
+    GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout, LayoutItem,
     MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels,
     Paint, Position, Scene, Shadow, Spacing, Stop, TextAlign, Transform, Turbulence,
     TurbulenceKind, Units,
@@ -159,6 +159,8 @@ pub struct ResolvedTransform {
     /// scales about, added to the anchor.
     pub origin_x: f64,
     pub origin_y: f64,
+    /// `scene::Transform::matrix`.
+    pub matrix: Option<[f64; 16]>,
 }
 
 impl ResolvedTransform {
@@ -169,10 +171,17 @@ impl ResolvedTransform {
     /// the origin, and puts the layer back so that nothing moves while it is
     /// not turned or scaled: the pivot lands where it is without them.
     pub fn matrix(&self) -> Affine {
+        let css = self
+            .matrix
+            .filter(crate::scene::matrix_is_affine_2d)
+            .map_or(Affine::IDENTITY, |m| {
+                Affine::new([m[0], m[1], m[4], m[5], m[12], m[13]])
+            });
         if self.origin_x != 0.0 || self.origin_y != 0.0 {
             return Affine::translate((self.x + self.origin_x, self.y + self.origin_y))
                 * Affine::rotate(self.rotation.to_radians())
                 * Affine::scale(self.scale)
+                * css
                 * Affine::translate((
                     -(self.anchor_x + self.origin_x),
                     -(self.anchor_y + self.origin_y),
@@ -181,6 +190,7 @@ impl ResolvedTransform {
         Affine::translate((self.x, self.y))
             * Affine::rotate(self.rotation.to_radians())
             * Affine::scale(self.scale)
+            * css
             * Affine::translate((-self.anchor_x, -self.anchor_y))
     }
 }
@@ -430,6 +440,19 @@ pub struct ResolvedMatte {
 pub enum ResolvedPaint {
     Solid(Color),
     Gradient(ResolvedGradient),
+    Image(ResolvedImagePaint),
+}
+
+/// `scene::ImagePaint` at one frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedImagePaint {
+    pub src: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub repeat_x: bool,
+    pub repeat_y: bool,
 }
 
 /// A gradient at one frame, in the space of whatever it paints.
@@ -442,6 +465,8 @@ pub struct ResolvedGradient {
     /// Whether the coordinates are pixels of the painted layer or fractions
     /// of its box.
     pub units: Units,
+    /// An affine applied to the finished gradient (`scene::Gradient::matrix`).
+    pub matrix: Option<[f64; 6]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -490,6 +515,11 @@ pub enum ResolvedKind {
         /// One entry per code point of `text` that has one: its own style, or
         /// `None` for a character drawn as the layer is.
         chars: Vec<Option<ResolvedChar>>,
+        /// Glyphs positioned by someone else; when there are any, the fields
+        /// above that shape text are not used (`scene::TextLayer::runs`).
+        runs: Vec<GlyphRun>,
+        /// The box of a layer with `runs`.
+        box_size: (f32, f32),
     },
     Image {
         src: String,
@@ -683,11 +713,20 @@ impl Resolver<'_> {
                 line_height,
                 max_width,
                 align,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.engine()?
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.engine()?.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let (width, height) = laid_out.box_size(*max_width);
                 Some(Rect::new(0.0, 0.0, width, height))
             }
@@ -843,6 +882,11 @@ impl Resolver<'_> {
                         })
                     })
                     .collect(),
+                runs: t.runs.clone(),
+                box_size: (
+                    t.box_width.as_ref().map_or(0.0, |n| n.at(f) as f32),
+                    t.box_height.as_ref().map_or(0.0, |n| n.at(f) as f32),
+                ),
             },
             LayerKind::Image(i) => {
                 let (width, height) = self.image_size(layer, i, f)?;
@@ -980,6 +1024,15 @@ fn resolve_paint(paint: &Paint, f: f64) -> ResolvedPaint {
     match paint {
         Paint::Solid(color) => ResolvedPaint::Solid(*color),
         Paint::Gradient(g) => ResolvedPaint::Gradient(resolve_gradient(g, f)),
+        Paint::Image(i) => ResolvedPaint::Image(ResolvedImagePaint {
+            src: i.src.clone(),
+            x: i.x.at(f),
+            y: i.y.at(f),
+            width: i.width.at(f).max(0.0),
+            height: i.height.at(f).max(0.0),
+            repeat_x: i.repeat_x,
+            repeat_y: i.repeat_y,
+        }),
     }
 }
 
@@ -1055,6 +1108,7 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         stops: resolve_stops(&g.stops, f),
         extend: g.extend,
         units: g.units,
+        matrix: g.matrix,
     }
 }
 
@@ -1111,6 +1165,7 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
         z: t.z.at(f),
         origin_x: 0.0,
         origin_y: 0.0,
+        matrix: t.matrix,
     }
 }
 

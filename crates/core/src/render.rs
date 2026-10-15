@@ -30,7 +30,8 @@ use crate::resolve::{
     ResolvedScene,
 };
 use crate::scene::{
-    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
+    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Paint, Scene, ShapeLayer, TextLayer,
+    Units, walk_layers,
 };
 use crate::text::{LaidOutText, TextEngine};
 use crate::video::{VideoDecoder, Videos, open_video, video_sources};
@@ -1079,11 +1080,20 @@ impl Renderer {
                 max_width,
                 align,
                 chars,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 text_bounds(&laid_out, *size, *max_width, chars)
             }
             ResolvedKind::Image { width, height, .. }
@@ -1127,7 +1137,8 @@ impl Renderer {
                 if let Some(paint) = fill {
                     // The box a gradient in box units is measured in: the
                     // geometry, without the stroke.
-                    let (brush, brush_transform) = paint_brush(paint, Some(path.bounding_box()));
+                    let (brush, brush_transform) =
+                        paint_brush_in(paint, Some(path.bounding_box()), &self.images);
                     self.vello_scene
                         .fill(Fill::NonZero, matrix, &brush, brush_transform, &path);
                 }
@@ -1150,13 +1161,22 @@ impl Renderer {
                 max_width,
                 align,
                 chars,
+                runs,
+                box_size,
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let (box_width, box_height) = laid_out.box_size(*max_width);
                 let text_box = Rect::new(0.0, 0.0, box_width, box_height);
-                let (brush, brush_transform) = paint_brush(color, Some(text_box));
+                let (brush, brush_transform) = paint_brush_in(color, Some(text_box), &self.images);
                 let centres = if chars.iter().any(Option::is_some) {
                     laid_out.char_centres()
                 } else {
@@ -1175,6 +1195,11 @@ impl Renderer {
                         scene
                             .draw_glyphs(&run.font)
                             .transform(matrix)
+                            .glyph_transform(
+                                (run.skew != 0.0)
+                                    .then(|| Affine::skew(f64::from(run.skew).to_radians().tan(), 0.0)),
+                            )
+                            .normalized_coords(&run.coords)
                             .brush_transform(brush_transform)
                             .font_size(run.font_size)
                             .hint(false)
@@ -1445,11 +1470,20 @@ impl Renderer {
                 line_height,
                 max_width,
                 align,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let (width, height) = laid_out.box_size(*max_width);
                 Some(Rect::new(0.0, 0.0, width, height))
             }
@@ -1836,7 +1870,48 @@ fn paint_brush(paint: &ResolvedPaint, layer_box: Option<Rect>) -> (peniko::Brush
             let (brush, brush_transform) = gradient_brush_in(g, layer_box);
             (brush, Some(brush_transform))
         }
+        // Needs the decoded pictures: see `paint_brush_in`.
+        ResolvedPaint::Image(_) => (peniko::Brush::Solid(peniko::Color::TRANSPARENT), None),
     }
+}
+
+/// `paint_brush`, with the pictures an image paint draws (`Renderer::images`).
+/// The picture is placed and sized by the paint, and repeats in the
+/// directions it says (an axis that does not repeat holds its edge pixels, so
+/// the shape painted must stop at the tile).
+fn paint_brush_in(
+    paint: &ResolvedPaint,
+    layer_box: Option<Rect>,
+    images: &HashMap<String, ImageData>,
+) -> (peniko::Brush, Option<Affine>) {
+    let ResolvedPaint::Image(i) = paint else {
+        return paint_brush(paint, layer_box);
+    };
+    let Some(image) = images.get(&i.src) else {
+        return (peniko::Brush::Solid(peniko::Color::TRANSPARENT), None);
+    };
+    let extend = |repeat: bool| {
+        if repeat {
+            peniko::Extend::Repeat
+        } else {
+            peniko::Extend::Pad
+        }
+    };
+    let sampler = peniko::ImageSampler {
+        x_extend: extend(i.repeat_x),
+        y_extend: extend(i.repeat_y),
+        ..Default::default()
+    };
+    let brush = peniko::Brush::Image(peniko::ImageBrush {
+        image: image.clone(),
+        sampler,
+    });
+    let to_tile = Affine::translate((i.x, i.y))
+        * Affine::scale_non_uniform(
+            i.width / f64::from(image.width.max(1)),
+            i.height / f64::from(image.height.max(1)),
+        );
+    (brush, Some(to_tile))
 }
 
 /// `gradient_brush`, for a gradient that may be in box units: its coordinates
@@ -1902,6 +1977,9 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
             peniko::Gradient::new_sweep(c, (lo * turns) as f32, (hi * turns) as f32)
         }
     };
+    if let Some(m) = g.matrix {
+        turn = Affine::new(m) * turn;
+    }
     let extend = match g.extend {
         Extend::Pad => peniko::Extend::Pad,
         Extend::Repeat => peniko::Extend::Repeat,
@@ -1933,6 +2011,17 @@ fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorSto
 
 /// Whether a leaf is drawn with an image (the image renderer, `vello_images`).
 fn draws_image(kind: &ResolvedKind) -> bool {
+    let image_paint = |p: &Option<ResolvedPaint>| matches!(p, Some(ResolvedPaint::Image(_)));
+    if let ResolvedKind::Shape { fill, .. } = kind
+        && image_paint(fill)
+    {
+        return true;
+    }
+    if let ResolvedKind::Text { color, .. } = kind
+        && matches!(color, ResolvedPaint::Image(_))
+    {
+        return true;
+    }
     matches!(
         kind,
         ResolvedKind::Image { .. }
@@ -2091,10 +2180,18 @@ fn image_sources(scene: &Scene) -> Vec<String> {
     // `walk_layers` also visits motion-blur copies, which can hold images of
     // their own.
     let mut sources = Vec::new();
-    walk_layers(&scene.layers, &mut |layer| {
-        if let LayerKind::Image(i) = &layer.kind {
-            sources.push(i.src.clone());
-        }
+    walk_layers(&scene.layers, &mut |layer| match &layer.kind {
+        LayerKind::Image(i) => sources.push(i.src.clone()),
+        // A picture as a fill or a text colour (`scene::Paint::Image`).
+        LayerKind::Shape(ShapeLayer {
+            fill: Some(Paint::Image(i)),
+            ..
+        })
+        | LayerKind::Text(TextLayer {
+            color: Paint::Image(i),
+            ..
+        }) => sources.push(i.src.clone()),
+        _ => {}
     });
     sources
 }
@@ -2372,6 +2469,7 @@ mod tests {
             stops: stops.to_vec(),
             extend,
             units: Units::User,
+            matrix: None,
         }
     }
 
