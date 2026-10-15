@@ -1188,6 +1188,14 @@ pub struct GroupLayer {
     /// into the group's parent, in their own 3D positions, sorted by depth.
     #[serde(default)]
     pub preserve3d: bool,
+    /// The group does not isolate its children: one that blends with a mode
+    /// other than `normal` blends with what is behind the group, as if the
+    /// group were not there (CSS's `isolation: auto` on an element that is not
+    /// a stacking context). Only a group that is otherwise plain (opacity 1,
+    /// `normal` blending, no effects, clip, mask or matte) can be passed
+    /// through; any other still has a buffer.
+    #[serde(default)]
+    pub pass_through: bool,
     /// Flex layout of the children, applied when the scene is resolved.
     pub layout: Option<Layout>,
 }

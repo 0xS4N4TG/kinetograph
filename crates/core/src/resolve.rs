@@ -569,6 +569,8 @@ pub enum ResolvedKind {
         children: Vec<ResolvedLayer>,
         /// The children are drawn straight into the parent, depth sorted.
         preserve3d: bool,
+        /// `GroupLayer::pass_through`.
+        pass_through: bool,
         /// The flex layout the children were placed by.
         layout: Option<ResolvedLayout>,
         /// With a `layout`: the size it gave the group, whose box is
@@ -935,6 +937,7 @@ impl Resolver<'_> {
                     children
                 },
                 preserve3d: g.preserve3d,
+                pass_through: g.pass_through,
             },
             LayerKind::Lottie(l) => {
                 let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;

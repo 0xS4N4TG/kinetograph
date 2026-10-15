@@ -1798,14 +1798,16 @@ fn is_hidden(layer: &ResolvedLayer) -> bool {
 /// its parent's canvas, under its matrix, instead of into a buffer of its own
 /// that is then blended: it blends normally at opacity 1, with no effects,
 /// clip, mask, matte, motion blur or 3D turn, nothing in it reads the backdrop,
-/// and every child it draws blends normally and is not a preserve3d group
-/// (whose children would blend one by one). Its children are then blended
+/// and every child it draws blends normally (unless the group is
+/// `pass_through`: then they blend with the canvas as they would without it)
+/// and is not a preserve3d group (whose children would blend one by one). Its children are then blended
 /// onto the canvas in the same order, so the result is the same up to f16
 /// rounding: `(b over a) over canvas` against `b over (a over canvas)`.
 fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
     let ResolvedKind::Group {
         children,
         preserve3d: false,
+        pass_through,
         ..
     } = &layer.kind
     else {
@@ -1824,7 +1826,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
             .iter()
             .filter(|c| !is_hidden(c) && !is_matte_source(children, c))
             .all(|c| {
-                c.blend_mode == BlendMode::Normal
+                (*pass_through || c.blend_mode == BlendMode::Normal)
                     && !matches!(
                         c.kind,
                         ResolvedKind::Group {

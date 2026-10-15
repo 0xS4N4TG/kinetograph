@@ -148,3 +148,19 @@ fn a_skewed_linear_gradient_tilts_its_lines_of_one_colour() {
     assert!(a[0].abs_diff(102) <= 4, "{a:?}");
     assert!(b[0].abs_diff(153) <= 4, "{b:?}");
 }
+
+#[test]
+fn a_pass_through_group_blends_its_children_with_what_is_behind_it() {
+    let layers = |pass: bool| {
+        format!(
+            r##"[{{"id": "back", "type": "shape", "shape": {{"kind": "rect", "width": 100, "height": 100}},
+                  "fill": "#ff0000"}},
+                 {{"id": "g", "type": "group", "passThrough": {pass}, "children": [
+                   {{"id": "c", "type": "shape", "shape": {{"kind": "rect", "width": 100, "height": 100}},
+                     "fill": "#00ff00", "blendMode": "multiply"}}]}}]"##
+        )
+    };
+    // Red times green is black; in a group of its own, green multiplies nothing.
+    assert_eq!(px(&render(&layers(true)), 50, 50), [0, 0, 0, 255]);
+    assert_eq!(px(&render(&layers(false)), 50, 50), [0, 255, 0, 255]);
+}
