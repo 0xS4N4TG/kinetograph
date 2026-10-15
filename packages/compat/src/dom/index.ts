@@ -92,3 +92,23 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
 }
 
 export type { IslandRequestJson as IslandRequest };
+
+/**
+ * The size of `text` set in a `span` with `style`, on a page with no stylesheets: `white-space: pre` and out of flow,
+ * as Remotion's `measureText` sets it. Null when the addon cannot answer.
+ */
+export function measureSpan(text: string, style: Record<string, unknown>, fonts: Record<string, string>): { width: number; height: number } | null {
+  const span: DomNode = { kind: 'element', type: 'span', props: { style: { whiteSpace: 'pre', ...style } }, children: [{ kind: 'text', text }] };
+  const root: DomNode = { kind: 'element', type: 'div', props: { style: { position: 'absolute', left: 0, top: 0 } }, children: [span] };
+  const { request } = requestFor(root as Extract<DomNode, { kind: 'element' }>, {
+    path: '$0',
+    viewport: { width: 4096, height: 4096 },
+    fonts,
+    emitNative: () => null,
+    time: 0,
+    stylesheets: [],
+  });
+  const boxes = JSON.parse(addonFunction('domLayoutBoxes')(JSON.stringify(request))) as Record<string, { width: number; height: number }>;
+  const box = boxes['$0.0'];
+  return box === undefined ? null : { width: box.width, height: box.height };
+}

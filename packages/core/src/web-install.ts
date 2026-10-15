@@ -3,9 +3,10 @@
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement. Not part of the Chrome
 // bundle, where the page has the real ones.
 
-import { resolveProjectFile, setCssFontFaceHandler, type CssFontFace } from '@kinetograph/compat/dom';
+import { hasAddonFunction, measureSpan, resolveProjectFile, setCssFontFaceHandler, type CssFontFace } from '@kinetograph/compat/dom';
 import { installDomGlobals, setPathMeasure } from '@kinetograph/compat/shim';
 import { addFace, NodeFontFace } from './font-face.js';
+import { setDomTextMeasure } from './layout-utils.js';
 import { getBoundingBox, getLength, getPointAtLength } from './paths.js';
 
 /** An `@font-face` rule of a stylesheet (a `.css` import, a `<style>` element): its file is registered like a `FontFace`. */
@@ -27,3 +28,19 @@ export function registerCssFontFace(face: CssFontFace): void {
 installDomGlobals();
 setCssFontFaceHandler(registerCssFontFace);
 setPathMeasure({ getLength, getPointAtLength, getBoundingBox });
+
+// `measureText` and `fitText` ask the DOM engine for the box of a `span`, as Remotion asks Chrome.
+setDomTextMeasure((options, fonts) => {
+  if (!hasAddonFunction('domLayoutBoxes')) return null;
+  const style: Record<string, unknown> = {
+    fontFamily: `"${options.fontFamily}"`,
+    fontSize: options.fontSize,
+    ...(options.fontWeight !== undefined ? { fontWeight: options.fontWeight } : {}),
+    ...(options.fontStyle !== undefined ? { fontStyle: options.fontStyle } : {}),
+    ...(options.letterSpacing !== undefined ? { letterSpacing: options.letterSpacing } : {}),
+    ...(options.textTransform !== undefined ? { textTransform: options.textTransform } : {}),
+    ...(options.fontVariantNumeric !== undefined ? { fontVariantNumeric: options.fontVariantNumeric } : {}),
+    ...options.additionalStyles,
+  };
+  return measureSpan(options.text, style, fonts);
+});
