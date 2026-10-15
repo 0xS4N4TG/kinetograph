@@ -426,6 +426,66 @@ branch with a draft PR against `feat/node-authoring` (PR #11). The cloud rules a
   move image goldens; then #13 and #14 together, then #15. Merge the fixes into `feat/node-authoring`, then #11 into
   `main`.
 
+**Phase 4 in a cloud session** (decided 2026-10-15; the GPU-pass performance work waits until after it, on the M4).
+Same shape as Phase 3: one Opus 5.5 orchestrator at high effort and four Sonnet 5.5 subagents at high effort, started
+with the Agent tool (not a Workflow), each in its own git worktree. The cloud rules above hold: code and CPU checks
+only (`cargo build`, `fmt --check`, `clippy --all-targets -D warnings`, `cargo test --lib`, `npm ci`, `npm run build`,
+`npm test`); no integration tests in `crates/core/tests/`, `still`, `render`, `bench` or `UPDATE_GOLDEN`; nothing
+opens a GPU device. Install Node 22+, a C++ toolchain and the ffmpeg dev libraries (the decoder links them).
+- The orchestrator goes first: branches `feat/studio-video` from `main`, and commits the contract the streams build
+  against:
+  - `docs/SCENE.md`: the `video` and `gif` layer types (fields, defaults, errors).
+  - `docs/AUTHORING.md`: the `<Video>`, `<OffthreadVideo>` and `<Gif>` props and their mapping to that JSON; the
+    addon's new functions; and the studio server's HTTP and WebSocket API (routes, message shapes, errors).
+  - The `packages/studio` workspace skeleton.
+
+  Then it pushes and starts the four subagents. Each cuts its branch from that commit and opens a draft PR against
+  `feat/studio-video`. A stream that needs another stream's API stubs it from the contract.
+  1. `feat/video-layers` (Rust core). The `video` layer: frames decoded with `ffmpeg-next` (already a dependency
+     of the CLI), the source time from the layer's frame, `trimBefore`, `trimAfter`, `playbackRate` and `loop`, and
+     the frame shown being the last one whose timestamp is at or before that time. Frames are uploaded like an
+     image (same `fit` rules).
+     - Purity: a frame's pixels must not depend on what was decoded before. Keep a decoder per source that
+       decodes forward and seeks on a jump back or a big jump forward. Add a test that renders frames out of
+       order and in order and gets the same bytes.
+     - The `gif` layer: the `image` crate's GIF decoder, with the frame picked from the summed frame delays.
+     - Test clips: generated with ffmpeg's `testsrc` and kept tiny. No real footage, because the repo is public.
+     - Test scenes and golden entries; the goldens are made on the M4.
+  2. `feat/video-elements` (TS):
+     - `<Video>`, `<OffthreadVideo>` (the same element here), and `<Gif>` as the `@remotion/gif` subpath, written
+       from Remotion's documented props.
+     - `getVideoMetadata` through the addon (an ffprobe-like call: duration, fps, size).
+     - A video's audio track: mixed into the `render` output by `packages/audio`, honouring `volume`, `muted`, the
+       trims and `playbackRate`.
+     - Snapshot tests of the emitted JSON.
+  3. `feat/studio-server` (`packages/studio` server, CLI and addon):
+     - `kinetograph studio <entry>` starts a Node server on localhost and opens the browser.
+     - esbuild watches the entry and pushes a reload over the WebSocket on save.
+     - Preview frames come from the addon: a new addon call returns JPEG or PNG at a `scale`, downsampled from
+       the full render so the pixels are the render's. Half size while scrubbing, full size when paused.
+     - Routes for the composition list, the scene tree (`inspect`) and timeline data. The reconciler records each
+       `Sequence` and `Series` item's name, `from` and duration in the frame loop's output.
+     - A render queue that runs `render` jobs and streams their progress.
+  4. `feat/studio-ui` (`packages/studio/ui`): React + Vite, Tailwind only, shadcn/ui (default style, zinc, dark;
+     §4 "Studio UI stack").
+     - Panels: the composition list; the preview canvas; transport controls (play, pause, frame step, scrub, loop,
+       fps readout); the timeline of sequences and layers; the scene tree; the props panel (edit the composition's
+       `defaultProps`, re-rendering the preview); and the render queue.
+     - Built against the contract with a mock server until stream 3 lands. Component tests with vitest and
+       Testing Library.
+- The orchestrator reviews each PR, runs the CPU checks, and merges it into `feat/studio-video`, resolving
+  conflicts.
+  - Then it adds `examples/video-overlay/`: a generated clip with captions, a lower third and a `<Gif>`, for
+    rendering and comparison on the M4.
+  - Then it opens `feat/studio-video` as a draft PR against `main`, titled Phase 4.
+  - Nothing merges into `main` before the M4 tests it. Stream branches are kept.
+- On the M4:
+  - `cargo test`; the npm GPU tests; look at the new scenes, then `UPDATE_GOLDEN=1`.
+  - The out-of-order video test.
+  - Run `kinetograph studio` on `examples/rajz-cards` and the S04 port, driven in a browser.
+  - Time a footage-heavy scene against Remotion with the same clip, since this is where the speed gain should be
+    smallest.
+
 ## 9. Rules for the build
 
 - `random(seed)` must be bit-exact with Remotion's implementation (the papercut kit seeds all jitter with it), but
