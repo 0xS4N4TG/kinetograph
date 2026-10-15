@@ -303,6 +303,18 @@ two so each half is reviewable:
     `shadow spread` 27 and 4.0 ms, `inset shadow` 27 and 3.6 ms, `displace` 8.5 and 2.1 ms. Fewer passes is the lever.
     Re-time Remotion in the same session as Kinetograph: Low Power Mode or battery changes both, by different amounts
     (S04 in Remotion 16.1–16.8 s with it on, 9.2–9.5 s off; Kinetograph ~4.3 and ~2.9 s).
+  - **Fewer passes, done 2026-10-15 (stream 5, `perf/gpu-passes`, all byte-identical).** S04 went from 278 passes a
+    frame to 113, and from 2.68–2.92 s for the whole `render` to **1.25–1.28 s** (min and median of 4 rounds,
+    load 3–6), against Remotion 8.86 s min and 8.96 s median timed in the same rounds: **7.0–7.1x** (the 5x bar of Phase 3
+    is met).
+    The decoded frames of the two renders are identical (89 frame md5s). Per stage, `frame_hashes --times` ms a frame
+    (min / median of 5, interleaved, load 8–16 from other jobs): before 25.8 / 26.9; inset shadow with no blur or spread
+    in one pass 24.7 / 25.7; a leaf is cut out of its Vello page when it is wanted 21.7 / 22.7; runs of blends in one
+    pass (`blend_many`) 17.8 / 18.1; pages drawn only as far as their leaves reach and packed by colouring 17.0 / 17.1;
+    a leaf with a sharp inset shadow cut out in the same pass 15.9 / 17.4; Vello's dispatches in one compute pass
+    12.2 / 13.3; a plain leaf blended straight from its page 11.4 / 11.8. Every one of them is byte-identical to the
+    build before it on all 34 test scenes, S04's 89 frames included. Details, what was rejected and what is next: ENGINE.md
+    §11.
 **Phase 3: authoring + agents.** The N-API addon (napi-rs) exposing the Rust core; the `@kinetograph/core` TS
 package: Remotion shim, `react-reconciler` host config emitting the scene graph, determinism shim; Web Audio via
 `node-web-audio-api`; the `kinetograph` CLI in TS and the MCP server; the Remotion package table in section 5;
