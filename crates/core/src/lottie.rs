@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::ffi::CString;
+use std::mem::ManuallyDrop;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -27,11 +28,22 @@ use crate::scene::{LayerKind, Scene, walk_layers};
 /// is not safe to do from two threads at once.
 static ENGINE: Mutex<()> = Mutex::new(());
 
+/// Keeps ThorVG's engine up for the rest of the process. Tearing it down (when
+/// the last player is dropped) frees every thread's memory pool but forgets
+/// only the dropping thread's `thread_local` pointer to it (`mpoolTerm` in
+/// `tvgSwMemPool.cpp`), so a thread that drew before would draw into freed
+/// memory after the next start. One player, made on first use and never
+/// dropped, means the engine is never torn down. Called with `ENGINE` held.
+fn keep_engine_up() {
+    static KEPT: std::sync::Once = std::sync::Once::new();
+    KEPT.call_once(|| std::mem::forget(Player::new()));
+}
+
 /// One animation, loaded, with the pixel buffer ThorVG paints it into.
 pub struct Lottie {
-    // Declared first, so it is dropped first: ThorVG holds a pointer to
-    // `buffer` from `set_sw_target` on.
-    player: Player,
+    // Dropped by hand in `drop`, under the engine lock and before `buffer`:
+    // ThorVG holds a pointer to `buffer` from `set_sw_target` on.
+    player: ManuallyDrop<Player>,
     /// The target, `size.0 x size.1` pixels of straight-alpha RGBA, one
     /// `u32` each (the value's little-endian bytes are R, G, B, A).
     buffer: Vec<u32>,
@@ -56,9 +68,12 @@ impl Lottie {
     pub fn open(path: &Path) -> std::result::Result<Lottie, String> {
         let bytes = std::fs::read(path).map_err(|e| format!("cannot read: {e}"))?;
         let _engine = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
-        let mut player = Player::new();
+        keep_engine_up();
         // ThorVG needs a target to load into; the first draw sizes it.
+        // Declared before `player`, so that on an error return `player`, which
+        // points into it, is dropped first.
         let mut buffer = vec![0_u32; 1];
+        let mut player = Player::new();
         player
             .set_sw_target(&mut buffer, 1, 1, ColorSpace::ABGR8888S)
             .map_err(|e| format!("cannot set up ThorVG: {e:?}"))?;
@@ -79,7 +94,7 @@ impl Lottie {
             ));
         }
         Ok(Lottie {
-            player,
+            player: ManuallyDrop::new(player),
             buffer,
             size: (1, 1),
             frame: 0.0,
@@ -145,6 +160,16 @@ impl Lottie {
                 .map_err(|e| format!("cannot draw frame {frame} ({e:?})"))?;
         }
         Ok(self.buffer.iter().flat_map(|p| p.to_le_bytes()).collect())
+    }
+}
+
+impl Drop for Lottie {
+    fn drop(&mut self) {
+        // Dropping the last player tears ThorVG's engine down, so it takes the
+        // lock like `open` and `render`.
+        let _engine = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: `player` is not used again; `buffer` is dropped after this.
+        unsafe { ManuallyDrop::drop(&mut self.player) };
     }
 }
 
