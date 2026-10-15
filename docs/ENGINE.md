@@ -90,3 +90,145 @@ shaders.
 - Build with the rustup toolchain: `export PATH=$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:$PATH`.
 - Disk is tight (about 35 GB free): all worktrees share `CARGO_TARGET_DIR=<main checkout>/target`; never
   `cargo clean`.
+
+## 10. Stream 4 notes (runtime)
+
+What the TypeScript side does around the addon, as built on `engine/runtime`. Code is under `packages/compat`,
+`packages/react`, `packages/core` and `packages/cli`.
+
+### 10.1 The request
+
+`mapDomIsland` (`compat/src/dom/index.ts`) builds an `IslandRequest` (`compat/src/request/`), calls the addon's
+`renderDomIsland`, and fills the `native` placeholders in the answer. Rules:
+
+- **Paths.** An element's `path` is its place in the host tree: its index among the elements of its parent (DOM and
+  `kg-*` alike, text counts for nothing, a `<Sequence>` is transparent), under the parent's path; top-level ones are
+  `$0`, `$1`. Native elements inside an island count in the numbering, so the paths of Rust's answer and of TypeScript
+  agree.
+- **Attributes** follow React DOM: `className` is `class`, `htmlFor` is `for`, SVG presentation props are hyphenated
+  (`strokeWidth` is `stroke-width`, `clipPath` is `clip-path`, `xlinkHref` is `xlink:href`) while SVG's camelCase
+  attributes keep their case (`viewBox`, `gradientUnits`, `stdDeviation`); HTML names are lower-cased; `true` is `""`
+  for boolean attributes, `false` leaves them out; handlers, `ref`, `key` and `children` are not attributes.
+- **`style`** is CSS declaration text by React's rules: numbers get `px` except `0`, custom properties and the unitless
+  properties (`opacity`, `zIndex`, `flexGrow`, `lineHeight`, `fontWeight`, `scale`, `order`, `aspectRatio`,
+  `strokeWidth`, … and their `Webkit`/`Moz`/`ms`/`O` prefixed forms); camelCase becomes kebab-case, `WebkitX` becomes
+  `-webkit-x`, `msX` `-ms-x`, `cssFloat` `float`; null, booleans and `''` leave the declaration out.
+- **`<style>`, `<link rel=stylesheet href>` and `.css` imports** are the document's stylesheets, the same for every
+  island of the tree (a `<style>` in one island applies in another, as in one document), in this order: imports (in
+  import order), then every `<style>` element and local `<link>` in tree order. The `<style>` element itself stays in
+  the request, empty, so sibling positions do not move.
+- **`dangerouslySetInnerHTML`** is parsed by a small forgiving HTML parser (`request/html.ts`) into children; on a
+  `<style>` it is the stylesheet.
+- **Native elements** are `{ "kind": "native", path, width, height }`: a layer's own `width`/`height` (a `<Layer>`'s
+  `layout` size, a `<Text>`'s `maxWidth` and measured height; a path or a group without a layout is 0 by 0; an animated
+  size is its first value). Rust leaves a `{"type": "native", path, x, y, …}` layer where the box went; TypeScript
+  replaces it with `emitNative`'s layers moved there (the layer's own `x`/`y` are an offset from the box, its anchor
+  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped.
+- **Top-level layers** of an island get `layoutItem: { position: 'absolute' }`, so a native flex parent does not
+  place them again.
+- **`fonts`** is `getFonts()` as it is: keys are the scene's `fontKey`s (`Inter`, `Inter:800`, `Inter:400i`), not the
+  `family:weight:style` the comment in `request.rs` says.
+- **`time`** is the virtual clock in seconds (`performance.now() / 1000`, which is `frame / fps`, and the sub-frame time
+  on a motion-blur sub-frame). `baseDir` is the entry's directory, `publicDir` the project's `public/`
+  (`setDomEnvironment`, from the CLI; `KINETOGRAPH_BASE_DIR` and `KINETOGRAPH_PUBLIC_DIR` before the project loads).
+- An island whose root is `<style>`, `<script>`, `<link>`, `<meta>`, `<title>`, `<head>` or `<template>` draws nothing
+  and is not sent.
+- **`<AbsoluteFill>`** is a layer mapping when everything inside it is native (the hand ports render as before), and
+  the `div` it is in Remotion (`position: absolute; inset: 0; display: flex; flex-direction: column`, the author's style
+  on top) when anything inside it is DOM: the layer's `domFill` prop says so, `emit` swaps it, and a fill inside a fill
+  is part of the same `div` tree. Without this, `justifyContent` and `alignItems` on a fill would not place its DOM
+  children.
+- One call per island per frame: the frame loop renders with `SceneRoot.update` and emits once, with `snapshot()`.
+- `KINETOGRAPH_DOM_MAPPER=legacy` selects the Phase 5 TypeScript mapping (`compat/src/dom/legacy.ts`, `compat/src/css`)
+  until it is removed.
+
+### 10.2 `.css` imports
+
+The CLI's bundler (`cli/src/css.ts`) no longer drops `.css`: each import becomes a module that calls
+`registerStylesheet(text, file)` when the project loads.
+
+- Local `@import`s are inlined (an `@import` with a media query becomes an `@media` block, cycles are cut); relative
+  `url()`s that name an existing file become absolute paths; remote ones are left alone.
+- `@font-face` rules (in imports, `<style>` elements and linked files) register their file with the font registry,
+  as `new FontFace(...)` does (the first local `url()`, `unicode-range` as for `FontFace`); a remote source is a note.
+- `*.module.css`: class names are scoped (`.title` becomes `.title_<hash>`), the default export and the named exports
+  map them; `:global(...)` is left alone.
+- **Tailwind.** A file with `@tailwind` directives or `@import "tailwindcss"` is built by the project's own Tailwind,
+  tried in this order: its `tailwindcss` CLI (`node_modules/.bin`, v3 or `@tailwindcss/cli` v4; `-i file -o out` in the
+  project root), Tailwind 4's `compile()` from the installed `tailwindcss` package (stylesheets resolved from the
+  package, class candidates scanned from the project's `.ts/.tsx/.js/.jsx/.html/.md(x)` files; about 0.25 s for the
+  papercut episode), PostCSS with `@tailwindcss/postcss` or v3's plugin. If none works the file is registered as it
+  is, the bundle warns, and `doctor` prints a "stylesheets:" note.
+- A project's already-built CSS file is any other stylesheet.
+- The Chrome fallback bundle puts the same text in `<style>` elements, so `doctor --compare` references have the CSS.
+
+### 10.3 Readback
+
+React refs to DOM host elements are `DomElement` objects (`compat/src/shim/element.ts`), made by the reconciler's
+`getPublicInstance`. They answer from the addon, for the element's island (`react/src/readback.ts`): the island is the
+outermost run of DOM elements above the element (a native element ends it; a fill that is a `div` starts it), sent as
+the same request a frame is drawn from, and `domLayoutBoxes` / `domComputedStyle` answer for it. Answers are cached
+until the tree changes (`generation`: bumped by every commit, before layout effects run, and by a script's writes).
+
+- `getBoundingClientRect`, `getClientRects`, `offsetWidth/Height/Left/Top/Parent`, `clientWidth/Height/Left/Top`,
+  `scrollWidth/Height` (offsets relative to the nearest positioned ancestor, else the island's origin);
+  `getComputedStyle(el)` (also the global) reads one property per question (`domComputedStyle`); without the addon
+  function it reads the inline style.
+- `matches`, `closest`, `querySelector(All)`, `getElementsBy…`, `contains`, `parentElement`, `children`, `textContent`,
+  `classList`, `dataset`, `getAttribute/setAttribute/removeAttribute`, `style` (read, and write: a script's changes are
+  laid over the props and are part of the next request, as in a DOM) and event listeners (nothing fires them).
+  `document.querySelector/getElementById/…` search every root.
+- SVG: `getTotalLength`, `getPointAtLength` and `getBBox` of `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
+  `polygon` use the path functions of `@kinetograph/core/paths` (handed over by `web/install`); a group's `getBBox` is
+  the union of its children's, with their `transform` attributes applied.
+- `ResizeObserver` and `IntersectionObserver` deliver after React's work is done and layout is settled: a callback that
+  sets state makes the root render again before the frame is emitted; resize observers fire when the border-box
+  size differs from the last one delivered (an element that is 0 by 0 is not reported first, as in the spec), and
+  carry `contentRect`, `borderBoxSize`, `contentBoxSize`. Everything is intersecting, ratio 1, reported once.
+  `MutationObserver` never fires. Observer rounds are capped at 8 per settle.
+- **Measure-then-render.** A `useLayoutEffect` or `useEffect` that measures and sets state re-renders within the
+  frame; the root settles until nothing is pending. A ninth tree generation measured within one frame (or the ninth
+  pass of a passive-effect loop) is an error that says an effect keeps measuring and setting state.
+- `measureText` and `fitText` (`@remotion/layout-utils`) put the text in a `span` (`white-space: pre`, out of flow) in
+  the DOM engine and read its box, as Remotion reads Chrome's: the line rounds as the DOM rounds it,
+  `letterSpacing`, `textTransform` and `additionalStyles` apply by CSS. Without the addon the text engine's own measure
+  answers.
+
+### 10.4 Web APIs and time
+
+`@kinetograph/core/web/install` (imported by the Node bundle after the determinism shim; not in the Chrome bundle) puts
+these on the global object where they are missing:
+
+- `window` (is `globalThis`), `self`, `innerWidth/Height` and `outerWidth/Height` (the composition's size, set by
+  `createSceneRoot({ viewport })`), `devicePixelRatio` 1, `screen`, `location` (`http://localhost/`), `history`,
+  `localStorage` and `sessionStorage` (in memory, empty at every start), `requestIdleCallback`;
+- `matchMedia`: `screen`, `width`/`height` features and their `min-`/`max-` forms, `orientation`, `aspect-ratio`,
+  `prefers-reduced-motion: no-preference`, `prefers-color-scheme: light`, `hover: none`, 1x resolution; `not`, `and`
+  and comma lists; `change` never fires;
+- `new Image()`: `src` of a project file (absolute, relative to the entry, or in `public/`), a `data:` URL or an
+  in-memory blob; `naturalWidth/Height` from the file's header (PNG, JPEG, GIF, WebP, BMP, SVG), `onload`, `onerror`
+  (with `message`), `addEventListener`, `decode()`; a missing file, a non-image or a remote URL is an `error`;
+- `fetch` of project files (the same lookup; `staticFile()` URLs are absolute paths), `data:` and `blob:` URLs; a
+  remote URL rejects with "remote URLs are not available: Kinetograph renders offline"; the font downloads keep the real
+  `fetch` (explicit, cached);
+- `URL.createObjectURL` for blobs is Node's own;
+- `document`: `createElement` (a detached node, never drawn), `createElement('canvas')` and `getContext` throw
+  "canvas is not supported yet", `body`/`documentElement` with the composition's size, queries over the host tree,
+  `fonts` (the `FontFace` shim);
+- `Element`, `HTMLElement`, `SVGElement`, `HTMLImageElement`, `DOMRect`, the three observers.
+- `crypto.getRandomValues` and `randomUUID` draw from the seeded `Math.random` generator.
+
+Time: `Date`, `performance.now`, timers and `requestAnimationFrame` were already driven by the frame
+(`core/src/determinism.ts`); `requestAnimationFrame` callbacks run once per frame with the frame time, before the frame
+renders. CSS `@keyframes` animations and transitions read `request.time`; nothing in TypeScript reads a wall clock.
+
+### 10.5 doctor and the corpus harness
+
+`doctor` reports the unsupported items Rust returns, plus a "stylesheets" note for what the bundle could not do.
+`--compare-every N` samples the first frame of the range and every Nth after it; `--compare-dir DIR` writes each sampled
+frame's native picture, Chrome's, and their difference (x4) as PNGs; the comparison counts pixels more than 2 levels
+apart and, separately, more than 48 (what is left after anti-aliasing and text rasterisation).
+
+`scripts/corpus.mjs` runs `doctor` on the episode 13 papercut project and prints: native frames of the total, the
+unsupported items with their frame counts, and with `--compare` (default every 30th frame) the per-frame differences;
+it writes `out/corpus/report.json` and the pictures.
