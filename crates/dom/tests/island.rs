@@ -46,7 +46,8 @@ fn a_native_element_leaves_a_placeholder_where_its_layers_go() {
             }
         })
     }
-    let placeholder = find(&out.layers).unwrap_or_else(|| panic!("no placeholder in {:?}", out.layers));
+    let placeholder =
+        find(&out.layers).unwrap_or_else(|| panic!("no placeholder in {:?}", out.layers));
     assert_eq!(placeholder["path"], "$0.1");
     assert_eq!(placeholder["x"], 35);
     assert_eq!(placeholder["y"], 55);

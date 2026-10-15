@@ -62,7 +62,7 @@ impl<'a> Painter<'a> {
     /// The inline content of `node` (an inline formatting context root): the
     /// boxes of its inline elements, its glyphs and its atomic inline boxes,
     /// appended to `ph.inline` in the order the lines have them.
-    pub fn paint_inline_root(
+    pub(super) fn paint_inline_root(
         &mut self,
         node: &'a Node,
         origin: Origin,
@@ -85,7 +85,7 @@ impl<'a> Painter<'a> {
 
         // Backgrounds and borders of inline elements go under the text.
         let mut inline_boxes = Vec::new();
-        self.inline_element_boxes(node, node, origin, &mut inline_boxes);
+        self.inline_element_boxes(node, origin, &mut inline_boxes);
         ph.inline.extend(inline_boxes);
 
         let size = (
@@ -109,10 +109,11 @@ impl<'a> Painter<'a> {
                             continue;
                         }
                         let mut paint = self.text_paint(&style);
-                        if let Some(fill) = self.kg_value(brush_node, "--kg-text-fill-color") {
-                            if let Some(c) = super::util::parse_css_color(&fill) {
-                                paint.color = c;
-                            }
+                        if let Some(c) = self
+                            .kg_value(brush_node, "--kg-text-fill-color")
+                            .and_then(|fill| super::util::parse_css_color(&fill))
+                        {
+                            paint.color = c;
                         }
                         let run = gr.run();
                         let Some(src) = self.font_path(run.font()) else {
@@ -252,10 +253,8 @@ impl<'a> Painter<'a> {
             ph.inline.extend(layers);
         }
         // Decoration lines.
-        let mut n = 0;
-        for (d, r, _t, _through) in decor_lines {
+        for (n, (d, r, _t, _through)) in decor_lines.into_iter().enumerate() {
             let id = self.layer_id(node, &format!("deco{n}"));
-            n += 1;
             let layers = self.decoration_line(&id, &d, r);
             for mut l in layers {
                 shift(&mut l, content.0, content.1);
@@ -456,35 +455,29 @@ impl<'a> Painter<'a> {
 
     /// The boxes of the non-atomic inline elements below `inline_root`, in tree
     /// order: one background and border per line the element spans.
-    fn inline_element_boxes(
-        &mut self,
-        inline_root: &'a Node,
-        node: &'a Node,
-        root_origin: Origin,
-        out: &mut Vec<Value>,
-    ) {
+    fn inline_element_boxes(&mut self, node: &'a Node, root_origin: Origin, out: &mut Vec<Value>) {
         for cid in node.children.iter() {
             let child = self.node(*cid);
             if !child.is_element() || !child.is_non_atomic_inline() {
                 continue;
             }
-            if self.is_visible(child) {
-                if let Some(frags) = child.inline_fragment_boxes() {
-                    let rects: Vec<Rect> = frags
-                        .map(|r| {
-                            Rect::new(
-                                f64::from(r.left) + root_origin.0,
-                                f64::from(r.top) + root_origin.1,
-                                f64::from(r.right - r.left),
-                                f64::from(r.bottom - r.top),
-                            )
-                        })
-                        .collect();
-                    let layers = self.inline_fragments(child, &rects);
-                    out.extend(layers);
-                }
+            if self.is_visible(child)
+                && let Some(frags) = child.inline_fragment_boxes()
+            {
+                let rects: Vec<Rect> = frags
+                    .map(|r| {
+                        Rect::new(
+                            f64::from(r.left) + root_origin.0,
+                            f64::from(r.top) + root_origin.1,
+                            f64::from(r.right - r.left),
+                            f64::from(r.bottom - r.top),
+                        )
+                    })
+                    .collect();
+                let layers = self.inline_fragments(child, &rects);
+                out.extend(layers);
             }
-            self.inline_element_boxes(inline_root, child, root_origin, out);
+            self.inline_element_boxes(child, root_origin, out);
         }
     }
 

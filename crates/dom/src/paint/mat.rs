@@ -104,6 +104,7 @@ impl Mat4 {
 
     /// Whether the matrix only moves points in the z = 0 plane to other
     /// points of it, without perspective: the six numbers of a 2D affine.
+    #[cfg(test)]
     pub fn is_affine_2d(&self) -> bool {
         let m = &self.0;
         let zero = |v: f64| v.abs() < 1e-12;
@@ -119,14 +120,9 @@ impl Mat4 {
             && (m[15] - 1.0).abs() < 1e-12
     }
 
-    /// `[a, b, c, d, e, f]` of the 2D part.
-    pub fn affine6(&self) -> [f64; 6] {
-        let m = &self.0;
-        [m[0], m[1], m[4], m[5], m[12], m[13]]
-    }
-
     /// Maps a point of the z = 0 plane through the matrix, perspective divide
     /// included. `None` when the point lands behind the eye.
+    #[cfg(test)]
     pub fn project(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let m = &self.0;
         let w = m[3] * x + m[7] * y + m[15];

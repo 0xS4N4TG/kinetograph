@@ -20,20 +20,20 @@ use super::{Origin, Painter};
 
 /// How a background layer repeats along one axis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Repeat {
+pub enum Tile {
     Repeat,
     Space,
     Round,
     NoRepeat,
 }
 
-impl From<Rep> for Repeat {
-    fn from(r: Rep) -> Repeat {
+impl From<Rep> for Tile {
+    fn from(r: Rep) -> Tile {
         match r {
-            Rep::Repeat => Repeat::Repeat,
-            Rep::Space => Repeat::Space,
-            Rep::Round => Repeat::Round,
-            Rep::NoRepeat => Repeat::NoRepeat,
+            Rep::Repeat => Tile::Repeat,
+            Rep::Space => Tile::Space,
+            Rep::Round => Tile::Round,
+            Rep::NoRepeat => Tile::NoRepeat,
         }
     }
 }
@@ -44,11 +44,9 @@ pub struct ImageLayerSpec<'s> {
     pub size: &'s BackgroundSize,
     pub pos_x: &'s LengthPercentage,
     pub pos_y: &'s LengthPercentage,
-    pub repeat: (Repeat, Repeat),
+    pub repeat: (Tile, Tile),
     pub origin: Region,
     pub clip: Region,
-    /// The layer's index in its list (to find the loaded picture).
-    pub index: usize,
     /// `background` or `mask`, for reports.
     pub property: &'static str,
 }
@@ -63,7 +61,7 @@ pub fn region_named(name: &str) -> Region {
 }
 
 /// Cap on tiles of a gradient drawn one by one.
-const MAX_TILES: usize = 600;
+const MAX_TILES: usize = 150;
 
 impl<'a> Painter<'a> {
     /// `background-color` and `background-image`, bottom first, as one layer
@@ -161,7 +159,6 @@ impl<'a> Painter<'a> {
                 repeat: (rx.into(), ry.into()),
                 origin: origin_of(i),
                 clip: clip_of(i),
-                index: i,
                 property: "background",
             };
             let layer_id = format!("{id}.{i}");
@@ -277,10 +274,10 @@ impl<'a> Painter<'a> {
             return None;
         }
         // `round` adjusts the tile to a whole number across the area.
-        if spec.repeat.0 == Repeat::Round && area.w > 0.0 {
+        if spec.repeat.0 == Tile::Round && area.w > 0.0 {
             tw = area.w / (area.w / tw).round().max(1.0);
         }
-        if spec.repeat.1 == Repeat::Round && area.h > 0.0 {
+        if spec.repeat.1 == Tile::Round && area.h > 0.0 {
             th = area.h / (area.h / th).round().max(1.0);
         }
 
@@ -372,9 +369,9 @@ impl<'a> Painter<'a> {
                 Some(super::util::group(id, shapes).set("clip", clip).build())
             }
             Img::Picture { path, .. } => {
-                let repeat_x = matches!(spec.repeat.0, Repeat::Repeat | Repeat::Round);
-                let repeat_y = matches!(spec.repeat.1, Repeat::Repeat | Repeat::Round);
-                let space = spec.repeat.0 == Repeat::Space || spec.repeat.1 == Repeat::Space;
+                let repeat_x = matches!(spec.repeat.0, Tile::Repeat | Tile::Round);
+                let repeat_y = matches!(spec.repeat.1, Tile::Repeat | Tile::Round);
+                let space = spec.repeat.0 == Tile::Space || spec.repeat.1 == Tile::Space;
                 if space && count > MAX_TILES {
                     self.report(
                         node,
@@ -591,7 +588,7 @@ fn axis_tiles(
     area_len: f64,
     tile: f64,
     off: f64,
-    repeat: Repeat,
+    repeat: Tile,
     paint_start: f64,
     paint_end: f64,
 ) -> (Vec<f64>, f64) {
@@ -603,8 +600,8 @@ fn axis_tiles(
         return (Vec::new(), 0.0);
     }
     match repeat {
-        Repeat::NoRepeat => (vec![area_start + off], 1.0),
-        Repeat::Repeat | Repeat::Round => {
+        Tile::NoRepeat => (vec![area_start + off], 1.0),
+        Tile::Repeat | Tile::Round => {
             let start = area_start + off;
             let first = ((paint_start - start) / tile).floor();
             let last = ((paint_end - start) / tile).ceil();
@@ -617,7 +614,7 @@ fn axis_tiles(
                 .collect();
             (starts, total)
         }
-        Repeat::Space => {
+        Tile::Space => {
             let n = (area_len / tile).floor();
             if !n.is_finite() || n < 2.0 {
                 return (vec![area_start + off], 1.0);
@@ -642,10 +639,10 @@ mod tests {
 
     #[test]
     fn repeat_tiles_cover_the_paint_area() {
-        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 0.0, Repeat::Repeat, 0.0, 100.0);
+        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 0.0, Tile::Repeat, 0.0, 100.0);
         assert_eq!(xs, vec![0.0, 30.0, 60.0, 90.0]);
         // Offset: a tile starts before the area and the first one is included.
-        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 10.0, Repeat::Repeat, 0.0, 100.0);
+        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 10.0, Tile::Repeat, 0.0, 100.0);
         assert_eq!(
             xs,
             vec![-20.0, 10.0, 40.0, 70.0, 100.0 - 0.0]
@@ -657,20 +654,20 @@ mod tests {
 
     #[test]
     fn a_tiny_tile_is_counted_not_listed() {
-        for repeat in [Repeat::Repeat, Repeat::Round, Repeat::Space] {
+        for repeat in [Tile::Repeat, Tile::Round, Tile::Space] {
             let (xs, total) = axis_tiles(0.0, 1000.0, 0.0001, 0.0, repeat, 0.0, 1000.0);
             assert!(xs.len() <= MAX_TILES + 1, "{repeat:?}");
             assert!(total > MAX_TILES as f64, "{repeat:?}");
         }
         for bad in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
-            let (xs, total) = axis_tiles(0.0, 100.0, bad, 0.0, Repeat::Repeat, 0.0, 100.0);
+            let (xs, total) = axis_tiles(0.0, 100.0, bad, 0.0, Tile::Repeat, 0.0, 100.0);
             assert!(xs.len() <= MAX_TILES + 1 && total.is_finite());
         }
     }
 
     #[test]
     fn space_distributes_the_gap() {
-        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 0.0, Repeat::Space, 0.0, 100.0);
+        let (xs, _) = axis_tiles(0.0, 100.0, 30.0, 0.0, Tile::Space, 0.0, 100.0);
         assert_eq!(xs.len(), 3);
         assert!((xs[1] - 35.0).abs() < 1e-9 && (xs[2] - 70.0).abs() < 1e-9);
     }

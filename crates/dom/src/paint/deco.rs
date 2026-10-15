@@ -47,7 +47,12 @@ impl<'a> Painter<'a> {
     /// and nothing between them (no picture, no inset shadow), is one shape:
     /// the colour fills the box inside the middle of the border, and the
     /// border is the stroke over its edge. Saves a layer per box.
-    fn fill_and_border(&mut self, node: &'a Node, style: &ComputedValues, geom: &BoxGeom) -> Option<Value> {
+    fn fill_and_border(
+        &mut self,
+        node: &'a Node,
+        style: &ComputedValues,
+        geom: &BoxGeom,
+    ) -> Option<Value> {
         use super::util::{current_color, hex_of, resolve_color, rgba};
         use style::values::specified::BorderStyle as S;
         if self.canvas_node == Some(node.id) || !geom.has_border() {
@@ -67,8 +72,13 @@ impl<'a> Painter<'a> {
         let current = current_color(style);
         let color = rgba(&resolve_color(sides[0].1, &current));
         if color[3] < 1.0
-            || sides.iter().any(|(st, c)| *st != S::Solid || rgba(&resolve_color(c, &current)) != color)
-            || !matches!(b.border_image_source, style::values::generics::image::GenericImage::None)
+            || sides
+                .iter()
+                .any(|(st, c)| *st != S::Solid || rgba(&resolve_color(c, &current)) != color)
+            || !matches!(
+                b.border_image_source,
+                style::values::generics::image::GenericImage::None
+            )
         {
             return None;
         }
@@ -85,7 +95,12 @@ impl<'a> Painter<'a> {
             .iter()
             .all(|c| format!("{c:?}").to_lowercase().contains("border"));
         let inset = style.get_effects().box_shadow.0.iter().any(|s| s.inset);
-        if fill[3] <= 0.0 || !no_images || !clip_ok || inset || self.kg_value(node, "--kg-background-clip").is_some() {
+        if fill[3] <= 0.0
+            || !no_images
+            || !clip_ok
+            || inset
+            || self.kg_value(node, "--kg-background-clip").is_some()
+        {
             return None;
         }
         // The shape is the border's centre line.
@@ -96,7 +111,8 @@ impl<'a> Painter<'a> {
         let radii = geom.radii.inner(w / 2.0, w / 2.0, w / 2.0, w / 2.0);
         let id = self.layer_id(node, "bg");
         let mut shape = self.region_shape(&id, rect, radii, Value::String(hex_of(fill)));
-        shape["stroke"] = serde_json::json!({ "color": hex_of(color), "width": super::util::num(w) });
+        shape["stroke"] =
+            serde_json::json!({ "color": hex_of(color), "width": super::util::num(w) });
         Some(shape)
     }
 

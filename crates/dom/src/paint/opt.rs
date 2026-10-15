@@ -16,7 +16,9 @@ pub fn optimize(layers: Vec<Value>) -> Vec<Value> {
     layers
         .into_iter()
         .flat_map(|l| {
-            let keep = l["id"].as_str().is_some_and(|id| sources.iter().any(|s| s == id));
+            let keep = l["id"]
+                .as_str()
+                .is_some_and(|id| sources.iter().any(|s| s == id));
             optimize_layer(l, keep)
         })
         .collect()
@@ -45,8 +47,11 @@ fn draws_nothing(layer: &Value) -> bool {
         }
         Some("shape") => {
             let size = |k: &str| layer["shape"][k].as_f64();
-            let empty = matches!(layer["shape"]["kind"].as_str(), Some("rect" | "roundedRect" | "ellipse"))
-                && (size("width").is_some_and(|w| w <= 0.0) || size("height").is_some_and(|h| h <= 0.0));
+            let empty = matches!(
+                layer["shape"]["kind"].as_str(),
+                Some("rect" | "roundedRect" | "ellipse")
+            ) && (size("width").is_some_and(|w| w <= 0.0)
+                || size("height").is_some_and(|h| h <= 0.0));
             empty && layer.get("stroke").is_none()
         }
         _ => false,
@@ -56,8 +61,26 @@ fn draws_nothing(layer: &Value) -> bool {
 /// The keys a leaf layer can have and still take its parent group's
 /// transform, opacity, effects and clip.
 const LEAF_KEYS: &[&str] = &[
-    "id", "type", "shape", "fill", "stroke", "color", "runs", "boxWidth", "boxHeight", "src", "width",
-    "height", "fit", "effects", "transform", "clip", "opacity", "text", "font", "size",
+    "id",
+    "type",
+    "shape",
+    "fill",
+    "stroke",
+    "color",
+    "runs",
+    "boxWidth",
+    "boxHeight",
+    "src",
+    "width",
+    "height",
+    "fit",
+    "effects",
+    "transform",
+    "clip",
+    "opacity",
+    "text",
+    "font",
+    "size",
 ];
 
 /// A group of one leaf layer is that leaf with the group's fields: the
@@ -70,29 +93,48 @@ fn merge_single_child(group: Value) -> Value {
     if g.get("type").and_then(Value::as_str) != Some("group") {
         return group;
     }
-    let Some([child]) = g.get("children").and_then(Value::as_array).map(Vec::as_slice) else {
+    let Some([child]) = g
+        .get("children")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+    else {
         return group;
     };
     let Some(c) = child.as_object() else {
         return group;
     };
-    let group_keys_ok = g
-        .keys()
-        .all(|k| matches!(k.as_str(), "id" | "type" | "children" | "transform" | "opacity" | "effects" | "clip" | "blendMode"));
+    let group_keys_ok = g.keys().all(|k| {
+        matches!(
+            k.as_str(),
+            "id" | "type" | "children" | "transform" | "opacity" | "effects" | "clip" | "blendMode"
+        )
+    });
     let leaf_ok = c.keys().all(|k| LEAF_KEYS.contains(&k.as_str()))
-        && c.get("type").and_then(Value::as_str).is_some_and(|t| t != "group");
+        && c.get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|t| t != "group");
     // One clip, one blend, and a leaf transform that is only a move.
     let clips_ok = !(g.contains_key("clip") && c.contains_key("clip"));
     let leaf_t = c.get("transform").and_then(Value::as_object);
     let leaf_move_only = leaf_t.is_none_or(|t| t.keys().all(|k| k == "x" || k == "y"));
     let leaf_has_blend = c.get("blendMode").is_some();
     let group_has_group_blend = g.get("blendMode").is_some();
-    if !(group_keys_ok && leaf_ok && clips_ok && leaf_move_only && !(leaf_has_blend && group_has_group_blend)) {
+    if !(group_keys_ok
+        && leaf_ok
+        && clips_ok
+        && leaf_move_only
+        && !(leaf_has_blend && group_has_group_blend))
+    {
         return group;
     }
     // A group's clip is in the group's space: with an offset leaf it would
     // have to move too, so such a pair is left alone.
-    let (cx, cy) = leaf_t.map_or((0.0, 0.0), |t| (t.get("x").and_then(Value::as_f64).unwrap_or(0.0), t.get("y").and_then(Value::as_f64).unwrap_or(0.0)));
+    let (cx, cy) = leaf_t.map_or((0.0, 0.0), |t| {
+        (
+            t.get("x").and_then(Value::as_f64).unwrap_or(0.0),
+            t.get("y").and_then(Value::as_f64).unwrap_or(0.0),
+        )
+    });
     if g.contains_key("clip") && (cx != 0.0 || cy != 0.0) {
         return group;
     }
@@ -122,8 +164,17 @@ fn merge_single_child(group: Value) -> Value {
         out.insert("transform".into(), Value::Object(t));
     }
     // Effects: the leaf's first, then the group's.
-    let mut effects: Vec<Value> = c.get("effects").and_then(Value::as_array).cloned().unwrap_or_default();
-    effects.extend(g.get("effects").and_then(Value::as_array).cloned().unwrap_or_default());
+    let mut effects: Vec<Value> = c
+        .get("effects")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    effects.extend(
+        g.get("effects")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+    );
     if effects.is_empty() {
         out.remove("effects");
     } else {
@@ -135,7 +186,8 @@ fn merge_single_child(group: Value) -> Value {
     if let Some(b) = g.get("blendMode") {
         out.insert("blendMode".into(), b.clone());
     }
-    let opacity = g.get("opacity").and_then(Value::as_f64).unwrap_or(1.0) * c.get("opacity").and_then(Value::as_f64).unwrap_or(1.0);
+    let opacity = g.get("opacity").and_then(Value::as_f64).unwrap_or(1.0)
+        * c.get("opacity").and_then(Value::as_f64).unwrap_or(1.0);
     if opacity < 1.0 {
         out.insert("opacity".into(), super::util::num4(opacity));
     } else {

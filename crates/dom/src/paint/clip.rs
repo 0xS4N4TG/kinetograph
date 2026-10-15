@@ -46,8 +46,8 @@ impl<'a> Painter<'a> {
                 Some(self.region_clip(rect, radii, 0.0, 0.0))
             }
             ClipPath::Shape(shape, b) => {
-                let (rect, radii) = self.reference_box(node, geom, b);
-                self.shape_clip(node, shape, rect, radii)
+                let (rect, _) = self.reference_box(node, geom, b);
+                self.shape_clip(node, shape, rect)
             }
         }
     }
@@ -67,20 +67,12 @@ impl<'a> Painter<'a> {
                 "a margin-box reference is taken as the border box",
             );
         }
-        geom.region(match region_named(&name) {
-            // `region_named` knows padding and content; ElementDependent and
-            // the rest are the border box.
-            r => r,
-        })
+        // `region_named` knows padding and content; ElementDependent and the
+        // rest are the border box.
+        geom.region(region_named(&name))
     }
 
-    fn shape_clip(
-        &mut self,
-        node: &Node,
-        shape: &BasicShape,
-        r: Rect,
-        radii: Radii,
-    ) -> Option<Value> {
+    fn shape_clip(&mut self, node: &Node, shape: &BasicShape, r: Rect) -> Option<Value> {
         let (w, h) = (r.w, r.h);
         match shape {
             BasicShape::Rect(inset) => {
@@ -104,7 +96,6 @@ impl<'a> Painter<'a> {
                     bl: rad(&inset.round.bottom_left),
                 }
                 .fitted(inner.w, inner.h);
-                let _ = radii;
                 Some(self.region_clip(inner, radii, 0.0, 0.0))
             }
             BasicShape::Circle(c) => {
@@ -282,7 +273,6 @@ impl<'a> Painter<'a> {
                 repeat: (rx.into(), ry.into()),
                 origin,
                 clip,
-                index: i,
                 property: "mask",
             };
             let mode = if svg.mask_mode.0.is_empty() {

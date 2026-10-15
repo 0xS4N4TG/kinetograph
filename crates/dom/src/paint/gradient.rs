@@ -10,7 +10,7 @@ use style::values::generics::image::{
 use style::values::specified::position::{HorizontalPositionKeyword, VerticalPositionKeyword};
 
 use super::geom::Rect;
-use super::util::{hex_of, lp, num, num4, resolve_color, rgba};
+use super::util::{hex_of, lp, num4, resolve_color, rgba};
 
 /// A stop with its position resolved to a distance along the gradient line
 /// (or a turn fraction for conic gradients).
@@ -57,13 +57,11 @@ fn fix_positions(positions: &mut [Option<f64>], full: f64) {
         positions[n - 1] = Some(full);
     }
     let mut highest = positions[0].unwrap();
-    for p in positions.iter_mut() {
-        if let Some(v) = p {
-            if *v < highest {
-                *v = highest;
-            }
-            highest = *v;
+    for v in positions.iter_mut().flatten() {
+        if *v < highest {
+            *v = highest;
         }
+        highest = *v;
     }
     let mut i = 0;
     while i < n {
@@ -77,8 +75,8 @@ fn fix_positions(positions: &mut [Option<f64>], full: f64) {
             j += 1;
         }
         let to = positions[j].unwrap();
-        for k in i..j {
-            positions[k] = Some(from + (to - from) * (k - i + 1) as f64 / (j - i + 1) as f64);
+        for (off, slot) in positions[i..j].iter_mut().enumerate() {
+            *slot = Some(from + (to - from) * (off + 1) as f64 / (j - i + 1) as f64);
         }
         i = j;
     }
@@ -116,11 +114,11 @@ fn with_hints(items: Vec<Entry>, full: f64) -> Vec<Stop> {
                     // Premultiplied interpolation.
                     let (pa, na) = (f64::from(prev.color[3]), f64::from(next.color[3]));
                     let a = pa + (na - pa) * w;
-                    for ch in 0..3 {
+                    for (ch, slot) in c.iter_mut().enumerate().take(3) {
                         let pm = f64::from(prev.color[ch]) * pa;
                         let nm = f64::from(next.color[ch]) * na;
                         let m = pm + (nm - pm) * w;
-                        c[ch] = if a > 0.0 { (m / a) as f32 } else { 0.0 };
+                        *slot = if a > 0.0 { (m / a) as f32 } else { 0.0 };
                     }
                     c[3] = a as f32;
                     out.push(Stop {

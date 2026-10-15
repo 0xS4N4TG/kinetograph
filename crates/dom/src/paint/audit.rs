@@ -126,20 +126,18 @@ impl<'a> Painter<'a> {
                 "paint-order of text is not drawn (fill is always first)",
             ),
         ] {
-            if let Some(v) = self.kg_value(node, name) {
-                if v != "normal" && v != "0" && v != "0px" {
-                    self.report(node, &name.replace("--kg-", ""), v, what);
-                }
+            if let Some(v) = self.kg_value(node, name)
+                && v != "normal"
+                && v != "0"
+                && v != "0px"
+            {
+                self.report(node, &name.replace("--kg-", ""), v, what);
             }
         }
         // Blurs past the limit of the blur effect are clamped.
-        if style
-            .get_effects()
-            .filter
-            .0
-            .iter()
-            .any(|f| matches!(f, style::values::generics::effects::Filter::Blur(r) if r.0.px() > 128.0))
-        {
+        if style.get_effects().filter.0.iter().any(
+            |f| matches!(f, style::values::generics::effects::Filter::Blur(r) if r.0.px() > 128.0),
+        ) {
             self.report(
                 node,
                 "filter",

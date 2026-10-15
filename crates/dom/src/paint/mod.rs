@@ -49,7 +49,6 @@ use style::values::computed::Float;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
 use crate::request::{IslandOutput, IslandRequest, Unsupported};
-use geom::{Radii, Rect};
 
 /// Paints a document that `resolve` has styled and laid out.
 pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
@@ -227,10 +226,7 @@ impl<'a> Painter<'a> {
         let mut out = Vec::new();
         // The canvas takes the background of the root element, or of the body
         // when the root has none (CSS Backgrounds 3, section 2.11.2).
-        let viewport = (
-            f64::from(self.req.viewport.width),
-            f64::from(self.req.viewport.height),
-        );
+        let viewport = (self.req.viewport.width, self.req.viewport.height);
         let body = self.body_of(root);
         if let Some((source, _from_body)) = self.canvas_background(root, body) {
             out.extend(self.canvas_layers(source, viewport));
@@ -572,7 +568,9 @@ fn flatten_plain_group(group: Value) -> Vec<Value> {
     let Some(obj) = group.as_object() else {
         return vec![group];
     };
-    let plain = obj.keys().all(|k| matches!(k.as_str(), "id" | "type" | "children" | "transform"))
+    let plain = obj
+        .keys()
+        .all(|k| matches!(k.as_str(), "id" | "type" | "children" | "transform"))
         && obj.get("transform").is_none_or(|t| {
             t.as_object()
                 .is_some_and(|t| t.keys().all(|k| k == "x" || k == "y"))
@@ -582,8 +580,12 @@ fn flatten_plain_group(group: Value) -> Vec<Value> {
         return vec![group];
     }
     let (dx, dy) = (
-        obj.get("transform").and_then(|t| t["x"].as_f64()).unwrap_or(0.0),
-        obj.get("transform").and_then(|t| t["y"].as_f64()).unwrap_or(0.0),
+        obj.get("transform")
+            .and_then(|t| t["x"].as_f64())
+            .unwrap_or(0.0),
+        obj.get("transform")
+            .and_then(|t| t["y"].as_f64())
+            .unwrap_or(0.0),
     );
     let mut out = children.cloned().unwrap_or_default();
     for l in &mut out {
