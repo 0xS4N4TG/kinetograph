@@ -381,9 +381,17 @@ Which picture is shown, for scene frame `f` (`frame`, or the frame being rendere
   range. An untagged matrix is BT.709 for a stream at least 720 lines tall and BT.601 below that, an untagged range
   is limited (TV) range, as browsers do. A pixel format with alpha (VP9 or ProRes 4444 with alpha) keeps it; others
   are opaque. Colours are then read as sRGB, as an image's are.
-- The stream's size, duration and time base are read when the scene loads (from the container, no decoding). A
-  missing or unreadable file, one without a video stream, a `trimAfter` not above `trimBefore`, a `trimBefore` at
-  or past the end of the stream, or a `playbackRate` not above 0 is a load error naming the layer.
+- The stream's size, duration, time base and first timestamp are read when the scene loads (from the container, no
+  decoding; a file's probe is remembered while the file is unchanged, so a scene per frame does not open it per frame).
+  The first video stream that is not a cover picture is used. A stream's own duration is its length; a container that
+  gives only its own (Matroska, where it is where the last picture ends) is not trusted, and the last packets say where
+  the stream ends instead. A missing or unreadable file, one without a video stream, a `trimAfter` not above
+  `trimBefore`, a `trimBefore` at or past the end of the stream, or a `playbackRate` not above 0 is a load error naming
+  the layer.
+- Decoded pictures are cached per file (the last 64 MiB, and at least 4 pictures), and a picture reaches Vello as one
+  image, so the image atlas holds only the pictures drawn lately: Vello drops those unused for two frames when it needs
+  the room. The layer cache redraws a video layer whenever the timestamp it asks for changes, which is when its
+  picture changes and, for a clip slower than the scene, also between two frames of one picture.
 - Counts nothing in the [margin](#canvas-margin).
 
 ### gif
@@ -408,7 +416,9 @@ sampling) and takes every layer field.
   the first picture.
 - **Pictures** are the full logical screen after each frame's disposal method (none, background, previous), as the
   `image` crate composes them, straight-alpha sRGB.
-- A missing or unreadable file, or one with no frames, is a load error naming the layer. Counts nothing in the margin.
+- A missing file, or one `image` cannot read the header of, is a load error naming the layer (its logical screen is read
+  when the scene loads). A file with no pictures, or whose pictures cannot be decoded, is an error naming the layer when
+  a renderer opens it, which decodes every picture. Counts nothing in the margin.
 
 ## Layout
 

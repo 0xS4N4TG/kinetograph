@@ -1,0 +1,50 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 24,
+  "durationInFrames": 48,
+  "background": "#14161d",
+  "layers": [
+    { "id": "natural", "type": "video", "src": "media/clip.mp4",
+      "transform": { "x": 10, "y": 10, "scale": 2.5 } },
+    { "id": "natural-box", "type": "shape", "shape": { "kind": "rect", "width": 64, "height": 36 },
+      "stroke": { "color": "#ffffff55", "width": 1 }, "transform": { "x": 10, "y": 10, "scale": 2.5 } },
+
+    { "id": "contain", "type": "video", "src": "media/clip.mp4",
+      "width": 90, "height": 90, "fit": "contain", "transform": { "x": 185, "y": 10 } },
+    { "id": "contain-box", "type": "shape", "shape": { "kind": "rect", "width": 90, "height": 90 },
+      "stroke": { "color": "#f6c177", "width": 1 }, "transform": { "x": 185, "y": 10 } },
+
+    { "id": "cover", "type": "video", "src": "media/clip.mp4",
+      "width": 90, "height": 90, "fit": "cover", "transform": { "x": 285, "y": 10 } },
+    { "id": "cover-box", "type": "shape", "shape": { "kind": "rect", "width": 90, "height": 90 },
+      "stroke": { "color": "#f6c177", "width": 1 }, "transform": { "x": 285, "y": 10 } },
+
+    { "id": "held", "type": "video", "src": "media/clip.mp4", "frame": 10, "width": 90,
+      "transform": { "x": 385, "y": 10 } },
+
+    { "id": "rate-trim-loop", "type": "video", "src": "media/clip.mp4", "width": 128,
+      "playbackRate": 2, "trimBefore": 12, "trimAfter": 36, "loop": true,
+      "transform": { "x": 10, "y": 120 } },
+
+    { "id": "late-start", "type": "video", "src": "media/offset.webm", "from": 6, "height": 54,
+      "transform": { "x": 150, "y": 120, "scale": 1.5 } },
+
+    { "id": "effects", "type": "video", "src": "media/clip.mp4", "width": 96,
+      "opacity": 0.9,
+      "effects": [{ "type": "dropShadow", "x": 4, "y": 6, "blur": 5, "color": "#000000aa" }],
+      "clip": { "kind": "inset", "radius": 10 },
+      "transform": { "x": 300, "y": 130, "rotation": 8 } },
+
+    { "id": "blurred", "type": "video", "src": "media/clip.mp4", "width": 64, "playbackRate": 3,
+      "motionBlur": { "samples": 4, "shutter": 1 },
+      "transform": { "x": 10, "y": 210 } },
+
+    { "id": "row", "type": "group", "transform": { "x": 100, "y": 210 },
+      "layout": { "gap": 8, "alignItems": "center", "height": 40 },
+      "children": [
+        { "id": "r1", "type": "video", "src": "media/clip.mp4", "height": 40, "trimBefore": 24 },
+        { "id": "r2", "type": "video", "src": "media/clip.mp4", "height": 40, "from": 30 }
+      ] }
+  ]
+}

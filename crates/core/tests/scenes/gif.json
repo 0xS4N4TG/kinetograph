@@ -1,0 +1,41 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#14161d",
+  "layers": [
+    { "id": "red", "type": "gif", "src": "media/spinner.gif", "time": 0.05,
+      "transform": { "x": 10, "y": 10, "scale": 2 } },
+    { "id": "green", "type": "gif", "src": "media/spinner.gif", "time": 0.15,
+      "transform": { "x": 90, "y": 10, "scale": 2 } },
+    { "id": "blue", "type": "gif", "src": "media/spinner.gif", "time": 0.22,
+      "transform": { "x": 170, "y": 10, "scale": 2 } },
+    { "id": "yellow", "type": "gif", "src": "media/spinner.gif", "time": 0.3,
+      "transform": { "x": 250, "y": 10, "scale": 2 } },
+    { "id": "square", "type": "gif", "src": "media/spinner.gif", "time": 0.47,
+      "transform": { "x": 330, "y": 10, "scale": 2 } },
+
+    { "id": "frame-time-looped", "type": "gif", "src": "media/spinner.gif",
+      "transform": { "x": 10, "y": 90, "scale": 2 } },
+    { "id": "frame-time-held", "type": "gif", "src": "media/spinner.gif", "loop": false,
+      "transform": { "x": 90, "y": 90, "scale": 2 } },
+    { "id": "keyed", "type": "gif", "src": "media/spinner.gif",
+      "time": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 1.2 }],
+      "transform": { "x": 170, "y": 90, "scale": 2 } },
+
+    { "id": "contain", "type": "gif", "src": "media/spinner.gif", "time": 0.15,
+      "width": 80, "height": 40, "fit": "contain", "transform": { "x": 10, "y": 170 } },
+    { "id": "contain-box", "type": "shape", "shape": { "kind": "rect", "width": 80, "height": 40 },
+      "stroke": { "color": "#f6c177", "width": 1 }, "transform": { "x": 10, "y": 170 } },
+    { "id": "cover", "type": "gif", "src": "media/spinner.gif", "time": 0.22,
+      "width": 80, "height": 40, "fit": "cover", "transform": { "x": 110, "y": 170 } },
+    { "id": "cover-box", "type": "shape", "shape": { "kind": "rect", "width": 80, "height": 40 },
+      "stroke": { "color": "#f6c177", "width": 1 }, "transform": { "x": 110, "y": 170 } },
+
+    { "id": "turned", "type": "gif", "src": "media/spinner.gif", "time": 0.3, "width": 64,
+      "opacity": 0.85,
+      "effects": [{ "type": "dropShadow", "x": 3, "y": 4, "blur": 4, "color": "#000000aa" }],
+      "transform": { "x": 260, "y": 190, "anchorX": 32, "anchorY": 24, "rotation": 15 } }
+  ]
+}
