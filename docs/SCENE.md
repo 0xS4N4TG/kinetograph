@@ -18,6 +18,7 @@ same pixels. Phase 3's reconciler will emit this same shape from React.
 | `fps` | number | Greater than 0. Frame numbers are what the engine uses; `fps` is carried for encoding. |
 | `durationInFrames` | integer | At least 1. Valid frames are `0..durationInFrames`; anything else is an error. |
 | `background` | colour | Optional, default `#000000`. May be transparent. |
+| `margin` | integer | Optional, default `0`. The least [canvas margin](#canvas-margin) in pixels; a number, not animated, not negative. |
 | `fonts` | object | Optional. Font family name to font file path. Text layers refer to these names. |
 | `camera` | object | Optional. The viewpoint for layers with a 3D transform. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first, topmost last (the same order as SVG and DOM paint order). |
@@ -416,12 +417,23 @@ Each entry in a layer's `effects` is an object with a `type`. A group's effects 
 
 An effect that paints outside its layer (a shadow, say) needs room beyond the canvas edge, and so does a layer that
 hangs off the canvas, whose shadow can fall back onto it. So the renderer draws on a canvas padded by a margin on every
-side and crops the margin off at the end. You do not set it; it is worked out when the scene loads: the largest distance
-the effects can reach past a layer, at any keyframe on any layer (nested layers included), rounded up to whole
-pixels. Each effect below says what it counts. The margin is limited so the padded canvas is at most 8192 pixels on a
-side.
+side and crops the margin off at the end. It is worked out when the scene loads: the largest distance the effects can
+reach past a layer, at any keyframe on any layer (nested layers included), rounded up to whole pixels, or the scene's
+`margin` if that is more. Each effect below says what it counts. The margin is limited so the padded canvas is at most
+8192 pixels on a side.
 
-- A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
+- A scene with no such effect and no `margin` has margin 0 and is rendered exactly on the canvas, as it always was.
+- `margin` on the scene is a floor, never a limit: the margin is `max(margin, reach)`, so no effect is ever cut off by
+  it, and a scene that sets nothing gets what its effects need, as before. It exists for scenes that are made one frame
+  at a time, as the TSX authoring layer does (`<Composition margin>`): every frame is its own scene whose keyframes are
+  constants, so the reach follows that frame's values, and a frame that reaches a pixel further than the rest has a
+  different margin. The textures that depend on the margin and the layer cache are rebuilt whenever it changes. Set
+  `margin` to the largest reach of any frame and the margin is the same on all of them. A frame that still reaches
+  further gets the room it needs (and rebuilds the textures), so a `margin` that is too small costs time, not pixels.
+- A margin that covers the reach does not change what the canvas shows, for `grain`, `dither` and `displace`: they work
+  from canvas positions, not from where the texture starts or how large it is, and `displace` gives the same bits at
+  any margin. `halftone`, 3D transforms, `cornerPin` and the `noise` layer read the padded texture through the
+  hardware filter or a matrix that includes the margin, and can differ by a level or so when it changes.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
 - `glow` counts `3 * radius`, and `chromaticAberration` counts `|amount|`.
@@ -825,8 +837,9 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
   rotate with the layer (as an SVG filter on a transformed element does), and a group is displaced in the group's
   space. The channels are used as the noise gives them, with no colour conversion between the two primitives (SVG's
   default `linearRGB` is the same for both).
-- **Sampling.** Bilinear, on premultiplied colour. What lies outside the texture (the canvas and its margin) is
-  transparent. The noise follows the spec's reference algorithm in 32-bit floats and, unlike a browser's, is not
+- **Sampling.** Bilinear, on premultiplied colour, worked out in the shader from the canvas position and not by the
+  hardware sampler, so the result is the same bit for bit at any [margin](#canvas-margin) (the sampler's weights come
+  from the texture's size). What lies outside the texture (the canvas and its margin) is transparent. The noise follows the spec's reference algorithm in 32-bit floats and, unlike a browser's, is not
   quantised to 8 bits, so expect differences of about one 8-bit step against a browser, not a different pattern.
 - Counts `|scale| / 2` times the largest product of `scale` over the layer and its ancestors in the
   [margin](#canvas-margin) (a pixel is read from that far away; at the largest keyframe, whichever way the scale

@@ -113,6 +113,7 @@ describe('SceneJson', () => {
       fps: 30,
       durationInFrames: 90,
       background: '#10131a',
+      margin: 44,
       fonts: { 'DM Sans': 'fonts/DMSans-Medium.ttf' },
       camera: { perspective: 700, x: 640, y: 360 },
       layers: [

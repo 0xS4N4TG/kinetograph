@@ -27,6 +27,12 @@ export interface CompositionProps<P extends Record<string, unknown> = Record<str
   width: number;
   height: number;
   defaultProps?: P;
+  /**
+   * The least margin, in pixels, the engine renders every frame with (SCENE.md "Canvas margin"). Set it to the
+   * largest reach of any frame's effects and the textures are built once; a frame that reaches further still gets
+   * the room it needs. A whole number, not negative. Default: none, each frame's margin is what its effects reach.
+   */
+  margin?: number;
   calculateMetadata?: (options: {
     defaultProps: P;
     props: P;
@@ -44,6 +50,7 @@ export type StillProps<P extends Record<string, unknown> = Record<string, unknow
 
 /** A registered composition, with what is needed to render it. */
 export interface CompositionEntry extends CompositionInfo {
+  margin?: number;
   component?: ComponentType<any>;
   lazyComponent?: () => Promise<{ default: ComponentType<any> }>;
   calculateMetadata?: CompositionProps<any>['calculateMetadata'];
@@ -78,6 +85,13 @@ function checkPositiveInteger(id: string, name: string, value: unknown): number 
   return value;
 }
 
+function checkMargin(id: string, value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new TypeError(`The "margin" of composition "${id}" must be a whole number of pixels, not negative, but got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function checkFps(id: string, value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new TypeError(`The "fps" of composition "${id}" must be a positive number, but got ${JSON.stringify(value)}`);
@@ -97,6 +111,7 @@ function entryFrom(props: CompositionProps<any>, folder: string[], isStill: bool
     fps: checkFps(id, isStill ? (props.fps ?? 30) : props.fps),
     durationInFrames: isStill ? 1 : checkPositiveInteger(id, 'durationInFrames', props.durationInFrames),
     defaultProps: (props.defaultProps as Record<string, unknown> | undefined) ?? {},
+    margin: props.margin === undefined ? undefined : checkMargin(id, props.margin),
     component: props.component,
     lazyComponent: props.lazyComponent,
     calculateMetadata: props.calculateMetadata,
@@ -207,6 +222,8 @@ export function setInputProps(props: Record<string, unknown>): void {
 export interface ResolvedComposition {
   config: VideoConfig;
   component: ComponentType<any>;
+  /** The `margin` prop, if the composition has one. */
+  margin?: number;
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -240,7 +257,11 @@ export function resolveComposition(
   const entry = getCompositionEntry(id);
   const props = { ...entry.defaultProps, ...(options.inputProps ?? inputProps) };
 
-  const finish = (config: VideoConfig, component: ComponentType<any>): ResolvedComposition => ({ config, component });
+  const finish = (config: VideoConfig, component: ComponentType<any>): ResolvedComposition => ({
+    config,
+    component,
+    margin: entry.margin,
+  });
   const metadata = entry.calculateMetadata
     ? entry.calculateMetadata({
         defaultProps: entry.defaultProps,

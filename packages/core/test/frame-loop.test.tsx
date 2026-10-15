@@ -122,6 +122,45 @@ describe('the frame loop', () => {
     renderer.dispose();
   });
 
+  it('puts the composition\'s margin in every frame\'s scene, and none when it has none', async () => {
+    registerRoot(() => (
+      <>
+        <Composition id="Pinned" component={Mover} width={100} height={50} fps={24} durationInFrames={10} margin={44} />
+        <Composition
+          id="Lazy"
+          lazyComponent={async () => ({ default: Mover })}
+          width={100}
+          height={50}
+          fps={24}
+          durationInFrames={10}
+          margin={0}
+          calculateMetadata={async () => ({ width: 64 })}
+        />
+        <Composition id="Plain" component={Mover} width={100} height={50} fps={24} durationInFrames={10} />
+      </>
+    ));
+    const pinned = createFrameRenderer('Pinned');
+    for (const frame of [0, 7, 3]) {
+      const { scene } = await pinned.renderFrame(frame);
+      expect(scene.margin).toBe(44);
+      // It is the field of the JSON the engine reads, so it survives the trip through a string.
+      expect(JSON.parse(JSON.stringify(scene)).margin).toBe(44);
+    }
+    // A margin of 0 is still sent, and a lazy component with async metadata keeps it.
+    expect((await createFrameRenderer('Lazy').renderFrame(1)).scene.margin).toBe(0);
+    const { scene } = await createFrameRenderer('Plain').renderFrame(1);
+    expect('margin' in scene).toBe(false);
+  });
+
+  it('rejects a margin that is not a whole number of pixels', () => {
+    for (const margin of [-1, 4.5, Number.NaN, '4']) {
+      registerRoot(() => (
+        <Composition id="M" component={Mover} width={10} height={10} fps={30} durationInFrames={5} margin={margin as number} />
+      ));
+      expect(() => getCompositions()).toThrow(/"margin" of composition "M".*whole number/);
+    }
+  });
+
   it('passes input props over the defaults', async () => {
     registerOne();
     const renderer = createFrameRenderer('Main', { inputProps: { label: 'override' } });

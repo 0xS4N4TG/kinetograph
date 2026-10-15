@@ -256,7 +256,7 @@ fn turning_the_layer_cache_off_gives_back_what_it_kept() {
 /// shadow reaches `pin` pixels, which makes `pin` the scene's margin (the
 /// displacements reach under 10). `card` is the card's transform and shape.
 /// With `displaced` false the displacements are zero, which draws without them.
-fn displaced_scene(card: serde_json::Value, pin: u32, displaced: bool) -> Scene {
+fn displaced_json(card: serde_json::Value, pin: u32, displaced: bool) -> serde_json::Value {
     let scale = |scale: f64| if displaced { scale } else { 0.0 };
     let mut card = card;
     card["id"] = "card".into();
@@ -266,7 +266,7 @@ fn displaced_scene(card: serde_json::Value, pin: u32, displaced: bool) -> Scene 
         "type": "displace", "scale": scale(14.0),
         "turbulence": {"type": "fractalNoise", "baseFrequency": 0.045, "numOctaves": 3, "seed": 7}
     }]);
-    let json = serde_json::json!({
+    serde_json::json!({
         "width": 160, "height": 120, "fps": 30, "durationInFrames": 1,
         "background": "#1b1e26",
         "layers": [
@@ -283,7 +283,10 @@ fn displaced_scene(card: serde_json::Value, pin: u32, displaced: bool) -> Scene 
             {"id": "pin", "type": "group", "children": [],
              "effects": [{"type": "dropShadow", "x": pin, "blur": 0}]}
         ]
-    });
+    })
+}
+
+fn scene_of(json: &serde_json::Value) -> Scene {
     Scene::from_json(&json.to_string(), PathBuf::new()).unwrap()
 }
 
@@ -311,7 +314,7 @@ fn displace_gives_the_same_pixels_at_any_margin() {
             let frames: Vec<_> = pins
                 .into_iter()
                 .map(|pin| {
-                    let scene = displaced_scene(card.clone(), pin, displaced);
+                    let scene = scene_of(&displaced_json(card.clone(), pin, displaced));
                     assert_eq!(scene.margin(), pin);
                     render_still(scene, 0).unwrap()
                 })
@@ -333,8 +336,22 @@ fn displace_gives_the_same_pixels_at_any_margin() {
             }
             if displaced {
                 // The displacement did something.
-                let plain = render_still(displaced_scene(card.clone(), pins[0], false), 0).unwrap();
+                let plain = displaced_json(card.clone(), pins[0], false);
+                let plain = render_still(scene_of(&plain), 0).unwrap();
                 assert_ne!(plain.rgba, frames[0].rgba, "card {i}: nothing displaced");
+
+                // The scene's own `margin`, with no layer to pin it, is the
+                // same margin: the same pixels.
+                let mut json = displaced_json(card.clone(), 0, true);
+                json["layers"].as_array_mut().unwrap().pop();
+                json["margin"] = pins[1].into();
+                let scene = scene_of(&json);
+                assert_eq!(scene.margin(), pins[1]);
+                let explicit = render_still(scene, 0).unwrap();
+                assert!(
+                    explicit.rgba == frames[1].rgba,
+                    "card {i}: an explicit margin differs"
+                );
             }
         }
     }
