@@ -5,14 +5,11 @@
 // absolute positioning, flex rows, `translate(-50%, -50%)`, box shadows,
 // gradients, `filter`, `clipPath`, `mixBlendMode`, rounded cards and SVG icons.
 //
-// Frames 96 to 119 underline the headline (`textDecoration`, which the native
-// path does not draw in this pass), so `doctor` reports one Chrome run there
-// and `render` switches to Chrome for those frames only.
+// Frames 96 to 119 underline the headline (`textDecoration`).
 //
 // On the M4:
 //   npx kinetograph doctor examples/compat/index.tsx
 //   npx kinetograph render examples/compat/index.tsx -o out/compat.mp4
-//   npx kinetograph doctor examples/compat/index.tsx --compare 6
 // and compare with Remotion rendering the same file.
 
 import React from 'react';
@@ -103,7 +100,6 @@ const Headline: React.FC = () => {
           fontSize: 96,
           color: PAPER,
           whiteSpace: 'nowrap',
-          // Not drawn natively in this pass: these frames go to Chrome.
           textDecoration: frame >= 96 && frame < 120 ? 'underline' : 'none',
         }}
       >

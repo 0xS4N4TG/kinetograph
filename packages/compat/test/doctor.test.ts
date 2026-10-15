@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Unsupported } from '@kinetograph/scene';
 import { describeIssue, summarize } from '../src/doctor.js';
-import { planRuns } from '../src/runs.js';
 
 const item = (over: Partial<Unsupported> = {}): Unsupported => ({
   path: '$0 <div>',
@@ -18,34 +17,23 @@ function frames(pattern: string, items: Record<string, Unsupported[]> = {}) {
 }
 
 describe('summarize', () => {
-  it('reports a project with nothing unsupported as fully native', () => {
+  it('reports a project with nothing unsupported as all clean', () => {
     const report = summarize('Main', frames('.....'));
     expect(report).toEqual({
       comp: 'Main',
       first: 0,
       last: 4,
       frames: 5,
-      nativeFrames: 5,
-      chromeFrames: 0,
-      nativeShare: 1,
-      runs: [{ first: 0, last: 4, path: 'native' }],
+      cleanFrames: 5,
+      unsupportedFrames: 0,
+      cleanShare: 1,
       issues: [],
     });
-    expect('compare' in report).toBe(false);
   });
 
-  it('counts the frames of each path and plans the runs as render does', () => {
-    const input = frames('..xx.x..');
-    const report = summarize('Main', input);
-    expect(report).toMatchObject({ first: 0, last: 7, frames: 8, nativeFrames: 5, chromeFrames: 3, nativeShare: 5 / 8 });
-    expect(report.runs).toEqual(planRuns(input, 'auto'));
-    expect(report.runs).toEqual([
-      { first: 0, last: 1, path: 'native' },
-      { first: 2, last: 3, path: 'chrome' },
-      { first: 4, last: 4, path: 'native' },
-      { first: 5, last: 5, path: 'chrome' },
-      { first: 6, last: 7, path: 'native' },
-    ]);
+  it('counts the frames with and without unsupported items', () => {
+    const report = summarize('Main', frames('..xx.x..'));
+    expect(report).toMatchObject({ first: 0, last: 7, frames: 8, cleanFrames: 5, unsupportedFrames: 3, cleanShare: 5 / 8 });
   });
 
   it('joins the frames of an issue into inclusive ascending ranges', () => {
@@ -149,13 +137,8 @@ describe('summarize', () => {
       { frame: 11, unsupported: [item()] },
       { frame: 20, unsupported: [item()] },
     ]);
-    expect(report).toMatchObject({ first: 10, last: 20, frames: 4, nativeFrames: 1, chromeFrames: 3 });
+    expect(report).toMatchObject({ first: 10, last: 20, frames: 4, cleanFrames: 1, unsupportedFrames: 3 });
     expect(report.issues[0]!.ranges).toEqual([[11, 12], [20, 20]]);
-    expect(report.runs).toEqual([
-      { first: 10, last: 10, path: 'native' },
-      { first: 11, last: 12, path: 'chrome' },
-      { first: 20, last: 20, path: 'chrome' },
-    ]);
   });
 
   it('merges a frame given twice into one frame', () => {
@@ -165,13 +148,13 @@ describe('summarize', () => {
       { frame: 4, unsupported: [other] },
       { frame: 5, unsupported: [] },
     ]);
-    expect(report).toMatchObject({ frames: 2, nativeFrames: 1, chromeFrames: 1 });
+    expect(report).toMatchObject({ frames: 2, cleanFrames: 1, unsupportedFrames: 1 });
     expect(report.issues.map((i) => i.frames)).toEqual([1, 1]);
   });
 
-  it('handles no frames at all: nothing needs Chrome', () => {
+  it('handles no frames at all: nothing is unsupported', () => {
     expect(summarize('Main', [])).toEqual({
-      comp: 'Main', first: 0, last: 0, frames: 0, nativeFrames: 0, chromeFrames: 0, nativeShare: 1, runs: [], issues: [],
+      comp: 'Main', first: 0, last: 0, frames: 0, cleanFrames: 0, unsupportedFrames: 0, cleanShare: 1, issues: [],
     });
   });
 
@@ -182,10 +165,8 @@ describe('summarize', () => {
     expect(input).toEqual(copy);
   });
 
-  it('reports every frame as Chrome when every frame has an item', () => {
-    const report = summarize('Main', frames('xxx'));
-    expect(report).toMatchObject({ nativeFrames: 0, chromeFrames: 3, nativeShare: 0 });
-    expect(report.runs).toEqual([{ first: 0, last: 2, path: 'chrome' }]);
+  it('reports no clean frame when every frame has an item', () => {
+    expect(summarize('Main', frames('xxx'))).toMatchObject({ cleanFrames: 0, unsupportedFrames: 3, cleanShare: 0 });
   });
 });
 

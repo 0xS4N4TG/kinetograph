@@ -31,7 +31,7 @@ export interface FrameResult {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree, showing or not (docs/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
-  /** Empty when the frame can be drawn natively; otherwise it is drawn by Chrome (docs/COMPAT.md §6.1). */
+  /** Empty when the engine draws everything in the frame; otherwise what it leaves out or approximates (docs/COMPAT.md §6.1). */
   unsupported: Unsupported[];
 }
 

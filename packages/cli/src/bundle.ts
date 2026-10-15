@@ -8,7 +8,7 @@ import { cssPlugin } from './css.js';
 import { CliError } from './errors.js';
 
 /** The package directory of the CLI: the bundle's `@kinetograph/*` imports resolve from here, so one copy of each. */
-export const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
+const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
 
 /** The `@remotion/<pkg>` packages that have a `@kinetograph/core/<pkg>` subpath (docs/AUTHORING.md §7.5). */
 const REMOTION_PACKAGES = new Set([
@@ -107,7 +107,7 @@ function aliasPlugin(): Plugin {
  * The project's entry file always runs: the synthetic entry imports it only for its side effects (`registerRoot`), and
  * a package.json with `"sideEffects": [...]` that leaves it out (as Remotion's templates do) would let esbuild drop it.
  */
-export function entryPlugin(absolute: string): Plugin {
+function entryPlugin(absolute: string): Plugin {
   return {
     name: 'kinetograph-entry',
     setup(b) {
@@ -175,7 +175,7 @@ function bundleOptions(absolute: string): BuildOptions {
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (docs/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [entryPlugin(absolute), aliasPlugin(), cssPlugin({ target: 'node' })],
+    plugins: [entryPlugin(absolute), aliasPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };

@@ -74,7 +74,7 @@ function describe(result: InspectResult): string {
 
 export const lint: Command = {
   name: 'lint',
-  summary: 'Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, type errors, and what compat mode draws in Chrome',
+  summary: 'Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, type errors, and what compat mode cannot draw',
   project: true,
   positionals: [ENTRY],
   options: [{ name: 'frames', type: 'string', description: 'Frames to check, comma separated (default 8 spread over the composition)' }],

@@ -1,11 +1,10 @@
-// What a render did about frames the native path cannot draw (docs/COMPAT.md §6.1): how many went each way, and, when
-// they are drawn natively anyway (`--compat native`), what was left out.
+// What the engine could not draw in the frames a command drew (docs/COMPAT.md §6.1): the frame is drawn anyway, with
+// the native approximation, and this says what was left out. `--strict` turns it into an error.
 
-import { pathFor, type CompatMode, type RenderPath, type Run } from '@kinetograph/compat';
 import type { Unsupported } from '@kinetograph/scene';
 import { CliError } from './errors.js';
 
-/** One kind of thing the native path left out, over the frames it was left out of. */
+/** One kind of thing the engine left out, over the frames it was left out of. */
 export interface LeftOut {
   element: string;
   property: string | null;
@@ -19,27 +18,19 @@ export interface LeftOut {
 }
 
 export interface CompatReport {
-  mode: CompatMode;
-  nativeFrames: number;
-  chromeFrames: number;
-  /** The frames in runs of consecutive frames drawn the same way (`planRuns`). */
-  runs: Run[];
-  /** With `--compat native`: what the native frames leave out. Empty otherwise. */
+  /** Frames drawn that held something unsupported. */
+  unsupportedFrames: number;
+  /** What those frames left out, one entry per kind. */
   leftOut: LeftOut[];
-}
-
-/** `--compat`: `auto` (the default), `native` or `chrome`. */
-export function parseCompat(value: string | number | boolean | undefined): CompatMode {
-  if (value === undefined) return 'auto';
-  if (value === 'auto' || value === 'native' || value === 'chrome') return value;
-  throw new CliError('INVALID_ARG', `--compat must be auto, native or chrome, got "${String(value)}"`);
 }
 
 /** Collects what was left out, frame by frame, into one entry per kind. */
 export class LeftOutCollector {
   private readonly kinds = new Map<string, LeftOut>();
+  private frames = 0;
 
   add(frame: number, unsupported: readonly Unsupported[]): void {
+    if (unsupported.length > 0) this.frames += 1;
     const seen = new Set<string>();
     for (const item of unsupported) {
       const key = `${item.element}\u0000${item.property ?? ''}\u0000${item.reason}`;
@@ -62,29 +53,41 @@ export class LeftOutCollector {
   result(): LeftOut[] {
     return [...this.kinds.values()].sort((a, b) => b.frames - a.frames || a.element.localeCompare(b.element));
   }
+
+  report(): CompatReport {
+    return { unsupportedFrames: this.frames, leftOut: this.result() };
+  }
 }
 
-/** The lines `--compat native` prints on stderr for what it left out. */
-export function describeLeftOut(items: readonly LeftOut[], limit = 12): string[] {
+function describeItem(item: Pick<LeftOut, 'element' | 'property' | 'values'>): string {
+  return item.property ? `${item.element} { ${item.property}${item.values.length ? `: ${item.values.join(' | ')}` : ''} }` : item.element;
+}
+
+/** The warning `still`, `strip` and `render` print on stderr for what they left out. */
+export function describeLeftOut(report: CompatReport, limit = 12): string[] {
+  const items = report.leftOut;
   if (items.length === 0) return [];
-  const lines = [`--compat native: ${items.length} kind${items.length === 1 ? '' : 's'} of unsupported content left out of the frames:`];
+  const kinds = `${items.length} kind${items.length === 1 ? '' : 's'}`;
+  const frames = `${report.unsupportedFrames} frame${report.unsupportedFrames === 1 ? '' : 's'}`;
+  const lines = [`warning: ${kinds} of unsupported content in ${frames}, drawn without it or approximated (--strict fails instead):`];
   for (const item of items.slice(0, limit)) {
-    const what = item.property ? `${item.element} { ${item.property}${item.values.length ? `: ${item.values.join(' | ')}` : ''} }` : item.element;
     const where = item.firstFrame === item.lastFrame ? `frame ${item.firstFrame}` : `${item.frames} frames, ${item.firstFrame}..=${item.lastFrame}`;
-    lines.push(`  ${what}: ${item.reason} (${where})`);
+    lines.push(`  ${describeItem(item)}: ${item.reason} (${where})`);
   }
   if (items.length > limit) lines.push(`  … and ${items.length - limit} more`);
   return lines;
 }
 
-/** Which way a frame goes under `mode`, as `pathFor` decides (re-exported so the commands read one place). */
-export function pathOf(unsupported: readonly Unsupported[] | undefined, mode: CompatMode): RenderPath {
-  return pathFor(unsupported ?? [], mode);
-}
-
-/** `12 native, 8 in Chrome (frames 40..=47)`: the sentence the render summary carries. */
-export function describeSplit(report: Pick<CompatReport, 'nativeFrames' | 'chromeFrames' | 'runs'>): string {
-  const chromeRuns = report.runs.filter((r) => r.path === 'chrome').map((r) => (r.first === r.last ? `${r.first}` : `${r.first}..=${r.last}`));
-  const shown = chromeRuns.length > 6 ? `${chromeRuns.slice(0, 6).join(', ')}, …` : chromeRuns.join(', ');
-  return `${report.nativeFrames} native, ${report.chromeFrames} in Chrome${chromeRuns.length ? ` (frames ${shown})` : ''}`;
+/** `--strict`: the error for the first frame that holds something the engine cannot draw. */
+export function strictError(frame: number, unsupported: readonly Unsupported[], limit = 5): CliError {
+  const collector = new LeftOutCollector();
+  collector.add(frame, unsupported);
+  const items = collector.result();
+  const lines = items.slice(0, limit).map((item) => `  ${describeItem(item)}: ${item.reason}`);
+  if (items.length > limit) lines.push(`  … and ${items.length - limit} more`);
+  return new CliError(
+    'UNSUPPORTED_CONTENT',
+    `--strict: frame ${frame} holds content the engine cannot draw:\n${lines.join('\n')}\n` +
+      'run `kinetograph doctor <entry>` for all of it, or leave out --strict to draw the frame without it',
+  );
 }

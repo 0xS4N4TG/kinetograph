@@ -264,14 +264,14 @@ describe('lintCompat', () => {
         rule: 'compat',
         severity: 'warning',
         layer: null,
-        message: 'not drawn natively, so Chrome renders the frame: div transform: skew is not supported (skewX(10deg); skewY(3deg)) at $0.2 <div>, $1 <div>',
+        message: 'not supported, so the frame is drawn without it or approximated: div transform: skew is not supported (skewX(10deg); skewY(3deg)) at $0.2 <div>, $1 <div>',
         frames: [10, 20, 30],
       },
       {
         rule: 'compat',
         severity: 'warning',
         layer: null,
-        message: 'not drawn natively, so Chrome renders the frame: span filter: url filters are not supported (url(#f)) at $0.2 <div>',
+        message: 'not supported, so the frame is drawn without it or approximated: span filter: url filters are not supported (url(#f)) at $0.2 <div>',
         frames: [10],
       },
     ]);
@@ -280,7 +280,7 @@ describe('lintCompat', () => {
   it('names an unsupported element without a property or value', () => {
     const canvas = item({ element: 'canvas', property: null, value: null, reason: 'element not supported', path: '$0 <canvas>' });
     const [issue] = lintCompat([{ frame: 4, unsupported: [canvas] }]);
-    expect(issue!.message).toBe('not drawn natively, so Chrome renders the frame: canvas: element not supported at $0 <canvas>');
+    expect(issue!.message).toBe('not supported, so the frame is drawn without it or approximated: canvas: element not supported at $0 <canvas>');
   });
 
   it('sorts with the other findings: errors first, then by first frame', () => {

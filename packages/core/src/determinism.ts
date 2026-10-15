@@ -15,7 +15,7 @@
 
 /**
  * The real functions, captured when this module is first evaluated (before `installDeterminism`). Bound to the global
- * object: a browser's timers throw "Illegal invocation" when called as methods of another object (in Chrome frames).
+ * object: a browser's timers throw "Illegal invocation" when called as methods of another object.
  */
 const originalTimers = {
   setTimeout: globalThis.setTimeout,

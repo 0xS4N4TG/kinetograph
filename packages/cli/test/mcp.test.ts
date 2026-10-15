@@ -34,7 +34,7 @@ describe('the tool list', () => {
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
 
     const still = by.still!.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
-    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'compat', 'entry', 'frame', 'output', 'props']);
+    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'entry', 'frame', 'output', 'props', 'strict']);
     expect(still.properties.frame!.type).toBe('number');
     // The output of an image tool is optional (a temp file is used), a video's is not.
     expect(still.required.sort()).toEqual(['entry', 'frame']);
@@ -55,8 +55,8 @@ describe('the tool list', () => {
       properties: Record<string, { type: string }>;
       required?: string[];
     };
-    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'compare', 'compare-dir', 'compare-every', 'entry', 'props', 'range']);
-    expect(doctor.properties.compare!.type).toBe('number');
+    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'entry', 'props', 'range']);
+    expect(doctor.properties.range!.type).toBe('string');
     expect(doctor.required ?? []).toEqual([]);
   });
 });
@@ -70,8 +70,8 @@ describe('toArgv', () => {
       'render', 'a.tsx', '--output', 'o.mp4', '--range', '0..9', '--draft', '--json',
     ]);
     expect(toArgv(command('render'), { entry: 'a.tsx', output: 'o.mp4', draft: false })).not.toContain('--draft');
-    expect(toArgv(command('doctor'), { entry: 'a.tsx', range: '0..30', compare: 4 })).toEqual([
-      'doctor', 'a.tsx', '--range', '0..30', '--compare', '4', '--json',
+    expect(toArgv(command('doctor'), { entry: 'a.tsx', range: '0..30' })).toEqual([
+      'doctor', 'a.tsx', '--range', '0..30', '--json',
     ]);
     expect(toArgv(command('audio analyze'), { entry: 'a.tsx' })).toEqual(['audio', 'analyze', 'a.tsx', '--json']);
     expect(toArgv(command('onion'), { entry: 'a.tsx', range: '0..30', count: 4 })).toEqual([

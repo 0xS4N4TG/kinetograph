@@ -1,7 +1,6 @@
 // Imported by the CLI's Node bundle entry right after the determinism shim (docs/ENGINE.md §10): the browser globals a
 // project commonly touches (`window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, observers,
-// `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement. Not part of the Chrome
-// bundle, where the page has the real ones.
+// `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 
 import { hasAddonFunction, measureSpan, resolveProjectFile, setCssFontFaceHandler, type CssFontFace } from '@kinetograph/compat/dom';
 import { installDomGlobals, setCanvasFonts, setPathMeasure } from '@kinetograph/compat/shim';

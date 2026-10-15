@@ -37,13 +37,3 @@ export interface IslandResult {
   /** The scene's `blendSpace` the island is painted for (ENGINE.md §2). */
   blendSpace?: 'linear' | 'srgb';
 }
-
-export type RenderPath = 'native' | 'chrome';
-export type CompatMode = 'auto' | 'native' | 'chrome';
-
-/** Inclusive frames drawn one way. */
-export interface Run {
-  first: number;
-  last: number;
-  path: RenderPath;
-}
