@@ -187,7 +187,9 @@ export function lintScene(scene: SceneJson, baseDir: string, exists: (path: stri
         message: `font "${layer.font}" is not registered (registered: ${Object.keys(fonts).join(', ') || 'none'})`,
       });
     }
-    if (layer.type === 'image' || layer.type === 'lottie') asset(layer.id, layer.type, layer.src);
+    if (layer.type === 'image' || layer.type === 'lottie' || layer.type === 'video' || layer.type === 'gif') {
+      asset(layer.id, layer.type, layer.src);
+    }
     for (const effect of layer.effects ?? []) {
       if (effect.type === 'lut' && typeof effect.src === 'string') asset(layer.id, 'lut', effect.src);
     }
@@ -195,10 +197,10 @@ export function lintScene(scene: SceneJson, baseDir: string, exists: (path: stri
   return findings;
 }
 
-/** `<Audio>` clips whose file is missing. */
+/** `<Audio>` clips whose file is missing. A `<Video>`'s sound is left out: its layer reports the missing file. */
 export function lintAudio(clips: AudioClipJson[], baseDir: string, exists: (path: string) => boolean = existsSync): Finding[] {
   return clips
-    .filter((clip) => !exists(resolve(baseDir, clip.src)))
+    .filter((clip) => !clip.video && !exists(resolve(baseDir, clip.src)))
     .map((clip) => ({
       rule: 'missing-asset',
       severity: 'error' as const,
