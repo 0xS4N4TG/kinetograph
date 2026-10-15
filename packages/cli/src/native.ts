@@ -44,6 +44,7 @@ export interface InspectLayer {
   bounds: { x: number; y: number; width: number; height: number } | null;
   effects: string[];
   clip: string | null;
+  clipBounds: { x: number; y: number; width: number; height: number } | null;
   mask: boolean;
   matte: { layer: string; mode: string } | null;
   matteSource: boolean;
