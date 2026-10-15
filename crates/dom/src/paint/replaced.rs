@@ -24,6 +24,11 @@ impl<'a> Painter<'a> {
             return Vec::new();
         };
         let tag = &el.name.local;
+        // A native `kg-*` element of the island (a replaced box): the TS side puts its layers where this goes.
+        if &**tag == "kg-native" {
+            let l = node.final_layout();
+            return vec![json!({"type": "native", "path": self.path_of(node), "x": num(origin.0), "y": num(origin.1), "width": num(f64::from(l.size.width)), "height": num(f64::from(l.size.height))})];
+        }
         let geom = box_geom(node, &style);
         let (content, radii) = geom.region(Region::Content);
         if content.is_empty() {

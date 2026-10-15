@@ -527,6 +527,7 @@ impl<'a> Painter<'a> {
             || *t == local_name!("video")
             || *t == local_name!("canvas")
             || *t == local_name!("svg")
+            || &**t == "kg-native"
     }
 
     fn clips_overflow(&self, node: &Node) -> bool {
