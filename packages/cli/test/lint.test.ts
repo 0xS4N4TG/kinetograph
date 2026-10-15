@@ -187,6 +187,30 @@ describe('lintScene', () => {
     const ok = scene({ layers: [{ id: 'a', type: 'text', text: 'x', font: 'DM Sans', size: 20 }] });
     expect(lintScene(ok, '/proj', () => true)).toEqual([]);
   });
+
+  it('finds a missing video or gif file, at any depth, naming the layer and the file', () => {
+    const media = scene({
+      fonts: {},
+      layers: [
+        { id: 'clip', type: 'video', src: 'clips/gone.mp4' },
+        { id: 'g', type: 'group', children: [{ id: 'spinner', type: 'gif', src: 'spin.gif' }] },
+        { id: 'here', type: 'video', src: 'clips/there.mp4' },
+        { id: 'there', type: 'gif', src: 'there.gif' },
+      ],
+    });
+    const findings = lintScene(media, '/proj', exists(['clips/there.mp4', 'there.gif']));
+    expect(findings).toEqual([
+      { rule: 'missing-asset', severity: 'error', layer: 'clip', message: 'video file not found: clips/gone.mp4' },
+      { rule: 'missing-asset', severity: 'error', layer: 'spinner', message: 'gif file not found: spin.gif' },
+    ]);
+  });
+
+  it('resolves a video src against the base directory, so absolute staticFile paths work', () => {
+    const seen: string[] = [];
+    const media = scene({ fonts: {}, layers: [{ id: 'v', type: 'video', src: '/abs/public/a.mp4' }, { id: 'w', type: 'video', src: 'b.mp4' }] });
+    lintScene(media, '/proj', (path) => (seen.push(path), true));
+    expect(seen).toEqual(['/abs/public/a.mp4', '/proj/b.mp4']);
+  });
 });
 
 describe('lintAudio and mergeFindings', () => {
@@ -196,6 +220,11 @@ describe('lintAudio and mergeFindings', () => {
       expect.objectContaining({ rule: 'missing-asset', layer: 'music' }),
     ]);
     expect(lintAudio([clip], '/p', () => true)).toEqual([]);
+  });
+
+  it('leaves the sound of a <Video> to its layer, which already reports the missing file', () => {
+    const sound = { id: 'v', src: 'a.mp4', from: 0, trimBefore: 0, trimAfter: null, playbackRate: 1, volume: 1, loop: false, muted: false, video: true };
+    expect(lintAudio([sound], '/p', () => false)).toEqual([]);
   });
 
   it('merges a finding seen at several frames into one issue and puts errors first', () => {

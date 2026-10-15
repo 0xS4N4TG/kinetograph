@@ -21,6 +21,8 @@ const REMOTION_PACKAGES = new Set([
   'google-fonts',
   'fonts',
   'lottie',
+  'gif',
+  'media-utils',
 ]);
 
 export type Resolution =
@@ -108,6 +110,7 @@ export function syntheticEntry(entry: string): string {
     `export * from '@kinetograph/core';`,
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
+    `export { setMediaProbe } from '@kinetograph/core/media-utils';`,
     '',
   ].join('\n');
 }

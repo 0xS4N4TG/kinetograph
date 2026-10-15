@@ -51,6 +51,8 @@ export const ELEMENT_NAMES: Record<string, string> = {
   'kg-noise': 'Noise',
   'kg-mesh-gradient': 'MeshGradient',
   'kg-lottie': 'Lottie',
+  'kg-video': 'Video',
+  'kg-gif': 'Gif',
   'kg-camera': 'Camera',
   'kg-audio': 'Audio',
 };
@@ -267,6 +269,22 @@ class Emitter {
           id,
           type: 'lottie',
           ...pick(props, ['src', 'width', 'height', 'time', 'loop']),
+          ...commonOf(props, name),
+        } as LayerJson;
+      case 'kg-video':
+        // The sound is not part of the layer: it is an audio clip with the layer's id.
+        this.audio.push({ id, ...props.sound });
+        return {
+          id,
+          type: 'video',
+          ...pick(props, ['src', 'width', 'height', 'fit', 'frame', 'from', 'trimBefore', 'trimAfter', 'playbackRate', 'loop']),
+          ...commonOf(props, name),
+        } as LayerJson;
+      case 'kg-gif':
+        return {
+          id,
+          type: 'gif',
+          ...pick(props, ['src', 'width', 'height', 'fit', 'time', 'loop']),
           ...commonOf(props, name),
         } as LayerJson;
       default:
