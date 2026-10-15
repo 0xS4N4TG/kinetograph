@@ -168,7 +168,7 @@ impl<'a> Painter<'a> {
                         let display = style.clone_display();
                         let floated = style.clone_float() != Float::None;
                         let out_of_flow = matches!(style.clone_position(), Position::Absolute | Position::Fixed);
-                        let is_sc = child.is_stacking_context_root(false);
+                        let is_sc = self.is_sc(child, false);
                         let positioned = !matches!(style.clone_position(), Position::Static);
                         drop(style);
                         if floated || out_of_flow || display.outside() != DisplayOutside::Inline {

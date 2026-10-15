@@ -333,7 +333,7 @@ impl<'a> Painter<'a> {
             let position = style.clone_position();
             let floated = style.clone_float() != Float::None;
             let positioned = !matches!(position, Position::Static);
-            let is_sc = child.is_stacking_context_root(parent_flex);
+            let is_sc = self.is_sc(child, parent_flex);
             let inline_level = display.outside() == DisplayOutside::Inline;
             drop(style);
 
@@ -412,6 +412,25 @@ impl<'a> Painter<'a> {
     }
 
     // ---- small queries ----
+
+    /// Whether `node` makes a stacking context: Blitz's rule plus what it
+    /// leaves out (`mix-blend-mode`, `perspective`, `preserve-3d`,
+    /// `backdrop-filter`).
+    pub fn is_sc(&self, node: &Node, parent_flex: bool) -> bool {
+        if node.is_stacking_context_root(parent_flex) {
+            return true;
+        }
+        node.primary_styles().is_some_and(|s| {
+            use style::computed_values::mix_blend_mode::T as Blend;
+            use style::computed_values::transform_style::T as Style3d;
+            use style::values::computed::Perspective;
+            let b = s.get_box();
+            s.get_effects().mix_blend_mode != Blend::Normal
+                || !matches!(b.perspective, Perspective::None)
+                || b.transform_style == Style3d::Preserve3d
+                || !s.get_effects().backdrop_filter.0.is_empty()
+        })
+    }
 
     pub fn is_visible(&self, node: &Node) -> bool {
         node.primary_styles()

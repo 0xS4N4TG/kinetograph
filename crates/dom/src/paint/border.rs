@@ -41,26 +41,34 @@ fn kind_of(s: BorderStyle) -> Kind {
 type Rgba = [f32; 4];
 
 /// The darker colour of `inset`, `outset`, `groove` and `ridge` borders (the
-/// same rule browsers use: a third of the way towards black, with white and
-/// black treated specially).
+/// rule browsers use: scaled towards black by a third of the brightest
+/// channel, with white a fixed grey). A colour already near black stays.
 fn darker(c: Rgba) -> Rgba {
+    let near_black = c[0] * c[0] + c[1] * c[1] + c[2] * c[2] < 3.0 * 0.125 * 0.125;
+    if near_black {
+        return c;
+    }
     if c[0] >= 0.999 && c[1] >= 0.999 && c[2] >= 0.999 {
         return [0.671, 0.671, 0.671, c[3]];
     }
     let v = c[0].max(c[1]).max(c[2]);
-    if v <= 0.0 {
-        return c;
-    }
     let m = ((v - 0.33) / v).max(0.0);
     [c[0] * m, c[1] * m, c[2] * m, c[3]]
 }
 
-/// The lighter colour, used for black borders so they show a relief.
+/// The lighter colour: each channel scaled so the brightest gains a third
+/// (black becomes a dark grey). A colour already near white stays.
 fn lighter(c: Rgba) -> Rgba {
-    if c[0] <= 0.0 && c[1] <= 0.0 && c[2] <= 0.0 {
+    let near_white = (1.0 - c[0]).powi(2) + (1.0 - c[1]).powi(2) + (1.0 - c[2]).powi(2) < 3.0 * 0.078 * 0.078;
+    if near_white {
+        return c;
+    }
+    let v = c[0].max(c[1]).max(c[2]);
+    if v <= 0.0 {
         return [0.329, 0.329, 0.329, c[3]];
     }
-    c
+    let m = (v + 0.33).min(1.0) / v;
+    [(c[0] * m).min(1.0), (c[1] * m).min(1.0), (c[2] * m).min(1.0), c[3]]
 }
 
 /// One side of a box: top, right, bottom, left.
@@ -436,6 +444,9 @@ mod tests {
     fn darker_follows_the_browser_rule() {
         let c = darker([1.0, 0.0, 0.0, 1.0]);
         assert!((c[0] - 0.67).abs() < 0.01, "{c:?}");
+        // #48c lightens to #5af.
+        let l = lighter([0x44 as f32 / 255.0, 0x88 as f32 / 255.0, 0xcc as f32 / 255.0, 1.0]);
+        assert!((l[0] * 255.0 - 85.0).abs() < 1.0 && (l[2] - 1.0).abs() < 1e-6, "{l:?}");
         assert_eq!(darker([1.0, 1.0, 1.0, 1.0])[0], 0.671);
     }
 }

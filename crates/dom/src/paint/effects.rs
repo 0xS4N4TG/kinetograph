@@ -191,7 +191,9 @@ impl<'a> Painter<'a> {
         let ox = lp(&o.horizontal, w);
         let oy = lp(&o.vertical, h);
         let oz = f64::from(o.depth.px());
-        let mut m = m.about(ox, oy, oz);
+        // The layer turns about (x, y) itself (its anchor is the origin); only the
+        // depth of the origin is left to do here.
+        let mut m = m.about(0.0, 0.0, oz);
         let (x, y) = (at.0 + ox, at.1 + oy);
         if let Some(p) = persp {
             // `T(-pos) P T(pos) * M`: the perspective, in the parent's frame
