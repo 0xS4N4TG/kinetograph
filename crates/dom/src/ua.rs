@@ -13,6 +13,9 @@ svg:not(:root), symbol, image, marker, pattern, foreignObject { overflow: hidden
 /* A native kg-* element is a box of its given size. */
 kg-native { display: block; }
 
+/* The margin, border and padding of an inline element, as a box on its line (inline.rs). */
+kg-spacer { display: inline-block; height: 0; margin: 0; padding: 0; border: 0; }
+
 /* Chrome shows no marker box for these. */
 template, script, noscript { display: none; }
 "#;

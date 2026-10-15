@@ -149,19 +149,13 @@ fn union(a: Rect, b: Rect) -> Rect {
     }
 }
 
-/// The line fragments of a non-atomic inline, in document coordinates.
+/// The line fragments of a non-atomic inline, in document coordinates, as
+/// Chrome reports them (the content area of its font plus its padding).
 fn fragments(doc: &BaseDocument, node: &Node) -> Option<Vec<Rect>> {
-    let local = node.inline_fragment_boxes()?;
-    let root = node.inline_root_ancestor()?;
-    let (ox, oy) = border_box_origin(doc, root.id);
     Some(
-        local
-            .map(|r| Rect {
-                x: ox + f64::from(r.left),
-                y: oy + f64::from(r.top),
-                width: f64::from(r.right - r.left),
-                height: f64::from(r.bottom - r.top),
-            })
+        crate::inline::fragments(doc, node.id)?
+            .into_iter()
+            .map(|f| f.rect)
             .collect(),
     )
 }

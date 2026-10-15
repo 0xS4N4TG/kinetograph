@@ -26,6 +26,7 @@ use blitz_dom::{
 use blitz_traits::shell::{ColorScheme, Viewport};
 
 use crate::fonts;
+use crate::inline;
 use crate::net::{self, LocalFiles};
 use crate::request::{DomNode, IslandRequest};
 use crate::ua;
@@ -169,6 +170,11 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
         for _ in 0..passes {
             island.doc.resolve(request.time);
         }
+    }
+    // Inline elements with horizontal margin, border or padding: Blitz leaves
+    // those widths out of the text, so give the text the widths (inline.rs).
+    if inline::add_edge_spacers(&mut island.doc) > 0 {
+        island.doc.resolve(request.time);
     }
     island.missing = files.missing();
     Ok(island)
