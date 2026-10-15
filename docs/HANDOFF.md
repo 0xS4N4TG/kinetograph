@@ -140,7 +140,9 @@ Decisions and why:
   Determinism: animation time comes from the frame number, and any randomness in expressions must be seeded.
   Before relying on it, measure coverage: a few hundred popular LottieFiles animations rendered through it and
   compared with lottie-web.
-- **Real 3D: real Three.js first, kiss3d as backup** (revised 2026-10-14 with the Node decision). With Node as host,
+- **Real 3D: real Three.js first, kiss3d as backup** (revised 2026-10-14 with the Node decision; superseded
+  2026-10-15: Three.js compatibility is dropped for now and the engine gets its own 3D layer, see "3D layer" in §8).
+  With Node as host,
   Three.js can run as written: its `WebGPURenderer` on the `webgpu` npm package (Dawn, Google's WebGPU
   implementation, 0.6.2 released 2026-10-02), rendering offscreen to a texture that becomes a compositor layer.
   That is coverage-first by definition: react-three-fiber, drei and `@remotion/three` code runs unchanged.
@@ -192,7 +194,7 @@ behaviour on top of engine primitives; "fallback" means compat mode renders it t
 | `@remotion/google-fonts` | shim | font registration | 3 |
 | `@remotion/lottie` | native `<Lottie>` via ThorVG (dotlottie-rs, section 4) | texture layer | 3 |
 | `@remotion/gif`, `<Video>`, `<OffthreadVideo>` | native | ffmpeg decode | 4 |
-| `@remotion/three` | real Three.js on `WebGPURenderer` + Dawn (section 4); kiss3d mapping as backup; GLSL `ShaderMaterial` falls back | 3D layer | after 3 |
+| `@remotion/three` | dropped for now (2026-10-15): `doctor` reports it; the engine's own 3D layer replaces it (§8, "3D layer") | 3D layer | deferred |
 | `@remotion/captions` | shim | per-glyph text | 3 |
 | Anything else (arbitrary HTML/CSS) | fallback | `doctor` | 5 |
 
@@ -321,7 +323,16 @@ goldens. `cargo test` and the GPU npm tests pass except `renderer_reuse` (#12).
 - The reference rebuild works but is slow (429 ms a frame) and matches loosely (#17).
 - Merge blockers #12–#15, fixed in the cloud (see "Phase 3 fixes in a cloud session") and tested on the M4 as PRs
   #18–#21 before #11 merged. Open: #16 (`kinetograph check`), #17.
-**3D layer (after Phase 3).** Three.js on Dawn, or the kiss3d mapping if the spike fails (section 4).
+**3D layer (after Phase 3).** Decided 2026-10-15: the engine gets its own 3D, and Three.js compatibility
+(`@remotion/three`, react-three-fiber, drei, pixi) is dropped for now. Spike 2 showed Three.js runs on Dawn, but
+running it means a second GPU API in the process, a pixel readback per frame and a browser library's behaviour to
+match; our own layer is native, shares the wgpu device and stays a pure function of the frame.
+- A `3d` scene layer drawn in Rust on the compositor's wgpu device, no readback. kiss3d 0.47 (section 4) is the
+  starting point to evaluate; its feature list (meshes, metallic-roughness PBR, lights, shadows, glTF) is the scope.
+- Authoring: our own components (`<Scene3D>`, `<Mesh>`, primitives, `<Model src="x.glb">`, lights, a camera), not
+  the Three.js API. Their names may follow react-three-fiber's where that costs nothing, so agents guess right.
+- Extruded text and SVG paths as meshes, since the motion-graphics use is mostly 3D type and logos.
+- Projects that import `three` or `@remotion/three` are reported by `doctor`; nothing falls back to Chrome.
 **Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
 of sequences and layers, scene tree from `inspect`, props panel, render queue calling `render`, hot reload on save.
@@ -549,6 +560,29 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
   - Render S04 straight from its Remotion source in compat mode. Compare it with Remotion's output (`--compare`
     and a look at the frames) and with the hand port, then time all three back to back.
 
+### Deferred: browser APIs the engine does not have yet (logged 2026-10-15)
+
+Remotion projects work unchanged when their effects are CSS, SVG or plain JS. These do not, and `doctor` reports
+them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only.
+1. **CSS gaps** (smallest). `line-clamp`: cut the shaped lines at N and add the ellipsis. Floats and tables: check
+   whether a newer Blitz lays them out before writing our own (an upgrade also means redoing the fontique patch).
+   `@container`: Stylo parses container queries; lay out once for the container sizes, restyle, lay out again. CSS
+   transitions: a transition starts when a value changes, which depends on the previous frame; to stay a pure
+   function of the frame, look back over the transition's duration for the frame the value changed and
+   interpolate from there.
+2. **Canvas 2D** (medium; the most common custom drawing in Remotion projects). A `CanvasRenderingContext2D` shim
+   records each frame's calls (paths, fill/stroke, gradients, `drawImage`, `fillText`, transforms, clips,
+   `globalAlpha`, `globalCompositeOperation`); Rust draws them as one canvas layer with Vello, whose model maps
+   almost one to one. `getImageData`/`toDataURL` need pixels at once, so those draw on the CPU.
+3. **WebGL fragment shaders** (shader transitions, Shadertoy ports): the slice of WebGL they use (one full-screen
+   quad, uniforms, textures, `drawArrays`), with their GLSL ES translated to WGSL by naga and run as a `shader`
+   pass. naga reads desktop GLSL, so GLSL ES 100 / 300 es probably needs a small rewrite step first.
+4. **Three.js and pixi**: dropped for now, see "3D layer" above. If they come back, the path is a WebGPU API in Node
+   on wgpu (`deno_webgpu`) so both run their WebGPU renderers unmodified, with GLSL materials through item 3.
+
+User shaders today are `shader({ code, uniforms })` in WGSL (SCENE.md, "shader"). Its limits, also to lift later:
+it sees only its own layer (no backdrop), runs one pass, samples no other texture, and takes only `f32` uniforms.
+
 ## 9. Rules for the build
 
 - `random(seed)` must be bit-exact with Remotion's implementation (the papercut kit seeds all jitter with it), but
@@ -560,7 +594,7 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
 
 ## 10. Open questions
 
-- Three.js `WebGPURenderer` headless on Dawn in Node: unverified (section 4). Decides Three.js vs kiss3d.
+- 3D layer: kiss3d on the shared wgpu device, or our own renderer (§8, "3D layer"). Three.js is dropped for now.
 - `react-reconciler` host config details: which React features (Suspense, context, portals) the scene graph needs.
 - Vello's filter/text quality vs Skia. Test early with the papercut grain + torn edge.
 - Licence for Kinetograph itself (MIT/Apache-2.0 matches the ecosystem; fframes is MIT).
