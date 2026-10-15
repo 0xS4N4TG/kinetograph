@@ -65,8 +65,9 @@ export type ClipShape =
   | { kind: 'inset'; sides: Sides<Length>; radius: Corners }
   | { kind: 'circle'; r: ShapeRadius; cx: Length; cy: Length }
   | { kind: 'ellipse'; rx: ShapeRadius; ry: ShapeRadius; cx: Length; cy: Length }
-  | { kind: 'polygon'; points: [Length, Length][] }
-  | { kind: 'path'; d: string };
+  /** `fillRule` is present only when it is `evenodd`; the default is `nonzero`. */
+  | { kind: 'polygon'; points: [Length, Length][]; fillRule?: 'evenodd' }
+  | { kind: 'path'; d: string; fillRule?: 'evenodd' };
 
 export interface ColorStop {
   color: ColorValue;
@@ -102,8 +103,12 @@ export interface ParsedStyle {
   boxSizing?: 'content-box' | 'border-box';
   margin?: Sides<LengthOrAuto>;
   padding?: Sides<Length>;
+  /** As computed: a side whose style is `none` or `hidden` has width 0; an unset width is `medium` (3px). Set (all three
+   *  of `borderWidth`, `borderStyle`, `borderColor`) as soon as any `border*` property is. */
   borderWidth?: Sides<Length>;
+  /** An unset style is `none`. */
   borderStyle?: Sides<string>;
+  /** An unset colour is `currentcolor`. */
   borderColor?: Sides<ColorValue>;
   borderRadius?: Corners;
   flexDirection?: 'row' | 'row-reverse' | 'column' | 'column-reverse';
@@ -164,4 +169,35 @@ export interface ParsedStyle {
   textDecoration?: string;
   textShadow?: TextShadow[];
   whiteSpace?: 'normal' | 'nowrap' | 'pre' | 'pre-wrap' | 'pre-line' | 'break-spaces';
+
+  // ---- SVG presentation properties (docs/COMPAT.md §4.5), as style values ----
+  fill?: SvgPaint;
+  stroke?: SvgPaint;
+  fillOpacity?: number;
+  strokeOpacity?: number;
+  /** A bare number is px, as SVG takes it. */
+  strokeWidth?: Length;
+  strokeLinecap?: 'butt' | 'round' | 'square';
+  strokeLinejoin?: 'miter' | 'round' | 'bevel' | 'arcs' | 'miter-clip';
+  strokeDasharray?: Length[] | 'none';
+  fillRule?: 'nonzero' | 'evenodd';
+}
+
+/** A `fill` or `stroke`: a colour, `none`, or a reference to a paint server (`url(#id)`) with an optional fallback. */
+export type SvgPaint = ColorValue | 'none' | { url: string; fallback?: ColorValue | 'none' };
+
+// ---- added by stream 1 (docs/COMPAT.md §3) ----
+
+export interface Diagnostic {
+  property: string;
+  value: string;
+  reason: string;
+}
+
+export interface LengthContext {
+  /** What a percentage is of, px. */
+  percentOf: number;
+  fontSize: number;
+  rootFontSize: number;
+  viewport: { width: number; height: number };
 }
