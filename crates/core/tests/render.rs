@@ -293,6 +293,46 @@ fn scene_of(json: &serde_json::Value) -> Scene {
     Scene::from_json(&json.to_string(), PathBuf::new()).unwrap()
 }
 
+/// A group whose `matrix3d()` only slides the plane 60 px right but has
+/// perspective in it (so the layer is warped, not folded into the 2D matrix),
+/// holding a red bar at layer x `bar_x`.
+fn slid_scene(bar_x: f64) -> Scene {
+    scene_of(&serde_json::json!({
+        "width": 200, "height": 100, "fps": 30, "durationInFrames": 1, "background": "#000000",
+        "layers": [{
+            "id": "slid", "type": "group",
+            "transform": {"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -0.001, 60, 0, 0, 1]},
+            "children": [{
+                "id": "bar", "type": "shape", "fill": "#ff0000",
+                "shape": {"kind": "rect", "width": 40, "height": 100},
+                "transform": {"x": bar_x}
+            }]
+        }]
+    }))
+}
+
+#[test]
+fn a_warped_layer_keeps_what_the_warp_brings_in_from_off_the_canvas() {
+    // The bar is at x -50..-10 and the warp slides the plane 60 px right, so it
+    // shows at 10..50. A flat texture the size of the canvas has nothing there.
+    let frame = render_still(slid_scene(-50.0), 0).unwrap();
+    let px = |x: usize, y: usize| {
+        let i = (y * frame.width as usize + x) * 4;
+        frame.rgba[i..i + 4].to_vec()
+    };
+    assert_eq!(px(30, 50), [255, 0, 0, 255], "inside the slid bar");
+    assert_eq!(px(5, 50), [0, 0, 0, 255], "left of it");
+    assert_eq!(px(60, 50), [0, 0, 0, 255], "right of it");
+    // Layers that start on the canvas are as they were.
+    let on = render_still(slid_scene(20.0), 0).unwrap();
+    let i = (50 * on.width as usize + 100) * 4;
+    assert_eq!(
+        &on.rgba[i..i + 4],
+        [255, 0, 0, 255],
+        "bar at 20 shows at 80..120"
+    );
+}
+
 #[test]
 fn displace_gives_the_same_pixels_at_any_margin() {
     // The first card sits on whole pixels and is scaled by a power of two, so

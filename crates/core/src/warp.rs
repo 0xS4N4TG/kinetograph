@@ -119,6 +119,58 @@ pub fn is_identity(h: &DMat3) -> bool {
     h.abs_diff_eq(DMat3::IDENTITY, 1e-9)
 }
 
+/// How far to draw a layer's flat texture to the right and down (whole pixels)
+/// so that the warp `h` finds everything it shows. The flat texture is as
+/// big as the padded canvas, `size`; what the warp puts on the canvas is the
+/// part of the layer's plane that `h` maps onto it (the canvas pulled back
+/// through `h`, cut at the vanishing line), and a slide, a turn or a camera move
+/// can bring in a part that lies off the texture (a mirrored copy of a wall at
+/// x < 0, brought in by a camera pan). The box of that part is moved onto the
+/// texture on each axis it fits, by the least that does it; one that is wider
+/// than the texture is left where it is. `(0, 0)` when it already fits, give or
+/// take a pixel.
+pub fn source_shift(h: &DMat3, size: (f64, f64)) -> (f64, f64) {
+    let g = h.inverse();
+    // `lambda` is 1 / w of the canvas point `(x, y)` as the plane puts it: positive in front of the camera.
+    let lambda = |x: f64, y: f64| g.x_axis.z * x + g.y_axis.z * y + g.z_axis.z;
+    let corners = [(0.0, 0.0), (size.0, 0.0), (size.0, size.1), (0.0, size.1)];
+    let floor = 1e-6 * (g.x_axis.z.abs() * size.0 + g.y_axis.z.abs() * size.1 + g.z_axis.z.abs());
+    // The canvas cut to the half plane in front of the vanishing line.
+    let mut front: Vec<(f64, f64)> = Vec::with_capacity(5);
+    for i in 0..4 {
+        let (a, b) = (corners[i], corners[(i + 1) % 4]);
+        let (la, lb) = (lambda(a.0, a.1) - floor, lambda(b.0, b.1) - floor);
+        if la >= 0.0 {
+            front.push(a);
+        }
+        if (la >= 0.0) != (lb >= 0.0) {
+            let t = la / (la - lb);
+            front.push((a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1)));
+        }
+    }
+    if front.is_empty() {
+        return (0.0, 0.0);
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for (x, y) in front {
+        let p = g * DVec3::new(x, y, 1.0);
+        let (u, v) = (p.x / p.z, p.y / p.z);
+        (x0, y0, x1, y1) = (x0.min(u), y0.min(v), x1.max(u), y1.max(v));
+    }
+    let axis = |lo: f64, hi: f64, extent: f64| {
+        if !(lo.is_finite() && hi.is_finite()) || hi - lo > extent {
+            0.0
+        } else if lo < -1.0 {
+            (-lo).ceil()
+        } else if hi > extent + 1.0 {
+            (extent - hi).floor()
+        } else {
+            0.0
+        }
+    };
+    (axis(x0, x1, size.0), axis(y0, y1, size.1))
+}
+
 /// `W_G . A_G . W_C . A_G^-1` generalised: the world matrix of a child whose
 /// parent in a `preserve3d` group has world `parent_world` and flat matrix
 /// `parent_flat` (both relative to the outermost such group's parent), when the
@@ -621,5 +673,28 @@ mod tests {
             assert!(close(apply(&h, [p.x, p.y]), [w.x, w.y]), "{from:?}");
         }
         assert!(in_texels(Affine::scale(0.0), local).is_none());
+    }
+    #[test]
+    fn the_flat_texture_is_shifted_to_cover_what_the_warp_shows() {
+        let size = (200.0, 100.0);
+        let slide = |dx: f64, dy: f64| {
+            DMat3::from_cols(
+                DVec3::new(1.0, 0.0, 0.0),
+                DVec3::new(0.0, 1.0, 0.0),
+                DVec3::new(dx, dy, 1.0),
+            )
+        };
+        // Slid right 60: the canvas shows the plane from x -60, so draw 60 right.
+        assert_eq!(source_shift(&slide(60.0, 0.0), size), (60.0, 0.0));
+        assert_eq!(source_shift(&slide(-60.5, 12.0), size), (-61.0, 12.0));
+        // Within a pixel of the canvas: nothing moves.
+        assert_eq!(source_shift(&slide(0.5, -0.5), size), (0.0, 0.0));
+        // Halved about the middle, the canvas shows twice its width: too wide to fit.
+        let half = DMat3::from_cols(
+            DVec3::new(0.5, 0.0, 0.0),
+            DVec3::new(0.0, 0.5, 0.0),
+            DVec3::new(50.0, 25.0, 1.0),
+        );
+        assert_eq!(source_shift(&half, size), (0.0, 0.0));
     }
 }

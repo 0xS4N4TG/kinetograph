@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 
-use glam::DMat4;
+use glam::{DMat3, DMat4, DVec3};
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
 use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
@@ -921,9 +921,14 @@ impl Renderer {
         backdrop: Option<&Tex>,
     ) -> Result<Option<Tex>> {
         if layer.motion.is_empty() {
-            let src = self.layer_texture(layer, siblings, parent, backdrop, None)?;
+            let shift = match &placement {
+                Some(placement) if backdrop.is_none() => self.source_shift(placement),
+                _ => (0.0, 0.0),
+            };
+            let src =
+                self.layer_texture(layer, siblings, shifted(shift, parent), backdrop, None)?;
             return Ok(match placement {
-                Some(placement) => self.place(src, &placement),
+                Some(placement) => self.place(src, &placement, shift),
                 None => Some(src),
             });
         }
@@ -951,20 +956,24 @@ impl Renderer {
             if sub.opacity <= 0.0 {
                 continue;
             }
-            let src = self.layer_texture(
-                sub,
-                siblings,
-                parent,
-                backdrop,
-                Some((i, layer.motion.len())),
-            )?;
             let placement = warp::layer_world(&sub.transform).map(|world| Placement {
                 parent,
                 world,
                 backface_hidden: sub.transform.backface_hidden,
             });
+            let shift = match &placement {
+                Some(placement) if backdrop.is_none() => self.source_shift(placement),
+                _ => (0.0, 0.0),
+            };
+            let src = self.layer_texture(
+                sub,
+                siblings,
+                shifted(shift, parent),
+                backdrop,
+                Some((i, layer.motion.len())),
+            )?;
             let src = match placement {
-                Some(placement) => match self.place(src, &placement) {
+                Some(placement) => match self.place(src, &placement, shift) {
                     Some(src) => src,
                     None => continue,
                 },
@@ -977,14 +986,59 @@ impl Renderer {
         Ok(sum)
     }
 
-    /// Warps a finished layer texture to where its 3D placement puts it, as
-    /// seen by the camera. `None` (and `src` released) if the layer is seen
-    /// edge on.
-    fn place(&mut self, src: Tex, placement: &Placement) -> Option<Tex> {
+    /// Where the flat texture of a layer with this `placement` is drawn, in
+    /// pixels right and down, so that the warp finds what it brings onto the
+    /// canvas (`warp::source_shift`). `place` is told the same.
+    fn source_shift(&self, placement: &Placement) -> (f64, f64) {
+        match warp::plane_homography(self.projection, placement.parent, placement.world) {
+            Some(h) if !warp::is_identity(&h) => warp::source_shift(
+                &h,
+                (f64::from(self.target_size.0), f64::from(self.target_size.1)),
+            ),
+            _ => (0.0, 0.0),
+        }
+    }
+
+    /// The matrix `layer_texture` is given as its parent for `layer` in
+    /// `siblings` under `parent`: `parent` moved by `source_shift` if the layer
+    /// is warped. `plan_pages` takes it too, so a leaf is found on its page.
+    fn shifted_parent(
+        &self,
+        siblings: &[ResolvedLayer],
+        layer: &ResolvedLayer,
+        parent: Affine,
+    ) -> Affine {
+        let Some(world) = warp::layer_world(&layer.transform) else {
+            return parent;
+        };
+        if uses_backdrop(siblings, layer) {
+            return parent;
+        }
+        let placement = Placement {
+            parent,
+            world,
+            backface_hidden: layer.transform.backface_hidden,
+        };
+        shifted(self.source_shift(&placement), parent)
+    }
+
+    /// Warps a finished layer texture, drawn `shift` pixels right and down of
+    /// where it belongs, to where its 3D placement puts it, as seen by the
+    /// camera. `None` (and `src` released) if the layer is seen edge on.
+    fn place(&mut self, src: Tex, placement: &Placement, shift: (f64, f64)) -> Option<Tex> {
         let Some(h) = warp::plane_homography(self.projection, placement.parent, placement.world)
         else {
             self.compositor.release(src);
             return None;
+        };
+        let h = if shift == (0.0, 0.0) {
+            h
+        } else {
+            h * DMat3::from_cols(
+                DVec3::new(1.0, 0.0, 0.0),
+                DVec3::new(0.0, 1.0, 0.0),
+                DVec3::new(-shift.0, -shift.1, 1.0),
+            )
         };
         // The plane is seen from behind when the map flips it over.
         if placement.backface_hidden && h.determinant() < 0.0 {
@@ -1270,7 +1324,7 @@ impl Renderer {
             if (is_hidden(layer) && !matte_source) || !layer.motion.is_empty() {
                 continue;
             }
-            let matrix = parent * layer.transform.matrix();
+            let matrix = self.shifted_parent(layers, layer, parent) * layer.transform.matrix();
             if let Some(clip) = &layer.clip {
                 let path = self.clip_path(clip, layer)?;
                 let region = self.path_bounds(&path, matrix);
@@ -2147,6 +2201,16 @@ fn in_area(area: PixelRect, matrix: Affine) -> Affine {
         matrix
     } else {
         Affine::translate((-f64::from(area.x0), -f64::from(area.y0))) * matrix
+    }
+}
+
+/// `parent` moved `shift` pixels right and down (`Renderer::source_shift`),
+/// itself when there is none: the same bits for a layer that is not moved.
+fn shifted(shift: (f64, f64), parent: Affine) -> Affine {
+    if shift == (0.0, 0.0) {
+        parent
+    } else {
+        Affine::translate(shift) * parent
     }
 }
 
