@@ -235,7 +235,7 @@ it writes `out/corpus/report.json` and the pictures.
 
 #### First numbers (2026-10-15, M4)
 
-Measured with `engine/runtime` plus `engine/front@02e5051` and `engine/paint@c322d49` (which merges `engine/svg`), and
+Measured with `engine/runtime` plus `engine/paint@6fa5b1c` (which has `engine/front` and `engine/svg` merged in), and
 one local change in `crates/dom/src/paint` that is not in any branch yet: the painter did not leave the
 `{"type": "native", ...}` placeholder layers the contract promises (`kg-native` nodes are replaced boxes: emit
 `{"type":"native","path","x","y","width","height"}` from `replaced_content`), without which every frame with a
