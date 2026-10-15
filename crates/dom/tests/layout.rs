@@ -63,8 +63,18 @@ fn grid_layout_with_place_items_and_calc() {
          width: calc(100px + 300px); place-items: center; column-gap: 0",
         vec![
             el("div", "$0.0", "width: 20px; height: 20px", vec![]),
-            el("div", "$0.1", "grid-column: span 2; width: 40px; height: 10px", vec![]),
-            el("div", "$0.2", "grid-column: 2; grid-row: 2; width: 10px; height: 10px", vec![]),
+            el(
+                "div",
+                "$0.1",
+                "grid-column: span 2; width: 40px; height: 10px",
+                vec![],
+            ),
+            el(
+                "div",
+                "$0.2",
+                "grid-column: 2; grid-row: 2; width: 10px; height: 10px",
+                vec![],
+            ),
         ],
     );
     let island = resolve(&request(root));
@@ -84,7 +94,12 @@ fn inline_layout_wraps_text_and_places_inline_blocks() {
         "width: 300px; font-family: 'DM Sans'; font-size: 20px; line-height: 30px",
         vec![
             text("alpha "),
-            el("span", "$0.1", "display: inline-block; width: 50px; height: 10px", vec![]),
+            el(
+                "span",
+                "$0.1",
+                "display: inline-block; width: 50px; height: 10px",
+                vec![],
+            ),
             text(" beta gamma delta epsilon zeta eta theta iota kappa lambda"),
         ],
     );
@@ -163,14 +178,24 @@ fn svg_elements_are_in_the_svg_namespace() {
         "$0",
         json!({ "viewBox": "0 0 10 10", "width": "100", "height": "50" }),
         "",
-        vec![el_attrs("rect", "$0.0", json!({ "width": "5", "height": "5" }), "", vec![])],
+        vec![el_attrs(
+            "rect",
+            "$0.0",
+            json!({ "width": "5", "height": "5" }),
+            "",
+            vec![],
+        )],
     );
     let island = resolve(&request(root));
     let svg = island.doc.get_node(island.node("$0").unwrap()).unwrap();
     let data = svg.element_data().unwrap();
     assert_eq!(data.name.ns, ns!(svg));
     assert_eq!(data.name.local, local_name!("svg"));
-    assert_eq!(data.attr(local_name!("viewbox")).or(data.attr(local_name!("viewBox"))), Some("0 0 10 10"));
+    assert_eq!(
+        data.attr(local_name!("viewbox"))
+            .or(data.attr(local_name!("viewBox"))),
+        Some("0 0 10 10")
+    );
     let rect = island.doc.get_node(island.node("$0.0").unwrap()).unwrap();
     assert_eq!(rect.element_data().unwrap().name.ns, ns!(svg));
     // A replaced box of the given size.

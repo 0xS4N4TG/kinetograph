@@ -78,7 +78,9 @@ pub fn resolve(request: &Value) -> IslandDocument {
 
 /// The border box of the element at `path`, in island coordinates: x, y, width, height.
 pub fn bounds(island: &IslandDocument, path: &str) -> (f64, f64, f64, f64) {
-    let id = island.node(path).unwrap_or_else(|| panic!("no node at {path}"));
+    let id = island
+        .node(path)
+        .unwrap_or_else(|| panic!("no node at {path}"));
     let r = island.doc.get_client_bounding_rect(id).expect("a box");
     (r.x, r.y, r.width, r.height)
 }

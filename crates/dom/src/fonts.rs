@@ -126,7 +126,10 @@ mod tests {
         assert_eq!(parse_key("Inter"), ("Inter", 400.0, FontStyle::Normal));
         assert_eq!(parse_key("Inter:800"), ("Inter", 800.0, FontStyle::Normal));
         assert_eq!(parse_key("Inter:400i"), ("Inter", 400.0, FontStyle::Italic));
-        assert_eq!(parse_key("DM Sans:700i"), ("DM Sans", 700.0, FontStyle::Italic));
+        assert_eq!(
+            parse_key("DM Sans:700i"),
+            ("DM Sans", 700.0, FontStyle::Italic)
+        );
         // A colon that is not a weight stays in the family name.
         assert_eq!(parse_key("Foo:Bar"), ("Foo:Bar", 400.0, FontStyle::Normal));
     }

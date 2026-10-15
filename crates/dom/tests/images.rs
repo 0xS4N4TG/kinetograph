@@ -54,7 +54,12 @@ fn img(path: &str, src: &str, style: &str) -> Value {
 fn img_takes_its_intrinsic_size() {
     let dir = Dir::new("intrinsic");
     dir.png("a.png", 64, 32);
-    let root = el("div", "$0", "", vec![img("$0.0", "a.png", "display: block")]);
+    let root = el(
+        "div",
+        "$0",
+        "",
+        vec![img("$0.0", "a.png", "display: block")],
+    );
     let island = resolve(&with_dirs(request(root), &dir, None));
     assert_eq!(bounds(&island, "$0.0"), (0.0, 0.0, 64.0, 32.0));
     assert!(island.missing.is_empty(), "{:?}", island.missing);
@@ -71,7 +76,11 @@ fn img_keeps_its_aspect_ratio_for_one_given_side() {
         vec![
             img("$0.0", "a.png", "display: block; width: 200px"),
             img("$0.1", "a.png", "display: block; height: 10px"),
-            img("$0.2", "a.png", "display: block; width: 50%; aspect-ratio: 1"),
+            img(
+                "$0.2",
+                "a.png",
+                "display: block; width: 50%; aspect-ratio: 1",
+            ),
         ],
     );
     let island = resolve(&with_dirs(request(root), &dir, None));
@@ -162,11 +171,19 @@ fn background_and_mask_images_load() {
 fn background_image_in_a_stylesheet_loads() {
     let dir = Dir::new("sheet-bg");
     dir.png("img/tile.png", 4, 4);
-    let mut req = request(el_attrs("div", "$0", json!({ "class": "t" }), "width: 10px; height: 10px", vec![]));
+    let mut req = request(el_attrs(
+        "div",
+        "$0",
+        json!({ "class": "t" }),
+        "width: 10px; height: 10px",
+        vec![],
+    ));
     req["stylesheets"] = json!([".t { background: url(img/tile.png) repeat }"]);
     let island = resolve(&with_dirs(req, &dir, None));
     let node = island.doc.get_node(island.node("$0").unwrap()).unwrap();
-    let image = node.element_data().unwrap().background_images[0].as_ref().unwrap();
+    let image = node.element_data().unwrap().background_images[0]
+        .as_ref()
+        .unwrap();
     assert_eq!(image.status, Status::Ok);
 }
 
@@ -178,8 +195,16 @@ fn missing_files_and_network_urls_are_reported_not_fetched() {
         "$0",
         "",
         vec![
-            img("$0.0", "nope.png", "display: block; width: 10px; height: 10px"),
-            img("$0.1", "https://example.com/a.png", "display: block; width: 10px; height: 10px"),
+            img(
+                "$0.0",
+                "nope.png",
+                "display: block; width: 10px; height: 10px",
+            ),
+            img(
+                "$0.1",
+                "https://example.com/a.png",
+                "display: block; width: 10px; height: 10px",
+            ),
         ],
     );
     let island = resolve(&with_dirs(request(root), &dir, None));
@@ -198,7 +223,12 @@ fn svg_files_have_an_intrinsic_size() {
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="30" height="12"><rect width="30" height="12"/></svg>"#,
     )
     .unwrap();
-    let root = el("div", "$0", "", vec![img("$0.0", "i.svg", "display: block")]);
+    let root = el(
+        "div",
+        "$0",
+        "",
+        vec![img("$0.0", "i.svg", "display: block")],
+    );
     let island = resolve(&with_dirs(request(root), &dir, None));
     assert_eq!(bounds(&island, "$0.0"), (0.0, 0.0, 30.0, 12.0));
 }

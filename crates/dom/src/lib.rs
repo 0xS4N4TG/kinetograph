@@ -10,7 +10,9 @@ pub mod document;
 pub mod fonts;
 pub mod net;
 pub mod paint;
+pub mod readback;
 pub mod request;
+pub mod transform;
 pub mod ua;
 
 pub use request::{IslandOutput, IslandRequest};

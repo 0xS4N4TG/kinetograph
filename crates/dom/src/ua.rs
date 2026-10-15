@@ -19,5 +19,8 @@ template, script, noscript { display: none; }
 
 /// The UA sheets in cascade order.
 pub fn sheets() -> Vec<String> {
-    vec![blitz_dom::DEFAULT_CSS.to_string(), KINETOGRAPH_UA.to_string()]
+    vec![
+        blitz_dom::DEFAULT_CSS.to_string(),
+        KINETOGRAPH_UA.to_string(),
+    ]
 }

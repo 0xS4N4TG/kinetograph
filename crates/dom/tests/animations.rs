@@ -47,7 +47,13 @@ fn keyframes_sample_at_the_requests_time() {
 
 #[test]
 fn opacity_animates() {
-    for (t, expected) in [(0.0, 0.0), (0.25, 0.25), (0.75, 0.75), (1.0, 1.0), (3.0, 1.0)] {
+    for (t, expected) in [
+        (0.0, 0.0),
+        (0.25, 0.25),
+        (0.75, 0.75),
+        (1.0, 1.0),
+        (3.0, 1.0),
+    ] {
         let o = opacity_at(t);
         assert!((o - expected).abs() < 0.01, "t={t}: {o} vs {expected}");
     }

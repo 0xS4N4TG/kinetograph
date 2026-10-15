@@ -45,7 +45,12 @@ fn weight_matching_follows_css() {
     let dm = reference(&dm_sans());
     let heavy = reference(&archivo_black());
     let fonts = json!({ "Test": dm_sans(), "Test:800": archivo_black() });
-    let at = |weight: u32| width(fonts.clone(), &format!("font-family: Test; font-weight: {weight}"));
+    let at = |weight: u32| {
+        width(
+            fonts.clone(),
+            &format!("font-family: Test; font-weight: {weight}"),
+        )
+    };
     // Exact.
     assert_eq!(at(400), dm);
     assert_eq!(at(800), heavy);
@@ -56,7 +61,10 @@ fn weight_matching_follows_css() {
     assert_eq!(at(500), dm);
     assert_eq!(at(300), dm);
     // Keywords.
-    assert_eq!(width(fonts.clone(), "font-family: Test; font-weight: bold"), heavy);
+    assert_eq!(
+        width(fonts.clone(), "font-family: Test; font-weight: bold"),
+        heavy
+    );
     assert_eq!(width(fonts, "font-family: Test"), dm);
 }
 
@@ -72,7 +80,10 @@ fn only_one_weight_registered_serves_every_weight() {
             &format!("font-family: Archivo; font-weight: {weight}"),
         );
         // Synthetic bold widens the glyphs a little for the heavy requests.
-        assert!((w - archivo).abs() < 0.03 * archivo, "weight {weight}: {w} vs {archivo}");
+        assert!(
+            (w - archivo).abs() < 0.03 * archivo,
+            "weight {weight}: {w} vs {archivo}"
+        );
     }
 }
 
@@ -82,7 +93,10 @@ fn style_matching() {
     let archivo = reference(&archivo_black());
     let fonts = json!({ "Test": dm_sans(), "Test:400i": archivo_black() });
     assert_eq!(width(fonts.clone(), "font-family: Test"), dm);
-    assert_eq!(width(fonts.clone(), "font-family: Test; font-style: italic"), archivo);
+    assert_eq!(
+        width(fonts.clone(), "font-family: Test; font-style: italic"),
+        archivo
+    );
 }
 
 #[test]
@@ -91,16 +105,34 @@ fn family_stack_and_names() {
     let archivo = reference(&archivo_black());
     let fonts = json!({ "DM Sans": dm_sans(), "Archivo:800": archivo_black() });
     // The first family of the stack that is registered wins.
-    assert_eq!(width(fonts.clone(), "font-family: Missing, 'Archivo', 'DM Sans'; font-weight: 800"), archivo);
-    assert_eq!(width(fonts.clone(), "font-family: Missing, 'DM Sans', Archivo"), dm);
+    assert_eq!(
+        width(
+            fonts.clone(),
+            "font-family: Missing, 'Archivo', 'DM Sans'; font-weight: 800"
+        ),
+        archivo
+    );
+    assert_eq!(
+        width(fonts.clone(), "font-family: Missing, 'DM Sans', Archivo"),
+        dm
+    );
     // Family names are case-insensitive, quoted or not.
     assert_eq!(width(fonts.clone(), "font-family: dm sans"), dm);
-    assert_eq!(width(fonts.clone(), "font-family: \"ARCHIVO\"; font-weight: 800"), archivo);
+    assert_eq!(
+        width(fonts.clone(), "font-family: \"ARCHIVO\"; font-weight: 800"),
+        archivo
+    );
     // A generic family, or a stack of nothing registered, falls back to a
     // registered font (the first key), never to a system font.
     // Here that is "Archivo:800", first in key order.
     assert_eq!(width(fonts.clone(), "font-family: sans-serif"), archivo);
-    assert_eq!(width(fonts.clone(), "font-family: Helvetica Neue, Arial, sans-serif"), archivo);
+    assert_eq!(
+        width(
+            fonts.clone(),
+            "font-family: Helvetica Neue, Arial, sans-serif"
+        ),
+        archivo
+    );
     assert_eq!(width(fonts, "font-family: monospace"), archivo);
 }
 
