@@ -301,12 +301,31 @@ for a `kg-*` element without padding, and it comes before the empty-box return, 
   353 257 pixels (0.1% to 17%) more than 48 levels apart, **1 276 162 summed** over the 33 frames (2 470 423 on
   `engine/runtime`, 5 312 576 right after the merge). Best: frames 840 (2919), 150 to 450 and 630 to 810 (4 to 14
   thousand). Worst: 600 (353 257), 0, 90, 120 and 480 to 570 (56 to 118 thousand). Those are the frames with a 3D
-  camera. Frame 600 (the crab-track slide in the gallery): the left 250 px of the scene is black, because the wall's mirrored
-  copy lies at layer x below 0 and a layer turned in 3D (`perspective()` in a `Depth`) is drawn flat in a canvas-sized
-  texture first, then warped, so what is left of the canvas is lost; fixing it means drawing the flat layer shifted by
-  what the warp needs (render.rs, `place`), which is the compositor's. Frame 0: the backdrop's perspective slope is
-  about 1.8 times the mp4's (the matrix is the one CSS gives, and `core` projects it to within a pixel, so the mp4 may
-  have been made with another camera setting; Chrome would settle it).
+  camera. Both leftovers are fixed (`fix/corpus-leftovers`), **291 511 summed** now (mean 3.1 to 5.5 levels, PSNR 27.6 to
+  33.6 dB, 2909 to 23 969 pixels a frame):
+
+  | frame | 0 | 60 | 90 | 120 | 480 | 510 | 540 | 570 | 600 |
+  |---|---|---|---|---|---|---|---|---|---|
+  | before | 91 868 | 65 480 | 118 266 | 98 150 | 90 298 | 56 130 | 92 155 | 113 277 | 353 257 |
+  | after | 8 929 | 15 485 | 11 399 | 23 969 | 6 870 | 8 730 | 12 956 | 10 934 | 6 507 |
+
+  1. Frame 600 (the crab-track slide in the gallery): the left 250 px of the scene was black, because the wall's mirrored
+     copy lies at layer x below 0 and a layer turned in 3D (`perspective()` in a `Depth`) was drawn flat in a canvas-sized
+     texture first, then warped, so what lay off the canvas was lost. `Renderer::source_shift` now draws the flat layer
+     shifted by whole pixels so that the part of its plane the warp maps onto the canvas (the canvas pulled back through
+     the homography, cut at the vanishing line: `warp::source_shift`) lies on the texture, and `place` undoes the shift in
+     the homography; `plan_pages` takes the same shift, so the leaves still come from their pages. A part wider than the
+     texture (a camera pulled far back) is left as it was, and a layer that reads the backdrop is not shifted.
+  2. The 3D-camera frames (0, 60 to 120, 480 to 570; the backdrop's perspective slope was 1.8 times the mp4's, the props
+     off by tens of pixels): the cause was the painter writing a layer's `matrix3d` rounded to four decimals
+     (`num4`). Its `w` terms are `sin(angle) / perspective`, about 5e-5 for a `Depth` at `perspective(1600px)`, so 5.5e-5
+     came out as 1e-4 and a gentler slope as a steeper one. Chrome's own picture of the same page agreed with the mp4
+     (the first suspicion, another camera setting, was wrong); native against it, frames 0 and 90: 90 138 and 116 265
+     pixels more than 48 levels apart before, 7970 and 10 397 after. The matrix is written with every digit now
+     (`num_exact`). The goldens of `preserve_3d`, `transforms` and `paint_order` changed by a few hundred pixels (their
+     perspective is 400 to 500 px, where the rounding was a few percent); each is closer to or as close to Chrome's
+     picture of the case as before (more than 48 levels apart: 62 to 1, 0 to 0, 23 to 23; mean 0.22 to 0.13, 0.28 to
+     0.22, 0.17 to 0.17), so they are updated.
 - **Against the Chrome fallback's own picture** (`--compare --every 120`, 9 frames; a page of our own, not Remotion's):
   pixels more than 48 levels apart 2 204 458 summed, mostly frame 840 (1 595 312), where that page is shifted down by half
   the height (its `Sequence` wrapper is a zero-size positioned `div`); the others 8 thousand to 267 thousand.
@@ -642,3 +661,34 @@ What the painter could change (stream 2, `crates/dom/src/paint`), in order of wh
    each still costs a walk and a cache key.
 3. **Per-element clips that equal the layer's own box** (the 260 `M0 0 L60 0 L60 18 L0 18 Z` clips on rings) are the
    same shape as the ring's hole boundary and could go with item 1.
+
+**Tried (`fix/corpus-leftovers`, same frame 30, M4, load 5 to 10; `frame_hashes --no-cache --times 0 5`, ms a frame
+over six frames, min of interleaved runs, two series run at different loads):**
+
+| | ms a frame | groups | shapes | picture |
+|---|---|---|---|---|
+| before | 681.7 (series 1, 6 runs) | 3204 | 4187 | hash `6770cdbe1afd638d` |
+| groups left out (item 2; kept) | 683.9 (series 1), 656.5 (series 2, 5 runs) | 2564 | 4187 | same hash |
+| and inset shadows as effects (item 1; not kept) | 655.9 (series 2) | 2564 | 3381 | 149 825 pixels differ, 12 484 by more than 2 levels, at most 31 |
+
+(The frame costs 650 to 700 ms here against the 500 above because of the machine's load.)
+
+- **Groups.** `paint/opt.rs` drops a group that has only `id`, `type`, `children` and possibly an `x`/`y` move (the
+  move is added to the children's positions) when no child blends, is matted, or is a pass-through or `preserve3d`
+  group, and the group is not a matte source. 640 of the 3204 go. Most of the 1,978 cannot: 968 are the `bg` groups
+  that isolate the `background-blend-mode: multiply` of the grain over the colour, and 795 have a 2D matrix of scale
+  and move that would have to be composed into every child. The picture is the same bytes and the time is the same:
+  the compositor already drew these groups without a buffer, so a walk and a cache key were all they cost, too little
+  to see in 680 ms. Kept because it is exact; drop the commit if the code is not worth it.
+- **Inset shadows.** Of the 962, 806 sit on a box with no border, an opaque colour that fills it, no spread and no
+  blur (`inset 1.5px 1.5px 0 #ffffff38`), so they can be an `insetShadow` effect of the box's `bg` (a group: the
+  colour and the grain, which blends). Tried: 806 ring shapes (and their clips) fewer, 3381 shapes instead of 4187,
+  and the time within noise (the two interleaved series have pairs from 43 ms faster to 112 ms slower; the mins differ
+  by 0.6 ms). The picture is not the same: 12 484 pixels differ by more than 2 levels, along the edges of the laptop
+  and the cards (the likely causes, not checked: the effect's reach raises the scene's margin, which moves what the blur
+  and displace passes sample, and the effect shades from a coverage texture sampled at a fractional offset). Not kept.
+  The other shape the note allowed, a ring whose outer outline is the padding box so that no clip is needed, only
+  fits a centred shadow (no offset, spread at least 0); the corpus' are offset, a crescent that needs the clip. So the
+  leaf count (a stack of 404 leaf boxes at one pixel, about 450 Vello pages) is not what the 680 ms is made of: cutting
+  800 leaves did not cut the time. The next measurement should be a profile of `start_frame`, not another painter
+  change.
