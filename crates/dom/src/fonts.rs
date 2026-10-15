@@ -81,12 +81,13 @@ pub fn font_context(
         .register_fonts(Blob::new(Arc::new(blitz_dom::BULLET_FONT) as _), None);
 
     let mut families = Vec::new();
+    let mut fixed_pitch = Vec::new();
     for (key, path) in fonts {
         let (family, weight, style) = parse_key(key);
         // Paths are absolute; a relative one is read from baseDir.
         let data = font_bytes(&base_dir.join(path).to_string_lossy())?;
         let registered = ctx.collection.register_fonts(
-            Blob::new(data),
+            Blob::new(data.clone()),
             Some(FontInfoOverride {
                 family_name: Some(family),
                 weight: Some(FontWeight::new(weight)),
@@ -100,12 +101,25 @@ pub fn font_context(
         if registered.is_empty() {
             return Err(format!("{path} contains no usable font"));
         }
+        let mono = is_fixed_pitch(&data);
         for (id, _) in registered {
             if !families.contains(&id) {
                 families.push(id);
             }
+            if mono && !fixed_pitch.contains(&id) {
+                fixed_pitch.push(id);
+            }
         }
     }
+    // `monospace` falls back to a fixed-pitch font if the project registered
+    // one; every other generic family prefers the proportional ones.
+    let proportional: Vec<_> = families
+        .iter()
+        .copied()
+        .filter(|id| !fixed_pitch.contains(id))
+        .collect();
+    let monospace_first: Vec<_> = fixed_pitch.iter().chain(&proportional).copied().collect();
+    let proportional_first: Vec<_> = proportional.iter().chain(&fixed_pitch).copied().collect();
     for generic in [
         GenericFamily::SansSerif,
         GenericFamily::Serif,
@@ -118,10 +132,24 @@ pub fn font_context(
         GenericFamily::UiMonospace,
         GenericFamily::UiRounded,
     ] {
+        let order = match generic {
+            GenericFamily::Monospace | GenericFamily::UiMonospace => &monospace_first,
+            _ => &proportional_first,
+        };
         ctx.collection
-            .append_generic_families(generic, families.iter().copied());
+            .append_generic_families(generic, order.iter().copied());
     }
     Ok(ctx)
+}
+
+/// Whether the font says all its glyphs are as wide as each other (the `post`
+/// table's fixed-pitch flag).
+fn is_fixed_pitch(data: &[u8]) -> bool {
+    use read_fonts::{FontRef, TableProvider as _};
+    FontRef::from_index(data, 0)
+        .ok()
+        .and_then(|font| font.post().ok())
+        .is_some_and(|post| post.is_fixed_pitch() != 0)
 }
 
 #[cfg(test)]

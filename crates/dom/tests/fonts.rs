@@ -167,6 +167,43 @@ fn family_stack_and_names() {
 }
 
 #[test]
+fn monospace_falls_back_to_a_fixed_pitch_font() {
+    let dm = reference(&dm_sans());
+    let mono = reference(&jetbrains_mono());
+    // JetBrains Mono sorts before... after "DM Sans" ("J" > "D"); generic
+    // families still prefer the proportional font, and `monospace` the fixed one.
+    let fonts = json!({ "DM Sans": dm_sans(), "JetBrains Mono": jetbrains_mono() });
+    assert_eq!(width(fonts.clone(), "font-family: sans-serif"), dm);
+    assert_eq!(width(fonts.clone(), "font-family: Nope, serif"), dm);
+    assert_eq!(width(fonts.clone(), "font-family: monospace"), mono);
+    assert_eq!(
+        width(fonts.clone(), "font-family: ui-monospace, monospace"),
+        mono
+    );
+    // With only a mono font registered everything is mono.
+    let only = json!({ "JetBrains Mono": jetbrains_mono() });
+    assert_eq!(width(only, "font-family: sans-serif"), mono);
+    // <code> and <pre> use `monospace` in the UA stylesheet.
+    let root = el(
+        "div",
+        "$0",
+        "font-size: 40px",
+        vec![el(
+            "code",
+            "$0.0",
+            "display: inline-block",
+            vec![text(SAMPLE)],
+        )],
+    );
+    let mut req = request(root);
+    req["fonts"] = fonts;
+    let island = resolve(&req);
+    let code = bounds(&island, "$0.0").2;
+    // Gecko's 13px monospace default does not apply: font-size is 40px as set.
+    assert!((code - mono).abs() < 1.0, "{code} vs {mono}");
+}
+
+#[test]
 fn woff2_files_are_unpacked() {
     // inter-800-latin.woff2 and the ttf both give text a width.
     assert!(reference(&inter_800()) > 100.0);

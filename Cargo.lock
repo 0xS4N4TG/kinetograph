@@ -1861,6 +1861,7 @@ dependencies = [
  "image",
  "kinetograph-core",
  "parley",
+ "read-fonts",
  "serde",
  "serde_json",
  "stylo",

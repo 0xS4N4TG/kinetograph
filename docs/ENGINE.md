@@ -174,7 +174,8 @@ weight search of CSS Fonts 4 (700 and 900 go to a registered 800; 300 and 500 to
 italic face. The old "no registered font at weight 800" cases were a matching bug of the TypeScript path.
 
 - **No system fonts.** A generic family (`sans-serif`, `serif`, `monospace`, `system-ui`, …) and a stack that names
-  nothing registered fall back to the registered families in key order, never to a font of the machine.
+  nothing registered fall back to the registered families in key order, never to a font of the machine; `monospace`
+  and `ui-monospace` try the fixed-pitch fonts first (the `post` table's flag), the others try them last.
 - **A face stays at its weight.** Google serves a font for one weight as a variable file (`inter-800-latin.woff2` has a
   `wght` axis, default 400). fontique set the axis to the requested weight, so `font-weight: 400` text drew the 400
   instance of a file registered as 800; a browser clamps to the `@font-face` weight and draws 800. `vendor/fontique`
