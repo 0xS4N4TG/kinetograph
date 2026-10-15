@@ -9,7 +9,7 @@ import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveProjectFile } from '../environment.js';
-import { DomElement, domElementFor, isDomElementShim, selectorContextOf, setImageSizeReader } from './element.js';
+import { DomElement, domElementFor, isDomElementShim, selectorContextOf, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
 import { matches, queryAll } from './selector.js';
@@ -369,6 +369,7 @@ function defineGetter(target: Record<string, unknown>, name: string, get: () => 
 export function installDomGlobals(): void {
   const g = globalThis as Record<string, unknown>;
   setImageSizeReader(imageSizeAt);
+  setProjectFileResolver(projectFileOf);
 
   if (!('window' in g)) Object.defineProperty(g, 'window', { value: globalThis, configurable: true, writable: true, enumerable: false });
   if (!('self' in g)) Object.defineProperty(g, 'self', { value: globalThis, configurable: true, writable: true, enumerable: false });

@@ -16,6 +16,7 @@ export {
   IntersectionObserverShim,
   MutationObserverShim,
 } from './observers.js';
+export { deliverMediaEvents } from './media-events.js';
 export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf } from './web.js';
 export { setPathMeasure } from './geometry.js';
 export type { PathMeasure } from './geometry.js';

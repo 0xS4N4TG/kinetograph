@@ -9,6 +9,7 @@ import Reconciler from 'react-reconciler';
 import { ConcurrentRoot, DiscreteEventPriority, NoEventPriority } from 'react-reconciler/constants.js';
 import { isDomElement } from '@kinetograph/compat/dom';
 import {
+  deliverMediaEvents,
   deliverObservations,
   domElementFor,
   hasObservers,
@@ -270,6 +271,8 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
       const rendered = reconciler.flushSyncWork();
       const effects = reconciler.flushPassiveEffects();
       if (rendered || effects) continue;
+      // Files that loaded: the `onLoad` of an <img> or <video> (a project may hold the frame until it fires).
+      if (container.readback !== null && deliverMediaEvents(container.readback)) continue;
       // Layout is settled: tell the observers what changed (a callback may set state, which renders again).
       if (hasObservers() && observerRounds < MAX_OBSERVER_DEPTH && deliverObservations()) {
         observerRounds += 1;

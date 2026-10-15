@@ -7,6 +7,7 @@ import { attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
 import { isDomElement } from '../request/tags.js';
 import type { DomNode } from '../types.js';
+import { addonFunction, hasAddonFunction } from '../addon.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
 import { overlayOf, propsWithOverlay, type BoxInfo, type HostElement, type Readback } from './host.js';
 import { matches, queryAll, type SelectorContext } from './selector.js';
@@ -474,6 +475,36 @@ export class DomElement {
   get complete(): boolean {
     return true;
   }
+  // `<video>` and `<audio>`: what the file's header says, and a player that is always ready and never plays.
+  private media(): { width: number; height: number; durationInSeconds: number } | null {
+    if (this.host.type !== 'video' && this.host.type !== 'audio') return null;
+    const file = projectFileOf(this.src);
+    if (file === null || !hasAddonFunction('probeMedia')) return null;
+    try {
+      return addonFunction('probeMedia')(file);
+    } catch {
+      return null;
+    }
+  }
+  get duration(): number {
+    return this.media()?.durationInSeconds ?? NaN;
+  }
+  get videoWidth(): number {
+    return this.media()?.width ?? 0;
+  }
+  get videoHeight(): number {
+    return this.media()?.height ?? 0;
+  }
+  get readyState(): number {
+    return 4;
+  }
+  get paused(): boolean {
+    return true;
+  }
+  currentTime = 0;
+  async play(): Promise<void> {}
+  pause(): void {}
+  load(): void {}
   async decode(): Promise<void> {}
   getContext(): never {
     throw new Error('canvas is not supported yet: <canvas> and WebGL are a later phase of Kinetograph, and there is no Chrome to fall back to');
@@ -599,6 +630,15 @@ export function affineOf(transform: string | null): [number, number, number, num
 // ---- image sizes (for `img.naturalWidth` and `new Image()`) ----
 
 let imageSizeOf: (src: string) => { width: number; height: number } | null = () => null;
+let fileOf: (src: string) => string | null = () => null;
+
+/** The web-API module hands over how a `src` names a project file. */
+export function setProjectFileResolver(fn: (src: string) => string | null): void {
+  fileOf = fn;
+}
+function projectFileOf(src: string): string | null {
+  return fileOf(src);
+}
 
 /** The web-API module hands over how to read an image file's size (it knows the project's directories). */
 export function setImageSizeReader(fn: (src: string) => { width: number; height: number } | null): void {

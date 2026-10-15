@@ -12,6 +12,8 @@ export interface DomAddon {
   domLayoutBoxes(requestJson: string): string;
   /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. */
   domComputedStyle(requestJson: string, path: string, properties: string[]): string[];
+  /** A video's or GIF's header (`probeMedia` of the addon), for `<video>` load events and `duration`. */
+  probeMedia?(path: string, baseDir?: string): { width: number; height: number; durationInSeconds: number };
   /** The text engine, for the size of native text in an island. */
   layoutText?(request: unknown): { width: number; height: number };
 }
