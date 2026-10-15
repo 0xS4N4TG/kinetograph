@@ -161,6 +161,33 @@ function charsOf(chars: unknown, text: string): (CharStyle | null)[] {
   return all.map((char, index) => chars(char, index, all.length) ?? null);
 }
 
+/** Whether any DOM element is in `nodes` or below them (through native elements and `<Sequence>`s too). */
+function holdsDom(nodes: HostNode[]): boolean {
+  return nodes.some((n) => n.kind === 'element' && (isDomElement(n.type) || holdsDom(n.children)));
+}
+
+/**
+ * `<AbsoluteFill>` as the `div` it is in Remotion, when what is inside it holds DOM elements: a column flex box over
+ * the whole page with the author's style laid over it, so that `justifyContent`, `alignItems` and the rest place the
+ * DOM children as CSS does. A tree of native elements only keeps the layer mapping (the hand ports render as before).
+ * Null for any other element.
+ */
+export function domFillOf(element: HostElement): HostElement | null {
+  if (element.type !== 'kg-layer') return null;
+  const fill = element.props.domFill as { style: Record<string, unknown>; id?: string; background: boolean } | undefined;
+  if (fill === undefined || !holdsDom(element.children)) return null;
+  return {
+    kind: 'element',
+    type: 'div',
+    props: {
+      ...(fill.id !== undefined ? { id: fill.id } : {}),
+      style: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...fill.style },
+    },
+    // The layer mapping's own background rectangle is the style's `backgroundColor` here.
+    children: fill.background ? element.children.slice(1) : element.children,
+  };
+}
+
 /**
  * A DOM element with each `<Sequence>` inside it replaced by what is inside that (and, when `sequences` is given,
  * recorded there), so a Sequence takes no place in the paths (docs/AUTHORING.md §11.4). Native elements are kept as
@@ -300,6 +327,11 @@ class Emitter {
         out.push(...this.island(node, path));
         continue;
       }
+      const fill = domFillOf(node);
+      if (fill !== null) {
+        out.push(...this.island(fill, path));
+        continue;
+      }
       const layer = this.element(node, path);
       if (layer !== null) out.push(layer);
     }
@@ -318,7 +350,13 @@ class Emitter {
       case 'kg-audio':
         this.audio.push({ id, ...props.clip });
         return null;
-      case 'kg-layer':
+      case 'kg-layer': {
+        // A native element met inside an island (`emitNative`) can be an `<AbsoluteFill>` that holds DOM elements.
+        const fill = domFillOf(element);
+        if (fill !== null) {
+          const layers = this.island(fill, path);
+          return layers.length === 1 ? layers[0]! : ({ id, type: 'group', children: layers } as LayerJson);
+        }
         return {
           id,
           type: 'group',
@@ -326,6 +364,7 @@ class Emitter {
           ...commonOf(props, name),
           children: this.children(element.children, path, name),
         } as LayerJson;
+      }
       case 'kg-shape': {
         const kind = props.kind;
         let shape: Record<string, unknown>;

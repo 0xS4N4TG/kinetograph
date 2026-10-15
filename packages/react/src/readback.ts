@@ -13,7 +13,7 @@ import {
 } from '@kinetograph/compat/dom';
 import type { BoxInfo, Readback } from '@kinetograph/compat/shim';
 import { propsWithOverlay } from '@kinetograph/compat/shim';
-import { flattenDomElement, type EmitOptions, type HostElement, type HostNode } from './emit.js';
+import { domFillOf, flattenDomElement, type EmitOptions, type HostElement, type HostNode } from './emit.js';
 
 /** The root of the host tree, as `root.ts` keeps it. */
 export interface Container {
@@ -100,7 +100,9 @@ export function createReadback(container: Container, options: EmitOptions): Read
   const islandRootOf = (host: HostElement): HostElement => {
     let top = host;
     for (let p = effectiveParent(top); isDom(p); p = effectiveParent(top)) top = p;
-    return top;
+    // An `<AbsoluteFill>` holding DOM elements is the island's root `div` (see `domFillOf`).
+    const parent = effectiveParent(top);
+    return parent !== null && domFillOf(parent) !== null ? parent : top;
   };
 
   const islandOf = (host: HostElement): Island | null => {
@@ -111,7 +113,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
       const path = pathOf(root);
       const stylesheets = [...importedStylesheets(), ...collectStyleElements(container.children)];
       for (const css of stylesheets) noteStylesheet(css);
-      const { request } = requestFor(flattenDomElement(root, path, null), {
+      const { request } = requestFor(flattenDomElement(domFillOf(root) ?? root, path, null), {
         path,
         viewport: options.viewport ?? { width: 1920, height: 1080 },
         fonts: options.fonts?.() ?? {},

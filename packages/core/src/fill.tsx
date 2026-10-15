@@ -116,7 +116,13 @@ export function AbsoluteFill({ style = {}, id, className, children }: AbsoluteFi
   }
 
   return (
-    <Layer id={id} layout={layout} layoutItem={{ position: 'absolute' }} opacity={opacity}>
+    <Layer
+      id={id}
+      layout={layout}
+      layoutItem={{ position: 'absolute' }}
+      opacity={opacity}
+      domFill={{ style, ...(id !== undefined ? { id } : {}), background: background !== undefined && !isTransparent(background) }}
+    >
       {background !== undefined && !isTransparent(background) ? (
         <Rect width={width} height={height} fill={background} layoutItem={{ position: 'absolute' }} />
       ) : null}
