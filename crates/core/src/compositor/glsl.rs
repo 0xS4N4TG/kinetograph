@@ -222,7 +222,8 @@ impl Compositor {
 
         // Vertex data.
         let vertex = &program.translated.vertex;
-        let mut layouts: Vec<(u32, wgpu::VertexFormat, u64)> = Vec::new();
+        // Location, format, stride and the attribute's offset in the vertex.
+        let mut layouts: Vec<(u32, wgpu::VertexFormat, u64, u64)> = Vec::new();
         let mut sources: Vec<(&str, u64, u64)> = Vec::new();
         let last = match &draw.indices {
             Some(indices) => {
@@ -264,8 +265,18 @@ impl Compositor {
                      (WebGL refuses such a draw with INVALID_OPERATION)"
                 )));
             }
-            layouts.push((*location, format, stride));
-            sources.push((&a.buffer, u64::from(a.offset), stride));
+            // The buffer is bound whole, with the offset in the attribute: wgpu
+            // bounds every vertex by a whole stride from the binding's start,
+            // so a binding moved by the offset would lose its last vertex.
+            // Only an offset that does not fit in the stride moves the binding.
+            let offset = u64::from(a.offset);
+            let (in_vertex, bound_at) = if offset + element <= stride {
+                (offset, 0)
+            } else {
+                (0, offset)
+            };
+            layouts.push((*location, format, stride, in_vertex));
+            sources.push((&a.buffer, bound_at, stride));
         }
 
         // The index list, expanded to triangles when the mode needs it.
@@ -530,17 +541,17 @@ impl Compositor {
     fn glsl_pipeline(
         &self,
         program: &Program,
-        layouts: &[(u32, wgpu::VertexFormat, u64)],
+        layouts: &[(u32, wgpu::VertexFormat, u64, u64)],
         topology: wgpu::PrimitiveTopology,
         indexed: bool,
         draw: &GlslDraw,
     ) -> Result<wgpu::RenderPipeline> {
         let attributes: Vec<[wgpu::VertexAttribute; 1]> = layouts
             .iter()
-            .map(|(location, format, _)| {
+            .map(|(location, format, _, offset)| {
                 [wgpu::VertexAttribute {
                     format: *format,
-                    offset: 0,
+                    offset: *offset,
                     shader_location: *location,
                 }]
             })
@@ -548,7 +559,7 @@ impl Compositor {
         let buffers: Vec<Option<wgpu::VertexBufferLayout>> = layouts
             .iter()
             .zip(&attributes)
-            .map(|((_, _, stride), attribute)| {
+            .map(|((_, _, stride, _), attribute)| {
                 Some(wgpu::VertexBufferLayout {
                     array_stride: *stride,
                     step_mode: wgpu::VertexStepMode::Vertex,
