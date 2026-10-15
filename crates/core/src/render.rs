@@ -27,7 +27,7 @@ use crate::mesh;
 use crate::resolve::{
     ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient,
     ResolvedGradientGeometry, ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint,
-    ResolvedScene,
+    ResolvedScene, ResolvedShadow,
 };
 use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
@@ -737,6 +737,23 @@ impl Renderer {
         Ok(canvas)
     }
 
+    /// The inset shadow that is the first effect of the leaf `layer`, if it
+    /// can be drawn in the one pass that cuts the leaf out of its page
+    /// (`Compositor::inset_from_page`): it has no blur and no spread, and the
+    /// leaf's pixels are what the page holds (a noise layer's are made from
+    /// them first).
+    fn sharp_inset_first(&self, layer: &ResolvedLayer) -> Option<ResolvedShadow> {
+        match (&layer.kind, layer.effects.first()) {
+            (ResolvedKind::Noise { .. }, _) => None,
+            (_, Some(ResolvedEffect::InsetShadow(shadow)))
+                if self.compositor.is_sharp_inset(shadow) =>
+            {
+                Some(*shadow)
+            }
+            _ => None,
+        }
+    }
+
     /// Where `layer`'s texture is cached, if it may be: the cache is on, the
     /// layer is not one of a motion-blurred layer's samples, and neither it
     /// nor its matte source blurs the backdrop, which makes its texture
@@ -865,6 +882,8 @@ impl Renderer {
             ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => None,
             _ => Some(self.raster_bounds(layer, matrix)?),
         };
+        // How many of the layer's effects drawing it has applied already.
+        let mut applied = 0;
         let src = match &layer.kind {
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
@@ -891,9 +910,18 @@ impl Renderer {
             _ => {
                 let region = raster.unwrap_or_else(|| self.whole());
                 let drawn = match self.page_target(layer, matrix)? {
-                    Some((page, area)) => self.timed(Stage::Composite, |s| {
-                        s.compositor.from_srgb8(&page, area, region)
-                    }),
+                    Some((page, area)) => match self.sharp_inset_first(layer) {
+                        // One pass cuts the leaf out and draws its inset shadow.
+                        Some(shadow) => {
+                            applied = 1;
+                            self.timed(Stage::Composite, |s| {
+                                s.compositor.inset_from_page(&page, area, region, &shadow)
+                            })
+                        }
+                        None => self.timed(Stage::Composite, |s| {
+                            s.compositor.from_srgb8(&page, area, region)
+                        }),
+                    },
                     None => {
                         let area = self.vello_area(region);
                         self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
@@ -943,7 +971,7 @@ impl Renderer {
                 src,
                 matrix,
                 layer_box,
-                &layer.effects,
+                &layer.effects[applied..],
                 backdrop,
                 coverage.as_ref(),
                 box_shadow.as_ref(),

@@ -257,6 +257,9 @@ pub struct Compositor {
     /// An inset shadow with no spread and no blur, which inverts the layer's
     /// alpha itself.
     inset_inverted: wgpu::RenderPipeline,
+    /// `inset_inverted` on a leaf that is still in its Vello page, cut out
+    /// and converted as it is read (`shaders/page.wgsl`).
+    inset_page: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
@@ -338,6 +341,7 @@ impl Compositor {
             "blend many",
             include_str!("shaders/blend_many.wgsl"),
         );
+        let page_shader = shader_module(device, "page", include_str!("shaders/page.wgsl"));
         let shadow_shader = shader_module(device, "shadow", include_str!("shaders/shadow.wgsl"));
         let shadow_box_shader = shader_module(
             device,
@@ -530,6 +534,7 @@ impl Compositor {
             drop_box: pipeline(&shadow_box_shader, "fs_drop_box", LINEAR_FORMAT),
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
             inset_inverted: pipeline(&shadow_shader, "fs_inset_inverted", LINEAR_FORMAT),
+            inset_page: pipeline(&page_shader, "fs_inset_page", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
@@ -589,6 +594,7 @@ impl Compositor {
             (&c.drop_box, "drop shadow (box)"),
             (&c.inset_shadow, "inset shadow"),
             (&c.inset_inverted, "inset shadow"),
+            (&c.inset_page, "inset shadow"),
             (&c.color, "colour filter"),
             (&c.glow, "glow"),
             (&c.aberration, "aberration"),
@@ -1738,6 +1744,51 @@ impl Compositor {
         target
     }
 
+    /// Whether the inset shadow `shadow` has no blur and no spread, which
+    /// lets one pass draw it from the layer itself (`shadow`,
+    /// `inset_from_page`).
+    pub fn is_sharp_inset(&self, shadow: &ResolvedShadow) -> bool {
+        self.fusion
+            && shadow.spread == 0.0
+            && (shadow.blur.is_nan() || shadow.blur < blur::MIN_RADIUS)
+    }
+
+    /// The leaf whose pixels are the box `region` of the Vello page `page`
+    /// (drawn over `area` of the canvas), with the inset shadow `shadow`,
+    /// which `is_sharp_inset`, over it: what `from_srgb8` and then `shadow`
+    /// make, in one pass.
+    pub fn inset_from_page(
+        &mut self,
+        page: &wgpu::TextureView,
+        area: PixelRect,
+        region: PixelRect,
+        shadow: &ResolvedShadow,
+    ) -> Tex {
+        let target = self.target(region);
+        let input = Input {
+            view: page,
+            origin: [area.x0, area.y0],
+            size: [area.width(), area.height()],
+        };
+        let [r, g, b, a] = shadow.color.linear_premultiplied();
+        let mut params: Vec<u8> = [region.x0, region.y0, region.x1, region.y1]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        params.extend(floats(&[
+            shadow.x,
+            shadow.y,
+            self.width as f32,
+            self.height as f32,
+            r as f32,
+            g as f32,
+            b as f32,
+            a as f32,
+        ]));
+        self.run_pass(&self.inset_page, input, input, &params, &target);
+        target
+    }
+
     /// Adds a drop shadow under `src`, or an inset shadow over it. `src`
     /// goes back to the pool; the result is a new texture.
     ///
@@ -1753,11 +1804,7 @@ impl Compositor {
         // An inset shadow with no spread and no blur is the layer's alpha
         // inverted and shifted: one pass reads the inversion where it needs it
         // instead of a pass writing it out first.
-        if self.fusion
-            && inset
-            && spread == 0.0
-            && (shadow.blur.is_nan() || shadow.blur < blur::MIN_RADIUS)
-        {
+        if inset && self.is_sharp_inset(shadow) {
             let [r, g, b, a] = shadow.color.linear_premultiplied();
             let params = floats(&[
                 self.width as f32,
