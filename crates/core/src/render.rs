@@ -152,7 +152,7 @@ pub struct Renderer {
     pages: Pages,
     /// The Vello targets of the frame's pages once it is over, to be drawn
     /// into again by the next frame's.
-    page_targets: Vec<wgpu::TextureView>,
+    page_targets: HashMap<(u32, u32), Vec<wgpu::TextureView>>,
     /// Above 0 while the samples of a motion-blurred layer are drawn: they are
     /// copies of one layer with the same ids, and only their average is kept.
     /// Their leaves are also rasterised into the box they cover, not the
@@ -214,7 +214,7 @@ impl Renderer {
             cache: LayerCache::new(CACHE_BYTES),
             cache_path: Vec::new(),
             pages: Pages::default(),
-            page_targets: Vec::new(),
+            page_targets: HashMap::new(),
             cache_paused: 0,
         };
         renderer.ensure_image_renderer(fresh.has_pictures())?;
@@ -541,6 +541,7 @@ impl Renderer {
             if pending.len() >= MAX_PENDING {
                 canvas = self.blend_pending(canvas, pending);
             }
+            self.compositor.submit_if_large();
         }
         Ok(canvas)
     }
@@ -988,10 +989,19 @@ impl Renderer {
                 self.compositor.release(src);
                 src = self.timed(Stage::Composite, |s| s.compositor.empty());
             } else if !src.bounds.is_empty() {
-                self.timed(Stage::Raster, |s| s.rasterise_clip(&path, matrix))?;
-                src = self.timed(Stage::Composite, |s| {
-                    s.compositor.mask(src, &s.vello_view, MaskMode::Alpha, keep)
-                });
+                src = match self.clip_page_target(layer, matrix)? {
+                    // The shape was drawn with the page it is on.
+                    Some((page, area)) => self.timed(Stage::Composite, |s| {
+                        s.compositor
+                            .mask_from(src, &page, area, MaskMode::Alpha, keep)
+                    }),
+                    None => {
+                        self.timed(Stage::Raster, |s| s.rasterise_clip(&path, matrix))?;
+                        self.timed(Stage::Composite, |s| {
+                            s.compositor.mask(src, &s.vello_view, MaskMode::Alpha, keep)
+                        })
+                    }
+                };
             }
         }
         if let Some(mask) = &layer.mask
@@ -1046,8 +1056,9 @@ impl Renderer {
     fn plan_pages(&mut self, layers: &[ResolvedLayer]) -> Result<()> {
         let mut leaves = Vec::new();
         self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
-        let regions: Vec<PixelRect> = leaves.iter().map(|(_, _, region)| *region).collect();
-        for page in pack_pages(&regions) {
+        let regions: Vec<PixelRect> = leaves.iter().map(|leaf| leaf.region).collect();
+        let packed = pack_pages(&regions);
+        for page in packed {
             self.vello_scene.reset();
             let mut has_images = false;
             // Vello draws from the canvas's top left corner, as a draw of the
@@ -1055,11 +1066,28 @@ impl Renderer {
             // leaf is asked for.
             let mut reach = PixelRect::EMPTY;
             for i in page {
-                let (layer, matrix, region) = leaves[i];
-                self.encode_leaf(layer, matrix)?;
-                has_images |= draws_image(&layer.kind);
-                reach = reach.union(region);
-                let key = leaf_key(layer, matrix);
+                let leaf = &leaves[i];
+                match &leaf.clip {
+                    Some(path) => {
+                        self.vello_scene.fill(
+                            Fill::NonZero,
+                            leaf.matrix,
+                            peniko::Color::WHITE,
+                            None,
+                            path,
+                        );
+                    }
+                    None => {
+                        self.encode_leaf(leaf.layer, leaf.matrix)?;
+                        has_images |= draws_image(&leaf.layer.kind);
+                    }
+                }
+                reach = reach.union(leaf.region);
+                let key = if leaf.clip.is_some() {
+                    clip_key(leaf.layer, leaf.matrix)
+                } else {
+                    leaf_key(leaf.layer, leaf.matrix)
+                };
                 self.pages.page_of.insert(key, self.pages.pages.len());
             }
             self.pages.pages.push(Page {
@@ -1069,6 +1097,7 @@ impl Renderer {
                 )),
                 has_images,
                 area: PixelRect::new(0, 0, reach.x1, reach.y1).intersect(self.whole()),
+                target_size: (0, 0),
                 target: None,
             });
         }
@@ -1076,12 +1105,14 @@ impl Renderer {
     }
 
     /// The leaves of `layers` and their groups for `plan_pages`: each with
-    /// the matrix and the box `layer_texture` rasterises it with.
+    /// the matrix and the box `layer_texture` rasterises it with, and the
+    /// clip shapes of the layers that have a clip, in white, with the box
+    /// they are masked by.
     fn collect_leaves<'a>(
         &mut self,
         layers: &'a [ResolvedLayer],
         parent: Affine,
-        leaves: &mut Vec<(&'a ResolvedLayer, Affine, PixelRect)>,
+        leaves: &mut Vec<Leaf<'a>>,
     ) -> Result<()> {
         for layer in layers {
             let matte_source = is_matte_source(layers, layer);
@@ -1089,6 +1120,18 @@ impl Renderer {
                 continue;
             }
             let matrix = parent * layer.transform.matrix();
+            if let Some(clip) = &layer.clip {
+                let path = self.clip_path(clip, layer)?;
+                let region = self.path_bounds(&path, matrix);
+                if !region.is_empty() {
+                    leaves.push(Leaf {
+                        layer,
+                        matrix,
+                        region,
+                        clip: Some(path),
+                    });
+                }
+            }
             match &layer.kind {
                 ResolvedKind::Group {
                     children,
@@ -1099,7 +1142,12 @@ impl Renderer {
                 _ => {
                     let region = self.raster_bounds(layer, matrix)?;
                     if !region.is_empty() {
-                        leaves.push((layer, matrix, region));
+                        leaves.push(Leaf {
+                            layer,
+                            matrix,
+                            region,
+                            clip: None,
+                        });
                     }
                 }
             }
@@ -1117,10 +1165,24 @@ impl Renderer {
         layer: &ResolvedLayer,
         matrix: Affine,
     ) -> Result<Option<(wgpu::TextureView, PixelRect)>> {
+        self.page_target_of(leaf_key(layer, matrix))
+    }
+
+    /// `page_target` for the clip shape of `layer` under `matrix`, drawn in
+    /// white: its alpha is the clip's coverage.
+    fn clip_page_target(
+        &mut self,
+        layer: &ResolvedLayer,
+        matrix: Affine,
+    ) -> Result<Option<(wgpu::TextureView, PixelRect)>> {
+        self.page_target_of(clip_key(layer, matrix))
+    }
+
+    fn page_target_of(&mut self, key: LeafKey) -> Result<Option<(wgpu::TextureView, PixelRect)>> {
         if self.cache_paused > 0 {
             return Ok(None);
         }
-        let Some(&page) = self.pages.page_of.get(&leaf_key(layer, matrix)) else {
+        let Some(&page) = self.pages.page_of.get(&key) else {
             return Ok(None);
         };
         let area = self.pages.pages[page].area;
@@ -1132,10 +1194,19 @@ impl Renderer {
             .take()
             .expect("a page that is not drawn has its scene");
         let has_images = self.pages.pages[page].has_images;
+        // A texture just big enough for the area, in steps of
+        // `bounds::SIZE_STEP` so that the frames' pages find ones to reuse.
+        let size = (
+            bounds::size_class(area.width(), self.target_size.0),
+            bounds::size_class(area.height(), self.target_size.1),
+        );
         let target = self
             .page_targets
+            .entry(size)
+            .or_default()
             .pop()
-            .unwrap_or_else(|| new_vello_target(&self.device, self.target_size));
+            .unwrap_or_else(|| new_vello_target(&self.device, size));
+        self.pages.pages[page].target_size = size;
         let previous = std::mem::replace(&mut self.vello_scene, scene);
         let rendered = self.timed(Stage::Raster, |s| {
             s.render_vello_scene_to(has_images, area, &target)
@@ -1149,7 +1220,12 @@ impl Renderer {
     /// Forgets the pages, keeping their Vello textures for the next frame's.
     fn clear_pages(&mut self) {
         for page in self.pages.pages.drain(..) {
-            self.page_targets.extend(page.target);
+            if let Some(target) = page.target {
+                self.page_targets
+                    .entry(page.target_size)
+                    .or_default()
+                    .push(target);
+            }
         }
         self.pages.page_of.clear();
     }
@@ -1840,6 +1916,22 @@ fn margin_origin(margin: u32) -> Affine {
 /// address, which is the same for the whole frame) and its matrix.
 type LeafKey = (usize, [u64; 6]);
 
+/// A leaf of `plan_pages`: a layer's own pixels, or the white shape of its
+/// clip (`clip`, which `region` is the box of).
+struct Leaf<'a> {
+    layer: &'a ResolvedLayer,
+    matrix: Affine,
+    region: PixelRect,
+    clip: Option<BezPath>,
+}
+
+/// Where the clip shape of a layer is: its key with the address one past
+/// the layer's, which no layer is at.
+fn clip_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
+    let (address, matrix) = leaf_key(layer, matrix);
+    (address + 1, matrix)
+}
+
 fn leaf_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
     (
         std::ptr::from_ref(layer) as usize,
@@ -1864,6 +1956,8 @@ struct Page {
     /// The pixels Vello draws of it: the canvas's top left corner and what
     /// reaches as far as the page's leaves do.
     area: PixelRect,
+    /// The size of the texture Vello draws it into, once it is drawn.
+    target_size: (u32, u32),
     /// The texture Vello drew it into, once it is drawn. Each page has one
     /// of its own for the rest of the frame, so a leaf is cut out of it
     /// whenever the leaf is wanted.
@@ -1885,7 +1979,12 @@ fn pack_pages(regions: &[PixelRect]) -> Vec<Vec<usize>> {
     let overlaps = |i: usize, j: usize| !regions[i].intersect(regions[j]).is_empty();
     let mut pages: Vec<Vec<usize>> = Vec::new();
     if n > DSATUR_LEAVES {
-        for i in 0..n {
+        // Largest first: the big boxes that overlap everything are alone on
+        // their pages early, and the small ones fill in around them.
+        let area = |i: usize| i64::from(regions[i].width()) * i64::from(regions[i].height());
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|&i| (std::cmp::Reverse(area(i)), i));
+        for i in order {
             match pages
                 .iter_mut()
                 .find(|page| page.iter().all(|&j| !overlaps(i, j)))
@@ -1893,6 +1992,9 @@ fn pack_pages(regions: &[PixelRect]) -> Vec<Vec<usize>> {
                 Some(page) => page.push(i),
                 None => pages.push(vec![i]),
             }
+        }
+        for page in &mut pages {
+            page.sort_unstable();
         }
         return pages;
     }

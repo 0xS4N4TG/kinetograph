@@ -179,6 +179,9 @@ pub struct BlendLayer<'a> {
     pub mode: BlendMode,
 }
 
+/// How many recorded passes and copies `submit_if_large` lets wait.
+const SUBMIT_OPS: u32 = 512;
+
 /// How many layers one `blend_many` pass composites (`SLOTS` in
 /// `shaders/blend_many.wgsl`).
 const BLEND_SLOTS: usize = 8;
@@ -311,6 +314,9 @@ pub struct Compositor {
     /// here instead of submitting one by one, which costs the driver far
     /// more than the passes themselves.
     pending: RefCell<Option<wgpu::CommandEncoder>>,
+    /// How many times `encoder` has been asked for since the last `submit`:
+    /// about how many passes and copies `pending` holds.
+    recorded: std::cell::Cell<u32>,
     /// The passes' uniform blocks.
     uniforms: RefCell<Uniforms>,
     /// Times each pass when `bench --passes` asks (`set_pass_timing`).
@@ -575,6 +581,7 @@ impl Compositor {
             layout,
             pool: Pool::new(POOL_BYTES),
             pending: RefCell::new(None),
+            recorded: std::cell::Cell::new(0),
             uniforms: RefCell::new(Uniforms::new(device, queue)),
             timer: None,
             fusion: true,
@@ -680,6 +687,7 @@ impl Compositor {
 
     /// The encoder the passes record into, until the next `submit`.
     fn encoder(&self) -> RefMut<'_, wgpu::CommandEncoder> {
+        self.recorded.set(self.recorded.get() + 1);
         RefMut::map(self.pending.borrow_mut(), |pending| {
             pending.get_or_insert_with(|| self.device.create_command_encoder(&Default::default()))
         })
@@ -691,7 +699,18 @@ impl Compositor {
     pub fn submit(&self) -> Option<wgpu::SubmissionIndex> {
         self.uniforms.borrow_mut().upload();
         let encoder = self.pending.borrow_mut().take()?;
+        self.recorded.set(0);
         Some(self.queue.submit([encoder.finish()]))
+    }
+
+    /// Submits what is recorded if there is a great deal of it. One command
+    /// buffer of several thousand passes is not accepted by the driver (the
+    /// submission fails without an error), so a frame of thousands of layers
+    /// is sent in pieces.
+    pub fn submit_if_large(&self) {
+        if self.recorded.get() >= SUBMIT_OPS {
+            self.submit();
+        }
     }
 
     /// Starts a frame: the uniform blocks of the last one are no longer
@@ -772,16 +791,6 @@ impl Compositor {
         copy_box(&mut encoder, src, &full, src.bounds);
         drop(encoder);
         Some(full)
-    }
-
-    /// The Vello output texture, which is the size of the canvas, as a pass
-    /// input.
-    fn vello_input<'a>(&self, view: &'a wgpu::TextureView) -> Input<'a> {
-        Input {
-            view,
-            origin: [0, 0],
-            size: [self.width, self.height],
-        }
     }
 
     /// A texture filled with `color` (linear, premultiplied), the size of
@@ -1018,12 +1027,30 @@ impl Compositor {
         mode: MaskMode,
         keep: PixelRect,
     ) -> Tex {
+        let whole = self.whole();
+        self.mask_from(src, vello_output, whole, mode, keep)
+    }
+
+    /// `mask` with a Vello output that drew only `area` of the canvas, from
+    /// the top left corner of the texture: it is transparent outside.
+    pub fn mask_from(
+        &mut self,
+        src: Tex,
+        vello_output: &wgpu::TextureView,
+        area: PixelRect,
+        mode: MaskMode,
+        keep: PixelRect,
+    ) -> Tex {
         let mode = match mode {
             MaskMode::Alpha => 0,
             MaskMode::Luminance => 2,
         };
         let target = self.target(src.bounds.intersect(keep));
-        let vello = self.vello_input(vello_output);
+        let vello = Input {
+            view: vello_output,
+            origin: [area.x0, area.y0],
+            size: [area.width(), area.height()],
+        };
         self.pass(&self.mask, src.input(), vello, 0.0, mode, &target);
         self.release(src);
         target
