@@ -199,6 +199,29 @@ case!(clipped_positioned, 340, 200, {
         .to_string()
 });
 
+// `-webkit-line-clamp`: the height is the bottom of the Nth line, the ellipsis ends it.
+case!(line_clamp, 340, 300, {
+    r#"<div style="position:absolute;left:10px;top:10px;width:150px;font-size:16px;line-height:20px;background:#eef;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">The quick brown fox jumps over the lazy dog and keeps running far away</div>
+<div style="position:absolute;left:180px;top:10px;width:150px;font-size:16px;line-height:20px;background:#efe;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3">The quick brown fox jumps over the lazy dog and keeps running far away until night</div>
+<div style="position:absolute;left:10px;top:80px;width:150px;font-size:16px;line-height:20px;background:#fee;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden">Short</div>
+<div style="position:absolute;left:180px;top:80px;width:150px;font-size:16px;line-height:20px;background:#ffe;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;padding:4px">Antidisestablishmentarianism and other quite long words follow here</div>
+<div style="position:absolute;left:10px;top:150px;width:150px;font-size:16px;line-height:20px;background:#eff;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden"><p style="margin:6px 0">The quick brown fox jumps</p><p style="margin:6px 0">over the lazy dog and keeps running far away</p></div>
+<div style="position:absolute;left:180px;top:150px;width:150px;font-size:16px;line-height:20px;background:#fef;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden"><span style="display:inline-block;width:14px;height:34px;background:#39c;vertical-align:bottom"></span>The quick brown fox jumps over the lazy dog and keeps running</div>
+<div style="position:absolute;left:10px;top:230px;width:150px;height:60px;font-size:16px;line-height:20px;background:#fed;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">The quick brown fox jumps over the lazy dog and keeps running far away</div>
+<div style="position:absolute;left:180px;top:230px;width:150px;font-size:16px;line-height:20px;background:#def;box-sizing:border-box;border:3px solid #369;padding:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:#036;text-overflow:ellipsis">The quick brown fox jumps over the lazy dog and keeps running far away</div>"#
+        .to_string()
+});
+
+// `text-overflow: ellipsis` on a box that clips: a line that is too long ends with the ellipsis.
+case!(text_overflow, 340, 140, {
+    r#"<div style="position:absolute;left:10px;top:10px;width:120px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#eef">A long line of text that overflows</div>
+<div style="position:absolute;left:150px;top:10px;width:120px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#efe">Short</div>
+<div style="position:absolute;left:10px;top:50px;width:120px;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px;background:#fee;color:#a30">Supercalifragilistic expialidocious <b>bold tail</b> end</div>
+<div style="position:absolute;left:150px;top:50px;width:150px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:clip;background:#ffe">A long line of text that overflows</div>
+<div style="position:absolute;left:10px;top:90px;width:200px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:underline;text-shadow:1px 1px 2px #888">Underlined text with a shadow overflowing</div>"#
+        .to_string()
+});
+
 case!(borders, 340, 260, {
     r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:50px;border:3px solid;border-color:#f00 #0a0 #00f #fa0"></div>
 <div style="position:absolute;left:120px;top:10px;width:90px;height:50px;border-style:solid;border-width:2px 8px 14px 4px;border-color:#234;border-radius:12px 30px 5px 20px"></div>

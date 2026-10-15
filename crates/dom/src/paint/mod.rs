@@ -22,6 +22,7 @@ mod border_image;
 mod clip;
 mod deco;
 mod effects;
+mod ellipsis;
 mod fonts;
 mod geom;
 mod gradient;

@@ -25,6 +25,8 @@ kurbo = "0.13.1"
 # Fonts: the Parley context Blitz lays text out with.
 parley = { version = "0.12.0", default-features = false, features = ["std"] }
 read-fonts = "0.41.0"
+# The advance of the ellipsis glyph (`paint::ellipsis`), the version Parley uses.
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 taffy = { version = "0.15.0", default-features = false, features = ["std"] }
 # Sub-resources are local files and data URLs.
 url = "2.5.8"

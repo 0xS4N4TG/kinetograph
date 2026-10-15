@@ -25,6 +25,7 @@ use blitz_dom::{
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
 
+use crate::clamp;
 use crate::fonts;
 use crate::inline;
 use crate::net::{self, LocalFiles};
@@ -85,7 +86,7 @@ pub fn parse_request(json: &str) -> Result<IslandRequest, serde_json::Error> {
 
 /// Switches on the CSS features Chrome has and Stylo ships off. They are
 /// process-wide and must be set before a document (its style system) is made.
-fn enable_css_features() {
+pub fn enable_css_features() {
     style_config::set_pref!("layout.css.has-selector.enabled", true);
     style_config::set_pref!("layout.container-queries.enabled", true);
     style_config::set_pref!("layout.css.nth-child-of.enabled", true);
@@ -203,6 +204,11 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     // those widths out of the text, so give the text the widths (inline.rs).
     if inline::add_edge_spacers(&mut island.doc) > 0 {
         island.doc.resolve(request.time);
+    }
+    // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
+    // only known once the text is laid out.
+    if clamp::requested(request) {
+        clamp::settle(&mut island.doc, request.time);
     }
     island.missing = files.missing();
     Ok(island)

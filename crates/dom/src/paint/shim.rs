@@ -3,7 +3,8 @@
 //!
 //! This Stylo is built without Gecko's property set: `filter: url(#id)`,
 //! `background-clip: text`, `-webkit-text-stroke`, `-webkit-text-fill-color`,
-//! `paint-order` and `text-decoration-skip-ink` are dropped as invalid. The
+//! `paint-order`, `text-decoration-skip-ink`, `-webkit-line-clamp`,
+//! `-webkit-box-orient` and `display: -webkit-box` are dropped as invalid. The
 //! front half runs every stylesheet and every `style` attribute through
 //! [`shim_css`] before it reaches the document, which writes the same value
 //! into a custom property (`--kg-filter: url(#id) blur(2px)`) next to the
@@ -25,6 +26,10 @@ const MIRRORED: &[&str] = &[
     "-webkit-text-fill-color",
     "paint-order",
     "text-decoration-skip-ink",
+    "-webkit-line-clamp",
+    "-webkit-box-orient",
+    // Only the legacy `-webkit-box` values (see `is_mirrored`).
+    "display",
 ];
 
 /// The custom property that mirrors `name` (`filter` and `-webkit-filter`
@@ -225,6 +230,13 @@ pub fn shim_css(css: &str) -> String {
                     None => ("", value),
                 };
                 let lname = name.to_ascii_lowercase();
+                // Every `display` is parsed by Stylo; only the legacy box values are not.
+                if lname == "display" && !value.to_ascii_lowercase().starts_with("-webkit-") {
+                    out.extend(&bytes[i..e]);
+                    i = e;
+                    at_decl_start = false;
+                    continue;
+                }
                 // What Stylo is given: the value, less the `url()`s of a filter.
                 let for_stylo =
                     if (lname == "filter" || lname == "-webkit-filter") && value.contains("url(") {
@@ -267,6 +279,16 @@ mod tests {
         assert!(s.contains("--kg-filter:url(#torn) blur(2px)"), "{s}");
         let s = shim_css("a{filter: url(#only)}");
         assert!(s.contains("filter:none;"), "{s}");
+    }
+
+    #[test]
+    fn the_legacy_box_properties_are_mirrored_but_other_displays_are_not() {
+        let s = shim_css("a{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}");
+        assert!(s.contains("--kg-display:-webkit-box"), "{s}");
+        assert!(s.contains("--kg-box-orient:vertical"), "{s}");
+        assert!(s.contains("--kg-line-clamp:2"), "{s}");
+        let s = shim_css("a{display:flex;color:red}");
+        assert_eq!(s, "a{display:flex;color:red}");
     }
 
     #[test]

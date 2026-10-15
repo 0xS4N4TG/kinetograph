@@ -1868,6 +1868,7 @@ dependencies = [
  "read-fonts",
  "serde",
  "serde_json",
+ "skrifa",
  "stylo",
  "stylo_static_prefs",
  "stylo_traits",
