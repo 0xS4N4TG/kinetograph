@@ -357,15 +357,31 @@ of sequences and layers, scene tree from `inspect`, props panel, render queue ca
 Plus video layers (`<Video>`, `<OffthreadVideo>`, `@remotion/gif`, section 5).
 **Built 2026-10-15 in one cloud session** (draft PR from `feat/studio-video`, the four stream branches merged into it
 and kept): the contract is `docs/AUTHORING.md` §11, SCENE.md's `video` and `gif`, and `packages/studio/src/protocol.ts`;
-the example is `examples/video-overlay/`. CPU checks green; nothing has rendered on a GPU yet. On the M4: the list in
-"Phase 4 in a cloud session" below.
+the example is `examples/video-overlay/`. Tested on the M4 and **merged into `main` 2026-10-16** (merge `449a639`,
+with Phase 5 and the full engine).
 **Phase 5: Remotion compat mode.** CSS subset mapped onto layers (possibly via Blitz/Stylo), Chrome fallback per frame
 range, `doctor`.
 **Built 2026-10-15 in the same cloud session** (draft PR from `feat/remotion-compat` against `feat/studio-video`, the
 four stream branches merged into it and kept): the contract is `docs/COMPAT.md`; the example is `examples/compat/`,
 where `doctor` reports 126 of 150 frames native and one Chrome run (96..119, the `textDecoration` it uses on purpose).
-CPU checks green, plus a Chromium-on-CPU integration test of the fallback; nothing has rendered on a GPU yet. On the
-M4: the list in "Phase 5 in the same cloud session" below.
+Tested on the M4 and **merged into `main` 2026-10-16** (merge `449a639`). The native DOM engine (Stylo, taffy, Parley,
+our compositor as the painter; `docs/ENGINE.md`) replaced the TS CSS mapper this phase first shipped with. On the
+papercut corpus 988 of 988 frames now draw natively, and pixels more than 48 levels off Chrome summed over the
+corpus fell from 5,312,576 to 1,276,162. Papercut ep13 frame 30 went from 990 to 500 ms. The Chrome fallback still
+exists and is removed in Phase 6.
+
+**Phase 6: finish the port, remove Chrome** (started 2026-10-16). Everything left before the render path has no
+browser in it. Streams in progress on their own branches are marked (building); the rest are queued in this order.
+1. Deferred browser-API ports (see "Deferred" below):
+   - Canvas 2D, native (building).
+   - CSS gaps: `line-clamp`, floats, tables, `@container`, transitions (building).
+   - WebGL fragment shaders, GLSL to WGSL through naga (next).
+2. Corpus leftovers (`docs/ENGINE.md` §10.5) and the painter suggestions (§11) (building), plus issues #16
+   (`kinetograph check`) and #17 (rajz-cards speed) (building).
+3. The own 3D layer (see "3D layer" above), after the ports.
+4. Last: remove the Phase 5 Chrome fallback (`--compat`, `packages/cli/src/fallback/`, Chrome for Testing). No Chrome
+   in the render path, canvas and WebGL included. `doctor` then reports what is unsupported instead of falling back.
+The showcase (`examples/showcase`) shots 3 to 10 redo is deferred by the user and is not part of Phase 6.
 
 **Building a phase in a Claude Code cloud session** (Phase 2 onwards). The cloud session writes code; all testing
 happens on the user's M4.
@@ -465,7 +481,7 @@ branch with a draft PR against `feat/node-authoring` (PR #11). The cloud rules a
   `main`.
 
 **Phase 4 in a cloud session** (decided 2026-10-15). Phases 4 and 5 run back to back in one cloud session (Phase 5
-below); the GPU-pass performance work waits until after both, on the M4.
+below); the GPU-pass performance work waited until after both (done, see Phase 2c).
 Same shape as Phase 3: one Opus 5.5 orchestrator at high effort and four Sonnet 5.5 subagents at high effort, started
 with the Agent tool (not a Workflow), each in its own git worktree. The cloud rules above hold: code and CPU checks
 only (`cargo build`, `fmt --check`, `clippy --all-targets -D warnings`, `cargo test --lib`, `npm ci`, `npm run build`,
@@ -581,7 +597,8 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
 ### Deferred: browser APIs the engine does not have yet (logged 2026-10-15)
 
 Remotion projects work unchanged when their effects are CSS, SVG or plain JS. These do not, and `doctor` reports
-them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only.
+them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only. This is
+Phase 6 (above); status as of 2026-10-16: items 1 and 2 are being built, item 3 is next, item 4 stays dropped.
 1. **CSS gaps** (smallest). `line-clamp`: cut the shaped lines at N and add the ellipsis. Floats and tables: check
    whether a newer Blitz lays them out before writing our own (an upgrade also means redoing the fontique patch).
    `@container`: Stylo parses container queries; lay out once for the container sizes, restyle, lay out again. CSS

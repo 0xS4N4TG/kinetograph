@@ -3,21 +3,22 @@
 A browserless programmatic video engine: agents write Remotion-shaped TypeScript and Web Audio code, Node runs it,
 and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is a placeholder name.
 
-Phases 1 and 2 (the core renderer: JSON scene graph, effects, camera, motion blur, `still`, `render`, `bench`) are
-built; see `README.md` and `docs/SCENE.md`. Before doing anything, read:
+Phases 0 to 5 are built and merged into `main` (core renderer, effects, authoring, studio and video layers, Remotion
+compat on a native DOM engine, GPU-pass work); see `README.md` and `docs/SCENE.md`. Before doing anything, read:
 
 - `docs/DECISION_RENDERING_CRITICAL.md`: **read first.** Decided 2026-10-15 after the first real Remotion project:
-  no Chrome ever (canvas/WebGL included), port every CSS/SVG feature natively, no Chrome stopgaps, GPU-pass work on
-  hold; plus the port list, test results and unpushed commits.
+  no Chrome ever (canvas/WebGL included), port every CSS/SVG feature natively, no Chrome stopgaps; plus the port list and
+  test results from then, and a 2026-10-16 status note (full engine and GPU-pass work approved and done, merged).
 - `docs/HANDOFF.md`: what it is, how it differs from fframes, architecture, effects list, agent CLI, roadmap, rules.
 - `docs/RESEARCH.md`: competitor scan, the papercut-vs-Blitz audit, the reference video breakdown.
 - `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.
 
 Decided 2026-10-14: own the engine, built from scratch (`HANDOFF.md` §3). fframes is a reference only. Phase 2 (2a,
-2b, 2c) done 2026-10-14. Phase 3 (`HANDOFF.md` §8) done 2026-10-15 (PR #11, with its fixes #18–#21). Next: Phases 4 (studio
-and video layers) and 5 (Remotion compat mode) back to back in one cloud session ("Phase 4 in a cloud session" and
-"Phase 5 in the same cloud session" in §8); after them, fewer GPU passes per frame on the M4. Cloud sessions write code only; all
-GPU tests, goldens and `bench` run on the M4 (see "Building a phase in a Claude Code cloud session" in §8).
+2b, 2c) done 2026-10-14. Phase 3 (`HANDOFF.md` §8) done 2026-10-15 (PR #11, with its fixes #18–#21). Phases 4 and 5 and
+the GPU-pass work merged into `main` 2026-10-16 (S04 7.0x faster than Remotion; papercut corpus 988/988 frames native).
+Next: Phase 6 (§8): Canvas 2D, CSS gaps, corpus leftovers and painter work (in progress), then WebGL fragment shaders,
+the own 3D layer, and last removing the Chrome fallback. Cloud sessions write code only; all GPU tests, goldens and
+`bench` run on the M4 (see "Building a phase in a Claude Code cloud session" in §8).
 
 Use the rustup toolchain (`~/.cargo/bin`, `/opt/homebrew/opt/rustup/bin`); Homebrew's `/opt/homebrew/bin/rustc` is
 broken.
