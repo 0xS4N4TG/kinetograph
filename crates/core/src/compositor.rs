@@ -118,6 +118,7 @@ use crate::uniforms::{Block, Uniforms};
 use crate::warp;
 
 mod filter_graph;
+mod glsl;
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -313,6 +314,8 @@ pub struct Compositor {
     filter: Option<filter_graph::FilterPipelines>,
     /// Vertex-colour triangles, for mesh gradients (`mesh_size` at group 0).
     mesh: wgpu::RenderPipeline,
+    /// WebGL layers: programs, pipelines and textures (`compositor/glsl.rs`).
+    glsl: glsl::GlslGpu,
     /// The padded texture size, which the mesh's vertex shader needs.
     mesh_size: wgpu::BindGroup,
     mesh_layout: wgpu::BindGroupLayout,
@@ -588,6 +591,7 @@ impl Compositor {
             displace,
             noise,
             filter: None,
+            glsl: glsl::GlslGpu::default(),
             mesh,
             mesh_size,
             mesh_layout,

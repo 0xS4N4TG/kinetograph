@@ -52,7 +52,7 @@ fn yes() -> bool {
 
 /// The programs, the data they draw from and the calls, in order.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct GlslContent {
     /// The context's `premultipliedAlpha` attribute: what it draws is read as
     /// premultiplied (the default) or straight colour.
@@ -378,12 +378,10 @@ fn tokenize(src: &str) -> Vec<Tok> {
             let start = i;
             while i < b.len() {
                 let d = b[i];
-                if d.is_ascii_alphanumeric() || d == b'.' || d == b'_' {
-                    i += 1;
-                } else if (d == b'+' || d == b'-')
+                let exponent_sign = (d == b'+' || d == b'-')
                     && matches!(b[i - 1], b'e' | b'E')
-                    && !src[start..i].starts_with("0x")
-                {
+                    && !src[start..i].starts_with("0x");
+                if d.is_ascii_alphanumeric() || d == b'.' || d == b'_' || exponent_sign {
                     i += 1;
                 } else {
                     break;
@@ -416,6 +414,31 @@ pub struct UniformDecl {
     pub array: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+struct PackedArray {
+    name: String,
+    /// The element type: `float`, `vec2`, `int`, `ivec2`, `uint` or `uvec2`.
+    ty: String,
+    len: u32,
+}
+
+impl PackedArray {
+    /// Elements in one `vec4`.
+    fn per_vec4(&self) -> u32 {
+        if self.ty.ends_with('2') { 2 } else { 4 }
+    }
+
+    /// The `vec4` type the elements travel in.
+    fn carrier(&self) -> &'static str {
+        match self.ty.as_bytes()[0] {
+            b'i' => "ivec4",
+            b'u' => "uvec4",
+            b'f' | b'v' => "vec4",
+            _ => unreachable!("a packed array is of floats, ints or uints"),
+        }
+    }
+}
+
 /// A varying by name, with the locations it takes and its type, shared by
 /// the two stages of a program.
 #[derive(Clone, Debug, Default)]
@@ -429,6 +452,13 @@ struct Rewritten {
     samplers: Vec<String>,
     /// The `bool` uniforms: name, GLSL type.
     bools: Vec<(String, String)>,
+    /// The `mat2` uniforms (naga cannot lay out a `matCx2` in a uniform
+    /// block): name and array length, as a `vec4` each.
+    mat2s: Vec<(String, Option<String>)>,
+    /// Arrays of scalars and of two-component vectors, which the Metal
+    /// backend lays out tighter than a uniform block's 16 bytes an element:
+    /// they travel as `vec4`s.
+    packed: Vec<PackedArray>,
     /// Attribute name, location, float components.
     attributes: Vec<(String, u32, Option<u32>)>,
     /// The varyings this stage declared, with their locations.
@@ -492,6 +522,8 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         uniforms: Vec::new(),
         samplers: Vec::new(),
         bools: Vec::new(),
+        mat2s: Vec::new(),
+        packed: Vec::new(),
         attributes: Vec::new(),
         varyings: Vec::new(),
         uses_frag_coord: false,
@@ -513,7 +545,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     while index < lines.len() {
         let line = lines[index];
         let trimmed = line.trim_start();
-        if trimmed.starts_with('#') {
+        if let Some(directive) = trimmed.strip_prefix('#') {
             // A directive with its continuation lines.
             let mut text = line.to_string();
             let mut extra = 0;
@@ -538,7 +570,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                     uses_point_size: &mut uses_point_size,
                 },
             )?;
-            let name = trimmed[1..].trim_start();
+            let name = directive.trim_start();
             if name.starts_with("version") || name.starts_with("extension") {
                 // Removed, keeping the lines.
                 body.push_str(&"\n".repeat(extra));
@@ -602,6 +634,18 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         let int_ty = ty.replacen("bvec", "ivec", 1).replacen("bool", "int", 1);
         members.push_str(&format!("{int_ty} {}; ", hidden(name)));
     }
+    for (name, array) in &r.mat2s {
+        let suffix = array.as_ref().map(|n| format!("[{n}]")).unwrap_or_default();
+        members.push_str(&format!("vec4 _k_m2_{name}{suffix}; "));
+    }
+    for a in &r.packed {
+        members.push_str(&format!(
+            "{} _k_a_{}[{}]; ",
+            a.carrier(),
+            a.name,
+            a.len.div_ceil(a.per_vec4())
+        ));
+    }
     if !members.is_empty() {
         let binding = u32::from(fragment);
         prelude.push_str(&format!(
@@ -618,6 +662,13 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     }
     for (name, ty) in &r.bools {
         prelude.push_str(&format!("{ty} {name}; "));
+    }
+    for (name, array) in &r.mat2s {
+        let suffix = array.as_ref().map(|n| format!("[{n}]")).unwrap_or_default();
+        prelude.push_str(&format!("mat2 {name}{suffix}; "));
+    }
+    for a in &r.packed {
+        prelude.push_str(&format!("{} {}[{}]; ", a.ty, a.name, a.len));
     }
     if fragment {
         if !has_out {
@@ -644,6 +695,28 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                 hidden(name)
             ));
         }
+    }
+    for (name, array) in &r.mat2s {
+        match array {
+            None => wrapper.push_str(&format!(
+                "{name} = mat2(_k_m2_{name}.xy, _k_m2_{name}.zw); "
+            )),
+            Some(n) => wrapper.push_str(&format!(
+                "for (int _k_i = 0; _k_i < {n}; _k_i++) {{ {name}[_k_i] = \
+                 mat2(_k_m2_{name}[_k_i].xy, _k_m2_{name}[_k_i].zw); }} "
+            )),
+        }
+    }
+    for a in &r.packed {
+        let (name, len) = (&a.name, a.len);
+        let from = if a.per_vec4() == 4 {
+            format!("_k_a_{name}[_k_i / 4][_k_i % 4]")
+        } else {
+            format!("((_k_i % 2 == 0) ? _k_a_{name}[_k_i / 2].xy : _k_a_{name}[_k_i / 2].zw)")
+        };
+        wrapper.push_str(&format!(
+            "for (int _k_i = 0; _k_i < {len}; _k_i++) {{ {name}[_k_i] = {from}; }} "
+        ));
     }
     wrapper.push_str("_k_main(); ");
     if !fragment {
@@ -1038,6 +1111,31 @@ fn declaration(
                         return Err(unsupported(format!("`{name}`: an array of `{ty}`")));
                     }
                     r.bools.push((name, ty.clone()));
+                } else if ty == "mat2" || ty == "mat2x2" {
+                    if let Some(n) = &array
+                        && n.parse::<u32>().is_err()
+                    {
+                        return Err(unsupported(format!(
+                            "`{name}`: the length of an array of mat2 must be a number, got `{n}`"
+                        )));
+                    }
+                    r.mat2s.push((name, array));
+                } else if let Some(n) = array.as_ref().filter(|_| {
+                    matches!(
+                        ty.as_str(),
+                        "float" | "vec2" | "int" | "ivec2" | "uint" | "uvec2"
+                    )
+                }) {
+                    let len = n.parse::<u32>().ok().filter(|l| *l > 0).ok_or_else(|| {
+                        unsupported(format!(
+                            "`{name}`: the length of an array uniform must be a number, got `{n}`"
+                        ))
+                    })?;
+                    r.packed.push(PackedArray {
+                        name,
+                        ty: ty.clone(),
+                        len,
+                    });
                 } else if is_builtin_type(&ty) {
                     r.uniforms.push(UniformDecl {
                         name,
@@ -1162,6 +1260,11 @@ pub struct UniformMember {
     /// Array length and element stride in bytes, for an array.
     pub array: Option<(u32, u32)>,
     pub is_bool: bool,
+    /// A `mat2`, kept as four floats in a `vec4`, column-major.
+    pub is_mat2: bool,
+    /// An array of scalars (1) or of two-component vectors (2), kept in
+    /// `vec4`s: how many components an element has.
+    pub packed: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1278,6 +1381,25 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
                 member.name = real.to_string();
                 member.is_bool = true;
                 uniforms.push(member);
+            } else if let Some(real) = name.strip_prefix("_k_a_") {
+                let packed = r
+                    .packed
+                    .iter()
+                    .find(|a| a.name == real)
+                    .ok_or_else(|| format!("{label}: lost the array `{real}`"))?;
+                let mut member = member;
+                member.name = real.to_string();
+                member.packed = Some(if packed.ty.ends_with('2') { 2 } else { 1 });
+                member.array = Some((packed.len, 16));
+                member.components = member.packed.expect("set above");
+                member.columns = 1;
+                member.rows = member.components;
+                uniforms.push(member);
+            } else if let Some(real) = name.strip_prefix("_k_m2_") {
+                let mut member = member;
+                member.name = real.to_string();
+                member.is_mat2 = true;
+                uniforms.push(member);
             } else {
                 uniforms.push(member);
             }
@@ -1341,6 +1463,8 @@ fn member_of(
         rows,
         array,
         is_bool: false,
+        is_mat2: false,
+        packed: None,
     })
 }
 
@@ -1364,6 +1488,169 @@ pub fn translate(program: &GlslProgram) -> std::result::Result<Translated, Strin
         vertex: parse_stage(ShaderStage::Vertex, vr)?,
         fragment: parse_stage(ShaderStage::Fragment, fr)?,
     })
+}
+
+/// The bytes of a stage's uniform block after `calls`, the uniform calls of a
+/// draw (`fbh` is the drawing buffer's height, for `gl_FragCoord`). What no
+/// call set is zero, as GL's default.
+pub fn uniform_bytes(
+    stage: &Stage,
+    calls: &BTreeMap<String, Vec<GlslUniform>>,
+    fbh: f32,
+) -> std::result::Result<Vec<u8>, String> {
+    let size = (stage.uniform_size.max(16) as usize).div_ceil(16) * 16;
+    let mut bytes = vec![0u8; size];
+    if let Some(at) = stage.fbh_offset {
+        put(&mut bytes, at as usize, &fbh.to_le_bytes());
+    }
+    for member in &stage.uniforms {
+        for call in calls.get(&member.name).into_iter().flatten() {
+            write_member(&mut bytes, member, call)?;
+        }
+    }
+    Ok(bytes)
+}
+
+fn put(bytes: &mut [u8], at: usize, value: &[u8]) {
+    bytes[at..at + value.len()].copy_from_slice(value);
+}
+
+fn write_member(
+    bytes: &mut [u8],
+    member: &UniformMember,
+    call: &GlslUniform,
+) -> std::result::Result<(), String> {
+    let name = &member.name;
+    let ok = match (call.kind, member.scalar, member.is_bool) {
+        (GlslUniformKind::Matrix, _, _) if member.is_mat2 => true,
+        (_, _, _) if member.is_mat2 => false,
+        (GlslUniformKind::Matrix, ScalarKind::Float, _) => member.columns > 1,
+        (GlslUniformKind::Matrix, _, _) => false,
+        (GlslUniformKind::Float, ScalarKind::Float, _) => member.columns == 1,
+        (GlslUniformKind::Float, _, is_bool) => is_bool,
+        (GlslUniformKind::Int, ScalarKind::Float, _) => false,
+        (GlslUniformKind::Int, _, _) => true,
+    };
+    if !ok {
+        return Err(format!(
+            "the uniform `{name}` was set with a call of the wrong kind for its type (WebGL \
+             ignores that call with INVALID_OPERATION)"
+        ));
+    }
+    let per = member.components as usize;
+    if call.value.is_empty() || !call.value.len().is_multiple_of(per) {
+        return Err(format!(
+            "the uniform `{name}` needs a multiple of {per} values, got {}",
+            call.value.len()
+        ));
+    }
+    let length = member.array.map_or(1, |(n, _)| n as usize);
+    let first = call.index as usize;
+    let count = call.value.len() / per;
+    if first + count > length {
+        return Err(format!(
+            "the uniform `{name}` has {length} element(s), but values for elements {first} to {} were set",
+            first + count - 1
+        ));
+    }
+    let stride = member.array.map_or(0, |(_, s)| s as usize);
+    // Matrix columns of two rows are 8 bytes apart, of three or four 16.
+    let column_stride = if member.rows == 2 { 8 } else { 16 };
+    for e in 0..count {
+        if let Some(width) = member.packed {
+            // Elements share `vec4`s: four scalars or two pairs.
+            let index = first + e;
+            let per_vec4 = 4 / width as usize;
+            let slot = member.offset as usize
+                + (index / per_vec4) * 16
+                + (index % per_vec4) * width as usize * 4;
+            for r in 0..width as usize {
+                let v = call.value[e * per + r];
+                let word: [u8; 4] = match member.scalar {
+                    ScalarKind::Float => (v as f32).to_le_bytes(),
+                    ScalarKind::Sint => (v as i32).to_le_bytes(),
+                    ScalarKind::Uint => (v as u32).to_le_bytes(),
+                };
+                put(bytes, slot + r * 4, &word);
+            }
+            continue;
+        }
+        let base = member.offset as usize + (first + e) * stride;
+        for c in 0..member.columns as usize {
+            for r in 0..member.rows as usize {
+                let v = call.value[e * per + c * member.rows as usize + r];
+                let at = base + c * column_stride + r * 4;
+                let word: [u8; 4] = match member.scalar {
+                    _ if member.is_bool => i32::from(v != 0.0).to_le_bytes(),
+                    ScalarKind::Float => (v as f32).to_le_bytes(),
+                    ScalarKind::Sint => (v as i32).to_le_bytes(),
+                    ScalarKind::Uint => (v as u32).to_le_bytes(),
+                };
+                put(bytes, at, &word);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A texture's straight RGBA8 pixels and size: decoded from its picture, or
+/// the bytes it was given.
+pub fn decode_texture(
+    texture: &GlslTexture,
+    base_dir: &std::path::Path,
+) -> std::result::Result<(Vec<u8>, u32, u32), String> {
+    use base64::Engine as _;
+    match (&texture.src, &texture.pixels) {
+        (Some(src), None) => {
+            let decoded = if let Some(bytes) = crate::scene::data_uri_bytes(src) {
+                image::load_from_memory(&bytes)
+                    .map_err(|e| format!("cannot decode a data: texture: {e}"))?
+            } else {
+                let path = base_dir.join(src);
+                image::open(&path)
+                    .map_err(|e| format!("cannot decode the texture {}: {e}", path.display()))?
+            }
+            .to_rgba8();
+            let (w, h) = decoded.dimensions();
+            Ok((decoded.into_raw(), w, h))
+        }
+        (None, Some(pixels)) => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(pixels)
+                .map_err(|e| format!("a texture's pixels are not base64: {e}"))?;
+            let (w, h) = (texture.width, texture.height);
+            if w == 0 || h == 0 || bytes.len() != w as usize * h as usize * 4 {
+                return Err(format!(
+                    "a texture of {w} x {h} needs {} bytes of RGBA, got {}",
+                    w as usize * h as usize * 4,
+                    bytes.len()
+                ));
+            }
+            Ok((bytes, w, h))
+        }
+        _ => Err("a texture has either a src or pixels".into()),
+    }
+}
+
+/// The next mip level: 2 x 2 blocks averaged (a side of one stays one).
+pub fn next_level(rgba: &[u8], width: u32, height: u32) -> (Vec<u8>, u32, u32) {
+    let (nw, nh) = ((width / 2).max(1), (height / 2).max(1));
+    let mut out = Vec::with_capacity(nw as usize * nh as usize * 4);
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut sum = [0u32; 4];
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let sx = (x * 2 + dx).min(width - 1) as usize;
+                let sy = (y * 2 + dy).min(height - 1) as usize;
+                let at = (sy * width as usize + sx) * 4;
+                for c in 0..4 {
+                    sum[c] += u32::from(rgba[at + c]);
+                }
+            }
+            out.extend(sum.map(|v| ((v + 2) / 4) as u8));
+        }
+    }
+    (out, nw, nh)
 }
 
 /// Translates every program of a layer, so that a scene with a shader naga
@@ -1390,6 +1677,81 @@ mod tests {
 
     const QUAD_ES1: &str = "attribute vec2 a_pos; varying vec2 v_uv;\n\
         void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+
+    fn call(kind: GlslUniformKind, value: &[f64], index: u32) -> GlslUniform {
+        GlslUniform {
+            kind,
+            value: value.to_vec(),
+            index,
+        }
+    }
+
+    fn word(bytes: &[u8], at: usize) -> f32 {
+        f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+    }
+
+    #[test]
+    fn arrays_of_scalars_and_pairs_travel_in_vec4s() {
+        let t = translate(&program(
+            QUAD_ES1,
+            "precision mediump float; varying vec2 v_uv; uniform float w[5]; uniform vec2 p[3]; \
+             uniform mat2 m; \
+             void main() { gl_FragColor = vec4(w[4] + p[2].y + m[1][1]); }",
+        ))
+        .unwrap();
+        let at = |n: &str| {
+            t.fragment
+                .uniforms
+                .iter()
+                .find(|u| u.name == n)
+                .unwrap()
+                .offset as usize
+        };
+        let mut calls = BTreeMap::new();
+        calls.insert(
+            "w".to_string(),
+            vec![call(GlslUniformKind::Float, &[1.0, 2.0, 3.0, 4.0, 5.0], 0)],
+        );
+        calls.insert(
+            "p".to_string(),
+            vec![call(GlslUniformKind::Float, &[7.0, 8.0], 2)],
+        );
+        calls.insert(
+            "m".to_string(),
+            vec![call(GlslUniformKind::Matrix, &[1.0, 2.0, 3.0, 4.0], 0)],
+        );
+        let bytes = uniform_bytes(&t.fragment, &calls, 64.0).unwrap();
+        // Four floats to a vec4, then the fifth in the next.
+        assert_eq!(word(&bytes, at("w") + 12), 4.0);
+        assert_eq!(word(&bytes, at("w") + 16), 5.0);
+        // Two pairs to a vec4: the third pair starts the second.
+        assert_eq!(word(&bytes, at("p") + 16), 7.0);
+        assert_eq!(word(&bytes, at("p") + 20), 8.0);
+        assert_eq!(word(&bytes, at("m") + 8), 3.0);
+        // The buffer height is the first word of the block.
+        assert_eq!(word(&bytes, 0), 64.0);
+    }
+
+    #[test]
+    fn a_call_of_the_wrong_kind_or_size_is_refused() {
+        let t = translate(&program(
+            QUAD_ES1,
+            "precision mediump float; varying vec2 v_uv; uniform float w[2]; uniform vec3 c; \
+             void main() { gl_FragColor = vec4(w[1] + c.x); }",
+        ))
+        .unwrap();
+        let try_one = |name: &str, c: GlslUniform| {
+            let mut calls = BTreeMap::new();
+            calls.insert(name.to_string(), vec![c]);
+            uniform_bytes(&t.fragment, &calls, 1.0)
+        };
+        let e = try_one("c", call(GlslUniformKind::Int, &[1.0, 2.0, 3.0], 0)).unwrap_err();
+        assert!(e.contains("wrong kind"), "{e}");
+        let e = try_one("w", call(GlslUniformKind::Float, &[1.0, 2.0, 3.0], 0)).unwrap_err();
+        assert!(e.contains("2 element"), "{e}");
+        let e = try_one("c", call(GlslUniformKind::Float, &[1.0, 2.0], 0)).unwrap_err();
+        assert!(e.contains("multiple of 3"), "{e}");
+    }
 
     #[test]
     fn es1_gradient_translates() {

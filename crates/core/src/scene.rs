@@ -200,6 +200,7 @@ pub enum LayerKind {
     Video(VideoLayer),
     Gif(GifLayer),
     Canvas(CanvasLayer),
+    Glsl(GlslLayer),
 }
 
 impl LayerKind {
@@ -216,6 +217,7 @@ impl LayerKind {
             LayerKind::Video(_) => "video",
             LayerKind::Gif(_) => "gif",
             LayerKind::Canvas(_) => "canvas",
+            LayerKind::Glsl(_) => "glsl",
         }
     }
 
@@ -1242,6 +1244,18 @@ pub struct CanvasLayer {
     pub commands: crate::canvas::CanvasOps,
 }
 
+/// What a WebGL context drew in a frame (`docs/SCENE.md`, "glsl"): the box
+/// `(0, 0, width, height)`, drawn by the GPU with the page's own shaders.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlslLayer {
+    pub width: Num,
+    pub height: Num,
+    /// The programs, data and draws (`crate::glsl`).
+    #[serde(flatten)]
+    pub recording: crate::glsl::GlslRecording,
+}
+
 /// A video file, one picture per frame (`docs/SCENE.md`, "video").
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1944,6 +1958,11 @@ impl Scene {
                     if let Some(bad) = crate::canvas::bad_path(&c.commands.0) {
                         return Err(Error::Scene(format!("layer {:?}: canvas: {bad}", layer.id)));
                     }
+                }
+                LayerKind::Glsl(g) => {
+                    non_negative("width", &g.width)?;
+                    non_negative("height", &g.height)?;
+                    crate::glsl::validate(&layer.id, &g.recording.0)?;
                 }
                 LayerKind::Lottie(l) => {
                     if l.src.trim().is_empty() {

@@ -16,6 +16,10 @@ pollster = "0.4"
 # tests, and users' custom effect shaders when a scene loads. `glsl-in` reads
 # the GLSL of a `glsl` layer (src/glsl.rs); `wgsl-out` writes it as WGSL.
 naga = { version = "30.0.1", features = ["wgsl-in", "wgsl-out", "glsl-in"] }
+# The same wgpu as Vello's. `naga-ir` lets a shader module be made from the
+# naga module the GLSL frontend produced, with no round trip through WGSL text
+# (which would not keep the array strides of a uniform block).
+wgpu = { version = "30.0.1", default-features = false, features = ["naga-ir"] }
 glam = "0.34.1"
 # LottieFiles' own player, which builds ThorVG (C++) from a submodule. Its
 # crates.io release is a stale 2024 alpha, so this is pinned to a git tag. CPU

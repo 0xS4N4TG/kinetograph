@@ -448,6 +448,7 @@ impl Walk<'_> {
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
+            | ResolvedKind::Glsl { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. }
             | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Video { width, height, .. }
@@ -759,6 +760,7 @@ fn kind_name(kind: &LayerKind) -> &'static str {
         LayerKind::Video(_) => "video",
         LayerKind::Gif(_) => "gif",
         LayerKind::Canvas(_) => "canvas",
+        LayerKind::Glsl(_) => "glsl",
     }
 }
 

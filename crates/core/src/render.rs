@@ -809,6 +809,7 @@ impl Renderer {
                 layer.kind,
                 ResolvedKind::Group { .. }
                     | ResolvedKind::MeshGradient { .. }
+                    | ResolvedKind::Glsl { .. }
                     | ResolvedKind::Noise { .. }
             )
             || uses_backdrop(siblings, layer)
@@ -1075,7 +1076,9 @@ impl Renderer {
         let matrix = parent * layer.transform.matrix();
         // Where a leaf layer's pixels are (see `raster_bounds`).
         let raster = match &layer.kind {
-            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => None,
+            ResolvedKind::Group { .. }
+            | ResolvedKind::MeshGradient { .. }
+            | ResolvedKind::Glsl { .. } => None,
             _ => Some(self.raster_bounds(layer, matrix)?),
         };
         // How many of the layer's effects drawing it has applied already, and
@@ -1100,6 +1103,18 @@ impl Renderer {
             } => {
                 let vertices = mesh::tessellate(*columns, *rows, points, colors, matrix);
                 self.timed(Stage::Raster, |s| s.compositor.mesh_gradient(&vertices))
+            }
+            // The page's own shaders, run on the GPU into a drawing buffer.
+            ResolvedKind::Glsl {
+                width,
+                height,
+                recording,
+            } => {
+                let base_dir = self.scene.base_dir.clone();
+                self.timed(Stage::Raster, |s| {
+                    s.compositor
+                        .glsl(&recording.0, (*width, *height), matrix, &base_dir)
+                })?
             }
             // Nothing lands on the texture: nothing to draw.
             _ if raster.is_some_and(|r| r.is_empty()) => {
@@ -1344,7 +1359,9 @@ impl Renderer {
                     preserve3d: false,
                     ..
                 } => self.collect_leaves(children, matrix, leaves)?,
-                ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {}
+                ResolvedKind::Group { .. }
+                | ResolvedKind::MeshGradient { .. }
+                | ResolvedKind::Glsl { .. } => {}
                 _ => {
                     let region = self.raster_bounds(layer, matrix)?;
                     if !region.is_empty() {
@@ -1507,7 +1524,9 @@ impl Renderer {
             | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
-            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
+            ResolvedKind::Group { .. }
+            | ResolvedKind::MeshGradient { .. }
+            | ResolvedKind::Glsl { .. } => return Ok(whole),
         };
         Ok(device_bounds(matrix, local).intersect(whole))
     }
@@ -1758,8 +1777,10 @@ impl Renderer {
                     &Rect::new(0.0, 0.0, *width, *height),
                 );
             }
-            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {
-                unreachable!("groups and meshes are composited, not rasterised")
+            ResolvedKind::Group { .. }
+            | ResolvedKind::MeshGradient { .. }
+            | ResolvedKind::Glsl { .. } => {
+                unreachable!("groups, meshes and WebGL layers are composited, not rasterised")
             }
         }
         Ok(())
@@ -1918,7 +1939,8 @@ impl Renderer {
             | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
-            | ResolvedKind::MeshGradient { width, height, .. } => {
+            | ResolvedKind::MeshGradient { width, height, .. }
+            | ResolvedKind::Glsl { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
             ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w, h)),

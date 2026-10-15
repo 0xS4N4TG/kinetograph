@@ -646,6 +646,12 @@ pub enum ResolvedKind {
         height: f64,
         ops: Arc<Vec<CanvasOp>>,
     },
+    /// What a WebGL context drew, in the box `(0, 0, width, height)`.
+    Glsl {
+        width: f64,
+        height: f64,
+        recording: crate::glsl::GlslRecording,
+    },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
     MeshGradient {
@@ -814,6 +820,7 @@ impl Resolver<'_> {
             | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
+            | ResolvedKind::Glsl { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
@@ -1064,6 +1071,11 @@ impl Resolver<'_> {
                 width: c.width.at(f),
                 height: c.height.at(f),
                 ops: c.commands.0.clone(),
+            },
+            LayerKind::Glsl(g) => ResolvedKind::Glsl {
+                width: g.width.at(f),
+                height: g.height.at(f),
+                recording: g.recording.clone(),
             },
             LayerKind::Noise(n) => ResolvedKind::Noise {
                 width: n.width.at(f),
