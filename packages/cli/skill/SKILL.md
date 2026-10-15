@@ -20,7 +20,9 @@ command with the same arguments; `still`, `strip` and `onion` return the image i
    to see a motion path. Open the PNG to look at it.
 3. **Check** without pixels: `kinetograph inspect src/index.tsx --frame 45` gives every layer's resolved position, size,
    bounds, effects and text lines. `kinetograph lint src/index.tsx` reports text overflowing its box or the canvas,
-   layers off the canvas, overlapping text, missing fonts and assets, each with the frame and layer id. Fix what it says.
+   layers off the canvas, overlapping text, missing fonts and assets, each with the frame and layer id. Fix what it
+   says. It only checks what a frame can show: a layer at opacity 0 (or inside a group at opacity 0) and one that its
+   clip cuts away completely are skipped at that frame, so a toast fading in off the canvas is not reported while hidden.
 4. **Fix** and repeat from 2. A still takes well under a second.
 5. **Render.** `kinetograph render src/index.tsx -o out/video.mp4`. Use `--draft` for a half-size quick look,
    `--range 0..90` for a part (`a..b` is a to b-1, `a..=b` includes b).

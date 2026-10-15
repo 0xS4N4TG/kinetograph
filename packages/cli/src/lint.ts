@@ -56,10 +56,31 @@ function overlapArea(a: Rect, b: Rect): number {
   });
 }
 
-function flatten(layers: InspectLayer[], into: InspectLayer[] = []): InspectLayer[] {
+const intersect = (a: Rect | null, b: Rect | null): Rect | null =>
+  !a ? b : !b ? a : {
+    left: Math.max(a.left, b.left),
+    top: Math.max(a.top, b.top),
+    right: Math.min(a.right, b.right),
+    bottom: Math.min(a.bottom, b.bottom),
+  };
+
+/**
+ * The layers a frame can show, in tree order. A layer at opacity 0 is skipped with its subtree, which is the same as
+ * its opacity times its ancestors' being 0. A layer whose pixels all fall outside its own clip and its ancestors' is
+ * skipped too: nothing of it is drawn. Matte sources are not drawn, so they are left out as well.
+ */
+function visibleLayers(layers: InspectLayer[], clip: Rect | null = null, into: InspectLayer[] = []): InspectLayer[] {
   for (const layer of layers) {
-    into.push(layer);
-    if (layer.children) flatten(layer.children, into);
+    if (layer.opacity <= 0) continue;
+    const c = layer.clipBounds;
+    const within = intersect(clip, c && { left: c.x, top: c.y, right: c.x + c.width, bottom: c.y + c.height });
+    if (layer.type !== 'group') {
+      const b = layer.bounds;
+      const seen = b ? { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height } : canvasRect(layer);
+      if (within && seen && overlapArea(seen, within) === 0) continue;
+    }
+    if (!layer.matteSource) into.push(layer);
+    if (layer.children) visibleLayers(layer.children, within, into);
   }
   return into;
 }
@@ -68,7 +89,7 @@ function flatten(layers: InspectLayer[], into: InspectLayer[] = []): InspectLaye
 export function lintInspect(result: InspectResult): Finding[] {
   const findings: Finding[] = [];
   const canvas: Rect = { left: 0, top: 0, right: result.width, bottom: result.height };
-  const layers = flatten(result.layers).filter((l) => l.opacity > 0 && !l.matteSource);
+  const layers = visibleLayers(result.layers);
   const texts: { layer: InspectLayer; rect: Rect }[] = [];
 
   for (const layer of layers) {

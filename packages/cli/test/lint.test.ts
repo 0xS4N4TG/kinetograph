@@ -14,6 +14,7 @@ function layer(over: Partial<InspectLayer> & { id: string }): InspectLayer {
     bounds: { x: 0, y: 0, width: 100, height: 50 },
     effects: [],
     clip: null,
+    clipBounds: null,
     mask: false,
     matte: null,
     matteSource: false,
@@ -97,6 +98,63 @@ describe('lintInspect', () => {
     expect(findings).toEqual([expect.objectContaining({ rule: 'text-overlap', layer: 'a' })]);
     expect(findings[0]!.message).toContain('"b"');
     expect(lintInspect(frame([text('a', { x: 100, y: 100 }, 200), text('b', { x: 100, y: 300 }, 200)]))).toEqual([]);
+  });
+
+  describe('layers that cannot be seen', () => {
+    const past = (over: Partial<InspectLayer> = {}) => ({ ...text('toast', { x: 900, y: 100 }, 300), ...over });
+    const inGroup = (group: Partial<InspectLayer>, ...children: InspectLayer[]) =>
+      layer({ id: 'g', type: 'group', box: null, bounds: null, children, ...group });
+    const rectOf = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+
+    it('reports text past the edge at opacity 1, and not at opacity 0', () => {
+      expect(lintInspect(frame([past()]))).toEqual([expect.objectContaining({ rule: 'text-overflow-canvas', layer: 'toast' })]);
+      expect(lintInspect(frame([past({ opacity: 0 })]))).toEqual([]);
+    });
+
+    it('skips a layer inside a group at opacity 0, and reports it inside one at opacity 1', () => {
+      expect(lintInspect(frame([inGroup({ opacity: 0 }, past())]))).toEqual([]);
+      expect(lintInspect(frame([inGroup({ opacity: 1 }, past())]))).toEqual([
+        expect.objectContaining({ rule: 'text-overflow-canvas', layer: 'toast' }),
+      ]);
+    });
+
+    it('skips a layer under any hidden ancestor, however deep', () => {
+      const deep = inGroup({ id: 'outer', opacity: 0.5 }, inGroup({ id: 'hidden', opacity: 0 }, inGroup({ id: 'inner' }, past())));
+      expect(lintInspect(frame([deep]))).toEqual([]);
+    });
+
+    it('skips the warnings of a layer that is off the canvas at opacity 0', () => {
+      const off = layer({ id: 'off', matrix: [1, 0, 0, 1, 2000, 0], bounds: rectOf(2000, 0, 100, 50) });
+      expect(lintInspect(frame([inGroup({ opacity: 0 }, off)]))).toEqual([]);
+      expect(lintInspect(frame([inGroup({ opacity: 1 }, off)]))).toEqual([expect.objectContaining({ rule: 'off-canvas', layer: 'off' })]);
+    });
+
+    it('skips an overlap when either text is hidden, also through its group', () => {
+      const a = text('a', { x: 100, y: 100 }, 200);
+      const b = text('b', { x: 150, y: 110 }, 200);
+      expect(lintInspect(frame([a, { ...b, opacity: 0 }]))).toEqual([]);
+      expect(lintInspect(frame([a, inGroup({ id: 'g2', opacity: 0 }, b)]))).toEqual([]);
+      expect(lintInspect(frame([a, inGroup({ id: 'g2', opacity: 1 }, b)]))).toHaveLength(1);
+    });
+
+    it('skips a layer that its own clip or an ancestor clip cuts away completely', () => {
+      const off = (id: string) => layer({ id, matrix: [1, 0, 0, 1, 2000, 0], bounds: rectOf(2000, 0, 100, 50) });
+      // Clip keeps a box that does not reach the layer, or keeps nothing (zero area).
+      expect(lintInspect(frame([inGroup({ clip: 'inset', clipBounds: rectOf(0, 0, 500, 500) }, off('a'))]))).toEqual([]);
+      expect(lintInspect(frame([{ ...off('b'), clip: 'ellipse', clipBounds: rectOf(2050, 25, 0, 0) }]))).toEqual([]);
+      // Clips nest: the inner clip is inside the layer's reach but the outer one is not.
+      const nested = inGroup({ clip: 'polygon', clipBounds: rectOf(0, 0, 500, 500) },
+        inGroup({ id: 'g2', clip: 'inset', clipBounds: rectOf(1900, 0, 400, 100) }, off('c')));
+      expect(lintInspect(frame([nested]))).toEqual([]);
+    });
+
+    it('still reports a layer that a clip only partly cuts, or that sits inside the clip', () => {
+      const clipped = (clipBounds: InspectLayer['clipBounds']) =>
+        inGroup({ clip: 'inset', clipBounds }, past({ bounds: rectOf(900, 100, 300, 40) }));
+      expect(lintInspect(frame([clipped(rectOf(0, 0, 1000, 600))]))).toHaveLength(1);
+      expect(lintInspect(frame([clipped(rectOf(1100, 100, 100, 40))]))).toHaveLength(1);
+      expect(lintInspect(frame([clipped(rectOf(0, 0, 800, 600))]))).toEqual([]);
+    });
   });
 });
 
