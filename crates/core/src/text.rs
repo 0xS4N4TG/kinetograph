@@ -96,6 +96,8 @@ pub struct LaidOutRun {
     pub coords: Vec<i16>,
     /// Synthetic italic, in degrees to the right.
     pub skew: f32,
+    /// Synthetic bold: pixels the outlines grow by on each side.
+    pub embolden: f32,
 }
 
 impl std::fmt::Debug for LaidOutRun {
@@ -241,6 +243,7 @@ impl TextEngine {
                     .collect(),
                 coords: run.coords.clone(),
                 skew: run.skew,
+                embolden: run.embolden,
             });
         }
         laid
@@ -323,6 +326,7 @@ impl TextEngine {
                         .collect(),
                     coords: Vec::new(),
                     skew: 0.0,
+                    embolden: 0.0,
                 });
             }
         }

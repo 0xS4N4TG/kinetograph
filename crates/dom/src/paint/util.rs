@@ -152,3 +152,56 @@ pub fn path_shape(id: &str, d: &str, fill: Value) -> Layer {
         .set("shape", json!({ "kind": "path", "d": d }))
         .set("fill", fill)
 }
+
+/// A CSS colour written out: `transparent`, `#rgb`, `#rgba`, `#rrggbb`,
+/// `#rrggbbaa`, `rgb()`/`rgba()` and a few names. `None` for anything else
+/// (including `currentcolor`, which the caller knows).
+pub fn parse_css_color(s: &str) -> Option<[f32; 4]> {
+    let s = s.trim().to_ascii_lowercase();
+    match s.as_str() {
+        "transparent" => return Some([0.0; 4]),
+        "black" => return Some([0.0, 0.0, 0.0, 1.0]),
+        "white" => return Some([1.0, 1.0, 1.0, 1.0]),
+        "red" => return Some([1.0, 0.0, 0.0, 1.0]),
+        "blue" => return Some([0.0, 0.0, 1.0, 1.0]),
+        "green" => return Some([0.0, 128.0 / 255.0, 0.0, 1.0]),
+        _ => {}
+    }
+    if let Some(h) = s.strip_prefix('#') {
+        let d: Vec<u8> = h.chars().filter_map(|c| c.to_digit(16).map(|v| v as u8)).collect();
+        if d.len() != h.len() {
+            return None;
+        }
+        let two = |a: u8, b: u8| f32::from(a * 16 + b) / 255.0;
+        return match d.len() {
+            3 => Some([two(d[0], d[0]), two(d[1], d[1]), two(d[2], d[2]), 1.0]),
+            4 => Some([two(d[0], d[0]), two(d[1], d[1]), two(d[2], d[2]), two(d[3], d[3])]),
+            6 => Some([two(d[0], d[1]), two(d[2], d[3]), two(d[4], d[5]), 1.0]),
+            8 => Some([two(d[0], d[1]), two(d[2], d[3]), two(d[4], d[5]), two(d[6], d[7])]),
+            _ => None,
+        };
+    }
+    let inner = s.strip_prefix("rgba(").or_else(|| s.strip_prefix("rgb("))?.strip_suffix(')')?;
+    let parts: Vec<&str> = inner.split(|c: char| c == ',' || c == '/' || c.is_whitespace()).filter(|p| !p.is_empty()).collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let chan = |p: &str| -> Option<f32> {
+        if let Some(v) = p.strip_suffix('%') {
+            v.parse::<f32>().ok().map(|v| v / 100.0)
+        } else {
+            p.parse::<f32>().ok().map(|v| v / 255.0)
+        }
+    };
+    let a = match parts.get(3) {
+        Some(p) => {
+            if let Some(v) = p.strip_suffix('%') {
+                v.parse::<f32>().ok()? / 100.0
+            } else {
+                p.parse::<f32>().ok()?
+            }
+        }
+        None => 1.0,
+    };
+    Some([chan(parts[0])?.clamp(0.0, 1.0), chan(parts[1])?.clamp(0.0, 1.0), chan(parts[2])?.clamp(0.0, 1.0), a.clamp(0.0, 1.0)])
+}

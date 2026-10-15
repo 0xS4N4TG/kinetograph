@@ -137,6 +137,20 @@ case!(paint_order, 340, 230, {
         .to_string()
 });
 
+case!(background_clip_text, 340, 120, {
+    r#"<div style="margin:10px;font-size:48px;font-weight:700;background:linear-gradient(90deg,#f0c,#0cf);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent">Gradient</div>
+<div style="margin:10px;font-size:30px;background:repeating-linear-gradient(45deg,#e33 0 6px,#fc3 6px 12px);background-clip:text;-webkit-text-fill-color:transparent">Stripes!</div>"#
+        .to_string()
+});
+
+case!(lists_and_outline, 340, 200, {
+    r#"<ul style="margin:0;padding-left:40px;font-size:22px;position:absolute;left:0;top:0"><li>Disc</li><li style="list-style:circle">Circle</li><li style="list-style:square">Square</li></ul>
+<ol style="margin:0;padding-left:40px;font-size:22px;position:absolute;left:150px;top:0"><li>One</li><li>Two</li><li style="list-style:upper-alpha">Alpha</li></ol>
+<div style="position:absolute;left:30px;top:130px;width:100px;height:40px;background:#fc9;outline:3px dashed #309;outline-offset:4px;border-radius:10px"></div>
+<div style="position:absolute;left:190px;top:130px;width:100px;height:40px;background:#9cf;outline:5px solid rgba(200,0,80,.6)"></div>"#
+        .to_string()
+});
+
 case!(borders, 340, 260, {
     r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:50px;border:3px solid;border-color:#f00 #0a0 #00f #fa0"></div>
 <div style="position:absolute;left:120px;top:10px;width:90px;height:50px;border-style:solid;border-width:2px 8px 14px 4px;border-color:#234;border-radius:12px 30px 5px 20px"></div>

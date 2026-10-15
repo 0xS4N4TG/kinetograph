@@ -1067,6 +1067,10 @@ pub struct GlyphRun {
     /// `font-style: italic` on a face without one).
     #[serde(default)]
     pub skew: f32,
+    /// Synthetic bold: how many pixels the outlines grow on each side
+    /// (about a 24th of the size for a face that has no bold).
+    #[serde(default)]
+    pub embolden: f32,
     /// `[glyph id, x, y]` for each glyph, `x` and `y` the origin of the glyph
     /// (on the baseline) in the layer's box.
     pub glyphs: Vec<[f32; 3]>,

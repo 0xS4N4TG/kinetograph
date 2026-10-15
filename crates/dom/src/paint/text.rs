@@ -13,7 +13,7 @@ use style::values::specified::box_::DisplayOutside;
 use style::values::specified::TextDecorationLine;
 
 use super::geom::Rect;
-use super::util::{Layer, current_color, hex_of, num, resolve_color, rgba, shift};
+use super::util::{Layer, current_color, hex_of, num, num4, resolve_color, rgba, shift};
 use super::{Origin, Painter, Phases};
 
 /// What a run of text is painted with: everything that makes two runs
@@ -91,7 +91,12 @@ impl<'a> Painter<'a> {
                         if style.clone_visibility() != style::computed_values::visibility::T::Visible {
                             continue;
                         }
-                        let paint = self.text_paint(&style);
+                        let mut paint = self.text_paint(&style);
+                        if let Some(fill) = self.kg_value(brush_node, "--kg-text-fill-color") {
+                            if let Some(c) = super::util::parse_css_color(&fill) {
+                                paint.color = c;
+                            }
+                        }
                         let run = gr.run();
                         let Some(src) = self.font_path(run.font()) else {
                             self.report(node, "font", "file", "the font of this text is not one of the project's font files");
@@ -119,7 +124,7 @@ impl<'a> Painter<'a> {
                             run_json["skew"] = json!(skew);
                         }
                         if synth.embolden() {
-                            run_json["embolden"] = json!(f64::from(run.font_size()) / scale / 24.0);
+                            run_json["embolden"] = json!(num4(f64::from(run.font_size()) / scale / 48.0));
                         }
 
                         // Decorations of this run.
@@ -406,14 +411,8 @@ impl<'a> Painter<'a> {
                 || rgba(&resolve_color(&bg.background_color, &current_color(&style)))[3] > 0.0;
             let has_shadow = !style.get_effects().box_shadow.0.is_empty();
             let b = style.get_border();
-            let has_border = [
-                b.border_top_width.0.to_f32_px(),
-                b.border_right_width.0.to_f32_px(),
-                b.border_bottom_width.0.to_f32_px(),
-                b.border_left_width.0.to_f32_px(),
-            ]
-            .iter()
-            .any(|w| *w > 0.0);
+            let _ = b;
+            let has_border = border_widths(&style).iter().any(|w| *w > 0.0);
             any_deco |= has_bg || has_shadow || has_border;
         }
         if !any_deco {
@@ -426,9 +425,11 @@ impl<'a> Painter<'a> {
             let p = style.get_padding();
             let m = style.get_margin();
             let px = |l: &style::values::computed::LengthPercentage| super::util::lp(l, 0.0).abs();
+            let bw = border_widths(&style);
+            let _ = b;
             let horizontal = [
-                f64::from(b.border_left_width.0.to_f32_px()),
-                f64::from(b.border_right_width.0.to_f32_px()),
+                bw[3],
+                bw[1],
                 px(&p.padding_left.0),
                 px(&p.padding_right.0),
                 match &m.margin_left {
@@ -444,7 +445,7 @@ impl<'a> Painter<'a> {
                 self.report(
                     node,
                     "padding/border/margin",
-                    "inline",
+                    format!("{horizontal:?}"),
                     "horizontal padding, border and margin of an inline element take no room in Blitz's line layout; use display: inline-block",
                 );
             }
@@ -477,7 +478,7 @@ impl<'a> Painter<'a> {
         last: bool,
     ) -> super::geom::BoxGeom {
         let b = style.get_border();
-        let w = |x: &style::values::computed::BorderSideWidth| f64::from(x.0.to_f32_px());
+        let bw = border_widths(style);
         let p = style.get_padding();
         let pad = |x: &style::values::computed::LengthPercentage| super::util::lp(x, rect.w);
         let radius = |c: &style::values::computed::BorderCornerRadius| {
@@ -494,12 +495,7 @@ impl<'a> Painter<'a> {
         super::geom::BoxGeom {
             w: rect.w,
             h: rect.h,
-            border: [
-                w(&b.border_top_width),
-                if last { w(&b.border_right_width) } else { 0.0 },
-                w(&b.border_bottom_width),
-                if first { w(&b.border_left_width) } else { 0.0 },
-            ],
+            border: [bw[0], if last { bw[1] } else { 0.0 }, bw[2], if first { bw[3] } else { 0.0 }],
             padding: [
                 pad(&p.padding_top.0),
                 if last { pad(&p.padding_right.0) } else { 0.0 },
@@ -509,4 +505,89 @@ impl<'a> Painter<'a> {
             radii,
         }
     }
+}
+
+impl<'a> Painter<'a> {
+    /// White text layers of every glyph `node` and its descendants hold, in
+    /// `node`'s own space: the shape `background-clip: text` cuts the
+    /// background to.
+    pub fn text_mask_layers(&mut self, node: &'a Node, id: &str) -> Vec<Value> {
+        let mut out = Vec::new();
+        let mut n = 0;
+        self.collect_text_mask(node, (0.0, 0.0), id, &mut n, &mut out);
+        out
+    }
+
+    fn collect_text_mask(&mut self, node: &'a Node, origin: Origin, id: &str, n: &mut usize, out: &mut Vec<Value>) {
+        if let Some(ild) = node.element_data().and_then(|e| e.inline_layout_data.as_ref()) {
+            let l = node.final_layout();
+            let content = (
+                origin.0 + f64::from(l.border.left + l.padding.left),
+                origin.1 + f64::from(l.border.top + l.padding.top) + f64::from(ild.block_offset),
+            );
+            let layout = &ild.layout;
+            let scale = f64::from(layout.scale()).max(1e-6);
+            let mut runs: Vec<Value> = Vec::new();
+            for line in layout.lines() {
+                for item in line.items() {
+                    let PositionedLayoutItem::GlyphRun(gr) = item else { continue };
+                    let run = gr.run();
+                    let Some(src) = self.font_path(run.font()) else { continue };
+                    let glyphs: Vec<Value> = gr
+                        .positioned_glyphs()
+                        .map(|g| json!([g.id, num(f64::from(g.x) / scale), num(f64::from(g.y) / scale)]))
+                        .collect();
+                    if glyphs.is_empty() {
+                        continue;
+                    }
+                    let mut r = json!({ "src": src, "index": run.font().index, "size": num(f64::from(run.font_size()) / scale), "glyphs": glyphs });
+                    let coords: Vec<i16> = run.normalized_coords().iter().map(|c| c.to_bits()).collect();
+                    if !coords.is_empty() {
+                        r["coords"] = json!(coords);
+                    }
+                    if let Some(skew) = run.synthesis().skew() {
+                        r["skew"] = json!(skew);
+                    }
+                    runs.push(r);
+                }
+            }
+            if !runs.is_empty() {
+                *n += 1;
+                let layer = Layer::new(&format!("{id}.{n}"), "text")
+                    .set("color", json!("#ffffff"))
+                    .set("boxWidth", num(f64::from(layout.width()) / scale))
+                    .set("boxHeight", num(f64::from(layout.height()) / scale))
+                    .set("runs", Value::Array(runs))
+                    .at(content.0, content.1);
+                out.push(layer.build());
+            }
+        }
+        let children: Vec<NodeId> = node
+            .layout_children
+            .borrow()
+            .as_ref()
+            .map(|c| c.iter().copied().collect())
+            .unwrap_or_default();
+        for cid in children {
+            let child = self.node(cid);
+            let loc = child.final_layout().location;
+            self.collect_text_mask(child, (origin.0 + f64::from(loc.x), origin.1 + f64::from(loc.y)), id, n, out);
+        }
+    }
+}
+
+/// The four border widths (top, right, bottom, left) of an element, 0 where
+/// the style is `none` or `hidden` (Stylo keeps the `medium` width then).
+pub(super) fn border_widths(style: &ComputedValues) -> [f64; 4] {
+    use style::values::specified::BorderStyle as S;
+    let b = style.get_border();
+    let w = |width: &style::values::computed::BorderSideWidth, st: S| {
+        if matches!(st, S::None | S::Hidden) { 0.0 } else { f64::from(width.0.to_f32_px()) }
+    };
+    [
+        w(&b.border_top_width, b.border_top_style),
+        w(&b.border_right_width, b.border_right_style),
+        w(&b.border_bottom_width, b.border_bottom_style),
+        w(&b.border_left_width, b.border_left_style),
+    ]
 }

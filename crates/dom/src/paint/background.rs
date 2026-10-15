@@ -93,10 +93,32 @@ impl<'a> Painter<'a> {
         let mut layers: Vec<Value> = Vec::new();
         let mut any_blend = false;
 
+        // `background-clip: text` is not parsed by this Stylo; the mirror
+        // property carries it (see `shim`).
+        let text_clip: Vec<bool> = match self.kg_value(node, "--kg-background-clip") {
+            Some(v) => super::shim::split_commas(&v).iter().map(|w| w.trim() == "text").collect(),
+            None => Vec::new(),
+        };
+        let is_text = |i: usize| !text_clip.is_empty() && text_clip[i % text_clip.len()];
+        let mask_id = format!("{id}.text");
+        let mut mask_source_added = false;
+        let mut add_mask = |p: &mut Self, layers: &mut Vec<Value>| {
+            if !mask_source_added {
+                mask_source_added = true;
+                let sources = p.text_mask_layers(node, &mask_id);
+                layers.push(super::util::group(&mask_id, sources).build());
+            }
+        };
+
         // The colour fills the painting area of the lowest layer.
         if color[3] > 0.0 {
             let (rect, radii) = geom.region(clip_of(n - 1));
-            layers.push(self.region_shape(&format!("{id}.color"), rect, radii, Value::String(hex_of(color))));
+            let mut shape = self.region_shape(&format!("{id}.color"), rect, radii, Value::String(hex_of(color)));
+            if is_text(n - 1) {
+                add_mask(self, &mut layers);
+                shape["matte"] = json!({ "layer": mask_id, "mode": "alpha" });
+            }
+            layers.push(shape);
         }
 
         for i in (0..images.len()).rev() {
@@ -127,6 +149,10 @@ impl<'a> Painter<'a> {
             let Some(mut layer) = self.image_layer(node, geom, &current, &spec, &layer_id, false) else {
                 continue;
             };
+            if is_text(i) {
+                add_mask(self, &mut layers);
+                layer["matte"] = json!({ "layer": mask_id, "mode": "alpha" });
+            }
             let blend_list = &bg.background_blend_mode.0;
             if !blend_list.is_empty() {
                 let mode = blend_name(&format!("{:?}", blend_list[pick(blend_list.len(), i)]));

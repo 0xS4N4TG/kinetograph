@@ -26,6 +26,26 @@ impl<'a> Painter<'a> {
             return Vec::new();
         }
 
+        if *tag == local_name!("svg") {
+            let id = self.layer_id(node, "svg");
+            let path = self.path_of(node);
+            let painted = super::svg::paint_svg(
+                self.doc,
+                self.req,
+                node.id.as_u64() as usize,
+                [content.w, content.h],
+                &id,
+                &path,
+            );
+            self.unsupported.extend(painted.unsupported);
+            let Some(mut layer) = painted.layer else { return Vec::new() };
+            super::util::shift(&mut layer, origin.0 + content.x, origin.1 + content.y);
+            if !radii.is_zero() {
+                let clip_rect = Rect::new(origin.0 + content.x, origin.1 + content.y, content.w, content.h);
+                self.clip_layer(&mut layer, clip_rect, radii);
+            }
+            return vec![layer];
+        }
         if *tag == local_name!("canvas") {
             self.report_element(node, "a <canvas> is not drawn yet");
             return Vec::new();
@@ -107,10 +127,126 @@ impl<'a> Painter<'a> {
         vec![layer]
     }
 
-    /// List markers: discs, circles and squares are shapes; numbers are text.
-    pub fn list_marker(&mut self, node: &'a Node, _origin: Origin) -> Vec<Value> {
-        let _ = node;
-        Vec::new()
+    /// The baseline of the first line of text in `node`, from its border box's
+    /// top, and the ascent of the font of that line.
+    fn first_baseline(&self, node: &'a Node) -> Option<(f64, f64)> {
+        if let Some(ild) = node.element_data().and_then(|e| e.inline_layout_data.as_ref()) {
+            let l = node.final_layout();
+            let line = ild.layout.lines().next()?;
+            let ascent = line
+                .items()
+                .find_map(|i| match i {
+                    parley::PositionedLayoutItem::GlyphRun(g) => Some(f64::from(g.run().font_metrics().ascent)),
+                    _ => None,
+                })
+                .unwrap_or(0.0);
+            let top = f64::from(l.border.top + l.padding.top) + f64::from(ild.block_offset);
+            return Some((top + f64::from(line.metrics().baseline), ascent));
+        }
+        let children: Vec<_> = node
+            .layout_children
+            .borrow()
+            .as_ref()
+            .map(|c| c.iter().copied().collect())
+            .unwrap_or_default();
+        for cid in children {
+            let c = self.node(cid);
+            if let Some((b, a)) = self.first_baseline(c) {
+                return Some((b + f64::from(c.final_layout().location.y), a));
+            }
+        }
+        None
+    }
+
+    /// The marker of a list item: discs, circles and squares as shapes the way
+    /// Chrome sizes them, numbers as text, both outside the content box.
+    pub fn list_marker(&mut self, node: &'a Node, origin: Origin) -> Vec<Value> {
+        use blitz_dom::node::{ListItemLayoutPosition, Marker};
+        let Some(item) = node.element_data().and_then(|e| e.list_item_data.as_deref()) else {
+            return Vec::new();
+        };
+        let Some(style) = node.primary_styles() else { return Vec::new() };
+        if !self.is_visible(node) {
+            return Vec::new();
+        }
+        let color = super::util::rgba(&super::util::current_color(&style));
+        let l = node.final_layout();
+        let content_x = origin.0 + f64::from(l.border.left + l.padding.left);
+        let Some((baseline, ascent)) = self.first_baseline(node) else {
+            return Vec::new();
+        };
+        let baseline = origin.1 + baseline;
+        let id = self.layer_id(node, "marker");
+        let fill = Value::String(super::util::hex_of(color));
+        match (&item.marker, &item.position) {
+            (Marker::Char(c), ListItemLayoutPosition::Outside(_)) | (Marker::Char(c), ListItemLayoutPosition::Inside)
+                if matches!(c, '\u{2022}' | '\u{25e6}' | '\u{25aa}') =>
+            {
+                let inside = matches!(item.position, ListItemLayoutPosition::Inside);
+                let ascent = ascent.round();
+                let d = ((ascent * 2.0 / 3.0).floor() + 1.0).div_euclid(2.0);
+                let d = d.max(1.0);
+                let top = baseline - ascent + (3.0 * (ascent - (ascent * 2.0 / 3.0).floor()) / 2.0).floor();
+                let x = if inside { content_x } else { content_x - 7.0 - 2.0 * d };
+                match c {
+                    '\u{2022}' => vec![super::util::Layer::new(&id, "shape")
+                        .set("shape", json!({ "kind": "ellipse", "width": num(d), "height": num(d) }))
+                        .set("fill", fill)
+                        .at(x, top)
+                        .build()],
+                    '\u{25e6}' => vec![super::util::Layer::new(&id, "shape")
+                        .set("shape", json!({ "kind": "ellipse", "width": num(d - 1.0), "height": num(d - 1.0) }))
+                        .set("stroke", json!({ "color": super::util::hex_of(color), "width": 1 }))
+                        .at(x + 0.5, top + 0.5)
+                        .build()],
+                    _ => vec![super::util::Layer::new(&id, "shape")
+                        .set("shape", json!({ "kind": "rect", "width": num(d), "height": num(d) }))
+                        .set("fill", fill)
+                        .at(x, top)
+                        .build()],
+                }
+            }
+            (Marker::String(_), ListItemLayoutPosition::Outside(layout)) | (Marker::Char(_), ListItemLayoutPosition::Outside(layout)) => {
+                // A text marker ends where the content starts, on the first baseline.
+                let scale = f64::from(layout.scale()).max(1e-6);
+                let width = f64::from(layout.full_width()) / scale;
+                let mut runs: Vec<Value> = Vec::new();
+                let mut first_base = 0.0;
+                for (n, line) in layout.lines().enumerate() {
+                    for it in line.items() {
+                        let parley::PositionedLayoutItem::GlyphRun(gr) = it else { continue };
+                        if n == 0 && first_base == 0.0 {
+                            first_base = f64::from(gr.baseline()) / scale;
+                        }
+                        let run = gr.run();
+                        let Some(src) = self.font_path(run.font()) else {
+                            self.report(node, "list-style-type", "marker", "the marker's font is not a project font file");
+                            return Vec::new();
+                        };
+                        let glyphs: Vec<Value> = gr
+                            .positioned_glyphs()
+                            .map(|g| json!([g.id, num(f64::from(g.x) / scale), num(f64::from(g.y) / scale)]))
+                            .collect();
+                        runs.push(json!({ "src": src, "index": run.font().index, "size": num(f64::from(run.font_size()) / scale), "glyphs": glyphs }));
+                    }
+                }
+                if runs.is_empty() {
+                    return Vec::new();
+                }
+                vec![super::util::Layer::new(&id, "text")
+                    .set("color", fill)
+                    .set("boxWidth", num(width))
+                    .set("boxHeight", num(f64::from(layout.height()) / scale))
+                    .set("runs", Value::Array(runs))
+                    // The marker's string ends in a space Blitz's layout trims.
+                    .at(content_x - width - f64::from(style.get_font().font_size.computed_size().px()) * 0.26, baseline - first_base)
+                    .build()]
+            }
+            _ => {
+                self.report(node, "list-style-position", "inside", "an inside marker in the bundled bullet font is not drawn");
+                Vec::new()
+            }
+        }
     }
 
     // ---- the canvas ----

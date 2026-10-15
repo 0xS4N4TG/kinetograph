@@ -46,8 +46,17 @@ impl<'a> Painter<'a> {
 
         // ---- filter ----
         let mut effects: Vec<Value> = Vec::new();
+        // `url()` references come from the mirror property; the ones before
+        // the first function go first, the rest last.
+        let (lead_urls, tail_urls) = self.filter_urls(node);
+        for u in &lead_urls {
+            self.url_filter(node, u, &geom, id, &mut effects);
+        }
         for f in fx.filter.0.iter() {
             self.filter_effect(node, f, &current, &mut effects, &mut opacity);
+        }
+        for u in &tail_urls {
+            self.url_filter(node, u, &geom, id, &mut effects);
         }
         if !effects.is_empty() {
             group = group.set("effects", Value::Array(effects));
@@ -59,7 +68,9 @@ impl<'a> Painter<'a> {
         }
 
         // ---- backdrop-filter ----
-        self.backdrop_filter(node, &style, &mut group);
+        if let Some(frost) = self.backdrop_layer(node, &style, &geom, id) {
+            children.insert(0, frost);
+        }
 
         // ---- opacity and blend go last ----
         if opacity < 1.0 {
@@ -243,8 +254,30 @@ impl<'a> Painter<'a> {
         )
     }
 
-    pub fn backdrop_filter(&mut self, node: &'a Node, style: &style::properties::ComputedValues, group: &mut Layer) {
-        let _ = (node, style, group);
+    /// `backdrop-filter`: a see-through shape of the border box whose
+    /// effect blurs what is behind it. Only `blur()` is drawn; the colour
+    /// functions are reported.
+    fn backdrop_layer(&mut self, node: &'a Node, style: &style::properties::ComputedValues, geom: &BoxGeom, id: &str) -> Option<Value> {
+        use style::values::generics::effects::Filter as F;
+        let list = &style.get_effects().backdrop_filter.0;
+        if list.is_empty() {
+            return None;
+        }
+        let mut sigma = 0.0_f64;
+        for f in list.iter() {
+            match f {
+                F::Blur(r) => sigma += f64::from(r.0.px()),
+                other => self.report(node, "backdrop-filter", format!("{other:?}"), "only blur() is drawn in a backdrop filter"),
+            }
+        }
+        if sigma <= 0.0 {
+            return None;
+        }
+        self.note_reach(3.0 * sigma);
+        let shape = self.region_shape(&format!("{id}.backdrop"), geom.border_box(), geom.radii, json!("#00000000"));
+        let mut shape = shape;
+        shape["effects"] = json!([{ "type": "backdropBlur", "radius": num(sigma) }]);
+        Some(shape)
     }
 
     pub fn filter_effect(
@@ -274,7 +307,8 @@ impl<'a> Painter<'a> {
                     "blur": num(f64::from(s.blur.0.px()) / 2.0), "color": hex(&color),
                 }));
             }
-            F::Url(_) => self.report(node, "filter", "url()", "an SVG filter reference is drawn by the filter graph (not connected yet)"),
+            // `url()` filters are not parsed by this Stylo (see `shim`).
+            F::Url(u) => match *u {},
         }
     }
 }
@@ -282,4 +316,41 @@ impl<'a> Painter<'a> {
 #[allow(dead_code)]
 fn unused(_: &mut Value) {
     shift(&mut Value::Null, 0.0, 0.0);
+}
+
+impl<'a> Painter<'a> {
+    /// The `url(...)` references of the element's `filter`, split into the
+    /// ones before the first filter function and the ones after.
+    fn filter_urls(&mut self, node: &Node) -> (Vec<String>, Vec<String>) {
+        let Some(value) = self.kg_value(node, "--kg-filter") else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut lead = Vec::new();
+        let mut tail = Vec::new();
+        let mut seen_function = false;
+        for w in super::shim::top_level_words(&value) {
+            if let Some(inner) = w.strip_prefix("url(").and_then(|r| r.strip_suffix(')')) {
+                let inner = inner.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+                if seen_function {
+                    tail.push(inner);
+                } else {
+                    lead.push(inner);
+                }
+            } else if w != "none" {
+                seen_function = true;
+            }
+        }
+        (lead, tail)
+    }
+
+    /// `filter: url(#id)`: the SVG painter builds the filter graph.
+    fn url_filter(&mut self, node: &Node, fragment: &str, geom: &BoxGeom, id: &str, out: &mut Vec<Value>) {
+        let path = self.path_of(node);
+        let bbox = [0.0, 0.0, geom.w, geom.h];
+        // CSS ignores a reference to nothing.
+        if let Some(fe) = super::svg::filter_graph(self.doc, self.req, fragment, bbox, &format!("{id}.filter"), &path) {
+            out.push(fe.effect);
+            self.unsupported.extend(fe.unsupported);
+        }
+    }
 }

@@ -56,13 +56,31 @@ pub fn font_ctx() -> FontContext {
     ctx
 }
 
+/// The page with its `<style>` blocks and `style` attributes run through the
+/// painter's CSS shim, as the front half does for a project's CSS.
+pub fn shim_html(html: &str) -> String {
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(i) = rest.find("style=\"").map(|i| (i, 7, '"')).into_iter().chain(rest.find("<style>").map(|i| (i, 7, '<'))).min_by_key(|t| t.0) {
+        let (pos, len, kind) = i;
+        out.push_str(&rest[..pos + len]);
+        rest = &rest[pos + len..];
+        let end = if kind == '"' { rest.find('"') } else { rest.find("</style>") }.unwrap_or(rest.len());
+        out.push_str(&kinetograph_dom::paint::shim_css(&rest[..end]));
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 pub fn document(html: &str, width: u32, height: u32) -> BaseDocument {
     let config = DocumentConfig {
         viewport: Some(Viewport::new(width, height, 1.0, ColorScheme::Light)),
         font_ctx: Some(font_ctx()),
         ..Default::default()
     };
-    let mut doc = HtmlDocument::from_html(html, config).into_inner();
+    let mut doc = HtmlDocument::from_html(&shim_html(html), config).into_inner();
+    kinetograph_dom::paint::register_properties(&mut doc);
     doc.resolve(0.0);
     doc
 }

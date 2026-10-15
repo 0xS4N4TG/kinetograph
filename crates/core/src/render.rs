@@ -1200,6 +1200,12 @@ impl Renderer {
                                     .then(|| Affine::skew(f64::from(run.skew).to_radians().tan(), 0.0)),
                             )
                             .normalized_coords(&run.coords)
+                            .font_embolden(vello::FontEmbolden::new(
+                                vello::kurbo::Diagonal2::new(
+                                    f64::from(run.embolden),
+                                    f64::from(run.embolden),
+                                ),
+                            ))
                             .brush_transform(brush_transform)
                             .font_size(run.font_size)
                             .hint(false)

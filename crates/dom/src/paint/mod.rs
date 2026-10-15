@@ -27,11 +27,13 @@ mod images;
 mod mat;
 mod replaced;
 mod shadow;
+mod shim;
 pub mod svg;
 mod text;
 mod util;
 
 pub use fonts::register_font_path;
+pub use shim::{kg_properties, register_properties, shim_css};
 
 use std::collections::HashSet;
 
@@ -125,6 +127,14 @@ impl<'a> Painter<'a> {
     }
 
     // ---- identity ----
+
+    /// The value of a `--kg-*` mirror property (`shim`) on `node`, if the
+    /// element declared it.
+    pub fn kg_value(&self, node: &Node, name: &str) -> Option<String> {
+        let v = self.doc.resolved_style_value(node.id, name);
+        let v = v.trim();
+        (!v.is_empty() && v != "initial").then(|| v.to_string())
+    }
 
     /// The element's host-tree path (`$0.2`): the `data-kg-path` attribute the
     /// front half sets, or a stand-in made from the node's id.
@@ -447,7 +457,10 @@ impl<'a> Painter<'a> {
             return false;
         };
         let t = &e.name.local;
-        *t == local_name!("img") || *t == local_name!("video") || *t == local_name!("canvas")
+        *t == local_name!("img")
+            || *t == local_name!("video")
+            || *t == local_name!("canvas")
+            || *t == local_name!("svg")
     }
 
     fn clips_overflow(&self, node: &Node) -> bool {
