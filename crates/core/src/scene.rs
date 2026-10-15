@@ -469,6 +469,8 @@ pub enum Effect {
         bottom_right: Option<[Num; 2]>,
         bottom_left: Option<[Num; 2]>,
     },
+    /// An SVG `<filter>`: a graph of primitives. See `filter.rs`.
+    FilterGraph(crate::filter::FilterGraph),
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
@@ -726,6 +728,7 @@ impl Effect {
             }
             // Warps what is in the texture, which paints nothing new.
             Effect::CornerPin { .. } => 0.0,
+            Effect::FilterGraph(graph) => graph.reach(layer_scale),
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -1567,6 +1570,9 @@ impl Scene {
                     } => validate_dot_matrix(&layer.id, &layer.kind, size, stagger, *order, *seed)?,
                     Effect::Displace { turbulence, .. } => {
                         validate_turbulence(&layer.id, "displace", turbulence)?;
+                    }
+                    Effect::FilterGraph(graph) => {
+                        graph.validate(&layer.id, layer.kind.has_box())?
                     }
                     Effect::CornerPin { .. } if !layer.kind.has_box() => {
                         return Err(Error::Scene(format!(

@@ -614,6 +614,7 @@ impl Walk<'_> {
                 | ResolvedEffect::Halftone(_)
                 | ResolvedEffect::DotMatrix(_)
                 | ResolvedEffect::CornerPin(_)
+                | ResolvedEffect::FilterGraph(_)
                 | ResolvedEffect::Shader(_) => b,
             };
         }
@@ -622,6 +623,11 @@ impl Walk<'_> {
         for effect in &layer.effects {
             if let Effect::Shader(shader) = effect {
                 b = inflate(b, shader.padding.at(self.t).max(0.0));
+            }
+            // A filter graph moves pixels as far as its offsets and
+            // displacements say; its region is not known without the box.
+            if let Effect::FilterGraph(graph) = effect {
+                b = inflate(b, graph.reach(bounds::max_stretch(matrix)));
             }
         }
         b
@@ -769,6 +775,7 @@ fn effect_name(effect: &Effect) -> &'static str {
         Effect::DotMatrix { .. } => "dotMatrix",
         Effect::Displace { .. } => "displace",
         Effect::CornerPin { .. } => "cornerPin",
+        Effect::FilterGraph(_) => "filterGraph",
         Effect::Shader(_) => "shader",
     }
 }
