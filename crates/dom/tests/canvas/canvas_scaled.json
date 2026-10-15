@@ -1,0 +1,1 @@
+[{"op":"fill","path":"M0 0L100 0L100 50L0 50Z","paint":{"type":"color","color":"#264653"}},{"op":"fill","path":"M48 25C48 34.9411 39.9411 43 30 43C20.0589 43 12 34.9411 12 25C12 15.0589 20.0589 7 30 7C39.9411 7 48 15.0589 48 25","paint":{"type":"color","color":"#e9c46a"}},{"op":"stroke","path":"M55 40L70 10L90 40","paint":{"type":"color","color":"#f4a261"},"width":4}]

@@ -8,7 +8,7 @@ use style::computed_values::object_fit::T as ObjectFit;
 use super::deco::box_geom;
 use super::geom::{Rect, Region};
 use super::images::Source;
-use super::util::{Layer, lp, num};
+use super::util::{Layer, lp, num, num4};
 use super::{Origin, Painter};
 
 impl<'a> Painter<'a> {
@@ -72,8 +72,7 @@ impl<'a> Painter<'a> {
             return vec![layer];
         }
         if *tag == local_name!("canvas") {
-            self.report_element(node, "a <canvas> is not drawn yet");
-            return Vec::new();
+            return self.canvas_content(node, origin, content, radii);
         }
         let is_video = *tag == local_name!("video");
         let src_attr = el.attr(local_name!("src")).map(str::to_string);
@@ -162,6 +161,62 @@ impl<'a> Painter<'a> {
             self.clip_layer(&mut layer, clip_rect, radii);
         }
         vec![layer]
+    }
+
+    /// What a `<canvas>`'s 2D context drew: the commands the TS side puts in
+    /// `data-kg-canvas` (docs/SCENE.md, "canvas"), as one canvas layer the size
+    /// of the canvas's bitmap (`width` and `height`, 300 x 150 without them),
+    /// stretched to the content box as `object-fit: fill` does. A canvas
+    /// nothing was drawn on draws nothing.
+    fn canvas_content(
+        &mut self,
+        node: &'a Node,
+        origin: Origin,
+        content: Rect,
+        radii: super::geom::Radii,
+    ) -> Vec<Value> {
+        let Some(commands) = super::attr(node, "data-kg-canvas") else {
+            return Vec::new();
+        };
+        let Ok(commands) = serde_json::from_str::<Value>(commands) else {
+            self.report_element(node, "the commands drawn on this <canvas> are not JSON");
+            return Vec::new();
+        };
+        let side = |name: &str, default: f64| {
+            super::attr(node, name)
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .filter(|v| v.is_finite() && *v >= 0.0)
+                .map_or(default, f64::floor)
+        };
+        let (width, height) = (side("width", 300.0), side("height", 150.0));
+        if !(width > 0.0 && height > 0.0) {
+            return Vec::new();
+        }
+        let id = self.layer_id(node, "canvas");
+        let mut layer = Layer::new(&id, "canvas")
+            .set("width", num(width))
+            .set("height", num(height))
+            .set("commands", commands)
+            .build();
+        let (sx, sy) = (content.w / width, content.h / height);
+        if sx != 1.0 || sy != 1.0 {
+            // A flat scale: drawn sharp, not resampled.
+            layer["transform"] = json!({
+                "matrix": [num4(sx), 0, 0, 0, 0, num4(sy), 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+            });
+        }
+        let (x, y) = (origin.0 + content.x, origin.1 + content.y);
+        if radii.is_zero() {
+            super::util::shift(&mut layer, x, y);
+            return vec![layer];
+        }
+        // A rounded box cuts the stretched bitmap: the clip is in the space of a layer without the scale, so it
+        // goes on a group around it.
+        let mut group = super::util::group(&format!("{id}.clip"), vec![layer])
+            .at(x, y)
+            .build();
+        self.clip_layer(&mut group, Rect::new(x, y, content.w, content.h), radii);
+        vec![group]
     }
 
     /// The baseline of the first line of text in `node`, from its border box's
