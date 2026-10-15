@@ -484,11 +484,11 @@ Mapping onto the engine:
   covering the composition, so its children stack in a column as in CSS and it overlays its siblings, as long as
   everything inside it is a native element. `style` maps `backgroundColor`/`background` (a colour) to a full-size rect
   drawn first, `opacity`, and the flex properties (`display`, `flexDirection`, `justifyContent`, `alignItems`,
-  `flexWrap`, `gap`, `padding`) to `layout`. With any other style key, a `className`, or DOM elements anywhere inside
-  it, it is the `div` it is in Remotion (`position: absolute; inset: 0; display: flex; flex-direction: column`, the
+  `flexWrap`, `gap`, `padding`) to `layout`. With any other style key, a value the layers cannot take (a gradient
+  `background`, `display: grid`, a `gap` in `em`), a `className`, or DOM elements anywhere inside it, it is the `div` it is in Remotion (`position: absolute; inset: 0; display: flex; flex-direction: column`, the
   author's style on top), drawn by the CSS engine.
 - `Img` is `<Image>` with `style.width`, `style.height`, `style.objectFit` mapped to `width`, `height`, `fit`; with any
-  other style key or a `className` it is an `img`.
+  other style key, a percentage size, an `objectFit` the image layer lacks, or a `className` it is an `img`.
 - `staticFile(name)` is the absolute path of `name` in the public directory, `setPublicDir(dir)` (default
   `<entry directory>/public`, set by the CLI).
 - `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s

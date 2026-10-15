@@ -77,18 +77,6 @@ describe('AbsoluteFill', () => {
     expect(b.children ?? []).toHaveLength(0);
   });
 
-  it('warns once about a value it cannot map, however often it renders', () => {
-    renderAt(<AbsoluteFill style={{ gap: '2em' }} />);
-    renderAt(<AbsoluteFill style={{ gap: '3em' }} />);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]![0])).toContain('style.gap');
-  });
-
-  it('warns about a background that is not a colour, and about display values it cannot do', () => {
-    renderAt(<AbsoluteFill style={{ background: 'linear-gradient(red, blue)', display: 'block' }} />);
-    expect(warn).toHaveBeenCalledTimes(2);
-  });
-
   it('renders nothing for display: none', () => {
     expect(renderAt(<AbsoluteFill style={{ display: 'none' }} />).layers).toEqual([]);
   });
@@ -114,10 +102,6 @@ describe('Img', () => {
     expect(img.fit).toBeUndefined();
   });
 
-  it('warns about an object fit it cannot do', () => {
-    renderAt(<Img src="/a.png" style={{ objectFit: 'none' }} />);
-    expect(warn).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('Freeze', () => {
@@ -224,6 +208,20 @@ describe('as DOM elements', () => {
     );
     expect(sent[0].root.style).toBe('position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center');
     expect(sent[0].root.children[0]).toMatchObject({ tag: 'p', path: '$0.0' });
+  });
+
+  it('with a value the layers cannot take (a gradient, display: grid, 2em) is the div, with no warning', () => {
+    renderDom(<AbsoluteFill style={{ background: 'linear-gradient(red, blue)', display: 'grid', gap: '2em' }} />);
+    expect(warn).not.toHaveBeenCalled();
+    expect(sent[0].root.style).toBe(
+      'position: absolute; inset: 0; display: grid; flex-direction: column; background: linear-gradient(red, blue); gap: 2em',
+    );
+  });
+
+  it('Img with a percentage size or an object-fit the image layer does not have is an img, with no warning', () => {
+    renderDom(<Img src="/a.png" style={{ width: '100%', objectFit: 'none' }} />);
+    expect(warn).not.toHaveBeenCalled();
+    expect(sent[0].root).toMatchObject({ tag: 'img', style: 'width: 100%; object-fit: none' });
   });
 
   it('Img with a style key the image layer has no use for is an img', () => {
