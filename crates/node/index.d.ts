@@ -40,7 +40,8 @@ export declare class VideoWriter {
   /**
    * Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
    * §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
-   * ordering rule as `pushFrame`.
+   * ordering rule as `pushFrame`. Like a failed `pushFrame`, a failed
+   * `pushRgba` ends the video.
    */
   pushRgba(rgba: Buffer, width: number, height: number, frame: number): void
   /** Renders `frame` of this scene and queues it for encoding. */

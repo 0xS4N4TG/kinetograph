@@ -238,3 +238,30 @@ test('decodeAudio returns null without an audio stream, and errors', () => {
   rejects(() => native.decodeAudio(`${media}/make_gif.py`, 48000, repo), 'INVALID_ARG', /make_gif\.py/);
   rejects(() => native.decodeAudio(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /sampleRate/);
 });
+
+test('videoFrame decodes the picture a video layer shows, as straight RGBA', () => {
+  const first = native.videoFrame(`${media}/clip.mp4`, 0, repo);
+  assert.deepEqual([first.width, first.height], [64, 36]);
+  assert.equal(first.data.length, 64 * 36 * 4);
+  assert.ok(Buffer.isBuffer(first.data));
+  // An opaque clip.
+  for (let i = 3; i < first.data.length; i += 4) assert.equal(first.data[i], 255);
+
+  // Out of order or in order, a time gives the same bytes (the picture is a function of the time).
+  const times = [1.5, 0.25, 1.0, 0.25, 1.9];
+  const seen = times.map((t) => native.videoFrame(`${media}/clip.mp4`, t, repo).data);
+  assert.ok(seen[1].equals(seen[3]));
+  assert.ok(!seen[0].equals(seen[1]), 'the clip changes along its length');
+  // A time before the start shows the first picture; one past the end, the last (held).
+  assert.ok(native.videoFrame(`${media}/clip.mp4`, -2, repo).data.equals(first.data));
+  const last = native.videoFrame(`${media}/clip.mp4`, 2, repo).data;
+  assert.ok(native.videoFrame(`${media}/clip.mp4`, 99, repo).data.equals(last));
+  // The path may be absolute.
+  assert.ok(native.videoFrame(path.join(repo, media, 'clip.mp4'), 0).data.equals(first.data));
+});
+
+test('videoFrame errors', () => {
+  rejects(() => native.videoFrame(`${media}/nope.mp4`, 0, repo), 'IO', /nope\.mp4/);
+  rejects(() => native.videoFrame(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /no video stream/);
+  rejects(() => native.videoFrame(`${media}/clip.mp4`, Number.NaN, repo), 'INVALID_ARG', /time/);
+});
