@@ -159,10 +159,47 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
         }
     }
     if request.time != 0.0 && island.doc.is_animating() {
-        island.doc.resolve(request.time);
+        // Stylo moves an animation on by one iteration per style pass, so a
+        // jump to a later iteration takes one pass for each iteration passed.
+        let passes = iteration_lag(&island.doc, request.time).min(MAX_CATCH_UP_PASSES) + 1;
+        for _ in 0..passes {
+            island.doc.resolve(request.time);
+        }
     }
     island.missing = files.missing();
     Ok(island)
+}
+
+/// A bound on the style passes spent catching an animation up to a late time
+/// (a 50 ms animation at the 30th second is iteration 600).
+const MAX_CATCH_UP_PASSES: usize = 2000;
+
+/// The most whole iterations any animation in `doc` has to be moved on by to
+/// show `time`.
+fn iteration_lag(doc: &BaseDocument, time: f64) -> usize {
+    let mut lag = 0.0_f64;
+    for (_, node) in doc.tree().iter() {
+        let Some(styles) = node.primary_styles() else {
+            continue;
+        };
+        let ui = styles.get_ui();
+        for (i, name) in ui.animation_name_iter().enumerate() {
+            if name.as_atom().is_none() {
+                continue;
+            }
+            let duration = f64::from(ui.animation_duration_mod(i).seconds());
+            let elapsed = time - f64::from(ui.animation_delay_mod(i).seconds());
+            if duration <= 0.0 || elapsed <= 0.0 {
+                continue;
+            }
+            let passed = (elapsed / duration).floor();
+            // The count is a number; `infinite` is infinity.
+            let count = f64::from(ui.animation_iteration_count_mod(i).0);
+            let last = (count.ceil() - 1.0).max(0.0);
+            lag = lag.max(passed.min(last));
+        }
+    }
+    lag as usize
 }
 
 // ---- building ----
