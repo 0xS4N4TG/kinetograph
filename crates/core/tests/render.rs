@@ -251,3 +251,91 @@ fn turning_the_layer_cache_off_gives_back_what_it_kept() {
     assert_eq!(renderer.render_frame(20).unwrap().rgba, plain.rgba);
     assert_eq!(renderer.layer_cache_counts().0, before);
 }
+
+/// A canvas with a card and a bar that are displaced and an empty layer whose
+/// shadow reaches `pin` pixels, which makes `pin` the scene's margin (the
+/// displacements reach under 10). `card` is the card's transform and shape.
+/// With `displaced` false the displacements are zero, which draws without them.
+fn displaced_scene(card: serde_json::Value, pin: u32, displaced: bool) -> Scene {
+    let scale = |scale: f64| if displaced { scale } else { 0.0 };
+    let mut card = card;
+    card["id"] = "card".into();
+    card["type"] = "shape".into();
+    card["fill"] = "#f2ead8".into();
+    card["effects"] = serde_json::json!([{
+        "type": "displace", "scale": scale(14.0),
+        "turbulence": {"type": "fractalNoise", "baseFrequency": 0.045, "numOctaves": 3, "seed": 7}
+    }]);
+    let json = serde_json::json!({
+        "width": 160, "height": 120, "fps": 30, "durationInFrames": 1,
+        "background": "#1b1e26",
+        "layers": [
+            card,
+            // Hangs off the right edge, so the margin lets its far part in.
+            {"id": "bar", "type": "shape", "transform": {"x": 140.5, "y": 60.25},
+             "shape": {"kind": "rect", "width": 40, "height": 30}, "fill": "#f6c177",
+             "effects": [{
+                "type": "displace", "scale": scale(10.0), "xChannelSelector": "B",
+                "yChannelSelector": "A",
+                "turbulence": {"type": "turbulence", "baseFrequency": [0.03, 0.06],
+                               "numOctaves": 2, "seed": 11}
+             }]},
+            {"id": "pin", "type": "group", "children": [],
+             "effects": [{"type": "dropShadow", "x": pin, "blur": 0}]}
+        ]
+    });
+    Scene::from_json(&json.to_string(), PathBuf::new()).unwrap()
+}
+
+#[test]
+fn displace_gives_the_same_pixels_at_any_margin() {
+    // The first card sits on whole pixels and is scaled by a power of two, so
+    // Vello draws it exactly wherever the margin puts it and only the
+    // displacement is left to differ. The second is turned and placed between
+    // pixels, as the papercut port's cards are.
+    let cards = [
+        serde_json::json!({
+            "transform": {"x": 37.0, "y": 15.0, "scale": 2.0},
+            "shape": {"kind": "rect", "width": 20, "height": 64}
+        }),
+        serde_json::json!({
+            "transform": {"x": 52.3, "y": 14.6, "anchorX": 20, "anchorY": 126,
+                          "rotation": 7, "scale": 1.37},
+            "shape": {"kind": "roundedRect", "width": 40, "height": 252, "radius": 8}
+        }),
+    ];
+    for (i, card) in cards.into_iter().enumerate() {
+        // The margins before and after a parity change, and a distant one.
+        let pins = [40, 41, 64];
+        for displaced in [false, true] {
+            let frames: Vec<_> = pins
+                .into_iter()
+                .map(|pin| {
+                    let scene = displaced_scene(card.clone(), pin, displaced);
+                    assert_eq!(scene.margin(), pin);
+                    render_still(scene, 0).unwrap()
+                })
+                .collect();
+            for (pin, frame) in pins.iter().zip(&frames).skip(1) {
+                let differing = frame
+                    .rgba
+                    .chunks(4)
+                    .zip(frames[0].rgba.chunks(4))
+                    .filter(|(a, b)| a != b)
+                    .count();
+                // Without the displacement, a difference is Vello's or the
+                // blend's, not the displacement's.
+                assert_eq!(
+                    differing, 0,
+                    "card {i}, displaced {displaced}: {differing} pixels differ between margins {} and {pin}",
+                    pins[0]
+                );
+            }
+            if displaced {
+                // The displacement did something.
+                let plain = render_still(displaced_scene(card.clone(), pins[0], false), 0).unwrap();
+                assert_ne!(plain.rgba, frames[0].rgba, "card {i}: nothing displaced");
+            }
+        }
+    }
+}

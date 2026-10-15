@@ -21,7 +21,7 @@
 //! pixel, so it does not depend on the size of the texture.
 //!
 //! The passes that read the layer through the hardware's bilinear filter
-//! (halftone, warp, displace, a custom shader, and the blur's pyramid) are
+//! (halftone, warp, a custom shader, and the blur's pyramid) are
 //! the exception. The weights of a filtered read are worked out from the
 //! texture's size, so they must read a texture of the size they always did:
 //! `full_copy` puts a smaller layer into one first, and they write textures
@@ -57,10 +57,11 @@
 //! (`shader_module`), and those that evaluate turbulence with
 //! `shaders/turbulence.wgsl`.
 //!
-//! The displace pass (`shaders/displace.wgsl`) also reads the layer through
-//! the filtered layout, and takes the noise tables of its seed (built on first
-//! use, `turbulence_tables`) as a second bind group. So does the noise layer's
-//! pass (`shaders/noise.wgsl`), on the shared layout, which fills a box's
+//! The displace pass (`shaders/displace.wgsl`) also sits on the filtered
+//! layout and the canvas-sized textures, but filters in the shader on
+//! `textureLoad` from canvas positions, so the margin cannot change a pixel of
+//! it. It takes the noise tables of its seed (built on first use,
+//! `turbulence_tables`) as a second bind group. So does the noise layer's pass (`shaders/noise.wgsl`), on the shared layout, which fills a box's
 //! coverage with the raw noise.
 //!
 //! A mesh gradient layer (`shaders/mesh.wgsl`) is not a full-screen pass: its
@@ -1284,7 +1285,7 @@ impl Compositor {
         self.run_filtered_pass_with(
             &self.displace,
             &input.view,
-            &displace_values(displace, layer_matrix),
+            &displace_values(displace, layer_matrix, self.margin),
             Some(&self.turbulence_tables[&key]),
             &target,
         );
@@ -2569,11 +2570,16 @@ fn warp_values(inverse: DMat3) -> [f32; 12] {
 }
 
 /// A displacement as `shaders/displace.wgsl` reads it: the inverse of the
-/// layer matrix (linear part, then translation), the scale, the matrix's
-/// linear part, the base frequency, then the octaves, the two channels and
-/// whether the noise is fractal, as u32s. A matrix that cannot be inverted has
-/// nothing to draw, so its inverse is zeros.
-fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine) -> Vec<u8> {
+/// layer matrix (linear part, then translation), the scale and the margin, the
+/// matrix's linear part, the base frequency, then the octaves, the two
+/// channels and whether the noise is fractal, as u32s. A matrix that cannot be
+/// inverted has nothing to draw, so its inverse is zeros.
+///
+/// `layer_matrix` takes the layer to the padded textures; the shader wants it
+/// to the canvas, so the margin is taken out of it here and passed on its own,
+/// which keeps every number but the margin the same at any margin.
+fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine, margin: u32) -> Vec<u8> {
+    let layer_matrix = Affine::translate((-f64::from(margin), -f64::from(margin))) * layer_matrix;
     let m = layer_matrix.as_coeffs();
     let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
         layer_matrix.inverse().as_coeffs()
@@ -2589,7 +2595,7 @@ fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine) -> Vec<u8>
         inverse[4] as f32,
         inverse[5] as f32,
         displace.scale,
-        0.0,
+        margin as f32,
         m[0] as f32,
         m[1] as f32,
         m[2] as f32,
@@ -3183,20 +3189,22 @@ mod tests {
                 seed: 7,
             },
         };
+        // The layer's matrix on the canvas, and in the textures with a margin.
         let matrix = Affine::translate((10.0, 20.0)) * Affine::rotate(0.5) * Affine::scale(2.0);
-        let bytes = displace_values(&displace, matrix);
+        let padded = Affine::translate((6.0, 6.0)) * matrix;
+        let bytes = displace_values(&displace, padded, 6);
         assert_eq!(bytes.len(), 80);
         let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
         let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
-        assert_eq!(float(6), 12.0);
+        assert_eq!([6, 7].map(float), [12.0, 6.0]);
         assert_eq!([12, 13].map(float), [0.04, 0.5]);
         // Octaves, the two channels, fractalNoise.
         assert_eq!([16, 17, 18, 19].map(word), [4, 2, 3, 1]);
 
-        // The shader's two mappings, written out: a texel to the layer by the
-        // inverse, and a displacement in layer space to texels by the linear
-        // part. Together they take the pixel to where the matrix puts the
-        // displaced layer point.
+        // The shader's two mappings, written out: a canvas pixel to the layer
+        // by the inverse, and a displacement in layer space to pixels by the
+        // linear part. Together they take the pixel to where the matrix puts
+        // the displaced layer point.
         let pixel = Point::new(123.5, 77.5);
         let layer = Point::new(
             f64::from(float(0)) * pixel.x + f64::from(float(2)) * pixel.y + f64::from(float(4)),
@@ -3221,9 +3229,43 @@ mod tests {
             ..displace
         };
         assert_eq!(word(19), 1);
-        let flat = displace_values(&plain, Affine::scale(0.0));
+        let flat = displace_values(&plain, Affine::scale(0.0), 0);
         assert!(flat[..24].iter().all(|b| *b == 0));
         assert_eq!(u32::from_le_bytes(flat[76..80].try_into().unwrap()), 0);
+    }
+
+    #[test]
+    fn displace_values_are_the_same_at_any_margin_but_the_margin() {
+        use crate::resolve::ResolvedTurbulence;
+        use crate::scene::Channel;
+
+        let displace = ResolvedDisplace {
+            scale: 9.0,
+            x_channel: Channel::R,
+            y_channel: Channel::G,
+            turbulence: ResolvedTurbulence {
+                fractal: false,
+                frequency: [0.013, 0.021],
+                octaves: 2,
+                seed: 3,
+            },
+        };
+        // A layer matrix whose translation is not a whole number.
+        let matrix = Affine::translate((100.3, 41.7)) * Affine::rotate(0.2) * Affine::scale(1.5);
+        let at = |margin: u32| {
+            let m = f64::from(margin);
+            displace_values(&displace, Affine::translate((m, m)) * matrix, margin)
+        };
+        let (a, b) = (at(43), at(44));
+        assert_eq!(a.len(), b.len());
+        // Only the margin, the fourth float of the second vec4, differs.
+        let differing: Vec<usize> = (0..a.len()).filter(|&i| a[i] != b[i]).collect();
+        assert!(!differing.is_empty());
+        assert!(
+            differing.iter().all(|i| (28..32).contains(i)),
+            "{differing:?}"
+        );
+        assert_eq!(f32::from_le_bytes(a[28..32].try_into().unwrap()), 43.0);
     }
 
     #[test]
