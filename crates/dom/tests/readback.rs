@@ -214,8 +214,14 @@ fn inline_elements_report_their_line_fragments() {
     let island = resolve(&request(root));
     let boxes = readback::layout_boxes(&island);
     let span = boxes["$0.1"];
-    // Wrapped over several lines: as tall as its lines, and as wide as the box allows.
-    assert!(span.height >= 60.0, "{span:?}");
+    // Wrapped over several lines. Chrome's box for an inline is the font's content
+    // area (26px for DM Sans at 20px), not the 30px line: the lines add up to
+    // (lines - 1) * 30 + 26.
+    assert!(span.height >= 56.0, "{span:?}");
+    assert!(
+        ((span.height - 26.0) / 30.0).fract().abs() < 1e-3,
+        "{span:?}"
+    );
     assert!(span.width > 100.0 && span.width <= 200.0, "{span:?}");
     assert_eq!((span.client.width, span.client.height), (0.0, 0.0));
 }

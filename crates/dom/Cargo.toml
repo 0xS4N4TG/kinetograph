@@ -13,9 +13,10 @@ blitz-dom = { version = "=0.3.0-beta.3", default-features = false, features = ["
 blitz-html = { version = "=0.3.0-beta.3", default-features = false }
 blitz-traits = "=0.3.0-beta.3"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["unbounded_depth"] }
 # Fonts: the Parley context Blitz lays text out with.
 parley = { version = "0.12.0", default-features = false, features = ["std"] }
+read-fonts = "0.41.0"
 # Sub-resources are local files and data URLs.
 url = "2.5.8"
 data-url = "0.3.2"
@@ -27,6 +28,8 @@ usvg = "0.48.1"
 euclid = "0.22"
 # Computed values (getComputedStyle, transforms): the version Blitz uses.
 style = { package = "stylo", version = "0.22.0" }
+# CSS features Chrome has that Stylo ships switched off (:has(), @container, ...).
+style_config = { package = "stylo_static_prefs", version = "0.22.0" }
 
 [dev-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] }

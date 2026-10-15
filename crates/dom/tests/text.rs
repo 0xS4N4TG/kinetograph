@@ -69,7 +69,9 @@ fn vertical_align_moves_inline_boxes() {
                 el(
                     "span",
                     "$0.1",
-                    &format!("display: inline-block; width: 10px; height: 10px; vertical-align: {align}"),
+                    &format!(
+                        "display: inline-block; width: 10px; height: 10px; vertical-align: {align}"
+                    ),
                     vec![],
                 ),
             ],
@@ -149,7 +151,9 @@ fn font_face_from_a_project_file() {
     // Not in `fonts`: only the stylesheet's @font-face names the file.
     req["fonts"] = json!({});
     req["baseDir"] = json!(manifest_dir().join("tests/fixtures"));
-    req["stylesheets"] = json!(["@font-face { font-family: Brand; src: url(fonts/archivo-black-400-latin.woff2) format('woff2'); }"]);
+    req["stylesheets"] = json!([
+        "@font-face { font-family: Brand; src: url(fonts/archivo-black-400-latin.woff2) format('woff2'); }"
+    ]);
     let island = resolve(&req);
     let w = bounds(&island, "$0.0").2;
     assert!(w > 50.0 && (w - dm).abs() > 5.0, "{w} vs {dm}");
