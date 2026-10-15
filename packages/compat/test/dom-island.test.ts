@@ -121,6 +121,13 @@ describe('mapDomIsland', () => {
     expect('margin' in mapDomIsland(node('div'), context())).toBe(false);
   });
 
+  it('passes the blend space the painter asks for', () => {
+    answer = { layers: [], unsupported: [], camera: null, blendSpace: 'srgb' };
+    expect(mapDomIsland(node('div'), context()).blendSpace).toBe('srgb');
+    answer = { layers: [], unsupported: [], camera: null };
+    expect('blendSpace' in mapDomIsland(node('div'), context())).toBe(false);
+  });
+
   it('draws nothing for a <style> root without asking the addon, and needs an element', () => {
     expect(mapDomIsland(node('style', {}, [{ kind: 'text', text: 'a{}' }]), context()).layers).toEqual([]);
     expect(sent).toHaveLength(0);

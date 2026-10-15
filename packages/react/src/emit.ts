@@ -44,6 +44,8 @@ export interface RenderedTree {
   unsupported: Unsupported[];
   /** The least scene `margin` the DOM islands need for their blurs (docs/ENGINE.md §2); absent when none does. */
   margin?: number;
+  /** `srgb` when any DOM island was painted for it (ENGINE.md §2); absent otherwise. */
+  blendSpace?: 'srgb';
 }
 
 /** What `emit` needs to know to draw DOM elements (docs/COMPAT.md §2). */
@@ -236,6 +238,7 @@ class Emitter {
   readonly unsupported: Unsupported[] = [];
   /** The largest `margin` any island asked for. */
   margin = 0;
+  blendSpace: 'srgb' | null = null;
   private readonly ids = new Set<string>();
 
   private sheets: string[] | null = null;
@@ -272,6 +275,7 @@ class Emitter {
     });
     this.unsupported.push(...result.unsupported);
     if (result.margin !== undefined) this.margin = Math.max(this.margin, result.margin);
+    if (result.blendSpace === 'srgb') this.blendSpace = 'srgb';
     // One camera serves the tree: the same one asked for twice is one.
     const { camera } = result;
     if (camera !== null && !this.cameras.some((c) => JSON.stringify(c) === JSON.stringify(camera))) this.cameras.push(camera);
@@ -472,5 +476,6 @@ export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
     sequences: emitter.sequences,
     unsupported: emitter.unsupported,
     ...(emitter.margin > 0 ? { margin: emitter.margin } : {}),
+    ...(emitter.blendSpace !== null ? { blendSpace: emitter.blendSpace } : {}),
   };
 }

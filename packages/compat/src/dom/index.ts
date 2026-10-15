@@ -39,6 +39,7 @@ interface IslandOutputJson {
   unsupported?: Unsupported[];
   camera?: CameraJson | null;
   margin?: number | null;
+  blendSpace?: 'linear' | 'srgb';
 }
 
 /** `style`, `script` and friends draw nothing: an island that is only one of them needs no trip to Rust. */
@@ -87,6 +88,7 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
     unsupported: output.unsupported ?? [],
     camera: output.camera ?? null,
     ...(typeof output.margin === 'number' && output.margin > 0 ? { margin: output.margin } : {}),
+    ...(output.blendSpace === 'srgb' ? { blendSpace: 'srgb' as const } : {}),
   };
 }
 

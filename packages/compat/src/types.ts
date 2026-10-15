@@ -34,6 +34,8 @@ export interface IslandResult {
   camera: CameraJson | null;
   /** The least scene `margin` (pixels) the island needs, for the blurs that reach past their layers (docs/ENGINE.md §2). */
   margin?: number;
+  /** The scene's `blendSpace` the island is painted for (ENGINE.md §2). */
+  blendSpace?: 'linear' | 'srgb';
 }
 
 export type RenderPath = 'native' | 'chrome';

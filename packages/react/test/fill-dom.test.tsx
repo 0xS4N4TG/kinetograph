@@ -21,6 +21,7 @@ beforeEach(() => {
         layers: [{ id: request.path, type: 'group', children: natives }],
         unsupported: [],
         camera: null,
+        ...(request.root.attrs?.['data-srgb'] ? { blendSpace: 'srgb' } : {}),
         ...(request.root.attrs?.['data-margin'] ? { margin: Number(request.root.attrs['data-margin']) } : {}),
       });
     },
@@ -43,6 +44,13 @@ describe('the margin islands ask for', () => {
   it('is the largest of them on the tree, and absent when none asks', () => {
     expect(render(<div />).margin).toBeUndefined();
     expect(render(<><div data-margin="8" /><div data-margin="30" /><div data-margin="12" /></>).margin).toBe(30);
+  });
+});
+
+describe('the blend space islands ask for', () => {
+  it('reaches the tree when an island asks for srgb', () => {
+    expect(render(<div />).blendSpace).toBeUndefined();
+    expect(render(<div data-srgb="1" />).blendSpace).toBe('srgb');
   });
 });
 
