@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { AudioClipJson, LayerJson, SceneJson } from '@kinetograph/scene';
+import { describeIssue, summarize } from '@kinetograph/compat/doctor';
+import type { AudioClipJson, LayerJson, SceneJson, Unsupported } from '@kinetograph/scene';
 import type { InspectLayer, InspectResult } from './native.js';
 
 export interface Finding {
@@ -209,6 +210,11 @@ export function lintAudio(clips: AudioClipJson[], baseDir: string, exists: (path
     }));
 }
 
+/** Sorts in place: errors first, then by the first frame each was seen at. */
+export function sortIssues(issues: LintIssue[]): LintIssue[] {
+  return issues.sort((a, b) => Number(b.severity === 'error') - Number(a.severity === 'error') || (a.frames[0]! - b.frames[0]!));
+}
+
 /** One issue per distinct finding, with every frame it was seen at; errors first. */
 export function mergeFindings(perFrame: { frame: number; findings: Finding[] }[]): LintIssue[] {
   const issues = new Map<string, LintIssue>();
@@ -220,7 +226,23 @@ export function mergeFindings(perFrame: { frame: number; findings: Finding[] }[]
       issues.set(key, issue);
     }
   }
-  return [...issues.values()].sort(
-    (a, b) => Number(b.severity === 'error') - Number(a.severity === 'error') || (a.frames[0]! - b.frames[0]!),
-  );
+  return sortIssues([...issues.values()]);
+}
+
+/**
+ * What compat mode cannot draw natively in the checked frames (docs/COMPAT.md §7): one warning per issue group of
+ * `kinetograph doctor`, since a Chrome frame still renders. The ranges are of the checked frames only.
+ */
+export function lintCompat(perFrame: { frame: number; unsupported: readonly Unsupported[] }[]): LintIssue[] {
+  return summarize('', perFrame).issues.map((issue) => {
+    const frames = issue.ranges.flatMap(([first, last]) => Array.from({ length: last - first + 1 }, (_, i) => first + i));
+    const values = issue.values.length > 0 ? ` (${issue.values.join('; ')})` : '';
+    return {
+      rule: 'compat',
+      severity: 'warning' as const,
+      layer: null,
+      message: `not drawn natively, so Chrome renders the frame: ${describeIssue(issue)}${values} at ${issue.paths.join(', ')}`,
+      frames,
+    };
+  });
 }
