@@ -54,6 +54,8 @@ export interface InspectLayer {
     lines: { text: string; top: number; bottom: number; baseline: number }[];
   };
   src?: string;
+  /** video, gif: the source time in seconds at the inspected frame (AUTHORING.md §11.1). */
+  media?: { time: number };
   children?: InspectLayer[];
 }
 

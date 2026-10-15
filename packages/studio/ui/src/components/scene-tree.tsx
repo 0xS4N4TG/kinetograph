@@ -7,9 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-// `media` (video and gif layers, AUTHORING.md section 3) is in the contract; `kinetograph`'s own type gets it with the video
-// layers, so it is added here until then.
-type InspectLayer = InspectResult['layers'][number] & { media?: { time: number } };
+type InspectLayer = InspectResult['layers'][number];
 
 function findLayer(layers: InspectLayer[], id: string): InspectLayer | null {
   for (const layer of layers) {
