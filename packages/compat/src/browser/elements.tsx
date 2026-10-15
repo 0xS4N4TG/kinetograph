@@ -10,6 +10,7 @@ import type {
   AudioProps,
   CameraProps,
   CanvasProps,
+  GlslShaderProps,
   CommonProps,
   EllipseProps,
   GifProps,
@@ -392,6 +393,15 @@ export function Canvas(props: CanvasProps): ReactElement {
     <Leaf common={props} tag="div" style={{ width: px(width), height: px(height) }}>
       <canvas ref={element} width={width} height={height} style={{ display: 'block' }} />
     </Leaf>
+  );
+}
+
+/** `<GlslShader>` is native-only: the shader runs on the engine's GPU path, and the frame fails, naming itself. */
+export function GlslShader(_props: GlslShaderProps): ReactElement {
+  const timeline = useTimeline();
+  throw new Error(
+    `unsupported: <GlslShader> cannot be drawn in Chrome (frame ${timeline.absoluteFrame}): it is drawn natively. ` +
+      'Keep the frames that hold a <GlslShader> off the Chrome path.',
   );
 }
 

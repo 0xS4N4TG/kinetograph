@@ -137,6 +137,15 @@ export interface CanvasProps extends CommonProps {
   draw: (context: any) => void;
 }
 
+export interface GlslShaderProps extends CommonProps {
+  width: number;
+  height: number;
+  fragment: string;
+  vertex?: string;
+  uniforms?: Record<string, number | boolean | readonly number[]>;
+  textures?: Record<string, string | { src: string; filter?: 'linear' | 'nearest'; wrap?: 'clamp' | 'repeat' | 'mirror' }>;
+}
+
 export interface CameraProps {
   perspective: Num;
   x?: Num;

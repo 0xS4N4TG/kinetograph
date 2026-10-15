@@ -1054,54 +1054,6 @@ fn draw_rects(
     Ok((viewport, scissor))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rectangles_are_checked_without_overflow() {
-        let size = (16, 16);
-        assert!(draw_rects([0, 0, 16, 16], None, size).is_ok());
-        let (v, s) = draw_rects([0, 0, 16, 8], Some([0, 0, 16, 8]), size).unwrap();
-        assert_eq!((v[1], s[1]), (8.0, 8));
-        for bad in [
-            [0, 0, -1, 4],
-            [i32::MAX, 0, i32::MAX, 4],
-            [0, i32::MIN, 4, 4],
-        ] {
-            assert!(draw_rects(bad, None, size).is_err(), "{bad:?}");
-        }
-        for bad in [[0, 0, -1, 4], [0, 0, 4, -1]] {
-            assert!(
-                draw_rects([0, 0, 16, 16], Some(bad), size).is_err(),
-                "{bad:?}"
-            );
-        }
-        // Huge scissors are clamped, not wrapped.
-        let (_, s) = draw_rects(
-            [0, 0, 16, 16],
-            Some([i32::MAX, i32::MAX, i32::MAX, i32::MAX]),
-            size,
-        )
-        .unwrap();
-        assert_eq!(s[2] * s[3], 0);
-        let (_, s) = draw_rects(
-            [0, 0, 16, 16],
-            Some([i32::MIN, i32::MIN, i32::MAX, i32::MAX]),
-            size,
-        )
-        .unwrap();
-        assert!(s[2] <= 16 && s[3] <= 16);
-    }
-
-    #[test]
-    fn a_draw_that_overflows_or_is_huge_is_refused() {
-        assert!(check_vertex_range(0, 6).is_ok());
-        assert!(check_vertex_range(u32::MAX, 1).is_err());
-        assert!(check_vertex_range(0, MAX_DRAW_VERTICES + 1).is_err());
-    }
-}
-
 /// A draw, ready to record.
 struct Prepared {
     pipeline: wgpu::RenderPipeline,
@@ -1309,4 +1261,52 @@ fn file_stamp(path: &Path) -> String {
             format!("{}:{t}", m.len())
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rectangles_are_checked_without_overflow() {
+        let size = (16, 16);
+        assert!(draw_rects([0, 0, 16, 16], None, size).is_ok());
+        let (v, s) = draw_rects([0, 0, 16, 8], Some([0, 0, 16, 8]), size).unwrap();
+        assert_eq!((v[1], s[1]), (8.0, 8));
+        for bad in [
+            [0, 0, -1, 4],
+            [i32::MAX, 0, i32::MAX, 4],
+            [0, i32::MIN, 4, 4],
+        ] {
+            assert!(draw_rects(bad, None, size).is_err(), "{bad:?}");
+        }
+        for bad in [[0, 0, -1, 4], [0, 0, 4, -1]] {
+            assert!(
+                draw_rects([0, 0, 16, 16], Some(bad), size).is_err(),
+                "{bad:?}"
+            );
+        }
+        // Huge scissors are clamped, not wrapped.
+        let (_, s) = draw_rects(
+            [0, 0, 16, 16],
+            Some([i32::MAX, i32::MAX, i32::MAX, i32::MAX]),
+            size,
+        )
+        .unwrap();
+        assert_eq!(s[2] * s[3], 0);
+        let (_, s) = draw_rects(
+            [0, 0, 16, 16],
+            Some([i32::MIN, i32::MIN, i32::MAX, i32::MAX]),
+            size,
+        )
+        .unwrap();
+        assert!(s[2] <= 16 && s[3] <= 16);
+    }
+
+    #[test]
+    fn a_draw_that_overflows_or_is_huge_is_refused() {
+        assert!(check_vertex_range(0, 6).is_ok());
+        assert!(check_vertex_range(u32::MAX, 1).is_err());
+        assert!(check_vertex_range(0, MAX_DRAW_VERTICES + 1).is_err());
+    }
 }
