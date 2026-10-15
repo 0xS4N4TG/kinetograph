@@ -126,9 +126,12 @@ function Scene({
     );
   };
   let node = children;
-  // The scene leaves during its last frames of the transition and arrives during the first.
-  if (exit) node = wrap(exit, 'exiting', frame - (duration - exit.duration), node);
-  if (enter) node = wrap(enter, 'entering', frame, node);
+  // The scene leaves during its last frames of the transition and arrives during the first. Its presentation wraps it
+  // only while that transition runs, as the published package does: a presentation need not draw nothing at rest (the
+  // tape strip of a papercut `tapePull` would sit on the scene for the whole of it).
+  const leaving = frame - (duration - (exit?.duration ?? 0));
+  if (exit && leaving >= 0 && leaving < exit.duration) node = wrap(exit, 'exiting', leaving, node);
+  if (enter && frame >= 0 && frame < enter.duration) node = wrap(enter, 'entering', frame, node);
   return <>{node}</>;
 }
 
