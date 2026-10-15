@@ -948,12 +948,15 @@ fn single_weight(t: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
 // - the atlas is a single `texture_2d`, not a texture array
 // - each tap is premultiplied before filtering, matching the existing bilinear path
 fn bicubic_sample(
-    coords: vec2<f32>,
+    image_coords: vec2<f32>,
     atlas_offset: vec2<f32>,
     atlas_max: vec2<f32>,
     alpha_type: u32,
 ) -> vec4<f32> {
-    let frac_coords = fract(coords + vec2(0.5));
+    // `image_coords` is relative to the image. The fraction and the taps come from it before the
+    // integer offset is added, so they do not depend on where the image sits in the atlas.
+    let frac_coords = fract(image_coords - vec2(0.5));
+    let coords = atlas_offset + floor(image_coords - vec2(0.5)) + vec2(0.5);
     // Get cubic weights for x and y directions
     let cx = cubic_weights(frac_coords.x);
     let cy = cubic_weights(frac_coords.y);
@@ -1325,11 +1328,11 @@ fn main(
                                 var atlas_uv = image.matrx.xy * my_xy.x + image.matrx.zw * my_xy.y + image.xlat;
                                 atlas_uv.x = extend_mode(atlas_uv.x, image.x_extend_mode, image.extents.x);
                                 atlas_uv.y = extend_mode(atlas_uv.y, image.y_extend_mode, image.extents.y);
-                                atlas_uv = atlas_uv + image.atlas_offset;
                                 // TODO: If the image couldn't be added to the atlas (i.e. was too big), this isn't robust
-                                let atlas_uv_clamped = clamp(atlas_uv, image.atlas_offset, atlas_max);
-                                // Nearest neighbor sampling
-                                let fg_rgba = maybe_premul_alpha(textureLoad(image_atlas, vec2<i32>(atlas_uv_clamped), 0), image.alpha_type);
+                                let atlas_uv_clamped = clamp(atlas_uv, vec2(0.0), image.extents - vec2(1.0));
+                                // Nearest neighbor sampling. The texel is chosen before the integer offset is added,
+                                // so where the image sits in the atlas cannot change it.
+                                let fg_rgba = maybe_premul_alpha(textureLoad(image_atlas, vec2<i32>(atlas_uv_clamped) + vec2<i32>(image.atlas_offset), 0), image.alpha_type);
                                 let fg_i = pixel_format(fg_rgba * area[i] * image.alpha, image.format);
                                 rgba[i] = rgba[i] * (1.0 - fg_i.a) + fg_i;
                             }
@@ -1344,12 +1347,13 @@ fn main(
                                 var atlas_uv = image.matrx.xy * my_xy.x + image.matrx.zw * my_xy.y + image.xlat;
                                 atlas_uv.x = extend_mode(atlas_uv.x, image.x_extend_mode, image.extents.x);
                                 atlas_uv.y = extend_mode(atlas_uv.y, image.y_extend_mode, image.extents.y);
-                                atlas_uv = atlas_uv + image.atlas_offset - vec2(0.5);
+                                atlas_uv = atlas_uv - vec2(0.5);
                                 // TODO: If the image couldn't be added to the atlas (i.e. was too big), this isn't robust
-                                let atlas_uv_clamped = clamp(atlas_uv, image.atlas_offset, atlas_max);
-                                // We know that the floor and ceil are within the atlas area because atlas_max and
-                                // atlas_offset are integers
-                                let uv_quad = vec4(floor(atlas_uv_clamped), ceil(atlas_uv_clamped));
+                                let atlas_uv_clamped = clamp(atlas_uv, vec2(0.0), image.extents - vec2(1.0));
+                                // We know that the floor and ceil are within the atlas area because the extents and
+                                // atlas_offset are integers. The offset is added to the texels, not to the position
+                                // that `uv_frac` comes from, so the weights do not depend on where the image sits.
+                                let uv_quad = vec4(floor(atlas_uv_clamped), ceil(atlas_uv_clamped)) + image.atlas_offset.xyxy;
                                 let uv_frac = fract(atlas_uv);
                                 let a = maybe_premul_alpha(textureLoad(image_atlas, vec2<i32>(uv_quad.xy), 0), image.alpha_type);
                                 let b = maybe_premul_alpha(textureLoad(image_atlas, vec2<i32>(uv_quad.xw), 0), image.alpha_type);
@@ -1370,7 +1374,6 @@ fn main(
                                 var atlas_uv = image.matrx.xy * my_xy.x + image.matrx.zw * my_xy.y + image.xlat;
                                 atlas_uv.x = extend_mode(atlas_uv.x, image.x_extend_mode, image.extents.x);
                                 atlas_uv.y = extend_mode(atlas_uv.y, image.y_extend_mode, image.extents.y);
-                                atlas_uv = atlas_uv + image.atlas_offset;
                                 let fg_rgba = bicubic_sample(atlas_uv, image.atlas_offset, atlas_max, image.alpha_type);
                                 let fg_i = pixel_format(fg_rgba * area[i] * image.alpha, image.format);
                                 rgba[i] = rgba[i] * (1.0 - fg_i.a) + fg_i;
