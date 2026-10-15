@@ -854,7 +854,7 @@ fn text(
     canvas_matrix: Affine,
     canvas: Rect,
 ) -> Result<()> {
-    if op.text.is_empty() || !(op.size > 0.0) {
+    if op.text.is_empty() || op.size.is_nan() || op.size <= 0.0 {
         return Ok(());
     }
     let laid = drawing

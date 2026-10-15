@@ -484,6 +484,23 @@ describe('a canvas layer', () => {
     });
   });
 
+  it('resetState puts the state back and closes open clips, and keeps what is drawn', () => {
+    const ctx = make();
+    ctx.fillStyle = 'red';
+    ctx.globalAlpha = 0.5;
+    ctx.save();
+    ctx.translate(3, 3);
+    ctx.rect(0, 0, 5, 5);
+    ctx.clip();
+    ctx.fillRect(0, 0, 2, 2);
+    ctx.resetState();
+    expect(ctx.commands.map((c) => c.op)).toEqual(['clip', 'fill', 'unclip']);
+    expect([ctx.fillStyle, ctx.globalAlpha, ctx.getTransform().e]).toEqual(['#000000', 1, 0]);
+    // The stack was dropped too: a restore has nothing to restore.
+    ctx.restore();
+    expect(ctx.commands).toHaveLength(3);
+  });
+
   it('reset empties the commands and the state', () => {
     const ctx = make();
     ctx.fillStyle = 'red';

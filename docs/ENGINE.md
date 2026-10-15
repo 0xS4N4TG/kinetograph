@@ -243,10 +243,11 @@ these on the global object where they are missing:
   remote URL rejects with "remote URLs are not available: Kinetograph renders offline"; the font downloads keep the real
   `fetch` (explicit, cached);
 - `URL.createObjectURL` for blobs is Node's own;
-- `document`: `createElement` (a detached node, never drawn), `createElement('canvas')` and `getContext` throw
-  "canvas is not supported yet", `body`/`documentElement` with the composition's size, queries over the host tree,
-  `fonts` (the `FontFace` shim);
-- `Element`, `HTMLElement`, `SVGElement`, `HTMLImageElement`, `DOMRect`, the three observers.
+- `document`: `createElement` (a detached node, never drawn), `createElement('canvas')` (a canvas outside the tree with
+  a recording 2D context; `getContext('webgl')` throws, saying WebGL is not available yet, AUTHORING.md §6.5),
+  `body`/`documentElement` with the composition's size, queries over the host tree, `fonts` (the `FontFace` shim);
+- `Element`, `HTMLElement`, `SVGElement`, `HTMLImageElement`, `HTMLCanvasElement`, `OffscreenCanvas`, `Path2D`,
+  `ImageData`, `DOMRect`, the three observers.
 - `crypto.getRandomValues` and `randomUUID` draw from the seeded `Math.random` generator.
 
 Time: `Date`, `performance.now`, timers and `requestAnimationFrame` were already driven by the frame
@@ -504,11 +505,22 @@ container stay inside its clip. The canvas takes the root's (or the body's) back
 A last pass (`opt.rs`) drops layers that draw nothing, flattens stacking-context groups that only move their children,
 and turns a group of one leaf into the leaf: 280 layers become 200 on a page of 60 transformed cards and 20 boxes.
 
+### `<canvas>`
+
+A canvas is drawn from what its 2D context recorded (AUTHORING.md §6.5): the TS side writes the commands as JSON in
+the element's `data-kg-canvas` attribute, and `replaced.rs` makes one `canvas` layer (SCENE.md, "canvas") of them, the
+size of the canvas's `width` x `height` attributes (300 x 150 without them) at the content box. A box of another size
+stretches it with a flat matrix, so the commands are drawn sharp at the box's size; a rounded box puts the layer in a
+group that carries the clip. A canvas nothing was drawn on draws nothing and is not reported. The cases of
+`crates/dom/tests/canvas.rs` are Canvas 2D scripts (`tests/canvas/*.js`) that Chrome runs and the engine draws from
+the recorded commands (`node crates/dom/tools/canvas-cases.mjs` makes the `.json` files): paths 0.35, gradients, a
+clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4 mean levels from Chrome.
+
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
 `text-overflow: ellipsis`, `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
 `writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`, `-webkit-text-stroke`, `paint-order`,
-form controls, iframes, `<canvas>`, SVG pictures (`<img src=x.svg>`, `url(x.svg)`), `evenodd` clip paths, `shape()`,
+form controls, iframes, SVG pictures (`<img src=x.svg>`, `url(x.svg)`), `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list
 markers in the bundled bullet font.

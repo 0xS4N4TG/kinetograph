@@ -54,7 +54,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `video` or `gif`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `canvas`, `video` or `gif`. |
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
@@ -369,7 +369,7 @@ by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like an
 What a Canvas 2D context drew: the list of commands a `CanvasRenderingContext2D` was given, drawn into the box
 `(0, 0, width, height)` with Vello, under the layer's transform. The authoring layer's `<Canvas>` and a Remotion
 project's `<canvas>` (`getContext('2d')`) both make one; the context object is `createCanvasContext` of
-`@kinetograph/scene` (AUTHORING.md, "Canvas 2D"). Like any layer it takes `effects`, `clip`, `mask`, `matte`,
+`@kinetograph/scene` (AUTHORING.md §6.5). Like any layer it takes `effects`, `clip`, `mask`, `matte`,
 `blendMode` and `opacity`.
 
 | Field | Default | Meaning |
@@ -420,6 +420,7 @@ default `source-over`).
 - The pictures a canvas draws from files (`kind: "src"`) are read when a renderer is built from the scene, as an image
   layer's are. A bad path or block of pixels is an error naming the layer when the scene loads.
 - Rendering is a pure function of the commands, the fonts and the files they name.
+- Counts nothing in the [margin](#canvas-margin).
 
 ### video
 
@@ -1244,7 +1245,7 @@ The layer's own box, which `inset` is measured from:
 |---|---|
 | `rect`, `roundedRect`, `ellipse` shape | `0, 0, width, height` (a stroke is not part of the box) |
 | `path` shape | The path's bounding box |
-| `image`, `lottie` | `0, 0, width, height` |
+| `image`, `lottie`, `canvas` | `0, 0, width, height` |
 | `text` | `0, 0, maxWidth` (or the laid-out width when there is no `maxWidth`) by the laid-out height |
 | `group` | None, unless it has a `layout`: then `0, 0, width, height` of the size the layout gave it. `inset` on a group without one is a load error; use `polygon`, `ellipse` or `path`. |
 
@@ -1680,6 +1681,9 @@ numbers. Blurs, colour filters and everything inside one layer are unchanged. Th
   margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
   size. Text is measured as one box of its own `maxWidth`, so it does not re-wrap to fit the container. Baseline
   alignment is for rows; a non-text layer's baseline is its bottom edge. See [Layout](#layout).
+- `canvas` draws the commands of a Canvas 2D context (see [canvas](#canvas)): no shadows, no `filter`, no letter or word
+  spacing, and a font is one face per key like a text layer's. Commands are drawn at the size the layer is drawn at
+  (they are vectors), not from a bitmap.
 - `lottie` is whatever ThorVG's CPU renderer draws (see [lottie](#lottie)); it is painted at the size the layer is
   drawn at, up to 4096 pixels a side, so a layer scaled up beyond that is resampled, and a layer that is turned or skewed
   is resampled from an upright picture. Layers cannot be overridden (no theming, slots or state machines), a file's
