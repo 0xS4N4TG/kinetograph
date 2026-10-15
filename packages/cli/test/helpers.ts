@@ -51,6 +51,10 @@ export interface Calls {
   render: { scene: unknown; output: string; options: unknown }[];
   bench: { scene: unknown; options: unknown }[];
   pushed: { scene: unknown; frame: number }[];
+  /** `pushRgba` calls: frames drawn elsewhere (Chrome). */
+  pushedRaw: { frame: number; width: number; height: number; bytes: number }[];
+  /** `pushFrame` and `pushRgba` calls in the order they came, as `native 3` and `raw 4`. */
+  order: string[];
   begun: { output: string; options: unknown }[];
   finished: unknown[];
   aborted: number;
@@ -58,7 +62,7 @@ export interface Calls {
 
 /** A stand-in for the addon that records its calls and opens no GPU. */
 export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { native: Native; calls: Calls } {
-  const calls: Calls = { still: [], render: [], bench: [], pushed: [], begun: [], finished: [], aborted: 0 };
+  const calls: Calls = { still: [], render: [], bench: [], pushed: [], pushedRaw: [], order: [], begun: [], finished: [], aborted: 0 };
   const summary = (output: string, over: object = {}) => ({
     output, encoder: 'libx264', width: 64, height: 36, fps: 30, frames: 3, first: 0, last: 2, ms: 10, msPerFrame: 3.3, audio: false,
     ...over,
@@ -67,6 +71,11 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
     constructor(private output: string) {}
     pushFrame(scene: string, frame: number): void {
       calls.pushed.push({ scene: JSON.parse(scene), frame });
+      calls.order.push(`native ${frame}`);
+    }
+    pushRgba(rgba: Buffer, width: number, height: number, frame: number): void {
+      calls.pushedRaw.push({ frame, width, height, bytes: rgba.length });
+      calls.order.push(`raw ${frame}`);
     }
     finish(audio?: unknown) {
       calls.finished.push(audio);

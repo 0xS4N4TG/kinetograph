@@ -610,9 +610,9 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | Command | Does |
 |---|---|
 | `compositions <entry>` | lists compositions |
-| `still <entry> <frame> -o out.png` | one PNG |
-| `render <entry> -o out.mp4 [--range a..b] [--encoder] [--draft]` | video with audio; `--draft` renders at half size |
-| `strip <entry> -n 12 -o sheet.png` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
+| `still <entry> <frame> -o out.png [--compat auto\|native\|chrome]` | one PNG; a frame the native path cannot draw comes from Chrome (COMPAT.md §6) |
+| `render <entry> -o out.mp4 [--range a..b] [--encoder] [--draft] [--compat auto\|native\|chrome]` | video with audio; `--draft` renders at half size; Chrome draws the frames the native path cannot (COMPAT.md §6) |
+| `strip <entry> -n 12 -o sheet.png [--compat …]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
 | `onion <entry> <range> -n 6 -o onion.png` | frames of the range blended over one another |
 | `inspect <entry> [--frame N]` | `InspectResult` |
 | `lint <entry>` | text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts or assets, with frame and layer id |

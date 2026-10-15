@@ -40,7 +40,8 @@ export declare class VideoWriter {
   /**
    * Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
    * §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
-   * ordering rule as `pushFrame`.
+   * ordering rule as `pushFrame`. Like a failed `pushFrame`, a failed
+   * `pushRgba` ends the video.
    */
   pushRgba(rgba: Buffer, width: number, height: number, frame: number): void
   /** Renders `frame` of this scene and queues it for encoding. */
@@ -247,7 +248,8 @@ export declare function version(): string
 
 /**
  * The picture a video layer shows `time` seconds after the stream's first
- * picture, decoded on the CPU (docs/COMPAT.md §6.2).
+ * picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
+ * a gif layer shows at `time` seconds (the last one is held past the end).
  */
 export declare function videoFrame(path: string, time: number, baseDir?: string | undefined | null): RgbaFrame
 

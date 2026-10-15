@@ -16,6 +16,7 @@ interface ProjectModule {
   setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
   setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
   setLayoutDom(fn: typeof import('@kinetograph/native').layoutDom | null): void;
+  getFonts(): Record<string, string>;
 }
 
 export interface FrameOutput {
@@ -40,6 +41,12 @@ export interface Source {
   composition: CompositionInfo;
   /** Frames can be asked for in any order, but a project's clock only runs forward, so ascending is cheapest. */
   frame(frame: number): Promise<FrameOutput>;
+  /** `--props`: what the composition was opened with, for the Chrome fallback to open it with too (docs/COMPAT.md §6.2). */
+  inputProps?: Record<string, unknown>;
+  /** The fonts registered so far (`getFonts()`): key to file. Downloaded ones are in it once a frame has been drawn. */
+  fonts?(): Record<string, string>;
+  /** Where `staticFile` reads from. */
+  publicDir?: string;
   dispose(): void;
 }
 
@@ -167,6 +174,9 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const sceneJson = JSON.stringify(result.scene);
       return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported: result.unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
+    inputProps,
+    fonts: () => mod.getFonts(),
+    publicDir: join(baseDir, 'public'),
     dispose: () => renderer.dispose(),
   };
 }

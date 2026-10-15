@@ -459,6 +459,87 @@ impl VideoWriter {
         Ok(())
     }
 
+    /// Queues a frame drawn elsewhere (the Chrome fallback): straight-alpha
+    /// sRGB RGBA8 of the video's size. Same ordering rule as `push_frame`:
+    /// the frame the GPU is drawing goes to the encoder first, so native and
+    /// raw frames reach it in the order they were pushed.
+    pub fn push_rgba(
+        &mut self,
+        renderer: &mut Renderer,
+        rgba: Vec<u8>,
+        width: u32,
+        height: u32,
+        frame: u32,
+    ) -> Result<(), RenderError> {
+        // Refuse a bad frame before the GPU is waited on.
+        self.check_raw(&rgba, width, height, frame)?;
+        self.flush(renderer)?;
+        self.push_raw(rgba, width, height, frame)
+    }
+
+    /// Reads back the frame the GPU is drawing, if any, and sends it to the
+    /// encoder.
+    pub fn flush(&mut self, renderer: &mut Renderer) -> Result<(), RenderError> {
+        if let Some((frame, pending)) = self.in_flight.take() {
+            self.send(renderer, frame, pending)?;
+        }
+        Ok(())
+    }
+
+    /// `push_rgba` for a writer with no frame in flight (after `flush`, or
+    /// when `push_frame` was never used), which needs no renderer.
+    pub fn push_raw(
+        &mut self,
+        rgba: Vec<u8>,
+        width: u32,
+        height: u32,
+        frame: u32,
+    ) -> Result<(), RenderError> {
+        self.check_raw(&rgba, width, height, frame)?;
+        if self.in_flight.is_some() {
+            return Err(RenderError::Invalid(
+                "a frame is still being drawn: flush it before pushing a raw one".into(),
+            ));
+        }
+        self.sink.push(Frame {
+            width,
+            height,
+            rgba,
+        })?;
+        self.first.get_or_insert(frame);
+        self.last = Some(frame);
+        self.pushed += 1;
+        Ok(())
+    }
+
+    fn check_raw(
+        &self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+        frame: u32,
+    ) -> Result<(), RenderError> {
+        if (width, height) != self.size {
+            return Err(RenderError::Invalid(format!(
+                "the frame is {width}x{height}, but the video is {}x{}",
+                self.size.0, self.size.1
+            )));
+        }
+        let expected = width as usize * height as usize * 4;
+        if rgba.len() != expected {
+            return Err(RenderError::Invalid(format!(
+                "a {width}x{height} frame is {expected} bytes of RGBA, got {}",
+                rgba.len()
+            )));
+        }
+        if let Some(last) = self.last.filter(|&last| frame <= last) {
+            return Err(RenderError::Invalid(format!(
+                "frames must come in increasing order: {frame} after {last}"
+            )));
+        }
+        Ok(())
+    }
+
     fn send(
         &mut self,
         renderer: &mut Renderer,
@@ -481,8 +562,20 @@ impl VideoWriter {
         if let Some(audio) = audio {
             audio.validate().map_err(RenderError::Invalid)?;
         }
-        if let Some((frame, pending)) = self.in_flight.take() {
-            self.send(renderer, frame, pending)?;
+        self.flush(renderer)?;
+        self.finish_flushed(audio)
+    }
+
+    /// `finish` for a writer with no frame in flight, which needs no
+    /// renderer.
+    pub fn finish_flushed(self, audio: Option<&AudioPcm>) -> Result<RenderSummary, RenderError> {
+        if let Some(audio) = audio {
+            audio.validate().map_err(RenderError::Invalid)?;
+        }
+        if self.in_flight.is_some() {
+            return Err(RenderError::Invalid(
+                "a frame is still being drawn: flush it before finishing".into(),
+            ));
         }
         let (Some(first), Some(last)) = (self.first, self.last) else {
             return Err(RenderError::Invalid("no frames were pushed".into()));
@@ -646,6 +739,49 @@ mod tests {
         };
         assert_eq!(sink.finish(Some(&audio)).unwrap(), 6);
         assert!(out.exists() && !encode::partial_path(&out).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn raw_frames_are_encoded_in_order_without_a_renderer() {
+        let dir = scratch("raw");
+        let out = dir.join("out.mp4");
+        let mut writer = VideoWriter::open(&out, 64, 48, 30.0, Some("libx264")).unwrap();
+        // Frame numbers need not start at 0 or be contiguous; they only order.
+        for frame in [3_u32, 4, 9] {
+            let level = u8::try_from(frame).unwrap() * 20;
+            writer.push_raw(grey(level).rgba, 64, 48, frame).unwrap();
+        }
+        let summary = writer.finish_flushed(None).unwrap();
+        assert_eq!((summary.frames, summary.first, summary.last), (3, 3, 9));
+        assert_eq!((summary.width, summary.height), (64, 48));
+        assert!(out.exists() && !encode::partial_path(&out).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn raw_frames_are_checked_for_size_length_and_order() {
+        let dir = scratch("raw-bad");
+        let out = dir.join("out.mp4");
+        let mut writer = VideoWriter::open(&out, 64, 48, 30.0, Some("libx264")).unwrap();
+        let invalid = |r: Result<(), RenderError>, want: &str| {
+            let err = r.expect_err("accepted a bad frame");
+            assert!(matches!(err, RenderError::Invalid(_)), "{err}");
+            assert!(err.to_string().contains(want), "{err}");
+        };
+        invalid(writer.push_raw(vec![0; 32 * 24 * 4], 32, 24, 0), "32x24");
+        invalid(writer.push_raw(vec![0; 10], 64, 48, 0), "bytes of RGBA");
+        writer.push_raw(grey(1).rgba, 64, 48, 5).unwrap();
+        invalid(writer.push_raw(grey(2).rgba, 64, 48, 5), "increasing order");
+        invalid(writer.push_raw(grey(2).rgba, 64, 48, 4), "5");
+        writer.push_raw(grey(2).rgba, 64, 48, 6).unwrap();
+        assert_eq!(writer.finish_flushed(None).unwrap().frames, 2);
+        // A writer with nothing pushed cannot finish.
+        let empty = VideoWriter::open(&out, 64, 48, 30.0, Some("libx264")).unwrap();
+        assert!(matches!(
+            empty.finish_flushed(None),
+            Err(RenderError::Invalid(_))
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
