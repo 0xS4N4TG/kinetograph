@@ -483,7 +483,7 @@ that fits or below the floats, and a block's height includes that gap.
   own, each in its part's box and cut to the cell (Chrome paints them per cell, so the gap between separate cells
   shows the table's background); the table paints one segment per stretch of grid line, snapped to whole pixels;
   dashed, dotted, double, groove, ridge, inset and outset segments use the box painter's border styles.
-- Not done: a caption wider than the grid does not widen the table; `<colgroup>` and row-group borders only apply at
+- A caption wider than the grid widens the table. Not done: `<colgroup>` and row-group borders only apply at
   the places CSS lists (their group's edges); `domLayoutBoxes` gives rows and groups no box; `empty-cells: hide` is
   not applied.
 
@@ -504,9 +504,15 @@ restarts the replay from it (a new element does not transition, as in a browser)
 function: the same request gives the same frame, whatever was rendered before. Without a history nothing
 transitions and every value is its final one (what the engine did before). A history needs only the states where the
 island's tree changed within the longest `delay + duration` before `time`, plus the state at the start of that
-window. **TypeScript does not fill it yet** (`IslandRequestJson.history` exists): the runtime would keep the last
-requests of each island for a sequential render and re-render the earlier frames of the window on a random access
-(`still`, a chunk's first frames), which is how it stays pure. `@starting-style` entry transitions are not run
+window. **TypeScript fills it** (`packages/compat/src/dom/history.ts`, `packages/core/src/frame-loop.tsx`): `mapDomIsland`
+reads the `transition` times out of the island's CSS (the window is twice the longest time seen) and, while the frame
+loop has recording on, keeps the island's request root whenever it differs from the last one kept. The loop renders
+every frame with recording on; a sequential render keeps the trail it has, and any other frame (the first, a jump back,
+a repeat) renders the frames of the window before it again with the addon off (`warm`), so a frame's history is the
+same whichever frames were rendered before it. A project with no `transition` in its CSS pays nothing; one with
+transitions renders the window's frames again for a frame that is not the next one. Motion-blur sub-frames use the
+frame's history and record nothing. Checked end to end in `packages/core/test/css-transitions.test.tsx` (in order,
+alone, backwards, out of order: the same mid-transition values). `@starting-style` entry transitions are not run
 (Stylo does not apply starting styles to a first style computation in this build), and a transition that is running when
 the style stops declaring one is not cancelled.
 

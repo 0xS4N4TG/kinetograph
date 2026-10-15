@@ -592,8 +592,8 @@ them. Each is to be ported natively (no Chrome), one stream each, tested against
    - `@container`, container units and the `container` shorthand: `@container` was not parsed at all by Stylo's Servo
      build, so `stylo` is vendored too; `blitz-dom` answers a container's size from its layout and restyles.
    - CSS transitions: the request carries a history of earlier tree states, which the engine replays so a transition
-     starts at the first state that shows the new value. Nothing fills the history on the TypeScript side yet, so a
-     project still renders every value as its final one.
+     starts at the first state that shows the new value; the frame loop fills the history from the frames before
+     the one asked for, so a frame is the same however it is reached.
 2. **Canvas 2D** (medium; the most common custom drawing in Remotion projects). A `CanvasRenderingContext2D` shim
    records each frame's calls (paths, fill/stroke, gradients, `drawImage`, `fillText`, transforms, clips,
    `globalAlpha`, `globalCompositeOperation`); Rust draws them as one canvas layer with Vello, whose model maps

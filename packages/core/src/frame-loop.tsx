@@ -19,6 +19,7 @@ import {
   type SequenceJson,
   type Unsupported,
 } from '@kinetograph/scene';
+import { clearHistory, resetTransitionWindow, setHistoryMode, transitionWindowSeconds } from '@kinetograph/compat/dom';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, setVirtualFrame, virtualNow } from './determinism.js';
@@ -48,11 +49,15 @@ class Renderer implements FrameRenderer {
   private readonly readyPromise: Promise<ResolvedComposition>;
   private scene: SceneRoot | null = null;
   private lastFrame = -1;
+  /** The frames whose islands' states are kept, for CSS transitions (compat's history): a continuous run. */
+  private trailFrom = -1;
+  private trailTo = -1;
   private disposed = false;
 
   constructor(compositionId: string, inputProps: Record<string, unknown> | undefined) {
     // Components that call getInputProps() see the props this render was given.
     if (inputProps) setInputProps(inputProps);
+    resetTransitionWindow();
     const { sync, ready } = resolveComposition(compositionId, { inputProps });
     this.resolved = sync;
     this.readyPromise = ready.then((value) => (this.resolved = value));
@@ -88,19 +93,14 @@ class Renderer implements FrameRenderer {
       );
     }
 
+    const sequential = this.scene !== null && frame === this.lastFrame + 1 && this.trailTo === this.lastFrame;
     // React state and virtual timers only move forward. Going back means starting the composition over.
-    if (frame < this.lastFrame || this.scene === null) {
-      this.scene?.unmount();
-      // `time` is the virtual clock in seconds (frame / fps, also on a motion-blur sub-frame): the clock CSS animations read.
-      this.scene = createSceneRoot({
-        viewport: { width: config.width, height: config.height },
-        fonts: getFonts,
-        time: () => virtualNow() / 1000,
-      });
-      this.lastFrame = -1;
-      resetVirtualClock();
+    if (frame < this.lastFrame || this.scene === null) this.startScene(config);
+    if (!sequential) {
+      clearHistory();
+      this.trailFrom = this.trailTo = -1;
     }
-    const scene = this.scene;
+    const scene = this.scene!;
     const fresh = this.lastFrame < 0;
     this.lastFrame = frame;
 
@@ -112,7 +112,38 @@ class Renderer implements FrameRenderer {
       await this.settle(scene, () => scene.update(this.element(component, config, 0)));
     }
     setVirtualFrame(frame, config.fps);
-    const main = await this.settle(scene, () => scene.update(this.element(component, config, frame)));
+    setHistoryMode({ record: true });
+    let main = await this.settle(scene, () => scene.update(this.element(component, config, frame)));
+    // CSS transitions need the states of the islands before this frame (docs/ENGINE.md §7.12). A frame has the
+    // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
+    // else renders the frames of the window again, with the addon off, to see them.
+    const window = Math.ceil(transitionWindowSeconds() * config.fps);
+    if (window > 0) {
+      if (!sequential) this.trailFrom = frame;
+      this.trailTo = frame;
+      const start = Math.max(0, frame - window);
+      if (frame > 0 && this.trailFrom > start) {
+        this.startScene(config);
+        clearHistory();
+        const again = this.scene!;
+        if (start > 0) {
+          setHistoryMode({ record: false, warm: true });
+          setVirtualFrame(0, config.fps);
+          await this.settle(again, () => again.update(this.element(component, config, 0)));
+        }
+        for (let at = start; at < frame; at++) {
+          setHistoryMode({ record: true, warm: true });
+          setVirtualFrame(at, config.fps);
+          await this.settle(again, () => again.update(this.element(component, config, at)));
+        }
+        setVirtualFrame(frame, config.fps);
+        setHistoryMode({ record: true });
+        main = await this.settle(again, () => again.update(this.element(component, config, frame)));
+        this.lastFrame = frame;
+        this.trailFrom = start;
+      }
+    }
+    setHistoryMode({ record: false });
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
     let layers = main.layers;
@@ -125,7 +156,8 @@ class Renderer implements FrameRenderer {
         }
         // The clock sits on the sub-frame, but timers and Math.random() stay with the frame.
         setVirtualFrame(time, config.fps, { seedFrame: frame, fireTimers: false });
-        const tree = await this.settle(scene, () => scene.update(this.element(component, config, time)));
+        const live = this.scene!;
+        const tree = await this.settle(live, () => live.update(this.element(component, config, time)));
         treesAt.set(time, tree.layers);
       }
       setVirtualFrame(frame, config.fps, { fireTimers: false });
@@ -148,6 +180,18 @@ class Renderer implements FrameRenderer {
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
     return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: main.unsupported };
+  }
+
+  private startScene(config: VideoConfig): void {
+    this.scene?.unmount();
+    // `time` is the virtual clock in seconds (frame / fps, also on a motion-blur sub-frame): the clock CSS animations read.
+    this.scene = createSceneRoot({
+      viewport: { width: config.width, height: config.height },
+      fonts: getFonts,
+      time: () => virtualNow() / 1000,
+    });
+    this.lastFrame = -1;
+    resetVirtualClock();
   }
 
   private element(component: ResolvedComposition['component'], config: VideoConfig, frame: number): ReactNode {

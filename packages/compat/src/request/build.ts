@@ -29,7 +29,7 @@ export interface IslandRequestJson {
   time: number;
   path: string;
   /**
-   * Earlier states of the island, oldest first, for CSS transitions (docs/ENGINE.md §7.12). Nothing fills it yet: with
+   * Earlier states of the island, oldest first, for CSS transitions (docs/ENGINE.md §7.12). The frame loop fills it (history.ts): with
    * none, no transition runs and every value is its final one.
    */
   history?: IslandSnapshotJson[];
