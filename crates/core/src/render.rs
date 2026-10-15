@@ -150,6 +150,9 @@ pub struct Renderer {
     /// The leaves of the frame that Vello draws a page at a time
     /// (`plan_pages`), and the textures of those drawn and not yet used.
     pages: Pages,
+    /// The Vello targets of the frame's pages once it is over, to be drawn
+    /// into again by the next frame's.
+    page_targets: Vec<wgpu::TextureView>,
     /// Above 0 while the samples of a motion-blurred layer are drawn: they are
     /// copies of one layer with the same ids, and only their average is kept.
     /// Their leaves are also rasterised into the box they cover, not the
@@ -211,6 +214,7 @@ impl Renderer {
             cache: LayerCache::new(CACHE_BYTES),
             cache_path: Vec::new(),
             pages: Pages::default(),
+            page_targets: Vec::new(),
             cache_paused: 0,
         };
         renderer.ensure_image_renderer(fresh.has_pictures())?;
@@ -252,6 +256,7 @@ impl Renderer {
             self.margin = margin;
             self.target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
             self.vello_view = new_vello_target(&self.device, self.target_size);
+            self.page_targets.clear();
             self.compositor.resize(scene.width, scene.height, margin);
         }
         self.install_assets(fresh);
@@ -807,8 +812,10 @@ impl Renderer {
             }
             _ => {
                 let region = raster.unwrap_or_else(|| self.whole());
-                let drawn = match self.take_from_page(layer, matrix)? {
-                    Some(drawn) => drawn,
+                let drawn = match self.page_target(layer, matrix)? {
+                    Some(page) => self.timed(Stage::Composite, |s| {
+                        s.compositor.from_srgb8(&page, s.whole(), region)
+                    }),
                     None => {
                         let area = self.vello_area(region);
                         self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
@@ -947,15 +954,13 @@ impl Renderer {
         }
         for page in members {
             self.vello_scene.reset();
-            let mut drawn = Vec::with_capacity(page.len());
             let mut has_images = false;
             for i in page {
-                let (layer, matrix, region) = leaves[i];
+                let (layer, matrix, _) = leaves[i];
                 self.encode_leaf(layer, matrix)?;
                 has_images |= draws_image(&layer.kind);
                 let key = leaf_key(layer, matrix);
                 self.pages.page_of.insert(key, self.pages.pages.len());
-                drawn.push((key, region));
             }
             self.pages.pages.push(Page {
                 scene: Some(std::mem::replace(
@@ -963,7 +968,7 @@ impl Renderer {
                     vello::Scene::new(),
                 )),
                 has_images,
-                leaves: drawn,
+                target: None,
             });
         }
         Ok(())
@@ -1001,51 +1006,50 @@ impl Renderer {
         Ok(())
     }
 
-    /// The texture `rasterise` and `from_srgb8` would make of the leaf
-    /// `layer` under `matrix`, from its page, if it is on one and this is
-    /// the first time it is wanted. Drawing the page makes the textures of
-    /// all its leaves from one Vello draw.
-    fn take_from_page(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<Option<Tex>> {
+    /// The Vello texture that holds the leaf `layer` under `matrix`, from
+    /// its page, if it is on one: the page's, drawn now if this is the first
+    /// leaf of it that is wanted. `from_srgb8` cuts the leaf out of it. It
+    /// holds the whole padded canvas, so the pixels of the other leaves of
+    /// the page are in it too, outside this leaf's box.
+    fn page_target(
+        &mut self,
+        layer: &ResolvedLayer,
+        matrix: Affine,
+    ) -> Result<Option<wgpu::TextureView>> {
         if self.cache_paused > 0 {
             return Ok(None);
         }
-        let key = leaf_key(layer, matrix);
-        if let Some(tex) = self.pages.drawn.remove(&key) {
-            return Ok(Some(tex));
+        let Some(&page) = self.pages.page_of.get(&leaf_key(layer, matrix)) else {
+            return Ok(None);
+        };
+        if let Some(target) = &self.pages.pages[page].target {
+            return Ok(Some(target.clone()));
         }
-        let Some(&page) = self.pages.page_of.get(&key) else {
-            return Ok(None);
-        };
-        let Some(scene) = self.pages.pages[page].scene.take() else {
-            // Drawn already, and this leaf's texture used: it is wanted twice.
-            return Ok(None);
-        };
+        let scene = self.pages.pages[page]
+            .scene
+            .take()
+            .expect("a page that is not drawn has its scene");
         let has_images = self.pages.pages[page].has_images;
         let whole = self.whole();
+        let target = self
+            .page_targets
+            .pop()
+            .unwrap_or_else(|| new_vello_target(&self.device, self.target_size));
         let previous = std::mem::replace(&mut self.vello_scene, scene);
-        let rendered = self.timed(Stage::Raster, |s| s.render_vello_scene(has_images, whole));
+        let rendered = self.timed(Stage::Raster, |s| {
+            s.render_vello_scene_to(has_images, whole, &target)
+        });
         self.vello_scene = previous;
         rendered?;
-        let regions: Vec<PixelRect> = self.pages.pages[page]
-            .leaves
-            .iter()
-            .map(|(_, region)| *region)
-            .collect();
-        let texes = self.timed(Stage::Composite, |s| {
-            s.compositor.from_srgb8_many(&s.vello_view, &regions)
-        });
-        for ((key, _), tex) in self.pages.pages[page].leaves.iter().zip(texes) {
-            self.pages.drawn.insert(*key, tex);
-        }
-        Ok(self.pages.drawn.remove(&key))
+        self.pages.pages[page].target = Some(target.clone());
+        Ok(Some(target))
     }
 
-    /// Forgets the pages, giving back the textures no layer took.
+    /// Forgets the pages, keeping their Vello textures for the next frame's.
     fn clear_pages(&mut self) {
-        for (_, tex) in self.pages.drawn.drain() {
-            self.compositor.release(tex);
+        for page in self.pages.pages.drain(..) {
+            self.page_targets.extend(page.target);
         }
-        self.pages.pages.clear();
         self.pages.page_of.clear();
     }
 
@@ -1492,6 +1496,18 @@ impl Renderer {
     fn render_vello_scene(&mut self, has_images: bool, area: PixelRect) -> Result<()> {
         // The passes recorded so far may read what Vello drew last.
         self.compositor.submit();
+        let target = self.vello_view.clone();
+        self.render_vello_scene_to(has_images, area, &target)
+    }
+
+    /// `render_vello_scene` into `target`, a texture of the same size that no
+    /// recorded pass is to read the old contents of.
+    fn render_vello_scene_to(
+        &mut self,
+        has_images: bool,
+        area: PixelRect,
+        target: &wgpu::TextureView,
+    ) -> Result<()> {
         let renderer = if has_images {
             self.vello_images.as_mut()
         } else {
@@ -1503,7 +1519,7 @@ impl Renderer {
                 &self.device,
                 &self.queue,
                 &self.vello_scene,
-                &self.vello_view,
+                target,
                 &RenderParams {
                     base_color: peniko::Color::TRANSPARENT,
                     width: area.width(),
@@ -1737,8 +1753,6 @@ struct Pages {
     pages: Vec<Page>,
     /// Which page each leaf is on.
     page_of: HashMap<LeafKey, usize>,
-    /// The textures of the leaves of drawn pages, until they are used.
-    drawn: HashMap<LeafKey, Tex>,
 }
 
 struct Page {
@@ -1746,8 +1760,10 @@ struct Page {
     scene: Option<vello::Scene>,
     /// Whether it has an image, which picks the renderer (`vello_images`).
     has_images: bool,
-    /// Its leaves and the pixels each can touch (`raster_bounds`).
-    leaves: Vec<(LeafKey, PixelRect)>,
+    /// The texture Vello drew it into, once it is drawn. Each page has one
+    /// of its own for the rest of the frame, so a leaf is cut out of it
+    /// whenever the leaf is wanted.
+    target: Option<wgpu::TextureView>,
 }
 
 fn is_hidden(layer: &ResolvedLayer) -> bool {

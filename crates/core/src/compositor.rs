@@ -804,25 +804,6 @@ impl Compositor {
         target
     }
 
-    /// `from_srgb8` for each of `regions` of a Vello output that was drawn
-    /// over the whole canvas, as one texture each.
-    pub fn from_srgb8_many(
-        &mut self,
-        vello_output: &wgpu::TextureView,
-        regions: &[PixelRect],
-    ) -> Vec<Tex> {
-        let input = self.vello_input(vello_output);
-        regions
-            .iter()
-            .map(|&region| {
-                let target = self.target(region);
-                let bind_group = self.composite_bind_group(input, input, &[0u8; 16], &target);
-                self.encode_draw(&mut self.encoder(), &self.to_linear, &bind_group, &target);
-                target
-            })
-            .collect()
-    }
-
     /// Composites `src` over `dst` with the layer's opacity and blend mode.
     /// `src` is only read, and stays its owner's (the layer cache keeps one
     /// for the next frame); the result is `dst`, changed under the box of
@@ -1981,30 +1962,7 @@ impl Compositor {
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
     ) {
-        let uniform = self.uniform(params);
-        let place = self.place_buffer(target, a, b);
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("composite"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(a.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(b.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: uniform.binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: place.binding(),
-                },
-            ],
-        });
+        let bind_group = self.composite_bind_group(a, b, params, target);
         self.draw_with(pipeline, &bind_group, extra, target);
     }
 
@@ -2080,17 +2038,6 @@ impl Compositor {
         target: &Tex,
     ) {
         self.encode_draw_with(&mut self.encoder(), pipeline, bind_group, extra, target);
-    }
-
-    /// `draw`, recorded into `encoder` to be submitted with other work.
-    fn encode_draw(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        pipeline: &wgpu::RenderPipeline,
-        bind_group: &wgpu::BindGroup,
-        target: &Tex,
-    ) {
-        self.encode_draw_with(encoder, pipeline, bind_group, None, target);
     }
 
     /// `draw_with`, recorded into `encoder`.
