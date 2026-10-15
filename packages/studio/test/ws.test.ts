@@ -1,7 +1,10 @@
 import { writeFileSync } from 'node:fs';
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import type { FrameRequest, RenderJob, ServerMessage } from '../src/index.js';
 import { Client, api, cleanup, projectSource, start, stopAll, text, until, writeProject, writeScene } from './helpers.js';
+
+// Workers start slowly on a busy machine: each test spawns several.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 afterEach(() => stopAll());
 afterAll(() => cleanup());

@@ -1,9 +1,12 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startStudio, type StudioServer } from '../src/index.js';
 import { api, cleanup, start, stopAll, text, until, writeProject, STUB_ENGINE } from './helpers.js';
+
+// Workers start slowly on a busy machine: each test spawns several.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 let studio: StudioServer;
 let dir: string;

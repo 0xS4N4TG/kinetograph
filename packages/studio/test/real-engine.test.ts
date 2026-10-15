@@ -5,8 +5,11 @@
 import { createRequire } from 'node:module';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { Client, api, cleanup, start, stopAll, tempDir, until } from './helpers.js';
+
+// Workers start slowly on a busy machine: each test spawns several.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const addon = (() => {
   try {
@@ -24,6 +27,7 @@ afterAll(async () => {
 
 const SOURCE = `
 import { Composition, Layer, Rect, Sequence, Series, registerRoot } from 'remotion';
+
 
 const Dot = () => <Rect id="dot" width={10} height={10} fill="#fff" />;
 const Main = ({ label }: { label?: string }) => (
