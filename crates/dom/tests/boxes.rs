@@ -1,6 +1,6 @@
-mod common;
+mod paintkit;
 
-use common::compare;
+use paintkit::compare;
 
 #[test]
 fn box_with_background_border_radius_and_text() {

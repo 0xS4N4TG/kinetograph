@@ -234,6 +234,35 @@ pub fn layout_dom(request_json: String) -> Result<String> {
     dom::layout_dom(&request_json)
 }
 
+/// One DOM island at one frame (docs/ENGINE.md §2): an `IslandRequest` as
+/// JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
+/// Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
+/// painted as scene layers. CPU only.
+#[napi]
+pub fn render_dom_island(request_json: String) -> Result<String> {
+    dom::render_dom_island(&request_json)
+}
+
+/// The boxes of every element of a DOM island (docs/ENGINE.md §2): an
+/// `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
+/// scroll } }` as JSON out. `x`..`height` are the border box where layout put
+/// it, `rect` the transformed bounding box `getBoundingClientRect` gives.
+#[napi]
+pub fn dom_layout_boxes(request_json: String) -> Result<String> {
+    dom::dom_layout_boxes(&request_json)
+}
+
+/// `getComputedStyle` of the element at `path` in a DOM island: the resolved
+/// value of each property (CSS or camelCase names), `""` for an unknown one.
+#[napi]
+pub fn dom_computed_style(
+    request_json: String,
+    path: String,
+    properties: Vec<String>,
+) -> Result<Vec<String>> {
+    dom::dom_computed_style(&request_json, &path, &properties)
+}
+
 /// The picture a video layer shows `time` seconds after the stream's first
 /// picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
 /// a gif layer shows at `time` seconds (the last one is held past the end).

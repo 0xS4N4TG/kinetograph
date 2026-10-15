@@ -19,13 +19,20 @@ serde_json = "1.0.154"
 style = { package = "stylo", version = "0.22.0" }
 style_traits = { package = "stylo_traits", version = "0.22.0" }
 kurbo = "0.13.1"
+# Fonts: the Parley context Blitz lays text out with.
 parley = { version = "0.12.0", default-features = false, features = ["std"] }
 taffy = { version = "0.15.0", default-features = false, features = ["std"] }
-url = "2.5"
-euclid = "0.22"
+# Sub-resources are local files and data URLs.
+url = "2.5.8"
+data-url = "0.3.2"
+bytes = "1.12.1"
 base64 = "0.23"
 percent-encoding = "2.3"
+# Decoding images the way Blitz does, and SVG images without system fonts.
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif"] }
+usvg = "0.48.1"
+# Transform matrices for readback.
+euclid = "0.22"
 
 [dev-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] }

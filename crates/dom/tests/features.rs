@@ -2,14 +2,14 @@
 //! the GPU and compared with Chrome's rendering of the same HTML. The
 //! pictures are in `target/paint-tests`.
 
-mod common;
+mod paintkit;
 
-use common::compare;
+use paintkit::compare;
 
 fn asset(name: &str) -> String {
     format!(
         "file://{}",
-        common::repo_root()
+        paintkit::repo_root()
             .join("crates/dom/tests/assets")
             .join(name)
             .canonicalize()
