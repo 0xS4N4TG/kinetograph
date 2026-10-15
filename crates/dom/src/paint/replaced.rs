@@ -1,0 +1,376 @@
+//! Replaced content: `<img>`, `<video>`, `<canvas>`, list markers, and the
+//! canvas background.
+
+use blitz_dom::{Node, local_name};
+use serde_json::{Value, json};
+use style::computed_values::object_fit::T as ObjectFit;
+
+use super::deco::box_geom;
+use super::geom::{Rect, Region};
+use super::images::Source;
+use super::util::{Layer, lp, num};
+use super::{Origin, Painter};
+
+impl<'a> Painter<'a> {
+    /// The picture or video of a replaced element, in its content box.
+    pub fn replaced_content(&mut self, node: &'a Node, origin: Origin) -> Vec<Value> {
+        let Some(style) = node.primary_styles() else {
+            return Vec::new();
+        };
+        if !self.is_visible(node) {
+            return Vec::new();
+        }
+        let Some(el) = node.element_data() else {
+            return Vec::new();
+        };
+        let tag = &el.name.local;
+        let geom = box_geom(node, &style);
+        let (content, radii) = geom.region(Region::Content);
+        if content.is_empty() {
+            return Vec::new();
+        }
+
+        if *tag == local_name!("svg") {
+            let id = self.layer_id(node, "svg");
+            let path = self.path_of(node);
+            let painted = super::svg::paint_svg(
+                self.doc,
+                self.req,
+                node.id.as_u64() as usize,
+                [content.w, content.h],
+                &id,
+                &path,
+            );
+            self.unsupported.extend(painted.unsupported);
+            let Some(mut layer) = painted.layer else {
+                return Vec::new();
+            };
+            super::util::shift(&mut layer, origin.0 + content.x, origin.1 + content.y);
+            if !radii.is_zero() {
+                let clip_rect = Rect::new(
+                    origin.0 + content.x,
+                    origin.1 + content.y,
+                    content.w,
+                    content.h,
+                );
+                self.clip_layer(&mut layer, clip_rect, radii);
+            }
+            return vec![layer];
+        }
+        if *tag == local_name!("canvas") {
+            self.report_element(node, "a <canvas> is not drawn yet");
+            return Vec::new();
+        }
+        let is_video = *tag == local_name!("video");
+        let src_attr = el.attr(local_name!("src")).map(str::to_string);
+        let Some(src_attr) = src_attr else {
+            return Vec::new();
+        };
+
+        let (path, nw, nh) = if is_video {
+            let Some(p) = self.resolve_relative(&src_attr).or_else(|| {
+                // A file: URL.
+                url::Url::parse(&src_attr)
+                    .ok()
+                    .and_then(|u| u.to_file_path().ok())
+            }) else {
+                self.report(
+                    node,
+                    "src",
+                    &src_attr,
+                    "the video file is not in the project",
+                );
+                return Vec::new();
+            };
+            // The video's own size is read by the scene when it loads; the
+            // box decides the layer's size.
+            (p.to_string_lossy().into_owned(), 0.0, 0.0)
+        } else {
+            match self.source_of(&src_attr) {
+                Source::Raster { path, w, h } => (path, w, h),
+                Source::Unsupported(reason) => {
+                    self.report(node, "src", &src_attr, &reason);
+                    return Vec::new();
+                }
+            }
+        };
+
+        let pos = style.get_position();
+        let fit = pos.object_fit;
+        // The picture's rectangle in the content box.
+        let (pic, needs_clip) = if is_video || nw <= 0.0 || nh <= 0.0 {
+            (Rect::new(0.0, 0.0, content.w, content.h), false)
+        } else {
+            let (mut pw, mut ph) = match fit {
+                ObjectFit::Fill => (content.w, content.h),
+                ObjectFit::Contain => {
+                    let s = (content.w / nw).min(content.h / nh);
+                    (nw * s, nh * s)
+                }
+                ObjectFit::Cover => {
+                    let s = (content.w / nw).max(content.h / nh);
+                    (nw * s, nh * s)
+                }
+                ObjectFit::None => (nw, nh),
+                ObjectFit::ScaleDown => {
+                    let s = (content.w / nw).min(content.h / nh).min(1.0);
+                    (nw * s, nh * s)
+                }
+            };
+            if !(pw > 0.0 && ph > 0.0) {
+                pw = content.w;
+                ph = content.h;
+            }
+            let px = lp(&pos.object_position.horizontal, content.w - pw);
+            let py = lp(&pos.object_position.vertical, content.h - ph);
+            let r = Rect::new(px, py, pw, ph);
+            let inside = Rect::new(0.0, 0.0, content.w, content.h).contains_rect(&r);
+            (r, !inside)
+        };
+
+        let id = self.layer_id(node, if is_video { "video" } else { "img" });
+        let mut layer = Layer::new(&id, if is_video { "video" } else { "image" })
+            .set("src", json!(path))
+            .set("width", num(pic.w))
+            .set("height", num(pic.h));
+        let lx = origin.0 + content.x + pic.x;
+        let ly = origin.1 + content.y + pic.y;
+        layer = layer.at(lx, ly);
+        let mut layer = layer.build();
+        // Cut to the content box when the picture overflows it, or the box is rounded.
+        if needs_clip || !radii.is_zero() {
+            let clip_rect = Rect::new(
+                origin.0 + content.x,
+                origin.1 + content.y,
+                content.w,
+                content.h,
+            );
+            self.clip_layer(&mut layer, clip_rect, radii);
+        }
+        vec![layer]
+    }
+
+    /// The baseline of the first line of text in `node`, from its border box's
+    /// top, and the ascent of the font of that line.
+    fn first_baseline(&self, node: &'a Node) -> Option<(f64, f64)> {
+        if let Some(ild) = node
+            .element_data()
+            .and_then(|e| e.inline_layout_data.as_ref())
+        {
+            let l = node.final_layout();
+            let line = ild.layout.lines().next()?;
+            let ascent = line
+                .items()
+                .find_map(|i| match i {
+                    parley::PositionedLayoutItem::GlyphRun(g) => {
+                        Some(f64::from(g.run().font_metrics().ascent))
+                    }
+                    _ => None,
+                })
+                .unwrap_or(0.0);
+            let top = f64::from(l.border.top + l.padding.top) + f64::from(ild.block_offset);
+            return Some((top + f64::from(line.metrics().baseline), ascent));
+        }
+        let children: Vec<_> = node
+            .layout_children
+            .borrow()
+            .as_ref()
+            .map(|c| c.iter().copied().collect())
+            .unwrap_or_default();
+        for cid in children {
+            let c = self.node(cid);
+            if let Some((b, a)) = self.first_baseline(c) {
+                return Some((b + f64::from(c.final_layout().location.y), a));
+            }
+        }
+        None
+    }
+
+    /// The marker of a list item: discs, circles and squares as shapes the way
+    /// Chrome sizes them, numbers as text, both outside the content box.
+    pub fn list_marker(&mut self, node: &'a Node, origin: Origin) -> Vec<Value> {
+        use blitz_dom::node::{ListItemLayoutPosition, Marker};
+        let Some(item) = node
+            .element_data()
+            .and_then(|e| e.list_item_data.as_deref())
+        else {
+            return Vec::new();
+        };
+        let Some(style) = node.primary_styles() else {
+            return Vec::new();
+        };
+        if !self.is_visible(node) {
+            return Vec::new();
+        }
+        let color = super::util::rgba(&super::util::current_color(&style));
+        let l = node.final_layout();
+        let content_x = origin.0 + f64::from(l.border.left + l.padding.left);
+        let Some((baseline, ascent)) = self.first_baseline(node) else {
+            return Vec::new();
+        };
+        let baseline = origin.1 + baseline;
+        let id = self.layer_id(node, "marker");
+        let fill = Value::String(super::util::hex_of(color));
+        match (&item.marker, &item.position) {
+            (Marker::Char(c), ListItemLayoutPosition::Outside(_))
+            | (Marker::Char(c), ListItemLayoutPosition::Inside)
+                if matches!(c, '\u{2022}' | '\u{25e6}' | '\u{25aa}') =>
+            {
+                let inside = matches!(item.position, ListItemLayoutPosition::Inside);
+                let ascent = ascent.round();
+                let d = ((ascent * 2.0 / 3.0).floor() + 1.0).div_euclid(2.0);
+                let d = d.max(1.0);
+                let top = baseline - ascent
+                    + (3.0 * (ascent - (ascent * 2.0 / 3.0).floor()) / 2.0).floor();
+                let x = if inside {
+                    content_x
+                } else {
+                    content_x - 7.0 - 2.0 * d
+                };
+                match c {
+                    '\u{2022}' => vec![super::util::Layer::new(&id, "shape")
+                        .set("shape", json!({ "kind": "ellipse", "width": num(d), "height": num(d) }))
+                        .set("fill", fill)
+                        .at(x, top)
+                        .build()],
+                    '\u{25e6}' => vec![super::util::Layer::new(&id, "shape")
+                        .set("shape", json!({ "kind": "ellipse", "width": num(d - 1.0), "height": num(d - 1.0) }))
+                        .set("stroke", json!({ "color": super::util::hex_of(color), "width": 1 }))
+                        .at(x + 0.5, top + 0.5)
+                        .build()],
+                    _ => vec![super::util::Layer::new(&id, "shape")
+                        .set("shape", json!({ "kind": "rect", "width": num(d), "height": num(d) }))
+                        .set("fill", fill)
+                        .at(x, top)
+                        .build()],
+                }
+            }
+            (Marker::String(_), ListItemLayoutPosition::Outside(layout))
+            | (Marker::Char(_), ListItemLayoutPosition::Outside(layout)) => {
+                // A text marker ends where the content starts, on the first baseline.
+                let scale = f64::from(layout.scale()).max(1e-6);
+                let width = f64::from(layout.full_width()) / scale;
+                let mut runs: Vec<Value> = Vec::new();
+                let mut first_base = 0.0;
+                for (n, line) in layout.lines().enumerate() {
+                    for it in line.items() {
+                        let parley::PositionedLayoutItem::GlyphRun(gr) = it else {
+                            continue;
+                        };
+                        if n == 0 && first_base == 0.0 {
+                            first_base = f64::from(gr.baseline()) / scale;
+                        }
+                        let run = gr.run();
+                        let Some(src) = self.font_path(run.font()) else {
+                            self.report(
+                                node,
+                                "list-style-type",
+                                "marker",
+                                "the marker's font is not a project font file",
+                            );
+                            return Vec::new();
+                        };
+                        let glyphs: Vec<Value> = gr
+                            .positioned_glyphs()
+                            .map(|g| {
+                                json!([
+                                    g.id,
+                                    num(f64::from(g.x) / scale),
+                                    num(f64::from(g.y) / scale)
+                                ])
+                            })
+                            .collect();
+                        runs.push(json!({ "src": src, "index": run.font().index, "size": num(f64::from(run.font_size()) / scale), "glyphs": glyphs }));
+                    }
+                }
+                if runs.is_empty() {
+                    return Vec::new();
+                }
+                vec![
+                    super::util::Layer::new(&id, "text")
+                        .set("color", fill)
+                        .set("boxWidth", num(width))
+                        .set("boxHeight", num(f64::from(layout.height()) / scale))
+                        .set("runs", Value::Array(runs))
+                        // The marker's string ends in a space Blitz's layout trims.
+                        .at(
+                            content_x
+                                - width
+                                - f64::from(style.get_font().font_size.computed_size().px()) * 0.26,
+                            baseline - first_base,
+                        )
+                        .build(),
+                ]
+            }
+            _ => {
+                self.report(
+                    node,
+                    "list-style-position",
+                    "inside",
+                    "an inside marker in the bundled bullet font is not drawn",
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    // ---- the canvas ----
+
+    /// The node whose background paints the canvas (the root, or the body when
+    /// the root has none), and whether it is the body.
+    pub fn canvas_background(
+        &mut self,
+        root: &'a Node,
+        body: Option<&'a Node>,
+    ) -> Option<(&'a Node, bool)> {
+        let has_bg = |n: &Node| {
+            n.primary_styles().is_some_and(|s| {
+                let bg = s.get_background();
+                let current = super::util::current_color(&s);
+                super::util::rgba(&super::util::resolve_color(&bg.background_color, &current))[3]
+                    > 0.0
+                    || bg
+                        .background_image
+                        .0
+                        .iter()
+                        .any(|i| !matches!(i, style::values::computed::Image::None))
+            })
+        };
+        if has_bg(root) {
+            self.canvas_node = Some(root.id);
+            return Some((root, false));
+        }
+        let body = body?;
+        if has_bg(body) {
+            self.canvas_node = Some(body.id);
+            return Some((body, true));
+        }
+        None
+    }
+
+    /// The background of `source` over the whole canvas.
+    pub fn canvas_layers(&mut self, source: &'a Node, viewport: (f64, f64)) -> Vec<Value> {
+        let Some(style) = source.primary_styles() else {
+            return Vec::new();
+        };
+        let mut geom = box_geom(source, &style);
+        // The canvas is the painting and positioning area (the root element's
+        // box for the positioning area; a body's background is positioned
+        // against the root element's box).
+        let root = self.doc.root_element();
+        let (w, h) = (
+            f64::from(root.final_layout().size.width).max(viewport.0),
+            f64::from(root.final_layout().size.height).max(viewport.1),
+        );
+        geom.w = w;
+        geom.h = h;
+        geom.border = [0.0; 4];
+        geom.padding = [0.0; 4];
+        geom.radii = super::geom::Radii::ZERO;
+        self.background(source, &style, &geom)
+    }
+
+    pub fn note_reach(&mut self, reach: f64) {
+        self.margin_reach = self.margin_reach.max(reach);
+    }
+}

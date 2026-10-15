@@ -79,3 +79,59 @@ fn turbulence_value(channel: u32, point: vec2<f32>, frequency: vec2<f32>, octave
     }
     return clamp(select(sum, (sum + 1.0) * 0.5, fractal), 0.0, 1.0);
 }
+
+// ---- stitchTiles ----
+//
+// The reference algorithm's variant that makes the noise tile seamlessly over a
+// tile (the primitive subregion). The lattice cell is kept unmasked (the
+// reference adds 4096 and truncates) while the cells past the tile's far edge
+// are wrapped back by the tile's width, and the wrap point and width double
+// with every octave. `st` is (width, wrap x, height, wrap y) of the first
+// octave; the caller has already moved the base frequency to a whole number
+// of cycles per tile.
+fn noise2_stitch(channel: u32, v: vec2<f32>, st: vec4<i32>) -> f32 {
+    let cell = floor(v);
+    var b0 = vec2<i32>(cell) + vec2<i32>(4096);
+    var b1 = b0 + vec2<i32>(1);
+    let r0 = v - cell;
+    let r1 = r0 - vec2<f32>(1.0);
+    if b0.x >= st.y { b0.x -= st.x; }
+    if b1.x >= st.y { b1.x -= st.x; }
+    if b0.y >= st.w { b0.y -= st.z; }
+    if b1.y >= st.w { b1.y -= st.z; }
+    let c0 = vec2<u32>(b0 & vec2<i32>(255));
+    let c1 = vec2<u32>(b1 & vec2<i32>(255));
+
+    let i = tables.lattice[c0.x];
+    let j = tables.lattice[c1.x];
+    let b00 = tables.lattice[i + c0.y];
+    let b10 = tables.lattice[j + c0.y];
+    let b01 = tables.lattice[i + c1.y];
+    let b11 = tables.lattice[j + c1.y];
+
+    let sx = s_curve(r0.x);
+    let sy = s_curve(r0.y);
+    let u0 = dot(vec2<f32>(r0.x, r0.y), gradient_at(channel, b00));
+    let v0 = dot(vec2<f32>(r1.x, r0.y), gradient_at(channel, b10));
+    let a = lerp(sx, u0, v0);
+    let u1 = dot(vec2<f32>(r0.x, r1.y), gradient_at(channel, b01));
+    let v1 = dot(vec2<f32>(r1.x, r1.y), gradient_at(channel, b11));
+    let b = lerp(sx, u1, v1);
+    return lerp(sy, a, b);
+}
+
+fn turbulence_value_stitch(channel: u32, point: vec2<f32>, frequency: vec2<f32>, octaves: u32, fractal: bool, stitch: vec4<i32>) -> f32 {
+    var sum = 0.0;
+    var v = point * frequency;
+    var ratio = 1.0;
+    var st = stitch;
+    for (var o = 0u; o < octaves; o++) {
+        let n = noise2_stitch(channel, v, st);
+        sum += select(abs(n), n, fractal) / ratio;
+        v *= 2.0;
+        ratio *= 2.0;
+        // Width and wrap point double; the wrap point keeps its 4096 offset.
+        st = vec4<i32>(st.x * 2, 2 * st.y - 4096, st.z * 2, 2 * st.w - 4096);
+    }
+    return clamp(select(sum, (sum + 1.0) * 0.5, fractal), 0.0, 1.0);
+}

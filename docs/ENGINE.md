@@ -506,3 +506,30 @@ islands for it. Chrome is for the tools only; the engine never starts one.
 - Image pixels come from `node.element_data().special_data` (`SpecialElementData::Image`) and `background_images` /
   `mask_images` as Blitz fills them; the pixel `Arc` is shared across frames.
 - `tests/common/mod.rs` (JSON request helpers, `bounds`) is meant to be shared: stream 2's golden tests can use it.
+## 9. Stream 3 notes (SVG)
+
+Two functions in `crates/dom/src/paint/svg/mod.rs` are what the box painter (stream 2) calls. Both take the
+styled, laid-out `BaseDocument` and the `IslandRequest` (for fonts and asset directories).
+
+```rust
+pub fn paint_svg(doc: &BaseDocument, request: &IslandRequest, node_id: usize, size: [f64; 2],
+                 id: &str, path: &str) -> SvgPaint;          // SvgPaint { layer: Option<Value>, unsupported }
+pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str, bbox: [f64; 4],
+                    id: &str, path: &str) -> Option<FilterEffect>;  // FilterEffect { effect: Value, unsupported }
+```
+
+- `paint_svg` paints an `<svg>` element's content only. `size` is the content box in CSS pixels; `viewBox` and
+  `preserveAspectRatio` map into it. It returns one `group` layer (id `id`) with (0, 0) at the content box's top-left
+  corner and a clip to the viewport (the UA's `overflow: hidden` on `<svg>`). It sets no `transform`, `opacity`,
+  `blendMode`, `effects`, `clip` or `mask` on that group: the CSS box is the caller's, so the caller adds those, and
+  `transform.x`/`.y` to put the box in its parent. That includes the CSS `rotate`, `scale`, `translate` and
+  `transform` properties of the `<svg>` element itself. Properties of the elements inside (`<g>`, `<path>`, ...)
+  are handled here.
+- `filter_graph` returns `{"type": "filterGraph", ...}` for `filter: url(#id)`, to be pushed onto the `effects` of
+  the filtered layer (in the order the CSS `filter` list has them). `fragment` is `#id`, `url(#id)` or `id`; the
+  `<filter>` can be anywhere in the document. `bbox` is `[x, y, width, height]` of the element's object bounding box
+  in the coordinates of the layer the effect goes on (an HTML box: its border box), used for `objectBoundingBox`
+  units and the default region (-10%, -10%, 120%, 120%). It returns `None` for an id that names no `<filter>`
+  (CSS ignores the reference then). A filter of the wrong kind of element is `None` too.
+- Both return `Unsupported` items for what they could not draw as Chrome would.
+- The `filterGraph` effect is documented in `docs/SCENE.md` ("filterGraph").

@@ -30,7 +30,8 @@ use crate::resolve::{
     ResolvedScene,
 };
 use crate::scene::{
-    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
+    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Paint, Scene, ShapeLayer, TextLayer,
+    Units, walk_layers,
 };
 use crate::text::{LaidOutText, TextEngine};
 use crate::video::{VideoDecoder, Videos, open_video, video_sources};
@@ -176,7 +177,7 @@ impl Renderer {
         let vello_view = new_vello_target(&device, target_size);
         // The scene's shaders and tables join below, the way a later
         // scene's do (`set_scene`).
-        let compositor = Compositor::new(
+        let mut compositor = Compositor::new(
             &device,
             &queue,
             scene.width,
@@ -185,6 +186,7 @@ impl Renderer {
             &[],
             &HashMap::new(),
         );
+        compositor.set_srgb_blend(scene.blend_space == crate::scene::BlendSpace::Srgb);
 
         let text = fresh
             .text
@@ -246,9 +248,13 @@ impl Renderer {
         let margin = scene.margin();
         let resized = (scene.width, scene.height, margin)
             != (self.scene.width, self.scene.height, self.margin);
-        if resized || fresh.rebound {
+        // What a cached group drew depends on the space it was blended in.
+        let respaced = scene.blend_space != self.scene.blend_space;
+        if resized || respaced || fresh.rebound {
             self.clear_layer_cache();
         }
+        self.compositor
+            .set_srgb_blend(scene.blend_space == crate::scene::BlendSpace::Srgb);
         if resized {
             self.clear_pages();
             self.margin = margin;
@@ -487,8 +493,11 @@ impl Renderer {
             }
             // A layer turned in 3D is drawn flat and then warped about its
             // own position, in its parent's plane.
-            let placement =
-                warp::layer_world(&layer.transform).map(|world| Placement { parent, world });
+            let placement = warp::layer_world(&layer.transform).map(|world| Placement {
+                parent,
+                world,
+                backface_hidden: layer.transform.backface_hidden,
+            });
             canvas = self.draw_layer(layer, layers, parent, placement, 1.0, canvas, below)?;
         }
         Ok(canvas)
@@ -707,8 +716,11 @@ impl Renderer {
                 backdrop,
                 Some((i, layer.motion.len())),
             )?;
-            let placement =
-                warp::layer_world(&sub.transform).map(|world| Placement { parent, world });
+            let placement = warp::layer_world(&sub.transform).map(|world| Placement {
+                parent,
+                world,
+                backface_hidden: sub.transform.backface_hidden,
+            });
             let src = match placement {
                 Some(placement) => match self.place(src, &placement) {
                     Some(src) => src,
@@ -732,6 +744,11 @@ impl Renderer {
             self.compositor.release(src);
             return None;
         };
+        // The plane is seen from behind when the map flips it over.
+        if placement.backface_hidden && h.determinant() < 0.0 {
+            self.compositor.release(src);
+            return None;
+        }
         // A placement that changes nothing (a group at depth 0 in a flat
         // stack) costs no pass.
         if warp::is_identity(&h) {
@@ -1079,11 +1096,20 @@ impl Renderer {
                 max_width,
                 align,
                 chars,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 text_bounds(&laid_out, *size, *max_width, chars)
             }
             ResolvedKind::Image { width, height, .. }
@@ -1127,7 +1153,8 @@ impl Renderer {
                 if let Some(paint) = fill {
                     // The box a gradient in box units is measured in: the
                     // geometry, without the stroke.
-                    let (brush, brush_transform) = paint_brush(paint, Some(path.bounding_box()));
+                    let (brush, brush_transform) =
+                        paint_brush_in(paint, Some(path.bounding_box()), &self.images);
                     self.vello_scene
                         .fill(Fill::NonZero, matrix, &brush, brush_transform, &path);
                 }
@@ -1150,13 +1177,22 @@ impl Renderer {
                 max_width,
                 align,
                 chars,
+                runs,
+                box_size,
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let (box_width, box_height) = laid_out.box_size(*max_width);
                 let text_box = Rect::new(0.0, 0.0, box_width, box_height);
-                let (brush, brush_transform) = paint_brush(color, Some(text_box));
+                let (brush, brush_transform) = paint_brush_in(color, Some(text_box), &self.images);
                 let centres = if chars.iter().any(Option::is_some) {
                     laid_out.char_centres()
                 } else {
@@ -1175,6 +1211,16 @@ impl Renderer {
                         scene
                             .draw_glyphs(&run.font)
                             .transform(matrix)
+                            .glyph_transform(
+                                (run.skew != 0.0).then(|| {
+                                    Affine::skew(f64::from(run.skew).to_radians().tan(), 0.0)
+                                }),
+                            )
+                            .normalized_coords(&run.coords)
+                            .font_embolden(vello::FontEmbolden::new(vello::kurbo::Diagonal2::new(
+                                f64::from(run.embolden),
+                                f64::from(run.embolden),
+                            )))
                             .brush_transform(brush_transform)
                             .font_size(run.font_size)
                             .hint(false)
@@ -1445,11 +1491,20 @@ impl Renderer {
                 line_height,
                 max_width,
                 align,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let (width, height) = laid_out.box_size(*max_width);
                 Some(Rect::new(0.0, 0.0, width, height))
             }
@@ -1504,6 +1559,8 @@ impl Renderer {
 struct Placement {
     parent: Affine,
     world: DMat4,
+    /// Not drawn when turned to show its back (`Transform::backface_hidden`).
+    backface_hidden: bool,
 }
 
 /// Where a `preserve3d` group's children are, while they are being placed.
@@ -1590,6 +1647,7 @@ fn collect_preserve3d<'a>(
             placement: Placement {
                 parent: space.parent,
                 world,
+                backface_hidden: child.transform.backface_hidden,
             },
             opacity: space.opacity,
             depth: warp::depth(&world, (centre.x, centre.y)),
@@ -1793,6 +1851,7 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 fn needs_box(effects: &[ResolvedEffect]) -> bool {
     effects.iter().any(|e| {
         matches!(e, ResolvedEffect::CornerPin(_))
+            || matches!(e, ResolvedEffect::FilterGraph(g) if g.needs_box())
             || matches!(e, ResolvedEffect::DotMatrix(d) if d.order == DotOrder::Sweep)
     })
 }
@@ -1836,7 +1895,48 @@ fn paint_brush(paint: &ResolvedPaint, layer_box: Option<Rect>) -> (peniko::Brush
             let (brush, brush_transform) = gradient_brush_in(g, layer_box);
             (brush, Some(brush_transform))
         }
+        // Needs the decoded pictures: see `paint_brush_in`.
+        ResolvedPaint::Image(_) => (peniko::Brush::Solid(peniko::Color::TRANSPARENT), None),
     }
+}
+
+/// `paint_brush`, with the pictures an image paint draws (`Renderer::images`).
+/// The picture is placed and sized by the paint, and repeats in the
+/// directions it says (an axis that does not repeat holds its edge pixels, so
+/// the shape painted must stop at the tile).
+fn paint_brush_in(
+    paint: &ResolvedPaint,
+    layer_box: Option<Rect>,
+    images: &HashMap<String, ImageData>,
+) -> (peniko::Brush, Option<Affine>) {
+    let ResolvedPaint::Image(i) = paint else {
+        return paint_brush(paint, layer_box);
+    };
+    let Some(image) = images.get(&i.src) else {
+        return (peniko::Brush::Solid(peniko::Color::TRANSPARENT), None);
+    };
+    let extend = |repeat: bool| {
+        if repeat {
+            peniko::Extend::Repeat
+        } else {
+            peniko::Extend::Pad
+        }
+    };
+    let sampler = peniko::ImageSampler {
+        x_extend: extend(i.repeat_x),
+        y_extend: extend(i.repeat_y),
+        ..Default::default()
+    };
+    let brush = peniko::Brush::Image(peniko::ImageBrush {
+        image: image.clone(),
+        sampler,
+    });
+    let to_tile = Affine::translate((i.x, i.y))
+        * Affine::scale_non_uniform(
+            i.width / f64::from(image.width.max(1)),
+            i.height / f64::from(image.height.max(1)),
+        );
+    (brush, Some(to_tile))
 }
 
 /// `gradient_brush`, for a gradient that may be in box units: its coordinates
@@ -1879,11 +1979,36 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
         return solid;
     }
     let mut turn = Affine::IDENTITY;
+    let mut linear_exact = false;
     let gradient = match g.geometry {
         ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } => {
-            let (p0, p1) = (Point::new(x0, y0), Point::new(x1, y1));
+            let (mut p0, mut p1) = (Point::new(x0, y0), Point::new(x1, y1));
             if p0.distance(p1) < 1e-6 {
                 return solid;
+            }
+            // Vello puts a linear gradient's end points through the brush
+            // transform, which is only right for a turn and a uniform scale.
+            // An affine `matrix` maps the field exactly: the points go through
+            // it, and the line is carried to the field's new gradient (which
+            // transforms by the inverse transpose).
+            if let Some(m) = g.matrix {
+                let a = Affine::new(m);
+                let d = p1 - p0;
+                let covector = d / d.hypot2();
+                let inv = a.inverse().as_coeffs();
+                // The inverse transpose applied to the covector.
+                let g2 = vello::kurbo::Vec2::new(
+                    inv[0] * covector.x + inv[1] * covector.y,
+                    inv[2] * covector.x + inv[3] * covector.y,
+                );
+                if g2.hypot2() > 0.0 {
+                    let q0 = a * p0;
+                    p0 = q0;
+                    p1 = q0 + g2 / g2.hypot2();
+                    // `p0..p1` is the whole field now: `lo` and `hi` below
+                    // still cut it as before.
+                    linear_exact = true;
+                }
             }
             peniko::Gradient::new_linear(p0 + (p1 - p0) * lo, p0 + (p1 - p0) * hi)
         }
@@ -1902,6 +2027,11 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
             peniko::Gradient::new_sweep(c, (lo * turns) as f32, (hi * turns) as f32)
         }
     };
+    if let Some(m) = g.matrix
+        && !linear_exact
+    {
+        turn = Affine::new(m) * turn;
+    }
     let extend = match g.extend {
         Extend::Pad => peniko::Extend::Pad,
         Extend::Repeat => peniko::Extend::Repeat,
@@ -1933,6 +2063,17 @@ fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorSto
 
 /// Whether a leaf is drawn with an image (the image renderer, `vello_images`).
 fn draws_image(kind: &ResolvedKind) -> bool {
+    let image_paint = |p: &Option<ResolvedPaint>| matches!(p, Some(ResolvedPaint::Image(_)));
+    if let ResolvedKind::Shape { fill, .. } = kind
+        && image_paint(fill)
+    {
+        return true;
+    }
+    if let ResolvedKind::Text { color, .. } = kind
+        && matches!(color, ResolvedPaint::Image(_))
+    {
+        return true;
+    }
     matches!(
         kind,
         ResolvedKind::Image { .. }
@@ -2091,10 +2232,18 @@ fn image_sources(scene: &Scene) -> Vec<String> {
     // `walk_layers` also visits motion-blur copies, which can hold images of
     // their own.
     let mut sources = Vec::new();
-    walk_layers(&scene.layers, &mut |layer| {
-        if let LayerKind::Image(i) = &layer.kind {
-            sources.push(i.src.clone());
-        }
+    walk_layers(&scene.layers, &mut |layer| match &layer.kind {
+        LayerKind::Image(i) => sources.push(i.src.clone()),
+        // A picture as a fill or a text colour (`scene::Paint::Image`).
+        LayerKind::Shape(ShapeLayer {
+            fill: Some(Paint::Image(i)),
+            ..
+        })
+        | LayerKind::Text(TextLayer {
+            color: Paint::Image(i),
+            ..
+        }) => sources.push(i.src.clone()),
+        _ => {}
     });
     sources
 }
@@ -2102,9 +2251,15 @@ fn image_sources(scene: &Scene) -> Vec<String> {
 /// Decodes the image file `src`, relative to `base_dir`.
 fn read_image(base_dir: &Path, src: &str) -> Result<ImageData> {
     let path = base_dir.join(src);
-    let decoded = image::open(&path)
-        .map_err(|e| Error::Render(format!("cannot decode {}: {e}", path.display())))?
-        .to_rgba8();
+    // A `data:` URL is decoded from memory, with no file.
+    let decoded = if let Some(bytes) = crate::scene::data_uri_bytes(src) {
+        image::load_from_memory(&bytes)
+            .map_err(|e| Error::Render(format!("cannot decode a data: picture: {e}")))?
+    } else {
+        image::open(&path)
+            .map_err(|e| Error::Render(format!("cannot decode {}: {e}", path.display())))?
+    }
+    .to_rgba8();
     let (width, height) = decoded.dimensions();
     Ok(ImageData {
         data: Blob::from(decoded.into_raw()),
@@ -2372,6 +2527,7 @@ mod tests {
             stops: stops.to_vec(),
             extend,
             units: Units::User,
+            matrix: None,
         }
     }
 

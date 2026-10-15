@@ -933,6 +933,74 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
 - Effects after `displace` see the displaced layer; one before it (`glow`, a shadow) is displaced with it. For the
   papercut look put the shadow after: `[displace, dropShadow]` casts the shadow of the torn edge.
 
+### filterGraph
+
+An SVG `<filter>` as a graph of primitives: `feTurbulence` into `feDisplacementMap`, `feGaussianBlur`,
+`feColorMatrix`, `feComposite`, and the rest, chained by `in`, `in2` and `result`. A port from SVG is mechanical:
+every attribute keeps its SVG name and meaning.
+
+```json
+{ "type": "filterGraph",
+  "filterUnits": "userSpaceOnUse", "x": -20, "y": -20, "width": 280, "height": 200,
+  "primitives": [
+    { "primitive": "feTurbulence", "type": "fractalNoise", "baseFrequency": 0.04, "numOctaves": 4, "seed": 7,
+      "result": "noise" },
+    { "primitive": "feDisplacementMap", "in": "SourceGraphic", "in2": "noise", "scale": 12,
+      "xChannelSelector": "R", "yChannelSelector": "G" } ] }
+```
+
+The graph runs on the layer's own pixels (`SourceGraphic`) in the layer's own space, like `displace`: lengths, the
+region and the noise are in layer pixels and follow the layer's `transform`, so a filter on a turned and scaled layer is
+the same filter turned and scaled. The result of the last primitive is the layer.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `x`, `y`, `width`, `height` | -10%, -10%, 120%, 120% of the layer's box | The filter region: nothing outside it survives, not even the layer. |
+| `filterUnits` | `objectBoundingBox` | `userSpaceOnUse`: the region is in layer pixels. `objectBoundingBox`: fractions of the layer's box (the box `inset` clips use). A group without a `layout` has no box: it must say `userSpaceOnUse` with all four numbers, and use `primitiveUnits` `userSpaceOnUse` (a load error otherwise). |
+| `primitiveUnits` | `userSpaceOnUse` | What primitive lengths and subregions are in. `objectBoundingBox` scales `stdDeviation`, `dx`, `dy`, `radius` and subregions by the box's width and height, and `scale` and light `z` by the root of the mean of their squares. |
+| `colorInterpolationFilters` | `linearRGB` | The colour space primitives work in unless one says otherwise (`linearRGB` or `sRGB`). The layer is in linear light; a primitive in sRGB gets its inputs converted and its result converted back, so a blur, a blend or a colour matrix gives what a browser's does in either space. |
+| `primitives` | required | In order. Each result can be named; a primitive can read the layer, any earlier result, or (left out) the previous result. |
+
+Every primitive has `primitive` (its element name), `in`, `in2` (when it has two inputs), `result`, `x`, `y`, `width`,
+`height` (the primitive subregion) and `colorInterpolationFilters`.
+
+- **Inputs.** `SourceGraphic` is the layer cut to the filter region, `SourceAlpha` the same as black with its alpha. A
+  name that no earlier primitive made reads the previous result (the layer, for the first primitive).
+  `BackgroundImage`, `BackgroundAlpha`, `FillPaint` and `StrokePaint` are empty images, as in Chrome.
+- **Subregions.** A primitive draws only inside its subregion: each side left out defaults to the union of the
+  subregions of the primitives it reads, or to the filter region if it reads the layer or nothing (and for `feTile`).
+  The subregion is cut to the filter region. Edges are hard: a pixel is in if its centre is.
+- **Numbers.** Every number is an [animatable number](#animated-numbers), also inside `values`, `tableValues` and
+  `kernelMatrix`. `stdDeviation`, `radius`, `baseFrequency` and `order` take one number or `[x, y]`.
+
+| `primitive` | Attributes | Notes |
+|---|---|---|
+| `feTurbulence` | `type` (`turbulence` default or `fractalNoise`), `baseFrequency` (0), `numOctaves` (1, 0 to 10), `seed` (0), `stitchTiles` (`true` or `false`) | The spec's reference algorithm, as the [`noise` layer](#noise) and [`displace`](#displace) have it, including `stitchTiles` (the tile is the primitive subregion). Sampled at whole canvas positions, as a browser does. Output is the raw four channels, not premultiplied, in the primitive's colour space. |
+| `feDisplacementMap` | `scale` (0), `xChannelSelector`, `yChannelSelector` (`R`, `G`, `B`, `A`; SVG's default is `A`) | `in` is moved by `in2`'s channels, read unpremultiplied and in the primitive's colour space (`in` is not converted). Nearest-pixel sampling, as a browser does. |
+| `feGaussianBlur` | `stdDeviation` (0) | Per axis; 0 on one axis blurs along the other. A round blur of 12 pixels or more uses the same pyramid as the [`blur` effect](#blur), less is exact. A turned layer is blurred along the canvas axes with the variance the turned filter has on each. At most 256. |
+| `feColorMatrix` | `type` (`matrix` default, `saturate`, `hueRotate`, `luminanceToAlpha`), `values` | On straight (unpremultiplied) colour, clamped to 0..1. A `values` of the wrong length is the identity. |
+| `feOffset` | `dx`, `dy` | In layer pixels, so it turns with the layer. Fractions of a pixel are interpolated. |
+| `feFlood` | `floodColor` (`#000000`), `floodOpacity` (1) | The colour is sRGB and converted to the primitive's space. |
+| `feComposite` | `operator` (`over`, `in`, `out`, `atop`, `xor`, `arithmetic`), `k1` to `k4` | `in` is the source, `in2` the destination. `arithmetic` is `k1*i1*i2 + k2*i1 + k3*i2 + k4` on premultiplied values, clamped. |
+| `feBlend` | `mode` | `normal`, `multiply`, `screen`, `darken`, `lighten`, `overlay`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. `in` is on top of `in2`. |
+| `feMerge` | `nodes`: the `in` of each `feMergeNode`, bottom first | |
+| `feComponentTransfer` | `funcR`, `funcG`, `funcB`, `funcA`: `{ "type": "identity" \| "table" \| "discrete" \| "linear" \| "gamma", "tableValues", "slope", "intercept", "amplitude", "exponent", "offset" }` | On straight colour. At most 32 table values. |
+| `feDropShadow` | `dx` (2), `dy` (2), `stdDeviation` (2), `floodColor`, `floodOpacity` | Made of the primitives the spec says: a blur of the alpha, an offset, a flood, `in` composite, a merge with the input. |
+| `feMorphology` | `operator` (`erode` default, `dilate`), `radius` (0) | A box of `radius` layer pixels each way, as whole pixels (at most 200 on the canvas); on a turned layer the box is along the canvas axes. |
+| `feTile` | | Repeats the input's subregion over its own. |
+| `feConvolveMatrix` | `order` (3, at most 8), `kernelMatrix`, `divisor` (sum of the kernel, or 1), `bias` (0), `targetX`, `targetY` (middle), `edgeMode` (`duplicate`, `wrap`, `none`), `preserveAlpha` | In canvas pixels (`kernelUnitLength` is not used). |
+| `feDiffuseLighting`, `feSpecularLighting` | `surfaceScale` (1), `diffuseConstant` or `specularConstant` (1), `specularExponent` (1, 1 to 128), `lightingColor` (white), `light` | `light` is `{ "type": "distant", "azimuth", "elevation" }`, `{ "type": "point", "x", "y", "z" }` or `{ "type": "spot", "x", "y", "z", "pointsAtX", "pointsAtY", "pointsAtZ", "specularExponent", "limitingConeAngle" }`. The input's alpha is the height; normals use the spec's Sobel kernels in canvas pixels, and a spot's cone fades over 0.016 of cosine like a browser's. |
+
+`feImage` is not supported yet.
+
+Loading a scene rejects a negative `stdDeviation`, `radius`, `baseFrequency` or subregion size, `numOctaves` outside 0
+to 10, a `values` or `kernelMatrix` of the wrong length, and a graph that needs a box on a layer that has none; the
+error names the layer.
+
+The [margin](#canvas-margin) counts what moves pixels: the largest offset (and a drop shadow's), half a displacement's
+`scale`, a dilation's radius and a convolution's order, summed along the graph, plus `3 * stdDeviation` of its blurs
+(a graph that only blurs counts nothing, like `blur`).
+
 ### cornerPin
 
 ```json
@@ -1435,12 +1503,89 @@ constants) gives the sub-frames itself with `frames`:
 - Everything else about sub-frames holds: opacity is applied per sample, mattes pair sample `i` with sample `i`, and the
   layer's enclosing groups and the camera are taken at the frame itself.
 
+## Boxes from the DOM painter
+
+The painter of the full engine (`crates/dom/src/paint`, docs/ENGINE.md section 8) writes CSS boxes as the layers above
+and needs these fields, all optional, all new. Existing scenes do not change.
+
+### Glyph runs
+
+A `text` layer can carry glyphs that someone else shaped and positioned (Blitz's Parley lines), so a line breaks where
+the browser-style layout broke it, with letter and word spacing, `white-space`, `vertical-align` and per-span fonts
+already in the positions.
+
+```json
+{ "id": "p.text", "type": "text", "color": "#123", "boxWidth": 176.4, "boxHeight": 21,
+  "runs": [ { "src": "/abs/Inter.ttf", "index": 0, "size": 28, "coords": [], "skew": 0, "embolden": 0,
+              "glyphs": [[121, 0, 18], [133, 10.06, 18]] } ],
+  "transform": { "x": 18, "y": 55 } }
+```
+
+| Field | Meaning |
+|---|---|
+| `runs` | When not empty, the layer is these runs and `text`, `font`, `size`, `maxWidth`, `align`, `lineHeight` and `chars` are not used. |
+| `boxWidth`, `boxHeight` | The layer's box (for `inset` clips, box-unit gradients, a transform origin and layout), in pixels; default 0. |
+| run `src`, `index` | The font file (relative to the scene, or absolute) and the face in it. It is read once and need not be in `fonts`. A file that is not there is a load error naming the layer. |
+| run `size` | Font size in pixels. |
+| run `coords` | Normalised variable-font coordinates (F2Dot14 as integers), as Parley reports them; default none. |
+| run `skew` | Synthetic italic: degrees the glyphs lean right. |
+| run `embolden` | Synthetic bold: pixels the outlines grow on each side (a 48th of the size is Chrome's fake bold). |
+| run `glyphs` | `[glyph id, x, y]` for each glyph: the glyph's origin on its baseline, in the layer's box. |
+
+`color` is a colour, a gradient (its box is the box above) or an [image paint](#image-paints), as for any text layer.
+
+### Transform `matrix`
+
+`transform.matrix` is a CSS `matrix3d()`: sixteen numbers, column-major (`a1, b1, c1, d1, a2, ...`), applied about the
+anchor after `scale` and `rotation`, so a layer with only `x`, `y`, `anchorX`, `anchorY` (the transform origin) and
+`matrix` is a CSS box with `transform-origin`. It is how the DOM painter writes the whole CSS transform: `translate`,
+`rotate` and `scale` properties, `skew`, per-axis scale, `matrix()`, `rotate3d()`, and the `perspective()` function and
+the `perspective` property of a parent (folded into its children's matrices, so there is no scene camera for them).
+
+- A matrix that only moves the plane (no z, no perspective) is folded into the layer's flat 2D matrix, so the layer is
+  drawn sharp, never resampled.
+- Any other matrix warps the finished layer like `rotateX` does (`W` of [3D transforms](#3d-transforms-and-the-camera)
+  gets the matrix, conjugated by the layer's own `rotation` and `scale`), and counts as a 3D transform: a matte source
+  cannot have one, and a `preserve3d` group places its children by it.
+- `transform.backfaceHidden` (default `false`) is CSS's `backface-visibility: hidden`: the layer is not drawn when its
+  3D placement shows its back (the warp flips it). A layer with no 3D placement is never culled.
+
+### Gradient `matrix`
+
+A gradient takes `"matrix": [a, b, c, d, e, f]`, an affine applied to the finished gradient in the space of its
+coordinates (before box units map them onto the box). `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about
+its centre `(cx, cy)` into an ellipse with radii `r` and `k * r`: CSS's `radial-gradient(ellipse ...)` whatever the box.
+
+### Image paints
+
+A shape's `fill` and a text layer's `color` can be a picture, once or tiled, which is `background-image: url()` with
+`background-repeat` and `background-size`:
+
+```json
+{ "type": "shape", "shape": { "kind": "rect", "width": 300, "height": 200 },
+  "fill": { "type": "image", "src": "tex.png", "x": 0, "y": 0, "width": 64, "height": 64,
+            "repeatX": true, "repeatY": true } }
+```
+
+The picture is drawn `width` x `height` with its top-left corner at (`x`, `y`) in the painted layer's space, bilinearly
+resampled. It repeats along the axes with `repeatX` / `repeatY`; along an axis that does not repeat its edge pixels are
+held, so cut the shape to the tile (a shape no taller than the tile for `repeat-x`). `src` is a PNG, JPEG or GIF
+file, or a `data:` URL, which is decoded from memory (an `image` layer's `src` can be one too).
+
+### Blend space
+
+The scene's `"blendSpace"` is `"linear"` (default, as always) or `"srgb"`. In `srgb` every layer is composited, and
+every blend mode evaluated, on sRGB-encoded values as CSS does: a half-transparent black over white is mid grey (128)
+and not light grey (188), a translucent shadow is as dark as a browser's, and `multiply` and `screen` give a browser's
+numbers. Blurs, colour filters and everything inside one layer are unchanged. The DOM painter's output asks for
+`srgb` (`IslandOutput::blend_space`).
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
-  `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
+  `halftone`, `dotMatrix`, `displace`, `filterGraph`, `cornerPin`, `shader`.
 - Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group without a `layout` (a load error).
 - Layout is flexbox only (`display: flex`; no grid, no block layout), with sizes in pixels (no percentages, `auto`

@@ -4,9 +4,9 @@
 //! measured. No system fonts are loaded, so layout does not depend on the
 //! machine.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use parley::fontique::{Blob, Collection, CollectionOptions, FontInfoOverride, SourceCache};
 use parley::{
@@ -15,11 +15,15 @@ use parley::{
 };
 
 use crate::error::{Error, Result};
-use crate::scene::TextAlign;
+use crate::scene::{GlyphRun, TextAlign};
 
 pub struct TextEngine {
     font_cx: FontContext,
     layout_cx: LayoutContext<()>,
+    /// The directory font paths of glyph runs resolve against.
+    base_dir: PathBuf,
+    /// Fonts of glyph runs (`GlyphRun::src`), read when first used.
+    run_fonts: HashMap<(String, u32), Option<FontData>>,
 }
 
 /// Shaped and positioned text. Coordinates are in pixels, relative to the
@@ -88,6 +92,12 @@ pub struct LaidOutRun {
     /// Byte range of the source string this run covers.
     pub text_range: Range<usize>,
     pub glyphs: Vec<PositionedGlyph>,
+    /// Normalised variable-font coordinates; empty for a static face.
+    pub coords: Vec<i16>,
+    /// Synthetic italic, in degrees to the right.
+    pub skew: f32,
+    /// Synthetic bold: pixels the outlines grow by on each side.
+    pub embolden: f32,
 }
 
 impl std::fmt::Debug for LaidOutRun {
@@ -165,7 +175,78 @@ impl TextEngine {
         Ok(TextEngine {
             font_cx,
             layout_cx: LayoutContext::new(),
+            base_dir: base_dir.to_path_buf(),
+            run_fonts: HashMap::new(),
         })
+    }
+
+    /// The font file a glyph run names, read once.
+    fn run_font(&mut self, src: &str, index: u32) -> Option<FontData> {
+        let base_dir = &self.base_dir;
+        self.run_fonts
+            .entry((src.to_string(), index))
+            .or_insert_with(|| {
+                let data = std::fs::read(base_dir.join(src)).ok()?;
+                let data = unpack_web_font(data).ok()?;
+                Some(FontData::new(Blob::from(data), index))
+            })
+            .clone()
+    }
+
+    /// Lays out a text layer: its `runs` as given when it has any (a box of
+    /// `box_size`), otherwise `text` shaped in `font`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn layout_layer(
+        &mut self,
+        text: &str,
+        font: &str,
+        size: f32,
+        line_height: Option<f32>,
+        max_width: Option<f32>,
+        align: TextAlign,
+        runs: &[GlyphRun],
+        box_size: (f32, f32),
+    ) -> LaidOutText {
+        if runs.is_empty() {
+            return self.layout(text, font, size, line_height, max_width, align);
+        }
+        let mut laid = LaidOutText {
+            width: box_size.0,
+            height: box_size.1,
+            lines: vec![LaidOutLine {
+                baseline: box_size.1,
+                top: 0.0,
+                bottom: box_size.1,
+                text_range: 0..0,
+            }],
+            runs: Vec::new(),
+        };
+        for run in runs {
+            let Some(font) = self.run_font(&run.src, run.index) else {
+                continue;
+            };
+            laid.runs.push(LaidOutRun {
+                line: 0,
+                font,
+                font_size: run.size,
+                text_range: 0..0,
+                glyphs: run
+                    .glyphs
+                    .iter()
+                    .map(|g| PositionedGlyph {
+                        id: g[0] as u32,
+                        x: g[1],
+                        y: g[2],
+                        advance: 0.0,
+                        char_index: 0,
+                    })
+                    .collect(),
+                coords: run.coords.clone(),
+                skew: run.skew,
+                embolden: run.embolden,
+            });
+        }
+        laid
     }
 
     /// Shapes `text` in the named font. `line_height` is a multiple of
@@ -243,6 +324,9 @@ impl TextEngine {
                             char_index: chars.get(i).or(chars.last()).copied().unwrap_or_default(),
                         })
                         .collect(),
+                    coords: Vec::new(),
+                    skew: 0.0,
+                    embolden: 0.0,
                 });
             }
         }

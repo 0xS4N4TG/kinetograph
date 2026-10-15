@@ -113,6 +113,8 @@ pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>
         ..DocumentConfig::default()
     });
 
+    // The painter's mirror properties do not inherit.
+    crate::paint::register_properties(&mut doc);
     let mut paths = BTreeMap::new();
     let (container, root) = {
         let mut m = doc.mutate();
@@ -122,7 +124,9 @@ pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>
         // Imported stylesheets come before the `<style>` elements of the tree.
         for css in &request.stylesheets {
             let style = element(&mut m, "style", false, vec![]);
-            let text = m.create_text_node(&escape_style_text(css));
+            // CSS this Stylo does not parse is mirrored into custom properties for
+            // the painter (`paint::shim_css`).
+            let text = m.create_text_node(&escape_style_text(&crate::paint::shim_css(css)));
             m.append_children(style, &[text]);
             m.append_children(head, &[style]);
         }
@@ -341,7 +345,7 @@ fn build_node(
             }
             // `attrs["style"]` would be a second style source; the `style` field wins.
             if !style.trim().is_empty() {
-                list.push(attr("style", style));
+                list.push(attr("style", &crate::paint::shim_css(style)));
             }
             let id = element(m, &tag, svg, list);
             paths.insert(path.clone(), id);
@@ -353,7 +357,7 @@ fn build_node(
                 if let DomNode::Text { text } = child
                     && is_style
                 {
-                    ids.push(m.create_text_node(&escape_style_text(text)));
+                    ids.push(m.create_text_node(&escape_style_text(&crate::paint::shim_css(text))));
                 } else if let Some(c) = build_node(m, child, child_svg, paths) {
                     ids.push(c);
                 }

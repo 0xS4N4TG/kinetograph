@@ -206,12 +206,21 @@ impl Resolver<'_> {
             line_height,
             max_width,
             align,
+            runs,
+            box_size,
             ..
         } = kind
         {
-            let laid_out =
-                self.engine()?
-                    .layout(text, font, *size, *line_height, *max_width, *align);
+            let laid_out = self.engine()?.layout_layer(
+                text,
+                font,
+                *size,
+                *line_height,
+                *max_width,
+                *align,
+                runs,
+                *box_size,
+            );
             let (width, height) = laid_out.box_size(*max_width);
             let baseline = laid_out
                 .lines
