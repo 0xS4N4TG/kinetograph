@@ -261,3 +261,26 @@ fn a_run_of_blends_is_a_few_passes() {
         blends(&plain)
     );
 }
+
+#[test]
+fn runs_of_blends_draw_the_same_pixels_in_srgb() {
+    // blend-runs.json with `blendSpace: "srgb"`, as every DOM island is: the
+    // fused blends must composite on the encoded colours too.
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes");
+    let json = std::fs::read_to_string(dir.join("blend-runs.json")).unwrap();
+    let json = json.replacen('{', r#"{"blendSpace": "srgb","#, 1);
+    let frames = [0, 1, 2, 3, 15, 29];
+    let run = |on: bool| {
+        let mut renderer = Renderer::new(Scene::from_json(&json, dir.clone()).unwrap()).unwrap();
+        renderer.set_pass_fusion(on);
+        renderer.set_layer_cache(true);
+        frames
+            .iter()
+            .map(|&f| renderer.render_frame(f).unwrap().rgba)
+            .collect::<Vec<_>>()
+    };
+    let (fused, plain) = (run(true), run(false));
+    for (frame, (a, b)) in frames.iter().zip(fused.iter().zip(&plain)) {
+        assert!(a == b, "frame {frame}: fusion changed the pixels in sRGB");
+    }
+}
