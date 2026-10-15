@@ -550,6 +550,13 @@ impl LayoutPassState<'_> {
                             probe.known_dimensions.height = None;
                             compute_grid_layout(&mut table_wrapper, node_id, probe).size.width
                         });
+                        // A caption wider than the grid widens the table.
+                        let narrowest = table::caption_min_width(table_wrapper.doc, &ctx);
+                        let wider = narrowest > width;
+                        let width = width.max(narrowest);
+                        if wider {
+                            grid_inputs.known_dimensions.width = Some(width);
+                        }
                         captions =
                             table::measure_captions(table_wrapper.doc, &ctx, width, inputs.run_mode);
                         if let Some(c) = &captions {

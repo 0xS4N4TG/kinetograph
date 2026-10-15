@@ -178,8 +178,8 @@ box's and fixed the cell's size, so a rowspan cell did not fill its rows.
   box taking them in (`TableContext::captions`, `caption_extent`).
 - A cell's `height` is its border box's and a minimum for its row (`min_size`), as in Chrome; the cell's own `width`
   and `height` no longer size it (`SizingMode::ContentSize`), its column and row do.
-- `TableCell::colspan` and `TableContext::is_fixed` are new fields. Not done: a caption wider than the grid does not
-  widen the table, `<col span>` widths other than at the first row's cells are not read from percentages.
+- `TableCell::colspan` and `TableContext::is_fixed` are new fields. A caption wider than the grid widens the table
+  (`caption_min_width`). Not done: percentage widths on `<col>`.
 
 ### The change (floats)
 

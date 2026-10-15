@@ -1307,3 +1307,31 @@ pub(crate) fn place_captions(
     output.size.height += above + below;
     output.scrollable_overflow_rect.bottom += above + below;
 }
+
+/// The widest min-content width of the table's captions: a table is at least that wide.
+pub(crate) fn caption_min_width(doc: &mut LayoutPassState<'_>, ctx: &TableContext) -> f32 {
+    let mut widest = 0.0_f32;
+    for &caption in &ctx.captions {
+        let out = doc.compute_child_layout(
+            crate::taffy_node_id(caption),
+            taffy::tree::LayoutInput {
+                known_dimensions: taffy::Size::NONE,
+                known_dimensions_are_definite: taffy::Size {
+                    width: true,
+                    height: true,
+                },
+                parent_size: taffy::Size::NONE,
+                available_space: taffy::Size {
+                    width: taffy::AvailableSpace::MinContent,
+                    height: taffy::AvailableSpace::MaxContent,
+                },
+                sizing_mode: taffy::SizingMode::InherentSize,
+                axis: taffy::RequestedAxis::Horizontal,
+                run_mode: taffy::RunMode::ComputeSize,
+                vertical_margins_are_collapsible: taffy::Line::FALSE,
+            },
+        );
+        widest = widest.max(out.size.width);
+    }
+    widest
+}

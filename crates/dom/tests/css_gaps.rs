@@ -671,3 +671,38 @@ fn separate_borders_add_to_the_cell_and_collapsed_ones_are_shared_in_halves() {
         "cell under border 4",
     );
 }
+
+#[test]
+fn a_caption_wider_than_the_grid_widens_the_table() {
+    // The caption needs 120 px (an inline box); the grid is 40.
+    let root = el(
+        "div",
+        "$0",
+        "",
+        vec![table_at(
+            "$0.0",
+            (10, 10),
+            "",
+            vec![
+                el(
+                    "caption",
+                    "$0.0.0",
+                    "",
+                    vec![el(
+                        "div",
+                        "$0.0.0.0",
+                        "display: inline-block; width: 120px; height: 10px",
+                        vec![],
+                    )],
+                ),
+                tr(
+                    "$0.0.1",
+                    vec![td("$0.0.1.0", "", vec![box_div("$0.0.1.0.0", 40, 10)])],
+                ),
+            ],
+        )],
+    );
+    let island = resolve(&request(root));
+    assert_eq!(bounds(&island, "$0.0").2, 120.0);
+    assert_eq!(bounds(&island, "$0.0.0").2, 120.0);
+}
