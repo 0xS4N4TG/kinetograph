@@ -108,6 +108,12 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
         vec![(0, 0), (0, 1), (0, 2), (1, 0)]
     );
     assert_eq!(declared_bindings("mesh.wgsl"), vec![(0, 0)]);
+    // The 3D layer's: the frame, the draw (a dynamic offset), the texture and
+    // its sampler.
+    assert_eq!(
+        declared_bindings("scene3d.wgsl"),
+        vec![(0, 0), (1, 0), (2, 0), (2, 1)]
+    );
 }
 
 #[test]
@@ -125,5 +131,14 @@ fn committed_scenes_load() {
         crate::video::load_videos(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         crate::gif::load_gifs(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         crate::lut::load_luts(&scene).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let (models, textures) = crate::render::scene3d_sources(&scene);
+        for src in models {
+            crate::scene3d::model::Model::open(&scene.base_dir, &src)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        }
+        for src in textures {
+            crate::scene3d::draw::Texture::open(&scene.base_dir, &src)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        }
     }
 }

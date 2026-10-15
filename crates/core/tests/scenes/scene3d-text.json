@@ -1,0 +1,59 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#101218",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    {
+      "id": "stage",
+      "type": "scene3d",
+      "width": 480,
+      "height": 270,
+      "camera": { "fov": 34, "position": [0, 0.6, 8], "target": [0, 0, 0] },
+      "lights": [
+        { "type": "ambient", "color": "#b8c4ff", "intensity": 0.3 },
+        { "type": "directional", "direction": [-0.6, -0.7, -1], "intensity": 1.8 },
+        { "type": "point", "position": [3, 2, 4], "color": "#ffd0a0", "intensity": 18 }
+      ],
+      "objects": [
+        {
+          "id": "title",
+          "type": "text",
+          "text": "Kinetograph",
+          "font": "DM Sans",
+          "size": 1.15,
+          "depth": 0.35,
+          "material": { "color": "#f1c453", "metallic": 0.1, "roughness": 0.35 },
+          "position": [0, 1.0, 0],
+          "rotation": [-8, [{ "frame": 0, "value": -22 }, { "frame": 30, "value": 22 }], 0]
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "text": "a\n3D",
+          "font": "DM Sans",
+          "size": 0.9,
+          "depth": 0.3,
+          "lineHeight": 1.0,
+          "align": "left",
+          "material": { "color": "#4cc9f0", "roughness": 0.4 },
+          "position": [-2.6, -1.5, 0],
+          "rotation": [0, 18, 0]
+        },
+        {
+          "id": "star",
+          "type": "extrude",
+          "path": "M50 0 L61 35 L98 35 L68 57 L79 91 L50 70 L21 91 L32 57 L2 35 L39 35 Z M50 28 L45 42 L55 42 Z",
+          "fillRule": "evenodd",
+          "size": 1.7,
+          "depth": 0.35,
+          "material": { "color": "#e63946", "roughness": 0.35 },
+          "position": [2.4, -1.4, 0],
+          "rotation": [0, [{ "frame": 0, "value": 40 }, { "frame": 30, "value": -40 }], 0]
+        }
+      ]
+    }
+  ]
+}

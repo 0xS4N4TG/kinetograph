@@ -1,0 +1,32 @@
+{
+  "width": 480,
+  "height": 480,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#15171e",
+  "layers": [
+    {
+      "id": "grid",
+      "type": "scene3d",
+      "width": 480,
+      "height": 480,
+      "camera": { "fov": 28, "position": [0, 0, 11] },
+      "lights": [
+        { "type": "ambient", "color": "#aab4ff", "intensity": 0.3 },
+        { "type": "directional", "direction": [-0.5, -0.8, -1], "intensity": 1.8 },
+        { "type": "point", "position": [3, 3, 4], "color": "#ffe2b0", "intensity": 25 }
+      ],
+      "objects": [
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [-1.5, 1.5, 0], "material": { "color": "#d94f30", "metallic": 0, "roughness": 0.1 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [0, 1.5, 0], "material": { "color": "#d94f30", "metallic": 0, "roughness": 0.5 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [1.5, 1.5, 0], "material": { "color": "#d94f30", "metallic": 0, "roughness": 0.9 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [-1.5, 0, 0], "material": { "color": "#f0c040", "metallic": 0.5, "roughness": 0.1 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [0, 0, 0], "material": { "color": "#f0c040", "metallic": 0.5, "roughness": 0.5 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [1.5, 0, 0], "material": { "color": "#f0c040", "metallic": 0.5, "roughness": 0.9 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [-1.5, -1.5, 0], "material": { "color": "#d8dde6", "metallic": 1, "roughness": 0.1 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [0, -1.5, 0], "material": { "color": "#d8dde6", "metallic": 1, "roughness": 0.5 } },
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 0.6 }, "position": [1.5, -1.5, 0], "material": { "color": "#d8dde6", "metallic": 1, "roughness": 0.9 } }
+      ]
+    }
+  ]
+}

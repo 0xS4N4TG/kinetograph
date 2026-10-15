@@ -1,0 +1,104 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#10131a",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "camera": { "perspective": 700 },
+  "layers": [
+    {
+      "id": "backdrop",
+      "type": "shape",
+      "shape": { "kind": "rect", "width": 480, "height": 270 },
+      "fill": {
+        "type": "linear",
+        "x0": 0, "y0": 0, "x1": 480, "y1": 270,
+        "stops": [
+          { "offset": 0, "color": "#3a0ca3" },
+          { "offset": 1, "color": "#f72585" }
+        ]
+      }
+    },
+    {
+      "id": "cube",
+      "type": "scene3d",
+      "width": 180,
+      "height": 180,
+      "transform": { "x": 120, "y": 120, "anchorX": 90, "anchorY": 90, "rotation": 12 },
+      "effects": [{ "type": "dropShadow", "x": 8, "y": 10, "blur": 8, "color": "#00000099" }],
+      "camera": { "type": "orthographic", "height": 3.4, "position": [4, 4, 4], "target": [0, 0, 0] },
+      "lights": [
+        { "type": "ambient", "intensity": 0.35 },
+        { "type": "directional", "direction": [-0.4, -1, -0.6], "intensity": 1.6 }
+      ],
+      "objects": [
+        {
+          "type": "mesh",
+          "geometry": { "kind": "box", "width": 1.6, "height": 1.6, "depth": 1.6 },
+          "material": { "color": "#4cc9f0", "roughness": 0.4 },
+          "rotation": [0, [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 90 }], 0]
+        }
+      ]
+    },
+    {
+      "id": "ring",
+      "type": "scene3d",
+      "width": 180,
+      "height": 180,
+      "transform": { "x": 270, "y": 30 },
+      "blendMode": "screen",
+      "opacity": 0.9,
+      "effects": [{ "type": "blur", "radius": 2.5 }],
+      "camera": { "fov": 40, "position": [0, 0, 5] },
+      "lights": [
+        { "type": "ambient", "intensity": 0.4 },
+        { "type": "point", "position": [2, 2, 3], "intensity": 14 }
+      ],
+      "objects": [
+        {
+          "type": "mesh",
+          "geometry": { "kind": "torus", "radius": 1, "tube": 0.35 },
+          "material": { "color": "#ffd166", "roughness": 0.3 },
+          "rotation": [[{ "frame": 0, "value": 20 }, { "frame": 30, "value": 110 }], 30, 0]
+        }
+      ]
+    },
+    {
+      "id": "turned",
+      "type": "scene3d",
+      "width": 160,
+      "height": 100,
+      "transform": { "x": 270, "y": 180, "anchorX": 80, "anchorY": 50, "rotateY": 35 },
+      "camera": { "fov": 40, "position": [0, 0, 5] },
+      "lights": [
+        { "type": "ambient", "intensity": 0.4 },
+        { "type": "directional", "direction": [-0.3, -0.5, -1], "intensity": 1.5 }
+      ],
+      "objects": [
+        {
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 0.9 },
+          "material": { "color": "#06d6a0", "roughness": 0.35 },
+          "position": [-0.8, 0, 0]
+        },
+        {
+          "type": "mesh",
+          "geometry": { "kind": "box", "width": 1, "height": 1, "depth": 1 },
+          "material": { "color": "#ffffff", "roughness": 0.5 },
+          "position": [0.9, 0, 0],
+          "rotation": [30, 30, 0]
+        }
+      ]
+    },
+    {
+      "id": "label",
+      "type": "text",
+      "text": "3D layer",
+      "font": "DM Sans",
+      "size": 30,
+      "color": "#ffffff",
+      "transform": { "x": 30, "y": 215 }
+    }
+  ]
+}

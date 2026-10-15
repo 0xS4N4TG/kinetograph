@@ -34,6 +34,9 @@ use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Paint, Scene, ShapeLayer, TextLayer,
     Units, walk_layers,
 };
+use crate::scene3d::Resolved3d;
+use crate::scene3d::draw::{Assets3d, Texture};
+use crate::scene3d::model::Model;
 use crate::text::{LaidOutText, TextEngine};
 use crate::video::{VideoDecoder, Videos, open_video, video_sources};
 use crate::warp;
@@ -142,6 +145,8 @@ pub struct Renderer {
     videos: Videos,
     /// The GIFs of the scene, all their pictures decoded.
     gifs: Gifs,
+    /// The models and textures of 3D layers, and the meshes built for them.
+    assets3d: Assets3d,
     /// `Some` while `render_timed` runs.
     timings: Option<Timings>,
     /// The textures of layers that stopped changing, kept for the next frame.
@@ -212,6 +217,7 @@ impl Renderer {
             lotties: Lotties::default(),
             videos: Videos::default(),
             gifs: Gifs::default(),
+            assets3d: Assets3d::default(),
             loaded: Loaded::default(),
             timings: None,
             cache: LayerCache::new(CACHE_BYTES),
@@ -296,6 +302,7 @@ impl Renderer {
     fn install_assets(&mut self, fresh: NewAssets) {
         if let Some(text) = fresh.text {
             self.text = text;
+            self.assets3d.forget_text();
         }
         self.loaded.fonts = fresh.fonts;
         for (src, id, image) in fresh.images {
@@ -313,6 +320,14 @@ impl Renderer {
         for (src, id, gif) in fresh.gifs {
             self.gifs.insert(src.clone(), gif);
             self.loaded.gifs.insert(src, id);
+        }
+        for (src, id, model) in fresh.models {
+            self.assets3d.insert_model(src.clone(), model);
+            self.loaded.models.insert(src, id);
+        }
+        for (src, id, texture) in fresh.textures3d {
+            self.assets3d.insert_texture(src.clone(), texture);
+            self.loaded.textures3d.insert(src, id);
         }
         let mut luts = HashMap::new();
         for (src, id, lut) in fresh.luts {
@@ -809,6 +824,7 @@ impl Renderer {
                 layer.kind,
                 ResolvedKind::Group { .. }
                     | ResolvedKind::MeshGradient { .. }
+                    | ResolvedKind::Scene3d { .. }
                     | ResolvedKind::Noise { .. }
             )
             || uses_backdrop(siblings, layer)
@@ -1075,7 +1091,9 @@ impl Renderer {
         let matrix = parent * layer.transform.matrix();
         // Where a leaf layer's pixels are (see `raster_bounds`).
         let raster = match &layer.kind {
-            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => None,
+            ResolvedKind::Group { .. }
+            | ResolvedKind::MeshGradient { .. }
+            | ResolvedKind::Scene3d { .. } => None,
             _ => Some(self.raster_bounds(layer, matrix)?),
         };
         // How many of the layer's effects drawing it has applied already, and
@@ -1101,6 +1119,12 @@ impl Renderer {
                 let vertices = mesh::tessellate(*columns, *rows, points, colors, matrix);
                 self.timed(Stage::Raster, |s| s.compositor.mesh_gradient(&vertices))
             }
+            // Meshes drawn with a depth buffer, not a Vello scene.
+            ResolvedKind::Scene3d {
+                width,
+                height,
+                scene,
+            } => self.scene3d_texture(&layer.id, matrix, (*width, *height), scene)?,
             // Nothing lands on the texture: nothing to draw.
             _ if raster.is_some_and(|r| r.is_empty()) => {
                 self.timed(Stage::Composite, |s| s.compositor.empty())
@@ -1248,6 +1272,26 @@ impl Renderer {
         Ok(src)
     }
 
+    /// Draws a 3D layer's scene into a texture, its box `size` placed on
+    /// the canvas by `matrix`.
+    fn scene3d_texture(
+        &mut self,
+        id: &str,
+        matrix: Affine,
+        size: (f64, f64),
+        scene: &Resolved3d,
+    ) -> Result<Tex> {
+        let bounds =
+            device_bounds(matrix, Rect::new(0.0, 0.0, size.0, size.1)).intersect(self.whole());
+        if bounds.is_empty() || !(size.0 > 0.0 && size.1 > 0.0) {
+            return Ok(self.timed(Stage::Composite, |s| s.compositor.empty()));
+        }
+        let draw = self.assets3d.draw_scene(id, scene, size, &mut self.text)?;
+        Ok(self.timed(Stage::Raster, |s| {
+            s.compositor.scene3d(&draw, matrix, bounds)
+        }))
+    }
+
     /// Groups the leaves of the frame that `layer_texture` will rasterise
     /// into pages, and encodes each page's Vello scene. No two leaves of a
     /// page overlap, and a page is drawn over the whole target with the
@@ -1344,7 +1388,9 @@ impl Renderer {
                     preserve3d: false,
                     ..
                 } => self.collect_leaves(children, matrix, leaves)?,
-                ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {}
+                ResolvedKind::Group { .. }
+                | ResolvedKind::MeshGradient { .. }
+                | ResolvedKind::Scene3d { .. } => {}
                 _ => {
                     let region = self.raster_bounds(layer, matrix)?;
                     if !region.is_empty() {
@@ -1506,6 +1552,7 @@ impl Renderer {
             | ResolvedKind::Video { width, height, .. }
             | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
+            | ResolvedKind::Scene3d { width, height, .. }
             | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
             ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
         };
@@ -1758,8 +1805,10 @@ impl Renderer {
                     &Rect::new(0.0, 0.0, *width, *height),
                 );
             }
-            ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => {
-                unreachable!("groups and meshes are composited, not rasterised")
+            ResolvedKind::Group { .. }
+            | ResolvedKind::MeshGradient { .. }
+            | ResolvedKind::Scene3d { .. } => {
+                unreachable!("groups, meshes and 3D scenes are composited, not rasterised")
             }
         }
         Ok(())
@@ -1918,6 +1967,7 @@ impl Renderer {
             | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
+            | ResolvedKind::Scene3d { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
@@ -3024,6 +3074,19 @@ pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
     Ok(images)
 }
 
+/// The model and texture files the 3D layers of `scene` name.
+pub(crate) fn scene3d_sources(scene: &Scene) -> (Vec<String>, Vec<String>) {
+    let (mut models, mut textures) = (Vec::new(), Vec::new());
+    walk_layers(&scene.layers, &mut |layer| {
+        if let LayerKind::Scene3d(s) = &layer.kind {
+            let (m, t) = s.sources();
+            models.extend(m);
+            textures.extend(t);
+        }
+    });
+    (models, textures)
+}
+
 /// A file as the renderer read it. Two scenes that name the same file get
 /// the same `FileId` as long as it has not been edited, and the renderer then
 /// keeps what it read instead of reading again. (The modification time only
@@ -3060,6 +3123,8 @@ struct Loaded {
     videos: HashMap<String, FileId>,
     gifs: HashMap<String, FileId>,
     luts: HashMap<String, FileId>,
+    models: HashMap<String, FileId>,
+    textures3d: HashMap<String, FileId>,
 }
 
 /// What reading a scene's assets found that the renderer did not hold yet
@@ -3075,6 +3140,8 @@ struct NewAssets {
     videos: Vec<(String, FileId, VideoDecoder)>,
     gifs: Vec<(String, FileId, Gif)>,
     luts: Vec<(String, FileId, Lut)>,
+    models: Vec<(String, FileId, Model)>,
+    textures3d: Vec<(String, FileId, Texture)>,
     /// Whether a canvas layer draws pictures (pixels of its own count, with no
     /// file behind them).
     canvas_pictures: bool,
@@ -3213,6 +3280,39 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         luts.push((src, id, lut));
     }
 
+    let (model_srcs, texture_srcs) = scene3d_sources(scene);
+    let mut models = Vec::new();
+    let mut seen = HashSet::new();
+    for src in model_srcs {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.models.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let model = Model::open(&scene.base_dir, &src)?;
+        models.push((src, id, model));
+    }
+
+    let mut textures3d = Vec::new();
+    let mut seen = HashSet::new();
+    for src in texture_srcs {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.textures3d.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let texture = Texture::open(&scene.base_dir, &src)?;
+        textures3d.push((src, id, texture));
+    }
+
     let mut canvas_pictures = false;
     walk_layers(&scene.layers, &mut |layer| {
         if let LayerKind::Canvas(c) = &layer.kind {
@@ -3228,6 +3328,8 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         videos,
         gifs,
         luts,
+        models,
+        textures3d,
         canvas_pictures,
         rebound,
     })

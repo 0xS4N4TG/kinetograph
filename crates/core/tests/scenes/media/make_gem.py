@@ -99,7 +99,7 @@ doc = {
         {"name": "plate", "primitives": [{"attributes": {"POSITION": 2, "NORMAL": 3, "TEXCOORD_0": 4}, "indices": 5, "material": 1}]},
     ],
     "materials": [
-        {"name": "steel", "pbrMetallicRoughness": {"baseColorFactor": [0.30, 0.79, 0.94, 1], "metallicFactor": 0.9, "roughnessFactor": 0.25}},
+        {"name": "steel", "pbrMetallicRoughness": {"baseColorFactor": [0.30, 0.79, 0.94, 1], "metallicFactor": 0.6, "roughnessFactor": 0.3}},
         {"name": "checker", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0, "roughnessFactor": 0.6}, "doubleSided": True},
     ],
     "textures": [{"source": 0, "sampler": 0}],
@@ -129,3 +129,28 @@ glb += struct.pack("<I4s", len(blob), b"BIN\0") + blob
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gem.glb")
 open(out, "wb").write(glb)
 print(out, len(glb), "bytes")
+
+# checker.png: the texture of scene3d-materials-kinds.json, 64x64 with a
+# translucent bottom half to show that textures' alpha is blended.
+def checker(x, y):
+    on = (x // 8 + y // 8) % 2 == 0
+    return (42, 157, 143) if on else (244, 241, 222)
+
+
+rows = b"".join(
+    b"\x00" + b"".join(bytes(checker(x, y)) + bytes([255 if y < 32 else 140]) for x in range(64)) for y in range(64)
+)
+
+
+def chunk(kind, data):
+    body = kind + data
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+
+checker_png = (
+    b"\x89PNG\r\n\x1a\n"
+    + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 6, 0, 0, 0))
+    + chunk(b"IDAT", zlib.compress(rows, 9))
+    + chunk(b"IEND", b"")
+)
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "checker.png"), "wb").write(checker_png)

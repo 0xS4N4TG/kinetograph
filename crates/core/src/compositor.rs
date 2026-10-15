@@ -68,6 +68,10 @@
 //! triangles are tessellated on the CPU (`mesh.rs`) and drawn with vertex
 //! colours into a 4x multisampled target that resolves into a pooled texture.
 //!
+//! A 3D layer (`scene3d`, `shaders/scene3d.wgsl`, `compositor/scene3d.rs`) is
+//! drawn with a depth buffer into a 4x multisampled target that resolves into a
+//! pooled texture, like the mesh gradient, and is then a layer like any other.
+//!
 //! The `lut` pass (`shaders/lut.wgsl`) reads a 3D texture as well, so it has
 //! a bind group layout of its own (`lut_layout`) and the scene's tables are
 //! uploaded once, when the compositor is made.
@@ -118,6 +122,7 @@ use crate::uniforms::{Block, Uniforms};
 use crate::warp;
 
 mod filter_graph;
+mod scene3d;
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -319,6 +324,9 @@ pub struct Compositor {
     /// The multisampled target the mesh is drawn into, made the first time
     /// a mesh is drawn and kept.
     mesh_samples: Option<Tex>,
+    /// The 3D layer's pipelines, targets and uploaded meshes, made the first
+    /// time a 3D layer is drawn (`compositor/scene3d.rs`).
+    scene3d: Option<scene3d::State>,
     /// For passes that evaluate turbulence: the storage buffer of one seed's
     /// tables, at bind group 1.
     turbulence_layout: wgpu::BindGroupLayout,
@@ -592,6 +600,7 @@ impl Compositor {
             mesh_size,
             mesh_layout,
             mesh_samples: None,
+            scene3d: None,
             turbulence_layout,
             turbulence_tables: HashMap::new(),
             lut_layout,
@@ -705,6 +714,7 @@ impl Compositor {
         self.mesh_size =
             mesh_size_group(&self.device, &self.mesh_layout, (self.width, self.height));
         self.mesh_samples = None;
+        self.forget_scene3d_targets();
         self.pool = Pool::new(POOL_BYTES);
     }
 
