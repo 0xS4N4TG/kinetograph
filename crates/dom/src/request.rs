@@ -78,6 +78,12 @@ pub struct IslandOutput {
     pub unsupported: Vec<Unsupported>,
     /// A scene camera, when the island needs one.
     pub camera: Option<Value>,
+    /// The least scene `margin` (pixels) the island needs: how far its blurs
+    /// (shadows, text shadows) reach past their layers, so a shadow that
+    /// falls on the canvas from a layer near its edge is blurred from real
+    /// pixels. The scene's margin is the largest of this and its effects'.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub margin: Option<u32>,
 }
 
 /// `Unsupported` of `@kinetograph/scene`.
