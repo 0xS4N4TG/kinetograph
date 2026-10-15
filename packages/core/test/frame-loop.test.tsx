@@ -326,6 +326,27 @@ describe('the frame loop', () => {
     expect((layers[0]!.children[0] as ShapeLayer).transform?.x).toBe(20);
   });
 
+  it('returns the Sequences of the frame, showing or not', async () => {
+    registerRoot(() => (
+      <Composition
+        id="Seq"
+        width={10}
+        height={10}
+        fps={30}
+        durationInFrames={30}
+        component={() => (
+          <Sequence name="pop" from={10} durationInFrames={5}>
+            <Mover />
+          </Sequence>
+        )}
+      />
+    ));
+    const renderer = createFrameRenderer('Seq');
+    const entry = { key: '/pop@10+5', name: 'pop', from: 10, durationInFrames: 5, parent: null };
+    expect((await renderer.renderFrame(5)).sequences).toEqual([{ ...entry, layer: null }]);
+    expect((await renderer.renderFrame(12)).sequences).toEqual([{ ...entry, layer: '$0' }]);
+  });
+
   it('carries camera and audio from the tree', async () => {
     registerRoot(() => (
       <Composition

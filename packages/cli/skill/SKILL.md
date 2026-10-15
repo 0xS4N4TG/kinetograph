@@ -10,7 +10,7 @@ runs it; a GPU compositor draws it. You cannot watch a video, so you look at sin
 
 Run everything as `npx kinetograph <command>`. Add `--json` to get one JSON object you can parse; a failure is
 `{ "error": { "code", "message" } }` with exit code 1. (If you are connected to the MCP server there is one tool per
-command with the same arguments; `still`, `strip` and `onion` return the image itself.)
+command (except `studio`) with the same arguments; `still`, `strip` and `onion` return the image itself.)
 
 ## The loop
 
@@ -30,6 +30,9 @@ command with the same arguments; `still`, `strip` and `onion` return the image i
 Also: `compositions <entry>` lists compositions (pick one with `--comp <id>`; pass props with `--props '{"title":"Hi"}'`),
 `audio analyze <entry>` measures the sound, `snapshot <entry> --update` approves frames and `snapshot <entry>` later
 diffs against them, `bench <entry>` times the stages, `effects` lists effects, `doctor` says what this install can do.
+`studio <entry>` starts the local studio (preview, timeline, scene tree, props, render queue) at `http://127.0.0.1:3000`
+and opens a browser; it is for the person at the screen, runs until stopped, and is not an MCP tool. Use `--no-open`
+when you start it yourself.
 
 An entry is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene (docs/SCENE.md); every command takes both.
 

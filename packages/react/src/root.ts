@@ -69,7 +69,8 @@ const hostConfig = {
   // ---- creating the tree ----
 
   getRootHostContext: (): HostContext => ROOT_CONTEXT,
-  getChildHostContext: (_parent: HostContext, type: string): HostContext => type,
+  // A `kg-sequence` is transparent: what is inside it answers to the element it stands in.
+  getChildHostContext: (parent: HostContext, type: string): HostContext => (type === 'kg-sequence' ? parent : type),
   createInstance(type: string, props: Record<string, any>, _root: Container, hostContext: HostContext): HostElement {
     if (!(type in ELEMENT_NAMES)) {
       throw new Error(`Unknown element <${type}>: only the Kinetograph elements (Layer, Rect, Text, ...) can be rendered`);

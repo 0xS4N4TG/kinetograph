@@ -1419,6 +1419,7 @@ name = "kinetograph-node"
 version = "0.1.0"
 dependencies = [
  "ffmpeg-next",
+ "image",
  "kinetograph-cli",
  "kinetograph-core",
  "napi",

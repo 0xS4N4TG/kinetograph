@@ -6,6 +6,7 @@ import { mcp } from './mcp.js';
 import { render, still } from './render.js';
 import { onion, strip } from './sheets.js';
 import { snapshot } from './snapshot.js';
+import { studio } from './studio.js';
 import type { Command } from './types.js';
 
 /** Every command, in the order of docs/AUTHORING.md §9. */
@@ -22,6 +23,7 @@ export const commands: Command[] = [
   snapshot,
   effects,
   doctor,
+  studio,
   mcp,
 ];
 
