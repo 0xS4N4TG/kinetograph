@@ -37,9 +37,12 @@ fn builtin_shaders_are_valid_wgsl() {
         };
         let module = naga::front::wgsl::parse_str(&source)
             .unwrap_or_else(|e| panic!("{}: {}", path.display(), e.emit_to_string(&source)));
+        // `store_f16` (shadow.wgsl) packs floats to halves, which wgpu allows
+        // on Metal.
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::default(),
+            naga::valid::Capabilities::default()
+                | naga::valid::Capabilities::SHADER_FLOAT16_IN_FLOAT32,
         )
         .validate(&module)
         .unwrap_or_else(|e| panic!("{}: {}", path.display(), e.emit_to_string(&source)));
