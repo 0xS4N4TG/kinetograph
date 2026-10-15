@@ -1,7 +1,8 @@
 // `.css` imports (docs/ENGINE.md §1): imports inlined, urls made absolute, Tailwind built by the project's own, CSS
 // modules scoped; and what the bundle does with them.
 
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -62,7 +63,7 @@ describe('usesTailwind', () => {
 });
 
 describe('buildTailwind', () => {
-  it('runs the project’s tailwindcss with -i and -o, in the project', () => {
+  it('runs the project’s tailwindcss with -i and -o, in the project', async () => {
     const dir = project({ 'src/index.css': '@tailwind utilities;' });
     mkdirSync(join(dir, 'node_modules', '.bin'), { recursive: true });
     const bin = join(dir, 'node_modules', '.bin', 'tailwindcss');
@@ -72,15 +73,37 @@ describe('buildTailwind', () => {
         `require('node:fs').writeFileSync(o, '/* built from ' + require('node:path').basename(i) + ' in ' + require('node:path').basename(process.cwd()) + ' */ .p-4 { padding: 1rem }');\n`,
     );
     chmodSync(bin, 0o755);
-    const built = buildTailwind(join(dir, 'src', 'index.css'));
+    const built = await buildTailwind(join(dir, 'src', 'index.css'));
     expect(built).toMatchObject({ css: expect.stringContaining('.p-4 { padding: 1rem }') });
     expect((built as { css: string }).css).toContain(`in ${dir.split('/').at(-1)}`);
   });
 
-  it('says what is missing when the project has no Tailwind', () => {
+  it('says what is missing when the project has no Tailwind', async () => {
     const dir = project({ 'src/index.css': '@tailwind base;' });
-    const built = buildTailwind(join(dir, 'src', 'index.css'));
+    const built = await buildTailwind(join(dir, 'src', 'index.css'));
     expect(built).toMatchObject({ error: expect.stringContaining('Install tailwindcss (v3) or @tailwindcss/cli (v4)') });
+  });
+});
+
+// Tailwind 4 without its CLI: the project's tailwindcss compile() with the sources scanned in JS. Uses the copy in the
+// papercut corpus project when this machine has it.
+const corpusTailwind = join(homedir(), '$KINETOGRAPH_CORPUS/tiny-agent/episodes/13-mods/papercut/node_modules/tailwindcss');
+describe.skipIf(!existsSync(corpusTailwind))('buildTailwind with Tailwind 4', () => {
+  it('builds @import "tailwindcss" with the classes the sources use', async () => {
+    const dir = project({
+      'src/index.css': '@import "tailwindcss";',
+      'src/App.tsx': 'export const A = () => <div className="p-4 bg-red-500 w-[37px]" />;',
+    });
+    mkdirSync(join(dir, 'node_modules'));
+    symlinkSync(corpusTailwind, join(dir, 'node_modules', 'tailwindcss'));
+    const built = await buildTailwind(join(dir, 'src', 'index.css'));
+    expect(built).toHaveProperty('css');
+    const css = (built as { css: string }).css;
+    expect(css).toContain('.p-4');
+    expect(css).toContain('.w-\\[37px\\]');
+    // Preflight is part of it: it is what makes `img { display: block }` in a Remotion project.
+    expect(css).toMatch(/box-sizing:\s*border-box/);
+    expect(css).not.toContain('.flex ');
   });
 });
 

@@ -56,7 +56,7 @@ beforeEach(() => {
     },
     domComputedStyle(json: string, path: string, props: string[]) {
       calls.styles++;
-      return JSON.stringify(Object.fromEntries(props.map((p) => [p, `${p}@${path}`])));
+      return props.map((p) => `${p}@${path}`);
     },
   });
 });

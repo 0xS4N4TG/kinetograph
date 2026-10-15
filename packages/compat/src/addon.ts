@@ -10,8 +10,8 @@ export interface DomAddon {
   renderDomIsland(requestJson: string): string;
   /** `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. */
   domLayoutBoxes(requestJson: string): string;
-  /** `IslandRequest` JSON, an element path and CSS property names in; `{ [property]: value }` JSON out. */
-  domComputedStyle(requestJson: string, path: string, properties: string[]): string;
+  /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. */
+  domComputedStyle(requestJson: string, path: string, properties: string[]): string[];
   /** The text engine, for the size of native text in an island. */
   layoutText?(request: unknown): { width: number; height: number };
 }

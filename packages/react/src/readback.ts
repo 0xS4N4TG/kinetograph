@@ -149,8 +149,9 @@ export function createReadback(container: Container, options: EmitOptions): Read
       if (island.computed.has(key)) return island.computed.get(key) ?? null;
       let value: string | null;
       if (hasAddonFunction('domComputedStyle')) {
-        const answer = JSON.parse(addonFunction('domComputedStyle')(island.json, pathOf(host), [property])) as Record<string, string>;
-        value = answer[property] ?? null;
+        // One value per property asked for, "" for one the engine does not know.
+        const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), [property]);
+        value = answer[0] !== undefined && answer[0] !== '' ? answer[0] : null;
       } else {
         value = inlineValue(host, property);
       }

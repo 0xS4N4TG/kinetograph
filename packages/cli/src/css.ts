@@ -5,10 +5,11 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Plugin } from 'esbuild';
 
 /** Whether the file asks for Tailwind to build it. */
@@ -28,11 +29,82 @@ export function projectRoot(from: string): string {
   }
 }
 
+// ---- Tailwind ----
+
+/** The extensions whose text is scanned for class names. */
+const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.html', '.mdx', '.md', '.svelte', '.vue']);
+const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', 'out', 'dist', 'build', '.cache', '.next', 'coverage']);
+
+/** The class-name candidates in the project's source files: every run of characters Tailwind could take a class from. */
+export function scanCandidates(root: string): string[] {
+  const found = new Set<string>();
+  const visit = (dir: string, depth: number): void => {
+    if (depth > 8) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIPPED_DIRECTORIES.has(entry.name)) visit(path, depth + 1);
+      } else if (SOURCE_EXTENSIONS.has(extname(entry.name)) && statSync(path).size <= 1 << 20) {
+        for (const token of readFileSync(path, 'utf8').match(/[^\s"'`<>{};,]+/g) ?? []) found.add(token);
+      }
+    }
+  };
+  visit(root, 0);
+  return [...found];
+}
+
+/** Tailwind 4 through its own `compile()` API (what its CLI and plugins call), scanning the sources in JS. */
+async function buildTailwindV4(file: string, root: string): Promise<{ css: string } | { error: string }> {
+  const require = createRequire(join(root, 'package.json'));
+  let tailwind: { compile?(css: string, options: object): Promise<{ build(candidates: string[]): string }> };
+  let pkgDir: string;
+  try {
+    pkgDir = dirname(require.resolve('tailwindcss/package.json'));
+    tailwind = require('tailwindcss');
+  } catch {
+    return { error: 'tailwindcss is not installed in the project' };
+  }
+  if (typeof tailwind.compile !== 'function') return { error: 'the installed tailwindcss is not version 4 (it has no compile())' };
+  const stylesheet = (id: string, base: string): string => {
+    if (id === 'tailwindcss') return join(pkgDir, 'index.css');
+    if (id.startsWith('tailwindcss/')) {
+      const rest = id.slice('tailwindcss/'.length);
+      return join(pkgDir, rest.endsWith('.css') ? rest : `${rest}.css`);
+    }
+    if (id.startsWith('.') || isAbsolute(id)) return resolve(base, id);
+    return createRequire(join(base, 'x.js')).resolve(id);
+  };
+  try {
+    const compiler = await tailwind.compile(readFileSync(file, 'utf8'), {
+      base: dirname(file),
+      loadStylesheet: async (id: string, base: string) => {
+        const path = stylesheet(id, base);
+        return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
+      },
+      loadModule: async (id: string, base: string) => {
+        const path = id.startsWith('.') ? resolve(base, id) : createRequire(join(base, 'x.js')).resolve(id);
+        const loaded = await import(pathToFileURL(path).href);
+        return { path, base: dirname(path), module: loaded.default ?? loaded };
+      },
+    });
+    return { css: compiler.build(scanCandidates(root)) };
+  } catch (error) {
+    return { error: `tailwindcss compile() failed: ${(error as Error).message.split('\n')[0]}` };
+  }
+}
+
 /**
  * Builds `file` with the project's Tailwind: its CLI (`tailwindcss` v3, or `@tailwindcss/cli` v4) if installed, else
- * PostCSS with the Tailwind plugin. Null when the project has no Tailwind to run.
+ * Tailwind 4's `compile()`, else PostCSS with the Tailwind plugin.
  */
-export function buildTailwind(file: string): { css: string } | { error: string } {
+export async function buildTailwind(file: string): Promise<{ css: string } | { error: string }> {
   const root = projectRoot(dirname(file));
   const bin = join(root, 'node_modules', '.bin', 'tailwindcss');
   const failures: string[] = [];
@@ -48,8 +120,11 @@ export function buildTailwind(file: string): { css: string } | { error: string }
         failures.push(`tailwindcss failed: ${(stderr ?? (error as Error).message).split('\n').slice(0, 3).join(' ')}`);
       }
     }
+    const v4 = await buildTailwindV4(file, root);
+    if ('css' in v4) return v4;
+    failures.push(v4.error);
     // PostCSS with the plugin: Tailwind 4's `@tailwindcss/postcss`, else Tailwind 3's own plugin. `process` is
-    // asynchronous, so it runs in a child and the bundler keeps its synchronous read of the file.
+    // asynchronous, so it runs in a child.
     try {
       const script = `
         const { createRequire } = require('node:module');
@@ -59,7 +134,12 @@ export function buildTailwind(file: string): { css: string } | { error: string }
         postcss([plugin]).process(require('node:fs').readFileSync(${JSON.stringify(file)}, 'utf8'), { from: ${JSON.stringify(file)} })
           .then((result) => process.stdout.write(result.css), (e) => { process.stderr.write(String((e && e.message) || e)); process.exit(1); });
       `;
-      const css = execFileSync(process.execPath, ['-e', script], { cwd: root, timeout: 120_000, maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+      const css = execFileSync(process.execPath, ['-e', script], {
+        cwd: root,
+        timeout: 120_000,
+        maxBuffer: 64 << 20,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).toString();
       return { css };
     } catch (error) {
       const message = (error as { stderr?: Buffer }).stderr?.toString().trim() || (error as Error).message;
@@ -184,14 +264,14 @@ export function cssPlugin(options: CssPluginOptions): Plugin {
   return {
     name: 'kinetograph-css',
     setup(b) {
-      b.onLoad({ filter: /\.css$/ }, (args) => {
+      b.onLoad({ filter: /\.css$/ }, async (args) => {
         const warnings: { text: string }[] = [];
         const read = readStylesheet(args.path, options.target === 'browser' ? options.fileUrl : undefined);
         for (const text of read.warnings) warnings.push({ text });
         let css = read.css;
         const files = [...read.files];
         if (usesTailwind(readFileSync(args.path, 'utf8'))) {
-          const built = buildTailwind(args.path);
+          const built = await buildTailwind(args.path);
           if ('css' in built) {
             css = absolutizeUrls(built.css, dirname(args.path), options.target === 'browser' ? options.fileUrl : undefined);
           } else {
