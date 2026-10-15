@@ -250,13 +250,6 @@ class Emitter {
     return (this.sheets ??= [...importedStylesheets(), ...collectStyleElements(this.roots)]);
   }
 
-  /** Claims an explicit id for a DOM element's layer: false when it is reserved or taken. */
-  private claim(id: string): boolean {
-    if (id.startsWith('$') || this.ids.has(id)) return false;
-    this.ids.add(id);
-    return true;
-  }
-
   /**
    * An island: a DOM element, with everything inside it, drawn by the compat mapping (docs/COMPAT.md §2). Its
    * `<Sequence>`s are taken out first, as `collect` does, so that they take no place in the paths.
@@ -274,7 +267,6 @@ class Emitter {
       viewport,
       fonts: this.options.fonts?.() ?? {},
       emitNative: (node, at) => this.element(node as HostElement, at),
-      claimId: (id) => this.claim(id),
       time: this.options.time?.() ?? 0,
       stylesheets: this.stylesheets(),
     });

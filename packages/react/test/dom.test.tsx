@@ -1,37 +1,79 @@
-// DOM islands in the reconciler (docs/COMPAT.md §2): which host elements are accepted, where an island's layers
-// stand, and what reaches the tree's `unsupported` and camera.
+// DOM islands in the reconciler (docs/ENGINE.md §1, §2): which host elements are accepted, where an island's layers
+// stand, how native elements are put back where Rust placed them, and what reaches the tree's `unsupported`, camera
+// and margin. The addon is a stand-in that answers as the Rust painter does: a group per island root, a placeholder
+// for each native element, and whatever the request's attributes ask it to report.
 
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import type { ReactNode } from 'react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { setLayoutDom } from '@kinetograph/compat/dom';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { setDomAddon } from '@kinetograph/compat/dom';
 import type { LayerJson } from '@kinetograph/scene';
 import { Camera, createSceneRoot, Layer, Rect, SequenceHost, Text, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 
-const font = fileURLToPath(new URL('../../../assets/fonts/DMSans-Medium.ttf', import.meta.url));
-
-/** The addon's CPU `layoutDom`, or null where it is not built. */
-function loadLayout(): ((json: string) => string) | null {
-  try {
-    return (createRequire(import.meta.url)('@kinetograph/native') as { layoutDom: (json: string) => string }).layoutDom;
-  } catch {
-    return null;
-  }
+interface Node {
+  kind: 'element' | 'text' | 'native';
+  tag?: string;
+  path?: string;
+  attrs?: Record<string, string>;
+  style?: string;
+  children?: Node[];
+  width?: number;
+  height?: number;
 }
-const layoutDom = loadLayout();
 
-// These tests are about the Phase 5 mapping's output until the Rust path is verified (KINETOGRAPH_DOM_MAPPER).
+const requests: { root: Node; path: string; viewport: { width: number; height: number } }[] = [];
+
+/** One group per element, children in order, natives as placeholders at 100 px steps; `data-*` attributes script it. */
+function paint(node: Node, y: number): { layer: unknown; used: number } | null {
+  if (node.kind === 'text') return null;
+  if (node.kind === 'native') {
+    return { layer: { type: 'native', path: node.path, x: 0, y, width: node.width ?? 0, height: node.height ?? 0 }, used: 100 };
+  }
+  const children: unknown[] = [];
+  let at = y;
+  for (const child of node.children ?? []) {
+    const made = paint(child, at);
+    if (made) {
+      children.push(made.layer);
+      at += made.used;
+    }
+  }
+  return { layer: { id: node.path, type: 'group', children }, used: at - y + 10 };
+}
+
 beforeAll(() => {
-  process.env.KINETOGRAPH_DOM_MAPPER = 'legacy';
-  setLayoutDom(layoutDom);
+  setDomAddon({
+    renderDomIsland(json: string) {
+      const request = JSON.parse(json);
+      requests.push(request);
+      const root = request.root as Node;
+      const out: { layers: unknown[]; unsupported: unknown[]; camera: unknown } = {
+        layers: [paint(root, 0)!.layer],
+        unsupported: [],
+        camera: null,
+      };
+      // Scripted by attributes anywhere in the island.
+      const visit = (n: Node): void => {
+        if (n.kind !== 'element') return;
+        if (n.attrs?.['data-unsupported'] !== undefined) {
+          out.unsupported.push({ path: `${n.path} <${n.tag}>`, element: n.tag, property: n.attrs['data-unsupported'], value: null, reason: 'scripted' });
+        }
+        if (n.attrs?.['data-perspective'] !== undefined) out.camera = { perspective: Number(n.attrs['data-perspective']), x: 5, y: 5 };
+        n.children?.forEach(visit);
+      };
+      visit(root);
+      return JSON.stringify(out);
+    },
+  });
 });
-afterEach(() => setLayoutDom(layoutDom));
+afterAll(() => setDomAddon(null));
+beforeEach(() => {
+  requests.length = 0;
+});
 
-/** Renders in a 1000 x 800 composition with one registered font. */
+/** Renders in a 1000 x 800 composition. */
 function render(node: ReactNode, options: { viewport?: { width: number; height: number } } = {}) {
-  const root = createSceneRoot({ viewport: { width: 1000, height: 800 }, fonts: () => ({ 'DM Sans': font }), ...options });
+  const root = createSceneRoot({ viewport: { width: 1000, height: 800 }, ...options });
   try {
     return root.render(<TimelineContext.Provider value={timeline(0)}>{node}</TimelineContext.Provider>);
   } finally {
@@ -59,10 +101,11 @@ describe('DOM elements in the reconciler', () => {
     const root = createSceneRoot({ ignoreDom: true });
     expect(root.render(<div />).layers).toEqual([]);
     root.unmount();
+    expect(requests).toHaveLength(0);
   });
 });
 
-describe.skipIf(layoutDom === null)('islands', () => {
+describe('islands', () => {
   it('stand where the element stands, with the ids of the host path', () => {
     const tree = render(
       <>
@@ -80,19 +123,26 @@ describe.skipIf(layoutDom === null)('islands', () => {
     expect(tree.layers.map((l) => l.id)).toEqual(['$0', 'group', '$2']);
     const group = tree.layers[1] as Extract<LayerJson, { type: 'group' }>;
     expect(group.children.map((c) => c.id)).toEqual(['$1.0', '$1.1']);
+    expect(requests.map((r) => r.path)).toEqual(['$1.0', '$2']);
   });
 
-  it('puts the island layers in the tree as absolute layout items', () => {
+  it('put the native elements’ layers where the engine placed their boxes, and are absolute layout items', () => {
     const tree = render(
       <Layer id="fill" layout={{ flexDirection: 'column', width: 1000, height: 800 }}>
-        <div style={{ position: 'absolute', top: 100, left: 50, ...sq }} />
+        <div style={{ position: 'absolute', top: 100, left: 50, ...sq }}>
+          <Rect id="chip" width={20} height={20} fill="#fff" />
+        </div>
       </Layer>,
     );
     const fill = tree.layers[0] as Extract<LayerJson, { type: 'group' }>;
-    expect(fill.children[0]).toMatchObject({ id: '$0.0', layoutItem: { position: 'absolute' }, transform: { x: 50, y: 100 } });
+    const island = fill.children[0] as Extract<LayerJson, { type: 'group' }>;
+    expect(island).toMatchObject({ id: '$0.0', layoutItem: { position: 'absolute' } });
+    // The stand-in put the Rect's box at y = 0.
+    expect(island.children[0]).toMatchObject({ id: 'chip', type: 'shape' });
+    expect(requests[0]!.root.children![0]).toEqual({ kind: 'native', path: '$0.0.0', width: 20, height: 20 });
   });
 
-  it('draw native elements inside them, and islands inside native elements inside them', () => {
+  it('draw islands inside native elements inside them', () => {
     const tree = render(
       <div style={{ padding: 10 }}>
         <Rect id="chip" width={20} height={20} fill="#fff" />
@@ -101,48 +151,31 @@ describe.skipIf(layoutDom === null)('islands', () => {
         </Layer>
       </div>,
     );
-    expect(ids(tree.layers)).toEqual(['$0', 'chip', '$0.1', '$0.1.0', '$0.1.0.bg']);
+    expect(ids(tree.layers)).toEqual(['$0', 'chip', '$0.1', '$0.1.0']);
     const root = tree.layers[0] as Extract<LayerJson, { type: 'group' }>;
-    expect(root.children.find((c) => c.id === 'chip')).toMatchObject({ transform: { x: 10, y: 10 } });
-    // The Layer sits below the 20 px rect.
-    expect(root.children.find((c) => c.id === '$0.1')).toMatchObject({ transform: { x: 10, y: 30 } });
+    // The stand-in puts the first native at y 0 and the second 100 px lower.
+    expect(root.children.find((c) => c.id === '$0.1')).toMatchObject({ transform: { y: 100 } });
   });
 
-  it('collect what compat cannot draw in the tree, once per element', () => {
+  it('collect what the engine cannot draw, and the camera it asks for', () => {
     const tree = render(
-      <div style={{ width: 10, height: 10 }}>
-        <div className="x" style={{ float: 'left' }} />
-        <canvas />
+      <div style={{ width: 10, height: 10 }} data-perspective="600">
+        <div data-unsupported="float" />
+        <canvas data-unsupported="canvas" />
       </div>,
     );
-    expect(tree.unsupported.map((u) => `${u.path}:${u.property}`).sort()).toEqual(['$0.0 <div>:className', '$0.0 <div>:float', '$0.1 <canvas>:null']);
-  });
-
-  it('take no unsupported items from a subtree with display none', () => {
-    const tree = render(
-      <div>
-        <div style={{ display: 'none' }}>
-          <canvas />
-        </div>
-      </div>,
-    );
-    expect(tree.unsupported).toEqual([]);
-  });
-
-  it('give the tree its camera from perspective, and one camera is one', () => {
-    const p = { position: 'absolute' as const, top: 0, left: 0, perspective: 600, ...sq };
-    const tree = render(
-      <>
-        <div style={p} />
-        <div style={p} />
-      </>,
-    );
+    expect(tree.unsupported.map((u) => `${u.path}:${u.property}`)).toEqual(['$0.0 <div>:float', '$0.1 <canvas>:canvas']);
     expect(tree.camera).toEqual({ perspective: 600, x: 5, y: 5 });
+  });
+
+  it('give the tree one camera, and refuse a second one', () => {
+    const a = <div data-perspective="600" style={sq} />;
+    expect(render(<>{a}{a}</>).camera).toEqual({ perspective: 600, x: 5, y: 5 });
     expect(() =>
       render(
         <>
           <Camera perspective={700} />
-          <div style={p} />
+          {a}
         </>,
       ),
     ).toThrow(/Only one <Camera>/);
@@ -176,5 +209,6 @@ describe.skipIf(layoutDom === null)('islands', () => {
       </>,
     );
     expect(ids(without.layers)).toEqual(['$0', '$1', '$1.0']);
+    expect(requests).toHaveLength(0);
   });
 });

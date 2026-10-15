@@ -16,7 +16,6 @@ interface ProjectModule {
   setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
   setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
   setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
-  setLayoutDom(fn: typeof import('@kinetograph/native').layoutDom | null): void;
   setDomAddon(addon: object | null): void;
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
@@ -123,7 +122,6 @@ async function loadProject(entry: string, bundleFile?: string): Promise<ProjectM
   }
   mod.setPublicDir(publicDir);
   mod.setLayoutText(native().layoutText);
-  mod.setLayoutDom(native().layoutDom);
   // The DOM engine: islands are styled, laid out and painted by the addon, relative paths resolve from the entry.
   mod.setDomAddon(native());
   mod.setDomEnvironment({ baseDir: dirname(entry), publicDir });

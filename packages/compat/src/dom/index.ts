@@ -1,8 +1,6 @@
 // `@kinetograph/compat/dom` (docs/ENGINE.md §1, §2): a DOM island is handed to the addon as an `IslandRequest`; Stylo,
 // taffy and Parley style and lay it out, our compositor paints it, and the layers come back as scene JSON. Native
 // (`kg-*`) elements inside the island are drawn here and put where Rust placed their boxes.
-//
-// The Phase 5 TypeScript mapping is still in `legacy.ts`; `KINETOGRAPH_DOM_MAPPER=legacy` selects it.
 
 import type { CameraJson, LayerJson, Unsupported } from '@kinetograph/scene';
 import { addonFunction } from '../addon.js';
@@ -11,12 +9,8 @@ import { buildIslandRequest, type IslandRequestJson } from '../request/build.js'
 import { isDomElement } from '../request/tags.js';
 import type { DomNode, IslandContext, IslandResult } from '../types.js';
 import { fillNatives, nativeSize } from './native.js';
-import { mapLegacyIsland } from './legacy.js';
 
 export { isDomElement };
-export { mapLegacyIsland, mapStyledIsland, setLayoutDom } from './legacy.js';
-export type { LayoutDom } from './legacy.js';
-export type { StyledElement, StyledNode, StyledNative, StyledText } from './tree.js';
 export { setDomAddon, hasAddonFunction, addonFunction } from '../addon.js';
 export type { DomAddon } from '../addon.js';
 export {
@@ -77,7 +71,6 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
   if (root.kind !== 'element' || !isDomElement(root.type)) {
     throw new Error('mapDomIsland needs a DOM element as the root of an island');
   }
-  if (process.env.KINETOGRAPH_DOM_MAPPER === 'legacy') return mapLegacyIsland(root, context);
   if (INVISIBLE.has(root.type)) return { layers: [], unsupported: [], camera: null };
 
   const { request, natives } = requestFor(root, context);

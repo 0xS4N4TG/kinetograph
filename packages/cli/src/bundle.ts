@@ -128,7 +128,7 @@ export function syntheticEntry(entry: string): string {
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
     `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
     // DOM elements are styled, laid out and painted by the addon too (docs/ENGINE.md §2).
-    `export { setLayoutDom, setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
+    `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
     '',
   ].join('\n');
 }
