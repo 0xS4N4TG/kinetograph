@@ -248,21 +248,36 @@ impl<'a> Painter<'a> {
     /// z-index ones.
     fn sc_content(&mut self, sc: &'a Node) -> Vec<Value> {
         let mut out = Vec::new();
+        let mut inner = Vec::new();
         let mut ph = Phases::default();
         let mut pos: Vec<Value> = Vec::new();
         out.extend(self.decoration(sc, (0.0, 0.0), true));
         if let Some(ctx) = sc.stacking_context.as_ref() {
             for hc in ctx.neg_z_hoisted_children() {
-                out.extend(self.hoisted(sc, hc));
+                inner.extend(self.hoisted(sc, hc));
             }
         }
         self.walk(sc, (0.0, 0.0), &mut ph, &mut pos);
-        out.extend(ph.flatten());
-        out.extend(pos);
+        inner.extend(ph.flatten());
+        inner.extend(pos);
         if let Some(ctx) = sc.stacking_context.as_ref() {
             for hc in ctx.pos_z_hoisted_children() {
-                out.extend(self.hoisted(sc, hc));
+                inner.extend(self.hoisted(sc, hc));
             }
+        }
+        // A stacking context that clips its overflow cuts its content (not
+        // its own box). The root's overflow is the viewport's.
+        if sc.id != self.doc.root_element().id && !inner.is_empty() && self.clips_overflow(sc) {
+            let id = self.layer_id(sc, "content");
+            let clip = self.overflow_clip(sc, (0.0, 0.0));
+            let group = util::group(&id, inner);
+            let group = match clip {
+                Some(c) => group.set("clip", c),
+                None => group,
+            };
+            out.push(group.build());
+        } else {
+            out.extend(inner);
         }
         out
     }
@@ -277,7 +292,47 @@ impl<'a> Painter<'a> {
             f64::from(offset.x + loc.x),
             f64::from(offset.y + loc.y),
         );
-        self.paint_context(child, at)
+        let layers = self.paint_context(child, at);
+        self.clip_by_containing_blocks(sc, child, layers)
+    }
+
+    /// A box hoisted into `sc`'s frame is still cut by the overflow of the
+    /// boxes it is contained in (the chain of its containing blocks up to
+    /// `sc`): each clipping one wraps it in a clip group, outermost last.
+    fn clip_by_containing_blocks(&mut self, sc: &'a Node, child: &'a Node, mut layers: Vec<Value>) -> Vec<Value> {
+        // The containing blocks from the child's up to (not including) `sc`.
+        let mut chain: Vec<&'a Node> = Vec::new();
+        let mut cur = child.containing_block();
+        while let Some(id) = cur {
+            if id == sc.id {
+                break;
+            }
+            let n = self.node(id);
+            chain.push(n);
+            cur = n.containing_block();
+        }
+        if cur.is_none() {
+            // `sc` is not above the child in the chain: nothing to say.
+            return layers;
+        }
+        // Positions in `sc`'s frame, from the top of the chain down.
+        let mut origins = Vec::with_capacity(chain.len());
+        let mut at = (0.0, 0.0);
+        for n in chain.iter().rev() {
+            let l = n.final_layout().location;
+            at = (at.0 + f64::from(l.x), at.1 + f64::from(l.y));
+            origins.push(at);
+        }
+        origins.reverse();
+        for (n, origin) in chain.iter().zip(origins) {
+            if !self.clips_overflow(n) {
+                continue;
+            }
+            let Some(clip) = self.overflow_clip(n, origin) else { continue };
+            let id = self.layer_id(n, "clipped");
+            layers = vec![util::group(&id, layers).set("clip", clip).build()];
+        }
+        layers
     }
 
     /// An element that makes a stacking context, as a group at `at` in its
@@ -417,9 +472,14 @@ impl<'a> Painter<'a> {
             self.walk(node, at, ph, pos);
             return;
         }
+        // Positioned descendants stay inside the clip (their containing block
+        // is in here, and so is the clip); they go last, over the rest.
         let mut inner = Phases::default();
-        self.walk(node, at, &mut inner, pos);
-        let content = inner.flatten();
+        let mut local_pos: Vec<Value> = Vec::new();
+        self.walk(node, at, &mut inner, &mut local_pos);
+        let mut content = inner.flatten();
+        content.extend(local_pos);
+        let _ = &pos;
         if content.is_empty() {
             return;
         }

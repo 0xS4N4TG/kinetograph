@@ -177,6 +177,17 @@ case!(border_images, 340, 220, {
     )
 });
 
+case!(clipped_positioned, 340, 200, {
+    r#"<div style="position:absolute;left:20px;top:20px;width:120px;height:80px;background:#cde;overflow:hidden;border-radius:16px">
+<div style="position:absolute;left:90px;top:50px;width:60px;height:60px;background:#f63"></div>
+<div style="position:absolute;left:-20px;top:-20px;width:60px;height:40px;background:#36f;z-index:3"></div></div>
+<div style="position:absolute;left:180px;top:20px;width:120px;height:80px;background:#cde;overflow:hidden;opacity:.9">
+<div style="position:absolute;left:80px;top:40px;width:80px;height:60px;background:#3a6;z-index:2"></div></div>
+<div style="position:absolute;left:20px;top:120px;width:120px;height:60px;overflow:hidden"><div style="margin-left:80px;width:100px;height:60px;background:#c3c"></div></div>
+<div style="position:absolute;left:180px;top:120px;width:120px;height:60px;overflow:hidden;background:#fed;position:absolute"><div style="position:absolute;left:100px;top:20px;width:100px;height:60px;background:#39c"></div></div>"#
+        .to_string()
+});
+
 case!(borders, 340, 260, {
     r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:50px;border:3px solid;border-color:#f00 #0a0 #00f #fa0"></div>
 <div style="position:absolute;left:120px;top:10px;width:90px;height:50px;border-style:solid;border-width:2px 8px 14px 4px;border-color:#234;border-radius:12px 30px 5px 20px"></div>
