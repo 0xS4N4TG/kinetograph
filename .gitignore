@@ -27,3 +27,6 @@ docs/reference/rajz-reference.mp4
 # Frames cropped from the third-party reference video: local only
 phase0/fframes/reference/media/p*.jpg
 phase0/fframes/compare/
+
+# Node addon build output
+*.node

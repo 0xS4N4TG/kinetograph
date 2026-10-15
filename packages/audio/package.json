@@ -1,0 +1,19 @@
+{
+  "name": "@kinetograph/audio",
+  "version": "0.1.0",
+  "description": "Web Audio synthesis and mixing for Kinetograph, through node-web-audio-api",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@kinetograph/scene": "0.1.0",
+    "node-web-audio-api": "2.2.0"
+  }
+}

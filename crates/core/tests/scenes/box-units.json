@@ -1,0 +1,63 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#14161d",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    { "id": "linear", "type": "shape",
+      "shape": { "kind": "roundedRect", "width": 200, "height": 90, "radius": 14 },
+      "fill": { "type": "linear", "units": "box", "x0": 0, "y0": 0, "x1": 1, "y1": 1,
+                "stops": [{ "offset": 0, "color": "#ff4d4d" }, { "offset": 1, "color": "#2f6bff" }] },
+      "transform": { "x": 14, "y": 14 } },
+
+    { "id": "radial", "type": "shape", "shape": { "kind": "ellipse", "width": 160, "height": 90 },
+      "fill": { "type": "radial", "units": "box", "cx": 0.5, "cy": 0.5, "r": 0.5,
+                "stops": [{ "offset": 0, "color": "#fff3b0" }, { "offset": 0.7, "color": "#e09f3e" },
+                          { "offset": 1, "color": "#9e2a2b" }] },
+      "transform": { "x": 240, "y": 14 } },
+
+    { "id": "conic", "type": "shape", "shape": { "kind": "rect", "width": 90, "height": 60 },
+      "fill": { "type": "conic", "units": "box", "cx": 0.5, "cy": 0.5,
+                "angle": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 90 }],
+                "stops": [{ "offset": 0, "color": "#06d6a0" }, { "offset": 0.5, "color": "#118ab2" },
+                          { "offset": 1, "color": "#06d6a0" }] },
+      "transform": { "x": 420, "y": 14, "anchorX": 45, "anchorY": 30, "rotation": 0 } },
+
+    { "id": "turned", "type": "shape",
+      "shape": { "kind": "rect", "width": 120, "height": 60 },
+      "fill": { "type": "linear", "units": "box", "x0": 0, "y0": 0, "x1": 1, "y1": 0, "extend": "repeat",
+                "stops": [{ "offset": 0, "color": "#f72585" }, { "offset": 0.25, "color": "#4cc9f0" }] },
+      "transform": { "x": 76, "y": 170, "scale": [{ "frame": 0, "value": 1 }, { "frame": 30, "value": 1.4 }],
+                     "rotation": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 24 }],
+                     "anchorX": 60, "anchorY": 30 } },
+
+    { "id": "path-off-origin", "type": "shape",
+      "shape": { "kind": "path", "d": "M240 130 L330 130 L285 215 Z" },
+      "fill": { "type": "linear", "units": "box", "x0": 0, "y0": 0, "x1": 0, "y1": 1,
+                "stops": [{ "offset": 0, "color": "#ffd166" }, { "offset": 1, "color": "#ef476f" }] } },
+
+    { "id": "word", "type": "text", "text": "Box units", "font": "DM Sans", "size": 44,
+      "color": { "type": "linear", "units": "box", "x0": 0, "y0": 0, "x1": 1, "y1": 0, "extend": "reflect",
+                 "stops": [{ "offset": 0, "color": "#7aa2f7" }, { "offset": 0.5, "color": "#e05a9d" }] },
+      "transform": { "x": 14, "y": 118 } },
+
+    { "id": "masked", "type": "shape", "shape": { "kind": "rect", "width": 130, "height": 100 },
+      "fill": "#d4a5ff",
+      "mask": { "mode": "luminance",
+                "gradient": { "type": "radial", "units": "box", "cx": 0.5, "cy": 0.5, "r": 0.5,
+                              "stops": [{ "offset": 0, "color": "#ffffff" }, { "offset": 1, "color": "#000000" }] } },
+      "transform": { "x": 345, "y": 110 } },
+
+    { "id": "alpha-mask", "type": "text", "text": "Fade", "font": "DM Sans", "size": 40, "color": "#ffffff",
+      "mask": { "gradient": { "type": "linear", "units": "box", "x0": 0, "y0": 0, "x1": 1, "y1": 0,
+                              "stops": [{ "offset": 0, "color": "#ffffffff" }, { "offset": 1, "color": "#ffffff00" }] } },
+      "transform": { "x": 345, "y": 222 } },
+
+    { "id": "no-extent", "type": "shape", "shape": { "kind": "rect", "width": 0, "height": 40 },
+      "fill": { "type": "linear", "units": "box", "x0": 0, "y0": 0, "x1": 1, "y1": 0,
+                "stops": [{ "offset": 0, "color": "#ff0000" }, { "offset": 1, "color": "#00ff00" }] },
+      "stroke": { "color": "#ffffff", "width": 2 }, "transform": { "x": 200, "y": 230 } }
+  ]
+}

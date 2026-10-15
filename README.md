@@ -5,13 +5,39 @@ Kinetograph is a placeholder name.
 A programmatic video engine: agents write TypeScript, a Rust core renders it on the GPU, no browser anywhere. It keeps
 Remotion's API for visuals and the Web Audio API for sound, and puts a GPU compositor underneath them.
 
-**Status:** Phase 1 is done: a Rust workspace with a GPU compositor (shape, text, image and group layers; all 16 W3C
-blend modes; blur), PNG output, and a CLI with `still` and `bench`. Phase 2b adds `render` (video). Scenes are JSON
-for now; the TypeScript runtime comes in later phases (see the [roadmap](docs/HANDOFF.md)).
+**Status:** Phases 1 and 2 are done: a Rust workspace with a GPU compositor (shape, text, image, group, noise and
+mesh-gradient layers; blend modes, masks, mattes, the effects of [SCENE.md](docs/SCENE.md), a 2.5D camera, motion
+blur), PNG and H.264 output. Phase 3 (authoring and agents) is built and awaiting its first GPU run: projects are
+written in TSX with Remotion's API and native elements, run in Node, and rendered by the Rust core through an N-API
+addon; the `kinetograph` CLI and MCP server are the agent surface (see the [roadmap](docs/HANDOFF.md) and the
+[authoring contract](docs/AUTHORING.md)).
 
 - [Technical handoff](docs/HANDOFF.md)
 - [Research notes](docs/RESEARCH.md)
 - [Scene format](docs/SCENE.md)
+- [Authoring contract](docs/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
+
+## Projects in TSX
+
+Node 22 or later. The npm workspaces are `@kinetograph/scene` (scene types and effect helpers), `@kinetograph/react`
+(the reconciler and native elements), `@kinetograph/core` (Remotion's API and packages, the frame loop, the
+determinism shim), `@kinetograph/audio`, the `kinetograph` CLI, and `@kinetograph/native` (the addon, `crates/node`).
+
+```sh
+npm ci
+npm run build                                   # TS packages and a debug addon
+npm run build:release -w @kinetograph/native    # the addon for timing
+
+npx kinetograph still examples/rajz-cards/index.tsx 60 -o out/rajz-60.png
+npx kinetograph strip examples/rajz-cards/index.tsx -n 12 -o out/rajz-strip.png
+npx kinetograph render examples/rajz-cards/index.tsx -o out/rajz-cards.mp4
+npx kinetograph inspect examples/rajz-cards/index.tsx --frame 60 --json
+```
+
+A project imports from `remotion` and `@remotion/*` as it would for Remotion (the CLI maps them onto
+`@kinetograph/core`) and from `@kinetograph/core` for the native elements and effects. Every command takes `--json`;
+`npx kinetograph mcp` serves the same commands over MCP. `npm test` runs the CPU tests; the GPU ones run with
+`KINETOGRAPH_GPU_TESTS=1`.
 
 ## Build and run
 

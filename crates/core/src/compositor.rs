@@ -21,7 +21,7 @@
 //! pixel, so it does not depend on the size of the texture.
 //!
 //! The passes that read the layer through the hardware's bilinear filter
-//! (halftone, warp, displace, a custom shader, and the blur's pyramid) are
+//! (halftone, warp, a custom shader, and the blur's pyramid) are
 //! the exception. The weights of a filtered read are worked out from the
 //! texture's size, so they must read a texture of the size they always did:
 //! `full_copy` puts a smaller layer into one first, and they write textures
@@ -57,10 +57,11 @@
 //! (`shader_module`), and those that evaluate turbulence with
 //! `shaders/turbulence.wgsl`.
 //!
-//! The displace pass (`shaders/displace.wgsl`) also reads the layer through
-//! the filtered layout, and takes the noise tables of its seed (built on first
-//! use, `turbulence_tables`) as a second bind group. So does the noise layer's
-//! pass (`shaders/noise.wgsl`), on the shared layout, which fills a box's
+//! The displace pass (`shaders/displace.wgsl`) also sits on the filtered
+//! layout and the canvas-sized textures, but filters in the shader on
+//! `textureLoad` from canvas positions, so the margin cannot change a pixel of
+//! it. It takes the noise tables of its seed (built on first use,
+//! `turbulence_tables`) as a second bind group. So does the noise layer's pass (`shaders/noise.wgsl`), on the shared layout, which fills a box's
 //! coverage with the raw noise.
 //!
 //! A mesh gradient layer (`shaders/mesh.wgsl`) is not a full-screen pass: its
@@ -249,6 +250,7 @@ pub struct Compositor {
     mesh: wgpu::RenderPipeline,
     /// The padded texture size, which the mesh's vertex shader needs.
     mesh_size: wgpu::BindGroup,
+    mesh_layout: wgpu::BindGroupLayout,
     /// The multisampled target the mesh is drawn into, made the first time
     /// a mesh is drawn and kept.
     mesh_samples: Option<Tex>,
@@ -273,6 +275,7 @@ pub struct Compositor {
     filtered_sampler: wgpu::Sampler,
     /// One pipeline per distinct custom shader, by `shader::compose` text.
     shaders: HashMap<String, wgpu::RenderPipeline>,
+    shader_pipeline_layout: wgpu::PipelineLayout,
     blur: Blur,
     pool: Pool<Tex>,
     /// What the passes have recorded since the last `submit`. Passes record
@@ -415,9 +418,13 @@ impl Compositor {
             "fs_noise",
             LINEAR_FORMAT,
         );
-        let (mesh, mesh_size) = mesh_pipeline(
+        let (mesh, mesh_layout) = mesh_pipeline(
             device,
             &shader_module(device, "mesh", include_str!("shaders/mesh.wgsl")),
+        );
+        let mesh_size = mesh_size_group(
+            device,
+            &mesh_layout,
             (width + 2 * margin, height + 2 * margin),
         );
         let lut_layout = lut_bind_group_layout(device);
@@ -447,36 +454,10 @@ impl Compositor {
         let shaders = shaders
             .iter()
             .map(|source| {
-                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("shader effect"),
-                    source: wgpu::ShaderSource::Wgsl(source.as_str().into()),
-                });
-                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("shader effect"),
-                    layout: Some(&shader_pipeline_layout),
-                    vertex: wgpu::VertexState {
-                        module: &module,
-                        entry_point: Some("kg_vs"),
-                        compilation_options: Default::default(),
-                        buffers: &[],
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &module,
-                        entry_point: Some("kg_fs"),
-                        compilation_options: Default::default(),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: LINEAR_FORMAT,
-                            blend: None,
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                    }),
-                    primitive: wgpu::PrimitiveState::default(),
-                    depth_stencil: None,
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview_mask: None,
-                    cache: None,
-                });
-                (source.clone(), pipeline)
+                (
+                    source.clone(),
+                    shader_effect_pipeline(device, &shader_pipeline_layout, source),
+                )
             })
             .collect();
         Compositor {
@@ -509,6 +490,7 @@ impl Compositor {
             noise,
             mesh,
             mesh_size,
+            mesh_layout,
             mesh_samples: None,
             turbulence_layout,
             turbulence_tables: HashMap::new(),
@@ -523,6 +505,7 @@ impl Compositor {
                 ..Default::default()
             }),
             shaders,
+            shader_pipeline_layout,
             filtered_layout,
             filtered_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("filtered"),
@@ -535,6 +518,41 @@ impl Compositor {
             pool: Pool::new(POOL_BYTES),
             pending: RefCell::new(None),
             uniforms: RefCell::new(Uniforms::new(device, queue)),
+        }
+    }
+
+    /// Makes the textures `width` x `height` (the canvas) plus `margin` on
+    /// every side, keeping the pipelines, tables and the rest of what the
+    /// compositor holds. The pool is emptied: its textures are the old size.
+    /// The caller gives back the textures it holds (the layer cache's) first.
+    pub fn resize(&mut self, width: u32, height: u32, margin: u32) {
+        self.width = width + 2 * margin;
+        self.height = height + 2 * margin;
+        self.canvas = (width, height);
+        self.margin = margin;
+        self.mesh_size =
+            mesh_size_group(&self.device, &self.mesh_layout, (self.width, self.height));
+        self.mesh_samples = None;
+        self.pool = Pool::new(POOL_BYTES);
+    }
+
+    /// Adds a pipeline for each custom shader module that has none yet
+    /// (`Scene::shader_sources`).
+    pub fn add_shaders(&mut self, sources: &[String]) {
+        for source in sources {
+            if !self.shaders.contains_key(source) {
+                let pipeline =
+                    shader_effect_pipeline(&self.device, &self.shader_pipeline_layout, source);
+                self.shaders.insert(source.clone(), pipeline);
+            }
+        }
+    }
+
+    /// Uploads `luts`, replacing a table that has the same `src`.
+    pub fn set_luts(&mut self, luts: &HashMap<String, Lut>) {
+        for (src, lut) in luts {
+            let texture = upload_lut(&self.device, &self.queue, lut);
+            self.luts.insert(src.clone(), texture);
         }
     }
 
@@ -1267,7 +1285,7 @@ impl Compositor {
         self.run_filtered_pass_with(
             &self.displace,
             &input.view,
-            &displace_values(displace, layer_matrix),
+            &displace_values(displace, layer_matrix, self.margin),
             Some(&self.turbulence_tables[&key]),
             &target,
         );
@@ -2098,16 +2116,52 @@ fn fullscreen_pipeline(
     })
 }
 
+/// The pipeline of one custom shader module (`shader::compose`).
+fn shader_effect_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    source: &str,
+) -> wgpu::RenderPipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("shader effect"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("shader effect"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("kg_vs"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("kg_fs"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: LINEAR_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 /// The mesh gradient pipeline, drawing `mesh::Vertex` triangles into a
-/// multisampled target, and the bind group with the `size` of that target in
-/// texels that its vertex shader turns positions into clip space with. The
-/// output is premultiplied, so triangles that overlap (a folded mesh) blend
-/// with "over".
+/// multisampled target, and the layout of the bind group (`mesh_size_group`)
+/// that its vertex shader turns positions into clip space with. The output
+/// is premultiplied, so triangles that overlap (a folded mesh) blend with
+/// "over".
 fn mesh_pipeline(
     device: &wgpu::Device,
     shader: &wgpu::ShaderModule,
-    size: (u32, u32),
-) -> (wgpu::RenderPipeline, wgpu::BindGroup) {
+) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("mesh"),
         entries: &[wgpu::BindGroupLayoutEntry {
@@ -2160,20 +2214,28 @@ fn mesh_pipeline(
         multiview_mask: None,
         cache: None,
     });
+    (pipeline, layout)
+}
+
+/// The padded texture size as the mesh's vertex shader reads it.
+fn mesh_size_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    size: (u32, u32),
+) -> wgpu::BindGroup {
     let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("mesh size"),
         contents: &floats(&[size.0 as f32, size.1 as f32, 0.0, 0.0]),
         usage: wgpu::BufferUsages::UNIFORM,
     });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("mesh"),
-        layout: &layout,
+        layout,
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: uniform.as_entire_binding(),
         }],
-    });
-    (pipeline, bind_group)
+    })
 }
 
 /// The bytes of one `mesh::Vertex`: position, then colour, as `f32`s.
@@ -2508,11 +2570,16 @@ fn warp_values(inverse: DMat3) -> [f32; 12] {
 }
 
 /// A displacement as `shaders/displace.wgsl` reads it: the inverse of the
-/// layer matrix (linear part, then translation), the scale, the matrix's
-/// linear part, the base frequency, then the octaves, the two channels and
-/// whether the noise is fractal, as u32s. A matrix that cannot be inverted has
-/// nothing to draw, so its inverse is zeros.
-fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine) -> Vec<u8> {
+/// layer matrix (linear part, then translation), the scale and the margin, the
+/// matrix's linear part, the base frequency, then the octaves, the two
+/// channels and whether the noise is fractal, as u32s. A matrix that cannot be
+/// inverted has nothing to draw, so its inverse is zeros.
+///
+/// `layer_matrix` takes the layer to the padded textures; the shader wants it
+/// to the canvas, so the margin is taken out of it here and passed on its own,
+/// which keeps every number but the margin the same at any margin.
+fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine, margin: u32) -> Vec<u8> {
+    let layer_matrix = Affine::translate((-f64::from(margin), -f64::from(margin))) * layer_matrix;
     let m = layer_matrix.as_coeffs();
     let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
         layer_matrix.inverse().as_coeffs()
@@ -2528,7 +2595,7 @@ fn displace_values(displace: &ResolvedDisplace, layer_matrix: Affine) -> Vec<u8>
         inverse[4] as f32,
         inverse[5] as f32,
         displace.scale,
-        0.0,
+        margin as f32,
         m[0] as f32,
         m[1] as f32,
         m[2] as f32,
@@ -3122,20 +3189,22 @@ mod tests {
                 seed: 7,
             },
         };
+        // The layer's matrix on the canvas, and in the textures with a margin.
         let matrix = Affine::translate((10.0, 20.0)) * Affine::rotate(0.5) * Affine::scale(2.0);
-        let bytes = displace_values(&displace, matrix);
+        let padded = Affine::translate((6.0, 6.0)) * matrix;
+        let bytes = displace_values(&displace, padded, 6);
         assert_eq!(bytes.len(), 80);
         let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
         let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
-        assert_eq!(float(6), 12.0);
+        assert_eq!([6, 7].map(float), [12.0, 6.0]);
         assert_eq!([12, 13].map(float), [0.04, 0.5]);
         // Octaves, the two channels, fractalNoise.
         assert_eq!([16, 17, 18, 19].map(word), [4, 2, 3, 1]);
 
-        // The shader's two mappings, written out: a texel to the layer by the
-        // inverse, and a displacement in layer space to texels by the linear
-        // part. Together they take the pixel to where the matrix puts the
-        // displaced layer point.
+        // The shader's two mappings, written out: a canvas pixel to the layer
+        // by the inverse, and a displacement in layer space to pixels by the
+        // linear part. Together they take the pixel to where the matrix puts
+        // the displaced layer point.
         let pixel = Point::new(123.5, 77.5);
         let layer = Point::new(
             f64::from(float(0)) * pixel.x + f64::from(float(2)) * pixel.y + f64::from(float(4)),
@@ -3160,9 +3229,43 @@ mod tests {
             ..displace
         };
         assert_eq!(word(19), 1);
-        let flat = displace_values(&plain, Affine::scale(0.0));
+        let flat = displace_values(&plain, Affine::scale(0.0), 0);
         assert!(flat[..24].iter().all(|b| *b == 0));
         assert_eq!(u32::from_le_bytes(flat[76..80].try_into().unwrap()), 0);
+    }
+
+    #[test]
+    fn displace_values_are_the_same_at_any_margin_but_the_margin() {
+        use crate::resolve::ResolvedTurbulence;
+        use crate::scene::Channel;
+
+        let displace = ResolvedDisplace {
+            scale: 9.0,
+            x_channel: Channel::R,
+            y_channel: Channel::G,
+            turbulence: ResolvedTurbulence {
+                fractal: false,
+                frequency: [0.013, 0.021],
+                octaves: 2,
+                seed: 3,
+            },
+        };
+        // A layer matrix whose translation is not a whole number.
+        let matrix = Affine::translate((100.3, 41.7)) * Affine::rotate(0.2) * Affine::scale(1.5);
+        let at = |margin: u32| {
+            let m = f64::from(margin);
+            displace_values(&displace, Affine::translate((m, m)) * matrix, margin)
+        };
+        let (a, b) = (at(43), at(44));
+        assert_eq!(a.len(), b.len());
+        // Only the margin, the fourth float of the second vec4, differs.
+        let differing: Vec<usize> = (0..a.len()).filter(|&i| a[i] != b[i]).collect();
+        assert!(!differing.is_empty());
+        assert!(
+            differing.iter().all(|i| (28..32).contains(i)),
+            "{differing:?}"
+        );
+        assert_eq!(f32::from_le_bytes(a[28..32].try_into().unwrap()), 43.0);
     }
 
     #[test]

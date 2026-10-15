@@ -18,6 +18,7 @@ same pixels. Phase 3's reconciler will emit this same shape from React.
 | `fps` | number | Greater than 0. Frame numbers are what the engine uses; `fps` is carried for encoding. |
 | `durationInFrames` | integer | At least 1. Valid frames are `0..durationInFrames`; anything else is an error. |
 | `background` | colour | Optional, default `#000000`. May be transparent. |
+| `margin` | integer | Optional, default `0`. The least [canvas margin](#canvas-margin) in pixels; a number, not animated, not negative. |
 | `fonts` | object | Optional. Font family name to font file path. Text layers refer to these names. |
 | `camera` | object | Optional. The viewpoint for layers with a 3D transform. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first, topmost last (the same order as SVG and DOM paint order). |
@@ -53,7 +54,8 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group`, `noise` or `meshGradient`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient` or `lottie`. |
+| `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
 | `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
@@ -73,10 +75,33 @@ Every layer has these fields:
 | `anchorX`, `anchorY` | `0` | Anchor point in the layer's own coordinates. Scale and rotation pivot here. |
 | `rotateX`, `rotateY` | `0` | Degrees. Turn the layer in 3D about the horizontal and the vertical axis through its position, as CSS's `rotateX` and `rotateY`. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `z` | `0` | Pixels toward the viewer, as CSS's `translateZ`. |
+| `originX`, `originY` | `0` | A point of the layer's box as a fraction of its size, added to the anchor to make the pivot: see [Transform origin](#transform-origin). |
 
 The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale) * translate(-anchorX, -anchorY)`. A child's
 matrix is applied inside its parent's. `rotateX`, `rotateY` and `z` do not change it: they move the finished layer
 afterwards.
+
+### Transform origin
+
+`originX` and `originY` say where the layer turns and scales without knowing its size: a point of its box (the box
+`inset` clips use, see [Clip paths](#clip-paths)) as a fraction of the box's width and height, so `0.5, 0.5` is the
+centre and `1, 1` the bottom-right corner. The pivot of `rotation`, `scale` and, in 3D, `rotateX` and `rotateY` is then
+the anchor plus `(box.x + originX * width, box.y + originY * height)`, where `box.x, box.y` is the box's top-left
+corner: `0, 0` for every layer but a path, whose box is its bounding box. An origin left at `0, 0` (the default)
+keeps the pivot at the anchor, even for a path.
+
+Like CSS's `transform-origin`, the origin changes the pivot and does not move the layer: with no turn and no scale the
+layer is where it would be without an origin, with its anchor at `(x, y)`, and the pivot sits at `(x, y)` plus the
+origin offset whatever `rotation` and `scale` do. The matrix is
+`translate(x + ox, y + oy) * rotate(rotation) * scale(scale) * translate(-(anchorX + ox), -(anchorY + oy))`, with
+`(ox, oy)` the origin in pixels. The 3D turn is about that same point.
+
+- Both are animatable numbers. The size is the box at that frame, so a text layer or an image whose size animates keeps
+  turning about its middle.
+- A layer without a box (a group without a `layout`) ignores them. A group with a `layout` has its size as its box, and
+  an origin is a fraction of that.
+- A text layer's box is its laid-out box, so measuring it needs its font: a scene with an origin on text is resolved with
+  the renderer's text engine.
 
 Layers are blended bottom-up in linear light (not in sRGB as CSS does, so `multiply`, `screen` and `softLight` look
 different from a browser).
@@ -110,16 +135,60 @@ is drawn over the fill. `fill` is a colour string or a [gradient](#gradients) (s
   "size": 64, "color": "#ffffff", "lineHeight": 1.2, "maxWidth": 600 }
 ```
 
-Left-aligned, one font per layer, no fallback, no bidi. `\n` starts a new line. The layer origin is the top-left of
-the text box.
+One font per layer, no fallback, no bidi. `\n` starts a new line. The layer origin is the top-left of the text box.
 
 - `font`: a key of the scene's `fonts`.
 - `size`: font size in pixels.
 - `color`: a colour string or a [gradient](#gradients) (see [Gradient fills](#gradient-fills)).
 - `lineHeight`: multiple of `size`. Omitted: the font's own line height.
 - `maxWidth`: wrap width in pixels. Omitted: lines break only at `\n`.
+- `align`: `left` (default), `center` or `right`. Each line is placed within `maxWidth`, or within the widest line when
+  there is no `maxWidth`. A line wider than `maxWidth` (a long word that does not break) is left-aligned. The text box
+  does not change with `align`: it is `maxWidth`, or the widest line, wide.
 
 Fonts are registered before any text is measured.
+
+### Per-character styles
+
+`chars` styles single characters, for kinetic type:
+
+```json
+{ "id": "word", "type": "text", "text": "Hi!", "font": "DM Sans", "size": 80, "color": "#fff",
+  "chars": [ { "y": [{ "frame": 0, "value": 40 }, { "frame": 12, "value": 0 }], "opacity": [{ "frame": 0, "value": 0 }, { "frame": 12, "value": 1 }] },
+             null,
+             { "scale": 1.4, "rotation": -10, "color": "#ff4d4d" } ] }
+```
+
+It is an array with one entry per Unicode code point of `text` (what JavaScript's `Array.from(text)` counts, so a `\n`
+has an entry, which is ignored). An entry is `null`, a character drawn as the layer is, or an object whose fields are all
+optional:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `x`, `y` | `0` | Offset of the character, in text-box pixels. |
+| `scale` | `1` | About the character's centre. |
+| `rotation` | `0` | Degrees clockwise, about the character's centre. |
+| `opacity` | `1` | 0..1, multiplies the layer's `opacity`. |
+| `color` | the layer's | A colour string; replaces the layer's `color` (a colour or a gradient) for this character. |
+
+All but `color` are animatable. The offset is applied first, then the turn and the scale about the centre.
+
+- **The centre of a character** is the middle of its glyph's advance, horizontally, and the middle of its line box,
+  vertically (the line's `top` and `bottom`, which `lineHeight` sets). A character of several glyphs takes the middle of
+  all their advances.
+- **Clusters.** Characters are the code points of the text, but glyphs belong to clusters: a cluster of several code
+  points (a ligature, a letter and its combining mark) takes the entry of its first code point, and the others' entries
+  do nothing. A code point with no glyph (a newline, the later letters of a ligature) shows nothing, whatever its entry
+  says.
+- A list shorter than the text styles the first characters only, and entries past its end are ignored.
+- **The text box** (for `inset` clips, `sweep` dot matrices, [box-unit gradients](#box-units), a transform origin and
+  layout) is the box without the offsets, so styling characters never changes it. The bounds of the layer, which the
+  renderer uses to size the layer's texture, do follow the characters.
+- A gradient `color` is in the text box and moves with the character: a letter keeps the colours it had where it was laid
+  out. A character's `color` replaces the gradient for that character, with a plain colour.
+- Characters are drawn in text order. Effects, clips, masks and mattes work on the layer as a whole, after its
+  characters.
+- Glyph positions are what the addon's `layoutText` returns, with `charIndex` the index into `chars`.
 
 ### image
 
@@ -127,7 +196,18 @@ Fonts are registered before any text is measured.
 { "id": "logo", "type": "image", "src": "logo.png", "width": 256, "height": 256 }
 ```
 
-PNG or JPEG, scaled to `width` x `height` from the layer origin. Colours are read as sRGB.
+PNG or JPEG, drawn in the box `width` x `height` from the layer origin. Colours are read as sRGB.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | The file, relative to the scene. |
+| `width`, `height` | the file's size | Animatable, not negative. Both left out: the file's size in pixels. One left out: the other side, with the file's aspect ratio. |
+| `fit` | `fill` | How the picture sits in the box. `fill` stretches it to the box. `contain` scales it to fit inside the box, keeping its aspect ratio, and centres it; the rest of the box is empty. `cover` scales it to cover the box, keeping its aspect ratio, centres it, and cuts it to the box. Like CSS's `object-fit`. |
+
+- The size of a file is read from its header when the scene loads, and only for a layer that leaves a side out. A missing
+  or unreadable file is a load error naming the layer.
+- The box does not change with `fit`: it is the layer's box for `inset` clips, `sweep` dot matrices and box-unit
+  gradients, and the layer is cut and bounded by it.
 
 ### group
 
@@ -141,7 +221,8 @@ matte, motion blur or 3D turn, whose drawn children all blend normally and none 
 the buffer and draws its children straight into its parent; the result is the same up to rounding.) Its
 `transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates. `"preserve3d": true` (default `false`) makes the group a 3D scene instead: see
-[preserve3d groups](#preserve3d-groups).
+[preserve3d groups](#preserve3d-groups). A group with a `layout` places its children with flexbox: see
+[Layout](#layout).
 
 ### noise
 
@@ -171,7 +252,7 @@ mask with, or to displace by. Like any layer it takes `effects`, `clip`, `mask`,
   `baseFrequency`, the transform or the box.
 - **The box edge** is anti-aliased: the box is drawn as a white shape through the layer matrix by the same rasteriser
   as a `shape` layer, and the noise fills its coverage. A box off the canvas is clipped as any layer is.
-- A group has no box, but a noise layer does: an `inset` clip or a `sweep` dot matrix on one measures from
+- A group without a `layout` has no box, but a noise layer does: an `inset` clip or a `sweep` dot matrix on one measures from
   `(0, 0, width, height)`.
 - Counts nothing in the [margin](#canvas-margin).
 
@@ -211,9 +292,122 @@ them. Like any layer it takes `effects`, `clip`, `mask`, `matte`, `blendMode` an
   triangles with vertex colours into a 4x multisampled texture, so the outer edge of the mesh is anti-aliased (the
   canvas edge is not, if the mesh fills the canvas exactly). Patches that fold over each other blend with "over", in
   document order; there is no depth.
-- A group has no box, but a mesh does: an `inset` clip or a `sweep` dot matrix on one measures from
+- A group without a `layout` has no box, but a mesh does: an `inset` clip or a `sweep` dot matrix on one measures from
   `(0, 0, width, height)`.
 - Counts nothing in the [margin](#canvas-margin).
+
+### lottie
+
+```json
+{ "id": "confetti", "type": "lottie", "src": "anims/confetti.json", "width": 400, "height": 400, "time": 1.2, "loop": true }
+```
+
+A [Lottie](https://lottiefiles.com) animation (After Effects, through Bodymovin, or any LottieFiles download), painted
+by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like any layer it takes `effects`, `clip`,
+`mask`, `matte`, `blendMode` and `opacity`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | A Lottie `.json` file or a `.lottie` archive, relative to the scene like an image's `src`. Read when the scene is loaded into a renderer (and, for its size, when the scene loads). |
+| `width`, `height` | the animation's own size | Animatable, not negative: the box in layer pixels. Both left out: the size the file declares. One left out: the other side, with the animation's aspect ratio. |
+| `time` | the frame's time, `frame / fps` | Animatable. Seconds into the animation. |
+| `loop` | `false` | Past the end of the animation, `false` holds its last frame and `true` wraps round. |
+
+- **Fitting.** The animation is fitted inside the box, centred, keeping its aspect ratio, as lottie-web's
+  `xMidYMid meet` does. A box with the animation's shape is filled; any other has empty space on two sides. The box is
+  what `inset` clips, `sweep` dot matrices, box-unit gradients, layout and the transform origin measure.
+- **Time.** The animation's frame is `time` times the file's frame rate, counted from the file's first frame, up to
+  its last (the one before `op`). A time below 0 is the first frame. With `loop` the time wraps modulo the
+  animation's duration instead of holding the last frame. `time` is in seconds of the animation, not of the scene: to
+  slow an animation down, scale the time (`time` at half the rate of `frame / fps`), as the authoring layer's
+  `playbackRate` does. Frames between two whole frames are interpolated, and a motion blur's sub-frames are at their own
+  times.
+- **Rasterising.** ThorVG's CPU renderer paints the animation straight into a picture the size of the box times the
+  largest stretch of the layer's matrix (at most 4096 pixels a side), rounded up, so a layer drawn at twice its size is
+  painted at twice its size and stays sharp, rather than upscaled. The picture is straight-alpha sRGB and goes in like an
+  [image](#image): drawn through the layer's matrix, so a layer that is turned is resampled. Painting is a pure function
+  of `time`: the same time gives the same pixels whatever was drawn before. An expression in the file that uses
+  randomness must be seeded, or it is not.
+- **What ThorVG draws.** Shape, solid, null, precomposition, image and text layers, the usual masks, mattes, trim paths
+  and gradient fills, layer effects of the kinds ThorVG supports, and JavaScript expressions (ThorVG's own interpreter).
+  Text in the file uses the fonts it embeds and ThorVG's built-in one; the scene's `fonts` are not used. What ThorVG
+  leaves out, this leaves out.
+- Counts nothing in the [margin](#canvas-margin).
+- A missing or unreadable file, or one that is not an animation, is an error naming the layer, when the scene loads (if
+  the box needs the file's size) or when a renderer is built from it.
+
+## Layout
+
+A `group` with a `layout` places its children with CSS flexbox (the `taffy` crate), and any layer can say how it takes
+part with `layoutItem`. Names and values are CSS's. Layout runs when a frame is resolved, after the fonts are
+registered, and moves the children by their transforms, so everything downstream sees the laid-out layers: bounds, the
+[margin](#canvas-margin) (layout changes none), the layer cache and `inspect`.
+
+```json
+{ "id": "row", "type": "group",
+  "layout": { "flexDirection": "row", "justifyContent": "center", "alignItems": "center", "gap": 24,
+              "padding": [0, 40, 0, 40], "width": 1080, "height": 400 },
+  "children": [
+    { "id": "a", "type": "shape", "shape": { "kind": "rect", "width": 200, "height": 120 }, "fill": "#f00" },
+    { "id": "b", "type": "text", "text": "hi", "font": "DM Sans", "size": 64, "color": "#fff",
+      "layoutItem": { "flexGrow": 1, "margin": 8 } },
+    { "id": "badge", "type": "shape", "shape": { "kind": "ellipse", "width": 20, "height": 20 }, "fill": "#0f0",
+      "layoutItem": { "position": "absolute" } } ] }
+```
+
+| `layout` field | Default | Values |
+|---|---|---|
+| `display` | `flex` | `flex`, the only one for now. |
+| `flexDirection` | `row` | `row`, `column`, `row-reverse`, `column-reverse`. |
+| `flexWrap` | `nowrap` | `nowrap`, `wrap`, `wrap-reverse`. |
+| `justifyContent` | `flex-start` | `flex-start`, `flex-end`, `center`, `space-between`, `space-around`, `space-evenly`. |
+| `alignItems` | `stretch` | `flex-start`, `flex-end`, `center`, `baseline`, `stretch`. |
+| `alignContent` | `stretch` | As `justifyContent`, plus `stretch`. |
+| `gap` | `0` | A number, or `[row, column]`: `row` is the space between rows, `column` between columns. |
+| `padding` | `0` | A number, or `[top, right, bottom, left]`. |
+| `width`, `height` | from the content | Pixels: the container's size. |
+
+| `layoutItem` field | Default | Values |
+|---|---|---|
+| `position` | `relative` | `relative`: in the flow. `absolute`: out of the flow, placed by its transform alone. |
+| `flexGrow`, `flexShrink` | `0`, `1` | Numbers, not negative. |
+| `flexBasis` | `auto` | A number of pixels, or `auto`. |
+| `alignSelf` | `auto` | `auto` (the container's `alignItems`), `flex-start`, `flex-end`, `center`, `baseline`, `stretch`. |
+| `margin` | `0` | A number, or `[top, right, bottom, left]`. May be negative. |
+| `width`, `height` | the layer's box | Pixels: the size the layout uses for this layer. |
+
+Every number is animatable. A `gap`, `padding` or `margin` given as a list is a list of numbers; a list of keyframe
+objects is one animated number. Loading a scene rejects a list of the wrong length, a negative gap, padding, size,
+`flexGrow`, `flexShrink` or `flexBasis`, and a value that is not in the tables; the error names the layer.
+
+- **Sizes.** A child's size for the layout is its box (the box `inset` clips use, see [Clip paths](#clip-paths): a
+  shape's width x height, a path's bounding box, an image's, a noise's or a mesh's box, a text layer's laid-out box). A
+  `layoutItem` `width` or `height` replaces that side. A group without a `layout` has no box and is 0 x 0 unless the
+  item gives a size. A child group that has a `layout` is a flex container and a flex item at once: it gets the size
+  the parent's layout gives it, from its content, its own `width` and `height`, the parent's `flexGrow` or stretching.
+  A `layoutItem` `width` or `height` on it wins over its `layout` ones. The container's own `width` and `height`
+  default to its content.
+- **Leaves keep their size.** A layer that is not a layout group is never resized: if the layout stretches or grows its
+  item, the layer is drawn at its own size from the item's top-left corner, and only its position changes. It also does
+  not shrink below its own size.
+- **Position.** The layout gives each child a position `(left, top)` in the container's space (inside the padding, after
+  the margin). The child is drawn as if its transform's `x` and `y` were `x + left - box.x + anchorX` and
+  `y + top - box.y + anchorY`, so with `x` and `y` at 0 its box's top-left corner lands at the position, and `scale`
+  and `rotation` pivot about its anchor and origin. Its own `x` and `y` are an offset from the laid-out place, as a CSS
+  `transform: translate()` is. Transforms never change the layout.
+- **Absolute items** take no part in the flow and no space: their transform is left alone, in the container's space. An
+  absolute child that is itself a layout group is laid out on its own.
+- **The box of a layout group** is `(0, 0, width, height)` of the size it was given, so an `inset` clip, a `sweep` dot
+  matrix, a `cornerPin`, a [box-unit gradient](#box-units) and a transform origin work on it, and a preserve3d group
+  sorts it by the middle of that box.
+- **Baselines.** `alignItems: baseline` (and `alignSelf`) lines up the first baselines of the items of a row: for text
+  the first line's baseline, for any other layer its bottom edge (as CSS treats a box with no text), and for a layout
+  group the baseline of its first item. In a column it does nothing, as in CSS.
+- **Motion blur.** A layer's sub-frames (including `frames`, see [Sub-frame layers](#sub-frame-layers)) are placed at
+  the position the frame's layer got, each from its own box and anchor. A layout group inside a blurred layer is laid out
+  separately in each sub-frame; a blurred layout group that is a flex item keeps the size its parent gave it in all of them.
+- A `layoutItem` on a layer whose parent has no `layout` does nothing.
+- Fractions are kept: positions are not rounded to pixels.
 
 ## Effects
 
@@ -223,12 +417,23 @@ Each entry in a layer's `effects` is an object with a `type`. A group's effects 
 
 An effect that paints outside its layer (a shadow, say) needs room beyond the canvas edge, and so does a layer that
 hangs off the canvas, whose shadow can fall back onto it. So the renderer draws on a canvas padded by a margin on every
-side and crops the margin off at the end. You do not set it; it is worked out when the scene loads: the largest distance
-the effects can reach past a layer, at any keyframe on any layer (nested layers included), rounded up to whole
-pixels. Each effect below says what it counts. The margin is limited so the padded canvas is at most 8192 pixels on a
-side.
+side and crops the margin off at the end. It is worked out when the scene loads: the largest distance the effects can
+reach past a layer, at any keyframe on any layer (nested layers included), rounded up to whole pixels, or the scene's
+`margin` if that is more. Each effect below says what it counts. The margin is limited so the padded canvas is at most
+8192 pixels on a side.
 
-- A scene with no such effect has margin 0 and is rendered exactly on the canvas, as it always was.
+- A scene with no such effect and no `margin` has margin 0 and is rendered exactly on the canvas, as it always was.
+- `margin` on the scene is a floor, never a limit: the margin is `max(margin, reach)`, so no effect is ever cut off by
+  it, and a scene that sets nothing gets what its effects need, as before. It exists for scenes that are made one frame
+  at a time, as the TSX authoring layer does (`<Composition margin>`): every frame is its own scene whose keyframes are
+  constants, so the reach follows that frame's values, and a frame that reaches a pixel further than the rest has a
+  different margin. The textures that depend on the margin and the layer cache are rebuilt whenever it changes. Set
+  `margin` to the largest reach of any frame and the margin is the same on all of them. A frame that still reaches
+  further gets the room it needs (and rebuilds the textures), so a `margin` that is too small costs time, not pixels.
+- A margin that covers the reach does not change what the canvas shows, for `grain`, `dither` and `displace`: they work
+  from canvas positions, not from where the texture starts or how large it is, and `displace` gives the same bits at
+  any margin. `halftone`, 3D transforms, `cornerPin` and the `noise` layer read the padded texture through the
+  hardware filter or a matrix that includes the margin, and can differ by a level or so when it changes.
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
 - `glow` counts `3 * radius`, and `chromaticAberration` counts `|amount|`.
@@ -632,8 +837,9 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
   rotate with the layer (as an SVG filter on a transformed element does), and a group is displaced in the group's
   space. The channels are used as the noise gives them, with no colour conversion between the two primitives (SVG's
   default `linearRGB` is the same for both).
-- **Sampling.** Bilinear, on premultiplied colour. What lies outside the texture (the canvas and its margin) is
-  transparent. The noise follows the spec's reference algorithm in 32-bit floats and, unlike a browser's, is not
+- **Sampling.** Bilinear, on premultiplied colour, worked out in the shader from the canvas position and not by the
+  hardware sampler, so the result is the same bit for bit at any [margin](#canvas-margin) (the sampler's weights come
+  from the texture's size). What lies outside the texture (the canvas and its margin) is transparent. The noise follows the spec's reference algorithm in 32-bit floats and, unlike a browser's, is not
   quantised to 8 bits, so expect differences of about one 8-bit step against a browser, not a different pattern.
 - Counts `|scale| / 2` times the largest product of `scale` over the layer and its ancestors in the
   [margin](#canvas-margin) (a pixel is read from that far away; at the largest keyframe, whichever way the scale
@@ -800,12 +1006,12 @@ The layer's own box, which `inset` is measured from:
 |---|---|
 | `rect`, `roundedRect`, `ellipse` shape | `0, 0, width, height` (a stroke is not part of the box) |
 | `path` shape | The path's bounding box |
-| `image` | `0, 0, width, height` |
+| `image`, `lottie` | `0, 0, width, height` |
 | `text` | `0, 0, maxWidth` (or the laid-out width when there is no `maxWidth`) by the laid-out height |
-| `group` | None. `inset` on a group is a load error; use `polygon`, `ellipse` or `path`. |
+| `group` | None, unless it has a `layout`: then `0, 0, width, height` of the size the layout gave it. `inset` on a group without one is a load error; use `polygon`, `ellipse` or `path`. |
 
 Loading a scene rejects a polygon with fewer than 3 points, a bad path `d`, a negative `radius`, `rx` or `ry` at any
-keyframe, and `inset` on a group, and the error names the layer.
+keyframe, and `inset` on a group without a `layout`, and the error names the layer.
 
 ## Gradients
 
@@ -831,11 +1037,36 @@ Common fields:
 |---|---|---|
 | `stops` | required | At least 2 `{ "offset", "color" }`. Offsets are between 0 and 1 at every keyframe. An offset lower than an earlier stop's is raised to it, as in CSS, so `[0.6, 0.3]` makes a hard edge at 0.6. Colours are plain colour strings (not animated) and may be translucent. |
 | `extend` | `pad` | Outside the first and last stop. `pad` holds the end colours. `repeat` repeats the span from the first to the last stop, which is CSS `repeating-linear-gradient` and friends; `reflect` does the same with every second span backwards. For `conic`, which already goes round, `repeat` repeats the span within the turn. |
+| `units` | `user` | What the coordinates are measured in. `user`: pixels of the painted layer. `box`: fractions of the painted layer's box, see [Box units](#box-units). |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
 stop's colour everywhere: a linear gradient whose two points coincide, a radial one with `r` 0, or a repeating one
 whose first and last stop have the same offset. The ramp between stops is sampled at 512 steps.
+
+### Box units
+
+With `"units": "box"` a gradient's coordinates are fractions of the box of the layer it paints: `(0, 0)` is the box's
+top-left corner and `(1, 1)` its bottom-right (the box is the one `inset` clips use, see [Clip paths](#clip-paths)). The
+gradient stretches with the box, as SVG's `objectBoundingBox` does, so a gradient that fits a layer keeps fitting it
+when the layer is resized or animated, without knowing its size.
+
+```json
+{ "id": "glow", "type": "shape", "shape": { "kind": "ellipse", "width": 160, "height": 90 },
+  "fill": { "type": "radial", "units": "box", "cx": 0.5, "cy": 0.5, "r": 0.5,
+            "stops": [{ "offset": 0, "color": "#fff3b0" }, { "offset": 1, "color": "#9e2a2b" }] } }
+```
+
+- It applies wherever a gradient does: a shape's `fill`, a text layer's `color` and a layer's `mask`. A `stroke` takes
+  only a colour.
+- The whole gradient is stretched, not only its position: a `radial` gradient with `r` 0.5 on a box twice as wide as it
+  is tall is an ellipse, and the turn of a `conic` one is stretched with it. `r` is measured in box widths along x and
+  box heights along y.
+- A gradient in box units on a shape is measured from the shape's geometry, not counting its stroke. On a text layer the
+  box is the text box. For a path the box is its bounding box, which need not start at `(0, 0)`.
+- A box with no width or no height has no extent, so the gradient paints the last stop's colour.
+- A layer without a box has nothing to measure from: a `mask` in box units on a group without a `layout` is a load error
+  naming the layer. A group with a `layout` has a box, see [Layout](#layout).
 
 ## Gradient fills
 
@@ -880,7 +1111,7 @@ coordinates.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `gradient` | required | A [gradient](#gradients), in the layer's own coordinates. It covers the whole plane (see `extend`), not just the layer's box. |
+| `gradient` | required | A [gradient](#gradients), in the layer's own coordinates, or in fractions of its box with `"units": "box"`. It covers the whole plane (see `extend`), not just the layer's box. |
 | `mode` | `alpha` | `alpha` keeps the layer where the gradient is opaque. `luminance` keeps it where the gradient is light: the Rec. 709 luminance of the gradient's linear-light colour, times its alpha, so black and transparent both hide the layer. |
 
 Loading a scene rejects a gradient with fewer than 2 stops, a stop offset outside 0..1 at any keyframe, a negative
@@ -1016,7 +1247,7 @@ groups nested in it, which sort together with them) are painted in **painter's o
 each layer's centre after its placement (before the camera's perspective, which does not change the order along a
 line of sight). A layer's centre is the middle of its box (the box an `inset` clip uses: a shape's, image's, noise's or
 mesh's width by height, a text layer's layout box, a path's bounding box), or its position `(x, y)` (where its anchor
-lands) for a group, which has no box. The sort is stable: layers at the same depth (within 1/1024 of a pixel) keep
+lands) for a group without a `layout`, which has no box. The sort is stable: layers at the same depth (within 1/1024 of a pixel) keep
 their document order. Only preserve3d groups sort. Every other list, a preserve3d group's parent and the children of an
 ordinary group inside it included, keeps document order; an ordinary group inside a preserve3d group is one layer to sort,
 at its position, and is drawn as a flat picture. The group as a whole is drawn at its place in its parent's list, so
@@ -1056,6 +1287,7 @@ subtree, children included, and what the children do relative to one another blu
 |---|---|---|
 | `samples` | `8` | Whole number, 2 to 64 (checked when the scene loads, naming the layer). Not animated. More is smoother and slower: the layer is drawn, run through its effects and warped once per sample. |
 | `shutter` | `0.5` | Animatable, in frames, clamped to 0..2. How long the shutter is open: `0.5` is a 180 degree shutter, `1` a 360 degree one. `0` is exactly the layer without motion blur. |
+| `frames` | none | An array of exactly `samples` complete layers of the same `type` as this one, one per sample in time order. See [Sub-frame layers](#sub-frame-layers). |
 
 The sub-frame times are `t_i = frame + shutter * ((i + 0.5) / samples - 0.5)` for `i` in `0..samples`: the shutter is
 cut into equal slots centred on the frame and each sample sits in the middle of its slot. Every sample is resolved by
@@ -1090,14 +1322,57 @@ the layer's backdrop then happens once, with the layer's `blendMode`.
   the average, so the layer fades as it turns edge on.
 - Counts nothing in the [margin](#canvas-margin).
 
+### Sub-frame layers
+
+Motion blur normally samples the layer by evaluating its keyframes at each sub-frame time. A layer whose values do not
+come from keyframes (an authoring layer that renders its whole tree once per sub-frame time and writes the results as
+constants) gives the sub-frames itself with `frames`:
+
+```json
+{ "id": "ball", "type": "shape", "shape": { "kind": "ellipse", "width": 40, "height": 40 }, "fill": "#fff",
+  "transform": { "x": 100 },
+  "motionBlur": { "samples": 2, "shutter": 1, "frames": [
+    { "id": "ball", "type": "shape", "shape": { "kind": "ellipse", "width": 40, "height": 40 }, "fill": "#fff",
+      "transform": { "x": 96 } },
+    { "id": "ball", "type": "shape", "shape": { "kind": "ellipse", "width": 40, "height": 40 }, "fill": "#fff",
+      "transform": { "x": 104 } } ] } }
+```
+
+- `frames` has exactly `samples` entries, each a complete layer of the same `type` as the layer it is in (a group's
+  entries are groups with their own children). Sub-frame `i` is `frames[i]` resolved at time `t_i`, instead of the layer
+  resolved there, so keyframes in a copy are still evaluated at `t_i`. The layer's own fields are used for the frame
+  itself: when the shutter is shut (`shutter` 0) the frames are not used.
+- Each copy is checked like a layer. Its `id` and its children's may repeat the layer's (they are not checked against
+  the rest of the scene), a `matte` in it names a sibling of the layer, and its own `motionBlur` is ignored, as one
+  inside any blurred layer is.
+- A copy's effects count in the [margin](#canvas-margin) like the layer's, and the images, tables and shaders it uses
+  are loaded like any other layer's. A count that is not `samples`, or an entry of another `type`, is a load error naming
+  the layer.
+- Everything else about sub-frames holds: opacity is applied per sample, mattes pair sample `i` with sample `i`, and the
+  layer's enclosing groups and the camera are taken at the frame itself.
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
   `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
-- No video layers or per-glyph text animation yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
-  `color`; a `stroke` takes only a colour.
+- No video layers yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
+  `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group without a `layout` (a load error).
+- Layout is flexbox only (`display: flex`; no grid, no block layout), with sizes in pixels (no percentages, `auto`
+  margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
+  size. Text is measured as one box of its own `maxWidth`, so it does not re-wrap to fit the container. Baseline
+  alignment is for rows; a non-text layer's baseline is its bottom edge. See [Layout](#layout).
+- `lottie` is whatever ThorVG's CPU renderer draws (see [lottie](#lottie)); it is painted at the size the layer is
+  drawn at, up to 4096 pixels a side, so a layer scaled up beyond that is resampled, and a layer that is turned or skewed
+  is resampled from an upright picture. Layers cannot be overridden (no theming, slots or state machines), a file's
+  text uses ThorVG's own font, and its sound is ignored. Building ThorVG needs a C++ toolchain.
+- Per-character styling moves, scales, turns, fades and recolours whole glyphs. There is no per-character blur or
+  effect, no outline or gradient of its own (a plain colour only), and characters are not re-flowed: the text box and
+  the line breaks are those of the unstyled text. Text has one font per layer, no fallback and no bidi, so the clusters
+  are those of left-to-right text.
+- An image's size is read from its header when the scene loads, only when a side is left out; `cover` cuts the picture
+  with an anti-aliased clip and `contain` leaves the rest of the box empty (no background colour).
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a
   `dropShadow` before it is not frosted). Its backdrop edge is the canvas plus margin described above; there is no
   edge-clamp mode as in browsers.

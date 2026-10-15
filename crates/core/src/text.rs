@@ -10,11 +10,12 @@ use std::path::Path;
 
 use parley::fontique::{Blob, Collection, CollectionOptions, FontInfoOverride, SourceCache};
 use parley::{
-    FontContext, FontData, FontFamily, LayoutContext, LineHeight, PositionedLayoutItem,
-    StyleProperty,
+    Alignment, AlignmentOptions, FontContext, FontData, FontFamily, LayoutContext, LineHeight,
+    PositionedLayoutItem, StyleProperty,
 };
 
 use crate::error::{Error, Result};
+use crate::scene::TextAlign;
 
 pub struct TextEngine {
     font_cx: FontContext,
@@ -29,6 +30,43 @@ pub struct LaidOutText {
     pub height: f32,
     pub lines: Vec<LaidOutLine>,
     pub runs: Vec<LaidOutRun>,
+}
+
+impl LaidOutText {
+    /// The centre of each character, by code point index, in text-box space:
+    /// the middle of its glyphs' advance across, and the middle of its line
+    /// box (`top` to `bottom`) down. Characters with no glyph (a newline, a
+    /// ligature's later letters) have none.
+    pub fn char_centres(&self) -> BTreeMap<u32, (f64, f64)> {
+        let mut spans: BTreeMap<u32, (f64, f64, usize)> = BTreeMap::new();
+        for run in &self.runs {
+            for glyph in &run.glyphs {
+                let (left, right) = (f64::from(glyph.x), f64::from(glyph.x + glyph.advance));
+                let span = spans
+                    .entry(glyph.char_index)
+                    .or_insert((left, right, run.line));
+                span.0 = span.0.min(left);
+                span.1 = span.1.max(right);
+            }
+        }
+        spans
+            .into_iter()
+            .map(|(index, (left, right, line))| {
+                let line = &self.lines[line];
+                let middle = f64::from(line.top + line.bottom) / 2.0;
+                (index, ((left + right) / 2.0, middle))
+            })
+            .collect()
+    }
+
+    /// The text box (`docs/SCENE.md`, "Clip paths"): `max_width`, or the
+    /// widest line without one, by the height.
+    pub fn box_size(&self, max_width: Option<f32>) -> (f64, f64) {
+        (
+            f64::from(max_width.unwrap_or(self.width)),
+            f64::from(self.height),
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -71,6 +109,10 @@ pub struct PositionedGlyph {
     pub x: f32,
     pub y: f32,
     pub advance: f32,
+    /// The index, in Unicode code points, of the character the glyph shows:
+    /// the first code point of its cluster (a ligature's glyph belongs to the
+    /// first letter of the ligature, a mark's base letter to the base).
+    pub char_index: u32,
 }
 
 impl TextEngine {
@@ -111,7 +153,8 @@ impl TextEngine {
     }
 
     /// Shapes `text` in the named font. `line_height` is a multiple of
-    /// `size`; `max_width` wraps lines.
+    /// `size`; `max_width` wraps lines. `align` places each line within
+    /// `max_width`, or within the widest line when there is none.
     pub fn layout(
         &mut self,
         text: &str,
@@ -119,6 +162,7 @@ impl TextEngine {
         size: f32,
         line_height: Option<f32>,
         max_width: Option<f32>,
+        align: TextAlign,
     ) -> LaidOutText {
         let mut builder = self
             .layout_cx
@@ -130,6 +174,20 @@ impl TextEngine {
         }
         let mut layout = builder.build(text);
         layout.break_all_lines(max_width);
+        // Left is Parley's own start: leaving it alone keeps left-aligned
+        // text exactly as it was before alignment existed.
+        match align {
+            TextAlign::Left => {}
+            TextAlign::Center => layout.align(Alignment::Center, AlignmentOptions::default()),
+            TextAlign::Right => layout.align(Alignment::Right, AlignmentOptions::default()),
+        }
+
+        // Code point index of each byte of `text`, for the clusters' ranges.
+        let mut char_at = vec![0_u32; text.len() + 1];
+        for (index, (start, c)) in text.char_indices().enumerate() {
+            char_at[start..start + c.len_utf8()].fill(index as u32);
+        }
+        char_at[text.len()] = text.chars().count() as u32;
 
         let mut lines = Vec::new();
         let mut runs = Vec::new();
@@ -146,6 +204,13 @@ impl TextEngine {
                     continue;
                 };
                 let run = glyph_run.run();
+                // The glyphs of a run come in the order of its visual
+                // clusters, which hold them: one code point index for each.
+                let mut chars = Vec::new();
+                for cluster in run.visual_clusters() {
+                    let first = char_at[cluster.text_range().start];
+                    chars.extend(std::iter::repeat_n(first, cluster.glyphs().count()));
+                }
                 runs.push(LaidOutRun {
                     line: index,
                     font: run.font().clone(),
@@ -153,11 +218,13 @@ impl TextEngine {
                     text_range: run.text_range(),
                     glyphs: glyph_run
                         .positioned_glyphs()
-                        .map(|g| PositionedGlyph {
+                        .enumerate()
+                        .map(|(i, g)| PositionedGlyph {
                             id: g.id,
                             x: g.x,
                             y: g.y,
                             advance: g.advance,
+                            char_index: chars.get(i).or(chars.last()).copied().unwrap_or_default(),
                         })
                         .collect(),
                 });
@@ -191,7 +258,7 @@ mod tests {
 
     #[test]
     fn exposes_glyph_positions() {
-        let t = engine().layout("Hello", "DM Sans", 32.0, None, None);
+        let t = engine().layout("Hello", "DM Sans", 32.0, None, None, TextAlign::Left);
         assert_eq!(t.lines.len(), 1);
         assert_eq!(glyph_count(&t), 5);
         let glyphs: Vec<_> = t.runs.iter().flat_map(|r| &r.glyphs).collect();
@@ -203,19 +270,164 @@ mod tests {
     #[test]
     fn wraps_at_max_width_and_honours_newlines() {
         let mut e = engine();
-        let one = e.layout("alpha beta gamma", "DM Sans", 32.0, None, None);
-        let wrapped = e.layout("alpha beta gamma", "DM Sans", 32.0, None, Some(150.0));
+        let one = e.layout(
+            "alpha beta gamma",
+            "DM Sans",
+            32.0,
+            None,
+            None,
+            TextAlign::Left,
+        );
+        let wrapped = e.layout(
+            "alpha beta gamma",
+            "DM Sans",
+            32.0,
+            None,
+            Some(150.0),
+            TextAlign::Left,
+        );
         assert_eq!(one.lines.len(), 1);
         assert!(wrapped.lines.len() > 1);
         assert!(wrapped.width <= 150.0);
-        let broken = e.layout("a\nb", "DM Sans", 32.0, None, None);
+        let broken = e.layout("a\nb", "DM Sans", 32.0, None, None, TextAlign::Left);
         assert_eq!(broken.lines.len(), 2);
+    }
+
+    fn char_indices(t: &LaidOutText) -> Vec<u32> {
+        t.runs
+            .iter()
+            .flat_map(|r| &r.glyphs)
+            .map(|g| g.char_index)
+            .collect()
+    }
+
+    #[test]
+    fn glyphs_know_their_code_point_index() {
+        let mut e = engine();
+        let plain = e.layout("Hello", "DM Sans", 32.0, None, None, TextAlign::Left);
+        assert_eq!(char_indices(&plain), [0, 1, 2, 3, 4]);
+        // A newline is a code point of its own with no glyph.
+        let lines = e.layout("ab\ncd", "DM Sans", 32.0, None, None, TextAlign::Left);
+        assert_eq!(char_indices(&lines), [0, 1, 3, 4]);
+        // Code points, not bytes: 'é' is two bytes.
+        let wide = e.layout("é!x", "DM Sans", 32.0, None, None, TextAlign::Left);
+        assert_eq!(char_indices(&wide), [0, 1, 2]);
+        // A wrapped line carries on counting.
+        let wrapped = e.layout(
+            "aa bb cc",
+            "DM Sans",
+            32.0,
+            None,
+            Some(60.0),
+            TextAlign::Left,
+        );
+        assert!(wrapped.lines.len() > 1);
+        let indices = char_indices(&wrapped);
+        assert!(indices.windows(2).all(|w| w[1] > w[0]));
+        assert_eq!(*indices.last().unwrap(), 7);
+    }
+
+    #[test]
+    fn a_ligature_or_a_mark_belongs_to_its_first_code_point() {
+        let mut e = engine();
+        // A base letter and a combining acute: one cluster, however many
+        // glyphs the font makes of it; every glyph is the base letter's.
+        let marked = e.layout("xe\u{301}y", "DM Sans", 32.0, None, None, TextAlign::Left);
+        let indices = char_indices(&marked);
+        assert_eq!(indices.first(), Some(&0));
+        assert_eq!(indices.last(), Some(&3));
+        assert!(!indices.contains(&2), "{indices:?}");
+        // Ligatures: whatever the font joins, no glyph is attributed past
+        // the end of the text, and the indices never go backwards.
+        let joined = e.layout("office fifi", "DM Sans", 32.0, None, None, TextAlign::Left);
+        let indices = char_indices(&joined);
+        assert!(indices.windows(2).all(|w| w[1] >= w[0]), "{indices:?}");
+        assert!(indices.iter().all(|&i| i < 11));
+    }
+
+    #[test]
+    fn character_centres_are_the_middle_of_the_advance_and_of_the_line() {
+        let mut e = engine();
+        let t = e.layout("ab\ncd", "DM Sans", 32.0, None, None, TextAlign::Left);
+        let centres = t.char_centres();
+        // No centre for the newline.
+        assert_eq!(centres.keys().copied().collect::<Vec<_>>(), [0, 1, 3, 4]);
+        let glyph = |i: usize| t.runs.iter().flat_map(|r| &r.glyphs).nth(i).unwrap();
+        let (a, b) = (glyph(0), glyph(1));
+        assert!((centres[&0].0 - f64::from(a.x + a.advance / 2.0)).abs() < 1e-4);
+        assert!((centres[&1].0 - f64::from(b.x + b.advance / 2.0)).abs() < 1e-4);
+        let line = |i: usize| f64::from(t.lines[i].top + t.lines[i].bottom) / 2.0;
+        assert!((centres[&0].1 - line(0)).abs() < 1e-4);
+        assert!((centres[&3].1 - line(1)).abs() < 1e-4);
+        assert!(centres[&3].1 > centres[&0].1);
+    }
+
+    /// The left edge of the first glyph of each line and the line's width.
+    fn line_starts(t: &LaidOutText) -> Vec<(f32, f32)> {
+        t.lines
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let glyphs: Vec<_> = t
+                    .runs
+                    .iter()
+                    .filter(|r| r.line == i)
+                    .flat_map(|r| &r.glyphs)
+                    .collect();
+                let first = glyphs.first().unwrap().x;
+                let last = glyphs.last().unwrap();
+                (first, last.x + last.advance - first)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn aligns_lines_within_the_widest_line() {
+        let mut e = engine();
+        let text = "a long line\nshort";
+        let left = e.layout(text, "DM Sans", 32.0, None, None, TextAlign::Left);
+        let [(l0, w0), (l1, w1)] = line_starts(&left)[..] else {
+            panic!("two lines");
+        };
+        assert!(l0.abs() < 0.01 && l1.abs() < 0.01 && w1 < w0);
+        let center = e.layout(text, "DM Sans", 32.0, None, None, TextAlign::Center);
+        let [(c0, _), (c1, _)] = line_starts(&center)[..] else {
+            panic!("two lines");
+        };
+        assert!(c0.abs() < 0.01, "the widest line stays put: {c0}");
+        assert!(
+            (c1 - (w0 - w1) / 2.0).abs() < 0.05,
+            "{c1} vs {}",
+            (w0 - w1) / 2.0
+        );
+        let right = e.layout(text, "DM Sans", 32.0, None, None, TextAlign::Right);
+        let [(r0, _), (r1, _)] = line_starts(&right)[..] else {
+            panic!("two lines");
+        };
+        assert!(r0.abs() < 0.01);
+        assert!((r1 - (w0 - w1)).abs() < 0.05, "{r1} vs {}", w0 - w1);
+        // The box does not change with the alignment.
+        assert_eq!(left.box_size(None), center.box_size(None));
+    }
+
+    #[test]
+    fn aligns_lines_within_the_max_width() {
+        let mut e = engine();
+        let w = 400.0;
+        let left = e.layout("hi", "DM Sans", 32.0, None, Some(w), TextAlign::Left);
+        let width = line_starts(&left)[0].1;
+        let center = e.layout("hi", "DM Sans", 32.0, None, Some(w), TextAlign::Center);
+        let right = e.layout("hi", "DM Sans", 32.0, None, Some(w), TextAlign::Right);
+        assert!((line_starts(&center)[0].0 - (w - width) / 2.0).abs() < 0.05);
+        assert!((line_starts(&right)[0].0 - (w - width)).abs() < 0.05);
+        // The box is the max width.
+        assert_eq!(right.box_size(Some(w)).0, 400.0);
     }
 
     #[test]
     fn line_height_scales_with_size() {
         let mut e = engine();
-        let t = e.layout("a\nb", "DM Sans", 20.0, Some(2.0), None);
+        let t = e.layout("a\nb", "DM Sans", 20.0, Some(2.0), None, TextAlign::Left);
         assert!((t.lines[1].baseline - t.lines[0].baseline - 40.0).abs() < 0.01);
     }
 }

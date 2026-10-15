@@ -1,0 +1,66 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#14161d",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    { "id": "ghosts", "type": "shape",
+      "shape": { "kind": "rect", "width": 60, "height": 40 }, "fill": "#ffffff",
+      "transform": { "x": 20, "y": 20 },
+      "motionBlur": { "samples": 4, "shutter": 1, "frames": [
+        { "id": "ghosts", "type": "shape", "shape": { "kind": "rect", "width": 60, "height": 40 },
+          "fill": "#ff4d4d", "transform": { "x": 20, "y": 20 } },
+        { "id": "ghosts", "type": "shape", "shape": { "kind": "rect", "width": 60, "height": 40 },
+          "fill": "#ffd166", "transform": { "x": 80, "y": 20 } },
+        { "id": "ghosts", "type": "shape", "shape": { "kind": "rect", "width": 60, "height": 40 },
+          "fill": "#06d6a0", "transform": { "x": 140, "y": 20 } },
+        { "id": "ghosts", "type": "shape", "shape": { "kind": "rect", "width": 60, "height": 40 },
+          "fill": "#4cc9f0", "transform": { "x": 200, "y": 20 } } ] } },
+
+    { "id": "word", "type": "text", "text": "Frames", "font": "DM Sans", "size": 48, "color": "#ffffff",
+      "transform": { "x": 20, "y": 100 },
+      "motionBlur": { "samples": 3, "shutter": 1, "frames": [
+        { "id": "word", "type": "text", "text": "Frames", "font": "DM Sans", "size": 48,
+          "color": "#ffffff", "transform": { "x": 20, "y": 100 },
+          "effects": [{ "type": "dropShadow", "x": 0, "y": 0, "blur": 4, "color": "#ff4d4dcc" }] },
+        { "id": "word", "type": "text", "text": "Frames", "font": "DM Sans", "size": 48,
+          "color": "#ffffff", "transform": { "x": 32, "y": 100 },
+          "effects": [{ "type": "dropShadow", "x": 0, "y": 40, "blur": 6, "color": "#4cc9f0cc" }] },
+        { "id": "word", "type": "text", "text": "Frames", "font": "DM Sans", "size": 48,
+          "color": "#ffffff", "transform": { "x": 44, "y": 100 },
+          "effects": [{ "type": "dropShadow", "x": 0, "y": 80, "blur": 8, "color": "#ffd166cc" }] }
+      ] } },
+
+    { "id": "pair", "type": "group", "transform": { "x": 300, "y": 120 },
+      "children": [
+        { "id": "disc", "type": "shape", "shape": { "kind": "ellipse", "width": 50, "height": 50 },
+          "fill": "#f72585" },
+        { "id": "bar", "type": "shape", "shape": { "kind": "rect", "width": 70, "height": 12 },
+          "fill": "#ffffff", "transform": { "x": 60, "y": 19 } }
+      ],
+      "motionBlur": { "samples": 2, "shutter": 1, "frames": [
+        { "id": "pair", "type": "group", "transform": { "x": 300, "y": 120 }, "children": [
+          { "id": "disc", "type": "shape", "shape": { "kind": "ellipse", "width": 50, "height": 50 },
+            "fill": "#f72585" },
+          { "id": "bar", "type": "shape", "shape": { "kind": "rect", "width": 70, "height": 12 },
+            "fill": "#ffffff", "transform": { "x": 60, "y": 19 } }] },
+        { "id": "pair", "type": "group", "transform": { "x": 300, "y": 190 }, "children": [
+          { "id": "disc", "type": "shape", "shape": { "kind": "ellipse", "width": 50, "height": 50 },
+            "fill": "#7209b7" },
+          { "id": "bar", "type": "shape", "shape": { "kind": "rect", "width": 70, "height": 12 },
+            "fill": "#ffd166", "transform": { "x": 60, "y": 19 } }] }
+      ] } },
+
+    { "id": "keyframed", "type": "shape", "shape": { "kind": "rect", "width": 40, "height": 40 },
+      "fill": "#ffffff",
+      "transform": { "x": 20, "y": [{ "frame": 0, "value": 190 }, { "frame": 30, "value": 230 }] },
+      "motionBlur": { "samples": 2, "shutter": 2, "frames": [
+        { "id": "keyframed", "type": "shape", "shape": { "kind": "rect", "width": 40, "height": 40 },
+          "fill": "#ef476f", "transform": { "x": 20, "y": [{ "frame": 0, "value": 190 }, { "frame": 30, "value": 230 }] } },
+        { "id": "keyframed", "type": "shape", "shape": { "kind": "rect", "width": 40, "height": 40 },
+          "fill": "#118ab2", "transform": { "x": 120, "y": [{ "frame": 0, "value": 190 }, { "frame": 30, "value": 230 }] } }
+      ] } }
+  ]
+}

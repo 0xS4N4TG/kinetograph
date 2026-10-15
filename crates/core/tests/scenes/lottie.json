@@ -1,0 +1,48 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 60,
+  "background": "#14161d",
+  "layers": [
+    { "id": "natural", "type": "lottie", "src": "anims/burst.json",
+      "transform": { "x": 10, "y": 10 } },
+
+    { "id": "wide", "type": "lottie", "src": "anims/burst.lottie", "width": 200, "height": 100,
+      "transform": { "x": 140, "y": 10 } },
+    { "id": "wide-box", "type": "shape", "shape": { "kind": "rect", "width": 200, "height": 100 },
+      "stroke": { "color": "#ffffff44", "width": 1 }, "transform": { "x": 140, "y": 10 } },
+
+    { "id": "big", "type": "lottie", "src": "anims/burst.json", "width": 60,
+      "transform": { "x": 360, "y": 10, "scale": 2, "rotation": 0 } },
+
+    { "id": "time", "type": "lottie", "src": "anims/burst.json", "width": 90, "height": 90,
+      "time": [{ "frame": 0, "value": 0 }, { "frame": 60, "value": 1.6 }],
+      "transform": { "x": 10, "y": 150 } },
+
+    { "id": "held", "type": "lottie", "src": "anims/burst.json", "width": 90, "height": 90,
+      "time": 5, "transform": { "x": 110, "y": 150 } },
+
+    { "id": "looped", "type": "lottie", "src": "anims/burst.json", "width": 90, "height": 90,
+      "time": 2.25, "loop": true, "transform": { "x": 210, "y": 150 } },
+
+    { "id": "turned", "type": "lottie", "src": "anims/burst.json", "width": 90, "height": 90,
+      "opacity": 0.85,
+      "effects": [{ "type": "dropShadow", "x": 4, "y": 6, "blur": 5, "color": "#000000aa" }],
+      "clip": { "kind": "inset", "radius": 30 },
+      "transform": { "x": 355, "y": 195, "anchorX": 45, "anchorY": 45, "rotation": 18 } },
+
+    { "id": "masked", "type": "lottie", "src": "anims/burst.json", "width": 90, "height": 90,
+      "mask": { "gradient": { "type": "linear", "units": "box", "x0": 0, "y0": 0, "x1": 1, "y1": 0,
+                              "stops": [{ "offset": 0.4, "color": "#ffffffff" }, { "offset": 1, "color": "#ffffff00" }] } },
+      "transform": { "x": 310, "y": 120, "scale": 0.5 } },
+
+    { "id": "row", "type": "group", "transform": { "x": 110, "y": 245 },
+      "layout": { "gap": 8, "alignItems": "center", "height": 20 },
+      "children": [
+        { "id": "r1", "type": "lottie", "src": "anims/burst.json", "height": 20 },
+        { "id": "r2", "type": "lottie", "src": "anims/burst.json", "height": 20,
+          "motionBlur": { "samples": 4, "shutter": 2 } }
+      ] }
+  ]
+}

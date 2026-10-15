@@ -1,15 +1,19 @@
 //! A scene evaluated at one frame: every animated number is a plain value.
 
-use vello::kurbo::{Affine, Rect};
+use vello::kurbo::{Affine, BezPath, Rect, Shape};
 
+use crate::anim::Num;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
-    BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape, Effect, Extend, Geometry, Gradient,
-    GradientGeometry, HalftoneShape, Layer, LayerKind, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE,
-    MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels, Paint, Scene, Shadow, Stop, Transform,
-    Turbulence, TurbulenceKind,
+    AlignContent, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
+    Effect, Extend, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, Gradient, GradientGeometry,
+    HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout, LayoutItem,
+    MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels,
+    Paint, Position, Scene, Shadow, Spacing, Stop, TextAlign, Transform, Turbulence,
+    TurbulenceKind, Units,
 };
+use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
 use crate::warp;
 
@@ -60,6 +64,10 @@ pub struct ResolvedLayer {
     pub mask: Option<ResolvedMask>,
     pub matte: Option<ResolvedMatte>,
     pub kind: ResolvedKind,
+    /// How the layer takes part in its parent's flex layout. Already applied
+    /// to `transform` (and to the transforms of the sub-frames) by the time
+    /// the scene is resolved; kept for the layout of the layers around it.
+    pub item: Option<ResolvedItem>,
     /// The layer's motion blur: one complete copy of it (and of its subtree)
     /// per sub-frame, in time order, each resolved at its own time. Empty
     /// when the layer has no motion blur or its shutter is shut. The fields
@@ -67,6 +75,57 @@ pub struct ResolvedLayer {
     /// these copies instead, and they have no sub-frames of their own
     /// (motion blur inside a blurred layer is ignored).
     pub motion: Vec<ResolvedLayer>,
+}
+
+/// A character's own style at one frame (`scene::CharStyle`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedChar {
+    /// Offset in text-box pixels.
+    pub x: f64,
+    pub y: f64,
+    /// About the character's centre.
+    pub scale: f64,
+    /// Degrees clockwise, about the character's centre.
+    pub rotation: f64,
+    /// 0..=1.
+    pub opacity: f32,
+    pub color: Option<Color>,
+}
+
+/// A group's flex layout at one frame (`scene::Layout`), in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedLayout {
+    pub direction: FlexDirection,
+    pub wrap: FlexWrap,
+    pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    pub align_content: AlignContent,
+    /// Between rows, between columns; not negative.
+    pub gap: (f64, f64),
+    /// Top, right, bottom, left; not negative.
+    pub padding: [f64; 4],
+    /// The size the group asked for; `None` is from the content.
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    /// The group's transform origin as fractions of the size, which its
+    /// layout is yet to give (`ResolvedTransform::origin_x`).
+    pub origin: (f64, f64),
+}
+
+/// A layer's `layoutItem` at one frame, in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedItem {
+    /// Out of the flow: the layout leaves it where its transform puts it.
+    pub absolute: bool,
+    pub grow: f64,
+    pub shrink: f64,
+    /// `None` is `auto`.
+    pub basis: Option<f64>,
+    pub align_self: AlignSelf,
+    /// Top, right, bottom, left.
+    pub margin: [f64; 4],
+    pub width: Option<f64>,
+    pub height: Option<f64>,
 }
 
 /// The widest shutter, in frames.
@@ -94,12 +153,30 @@ pub struct ResolvedTransform {
     pub rotate_y: f64,
     /// Pixels toward the viewer.
     pub z: f64,
+    /// The point of the layer's box (`originX` and `originY` times its size,
+    /// in layer pixels, 0 for a layer without a box) that the layer turns and
+    /// scales about, added to the anchor.
+    pub origin_x: f64,
+    pub origin_y: f64,
 }
 
 impl ResolvedTransform {
     /// Layer space to parent space: move the anchor to the origin, scale,
     /// rotate, then translate to (x, y).
+    ///
+    /// The origin moves the pivot of the turn and the scale to the anchor plus
+    /// the origin, and puts the layer back so that nothing moves while it is
+    /// not turned or scaled: the pivot lands where it is without them.
     pub fn matrix(&self) -> Affine {
+        if self.origin_x != 0.0 || self.origin_y != 0.0 {
+            return Affine::translate((self.x + self.origin_x, self.y + self.origin_y))
+                * Affine::rotate(self.rotation.to_radians())
+                * Affine::scale(self.scale)
+                * Affine::translate((
+                    -(self.anchor_x + self.origin_x),
+                    -(self.anchor_y + self.origin_y),
+                ));
+        }
         Affine::translate((self.x, self.y))
             * Affine::rotate(self.rotation.to_radians())
             * Affine::scale(self.scale)
@@ -361,6 +438,9 @@ pub struct ResolvedGradient {
     /// At least 2 stops, offsets in 0..=1 and never decreasing.
     pub stops: Vec<(f64, Color)>,
     pub extend: Extend,
+    /// Whether the coordinates are pixels of the painted layer or fractions
+    /// of its box.
+    pub units: Units,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -405,16 +485,36 @@ pub enum ResolvedKind {
         /// Multiple of the font size.
         line_height: Option<f32>,
         max_width: Option<f32>,
+        align: TextAlign,
+        /// One entry per code point of `text` that has one: its own style, or
+        /// `None` for a character drawn as the layer is.
+        chars: Vec<Option<ResolvedChar>>,
     },
     Image {
         src: String,
+        /// The box the picture is fitted to.
         width: f64,
         height: f64,
+        fit: Fit,
     },
     Group {
         children: Vec<ResolvedLayer>,
         /// The children are drawn straight into the parent, depth sorted.
         preserve3d: bool,
+        /// The flex layout the children were placed by.
+        layout: Option<ResolvedLayout>,
+        /// With a `layout`: the size it gave the group, whose box is
+        /// `(0, 0, width, height)`.
+        size: Option<(f64, f64)>,
+    },
+    /// A Lottie animation fitted into the box `(0, 0, width, height)`.
+    Lottie {
+        src: String,
+        width: f64,
+        height: f64,
+        /// Seconds into the animation.
+        time: f64,
+        looped: bool,
     },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
@@ -459,7 +559,22 @@ pub enum ResolvedGeometry {
 impl Scene {
     /// Evaluates every animated value at `frame`. Errors if the frame is
     /// outside `0..durationInFrames`.
+    ///
+    /// Text is measured only where a resolved value depends on it (a text
+    /// layer's transform origin), with a text engine built for the call from
+    /// the scene's fonts. A caller that has an engine, as the renderer does,
+    /// passes it to `resolve_with_text` instead.
     pub fn resolve(&self, frame: u32) -> Result<ResolvedScene> {
+        self.resolve_with(frame, TextHandle::Lazy(None))
+    }
+
+    /// Like `resolve`, measuring text with `text`, whose fonts must be the
+    /// scene's (`TextEngine::new(&scene.fonts, &scene.base_dir)`).
+    pub fn resolve_with_text(&self, frame: u32, text: &mut TextEngine) -> Result<ResolvedScene> {
+        self.resolve_with(frame, TextHandle::Given(text))
+    }
+
+    fn resolve_with(&self, frame: u32, text: TextHandle) -> Result<ResolvedScene> {
         if frame >= self.duration_in_frames {
             return Err(Error::FrameOutOfRange {
                 frame,
@@ -471,6 +586,12 @@ impl Scene {
             frame,
             fps: self.fps,
         };
+        let mut resolver = Resolver { scene: self, text };
+        let mut layers = Vec::with_capacity(self.layers.len());
+        for layer in &self.layers {
+            layers.push(resolver.layer(layer, clock, true)?);
+        }
+        resolver.lay_out(&mut layers)?;
         Ok(ResolvedScene {
             width: self.width,
             height: self.height,
@@ -485,132 +606,317 @@ impl Scene {
                     .as_ref()
                     .map_or(f64::from(self.height) / 2.0, |n| n.at(clock.t)),
             }),
-            layers: self
-                .layers
-                .iter()
-                .map(|l| resolve_layer(l, clock, true))
-                .collect(),
+            layers,
         })
     }
 }
 
-/// `blur` is whether a motion blur on `layer` or below counts; a sub-frame's
-/// copy is resolved without it.
-fn resolve_layer(layer: &Layer, clock: Clock, blur: bool) -> ResolvedLayer {
-    let f = clock.t;
-    let motion = match &layer.motion_blur {
-        Some(mb) if blur => {
-            let shutter = mb.shutter.at(f).clamp(0.0, MAX_SHUTTER);
-            // A shut shutter is exactly the layer without motion blur.
-            if shutter > 0.0 {
-                // Checked when the scene loaded.
-                motion_times(f, mb.samples as u32, shutter)
-                    .into_iter()
-                    .map(|t| resolve_layer(layer, Clock { t, ..clock }, false))
-                    .collect()
-            } else {
-                Vec::new()
+/// The text engine a resolve measures with.
+enum TextHandle<'a> {
+    Given(&'a mut TextEngine),
+    /// Built when first needed, from the scene's fonts.
+    Lazy(Option<Box<TextEngine>>),
+}
+
+/// Evaluates the layers of one scene.
+pub(crate) struct Resolver<'a> {
+    pub(crate) scene: &'a Scene,
+    text: TextHandle<'a>,
+}
+
+impl Resolver<'_> {
+    pub(crate) fn engine(&mut self) -> Result<&mut TextEngine> {
+        match &mut self.text {
+            TextHandle::Given(engine) => Ok(engine),
+            TextHandle::Lazy(slot) => {
+                if slot.is_none() {
+                    *slot = Some(Box::new(TextEngine::new(
+                        &self.scene.fonts,
+                        &self.scene.base_dir,
+                    )?));
+                }
+                Ok(&mut **slot.as_mut().expect("just built"))
             }
         }
-        _ => Vec::new(),
-    };
-    // The frame's own children are not drawn when the layer has sub-frames.
-    let blur = blur && motion.is_empty();
-    let kind = match &layer.kind {
-        LayerKind::Shape(s) => ResolvedKind::Shape {
-            geometry: match &s.shape {
-                Geometry::Rect { width, height } => ResolvedGeometry::Rect {
-                    width: width.at(f),
-                    height: height.at(f),
+    }
+
+    /// The box of a resolved leaf layer in layer space (`docs/SCENE.md`,
+    /// "Clip paths"), or `None` for a layer without one.
+    pub(crate) fn layer_box(&mut self, kind: &ResolvedKind) -> Result<Option<Rect>> {
+        Ok(match kind {
+            ResolvedKind::Shape { geometry, .. } => Some(match geometry {
+                ResolvedGeometry::Rect { width, height }
+                | ResolvedGeometry::RoundedRect { width, height, .. }
+                | ResolvedGeometry::Ellipse { width, height } => {
+                    Rect::new(0.0, 0.0, *width, *height)
+                }
+                ResolvedGeometry::Path { d } => BezPath::from_svg(d)
+                    .map_err(|e| Error::Scene(format!("bad SVG path {d:?}: {e}")))?
+                    .bounding_box(),
+            }),
+            ResolvedKind::Text {
+                text,
+                font,
+                size,
+                line_height,
+                max_width,
+                align,
+                ..
+            } => {
+                let laid_out =
+                    self.engine()?
+                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let (width, height) = laid_out.box_size(*max_width);
+                Some(Rect::new(0.0, 0.0, width, height))
+            }
+            ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. }
+            | ResolvedKind::Noise { width, height, .. }
+            | ResolvedKind::MeshGradient { width, height, .. } => {
+                Some(Rect::new(0.0, 0.0, *width, *height))
+            }
+            ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w, h)),
+        })
+    }
+
+    /// The width and height of an image whose layer leaves a side out: the
+    /// file's size, which the scene read when it loaded.
+    fn natural_size(&self, layer: &Layer, src: &str) -> Result<(f64, f64)> {
+        self.scene.asset_sizes.get(src).copied().ok_or_else(|| {
+            Error::Render(format!(
+                "layer {:?}: the size of {src:?} was not read when the scene loaded",
+                layer.id
+            ))
+        })
+    }
+
+    /// `blur` is whether a motion blur on `layer` or below counts; a
+    /// sub-frame's copy is resolved without it.
+    fn layer(&mut self, layer: &Layer, clock: Clock, blur: bool) -> Result<ResolvedLayer> {
+        let f = clock.t;
+        let motion = match &layer.motion_blur {
+            Some(mb) if blur => {
+                let shutter = mb.shutter.at(f).clamp(0.0, MAX_SHUTTER);
+                // A shut shutter is exactly the layer without motion blur.
+                if shutter > 0.0 {
+                    // Checked when the scene loaded.
+                    let mut subs = Vec::new();
+                    for (i, t) in motion_times(f, mb.samples as u32, shutter)
+                        .into_iter()
+                        .enumerate()
+                    {
+                        // The authoring layer's own copy for this sub-frame,
+                        // when it gave them.
+                        let source = mb
+                            .frames
+                            .as_ref()
+                            .and_then(|frames| frames.get(i))
+                            .unwrap_or(layer);
+                        let mut sub = self.layer(source, Clock { t, ..clock }, false)?;
+                        sub.id.clone_from(&layer.id);
+                        subs.push(sub);
+                    }
+                    subs
+                } else {
+                    Vec::new()
+                }
+            }
+            _ => Vec::new(),
+        };
+        // The frame's own children are not drawn when the layer has sub-frames.
+        let blur = blur && motion.is_empty();
+        let kind = self.kind(layer, clock, blur)?;
+        let transform = self.transform(&layer.transform, f, &kind)?;
+        Ok(ResolvedLayer {
+            id: layer.id.clone(),
+            transform,
+            opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
+            blend_mode: layer.blend_mode,
+            effects: resolve_effects(&layer.effects, clock),
+            clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
+            mask: layer.mask.as_ref().map(|m| ResolvedMask {
+                gradient: resolve_gradient(&m.gradient, f),
+                mode: m.mode,
+            }),
+            matte: layer.matte.as_ref().map(|m| ResolvedMatte {
+                layer: m.layer.clone(),
+                mode: m.mode,
+            }),
+            kind,
+            item: layer.layout_item.as_ref().map(|i| resolve_item(i, f)),
+            motion,
+        })
+    }
+
+    /// The transform at time `f`. Its origin, a fraction of the layer's box,
+    /// is turned into pixels from the box's top-left corner here (a path's box
+    /// need not start at 0, 0). The box is only worked out when an origin is
+    /// given, animated or not zero, since measuring text costs a layout; an
+    /// origin left at 0, 0 keeps the pivot at the anchor.
+    fn transform(
+        &mut self,
+        t: &Transform,
+        f: f64,
+        kind: &ResolvedKind,
+    ) -> Result<ResolvedTransform> {
+        let mut resolved = resolve_transform(t, f);
+        let given = |n: &Num| !matches!(n, Num::Const(v) if *v == 0.0);
+        if (given(&t.origin_x) || given(&t.origin_y))
+            && let Some(b) = self.layer_box(kind)?
+        {
+            resolved.origin_x = b.x0 + t.origin_x.at(f) * b.width();
+            resolved.origin_y = b.y0 + t.origin_y.at(f) * b.height();
+        }
+        Ok(resolved)
+    }
+
+    fn kind(&mut self, layer: &Layer, clock: Clock, blur: bool) -> Result<ResolvedKind> {
+        let f = clock.t;
+        Ok(match &layer.kind {
+            LayerKind::Shape(s) => ResolvedKind::Shape {
+                geometry: match &s.shape {
+                    Geometry::Rect { width, height } => ResolvedGeometry::Rect {
+                        width: width.at(f),
+                        height: height.at(f),
+                    },
+                    Geometry::RoundedRect {
+                        width,
+                        height,
+                        radius,
+                    } => ResolvedGeometry::RoundedRect {
+                        width: width.at(f),
+                        height: height.at(f),
+                        radius: radius.at(f),
+                    },
+                    Geometry::Ellipse { width, height } => ResolvedGeometry::Ellipse {
+                        width: width.at(f),
+                        height: height.at(f),
+                    },
+                    Geometry::Path { d } => ResolvedGeometry::Path { d: d.clone() },
                 },
-                Geometry::RoundedRect {
+                fill: s.fill.as_ref().map(|p| resolve_paint(p, f)),
+                stroke: s.stroke.as_ref().map(|st| (st.color, st.width.at(f))),
+            },
+            LayerKind::Text(t) => ResolvedKind::Text {
+                text: t.text.clone(),
+                font: t.font.clone(),
+                size: t.size.at(f) as f32,
+                color: resolve_paint(&t.color, f),
+                line_height: t.line_height.as_ref().map(|n| n.at(f) as f32),
+                max_width: t.max_width.as_ref().map(|n| n.at(f) as f32),
+                align: t.align,
+                chars: t
+                    .chars
+                    .iter()
+                    .map(|c| {
+                        c.as_ref().map(|c| ResolvedChar {
+                            x: c.x.at(f),
+                            y: c.y.at(f),
+                            scale: c.scale.at(f),
+                            rotation: c.rotation.at(f),
+                            opacity: c.opacity.at(f).clamp(0.0, 1.0) as f32,
+                            color: c.color,
+                        })
+                    })
+                    .collect(),
+            },
+            LayerKind::Image(i) => {
+                let (width, height) = self.image_size(layer, i, f)?;
+                ResolvedKind::Image {
+                    src: i.src.clone(),
                     width,
                     height,
-                    radius,
-                } => ResolvedGeometry::RoundedRect {
-                    width: width.at(f),
-                    height: height.at(f),
-                    radius: radius.at(f),
-                },
-                Geometry::Ellipse { width, height } => ResolvedGeometry::Ellipse {
-                    width: width.at(f),
-                    height: height.at(f),
-                },
-                Geometry::Path { d } => ResolvedGeometry::Path { d: d.clone() },
-            },
-            fill: s.fill.as_ref().map(|p| resolve_paint(p, f)),
-            stroke: s.stroke.as_ref().map(|st| (st.color, st.width.at(f))),
-        },
-        LayerKind::Text(t) => ResolvedKind::Text {
-            text: t.text.clone(),
-            font: t.font.clone(),
-            size: t.size.at(f) as f32,
-            color: resolve_paint(&t.color, f),
-            line_height: t.line_height.as_ref().map(|n| n.at(f) as f32),
-            max_width: t.max_width.as_ref().map(|n| n.at(f) as f32),
-        },
-        LayerKind::Image(i) => ResolvedKind::Image {
-            src: i.src.clone(),
-            width: i.width.at(f),
-            height: i.height.at(f),
-        },
-        LayerKind::Group(g) => ResolvedKind::Group {
-            children: g
-                .children
-                .iter()
-                .map(|c| resolve_layer(c, clock, blur))
-                .collect(),
-            preserve3d: g.preserve3d,
-        },
-        LayerKind::MeshGradient(m) => {
-            let (width, height) = (m.width.at(f), m.height.at(f));
-            let (columns, rows) = (m.columns as usize, m.rows as usize);
-            ResolvedKind::MeshGradient {
-                width,
-                height,
-                columns,
-                rows,
-                points: match &m.points {
-                    Some(points) => points.iter().map(|[x, y]| [x.at(f), y.at(f)]).collect(),
-                    // Evenly spaced over the box, a row at a time.
-                    None => (0..rows)
-                        .flat_map(|j| {
-                            (0..columns).map(move |i| {
-                                [
-                                    width * i as f64 / (columns - 1) as f64,
-                                    height * j as f64 / (rows - 1) as f64,
-                                ]
-                            })
-                        })
-                        .collect(),
-                },
-                colors: m.colors.clone(),
+                    fit: i.fit,
+                }
             }
+            LayerKind::Group(g) => ResolvedKind::Group {
+                layout: g
+                    .layout
+                    .as_ref()
+                    .map(|l| resolve_layout(l, &layer.transform, f)),
+                size: None,
+                children: {
+                    let mut children = Vec::with_capacity(g.children.len());
+                    for child in &g.children {
+                        children.push(self.layer(child, clock, blur)?);
+                    }
+                    children
+                },
+                preserve3d: g.preserve3d,
+            },
+            LayerKind::Lottie(l) => {
+                let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;
+                ResolvedKind::Lottie {
+                    src: l.src.clone(),
+                    width,
+                    height,
+                    time: l.time.as_ref().map_or(clock.t / clock.fps, |n| n.at(f)),
+                    looped: l.looped,
+                }
+            }
+            LayerKind::MeshGradient(m) => {
+                let (width, height) = (m.width.at(f), m.height.at(f));
+                let (columns, rows) = (m.columns as usize, m.rows as usize);
+                ResolvedKind::MeshGradient {
+                    width,
+                    height,
+                    columns,
+                    rows,
+                    points: match &m.points {
+                        Some(points) => points.iter().map(|[x, y]| [x.at(f), y.at(f)]).collect(),
+                        // Evenly spaced over the box, a row at a time.
+                        None => (0..rows)
+                            .flat_map(|j| {
+                                (0..columns).map(move |i| {
+                                    [
+                                        width * i as f64 / (columns - 1) as f64,
+                                        height * j as f64 / (rows - 1) as f64,
+                                    ]
+                                })
+                            })
+                            .collect(),
+                    },
+                    colors: m.colors.clone(),
+                }
+            }
+            LayerKind::Noise(n) => ResolvedKind::Noise {
+                width: n.width.at(f),
+                height: n.height.at(f),
+                turbulence: resolve_turbulence(&n.turbulence, f),
+                channels: n.channels,
+            },
+        })
+    }
+
+    /// The box of an image at time `f`: the sides it gives, and for one it
+    /// leaves out the file's size (both left out), or the size that keeps the
+    /// file's aspect ratio (one left out).
+    fn image_size(&self, layer: &Layer, image: &ImageLayer, f: f64) -> Result<(f64, f64)> {
+        self.box_size(layer, &image.src, &image.width, &image.height, f)
+    }
+
+    /// The box of a layer with a file behind it: see `image_size`.
+    fn box_size(
+        &self,
+        layer: &Layer,
+        src: &str,
+        width: &Option<Num>,
+        height: &Option<Num>,
+        f: f64,
+    ) -> Result<(f64, f64)> {
+        let (width, height) = (
+            width.as_ref().map(|n| n.at(f)),
+            height.as_ref().map(|n| n.at(f)),
+        );
+        if let (Some(width), Some(height)) = (width, height) {
+            return Ok((width, height));
         }
-        LayerKind::Noise(n) => ResolvedKind::Noise {
-            width: n.width.at(f),
-            height: n.height.at(f),
-            turbulence: resolve_turbulence(&n.turbulence, f),
-            channels: n.channels,
-        },
-    };
-    ResolvedLayer {
-        id: layer.id.clone(),
-        transform: resolve_transform(&layer.transform, f),
-        opacity: layer.opacity.at(f).clamp(0.0, 1.0) as f32,
-        blend_mode: layer.blend_mode,
-        effects: resolve_effects(&layer.effects, clock),
-        clip: layer.clip.as_ref().map(|c| resolve_clip(c, f)),
-        mask: layer.mask.as_ref().map(|m| ResolvedMask {
-            gradient: resolve_gradient(&m.gradient, f),
-            mode: m.mode,
-        }),
-        matte: layer.matte.as_ref().map(|m| ResolvedMatte {
-            layer: m.layer.clone(),
-            mode: m.mode,
-        }),
-        kind,
-        motion,
+        let (natural_width, natural_height) = self.natural_size(layer, src)?;
+        Ok(match (width, height) {
+            (Some(width), None) => (width, width * natural_height / natural_width),
+            (None, Some(height)) => (height * natural_width / natural_height, height),
+            _ => (natural_width, natural_height),
+        })
     }
 }
 
@@ -618,6 +924,54 @@ fn resolve_paint(paint: &Paint, f: f64) -> ResolvedPaint {
     match paint {
         Paint::Solid(color) => ResolvedPaint::Solid(*color),
         Paint::Gradient(g) => ResolvedPaint::Gradient(resolve_gradient(g, f)),
+    }
+}
+
+/// Four lengths from a `Spacing` of one or four numbers: top, right,
+/// bottom, left. Not negative unless `signed`.
+fn edges(spacing: &Option<Spacing>, f: f64, signed: bool) -> [f64; 4] {
+    let at = |n: &Num| if signed { n.at(f) } else { n.at(f).max(0.0) };
+    match spacing.as_ref().map(|s| &s.0[..]) {
+        Some([all]) => [at(all); 4],
+        // Checked when the scene loaded.
+        Some([top, right, bottom, left]) => [at(top), at(right), at(bottom), at(left)],
+        _ => [0.0; 4],
+    }
+}
+
+fn resolve_layout(l: &Layout, t: &Transform, f: f64) -> ResolvedLayout {
+    ResolvedLayout {
+        direction: l.flex_direction,
+        wrap: l.flex_wrap,
+        justify_content: l.justify_content,
+        align_items: l.align_items,
+        align_content: l.align_content,
+        gap: match l.gap.as_ref().map(|s| &s.0[..]) {
+            Some([both]) => (both.at(f).max(0.0), both.at(f).max(0.0)),
+            // [row, column]
+            Some([row, column]) => (row.at(f).max(0.0), column.at(f).max(0.0)),
+            _ => (0.0, 0.0),
+        },
+        padding: edges(&l.padding, f, false),
+        width: l.width.as_ref().map(|n| n.at(f).max(0.0)),
+        height: l.height.as_ref().map(|n| n.at(f).max(0.0)),
+        origin: (t.origin_x.at(f), t.origin_y.at(f)),
+    }
+}
+
+fn resolve_item(i: &LayoutItem, f: f64) -> ResolvedItem {
+    ResolvedItem {
+        absolute: i.position == Position::Absolute,
+        grow: i.flex_grow.as_ref().map_or(0.0, |n| n.at(f).max(0.0)),
+        shrink: i.flex_shrink.as_ref().map_or(1.0, |n| n.at(f).max(0.0)),
+        basis: match &i.flex_basis {
+            Some(FlexBasis::Length(n)) => Some(n.at(f).max(0.0)),
+            _ => None,
+        },
+        align_self: i.align_self,
+        margin: edges(&i.margin, f, true),
+        width: i.width.as_ref().map(|n| n.at(f).max(0.0)),
+        height: i.height.as_ref().map(|n| n.at(f).max(0.0)),
     }
 }
 
@@ -644,6 +998,7 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         geometry,
         stops: resolve_stops(&g.stops, f),
         extend: g.extend,
+        units: g.units,
     }
 }
 
@@ -698,6 +1053,8 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
         rotate_x: t.rotate_x.at(f),
         rotate_y: t.rotate_y.at(f),
         z: t.z.at(f),
+        origin_x: 0.0,
+        origin_y: 0.0,
     }
 }
 
@@ -912,6 +1269,16 @@ mod tests {
                  "size": 40, "color": "#fff"}]}
         ]
     }"##;
+
+    /// The scene's first layer at `clock`, which may be between frames.
+    fn resolve_first(scene: &Scene, clock: Clock) -> ResolvedLayer {
+        Resolver {
+            scene,
+            text: TextHandle::Lazy(None),
+        }
+        .layer(&scene.layers[0], clock, true)
+        .unwrap()
+    }
 
     fn scene() -> Scene {
         Scene::from_json(SCENE, PathBuf::new()).unwrap()
@@ -1133,7 +1500,7 @@ mod tests {
             frame: 2,
             fps: scene.fps,
         };
-        let layer = resolve_layer(&scene.layers[0], clock, true);
+        let layer = resolve_first(&scene, clock);
         assert_eq!(layer.transform.x, 25.0);
         let [ResolvedEffect::Shader(shader)] = &layer.effects[..] else {
             panic!("not a shader");
@@ -1145,10 +1512,7 @@ mod tests {
             frame: 4,
             fps: scene.fps,
         };
-        assert_eq!(
-            resolve_layer(&scene.layers[0], whole, true).transform.x,
-            40.0
-        );
+        assert_eq!(resolve_first(&scene, whole).transform.x, 40.0);
         assert_eq!(scene.resolve(4).unwrap().layers[0].transform.x, 40.0);
     }
 
@@ -1215,7 +1579,7 @@ mod tests {
         }"##;
         let scene = Scene::from_json(json, PathBuf::new()).unwrap();
         let grain = |clock: Clock| {
-            let layer = resolve_layer(&scene.layers[0], clock, true);
+            let layer = resolve_first(&scene, clock);
             let [ResolvedEffect::Grain(a), ResolvedEffect::Grain(b)] = layer.effects[..] else {
                 panic!("not two grains");
             };
@@ -1841,5 +2205,272 @@ mod tests {
         }
         // A parent whose shutter is shut does not stop its children's.
         assert_eq!(children(&resolved.layers[1])[0].motion.len(), 5);
+    }
+
+    #[test]
+    fn motion_blur_frames_stand_in_for_the_layer_at_each_sub_frame() {
+        // The layer itself moves with t, the copies are at x = 1000 and 2000
+        // and are told apart by their opacity: each sub-frame is the copy
+        // resolved at its own time, with the original's id.
+        let json = r##"{"width": 100, "height": 50, "fps": 30, "durationInFrames": 20, "layers": [
+          {"id": "a", "type": "shape", "shape": {"kind": "rect", "width": 4, "height": 4},
+           "fill": "#fff",
+           "transform": {"x": [{"frame": 0, "value": 0}, {"frame": 10, "value": 100}]},
+           "motionBlur": {"samples": 2, "shutter": 1, "frames": [
+             {"id": "copy0", "type": "shape", "shape": {"kind": "rect", "width": 4, "height": 4},
+              "fill": "#fff", "opacity": 0.25,
+              "transform": {"x": [{"frame": 0, "value": 1000}, {"frame": 10, "value": 1100}]}},
+             {"id": "copy1", "type": "shape", "shape": {"kind": "rect", "width": 4, "height": 4},
+              "fill": "#fff", "opacity": 0.5,
+              "transform": {"x": [{"frame": 0, "value": 2000}, {"frame": 10, "value": 2100}]}}]}}]}"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        let layer = &scene.resolve(5).unwrap().layers[0];
+        // The sub-frames sit at t = 4.75 and 5.25.
+        let xs: Vec<f64> = layer.motion.iter().map(|m| m.transform.x).collect();
+        assert_eq!(xs, [1047.5, 2052.5]);
+        assert_eq!(
+            layer.motion.iter().map(|m| m.opacity).collect::<Vec<_>>(),
+            [0.25, 0.5]
+        );
+        assert!(layer.motion.iter().all(|m| m.id == "a"));
+        // The frame itself is the layer's own.
+        assert_eq!(layer.transform.x, 50.0);
+        // Without frames the layer is its own sub-frames.
+        let plain = json.replace(r#""frames": ["#, r#""unused": ["#);
+        let scene = Scene::from_json(&plain, PathBuf::new()).unwrap();
+        let layer = &scene.resolve(5).unwrap().layers[0];
+        let xs: Vec<f64> = layer.motion.iter().map(|m| m.transform.x).collect();
+        assert_eq!(xs, [47.5, 52.5]);
+    }
+
+    fn examples() -> PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples")
+    }
+
+    /// The box of the image layer `pic` (720 x 540 on disk) at frame 0.
+    fn image_box(sides: &str) -> (f64, f64) {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 11, "layers": [
+              {{"id": "pic", "type": "image", "src": "card-art.png", {sides}}}]}}"##
+        );
+        let scene = Scene::from_json(&json, examples()).unwrap();
+        match &scene.resolve(5).unwrap().layers[0].kind {
+            ResolvedKind::Image { width, height, .. } => (*width, *height),
+            _ => panic!("not an image"),
+        }
+    }
+
+    #[test]
+    fn an_image_without_sides_is_the_files_size_and_keeps_its_aspect_ratio() {
+        assert_eq!(image_box(r#""fit": "fill""#), (720.0, 540.0));
+        // 720 x 540 is 4:3.
+        assert_eq!(image_box(r#""width": 400"#), (400.0, 300.0));
+        assert_eq!(image_box(r#""height": 270"#), (360.0, 270.0));
+        // Animated: frame 5 is half way.
+        assert_eq!(
+            image_box(r#""width": [{"frame": 0, "value": 100}, {"frame": 10, "value": 500}]"#),
+            (300.0, 225.0)
+        );
+        // Both given: the box as given, whatever the file's shape.
+        assert_eq!(image_box(r#""width": 10, "height": 90"#), (10.0, 90.0));
+    }
+
+    #[test]
+    fn gradient_units_and_fit_are_carried_to_the_resolved_layer() {
+        let json = r##"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 2, "layers": [
+          {"id": "s", "type": "shape", "shape": {"kind": "rect", "width": 40, "height": 20},
+           "fill": {"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, "units": "box",
+                    "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]},
+           "mask": {"gradient": {"type": "radial", "cx": 0.5, "cy": 0.5, "r": 0.5,
+                    "stops": [{"offset": 0, "color": "#fff"}, {"offset": 1, "color": "#000"}]}}},
+          {"id": "i", "type": "image", "src": "x.png", "width": 4, "height": 4, "fit": "cover"}]}"##;
+        let layers = Scene::from_json(json, PathBuf::new())
+            .unwrap()
+            .resolve(0)
+            .unwrap()
+            .layers;
+        let ResolvedKind::Shape {
+            fill: Some(ResolvedPaint::Gradient(fill)),
+            ..
+        } = &layers[0].kind
+        else {
+            panic!("not a gradient fill");
+        };
+        assert_eq!(fill.units, Units::Box);
+        assert_eq!(layers[0].mask.as_ref().unwrap().gradient.units, Units::User);
+        assert!(matches!(
+            &layers[1].kind,
+            ResolvedKind::Image {
+                fit: Fit::Cover,
+                ..
+            }
+        ));
+    }
+
+    /// A scene with the DM Sans font of the repository, whose paths resolve
+    /// from the workspace root.
+    fn scene_with_font(layers: &str) -> Scene {
+        let json = format!(
+            r##"{{"width": 400, "height": 300, "fps": 30, "durationInFrames": 11,
+                "fonts": {{"DM Sans": "assets/fonts/DMSans-Medium.ttf"}}, "layers": {layers}}}"##
+        );
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        Scene::from_json(&json, root).unwrap()
+    }
+
+    #[test]
+    fn the_origin_is_a_fraction_of_the_box_and_moves_nothing_at_rest() {
+        let scene = scene_with_font(
+            r##"[
+              {"id": "r", "type": "shape", "shape": {"kind": "rect", "width": 100, "height": 40},
+               "fill": "#fff", "transform": {"x": 50, "y": 60, "originX": 0.5, "originY": [{"frame": 0, "value": 0}, {"frame": 10, "value": 1}]}},
+              {"id": "p", "type": "shape", "shape": {"kind": "path", "d": "M20 10 L60 10 L40 50 Z"},
+               "fill": "#fff", "transform": {"originX": 1, "originY": 0.5}},
+              {"id": "t", "type": "text", "text": "Hi", "font": "DM Sans", "size": 40,
+               "color": "#fff", "transform": {"originX": 0.5}},
+              {"id": "g", "type": "group", "children": [], "transform": {"originX": 0.5}},
+              {"id": "z", "type": "shape", "shape": {"kind": "rect", "width": 100, "height": 40},
+               "fill": "#fff"}
+            ]"##,
+        );
+        let layers = scene.resolve(5).unwrap().layers;
+        // 100 x 40: half the width, and the animated fraction 0.5 of 40.
+        let t = &layers[0].transform;
+        assert_eq!((t.origin_x, t.origin_y), (50.0, 20.0));
+        // A path's box is its bounding box, 40 x 40 from (20, 10): the
+        // origin is the middle of its right side, not measured from 0, 0.
+        let t = &layers[1].transform;
+        assert_eq!((t.origin_x, t.origin_y), (60.0, 30.0));
+        // Text: half the laid-out width.
+        let mut engine = TextEngine::new(&scene.fonts, &scene.base_dir).unwrap();
+        let width = f64::from(
+            engine
+                .layout("Hi", "DM Sans", 40.0, None, None, TextAlign::Left)
+                .width,
+        );
+        assert!((layers[2].transform.origin_x - width / 2.0).abs() < 1e-3);
+        // A group has no box: the origin is ignored. So is none at all.
+        assert_eq!(layers[3].transform.origin_x, 0.0);
+        assert_eq!(layers[4].transform.origin_x, 0.0);
+        // Turning about the pivot leaves it where it is, and without any
+        // turn the layer is where it would be without an origin.
+        let mut rect = layers[0].transform;
+        let pivot = rect.matrix() * vello::kurbo::Point::new(50.0, 20.0);
+        assert!(pivot.distance(vello::kurbo::Point::new(100.0, 80.0)) < 1e-9);
+        rect.rotation = 70.0;
+        rect.scale = 2.0;
+        let turned = rect.matrix() * vello::kurbo::Point::new(50.0, 20.0);
+        assert!(turned.distance(pivot) < 1e-9);
+        rect.rotation = 0.0;
+        rect.scale = 1.0;
+        let corner = rect.matrix() * vello::kurbo::Point::new(0.0, 0.0);
+        assert!(corner.distance(vello::kurbo::Point::new(50.0, 60.0)) < 1e-9);
+        // The same answers through an engine the caller owns.
+        let again = scene.resolve_with_text(5, &mut engine).unwrap().layers;
+        assert_eq!(again, layers);
+    }
+
+    #[test]
+    fn character_styles_are_resolved_per_frame_and_opacity_is_clamped() {
+        let scene = scene_with_font(
+            r##"[{"id": "t", "type": "text", "text": "abc", "font": "DM Sans", "size": 20,
+                  "color": "#fff", "chars": [
+                    null,
+                    {"x": [{"frame": 0, "value": 0}, {"frame": 10, "value": 20}],
+                     "scale": 2, "rotation": 90, "opacity": [{"frame": 0, "value": -1}, {"frame": 10, "value": 3}],
+                     "color": "#ff0000"}]},
+                 {"id": "u", "type": "text", "text": "abc", "font": "DM Sans", "size": 20,
+                  "color": "#fff"}]"##,
+        );
+        let layers = scene.resolve(5).unwrap().layers;
+        let chars = |l: &ResolvedLayer| match &l.kind {
+            ResolvedKind::Text { chars, .. } => chars.clone(),
+            _ => panic!("not text"),
+        };
+        let styled = chars(&layers[0]);
+        assert_eq!(styled.len(), 2);
+        assert!(styled[0].is_none());
+        let c = styled[1].unwrap();
+        assert_eq!((c.x, c.y, c.scale, c.rotation), (10.0, 0.0, 2.0, 90.0));
+        assert_eq!(c.opacity, 1.0);
+        assert_eq!(c.color, Some(Color::parse("#ff0000").unwrap()));
+        // At frame 0 the opacity is -1 and clamps to 0.
+        let first = chars(&scene.resolve(0).unwrap().layers[0]);
+        assert_eq!(first[1].unwrap().opacity, 0.0);
+        // A layer without chars has none, so it resolves as before.
+        assert!(chars(&layers[1]).is_empty());
+    }
+
+    /// The resolved lottie layer `anim` of a 30 fps scene with `layer`'s
+    /// fields, at `frame`.
+    fn lottie_at(layer: &str, frame: u32) -> ResolvedKind {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 30, "layers": [
+              {{"id": "anim", "type": "lottie", "src": "burst.json", {layer}}}]}}"##
+        );
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/anims");
+        let scene = Scene::from_json(&json, base).unwrap();
+        scene.resolve(frame).unwrap().layers.remove(0).kind
+    }
+
+    #[test]
+    fn a_lottie_box_is_the_animations_size_or_keeps_its_aspect_ratio() {
+        let boxed = |layer: &str| match lottie_at(layer, 0) {
+            ResolvedKind::Lottie { width, height, .. } => (width, height),
+            _ => panic!("not a lottie layer"),
+        };
+        // burst.json is 120 x 120.
+        assert_eq!(boxed(r#""loop": false"#), (120.0, 120.0));
+        assert_eq!(boxed(r#""width": 60"#), (60.0, 60.0));
+        assert_eq!(boxed(r#""height": 30"#), (30.0, 30.0));
+        assert_eq!(boxed(r#""width": 60, "height": 20"#), (60.0, 20.0));
+    }
+
+    #[test]
+    fn a_lottie_time_follows_the_frame_unless_given() {
+        let time = |layer: &str, frame: u32| match lottie_at(layer, frame) {
+            ResolvedKind::Lottie { time, looped, .. } => (time, looped),
+            _ => panic!("not a lottie layer"),
+        };
+        assert_eq!(time(r#""loop": true"#, 15), (0.5, true));
+        assert_eq!(time(r#""width": 1, "height": 1"#, 0), (0.0, false));
+        assert_eq!(time(r#""time": 1.25"#, 15), (1.25, false));
+        let keyed = r#""time": [{"frame": 0, "value": 0}, {"frame": 30, "value": 3}]"#;
+        assert_eq!(time(keyed, 15), (1.5, false));
+        // A sub-frame is at its own time.
+        let json = r##"{"width": 100, "height": 100, "fps": 30, "durationInFrames": 30, "layers": [
+          {"id": "a", "type": "lottie", "src": "x.json", "width": 5, "height": 5,
+           "motionBlur": {"samples": 2, "shutter": 1}}]}"##;
+        let layers = Scene::from_json(json, std::path::PathBuf::new())
+            .unwrap()
+            .resolve(15)
+            .unwrap()
+            .layers;
+        let times: Vec<f64> = layers[0]
+            .motion
+            .iter()
+            .map(|m| match &m.kind {
+                ResolvedKind::Lottie { time, .. } => *time,
+                _ => panic!("not a lottie layer"),
+            })
+            .collect();
+        assert_eq!(times, [(15.0 - 0.25) / 30.0, (15.0 + 0.25) / 30.0]);
+    }
+
+    #[test]
+    fn text_align_is_resolved() {
+        let scene = scene_with_font(
+            r##"[{"id": "t", "type": "text", "text": "a", "font": "DM Sans", "size": 20,
+                  "color": "#fff", "align": "center"},
+                 {"id": "u", "type": "text", "text": "a", "font": "DM Sans", "size": 20,
+                  "color": "#fff"}]"##,
+        );
+        let layers = scene.resolve(0).unwrap().layers;
+        let align = |l: &ResolvedLayer| match &l.kind {
+            ResolvedKind::Text { align, .. } => *align,
+            _ => panic!("not text"),
+        };
+        assert_eq!(align(&layers[0]), TextAlign::Center);
+        assert_eq!(align(&layers[1]), TextAlign::Left);
     }
 }

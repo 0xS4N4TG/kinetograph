@@ -1,0 +1,50 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#14161d",
+  "layers": [
+    { "id": "natural", "type": "image", "src": "../../../../examples/card-art.png",
+      "transform": { "x": 10, "y": 10, "scale": 0.2 } },
+    { "id": "natural-box", "type": "shape", "shape": { "kind": "rect", "width": 720, "height": 540 },
+      "stroke": { "color": "#ffffff55", "width": 10 },
+      "transform": { "x": 10, "y": 10, "scale": 0.2 } },
+
+    { "id": "width-only", "type": "image", "src": "../../../../examples/card-art.png",
+      "width": [{ "frame": 0, "value": 90 }, { "frame": 30, "value": 150 }],
+      "transform": { "x": 170, "y": 10 } },
+    { "id": "width-only-box", "type": "shape",
+      "shape": { "kind": "rect", "width": 120, "height": 90 },
+      "stroke": { "color": "#ffffff55", "width": 1 }, "transform": { "x": 170, "y": 10 } },
+
+    { "id": "height-only", "type": "image", "src": "../../../../examples/card-art.png", "height": 100,
+      "transform": { "x": 330, "y": 10 } },
+    { "id": "height-only-box", "type": "shape",
+      "shape": { "kind": "rect", "width": 133.3333, "height": 100 },
+      "stroke": { "color": "#ffffff55", "width": 1 }, "transform": { "x": 330, "y": 10 } },
+
+    { "id": "contain", "type": "image", "src": "../../../../examples/card-art.png",
+      "width": 140, "height": 80, "fit": "contain", "transform": { "x": 10, "y": 140 } },
+    { "id": "contain-box", "type": "shape", "shape": { "kind": "rect", "width": 140, "height": 80 },
+      "stroke": { "color": "#f6c177", "width": 1 }, "transform": { "x": 10, "y": 140 } },
+
+    { "id": "cover", "type": "image", "src": "../../../../examples/card-art.png",
+      "width": 140, "height": 80, "fit": "cover", "transform": { "x": 170, "y": 140 } },
+    { "id": "cover-box", "type": "shape", "shape": { "kind": "rect", "width": 140, "height": 80 },
+      "stroke": { "color": "#f6c177", "width": 1 }, "transform": { "x": 170, "y": 140 } },
+
+    { "id": "cover-tall", "type": "image", "src": "../../../../examples/grain.png",
+      "width": [{ "frame": 0, "value": 140 }, { "frame": 30, "value": 80 }], "height": 80,
+      "fit": "cover", "transform": { "x": 330, "y": 140 } },
+    { "id": "cover-tall-box", "type": "shape", "shape": { "kind": "rect", "width": 110, "height": 80 },
+      "stroke": { "color": "#f6c177", "width": 1 }, "transform": { "x": 330, "y": 140 } },
+
+    { "id": "contain-turned", "type": "image", "src": "../../../../examples/gradient.png",
+      "width": 60, "height": 30, "fit": "contain", "opacity": 0.9,
+      "transform": { "x": 100, "y": 245, "rotation": -12, "anchorX": 30, "anchorY": 15 } },
+    { "id": "cover-turned", "type": "image", "src": "../../../../examples/gradient.png",
+      "width": 60, "height": 30, "fit": "cover",
+      "transform": { "x": 240, "y": 245, "rotation": 12, "anchorX": 30, "anchorY": 15 } }
+  ]
+}

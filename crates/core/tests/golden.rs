@@ -345,3 +345,102 @@ fn motion_blur_matches_golden() {
     let frame = render_still(scene("tests/scenes/motion-blur.json"), 15).unwrap();
     check("motion-blur", &frame);
 }
+
+#[test]
+fn image_fit_matches_golden() {
+    // Frame 15 of 30: the animated widths are half way. Covers an image with
+    // both sides left out (the file's 720 x 540, scaled by the layer), one
+    // with only a width that is animated and one with only a height (the
+    // aspect ratio kept, the outlines show the expected boxes), `contain` and
+    // `cover` in a 140 x 80 box, a portrait photo covering a landscape box
+    // whose width animates, and `contain` and `cover` on turned layers, one
+    // of them half transparent.
+    let frame = render_still(scene("tests/scenes/image-fit.json"), 15).unwrap();
+    check("image-fit", &frame);
+}
+
+#[test]
+fn box_units_match_golden() {
+    // Frame 15 of 30: the conic angle, scale and rotation are half way.
+    // Covers box-unit gradients on a rounded rect (diagonal), an ellipse
+    // (radial, so an elliptical gradient), a rect with a conic gradient
+    // stretched by its box, a repeating one on a rect that scales and turns,
+    // a path whose box does not start at the origin, text with a reflecting
+    // gradient, a luminance mask and an alpha mask in box units, and a rect
+    // with no width (its gradient has no extent: the last stop, under a
+    // white stroke).
+    let frame = render_still(scene("tests/scenes/box-units.json"), 15).unwrap();
+    check("box-units", &frame);
+}
+
+#[test]
+fn motion_blur_frames_match_golden() {
+    // Frame 15 of 30. Covers a rect whose four copies sit at different places
+    // in different colours (the average of the four), text whose three copies
+    // have different drop shadows (the scene's margin comes from the copies),
+    // a group whose two copies are in different places and colours, and a
+    // keyframed rect whose copies are resolved at their own sub-frame times
+    // (the shutter is two frames wide).
+    let frame = render_still(scene("tests/scenes/motion-frames.json"), 15).unwrap();
+    check("motion-frames", &frame);
+}
+
+#[test]
+fn flex_layout_matches_golden() {
+    // Frame 15 of 30: the stack's gap, the wrap width and the card's scale
+    // and turn are half way. Covers a space-between toolbar with padding, a
+    // centred title, a margin, an absolute background and badge (left where
+    // their transforms put them); a column that aligns to the end with a
+    // growing item and an `alignSelf`; a wrapping row whose width animates
+    // (the squares re-wrap) with a row and a column gap; baseline alignment
+    // of two text sizes and a box; a reversed, centred row; and a card, a
+    // layout group sized by its content, that is clipped by an `inset` clip
+    // and faded by a box-unit mask (a layout group has a box) and turns and
+    // scales about its centre by `originX`/`originY`, with a nested layout
+    // group inside it.
+    let frame = render_still(scene("tests/scenes/layout.json"), 15).unwrap();
+    check("layout", &frame);
+}
+
+#[test]
+fn lottie_matches_golden() {
+    // Frame 15 of 60 (0.5 s): the animation's own time follows the frame
+    // unless a layer gives `time`. Covers a Lottie JSON at its own size and a
+    // `.lottie` archive fitted into a wide box (centred, aspect ratio kept,
+    // outlined), a layer scaled to 2x (painted at the size it is drawn, not
+    // upscaled), animated `time`, a held last frame (time past the end) and a
+    // looped one, a turned, half-transparent layer with a drop shadow and an
+    // inset clip, a box-unit mask, and two layers in a flex row sized by their
+    // height alone (the aspect ratio gives the width), the second with motion
+    // blur.
+    let frame = render_still(scene("tests/scenes/lottie.json"), 15).unwrap();
+    check("lottie", &frame);
+}
+
+#[test]
+fn glyph_text_matches_golden() {
+    // Frame 15 of 30: the staggered rise and fade-in of the first line are
+    // under way, and the animated offset on the last character is half way.
+    // Covers per-character offsets and opacity, scale and rotation about the
+    // character's centre, a character in its own colour, a box-unit gradient
+    // that moves with each character, centred two-line text where the
+    // newline has an entry (ignored, its scale and offset must not show) and
+    // an invisible character, and a drop shadow on text whose letters are
+    // moved.
+    let frame = render_still(scene("tests/scenes/glyph-text.json"), 15).unwrap();
+    check("glyph-text", &frame);
+}
+
+#[test]
+fn origin_and_align_match_golden() {
+    // Frame 15 of 30: the rotations, scale and tilt are half way. Covers a
+    // rect turning and shrinking about its centre (its outline stays put), an
+    // ellipse turning about its bottom-right corner, a path turning about the
+    // middle of its box (which does not start at the origin), a layer with
+    // an anchor and an origin together, a card tilted about the vertical
+    // axis through its centre under no camera, text turning about its centre,
+    // and three-line text left, centre and right aligned in a 130 px wrap
+    // width (outlined) and centred with no wrap width.
+    let frame = render_still(scene("tests/scenes/origin-align.json"), 15).unwrap();
+    check("origin-align", &frame);
+}

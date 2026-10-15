@@ -8,6 +8,9 @@
 //! T(x, y, z) . Rx(rotateX) . Ry(rotateY) . Rz(rotation) . S(scale, scale, 1) . T(-anchorX, -anchorY, 0)
 //! ```
 //!
+//! (With a transform origin `o`, in pixels, read `(x, y)` as `(x, y) + o` and
+//! the anchor as `anchor + o`: the layer turns about its pivot.)
+//!
 //! It factors as `W . A`: `A` is the 2D matrix every layer has
 //! (`ResolvedTransform::matrix`), and `W = T(x, y, z) . Rx . Ry . T(-x, -y, 0)`
 //! moves the plane `A` leaves the layer in, turning it about its position. So
@@ -39,7 +42,7 @@ pub fn layer_world(t: &ResolvedTransform) -> Option<DMat4> {
     if t.rotate_x == 0.0 && t.rotate_y == 0.0 && t.z == 0.0 {
         return None;
     }
-    let pivot = DVec3::new(t.x, t.y, 0.0);
+    let pivot = DVec3::new(t.x + t.origin_x, t.y + t.origin_y, 0.0);
     Some(
         DMat4::from_translation(pivot + DVec3::new(0.0, 0.0, t.z))
             * DMat4::from_rotation_x(t.rotate_x.to_radians())
@@ -206,12 +209,16 @@ fn unit_square_to_quad(q: [[f64; 2]; 4]) -> Option<DMat3> {
 /// check the factored forms against.
 #[cfg(test)]
 pub(crate) fn full_matrix(t: &ResolvedTransform) -> DMat4 {
-    DMat4::from_translation(DVec3::new(t.x, t.y, t.z))
+    DMat4::from_translation(DVec3::new(t.x + t.origin_x, t.y + t.origin_y, t.z))
         * DMat4::from_rotation_x(t.rotate_x.to_radians())
         * DMat4::from_rotation_y(t.rotate_y.to_radians())
         * DMat4::from_rotation_z(t.rotation.to_radians())
         * DMat4::from_scale(DVec3::new(t.scale, t.scale, 1.0))
-        * DMat4::from_translation(DVec3::new(-t.anchor_x, -t.anchor_y, 0.0))
+        * DMat4::from_translation(DVec3::new(
+            -(t.anchor_x + t.origin_x),
+            -(t.anchor_y + t.origin_y),
+            0.0,
+        ))
 }
 
 #[cfg(test)]
@@ -236,6 +243,8 @@ mod tests {
             rotate_x: rx,
             rotate_y: ry,
             z,
+            origin_x: 0.0,
+            origin_y: 0.0,
         }
     }
 
@@ -254,6 +263,23 @@ mod tests {
             let w = layer_world(&t).unwrap();
             assert!(near(w * flat(t.matrix()), full_matrix(&t)), "{angles:?}");
         }
+    }
+
+    #[test]
+    fn the_factorisation_holds_with_a_transform_origin() {
+        let mut t = transform((120.0, 80.0), 25.0, 1.5, (30.0, 40.0), (35.0, -50.0, 60.0));
+        t.origin_x = 45.0;
+        t.origin_y = 20.0;
+        let w = layer_world(&t).expect("a 3D layer has a world matrix");
+        assert!(near(w * flat(t.matrix()), full_matrix(&t)));
+        // The pivot lands at (x, y) + origin whatever the layer does: it
+        // neither turns in 3D out of its place nor moves with the scale.
+        let pivot = DVec3::new(165.0, 100.0, 0.0);
+        let anchor_to_pivot = t.matrix() * vello::kurbo::Point::new(75.0, 60.0);
+        assert!((anchor_to_pivot.x - pivot.x).abs() < 1e-9);
+        assert!((anchor_to_pivot.y - pivot.y).abs() < 1e-9);
+        let moved = w.transform_point3(pivot);
+        assert!((moved - DVec3::new(165.0, 100.0, 60.0)).length() < 1e-9);
     }
 
     #[test]
