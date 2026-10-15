@@ -119,7 +119,7 @@ async function measure(root) {
 const browser = await puppeteer.launch({
   executablePath: findChrome(),
   headless: true,
-  args: ['--allow-file-access-from-files', '--disable-web-security', '--no-sandbox', '--font-render-hinting=none'],
+  args: ['--use-mock-keychain', '--password-store=basic', '--allow-file-access-from-files', '--disable-web-security', '--no-sandbox', '--font-render-hinting=none'],
 });
 const dir = mkdtempSync(join(tmpdir(), 'kg-compare-'));
 let worst = 0;

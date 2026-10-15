@@ -221,6 +221,9 @@ pub fn chrome(name: &str, body: &str, w: u32, h: u32) -> Option<RgbaImage> {
     let _ = std::fs::remove_file(&png_path);
     let _ = std::process::Command::new(bin)
         .arg("--headless=new")
+        // Never ask for the macOS keychain ("Chromium Safe Storage").
+        .arg("--use-mock-keychain")
+        .arg("--password-store=basic")
         .arg(format!("--screenshot={}", png_path.display()))
         .arg(format!("--window-size={w},{h}"))
         .arg("--hide-scrollbars")

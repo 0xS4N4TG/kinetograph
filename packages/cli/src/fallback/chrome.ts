@@ -84,6 +84,9 @@ export function chromeArgs(options: { root?: boolean } = {}): string[] {
   return [
     // Pixels must not depend on the GPU: composite on the CPU.
     '--disable-gpu',
+    // Never touch the macOS keychain ("Chromium Safe Storage"): nothing here stores passwords or cookies.
+    '--use-mock-keychain',
+    '--password-store=basic',
     '--force-color-profile=srgb',
     '--hide-scrollbars',
     '--font-render-hinting=none',
