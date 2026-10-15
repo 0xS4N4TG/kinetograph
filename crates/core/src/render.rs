@@ -1856,8 +1856,9 @@ fn is_hidden(layer: &ResolvedLayer) -> bool {
 /// its parent's canvas, under its matrix, instead of into a buffer of its own
 /// that is then blended: it blends normally at opacity 1, with no effects,
 /// clip, mask, matte, motion blur or 3D turn, nothing in it reads the backdrop,
-/// and every child it draws blends normally (unless the group is
-/// `pass_through`: then they blend with the canvas as they would without it)
+/// and every child it draws blends normally, nor passes a blend through from
+/// inside it (unless the group is `pass_through`: then they blend with the
+/// canvas as they would without it)
 /// and is not a preserve3d group (whose children would blend one by one). Its children are then blended
 /// onto the canvas in the same order, so the result is the same up to f16
 /// rounding: `(b over a) over canvas` against `b over (a over canvas)`.
@@ -1884,7 +1885,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
             .iter()
             .filter(|c| !is_hidden(c) && !is_matte_source(children, c))
             .all(|c| {
-                (*pass_through || c.blend_mode == BlendMode::Normal)
+                (*pass_through || !blends_outside(c))
                     && !matches!(
                         c.kind,
                         ResolvedKind::Group {
@@ -1893,6 +1894,15 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
                         }
                     )
             })
+}
+
+/// Whether `layer` blends with whatever is under the group it is in: it has
+/// a blend mode itself, or it is a `pass_through` group (no buffer of its own)
+/// with something in it that does.
+fn blends_outside(layer: &ResolvedLayer) -> bool {
+    layer.blend_mode != BlendMode::Normal
+        || matches!(&layer.kind, ResolvedKind::Group { children, pass_through: true, .. }
+            if children.iter().any(blends_outside))
 }
 
 /// Whether another layer in `layers` uses `layer` as its matte.
@@ -3321,6 +3331,24 @@ mod tests {
             {"id": "m", "type": "shape", "fill": "#fff", "blendMode": "multiply",
               "shape": {"kind": "rect", "width": 5, "height": 5}}]}"##
         ));
+        // A pass-through group inside whose child blends reaches the backdrop
+        // of the group it is in, which then keeps its buffer (an SVG with a
+        // multiply in it, in a div that turns: the blend stays in the div).
+        let through = |id: &str, inner: &str| {
+            format!(
+                r##"{{"id": "{id}", "type": "group", "passThrough": true, "children": [{inner}]}}"##
+            )
+        };
+        let multiply = r##"{"id": "m", "type": "shape", "fill": "#fff", "blendMode": "multiply",
+            "shape": {"kind": "rect", "width": 5, "height": 5}}"##;
+        assert!(!group("", &through("svg", multiply)));
+        assert!(!group("", &through("outer", &through("svg", multiply))));
+        assert!(group("", &through("svg", &card("a", "{}"))));
+        // The pass-through group itself passes it on up, so it may skip its own.
+        let json = format!(
+            r##"[{{"id": "g", "type": "group", "passThrough": true, "children": [{multiply}]}}]"##
+        );
+        assert!(needs_no_buffer(&resolve_layers(&json)[0]));
         // A hidden child, or a matte source, is not drawn by the group.
         assert!(group(
             "",
