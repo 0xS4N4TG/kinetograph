@@ -57,3 +57,26 @@ arithmetic gave exactly the offset-0 fractions and texels at every offset. Build
 
 Remove `vendor/vello_shaders`, the `[patch.crates-io]` entry and this file once a `vello_shaders` release does the
 same. The change is small enough to offer upstream as a pull request against `research/vello_shaders/shader/fine.wgsl`.
+
+## vello 0.11.0
+
+- Upstream: crates.io `vello` 0.11.0 (same commit as `vello_shaders`). Licence: Apache-2.0 OR MIT, both kept.
+- Wired in by `[patch.crates-io]` in the root `Cargo.toml`. The unchanged copy was committed first.
+- Changed file: `src/wgpu_engine.rs`.
+
+### Why
+
+`WgpuEngine::run_recording` began a compute pass for each dispatch, about 17 for each `render_to_texture`, and S04
+draws about 20 pages a frame: some 340 Metal compute encoders a frame, each with its creation cost on the CPU.
+
+### The change
+
+Consecutive dispatches share one compute pass (`open_pass`). The pass is ended before anything that puts a command on
+the encoder itself (a buffer clear, a texture copy, a draw, a download), and before a bind group is made while a clear
+is pending, since making one can clear a buffer. Dispatches in one pass are ordered, and storage writes of one are
+seen by the next, so the output is the same: all 34 test scenes render byte-identically. The `wgpu-profiler` code in
+that file is adjusted but not built (the feature is off).
+
+### Dropping the patch
+
+Remove `vendor/vello`, its `[patch.crates-io]` entry and this section once a vello release does the same.

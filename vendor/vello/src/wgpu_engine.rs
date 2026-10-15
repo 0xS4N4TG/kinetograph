@@ -394,7 +394,23 @@ impl WgpuEngine {
             device.create_command_encoder(&CommandEncoderDescriptor { label: Some(label) });
         #[cfg(feature = "wgpu-profiler")]
         let query = profiler.begin_query(label, &mut encoder);
+        // The compute pass the dispatches share, while one is open (see
+        // vendor/README.md).
+        let mut open_pass: Option<wgpu::ComputePass<'static>> = None;
         for command in &recording.commands {
+            // What puts anything on the encoder itself ends the pass first.
+            if !matches!(
+                command,
+                Command::Dispatch(..)
+                    | Command::DispatchIndirect(..)
+                    | Command::Upload(..)
+                    | Command::UploadUniform(..)
+                    | Command::UploadImage(..)
+                    | Command::FreeBuffer(..)
+                    | Command::FreeImage(..)
+            ) {
+                open_pass = None;
+            }
             match command {
                 Command::Upload(buf_proxy, bytes) => {
                     transient_map
@@ -556,6 +572,10 @@ impl WgpuEngine {
                             if x == 0 || y == 0 || z == 0 {
                                 continue;
                             }
+                            // Making a bind group can clear a buffer on the encoder.
+                            if !self.bind_map.pending_clears.is_empty() {
+                                open_pass = None;
+                            }
                             let bind_group = transient_map.create_bind_group(
                                 &mut self.bind_map,
                                 &mut self.pool,
@@ -565,11 +585,14 @@ impl WgpuEngine {
                                 &wgpu_shader.bind_group_layout,
                                 bindings,
                             );
-                            let mut cpass =
-                                encoder.begin_compute_pass(&ComputePassDescriptor::default());
+                            let cpass = open_pass.get_or_insert_with(|| {
+                                encoder
+                                    .begin_compute_pass(&ComputePassDescriptor::default())
+                                    .forget_lifetime()
+                            });
                             #[cfg(feature = "wgpu-profiler")]
                             let query = profiler
-                                .begin_query(shader.label, &mut cpass)
+                                .begin_query(shader.label, &mut *cpass)
                                 .with_parent(Some(&query));
                             #[cfg_attr(
                                 not(feature = "debug_layers"),
@@ -585,7 +608,7 @@ impl WgpuEngine {
                             cpass.set_bind_group(0, &bind_group, &[]);
                             cpass.dispatch_workgroups(x, y, z);
                             #[cfg(feature = "wgpu-profiler")]
-                            profiler.end_query(&mut cpass, query);
+                            profiler.end_query(&mut *cpass, query);
                         }
                     }
                 }
@@ -607,6 +630,9 @@ impl WgpuEngine {
                             (cpu_shader.shader)(n_wg, &resources);
                         }
                         ShaderKind::Wgpu(wgpu_shader) => {
+                            if !self.bind_map.pending_clears.is_empty() {
+                                open_pass = None;
+                            }
                             let bind_group = transient_map.create_bind_group(
                                 &mut self.bind_map,
                                 &mut self.pool,
@@ -623,11 +649,14 @@ impl WgpuEngine {
                                 queue,
                                 proxy,
                             );
-                            let mut cpass =
-                                encoder.begin_compute_pass(&ComputePassDescriptor::default());
+                            let cpass = open_pass.get_or_insert_with(|| {
+                                encoder
+                                    .begin_compute_pass(&ComputePassDescriptor::default())
+                                    .forget_lifetime()
+                            });
                             #[cfg(feature = "wgpu-profiler")]
                             let query = profiler
-                                .begin_query(shader.label, &mut cpass)
+                                .begin_query(shader.label, &mut *cpass)
                                 .with_parent(Some(&query));
                             #[cfg_attr(
                                 not(feature = "debug_layers"),
@@ -646,7 +675,7 @@ impl WgpuEngine {
                             )?;
                             cpass.dispatch_workgroups_indirect(buf, *offset);
                             #[cfg(feature = "wgpu-profiler")]
-                            profiler.end_query(&mut cpass, query);
+                            profiler.end_query(&mut *cpass, query);
                         }
                     }
                 }
@@ -754,6 +783,7 @@ impl WgpuEngine {
         // TODO: This only actually needs to happen once per frame, but run_recording happens two or three times
         #[cfg(feature = "wgpu-profiler")]
         profiler.resolve_queries(&mut encoder);
+        drop(open_pass);
         queue.submit(Some(encoder.finish()));
         for id in free_bufs {
             if let Some(buf) = self.bind_map.buf_map.remove(&id)
