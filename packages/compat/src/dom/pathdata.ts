@@ -64,7 +64,6 @@ function tokens(d: string): (string | number)[] | null {
 /** Arc flags may be written without separators ("a1 1 0 00.5.5"), which the number regex above does not split. */
 function expandArcFlags(d: string): string {
   return d.replace(/([Aa])([^A-Za-z]*)/g, (_all, cmd: string, rest: string) => {
-    const nums = rest.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?|[01]/g) ?? [];
     // Re-read the arguments seven at a time: the 4th and 5th are single-digit flags.
     const parts: string[] = [];
     let text = rest.trim();
@@ -81,7 +80,6 @@ function expandArcFlags(d: string): string {
       parts.push(args.join(' '));
       text = text.replace(/^[\s,]+/, '');
     }
-    void nums;
     return `${cmd}${parts.join(` ${cmd} `)}`;
   });
 }

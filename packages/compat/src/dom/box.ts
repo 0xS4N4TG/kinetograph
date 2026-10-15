@@ -461,7 +461,7 @@ function replacedBox(el: StyledElement, box: Box, scope: Scope): void {
   }
 }
 
-function svgBox(el: StyledElement, box: Box, scope: Scope): void {
+function svgBox(el: StyledElement, box: Box): void {
   const style = box.style;
   box.content = { kind: 'svg', el };
   const attrW = pixels(el.props.width);
@@ -485,7 +485,6 @@ function svgBox(el: StyledElement, box: Box, scope: Scope): void {
     height = height ?? 150;
   }
   box.layout.measure = { width, height };
-  void scope;
 }
 
 export function parseViewBox(value: unknown): { x: number; y: number; width: number; height: number } | null {
@@ -522,7 +521,7 @@ export function buildBox(el: StyledElement, parent: Box | null, scope: Scope): B
     return box;
   }
   if (el.type === 'svg') {
-    svgBox(el, box, scope);
+    svgBox(el, box);
     return box;
   }
 

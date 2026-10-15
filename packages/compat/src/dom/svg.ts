@@ -485,8 +485,9 @@ export function mapSvg(svg: StyledElement, content: Rect, box: Box, report: Repo
     const s = mode === 'slice' ? Math.max(sx, sy) : Math.min(sx, sy);
     const slackX = content.w - view.width * s;
     const slackY = content.h - view.height * s;
-    const ox = align.includes('XMid') ? slackX / 2 : align.includes('XMax') ? slackX : 0;
-    const oy = align.includes('YMid') ? slackY / 2 : align.includes('YMax') ? slackY : 0;
+    const [, ax, ay] = /^x(Min|Mid|Max)Y(Min|Mid|Max)$/.exec(align)!;
+    const ox = ax === 'Mid' ? slackX / 2 : ax === 'Max' ? slackX : 0;
+    const oy = ay === 'Mid' ? slackY / 2 : ay === 'Max' ? slackY : 0;
     placeUniform(transform, s, ox, oy, content, view);
     if (mode === 'slice') {
       // The part of the viewBox that falls inside the box, in the group's own coordinates.

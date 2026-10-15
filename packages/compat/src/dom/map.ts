@@ -229,7 +229,7 @@ function mapBox(box: Box, mc: MapContext, parent: Origin): LayerJson | null {
   }
 
   // ---- what the box paints ----
-  if (visible) paintBackground(box, geom, layers, badPaint, mc, fields);
+  if (visible) paintBackground(box, geom, layers, badPaint);
 
   // ---- its content ----
   const content: LayerJson[] = [];
@@ -261,7 +261,7 @@ function mapBox(box: Box, mc: MapContext, parent: Origin): LayerJson | null {
   const maskImage = style.maskImage;
   let result: LayerJson[] = [...layers, ...body];
   if (maskImage && maskImage.length > 0) {
-    const masked = maskOf(box, geom, maskImage, badPaint, mc);
+    const masked = maskOf(box, geom, maskImage, badPaint);
     if (masked !== null) {
       if ('gradient' in masked) {
         fields.mask = masked;
@@ -276,7 +276,6 @@ function mapBox(box: Box, mc: MapContext, parent: Origin): LayerJson | null {
 
   const children = result;
   if (children.length === 0) return null;
-  void origin;
   return { id: box.id, type: 'group', ...fields, children } as LayerJson;
 }
 
@@ -359,10 +358,7 @@ function paintBackground(
   geom: BoxGeometry,
   layers: LayerJson[],
   bad: (property: string, value: string, reason: string) => void,
-  mc: MapContext,
-  fields: { effects?: Effect[] },
 ): void {
-  void fields;
   const style = box.style;
   const env = box.env;
   const current = currentOf(box);
@@ -423,7 +419,6 @@ function paintBackground(
 
   // ---- .border ----
   if (hasBorder) borderLayer(box, geom, layers, bad);
-  void mc;
 }
 
 function borderLayer(
@@ -473,12 +468,9 @@ function maskOf(
   geom: BoxGeometry,
   images: readonly BackgroundImage[],
   bad: (property: string, value: string, reason: string) => void,
-  mc: MapContext,
 ): Mask | { layer: LayerJson } | null {
-  void mc;
   const style = box.style;
   const env = box.env;
-  const el = box.el!;
   if (images.length > 1) {
     bad('maskImage', `${images.length} layers`, 'only one mask layer is drawn');
     return null;
@@ -508,7 +500,6 @@ function maskOf(
       id: sub(box, 'mask'),
     },
   );
-  void el;
   return layer === null ? null : { layer };
 }
 
@@ -576,8 +567,13 @@ function placeNative(box: Box, rect: NonNullable<Box['rect']>): LayerJson | null
   const t: Transform = { ...(layer.transform ?? {}) };
   const anchorX = constant(t.anchorX, 0) ?? 0;
   const anchorY = constant(t.anchorY, 0) ?? 0;
-  t.x = plus(t.x, rect.x + anchorX) as Transform['x'];
-  t.y = plus(t.y, rect.y + anchorY) as Transform['y'];
+  const x = plus(t.x, rect.x + anchorX);
+  const y = plus(t.y, rect.y + anchorY);
+  if (x === 0) delete t.x;
+  else t.x = x;
+  if (y === 0) delete t.y;
+  else t.y = y;
+  if (Object.keys(t).length === 0) return layer;
   return { ...layer, transform: t } as LayerJson;
 }
 
@@ -593,5 +589,3 @@ export function mapRoot(root: Box, mc: MapContext): LayerJson | null {
   return layer;
 }
 
-export type { ParsedStyle, LengthEnv };
-export { colorString };

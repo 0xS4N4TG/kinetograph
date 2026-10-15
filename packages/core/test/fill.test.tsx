@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Text, useTimeline } from '@kinetograph/react';
+import { createRequire } from 'node:module';
+import type { ReactNode } from 'react';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLayoutDom } from '@kinetograph/compat/dom';
+import { createSceneRoot, Rect, Text, TimelineContext, useTimeline } from '@kinetograph/react';
 import { AbsoluteFill, Img, resetStyleWarnings } from '../src/fill.js';
 import { Freeze } from '../src/timeline.js';
-import { renderAt } from './scene-harness.js';
+import { renderAt, timeline } from './scene-harness.js';
 
 let warn: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
@@ -137,5 +140,95 @@ describe('Freeze', () => {
       </>,
     );
     expect(seen).toEqual([true, false, false]);
+  });
+});
+
+// ---- the DOM elements they are with any other key (docs/COMPAT.md §4.1) ----
+
+function loadLayout(): ((json: string) => string) | null {
+  try {
+    return (createRequire(import.meta.url)('@kinetograph/native') as { layoutDom: (json: string) => string }).layoutDom;
+  } catch {
+    return null;
+  }
+}
+const layoutDom = loadLayout();
+
+/** Renders in the 1280 x 720 composition of the harness, as the frame loop makes its root. */
+function renderDom(node: ReactNode) {
+  const root = createSceneRoot({ viewport: { width: 1280, height: 720 } });
+  try {
+    return root.render(<TimelineContext.Provider value={timeline(0)}>{node}</TimelineContext.Provider>);
+  } finally {
+    root.unmount();
+  }
+}
+
+describe.skipIf(layoutDom === null)('as DOM elements', () => {
+  beforeAll(() => setLayoutDom(layoutDom));
+  afterAll(() => setLayoutDom(null));
+
+  it('AbsoluteFill with a style key the layers have no use for is a div over the whole page', () => {
+    const tree = renderDom(<AbsoluteFill style={{ backgroundColor: '#112233', zIndex: 3, backgroundImage: 'linear-gradient(red, blue)' }} />);
+    expect(warn).not.toHaveBeenCalled();
+    expect(tree.unsupported).toEqual([]);
+    const [fill] = tree.layers as any[];
+    expect(fill.id).toBe('$0');
+    expect(fill.children.map((c: any) => c.id)).toEqual(['$0.bg', '$0.bg-0']);
+    expect(fill.children[0]).toMatchObject({ shape: { kind: 'rect', width: 1280, height: 720 }, fill: '#112233' });
+  });
+
+  it('stacks its children in a column unless the author says otherwise', () => {
+    const tree = renderDom(
+      <AbsoluteFill style={{ flexDirection: 'row', zIndex: 1 }}>
+        <div style={{ width: 100, height: 20, backgroundColor: 'red' }} />
+        <div style={{ width: 50, height: 20, backgroundColor: 'red' }} />
+      </AbsoluteFill>,
+    );
+    const [fill] = tree.layers as any[];
+    expect(fill.children.find((c: any) => c.id === '$0.1').transform).toEqual({ x: 100 });
+    const column = renderDom(
+      <AbsoluteFill style={{ zIndex: 1 }}>
+        <div style={{ width: 100, height: 20, backgroundColor: 'red' }} />
+        <div style={{ width: 50, height: 20, backgroundColor: 'red' }} />
+      </AbsoluteFill>,
+    );
+    expect((column.layers[0] as any).children.find((c: any) => c.id === '$0.1').transform).toEqual({ y: 20 });
+  });
+
+  it('with a class name is a div, and the class is reported', () => {
+    const tree = renderDom(<AbsoluteFill className="bg" />);
+    expect(tree.unsupported).toEqual([expect.objectContaining({ element: 'div', property: 'className' })]);
+  });
+
+  it('keeps the layers when it uses only the keys they read, so the hand ports render as before', () => {
+    const [fill] = renderAt(<AbsoluteFill style={{ backgroundColor: '#112233', opacity: 0.5, flexDirection: 'row', gap: 4 }} />).layers as any[];
+    expect(fill).toMatchObject({ type: 'group', layout: { width: 1280, height: 720, flexDirection: 'row', gap: 4 }, opacity: 0.5 });
+  });
+
+  it('Img with a style key the image layer has no use for is an img', () => {
+    const tree = renderDom(<Img src="/a.png" width={64} height={32} style={{ borderRadius: 8, objectFit: 'cover' }} />);
+    const [box] = tree.layers as any[];
+    expect(box.children.find((c: any) => c.type === 'image')).toMatchObject({ id: '$0.img', src: '/a.png', width: 64, height: 32, fit: 'cover' });
+    expect(tree.unsupported).toEqual([]);
+  });
+
+  it('keeps its CSS position when it sits in an AbsoluteFill that is a flex column of layers', () => {
+    const tree = renderDom(
+      <AbsoluteFill>
+        <Rect width={300} height={200} fill="#fff" />
+        <AbsoluteFill style={{ zIndex: 2 }}>
+          <div style={{ position: 'absolute', top: 100, left: 50, width: 10, height: 10, backgroundColor: 'red' }} />
+        </AbsoluteFill>
+      </AbsoluteFill>,
+    );
+    const [outer] = tree.layers as any[];
+    expect(outer.layout).toBeDefined();
+    const island = outer.children.find((c: any) => c.id === '$0.1');
+    // The inner AbsoluteFill is the island: out of the column's flow.
+    expect(island.layoutItem).toEqual({ position: 'absolute' });
+    const dot = island.children.find((c: any) => c.id === '$0.1.0');
+    expect(dot.transform).toEqual({ x: 50, y: 100 });
+    expect(island.transform).toBeUndefined();
   });
 });

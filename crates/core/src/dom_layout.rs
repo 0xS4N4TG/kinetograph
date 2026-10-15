@@ -928,8 +928,7 @@ mod tests {
                     baseline: 1.0,
                 })
             })
-            .err()
-            .expect("an error")
+            .expect_err("an error")
             .to_string()
         };
         assert!(error(json!({ "colour": 1 }), Value::Null).contains("unknown style property"));
