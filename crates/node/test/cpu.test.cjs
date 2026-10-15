@@ -353,3 +353,87 @@ test('videoFrame errors', () => {
   rejects(() => native.videoFrame(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /no video stream/);
   rejects(() => native.videoFrame(`${media}/clip.mp4`, Number.NaN, repo), 'INVALID_ARG', /time/);
 });
+
+// ---- DOM islands (docs/ENGINE.md §2) ----
+
+const el = (tag, p, style = '', children = [], attrs = {}) => ({ kind: 'element', tag, path: p, attrs, style, children });
+const txt = (text) => ({ kind: 'text', text });
+const island = (root, extra = {}) =>
+  JSON.stringify({
+    root,
+    viewport: { width: 400, height: 300 },
+    fonts: { 'DM Sans': font },
+    baseDir: repo,
+    time: 0,
+    path: '$0',
+    ...extra,
+  });
+
+test('domLayoutBoxes gives the offset box, the transformed rect and the client and scroll sizes', () => {
+  const boxes = JSON.parse(
+    native.domLayoutBoxes(
+      island(
+        el('div', '$0', 'display: flex; gap: 10px; padding: 5px', [
+          el('div', '$0.0', 'width: 100px; height: 40px; transform: translate(7px, 3px) scale(2); transform-origin: 0 0'),
+          el('div', '$0.1', 'flex: 1; height: 20px; overflow: hidden', [el('div', '$0.1.0', 'width: 500px; height: 10px')]),
+          { kind: 'native', path: '$0.2', width: 30, height: 15 },
+        ]),
+      ),
+    ),
+  );
+  assert.deepEqual(boxes['$0.0'].rect, { x: 12, y: 8, width: 200, height: 80 });
+  assert.deepEqual(
+    [boxes['$0.0'].x, boxes['$0.0'].y, boxes['$0.0'].width, boxes['$0.0'].height],
+    [5, 5, 100, 40],
+  );
+  // 400 - 2 * 5 padding - 100 - 30 - 2 * 10 gap.
+  assert.equal(boxes['$0.1'].width, 240);
+  assert.deepEqual(boxes['$0.1'].client, { width: 240, height: 20 });
+  assert.ok(boxes['$0.1'].scroll.width >= 500);
+  assert.deepEqual([boxes['$0.2'].width, boxes['$0.2'].height], [30, 15]);
+});
+
+test('domLayoutBoxes needs the registered fonts to measure text, and wraps at the viewport', () => {
+  const root = el('div', '$0', 'font-family: "DM Sans"; font-size: 32px; line-height: 40px', [
+    txt('alpha beta gamma delta epsilon zeta eta theta iota kappa lambda'),
+  ]);
+  const boxes = JSON.parse(native.domLayoutBoxes(island(root)));
+  assert.equal(boxes['$0'].width, 400);
+  assert.ok(boxes['$0'].height >= 80 && boxes['$0'].height % 40 === 0, boxes['$0'].height);
+});
+
+test('domComputedStyle gives resolved values for CSS and camelCase names', () => {
+  const root = el('div', '$0', 'width: 50%; font-size: 20px; color: red; transform: translate(10px, 5px)');
+  const values = native.domComputedStyle(island(root), '$0', ['width', 'fontSize', 'color', 'transform', 'nonsense']);
+  assert.deepEqual(values, ['200px', '20px', 'rgb(255, 0, 0)', 'matrix(1, 0, 0, 1, 10, 5)', '']);
+});
+
+test('renderDomIsland returns an IslandOutput and reports files it cannot read', () => {
+  const root = el('div', '$0', '', [el('img', '$0.0', 'width: 10px; height: 10px', [], { src: 'nope.png' })]);
+  const out = JSON.parse(native.renderDomIsland(island(root)));
+  assert.ok(Array.isArray(out.layers));
+  assert.ok(Array.isArray(out.unsupported));
+  assert.ok(out.unsupported.some((u) => /nope\.png/.test(u.reason)));
+  assert.equal(out.camera, null);
+});
+
+test('renderDomIsland is a pure function of the request, animations included', () => {
+  const sheet = '@keyframes w { from { width: 100px } to { width: 300px } } .a { height: 10px; animation: w 2s linear both }';
+  const at = (time) => island(el('div', '$0', '', [], { class: 'a' }), { stylesheets: [sheet], time });
+  const width = (time) => JSON.parse(native.domLayoutBoxes(at(time)))['$0'].width;
+  assert.equal(width(1), 200);
+  assert.equal(width(0.5), 150);
+  assert.equal(width(1), 200);
+  assert.equal(native.renderDomIsland(at(0.7)), native.renderDomIsland(at(0.7)));
+});
+
+test('the DOM island functions throw INVALID_ARG or RENDER errors', () => {
+  rejects(() => native.renderDomIsland('{ nope'), 'INVALID_ARG', /renderDomIsland request/);
+  rejects(() => native.domLayoutBoxes('{}'), 'INVALID_ARG', /domLayoutBoxes request/);
+  rejects(() => native.domComputedStyle(island(el('div', '$0')), '$9', ['width']), 'INVALID_ARG', /no element/);
+  rejects(
+    () => native.domLayoutBoxes(island(el('div', '$0'), { fonts: { Broken: '/nonexistent/font.ttf' } })),
+    'RENDER',
+    /font\.ttf/,
+  );
+});

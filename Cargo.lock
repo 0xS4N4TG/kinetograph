@@ -1857,9 +1857,17 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "bytes",
+ "data-url",
+ "euclid",
+ "image",
  "kinetograph-core",
+ "parley",
+ "percent-encoding",
  "serde",
  "serde_json",
+ "stylo",
+ "url",
 ]
 
 [[package]]
@@ -1870,6 +1878,7 @@ dependencies = [
  "image",
  "kinetograph-cli",
  "kinetograph-core",
+ "kinetograph-dom",
  "napi",
  "napi-build",
  "napi-derive",

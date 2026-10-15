@@ -94,6 +94,20 @@ export interface BenchStages {
  */
 export declare function decodeAudio(path: string, sampleRate: number, baseDir?: string | undefined | null): AudioPcm | null
 
+/**
+ * `getComputedStyle` of the element at `path` in a DOM island: the resolved
+ * value of each property (CSS or camelCase names), `""` for an unknown one.
+ */
+export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>): Array<string>
+
+/**
+ * The boxes of every element of a DOM island (docs/ENGINE.md §2): an
+ * `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
+ * scroll } }` as JSON out. `x`..`height` are the border box where layout put
+ * it, `rect` the transformed bounding box `getBoundingClientRect` gives.
+ */
+export declare function domLayoutBoxes(requestJson: string): string
+
 /** The scene resolved at `frame`, as an `InspectResult` JSON string. */
 export declare function inspect(sceneJson: string, frame: number, baseDir?: string | undefined | null): string
 
@@ -147,6 +161,14 @@ export interface PreviewOptions {
 
 /** Reads a video's or GIF's header, without decoding a picture. */
 export declare function probeMedia(path: string, baseDir?: string | undefined | null): MediaInfo
+
+/**
+ * One DOM island at one frame (docs/ENGINE.md §2): an `IslandRequest` as
+ * JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
+ * Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
+ * painted as scene layers. CPU only.
+ */
+export declare function renderDomIsland(requestJson: string): string
 
 export interface RendererOptions {
   /** Default true. */
