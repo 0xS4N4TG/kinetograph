@@ -7,6 +7,7 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./css": { "types": "./dist/css/index.d.ts", "default": "./dist/css/index.js" },
+    "./shim": { "types": "./dist/shim/index.d.ts", "default": "./dist/shim/index.js" },
     "./dom": { "types": "./dist/dom/index.d.ts", "default": "./dist/dom/index.js" },
     "./browser": { "types": "./dist/browser/index.d.ts", "default": "./dist/browser/index.js" },
     "./browser/prelude": { "types": "./dist/browser/prelude.d.ts", "default": "./dist/browser/prelude.js" },

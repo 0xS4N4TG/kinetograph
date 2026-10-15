@@ -17,7 +17,7 @@ export { isDomElement };
 export { mapLegacyIsland, mapStyledIsland, setLayoutDom } from './legacy.js';
 export type { LayoutDom } from './legacy.js';
 export type { StyledElement, StyledNode, StyledNative, StyledText } from './tree.js';
-export { setDomAddon, hasAddonFunction } from '../addon.js';
+export { setDomAddon, hasAddonFunction, addonFunction } from '../addon.js';
 export type { DomAddon } from '../addon.js';
 export {
   setDomEnvironment,

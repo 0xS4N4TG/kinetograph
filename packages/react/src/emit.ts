@@ -5,6 +5,7 @@
 // for. Nothing here reads time: `<Lottie>` and `<Audio>` already resolved it.
 
 import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
+import { propsWithOverlay } from '@kinetograph/compat/shim';
 import {
   fontKey,
   type AudioClipJson,
@@ -166,7 +167,8 @@ function charsOf(chars: unknown, text: string): (CharStyle | null)[] {
  * they are: they are emitted on their own.
  */
 export function flattenDomElement(element: HostElement, path: string, sequences: SequenceJson[] | null): HostElement {
-  return { ...element, children: flattenDomChildren(element.children, path, { next: 0 }, sequences) };
+  // A script's writes to `style` and attributes (through a ref) are laid over the props.
+  return { ...element, props: propsWithOverlay(element), children: flattenDomChildren(element.children, path, { next: 0 }, sequences) };
 }
 
 function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next: number }, sequences: SequenceJson[] | null): HostNode[] {

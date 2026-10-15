@@ -8,7 +8,17 @@ import { createContext, type ReactNode } from 'react';
 import Reconciler from 'react-reconciler';
 import { ConcurrentRoot, DiscreteEventPriority, NoEventPriority } from 'react-reconciler/constants.js';
 import { isDomElement } from '@kinetograph/compat/dom';
+import {
+  deliverObservations,
+  domElementFor,
+  hasObservers,
+  MAX_OBSERVER_DEPTH,
+  registerReadbackRoot,
+  setWebViewport,
+  unregisterReadbackRoot,
+} from '@kinetograph/compat/shim';
 import { ELEMENT_NAMES, emit, type EmitOptions, type HostElement, type HostNode, type HostText, type RenderedTree } from './emit.js';
+import { createReadback, hostMeta, MAX_MEASURE_PASSES, measureLoopError, type Container } from './readback.js';
 
 export type { EmitOptions, RenderedTree } from './emit.js';
 
@@ -18,11 +28,6 @@ export interface SceneRoot {
   /** The tree as it is now, after state updates since the last render. */
   snapshot(): RenderedTree;
   unmount(): void;
-}
-
-/** The root of the host tree. */
-interface Container {
-  children: HostNode[];
 }
 
 /** What a child learns about its place: the type of the nearest host parent, or `root`. */
@@ -79,21 +84,34 @@ const hostConfig = {
       throw new Error(`Unknown element <${type}>: only the Kinetograph elements (Layer, Rect, Text, ...) and DOM elements (div, span, svg, ...) can be rendered`);
     }
     const element: HostElement = { kind: 'element', type, props, children: [] };
+    hostMeta.set(element, { parent: null, container: _root });
     // A <Text> child that is an element is caught here, before it is attached, so the error names the element.
     checkChild(hostContext, element);
     return element;
   },
   createTextInstance(text: string, _root: Container, hostContext: HostContext): HostText {
     const node: HostText = { kind: 'text', text };
+    hostMeta.set(node, { parent: null, container: _root });
     checkChild(hostContext, node);
     return node;
   },
-  appendInitialChild: (parent: HostElement, child: HostNode) => parent.children.push(child),
+  appendInitialChild: (parent: HostElement, child: HostNode) => {
+    adopt(parent, child);
+    parent.children.push(child);
+  },
   finalizeInitialChildren: () => false,
   shouldSetTextContent: () => false,
-  getPublicInstance: (instance: HostNode) => instance,
+  // A ref to a DOM element is an object that answers like one for measurement (docs/ENGINE.md §1, "Readback").
+  getPublicInstance: (instance: HostNode) => {
+    if (instance.kind !== 'element' || !isDomElement(instance.type)) return instance;
+    const container = hostMeta.get(instance)?.container;
+    return container?.readback ? domElementFor(instance, container.readback) : instance;
+  },
   prepareForCommit: () => null,
-  resetAfterCommit: () => {},
+  // The tree has changed: readback caches are stale. Layout effects run after this, so they measure the new tree.
+  resetAfterCommit: (container: Container) => {
+    container.generation++;
+  },
   preparePortalMount: () => {},
   detachDeletedInstance: () => {},
 
@@ -102,20 +120,25 @@ const hostConfig = {
   // React moves a child to the end by appending it again, as the DOM does.
   appendChild(parent: HostElement, child: HostNode) {
     removeFrom(parent.children, child);
+    adopt(parent, child);
     parent.children.push(child);
   },
   appendChildToContainer(container: Container, child: HostNode) {
     removeFrom(container.children, child);
+    adopt(null, child);
     container.children.push(child);
   },
   insertBefore(parent: HostElement, child: HostNode, before: HostNode) {
+    adopt(parent, child);
     insertInto(parent.children, child, before);
   },
   insertInContainerBefore(container: Container, child: HostNode, before: HostNode) {
+    adopt(null, child);
     insertInto(container.children, child, before);
   },
   removeChild(parent: HostElement, child: HostNode) {
     removeFrom(parent.children, child);
+    adopt(null, child);
   },
   removeChildFromContainer(container: Container, child: HostNode) {
     removeFrom(container.children, child);
@@ -174,6 +197,12 @@ const hostConfig = {
   getInstanceFromScope: () => null,
 };
 
+/** Records where a node hangs (for readback: parents, paths, connectedness). */
+function adopt(parent: HostElement | null, child: HostNode): void {
+  const meta = hostMeta.get(child);
+  if (meta) meta.parent = parent;
+}
+
 function insertInto(list: HostNode[], child: HostNode, before: HostNode): void {
   // React moves an existing child by inserting it again.
   removeFrom(list, child);
@@ -195,13 +224,18 @@ const reconciler = (Reconciler as unknown as (config: object) => Reconciler.Reco
 /** Passes that flush effects and the updates they cause; more than this means an effect keeps updating state. */
 const MAX_SETTLE_PASSES = 100;
 
+
 /**
  * A root that renders into a host tree and emits it as scene JSON. One per composition, kept across frames like a
  * Remotion tab keeps its page, so state, refs and effects live across `render` calls and a `delayRender` that
  * resolves later can update the tree seen by `snapshot`.
  */
 export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
-  const container: Container = { children: [] };
+  const container: Container = { children: [], generation: 0, readback: null, measuredGenerations: new Set() };
+  container.readback = createReadback(container, options);
+  registerReadbackRoot(container.readback);
+  // `window.innerWidth`, `matchMedia` and `document.documentElement` report the composition's size.
+  if (options.viewport) setWebViewport(options.viewport);
   let error: { value: unknown } | undefined;
   const remember = (value: unknown): void => {
     // The first error is the cause; later ones are usually its fallout.
@@ -223,14 +257,23 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
   let unmounted = false;
 
   function settle(): void {
+    container.measuredGenerations.clear();
+    let observerRounds = 0;
     for (let pass = 0; ; pass += 1) {
       if (pass >= MAX_SETTLE_PASSES) {
         throw new Error('The tree did not settle: an effect keeps updating state on every render');
       }
+      if (pass >= MAX_MEASURE_PASSES && container.measuredGenerations.size > 0) throw measureLoopError();
       // Both calls run, so a sync render and the effects it left are handled together.
       const rendered = reconciler.flushSyncWork();
       const effects = reconciler.flushPassiveEffects();
-      if (!rendered && !effects) break;
+      if (rendered || effects) continue;
+      // Layout is settled: tell the observers what changed (a callback may set state, which renders again).
+      if (hasObservers() && observerRounds < MAX_OBSERVER_DEPTH && deliverObservations()) {
+        observerRounds += 1;
+        continue;
+      }
+      break;
     }
     if (error !== undefined) {
       const { value } = error;
@@ -263,6 +306,7 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
         settle();
       } finally {
         container.children = [];
+        unregisterReadbackRoot(container.readback!);
       }
     },
   };

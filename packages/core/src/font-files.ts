@@ -27,7 +27,10 @@ export function defaultFontCacheDir(): string {
   return join(homedir(), '.cache', 'kinetograph', 'fonts');
 }
 
-const defaultFetch: FetchLike = (url, init) => fetch(url, init);
+// In a Node render the project's own `fetch` reads project files only (no network, docs/ENGINE.md §10); these downloads are
+// explicit and cached, and use the real one, which the DOM globals keep under this symbol.
+const defaultFetch: FetchLike = (url, init) =>
+  ((globalThis as Record<symbol, unknown>)[Symbol.for('kinetograph.realFetch')] as typeof fetch | undefined ?? fetch)(url, init);
 
 /** Google serves TrueType to clients it does not recognise, which is what the renderer reads (it has no WOFF2 decoder). */
 const USER_AGENT = 'curl/8.0';

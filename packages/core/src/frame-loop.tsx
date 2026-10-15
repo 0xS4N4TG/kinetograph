@@ -21,7 +21,7 @@ import {
 } from '@kinetograph/scene';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { realTimers, resetVirtualClock, setVirtualFrame } from './determinism.js';
+import { realTimers, resetVirtualClock, setVirtualFrame, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 
 export interface FrameResult {
@@ -91,7 +91,12 @@ class Renderer implements FrameRenderer {
     // React state and virtual timers only move forward. Going back means starting the composition over.
     if (frame < this.lastFrame || this.scene === null) {
       this.scene?.unmount();
-      this.scene = createSceneRoot({ viewport: { width: config.width, height: config.height }, fonts: getFonts });
+      // `time` is the virtual clock in seconds (frame / fps, also on a motion-blur sub-frame): the clock CSS animations read.
+      this.scene = createSceneRoot({
+        viewport: { width: config.width, height: config.height },
+        fonts: getFonts,
+        time: () => virtualNow() / 1000,
+      });
       this.lastFrame = -1;
       resetVirtualClock();
     }

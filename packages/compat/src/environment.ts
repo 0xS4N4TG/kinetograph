@@ -11,14 +11,20 @@ export interface DomEnvironment {
   publicDir?: string;
 }
 
-let environment: DomEnvironment = { baseDir: process.cwd() };
+let environment: DomEnvironment | null = null;
 
 export function setDomEnvironment(next: DomEnvironment): void {
   environment = { baseDir: next.baseDir, ...(next.publicDir !== undefined ? { publicDir: next.publicDir } : {}) };
 }
 
+/**
+ * Where relative paths resolve. Set by the host after the project loads; before that (a stylesheet imported while the
+ * project loads) the host's environment variables say: `KINETOGRAPH_BASE_DIR`, `KINETOGRAPH_PUBLIC_DIR`.
+ */
 export function getDomEnvironment(): DomEnvironment {
-  return environment;
+  if (environment !== null) return environment;
+  const publicDir = process.env.KINETOGRAPH_PUBLIC_DIR;
+  return { baseDir: process.env.KINETOGRAPH_BASE_DIR ?? process.cwd(), ...(publicDir ? { publicDir } : {}) };
 }
 
 // ---- stylesheets ----
@@ -118,7 +124,8 @@ function registerFontFaces(css: string): void {
 /** Where a file named in CSS is: absolute as it is; else beside the project's entry, else in the public folder. */
 export function resolveProjectFile(name: string): string | null {
   const clean = name.split(/[?#]/)[0]!;
-  const roots = [environment.baseDir, environment.publicDir].filter((d): d is string => d !== undefined);
+  const { baseDir, publicDir } = getDomEnvironment();
+  const roots = [baseDir, publicDir].filter((d): d is string => d !== undefined);
   if (isAbsolute(clean) && existsSync(clean)) return clean;
   const relative = clean.replace(/^[/\\]+/, '');
   for (const root of roots) {
