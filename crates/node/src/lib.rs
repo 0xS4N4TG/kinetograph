@@ -235,7 +235,8 @@ pub fn layout_dom(request_json: String) -> Result<String> {
 }
 
 /// The picture a video layer shows `time` seconds after the stream's first
-/// picture, decoded on the CPU (docs/COMPAT.md §6.2).
+/// picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
+/// a gif layer shows at `time` seconds (the last one is held past the end).
 #[napi]
 pub fn video_frame(path: String, time: f64, base_dir: Option<String>) -> Result<RgbaFrame> {
     raw::video_frame(&resolve_base(base_dir).join(path), time)

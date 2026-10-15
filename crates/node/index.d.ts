@@ -248,7 +248,8 @@ export declare function version(): string
 
 /**
  * The picture a video layer shows `time` seconds after the stream's first
- * picture, decoded on the CPU (docs/COMPAT.md §6.2).
+ * picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
+ * a gif layer shows at `time` seconds (the last one is held past the end).
  */
 export declare function videoFrame(path: string, time: number, baseDir?: string | undefined | null): RgbaFrame
 

@@ -260,6 +260,15 @@ test('videoFrame decodes the picture a video layer shows, as straight RGBA', () 
   assert.ok(native.videoFrame(path.join(repo, media, 'clip.mp4'), 0).data.equals(first.data));
 });
 
+test('videoFrame also gives the picture of a GIF at a time', () => {
+  const at = (t) => native.videoFrame(`${media}/spinner.gif`, t, repo);
+  assert.deepEqual([at(0).width, at(0).height], [32, 24]);
+  assert.ok(at(0).data.equals(at(-1).data));
+  assert.ok(!at(0).data.equals(at(0.15).data));
+  // Past the end the last picture is held.
+  assert.ok(at(0.7).data.equals(at(60).data));
+});
+
 test('videoFrame errors', () => {
   rejects(() => native.videoFrame(`${media}/nope.mp4`, 0, repo), 'IO', /nope\.mp4/);
   rejects(() => native.videoFrame(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /no video stream/);

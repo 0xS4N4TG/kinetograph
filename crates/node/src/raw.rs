@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use kinetograph_core::gif::{self, Gif};
 use kinetograph_core::video::{self, VideoDecoder};
 use napi::bindgen_prelude::Buffer;
 
@@ -19,17 +20,28 @@ const MAX_DECODERS: usize = 8;
 
 static DECODERS: Mutex<Option<HashMap<PathBuf, VideoDecoder>>> = Mutex::new(None);
 
+/// A GIF is decoded whole, so only a few stay in memory.
+const MAX_GIFS: usize = 4;
+
+static GIFS: Mutex<Option<HashMap<PathBuf, Gif>>> = Mutex::new(None);
+
 /// The picture a video layer shows `time` seconds after the stream's first
 /// picture, by the rule of docs/SCENE.md "video": the last picture at or
 /// before `time` (rounded to the nearest tick), the first for a `time`
 /// before it, and the last picture before the stream's end for one at or past
 /// it. The result depends on (file, time) only, never on earlier calls.
+///
+/// A GIF is accepted too: the picture `docs/SCENE.md` "gif" shows at `time`
+/// seconds (the first before the start, the last past the end).
 pub fn video_frame(path: &Path, time: f64) -> Result<RgbaFrame> {
     if !time.is_finite() {
         return Err(invalid(format!("time must be a number, got {time}")));
     }
     std::fs::metadata(path)
         .map_err(|e| error(Code::Io, format!("cannot read {}: {e}", path.display())))?;
+    if gif::is_gif(path) {
+        return gif_frame(path, time);
+    }
     let bad = |what: String| invalid(format!("{}: {what}", path.display()));
     let info = video::probe(path).map_err(bad)?;
     let target = info.media_time(time, info.duration);
@@ -60,6 +72,25 @@ pub fn video_frame(path: &Path, time: f64) -> Result<RgbaFrame> {
             ));
         }
     };
+    Ok(RgbaFrame {
+        width: image.width,
+        height: image.height,
+        data: Buffer::from(image.data.as_ref().to_vec()),
+    })
+}
+
+fn gif_frame(path: &Path, time: f64) -> Result<RgbaFrame> {
+    let key = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut guard = GIFS.lock().unwrap_or_else(|e| e.into_inner());
+    let gifs = guard.get_or_insert_with(HashMap::new);
+    if !gifs.contains_key(&key) {
+        let opened = Gif::open(path).map_err(|e| invalid(format!("{}: {e}", path.display())))?;
+        if gifs.len() >= MAX_GIFS {
+            gifs.clear();
+        }
+        gifs.insert(key.clone(), opened);
+    }
+    let image = gifs[&key].picture(time, false);
     Ok(RgbaFrame {
         width: image.width,
         height: image.height,
@@ -107,6 +138,23 @@ mod tests {
         assert_eq!(at(-3.0), at(0.0));
         assert_eq!(at(2.0), at(50.0));
         assert_ne!(at(2.0), at(0.0));
+    }
+
+    #[test]
+    fn a_gif_shows_the_picture_for_its_time() {
+        let spinner =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/scenes/media/spinner.gif");
+        let at = |t: f64| video_frame(&spinner, t).unwrap().data.to_vec();
+        let first = video_frame(&spinner, 0.0).unwrap();
+        assert_eq!((first.width, first.height), (32, 24));
+        assert_eq!(first.data.len(), 32 * 24 * 4);
+        // Delays are 100 (a 0 counts as 100), 100, 40, 200 and 60 ms.
+        assert_eq!(at(-1.0), at(0.0));
+        assert_eq!(at(0.05), at(0.0));
+        assert_ne!(at(0.15), at(0.0));
+        // Past the end, the last picture is held.
+        assert_eq!(at(0.7), at(30.0));
+        assert_ne!(at(0.7), at(0.0));
     }
 
     #[test]
