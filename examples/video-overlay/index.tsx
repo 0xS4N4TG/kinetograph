@@ -151,9 +151,16 @@ const LowerThird: React.FC = () => {
   const { fps, durationInFrames } = useVideoConfig();
   const enter = spring({ frame, fps, config: { damping: 16 } });
   const exit = spring({ frame: frame - (durationInFrames - 15), fps, config: { damping: 200 } });
-  const slide = interpolate(enter - exit, [0, 1], [-720, 0]);
+  // A wipe from the left, with the contents easing in behind it.
+  const shown = enter - exit;
+  const wipe = 700 * shown; // wide enough for the shadow at rest
   return (
-    <Layer id="lower-third" x={96 + slide} y={96}>
+    <Layer
+      id="lower-third"
+      x={96 - 40 * (1 - shown)}
+      y={96}
+      clip={{ kind: 'polygon', points: [[0, -40], [wipe, -40], [wipe, 180], [0, 180]] }}
+    >
       <Rect width={620} height={132} radius={12} fill="#101218e6" effects={[dropShadow({ y: 10, blur: 30, color: '#00000080' })]} />
       <Rect width={10} height={132} fill={ACCENT} />
       <Text font={fontFamily} weight={700} size={44} color="#ffffff" x={40} y={22}>
