@@ -13,6 +13,7 @@ import type {
   AudioClipJson,
   BlendMode,
   CanvasContext2D,
+  GlslTextureOptions,
   CharStyle,
   Clip,
   ColorString,
@@ -159,6 +160,20 @@ export interface CanvasProps extends CommonProps {
   draw: (context: CanvasContext2D) => void;
 }
 
+export interface GlslShaderProps extends CommonProps {
+  /** The size of the shader's drawing buffer in layer pixels, whole, not animated. */
+  width: number;
+  height: number;
+  /** The fragment shader, GLSL ES 100 or 300 es (docs/SCENE.md, "glsl"). */
+  fragment: string;
+  /** The vertex shader. Default: one that covers the box with the attribute `a_position`, in clip space. */
+  vertex?: string;
+  /** Values for its uniforms, by name; compute them from the frame (`useCurrentFrame`), not from a clock. */
+  uniforms?: Record<string, number | boolean | readonly number[]>;
+  /** Pictures for its `sampler2D` uniforms, by name. */
+  textures?: Record<string, string | GlslTextureOptions>;
+}
+
 export interface CameraProps {
   perspective: Num;
   x?: Num;
@@ -246,6 +261,13 @@ export function SequenceHost(props: SequenceHostProps) {
 /** A canvas drawn with `draw(context)`: a Canvas 2D context's commands, drawn natively (docs/SCENE.md, "canvas"). */
 export function Canvas(props: CanvasProps) {
   return createElement('kg-canvas', props);
+}
+
+// ---- <GlslShader> ----
+
+/** A full-screen GLSL fragment shader, run natively on the GPU (docs/SCENE.md, "glsl"). */
+export function GlslShader(props: GlslShaderProps) {
+  return createElement('kg-glsl', props);
 }
 
 // ---- <Lottie> ----

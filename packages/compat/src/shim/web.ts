@@ -8,7 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, type CanvasPicture } from '@kinetograph/scene';
+import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, type CanvasPicture } from '@kinetograph/scene';
 import { resolveProjectFile } from '../environment.js';
 import { CanvasSurface, OffscreenCanvasShim } from './canvas.js';
 import { DomElement, domElementFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
@@ -367,8 +367,8 @@ class DetachedCanvas extends DetachedElement {
     else if (name === 'height') this.surface.height = Number(value);
     super.setAttribute(name, value);
   }
-  getContext(type: string): CanvasContext2D | null {
-    return this.surface.getContext(type);
+  getContext(type: string, attributes?: unknown): CanvasContext2D | WebGLContext | null {
+    return this.surface.getContext(type, attributes);
   }
   toDataURL(): string {
     return this.surface.toDataURL();
@@ -463,6 +463,8 @@ export function installDomGlobals(): void {
   define(g, 'HTMLCanvasElement', DomElement);
   define(g, 'OffscreenCanvas', OffscreenCanvasShim);
   define(g, 'CanvasRenderingContext2D', CanvasContext2D);
+  define(g, 'WebGLRenderingContext', WebGLContext);
+  define(g, 'WebGL2RenderingContext', WebGLContext);
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
   define(g, 'Path2D', Path2D);

@@ -8,6 +8,9 @@ import {
   CANVAS_SOURCE,
   CanvasContext2D,
   createCanvasContext,
+  createWebGLContext,
+  WebGLContext,
+  WebGLUnsupportedError,
   type CanvasCommand,
   type CanvasContextOptions,
   type CanvasPicture,
@@ -16,7 +19,7 @@ import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
 import type { HostElement } from './host.js';
 
-export { CANVAS_SOURCE, CanvasContext2D };
+export { CANVAS_SOURCE, CanvasContext2D, WebGLContext };
 
 let fontsOf: () => Record<string, string> = () => ({});
 
@@ -75,8 +78,30 @@ export function bitmapSide(attribute: string | null, fallback: number): number {
 export { DEFAULT_HEIGHT, DEFAULT_WIDTH };
 
 const contexts = new WeakMap<object, CanvasContext2D>();
+/** The WebGL contexts of canvases in the tree (docs/SCENE.md, "glsl"). */
+const glContexts = new WeakMap<object, WebGLContext>();
 /** Every context made, for `resetCanvasStates` (weakly: a canvas that is gone takes its context with it). */
-const live = new Set<WeakRef<CanvasContext2D>>();
+const live = new Set<WeakRef<CanvasContext2D | WebGLContext>>();
+
+/** The pixels of a canvas texture: the commands drawn on a transparent canvas, straight alpha. */
+function rasterizeCanvas(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null {
+  if (!hasAddonFunction('renderCanvas')) return null;
+  return renderCanvas(source.commands, source, 'rgba');
+}
+
+const WEBGL_TYPE = /^(experimental-)?webgl2?$/;
+
+function newGlContext(type: string, size: () => { width: number; height: number }, canvas: unknown, attributes: unknown): WebGLContext {
+  const context = createWebGLContext({
+    size,
+    canvas,
+    version: type.endsWith('2') ? 2 : 1,
+    attributes: typeof attributes === "object" && attributes !== null ? (attributes as Record<string, unknown>) : undefined,
+    rasterize: rasterizeCanvas,
+  });
+  live.add(new WeakRef(context));
+  return context;
+}
 
 /**
  * Puts every canvas context's state back to a new canvas's, keeping what is drawn (`CanvasContext2D.resetState`). The
@@ -91,24 +116,42 @@ export function resetCanvasStates(): void {
   }
 }
 
+/** The WebGL recording of the canvas on `host`, or null when nothing was drawn on it. */
+export function glContentOf(host: object): ReturnType<WebGLContext['content']> | null {
+  const context = glContexts.get(host);
+  return context === undefined || !context.drawn ? null : context.content();
+}
+
 /**
  * The 2D context of the canvas whose host element is `host`, made on first use. `size` is the canvas's bitmap size,
  * read when it matters (it changes with `canvas.width`). WebGL and the other kinds of context are not available.
  */
-export function contextOfHost(host: object, type: string, size: () => { width: number; height: number }, canvas: unknown): CanvasContext2D | null {
-  return contextFor(contexts, host, type, size, canvas);
+export function contextOfHost(host: object, type: string, size: () => { width: number; height: number }, canvas: unknown, attributes?: unknown): CanvasContext2D | WebGLContext | null {
+  return contextFor(contexts, glContexts, host, type, size, canvas, attributes);
 }
 
-function contextFor(store: WeakMap<object, CanvasContext2D>, key: object, type: string, size: () => { width: number; height: number }, canvas: unknown): CanvasContext2D | null {
-  if (type !== '2d') {
-    if (/^(experimental-)?webgl2?$|^webgpu$/.test(type)) {
-      throw new Error(
-        `canvas.getContext("${type}"): WebGL and WebGPU are not available yet. Kinetograph draws a canvas natively, with no browser behind it, ` +
-          'and only the 2D context is ported (HANDOFF.md §8). Draw with getContext("2d"), SVG or DOM elements for now.',
-      );
+function contextFor(
+  store: WeakMap<object, CanvasContext2D>,
+  glStore: WeakMap<object, WebGLContext>,
+  key: object,
+  type: string,
+  size: () => { width: number; height: number },
+  canvas: unknown,
+  attributes?: unknown,
+): CanvasContext2D | WebGLContext | null {
+  if (type === 'webgpu') throw new WebGLUnsupportedError('canvas.getContext("webgpu"); WebGPU has no native port, use "webgl", "webgl2" or "2d"');
+  if (WEBGL_TYPE.test(type)) {
+    // A canvas has one kind of context for good, as in a browser.
+    if (store.has(key)) return null;
+    let gl = glStore.get(key);
+    if (gl === undefined) {
+      gl = newGlContext(type, size, canvas, attributes);
+      glStore.set(key, gl);
     }
-    return null;
+    return gl;
   }
+  if (type !== '2d') return null;
+  if (glStore.has(key)) return null;
   let context = store.get(key);
   if (context === undefined) {
     context = createCanvasContext({ size, canvas, ...canvasEnvironment() });
@@ -127,12 +170,15 @@ export function canvasCommandsOf(host: object): CanvasCommand[] | null {
 /** `props` with the commands drawn on a `<canvas>` host written where the painter reads them. */
 export function withCanvasCommands(host: HostElement, props: Record<string, any>): Record<string, any> {
   if (host.type !== 'canvas') return props;
+  const gl = glContentOf(host);
+  if (gl !== null) return { ...props, 'data-kg-webgl': JSON.stringify(gl) };
   const commands = canvasCommandsOf(host);
   return commands === null ? props : { ...props, 'data-kg-canvas': JSON.stringify(commands) };
 }
 
 /** What `drawImage` and `createPattern` read from the canvas on `host`: the commands so far, in its bitmap's size. */
 export function canvasPictureOf(host: object, size: { width: number; height: number }): CanvasPicture | null {
+  if (glContexts.has(host)) throw new WebGLUnsupportedError('drawing or sampling a WebGL canvas as a picture; draw into the shader\'s own canvas');
   if (!(size.width > 0 && size.height > 0)) return null;
   return { source: { kind: 'canvas', width: size.width, height: size.height, commands: [...(contexts.get(host)?.commands ?? [])] }, width: size.width, height: size.height };
 }
@@ -140,6 +186,7 @@ export function canvasPictureOf(host: object, size: { width: number; height: num
 /** Resets the context of the canvas on `host` (its `width` or `height` was set), which empties it. */
 export function resetCanvasOf(host: object): void {
   contexts.get(host)?.reset();
+  glContexts.get(host)?.reset();
 }
 
 // ---- canvases outside the tree ----
@@ -166,6 +213,7 @@ export class CanvasSurface {
   private widthValue: number;
   private heightValue: number;
   private readonly store = new WeakMap<object, CanvasContext2D>();
+  private readonly glStore = new WeakMap<object, WebGLContext>();
   constructor(width: number = DEFAULT_WIDTH, height: number = DEFAULT_HEIGHT) {
     this.widthValue = Math.max(0, Math.floor(Number(width)) || 0);
     this.heightValue = Math.max(0, Math.floor(Number(height)) || 0);
@@ -187,16 +235,22 @@ export class CanvasSurface {
     this.heightValue = Math.max(0, Math.floor(Number(value)) || 0);
     this.context?.reset();
   }
-  getContext(type: string): CanvasContext2D | null {
-    return contextFor(this.store, this, type, () => ({ width: this.widthValue, height: this.heightValue }), this);
+  getContext(type: string, attributes?: unknown): CanvasContext2D | WebGLContext | null {
+    return contextFor(this.store, this.glStore, this, type, () => ({ width: this.widthValue, height: this.heightValue }), this, attributes);
+  }
+  private refuseGl(): void {
+    if (this.glStore.has(this)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
   }
   toDataURL(): string {
+    this.refuseGl();
     return canvasToDataUrl(this.context?.commands ?? [], { width: this.widthValue, height: this.heightValue });
   }
   toBlob(callback: (blob: Blob | null) => void): void {
+    this.refuseGl();
     callback(canvasToBlob(this.context?.commands ?? [], { width: this.widthValue, height: this.heightValue }));
   }
   [CANVAS_SOURCE](): CanvasPicture | null {
+    this.refuseGl();
     const size = { width: this.widthValue, height: this.heightValue };
     if (!(size.width > 0 && size.height > 0)) return null;
     return { source: { kind: 'canvas', ...size, commands: [...(this.context?.commands ?? [])] }, ...size };
@@ -209,7 +263,7 @@ export class OffscreenCanvasShim extends CanvasSurface {
     super(width, height);
   }
   async convertToBlob(): Promise<Blob> {
-    return canvasToBlob(this.getContext('2d')?.commands ?? [], { width: this.width, height: this.height });
+    return canvasToBlob((this.getContext('2d') as CanvasContext2D | null)?.commands ?? [], { width: this.width, height: this.height });
   }
   transferToImageBitmap(): never {
     throw new Error('transferToImageBitmap is not available: draw the OffscreenCanvas with drawImage instead');

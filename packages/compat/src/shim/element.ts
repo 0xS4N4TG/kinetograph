@@ -8,7 +8,7 @@ import { cssPropertyName, styleToCss } from '../request/style.js';
 import { isDomElement } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
-import { CANVAS_SOURCE, type CanvasContext2D, type CanvasPicture } from '@kinetograph/scene';
+import { CANVAS_SOURCE, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetograph/scene';
 import {
   bitmapSide,
   canvasCommandsOf,
@@ -529,9 +529,9 @@ export class DomElement {
   load(): void {}
   async decode(): Promise<void> {}
   // `<canvas>`: the 2D context records what is drawn, and the painter draws it (docs/SCENE.md, "canvas").
-  getContext(type: string): CanvasContext2D | null {
+  getContext(type: string, attributes?: unknown): CanvasContext2D | WebGLContext | null {
     if (this.host.type !== 'canvas') throw new TypeError(`getContext is not a function: <${this.host.type}> is not a canvas`);
-    return contextOfHost(this.host, String(type), () => ({ width: this.width, height: this.height }), this);
+    return contextOfHost(this.host, String(type), () => ({ width: this.width, height: this.height }), this, attributes);
   }
   toDataURL(): string {
     return canvasToDataUrl(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height });

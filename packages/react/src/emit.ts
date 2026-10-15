@@ -8,6 +8,7 @@ import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland }
 import { canvasEnvironment, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
 import {
   createCanvasContext,
+  glslShader,
   fontKey,
   type AudioClipJson,
   type CameraJson,
@@ -74,6 +75,7 @@ export const ELEMENT_NAMES: Record<string, string> = {
   'kg-mesh-gradient': 'MeshGradient',
   'kg-lottie': 'Lottie',
   'kg-canvas': 'Canvas',
+  'kg-glsl': 'GlslShader',
   'kg-video': 'Video',
   'kg-gif': 'Gif',
   'kg-camera': 'Camera',
@@ -455,6 +457,17 @@ class Emitter {
         const context = createCanvasContext({ size: () => ({ width, height }), ...canvasEnvironment(this.options.fonts) });
         draw(context);
         return { id, type: 'canvas', width, height, commands: context.commands, ...commonOf(props, name) } as LayerJson;
+      }
+      case 'kg-glsl': {
+        const { width, height, fragment, vertex, uniforms, textures } = props;
+        for (const [side, value] of [['width', width], ['height', height]] as const) {
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+            throw new Error(`<GlslShader> ${side} must be a number of pixels, 0 or more, got ${JSON.stringify(value)}`);
+          }
+        }
+        if (typeof fragment !== 'string') throw new Error('<GlslShader> needs a fragment shader');
+        const content = glslShader({ width, height, fragment, vertex, uniforms, textures });
+        return { id, type: 'glsl', width, height, ...content, ...commonOf(props, name) } as LayerJson;
       }
       case 'kg-video':
         // The sound is not part of the layer: it is an audio clip with the layer's id.
