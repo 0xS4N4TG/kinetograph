@@ -13,13 +13,22 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
-/** The real functions, captured when this module is first evaluated (before `installDeterminism`). */
-export const realTimers = {
+/**
+ * The real functions, captured when this module is first evaluated (before `installDeterminism`). Bound to the global
+ * object: a browser's timers throw "Illegal invocation" when called as methods of another object (in Chrome frames).
+ */
+const originalTimers = {
   setTimeout: globalThis.setTimeout,
   clearTimeout: globalThis.clearTimeout,
   setInterval: globalThis.setInterval,
   clearInterval: globalThis.clearInterval,
-  setImmediate: globalThis.setImmediate,
+};
+export const realTimers = {
+  setTimeout: globalThis.setTimeout.bind(globalThis),
+  clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  setInterval: globalThis.setInterval.bind(globalThis),
+  clearInterval: globalThis.clearInterval.bind(globalThis),
+  setImmediate: globalThis.setImmediate?.bind(globalThis),
 };
 
 const RealDate = globalThis.Date;
@@ -287,10 +296,10 @@ export function uninstallDeterminism(): void {
   Math.random = realMathRandom;
   // `now` was an own property of the instance; dropping it exposes the prototype's real one again.
   if (globalThis.performance) delete (globalThis.performance as { now?: unknown }).now;
-  g.setTimeout = realTimers.setTimeout;
-  g.setInterval = realTimers.setInterval;
-  g.clearTimeout = realTimers.clearTimeout;
-  g.clearInterval = realTimers.clearInterval;
+  g.setTimeout = originalTimers.setTimeout;
+  g.setInterval = originalTimers.setInterval;
+  g.clearTimeout = originalTimers.clearTimeout;
+  g.clearInterval = originalTimers.clearInterval;
   if (realRequestAnimationFrame === undefined) delete g.requestAnimationFrame;
   else g.requestAnimationFrame = realRequestAnimationFrame;
   if (realCancelAnimationFrame === undefined) delete g.cancelAnimationFrame;
