@@ -200,6 +200,20 @@ case!(clipped_positioned, 340, 200, {
         .to_string()
 });
 
+// Floats: margins, `clear`, drop caps, floats in floats, a line too narrow for any content moving below
+// the floats, a BFC that contains its float.
+case!(floats, 340, 410, {
+    r#"<div style="position:absolute;left:10px;top:10px;width:150px;font-size:14px;line-height:18px;background:#eef"><div style="float:left;width:40px;height:40px;margin:10px 12px 8px 6px;background:#f66"></div>The quick brown fox jumps over the lazy dog and keeps running far away until the night falls and rises again</div>
+<div style="position:absolute;left:180px;top:10px;width:150px;font-size:14px;line-height:18px;background:#efe"><div style="float:right;width:40px;height:40px;margin:4px 0 4px 10px;background:#66f"></div>The quick brown fox jumps over the lazy dog and keeps running far away until the night falls</div>
+<div style="position:absolute;left:10px;top:130px;width:150px;font-size:14px;line-height:18px;background:#fee"><div style="float:left;width:30px;height:60px;background:#6c6"></div><div style="float:left;width:30px;height:30px;background:#c6c;margin-left:4px"></div><div style="float:left;width:30px;height:30px;background:#6cc;clear:left"></div>Wrapping text after several floats of different heights goes around them all</div>
+<div style="position:absolute;left:180px;top:130px;width:150px;font-size:14px;line-height:18px;background:#ffe"><p style="margin:0"><span style="float:left;font-size:40px;line-height:34px;margin-right:4px">D</span>rop cap paragraph that wraps around the big first letter for some lines</p></div>
+<div style="position:absolute;left:10px;top:240px;width:150px;background:#eef;font-size:13px;line-height:16px"><div style="float:left;width:50px;height:50px;background:#f66"></div><div style="clear:both;background:#aaf">cleared block</div><div style="margin-top:10px;background:#afa">after</div></div>
+<div style="position:absolute;left:180px;top:240px;width:150px;background:#fee;font-size:13px;line-height:16px;display:flow-root"><div style="float:right;width:60px;height:60px;background:#c6c"></div>BFC container contains its float</div>
+<div style="position:absolute;left:10px;top:330px;width:150px;background:#ffe;font-size:13px;line-height:16px"><div style="float:left;width:60px;height:30px;background:#9c6"></div><div style="float:right;width:60px;height:30px;background:#69c"></div><div style="text-align:center">centered line between two floats</div></div>
+<div style="position:absolute;left:180px;top:330px;width:150px;background:#eff;font-size:13px;line-height:16px"><div style="float:left;width:120px;height:20px;background:#c93"></div><div style="float:left;width:120px;height:20px;background:#39c"></div>text after wide floats that cannot sit side by side</div>"#
+        .to_string()
+});
+
 // `-webkit-line-clamp`: the height is the bottom of the Nth line, the ellipsis ends it.
 case!(line_clamp, 340, 300, {
     r#"<div style="position:absolute;left:10px;top:10px;width:150px;font-size:16px;line-height:20px;background:#eef;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">The quick brown fox jumps over the lazy dog and keeps running far away</div>

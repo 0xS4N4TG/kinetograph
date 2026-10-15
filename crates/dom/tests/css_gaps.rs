@@ -91,6 +91,61 @@ fn line_clamp_counts_lines_across_paragraphs() {
     assert_eq!(bounds(&island, "$0").3, 72.0);
 }
 
+#[test]
+fn a_line_too_narrow_for_any_content_moves_below_the_floats() {
+    let float = |side: &str, path: &str| {
+        el(
+            "div",
+            path,
+            &format!("float: {side}; width: 60px; height: 30px"),
+            vec![],
+        )
+    };
+    let root = el(
+        "div",
+        "$0",
+        "width: 150px; font-size: 16px; line-height: 20px",
+        vec![
+            float("left", "$0.0"),
+            float("right", "$0.1"),
+            el(
+                "div",
+                "$0.2",
+                "text-align: center",
+                vec![text("Centered line between floats")],
+            ),
+        ],
+    );
+    let island = resolve(&request(root));
+    // The 30 px between the floats holds no word of it: both lines start below them.
+    let (_, y, _, h) = bounds(&island, "$0.2");
+    assert_eq!(y, 0.0);
+    assert!(h >= 70.0, "{h}");
+    assert_eq!(bounds(&island, "$0").3, h);
+    // A gap that fits a word keeps the text beside the float.
+    let narrow = el(
+        "div",
+        "$0",
+        "width: 150px; font-size: 16px; line-height: 20px",
+        vec![
+            el(
+                "div",
+                "$0.0",
+                "float: left; width: 100px; height: 30px",
+                vec![],
+            ),
+            el(
+                "div",
+                "$0.1",
+                "",
+                vec![text("An extra long text that wraps")],
+            ),
+        ],
+    );
+    let island = resolve(&request(narrow));
+    assert!(bounds(&island, "$0").3 < 100.0);
+}
+
 /// A container of `width` with a child that `@container` rules style.
 fn container_island(width: &str, css: &str) -> kinetograph_dom::document::IslandDocument {
     let mut req = request(el(

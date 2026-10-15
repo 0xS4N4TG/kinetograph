@@ -147,14 +147,27 @@ Gecko. The change is small enough to offer upstream.
 - Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, `packages/blitz-dom`, commit
   `5890fab3afb087d8c0c5b0652b8b635f161f3a13` per `.cargo_vcs_info.json`). Licence: MIT OR Apache-2.0. Wired in by
   `[patch.crates-io]` in the root `Cargo.toml`. The unchanged copy was committed first.
-- Changed files: `src/stylo.rs`, `src/resolve.rs`, `src/node/node.rs`.
+- Changed files: `src/stylo.rs`, `src/resolve.rs`, `src/node/node.rs` (container queries), `src/layout/inline.rs`
+  (floats).
 
 ### Why
 
 `TElement::query_container_size` returned `Default::default()` ("FIXME: Implement container queries"), so no
 `@container` condition could be evaluated.
 
-### The change
+Floats: inline layout beside a float broke each line at the width of the slot beside the float and let an unbreakable
+word that is wider than the slot overflow it ("TODO: revert state and retry layout if a line doesn't fit"), so a line
+that CSS 2.1 9.5 moves down past the float stayed beside it, on top of it. Parley's layout height is the sum of the
+lines' heights, so the gap above a line that had moved down was not part of its block's height.
+
+### The change (floats)
+
+- `inline.rs`: each line's slot and the state at its start (or at the last float placed in it) are remembered; when a
+  line's content is wider than a float-narrowed slot, the breaker is reverted (`BreakLines::revert_to`) and the line is
+  laid out again in the next slot below that is wide enough, or below the last float. A line that fits is untouched.
+- The block's height is at least the bottom of its last line box (`block_max_coord`), not only Parley's sum.
+
+### The change (container queries)
 
 - `query_container_size` returns the content box of the node's last layout (`Node::container_size`), and remembers it in
   `Node::container_size_seen`.

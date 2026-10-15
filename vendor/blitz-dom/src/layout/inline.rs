@@ -676,22 +676,50 @@ impl LayoutPassState<'_> {
             state.set_line_x(initial_slot.x * scale);
             state.set_line_y((initial_slot.y * scale) as f64);
 
-            // TODO: revert state and retry layout if a line doesn't fit
-            //
-            // Save initial state. Saved state is used to revert the layout to a previous state if needed
-            // (e.g. to revert a line that doesn't fit in the space it was laid out into)
-            //
-            // let mut saved_state = breaker.state().clone();
+            // The slot the line in progress is laid into, and the state at its start (or
+            // at the last float placed in it): a line that is too narrow for any content
+            // is laid out again in a lower slot (CSS 2.1 9.5).
+            let mut slot = initial_slot;
+            let mut saved_state = breaker.state().clone();
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
-                    YieldData::LineBreak(_line_break_data) => {
+                    YieldData::LineBreak(line_break) => {
+                        // A line wider than its slot holds one unbreakable item that does
+                        // not fit: "if a shortened line box is too small to contain any
+                        // content, then the line box is shifted downward (and its width
+                        // recomputed) until either some content fits or there are no more
+                        // floats present".
+                        let needed = (line_break.metrics.advance - line_break.metrics.hanging_advance) / scale;
+                        if slot.segment_id.is_some() && needed > slot.width + 0.01 {
+                            let mut lower = slot;
+                            loop {
+                                lower = block_ctx.find_content_slot(lower.y, Clear::None, lower.segment_id);
+                                if lower.segment_id.is_none() {
+                                    // Past the last float.
+                                    if let Some(bottom) = block_ctx.cleared_threshold(Clear::Both) {
+                                        lower.y = lower.y.max(bottom);
+                                    }
+                                    break;
+                                }
+                                if lower.width >= needed {
+                                    break;
+                                }
+                            }
+                            breaker.revert_to(saved_state.clone());
+                            let state = breaker.state_mut();
+                            state.set_line_max_advance(lower.width * scale);
+                            state.set_line_x(lower.x * scale);
+                            state.set_line_y((lower.y * scale) as f64);
+                            has_active_floats = lower.segment_id.is_some();
+                            slot = lower;
+                            saved_state = breaker.state().clone();
+                            continue;
+                        }
+
                         let state = breaker.state_mut();
 
                         if has_active_floats {
-                            // TODO: revert state and retry layout if a line doesn't fit
-                            // saved_state = state.clone();
-
                             let min_y = state.line_y() / scale as f64;
                             let next_slot =
                                 block_ctx.find_content_slot(min_y as f32, Clear::None, None);
@@ -700,10 +728,13 @@ impl LayoutPassState<'_> {
                             state.set_line_max_advance(next_slot.width * scale);
                             state.set_line_x(next_slot.x * scale);
                             state.set_line_y((next_slot.y * scale) as f64);
+                            slot = next_slot;
                         } else {
                             state.set_line_x(0.0);
                             state.set_line_max_advance(width);
+                            slot.segment_id = None;
                         }
+                        saved_state = breaker.state().clone();
 
                         continue;
                     }
@@ -757,6 +788,7 @@ impl LayoutPassState<'_> {
                         state.set_line_max_advance(next_slot.width * scale);
                         state.set_line_x(next_slot.x * scale);
                         state.set_line_y((next_slot.y * scale) as f64);
+                        slot = next_slot;
 
                         let location = taffy::Point {
                             x: pos.x + margin.left + container_pb.left,
@@ -783,6 +815,7 @@ impl LayoutPassState<'_> {
                             f32::NEG_INFINITY,
                             f32::NEG_INFINITY,
                         );
+                        saved_state = breaker.state().clone();
 
                         // if float.is_floated() {
                         //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
@@ -857,6 +890,14 @@ impl LayoutPassState<'_> {
 
         #[cfg(feature = "floats")]
         {
+            // Parley's height is the sum of the lines' heights; a line moved down past a float
+            // leaves a gap above it that the block's height includes.
+            let last_line = line_count.saturating_sub(1 + trailing_empty_line.is_some() as usize);
+            if has_inline_content
+                && let Some(line) = inline_layout.layout.get(last_line)
+            {
+                height = height.max(line.metrics().block_max_coord);
+            }
             if is_bfc_root {
                 height = height.max(float_height_contribution * scale)
             };
