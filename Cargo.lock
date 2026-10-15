@@ -2815,8 +2815,6 @@ dependencies = [
 [[package]]
 name = "vello_shaders"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e653222cee49f2571729c3e4b0fa99bc4f826c6bb9487dbb88b825d552b3a27"
 dependencies = [
  "bytemuck",
  "log",
