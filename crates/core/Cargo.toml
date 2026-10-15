@@ -37,4 +37,5 @@ ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
 # WOFF and WOFF2 fonts (a web project's `@font-face` files) are unpacked to
 # the TrueType/OpenType tables Parley reads. Pure Rust.
 wuff = "0.2.9"
+base64 = "0.23"
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "block_layout"] }

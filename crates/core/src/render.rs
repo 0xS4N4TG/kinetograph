@@ -2263,9 +2263,15 @@ fn image_sources(scene: &Scene) -> Vec<String> {
 /// Decodes the image file `src`, relative to `base_dir`.
 fn read_image(base_dir: &Path, src: &str) -> Result<ImageData> {
     let path = base_dir.join(src);
-    let decoded = image::open(&path)
-        .map_err(|e| Error::Render(format!("cannot decode {}: {e}", path.display())))?
-        .to_rgba8();
+    // A `data:` URL is decoded from memory, with no file.
+    let decoded = if let Some(bytes) = crate::scene::data_uri_bytes(src) {
+        image::load_from_memory(&bytes)
+            .map_err(|e| Error::Render(format!("cannot decode a data: picture: {e}")))?
+    } else {
+        image::open(&path)
+            .map_err(|e| Error::Render(format!("cannot decode {}: {e}", path.display())))?
+    }
+    .to_rgba8();
     let (width, height) = decoded.dimensions();
     Ok(ImageData {
         data: Blob::from(decoded.into_raw()),

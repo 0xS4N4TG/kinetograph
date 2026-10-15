@@ -16,7 +16,6 @@
 //! - a filter is the `filterGraph` of `filter.rs`, on the group made for it.
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 
 use blitz_dom::BaseDocument;
 use kurbo::{Affine, BezPath, PathEl, Point, Shape};
@@ -675,15 +674,8 @@ impl Emitter<'_> {
             );
             return Vec::new();
         };
-        let Some(src) = write_image(ext, &bytes) else {
-            self.unsupported(
-                "image",
-                "href",
-                "",
-                "the image could not be written for the renderer",
-            );
-            return Vec::new();
-        };
+        // In memory: the scene decodes a data: URL, so no file is written.
+        let src = super::assets::data_url(ext, &bytes);
         let mut layer = json!({
             "id": self.next_id(), "type": "image", "src": src,
             "width": size.width(), "height": size.height(),
@@ -737,20 +729,6 @@ fn contains_blend(g: &usvg::Group) -> bool {
         usvg::Node::Group(c) => c.blend_mode() != usvg::BlendMode::Normal || contains_blend(c),
         _ => false,
     })
-}
-
-/// Writes image bytes where the renderer can read them, by content, and gives
-/// the path.
-fn write_image(ext: &str, bytes: &[u8]) -> Option<String> {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut h);
-    let dir = std::env::temp_dir().join("kinetograph-svg-images");
-    std::fs::create_dir_all(&dir).ok()?;
-    let path = dir.join(format!("{:016x}.{ext}", h.finish()));
-    if !path.exists() {
-        std::fs::write(&path, bytes).ok()?;
-    }
-    Some(path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]
