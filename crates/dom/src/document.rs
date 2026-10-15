@@ -75,7 +75,7 @@ pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>
     let public_dir = request.public_dir.as_deref().map(Path::new);
     let files = Arc::new(LocalFiles::new(&base_dir, public_dir));
 
-    let font_ctx = fonts::font_context(&request.fonts).map_err(BuildError)?;
+    let font_ctx = fonts::font_context(&request.fonts, &base_dir).map_err(BuildError)?;
     let width = request.viewport.width.max(0.0).round() as u32;
     let height = request.viewport.height.max(0.0).round() as u32;
     let mut doc = BaseDocument::new(DocumentConfig {

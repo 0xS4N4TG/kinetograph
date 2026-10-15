@@ -66,7 +66,10 @@ fn font_bytes(path: &str) -> Result<Arc<Vec<u8>>, String> {
 }
 
 /// A Parley context holding exactly `fonts` (and Blitz's list-marker font).
-pub fn font_context(fonts: &BTreeMap<String, String>) -> Result<FontContext, String> {
+pub fn font_context(
+    fonts: &BTreeMap<String, String>,
+    base_dir: &std::path::Path,
+) -> Result<FontContext, String> {
     let mut ctx = FontContext {
         source_cache: SourceCache::new_shared(),
         collection: Collection::new(CollectionOptions {
@@ -80,7 +83,8 @@ pub fn font_context(fonts: &BTreeMap<String, String>) -> Result<FontContext, Str
     let mut families = Vec::new();
     for (key, path) in fonts {
         let (family, weight, style) = parse_key(key);
-        let data = font_bytes(path)?;
+        // Paths are absolute; a relative one is read from baseDir.
+        let data = font_bytes(&base_dir.join(path).to_string_lossy())?;
         let registered = ctx.collection.register_fonts(
             Blob::new(data),
             Some(FontInfoOverride {

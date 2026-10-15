@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 kinetograph-core = { path = "../core" }
 kinetograph-cli = { path = "../cli" }
+kinetograph-dom = { path = "../dom" }
 ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
 napi = { version = "3.14.2", features = ["napi9"] }
 napi-derive = "3.6.12"
