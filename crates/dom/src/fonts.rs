@@ -91,6 +91,9 @@ pub fn font_context(
                 family_name: Some(family),
                 weight: Some(FontWeight::new(weight)),
                 style: Some(style),
+                // The file is the face of that weight: a variable font stays
+                // at it (the vendored fontique, vendor/README.md).
+                pin_weight: true,
                 ..Default::default()
             }),
         );

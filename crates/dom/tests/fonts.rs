@@ -88,6 +88,36 @@ fn only_one_weight_registered_serves_every_weight() {
 }
 
 #[test]
+fn a_variable_font_stays_at_its_registered_weight() {
+    // inter-800-latin.woff2 is a variable font (wght 100 to 900, default 400),
+    // as Google serves it for one weight. A browser holds it at the @font-face
+    // weight, so the papercut's 400 and 900 text is drawn at 800.
+    let at_400 = width(json!({ "Inter": inter_800() }), "font-family: Inter");
+    let at_800 = width(
+        json!({ "Inter:800": inter_800() }),
+        "font-family: Inter; font-weight: 800",
+    );
+    assert!(
+        (at_800 - at_400).abs() > 10.0,
+        "800 instance {at_800} vs 400 instance {at_400}"
+    );
+    for weight in [100, 300, 400, 600, 800, 900] {
+        let w = width(
+            json!({ "Inter:800": inter_800() }),
+            &format!("font-family: Inter; font-weight: {weight}"),
+        );
+        // Faux bold adds nothing to the advance: the same width at every weight.
+        assert_eq!(w, at_800, "weight {weight}");
+    }
+    // Registered at 400, the same file is the 400 instance for every request.
+    let w = width(
+        json!({ "Inter": inter_800() }),
+        "font-family: Inter; font-weight: 800",
+    );
+    assert_eq!(w, at_400);
+}
+
+#[test]
 fn style_matching() {
     let dm = reference(&dm_sans());
     let archivo = reference(&archivo_black());

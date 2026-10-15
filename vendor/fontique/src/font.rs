@@ -25,6 +25,9 @@ pub struct FontInfo {
     axes: AxisVec,
     attr_axes: u8,
     charmap_index: CharmapIndex,
+    /// Kinetograph: the `wght` axis is held at `weight` (see
+    /// `FontInfoOverride::pin_weight`).
+    pin_weight: bool,
 }
 
 impl FontInfo {
@@ -104,8 +107,17 @@ impl FontInfo {
         // 2. A non-conformant font specifies different weights in its OS/2 and `fvar` tables.
         //      - See: <https://learn.microsoft.com/en-us/typography/opentype/spec/dvaraxistag_wght#additional-information>
         if let Some(weight_axis) = self.axes.iter().find(|axis| axis.tag == Tag::new(b"wght")) {
-            if weight_axis.default != weight.value() {
-                synth.vars[len] = (Tag::new(b"wght"), weight.value());
+            // Kinetograph: a font whose weight is pinned shows its own weight
+            // whatever is asked for, as a CSS `@font-face` with a single
+            // `font-weight` does (the used `wght` is clamped to the
+            // descriptor). A request far heavier than the face still gets
+            // the faux bold a browser adds.
+            let wanted = if self.pin_weight { self.weight } else { weight };
+            if self.pin_weight && weight.value() > self.weight.value() + 200.0 {
+                synth.embolden = true;
+            }
+            if weight_axis.default != wanted.value() {
+                synth.vars[len] = (Tag::new(b"wght"), wanted.value());
                 len += 1;
             }
         } else if weight.value() > self.weight.value() + 200.0 {
@@ -255,6 +267,7 @@ impl FontInfo {
             axes,
             attr_axes,
             charmap_index,
+            pin_weight: false,
         })
     }
 
@@ -285,6 +298,9 @@ impl FontInfo {
         }
         if let Some(weight) = info_override.weight {
             self.weight = weight;
+        }
+        if info_override.pin_weight {
+            self.pin_weight = true;
         }
         if let Some(axes) = info_override.axes {
             // This is O(n^2) but no font should have enough axes for that to
@@ -486,6 +502,9 @@ pub struct FontInfoOverride<'a> {
     /// Default values for the font's variation axes. Axes not included within
     /// the font will be ignored.
     pub axes: Option<&'a [(Tag, f32)]>,
+    /// Kinetograph: hold a `wght` axis at the weight this override (or the
+    /// font) gives, instead of following the requested weight.
+    pub pin_weight: bool,
 }
 
 #[cfg(test)]

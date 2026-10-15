@@ -11,5 +11,10 @@ license = "MIT OR Apache-2.0"
 # Vello 0.11's fine shader loses low bits of an image's sample position by adding
 # the image's atlas offset before splitting it into texel and fraction (#12);
 # see vendor/README.md.
+#
+# fontique 0.12 follows the requested weight on a variable font's `wght` axis;
+# a face registered at one weight must stay at it, as a CSS @font-face with a
+# single font-weight does (vendor/README.md).
 [patch.crates-io]
 vello_shaders = { path = "vendor/vello_shaders" }
+fontique = { path = "vendor/fontique" }
