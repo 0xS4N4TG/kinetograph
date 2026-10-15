@@ -326,6 +326,10 @@ goldens. `cargo test` and the GPU npm tests pass except `renderer_reuse` (#12).
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
 of sequences and layers, scene tree from `inspect`, props panel, render queue calling `render`, hot reload on save.
 Plus video layers (`<Video>`, `<OffthreadVideo>`, `@remotion/gif`, section 5).
+**Built 2026-10-15 in one cloud session** (draft PR from `feat/studio-video`, the four stream branches merged into it
+and kept): the contract is `docs/AUTHORING.md` §11, SCENE.md's `video` and `gif`, and `packages/studio/src/protocol.ts`;
+the example is `examples/video-overlay/`. CPU checks green; nothing has rendered on a GPU yet. On the M4: the list in
+"Phase 4 in a cloud session" below.
 **Phase 5: Remotion compat mode.** CSS subset mapped onto layers (possibly via Blitz/Stylo), Chrome fallback per frame
 range, `doctor`.
 
