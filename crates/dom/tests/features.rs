@@ -2,6 +2,7 @@
 //! the GPU and compared with Chrome's rendering of the same HTML. The
 //! pictures are in `target/paint-tests`.
 
+mod common;
 mod paintkit;
 
 use paintkit::compare;
@@ -267,3 +268,106 @@ case!(borders, 340, 260, {
 <div style="position:absolute;left:230px;top:170px;width:90px;height:50px;border:8px outset #48c;border-radius:20px/10px"></div>"#
         .to_string()
 });
+
+/// Transitions: each box gets the class `go` half a second into a second-long transition, and the
+/// frame is the one at 1 s. Chrome's page does the same with the Web Animations API (the
+/// transitions are paused at 500 ms), ours replays two states (`IslandRequest::history`).
+#[test]
+fn transitions() {
+    use serde_json::json;
+
+    let (w, h) = (340, 230);
+    let css = r#"
+.t{position:absolute;width:60px;height:40px;transition:all 1s linear}
+.a{left:10px;top:10px;background:#f00}
+.a.go{background:#00f;opacity:.2}
+.b{left:90px;top:10px;background:#0a0}
+.b.go{transform:rotate(45deg) scale(1.5)}
+.c{left:200px;top:10px;border-radius:0;background:#999}
+.c.go{width:100px;height:60px;border-radius:20px;background:#fc0}
+.d{left:10px;top:100px;background:#36c;transition:background-color 1s ease-in}
+.d.go{background:#fc3}
+.e{left:90px;top:100px;background:#639;transition:left 1s linear .25s}
+.e.go{left:230px}
+.f{left:10px;top:160px;background:#f90;transition:filter 1s linear}
+.f.go{filter:blur(8px)}
+.g{left:120px;top:160px;background:#3a9;transition:none}
+.g.go{left:220px}
+.h{left:230px;top:100px;background:#c06;border:0 solid #000;transition:border-width 1s linear}
+.h.go{border-width:10px}
+"#;
+    let names = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    // Chrome: the same boxes, the class added, every transition paused at 500 ms.
+    let boxes: String = names
+        .iter()
+        .map(|n| format!(r#"<div class="t {n}"></div>"#))
+        .collect();
+    let chrome_body = format!(
+        r#"<style>{css}</style>{boxes}<script>
+const boxes = [...document.querySelectorAll('.t')];
+boxes.forEach(b => getComputedStyle(b).opacity);
+boxes.forEach(b => b.classList.add('go'));
+boxes.forEach(b => getComputedStyle(b).opacity);
+document.getAnimations().forEach(a => {{ a.pause(); a.currentTime = 500; }});
+</script>"#
+    );
+    let reference = paintkit::chrome("transitions", &chrome_body, w, h);
+
+    // Ours: the boxes before (0 s), with `go` from 0.5 s, and at 1 s.
+    let tree = |go: bool| {
+        let class = |n: &&str| {
+            if go {
+                format!("t {n} go")
+            } else {
+                format!("t {n}")
+            }
+        };
+        common::el(
+            "div",
+            "$0",
+            "",
+            names
+                .iter()
+                .enumerate()
+                .map(|(i, n)| {
+                    common::el_attrs(
+                        "div",
+                        &format!("$0.{i}"),
+                        json!({ "class": class(n) }),
+                        "",
+                        vec![],
+                    )
+                })
+                .collect(),
+        )
+    };
+    let mut req = common::request(tree(true));
+    req["viewport"] = json!({ "width": w, "height": h });
+    req["stylesheets"] = json!([css]);
+    req["time"] = json!(1.0);
+    req["history"] = json!([
+        { "time": 0.0, "root": tree(false) },
+        { "time": 0.5, "root": tree(true) },
+    ]);
+    let request = common::parse(&req);
+    let island = kinetograph_dom::document::resolve(&request).unwrap();
+    let out = kinetograph_dom::paint::paint(&island.doc, &request);
+    let frame = paintkit::render_output(&out, w, h);
+    let dir = paintkit::out_dir();
+    paintkit::save_frame(&frame, &dir.join("transitions-ours.png"));
+    paintkit::check_golden("transitions", &frame);
+    let diff = reference.map(|reference| {
+        let ours = paintkit::frame_image(&frame);
+        paintkit::diff_image(&ours, &reference)
+            .save(dir.join("transitions-diff.png"))
+            .unwrap();
+        paintkit::diff(&ours, &reference)
+    });
+    if let Some(d) = diff {
+        assert!(d.mean < 30.0, "transitions: {d:?}");
+    }
+    println!(
+        "transitions: unsupported {:?}; diff {diff:?}",
+        out.unsupported
+    );
+}

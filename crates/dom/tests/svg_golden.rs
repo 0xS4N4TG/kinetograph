@@ -52,6 +52,7 @@ fn document(name: &str, width: u32, height: u32) -> (BaseDocument, IslandRequest
         public_dir: None,
         time: 0.0,
         path: "$0".into(),
+        history: Vec::new(),
     };
     (doc, request)
 }
