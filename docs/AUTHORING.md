@@ -163,7 +163,9 @@ interface InspectLayer {
   box: { x: number; y: number; width: number; height: number } | null;    // layer space (the `inset` box)
   bounds: { x: number; y: number; width: number; height: number } | null; // canvas px, transform and effect reach
   effects: string[];                         // effect types, in order
-  clip: string | null; mask: boolean; matte: { layer: string; mode: string } | null; matteSource: boolean;
+  clip: string | null;                       // clip kind
+  clipBounds: { x: number; y: number; width: number; height: number } | null; // canvas px, the clip shape's box, placed like bounds (zero area if it keeps nothing)
+  mask: boolean; matte: { layer: string; mode: string } | null; matteSource: boolean;
   motionBlur: { samples: number; shutter: number } | null;
   text?: { text: string; font: string; size: number; width: number; height: number; maxWidth: number | null;
            lines: { text: string; top: number; bottom: number; baseline: number }[] };

@@ -125,6 +125,10 @@ pub struct InspectLayer {
     /// The type of each effect, in order.
     pub effects: Vec<&'static str>,
     pub clip: Option<&'static str>,
+    /// Where the clip keeps pixels, as a box in canvas pixels placed like
+    /// `bounds` (the shape's bounding box: a zero-area box when it keeps
+    /// nothing). `None` without a clip, or for a clip seen edge on.
+    pub clip_bounds: Option<InspectRect>,
     pub mask: bool,
     pub matte: Option<InspectMatte>,
     /// Another layer in the same list uses this one as its matte.
@@ -258,6 +262,7 @@ impl Walk<'_> {
         };
 
         let mut bounds = self.bounds(layer, r, matrix, &boxes, group_bounds, parent, space);
+        let clip_bounds = self.clip_bounds(r, matrix, &boxes, parent, space);
         // A blurred layer is smeared over the places its samples are.
         for sample in &r.motion {
             let b = self.sample_bounds(layer, sample, parent, space);
@@ -304,6 +309,7 @@ impl Walk<'_> {
                 ResolvedClip::Ellipse { .. } => "ellipse",
                 ResolvedClip::Path { .. } => "path",
             }),
+            clip_bounds: clip_bounds.and_then(rect_json),
             mask: r.mask.is_some(),
             matte: r.matte.as_ref().map(|m| InspectMatte {
                 layer: m.layer.clone(),
@@ -465,6 +471,59 @@ impl Walk<'_> {
         }
     }
 
+    /// Where `r`'s clip keeps pixels on the canvas (see
+    /// `InspectLayer::clip_bounds`): the clip shape's bounding box in layer
+    /// space, through the matrix and the 3D placement as `bounds` is.
+    fn clip_bounds(
+        &self,
+        r: &ResolvedLayer,
+        matrix: Affine,
+        boxes: &Boxes,
+        parent: Affine,
+        space: Option<Space>,
+    ) -> Option<Rect> {
+        let local = match r.clip.as_ref()? {
+            ResolvedClip::Polygon { points } => points
+                .iter()
+                .map(|&(x, y)| Point::new(x, y))
+                .fold(None, |r: Option<Rect>, p| {
+                    Some(r.map_or(Rect::from_points(p, p), |r| r.union_pt(p)))
+                })?,
+            ResolvedClip::Inset {
+                top,
+                right,
+                bottom,
+                left,
+                ..
+            } => {
+                let b = boxes.layer?;
+                let (x0, y0) = (b.x0 + left, b.y0 + top);
+                // Sides that cross keep nothing.
+                Rect::new(x0, y0, (b.x1 - right).max(x0), (b.y1 - bottom).max(y0))
+            }
+            ResolvedClip::Ellipse { cx, cy, rx, ry } => {
+                if *rx <= 0.0 || *ry <= 0.0 {
+                    Rect::new(*cx, *cy, *cx, *cy)
+                } else {
+                    Rect::new(cx - rx, cy - ry, cx + rx, cy + ry)
+                }
+            }
+            ResolvedClip::Path { d } => BezPath::from_svg(d).ok()?.bounding_box(),
+        };
+        let flat = bounds::transformed(matrix, local);
+        match placement(r, parent, space) {
+            Some(p) => {
+                let h = warp::plane_homography(self.projection, p.parent, p.world)?;
+                if warp::is_identity(&h) {
+                    Some(flat)
+                } else {
+                    warped(h, flat)
+                }
+            }
+            None => Some(flat),
+        }
+    }
+
     /// `bounds` for one sample of a motion-blurred layer, whole subtree
     /// included.
     fn sample_bounds(
@@ -572,6 +631,10 @@ fn placement(r: &ResolvedLayer, parent: Affine, space: Option<Space>) -> Option<
 /// nothing to see.
 fn warp_subtree(node: &mut InspectLayer, h: Option<DMat3>) {
     node.bounds = match (node.bounds, h) {
+        (Some(b), Some(h)) => warped(h, b.into()).and_then(rect_json),
+        _ => None,
+    };
+    node.clip_bounds = match (node.clip_bounds, h) {
         (Some(b), Some(h)) => warped(h, b.into()).and_then(rect_json),
         _ => None,
     };
@@ -861,6 +924,64 @@ mod tests {
     }
 
     #[test]
+    fn a_clip_reports_where_it_keeps_pixels_on_the_canvas() {
+        let s = scene(json!([
+            rect("none", json!({})),
+            rect(
+                "inset",
+                json!({
+                    "transform": { "x": 200, "y": 100 },
+                    "clip": { "kind": "inset", "left": 10, "top": 5, "right": 20, "bottom": 5 },
+                })
+            ),
+            rect(
+                "crossed",
+                json!({ "clip": { "kind": "inset", "left": 60, "right": 60 } })
+            ),
+            rect(
+                "empty",
+                json!({ "clip": { "kind": "ellipse", "cx": 50, "cy": 25, "rx": 0, "ry": 10 } })
+            ),
+            {
+                "id": "group", "type": "group",
+                "transform": { "x": 300, "y": 10 },
+                "clip": { "kind": "polygon", "points": [[0, 0], [40, 0], [20, 30]] },
+                "children": [rect("inner", json!({}))],
+            },
+        ]));
+        let layers = inspect(&s, 0).unwrap().layers;
+        let clip = |l: &InspectLayer| {
+            let b = l.clip_bounds.expect("clip bounds");
+            (b.x, b.y, b.width, b.height)
+        };
+        assert!(layers[0].clip_bounds.is_none());
+        close(clip(&layers[1]), (210.0, 105.0, 70.0, 40.0));
+        assert_eq!(clip(&layers[2]).2, 0.0);
+        assert_eq!(clip(&layers[3]).2, 0.0);
+        close(clip(&layers[4]), (300.0, 10.0, 40.0, 30.0));
+        assert!(
+            layers[4].children.as_ref().unwrap()[0]
+                .clip_bounds
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_clip_inside_a_turned_group_is_seen_where_the_group_turns_it() {
+        let group = json!({
+            "id": "card", "type": "group",
+            "transform": { "x": 100, "y": 100, "anchorX": 50, "anchorY": 50, "rotateY": 60 },
+            "children": [rect("face", json!({
+                "shape": { "kind": "rect", "width": 100, "height": 100 },
+                "clip": { "kind": "inset" } }))],
+        });
+        let result = inspect(&scene(json!([group])), 0).unwrap();
+        let face = &result.layers[0].children.as_ref().unwrap()[0];
+        let b = face.clip_bounds.unwrap();
+        close((b.x, b.y, b.width, b.height), bounds_of(face));
+    }
+
+    #[test]
     fn a_motion_blurred_layer_covers_where_its_samples_are() {
         let s = scene(json!([rect(
             "fast",
@@ -1017,6 +1138,7 @@ mod tests {
             "bounds",
             "effects",
             "clip",
+            "clipBounds",
             "mask",
             "matte",
             "matteSource",
