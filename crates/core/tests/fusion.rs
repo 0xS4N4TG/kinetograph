@@ -146,8 +146,25 @@ fn random_scene(seed: u64, count: usize) -> Scene {
             "normal", "normal", "normal", "multiply", "screen", "overlay",
         ][next(6) as usize];
         let opacity = [1.0, 1.0, 0.7, 0.35][next(4) as usize];
+        // A quarter of them clipped, to a triangle or a quadrilateral.
+        let clip = if next(4) == 0 {
+            let mut at = |n| next(n) as f64 + 0.25 * next(4) as f64;
+            format!(
+                r#", "clip": {{"kind": "polygon", "points": [[{}, {}], [{}, {}], [{}, {}], [{}, {}]]}}"#,
+                at(10),
+                at(10),
+                at(80),
+                at(15),
+                at(70),
+                at(60),
+                at(15),
+                at(70)
+            )
+        } else {
+            String::new()
+        };
         layers.push(format!(
-            r#"{{"id": "s{i}", "type": "shape", "shape": {shape}, "fill": "{colour}"{stroke}{inset},
+            r#"{{"id": "s{i}", "type": "shape", "shape": {shape}, "fill": "{colour}"{stroke}{inset}{clip},
                "blendMode": "{mode}", "opacity": {opacity},
                "transform": {{"x": [{{"frame": 0, "value": {x}}}, {{"frame": 9, "value": {x2}}}], "y": {y}, "rotation": {r}}}}}"#,
             x = next(260),

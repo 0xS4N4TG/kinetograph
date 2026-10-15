@@ -18,6 +18,7 @@ struct Params {
     color: vec4<f32>,
 }
 
+// tex_a is the page that holds the leaf, tex_b the page that holds its clip.
 @group(0) @binding(0) var tex_a: texture_2d<f32>;
 @group(0) @binding(1) var tex_b: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> params: Params;
@@ -71,4 +72,24 @@ fn fs_inset_page(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let layer = leaf_pixel(canvas_xy(p));
     let shadow = params.color * (inverted_shadow_alpha(canvas_pos(p)) * layer.a);
     return shadow + layer * (1.0 - shadow.a);
+}
+
+// The pixel `xy` of the clip's page (tex_b): transparent outside it.
+fn load_b(xy: vec2<i32>) -> vec4<f32> {
+    let q = xy - place.b.xy;
+    if any(q < vec2<i32>(0)) || any(q >= place.b.zw) {
+        return vec4<f32>(0.0);
+    }
+    return textureLoad(tex_b, q, 0);
+}
+
+// The leaf's texture masked by the alpha of a clip shape drawn in white on
+// another page (`fs_mask` in composite.wgsl). params.region is the leaf's box
+// cut to the clip's.
+@fragment
+fn fs_leaf_clip(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let xy = canvas_xy(p);
+    let masked = leaf_pixel(xy) * clamp(load_b(xy).a, 0.0, 1.0);
+    return vec4<f32>(
+        store_f16(masked.x), store_f16(masked.y), store_f16(masked.z), store_f16(masked.w));
 }

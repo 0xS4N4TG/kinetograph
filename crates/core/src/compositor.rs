@@ -263,6 +263,8 @@ pub struct Compositor {
     /// `inset_inverted` on a leaf that is still in its Vello page, cut out
     /// and converted as it is read (`shaders/page.wgsl`).
     inset_page: wgpu::RenderPipeline,
+    /// A leaf cut out of its page and masked by its clip's page.
+    leaf_clip: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
@@ -541,6 +543,7 @@ impl Compositor {
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
             inset_inverted: pipeline(&shadow_shader, "fs_inset_inverted", LINEAR_FORMAT),
             inset_page: pipeline(&page_shader, "fs_inset_page", LINEAR_FORMAT),
+            leaf_clip: pipeline(&page_shader, "fs_leaf_clip", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
@@ -602,6 +605,7 @@ impl Compositor {
             (&c.inset_shadow, "inset shadow"),
             (&c.inset_inverted, "inset shadow"),
             (&c.inset_page, "inset shadow"),
+            (&c.leaf_clip, "to linear"),
             (&c.color, "colour filter"),
             (&c.glow, "glow"),
             (&c.aberration, "aberration"),
@@ -1768,6 +1772,40 @@ impl Compositor {
         let params = floats(&closed.uniform());
         self.run_pass(&self.drop_box, src.input(), src.input(), &params, &target);
         self.release(src);
+        target
+    }
+
+    /// Whether the passes that read Vello pages directly are in use.
+    pub fn is_fused(&self) -> bool {
+        self.fusion
+    }
+
+    /// The leaf whose pixels are in the box `region` of the page `leaf` (drawn
+    /// over `leaf_area`) masked by the clip shape in `clip` (drawn over
+    /// `clip_area`) inside `keep`: what `from_srgb8` and then `mask` make, in
+    /// one pass. `region` and `keep` must overlap.
+    pub fn leaf_clipped_from_page(
+        &mut self,
+        leaf: (&wgpu::TextureView, PixelRect),
+        clip: (&wgpu::TextureView, PixelRect),
+        region: PixelRect,
+        keep: PixelRect,
+    ) -> Tex {
+        let kept = region.intersect(keep);
+        let target = self.target(kept);
+        fn input(page: (&wgpu::TextureView, PixelRect)) -> Input<'_> {
+            Input {
+                view: page.0,
+                origin: [page.1.x0, page.1.y0],
+                size: [page.1.width(), page.1.height()],
+            }
+        }
+        let mut params: Vec<u8> = [kept.x0, kept.y0, kept.x1, kept.y1]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        params.extend(floats(&[0.0; 8]));
+        self.run_pass(&self.leaf_clip, input(leaf), input(clip), &params, &target);
         target
     }
 

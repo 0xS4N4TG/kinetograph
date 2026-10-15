@@ -738,6 +738,41 @@ impl Renderer {
         Ok(canvas)
     }
 
+    /// The leaf `layer` cut out of its page `page` (drawn over `area`) and
+    /// masked by its clip, in one pass, when it can be: it has no effects
+    /// (which come between the cut and the clip), its clip shape is on a page
+    /// too, and the clip keeps some of the leaf's box `region`.
+    fn clipped_from_page(
+        &mut self,
+        layer: &ResolvedLayer,
+        matrix: Affine,
+        page: &wgpu::TextureView,
+        area: PixelRect,
+        region: PixelRect,
+    ) -> Result<Option<Tex>> {
+        let Some(clip) = &layer.clip else {
+            return Ok(None);
+        };
+        if !self.compositor.is_fused()
+            || !layer.effects.is_empty()
+            || matches!(layer.kind, ResolvedKind::Noise { .. })
+        {
+            return Ok(None);
+        }
+        let path = self.clip_path(clip, layer)?;
+        let keep = self.path_bounds(&path, matrix);
+        if region.intersect(keep).is_empty() {
+            return Ok(None);
+        }
+        let Some((clip_page, clip_area)) = self.clip_page_target(layer, matrix)? else {
+            return Ok(None);
+        };
+        Ok(Some(self.timed(Stage::Composite, |s| {
+            s.compositor
+                .leaf_clipped_from_page((page, area), (&clip_page, clip_area), region, keep)
+        })))
+    }
+
     /// The inset shadow that is the first effect of the leaf `layer`, if it
     /// can be drawn in the one pass that cuts the leaf out of its page
     /// (`Compositor::inset_from_page`): it has no blur and no spread, and the
@@ -883,8 +918,10 @@ impl Renderer {
             ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => None,
             _ => Some(self.raster_bounds(layer, matrix)?),
         };
-        // How many of the layer's effects drawing it has applied already.
+        // How many of the layer's effects drawing it has applied already, and
+        // whether its clip has been.
         let mut applied = 0;
+        let mut clipped = false;
         let src = match &layer.kind {
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
@@ -919,9 +956,16 @@ impl Renderer {
                                 s.compositor.inset_from_page(&page, area, region, &shadow)
                             })
                         }
-                        None => self.timed(Stage::Composite, |s| {
-                            s.compositor.from_srgb8(&page, area, region)
-                        }),
+                        None => match self.clipped_from_page(layer, matrix, &page, area, region)? {
+                            // One pass cuts the leaf out and masks it.
+                            Some(tex) => {
+                                clipped = true;
+                                tex
+                            }
+                            None => self.timed(Stage::Composite, |s| {
+                                s.compositor.from_srgb8(&page, area, region)
+                            }),
+                        },
                     },
                     None => {
                         let area = self.vello_area(region);
@@ -981,7 +1025,7 @@ impl Renderer {
         if let Some(coverage) = coverage {
             self.compositor.release(coverage);
         }
-        if let Some(clip) = &layer.clip {
+        if let Some(clip) = layer.clip.as_ref().filter(|_| !clipped) {
             let path = self.clip_path(clip, layer)?;
             let keep = self.path_bounds(&path, matrix);
             if keep.is_empty() {
