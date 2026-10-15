@@ -12,6 +12,9 @@ import {
   type AudioClipJson,
   type CameraJson,
   type CharStyle,
+  type Camera3DJson,
+  type Light3DJson,
+  type Object3DJson,
   type SequenceJson,
   type Unsupported,
   type Effect,
@@ -74,6 +77,16 @@ export const ELEMENT_NAMES: Record<string, string> = {
   'kg-mesh-gradient': 'MeshGradient',
   'kg-lottie': 'Lottie',
   'kg-canvas': 'Canvas',
+  'kg-scene3d': 'Scene3D',
+  'kg-camera3d': 'Camera3D',
+  'kg-ambient-light': 'AmbientLight',
+  'kg-directional-light': 'DirectionalLight',
+  'kg-point-light': 'PointLight',
+  'kg-mesh': 'Mesh',
+  'kg-model': 'Model',
+  'kg-text3d': 'Text3D',
+  'kg-extrude': 'Extrude',
+  'kg-group3d': 'Group3D',
   'kg-video': 'Video',
   'kg-gif': 'Gif',
   'kg-camera': 'Camera',
@@ -345,6 +358,83 @@ class Emitter {
     }
   }
 
+  /** The camera, lights and objects a `<Scene3D>` holds, as the layer's fields. */
+  private scene3d(scene: HostElement): { camera?: Camera3DJson; lights?: Light3DJson[]; objects?: Object3DJson[] } {
+    let camera: Camera3DJson | undefined;
+    const lights: Light3DJson[] = [];
+    const objects: Object3DJson[] = [];
+    for (const node of scene.children) {
+      if (node.kind === 'text') throw new Error(`Raw text "${node.text}" is not allowed inside <Scene3D>; use <Text3D>`);
+      switch (node.type) {
+        case 'kg-camera3d':
+          if (camera !== undefined) throw new Error('A <Scene3D> takes one <Camera3D>');
+          camera = pick(node.props, ['type', 'fov', 'height', 'near', 'far', 'position', 'target', 'up']) as Camera3DJson;
+          break;
+        case 'kg-ambient-light':
+          lights.push({ type: 'ambient', ...pick(node.props, ['color', 'intensity']) });
+          break;
+        case 'kg-directional-light':
+          lights.push({ type: 'directional', ...pick(node.props, ['direction', 'color', 'intensity']) });
+          break;
+        case 'kg-point-light':
+          if (node.props.position === undefined) throw new Error('<PointLight> needs a position');
+          lights.push({ type: 'point', ...pick(node.props, ['position', 'color', 'intensity', 'range']) } as Light3DJson);
+          break;
+        case 'kg-sequence':
+          throw new Error('<Sequence> cannot be inside <Scene3D>: put it around the <Scene3D>');
+        default:
+          objects.push(this.object3d(node, 'Scene3D'));
+      }
+    }
+    return {
+      ...(camera !== undefined ? { camera } : {}),
+      ...(lights.length > 0 ? { lights } : {}),
+      ...(objects.length > 0 ? { objects } : {}),
+    };
+  }
+
+  private object3d(node: HostElement, parent: string): Object3DJson {
+    const { type, props } = node;
+    const name = ELEMENT_NAMES[type] ?? type;
+    const placement = pick(props, ['id', 'position', 'rotation', 'scale', 'visible']);
+    const material = pick(props, ['material']);
+    switch (type) {
+      case 'kg-mesh': {
+        const kind = props.geometry?.kind;
+        if (!['box', 'sphere', 'plane', 'cylinder', 'torus'].includes(kind)) {
+          throw new Error(`<Mesh> geometry.kind must be box, sphere, plane, cylinder or torus, got ${JSON.stringify(kind)}`);
+        }
+        return { type: 'mesh', geometry: props.geometry, ...material, ...placement } as Object3DJson;
+      }
+      case 'kg-model':
+        if (typeof props.src !== 'string') throw new Error('<Model> needs a src, the path of a .gltf or .glb file');
+        return { type: 'model', src: props.src, ...material, ...placement } as Object3DJson;
+      case 'kg-text3d':
+        if (typeof props.font !== 'string') throw new Error('<Text3D> needs a font, a key of the scene\'s fonts');
+        return {
+          type: 'text',
+          text: textOf(node),
+          font: fontKey(props.font, props.weight, props.fontStyle),
+          ...pick(props, ['size', 'depth', 'align', 'lineHeight']),
+          ...material,
+          ...placement,
+        } as Object3DJson;
+      case 'kg-extrude':
+        if (typeof props.path !== 'string') throw new Error('<Extrude> needs a path, SVG path data');
+        return { type: 'extrude', path: props.path, ...pick(props, ['size', 'depth', 'fillRule']), ...material, ...placement } as Object3DJson;
+      case 'kg-group3d': {
+        const children: Object3DJson[] = [];
+        for (const child of node.children) {
+          if (child.kind === 'text') throw new Error(`Raw text "${child.text}" is not allowed inside <Group3D>; use <Text3D>`);
+          children.push(this.object3d(child, 'Group3D'));
+        }
+        return { type: 'group', children, ...placement } as Object3DJson;
+      }
+      default:
+        throw new Error(`<${name}> cannot be inside <${parent}>: it takes <Mesh>, <Model>, <Text3D>, <Extrude> and <Group3D>`);
+    }
+  }
+
   /** A layer, or null for `<Camera>` and `<Audio>`, which land in `cameras` and `audio` instead. */
   private element(element: HostElement, path: string): LayerJson | null {
     const { type, props } = element;
@@ -456,6 +546,28 @@ class Emitter {
         draw(context);
         return { id, type: 'canvas', width, height, commands: context.commands, ...commonOf(props, name) } as LayerJson;
       }
+      case 'kg-scene3d': {
+        for (const side of ['width', 'height'] as const) {
+          if (props[side] === undefined) throw new Error(`<Scene3D> needs a ${side}, the size of its box in layer pixels`);
+        }
+        return {
+          id,
+          type: 'scene3d',
+          ...pick(props, ['width', 'height', 'msaa']),
+          ...this.scene3d(element),
+          ...commonOf(props, name),
+        } as LayerJson;
+      }
+      case 'kg-camera3d':
+      case 'kg-ambient-light':
+      case 'kg-directional-light':
+      case 'kg-point-light':
+      case 'kg-mesh':
+      case 'kg-model':
+      case 'kg-text3d':
+      case 'kg-extrude':
+      case 'kg-group3d':
+        throw new Error(`<${name}> must be inside a <Scene3D>`);
       case 'kg-video':
         // The sound is not part of the layer: it is an audio clip with the layer's id.
         this.audio.push({ id, ...props.sound });

@@ -43,9 +43,9 @@ function describeParent(type: string): string {
 }
 
 function checkChild(parentType: string, child: HostNode): void {
-  if (parentType === 'kg-text') {
+  if (parentType === 'kg-text' || parentType === 'kg-text3d') {
     if (child.kind !== 'text') {
-      throw new Error(`<${ELEMENT_NAMES[child.type] ?? child.type}> cannot be inside <Text>: <Text> takes only strings and numbers`);
+      throw new Error(`<${ELEMENT_NAMES[child.type] ?? child.type}> cannot be inside <Text>: <${ELEMENT_NAMES[parentType]}> takes only strings and numbers`);
     }
     return;
   }
@@ -54,8 +54,8 @@ function checkChild(parentType: string, child: HostNode): void {
   if (child.kind === 'text') {
     throw new Error(`Raw text "${child.text}" is not allowed inside ${describeParent(parentType)}; wrap it in <Text>`);
   }
-  if (parentType !== 'kg-layer' && parentType !== ROOT_CONTEXT) {
-    throw new Error(`<${ELEMENT_NAMES[parentType] ?? parentType}> cannot have children; only <Layer> does`);
+  if (parentType !== 'kg-layer' && parentType !== ROOT_CONTEXT && parentType !== 'kg-scene3d' && parentType !== 'kg-group3d') {
+    throw new Error(`<${ELEMENT_NAMES[parentType] ?? parentType}> cannot have children; only <Layer>, <Scene3D> and <Group3D> do`);
   }
 }
 
