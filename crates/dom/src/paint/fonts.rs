@@ -24,8 +24,10 @@ pub fn register_font_path(blob_id: u64, path: impl Into<String>) {
     registered().lock().unwrap().insert(blob_id, path.into());
 }
 
-fn matched() -> &'static Mutex<HashMap<(u64, usize), Option<String>>> {
-    static MATCHED: OnceLock<Mutex<HashMap<(u64, usize), Option<String>>>> = OnceLock::new();
+type Matches = Mutex<HashMap<(u64, usize), Option<String>>>;
+
+fn matched() -> &'static Matches {
+    static MATCHED: OnceLock<Matches> = OnceLock::new();
     MATCHED.get_or_init(Default::default)
 }
 

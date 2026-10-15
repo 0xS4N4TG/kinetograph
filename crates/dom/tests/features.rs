@@ -23,9 +23,15 @@ macro_rules! case {
         #[test]
         fn $name() {
             let body: String = $body;
-            let (out, _frame, diff) = compare(stringify!($name), &body, $w, $h);
+            let (out, frame, diff) = compare(stringify!($name), &body, $w, $h);
+            paintkit::check_golden(stringify!($name), &frame);
+            if let Some(d) = diff {
+                // Against Chrome: translucency, geometry and paint order must be close; text differs by design.
+                assert!(d.mean < 30.0, "{}: {d:?}", stringify!($name));
+            }
+            let n = paintkit::count_layers(&out.layers);
             println!(
-                "{}: unsupported {:?}; diff {:?}",
+                "{}: layers {n}; unsupported {:?}; diff {:?}",
                 stringify!($name),
                 out.unsupported,
                 diff

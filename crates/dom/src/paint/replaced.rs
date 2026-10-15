@@ -24,13 +24,22 @@ impl<'a> Painter<'a> {
             return Vec::new();
         };
         let tag = &el.name.local;
-        // A native `kg-*` element of the island (a replaced box): the TS side puts its layers where this goes.
-        if &**tag == "kg-native" {
-            let l = node.final_layout();
-            return vec![json!({"type": "native", "path": self.path_of(node), "x": num(origin.0), "y": num(origin.1), "width": num(f64::from(l.size.width)), "height": num(f64::from(l.size.height))})];
-        }
         let geom = box_geom(node, &style);
         let (content, radii) = geom.region(Region::Content);
+
+        // A native `kg-*` element of the TS side: a replaced box whose layers
+        // the caller puts where this placeholder is (docs/ENGINE.md section 2).
+        if &**tag == "kg-native" {
+            let path = self.path_of(node);
+            return vec![serde_json::json!({
+                "type": "native",
+                "path": path,
+                "x": num(origin.0 + content.x),
+                "y": num(origin.1 + content.y),
+                "width": num(content.w),
+                "height": num(content.h),
+            })];
+        }
         if content.is_empty() {
             return Vec::new();
         }
@@ -41,7 +50,7 @@ impl<'a> Painter<'a> {
             let painted = super::svg::paint_svg(
                 self.doc,
                 self.req,
-                node.id.as_u64() as usize,
+                node.id,
                 [content.w, content.h],
                 &id,
                 &path,

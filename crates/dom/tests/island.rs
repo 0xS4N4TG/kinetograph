@@ -21,6 +21,41 @@ fn tile() -> String {
 }
 
 #[test]
+fn a_native_element_leaves_a_placeholder_where_its_layers_go() {
+    let native = json!({ "kind": "native", "path": "$0.1", "width": 120.0, "height": 40.0 });
+    let req = request(el(
+        "div",
+        "$0",
+        "width:1000px;height:500px",
+        vec![el(
+            "div",
+            "$0.0",
+            "position:absolute;left:30px;top:50px;padding:5px;background:#fff",
+            vec![native],
+        )],
+    ));
+    let parsed = common::parse(&req);
+    let island = document::resolve(&parsed).expect("resolves");
+    let out = paint(&island.doc, &parsed);
+    fn find(layers: &[serde_json::Value]) -> Option<&serde_json::Value> {
+        layers.iter().find_map(|l| {
+            if l["type"] == "native" {
+                Some(l)
+            } else {
+                find(l["children"].as_array().map_or(&[], |c| c.as_slice()))
+            }
+        })
+    }
+    let placeholder =
+        find(&out.layers).unwrap_or_else(|| panic!("no placeholder in {:?}", out.layers));
+    assert_eq!(placeholder["path"], "$0.1");
+    assert_eq!(placeholder["x"], 35);
+    assert_eq!(placeholder["y"], 55);
+    assert_eq!(placeholder["width"], 120);
+    assert_eq!(placeholder["height"], 40);
+}
+
+#[test]
 fn a_papercut_style_card_paints_end_to_end() {
     let card = el_attrs(
         "div",

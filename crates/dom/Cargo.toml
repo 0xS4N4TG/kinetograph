@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[dev-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
 [dependencies]
 kinetograph-core = { path = "../core" }
 # Blitz's DOM: Stylo for CSS, taffy for layout, Parley for text. No system fonts:
@@ -16,6 +19,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["unbounded_depth"] }
 # The painter (stream 2) reads Stylo's computed values and Blitz's Parley layouts.
 # Same versions as blitz-dom, so the types are the same ones.
+style = { package = "stylo", version = "0.22.0" }
 style_traits = { package = "stylo_traits", version = "0.22.0" }
 kurbo = "0.13.1"
 # Fonts: the Parley context Blitz lays text out with.
@@ -31,12 +35,9 @@ percent-encoding = "2.3"
 # Decoding images the way Blitz does, and SVG images without system fonts.
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif"] }
 usvg = "0.48.1"
+# CSS colour and number syntax (the SVG painter).
+svgtypes = "0.16.1"
 # Transform matrices for readback.
 euclid = "0.22"
-# Computed values (getComputedStyle, transforms): the version Blitz uses.
-style = { package = "stylo", version = "0.22.0" }
 # CSS features Chrome has that Stylo ships switched off (:has(), @container, ...).
 style_config = { package = "stylo_static_prefs", version = "0.22.0" }
-
-[dev-dependencies]
-image = { version = "0.25.10", default-features = false, features = ["png"] }

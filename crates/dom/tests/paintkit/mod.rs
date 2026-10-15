@@ -137,6 +137,14 @@ pub fn scene_json(out: &IslandOutput, w: u32, h: u32) -> Value {
     scene
 }
 
+/// Every layer, nested ones included.
+pub fn count_layers(layers: &[Value]) -> usize {
+    layers
+        .iter()
+        .map(|l| 1 + l["children"].as_array().map_or(0, |c| count_layers(c)))
+        .sum()
+}
+
 pub fn render_output(out: &IslandOutput, w: u32, h: u32) -> Frame {
     let json = scene_json(out, w, h).to_string();
     let scene = Scene::from_json(&json, repo_root().join("crates/dom/tests/assets"))
@@ -288,6 +296,42 @@ pub fn diff_image(a: &RgbaImage, b: &RgbaImage) -> RgbaImage {
         ]);
     }
     out
+}
+
+/// Compares a frame with the committed golden `tests/golden/<name>.png`
+/// (made on the M4, compared exactly; `UPDATE_GOLDEN=1` writes it, to be
+/// checked by eye against `target/paint-tests/<name>-chrome.png`).
+pub fn check_golden(name: &str, frame: &Frame) {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("tests/golden/{name}.png"));
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        save_frame(frame, &path);
+        return;
+    }
+    let golden = image::open(&path)
+        .unwrap_or_else(|e| {
+            panic!(
+                "cannot read {}: {e} (run with UPDATE_GOLDEN=1)",
+                path.display()
+            )
+        })
+        .to_rgba8();
+    assert_eq!(
+        (golden.width(), golden.height()),
+        (frame.width, frame.height),
+        "{name}: size changed"
+    );
+    let differing = golden
+        .as_raw()
+        .chunks(4)
+        .zip(frame.rgba.chunks(4))
+        .filter(|(a, b)| a != b)
+        .count();
+    assert_eq!(
+        differing,
+        0,
+        "{name}: {differing} pixels differ from {}",
+        path.display()
+    );
 }
 
 /// Renders `body` and compares it with Chrome's rendering of the same page.

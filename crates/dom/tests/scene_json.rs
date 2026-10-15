@@ -84,7 +84,9 @@ fn a_radial_ellipse_that_is_not_the_box_squashes_a_circle() {
     let fill = &find(&out.layers, "a.bg.0")["fill"];
     assert_eq!(fill["type"], "radial");
     assert_eq!(fill["r"], 40);
-    let m = fill["matrix"].as_array().expect("an ellipse has a matrix");
+    let m = fill["transform"]
+        .as_array()
+        .expect("an ellipse has a transform");
     assert_eq!(m[3], 0.5);
 }
 
@@ -133,8 +135,9 @@ fn mix_blend_mode_and_opacity_make_a_group_of_the_element() {
         100,
         100,
     );
+    // The group of one shape is the shape itself, with the group's fields.
     let g = find(&out.layers, "a");
-    assert_eq!(g["type"], "group");
+    assert_eq!(g["type"], "shape");
     assert_eq!(g["blendMode"], "screen");
     assert_eq!(g["opacity"], 0.5);
 }
@@ -277,7 +280,7 @@ fn z_index_orders_stacking_contexts_and_floats_sit_between_blocks_and_inline() {
     );
     let i = |id: &str| index_of(&out.layers, id);
     assert!(
-        i("lo") < i("flow.bg.color"),
+        i("lo.bg.color") < i("flow.bg.color"),
         "negative z-index under in-flow blocks"
     );
     assert!(i("flow.bg.color") < i("fl.bg.color"), "floats over blocks");
@@ -285,7 +288,7 @@ fn z_index_orders_stacking_contexts_and_floats_sit_between_blocks_and_inline() {
         i("fl.bg.color") < i("pos.bg.color"),
         "positioned over floats"
     );
-    assert!(i("pos.bg.color") < i("hi"), "z-index 2 on top");
+    assert!(i("pos.bg.color") < i("hi.bg.color"), "z-index 2 on top");
 }
 
 #[test]
@@ -437,6 +440,32 @@ fn a_border_image_with_a_tiny_tile_stretches_instead_of_allocating() {
         out.unsupported
     );
     assert!(flat(&out.layers).len() < 1000);
+}
+
+/// Layer counts for a busy page (280 before the layer-merging pass, 200
+/// after): 60 cards, each a transformed stacking
+/// context holding a box with a background, border and radius and a line of
+/// text, and 20 plain bordered boxes.
+#[test]
+fn a_busy_page_stays_within_a_layer_budget() {
+    let mut body = String::new();
+    for i in 0..60 {
+        body += &format!(
+            r#"<div style="position:absolute;left:{}px;top:{}px;width:90px;height:40px;transform:rotate(2deg);opacity:.95"><div style="background:#fc6;border:2px solid #432;border-radius:8px;padding:4px;font-size:12px">card {i}</div></div>"#,
+            (i % 10) * 100,
+            (i / 10) * 60
+        );
+    }
+    for i in 0..20 {
+        body += &format!(
+            r#"<div style="position:absolute;left:{}px;top:380px;width:40px;height:20px;background:#9cf;border:1px solid #036"></div>"#,
+            i * 45
+        );
+    }
+    let out = paint(&body, 1000, 420);
+    let n = paintkit::count_layers(&out.layers);
+    println!("busy page: {n} layers");
+    assert!(n <= 220, "{n} layers");
 }
 
 #[test]

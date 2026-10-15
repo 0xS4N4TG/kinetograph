@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><style>html,body{margin:0;background:#fff}</style></head><body>
+<svg width="0" height="0" style="position:absolute">
+  <filter id="rough" x="-4%" y="-4%" width="108%" height="108%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="whip" x="-10%" y="0" width="120%" height="100%"><feGaussianBlur stdDeviation="6 0"/></filter>
+</svg>
+<svg width="480" height="360" viewBox="0 0 240 180">
+  <defs>
+    <clipPath id="c1"><rect x="10" y="10" width="40" height="40" rx="8"/></clipPath>
+    <clipPath id="c2"><circle cx="90" cy="30" r="20"/><rect x="95" y="35" width="25" height="25"/></clipPath>
+    <mask id="m1" maskUnits="userSpaceOnUse" x="0" y="0" width="240" height="180">
+      <linearGradient id="mg"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
+      <rect x="130" y="10" width="50" height="40" fill="url(#mg)"/>
+    </mask>
+    <pattern id="p1" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5" r="3" fill="#e63946"/></pattern>
+    <marker id="mk" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#264653"/></marker>
+  </defs>
+  <rect x="5" y="5" width="50" height="50" fill="#e9c46a" clip-path="url(#c1)"/>
+  <rect x="65" y="5" width="70" height="60" fill="#2a9d8f" clip-path="url(#c2)"/>
+  <rect x="130" y="10" width="50" height="40" fill="#d62828" mask="url(#m1)"/>
+  <rect x="190" y="10" width="40" height="40" fill="url(#p1)" stroke="#333"/>
+  <path d="M10 90 L60 90 L60 130" fill="none" stroke="#264653" stroke-width="3" marker-end="url(#mk)"/>
+  <g filter="url(#rough)"><rect x="80" y="80" width="50" height="40" fill="#f4a261"/></g>
+  <rect x="150" y="80" width="40" height="30" fill="#6a4c93" filter="url(#whip)"/>
+  <g style="mix-blend-mode:multiply"><circle cx="30" cy="150" r="18" fill="#e63946"/><circle cx="45" cy="150" r="18" fill="#457b9d"/></g>
+  <path d="M100 150 C120 120 140 180 160 150" fill="none" stroke="url(#mg)" stroke-width="8"/>
+  <rect x="180" y="120" width="50" height="40" fill="#8ac926" transform="rotate(15 205 140)" stroke="#000" stroke-width="2" stroke-dasharray="6 3"/>
+</svg></body></html>

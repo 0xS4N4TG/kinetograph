@@ -15,6 +15,7 @@
 //! Anything that cannot be drawn as Chrome would is reported through
 //! `Painter::unsupported`, never drawn wrongly.
 
+mod audit;
 mod background;
 mod border;
 mod border_image;
@@ -26,6 +27,7 @@ mod geom;
 mod gradient;
 mod images;
 mod mat;
+mod opt;
 mod replaced;
 mod shadow;
 mod shim;
@@ -47,12 +49,12 @@ use style::values::computed::Float;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
 use crate::request::{IslandOutput, IslandRequest, Unsupported};
-use geom::{Radii, Rect};
 
 /// Paints a document that `resolve` has styled and laid out.
 pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
     let mut painter = Painter::new(doc, request);
     let layers = painter.paint_root();
+    let layers = opt::optimize(layers);
     IslandOutput {
         layers,
         unsupported: painter.unsupported,
@@ -102,6 +104,8 @@ pub(crate) struct Painter<'a> {
     pub canvas_node: Option<NodeId>,
     /// The farthest a blur reaches past its layer, for the scene's margin.
     pub margin_reach: f64,
+    /// Nodes `audit` has looked at.
+    audited: HashSet<u64>,
     /// The mode (`alpha` or `luminance`) of each mask source group, by id.
     pub mask_modes: std::collections::HashMap<String, &'static str>,
 }
@@ -120,6 +124,7 @@ impl<'a> Painter<'a> {
             camera: None,
             canvas_node: None,
             margin_reach: 0.0,
+            audited: HashSet::new(),
             mask_modes: Default::default(),
         }
     }
@@ -221,10 +226,7 @@ impl<'a> Painter<'a> {
         let mut out = Vec::new();
         // The canvas takes the background of the root element, or of the body
         // when the root has none (CSS Backgrounds 3, section 2.11.2).
-        let viewport = (
-            f64::from(self.req.viewport.width),
-            f64::from(self.req.viewport.height),
-        );
+        let viewport = (self.req.viewport.width, self.req.viewport.height);
         let body = self.body_of(root);
         if let Some((source, _from_body)) = self.canvas_background(root, body) {
             out.extend(self.canvas_layers(source, viewport));
@@ -345,7 +347,7 @@ impl<'a> Painter<'a> {
         let id = self.layer_id(node, "");
         let children = self.sc_content(node);
         match self.context_group(node, &id, at, children) {
-            Some(group) => vec![group],
+            Some(group) => flatten_plain_group(group),
             None => Vec::new(),
         }
     }
@@ -537,6 +539,59 @@ impl<'a> Painter<'a> {
             b.overflow_x != Overflow::Visible || b.overflow_y != Overflow::Visible
         })
     }
+}
+
+/// Whether a layer or anything in it blends with, or reads, what is behind
+/// it: such layers need the group they are in to stay a buffer of its own.
+fn reads_backdrop(layer: &Value) -> bool {
+    let blends = layer
+        .get("blendMode")
+        .and_then(Value::as_str)
+        .is_some_and(|m| m != "normal");
+    let backdrop = layer
+        .get("effects")
+        .and_then(Value::as_array)
+        .is_some_and(|e| e.iter().any(|e| e["type"] == "backdropBlur"));
+    blends
+        || backdrop
+        || layer
+            .get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|c| c.iter().any(reads_backdrop))
+}
+
+/// A stacking context that only has a place (no transform but a move, no
+/// opacity, filter, blend, clip, mask or matte) and holds nothing that
+/// blends with the backdrop paints as its children would without it, so its
+/// children go to its parent, moved: one group fewer.
+fn flatten_plain_group(group: Value) -> Vec<Value> {
+    let Some(obj) = group.as_object() else {
+        return vec![group];
+    };
+    let plain = obj
+        .keys()
+        .all(|k| matches!(k.as_str(), "id" | "type" | "children" | "transform"))
+        && obj.get("transform").is_none_or(|t| {
+            t.as_object()
+                .is_some_and(|t| t.keys().all(|k| k == "x" || k == "y"))
+        });
+    let children = obj.get("children").and_then(Value::as_array);
+    if !plain || children.is_none_or(|c| c.iter().any(reads_backdrop)) {
+        return vec![group];
+    }
+    let (dx, dy) = (
+        obj.get("transform")
+            .and_then(|t| t["x"].as_f64())
+            .unwrap_or(0.0),
+        obj.get("transform")
+            .and_then(|t| t["y"].as_f64())
+            .unwrap_or(0.0),
+    );
+    let mut out = children.cloned().unwrap_or_default();
+    for l in &mut out {
+        util::shift(l, dx, dy);
+    }
+    out
 }
 
 /// An attribute of an element, by name.

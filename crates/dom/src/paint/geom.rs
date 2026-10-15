@@ -1,6 +1,6 @@
 //! Boxes, corner radii and the paths they make.
 
-use kurbo::{BezPath, Rect as KRect, Shape};
+use kurbo::BezPath;
 
 /// A rectangle by its top-left corner and size, in CSS pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -79,10 +79,6 @@ impl Rect {
             && o.y >= self.y - 1e-6
             && o.right() <= self.right() + 1e-6
             && o.bottom() <= self.bottom() + 1e-6
-    }
-
-    pub fn to_kurbo(&self) -> KRect {
-        KRect::new(self.x, self.y, self.right(), self.bottom())
     }
 }
 
@@ -293,6 +289,7 @@ pub fn path_d(path: &BezPath) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kurbo::Shape;
 
     #[test]
     fn rounded_rect_bounds_and_area() {

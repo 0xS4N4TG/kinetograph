@@ -5,7 +5,7 @@ use blitz_dom::Node;
 use serde_json::{Value, json};
 use style::computed_values::backface_visibility::T as Backface;
 use style::computed_values::transform_style::T as TransformStyle;
-use style::values::computed::{Length, Perspective, Rotate, Scale, Translate};
+use style::values::computed::{Perspective, Rotate, Scale, Translate};
 
 use super::background::blend_name;
 use super::deco::box_geom;
@@ -324,7 +324,7 @@ impl<'a> Painter<'a> {
 
     pub fn filter_effect(
         &mut self,
-        node: &'a Node,
+        _node: &'a Node,
         f: &style::values::computed::Filter,
         current: &style::color::AbsoluteColor,
         out: &mut Vec<Value>,
