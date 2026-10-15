@@ -113,7 +113,8 @@ pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str,
 - `filter_graph` returns `{"type": "filterGraph", ...}` for `filter: url(#id)`, to be pushed onto the `effects` of
   the filtered layer (in the order the CSS `filter` list has them). `fragment` is `#id`, `url(#id)` or `id`; the
   `<filter>` can be anywhere in the document. `bbox` is `[x, y, width, height]` of the element's object bounding box
-  in the coordinates of the layer the effect goes on (an HTML box: its border box), used for `objectBoundingBox`
+  in the coordinates of the layer the effect goes on (an HTML box: its border box and everything painted inside it, as Chrome
+  takes it, see 10.5), used for `objectBoundingBox`
   units and the default region (-10%, -10%, 120%, 120%). It returns `None` for an id that names no `<filter>`
   (CSS ignores the reference then). A filter of the wrong kind of element is `None` too.
 - Both return `Unsupported` items for what they could not draw as Chrome would.
@@ -267,19 +268,45 @@ it writes `out/corpus/report.json` and the pictures.
 
 First run, then the current one. Both: `node scripts/corpus.mjs --reference --every 30` (33 sampled frames of 988).
 
-**Current**: `engine/runtime` merged with `engine/front@97180a0`, `engine/paint@c233112` (which has `engine/svg` in it).
-The painter now leaves the `native` placeholder layers (a two-line addition on this branch, `7783f89`, for stream 2 to
-keep or replace; without it every native element inside DOM lost its content). 153 s for the whole run.
+**Current**: the four streams merged (`feat/full-engine`), after the fixes below. About 63 s for the whole run.
+
+The first run after the merge was worse than `engine/runtime` had measured (5 312 576 pixels more than 48 levels apart
+against 2 470 423): whole props were missing (the barrier arm with the DELETE GUARD sign, the file cards, the toothed
+chute, the trench coat's badges) and a `</>` strip sat on the whole of one scene. Causes, all found from the pictures
+(`doctor` reports nothing for them):
+
+1. `filter: url(#rough)` takes its region from the box of the element, and the kit's `Paper` is a `div` of `inset: 0`
+   inside a `width: 0; height: 0` wrapper, so the region was empty and the prop drew nothing. Chrome takes the element's box
+   and everything painted inside it, through the descendants' transforms and up to an `overflow` clip (the critter's cap and
+   arm stick out of its body). `Painter::filter_bbox` does the same. This was the main loss (2.5 million pixels).
+2. `filter: url(#torn)` alone (the tape corners, the strip) is not in Stylo's filter list, so the element made no stacking
+   context and the filter was dropped. `is_sc` now reads the mirrored `--kg-filter`.
+3. A text layer's box was its longest line, but a centred line sits inside the content box, so the compositor (and the
+   filter on the banner) cut off the end of the line ("COMMAND", "DELET"). The box is now the wider of the two.
+4. `TransitionSeries` kept a transition's presentation mounted at rest; `tapePull` draws its `</>` strip at every
+   progress, so it covered the whole of the scene before the cut. The wrapper is now added only inside the transition's
+   window, as the published package does.
+5. A group with no buffer of its own (a `div` that only turns) holding a pass-through SVG group with a `multiply` inside
+   blended with the page: the red marker ring came out nearly black. `needs_no_buffer` now sees a blend passed through a
+   pass-through group.
+
+The `native` placeholder was not the cause: stream 2's content-box version (`replaced.rs`) is the same box as stream 4's
+for a `kg-*` element without padding, and it comes before the empty-box return, so zero-size natives (`Sequence`,
+`Camera`) still get one.
 
 - **Native frames: 988 of 988**, Chrome frames 0. This counts frames, not fidelity: the painter reports no
   unsupported item on any frame yet.
 - **Against the real Remotion render** (`out/mods-papercut.mp4` in the project; same sources and frame count; H.264, so
-  a few levels of noise everywhere): mean difference 3.5 to 16.4 levels (median 4.9), PSNR 16.7 to 31.2 dB, 4669 to
-  333 279 pixels (0.2% to 16%) more than 48 levels apart, 2 470 423 summed over the 33 frames. Best: frames 840 (4669),
-  360 (8297), 210 to 300, 330, 390 to 450, 720, 870 to 960 (8 to 18 thousand). Worst: 600 (333 279), 750 to 810
-  (198 to 252 thousand), 0, 90, 120, 480 to 570 (90 to 125 thousand). Frame 600 is the rip scene: the native frame has the
-  crack and a cream panel at the left that the mp4 does not, and the Chrome fallback's picture has the crack too, so the mp4
-  may not be frame-exact there.
+  a few levels of noise everywhere): mean difference 3.1 to 15.3 levels (median 3.8), PSNR 17.8 to 33.6 dB, 2919 to
+  353 257 pixels (0.1% to 17%) more than 48 levels apart, **1 276 162 summed** over the 33 frames (2 470 423 on
+  `engine/runtime`, 5 312 576 right after the merge). Best: frames 840 (2919), 150 to 450 and 630 to 810 (4 to 14
+  thousand). Worst: 600 (353 257), 0, 90, 120 and 480 to 570 (56 to 118 thousand). Those are the frames with a 3D
+  camera. Frame 600 (the crab-track slide in the gallery): the left 250 px of the scene is black, because the wall's mirrored
+  copy lies at layer x below 0 and a layer turned in 3D (`perspective()` in a `Depth`) is drawn flat in a canvas-sized
+  texture first, then warped, so what is left of the canvas is lost; fixing it means drawing the flat layer shifted by
+  what the warp needs (render.rs, `place`), which is the compositor's. Frame 0: the backdrop's perspective slope is
+  about 1.8 times the mp4's (the matrix is the one CSS gives, and `core` projects it to within a pixel, so the mp4 may
+  have been made with another camera setting; Chrome would settle it).
 - **Against the Chrome fallback's own picture** (`--compare --every 120`, 9 frames; a page of our own, not Remotion's):
   pixels more than 48 levels apart 2 204 458 summed, mostly frame 840 (1 595 312), where that page is shifted down by half
   the height (its `Sequence` wrapper is a zero-size positioned `div`); the others 8 thousand to 267 thousand.
@@ -384,7 +411,7 @@ islands for it. Chrome is for the tools only; the engine never starts one.
 - `tests/common/mod.rs` (JSON request helpers, `bounds`) is meant to be shared: stream 2's golden tests can use it.
 
 What to fix first, from the pictures (not from `doctor`, which has nothing yet): `filter: url(#...)` on the tape banners
-and signs (the text is clipped to the filter region, "DELET" and "GUAR"), the SVG filters (`rough`, `torn`), the grain
+and signs (the text is clipped to the filter region, "DELET" and "GUAR"; fixed, see 10.5), the SVG filters (`rough`, `torn`), the grain
 texture and multiply blend of the paper, and the rip transition's clip.
 
 What is drawn (stream 3, as built):
