@@ -15,6 +15,7 @@ use crate::scene::{
 };
 use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
+use crate::video::{Clip as VideoClip, MediaTime};
 use crate::warp;
 
 /// The time a scene is evaluated at.
@@ -516,6 +517,27 @@ pub enum ResolvedKind {
         time: f64,
         looped: bool,
     },
+    /// A video's picture fitted into the box `(0, 0, width, height)` like an
+    /// image.
+    Video {
+        src: String,
+        width: f64,
+        height: f64,
+        fit: Fit,
+        /// The time in the file and the picture it picks.
+        time: MediaTime,
+    },
+    /// A GIF's picture fitted into the box `(0, 0, width, height)` like an
+    /// image.
+    Gif {
+        src: String,
+        width: f64,
+        height: f64,
+        fit: Fit,
+        /// Seconds into the animation.
+        time: f64,
+        looped: bool,
+    },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
     MeshGradient {
@@ -671,6 +693,8 @@ impl Resolver<'_> {
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Lottie { width, height, .. }
+            | ResolvedKind::Video { width, height, .. }
+            | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
@@ -852,6 +876,38 @@ impl Resolver<'_> {
                     height,
                     time: l.time.as_ref().map_or(clock.t / clock.fps, |n| n.at(f)),
                     looped: l.looped,
+                }
+            }
+            LayerKind::Video(v) => {
+                let (width, height) = self.box_size(layer, &v.src, &v.width, &v.height, f)?;
+                let info = self.scene.videos.get(&v.src).ok_or_else(|| {
+                    Error::Render(format!(
+                        "layer {:?}: the container of {:?} was not read when the scene loaded",
+                        layer.id, v.src
+                    ))
+                })?;
+                // The scene frame the clip's clock reads: the frame being
+                // rendered, sub-frames at their own times.
+                let frame = v.frame.as_ref().map_or(clock.t, |n| n.at(f));
+                let clip = VideoClip::from(v);
+                let seconds = clip.source_time(frame, clock.fps, info.duration);
+                ResolvedKind::Video {
+                    src: v.src.clone(),
+                    width,
+                    height,
+                    fit: v.fit,
+                    time: info.media_time(seconds, clip.end(clock.fps, info.duration)),
+                }
+            }
+            LayerKind::Gif(g) => {
+                let (width, height) = self.box_size(layer, &g.src, &g.width, &g.height, f)?;
+                ResolvedKind::Gif {
+                    src: g.src.clone(),
+                    width,
+                    height,
+                    fit: g.fit,
+                    time: g.time.as_ref().map_or(clock.t / clock.fps, |n| n.at(f)),
+                    looped: g.looped,
                 }
             }
             LayerKind::MeshGradient(m) => {
@@ -2455,6 +2511,119 @@ mod tests {
             })
             .collect();
         assert_eq!(times, [(15.0 - 0.25) / 30.0, (15.0 + 0.25) / 30.0]);
+    }
+
+    /// A 24 fps, 60 frame scene with video layer `clip` (clip.mp4, 2 s, a
+    /// picture every 512 ticks of 1/12288 s) and `layer`'s fields.
+    fn video_scene(layer: &str) -> Scene {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 24, "durationInFrames": 60, "layers": [
+              {{"id": "clip", "type": "video", "src": "clip.mp4", {layer}}}]}}"##
+        );
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+        Scene::from_json(&json, base).unwrap()
+    }
+
+    fn video_at(scene: &Scene, frame: u32) -> (f64, i64) {
+        match &scene.resolve(frame).unwrap().layers[0].kind {
+            ResolvedKind::Video { time, .. } => (time.seconds, time.ts),
+            _ => panic!("not a video layer"),
+        }
+    }
+
+    #[test]
+    fn a_video_box_is_the_streams_size_or_keeps_its_aspect_ratio() {
+        let boxed = |layer: &str| match video_scene(layer).resolve(0).unwrap().layers.remove(0).kind
+        {
+            ResolvedKind::Video {
+                width, height, fit, ..
+            } => (width, height, fit),
+            _ => panic!("not a video layer"),
+        };
+        // clip.mp4 is 64 x 36.
+        assert_eq!(boxed(r#""loop": false"#), (64.0, 36.0, Fit::Fill));
+        assert_eq!(boxed(r#""width": 32"#), (32.0, 18.0, Fit::Fill));
+        assert_eq!(boxed(r#""height": 72"#), (128.0, 72.0, Fit::Fill));
+        assert_eq!(
+            boxed(r#""width": 10, "height": 20, "fit": "cover""#),
+            (10.0, 20.0, Fit::Cover)
+        );
+    }
+
+    #[test]
+    fn a_video_shows_the_picture_its_frame_picks() {
+        // At the clip's own 24 fps, frame n is picture n (512 ticks each).
+        let scene = video_scene(r#""loop": false"#);
+        assert_eq!(video_at(&scene, 0), (0.0, 0));
+        assert_eq!(video_at(&scene, 12), (0.5, 12 * 512));
+        // The file ends at 2 s (24576 ticks): frame 48 and later ask for the
+        // last tick before the end, which is in the last picture.
+        assert_eq!(video_at(&scene, 48).1, 24575);
+        assert_eq!(video_at(&scene, 59), (2.0, 24575));
+        // `from`, `trimBefore` and `playbackRate` move and speed the clip.
+        let scene = video_scene(r#""from": 10, "trimBefore": 6, "playbackRate": 2"#);
+        assert_eq!(video_at(&scene, 5), (0.25, 6 * 512));
+        assert_eq!(video_at(&scene, 10), (0.25, 6 * 512));
+        assert_eq!(video_at(&scene, 11), ((6.0 + 2.0) / 24.0, 8 * 512));
+        // A looped, trimmed clip: file frames 12 to 36, 24 frames long.
+        let scene = video_scene(r#""trimBefore": 12, "trimAfter": 36, "loop": true"#);
+        assert_eq!(video_at(&scene, 0).1, 12 * 512);
+        assert_eq!(video_at(&scene, 23).1, 35 * 512);
+        assert_eq!(video_at(&scene, 24).1, 12 * 512);
+        // Not looped, it holds the last tick before `trimAfter` (1.5 s).
+        let scene = video_scene(r#""trimBefore": 12, "trimAfter": 36"#);
+        assert_eq!(video_at(&scene, 40).1, 18431);
+        // A time between pictures is its own tick; the decoder picks the
+        // picture at or before it.
+        let scene = video_scene(r#""playbackRate": 0.5"#);
+        assert_eq!(video_at(&scene, 3), (1.5 / 24.0, 768));
+        // `frame` holds or moves the clip's clock apart from the scene's.
+        let scene = video_scene(r#""frame": 20"#);
+        assert_eq!(video_at(&scene, 0).1, 20 * 512);
+        assert_eq!(video_at(&scene, 50).1, 20 * 512);
+        let scene =
+            video_scene(r#""frame": [{"frame": 0, "value": 0}, {"frame": 10, "value": 30}]"#);
+        assert_eq!(video_at(&scene, 5).1, 15 * 512);
+    }
+
+    #[test]
+    fn a_video_sub_frame_is_at_its_own_time() {
+        let scene = video_scene(r#""motionBlur": {"samples": 2, "shutter": 1}"#);
+        let layers = scene.resolve(24).unwrap().layers;
+        let times: Vec<f64> = layers[0]
+            .motion
+            .iter()
+            .map(|m| match &m.kind {
+                ResolvedKind::Video { time, .. } => time.seconds,
+                _ => panic!("not a video layer"),
+            })
+            .collect();
+        assert_eq!(times, [(24.0 - 0.25) / 24.0, (24.0 + 0.25) / 24.0]);
+    }
+
+    #[test]
+    fn a_gif_time_follows_the_frame_unless_given() {
+        let gif_at = |layer: &str, frame: u32| {
+            let json = format!(
+                r##"{{"width": 100, "height": 100, "fps": 24, "durationInFrames": 60, "layers": [
+                  {{"id": "g", "type": "gif", "src": "spinner.gif", {layer}}}]}}"##
+            );
+            let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+            let scene = Scene::from_json(&json, base).unwrap();
+            match scene.resolve(frame).unwrap().layers.remove(0).kind {
+                ResolvedKind::Gif {
+                    time,
+                    looped,
+                    width,
+                    height,
+                    ..
+                } => (time, looped, width, height),
+                _ => panic!("not a gif layer"),
+            }
+        };
+        assert_eq!(gif_at(r#""loop": false"#, 12), (0.5, false, 32.0, 24.0));
+        assert_eq!(gif_at(r#""height": 48"#, 0), (0.0, true, 64.0, 48.0));
+        assert_eq!(gif_at(r#""time": 1.25"#, 12).0, 1.25);
     }
 
     #[test]
