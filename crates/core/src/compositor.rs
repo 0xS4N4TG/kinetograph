@@ -170,11 +170,36 @@ impl Pooled for Tex {
     }
 }
 
-/// A layer for `Compositor::blend_many`: the texture, its opacity and blend
-/// mode.
+/// What `Compositor::blend_many` composites.
+#[derive(Clone, Copy)]
+pub enum BlendSource<'a> {
+    Texture(&'a Tex),
+    /// A leaf that is still in its Vello page: the page's texture and the
+    /// pixels Vello drew of it, optionally the page that holds the leaf's clip
+    /// shape in white, and the box of the canvas where the leaf, cut to its
+    /// clip's box, is not transparent. It is cut out of the page and masked
+    /// as the passes `from_srgb8` and `mask` would.
+    Page {
+        leaf: (&'a wgpu::TextureView, PixelRect),
+        clip: Option<(&'a wgpu::TextureView, PixelRect)>,
+        bounds: PixelRect,
+    },
+}
+
+impl BlendSource<'_> {
+    fn bounds(&self) -> PixelRect {
+        match self {
+            BlendSource::Texture(t) => t.bounds,
+            BlendSource::Page { bounds, .. } => *bounds,
+        }
+    }
+}
+
+/// A layer for `Compositor::blend_many`: what it is made of, its opacity and
+/// blend mode.
 #[derive(Clone, Copy)]
 pub struct BlendLayer<'a> {
-    pub texture: &'a Tex,
+    pub source: BlendSource<'a>,
     pub opacity: f32,
     pub mode: BlendMode,
 }
@@ -184,7 +209,7 @@ const SUBMIT_OPS: u32 = 512;
 
 /// How many layers one `blend_many` pass composites (`SLOTS` in
 /// `shaders/blend_many.wgsl`).
-const BLEND_SLOTS: usize = 8;
+const BLEND_SLOTS: usize = 7;
 
 /// Texels that a `blend_many` pass may draw beyond twice what its layers
 /// cover, so that small layers still go together.
@@ -900,8 +925,12 @@ impl Compositor {
     /// rounds to a half float in between, as the texture the separate passes
     /// write would. So the result is the same, bit for bit.
     pub fn blend_many(&mut self, mut dst: Tex, layers: &[BlendLayer]) -> Tex {
+        // A texture that needs the whole texture to blend (a non-separable
+        // mode), or is out of the way, is blended on its own, as it always
+        // was. A page leaf is always separable and has something to draw.
         let alone = |l: &BlendLayer| {
-            mode_index(l.mode) >= FIRST_NON_SEPARABLE_MODE || l.texture.bounds.is_empty()
+            matches!(l.source, BlendSource::Texture(_))
+                && (mode_index(l.mode) >= FIRST_NON_SEPARABLE_MODE || l.source.bounds().is_empty())
         };
         let area = |r: PixelRect| i64::from(r.width()) * i64::from(r.height());
         let mut i = 0;
@@ -909,9 +938,10 @@ impl Compositor {
             let first = &layers[i];
             let mut end = i + 1;
             if self.fusion && !alone(first) {
-                let (mut region, mut covered) = (first.texture.bounds, area(first.texture.bounds));
+                let (mut region, mut covered) =
+                    (first.source.bounds(), area(first.source.bounds()));
                 while end < layers.len() && end - i < BLEND_SLOTS && !alone(&layers[end]) {
-                    let bounds = layers[end].texture.bounds;
+                    let bounds = layers[end].source.bounds();
                     let (joined, together) = (region.union(bounds), covered + area(bounds));
                     // Not so spread out that the pass draws mostly what none
                     // of the layers touches.
@@ -921,19 +951,22 @@ impl Compositor {
                     (region, covered, end) = (joined, together, end + 1);
                 }
             }
-            if end - i == 1 {
-                dst = self.blend(dst, first.texture, first.opacity, first.mode);
-            } else {
-                let group = &layers[i..end];
-                let region = group
-                    .iter()
-                    .fold(PixelRect::EMPTY, |r, l| r.union(l.texture.bounds));
-                self.update(&mut dst, region, |c, dst, temp| {
-                    c.blend_many_pass(dst, group, temp);
-                });
-                dst.bounds = group
-                    .iter()
-                    .fold(dst.bounds, |r, l| r.union(l.texture.bounds));
+            match (first.source, end - i) {
+                (BlendSource::Texture(texture), 1) => {
+                    dst = self.blend(dst, texture, first.opacity, first.mode);
+                }
+                _ => {
+                    let group = &layers[i..end];
+                    let region = group
+                        .iter()
+                        .fold(PixelRect::EMPTY, |r, l| r.union(l.source.bounds()));
+                    self.update(&mut dst, region, |c, dst, temp| {
+                        c.blend_many_pass(dst, group, temp);
+                    });
+                    dst.bounds = group
+                        .iter()
+                        .fold(dst.bounds, |r, l| r.union(l.source.bounds()));
+                }
             }
             i = end;
         }
@@ -943,48 +976,76 @@ impl Compositor {
     /// The pass of `blend_many`: `layers` (at most `BLEND_SLOTS`) over `dst`
     /// into `target`.
     fn blend_many_pass(&self, dst: &Tex, layers: &[BlendLayer], target: &Tex) {
-        let mut bytes = Vec::with_capacity(48 + 48 * BLEND_SLOTS);
+        let mut bytes = Vec::with_capacity(48 + 64 * BLEND_SLOTS);
         let mut put = |values: &[[u8; 4]]| bytes.extend(values.iter().flatten());
         let int = |v: i32| v.to_le_bytes();
+        let placed = |origin: [i32; 2], size: [u32; 2]| {
+            [
+                int(origin[0]),
+                int(origin[1]),
+                int(size[0] as i32),
+                int(size[1] as i32),
+            ]
+        };
+        let paged = |(_, area): (&wgpu::TextureView, PixelRect)| {
+            placed([area.x0, area.y0], [area.width(), area.height()])
+        };
         put(&[int(target.origin[0]), int(target.origin[1]), int(0), int(0)]);
-        put(&[
-            int(dst.origin[0]),
-            int(dst.origin[1]),
-            int(dst.size[0] as i32),
-            int(dst.size[1] as i32),
-        ]);
+        put(&placed(dst.origin, dst.size));
         put(&[(layers.len() as u32).to_le_bytes(), [0; 4], [0; 4], [0; 4]]);
+        // The two textures of each slot, `a` and `b`; a slot that does not use
+        // one binds the canvas.
+        let mut views: Vec<(&wgpu::TextureView, &wgpu::TextureView)> = Vec::new();
         for slot in 0..BLEND_SLOTS {
             match layers.get(slot) {
                 Some(l) => {
-                    let (t, b) = (l.texture, l.texture.bounds);
-                    put(&[
-                        int(t.origin[0]),
-                        int(t.origin[1]),
-                        int(t.size[0] as i32),
-                        int(t.size[1] as i32),
-                    ]);
+                    let b = l.source.bounds();
+                    let (kind, place, clip, a_view, b_view) = match l.source {
+                        BlendSource::Texture(t) => (
+                            0u32,
+                            placed(t.origin, t.size),
+                            [[0; 4]; 4],
+                            &t.view,
+                            &dst.view,
+                        ),
+                        BlendSource::Page {
+                            leaf, clip: None, ..
+                        } => (1, paged(leaf), [[0; 4]; 4], leaf.0, &dst.view),
+                        BlendSource::Page {
+                            leaf,
+                            clip: Some(clip),
+                            ..
+                        } => (2, paged(leaf), paged(clip), leaf.0, clip.0),
+                    };
+                    put(&place);
+                    put(&clip);
                     put(&[int(b.x0), int(b.y0), int(b.x1), int(b.y1)]);
                     put(&[
                         l.opacity.to_le_bytes(),
                         mode_index(l.mode).to_le_bytes(),
-                        [0; 4],
+                        kind.to_le_bytes(),
                         [0; 4],
                     ]);
+                    views.push((a_view, b_view));
                 }
-                None => put(&[[0; 4]; 12]),
+                None => {
+                    put(&[[0; 4]; 16]);
+                    views.push((&dst.view, &dst.view));
+                }
             }
         }
         let uniform = self.uniform(&bytes);
-        let layer_view = |slot: usize| layers.get(slot).map_or(&dst.view, |l| &l.texture.view);
         let entry = |binding, view| wgpu::BindGroupEntry {
             binding,
             resource: wgpu::BindingResource::TextureView(view),
         };
         let mut entries = vec![entry(0, &dst.view)];
-        entries.extend((0..BLEND_SLOTS).map(|slot| entry(slot as u32 + 1, layer_view(slot))));
+        for (slot, (a, b)) in views.into_iter().enumerate() {
+            entries.push(entry(2 * slot as u32 + 1, a));
+            entries.push(entry(2 * slot as u32 + 2, b));
+        }
         entries.push(wgpu::BindGroupEntry {
-            binding: BLEND_SLOTS as u32 + 1,
+            binding: 2 * BLEND_SLOTS as u32 + 1,
             resource: uniform.binding(),
         });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1780,6 +1841,12 @@ impl Compositor {
         self.fusion
     }
 
+    /// Whether `blend_many` can composite a layer in `mode` from a page: the
+    /// mode works pixel by pixel (see `blend`).
+    pub fn blends_per_pixel(&self, mode: BlendMode) -> bool {
+        mode_index(mode) < FIRST_NON_SEPARABLE_MODE
+    }
+
     /// The leaf whose pixels are in the box `region` of the page `leaf` (drawn
     /// over `leaf_area`) masked by the clip shape in `clip` (drawn over
     /// `clip_area`) inside `keep`: what `from_srgb8` and then `mask` make, in
@@ -2569,8 +2636,8 @@ fn mesh_vertex_bytes(vertices: &[mesh::Vertex]) -> Vec<u8> {
     floats(&flat)
 }
 
-/// The bind group of `blend_many`: the canvas, `BLEND_SLOTS` layers (all read
-/// with `textureLoad`) and the uniform block.
+/// The bind group of `blend_many`: the canvas, two textures for each of
+/// `BLEND_SLOTS` layers (all read with `textureLoad`) and the uniform block.
 fn blend_many_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     let texture = |binding| wgpu::BindGroupLayoutEntry {
         binding,
@@ -2582,9 +2649,9 @@ fn blend_many_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout 
         },
         count: None,
     };
-    let mut entries: Vec<_> = (0..=BLEND_SLOTS as u32).map(texture).collect();
+    let mut entries: Vec<_> = (0..=2 * BLEND_SLOTS as u32).map(texture).collect();
     entries.push(wgpu::BindGroupLayoutEntry {
-        binding: BLEND_SLOTS as u32 + 1,
+        binding: 2 * BLEND_SLOTS as u32 + 1,
         visibility: wgpu::ShaderStages::FRAGMENT,
         ty: wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Uniform,

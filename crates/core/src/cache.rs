@@ -149,7 +149,9 @@ pub fn uses_projection(layer: &ResolvedLayer) -> bool {
 
 struct Entry<T> {
     key: Key,
-    texture: T,
+    /// `None` for a layer that was drawn without a texture of its own, which
+    /// `note` records: the layer is only known to have been this.
+    texture: Option<T>,
     /// The frame it was last made or used in.
     round: u64,
 }
@@ -160,7 +162,10 @@ pub struct Hit<T>(Entry<T>);
 
 impl<T> Hit<T> {
     pub fn texture(&self) -> &T {
-        &self.0.texture
+        self.0
+            .texture
+            .as_ref()
+            .expect("a hit has the texture of its entry")
     }
 }
 
@@ -207,7 +212,7 @@ impl<T: Pooled> LayerCache<T> {
         self.bytes = 0;
         std::mem::take(&mut self.entries)
             .into_values()
-            .map(|e| e.texture)
+            .filter_map(|e| e.texture)
             .collect()
     }
 
@@ -223,9 +228,9 @@ impl<T: Pooled> LayerCache<T> {
         for (id, entry) in std::mem::take(&mut self.entries) {
             if entry.round == self.round {
                 self.entries.insert(id, entry);
-            } else {
-                self.bytes -= entry.texture.bytes();
-                dropped.push(entry.texture);
+            } else if let Some(texture) = entry.texture {
+                self.bytes -= texture.bytes();
+                dropped.push(texture);
             }
         }
         dropped
@@ -239,13 +244,41 @@ impl<T: Pooled> LayerCache<T> {
             self.misses += 1;
             return Err(None);
         };
-        self.bytes -= entry.texture.bytes();
-        if entry.key.matches(inputs) {
-            self.hits += 1;
-            Ok(Hit(entry))
-        } else {
-            self.misses += 1;
-            Err(Some(entry.texture))
+        self.bytes -= entry.texture.as_ref().map_or(0, Pooled::bytes);
+        match entry.texture {
+            Some(_) if entry.key.matches(inputs) => {
+                self.hits += 1;
+                Ok(Hit(entry))
+            }
+            texture => {
+                self.misses += 1;
+                Err(texture)
+            }
+        }
+    }
+
+    /// Whether the layer `id` was drawn without a texture of its own last
+    /// frame (`note`) and was then what `inputs` says it is now.
+    pub fn is_unchanged(&self, id: &[String], inputs: &Inputs) -> bool {
+        self.entries
+            .get(id)
+            .is_some_and(|e| e.texture.is_none() && e.key.matches(inputs))
+    }
+
+    /// Records that the layer `id`, made from `inputs`, was drawn this frame
+    /// without a texture to keep. If the next frame finds it unchanged
+    /// (`is_unchanged`) it is drawn the way that gives it one, so a layer that
+    /// stays the same is cached from its third frame on.
+    pub fn note(&mut self, id: Vec<String>, inputs: &Inputs) {
+        if self.enabled {
+            self.entries.insert(
+                id,
+                Entry {
+                    key: Key::of(inputs),
+                    texture: None,
+                    round: self.round,
+                },
+            );
         }
     }
 
@@ -253,7 +286,7 @@ impl<T: Pooled> LayerCache<T> {
     pub fn put_back(&mut self, id: Vec<String>, hit: Hit<T>) {
         let mut entry = hit.0;
         entry.round = self.round;
-        self.bytes += entry.texture.bytes();
+        self.bytes += entry.texture.as_ref().map_or(0, Pooled::bytes);
         self.entries.insert(id, entry);
     }
 
@@ -262,9 +295,11 @@ impl<T: Pooled> LayerCache<T> {
     /// caller to release: an older entry for the layer, or `texture` itself.
     pub fn put(&mut self, id: Vec<String>, inputs: &Inputs, texture: T) -> Vec<T> {
         let mut released = Vec::new();
-        if let Some(old) = self.entries.remove(&id) {
-            self.bytes -= old.texture.bytes();
-            released.push(old.texture);
+        if let Some(old) = self.entries.remove(&id)
+            && let Some(old) = old.texture
+        {
+            self.bytes -= old.bytes();
+            released.push(old);
         }
         if !self.enabled || self.bytes + texture.bytes() > self.limit {
             released.push(texture);
@@ -275,7 +310,7 @@ impl<T: Pooled> LayerCache<T> {
             id,
             Entry {
                 key: Key::of(inputs),
-                texture,
+                texture: Some(texture),
                 round: self.round,
             },
         );
@@ -729,6 +764,56 @@ mod tests {
         let replaced = cache.put(id("a"), &inputs(&layers[0]), Bytes(15));
         assert_eq!(replaced.iter().map(|t| t.0).collect::<Vec<_>>(), [10]);
         assert_eq!(cache.kept(), (2, 25));
+    }
+
+    #[test]
+    fn a_layer_drawn_without_a_texture_is_noted_and_found_unchanged_the_next_frame() {
+        let still = at(&scene(&format!("[{}]", shape(""))), 0);
+        let moving = at(
+            &scene(&format!(
+                "[{}]",
+                shape(&format!(r#", "transform": {{"x": {MOVE}}}"#))
+            )),
+            0,
+        );
+        let later = at(
+            &scene(&format!(
+                "[{}]",
+                shape(&format!(r#", "transform": {{"x": {MOVE}}}"#))
+            )),
+            10,
+        );
+        let mut cache = cache(1000);
+        cache.begin_frame();
+        assert!(!cache.is_unchanged(&id("a"), &inputs(&still[0])));
+        cache.note(id("a"), &inputs(&still[0]));
+        cache.note(id("m"), &inputs(&moving[0]));
+        // It keeps no texture, so it costs no bytes.
+        assert_eq!(cache.kept(), (2, 0));
+        assert!(cache.end_frame().is_empty());
+        cache.begin_frame();
+        assert!(cache.is_unchanged(&id("a"), &inputs(&still[0])));
+        // A layer that moved is not.
+        assert!(!cache.is_unchanged(&id("m"), &inputs(&later[0])));
+        // Taking it is a miss, which a texture then replaces.
+        assert!(matches!(
+            cache.take(&id("a"), &inputs(&still[0])),
+            Err(None)
+        ));
+        assert!(cache.put(id("a"), &inputs(&still[0]), Bytes(7)).is_empty());
+        assert_eq!(cache.kept().1, 7);
+        cache.end_frame();
+        // From then on it is a hit, and is no longer "noted".
+        cache.begin_frame();
+        assert!(!cache.is_unchanged(&id("a"), &inputs(&still[0])));
+        assert!(cache.take(&id("a"), &inputs(&still[0])).is_ok());
+        // A noted layer that the frame does not use is dropped, texture-less.
+        assert!(cache.end_frame().is_empty());
+        assert_eq!(cache.kept(), (0, 0));
+        // A cache that is off notes nothing.
+        let mut off = LayerCache::<Bytes>::new(1000);
+        off.note(id("a"), &inputs(&still[0]));
+        assert_eq!(off.kept(), (0, 0));
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::cache::{self, Inputs, LayerCache};
 use crate::color::Color;
-use crate::compositor::{BlendLayer, Compositor, Readback, Tex};
+use crate::compositor::{BlendLayer, BlendSource, Compositor, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::gif::{Gif, Gifs, gif_sources, open_gif};
 use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
@@ -556,7 +556,7 @@ impl Renderer {
         let layers: Vec<BlendLayer> = pending
             .iter()
             .map(|p| BlendLayer {
-                texture: p.texture(),
+                source: p.source(),
                 opacity: p.opacity,
                 mode: p.mode,
             })
@@ -578,6 +578,11 @@ impl Renderer {
                     }
                 }
                 Waiting::Loose(texture) => self.compositor.release(texture),
+                Waiting::Page { id, inputs, .. } => {
+                    if let Some(id) = id {
+                        self.cache.note(id, &inputs);
+                    }
+                }
             }
         }
         canvas
@@ -683,6 +688,10 @@ impl Renderer {
             .then_some(self.projection),
             opacity_scale: (!layer.motion.is_empty()).then_some(opacity_scale),
         };
+        // (Asked before `take` removes what it would be told by.)
+        let unchanged = id
+            .as_ref()
+            .is_some_and(|id| self.cache.is_unchanged(id, &inputs));
         if let Some(id) = &id {
             match self.cache.take(id, &inputs) {
                 Ok(hit) => {
@@ -699,6 +708,27 @@ impl Renderer {
                 Err(Some(stale)) => self.compositor.release(stale),
                 Err(None) => {}
             }
+        }
+
+        // A plain leaf goes to the blend straight from its page, unless it
+        // was the same last frame too: then it is drawn the way that gives
+        // the layer cache a texture to keep.
+        if !unchanged
+            && let Some((leaf, clip, bounds)) =
+                self.page_source(layer, siblings, parent, placement)?
+        {
+            pending.push(Pending {
+                what: Waiting::Page {
+                    id,
+                    inputs,
+                    leaf,
+                    clip,
+                    bounds,
+                },
+                opacity,
+                mode: layer.blend_mode,
+            });
+            return Ok(canvas);
         }
 
         // The backdrop is only built for a layer that blurs it: the canvas so
@@ -736,6 +766,64 @@ impl Renderer {
             mode: layer.blend_mode,
         });
         Ok(canvas)
+    }
+
+    /// What `blend_many` needs to blend the leaf `layer` straight from its
+    /// page (and its clip's, if it has one): the leaf's page and the pixels
+    /// of it Vello drew, the clip's, and the box the leaf is not transparent
+    /// in. `None` unless the leaf is plain: drawn flat, with no effects, mask
+    /// or matte, nothing behind it to look at, a blend mode that works pixel
+    /// by pixel, its clip (if any) keeping something, and both on pages.
+    #[allow(clippy::type_complexity)]
+    fn page_source(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        placement: Option<Placement>,
+    ) -> Result<
+        Option<(
+            (wgpu::TextureView, PixelRect),
+            Option<(wgpu::TextureView, PixelRect)>,
+            PixelRect,
+        )>,
+    > {
+        if !self.compositor.is_fused()
+            || placement.is_some()
+            || !layer.motion.is_empty()
+            || !layer.effects.is_empty()
+            || layer.mask.is_some()
+            || layer.matte.is_some()
+            || !self.compositor.blends_per_pixel(layer.blend_mode)
+            || matches!(
+                layer.kind,
+                ResolvedKind::Group { .. }
+                    | ResolvedKind::MeshGradient { .. }
+                    | ResolvedKind::Noise { .. }
+            )
+            || uses_backdrop(siblings, layer)
+        {
+            return Ok(None);
+        }
+        let matrix = parent * layer.transform.matrix();
+        let Some(&(_, region)) = self.pages.page_of.get(&leaf_key(layer, matrix)) else {
+            return Ok(None);
+        };
+        let Some(leaf) = self.page_target(layer, matrix)? else {
+            return Ok(None);
+        };
+        let Some(clip) = &layer.clip else {
+            return Ok(Some((leaf, None, region)));
+        };
+        let path = self.clip_path(clip, layer)?;
+        let bounds = region.intersect(self.path_bounds(&path, matrix));
+        if bounds.is_empty() {
+            return Ok(None);
+        }
+        let Some(clip_page) = self.clip_page_target(layer, matrix)? else {
+            return Ok(None);
+        };
+        Ok(Some((leaf, Some(clip_page), bounds)))
     }
 
     /// The leaf `layer` cut out of its page `page` (drawn over `area`) and
@@ -1132,7 +1220,9 @@ impl Renderer {
                 } else {
                     leaf_key(leaf.layer, leaf.matrix)
                 };
-                self.pages.page_of.insert(key, self.pages.pages.len());
+                self.pages
+                    .page_of
+                    .insert(key, (self.pages.pages.len(), leaf.region));
             }
             self.pages.pages.push(Page {
                 scene: Some(std::mem::replace(
@@ -1226,7 +1316,7 @@ impl Renderer {
         if self.cache_paused > 0 {
             return Ok(None);
         }
-        let Some(&page) = self.pages.page_of.get(&key) else {
+        let Some(&(page, _)) = self.pages.page_of.get(&key) else {
             return Ok(None);
         };
         let area = self.pages.pages[page].area;
@@ -1988,8 +2078,8 @@ fn leaf_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
 #[derive(Default)]
 struct Pages {
     pages: Vec<Page>,
-    /// Which page each leaf is on.
-    page_of: HashMap<LeafKey, usize>,
+    /// Which page each leaf is on, and the pixels it can touch.
+    page_of: HashMap<LeafKey, (usize, PixelRect)>,
 }
 
 struct Page {
@@ -2099,13 +2189,32 @@ enum Waiting<'a> {
     },
     /// Drawn now, not for the layer cache: the pool has it back.
     Loose(Tex),
+    /// Not drawn into a texture of its own: blended straight from its Vello
+    /// page (and its clip's), the layer cache told only what it was made
+    /// from (`LayerCache::note`).
+    Page {
+        id: Option<Vec<String>>,
+        inputs: Inputs<'a>,
+        leaf: (wgpu::TextureView, PixelRect),
+        clip: Option<(wgpu::TextureView, PixelRect)>,
+        bounds: PixelRect,
+    },
 }
 
 impl Pending<'_> {
-    fn texture(&self) -> &Tex {
+    fn source(&self) -> BlendSource<'_> {
         match &self.what {
-            Waiting::Cached { hit, .. } => hit.texture(),
-            Waiting::Kept { texture, .. } | Waiting::Loose(texture) => texture,
+            Waiting::Cached { hit, .. } => BlendSource::Texture(hit.texture()),
+            Waiting::Kept { texture, .. } | Waiting::Loose(texture) => {
+                BlendSource::Texture(texture)
+            }
+            Waiting::Page {
+                leaf, clip, bounds, ..
+            } => BlendSource::Page {
+                leaf: (&leaf.0, leaf.1),
+                clip: clip.as_ref().map(|(view, area)| (view, *area)),
+                bounds: *bounds,
+            },
         }
     }
 }

@@ -220,6 +220,32 @@ fn random_scenes_draw_the_same_pixels() {
 }
 
 #[test]
+fn a_leaf_that_stays_the_same_is_cached_from_its_third_frame() {
+    // blend-runs.json has plain layers that never change. With fusion a plain
+    // leaf goes to the blend from its page without a texture, so the cache
+    // learns that it was the same in the second frame and keeps a texture
+    // from the third: it has one fewer hit in the second frame than without
+    // fusion (its leaves are not cached yet), and as many from the third on.
+    let hits = |fusion: bool| {
+        let mut renderer = Renderer::new(load("tests/scenes/blend-runs.json")).unwrap();
+        renderer.set_pass_fusion(fusion);
+        renderer.set_layer_cache(true);
+        let mut hits = Vec::new();
+        for frame in 0..6 {
+            renderer.render_frame(frame).unwrap();
+            hits.push(renderer.layer_cache_counts().0);
+        }
+        hits
+    };
+    let (on, off) = (hits(true), hits(false));
+    let new = |h: &[u64], frame: usize| h[frame] - h[frame - 1];
+    assert!(new(&on, 1) < new(&off, 1), "{on:?} {off:?}");
+    for frame in 3..6 {
+        assert_eq!(new(&on, frame), new(&off, frame), "{on:?} {off:?}");
+    }
+}
+
+#[test]
 fn a_run_of_blends_is_a_few_passes() {
     let path = "tests/scenes/blend-runs.json";
     let (Some(fused), Some(plain)) = (pass_names(path, 15, true), pass_names(path, 15, false))
