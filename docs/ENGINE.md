@@ -232,3 +232,34 @@ apart and, separately, more than 48 (what is left after anti-aliasing and text r
 `scripts/corpus.mjs` runs `doctor` on the episode 13 papercut project and prints: native frames of the total, the
 unsupported items with their frame counts, and with `--compare` (default every 30th frame) the per-frame differences;
 it writes `out/corpus/report.json` and the pictures.
+
+#### First numbers (2026-10-15, M4)
+
+Measured with `engine/runtime` plus `engine/front@02e5051` and `engine/paint@c322d49` (which merges `engine/svg`), and
+one local change in `crates/dom/src/paint` that is not in any branch yet: the painter did not leave the
+`{"type": "native", ...}` placeholder layers the contract promises (`kg-native` nodes are replaced boxes: emit
+`{"type":"native","path","x","y","width","height"}` from `replaced_content`), without which every frame with a
+`<Sequence>`, `<Audio>` or other native element inside DOM loses its content. `node scripts/corpus.mjs --reference
+--every 30`, 199 s:
+
+- **Native frames: 988 of 988.** This number means little yet: the painter reports no unsupported item on any frame
+  (`unsupported` is empty everywhere), so it counts frames, not fidelity. Chrome frames: 0.
+- **JS stage** (React render, emit, request, Rust style/layout/paint, JSON), the whole episode through `doctor`: about
+  60 s, 60 ms a frame (frames 30 to 50: 224 ms a frame, 138 ms of it in `renderDomIsland`, 3 islands a frame, 430 KB
+  of request and 480 KB of answer; frames 500 to 520: 133 ms, 84 ms in Rust). Rust is about 65% of it; React in
+  development mode is about 25 ms of the rest (`NODE_ENV=production` would save roughly half of that, at the price of
+  React's minified error messages, so it is not set). A native frame of the corpus, drawn by the GPU, takes 5 to 10 s
+  (6661 layers at frame 30): the compositor's, not this stream's.
+- **Against the real Remotion render** (`out/mods-papercut.mp4` in the project, the same 988 frames and sources, H.264
+  so a few levels of noise everywhere): mean difference 4.2 to 28 levels (median 5.9), PSNR 15.8 to 29.0 dB, 8755 to
+  384196 pixels (0.4% to 18.5% of 2 073 600) more than 48 levels apart, 3 559 263 summed over the 33 sampled frames. The
+  worst frames are 600 and 630 to 810 (the S08 rip and S09 scenes: the native frame has the crack and a cream panel
+  at the left that the Remotion frame does not; the Chrome fallback's picture has the crack too, so the mp4 may not be
+  frame-exact there). The best are 840 (8755), 210 to 330 and 900 to 960 (14 860 to 37 426).
+- **Against the Chrome fallback's own picture** (`--compare`, a page of our own, not Remotion's) the differences were
+  larger and mean little: its `Sequence` wrapper is a zero-size positioned `div`, so at frame 840 its picture is
+  shifted down by half the height.
+
+What to fix first, from the pictures (not from `doctor`, which has nothing yet): `filter: url(#...)` on the tape banners
+and signs (the text is clipped to the filter region, "DELET" and "GUAR"), the SVG filters (`rough`, `torn`), the
+grain texture and multiply blend of the paper, and the rip transition's clip.
