@@ -7,7 +7,7 @@ use std::time::{Instant, SystemTime};
 
 use glam::DMat4;
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
-use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke};
+use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
 use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
 use vello::util::RenderContext;
 use vello::wgpu;
@@ -1903,14 +1903,95 @@ fn gradient_brush_in(g: &ResolvedGradient, layer_box: Option<Rect>) -> (peniko::
     let (brush, turn) = gradient_brush(g);
     let turn = g.transform * turn;
     let (Units::Box, Some(b)) = (g.units, layer_box) else {
-        return (brush, turn);
+        return (
+            linear_in_layer_space(g, brush, Affine::IDENTITY, turn),
+            linear_transform(g, turn),
+        );
     };
     if !(b.width() > 0.0 && b.height() > 0.0) {
         let last = g.stops[g.stops.len() - 1].1;
         return (peniko::Brush::Solid(to_peniko(last)), Affine::IDENTITY);
     }
     let to_box = Affine::translate((b.x0, b.y0)) * Affine::scale_non_uniform(b.width(), b.height());
-    (brush, to_box * turn)
+    (
+        linear_in_layer_space(g, brush, to_box, turn),
+        linear_transform(g, to_box * turn),
+    )
+}
+
+/// Vello places a linear gradient by moving its two end points, so a matrix
+/// that stretches or skews does not tilt the lines of one colour as it should
+/// (SVG's `gradientTransform` on a diagonal gradient, or `objectBoundingBox`
+/// on a box that is not square). The same gradient, for any matrix, is the
+/// one whose line runs along the direction its colour changes fastest in the
+/// painted space; the brush for that has no matrix of its own
+/// (`linear_transform`). Everything else goes through Vello's matrix as it is.
+fn linear_in_layer_space(
+    g: &ResolvedGradient,
+    brush: peniko::Brush,
+    to_box: Affine,
+    turn: Affine,
+) -> peniko::Brush {
+    let ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } = g.geometry else {
+        return brush;
+    };
+    let m = to_box * turn;
+    if !moves_by_matrix(g, m) {
+        return brush;
+    }
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let len2 = dx * dx + dy * dy;
+    if len2 < 1e-12 {
+        return brush;
+    }
+    // t at a layer point p is ((m^-1 p - start) . d) / |d|^2: a plane, with
+    // this slope and its value at the origin.
+    let [a, b, c, d, e, f] = m.inverse().as_coeffs();
+    let slope = Vec2::new((a * dx + b * dy) / len2, (c * dx + d * dy) / len2);
+    let at_origin = ((e - x0) * dx + (f - y0) * dy) / len2;
+    let slope2 = slope.hypot2();
+    if slope2 < 1e-18 {
+        return brush;
+    }
+    let start = Point::ZERO - slope * (at_origin / slope2);
+    let end = start + slope / slope2;
+    let mut moved = g.clone();
+    moved.geometry = ResolvedGradientGeometry::Linear {
+        x0: start.x,
+        y0: start.y,
+        x1: end.x,
+        y1: end.y,
+    };
+    gradient_brush(&moved).0
+}
+
+/// The matrix to give the brush `linear_in_layer_space` made, or `m` for any
+/// other.
+fn linear_transform(g: &ResolvedGradient, m: Affine) -> Affine {
+    if moves_by_matrix(g, m) {
+        Affine::IDENTITY
+    } else {
+        m
+    }
+}
+
+/// Whether `linear_in_layer_space` applies: a linear gradient with a matrix
+/// of its own (`Gradient::transform`) that Vello would place wrongly. One
+/// without keeps the placement it always had.
+fn moves_by_matrix(g: &ResolvedGradient, m: Affine) -> bool {
+    matches!(g.geometry, ResolvedGradientGeometry::Linear { .. })
+        && g.transform != Affine::IDENTITY
+        && !m.is_nan()
+        && m.determinant().abs() >= 1e-12
+        && !is_similarity(m)
+}
+
+/// Whether `m` is a rotation, a uniform scale and a move: Vello then places a
+/// linear gradient exactly.
+fn is_similarity(m: Affine) -> bool {
+    let [a, b, c, d, _, _] = m.as_coeffs();
+    let s = a.hypot(b);
+    (a - d).abs() < 1e-9 * s.max(1.0) && (b + c).abs() < 1e-9 * s.max(1.0)
 }
 
 /// A resolved gradient as a Vello brush, plus a transform to apply to the

@@ -1858,8 +1858,11 @@ dependencies = [
  "blitz-html",
  "blitz-traits",
  "kinetograph-core",
+ "kurbo",
  "serde",
  "serde_json",
+ "svgtypes",
+ "usvg",
 ]
 
 [[package]]

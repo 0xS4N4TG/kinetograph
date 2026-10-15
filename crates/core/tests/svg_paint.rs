@@ -133,3 +133,18 @@ fn an_srgb_luminance_matte_reads_the_encoded_colour() {
     assert!(srgb.abs_diff(128) <= 2, "{srgb}");
     assert!(linear.abs_diff(55) <= 3, "{linear}");
 }
+
+#[test]
+fn a_skewed_linear_gradient_tilts_its_lines_of_one_colour() {
+    // t = (x - y / 2) / 100 in the painted space: red at 0, blue at 1. The
+    // matrix shears the gradient's space, so equal colours run along lines that
+    // are not perpendicular to the line from the first point to the second.
+    let layers = r##"[{"id": "r", "type": "shape", "shape": {"kind": "rect", "width": 100, "height": 100},
+        "fill": {"type": "linear", "x0": 0, "y0": 0, "x1": 1, "y1": 0, "transform": [100, 0, 50, 100, 0, 0],
+                 "stops": [{"offset": 0, "color": "#ff0000"}, {"offset": 1, "color": "#0000ff"}]}}]"##;
+    let f = render(layers);
+    // t = 0.6 at (80, 40) and 0.4 at (80, 80): red is 1 - t.
+    let (a, b) = (px(&f, 80, 40), px(&f, 80, 80));
+    assert!(a[0].abs_diff(102) <= 4, "{a:?}");
+    assert!(b[0].abs_diff(153) <= 4, "{b:?}");
+}

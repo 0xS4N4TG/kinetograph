@@ -14,3 +14,11 @@ blitz-html = { version = "=0.3.0-beta.3", default-features = false }
 blitz-traits = "=0.3.0-beta.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.154"
+# SVG painting (paint/svg): usvg resolves an <svg> subtree (shapes, use, paint
+# servers, text to paths, markers, clip paths, masks) before we turn it into
+# layers. The version Blitz's `svg` feature pulls in; we load our own fonts,
+# never the system's.
+usvg = { version = "=0.48.1", default-features = false, features = ["text"] }
+kurbo = "0.13.1"
+# CSS colour and number syntax, the parser usvg and Blitz already use.
+svgtypes = "0.16.1"
