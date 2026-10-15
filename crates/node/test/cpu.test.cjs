@@ -427,6 +427,16 @@ test('renderDomIsland is a pure function of the request, animations included', (
   assert.equal(native.renderDomIsland(at(0.7)), native.renderDomIsland(at(0.7)));
 });
 
+test('a DOM tree thousands of levels deep lays out (the island thread has a large stack)', () => {
+  const depth = 3000;
+  let node = el('div', `$0.${depth}`, 'width: 10px; height: 10px');
+  for (let d = depth - 1; d >= 0; d--) node = el('div', `$0.${d}`, 'padding-left: 1px', [node]);
+  const boxes = JSON.parse(native.domLayoutBoxes(island(el('div', '$0', '', [node]))));
+  assert.equal(boxes[`$0.${depth}`].x, depth);
+  // And a second call on the same thread still works.
+  assert.equal(JSON.parse(native.domLayoutBoxes(island(el('div', '$0', 'height: 7px'))))['$0'].height, 7);
+});
+
 test('the DOM island functions throw INVALID_ARG or RENDER errors', () => {
   rejects(() => native.renderDomIsland('{ nope'), 'INVALID_ARG', /renderDomIsland request/);
   rejects(() => native.domLayoutBoxes('{}'), 'INVALID_ARG', /domLayoutBoxes request/);

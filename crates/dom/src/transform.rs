@@ -153,5 +153,5 @@ pub fn bounding_box(m: &Matrix, w: f64, h: f64) -> Option<(f64, f64, f64, f64)> 
         max = (max.0.max(px), max.1.max(py));
         any = true;
     }
-    any.then(|| (min.0, min.1, max.0 - min.0, max.1 - min.1))
+    any.then_some((min.0, min.1, max.0 - min.0, max.1 - min.1))
 }

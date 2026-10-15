@@ -1864,12 +1864,20 @@ dependencies = [
  "kinetograph-core",
  "kurbo",
  "parley",
+<<<<<<< HEAD
  "percent-encoding",
  "serde",
  "serde_json",
  "stylo",
  "stylo_traits",
  "taffy",
+=======
+ "read-fonts",
+ "serde",
+ "serde_json",
+ "stylo",
+ "stylo_static_prefs",
+>>>>>>> engine/front
  "url",
  "usvg",
 ]

@@ -13,6 +13,7 @@ blitz-dom = { version = "=0.3.0-beta.3", default-features = false, features = ["
 blitz-html = { version = "=0.3.0-beta.3", default-features = false }
 blitz-traits = "=0.3.0-beta.3"
 serde = { version = "1", features = ["derive"] }
+<<<<<<< HEAD
 serde_json = "1.0.154"
 # The painter (stream 2) reads Stylo's computed values and Blitz's Parley layouts.
 # Same versions as blitz-dom, so the types are the same ones.
@@ -22,6 +23,12 @@ kurbo = "0.13.1"
 # Fonts: the Parley context Blitz lays text out with.
 parley = { version = "0.12.0", default-features = false, features = ["std"] }
 taffy = { version = "0.15.0", default-features = false, features = ["std"] }
+=======
+serde_json = { version = "1.0.154", features = ["unbounded_depth"] }
+# Fonts: the Parley context Blitz lays text out with.
+parley = { version = "0.12.0", default-features = false, features = ["std"] }
+read-fonts = "0.41.0"
+>>>>>>> engine/front
 # Sub-resources are local files and data URLs.
 url = "2.5.8"
 data-url = "0.3.2"
@@ -33,6 +40,13 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 usvg = "0.48.1"
 # Transform matrices for readback.
 euclid = "0.22"
+<<<<<<< HEAD
+=======
+# Computed values (getComputedStyle, transforms): the version Blitz uses.
+style = { package = "stylo", version = "0.22.0" }
+# CSS features Chrome has that Stylo ships switched off (:has(), @container, ...).
+style_config = { package = "stylo_static_prefs", version = "0.22.0" }
+>>>>>>> engine/front
 
 [dev-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] }
