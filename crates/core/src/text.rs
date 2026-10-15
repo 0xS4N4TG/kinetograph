@@ -115,6 +115,20 @@ pub struct PositionedGlyph {
     pub char_index: u32,
 }
 
+/// A WOFF or WOFF2 file unpacked to the plain font it wraps; any other bytes
+/// are returned as they are.
+fn unpack_web_font(data: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
+    match data.get(..4) {
+        Some(b"wOF2") => {
+            wuff::decompress_woff2(&data).map_err(|e| format!("cannot unpack WOFF2: {e:?}"))
+        }
+        Some(b"wOFF") => {
+            wuff::decompress_woff1(&data).map_err(|e| format!("cannot unpack WOFF: {e:?}"))
+        }
+        _ => Ok(data),
+    }
+}
+
 impl TextEngine {
     /// Registers every font in `fonts` (family name -> path, relative to
     /// `base_dir`) under its scene name.
@@ -132,6 +146,8 @@ impl TextEngine {
                 path: path.clone(),
                 source,
             })?;
+            let data = unpack_web_font(data)
+                .map_err(|e| Error::Render(format!("{}: {e}", path.display())))?;
             let registered = font_cx.collection.register_fonts(
                 Blob::from(data),
                 Some(FontInfoOverride {

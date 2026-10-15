@@ -34,4 +34,7 @@ dotlottie-rs = { git = "https://github.com/LottieFiles/dotlottie-rs", tag = "v0.
 # Decodes the `video` layers' pictures and converts them (swscale). The same
 # crate and version as `kinetograph-cli`, which encodes with it.
 ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
+# WOFF and WOFF2 fonts (a web project's `@font-face` files) are unpacked to
+# the TrueType/OpenType tables Parley reads. Pure Rust.
+wuff = "0.2.9"
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "block_layout"] }
