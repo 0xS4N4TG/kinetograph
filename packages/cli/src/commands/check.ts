@@ -1,10 +1,33 @@
+import { existsSync } from 'node:fs';
 import type { SceneJson, Unsupported } from '@kinetograph/scene';
 import { parseFrameList } from '../args.js';
 import { toErrorObject } from '../errors.js';
 import { lintAudio, lintCompat, lintInspect, lintScene, mergeFindings, sortIssues, type Finding } from '../lint.js';
 import { native, type InspectLayer, type InspectResult } from '../native.js';
 import { checkFrame, evenFrames } from '../source.js';
+import { typeCheck, type TypeDiagnostic } from '../typecheck.js';
 import { ENTRY, openFromArgs, type Command } from './types.js';
+
+const describeDiagnostic = (d: TypeDiagnostic): string =>
+  `${d.file ? `${d.file}${d.line ? `:${d.line}:${d.column}` : ''}: ` : ''}TS${d.code}: ${d.message}`;
+
+export const check: Command = {
+  name: 'check',
+  summary: 'Type errors in the project (tsc --noEmit), such as a misspelled prop that renders without an error',
+  project: false,
+  positionals: [ENTRY],
+  options: [],
+  async run(args) {
+    const result = typeCheck(String(args.positionals.entry));
+    const errors = result.diagnostics.length;
+    const text = !result.checked
+      ? 'nothing to type-check (a scene file, or JavaScript with no tsconfig.json)'
+      : errors
+        ? result.diagnostics.map(describeDiagnostic).join('\n') + `\n${errors} type errors`
+        : 'no type errors';
+    return { data: { ok: errors === 0, ...result, errors }, text, exitCode: errors > 0 ? 1 : 0 };
+  },
+};
 
 export const inspect: Command = {
   name: 'inspect',
@@ -51,7 +74,7 @@ function describe(result: InspectResult): string {
 
 export const lint: Command = {
   name: 'lint',
-  summary: 'Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, and what compat mode draws in Chrome',
+  summary: 'Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, type errors, and what compat mode draws in Chrome',
   project: true,
   positionals: [ENTRY],
   options: [{ name: 'frames', type: 'string', description: 'Frames to check, comma separated (default 8 spread over the composition)' }],
@@ -84,12 +107,25 @@ export const lint: Command = {
         }
         perFrame.push({ frame, findings });
       }
-      const issues = sortIssues([...mergeFindings(perFrame), ...lintCompat(unsupportedFrames)]);
+      // The entry can be a stand-in (tests); a file that is not there has no types to check.
+      const entry = String(args.positionals.entry);
+      const types = existsSync(entry) ? typeCheck(entry).diagnostics : [];
+      const typeIssues = types.map((d) => ({
+        rule: 'type-error',
+        severity: 'error' as const,
+        layer: null,
+        message: describeDiagnostic(d),
+        frames: [],
+      }));
+      const issues = sortIssues([...mergeFindings(perFrame), ...lintCompat(unsupportedFrames), ...typeIssues]);
       const errors = issues.filter((i) => i.severity === 'error').length;
       const warnings = issues.length - errors;
       const text = issues.length
         ? issues
-            .map((i) => `${i.severity} ${i.rule}${i.layer ? ` [${i.layer}]` : ''} at frame${i.frames.length > 1 ? 's' : ''} ${i.frames.join(', ')}: ${i.message}`)
+            .map((i) => {
+              const at = i.frames.length ? ` at frame${i.frames.length > 1 ? 's' : ''} ${i.frames.join(', ')}` : '';
+              return `${i.severity} ${i.rule}${i.layer ? ` [${i.layer}]` : ''}${at}: ${i.message}`;
+            })
             .join('\n') + `\n${errors} errors, ${warnings} warnings`
         : `no issues (frames ${frames.join(', ')})`;
       return {

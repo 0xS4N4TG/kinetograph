@@ -187,6 +187,27 @@ describe('still', () => {
   });
 });
 
+describe('check', () => {
+  it('lists type errors with file and position, and exits 1', async () => {
+    const dir = scratch();
+    const entry = join(dir, 'index.ts');
+    writeFileSync(entry, 'export const x: number = "a";\n');
+    const r = await cli('check', entry, '--json');
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ ok: false, checked: true, errors: 1 });
+    expect(r.json.diagnostics[0]).toMatchObject({ line: 1, column: 14, code: 2322 });
+    expect((await cli('check', entry)).text).toContain('TS2322');
+  });
+
+  it('is ok for a project that type-checks and for a scene file', async () => {
+    const dir = scratch();
+    const entry = join(dir, 'index.ts');
+    writeFileSync(entry, 'export const x: number = 1;\n');
+    expect((await cli('check', entry, '--json')).json).toMatchObject({ ok: true, errors: 0 });
+    expect((await cli('check', sceneFile(), '--json')).json).toMatchObject({ ok: true, checked: false });
+  });
+});
+
 describe('inspect and lint', () => {
   it('prints the addon\'s InspectResult', async () => {
     const r = await cli('inspect', sceneFile(), '--frame', '12', '--json');
@@ -226,6 +247,20 @@ describe('inspect and lint', () => {
     expect(r.code).toBe(1);
     expect(r.json.issues.map((i: { rule: string }) => i.rule)).toEqual(['missing-font', 'inspect-failed']);
     expect(r.json.issues.find((i: { rule: string }) => i.rule === 'missing-font').layer).toBe('label');
+  });
+
+  it('reports a type error in the project as a lint error without a frame', async () => {
+    const dir = scratch();
+    const entry = join(dir, 'index.ts');
+    writeFileSync(entry, 'export const x: number = "a";\n');
+    seam.override = () => fakeProject();
+    const r = await cli('lint', entry, '--frames', '0', '--json');
+    expect(r.code).toBe(1);
+    expect(r.json.issues).toEqual([
+      expect.objectContaining({ rule: 'type-error', severity: 'error', layer: null, frames: [] }),
+    ]);
+    expect(r.json.issues[0].message).toContain('TS2322');
+    expect((await cli('lint', entry, '--frames', '0')).text).toContain('error type-error: ');
   });
 
   it('is ok with no issues, spreading 8 frames by default', async () => {

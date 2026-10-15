@@ -245,7 +245,8 @@ CLI first (`npx kinetograph …`, TS, calling the addon), MCP server wrapping th
 | `strip <comp> -n 12` | labelled contact sheet |
 | `onion <range> -n 6` | blended frames showing a motion path |
 | `inspect <comp> [--frame N]` | scene graph as JSON: layers, bounds, resolved styles |
-| `lint` | text overflow, off-canvas layers, overlaps, missing fonts/assets, with frame and layer |
+| `lint` | text overflow, off-canvas layers, overlaps, missing fonts/assets, type errors, with frame and layer |
+| `check` | `tsc --noEmit` on the project; type errors as JSON |
 | `render [--range a..b] [--draft]` | video; draft = half size, fast |
 | `audio analyze` | LUFS, true peak, clipping, silence per scene |
 | `snapshot` | diff against approved PNGs |
@@ -338,7 +339,10 @@ goldens. `cargo test` and the GPU npm tests pass except `renderer_reuse` (#12).
   Remotion on battery, Low Power Mode off (the earlier 3.6–4.5x had Low Power Mode on, which slows Remotion more):
   Remotion 9.2–9.5 s, the JSON port 2.72–2.74 s (3.4–3.5x), the TSX port 2.86–2.92 s (3.2–3.3x). Below the 5x bar,
   accepted for now (decided 2026-10-15); fewer GPU passes is the next lever. No `bench` regression against `main`.
-- The reference rebuild works but is slow (429 ms a frame) and matches loosely (#17).
+- The reference rebuild was slow (429 ms a frame) and matched loosely (#17). After the GPU-pass work it renders at
+  35 ms a frame (125 frames in 4.4 s; frames 10, 60, 110: 10, 20, 194 ms in `bench`); the example now has cards at the
+  reference's size (about 450 px tall), wider spacing and the full-frame gradient wipe. The stand-in silhouettes stay:
+  the reference's photos are third-party.
 - Merge blockers #12–#15, fixed in the cloud (see "Phase 3 fixes in a cloud session") and tested on the M4 as PRs
   #18–#21 before #11 merged. Open: #16 (`kinetograph check`), #17.
 **3D layer (after Phase 3).** Decided 2026-10-15: the engine gets its own 3D, and Three.js compatibility

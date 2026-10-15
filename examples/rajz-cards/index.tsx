@@ -41,7 +41,6 @@ import {
   blur,
   dropShadow,
   linearGradient,
-  radialGradient,
 } from '@kinetograph/core';
 import { onFrame } from '@kinetograph/audio';
 
@@ -55,8 +54,13 @@ const INK = '#111111';
 
 // ---- one card ----
 
-const CARD_W = 220;
-const CARD_H = 300;
+// The card is drawn on a 220 x 300 grid and scaled up: the reference's cards
+// are about 450 px tall on the 1080 px frame.
+const GRID_W = 220;
+const GRID_H = 300;
+const CARD_SCALE = 1.5;
+const CARD_W = GRID_W * CARD_SCALE;
+const CARD_H = GRID_H * CARD_SCALE;
 
 /** A dark figure on a pale backdrop, centred on (0, 0): head, body and legs
  *  in a pose that `seed` picks, so every card in a stack differs. */
@@ -67,27 +71,27 @@ const Card: React.FC<{ seed: number; id?: string } & Record<string, unknown>> = 
   const lean = (random(`lean-${seed}`) - 0.5) * 40;
   const crouch = random(`crouch-${seed}`) * 50;
   const portrait = random(`portrait-${seed}`) > 0.6;
-  const cx = CARD_W / 2 + (random(`x-${seed}`) - 0.5) * 40;
+  const cx = GRID_W / 2 + (random(`x-${seed}`) - 0.5) * 40;
   const headR = portrait ? 34 : 18;
   const headY = portrait ? 105 : 62 + crouch;
   const shoulders = portrait ? 92 : 46;
   const bodyTop = headY + headR - 4;
-  const hem = portrait ? CARD_H + 10 : 205 + crouch / 2;
+  const hem = portrait ? GRID_H + 10 : 205 + crouch / 2;
   const body =
     `M ${cx - shoulders / 2} ${bodyTop + 10} ` +
     `Q ${cx} ${bodyTop - 6} ${cx + shoulders / 2} ${bodyTop + 10} ` +
     `L ${cx + shoulders / 2 + lean / 3 + 12} ${hem} L ${cx - shoulders / 2 + lean / 3 - 12} ${hem} Z`;
   const legs = portrait
     ? ''
-    : `M ${cx - 16 + lean / 3} ${hem} L ${cx - 22 + lean} ${CARD_H - 22} L ${cx - 8 + lean} ${CARD_H - 22} ` +
-      `L ${cx + lean / 3} ${hem + 10} L ${cx + 10 - lean / 2} ${CARD_H - 20} L ${cx + 24 - lean / 2} ${CARD_H - 20} ` +
+    : `M ${cx - 16 + lean / 3} ${hem} L ${cx - 22 + lean} ${GRID_H - 22} L ${cx - 8 + lean} ${GRID_H - 22} ` +
+      `L ${cx + lean / 3} ${hem + 10} L ${cx + 10 - lean / 2} ${GRID_H - 20} L ${cx + 24 - lean / 2} ${GRID_H - 20} ` +
       `L ${cx + 16 + lean / 3} ${hem} Z`;
   return (
     <Layer {...props}>
-      <Layer x={-CARD_W / 2} y={-CARD_H / 2}>
+      <Layer x={-CARD_W / 2} y={-CARD_H / 2} scale={CARD_SCALE} anchorX={0} anchorY={0}>
         <Rect
-          width={CARD_W}
-          height={CARD_H}
+          width={GRID_W}
+          height={GRID_H}
           fill={linearGradient(['#fafafa', '#d9d9d9'], { angle: 160 })}
           effects={[dropShadow({ y: 8, blur: 12, color: '#00000030' })]}
         />
@@ -148,9 +152,9 @@ const Cluster: React.FC = () => {
             key={i}
             id={`cluster-${i}`}
             seed={i}
-            x={(i - 2) * 70 + (1 - s) * 200}
-            y={(i % 2 === 0 ? -1 : 1) * 30}
-            z={-i * 90}
+            x={(i - 2) * 105 + (1 - s) * 300}
+            y={(i % 2 === 0 ? -1 : 1) * 45}
+            z={-i * 135}
             rotateY={(i - 2) * 6}
             scale={0.8 + 0.2 * s}
             opacity={s}
@@ -166,7 +170,7 @@ const Cluster: React.FC = () => {
 const Arc: React.FC = () => {
   const frame = useCurrentFrame();
   const count = 9;
-  const radius = 1100;
+  const radius = 1500;
   const turn = interpolate(frame, [0, 40], [24, 4], { easing: Easing.out(Easing.quad) });
   return (
     <Layer id="arc" x={WIDTH / 2 - 120} y={HEIGHT / 2} rotateY={turn} preserve3d>
@@ -180,12 +184,12 @@ const Arc: React.FC = () => {
             seed={10 + i}
             x={radius * Math.sin(rad)}
             z={radius * Math.cos(rad) - radius}
-            y={(i % 3) * 18 - 18}
+            y={(i % 3) * 27 - 27}
             rotateY={angle}
           />
         );
       })}
-      <Word id="gets" text="gets" start={4} x={-30} y={-CARD_H / 2 - 70} rotateY={-14} />
+      <Word id="gets" text="gets" start={4} x={-30} y={-CARD_H / 2 - 80} rotateY={-14} />
       <Word id="better" text="better" start={9} x={-40} y={CARD_H / 2 + 6} rotateY={-14} rotateX={10} />
     </Layer>
   );
@@ -209,9 +213,9 @@ const YouCreate: React.FC = () => {
               key={i}
               id={`row-${i}`}
               seed={30 + i}
-              x={-150 + i * 55}
-              y={(i % 2) * 40 - 20}
-              z={-500 + i * 30 - (1 - s) * 600}
+              x={-200 + i * 75}
+              y={(i % 2) * 60 - 30}
+              z={-600 + i * 40 - (1 - s) * 700}
               rotateY={-18}
               opacity={s}
             />
@@ -223,7 +227,7 @@ const YouCreate: React.FC = () => {
         seed={47}
         x={1180}
         y={HEIGHT / 2}
-        scale={0.4 + 0.6 * big}
+        scale={0.5 + 0.7 * big}
         rotateY={(1 - big) * -30}
         opacity={Math.min(1, big * 2)}
       />
@@ -244,7 +248,9 @@ export const RajzCards: React.FC = () => {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
-  const glow = interpolate(frame, [92, 112], [0, 1], {
+  // The gradient wipe: a tall band, transparent at its top, that rises until it covers the frame.
+  const wipe = interpolate(frame, [92, 124], [0, 1], {
+    easing: Easing.inOut(Easing.cubic),
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
@@ -253,17 +259,15 @@ export const RajzCards: React.FC = () => {
       <Camera perspective={1400} />
       <Rect
         id="glow"
-        width={WIDTH * 1.4}
-        height={700}
-        x={-WIDTH * 0.2}
-        y={HEIGHT - 520 + (1 - glow) * 300}
-        opacity={glow}
-        fill={radialGradient(['#ff8a3d', '#ff4d7e', '#e88ad6', [1, '#e8e8e800']], {
-          cx: 0.6,
-          cy: 0.9,
-          r: 0.6,
-        })}
-        effects={[blur(40)]}
+        width={WIDTH * 1.2}
+        height={HEIGHT * 1.8}
+        x={-WIDTH * 0.1}
+        y={HEIGHT - wipe * HEIGHT * 1.6}
+        fill={linearGradient(
+          [[0, '#b69cf600'], [0.25, '#b69cf6'], [0.5, '#ec6fd0'], [0.75, '#ff4d6e'], [1, '#ff9a2e']],
+          { angle: 180 },
+        )}
+        effects={[blur(30)]}
         layoutItem={{ position: 'absolute' }}
       />
       <Layer
