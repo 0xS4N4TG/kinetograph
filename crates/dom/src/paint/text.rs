@@ -88,8 +88,15 @@ impl<'a> Painter<'a> {
         self.inline_element_boxes(node, origin, &mut inline_boxes);
         ph.inline.extend(inline_boxes);
 
+        // The layout's width is its longest line; a centred or right-aligned
+        // line sits inside the content box, so the box the glyphs may fall in
+        // is the wider of the two (the compositor sizes the layer, and the
+        // filters and blurs on it, by this box).
+        let content_width = f64::from(
+            l.size.width - l.border.left - l.border.right - l.padding.left - l.padding.right,
+        );
         let size = (
-            f64::from(layout.width()) / scale,
+            (f64::from(layout.width()) / scale).max(content_width),
             f64::from(layout.height()) / scale,
         );
         let mut batch: Option<Batch> = None;

@@ -116,6 +116,44 @@ fn a_url_filter_on_an_empty_box_takes_the_box_of_its_content() {
     assert_eq!(g["bbox"], json!([-110, -23, 670, 46]), "{g}");
 }
 
+/// A centred line is shorter than its box and sits inside it; the text layer's
+/// box has to hold the glyphs, or the compositor cuts the end of the line off
+/// (the last letter of papercut's centred banners).
+#[test]
+fn a_centred_text_layer_box_holds_its_glyphs() {
+    let banner = el(
+        "div",
+        "$0.0",
+        "position:absolute;left:20px;top:20px;width:400px;padding:0 30px;text-align:center;\
+         font-family:'DM Sans';font-size:24px;white-space:nowrap",
+        vec![text("Short line")],
+    );
+    let req = request(el("div", "$0", "width:1000px;height:500px", vec![banner]));
+    let parsed = common::parse(&req);
+    let island = document::resolve(&parsed).expect("resolves");
+    let out = paint(&island.doc, &parsed);
+    fn text_layer(layers: &[serde_json::Value]) -> Option<&serde_json::Value> {
+        layers.iter().find_map(|l| {
+            if l["type"] == "text" {
+                Some(l)
+            } else {
+                text_layer(l["children"].as_array().map_or(&[], |c| c.as_slice()))
+            }
+        })
+    }
+    let layer = text_layer(&out.layers).unwrap_or_else(|| panic!("no text in {:?}", out.layers));
+    let last_glyph_end = layer["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|r| r["glyphs"].as_array().into_iter().flatten())
+        .map(|g| g["x"].as_f64().unwrap_or(0.0))
+        .fold(0.0, f64::max);
+    let box_width = layer["boxWidth"].as_f64().unwrap();
+    assert!(box_width >= 400.0, "boxWidth {box_width}: {layer}");
+    assert!(last_glyph_end <= box_width, "{last_glyph_end} > {box_width}");
+}
+
 #[test]
 fn a_papercut_style_card_paints_end_to_end() {
     let card = el_attrs(
