@@ -422,6 +422,67 @@ default `source-over`).
 - Rendering is a pure function of the commands, the fonts and the files they name.
 - Counts nothing in the [margin](#canvas-margin).
 
+### glsl
+
+What a WebGL context drew: the page's own GLSL ES shaders, run on the GPU. The box is `(0, 0, width, height)`; the
+drawing buffer is that many pixels (whole, 1 to 8192 each way), as a `<canvas>`'s is.
+
+```json
+{ "id": "sky", "type": "glsl", "width": 640, "height": 360,
+  "programs": { "p": { "vertex": "attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }",
+                       "fragment": "precision mediump float; uniform vec2 u_res; void main() { gl_FragColor = vec4(gl_FragCoord.xy / u_res, 0.5, 1.0); }",
+                       "attributes": { "a_pos": 0 } } },
+  "buffers": { "quad": "<base64 of six vec2 floats>" },
+  "ops": [
+    { "op": "clear", "color": [0, 0, 0, 1] },
+    { "op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "viewport": [0, 0, 640, 360],
+      "attributes": { "a_pos": { "buffer": "quad", "size": 2, "type": "f32" } },
+      "uniforms": { "u_res": [{ "kind": "f", "value": [640, 360] }] } } ] }
+```
+
+Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fragment shader, and a `<canvas>`'s
+`getContext('webgl')` records it (AUTHORING.md §6.5).
+
+| Field | Default | |
+|---|---|---|
+| `width`, `height` | required | Animatable, not negative. The drawing buffer's size in pixels (rounded). |
+| `programs` | `{}` | By id: `vertex` and `fragment` (GLSL ES 100, or 300 es with `#version 300 es`) and the `attributes` (name to location) the link gave the vertex shader. |
+| `buffers` | `{}` | By id: base64 bytes. |
+| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL) or `pixels` (base64 straight-alpha RGBA8 with `width` and `height`), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded) and `mipmaps` (`generateMipmap` was called). |
+| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a) throws away everything before it. A `draw` runs one program. |
+| `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
+
+A `draw` carries `program`, `mode` (`triangles`, `triangleStrip`, `triangleFan`), `first` and `count`, `indices`
+(`drawElements`: `buffer`, `type` `u8`, `u16` or `u32`, byte `offset`), `attributes` by the shader's names (`buffer`,
+`size`, `type` `f32`, or `u8`, `i8`, `u16`, `i16` with `normalized`, byte `stride` and `offset`), `uniforms` by name
+(a list of calls: `kind` `f`, `i` or `m` for column-major matrices, `value`, and `index` for an element of an array),
+`units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
+to, as the GL names), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
+equations and colour), `colorMask` and `cull`.
+
+How it is drawn:
+
+- The program is read by naga's GLSL frontend after a rewrite to the Vulkan flavour it reads (`attribute`, `varying`
+  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D` becomes a texture and a sampler,
+  `gl_FragColor` an output). `gl_FragCoord` counts up from the bottom row and clip depth is taken from GL's -w..w to
+  wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
+  uniforms travel packed (naga and Metal lay them out differently). A shader naga cannot read fails when the scene
+  loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`).
+- Drawing is into an 8-bit RGBA buffer, blended in it as GL does (on sRGB-encoded values, with the factors and the
+  colour mask), not in linear light. The buffer is then placed under the layer's transform and converted to linear
+  light like a picture is. The first frame costs the compile of each program; every later frame reuses the pipeline.
+- A texture whose minification filter reads mipmaps it does not have (WebGL's default filter, without
+  `generateMipmap`) is incomplete and samples as opaque black, as in a browser.
+- Rendering is a pure function of the recording and the files it names; nothing reads a clock.
+
+Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored): rendering to a
+framebuffer or renderbuffer, the depth and stencil tests, `readPixels`, points and lines, instanced drawing, integer
+and constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures, texture levels
+other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, several colour outputs, a texture read in
+the vertex shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
+`antialias: true` smooths them); a full-screen quad has none. The shaders' maths is the GPU's: a `sin` of a large
+argument can differ from Chrome's last digits.
+
 ### video
 
 ```json
@@ -1745,4 +1806,5 @@ numbers. Blurs, colour filters and everything inside one layer are unchanged. Th
 - An unknown clip `kind`, gradient `type`, `extend`, mask `mode` or matte `mode` is rejected with the JSON parser's
   line and column, not the layer id.
 - A custom `shader` takes numbers only (`f32` uniforms), no extra textures, and it sees one layer, not the backdrop.
+  (A GLSL fragment shader over a full box, with textures, is the [`glsl`](#glsl) layer.)
   Its uniforms are `f32` even when the number is a whole frame count.

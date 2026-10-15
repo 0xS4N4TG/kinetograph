@@ -379,7 +379,7 @@ browser in it. Streams in progress on their own branches are marked (building); 
 1. Deferred browser-API ports (see "Deferred" below):
    - Canvas 2D, native (building).
    - CSS gaps: `line-clamp`, floats, tables, `@container`, transitions (building).
-   - WebGL fragment shaders, GLSL to WGSL through naga (next).
+   - WebGL fragment shaders, GLSL to WGSL through naga (done 2026-10-16, branch `feat/webgl-shaders`).
 2. Corpus leftovers (`docs/ENGINE.md` §10.5) and the painter suggestions (§11) (building), plus issues #16
    (`kinetograph check`) and #17 (rajz-cards speed) (building).
 3. The own 3D layer (see "3D layer" above), after the ports.
@@ -602,7 +602,7 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
 
 Remotion projects work unchanged when their effects are CSS, SVG or plain JS. These do not, and `doctor` reports
 them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only. This is
-Phase 6 (above); status as of 2026-10-16: items 1 and 2 are being built, item 3 is next, item 4 stays dropped.
+Phase 6 (above); status as of 2026-10-16: item 1 is being built, items 2 and 3 are done, item 4 stays dropped.
 1. **CSS gaps** (smallest). `line-clamp`: cut the shaped lines at N and add the ellipsis. Floats and tables: check
    whether a newer Blitz lays them out before writing our own (an upgrade also means redoing the fontique patch).
    `@container`: Stylo parses container queries; lay out once for the container sizes, restyle, lay out again. CSS
@@ -619,9 +619,16 @@ Phase 6 (above); status as of 2026-10-16: items 1 and 2 are being built, item 3 
    and draw nothing; Vello has no blur but a rounded rectangle's, so a path's shadow needs a blur pass of its own),
    `filter`, letter and word spacing, right-to-left `direction`, `isPointInPath`, patterns of a canvas, and a pattern's
    transform.
-3. **WebGL fragment shaders** (shader transitions, Shadertoy ports): the slice of WebGL they use (one full-screen
-   quad, uniforms, textures, `drawArrays`), with their GLSL ES translated to WGSL by naga and run as a `shader`
-   pass. naga reads desktop GLSL, so GLSL ES 100 / 300 es probably needs a small rewrite step first.
+3. **WebGL fragment shaders: done** (2026-10-16, branch `feat/webgl-shaders`). A recording WebGL context
+   (`createWebGLContext`, `@kinetograph/scene`; `getContext('webgl'|'webgl2')` in compat) writes its clears and draws
+   as one `glsl` layer, and the core runs them with the page's own GLSL ES 100 / 300 es, rewritten to the flavour
+   naga reads and run on the shared wgpu device (SCENE.md "glsl", AUTHORING.md §6.6, ENGINE.md §8). Natively:
+   `<GlslShader>` / `glslShader()`. Programs, buffers, uniforms (floats, ints, bools, vectors, matrices, arrays),
+   2D textures with wrap, filter and mipmaps, indexed and strip/fan triangles, viewport, scissor, blending, colour
+   mask, culling, clear. Checked against Chrome (gradient, noise, texture: at most 1 level off). Not done, and
+   `unsupported:` when used: framebuffers (multi-pass), depth and stencil, `readPixels`, points and lines,
+   instancing, cube/3D/float textures, multisampled edges. `renderCanvas` no longer opens the GPU on every call
+   (31 ms to 1.1 ms).
 4. **Three.js and pixi**: dropped for now, see "3D layer" above. If they come back, the path is a WebGPU API in Node
    on wgpu (`deno_webgpu`) so both run their WebGPU renderers unmodified, with GLSL materials through item 3.
 

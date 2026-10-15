@@ -471,8 +471,8 @@ The context and the globals around it:
 
 Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `shadowColor`, `shadowOffsetX/Y`,
 `filter`, `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`,
-`direction`, `imageSmoothingQuality`. `isPointInPath` and `isPointInStroke` return `false`. `getContext('webgl')`,
-`'webgl2'` and `'webgpu'` throw a message saying so (HANDOFF §8); another context type returns `null`.
+`direction`, `imageSmoothingQuality`. `isPointInPath` and `isPointInStroke` return `false`. `getContext('webgl')` and
+`'webgl2'` return a recording WebGL context (§6.6); `'webgpu'` throws `unsupported:`; another context type returns `null`.
 
 - **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family
   (the first of the list that has a face), then the nearest weight and the right style of it; a family with no face
@@ -488,6 +488,37 @@ Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `sh
 - **Sizes.** The bitmap is `width` x `height` (300 x 150 by default); CSS stretches it to the element's box as
   `object-fit: fill` does. The commands are drawn at the box's size, not resampled from the bitmap, so a stretched canvas
   is sharp where Chrome's is blurred (ENGINE.md §4, "`<canvas>`").
+
+### 6.6 WebGL and GLSL shaders
+
+A WebGL context records, as a Canvas 2D one does, and the renderer replays the recording on the GPU with the page's
+own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involved.
+
+- **`<GlslShader width height fragment uniforms textures>`** (native): a full-screen fragment shader, GLSL ES 100 or
+  300 es. `vertex` is optional (the default covers the box with `a_position` in clip space). `uniforms` are the values
+  of the shader's uniforms by name (a number, or an array for a vector, a column-major matrix or an array of them);
+  work them out from the frame (`useCurrentFrame()`), as the shader has no clock. `textures` maps `sampler2D` names to
+  a project file or `{ src, filter: 'linear' | 'nearest', wrap: 'clamp' | 'repeat' | 'mirror' }`. `gl_FragCoord`
+  counts up from the bottom row, as in a browser. The same thing outside React: `glslShader({ width, height,
+  fragment, ... })` of `@kinetograph/scene` returns the recording, and `glslLayer(context, layer)` makes a layer from
+  any context.
+- **`canvas.getContext('webgl' | 'webgl2' | 'experimental-webgl')`** in a Remotion project (`<canvas>`,
+  `document.createElement('canvas')`): a `WebGLRenderingContext` that records. A project's own WebGL code (shader
+  transitions, Shadertoy ports) runs as it is: `createShader`, `createProgram`, `bindAttribLocation`, buffers,
+  vertex arrays, `vertexAttribPointer`, the `uniform*` calls, `texImage2D` from an image, a canvas, `ImageData` or an
+  array, `texParameteri`, `generateMipmap`, `activeTexture`, `pixelStorei` (flip and premultiply), `viewport`,
+  `scissor`, `enable` (`BLEND`, `CULL_FACE`, `SCISSOR_TEST`), `blendFunc` and the rest of blending, `colorMask`,
+  `clearColor`, `clear`, `drawArrays` and `drawElements` of triangles. `getShaderParameter(COMPILE_STATUS)` is true:
+  a shader naga cannot read fails when the scene loads, naming the line. `getExtension('OES_standard_derivatives')`
+  answers (derivatives always work); other extensions return `null`.
+- The drawing buffer is a browser's: the first draw or clear after a frame starts it afresh, and a frame that draws
+  nothing keeps the picture. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
+  returns `null`.
+- Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
+  framebuffers, depth and stencil tests, `readPixels`, points and lines, instancing, cube and float textures,
+  `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas. Enabling the depth test is accepted but
+  the first draw with it on throws, because a flat quad does not need it and a scene that does is drawn wrongly
+  without it.
 
 ### 6.4 Audio clips
 

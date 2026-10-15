@@ -244,7 +244,7 @@ these on the global object where they are missing:
   `fetch` (explicit, cached);
 - `URL.createObjectURL` for blobs is Node's own;
 - `document`: `createElement` (a detached node, never drawn), `createElement('canvas')` (a canvas outside the tree with
-  a recording 2D context; `getContext('webgl')` throws, saying WebGL is not available yet, AUTHORING.md §6.5),
+  a recording 2D context, and a recording WebGL context for `getContext('webgl')`, AUTHORING.md §6.5 and §6.6),
   `body`/`documentElement` with the composition's size, queries over the host tree, `fonts` (the `FontFace` shim);
 - `Element`, `HTMLElement`, `SVGElement`, `HTMLImageElement`, `HTMLCanvasElement`, `OffscreenCanvas`, `Path2D`,
   `ImageData`, `DOMRect`, the three observers.
@@ -534,6 +534,19 @@ group that carries the clip. A canvas nothing was drawn on draws nothing and is 
 `crates/dom/tests/canvas.rs` are Canvas 2D scripts (`tests/canvas/*.js`) that Chrome runs and the engine draws from
 the recorded commands (`node crates/dom/tools/canvas-cases.mjs` makes the `.json` files): paths 0.35, gradients, a
 clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4 mean levels from Chrome.
+
+A canvas with a WebGL context is the same with `data-kg-webgl` and a `glsl` layer (SCENE.md, "glsl"). The core
+translates each program once (`crates/core/src/glsl.rs`: a token-level rewrite of GLSL ES 100 and 300 es to the Vulkan
+flavour naga's GLSL frontend reads, then naga's IR goes to wgpu directly, with no WGSL text in between, which would
+not keep the uniform array strides), and `compositor/glsl.rs` replays the draws into an Rgba8 drawing buffer
+(`shaders/glsl_blit.wgsl` then places it on the canvas in linear light). Findings: naga cannot lay out a `matCx2` in a
+uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
+travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
+from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
+`crates/dom/tests/webgl.rs` runs three cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
+them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0 and texture sampling 0.05 mean
+levels from Chrome, none more than 1 level off. `renderCanvas` (the addon) keeps one renderer, so a call no longer
+opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
