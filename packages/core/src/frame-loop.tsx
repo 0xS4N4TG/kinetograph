@@ -142,7 +142,9 @@ class Renderer implements FrameRenderer {
       layers,
     };
     if (main.camera !== null) sceneJson.camera = main.camera;
-    if (margin !== undefined) sceneJson.margin = margin;
+    // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
+    const needed = Math.max(margin ?? 0, main.margin ?? 0);
+    if (margin !== undefined || needed > 0) sceneJson.margin = needed;
     return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: main.unsupported };
   }
 

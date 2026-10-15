@@ -37,6 +37,8 @@ export interface IslandResult {
   unsupported: Unsupported[];
   /** From a `perspective` property (docs/COMPAT.md §4.3). */
   camera: CameraJson | null;
+  /** The least scene `margin` (pixels) the island needs, for the blurs that reach past their layers (docs/ENGINE.md §2). */
+  margin?: number;
 }
 
 export type RenderPath = 'native' | 'chrome';

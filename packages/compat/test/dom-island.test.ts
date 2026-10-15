@@ -114,6 +114,13 @@ describe('mapDomIsland', () => {
     expect((result.layers[0] as any).layoutItem).toEqual({ position: 'relative' });
   });
 
+  it('passes the margin the island needs through, only when there is one', () => {
+    answer = { layers: [], unsupported: [], camera: null, margin: 24 };
+    expect(mapDomIsland(node('div'), context()).margin).toBe(24);
+    answer = { layers: [], unsupported: [], camera: null };
+    expect('margin' in mapDomIsland(node('div'), context())).toBe(false);
+  });
+
   it('draws nothing for a <style> root without asking the addon, and needs an element', () => {
     expect(mapDomIsland(node('style', {}, [{ kind: 'text', text: 'a{}' }]), context()).layers).toEqual([]);
     expect(sent).toHaveLength(0);

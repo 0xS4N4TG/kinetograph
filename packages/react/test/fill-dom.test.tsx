@@ -17,7 +17,12 @@ beforeEach(() => {
       const natives = request.root.children
         .filter((c: any) => c.kind === 'native')
         .map((c: any) => ({ type: 'native', path: c.path, x: 0, y: 0, width: c.width ?? 0, height: c.height ?? 0 }));
-      return JSON.stringify({ layers: [{ id: request.path, type: 'group', children: natives }], unsupported: [], camera: null });
+      return JSON.stringify({
+        layers: [{ id: request.path, type: 'group', children: natives }],
+        unsupported: [],
+        camera: null,
+        ...(request.root.attrs?.['data-margin'] ? { margin: Number(request.root.attrs['data-margin']) } : {}),
+      });
     },
   });
 });
@@ -33,6 +38,13 @@ function render(node: React.ReactNode) {
     root.unmount();
   }
 }
+
+describe('the margin islands ask for', () => {
+  it('is the largest of them on the tree, and absent when none asks', () => {
+    expect(render(<div />).margin).toBeUndefined();
+    expect(render(<><div data-margin="8" /><div data-margin="30" /><div data-margin="12" /></>).margin).toBe(30);
+  });
+});
 
 describe('AbsoluteFill with DOM children', () => {
   it('is a flex column div over the page with the author’s style on top', () => {

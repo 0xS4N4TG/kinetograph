@@ -44,6 +44,7 @@ interface IslandOutputJson {
   layers: unknown[];
   unsupported?: Unsupported[];
   camera?: CameraJson | null;
+  margin?: number | null;
 }
 
 /** `style`, `script` and friends draw nothing: an island that is only one of them needs no trip to Rust. */
@@ -88,7 +89,12 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
   });
   // The island is laid out in the composition's box already: a flex layout around it must not place it again.
   const layers = placed.map((layer) => (layer.layoutItem === undefined ? ({ ...layer, layoutItem: { position: 'absolute' } } as LayerJson) : layer));
-  return { layers, unsupported: output.unsupported ?? [], camera: output.camera ?? null };
+  return {
+    layers,
+    unsupported: output.unsupported ?? [],
+    camera: output.camera ?? null,
+    ...(typeof output.margin === 'number' && output.margin > 0 ? { margin: output.margin } : {}),
+  };
 }
 
 export type { IslandRequestJson as IslandRequest };
