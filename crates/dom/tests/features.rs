@@ -87,6 +87,56 @@ case!(transforms, 340, 260, {
         .to_string()
 });
 
+case!(clip_paths, 340, 200, {
+    r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:70px;background:#f63;clip-path:circle(40% at 50% 50%)"></div>
+<div style="position:absolute;left:120px;top:10px;width:90px;height:70px;background:#36f;clip-path:polygon(50% 0,100% 100%,0 70%)"></div>
+<div style="position:absolute;left:230px;top:10px;width:90px;height:70px;background:#3a6;clip-path:inset(10px 20px round 15px)"></div>
+<div style="position:absolute;left:10px;top:100px;width:90px;height:70px;background:#a3c;clip-path:ellipse(50% 30% at 50% 50%)"></div>
+<div style="position:absolute;left:120px;top:100px;width:90px;height:70px;background:#c93;clip-path:polygon(calc(50% - 20px) 0,calc(100% - 10px) 50%,50% calc(100% - 5px),10px 50%)"></div>
+<div style="position:absolute;left:230px;top:100px;width:90px;height:70px;background:#09c;clip-path:path('M0 0 L90 0 L45 70 Z')"></div>"#
+        .to_string()
+});
+
+case!(masks_and_overflow, 340, 200, {
+    format!(
+        r#"<div style="position:absolute;left:10px;top:10px;width:100px;height:70px;background:#f63;-webkit-mask-image:linear-gradient(90deg,#000,transparent);mask-image:linear-gradient(90deg,#000,transparent)"></div>
+<div style="position:absolute;left:120px;top:10px;width:100px;height:70px;background:#36f;mask-image:radial-gradient(circle at 50% 50%,#000 30%,transparent 60%)"></div>
+<div style="position:absolute;left:230px;top:10px;width:100px;height:70px;background:#3a6;mask-image:url({0});mask-size:32px 32px;mask-repeat:repeat"></div>
+<div style="position:absolute;left:10px;top:100px;width:100px;height:70px;border:4px solid #333;border-radius:25px;overflow:hidden;background:#eee"><div style="width:140px;height:100px;background:linear-gradient(45deg,#f0c,#0cf)"></div></div>
+<div style="position:absolute;left:130px;top:100px;width:100px;height:70px;overflow:hidden;"><img src="{1}" style="width:140px;height:100px;object-fit:cover"></div>
+<div style="position:absolute;left:250px;top:100px;width:80px;height:70px;"><img src="{1}" style="width:80px;height:70px;object-fit:contain;object-position:0 100%;background:#cde"></div>"#,
+        asset("tile.png"),
+        asset("photo.png")
+    )
+});
+
+case!(filters, 340, 220, {
+    format!(
+        r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:60px;background:linear-gradient(90deg,#f33,#3f3);filter:blur(4px)"></div>
+<div style="position:absolute;left:120px;top:10px;width:90px;height:60px;background:linear-gradient(90deg,#f33,#3f3);filter:grayscale(1) contrast(1.4)"></div>
+<div style="position:absolute;left:230px;top:10px;width:90px;height:60px;background:linear-gradient(90deg,#f33,#3f3);filter:hue-rotate(90deg) saturate(1.5) brightness(1.1)"></div>
+<div style="position:absolute;left:10px;top:100px;width:90px;height:60px;background:#fc3;border-radius:12px;filter:drop-shadow(6px 8px 6px rgba(0,0,0,.6))"></div>
+<div style="position:absolute;left:120px;top:100px;width:90px;height:60px;background:#39f;filter:invert(.8) sepia(.5)"></div>
+<div style="position:absolute;left:230px;top:100px;width:90px;height:60px;background:#39f;opacity:.5;filter:opacity(.5)"></div>
+<img src="{}" style="position:absolute;left:10px;top:180px;width:60px;height:36px">"#,
+        asset("photo.png")
+    )
+});
+
+case!(paint_order, 340, 230, {
+    r#"<div style="position:relative;width:320px;height:210px;margin:5px">
+<div style="position:absolute;left:10px;top:10px;width:100px;height:80px;background:#f66;z-index:2"></div>
+<div style="position:absolute;left:60px;top:40px;width:100px;height:80px;background:#6c6;z-index:1;opacity:.9"></div>
+<div style="position:absolute;left:110px;top:70px;width:100px;height:80px;background:#66f;"></div>
+<div style="float:left;width:70px;height:70px;background:#fc3;margin:120px 0 0 20px"></div>
+<div style="margin:130px 0 0 60px;height:40px;background:#ccc;opacity:1;color:#000">block over float text</div>
+<div style="position:absolute;left:220px;top:20px;width:90px;height:90px;background:#999;transform:rotate(10deg);z-index:-1"></div>
+<div style="position:absolute;left:230px;top:140px;width:60px;height:50px;background:#c0c;outline:4px solid #306;outline-offset:3px"></div>
+<div style="display:flex;position:absolute;left:10px;top:170px;gap:6px"><div style="width:30px;height:30px;background:#f90;order:2"></div><div style="width:30px;height:30px;background:#09f;order:1"></div><div style="width:30px;height:30px;background:#9c0;z-index:-1;margin-left:-20px"></div></div>
+</div>"#
+        .to_string()
+});
+
 case!(borders, 340, 260, {
     r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:50px;border:3px solid;border-color:#f00 #0a0 #00f #fa0"></div>
 <div style="position:absolute;left:120px;top:10px;width:90px;height:50px;border-style:solid;border-width:2px 8px 14px 4px;border-color:#234;border-radius:12px 30px 5px 20px"></div>

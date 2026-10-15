@@ -419,8 +419,36 @@ impl<'a> Painter<'a> {
         if !any_deco {
             return out;
         }
-        let l = node.final_layout();
-        let _ = l;
+        // Blitz's inline layout gives a span's horizontal padding, border and
+        // margin no room, so a box drawn round it would overlap its text.
+        {
+            let b = style.get_border();
+            let p = style.get_padding();
+            let m = style.get_margin();
+            let px = |l: &style::values::computed::LengthPercentage| super::util::lp(l, 0.0).abs();
+            let horizontal = [
+                f64::from(b.border_left_width.0.to_f32_px()),
+                f64::from(b.border_right_width.0.to_f32_px()),
+                px(&p.padding_left.0),
+                px(&p.padding_right.0),
+                match &m.margin_left {
+                    style::values::generics::length::GenericMargin::LengthPercentage(l) => px(l),
+                    _ => 0.0,
+                },
+                match &m.margin_right {
+                    style::values::generics::length::GenericMargin::LengthPercentage(l) => px(l),
+                    _ => 0.0,
+                },
+            ];
+            if horizontal.iter().any(|v| *v > 0.0) {
+                self.report(
+                    node,
+                    "padding/border/margin",
+                    "inline",
+                    "horizontal padding, border and margin of an inline element take no room in Blitz's line layout; use display: inline-block",
+                );
+            }
+        }
         for (i, r) in rects.iter().enumerate() {
             let geom = self.inline_fragment_geom(node, &style, *r, i == 0, i + 1 == count);
             let mut layers = Vec::new();

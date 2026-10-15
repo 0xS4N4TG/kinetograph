@@ -17,6 +17,7 @@
 
 mod background;
 mod border;
+mod clip;
 mod deco;
 mod effects;
 mod fonts;
@@ -97,6 +98,8 @@ pub(crate) struct Painter<'a> {
     pub canvas_node: Option<NodeId>,
     /// The farthest a blur reaches past its layer, for the scene's margin.
     pub margin_reach: f64,
+    /// The mode (`alpha` or `luminance`) of each mask source group, by id.
+    pub mask_modes: std::collections::HashMap<String, &'static str>,
 }
 
 /// Where a box's border-box top-left corner is in the current frame.
@@ -113,6 +116,7 @@ impl<'a> Painter<'a> {
             camera: None,
             canvas_node: None,
             margin_reach: 0.0,
+            mask_modes: Default::default(),
         }
     }
 

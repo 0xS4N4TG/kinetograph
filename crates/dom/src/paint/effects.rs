@@ -72,7 +72,8 @@ impl<'a> Painter<'a> {
         // ---- mask ----
         let mut sibling_sources: Vec<Value> = Vec::new();
         if let Some(matte_id) = self.mask(node, &style, &geom, &current, &mut sibling_sources) {
-            group = group.set("matte", json!({ "layer": matte_id, "mode": "alpha" }));
+            let mode = self.mask_modes.get(&matte_id).copied().unwrap_or("alpha");
+            group = group.set("matte", json!({ "layer": matte_id, "mode": mode }));
         }
 
         group = group.set("children", Value::Array(std::mem::take(&mut children)));
@@ -244,23 +245,6 @@ impl<'a> Painter<'a> {
 
     pub fn backdrop_filter(&mut self, node: &'a Node, style: &style::properties::ComputedValues, group: &mut Layer) {
         let _ = (node, style, group);
-    }
-
-    pub fn clip_path(&mut self, node: &'a Node, style: &style::properties::ComputedValues, geom: &BoxGeom) -> Option<Value> {
-        let _ = (node, style, geom);
-        None
-    }
-
-    pub fn mask(
-        &mut self,
-        node: &'a Node,
-        style: &style::properties::ComputedValues,
-        geom: &BoxGeom,
-        current: &style::color::AbsoluteColor,
-        sources: &mut Vec<Value>,
-    ) -> Option<String> {
-        let _ = (node, style, geom, current, sources);
-        None
     }
 
     pub fn filter_effect(
