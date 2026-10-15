@@ -17,6 +17,7 @@
 
 mod background;
 mod border;
+mod border_image;
 mod clip;
 mod deco;
 mod effects;

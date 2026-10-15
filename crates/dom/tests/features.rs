@@ -165,6 +165,18 @@ case!(preserve_3d, 360, 220, {
         .to_string()
 });
 
+case!(border_images, 340, 220, {
+    format!(
+        r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:60px;border:12px solid transparent;border-image:url({0}) 16 round"></div>
+<div style="position:absolute;left:130px;top:10px;width:90px;height:60px;border:12px solid transparent;border-image:url({1}) 14 stretch"></div>
+<div style="position:absolute;left:250px;top:10px;width:70px;height:60px;border:8px solid;border-image:linear-gradient(45deg,#f0c,#0cf) 1"></div>
+<div style="position:absolute;left:10px;top:120px;width:90px;height:60px;border:10px solid transparent;border-image:url({0}) 10 / 10px 20px / 4px space;background:#eee"></div>
+<div style="position:absolute;left:130px;top:120px;width:90px;height:60px;border:10px solid transparent;border-image:repeating-linear-gradient(90deg,#000 0 6px,#fc0 6px 12px) 10 fill / 10px"></div>"#,
+        asset("tile.png"),
+        asset("photo.png")
+    )
+});
+
 case!(borders, 340, 260, {
     r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:50px;border:3px solid;border-color:#f00 #0a0 #00f #fa0"></div>
 <div style="position:absolute;left:120px;top:10px;width:90px;height:50px;border-style:solid;border-width:2px 8px 14px 4px;border-color:#234;border-radius:12px 30px 5px 20px"></div>

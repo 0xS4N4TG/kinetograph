@@ -1982,11 +1982,36 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
         return solid;
     }
     let mut turn = Affine::IDENTITY;
+    let mut linear_exact = false;
     let gradient = match g.geometry {
         ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } => {
-            let (p0, p1) = (Point::new(x0, y0), Point::new(x1, y1));
+            let (mut p0, mut p1) = (Point::new(x0, y0), Point::new(x1, y1));
             if p0.distance(p1) < 1e-6 {
                 return solid;
+            }
+            // Vello puts a linear gradient's end points through the brush
+            // transform, which is only right for a turn and a uniform scale.
+            // An affine `matrix` maps the field exactly: the points go through
+            // it, and the line is carried to the field's new gradient (which
+            // transforms by the inverse transpose).
+            if let Some(m) = g.matrix {
+                let a = Affine::new(m);
+                let d = p1 - p0;
+                let covector = d / d.hypot2();
+                let inv = a.inverse().as_coeffs();
+                // The inverse transpose applied to the covector.
+                let g2 = vello::kurbo::Vec2::new(
+                    inv[0] * covector.x + inv[1] * covector.y,
+                    inv[2] * covector.x + inv[3] * covector.y,
+                );
+                if g2.hypot2() > 0.0 {
+                    let q0 = a * p0;
+                    p0 = q0;
+                    p1 = q0 + g2 / g2.hypot2();
+                    // `p0..p1` is the whole field now: `lo` and `hi` below
+                    // still cut it as before.
+                    linear_exact = true;
+                }
             }
             peniko::Gradient::new_linear(p0 + (p1 - p0) * lo, p0 + (p1 - p0) * hi)
         }
@@ -2005,7 +2030,9 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
             peniko::Gradient::new_sweep(c, (lo * turns) as f32, (hi * turns) as f32)
         }
     };
-    if let Some(m) = g.matrix {
+    if let Some(m) = g.matrix
+        && !linear_exact
+    {
         turn = Affine::new(m) * turn;
     }
     let extend = match g.extend {

@@ -131,14 +131,11 @@ impl<'a> Painter<'a> {
                 color(&b.border_left_color),
             ],
         };
-        // A border image replaces the painted border.
-        if !matches!(
-            style.get_border().border_image_source,
-            style::values::generics::image::GenericImage::None
-        ) {
-            self.report(node, "border-image", "image", "border-image is not drawn yet");
-        }
         let id = self.layer_id(node, "border");
+        // A border image replaces the painted border.
+        if let Some(layers) = self.border_image(node, style, geom, &id) {
+            return layers;
+        }
         self.paint_ring(node, &id, &ring)
     }
 
