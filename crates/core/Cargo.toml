@@ -34,4 +34,4 @@ dotlottie-rs = { git = "https://github.com/LottieFiles/dotlottie-rs", tag = "v0.
 # Decodes the `video` layers' pictures and converts them (swscale). The same
 # crate and version as `kinetograph-cli`, which encodes with it.
 ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
-taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox"] }
+taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "block_layout"] }

@@ -238,3 +238,82 @@ test('decodeAudio returns null without an audio stream, and errors', () => {
   rejects(() => native.decodeAudio(`${media}/make_gif.py`, 48000, repo), 'INVALID_ARG', /make_gif\.py/);
   rejects(() => native.decodeAudio(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /sampleRate/);
 });
+
+// ---- layoutDom (docs/COMPAT.md §5.1) ----
+
+const domRequest = (root, extra = {}) =>
+  JSON.stringify({
+    root,
+    available: { width: 400, height: 300 },
+    fonts: { 'DM Sans': font },
+    baseDir: repo,
+    ...extra,
+  });
+
+test('layoutDom lays out blocks, flex and absolute boxes', () => {
+  const box = JSON.parse(
+    native.layoutDom(
+      domRequest({
+        style: { display: 'flex', flexDirection: 'column', padding: [10, 10, 10, 10], position: 'relative', height: 300, boxSizing: 'border-box' },
+        children: [
+          { style: { height: 40, margin: [0, 'auto', 0, 'auto'], width: { percent: 50 } } },
+          { style: { flexGrow: 1 } },
+          { style: { position: 'absolute', inset: [0, 0, 'auto', 'auto'], width: 20, height: 20 } },
+        ],
+      }),
+    ),
+  );
+  assert.deepEqual([box.x, box.y, box.width, box.height], [0, 0, 400, 300]);
+  assert.deepEqual(box.padding, [10, 10, 10, 10]);
+  assert.equal(box.children.length, 3);
+  // 50% of the 380 px content box, centred by its auto margins.
+  assert.deepEqual(
+    [box.children[0].x, box.children[0].y, box.children[0].width, box.children[0].height],
+    [105, 10, 190, 40],
+  );
+  assert.equal(box.children[1].height, 300 - 20 - 40);
+  // Absolute: against the padding box, out of the flow.
+  assert.deepEqual(
+    [box.children[2].x, box.children[2].y, box.children[2].width, box.children[2].height],
+    [380, 0, 20, 20],
+  );
+});
+
+test('layoutDom measures text with the renderer engine, at the width on offer', () => {
+  const text = 'alpha beta gamma delta';
+  const leaf = (width) => ({
+    style: width === undefined ? {} : { width },
+    measure: { text: { text, font: 'DM Sans', size: 24 } },
+  });
+  const wide = JSON.parse(native.layoutDom(domRequest({ children: [leaf()] })));
+  const narrow = JSON.parse(native.layoutDom(domRequest({ children: [leaf(150)] })));
+  // The same lines layoutText makes at that width.
+  const one = native.layoutText({ text, font: 'DM Sans', size: 24, fonts: { 'DM Sans': font }, baseDir: repo });
+  const wrapped = native.layoutText({
+    text,
+    font: 'DM Sans',
+    size: 24,
+    maxWidth: 150,
+    fonts: { 'DM Sans': font },
+    baseDir: repo,
+  });
+  assert.equal(wide.children[0].width, 400);
+  assert.ok(Math.abs(wide.children[0].height - one.height) < 1e-3);
+  assert.ok(wrapped.lines.length > 1);
+  assert.ok(Math.abs(narrow.children[0].height - wrapped.height) < 1e-3);
+});
+
+test('layoutDom errors', () => {
+  rejects(() => native.layoutDom('{ nope'), 'INVALID_ARG', /layoutDom request/);
+  rejects(() => native.layoutDom(domRequest({ style: { colour: 'red' } })), 'INVALID_ARG', /unknown style property/);
+  rejects(
+    () => native.layoutDom(domRequest({ measure: { text: { text: 'a', font: 'Nope', size: 10 } } })),
+    'INVALID_ARG',
+    /Nope/,
+  );
+  rejects(
+    () => native.layoutDom(domRequest({}, { available: { width: -1, height: 10 } })),
+    'INVALID_ARG',
+    /available width/,
+  );
+});

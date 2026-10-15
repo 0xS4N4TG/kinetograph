@@ -42,6 +42,43 @@ fn fonts_key(fonts: &BTreeMap<String, PathBuf>) -> String {
     key
 }
 
+/// Runs `f` with the text engine for `fonts` (font key -> file, relative to
+/// `base_dir`, or the working directory), building and caching it on first
+/// use. `layoutText` and `layoutDom` share the engines.
+pub(crate) fn with_engine<R>(
+    fonts: &HashMap<String, String>,
+    base_dir: Option<&str>,
+    f: impl FnOnce(&mut TextEngine) -> R,
+) -> Result<R> {
+    let base = match base_dir {
+        Some(dir) => PathBuf::from(dir),
+        None => std::env::current_dir().unwrap_or_default(),
+    };
+    let fonts: BTreeMap<String, PathBuf> = fonts
+        .iter()
+        .map(|(name, file)| {
+            let path = base.join(file);
+            (name.clone(), std::path::absolute(&path).unwrap_or(path))
+        })
+        .collect();
+    let key = fonts_key(&fonts);
+
+    let mut engines = engines().lock().unwrap_or_else(|e| e.into_inner());
+    if !engines.contains_key(&key) {
+        let files: BTreeMap<String, String> = fonts
+            .iter()
+            .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
+            .collect();
+        let engine = TextEngine::new(&files, Path::new("")).map_err(from_core)?;
+        if engines.len() >= MAX_ENGINES {
+            engines.clear();
+        }
+        engines.insert(key.clone(), engine);
+    }
+    let engine = engines.get_mut(&key).expect("inserted above");
+    Ok(f(engine))
+}
+
 pub fn layout_text(request: &TextLayoutRequest) -> Result<TextLayout> {
     if !(request.size.is_finite() && request.size > 0.0) {
         return Err(invalid(format!(
@@ -79,42 +116,16 @@ pub fn layout_text(request: &TextLayoutRequest) -> Result<TextLayout> {
         )));
     }
 
-    let base = match &request.base_dir {
-        Some(dir) => PathBuf::from(dir),
-        None => std::env::current_dir().unwrap_or_default(),
-    };
-    let fonts: BTreeMap<String, PathBuf> = request
-        .fonts
-        .iter()
-        .map(|(name, file)| {
-            let path = base.join(file);
-            (name.clone(), std::path::absolute(&path).unwrap_or(path))
-        })
-        .collect();
-    let key = fonts_key(&fonts);
-
-    let mut engines = engines().lock().unwrap_or_else(|e| e.into_inner());
-    if !engines.contains_key(&key) {
-        let files: BTreeMap<String, String> = fonts
-            .iter()
-            .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
-            .collect();
-        let engine = TextEngine::new(&files, Path::new("")).map_err(from_core)?;
-        if engines.len() >= MAX_ENGINES {
-            engines.clear();
-        }
-        engines.insert(key.clone(), engine);
-    }
-    let engine = engines.get_mut(&key).expect("inserted above");
-    let laid_out = engine.layout(
-        &request.text,
-        &request.font,
-        request.size as f32,
-        request.line_height.map(|h| h as f32),
-        request.max_width.map(|w| w as f32),
-        align,
-    );
-    drop(engines);
+    let laid_out = with_engine(&request.fonts, request.base_dir.as_deref(), |engine| {
+        engine.layout(
+            &request.text,
+            &request.font,
+            request.size as f32,
+            request.line_height.map(|h| h as f32),
+            request.max_width.map(|w| w as f32),
+            align,
+        )
+    })?;
     Ok(describe(&request.text, &laid_out))
 }
 
