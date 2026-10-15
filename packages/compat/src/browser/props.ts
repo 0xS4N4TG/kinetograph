@@ -146,6 +146,22 @@ export interface GlslShaderProps extends CommonProps {
   textures?: Record<string, string | { src: string; filter?: 'linear' | 'nearest'; wrap?: 'clamp' | 'repeat' | 'mirror' }>;
 }
 
+/** The props of the 3D elements, which Chrome frames do not draw: any, as only the name is used. */
+export interface ThreeDProps extends CommonProps {
+  [prop: string]: any;
+}
+export type AmbientLightProps = ThreeDProps;
+export type Camera3DProps = ThreeDProps;
+export type DirectionalLightProps = ThreeDProps;
+export type ExtrudeProps = ThreeDProps;
+export type Group3DProps = ThreeDProps;
+export type MeshProps = ThreeDProps;
+export type ModelProps = ThreeDProps;
+export type PointLightProps = ThreeDProps;
+export type Scene3DProps = ThreeDProps;
+export type Text3DProps = ThreeDProps;
+export type Object3DProps = ThreeDProps;
+
 export interface CameraProps {
   perspective: Num;
   x?: Num;

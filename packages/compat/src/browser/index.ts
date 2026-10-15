@@ -4,6 +4,16 @@
 // `@kinetograph/core` bundles against either.
 
 export {
+  AmbientLight,
+  Camera3D,
+  DirectionalLight,
+  Extrude,
+  Group3D,
+  Mesh,
+  Model,
+  PointLight,
+  Scene3D,
+  Text3D,
   Audio,
   Camera,
   Canvas,
@@ -24,6 +34,17 @@ export {
   Video,
 } from './elements.js';
 export type {
+  AmbientLightProps,
+  Camera3DProps,
+  DirectionalLightProps,
+  ExtrudeProps,
+  Group3DProps,
+  MeshProps,
+  ModelProps,
+  Object3DProps,
+  PointLightProps,
+  Scene3DProps,
+  Text3DProps,
   AudioProps,
   CameraProps,
   CanvasProps,

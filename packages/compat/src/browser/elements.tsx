@@ -11,6 +11,7 @@ import type {
   CameraProps,
   CanvasProps,
   GlslShaderProps,
+  ThreeDProps,
   CommonProps,
   EllipseProps,
   GifProps,
@@ -404,6 +405,27 @@ export function GlslShader(_props: GlslShaderProps): ReactElement {
       'Keep the frames that hold a <GlslShader> off the Chrome path.',
   );
 }
+
+/** The 3D layer is native-only (it has its own renderer): a frame that holds a 3D element fails, naming it. */
+function unsupported3d(name: string): (props: ThreeDProps) => ReactElement {
+  return function Unsupported3d(_props: ThreeDProps): ReactElement {
+    const timeline = useTimeline();
+    throw new Error(
+      `unsupported: <${name}> cannot be drawn in Chrome (frame ${timeline.absoluteFrame}): the 3D layer is drawn natively. ` +
+        `Keep the frames that hold a <${name}> off the Chrome path.`,
+    );
+  };
+}
+export const AmbientLight = unsupported3d('AmbientLight');
+export const Camera3D = unsupported3d('Camera3D');
+export const DirectionalLight = unsupported3d('DirectionalLight');
+export const Extrude = unsupported3d('Extrude');
+export const Group3D = unsupported3d('Group3D');
+export const Mesh = unsupported3d('Mesh');
+export const Model = unsupported3d('Model');
+export const PointLight = unsupported3d('PointLight');
+export const Scene3D = unsupported3d('Scene3D');
+export const Text3D = unsupported3d('Text3D');
 
 /** There is no Lottie in Chrome in this pass: the frame fails, naming itself. */
 export function Lottie(_props: LottieProps): ReactElement {

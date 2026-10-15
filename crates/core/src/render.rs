@@ -1405,7 +1405,7 @@ impl Renderer {
                 ResolvedKind::Group { .. }
                 | ResolvedKind::MeshGradient { .. }
                 | ResolvedKind::Glsl { .. } => {}
-                | ResolvedKind::Scene3d { .. } => {}
+                ResolvedKind::Scene3d { .. } => {}
                 _ => {
                     let region = self.raster_bounds(layer, matrix)?;
                     if !region.is_empty() {
