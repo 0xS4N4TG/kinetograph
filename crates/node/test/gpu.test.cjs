@@ -287,3 +287,25 @@ test('renderCanvas draws a canvas layer on a transparent canvas, as RGBA or a PN
     /bad path/,
   );
 });
+
+test('renderCanvas reuses one renderer: sizes alternate, a failed call changes nothing, and it is fast', { skip }, () => {
+  const request = (width, color) =>
+    JSON.stringify({
+      width,
+      height: 4,
+      commands: [{ op: 'fill', path: 'M0 0H4V4H0Z', paint: { type: 'color', color } }],
+      fonts: {},
+      baseDir: repo,
+    });
+  const first = native.renderCanvas(request(8, '#ff0000'));
+  // Another size, another colour, then the first again: byte for byte what it was.
+  assert.equal(native.renderCanvas(request(16, '#00ff00')).length, 16 * 4 * 4);
+  rejects(() => native.renderCanvas(request(0, '#00ff00')), 'INVALID_ARG', /width/);
+  const again = native.renderCanvas(request(8, '#ff0000'));
+  assert.deepEqual([...again], [...first]);
+  // The device is not opened again: calls after the first take milliseconds, not the ~30 ms a fresh device took.
+  const start = process.hrtime.bigint();
+  for (let i = 0; i < 20; i += 1) native.renderCanvas(request(i % 2 ? 8 : 16, '#0000ff'));
+  const perCall = Number(process.hrtime.bigint() - start) / 1e6 / 20;
+  assert.ok(perCall < 15, `${perCall} ms a call`);
+});
