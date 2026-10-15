@@ -75,6 +75,29 @@ fn scenes_in_turn_match_fresh_renderers() {
     }
 }
 
+/// Vello keeps one image atlas per renderer, and every Lottie frame is a new
+/// image in it, so a frame's pixels must not depend on which images the
+/// renderer drew before (#12).
+#[test]
+fn lottie_frames_in_order_match_fresh_renderers() {
+    let scene = load("tests/scenes/lottie.json");
+    assert_eq!(scene.duration_in_frames, 60, "the scene runs 60 frames");
+    let wanted: Vec<Frame> = (0..scene.duration_in_frames)
+        .map(|frame| fresh(&scene, frame))
+        .collect();
+    for cache in [false, true] {
+        let mut renderer = Renderer::new(scene.clone()).unwrap();
+        renderer.set_layer_cache(cache);
+        for (frame, want) in wanted.iter().enumerate() {
+            let got = renderer.render_frame(frame as u32).unwrap();
+            assert!(
+                got.rgba == want.rgba,
+                "frame {frame}, cache {cache}: not byte for byte what a new renderer draws"
+            );
+        }
+    }
+}
+
 #[test]
 fn the_same_scene_again_keeps_its_layer_cache() {
     let scene = load("tests/scenes/clip-paths.json");

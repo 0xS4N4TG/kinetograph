@@ -7,3 +7,9 @@ exclude = ["phase0"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+
+# Vello 0.11's fine shader loses low bits of an image's sample position by adding
+# the image's atlas offset before splitting it into texel and fraction (#12);
+# see vendor/README.md.
+[patch.crates-io]
+vello_shaders = { path = "vendor/vello_shaders" }
