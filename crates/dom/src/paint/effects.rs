@@ -11,9 +11,9 @@ use super::background::blend_name;
 use super::deco::box_geom;
 use super::geom::{BoxGeom, Region};
 use super::mat::Mat4;
-use crate::transform::{Matrix, local_transform};
 use super::util::{Layer, current_color, hex, lp, num, num4, resolve_color, shift};
 use super::{Origin, Painter};
+use crate::transform::{Matrix, local_transform};
 
 impl<'a> Painter<'a> {
     /// The group of a stacking context: its children (in its own frame, the
@@ -443,7 +443,9 @@ impl<'a> Painter<'a> {
                 }
                 if min.0.is_finite() && max.0.is_finite() {
                     *found = Some(match *found {
-                        Some((a, b, c, d)) => (a.min(min.0), b.min(min.1), c.max(max.0), d.max(max.1)),
+                        Some((a, b, c, d)) => {
+                            (a.min(min.0), b.min(min.1), c.max(max.0), d.max(max.1))
+                        }
                         None => (min.0, min.1, max.0, max.1),
                     });
                 }

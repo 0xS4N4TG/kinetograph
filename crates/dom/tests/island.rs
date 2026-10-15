@@ -162,7 +162,12 @@ fn a_url_filter_takes_the_box_of_content_that_sticks_out_through_transforms() {
          filter:url(#rough)",
         vec![cap, arm],
     );
-    let req = request(el("div", "$0", "width:1000px;height:500px", vec![defs, paper]));
+    let req = request(el(
+        "div",
+        "$0",
+        "width:1000px;height:500px",
+        vec![defs, paper],
+    ));
     let parsed = common::parse(&req);
     let island = document::resolve(&parsed).expect("resolves");
     let out = paint(&island.doc, &parsed);
@@ -216,7 +221,10 @@ fn a_centred_text_layer_box_holds_its_glyphs() {
         .fold(0.0, f64::max);
     let box_width = layer["boxWidth"].as_f64().unwrap();
     assert!(box_width >= 400.0, "boxWidth {box_width}: {layer}");
-    assert!(last_glyph_end <= box_width, "{last_glyph_end} > {box_width}");
+    assert!(
+        last_glyph_end <= box_width,
+        "{last_glyph_end} > {box_width}"
+    );
 }
 
 #[test]
