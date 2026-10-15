@@ -102,8 +102,16 @@ impl<'a> Painter<'a> {
         let mut batch: Option<Batch> = None;
         let mut decor_lines: Vec<(Decor, Rect, f64, bool)> = Vec::new(); // under / through lines, flushed with the batch
 
-        for line in layout.lines() {
-            for item in line.items() {
+        let clamp_line = self.clamp_line(node);
+        let overflow_ellipsis = self.overflow_ellipsis(node);
+        for (line_index, line) in layout.lines().enumerate() {
+            let force = clamp_line == Some(line_index);
+            let cut = if force || overflow_ellipsis {
+                self.line_cut(node, &line, scale, content_width, force)
+            } else {
+                None
+            };
+            for (item_index, item) in line.items().enumerate() {
                 match item {
                     PositionedLayoutItem::GlyphRun(gr) => {
                         let brush_node = self.node(NodeId::from_u64(gr.style().brush.id.as_u64()));
@@ -135,11 +143,18 @@ impl<'a> Painter<'a> {
                         let synth = run.synthesis();
                         let mut glyphs: Vec<Value> = Vec::new();
                         for g in gr.positioned_glyphs() {
-                            glyphs.push(json!([
-                                g.id,
-                                num(f64::from(g.x) / scale),
-                                num(f64::from(g.y) / scale)
-                            ]));
+                            let x = f64::from(g.x) / scale;
+                            if cut.as_ref().is_some_and(|c| x >= c.x - 0.01) {
+                                continue;
+                            }
+                            glyphs.push(json!([g.id, num(x), num(f64::from(g.y) / scale)]));
+                        }
+                        // The ellipsis follows the last glyph kept of its run.
+                        if let Some(c) = cut.as_ref().filter(|c| c.anchor == item_index) {
+                            let y = num(f64::from(gr.baseline()) / scale);
+                            for (id, x) in &c.glyphs {
+                                glyphs.push(json!([id, num(*x), y]));
+                            }
                         }
                         if glyphs.is_empty() {
                             continue;
@@ -170,7 +185,11 @@ impl<'a> Painter<'a> {
                         let metrics = run.font_metrics();
                         let decor = self.decorations_of(brush_node);
                         let x0 = f64::from(gr.offset()) / scale;
-                        let adv = f64::from(gr.advance()) / scale;
+                        let mut adv = f64::from(gr.advance()) / scale;
+                        // Chrome's decoration stops where the cut is, ellipsis not included.
+                        if let Some(c) = &cut {
+                            adv = adv.min((c.x - x0).max(0.0));
+                        }
                         let base = f64::from(gr.baseline()) / scale;
                         for d in decor {
                             let t = d
@@ -214,6 +233,12 @@ impl<'a> Painter<'a> {
                         if let Some(b) = batch.take() {
                             let layers = self.text_layers(node, &b, content, size);
                             ph.inline.extend(layers);
+                        }
+                        if cut
+                            .as_ref()
+                            .is_some_and(|c| f64::from(ib.x) / scale >= c.x - 0.01)
+                        {
+                            continue;
                         }
                         let child_id = NodeId::from_u64(ib.id);
                         let child = self.node(child_id);

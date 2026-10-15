@@ -6,6 +6,8 @@
 //! and `readback` are stream 1's; `paint` is stream 2's; `paint::svg` is
 //! stream 3's.
 
+pub mod clamp;
+pub mod collapse;
 pub mod document;
 pub mod fonts;
 pub mod inline;

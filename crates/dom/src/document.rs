@@ -25,6 +25,8 @@ use blitz_dom::{
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
 
+use crate::clamp;
+use crate::collapse;
 use crate::fonts;
 use crate::inline;
 use crate::net::{self, LocalFiles};
@@ -83,9 +85,10 @@ pub fn parse_request(json: &str) -> Result<IslandRequest, serde_json::Error> {
     Ok(request)
 }
 
-/// Switches on the CSS features Chrome has and Stylo ships off. They are
-/// process-wide and must be set before a document (its style system) is made.
-fn enable_css_features() {
+/// Switches on the CSS features Chrome has and Stylo ships off (`@container`
+/// needs the vendored Stylo, vendor/README.md). They are process-wide and must
+/// be set before a document (its style system) is made.
+pub fn enable_css_features() {
     style_config::set_pref!("layout.css.has-selector.enabled", true);
     style_config::set_pref!("layout.container-queries.enabled", true);
     style_config::set_pref!("layout.css.nth-child-of.enabled", true);
@@ -96,6 +99,14 @@ fn enable_css_features() {
 
 /// Builds the DOM of `request` (no style or layout yet).
 pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>), BuildError> {
+    build_root(request, &request.root)
+}
+
+/// Builds a document for `request`'s page with `root` as the island's tree.
+fn build_root(
+    request: &IslandRequest,
+    root: &DomNode,
+) -> Result<(IslandDocument, Arc<LocalFiles>), BuildError> {
     let base_dir = PathBuf::from(&request.base_dir);
     let public_dir = request.public_dir.as_deref().map(Path::new);
     let files = Arc::new(LocalFiles::new(&base_dir, public_dir));
@@ -145,7 +156,7 @@ pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>
                 ),
             ],
         );
-        let root = build_node(&mut m, &request.root, false, &mut paths);
+        let root = build_node(&mut m, root, false, &mut paths);
         if let Some(root) = root {
             m.append_children(container, &[root]);
         }
@@ -171,32 +182,42 @@ pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>
 }
 
 /// Builds the document, styles it and lays it out at `request.time`.
+///
+/// A CSS transition starts when a style value changes, which needs a state
+/// before the change, and a frame is built from nothing. `request.history`
+/// supplies the states before: the document is built from the oldest, and
+/// each later state (the request's own last) is applied to it as attribute,
+/// `style` and text changes and styled at its time, so Stylo starts a
+/// transition at the time of the first state that shows the new value, and
+/// its progress at `request.time` follows from the clock alone. A state that
+/// adds, removes or retags elements starts the replay over from it (a new
+/// element does not transition, as in a browser). With no history, nothing
+/// transitions and every value is its final one.
 pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
-    let (mut island, files) = build(request)?;
-    // Images and `@font-face` files are answered while the tree is built
-    // (`<img>`) and while styles are computed (`background-image`, `@import`),
-    // and enter the document before the next resolve. Resolve until nothing
-    // new arrives; the passes after the first only redo what the new resource
-    // touched.
-    //
-    // CSS animations start at the first style computation, with the clock
-    // there. Starting it at 0 and then moving to `time` makes the animation's
-    // progress `time`, whatever the frame.
-    deliver(&mut island.doc, &files);
-    for _ in 0..4 {
-        files.take_served();
-        island.doc.resolve(0.0);
-        if files.take_served() == 0 {
-            break;
-        }
-        deliver(&mut island.doc, &files);
-    }
-    if request.time != 0.0 && island.doc.is_animating() {
-        // Stylo moves an animation on by one iteration per style pass, so a
-        // jump to a later iteration takes one pass for each iteration passed.
-        let passes = iteration_lag(&island.doc, request.time).min(MAX_CATCH_UP_PASSES) + 1;
-        for _ in 0..passes {
-            island.doc.resolve(request.time);
+    let mut states: Vec<(f64, &DomNode)> = request
+        .history
+        .iter()
+        .filter(|s| s.time < request.time)
+        .map(|s| (s.time, &s.root))
+        .collect();
+    states.sort_by(|a, b| a.0.total_cmp(&b.0));
+    states.push((request.time, &request.root));
+
+    let (mut island, mut files) = build_root(request, states[0].1)?;
+    start(&mut island, &files, states[0].0);
+    for &(time, root) in &states[1..] {
+        match changes(&island, root) {
+            Some(edits) => {
+                if !edits.is_empty() {
+                    apply(&mut island, &edits);
+                    load(&mut island, &files, time);
+                }
+                advance(&mut island.doc, time);
+            }
+            None => {
+                (island, files) = build_root(request, root)?;
+                start(&mut island, &files, time);
+            }
         }
     }
     // Inline elements with horizontal margin, border or padding: Blitz leaves
@@ -204,8 +225,187 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     if inline::add_edge_spacers(&mut island.doc) > 0 {
         island.doc.resolve(request.time);
     }
+    // A collapsed table's cells give up their borders for half of each in their
+    // padding, as Chrome lays it out (collapse.rs).
+    if collapse::requested(request) {
+        collapse::settle(&mut island.doc, request.time);
+    }
+    // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
+    // only known once the text is laid out.
+    if clamp::requested(request) {
+        clamp::settle(&mut island.doc, request.time);
+    }
     island.missing = files.missing();
     Ok(island)
+}
+
+/// Styles a freshly built document and brings it to `time`.
+///
+/// CSS animations start at the first style computation, with the clock
+/// there. Starting it at 0 and then moving to `time` makes the animation's
+/// progress `time`, whatever the frame.
+fn start(island: &mut IslandDocument, files: &LocalFiles, time: f64) {
+    load(island, files, 0.0);
+    advance(&mut island.doc, time);
+}
+
+/// Resolves the document at `at` until its sub-resources have arrived.
+///
+/// Images and `@font-face` files are answered while the tree is built
+/// (`<img>`) and while styles are computed (`background-image`, `@import`),
+/// and enter the document before the next resolve. Resolve until nothing new
+/// arrives; the passes after the first only redo what the new resource touched.
+fn load(island: &mut IslandDocument, files: &LocalFiles, at: f64) {
+    deliver(&mut island.doc, files);
+    for _ in 0..4 {
+        files.take_served();
+        island.doc.resolve(at);
+        if files.take_served() == 0 {
+            break;
+        }
+        deliver(&mut island.doc, files);
+    }
+}
+
+/// Moves the document's animation clock on to `time`.
+fn advance(doc: &mut BaseDocument, time: f64) {
+    if time != 0.0 && doc.is_animating() {
+        // Stylo moves an animation on by one iteration per style pass, so a
+        // jump to a later iteration takes one pass for each iteration passed.
+        let passes = iteration_lag(doc, time).min(MAX_CATCH_UP_PASSES) + 1;
+        for _ in 0..passes {
+            doc.resolve(time);
+        }
+    }
+}
+
+/// A change to a built document that makes it show another state of the island.
+enum Edit {
+    /// Sets (`Some`) or removes (`None`) an attribute.
+    Attr(NodeId, QualName, Option<String>),
+    Text(NodeId, String),
+}
+
+/// The edits that turn the document into the state `root`, or `None` when the
+/// states differ in structure (another element, another number of children).
+fn changes(island: &IslandDocument, root: &DomNode) -> Option<Vec<Edit>> {
+    let mut edits = Vec::new();
+    let id = island.root?;
+    diff(&island.doc, id, root, false, &mut edits).then_some(edits)
+}
+
+/// Compares the node `id` with `want`, pushing what has to change; false if
+/// the two do not have the same shape.
+fn diff(
+    doc: &BaseDocument,
+    id: NodeId,
+    want: &DomNode,
+    in_svg: bool,
+    edits: &mut Vec<Edit>,
+) -> bool {
+    let Some(node) = doc.get_node(id) else {
+        return false;
+    };
+    match want {
+        DomNode::Text { text } => match node.text_data() {
+            Some(data) => {
+                if data.content != *text {
+                    edits.push(Edit::Text(id, text.clone()));
+                }
+                true
+            }
+            None => false,
+        },
+        DomNode::Native {
+            path,
+            width,
+            height,
+        } => {
+            node.data
+                .is_element_with_tag_name(&LocalName::from("kg-native"))
+                && diff_attrs(node, native_attributes(path, *width, *height), edits)
+        }
+        DomNode::Element {
+            tag,
+            path,
+            attrs,
+            style,
+            children,
+        } => {
+            let svg = in_svg || tag == "svg";
+            let tag = if svg {
+                tag.clone()
+            } else {
+                tag.to_ascii_lowercase()
+            };
+            if tag == "script"
+                || !node
+                    .data
+                    .is_element_with_tag_name(&LocalName::from(tag.as_str()))
+            {
+                return false;
+            }
+            if !diff_attrs(node, element_attributes(path, attrs, style, svg), edits) {
+                return false;
+            }
+            let child_svg = svg && tag != "foreignObject";
+            let wanted: Vec<&DomNode> = children
+                .iter()
+                .filter(|c| !matches!(c, DomNode::Element { tag, .. } if tag == "script"))
+                .collect();
+            if node.children.len() != wanted.len() {
+                return false;
+            }
+            let is_style = tag == "style";
+            node.children
+                .iter()
+                .zip(wanted)
+                .all(|(&child, want)| match (is_style, want) {
+                    (true, DomNode::Text { text }) => {
+                        let text = escape_style_text(&crate::paint::shim_css(text));
+                        let same = doc
+                            .get_node(child)
+                            .and_then(|n| n.text_data())
+                            .is_some_and(|d| d.content == text);
+                        if !same {
+                            edits.push(Edit::Text(child, text));
+                        }
+                        true
+                    }
+                    _ => diff(doc, child, want, child_svg, edits),
+                })
+        }
+    }
+}
+
+/// Pushes the attribute edits that make `node`'s attributes `want`.
+fn diff_attrs(node: &blitz_dom::Node, want: Vec<Attribute>, edits: &mut Vec<Edit>) -> bool {
+    let Some(have) = node.attrs() else {
+        return false;
+    };
+    for w in &want {
+        match have.iter().find(|h| h.name == w.name) {
+            Some(h) if h.value == w.value => {}
+            _ => edits.push(Edit::Attr(node.id, w.name.clone(), Some(w.value.clone()))),
+        }
+    }
+    for h in have {
+        if !want.iter().any(|w| w.name == h.name) {
+            edits.push(Edit::Attr(node.id, h.name.clone(), None));
+        }
+    }
+    true
+}
+
+fn apply(island: &mut IslandDocument, edits: &[Edit]) {
+    let mut m = island.doc.mutate();
+    for edit in edits {
+        match edit {
+            Edit::Attr(id, name, Some(value)) => m.set_attribute(*id, name.clone(), value),
+            Edit::Attr(id, name, None) => m.clear_attribute(*id, name.clone()),
+            Edit::Text(id, text) => m.set_node_text(*id, text),
+        }
+    }
 }
 
 /// Hands the images the net provider has decoded to the document.
@@ -293,6 +493,38 @@ fn attribute(name: &str, value: &str, svg: bool) -> Attribute {
     attr(&name, value)
 }
 
+/// The attributes of an island element: its host-tree path, `attrs`, and the
+/// `style` run through the painter's CSS shim.
+fn element_attributes(
+    path: &str,
+    attrs: &BTreeMap<String, String>,
+    style: &str,
+    svg: bool,
+) -> Vec<Attribute> {
+    let mut list = vec![attr(PATH_ATTR, path)];
+    for (name, value) in attrs {
+        if name == "style" || name == PATH_ATTR {
+            continue;
+        }
+        list.push(attribute(name, value, svg));
+    }
+    // `attrs["style"]` would be a second style source; the `style` field wins.
+    if !style.trim().is_empty() {
+        list.push(attr("style", &crate::paint::shim_css(style)));
+    }
+    list
+}
+
+/// The attributes of a native element's placeholder box.
+fn native_attributes(path: &str, width: Option<f64>, height: Option<f64>) -> Vec<Attribute> {
+    let style = format!(
+        "width: {}px; height: {}px",
+        width.unwrap_or(0.0),
+        height.unwrap_or(0.0)
+    );
+    vec![attr(PATH_ATTR, path), attr("style", &style)]
+}
+
 fn build_node(
     m: &mut DocumentMutator<'_>,
     node: &DomNode,
@@ -306,16 +538,11 @@ fn build_node(
             width,
             height,
         } => {
-            let style = format!(
-                "width: {}px; height: {}px",
-                width.unwrap_or(0.0),
-                height.unwrap_or(0.0)
-            );
             let id = element(
                 m,
                 "kg-native",
                 false,
-                vec![attr(PATH_ATTR, path), attr("style", &style)],
+                native_attributes(path, *width, *height),
             );
             paths.insert(path.clone(), id);
             Some(id)
@@ -336,18 +563,7 @@ fn build_node(
             } else {
                 tag.to_ascii_lowercase()
             };
-            let mut list = vec![attr(PATH_ATTR, path)];
-            for (name, value) in attrs {
-                if name == "style" || name == PATH_ATTR {
-                    continue;
-                }
-                list.push(attribute(name, value, svg));
-            }
-            // `attrs["style"]` would be a second style source; the `style` field wins.
-            if !style.trim().is_empty() {
-                list.push(attr("style", &crate::paint::shim_css(style)));
-            }
-            let id = element(m, &tag, svg, list);
+            let id = element(m, &tag, svg, element_attributes(path, attrs, style, svg));
             paths.insert(path.clone(), id);
             let is_style = tag == "style";
             // `foreignObject` holds HTML again.

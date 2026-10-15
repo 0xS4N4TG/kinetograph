@@ -203,6 +203,57 @@ impl<'a> Painter<'a> {
         layers
     }
 
+    /// A straight border segment: `rect` is its extent (the border's width
+    /// across it, its length along it), `vertical` whether it runs top to
+    /// bottom. For the borders of a collapsed table.
+    pub(super) fn border_segment(
+        &mut self,
+        node: &'a Node,
+        id: &str,
+        rect: Rect,
+        vertical: bool,
+        style: BorderStyle,
+        color: Rgba,
+    ) -> Vec<Value> {
+        let kind = kind_of(style);
+        if kind == Kind::Solid {
+            let fill = Value::String(hex_of(color));
+            return vec![
+                super::util::rect_shape(id, rect.w, rect.h, 0.0, fill)
+                    .at(rect.x, rect.y)
+                    .build(),
+            ];
+        }
+        if matches!(kind, Kind::Dashed | Kind::Dotted) {
+            // Dashes along the segment's centre line.
+            let mut line = BezPath::new();
+            if vertical {
+                let x = rect.x + rect.w / 2.0;
+                line.move_to((x, rect.y));
+                line.line_to((x, rect.bottom()));
+            } else {
+                let y = rect.y + rect.h / 2.0;
+                line.move_to((rect.x, y));
+                line.line_to((rect.right(), y));
+            }
+            let w = if vertical { rect.w } else { rect.h };
+            let outline = dashed_outline(&line, kind, w);
+            return vec![self.finish(id, &outline, rect, color, None)];
+        }
+        // Any other style: a box with one border side, which is the segment.
+        let side = if vertical { Side::Left } else { Side::Top };
+        let mut widths = [0.0; 4];
+        widths[side.index()] = if vertical { rect.w } else { rect.h };
+        let ring = Ring {
+            outer: rect,
+            radii: Radii::ZERO,
+            widths,
+            kinds: [kind; 4],
+            colors: [color; 4],
+        };
+        self.paint_ring(node, id, &ring)
+    }
+
     fn paint_ring(&mut self, node: &'a Node, id: &str, ring: &Ring) -> Vec<Value> {
         // Sides with nothing to paint have no width.
         let mut ring_widths = ring.widths;
@@ -447,33 +498,37 @@ impl<'a> Painter<'a> {
             return None;
         }
         let center = rounded_rect_path(rect, radii);
-        let length = center.perimeter(0.01);
-        let (pattern, cap): (Vec<f64>, Cap) = if kind == Kind::Dotted {
-            // Round dots as wide as the border, a dot width apart.
-            let n = (length / (2.0 * w)).round().max(1.0);
-            let step = length / n;
-            (vec![0.001, (step - 0.001).max(0.001)], Cap::Round)
-        } else {
-            let (d, g) = if w >= 3.0 {
-                (2.0 * w, w)
-            } else {
-                (3.0 * w, 2.0 * w)
-            };
-            let n = (length / (d + g)).round().max(1.0);
-            let scale = length / (n * (d + g));
-            (vec![d * scale, g * scale], Cap::Butt)
-        };
-        let dashed: BezPath =
-            kurbo::dash(center.elements().iter().copied(), 0.0, &pattern).collect();
-        let outline = kurbo::stroke(
-            dashed.elements().iter().copied(),
-            &Stroke::new(w).with_caps(cap).with_join(Join::Miter),
-            &StrokeOpts::default(),
-            0.05,
-        );
+        let outline = dashed_outline(&center, kind, w);
         let _ = PathEl::ClosePath;
         Some(self.finish(id, &outline, ring.outer, color, clip))
     }
+}
+
+/// The dashes (or dots) of a border `w` wide along `center`, stroked as wide as the border.
+fn dashed_outline(center: &BezPath, kind: Kind, w: f64) -> BezPath {
+    let length = center.perimeter(0.01);
+    let (pattern, cap): (Vec<f64>, Cap) = if kind == Kind::Dotted {
+        // Round dots as wide as the border, a dot width apart.
+        let n = (length / (2.0 * w)).round().max(1.0);
+        let step = length / n;
+        (vec![0.001, (step - 0.001).max(0.001)], Cap::Round)
+    } else {
+        let (d, g) = if w >= 3.0 {
+            (2.0 * w, w)
+        } else {
+            (3.0 * w, 2.0 * w)
+        };
+        let n = (length / (d + g)).round().max(1.0);
+        let scale = length / (n * (d + g));
+        (vec![d * scale, g * scale], Cap::Butt)
+    };
+    let dashed: BezPath = kurbo::dash(center.elements().iter().copied(), 0.0, &pattern).collect();
+    kurbo::stroke(
+        dashed.elements().iter().copied(),
+        &Stroke::new(w).with_caps(cap).with_join(Join::Miter),
+        &StrokeOpts::default(),
+        0.05,
+    )
 }
 
 /// The two colours of a groove or ridge side: outer half, inner half.

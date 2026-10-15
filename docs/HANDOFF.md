@@ -602,13 +602,19 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
 
 Remotion projects work unchanged when their effects are CSS, SVG or plain JS. These do not, and `doctor` reports
 them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only. This is
-Phase 6 (above); status as of 2026-10-16: items 1 and 2 are being built, item 3 is next, item 4 stays dropped.
-1. **CSS gaps** (smallest). `line-clamp`: cut the shaped lines at N and add the ellipsis. Floats and tables: check
-   whether a newer Blitz lays them out before writing our own (an upgrade also means redoing the fontique patch).
-   `@container`: Stylo parses container queries; lay out once for the container sizes, restyle, lay out again. CSS
-   transitions: a transition starts when a value changes, which depends on the previous frame; to stay a pure
-   function of the frame, look back over the transition's duration for the frame the value changed and
-   interpolate from there.
+Phase 6 (above); status as of 2026-10-16: items 1 and 2 are done, item 3 is being built, item 4 stays dropped.
+1. **CSS gaps** (done 2026-10-16, `feat/css-gaps`; the design and what is left are in `docs/ENGINE.md` §7.12).
+   - `-webkit-line-clamp` (the box's height is the Nth line's bottom, the ellipsis ends that line) and
+     `text-overflow: ellipsis`, which shares the ellipsis code.
+   - Floats: Blitz already laid them out; a line too narrow for any content now moves below the floats, and the
+     block's height counts the gap (vendored `blitz-dom`).
+   - Tables: backgrounds of rows, groups and columns, `border-collapse: collapse` borders laid out and drawn as Chrome
+     does, captions, and the automatic column widths (vendored `blitz-dom`).
+   - `@container`, container units and the `container` shorthand: `@container` was not parsed at all by Stylo's Servo
+     build, so `stylo` is vendored too; `blitz-dom` answers a container's size from its layout and restyles.
+   - CSS transitions: the request carries a history of earlier tree states, which the engine replays so a transition
+     starts at the first state that shows the new value; the frame loop fills the history from the frames before
+     the one asked for, so a frame is the same however it is reached.
 2. **Canvas 2D: done** (2026-10-16, branch `feat/canvas2d`). A `CanvasRenderingContext2D` that records
    (`createCanvasContext`, `@kinetograph/scene`) keeps the canvas's state and writes each call as a command; Rust draws
    the commands as one `canvas` layer with Vello (SCENE.md, "canvas"). A `<canvas>` in a Remotion project, `<Canvas

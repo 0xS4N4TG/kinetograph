@@ -246,8 +246,6 @@ dependencies = [
 [[package]]
 name = "blitz-dom"
 version = "0.3.0-beta.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53e58a506e20e90b69ab8b03f933c125237361c31b0dae0e7e149c5bcbf9b28a"
 dependencies = [
  "app_units",
  "atomic_refcell",
@@ -1868,6 +1866,7 @@ dependencies = [
  "read-fonts",
  "serde",
  "serde_json",
+ "skrifa",
  "stylo",
  "stylo_static_prefs",
  "stylo_traits",
@@ -3302,8 +3301,6 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a255e46af2478628c48daab3774090caabd7812b1dd3ca98801c2b9c53491ed"
 dependencies = [
  "app_units",
  "arrayvec",

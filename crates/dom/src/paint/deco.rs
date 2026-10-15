@@ -126,7 +126,17 @@ impl<'a> Painter<'a> {
         if !self.is_visible(node) {
             return Vec::new();
         }
-        let geom = box_geom(node, &style);
+        let mut geom = box_geom(node, &style);
+        let mut at = at;
+        if let Some((above, below)) = self.table_caption_extent(node) {
+            // The table's own box is the grid, between its captions.
+            geom.h -= above + below;
+            at.1 += above;
+        }
+        if self.is_collapsed_table(node) {
+            // Its border is one of the collapsed ones (`table.rs`).
+            geom.border = [0.0; 4];
+        }
         let mut out = Vec::new();
         out.extend(self.box_shadows(node, &style, &geom, false));
         if let Some(one) = self.fill_and_border(node, &style, &geom) {

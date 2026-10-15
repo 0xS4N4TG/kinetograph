@@ -29,6 +29,21 @@ pub struct IslandRequest {
     pub time: f64,
     /// The island root's host-tree path (`$0.2`).
     pub path: String,
+    /// Earlier states of this island, oldest first. A CSS transition starts when a
+    /// style value changes, and a frame has no "before" of its own; the caller
+    /// supplies it here, and the engine replays the states in order to find
+    /// when each value changed (`document::resolve`, docs/ENGINE.md §7.12).
+    /// Empty: nothing transitions, every value is its final one.
+    #[serde(default)]
+    pub history: Vec<Snapshot>,
+}
+
+/// An earlier state of the island: its tree as it was at `time` (seconds).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Snapshot {
+    pub time: f64,
+    pub root: DomNode,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

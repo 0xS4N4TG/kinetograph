@@ -287,6 +287,7 @@ mod tests {
             public_dir: public.map(|p| p.to_string_lossy().into_owned()),
             time: 0.0,
             path: "$0".into(),
+            history: Vec::new(),
         }
     }
 

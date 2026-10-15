@@ -27,15 +27,6 @@ impl<'a> Painter<'a> {
 
         let dbg = |v: &dyn std::fmt::Debug| format!("{v:?}").to_lowercase();
 
-        let to = dbg(&style.get_text().text_overflow);
-        if to.contains("ellipsis") || to.contains("\"") {
-            self.report(
-                node,
-                "text-overflow",
-                to,
-                "the ellipsis of clipped text is not drawn",
-            );
-        }
         let ir = dbg(&style.get_inherited_box().image_rendering);
         if ir != "auto" {
             self.report(

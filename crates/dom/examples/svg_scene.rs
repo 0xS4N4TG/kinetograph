@@ -47,6 +47,7 @@ fn main() {
         public_dir: None,
         time: 0.0,
         path: "$0".into(),
+        history: Vec::new(),
     };
     let mut svgs: Vec<NodeId> = Vec::new();
     let mut stack = vec![doc.root_node().id];
