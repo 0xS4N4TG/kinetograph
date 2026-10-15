@@ -84,6 +84,12 @@ pub struct IslandOutput {
     /// pixels. The scene's margin is the largest of this and its effects'.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub margin: Option<u32>,
+    /// The scene's `blendSpace` the island is painted for: `"srgb"`, because
+    /// CSS composites sRGB-encoded values (a translucent shadow or overlay
+    /// looks as Chrome's only when the layers are blended that way). The scene
+    /// that holds the island's layers must set it.
+    #[serde(rename = "blendSpace")]
+    pub blend_space: &'static str,
 }
 
 /// `Unsupported` of `@kinetograph/scene`.

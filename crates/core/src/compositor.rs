@@ -221,6 +221,8 @@ pub struct Compositor {
     /// The canvas, which `read_rgba8` copies out of the middle of a texture.
     canvas: (u32, u32),
     margin: u32,
+    /// Blend and composite layers on sRGB-encoded values (`Scene::blend_space`).
+    srgb_blend: bool,
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
@@ -471,6 +473,7 @@ impl Compositor {
             height: height + 2 * margin,
             canvas: (width, height),
             margin,
+            srgb_blend: false,
             to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
             mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
@@ -530,6 +533,12 @@ impl Compositor {
     /// every side, keeping the pipelines, tables and the rest of what the
     /// compositor holds. The pool is emptied: its textures are the old size.
     /// The caller gives back the textures it holds (the layer cache's) first.
+    /// Composite layers on sRGB-encoded values (`Scene::blend_space`) or in
+    /// linear light.
+    pub fn set_srgb_blend(&mut self, srgb: bool) {
+        self.srgb_blend = srgb;
+    }
+
     pub fn resize(&mut self, width: u32, height: u32, margin: u32) {
         self.width = width + 2 * margin;
         self.height = height + 2 * margin;
@@ -766,13 +775,15 @@ impl Compositor {
     /// `dst` must hold the box drawn.
     pub fn blend(&mut self, mut dst: Tex, src: &Tex, opacity: f32, mode: BlendMode) -> Tex {
         let mode = mode_index(mode);
+        // Bit 16 of the pass's mode says to composite in sRGB.
+        let space_bit = if self.srgb_blend { 1 << 16 } else { 0 };
         let region = if mode >= FIRST_NON_SEPARABLE_MODE {
             self.whole()
         } else {
             src.bounds
         };
         self.update(&mut dst, region, |c, dst, temp| {
-            c.pass(&c.blend, dst.input(), src.input(), opacity, mode, temp);
+            c.pass(&c.blend, dst.input(), src.input(), opacity, mode | space_bit, temp);
         });
         dst.bounds = dst.bounds.union(src.bounds);
         dst

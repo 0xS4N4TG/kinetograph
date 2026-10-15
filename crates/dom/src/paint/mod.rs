@@ -57,6 +57,7 @@ pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
         unsupported: painter.unsupported,
         camera: painter.camera,
         margin: (painter.margin_reach > 0.0).then(|| painter.margin_reach.ceil() as u32),
+        blend_space: "srgb",
     }
 }
 

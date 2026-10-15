@@ -36,6 +36,9 @@ pub struct Scene {
     /// The viewpoint that layers with a 3D transform are drawn from. Without
     /// one, 3D transforms are orthographic: no perspective.
     pub camera: Option<Camera>,
+    /// The colour space layers are blended in.
+    #[serde(default)]
+    pub blend_space: BlendSpace,
     /// Bottom layer first.
     pub layers: Vec<Layer>,
     /// Directory that asset paths resolve against (the scene file's directory).
@@ -51,6 +54,19 @@ pub struct Scene {
     /// `src`, read when the scene loads.
     #[serde(skip)]
     pub videos: BTreeMap<String, Arc<VideoInfo>>,
+}
+
+/// The colour space a layer is composited and blended in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlendSpace {
+    /// Linear light: physically right, and what the scene format has always
+    /// done.
+    #[default]
+    Linear,
+    /// sRGB-encoded values, as CSS and every browser composite: a half
+    /// transparent black over white is mid grey (128), not light grey (188).
+    Srgb,
 }
 
 fn default_background() -> Color {

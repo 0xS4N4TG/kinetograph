@@ -1503,6 +1503,83 @@ constants) gives the sub-frames itself with `frames`:
 - Everything else about sub-frames holds: opacity is applied per sample, mattes pair sample `i` with sample `i`, and the
   layer's enclosing groups and the camera are taken at the frame itself.
 
+## Boxes from the DOM painter
+
+The painter of the full engine (`crates/dom/src/paint`, docs/ENGINE.md section 8) writes CSS boxes as the layers above
+and needs these fields, all optional, all new. Existing scenes do not change.
+
+### Glyph runs
+
+A `text` layer can carry glyphs that someone else shaped and positioned (Blitz's Parley lines), so a line breaks where
+the browser-style layout broke it, with letter and word spacing, `white-space`, `vertical-align` and per-span fonts
+already in the positions.
+
+```json
+{ "id": "p.text", "type": "text", "color": "#123", "boxWidth": 176.4, "boxHeight": 21,
+  "runs": [ { "src": "/abs/Inter.ttf", "index": 0, "size": 28, "coords": [], "skew": 0, "embolden": 0,
+              "glyphs": [[121, 0, 18], [133, 10.06, 18]] } ],
+  "transform": { "x": 18, "y": 55 } }
+```
+
+| Field | Meaning |
+|---|---|
+| `runs` | When not empty, the layer is these runs and `text`, `font`, `size`, `maxWidth`, `align`, `lineHeight` and `chars` are not used. |
+| `boxWidth`, `boxHeight` | The layer's box (for `inset` clips, box-unit gradients, a transform origin and layout), in pixels; default 0. |
+| run `src`, `index` | The font file (relative to the scene, or absolute) and the face in it. It is read once and need not be in `fonts`. A file that is not there is a load error naming the layer. |
+| run `size` | Font size in pixels. |
+| run `coords` | Normalised variable-font coordinates (F2Dot14 as integers), as Parley reports them; default none. |
+| run `skew` | Synthetic italic: degrees the glyphs lean right. |
+| run `embolden` | Synthetic bold: pixels the outlines grow on each side (a 48th of the size is Chrome's fake bold). |
+| run `glyphs` | `[glyph id, x, y]` for each glyph: the glyph's origin on its baseline, in the layer's box. |
+
+`color` is a colour, a gradient (its box is the box above) or an [image paint](#image-paints), as for any text layer.
+
+### Transform `matrix`
+
+`transform.matrix` is a CSS `matrix3d()`: sixteen numbers, column-major (`a1, b1, c1, d1, a2, ...`), applied about the
+anchor after `scale` and `rotation`, so a layer with only `x`, `y`, `anchorX`, `anchorY` (the transform origin) and
+`matrix` is a CSS box with `transform-origin`. It is how the DOM painter writes the whole CSS transform: `translate`,
+`rotate` and `scale` properties, `skew`, per-axis scale, `matrix()`, `rotate3d()`, and the `perspective()` function and
+the `perspective` property of a parent (folded into its children's matrices, so there is no scene camera for them).
+
+- A matrix that only moves the plane (no z, no perspective) is folded into the layer's flat 2D matrix, so the layer is
+  drawn sharp, never resampled.
+- Any other matrix warps the finished layer like `rotateX` does (`W` of [3D transforms](#3d-transforms-and-the-camera)
+  gets the matrix, conjugated by the layer's own `rotation` and `scale`), and counts as a 3D transform: a matte source
+  cannot have one, and a `preserve3d` group places its children by it.
+- `transform.backfaceHidden` (default `false`) is CSS's `backface-visibility: hidden`: the layer is not drawn when its
+  3D placement shows its back (the warp flips it). A layer with no 3D placement is never culled.
+
+### Gradient `matrix`
+
+A gradient takes `"matrix": [a, b, c, d, e, f]`, an affine applied to the finished gradient in the space of its
+coordinates (before box units map them onto the box). `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about
+its centre `(cx, cy)` into an ellipse with radii `r` and `k * r`: CSS's `radial-gradient(ellipse ...)` whatever the box.
+
+### Image paints
+
+A shape's `fill` and a text layer's `color` can be a picture, once or tiled, which is `background-image: url()` with
+`background-repeat` and `background-size`:
+
+```json
+{ "type": "shape", "shape": { "kind": "rect", "width": 300, "height": 200 },
+  "fill": { "type": "image", "src": "tex.png", "x": 0, "y": 0, "width": 64, "height": 64,
+            "repeatX": true, "repeatY": true } }
+```
+
+The picture is drawn `width` x `height` with its top-left corner at (`x`, `y`) in the painted layer's space, bilinearly
+resampled. It repeats along the axes with `repeatX` / `repeatY`; along an axis that does not repeat its edge pixels are
+held, so cut the shape to the tile (a shape no taller than the tile for `repeat-x`). `src` is a PNG, JPEG or GIF
+file, or a `data:` URL, which is decoded from memory (an `image` layer's `src` can be one too).
+
+### Blend space
+
+The scene's `"blendSpace"` is `"linear"` (default, as always) or `"srgb"`. In `srgb` every layer is composited, and
+every blend mode evaluated, on sRGB-encoded values as CSS does: a half-transparent black over white is mid grey (128)
+and not light grey (188), a translucent shadow is as dark as a browser's, and `multiply` and `screen` give a browser's
+numbers. Blurs, colour filters and everything inside one layer are unchanged. The DOM painter's output asks for
+`srgb` (`IslandOutput::blend_space`).
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.

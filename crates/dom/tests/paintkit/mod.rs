@@ -122,6 +122,7 @@ pub fn scene_json(out: &IslandOutput, w: u32, h: u32) -> Value {
     if let Some(m) = out.margin {
         scene["margin"] = json!(m);
     }
+    scene["blendSpace"] = json!(out.blend_space);
     scene
 }
 

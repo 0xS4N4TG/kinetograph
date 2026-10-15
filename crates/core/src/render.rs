@@ -177,7 +177,7 @@ impl Renderer {
         let vello_view = new_vello_target(&device, target_size);
         // The scene's shaders and tables join below, the way a later
         // scene's do (`set_scene`).
-        let compositor = Compositor::new(
+        let mut compositor = Compositor::new(
             &device,
             &queue,
             scene.width,
@@ -186,6 +186,7 @@ impl Renderer {
             &[],
             &HashMap::new(),
         );
+        compositor.set_srgb_blend(scene.blend_space == crate::scene::BlendSpace::Srgb);
 
         let text = fresh
             .text
@@ -247,9 +248,13 @@ impl Renderer {
         let margin = scene.margin();
         let resized = (scene.width, scene.height, margin)
             != (self.scene.width, self.scene.height, self.margin);
-        if resized || fresh.rebound {
+        // What a cached group drew depends on the space it was blended in.
+        let respaced = scene.blend_space != self.scene.blend_space;
+        if resized || respaced || fresh.rebound {
             self.clear_layer_cache();
         }
+        self.compositor
+            .set_srgb_blend(scene.blend_space == crate::scene::BlendSpace::Srgb);
         if resized {
             self.clear_pages();
             self.margin = margin;
