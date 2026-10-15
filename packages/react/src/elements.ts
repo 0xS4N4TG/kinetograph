@@ -57,6 +57,12 @@ export interface LayerProps extends CommonProps {
   preserve3d?: boolean;
   layout?: Layout;
   children?: ReactNode;
+  /**
+   * @internal `<AbsoluteFill>`'s layer mapping says what the CSS box it stands for is, so that a tree holding DOM
+   * elements draws it as that `div` (docs/ENGINE.md §10): the author's style, and whether the first child is the
+   * background rectangle the layer mapping adds.
+   */
+  domFill?: { style: Record<string, unknown>; id?: string; background: boolean };
 }
 
 export interface ShapeProps extends CommonProps {

@@ -22,7 +22,8 @@
     "./media-utils": { "types": "./dist/media-utils.d.ts", "default": "./dist/media-utils.js" },
     "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
     "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
-    "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" }
+    "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" },
+    "./web/install": { "types": "./dist/web-install.d.ts", "default": "./dist/web-install.js" }
   },
   "files": ["dist"],
   "scripts": {
@@ -30,6 +31,7 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@kinetograph/compat": "0.1.0",
     "@kinetograph/native": "0.1.0",
     "@kinetograph/react": "0.1.0",
     "@kinetograph/scene": "0.1.0"

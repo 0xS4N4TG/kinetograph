@@ -39,6 +39,29 @@ function hasOtherKeys(style: FillStyle, keys: ReadonlySet<string>): boolean {
   return Object.entries(style).some(([key, value]) => value !== undefined && value !== null && !keys.has(key));
 }
 
+/**
+ * Whether the layer mapping can take every value of a fill's style: a plain colour for the background, `flex` for
+ * `display`, a number for `opacity`, pixels for `gap` and `padding`. Anything else (a gradient, `display: grid`, `2em`)
+ * is CSS for the engine's CSS engine, so the fill is the `div`.
+ */
+function layerCanTake(style: FillStyle): boolean {
+  for (const [key, value] of Object.entries(style)) {
+    if (value === undefined || value === null) continue;
+    if (key === 'backgroundColor' || key === 'background') {
+      if (typeof value !== 'string' || parseColor(value) === null) return false;
+    } else if (key === 'display') {
+      if (value !== 'flex' && value !== 'none') return false;
+    } else if (key === 'opacity') {
+      if (typeof value !== 'number') return false;
+    } else if (key === 'gap') {
+      if (px(value) === null) return false;
+    } else if (key === 'padding') {
+      if (parsePadding(value) === null) return false;
+    }
+  }
+  return true;
+}
+
 /** `10`, `'10px'` -> 10; anything else -> null. */
 function px(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -79,7 +102,7 @@ export interface AbsoluteFillProps {
  */
 export function AbsoluteFill({ style = {}, id, className, children }: AbsoluteFillProps): ReactNode {
   const { width, height } = useVideoConfig();
-  if (className !== undefined || hasOtherKeys(style, FILL_KEYS)) {
+  if (className !== undefined || hasOtherKeys(style, FILL_KEYS) || !layerCanTake(style)) {
     // Remotion's own: a column flex box over the whole page, the author's style laid over it.
     return (
       <div id={id} className={className} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...style }}>
@@ -116,7 +139,13 @@ export function AbsoluteFill({ style = {}, id, className, children }: AbsoluteFi
   }
 
   return (
-    <Layer id={id} layout={layout} layoutItem={{ position: 'absolute' }} opacity={opacity}>
+    <Layer
+      id={id}
+      layout={layout}
+      layoutItem={{ position: 'absolute' }}
+      opacity={opacity}
+      domFill={{ style, ...(id !== undefined ? { id } : {}), background: background !== undefined && !isTransparent(background) }}
+    >
       {background !== undefined && !isTransparent(background) ? (
         <Rect width={width} height={height} fill={background} layoutItem={{ position: 'absolute' }} />
       ) : null}
@@ -137,7 +166,11 @@ export interface ImgProps {
 
 /** An image whose CSS-style `width`, `height` and `objectFit` become the layer's box and fit. */
 export function Img({ src, style = {}, width, height, id, className }: ImgProps): ReactNode {
-  if (className !== undefined || hasOtherKeys(style, IMG_KEYS)) {
+  // Pixels for the size and a fit the image layer has are the layer mapping; a percentage, `auto`, `object-fit: none`
+  // are CSS (docs/ENGINE.md §10.1).
+  const layerFit = style.objectFit === undefined || ['fill', 'contain', 'cover', 'scale-down'].includes(String(style.objectFit));
+  const layerSize = (style.width === undefined || px(style.width) !== null) && (style.height === undefined || px(style.height) !== null);
+  if (className !== undefined || hasOtherKeys(style, IMG_KEYS) || !layerFit || !layerSize) {
     return <img id={id} className={className} src={src} width={width} height={height} style={style} />;
   }
   const w = px(style.width) ?? width;

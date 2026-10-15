@@ -121,157 +121,177 @@ pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str,
 
 ## 7. Stream 1 notes (front: Blitz document, fonts, files, animations, readback)
 
-What `engine/front` built. Code: `crates/dom/src/{document,fonts,net,ua,inline,transform,readback}.rs`,
-`crates/node/src/dom.rs`, the vendored `vendor/fontique`, and `crates/dom/tools/`. Tests: `crates/dom/tests/*.rs` and
-the island tests in `crates/node/test/cpu.test.cjs`.
+## 10. Stream 4 notes (runtime)
 
-### 7.1 API
+What the TypeScript side does around the addon, as built on `engine/runtime`. Code is under `packages/compat`,
+`packages/react`, `packages/core` and `packages/cli`.
 
-```rust
-// kinetograph_dom::document
-pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError>;  // build + style + layout at request.time
-pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>), BuildError>;  // DOM only
-pub struct IslandDocument {
-    pub doc: blitz_dom::BaseDocument,            // styled and laid out
-    pub paths: BTreeMap<String, NodeId>,         // host-tree path -> node, elements and native placeholders
-    pub node_paths: HashMap<NodeId, String>,
-    pub container: NodeId,                       // <div data-kg-island>, the viewport-sized containing box
-    pub root: Option<NodeId>,                    // the node of request.root
-    pub missing: Vec<String>,                    // files that could not be read, with why
-}
-pub const PATH_ATTR: &str = "data-kg-path";      // every element carries its path in this attribute
+### 10.1 The request
 
-// kinetograph_dom::readback
-pub fn layout_boxes(island: &IslandDocument) -> BTreeMap<String, ElementBox>;   // domLayoutBoxes
-pub fn computed_style(island: &IslandDocument, path: &str, properties: &[String]) -> Option<Vec<String>>;
-// kinetograph_dom::inline
-pub fn fragments(doc: &BaseDocument, id: NodeId) -> Option<Vec<Fragment>>;       // see 7.6
-// kinetograph_dom::transform
-pub fn local_transform(node: &Node, size: (f32, f32)) -> Option<Matrix>;         // 4x4, see 7.8
-pub fn perspective_matrix(node: &Node, size: (f32, f32)) -> Option<Matrix>;
-```
+`mapDomIsland` (`compat/src/dom/index.ts`) builds an `IslandRequest` (`compat/src/request/`), calls the addon's
+`renderDomIsland`, and fills the `native` placeholders in the answer. Rules:
 
-The addon (`crates/node/src/dom.rs`, declared in `crates/node/index.d.ts`):
+- **Paths.** An element's `path` is its place in the host tree: its index among the elements of its parent (DOM and
+  `kg-*` alike, text counts for nothing, a `<Sequence>` is transparent), under the parent's path; top-level ones are
+  `$0`, `$1`. Native elements inside an island count in the numbering, so the paths of Rust's answer and of TypeScript
+  agree.
+- **Attributes** follow React DOM: `className` is `class`, `htmlFor` is `for`, SVG presentation props are hyphenated
+  (`strokeWidth` is `stroke-width`, `clipPath` is `clip-path`, `xlinkHref` is `xlink:href`) while SVG's camelCase
+  attributes keep their case (`viewBox`, `gradientUnits`, `stdDeviation`); HTML names are lower-cased; `true` is `""`
+  for boolean attributes, `false` leaves them out; handlers, `ref`, `key` and `children` are not attributes.
+- **`style`** is CSS declaration text by React's rules: numbers get `px` except `0`, custom properties and the unitless
+  properties (`opacity`, `zIndex`, `flexGrow`, `lineHeight`, `fontWeight`, `scale`, `order`, `aspectRatio`,
+  `strokeWidth`, … and their `Webkit`/`Moz`/`ms`/`O` prefixed forms); camelCase becomes kebab-case, `WebkitX` becomes
+  `-webkit-x`, `msX` `-ms-x`, `cssFloat` `float`; null, booleans and `''` leave the declaration out.
+- **`<style>`, `<link rel=stylesheet href>` and `.css` imports** are the document's stylesheets, the same for every
+  island of the tree (a `<style>` in one island applies in another, as in one document), in this order: imports (in
+  import order), then every `<style>` element and local `<link>` in tree order. The `<style>` element itself stays in
+  the request, empty, so sibling positions do not move.
+- **`dangerouslySetInnerHTML`** is parsed by a small forgiving HTML parser (`request/html.ts`) into children; on a
+  `<style>` it is the stylesheet.
+- **Native elements** are `{ "kind": "native", path, width, height }`: a layer's own `width`/`height` (a `<Layer>`'s
+  `layout` size, a `<Text>`'s `maxWidth` and measured height; a path or a group without a layout is 0 by 0; an animated
+  size is its first value). Rust leaves a `{"type": "native", path, x, y, …}` layer where the box went; TypeScript
+  replaces it with `emitNative`'s layers moved there (the layer's own `x`/`y` are an offset from the box, its anchor
+  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped.
+- **Top-level layers** of an island get `layoutItem: { position: 'absolute' }`, so a native flex parent does not
+  place them again.
+- **`fonts`** is `getFonts()` as it is: keys are the scene's `fontKey`s (`Inter`, `Inter:800`, `Inter:400i`), not the
+  `family:weight:style` the comment in `request.rs` says.
+- **`time`** is the virtual clock in seconds (`performance.now() / 1000`, which is `frame / fps`, and the sub-frame time
+  on a motion-blur sub-frame). `baseDir` is the entry's directory, `publicDir` the project's `public/`
+  (`setDomEnvironment`, from the CLI; `KINETOGRAPH_BASE_DIR` and `KINETOGRAPH_PUBLIC_DIR` before the project loads).
+- An island whose root is `<style>`, `<script>`, `<link>`, `<meta>`, `<title>`, `<head>` or `<template>` draws nothing
+  and is not sent.
+- **`<AbsoluteFill>`** is a layer mapping when everything inside it is native (the hand ports render as before), and
+  the `div` it is in Remotion (`position: absolute; inset: 0; display: flex; flex-direction: column`, the author's style
+  on top) when anything inside it is DOM: the layer's `domFill` prop says so, `emit` swaps it, and a fill inside a fill
+  is part of the same `div` tree. Without this, `justifyContent` and `alignItems` on a fill would not place its DOM
+  children.
+- One call per island per frame: the frame loop renders with `SceneRoot.update` and emits once, with `snapshot()`.
+- `KINETOGRAPH_DOM_MAPPER=legacy` selects the Phase 5 TypeScript mapping (`compat/src/dom/legacy.ts`, `compat/src/css`)
+  until it is removed.
 
-```ts
-renderDomIsland(requestJson: string): string                       // IslandOutput JSON: build -> resolve -> paint::paint(&doc, &request)
-domLayoutBoxes(requestJson: string): string                        // { [path]: { x, y, width, height, rect, client, scroll } }
-domComputedStyle(requestJson: string, path: string, properties: string[]): string[]
-```
+### 10.2 `.css` imports
 
-A request is parsed, a document built and resolved, and the answer made; nothing is kept between calls, so each is a
-pure function of its request. The three functions run on one persistent thread with a 512 MB stack (reserved, not
-committed) and parse without serde_json's 128-level limit, because Stylo and Blitz recurse over the tree: a default
-stack overflows at about 1500 levels, this one lays out 3000 (tested). The calls of several Node worker threads are
-served one after another. `renderDomIsland` appends one `unsupported` item (`element: "resource"`, the reason
-naming the file) for every image, stylesheet or font the island named that could not be read. A panic inside Stylo or
-Blitz is a `RENDER` error, a bad request `INVALID_ARG`, a font file that cannot be read `RENDER`.
+The CLI's bundler (`cli/src/css.ts`) no longer drops `.css`: each import becomes a module that calls
+`registerStylesheet(text, file)` when the project loads.
 
-### 7.2 The document
+- Local `@import`s are inlined (an `@import` with a media query becomes an `@media` block, cycles are cut); relative
+  `url()`s that name an existing file become absolute paths; remote ones are left alone.
+- `@font-face` rules (in imports, `<style>` elements and linked files) register their file with the font registry,
+  as `new FontFace(...)` does (the first local `url()`, `unicode-range` as for `FontFace`); a remote source is a note.
+- `*.module.css`: class names are scoped (`.title` becomes `.title_<hash>`), the default export and the named exports
+  map them; `:global(...)` is left alone.
+- **Tailwind.** A file with `@tailwind` directives or `@import "tailwindcss"` is built by the project's own Tailwind,
+  tried in this order: its `tailwindcss` CLI (`node_modules/.bin`, v3 or `@tailwindcss/cli` v4; `-i file -o out` in the
+  project root), Tailwind 4's `compile()` from the installed `tailwindcss` package (stylesheets resolved from the
+  package, class candidates scanned from the project's `.ts/.tsx/.js/.jsx/.html/.md(x)` files; about 0.25 s for the
+  papercut episode), PostCSS with `@tailwindcss/postcss` or v3's plugin. If none works the file is registered as it
+  is, the bundle warns, and `doctor` prints a "stylesheets:" note.
+- A project's already-built CSS file is any other stylesheet.
+- The Chrome fallback bundle puts the same text in `<style>` elements, so `doctor --compare` references have the CSS.
 
-```
-<html> <head> <style>request.stylesheets[0]</style> … </head>
-       <body>                                         margin 0 (ua.rs)
-         <div data-kg-island style="position: relative; display: block; width: Wpx; height: Hpx">
-           …the DomNode tree…
-```
+### 10.3 Readback
 
-- **Containing box.** The island is laid out as CSS lays out a child of a `position: relative` block of the
-  composition's size: percentages, `auto` margins, `inset: 0` and `vw`/`vh` of the root resolve against the composition.
-  `Viewport` is the same size, so `@media (min-width)` and `vw` units use the composition.
-- **Elements.** `tag` is lower-cased unless the element is in SVG (`<svg>` and everything below it except under
-  `foreignObject`), where it keeps its case and is in the SVG namespace; attribute names likewise (`xlink:href` gets the
-  XLink namespace). `style` is the `style` attribute (it wins over `attrs.style`); `<script>` is dropped. A `native`
-  node is `<kg-native>` (`display: block`, `width`/`height` as given or 0).
-- **Stylesheets.** `request.stylesheets` become `<style>` elements in `<head>`, in order, before the tree's own
-  `<style>` elements, so source order is document order. Blitz decodes HTML entities in `<style>` text; `&` is escaped
-  to survive that. `<link rel=stylesheet>` and `@import` load from the project's files (7.4).
-- **UA stylesheet** (`ua.rs`): Blitz's `default.css` (Gecko's `html.css`: Chrome's block/inline defaults, heading and
-  list margins, `b`/`i`, `[hidden]`) plus: `html, body { margin: 0 }`, Chrome's `overflow: hidden` for non-root
-  `svg`, `kg-native { display: block }`, `kg-spacer` (7.6). Form controls keep Gecko's look, not Chrome's.
-- **CSS switched on** (Stylo ships them off): `:has()`, `:nth-child(of S)`, `@container` (parsed; Blitz does not
-  evaluate container sizes, so it never applies), `@scope`, `@starting-style`. `@layer`, `@supports`, `@media`,
-  `calc()`/`min()`/`clamp()`, custom properties, nesting, `color-mix()`, grid, multicol, `:is`, `:where` work as they are.
-- **Threading.** Style traversal runs sequentially in the calling thread (`StyleThreading::Sequential`), so concurrent
-  calls from Node workers are safe.
+React refs to DOM host elements are `DomElement` objects (`compat/src/shim/element.ts`), made by the reconciler's
+`getPublicInstance`. They answer from the addon, for the element's island (`react/src/readback.ts`): the island is the
+outermost run of DOM elements above the element (a native element ends it; a fill that is a `div` starts it), sent as
+the same request a frame is drawn from, and `domLayoutBoxes` / `domComputedStyle` answer for it. Answers are cached
+until the tree changes (`generation`: bumped by every commit, before layout effects run, and by a script's writes).
 
-### 7.3 Fonts
+- `getBoundingClientRect`, `getClientRects`, `offsetWidth/Height/Left/Top/Parent`, `clientWidth/Height/Left/Top`,
+  `scrollWidth/Height` (offsets relative to the nearest positioned ancestor, else the island's origin);
+  `getComputedStyle(el)` (also the global) reads one property per question (`domComputedStyle`); without the addon
+  function it reads the inline style.
+- `matches`, `closest`, `querySelector(All)`, `getElementsBy…`, `contains`, `parentElement`, `children`, `textContent`,
+  `classList`, `dataset`, `getAttribute/setAttribute/removeAttribute`, `style` (read, and write: a script's changes are
+  laid over the props and are part of the next request, as in a DOM) and event listeners (nothing fires them).
+  `document.querySelector/getElementById/…` search every root.
+- SVG: `getTotalLength`, `getPointAtLength` and `getBBox` of `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
+  `polygon` use the path functions of `@kinetograph/core/paths` (handed over by `web/install`); a group's `getBBox` is
+  the union of its children's, with their `transform` attributes applied.
+- `ResizeObserver` and `IntersectionObserver` deliver after React's work is done and layout is settled: a callback that
+  sets state makes the root render again before the frame is emitted; resize observers fire when the border-box
+  size differs from the last one delivered (an element that is 0 by 0 is not reported first, as in the spec), and
+  carry `contentRect`, `borderBoxSize`, `contentBoxSize`. Everything is intersecting, ratio 1, reported once.
+  `MutationObserver` never fires. Observer rounds are capped at 8 per settle.
+- **Measure-then-render.** A `useLayoutEffect` or `useEffect` that measures and sets state re-renders within the
+  frame; the root settles until nothing is pending. A ninth tree generation measured within one frame (or the ninth
+  pass of a passive-effect loop) is an error that says an effect keeps measuring and setting state.
+- `measureText` and `fitText` (`@remotion/layout-utils`) put the text in a `span` (`white-space: pre`, out of flow) in
+  the DOM engine and read its box, as Remotion reads Chrome's: the line rounds as the DOM rounds it,
+  `letterSpacing`, `textTransform` and `additionalStyles` apply by CSS. Without the addon the text engine's own measure
+  answers.
 
-`request.fonts` maps a font key to a file; **the keys are `fontKey` of `@kinetograph/scene`** (`Inter` for 400 normal,
-`Inter:800`, `Inter:400i`), not `family:weight:style`. Each file (relative paths resolve against `baseDir`) is read,
-unpacked if WOFF or WOFF2 (`blitz_dom::decode_font_bytes`, `wuff`) and registered in Parley under the key's family name,
-weight and style. CSS font matching then does the rest: the `font-family` stack in order, names case-insensitive, the
-weight search of CSS Fonts 4 (700 and 900 go to a registered 800; 300 and 500 to a registered 400), `italic` to an
-italic face. The old "no registered font at weight 800" cases were a matching bug of the TypeScript path.
+### 10.4 Web APIs and time
 
-- **No system fonts.** A generic family (`sans-serif`, `serif`, `monospace`, `system-ui`, …) and a stack that names
-  nothing registered fall back to the registered families in key order, never to a font of the machine; `monospace`
-  and `ui-monospace` try the fixed-pitch fonts first (the `post` table's flag), the others try them last.
-- **A face stays at its weight.** Google serves a font for one weight as a variable file (`inter-800-latin.woff2` has a
-  `wght` axis, default 400). fontique set the axis to the requested weight, so `font-weight: 400` text drew the 400
-  instance of a file registered as 800; a browser clamps to the `@font-face` weight and draws 800. `vendor/fontique`
-  (see `vendor/README.md`) adds `FontInfoOverride::pin_weight`, and `fonts.rs` sets it for every registered font: the
-  axis stays at the key's weight, and a request more than 200 heavier than the face gets the faux bold. This is the one
-  patched dependency of this stream; `[patch.crates-io] fontique` in the root `Cargo.toml` wires it.
-- Decoded font bytes are cached by path, size and modification time (`fonts.rs`), so a frame does not unpack WOFF2
-  again; registering is lazy in Parley (0.01 ms).
-- `@font-face` in a stylesheet works too (`url()` resolved like images; registered by the descriptor's family, weight
-  and style).
+`@kinetograph/core/web/install` (imported by the Node bundle after the determinism shim; not in the Chrome bundle) puts
+these on the global object where they are missing:
 
-### 7.4 Files: images, stylesheets, fonts
+- `window` (is `globalThis`), `self`, `innerWidth/Height` and `outerWidth/Height` (the composition's size, set by
+  `createSceneRoot({ viewport })`), `devicePixelRatio` 1, `screen`, `location` (`http://localhost/`), `history`,
+  `localStorage` and `sessionStorage` (in memory, empty at every start), `requestIdleCallback`;
+- `matchMedia`: `screen`, `width`/`height` features and their `min-`/`max-` forms, `orientation`, `aspect-ratio`,
+  `prefers-reduced-motion: no-preference`, `prefers-color-scheme: light`, `hover: none`, 1x resolution; `not`, `and`
+  and comma lists; `change` never fires;
+- `new Image()`: `src` of a project file (absolute, relative to the entry, or in `public/`), a `data:` URL or an
+  in-memory blob; `naturalWidth/Height` from the file's header (PNG, JPEG, GIF, WebP, BMP, SVG), `onload`, `onerror`
+  (with `message`), `addEventListener`, `decode()`; a missing file, a non-image or a remote URL is an `error`;
+- `fetch` of project files (the same lookup; `staticFile()` URLs are absolute paths), `data:` and `blob:` URLs; a
+  remote URL rejects with "remote URLs are not available: Kinetograph renders offline"; the font downloads keep the real
+  `fetch` (explicit, cached);
+- `URL.createObjectURL` for blobs is Node's own;
+- `document`: `createElement` (a detached node, never drawn), `createElement('canvas')` and `getContext` throw
+  "canvas is not supported yet", `body`/`documentElement` with the composition's size, queries over the host tree,
+  `fonts` (the `FontFace` shim);
+- `Element`, `HTMLElement`, `SVGElement`, `HTMLImageElement`, `DOMRect`, the three observers.
+- `crypto.getRandomValues` and `randomUUID` draw from the seeded `Math.random` generator.
 
-`net.rs` is the document's `NetProvider`. No network: `http(s):` is "not available" (listed in `missing`). A `file:`
-URL names a file as it is; if there is none, the same path read against `publicDir`, then `baseDir`
-(`/logo.png`, `logo.png`, `./logo.png`, `fonts/x.woff2` all work). `data:` URLs work. Relative URLs in markup and CSS
-resolve against `baseDir` (the document's base URL is `file://<baseDir>/`).
+Time: `Date`, `performance.now`, timers and `requestAnimationFrame` were already driven by the frame
+(`core/src/determinism.ts`); `requestAnimationFrame` callbacks run once per frame with the frame time, before the frame
+renders. CSS `@keyframes` animations and transitions read `request.time`; nothing in TypeScript reads a wall clock.
 
-- Requests are answered synchronously in the calling thread, so `<img>` has its intrinsic size when layout runs.
-  `background-image: url()` and `mask-image: url()` are found while styles are computed, so `resolve` runs the style
-  and layout pass again (incrementally) when a request was answered during one, up to 4 times.
-- **Images are decoded once** and kept between documents, keyed by path, size and modification time (at most 512 MB
-  of pixels, then the cache starts over). Decoding the papercut's 512 px grain texture took about 4 ms of a 5 ms frame
-  before this. A cached picture is the same `Arc<Vec<u8>>` in every frame's document, which the painter can use as a key.
-  Rasters decode as Blitz does (`image` crate, straight RGBA8); SVG images parse with usvg and **no system fonts**
-  (Blitz would load the machine's).
-- A file that cannot be read stays in `IslandDocument::missing` and becomes an `unsupported` item (7.1).
+### 10.5 doctor and the corpus harness
 
-### 7.5 CSS animations and transitions
+`doctor` reports the unsupported items Rust returns, plus a "stylesheets" note for what the bundle could not do.
+`--compare-every N` samples the first frame of the range and every Nth after it; `--compare-dir DIR` writes each sampled
+frame's native picture, Chrome's, and their difference (x4) as PNGs; the comparison counts pixels more than 2 levels
+apart and, separately, more than 48 (what is left after anti-aliasing and text rasterisation).
 
-`resolve(time)` of Blitz is Stylo's clock: nothing reads the wall clock. A document is new for every frame, and
-Stylo starts an animation at the clock of the first style pass, so `document::resolve` styles at 0 and then moves to
-`request.time`: the animation's progress is the time. Stylo moves an animation on by one iteration per style pass, so
-reaching the Nth iteration takes N passes; the count comes from the computed `animation-*` values and is capped at
-2000 passes. Tested: `@keyframes` on `width`, `opacity`, easing, delay, `both` fill, `infinite`, `alternate`, 2.5
-iterations, out of order and repeated times. **Transitions do not run**: a transition needs a style change between two
-style passes, and a frame has one style. Remotion forbids CSS transitions and animations for this reason; an
-animation is the way to make CSS move.
+`scripts/corpus.mjs` runs `doctor` on the episode 13 papercut project and prints: native frames of the total, the
+unsupported items with their frame counts, and with `--compare` (default every 30th frame) the per-frame differences;
+it writes `out/corpus/report.json` and the pictures.
 
-### 7.6 Inline elements: edges and boxes
+#### Numbers (2026-10-15, M4)
 
-Blitz lays an inline element (`span`, `b`, `a`) out as a style span of its inline root's text and **ignores its
-horizontal margin, border and padding** (text after a span with `padding: 0 20px` sat 66 px from where Chrome has
-it). `inline::add_edge_spacers` runs after the last style pass and gives the text those widths with zero-height
-`inline-block`s, `<kg-spacer style="width: Npx">`: the margin of each side outside the element, its border plus padding
-inside it (swapped for `direction: rtl`). Then `resolve` once more. Lines break and the following text moves as in
-Chrome; on a wrapped inline the left edge is on its first line and the right on its last (`box-decoration-break: slice`).
+First run, then the current one. Both: `node scripts/corpus.mjs --reference --every 30` (33 sampled frames of 988).
 
-**For the painter (stream 2):**
-- `inline::fragments(doc, id) -> Option<Vec<Fragment { rect, baseline }>>` returns the pieces of a non-atomic inline,
-  one per line, in document coordinates, as `getClientRects()` does: x from the glyphs and spacers inside the element
-  (so the rect **already includes the left/right padding and border** on the lines that have them; do not add them
-  again), y from the content area of the element's font (ascent and descent rounded to whole pixels, as Chrome rounds
-  them) grown by the vertical padding and border, no hanging whitespace at a line end. Blitz's own
-  `Node::inline_fragment_boxes` is the line box and ignores all of this.
-- A node named `kg-spacer` paints nothing and has no path; skip it. Elements with `data-kg-path` are the ones the
-  request had.
-- `inline::edges(node, basis) -> Edges` gives the margin/border/padding of an element in CSS pixels (`border-style:
-  none` is 0 width, which Stylo's computed `border-width` does not do).
-- Known gaps: a break opportunity exists between a spacer and the first word (an inline can start a line with only its
-  padding at the end of the previous one, rarely); collapsible whitespace at the start of a padded inline does not
-  collapse with the one before it; `vertical-align: sub|super|<length>` on text spans does nothing (Parley); a
-  block-level `::before`/`::after` on an element whose other content is text is dropped from layout (Blitz).
+**Current**: `engine/runtime` merged with `engine/front@97180a0`, `engine/paint@c233112` (which has `engine/svg` in it).
+The painter now leaves the `native` placeholder layers (a two-line addition on this branch, `7783f89`, for stream 2 to
+keep or replace; without it every native element inside DOM lost its content). 153 s for the whole run.
 
-### 7.7 Readback
+- **Native frames: 988 of 988**, Chrome frames 0. This counts frames, not fidelity: the painter reports no
+  unsupported item on any frame yet.
+- **Against the real Remotion render** (`out/mods-papercut.mp4` in the project; same sources and frame count; H.264, so
+  a few levels of noise everywhere): mean difference 3.5 to 16.4 levels (median 4.9), PSNR 16.7 to 31.2 dB, 4669 to
+  333 279 pixels (0.2% to 16%) more than 48 levels apart, 2 470 423 summed over the 33 frames. Best: frames 840 (4669),
+  360 (8297), 210 to 300, 330, 390 to 450, 720, 870 to 960 (8 to 18 thousand). Worst: 600 (333 279), 750 to 810
+  (198 to 252 thousand), 0, 90, 120, 480 to 570 (90 to 125 thousand). Frame 600 is the rip scene: the native frame has the
+  crack and a cream panel at the left that the mp4 does not, and the Chrome fallback's picture has the crack too, so the mp4
+  may not be frame-exact there.
+- **Against the Chrome fallback's own picture** (`--compare --every 120`, 9 frames; a page of our own, not Remotion's):
+  pixels more than 48 levels apart 2 204 458 summed, mostly frame 840 (1 595 312), where that page is shifted down by half
+  the height (its `Sequence` wrapper is a zero-size positioned `div`); the others 8 thousand to 267 thousand.
+- **JS stage** (React, emit, request, Rust style/layout/paint, JSON) for all 988 frames through `doctor`: about 60 s, 60
+  ms a frame. Frames 30 to 50: 224 ms a frame, 138 ms of it in `renderDomIsland` (3 islands a frame, 430 KB of request and
+  480 KB of answer); frames 500 to 520: 133 ms, 84 ms in Rust. Rust is about 65%; React in development mode is about
+  25 ms of the rest (`NODE_ENV=production` would save roughly half of that, at the price of React's minified error
+  messages, so it is not set). Drawing a corpus frame on the GPU takes 5 to 10 s (6661 layers at frame 30): the
+  compositor's, not this stream's.
+
+**First run** (`engine/paint@6fa5b1c`, same placeholder patch): native 988 of 988; mean 4.2 to 28 levels, PSNR 15.8 to
+29.0 dB, 8755 to 384 196 pixels more than 48 apart, 3 559 263 summed.
 
 `domLayoutBoxes` answers `{ [path]: ElementBox }` for every element and native placeholder (`display: none` and
 `display: contents` are all zeros):
@@ -362,3 +382,7 @@ islands for it. Chrome is for the tools only; the engine never starts one.
 - Image pixels come from `node.element_data().special_data` (`SpecialElementData::Image`) and `background_images` /
   `mask_images` as Blitz fills them; the pixel `Arc` is shared across frames.
 - `tests/common/mod.rs` (JSON request helpers, `bounds`) is meant to be shared: stream 2's golden tests can use it.
+
+What to fix first, from the pictures (not from `doctor`, which has nothing yet): `filter: url(#...)` on the tape banners
+and signs (the text is clipped to the filter region, "DELET" and "GUAR"), the SVG filters (`rough`, `torn`), the grain
+texture and multiply blend of the paper, and the rip transition's clip.

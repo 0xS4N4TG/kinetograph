@@ -4,7 +4,8 @@
 // concatenation) is worked out here, in one pass, each time a tree is asked
 // for. Nothing here reads time: `<Lottie>` and `<Audio>` already resolved it.
 
-import { isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
+import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
+import { propsWithOverlay } from '@kinetograph/compat/shim';
 import {
   fontKey,
   type AudioClipJson,
@@ -41,6 +42,10 @@ export interface RenderedTree {
   sequences: SequenceJson[];
   /** What DOM elements in the tree ask for that compat mode cannot draw natively (docs/COMPAT.md §6.1). */
   unsupported: Unsupported[];
+  /** The least scene `margin` the DOM islands need for their blurs (docs/ENGINE.md §2); absent when none does. */
+  margin?: number;
+  /** `srgb` when any DOM island was painted for it (ENGINE.md §2); absent otherwise. */
+  blendSpace?: 'srgb';
 }
 
 /** What `emit` needs to know to draw DOM elements (docs/COMPAT.md §2). */
@@ -51,6 +56,8 @@ export interface EmitOptions {
   fonts?: () => Record<string, string>;
   /** Leave DOM elements out instead of drawing them (composition discovery, which wants only the `<Composition>`s). */
   ignoreDom?: boolean;
+  /** The clock CSS animations and transitions read, in seconds (frame / fps), asked for when an island is drawn. */
+  time?: () => number;
 }
 
 /** The name of an element as a user writes it, for error messages. */
@@ -158,21 +165,92 @@ function charsOf(chars: unknown, text: string): (CharStyle | null)[] {
   return all.map((char, index) => chars(char, index, all.length) ?? null);
 }
 
+/** Whether any DOM element is in `nodes` or below them (through native elements and `<Sequence>`s too). */
+function holdsDom(nodes: HostNode[]): boolean {
+  return nodes.some((n) => n.kind === 'element' && (isDomElement(n.type) || holdsDom(n.children)));
+}
+
+/**
+ * `<AbsoluteFill>` (and the wrapper of a `<Sequence>` or `<Loop>`, which is one in Remotion) as the `div` it is in
+ * Remotion, when what is inside it holds DOM elements or it sits inside DOM already: a column flex box over
+ * the whole page with the author's style laid over it, so that `justifyContent`, `alignItems` and the rest place the
+ * DOM children as CSS does. A tree of native elements only keeps the layer mapping (the hand ports render as before).
+ * Null for any other element.
+ */
+export function domFillOf(element: HostElement, insideDom = false): HostElement | null {
+  if (element.type !== 'kg-layer') return null;
+  const fill = element.props.domFill as { style: Record<string, unknown>; id?: string; background: boolean } | undefined;
+  // Inside DOM it always is the `div` (CSS has no native layer to put in a flow); outside, only when DOM is inside it.
+  if (fill === undefined || (!insideDom && !holdsDom(element.children))) return null;
+  return {
+    kind: 'element',
+    type: 'div',
+    props: {
+      ...(fill.id !== undefined ? { id: fill.id } : {}),
+      style: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...fill.style },
+    },
+    // The layer mapping's own background rectangle is the style's `backgroundColor` here.
+    children: fill.background ? element.children.slice(1) : element.children,
+  };
+}
+
+/**
+ * A DOM element with each `<Sequence>` inside it replaced by what is inside that (and, when `sequences` is given,
+ * recorded there), so a Sequence takes no place in the paths (docs/AUTHORING.md §11.4). Native elements are kept as
+ * they are: they are emitted on their own.
+ */
+export function flattenDomElement(element: HostElement, path: string, sequences: SequenceJson[] | null): HostElement {
+  // A script's writes to `style` and attributes (through a ref) are laid over the props.
+  return { ...element, props: propsWithOverlay(element), children: flattenDomChildren(element.children, path, { next: 0 }, sequences) };
+}
+
+function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next: number }, sequences: SequenceJson[] | null): HostNode[] {
+  const out: HostNode[] = [];
+  for (const child of nodes) {
+    if (child.kind === 'text') {
+      out.push(child);
+    } else if (child.type === 'kg-sequence') {
+      const { sequence, wrapped } = child.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
+      const record: SequenceJson = { ...sequence, layer: null };
+      sequences?.push(record);
+      const first = place.next;
+      const inner = flattenDomChildren(child.children, parentPath, place, sequences);
+      out.push(...inner);
+      if (wrapped && place.next > first) {
+        const head = inner.find((n): n is HostElement => n.kind === 'element');
+        if (head !== undefined) record.layer = typeof head.props.id === 'string' ? head.props.id : `${parentPath}.${first}`;
+      }
+    } else {
+      const path = `${parentPath}.${place.next++}`;
+      // An `<AbsoluteFill>` that holds DOM elements, inside DOM, is part of the same CSS tree: its `div`.
+      const node = isDomElement(child.type) ? child : (domFillOf(child, true) ?? child);
+      out.push(isDomElement(node.type) ? flattenDomElement(node, path, sequences) : node);
+    }
+  }
+  return out;
+}
+
 class Emitter {
   readonly layers: LayerJson[] = [];
   readonly cameras: CameraJson[] = [];
   readonly audio: AudioClipJson[] = [];
   readonly sequences: SequenceJson[] = [];
   readonly unsupported: Unsupported[] = [];
+  /** The largest `margin` any island asked for. */
+  margin = 0;
+  blendSpace: 'srgb' | null = null;
   private readonly ids = new Set<string>();
 
-  constructor(private readonly options: EmitOptions = {}) {}
+  private sheets: string[] | null = null;
 
-  /** Claims an explicit id for a DOM element's layer: false when it is reserved or taken. */
-  private claim(id: string): boolean {
-    if (id.startsWith('$') || this.ids.has(id)) return false;
-    this.ids.add(id);
-    return true;
+  constructor(
+    private readonly options: EmitOptions = {},
+    private readonly roots: HostNode[] = [],
+  ) {}
+
+  /** Document-wide CSS: the project's imported files, then every `<style>` element in the tree, in order. */
+  private stylesheets(): string[] {
+    return (this.sheets ??= [...importedStylesheets(), ...collectStyleElements(this.roots)]);
   }
 
   /**
@@ -187,47 +265,21 @@ class Emitter {
         `<${root.type}> is a DOM element, which is laid out in the composition's box: create the root with createSceneRoot({ viewport: { width, height } })`,
       );
     }
-    const result = mapDomIsland(this.flattenElement(root, path), {
+    const result = mapDomIsland(flattenDomElement(root, path, this.sequences), {
       path,
       viewport,
       fonts: this.options.fonts?.() ?? {},
       emitNative: (node, at) => this.element(node as HostElement, at),
-      claimId: (id) => this.claim(id),
+      time: this.options.time?.() ?? 0,
+      stylesheets: this.stylesheets(),
     });
     this.unsupported.push(...result.unsupported);
+    if (result.margin !== undefined) this.margin = Math.max(this.margin, result.margin);
+    if (result.blendSpace === 'srgb') this.blendSpace = 'srgb';
     // One camera serves the tree: the same one asked for twice is one.
     const { camera } = result;
     if (camera !== null && !this.cameras.some((c) => JSON.stringify(c) === JSON.stringify(camera))) this.cameras.push(camera);
     return result.layers;
-  }
-
-  private flattenElement(element: HostElement, path: string): HostElement {
-    return { ...element, children: this.flattenChildren(element.children, path, { next: 0 }) };
-  }
-
-  /** The children of a DOM element with each `<Sequence>` replaced by what is inside it (and recorded). */
-  private flattenChildren(nodes: HostNode[], parentPath: string, place: { next: number }): HostNode[] {
-    const out: HostNode[] = [];
-    for (const child of nodes) {
-      if (child.kind === 'text') {
-        out.push(child);
-      } else if (child.type === 'kg-sequence') {
-        const { sequence, wrapped } = child.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
-        const record: SequenceJson = { ...sequence, layer: null };
-        this.sequences.push(record);
-        const first = place.next;
-        const inner = this.flattenChildren(child.children, parentPath, place);
-        out.push(...inner);
-        if (wrapped && place.next > first) {
-          const head = inner.find((n): n is HostElement => n.kind === 'element');
-          if (head !== undefined) record.layer = typeof head.props.id === 'string' ? head.props.id : `${parentPath}.${first}`;
-        }
-      } else {
-        const path = `${parentPath}.${place.next++}`;
-        out.push(isDomElement(child.type) ? this.flattenElement(child, path) : child);
-      }
-    }
-    return out;
   }
 
   /** The element's id: explicit (checked) or `$` + its index path among the host elements. */
@@ -280,6 +332,11 @@ class Emitter {
         out.push(...this.island(node, path));
         continue;
       }
+      const fill = domFillOf(node);
+      if (fill !== null) {
+        out.push(...this.island(fill, path));
+        continue;
+      }
       const layer = this.element(node, path);
       if (layer !== null) out.push(layer);
     }
@@ -298,7 +355,13 @@ class Emitter {
       case 'kg-audio':
         this.audio.push({ id, ...props.clip });
         return null;
-      case 'kg-layer':
+      case 'kg-layer': {
+        // A native element met inside an island (`emitNative`) can be an `<AbsoluteFill>` that holds DOM elements.
+        const fill = domFillOf(element);
+        if (fill !== null) {
+          const layers = this.island(fill, path);
+          return layers.length === 1 ? layers[0]! : ({ id, type: 'group', children: layers } as LayerJson);
+        }
         return {
           id,
           type: 'group',
@@ -306,6 +369,7 @@ class Emitter {
           ...commonOf(props, name),
           children: this.children(element.children, path, name),
         } as LayerJson;
+      }
       case 'kg-shape': {
         const kind = props.kind;
         let shape: Record<string, unknown>;
@@ -400,7 +464,7 @@ class Emitter {
 
 /** The scene JSON of a host tree (the children of the root). */
 export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
-  const emitter = new Emitter(options);
+  const emitter = new Emitter(options, roots);
   const layers = emitter.children(roots, '', 'the root of the tree');
   if (emitter.cameras.length > 1) {
     throw new Error(`Only one <Camera> is allowed per tree, found ${emitter.cameras.length}`);
@@ -411,5 +475,7 @@ export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
     audio: emitter.audio,
     sequences: emitter.sequences,
     unsupported: emitter.unsupported,
+    ...(emitter.margin > 0 ? { margin: emitter.margin } : {}),
+    ...(emitter.blendSpace !== null ? { blendSpace: emitter.blendSpace } : {}),
   };
 }

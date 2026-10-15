@@ -16,7 +16,10 @@ interface ProjectModule {
   setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
   setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
   setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
-  setLayoutDom(fn: typeof import('@kinetograph/native').layoutDom | null): void;
+  setDomAddon(addon: object | null): void;
+  setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
+  /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
+  stylesheetNotes(): string[];
   getFonts(): Record<string, string>;
 }
 
@@ -48,6 +51,8 @@ export interface Source {
   fonts?(): Record<string, string>;
   /** Where `staticFile` reads from. */
   publicDir?: string;
+  /** Problems with the project's stylesheets, for `doctor`. */
+  notes?(): string[];
   dispose(): void;
 }
 
@@ -105,6 +110,7 @@ async function loadProject(entry: string, bundleFile?: string): Promise<ProjectM
   // before setPublicDir below can.
   const publicDir = publicDirOf(entry);
   process.env.KINETOGRAPH_PUBLIC_DIR = publicDir;
+  process.env.KINETOGRAPH_BASE_DIR = dirname(entry);
   let mod: ProjectModule;
   try {
     mod = (await import(pathToFileURL(file).href)) as ProjectModule;
@@ -116,7 +122,9 @@ async function loadProject(entry: string, bundleFile?: string): Promise<ProjectM
   }
   mod.setPublicDir(publicDir);
   mod.setLayoutText(native().layoutText);
-  mod.setLayoutDom(native().layoutDom);
+  // The DOM engine: islands are styled, laid out and painted by the addon, relative paths resolve from the entry.
+  mod.setDomAddon(native());
+  mod.setDomEnvironment({ baseDir: dirname(entry), publicDir });
   // A relative `src` is read from where the scenes' assets are (the entry's directory), not the working directory.
   mod.setMediaProbe((path, baseDir) => native().probeMedia(path, baseDir ?? dirname(entry)));
   mod.setAudioDecoder((path, sampleRate) => native().decodeAudio(path, sampleRate, dirname(entry)));
@@ -195,6 +203,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
     inputProps,
     fonts: () => mod.getFonts(),
     publicDir: publicDirOf(absolute),
+    notes: () => mod.stylesheetNotes(),
     dispose: () => renderer.dispose(),
   };
 }

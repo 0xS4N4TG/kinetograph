@@ -523,6 +523,11 @@ export interface SceneJson {
    * reach, whichever is more (SCENE.md "Canvas margin"). Default 0.
    */
   margin?: number;
+  /**
+   * The space layers are composited in: `linear` (default) or `srgb`, as CSS does (SCENE.md "Blend space"). A tree with
+   * DOM islands asks for `srgb`: the painter writes its layers for it (ENGINE.md §10.1).
+   */
+  blendSpace?: 'linear' | 'srgb';
   /** Font key to font file. */
   fonts?: Record<string, string>;
   camera?: CameraJson;

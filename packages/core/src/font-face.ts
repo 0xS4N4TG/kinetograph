@@ -75,7 +75,7 @@ export class NodeFontFace {
   }
 }
 
-function addFace(face: NodeFontFace): void {
+export function addFace(face: NodeFontFace): void {
   const weight = WEIGHTS[face.weight] ?? (Number.isFinite(Number(face.weight)) ? Number(face.weight) : 400);
   const style = face.style === 'italic' || face.style === 'oblique' ? 'italic' : 'normal';
   const key = `${face.family}:${weight}:${style}`;

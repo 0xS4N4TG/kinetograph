@@ -25,6 +25,10 @@ export interface DoctorCompare {
   meanDiff: number;
   /** Pixels with any channel more than 2 levels apart. */
   differingPixels: number;
+  /** Pixels with any channel more than 48 levels apart: what is left once anti-aliasing noise is set aside. */
+  largeDiffPixels?: number;
+  /** The pictures written for this frame (`--compare-dir`). */
+  files?: { native: string; chrome: string; diff: string };
 }
 
 export interface DoctorReport {
@@ -41,6 +45,8 @@ export interface DoctorReport {
   /** Most frames first. */
   issues: DoctorIssue[];
   compare?: DoctorCompare[];
+  /** Problems with the project's stylesheets that no frame shows (Tailwind that could not be built, a remote font). */
+  notes?: string[];
 }
 
 /** The most values and element paths an issue lists. */

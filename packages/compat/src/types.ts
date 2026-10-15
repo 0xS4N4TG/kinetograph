@@ -18,11 +18,13 @@ export interface IslandContext {
   fonts: Record<string, string>;
   /** Emits a native (`kg-*`) element found inside the island, as the reconciler would at `path`. */
   emitNative(node: DomNode, path: string): LayerJson | null;
-  /**
-   * Claims an explicit `id` of a DOM element as a layer id: true when it is free (and so is used), false when another
-   * layer has it. Without it every explicit id is taken. (An addition to the contract: ids are unique across a tree.)
-   */
-  claimId?(id: string): boolean;
+  /** Seconds (frame / fps): the clock CSS animations and transitions read. Default 0. */
+  time?: number;
+  /** Where relative `src` and `url()` resolve, then `publicDir`. Default: the DOM environment's. */
+  baseDir?: string;
+  publicDir?: string;
+  /** Document-wide CSS: imported files, then every `<style>` element of the tree. Default: the imported ones. */
+  stylesheets?: readonly string[];
 }
 
 export interface IslandResult {
@@ -30,6 +32,10 @@ export interface IslandResult {
   unsupported: Unsupported[];
   /** From a `perspective` property (docs/COMPAT.md §4.3). */
   camera: CameraJson | null;
+  /** The least scene `margin` (pixels) the island needs, for the blurs that reach past their layers (docs/ENGINE.md §2). */
+  margin?: number;
+  /** The scene's `blendSpace` the island is painted for (ENGINE.md §2). */
+  blendSpace?: 'linear' | 'srgb';
 }
 
 export type RenderPath = 'native' | 'chrome';
