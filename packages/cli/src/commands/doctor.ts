@@ -109,6 +109,7 @@ export function formatReport(report: DoctorReport): string {
       lines.push(`     at ${issue.paths.join(', ')}`);
     });
   }
+  if (report.notes) lines.push('', 'stylesheets:', ...report.notes.map((note) => `  ${note}`));
   if (report.compare) {
     lines.push('', 'native against Chrome (differences in levels, 0..255):');
     for (const c of report.compare) {
@@ -170,6 +171,8 @@ export const doctor: Command = {
       const sampled = compare === undefined ? [] : evenFrames(first, last, compare);
       const { frames, scenes } = await scan(source, first, last, new Set(sampled), context.progress);
       const report = summarize(source.composition.id, frames);
+      const notes = source.notes?.() ?? [];
+      if (notes.length > 0) report.notes = notes;
 
       if (compare !== undefined) {
         context.progress('starting Chrome');

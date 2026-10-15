@@ -5,6 +5,7 @@
 import { dirname, resolve } from 'node:path';
 import { build, type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { CLI_DIR, entryPlugin, familyFromModule, resolveSpecifier } from '../bundle.js';
+import { cssPlugin } from '../css.js';
 import { CliError } from '../errors.js';
 
 export interface BrowserBundleSettings {
@@ -212,8 +213,8 @@ export function browserBundleOptions(entry: string, settings: BrowserBundleSetti
     target: 'chrome120',
     jsx: 'automatic',
     logLevel: 'silent',
-    loader: { '.css': 'empty' },
-    plugins: [entryPlugin(absolute), aliasPlugin()],
+    // Stylesheets reach the page as <style> elements, so Chrome draws what the engine is compared with.
+    plugins: [entryPlugin(absolute), aliasPlugin(), cssPlugin({ target: 'browser', fileUrl: (file) => `/@file?path=${encodeURIComponent(file)}` })],
     define: {
       'process.env.NODE_ENV': '"production"',
       'process.env.KINETOGRAPH_PUBLIC_DIR': JSON.stringify(settings.publicDir),

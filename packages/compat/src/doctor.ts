@@ -41,6 +41,8 @@ export interface DoctorReport {
   /** Most frames first. */
   issues: DoctorIssue[];
   compare?: DoctorCompare[];
+  /** Problems with the project's stylesheets that no frame shows (Tailwind that could not be built, a remote font). */
+  notes?: string[];
 }
 
 /** The most values and element paths an issue lists. */

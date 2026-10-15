@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
+import { cssPlugin } from './css.js';
 import { CliError } from './errors.js';
 
 /** The package directory of the CLI: the bundle's `@kinetograph/*` imports resolve from here, so one copy of each. */
@@ -120,13 +121,14 @@ export function entryPlugin(absolute: string): Plugin {
 export function syntheticEntry(entry: string): string {
   return [
     `import '@kinetograph/core/determinism/install';`,
+    `import '@kinetograph/core/web/install';`,
     `import ${JSON.stringify(entry)};`,
     `export * from '@kinetograph/core';`,
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
     `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
-    // DOM elements are laid out by the addon too (docs/COMPAT.md §5.1).
-    `export { setLayoutDom } from '@kinetograph/compat/dom';`,
+    // DOM elements are styled, laid out and painted by the addon too (docs/ENGINE.md §2).
+    `export { setLayoutDom, setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
     '',
   ].join('\n');
 }
@@ -172,9 +174,9 @@ function bundleOptions(absolute: string): BuildOptions {
     sourcemap: 'inline',
     logLevel: 'silent',
     external: EXTERNAL,
-    // Stylesheets are not read (docs/COMPAT.md §2): an `import './index.css'` (Tailwind's, say) bundles to nothing.
-    loader: { '.css': 'empty' },
-    plugins: [entryPlugin(absolute), aliasPlugin()],
+    // An `import './index.css'` registers the stylesheet's text for the DOM engine (docs/ENGINE.md §1); Tailwind's
+    // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
+    plugins: [entryPlugin(absolute), aliasPlugin(), cssPlugin({ target: 'node' })],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };
