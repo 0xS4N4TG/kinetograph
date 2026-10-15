@@ -53,20 +53,20 @@ const fmt = (n: number): string => String(r3(n));
 /** Path data of the rectangle `(x, y, w, h)` with `radii`, clockwise from the top edge. */
 export function boxPath(x: number, y: number, w: number, h: number, radii: Radii): string {
   const { tl, tr, br, bl } = radii;
-  const corner = (r: [number, number], toX: number, toY: number): string =>
-    r[0] > 0 && r[1] > 0 ? `A${fmt(r[0])} ${fmt(r[1])} 0 0 1 ${fmt(toX)} ${fmt(toY)}` : `L${fmt(toX)} ${fmt(toY)}`;
-  return [
-    `M${fmt(x + tl[0])} ${fmt(y)}`,
-    `L${fmt(x + w - tr[0])} ${fmt(y)}`,
-    corner(tr, x + w, y + tr[1]),
-    `L${fmt(x + w)} ${fmt(y + h - br[1])}`,
-    corner(br, x + w - br[0], y + h),
-    `L${fmt(x + bl[0])} ${fmt(y + h)}`,
-    corner(bl, x, y + h - bl[1]),
-    `L${fmt(x)} ${fmt(y + tl[1])}`,
-    corner(tl, x + tl[0], y),
-    'Z',
-  ].join(' ');
+  const round = (r: [number, number]): boolean => r[0] > 0 && r[1] > 0;
+  const arc = (r: [number, number], toX: number, toY: number): string => `A${fmt(r[0])} ${fmt(r[1])} 0 0 1 ${fmt(toX)} ${fmt(toY)}`;
+  const parts = [`M${fmt(x + (round(tl) ? tl[0] : 0))} ${fmt(y)}`, `L${fmt(x + w - (round(tr) ? tr[0] : 0))} ${fmt(y)}`];
+  if (round(tr)) parts.push(arc(tr, x + w, y + tr[1]));
+  parts.push(`L${fmt(x + w)} ${fmt(y + h - (round(br) ? br[1] : 0))}`);
+  if (round(br)) parts.push(arc(br, x + w - br[0], y + h));
+  parts.push(`L${fmt(x + (round(bl) ? bl[0] : 0))} ${fmt(y + h)}`);
+  if (round(bl)) parts.push(arc(bl, x, y + h - bl[1]));
+  if (round(tl)) {
+    parts.push(`L${fmt(x)} ${fmt(y + tl[1])}`);
+    parts.push(arc(tl, x + tl[0], y));
+  }
+  parts.push('Z');
+  return parts.join(' ');
 }
 
 /**

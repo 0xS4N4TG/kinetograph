@@ -202,7 +202,12 @@ function mapBox(box: Box, mc: MapContext, parent: Origin): LayerJson | null {
     if (mode) fields.blendMode = mode;
     else bad('mixBlendMode', style.mixBlendMode, 'not a blend mode the engine has');
   }
-  if (style.clipPath !== undefined && style.clipPath !== 'none') fields.clip = clipFor(style.clipPath, border, env);
+  if (style.clipPath !== undefined && style.clipPath !== 'none') {
+    if ('fillRule' in style.clipPath && style.clipPath.fillRule === 'evenodd') {
+      bad('clipPath', 'evenodd', 'a clip with the even-odd fill rule is not drawn');
+    }
+    fields.clip = clipFor(style.clipPath, border, env);
+  }
 
   // The transform: the box's place and the CSS transform about its origin.
   const origin = transformOf(box, rect, fields, mc);
@@ -252,21 +257,24 @@ function mapBox(box: Box, mc: MapContext, parent: Origin): LayerJson | null {
     ];
   }
 
-  // A picture as the mask: the picture is a sibling that matte the content.
+  // A picture as the mask is a sibling that mattes everything the box paints.
   const maskImage = style.maskImage;
-  let maskLayers: LayerJson[] = [];
+  let result: LayerJson[] = [...layers, ...body];
   if (maskImage && maskImage.length > 0) {
     const masked = maskOf(box, geom, maskImage, badPaint, mc);
     if (masked !== null) {
-      if ('gradient' in masked) fields.mask = masked;
-      else {
-        maskLayers = [masked.layer];
-        body = [{ id: sub(box, 'masked'), type: 'group', matte: { layer: masked.layer.id, mode: 'alpha' }, children: body }];
+      if ('gradient' in masked) {
+        fields.mask = masked;
+      } else {
+        result = [
+          masked.layer,
+          { id: sub(box, 'masked'), type: 'group', matte: { layer: masked.layer.id, mode: 'alpha' }, children: result },
+        ];
       }
     }
   }
 
-  const children = [...layers, ...maskLayers, ...body];
+  const children = result;
   if (children.length === 0) return null;
   void origin;
   return { id: box.id, type: 'group', ...fields, children } as LayerJson;

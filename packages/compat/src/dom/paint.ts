@@ -138,7 +138,7 @@ export function resolveStops(
     for (let k = i; k < j; k += 1) at[k] = from + ((to - from) * (k - i + 1)) / (j - i + 1);
     i = j;
   }
-  return stops.map((stop, i) => ({ offset: r3(at[i]! * 1e3) / 1e3, color: colorString(stop.color, current) }));
+  return stops.map((stop, i) => ({ offset: Math.round(at[i]! * 1e6) / 1e6, color: colorString(stop.color, current) }));
 }
 
 function radialRadii(

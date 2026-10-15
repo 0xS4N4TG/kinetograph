@@ -1,12 +1,13 @@
 // COMPAT.md §4.2: a box is a group with .bg, .bg-N, .border and its children.
 
 import { describe, expect, it } from 'vitest';
+import type { Length } from '../../src/css/types.js';
 import { corners, div, em, find, hasAddon, ids, pct, px, rgb, run, sides } from './helpers.js';
 
 describe.skipIf(!hasAddon)('boxes', () => {
   it('is a group at its border box with a .bg rect and its children at their laid-out places', () => {
     const { root, unsupported, layers } = run(
-      div({ position: 'absolute', inset: sides(px(10), 'auto', 'auto', px(20)), width: px(300), height: px(100), backgroundColor: rgb(255, 0, 0) }, [
+      div({ position: 'absolute', inset: sides<Length | 'auto'>(px(10), 'auto', 'auto', px(20)), width: px(300), height: px(100), backgroundColor: rgb(255, 0, 0) }, [
         div({ width: px(50), height: px(20), backgroundColor: rgb(0, 0, 255) }),
         div({ width: px(50), height: px(30), backgroundColor: rgb(0, 255, 0) }),
       ]),

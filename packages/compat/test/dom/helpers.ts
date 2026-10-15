@@ -4,7 +4,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import type { LayerJson } from '@kinetograph/scene';
-import type { Length, ParsedStyle, Rgba } from '../../src/css/types.js';
+import type { Corners, Length, ParsedStyle, Rgba } from '../../src/css/types.js';
 import { mapStyledIsland, setLayoutDom, type LayoutDom, type StyledElement, type StyledNode } from '../../src/dom/index.js';
 import { Report } from '../../src/dom/tree.js';
 import type { DomNode, IslandContext, IslandResult } from '../../src/types.js';
@@ -17,7 +17,7 @@ export const pct = (value: number): Length => ({ unit: '%', value });
 export const em = (value: number): Length => ({ unit: 'em', value });
 export const rgb = (r: number, g: number, b: number, a = 1): Rgba => ({ r, g, b, a });
 export const sides = <T,>(top: T, right: T = top, bottom: T = top, left: T = right): [T, T, T, T] => [top, right, bottom, left];
-export const corners = (r: number): ParsedStyle['borderRadius'] => [
+export const corners = (r: number): Corners => [
   [px(r), px(r)],
   [px(r), px(r)],
   [px(r), px(r)],

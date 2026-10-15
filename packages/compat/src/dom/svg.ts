@@ -78,8 +78,8 @@ function lengthOf(value: unknown, of: number): number | null {
 }
 
 function color(value: string, current: Rgba): Rgba | null {
-  if (value.toLowerCase() === 'currentcolor') return current;
-  return parseColor(value);
+  const parsed = parseColor(value);
+  return parsed === 'currentcolor' ? current : parsed;
 }
 
 function paintsOf(el: StyledElement, parent: Paints): Paints {
@@ -90,7 +90,7 @@ function paintsOf(el: StyledElement, parent: Paints): Paints {
     return typeof v === 'string' ? v.trim() : undefined;
   };
   const c = text('color');
-  if (c !== undefined) out.color = parseColor(c) ?? out.color;
+  if (c !== undefined) out.color = color(c, out.color) ?? out.color;
   const fill = pick('fill');
   if (typeof fill === 'string') out.fill = fill.trim();
   const stroke = pick('stroke');
