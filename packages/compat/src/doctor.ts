@@ -25,6 +25,10 @@ export interface DoctorCompare {
   meanDiff: number;
   /** Pixels with any channel more than 2 levels apart. */
   differingPixels: number;
+  /** Pixels with any channel more than 48 levels apart: what is left once anti-aliasing noise is set aside. */
+  largeDiffPixels?: number;
+  /** The pictures written for this frame (`--compare-dir`). */
+  files?: { native: string; chrome: string; diff: string };
 }
 
 export interface DoctorReport {
