@@ -42,6 +42,15 @@ export const ENTRY: PositionalSpec = {
 
 export const OUTPUT_OPTION: OptionSpec = { name: 'output', short: 'o', type: 'string', description: 'Output file path' };
 
+/** `--compat`, on the commands that draw frames (docs/COMPAT.md §6.1). */
+export const COMPAT_OPTION: OptionSpec = {
+  name: 'compat',
+  type: 'string',
+  description:
+    'Frames the native path cannot draw (Remotion compat): auto (default) draws them in Chrome, native leaves ' +
+    'out what it cannot draw and lists it, chrome draws every frame in Chrome',
+};
+
 export function allOptions(command: Command): OptionSpec[] {
   return command.project ? [...command.options, ...PROJECT_OPTIONS] : command.options;
 }

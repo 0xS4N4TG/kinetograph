@@ -235,7 +235,8 @@ pub fn layout_dom(request_json: String) -> Result<String> {
 }
 
 /// The picture a video layer shows `time` seconds after the stream's first
-/// picture, decoded on the CPU (docs/COMPAT.md §6.2).
+/// picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
+/// a gif layer shows at `time` seconds (the last one is held past the end).
 #[napi]
 pub fn video_frame(path: String, time: f64, base_dir: Option<String>) -> Result<RgbaFrame> {
     raw::video_frame(&resolve_base(base_dir).join(path), time)
@@ -601,19 +602,24 @@ impl Drop for VideoWriter {
 impl VideoWriter {
     /// Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
     /// §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
-    /// ordering rule as `pushFrame`.
+    /// ordering rule as `pushFrame`. Like a failed `pushFrame`, a failed
+    /// `pushRgba` ends the video.
     #[napi]
-    pub fn push_rgba(
-        &mut self,
-        _rgba: Buffer,
-        _width: u32,
-        _height: u32,
-        _frame: f64,
-    ) -> Result<()> {
-        Err(error(
-            Code::Render,
-            "not implemented: pushRgba (docs/COMPAT.md §6.2)",
-        ))
+    pub fn push_rgba(&mut self, rgba: Buffer, width: f64, height: f64, frame: f64) -> Result<()> {
+        let pushed = (|| {
+            let width = count("width", width)?;
+            let height = count("height", height)?;
+            let frame = count("frame", frame)?;
+            let shared = self.shared.clone();
+            let mut gpu = shared.lock();
+            self.writer()?
+                .push_rgba(&mut gpu, rgba.to_vec(), width, height, frame)
+                .map_err(from_render)
+        })();
+        if pushed.is_err() {
+            self.close();
+        }
+        pushed
     }
 
     /// Renders `frame` of this scene and queues it for encoding.
