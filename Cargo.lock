@@ -1836,6 +1836,7 @@ dependencies = [
 name = "kinetograph-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "dotlottie-rs",
  "ffmpeg-next",
  "glam",
@@ -1854,12 +1855,22 @@ dependencies = [
 name = "kinetograph-dom"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "euclid",
+ "image",
  "kinetograph-core",
+ "kurbo",
+ "parley",
+ "percent-encoding",
  "serde",
  "serde_json",
+ "stylo",
+ "stylo_traits",
+ "taffy",
+ "url",
 ]
 
 [[package]]

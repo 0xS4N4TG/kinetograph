@@ -83,24 +83,23 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// A `data:` URL, written once to a file named after its bytes.
+    /// A `data:` URL: the scene decodes it from memory (no file is written),
+    /// so the layer's `src` is the URL itself.
     fn data_source(&self, rest: &str) -> Source {
         let Some((meta, data)) = rest.split_once(',') else {
             return Source::Unsupported("a malformed data: URL".to_string());
         };
         let is_base64 = meta.ends_with(";base64");
         let mime = meta.split(';').next().unwrap_or("");
-        let ext = match mime {
-            "image/png" => "png",
-            "image/jpeg" | "image/jpg" => "jpg",
-            "image/gif" => "gif",
+        match mime {
+            "image/png" | "image/jpeg" | "image/jpg" | "image/gif" => {}
             "image/svg+xml" => {
                 return Source::Unsupported("an SVG picture is not drawn yet".to_string());
             }
             other => {
                 return Source::Unsupported(format!("the picture type {other:?} is not drawn"));
             }
-        };
+        }
         let bytes = if is_base64 {
             let clean: String = percent_decode(data).chars().filter(|c| !c.is_whitespace()).collect();
             match base64::engine::general_purpose::STANDARD.decode(clean.as_bytes()) {
@@ -110,21 +109,17 @@ impl<'a> Painter<'a> {
         } else {
             percent_encoding::percent_decode_str(data).collect()
         };
-        let dir = std::env::temp_dir().join("kinetograph-dom-data");
-        if std::fs::create_dir_all(&dir).is_err() {
-            return Source::Unsupported("no place to put a data: picture".to_string());
-        }
-        let path = dir.join(format!("{:016x}.{ext}", fnv(&bytes)));
-        if !path.exists() && std::fs::write(&path, &bytes).is_err() {
-            return Source::Unsupported("no place to put a data: picture".to_string());
-        }
-        match image::image_dimensions(&path) {
-            Ok((w, h)) => Source::Raster {
-                path: path.to_string_lossy().into_owned(),
+        let size = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .ok()
+            .and_then(|r| r.into_dimensions().ok());
+        match size {
+            Some((w, h)) => Source::Raster {
+                path: format!("data:{rest}"),
                 w: f64::from(w),
                 h: f64::from(h),
             },
-            Err(e) => Source::Unsupported(format!("cannot read a data: picture: {e}")),
+            None => Source::Unsupported("cannot read a data: picture".to_string()),
         }
     }
 }
@@ -133,13 +128,4 @@ fn percent_decode(s: &str) -> String {
     percent_encoding::percent_decode_str(s)
         .decode_utf8_lossy()
         .into_owned()
-}
-
-fn fnv(bytes: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in bytes {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    h
 }
