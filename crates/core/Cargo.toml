@@ -39,3 +39,9 @@ ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
 wuff = "0.2.9"
 base64 = "0.23"
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "block_layout"] }
+# The 3D layer (`scene3d`): glTF/GLB models, the triangulation of extruded
+# type and paths, and the glyph outlines that type is extruded from (the
+# version Parley and Vello already use).
+gltf = "1.4"
+lyon_tessellation = "1"
+skrifa = "0.44"
