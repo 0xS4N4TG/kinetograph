@@ -85,8 +85,9 @@ pub fn parse_request(json: &str) -> Result<IslandRequest, serde_json::Error> {
     Ok(request)
 }
 
-/// Switches on the CSS features Chrome has and Stylo ships off. They are
-/// process-wide and must be set before a document (its style system) is made.
+/// Switches on the CSS features Chrome has and Stylo ships off (`@container`
+/// needs the vendored Stylo, vendor/README.md). They are process-wide and must
+/// be set before a document (its style system) is made.
 pub fn enable_css_features() {
     style_config::set_pref!("layout.css.has-selector.enabled", true);
     style_config::set_pref!("layout.container-queries.enabled", true);

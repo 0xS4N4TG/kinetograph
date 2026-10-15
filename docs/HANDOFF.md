@@ -582,12 +582,18 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
 
 Remotion projects work unchanged when their effects are CSS, SVG or plain JS. These do not, and `doctor` reports
 them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only.
-1. **CSS gaps** (smallest). `line-clamp`: cut the shaped lines at N and add the ellipsis. Floats and tables: check
-   whether a newer Blitz lays them out before writing our own (an upgrade also means redoing the fontique patch).
-   `@container`: Stylo parses container queries; lay out once for the container sizes, restyle, lay out again. CSS
-   transitions: a transition starts when a value changes, which depends on the previous frame; to stay a pure
-   function of the frame, look back over the transition's duration for the frame the value changed and
-   interpolate from there.
+1. **CSS gaps** (done 2026-10-16, `feat/css-gaps`; the design and what is left are in `docs/ENGINE.md` §7.12).
+   - `-webkit-line-clamp` (the box's height is the Nth line's bottom, the ellipsis ends that line) and
+     `text-overflow: ellipsis`, which shares the ellipsis code.
+   - Floats: Blitz already laid them out; a line too narrow for any content now moves below the floats, and the
+     block's height counts the gap (vendored `blitz-dom`).
+   - Tables: backgrounds of rows, groups and columns, `border-collapse: collapse` borders laid out and drawn as Chrome
+     does, captions, and the automatic column widths (vendored `blitz-dom`).
+   - `@container`, container units and the `container` shorthand: `@container` was not parsed at all by Stylo's Servo
+     build, so `stylo` is vendored too; `blitz-dom` answers a container's size from its layout and restyles.
+   - CSS transitions: the request carries a history of earlier tree states, which the engine replays so a transition
+     starts at the first state that shows the new value. Nothing fills the history on the TypeScript side yet, so a
+     project still renders every value as its final one.
 2. **Canvas 2D** (medium; the most common custom drawing in Remotion projects). A `CanvasRenderingContext2D` shim
    records each frame's calls (paths, fill/stroke, gradients, `drawImage`, `fillText`, transforms, clips,
    `globalAlpha`, `globalCompositeOperation`); Rust draws them as one canvas layer with Vello, whose model maps

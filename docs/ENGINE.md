@@ -36,7 +36,7 @@ document: `domLayoutBoxes(json)` in the addon (stream 1) answers for the island'
 `crates/dom/src/request.rs` is the contract and is owned by the orchestrator: streams may add optional fields;
 changing an existing one goes through the orchestrator. In short:
 
-- `IslandRequest { root: DomNode, stylesheets, viewport, fonts, baseDir, publicDir?, time, path }`.
+- `IslandRequest { root: DomNode, stylesheets, viewport, fonts, baseDir, publicDir?, time, path, history? }` (`history`: earlier tree states, for CSS transitions, §7.12).
 - `DomNode` = `element { tag, path, attrs, style, children }` | `text { text }` | `native { path, width?, height? }`.
   `style` is CSS declaration text (`width: 10px; opacity: 0.5`), serialized by TS with React's rules.
 - `IslandOutput { layers: LayerJson[], unsupported: Unsupported[], camera }`, the shape of `IslandResult`.
@@ -388,12 +388,10 @@ islands for it. Chrome is for the tools only; the engine never starts one.
   below, captions, centred full-frame layouts). The other 16 differ for the reasons below, or by 1.2 to 3 px in a text
   width.
 - **Known differences** (each found by this tool; none occurs in the papercut corpus):
-  `-webkit-line-clamp` (not implemented in Blitz: the box is as tall as all the lines);
-  text wrapping around floats (one line more in Chrome: float margins are not all counted);
-  `<table>`: rows have no box and auto column widths are distributed differently;
+  (`-webkit-line-clamp`, floats, `<table>` and `@container` were on this list and are done, §7.12; a table's rows,
+  row groups and columns still have no box of their own in `domLayoutBoxes`;)
   `::first-line`/`::first-letter` styles do not change layout;
   a block-level `::before`/`::after` on an element with text children is dropped;
-  `@container` queries never match;
   `aspect-ratio` with `max-height` and a definite width shrinks the width;
   `display: inline-flex|inline-grid` sits lower than Chrome's first-baseline alignment (7 px in the zoo);
   `vertical-align: sub|super|<length>` on text; `<br>` has a zero box; SVG child elements (`rect`, `path`) have a zero
@@ -446,6 +444,71 @@ What is drawn (stream 3, as built):
 - `crates/dom/tests/svg_golden.rs` and `crates/core/tests/{filter,svg_paint,golden}.rs` hold the tests; the goldens
   are in `crates/dom/tests/golden` and `crates/core/tests/golden`. `cargo run -p kinetograph-dom --example svg_scene
   -- page.html scene.json W H` makes a scene from the `<svg>`s of an HTML page, to compare with a browser.
+
+### 7.12 CSS gaps: line clamp, floats, tables, containers, transitions
+
+Branch `feat/css-gaps` (2026-10-16). All of it is checked against Chrome for Testing 154 as an oracle (golden cases in
+`crates/dom/tests/features.rs`, numbers from `getBoundingClientRect` in `crates/dom/tests/css_gaps.rs`).
+
+**Two vendored crates** (`vendor/README.md` has the details and how to drop each patch):
+- `stylo` parses `@container`, the container length units and the `container` shorthand in its Servo build (they were
+  `cfg(feature = "gecko")`; the properties were already there behind the `layout.container-queries.enabled` pref).
+- `blitz-dom` answers a container's size, restyles the subtree of a container whose size changed (`resolve` is now a
+  loop of passes, at most 4 extra), breaks lines around floats as CSS 2.1 9.5 says, and does the table work below.
+
+**`-webkit-line-clamp`** (`crate::clamp`, `paint::ellipsis`). Chrome's legacy box: `display: -webkit-box`,
+`-webkit-box-orient: vertical`, `-webkit-line-clamp: N` (nothing else clamps; the unprefixed `line-clamp` does nothing
+in Chrome 154 either). The shim mirrors the three properties; after the first layout `clamp::settle` makes the box a
+block formatting context (Chrome's `flow-root`), counts lines across its in-flow block children, and gives the box a
+`height` that is the bottom of the Nth line when its height is `auto`. The lines after the Nth are still laid out and
+painted, as in Chrome (the box's `overflow` hides them). The line that ends the text is recorded in `data-kg-clamp`.
+`text-overflow: ellipsis` on a box that clips uses the same code (`Painter::line_cut`): the line is cut at a cluster
+boundary (trailing spaces dropped, right-to-left lines not cut and reported) until the ellipsis (`…`, or three full
+stops if the font has no `…`) fits, in the font and colour of the text it follows; the decoration stops before it.
+
+**Floats.** Blitz (`floats` feature) already laid floats out; the zoo's "one line more in Chrome" no longer shows. What
+was missing: a line whose first unbreakable word is wider than the gap beside a float now moves down to the next gap
+that fits or below the floats, and a block's height includes that gap.
+
+**Tables.**
+- Layout (vendored `blitz-dom`, `table.rs`): `auto_columns` is the CSS automatic table layout algorithm (what is
+  asked, how a span asks, how the width is shared, percentages); captions are laid out inside the table's box, above
+  and below the grid, as wide as the grid; a cell's `height` is its border box's and a minimum for its row.
+- Collapsed borders (`crate::collapse`): after the first layout `collapse::settle` resolves every grid line's border
+  (hidden, width, style, element; cell, row, row group, column, column group, table), gives each cell
+  `border-*-width: 0` and half of its resolved sides added to its `padding-*` (and the table half of its outer
+  borders as padding), which is Chrome's geometry (a 1 px grid is 1 px shared, a 4 px table border over 2 px cells
+  makes the table and the cell take half each), and keeps the resolved borders on the table (`data-kg-cborders`, JSON).
+- Painting (`paint::table`): a cell paints the backgrounds of its column group, column, row group and row under its
+  own, each in its part's box and cut to the cell (Chrome paints them per cell, so the gap between separate cells
+  shows the table's background); the table paints one segment per stretch of grid line, snapped to whole pixels;
+  dashed, dotted, double, groove, ridge, inset and outset segments use the box painter's border styles.
+- Not done: a caption wider than the grid does not widen the table; `<colgroup>` and row-group borders only apply at
+  the places CSS lists (their group's edges); `domLayoutBoxes` gives rows and groups no box; `empty-cells: hide` is
+  not applied.
+
+**`@container`.** Size queries (`width`, `height`, `inline-size`, `block-size`, `aspect-ratio`, range syntax, `and`/`or`/
+`not`, named containers, nested containers) and the units `cqw cqh cqi cqb cqmin cqmax` are Stylo's own; the
+document gives it the content box of a container's last layout, so the first style pass sees an empty box and the
+pass loop in `resolve` corrects it. `container-type: inline-size` does not make a container's own width ignore its
+content (an `inline-block` container without a width is as wide as its text; Chrome has it 0 wide). `style()` container
+queries are not evaluated.
+
+**CSS transitions.** A transition starts when a style value changes, and a frame is built from nothing, so there is no
+"before". The choice: **the caller supplies the past.** `IslandRequest.history` is an ordered list of earlier tree states
+of the island (`{ time, root }`, seconds), and `document::resolve` replays them: the document is built from the oldest,
+each later state (the request's own last) is applied to it as attribute, `style` and text edits and styled at its time,
+so Stylo starts a transition at the **time of the first state that shows the new value** (plus `transition-delay`) and
+its progress at `request.time` is a function of the clock alone. A state that adds, removes or retags an element
+restarts the replay from it (a new element does not transition, as in a browser). The request is still a pure
+function: the same request gives the same frame, whatever was rendered before. Without a history nothing
+transitions and every value is its final one (what the engine did before). A history needs only the states where the
+island's tree changed within the longest `delay + duration` before `time`, plus the state at the start of that
+window. **TypeScript does not fill it yet** (`IslandRequestJson.history` exists): the runtime would keep the last
+requests of each island for a sequential render and re-render the earlier frames of the window on a random access
+(`still`, a chunk's first frames), which is how it stays pure. `@starting-style` entry transitions are not run
+(Stylo does not apply starting styles to a first style computation in this build), and a transition that is running when
+the style stops declaring one is not cancelled.
 
 ## 8. Stream 2 notes (paint)
 
@@ -506,7 +569,7 @@ and turns a group of one leaf into the leaf: 280 layers become 200 on a page of 
 
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
-`text-overflow: ellipsis`, `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
+`image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
 `writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`, `-webkit-text-stroke`, `paint-order`,
 form controls, iframes, `<canvas>`, SVG pictures (`<img src=x.svg>`, `url(x.svg)`), `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
