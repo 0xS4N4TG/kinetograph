@@ -152,6 +152,12 @@ describe('the sound of <Video>', () => {
     ]);
   });
 
+  it('carries toneFrequency when it is not 1, and checks its range', () => {
+    expect(renderAt(<Video id="v" src="a.mp4" toneFrequency={1.5} />).audio[0]).toMatchObject({ toneFrequency: 1.5 });
+    expect(renderAt(<Video id="v" src="a.mp4" toneFrequency={1} />).audio[0]).not.toHaveProperty('toneFrequency');
+    expect(() => renderAt(<Video id="v" src="a.mp4" toneFrequency={2.5} />)).toThrow(/toneFrequency must be between 0.01 and 2/);
+  });
+
   it('carries the trims, rate and loop of the layer', () => {
     const clip = renderAt(<Video id="v" src="a.mp4" startFrom={10} endAt={50} playbackRate={2} loop />).audio[0];
     expect(clip).toMatchObject({ trimBefore: 10, trimAfter: 50, playbackRate: 2, loop: true });

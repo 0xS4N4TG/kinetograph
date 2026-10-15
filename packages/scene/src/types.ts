@@ -543,6 +543,8 @@ export interface AudioClipJson {
   muted: boolean;
   /** The sound of a `<Video>`: decoded with the addon's `decodeAudio` (docs/AUTHORING.md §11.3). */
   video?: boolean;
+  /** Remotion's `toneFrequency`: the pitch times this (0.01 to 2), the length unchanged. Left out when it is 1. */
+  toneFrequency?: number;
 }
 
 /** Something compat mode cannot draw natively (docs/COMPAT.md §6.1); a frame holding one is drawn by Chrome. */

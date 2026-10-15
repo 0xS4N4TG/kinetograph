@@ -449,8 +449,16 @@ interface AudioClipJson {
   volume: number;        // at this frame (a volume callback evaluated at the clip's own frame)
   loop: boolean;
   muted: boolean;        // `muted`, or inside a <Freeze>
+  video?: boolean;       // the sound of a <Video> (§11.3)
+  toneFrequency?: number; // left out when 1
 }
 ```
+
+`toneFrequency` is Remotion's prop of `<Audio>` and `<Video>`: the pitch is multiplied by it (0.01 to 2, anything
+else throws) and the speed is not. The mixer shifts each file once per value: a WSOLA time stretch by the factor
+(windows of 1024 samples, half overlapping, each moved up to 256 samples to line up with the last, the same positions
+for every channel), then a linear resample back to the original length. It is plain arithmetic on the samples, so
+the same file and value always give the same sound. A change of `toneFrequency` starts a new clip timeline (§8).
 
 A clip appears in the tree of every frame it plays in; the CLI joins them by `id` into one clip with a volume per
 frame (§8).
@@ -835,3 +843,23 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
 - A `reload` message refetches compositions and re-renders the current frame; `buildError` shows the error over the
   preview until the next good build.
 - Built by `vite build` into `ui/dist`. Tests: vitest + Testing Library + jsdom against the mock server.
+
+### 11.7 Audio data (`@remotion/media-utils`)
+
+`@kinetograph/core/media-utils` also has the audio half of `@remotion/media-utils`, for audio-reactive visuals:
+
+- `getAudioData(src)`, `useAudioData(src)`, `useWindowedAudioData({ src, frame, fps, windowInSeconds })` and
+  `getAudioDurationInSeconds(src)`. The file is decoded once by the addon's `decodeAudio` (ffmpeg: any file with an
+  audio stream, video files included) at 48 kHz and kept per `src`. Decoding is synchronous, so `useAudioData` returns
+  the data on the first frame (Remotion's is null until it loads), and the windowed hook's window is the whole file
+  with `dataOffsetInSeconds: 0`. The host passes the decoder in with `setAudioDecoder`, as it does `setMediaProbe`; in
+  a Chrome frame the page asks the driver (`GET /@audio`).
+- `visualizeAudio({ audioData, frame, fps, numberOfSamples, smoothing, dataOffsetInSeconds })`: `numberOfSamples`
+  (a power of two) values 0..1, low frequencies first, in equal bands from 0 Hz to half the sample rate. Each is the
+  peak magnitude in its band of a 2048-sample (or `2 × numberOfSamples`, if more) Hann-windowed FFT of the channels'
+  average, centred on the frame's time and scaled so a full-scale sine reads 1. `smoothing` (default true) averages
+  the frames before and after. `optimizeFor` is accepted and changes nothing. This follows Remotion's documented
+  behaviour, not its numbers: bars from the two have the same shape, not the same values.
+- `getWaveformPortion({ audioData, startTimeInSeconds, durationInSeconds, numberOfSamples })`: `numberOfSamples`
+  bars `{ index, amplitude }`, each the mean absolute sample of the channels' average over its stretch.
+

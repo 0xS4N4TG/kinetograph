@@ -27,7 +27,7 @@ export interface FrameServerOptions {
   baseDir: string;
   /** Directories the server may read files from; anything else is refused. */
   roots: string[];
-  native: Pick<Native, 'probeMedia' | 'videoFrame' | 'layoutText'>;
+  native: Pick<Native, 'probeMedia' | 'videoFrame' | 'layoutText' | 'decodeAudio'>;
   /** The Node side's registered fonts, added to every text layout the page asks for. */
   fonts: () => Record<string, string>;
 }
@@ -165,6 +165,15 @@ export async function startFrameServer(options: FrameServerOptions): Promise<Fra
       case '/@probe':
         sendJson(res, 200, options.native.probeMedia(projectFile(query.get('src') ?? '')));
         return;
+      case '/@audio': {
+        // `getAudioData` in a Chrome frame: the samples as base64 of little-endian float32, one string per channel.
+        const pcm = options.native.decodeAudio(projectFile(query.get('src') ?? ''), numberParam(query, 'sampleRate'));
+        sendJson(res, 200, pcm && {
+          sampleRate: pcm.sampleRate,
+          channels: pcm.channels.map((c) => Buffer.from(c.buffer, c.byteOffset, c.byteLength).toString('base64')),
+        });
+        return;
+      }
       case '/@video': {
         const file = projectFile(query.get('src') ?? '');
         const info = options.native.probeMedia(file);

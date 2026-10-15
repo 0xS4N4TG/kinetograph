@@ -4,7 +4,7 @@
 
 import { dirname, resolve } from 'node:path';
 import { build, type BuildOptions, type Message, type Plugin } from 'esbuild';
-import { CLI_DIR, familyFromModule, resolveSpecifier } from '../bundle.js';
+import { CLI_DIR, entryPlugin, familyFromModule, resolveSpecifier } from '../bundle.js';
 import { CliError } from '../errors.js';
 
 export interface BrowserBundleSettings {
@@ -30,7 +30,7 @@ export function browserEntry(entry: string, settings: Pick<BrowserBundleSettings
     `import ${JSON.stringify(entry)};`,
     `import { createFrameRenderer, registerFont } from '@kinetograph/core';`,
     `import { setLayoutText } from '@kinetograph/core/layout-utils';`,
-    `import { setMediaProbe } from '@kinetograph/core/media-utils';`,
+    `import { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
     `import { installBrowserRuntime } from '@kinetograph/compat/browser';`,
     `function ask(method, url, body) {`,
     `  const request = new XMLHttpRequest();`,
@@ -51,6 +51,15 @@ export function browserEntry(entry: string, settings: Pick<BrowserBundleSettings
     `};`,
     `setLayoutText((request) => ask('POST', '/@layout', request));`,
     `setMediaProbe((path) => ask('GET', '/@probe?src=' + encodeURIComponent(path)));`,
+    `setAudioDecoder((path, sampleRate) => {`,
+    `  const pcm = ask('GET', '/@audio?src=' + encodeURIComponent(path) + '&sampleRate=' + sampleRate);`,
+    `  if (pcm === null) return null;`,
+    `  const channels = pcm.channels.map((text) => {`,
+    `    const bytes = Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));`,
+    `    return new Float32Array(bytes.buffer);`,
+    `  });`,
+    `  return { sampleRate: pcm.sampleRate, channels };`,
+    `});`,
     `installBrowserRuntime(createFrameRenderer(${JSON.stringify(settings.composition)}, { inputProps: ${JSON.stringify(settings.inputProps)} }));`,
     '',
   ].join('\n');
@@ -203,7 +212,8 @@ export function browserBundleOptions(entry: string, settings: BrowserBundleSetti
     target: 'chrome120',
     jsx: 'automatic',
     logLevel: 'silent',
-    plugins: [aliasPlugin()],
+    loader: { '.css': 'empty' },
+    plugins: [entryPlugin(absolute), aliasPlugin()],
     define: {
       'process.env.NODE_ENV': '"production"',
       'process.env.KINETOGRAPH_PUBLIC_DIR': JSON.stringify(settings.publicDir),

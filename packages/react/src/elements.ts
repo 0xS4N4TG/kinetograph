@@ -159,6 +159,17 @@ export interface AudioProps {
   playbackRate?: number;
   loop?: boolean;
   muted?: boolean;
+  /** The pitch times this, 0.01 to 2 (Remotion's); the speed is unchanged. */
+  toneFrequency?: number;
+}
+
+/** `toneFrequency` as a clip field: left out when it is 1 (or not given), so clips without it are as before. */
+function toneOf(label: string, toneFrequency: number | undefined): { toneFrequency?: number } {
+  if (toneFrequency === undefined || toneFrequency === 1) return {};
+  if (!(typeof toneFrequency === 'number' && toneFrequency >= 0.01 && toneFrequency <= 2)) {
+    throw new Error(`${label} toneFrequency must be between 0.01 and 2, got ${String(toneFrequency)}`);
+  }
+  return { toneFrequency };
 }
 
 export function Layer(props: LayerProps) {
@@ -280,6 +291,7 @@ export function Audio(props: AudioProps) {
     volume,
     loop: props.loop ?? false,
     muted: (props.muted ?? false) || timeline.frozen,
+    ...toneOf(`<Audio src="${props.src}">`, props.toneFrequency),
   };
   return createElement('kg-audio', { id: props.id, clip });
 }
@@ -303,6 +315,8 @@ export interface VideoProps extends CommonProps {
   /** A number, or a function of the frame within the video's Sequence. */
   volume?: number | ((frame: number) => number);
   muted?: boolean;
+  /** The pitch of the video's sound times this, 0.01 to 2 (Remotion's); the speed is unchanged. */
+  toneFrequency?: number;
   /** Accepted and ignored. */
   transparent?: boolean;
   toneMapped?: boolean;
@@ -381,6 +395,7 @@ export function Video(props: VideoProps): ReactNode {
     loop: props.loop ?? false,
     muted: (props.muted ?? false) || timeline.frozen,
     video: true,
+    ...toneOf(label, props.toneFrequency),
   };
   // `emit` reads the common props and the layer's fields from here; `volume`, `muted` and the ignored props stay behind.
   return createElement('kg-video', {

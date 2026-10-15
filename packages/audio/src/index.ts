@@ -6,6 +6,7 @@ export type { AudioContextLike, OnFrameCallback } from './registry.js';
 export { joinClips } from './clips.js';
 export type { AudioClipTimeline } from './clips.js';
 export { renderAudio, clampPcm } from './render.js';
+export { shiftPitch } from './pitch.js';
 export type { AudioPcm, DecodeAudio } from './render.js';
 export { analyzeAudio, integratedLoudness, kWeighting, truePeakDb } from './analyze.js';
 export type { AudioAnalysis } from './analyze.js';

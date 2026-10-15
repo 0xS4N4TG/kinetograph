@@ -23,6 +23,7 @@ const REMOTION_PACKAGES = new Set([
   'lottie',
   'gif',
   'media-utils',
+  'media',
 ]);
 
 export type Resolution =
@@ -102,6 +103,19 @@ function aliasPlugin(): Plugin {
   };
 }
 
+/**
+ * The project's entry file always runs: the synthetic entry imports it only for its side effects (`registerRoot`), and
+ * a package.json with `"sideEffects": [...]` that leaves it out (as Remotion's templates do) would let esbuild drop it.
+ */
+export function entryPlugin(absolute: string): Plugin {
+  return {
+    name: 'kinetograph-entry',
+    setup(b) {
+      b.onResolve({ filter: /.*/ }, (args) => (args.path === absolute ? { path: absolute, sideEffects: true } : undefined));
+    },
+  };
+}
+
 /** The synthetic entry (docs/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
 export function syntheticEntry(entry: string): string {
   return [
@@ -110,7 +124,7 @@ export function syntheticEntry(entry: string): string {
     `export * from '@kinetograph/core';`,
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
-    `export { setMediaProbe } from '@kinetograph/core/media-utils';`,
+    `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
     // DOM elements are laid out by the addon too (docs/COMPAT.md §5.1).
     `export { setLayoutDom } from '@kinetograph/compat/dom';`,
     '',
@@ -158,7 +172,9 @@ function bundleOptions(absolute: string): BuildOptions {
     sourcemap: 'inline',
     logLevel: 'silent',
     external: EXTERNAL,
-    plugins: [aliasPlugin()],
+    // Stylesheets are not read (docs/COMPAT.md §2): an `import './index.css'` (Tailwind's, say) bundles to nothing.
+    loader: { '.css': 'empty' },
+    plugins: [entryPlugin(absolute), aliasPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };

@@ -60,6 +60,16 @@ interface IslandResult { layers: LayerJson[]; unsupported: Unsupported[]; camera
 function mapDomIsland(root: DomNode, context: IslandContext): IslandResult;      // compat/dom, stream 2
 ```
 
+- **What a project brings with it.** A Remotion project is bundled as it is, with these allowances:
+  - `import './index.css'` (Tailwind's entry, say) bundles to nothing: stylesheets are not read, so a `className`
+    draws nothing.
+  - The entry runs even when the project's package.json lists `"sideEffects"` without it, as Remotion's templates do.
+  - `staticFile` reads `public/` beside the entry, else `public/` beside the nearest package.json (Remotion's place,
+    with the entry in `src/`).
+  - `@remotion/media`'s `<Audio>` and `<Video>` are the engine's.
+  - `new FontFace(family, "url(...)", { weight, style, unicodeRange })` with `document.fonts.add(face)` registers the
+    file (`registerFont`). One file is kept per family, weight and style; of a face split by `unicodeRange`, the one
+    covering basic Latin. WOFF and WOFF2 files are unpacked by the text engine (`wuff`).
 - **The containing box.** A DOM island is laid out as CSS would lay it out in a box the composition's size, as
   Remotion's root `div` is. A layout box from an enclosing native `<Layer layout>` is not known in TS (taffy computes
   it in Rust at resolve time), so an island inside one is laid out in the composition's box all the same.

@@ -114,7 +114,9 @@ export async function openChromeRenderer(source: Source, options: ChromeOptions 
       page.on('pageerror', (error) => {
         const message = error instanceof Error ? error.message : String(error);
         problems.push(message);
-        reject(new Error(message));
+        // The top of the stack says which of the project's lines threw (the bundle is not minified).
+        const where = error instanceof Error ? (error.stack ?? '').split('\n').slice(1, 4).join('\n') : '';
+        reject(new Error(where ? `${message}\n${where}` : message));
       });
     });
     crashed.catch(() => undefined);

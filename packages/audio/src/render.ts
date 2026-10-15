@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AudioBuffer, OfflineAudioContext } from 'node-web-audio-api';
 import type { AudioClipTimeline } from './clips.js';
+import { shiftPitch } from './pitch.js';
 import { registeredCallbacks } from './registry.js';
 
 export interface AudioPcm {
@@ -60,6 +61,8 @@ export async function renderAudio(options: {
   const decoded = new Map<string, AudioBuffer>();
   // The sound of a video file, by path; null for a file with none.
   const videoSound = new Map<string, AudioBuffer | null>();
+  // `toneFrequency`: a file's sound shifted once per pitch.
+  const pitched = new Map<string, AudioBuffer>();
   for (const clip of clips) {
     const path = resolve(options.baseDir ?? process.cwd(), clip.src);
     let buffer: AudioBuffer | null | undefined;
@@ -78,6 +81,16 @@ export async function renderAudio(options: {
         buffer = await decode(ctx, path);
         decoded.set(path, buffer);
       }
+    }
+    const tone = clip.toneFrequency ?? 1;
+    if (tone !== 1) {
+      const key = `${clip.video ? 'video' : 'audio'}:${path}@${tone}`;
+      let shifted = pitched.get(key);
+      if (!shifted) {
+        shifted = pitchBuffer(ctx, buffer, tone);
+        pitched.set(key, shifted);
+      }
+      buffer = shifted;
     }
     scheduleClip(ctx, buffer, clip, { fps, first, last, timeOf });
   }
@@ -137,6 +150,15 @@ async function decodeVideoSound(
   const buffer = ctx.createBuffer(pcm.channels.length, length, pcm.sampleRate);
   pcm.channels.forEach((channel, index) => buffer.copyToChannel(channel as Float32Array<ArrayBuffer>, index));
   return buffer;
+}
+
+/** `buffer` with its pitch times `tone`, the same length and rate. */
+function pitchBuffer(ctx: OfflineAudioContext, buffer: AudioBuffer, tone: number): AudioBuffer {
+  const channels: Float32Array[] = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+  const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+  shiftPitch(channels, tone).forEach((channel, index) => out.copyToChannel(channel as Float32Array<ArrayBuffer>, index));
+  return out;
 }
 
 async function decode(ctx: OfflineAudioContext, path: string): Promise<AudioBuffer> {

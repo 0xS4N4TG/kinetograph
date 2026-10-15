@@ -15,6 +15,7 @@ interface ProjectModule {
   setPublicDir(dir: string): void;
   setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
   setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
+  setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
   setLayoutDom(fn: typeof import('@kinetograph/native').layoutDom | null): void;
   getFonts(): Record<string, string>;
 }
@@ -81,12 +82,28 @@ function requireEntry(entry: string): string {
   return absolute;
 }
 
+/**
+ * Where `staticFile` reads from: `public/` beside the entry, or else `public/` beside the nearest package.json (where
+ * Remotion keeps it, with the entry in `src/`). Beside the entry when neither exists.
+ */
+export function publicDirOf(entry: string): string {
+  const beside = join(dirname(entry), 'public');
+  if (existsSync(beside)) return beside;
+  for (let dir = dirname(entry); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, 'package.json'))) {
+      const atRoot = join(dir, 'public');
+      return existsSync(atRoot) ? atRoot : beside;
+    }
+    if (dirname(dir) === dir) return beside;
+  }
+}
+
 async function loadProject(entry: string, bundleFile?: string): Promise<ProjectModule> {
   const file = bundleFile ?? (await bundleProject(entry)).file;
   process.setSourceMapsEnabled(true);
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
   // before setPublicDir below can.
-  const publicDir = join(dirname(entry), 'public');
+  const publicDir = publicDirOf(entry);
   process.env.KINETOGRAPH_PUBLIC_DIR = publicDir;
   let mod: ProjectModule;
   try {
@@ -102,6 +119,7 @@ async function loadProject(entry: string, bundleFile?: string): Promise<ProjectM
   mod.setLayoutDom(native().layoutDom);
   // A relative `src` is read from where the scenes' assets are (the entry's directory), not the working directory.
   mod.setMediaProbe((path, baseDir) => native().probeMedia(path, baseDir ?? dirname(entry)));
+  mod.setAudioDecoder((path, sampleRate) => native().decodeAudio(path, sampleRate, dirname(entry)));
   return mod;
 }
 
@@ -176,7 +194,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
     },
     inputProps,
     fonts: () => mod.getFonts(),
-    publicDir: join(baseDir, 'public'),
+    publicDir: publicDirOf(absolute),
     dispose: () => renderer.dispose(),
   };
 }
