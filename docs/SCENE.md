@@ -119,6 +119,21 @@ different from a browser).
 is drawn over the fill. `fill` is a colour string or a [gradient](#gradients) (see [Gradient fills](#gradient-fills));
 `stroke.color` is a colour string only.
 
+The stroke can be finished and dashed as SVG's can:
+
+| `stroke` field | Default | Meaning |
+|---|---|---|
+| `color`, `width` | required | |
+| `cap` | `butt` | `butt`, `round` or `square`: how an open end is finished. |
+| `join` | `round` | `miter`, `round` or `bevel`: how a corner is finished. |
+| `miterLimit` | `4` | A `miter` join whose tip is longer than this many stroke widths is bevelled. |
+| `dashArray` | none | Dash and gap lengths, alternating, starting with a dash, repeated along the line; an odd count is repeated to make it even. A list that is empty, has a negative number or adds up to nothing is a solid line. |
+| `dashOffset` | `0` | How far into the pattern the line starts. |
+
+`fillRule` (`nonzero`, the default, or `evenodd`) says which parts of a path with crossings or holes the fill covers.
+A stroke's box (for the texture the shape is drawn in) grows with its joins and caps: a `miter` join reaches
+`miterLimit` half widths, a `square` cap a corner.
+
 `shape.kind` and its fields (the shape's top-left corner is the layer's origin):
 
 | Kind | Fields |
@@ -956,9 +971,10 @@ the same filter turned and scaled. The result of the last primitive is the layer
 | Field | Default | Meaning |
 |---|---|---|
 | `x`, `y`, `width`, `height` | -10%, -10%, 120%, 120% of the layer's box | The filter region: nothing outside it survives, not even the layer. |
-| `filterUnits` | `objectBoundingBox` | `userSpaceOnUse`: the region is in layer pixels. `objectBoundingBox`: fractions of the layer's box (the box `inset` clips use). A group without a `layout` has no box: it must say `userSpaceOnUse` with all four numbers, and use `primitiveUnits` `userSpaceOnUse` (a load error otherwise). |
+| `filterUnits` | `objectBoundingBox` | `userSpaceOnUse`: the region is in layer pixels. `objectBoundingBox`: fractions of the layer's box (the box `inset` clips use). A group without a `layout` has no box: give it a `bbox`, or `userSpaceOnUse` with all four numbers and `primitiveUnits` `userSpaceOnUse` (a load error otherwise). |
 | `primitiveUnits` | `userSpaceOnUse` | What primitive lengths and subregions are in. `objectBoundingBox` scales `stdDeviation`, `dx`, `dy`, `radius` and subregions by the box's width and height, and `scale` and light `z` by the root of the mean of their squares. |
 | `colorInterpolationFilters` | `linearRGB` | The colour space primitives work in unless one says otherwise (`linearRGB` or `sRGB`). The layer is in linear light; a primitive in sRGB gets its inputs converted and its result converted back, so a blur, a blend or a colour matrix gives what a browser's does in either space. |
+| `bbox` | none | `[x, y, width, height]`, the box that `objectBoundingBox` units and the default region are fractions of, in layer space. For a layer that has no box (a group) and for a port from SVG: the box of the element the SVG filter was on. It is used instead of the layer's own box when both exist. |
 | `primitives` | required | In order. Each result can be named; a primitive can read the layer, any earlier result, or (left out) the previous result. |
 
 Every primitive has `primitive` (its element name), `in`, `in2` (when it has two inputs), `result`, `x`, `y`, `width`,
@@ -1180,7 +1196,7 @@ Every number is animatable, including the stop offsets.
 | `type` | Fields | Meaning |
 |---|---|---|
 | `linear` | `x0`, `y0`, `x1`, `y1` | Offset 0 is at (x0, y0) and offset 1 at (x1, y1); lines perpendicular to that axis have one colour. |
-| `radial` | `cx`, `cy`, `r` | Circles around the centre; offset 1 is at distance `r` (at least 0). |
+| `radial` | `cx`, `cy`, `r`, and optionally `fx`, `fy`, `fr` | Circles around the centre; offset 1 is at distance `r` (at least 0). With a focal circle (`fx`, `fy`, `fr`: each defaults to the centre's, and 0 for `fr`) offset 0 is on it and the circles in between grow from it to the outer one, as SVG's focal point does. |
 | `conic` | `cx`, `cy`, `angle` (default `0`) | Offset 0 points `angle` degrees clockwise from 12 o'clock, as in CSS `conic-gradient`; offset 1 is a full turn later. |
 
 Common fields:
@@ -1190,6 +1206,7 @@ Common fields:
 | `stops` | required | At least 2 `{ "offset", "color" }`. Offsets are between 0 and 1 at every keyframe. An offset lower than an earlier stop's is raised to it, as in CSS, so `[0.6, 0.3]` makes a hard edge at 0.6. Colours are plain colour strings (not animated) and may be translucent. |
 | `extend` | `pad` | Outside the first and last stop. `pad` holds the end colours. `repeat` repeats the span from the first to the last stop, which is CSS `repeating-linear-gradient` and friends; `reflect` does the same with every second span backwards. For `conic`, which already goes round, `repeat` repeats the span within the turn. |
 | `units` | `user` | What the coordinates are measured in. `user`: pixels of the painted layer. `box`: fractions of the painted layer's box, see [Box units](#box-units). |
+| `transform` | none | A matrix `[a, b, c, d, e, f]` (SVG's `matrix()`, so `x' = a x + c y + e`) that takes the gradient's space (after `units`) to the painted layer's: SVG's `gradientTransform`. A non-uniform matrix turns a circle into an ellipse and skews a line's perpendiculars. |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
@@ -1283,7 +1300,7 @@ it can be anything (text, an image, a group of shapes).
 | Field | Default | Meaning |
 |---|---|---|
 | `layer` | required | The `id` of the matte source. |
-| `mode` | `alpha` | `alpha` keeps the layer where the source is opaque; `alphaInverted` where it is transparent. `luminance` keeps it where the source is light (Rec. 709 luminance of the linear-light colour, times alpha, as in a gradient mask); `luminanceInverted` where it is dark or transparent. |
+| `mode` | `alpha` | `alpha` keeps the layer where the source is opaque; `alphaInverted` where it is transparent. `luminance` keeps it where the source is light (Rec. 709 luminance of the linear-light colour, times alpha, as in a gradient mask); `luminanceInverted` where it is dark or transparent. `srgbLuminance` takes the luminance (0.2125, 0.7154, 0.0721) of the sRGB-encoded colour instead, times alpha, which is what an SVG `<mask>` does: mid grey (`#808080`) keeps half the layer, where `luminance` keeps a fifth. |
 
 Rules:
 

@@ -240,7 +240,10 @@ fn fs_blend(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
 // luminance inverted.
 fn coverage(m: vec4<f32>, mode: u32) -> f32 {
     var c = m.a;
-    if mode >= 2u {
+    if mode == 4u {
+        // The luminance of the sRGB-encoded colour, times alpha (SVG masks).
+        c = dot(linear_to_srgb(unpremultiply(m)), vec3<f32>(0.2125, 0.7154, 0.0721)) * m.a;
+    } else if mode >= 2u {
         c = dot(m.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     }
     if mode % 2u == 1u {

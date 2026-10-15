@@ -70,6 +70,10 @@ pub struct FilterGraph {
     /// The colour space the primitives work in unless they say otherwise
     /// (default `linearRGB`).
     pub color_interpolation_filters: Option<ColorSpace>,
+    /// The box of what the filter is on, `[x, y, width, height]` in layer
+    /// space, for a layer that has none of its own (a group): the box that
+    /// `objectBoundingBox` units and the default region are fractions of.
+    pub bbox: Option<[f64; 4]>,
     pub primitives: Vec<FilterPrimitive>,
 }
 
@@ -350,12 +354,13 @@ impl FilterGraph {
     /// or the primitives are in `objectBoundingBox` units, or the region is
     /// left to default.
     pub fn needs_box(&self) -> bool {
-        self.filter_units != Some(FilterUnits::UserSpaceOnUse)
-            || self.x.is_none()
-            || self.y.is_none()
-            || self.width.is_none()
-            || self.height.is_none()
-            || self.primitive_units == Some(FilterUnits::ObjectBoundingBox)
+        self.bbox.is_none()
+            && (self.filter_units != Some(FilterUnits::UserSpaceOnUse)
+                || self.x.is_none()
+                || self.y.is_none()
+                || self.width.is_none()
+                || self.height.is_none()
+                || self.primitive_units == Some(FilterUnits::ObjectBoundingBox))
     }
 
     /// How far past the layer's own pixels the graph can paint, in layer
@@ -422,7 +427,7 @@ impl FilterGraph {
     /// The load-time checks: an error naming `layer`.
     pub fn validate(&self, layer: &str, has_box: bool) -> Result<()> {
         let bad = |msg: String| Err(Error::Scene(format!("layer {layer:?}: filterGraph {msg}")));
-        if !has_box && (self.needs_box()) {
+        if !has_box && self.needs_box() {
             return bad(
                 "on a group without a layout needs filterUnits \"userSpaceOnUse\" with x, y, \
                  width and height, and primitives in userSpaceOnUse: the group has no box to \
@@ -765,6 +770,9 @@ pub struct ResolvedFilterGraph {
     /// Lengths and subregions of the primitives are in fractions of the
     /// layer's box.
     pub prim_bbox: bool,
+    /// The box given with the graph (`FilterGraph::bbox`), which is used
+    /// instead of the layer's own.
+    pub bbox: Option<Rect>,
     pub nodes: Vec<FeNode>,
 }
 
@@ -1099,6 +1107,7 @@ impl FilterGraph {
             region: [at(&self.x), at(&self.y), at(&self.width), at(&self.height)],
             region_bbox: self.filter_units != Some(FilterUnits::UserSpaceOnUse),
             prim_bbox: self.primitive_units == Some(FilterUnits::ObjectBoundingBox),
+            bbox: self.bbox.map(|[x, y, w, h]| Rect::new(x, y, x + w, y + h)),
             nodes,
         }
     }
@@ -1278,13 +1287,15 @@ pub struct Plan {
 
 impl ResolvedFilterGraph {
     pub fn needs_box(&self) -> bool {
-        self.region_bbox || self.prim_bbox || self.region.iter().any(Option::is_none)
+        self.bbox.is_none()
+            && (self.region_bbox || self.prim_bbox || self.region.iter().any(Option::is_none))
     }
 
     /// The rectangles and lengths in layer units. `layer_box` is the layer's
     /// box in layer space, if it has one; `None` is returned if a unit or a
     /// default needs it and there is none.
     pub fn plan(&self, layer_box: Option<Rect>) -> Option<Plan> {
+        let layer_box = self.bbox.or(layer_box);
         let need = |b: Option<Rect>| -> Option<Rect> { b };
         let region = if self.region_bbox {
             let b = need(layer_box)?;

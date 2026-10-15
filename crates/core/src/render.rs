@@ -27,7 +27,7 @@ use crate::mesh;
 use crate::resolve::{
     ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient,
     ResolvedGradientGeometry, ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint,
-    ResolvedScene,
+    ResolvedScene, ShapeStyle,
 };
 use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Scene, Units, walk_layers,
@@ -1065,11 +1065,12 @@ impl Renderer {
                 geometry,
                 fill,
                 stroke,
+                style,
             } => {
                 if fill.is_none() && stroke.is_none() {
                     return Ok(PixelRect::EMPTY);
                 }
-                shape_box(geometry, stroke.map(|(_, width)| width))?
+                shape_box(geometry, stroke.map(|(_, width)| (width, style)))?
             }
             ResolvedKind::Text {
                 text,
@@ -1122,6 +1123,7 @@ impl Renderer {
                 geometry,
                 fill,
                 stroke,
+                style,
             } => {
                 let path = geometry_path(geometry)?;
                 if let Some(paint) = fill {
@@ -1129,11 +1131,11 @@ impl Renderer {
                     // geometry, without the stroke.
                     let (brush, brush_transform) = paint_brush(paint, Some(path.bounding_box()));
                     self.vello_scene
-                        .fill(Fill::NonZero, matrix, &brush, brush_transform, &path);
+                        .fill(fill_rule(style), matrix, &brush, brush_transform, &path);
                 }
                 if let Some((color, width)) = stroke {
                     self.vello_scene.stroke(
-                        &Stroke::new(*width),
+                        &stroke_of(*width, style),
                         matrix,
                         to_peniko(*color),
                         None,
@@ -1331,16 +1333,17 @@ impl Renderer {
             geometry,
             fill,
             stroke,
+            style,
         } = &layer.kind
         {
             let path = geometry_path(geometry)?;
             if fill.is_some() {
                 self.vello_scene
-                    .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, &path);
+                    .fill(fill_rule(style), matrix, peniko::Color::WHITE, None, &path);
             }
             if let Some((_, width)) = stroke {
                 self.vello_scene.stroke(
-                    &Stroke::new(*width),
+                    &stroke_of(*width, style),
                     matrix,
                     peniko::Color::WHITE,
                     None,
@@ -1598,17 +1601,68 @@ fn collect_preserve3d<'a>(
     Ok(())
 }
 
+/// The fill rule of a shape as Vello has it.
+fn fill_rule(style: &ShapeStyle) -> Fill {
+    match style.fill_rule {
+        crate::scene::FillRule::NonZero => Fill::NonZero,
+        crate::scene::FillRule::EvenOdd => Fill::EvenOdd,
+    }
+}
+
+/// The stroke of a shape: `width` wide, finished as `style` says.
+fn stroke_of(width: f64, style: &ShapeStyle) -> Stroke {
+    use crate::scene::{StrokeCap, StrokeJoin};
+    let cap = match style.cap {
+        StrokeCap::Butt => vello::kurbo::Cap::Butt,
+        StrokeCap::Round => vello::kurbo::Cap::Round,
+        StrokeCap::Square => vello::kurbo::Cap::Square,
+    };
+    let join = match style.join {
+        StrokeJoin::Miter => vello::kurbo::Join::Miter,
+        StrokeJoin::Round => vello::kurbo::Join::Round,
+        StrokeJoin::Bevel => vello::kurbo::Join::Bevel,
+    };
+    let stroke = Stroke::new(width)
+        .with_caps(cap)
+        .with_join(join)
+        .with_miter_limit(style.miter_limit);
+    if style.dash.is_empty() {
+        stroke
+    } else {
+        stroke.with_dashes(style.dash_offset, style.dash.iter().copied())
+    }
+}
+
+/// How many half stroke widths past the path a stroke finished as `style`
+/// reaches: a miter join as far as its limit, a square cap a corner.
+fn stroke_reach(style: &ShapeStyle) -> f64 {
+    use crate::scene::{StrokeCap, StrokeJoin};
+    let join = if style.join == StrokeJoin::Miter {
+        style.miter_limit.max(1.0)
+    } else {
+        1.0
+    };
+    let cap = if style.cap == StrokeCap::Square {
+        std::f64::consts::SQRT_2
+    } else {
+        1.0
+    };
+    join.max(cap)
+}
+
 /// The box of a shape in layer space: its geometry, and, if it has a stroke
-/// of `stroke_width`, half the width more all round, which is as far as the
-/// stroke's round joins and caps (the default) reach.
-fn shape_box(geometry: &ResolvedGeometry, stroke_width: Option<f64>) -> Result<Rect> {
+/// of that width, half the width more all round (times `stroke_reach`), which
+/// is as far as its joins and caps reach.
+fn shape_box(geometry: &ResolvedGeometry, stroke: Option<(f64, &ShapeStyle)>) -> Result<Rect> {
     let shape = match geometry {
         ResolvedGeometry::Rect { width, height }
         | ResolvedGeometry::RoundedRect { width, height, .. }
         | ResolvedGeometry::Ellipse { width, height } => Rect::new(0.0, 0.0, *width, *height),
         ResolvedGeometry::Path { .. } => geometry_path(geometry)?.bounding_box(),
     };
-    let half = stroke_width.map_or(0.0, |width| width.max(0.0) / 2.0);
+    let half = stroke.map_or(0.0, |(width, style)| {
+        width.max(0.0) / 2.0 * stroke_reach(style)
+    });
     Ok(shape.inflate(half, half))
 }
 
@@ -1847,6 +1901,7 @@ fn paint_brush(paint: &ResolvedPaint, layer_box: Option<Rect>) -> (peniko::Brush
 /// paints the last stop's colour, like any gradient without one.
 fn gradient_brush_in(g: &ResolvedGradient, layer_box: Option<Rect>) -> (peniko::Brush, Affine) {
     let (brush, turn) = gradient_brush(g);
+    let turn = g.transform * turn;
     let (Units::Box, Some(b)) = (g.units, layer_box) else {
         return (brush, turn);
     };
@@ -1894,6 +1949,28 @@ fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
             }
             let c = Point::new(cx, cy);
             peniko::Gradient::new_two_point_radial(c, (r * lo) as f32, c, (r * hi) as f32)
+        }
+        ResolvedGradientGeometry::FocalRadial {
+            cx,
+            cy,
+            r,
+            fx,
+            fy,
+            fr,
+        } => {
+            // The circles run from the focal one (offset 0) to the outer one
+            // (offset 1); the span `lo..hi` is what is drawn.
+            let at = |t: f64| {
+                (
+                    Point::new(fx + (cx - fx) * t, fy + (cy - fy) * t),
+                    (fr + (r - fr) * t) as f32,
+                )
+            };
+            let ((c0, r0), (c1, r1)) = (at(lo), at(hi));
+            if c0.distance(c1) < 1e-6 && (r1 - r0).abs() < 1e-6 {
+                return solid;
+            }
+            peniko::Gradient::new_two_point_radial(c0, r0, c1, r1)
         }
         ResolvedGradientGeometry::Conic { cx, cy, angle } => {
             let c = Point::new(cx, cy);
@@ -2373,6 +2450,7 @@ mod tests {
             stops: stops.to_vec(),
             extend,
             units: Units::User,
+            transform: Affine::IDENTITY,
         }
     }
 
@@ -3138,10 +3216,27 @@ mod tests {
             shape_box(&rect, None).unwrap(),
             Rect::new(0.0, 0.0, 40.0, 20.0)
         );
+        let plain = ShapeStyle::default();
         assert_eq!(
-            shape_box(&rect, Some(10.0)).unwrap(),
+            shape_box(&rect, Some((10.0, &plain))).unwrap(),
             Rect::new(-5.0, -5.0, 45.0, 25.0)
         );
+        // A miter join reaches as far as its limit, a square cap a corner.
+        let miter = ShapeStyle {
+            join: crate::scene::StrokeJoin::Miter,
+            miter_limit: 3.0,
+            ..ShapeStyle::default()
+        };
+        assert_eq!(
+            shape_box(&rect, Some((10.0, &miter))).unwrap(),
+            Rect::new(-15.0, -15.0, 55.0, 35.0)
+        );
+        let square = ShapeStyle {
+            cap: crate::scene::StrokeCap::Square,
+            ..ShapeStyle::default()
+        };
+        let reach = 5.0 * std::f64::consts::SQRT_2;
+        assert!((shape_box(&rect, Some((10.0, &square))).unwrap().x0 + reach).abs() < 1e-9);
         // A rounded corner or an ellipse stays in the box.
         let round = ResolvedGeometry::RoundedRect {
             width: 40.0,
