@@ -156,11 +156,9 @@ impl Renderer {
         // cheaply.
         let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
 
-        let mut context = RenderContext::new();
-        let id = pollster::block_on(context.device(None))
+        let context = RenderContext::new();
+        let (device, queue) = pollster::block_on(new_device(&context.instance))
             .ok_or_else(|| Error::Render("no compatible GPU adapter found".into()))?;
-        let device = context.devices[id].device.clone();
-        let queue = context.devices[id].queue.clone();
 
         let vello = new_vello(&device)?;
         let margin = scene.margin();
@@ -323,6 +321,19 @@ impl Renderer {
     /// many were looked for in it and drawn instead.
     pub fn layer_cache_counts(&self) -> (u64, u64) {
         self.cache.counts()
+    }
+
+    /// Times every compositing pass on the GPU from now on, for
+    /// `take_pass_times`. `false` if the GPU cannot (no `TIMESTAMP_QUERY`).
+    pub fn set_pass_timing(&mut self, on: bool) -> bool {
+        self.compositor.set_pass_timing(on)
+    }
+
+    /// The compositing passes since the last call, with their GPU times.
+    /// Vello's rasterising and the copies between textures are not passes
+    /// that can be timed, so they are not in it.
+    pub fn take_pass_times(&mut self) -> Vec<crate::pass_timer::PassTime> {
+        self.compositor.take_pass_times()
     }
 
     pub fn render_frame(&mut self, frame: u32) -> Result<Frame> {
@@ -1961,6 +1972,28 @@ fn new_vello_target(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureVie
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// The GPU device, made as `vello::util::RenderContext::device` makes it
+/// (the default adapter, default limits, `CLEAR_TEXTURE` and
+/// `PIPELINE_CACHE` when there), plus `TIMESTAMP_QUERY` when there, for
+/// `set_pass_timing`.
+async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Queue)> {
+    let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, None)
+        .await
+        .ok()?;
+    let wanted = wgpu::Features::CLEAR_TEXTURE
+        | wgpu::Features::PIPELINE_CACHE
+        | wgpu::Features::TIMESTAMP_QUERY;
+    adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features: adapter.features() & wanted,
+            required_limits: wgpu::Limits::default(),
+            ..Default::default()
+        })
+        .await
+        .ok()
 }
 
 fn new_vello(device: &wgpu::Device) -> Result<vello::Renderer> {

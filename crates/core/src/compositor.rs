@@ -89,6 +89,7 @@
 
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use glam::DMat3;
 use vello::kurbo::{Affine, Rect};
@@ -101,6 +102,7 @@ use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::mesh;
+use crate::pass_timer::{self, PassTime, PassTimer, Stamp};
 use crate::pool::{Pool, Pooled};
 use crate::resolve::{
     ResolvedCornerPin, ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect,
@@ -284,6 +286,11 @@ pub struct Compositor {
     pending: RefCell<Option<wgpu::CommandEncoder>>,
     /// The passes' uniform blocks.
     uniforms: RefCell<Uniforms>,
+    /// Times each pass when `bench --passes` asks (`set_pass_timing`).
+    timer: Option<Arc<PassTimer>>,
+    /// What the pass timer calls each built-in pipeline's passes; a custom
+    /// shader's are "shader".
+    names: HashMap<wgpu::RenderPipeline, &'static str>,
 }
 
 impl Compositor {
@@ -460,7 +467,7 @@ impl Compositor {
                 )
             })
             .collect();
-        Compositor {
+        let mut compositor = Compositor {
             device: device.clone(),
             queue: queue.clone(),
             width: width + 2 * margin,
@@ -518,7 +525,60 @@ impl Compositor {
             pool: Pool::new(POOL_BYTES),
             pending: RefCell::new(None),
             uniforms: RefCell::new(Uniforms::new(device, queue)),
-        }
+            timer: None,
+            names: HashMap::new(),
+        };
+        let c = &compositor;
+        compositor.names = [
+            (&c.to_linear, "to linear"),
+            (&c.blend, "blend"),
+            (&c.mask, "mask"),
+            (&c.matte, "matte"),
+            (&c.accumulate, "accumulate"),
+            (&c.encode, "encode"),
+            (&c.spread, "shadow spread"),
+            (&c.drop_shadow, "drop shadow"),
+            (&c.drop_box, "drop shadow (box)"),
+            (&c.inset_shadow, "inset shadow"),
+            (&c.color, "colour filter"),
+            (&c.glow, "glow"),
+            (&c.aberration, "aberration"),
+            (&c.gradient_map, "gradient map"),
+            (&c.grain, "grain"),
+            (&c.dither, "dither"),
+            (&c.halftone, "halftone"),
+            (&c.dot_matrix, "dot matrix"),
+            (&c.warp, "warp"),
+            (&c.displace, "displace"),
+            (&c.noise, "noise"),
+            (&c.lut, "lut"),
+        ]
+        .into_iter()
+        .map(|(pipeline, name)| (pipeline.clone(), name))
+        .collect();
+        compositor
+    }
+
+    /// Turns the pass timer on or off; `false` if the device cannot time
+    /// passes. Turning it on starts an empty record.
+    pub fn set_pass_timing(&mut self, on: bool) -> bool {
+        self.timer = on
+            .then(|| PassTimer::new(&self.device, &self.queue).map(Arc::new))
+            .flatten();
+        self.blur.timer = self.timer.clone();
+        self.timer.is_some()
+    }
+
+    /// The GPU time of every pass recorded since the last call (or since
+    /// the timer was turned on). Submits what is pending and waits for it.
+    pub fn take_pass_times(&self) -> Vec<PassTime> {
+        self.submit();
+        self.timer.as_ref().map(|t| t.take()).unwrap_or_default()
+    }
+
+    /// Timestamps for a pass called `name` into `target`, when timing.
+    fn stamp(&self, name: &'static str, target: &wgpu::TextureView) -> Option<Stamp> {
+        self.timer.as_ref().map(|t| t.stamp(name, target))
     }
 
     /// Makes the textures `width` x `height` (the canvas) plus `margin` on
@@ -639,10 +699,12 @@ impl Compositor {
             return None;
         }
         let full = self.target_full(src.bounds);
+        let stamp = self.stamp("clear", &full.view);
         let mut encoder = self.encoder();
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear"),
             color_attachments: &[Some(clear_attachment(&full.view, wgpu::Color::TRANSPARENT))],
+            timestamp_writes: pass_timer::writes(&stamp),
             ..Default::default()
         });
         copy_box(&mut encoder, src, &full, src.bounds);
@@ -693,10 +755,12 @@ impl Compositor {
     }
 
     fn clear(&self, tex: &Tex, color: wgpu::Color) {
+        let stamp = self.stamp("clear", &tex.view);
         self.encoder()
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear"),
                 color_attachments: &[Some(clear_attachment(&tex.view, color))],
+                timestamp_writes: pass_timer::writes(&stamp),
                 ..Default::default()
             });
     }
@@ -1361,6 +1425,7 @@ impl Compositor {
                 usage: wgpu::BufferUsages::VERTEX,
             });
         {
+            let stamp = self.stamp("mesh", &target.view);
             let mut encoder = self.encoder();
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("mesh"),
@@ -1374,6 +1439,7 @@ impl Compositor {
                         store: wgpu::StoreOp::Discard,
                     },
                 })],
+                timestamp_writes: pass_timer::writes(&stamp),
                 ..Default::default()
             });
             pass.set_pipeline(&self.mesh);
@@ -1996,12 +2062,15 @@ impl Compositor {
                 target.size[0] as i32,
                 target.size[1] as i32,
             ));
+        let name = self.names.get(pipeline).copied().unwrap_or("shader");
+        let stamp = self.stamp(name, &target.view);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("composite"),
             color_attachments: &[Some(clear_attachment(
                 &target.view,
                 wgpu::Color::TRANSPARENT,
             ))],
+            timestamp_writes: pass_timer::writes(&stamp),
             ..Default::default()
         });
         if !region.is_empty() {
