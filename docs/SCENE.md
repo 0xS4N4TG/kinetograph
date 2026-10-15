@@ -237,7 +237,10 @@ the buffer and draws its children straight into its parent; the result is the sa
 `transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates. `"preserve3d": true` (default `false`) makes the group a 3D scene instead: see
 [preserve3d groups](#preserve3d-groups). A group with a `layout` places its children with flexbox: see
-[Layout](#layout).
+[Layout](#layout). `"passThrough": true` (default `false`) draws the children straight into the group's parent
+even if they blend with a mode other than `normal`, so they blend with what is behind the group, as if it were not
+there (CSS `isolation: auto` on an element that is not a stacking context, such as an `<svg>` root). It only takes
+effect on a group that is otherwise plain (opacity 1, `normal` blending, no effects, clip, mask or matte).
 
 ### noise
 

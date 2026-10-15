@@ -116,7 +116,7 @@ pub fn paint_svg(
     let children = emitter.group(tree.root(), Affine::IDENTITY);
     notes.append(&mut emitter.notes);
     // Text with no font to set it in is dropped by usvg without a word.
-    if serialized.xml.contains("<text") && !tree.has_text_nodes() {
+    if serialized.xml.contains("<text") && request.fonts.is_empty() {
         notes.push(Note {
             element: "text".into(),
             property: Some("font-family".into()),

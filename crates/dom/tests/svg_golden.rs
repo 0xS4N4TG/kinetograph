@@ -41,7 +41,13 @@ fn document(name: &str, width: u32, height: u32) -> (BaseDocument, IslandRequest
             width: f64::from(width),
             height: f64::from(height),
         },
-        fonts: BTreeMap::new(),
+        fonts: BTreeMap::from([(
+            "DM:400:normal".to_string(),
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/fonts/DMSans-Medium.ttf")
+                .to_string_lossy()
+                .into_owned(),
+        )]),
         base_dir: dir().join("svg").to_string_lossy().into_owned(),
         public_dir: None,
         time: 0.0,
@@ -147,6 +153,14 @@ fn basic_shapes_gradients_and_strokes_match_golden() {
 #[test]
 fn clips_masks_patterns_markers_and_filters_match_golden() {
     check("svg-features", &svg_page("features.html", 480, 360));
+}
+
+#[test]
+fn text_css_transforms_use_and_nested_svg_match_golden() {
+    check(
+        "svg-text-transforms",
+        &svg_page("text-transforms.html", 400, 240),
+    );
 }
 
 #[test]

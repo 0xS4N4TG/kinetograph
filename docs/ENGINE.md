@@ -97,7 +97,7 @@ Two functions in `crates/dom/src/paint/svg/mod.rs` are what the box painter (str
 styled, laid-out `BaseDocument` and the `IslandRequest` (for fonts and asset directories).
 
 ```rust
-pub fn paint_svg(doc: &BaseDocument, request: &IslandRequest, node_id: usize, size: [f64; 2],
+pub fn paint_svg(doc: &BaseDocument, request: &IslandRequest, node_id: NodeId, size: [f64; 2],
                  id: &str, path: &str) -> SvgPaint;          // SvgPaint { layer: Option<Value>, unsupported }
 pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str, bbox: [f64; 4],
                     id: &str, path: &str) -> Option<FilterEffect>;  // FilterEffect { effect: Value, unsupported }
@@ -118,3 +118,36 @@ pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str,
   (CSS ignores the reference then). A filter of the wrong kind of element is `None` too.
 - Both return `Unsupported` items for what they could not draw as Chrome would.
 - The `filterGraph` effect is documented in `docs/SCENE.md` ("filterGraph").
+
+What is drawn (stream 3, as built):
+
+- **SVG** (`paint_svg`): usvg resolves the subtree (shapes, `use`/`symbol`, nested `<svg>` with `viewBox` and
+  `preserveAspectRatio`, gradients with `gradientTransform` and focus, text to paths with the request's fonts only,
+  markers, `currentColor` from Stylo, `<style>` rules from the request's stylesheets); we map it to layers: paths with
+  fill, fill rule, stroke width, caps, joins, miter limit and dashes (also `pathLength`), gradient and pattern paints
+  (a pattern is its tile drawn once, repeated by `feTile`, cut to the shape by a matte), strokes with a gradient or
+  under a stretched matrix as filled outlines, clip paths (one plain path is the scene's `clip`, anything else a
+  matte), masks (`srgbLuminance` matte), `opacity` and `mix-blend-mode` on groups, `<image>` (PNG and JPEG, as `data:`
+  URLs, nothing written to disk), CSS `transform`, `rotate`, `scale`, `translate`, `transform-origin` on inner elements
+  (`transform-box: view-box` only), and `filter="url(#id)"` on any element, including a `<filter>` defined in another
+  `<svg>` of the page. The group returned is `passThrough` (no clip, no isolation) unless something reaches outside
+  the box, so a `mix-blend-mode` inside blends with what is behind the `<svg>`.
+- **Filters** (`filterGraph`, `filter_graph`): all 17 primitives but `feImage`, which becomes a transparent flood and an
+  `Unsupported` item. CSS filter functions on an element inside an `<svg>` are `Unsupported` (the box painter does
+  them for HTML boxes).
+- `Unsupported` items: `feImage`; CSS filter functions on SVG elements; `transform-box` other than `view-box`; a
+  skewed or mirrored pattern, image, or filtered element (drawn unturned for the filter); a GIF or WebP `<image>`;
+  text when the request registers no font.
+- Reads of files (`<image href>`) are limited to `base_dir` and `public_dir`: relative, no `..`, canonical path
+  inside the root.
+- **Checked against Chrome for Testing 154** (mean difference over the picture, of 255; a pixel counts as different
+  above 16): `filterGraph` sheet of 39 filters, per tile 0.0 to 1.9 (the noise ones 1.2 to 2.9; Chrome rounds noise
+  positions to whole pixels, and so do we); the same on turned and scaled layers 1.0 to 6.0; the papercut `torn` and
+  `rough` filters on `div`s 0.06; the SVG pages: shapes 1.9, features 2.6, text and transforms 1.7. What is left is
+  edge anti-aliasing and **blending in linear light**: a translucent layer over another (an `opacity` of 0.93 with
+  `multiply`, a mask's fade, the soft edge of a shape) is mixed in linear light here and in sRGB by Chrome, which
+  darkens or lightens it by up to 20 levels. That is the engine's rule for layers (`SCENE.md`), not the SVG painter's;
+  it needs a compositor-level option to go away.
+- `crates/dom/tests/svg_golden.rs` and `crates/core/tests/{filter,svg_paint,golden}.rs` hold the tests; the goldens
+  are in `crates/dom/tests/golden` and `crates/core/tests/golden`. `cargo run -p kinetograph-dom --example svg_scene
+  -- page.html scene.json W H` makes a scene from the `<svg>`s of an HTML page, to compare with a browser.
