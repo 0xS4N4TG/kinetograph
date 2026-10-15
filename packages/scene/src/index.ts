@@ -8,3 +8,4 @@ export * from './paint.js';
 export * from './catalog.js';
 export * from './motion.js';
 export * from './canvas.js';
+export * from './webgl.js';

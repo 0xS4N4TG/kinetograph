@@ -616,6 +616,99 @@ export interface CanvasLayer extends LayerBase {
   commands?: CanvasCommand[];
 }
 
+// ---- glsl (docs/SCENE.md, "glsl") ----
+
+export interface GlslProgram {
+  vertex: string;
+  fragment: string;
+  /** Attribute name to location. */
+  attributes?: Record<string, number>;
+}
+
+export interface GlslTexture {
+  /** A picture file relative to the scene, or a `data:` URL. */
+  src?: string;
+  /** Base64 RGBA8, straight alpha. */
+  pixels?: string;
+  width?: number;
+  height?: number;
+  flipY?: boolean;
+  premultiply?: boolean;
+  /** `generateMipmap` was called. */
+  mipmaps?: boolean;
+}
+
+export interface GlslAttribute {
+  buffer: string;
+  size: number;
+  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32';
+  normalized?: boolean;
+  stride?: number;
+  offset?: number;
+}
+
+export interface GlslUniform {
+  /** `f` for `uniform*f`, `i` for `uniform*i`, `m` for `uniformMatrix*` (column-major). */
+  kind: 'f' | 'i' | 'm';
+  value: number[];
+  /** The array element the first value goes to. */
+  index?: number;
+}
+
+export interface GlslSampler {
+  texture: string;
+  min: string;
+  mag: string;
+  wrapS: string;
+  wrapT: string;
+}
+
+export interface GlslBlend {
+  srcRgb: string;
+  dstRgb: string;
+  srcAlpha: string;
+  dstAlpha: string;
+  eqRgb: string;
+  eqAlpha: string;
+  color: [number, number, number, number];
+}
+
+export interface GlslDraw {
+  program: string;
+  mode: 'triangles' | 'triangleStrip' | 'triangleFan';
+  first: number;
+  count: number;
+  indices?: { buffer: string; type: 'u8' | 'u16' | 'u32'; offset: number };
+  attributes: Record<string, GlslAttribute>;
+  uniforms: Record<string, GlslUniform[]>;
+  units: Record<string, GlslSampler>;
+  /** `x, y, width, height`, y up from the bottom row. */
+  viewport: [number, number, number, number];
+  scissor?: [number, number, number, number];
+  blend?: GlslBlend;
+  colorMask?: [boolean, boolean, boolean, boolean];
+  cull?: { face: string; front: string };
+}
+
+export type GlslOp = { op: 'clear'; color: [number, number, number, number] } | ({ op: 'draw' } & GlslDraw);
+
+/** What a WebGL context did: the programs, data and calls of a `glsl` layer. */
+export interface GlslContent {
+  premultipliedAlpha?: boolean;
+  alpha?: boolean;
+  programs: Record<string, GlslProgram>;
+  /** Base64 bytes. */
+  buffers: Record<string, string>;
+  textures: Record<string, GlslTexture>;
+  ops: GlslOp[];
+}
+
+export interface GlslLayer extends LayerBase, Partial<GlslContent> {
+  type: 'glsl';
+  width: Num;
+  height: Num;
+}
+
 export interface VideoLayer extends LayerBase {
   type: 'video';
   /** Any file FFmpeg reads with a video stream, relative to the scene. */
@@ -662,6 +755,7 @@ export type LayerJson =
   | MeshGradientLayer
   | LottieLayer
   | CanvasLayer
+  | GlslLayer
   | VideoLayer
   | GifLayer;
 export type LayerType = LayerJson['type'];
