@@ -309,6 +309,17 @@ and kept): the contract is `docs/AUTHORING.md`; the TSX rebuild of the reference
 checks green; nothing has rendered on a GPU yet. On the M4: the seven new goldens, the addon's GPU tests, spike 1
 (`crates/node/spike/handoff.mjs`), spike 2 (`spikes/three-dawn`), the reference rebuild, then the papercut port and
 the go/no-go timing.
+**Tested on the M4 2026-10-15** (PR #11, not merged). Fixed on the branch: a ThorVG use-after-free across threads (the
+Lottie tests crashed about half the runs), transform origins measured from the box's top-left corner, the seven new
+goldens. `cargo test` and the GPU npm tests pass except `renderer_reuse` (#12).
+- Spike 1: handoff 0.58 ms a frame on the papercut card, 1.6–2.9 ms on the S04 port. Spike 2: Three.js
+  `WebGPURenderer` runs on Dawn (Metal), ~0.44 ms a frame at 512², 1.3–1.4 ms with readback. Three.js it is.
+- Go/no-go: the S04Meter TSX port matches the JSON port byte for byte on all 89 frames and renders 3.6–3.9x faster
+  than Remotion (the JSON port 4.1–4.5x). Below the 5x bar; 4x accepted for now (decided 2026-10-15). No `bench`
+  regression against `main`.
+- The reference rebuild works but is slow (429 ms a frame) and matches loosely (#17).
+- Merge blockers, fixed in the cloud before #11 merges: #12, #13, #14, #15 (see "Phase 3 fixes in a cloud session").
+  Later: #16 (`kinetograph check`), #17.
 **3D layer (after Phase 3).** Three.js on Dawn, or the kiss3d mapping if the spike fails (section 4).
 **Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
@@ -382,6 +393,37 @@ still hold, plus:
   `examples/`, for rendering and comparison on the M4, and opens `feat/node-authoring` as a draft PR against `main`
   titled Phase 3. The TSX port of ep 13 S04Meter is done on the M4, where the papercut source is.
   Nothing merges into `main` before the M4 tests it. The stream branches are kept after they merge.
+
+**Phase 3 fixes in a cloud session** (decided 2026-10-15). The four merge blockers found on the M4, each on its own
+branch with a draft PR against `feat/node-authoring` (PR #11). The cloud rules above hold; nothing merges, and
+`main` is not touched. PR titles start "Phase 3 fix:" and the body says "Fixes #N".
+- **#12 `fix/image-atlas-offset`.** Vello 0.11 keeps an image atlas across renders, and `fine.wgsl` adds the atlas
+  offset before splitting the sample position into texel and fraction (`atlas_uv = atlas_uv + image.atlas_offset`,
+  around lines 1328 and 1347), so image and Lottie pixels move by a level with what the renderer drew before. Vendor
+  `vello_shaders` 0.11.0 under `vendor/vello_shaders`, wire it with `[patch.crates-io]`, and take the floor and
+  fraction of the image-local position before adding the integer offset. Smallest possible shader diff; a README in
+  `vendor/` names the upstream file, version and change so it can be offered upstream. Tests: `renderer_reuse` must
+  pass, plus a new one that renders `tests/scenes/lottie.json` frames 0–59 in order on one `Renderer` and checks each
+  against `render_still`. Image goldens may move by a level; the M4 looks and regenerates.
+- **#13 `fix/displace-margin`.** Make `displace` independent of the margin (SCENE.md says its noise is in layer
+  space), with a GPU test that renders one displace scene at two margins and asserts identical pixels. Then stop the
+  margin changing per frame in TSX renders, so textures are not rebuilt: an explicit `margin` on `<Composition>` and
+  in the scene JSON, or another design that does not depend on frame order (a renderer keeping "the largest margin so
+  far" does, unless pixels are proven margin-independent). Justify the choice in the PR; update SCENE.md and
+  AUTHORING.md.
+- **#14 `feat/composition-background`**, branched from `fix/displace-margin` with its PR against that branch (same
+  `<Composition>` props and `frame-loop.tsx`). A `background` colour prop on `<Composition>` passed into every frame's
+  scene in place of the hard-coded `'transparent'` in `packages/core/src/frame-loop.tsx`; default transparent;
+  documented in AUTHORING §7; a unit test on the emitted JSON.
+- **#15 `fix/lint-visibility`.** In `packages/cli/src/lint.ts`, skip a layer for a frame when its opacity times its
+  ancestors' is 0, and for off-canvas checks when a clip hides it. CLI tests: text past the edge at `opacity={0}`, the
+  same inside a group at opacity 0 (no finding), and at opacity 1 (finding). Update `packages/cli/skill/SKILL.md` if
+  it describes lint's output.
+- When done: push every branch, open the four draft PRs, and report the PR links, each CPU check's result, what the
+  M4 must run per PR (test targets, scenes to look at, goldens that may need `UPDATE_GOLDEN=1`, any `bench`), and
+  any decision the issue left open, especially #13's margin design. On the M4, #12 is tested first since it can
+  move image goldens; then #13 and #14 together, then #15. Merge the fixes into `feat/node-authoring`, then #11 into
+  `main`.
 
 ## 9. Rules for the build
 
