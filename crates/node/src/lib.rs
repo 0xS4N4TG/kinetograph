@@ -16,7 +16,6 @@ mod error;
 mod layout;
 mod media;
 mod preview;
-mod raw;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -262,14 +261,6 @@ pub fn dom_computed_style(
     properties: Vec<String>,
 ) -> Result<Vec<String>> {
     dom::dom_computed_style(&request_json, &path, &properties)
-}
-
-/// The picture a video layer shows `time` seconds after the stream's first
-/// picture, decoded on the CPU (docs/COMPAT.md §6.2). A GIF gives the picture
-/// a gif layer shows at `time` seconds (the last one is held past the end).
-#[napi]
-pub fn video_frame(path: String, time: f64, base_dir: Option<String>) -> Result<RgbaFrame> {
-    raw::video_frame(&resolve_base(base_dir).join(path), time)
 }
 
 // ---- GPU ----
@@ -639,28 +630,6 @@ impl Drop for VideoWriter {
 
 #[napi]
 impl VideoWriter {
-    /// Queues a frame drawn elsewhere (the Chrome fallback, docs/COMPAT.md
-    /// §6.2): straight-alpha sRGB RGBA8 of the writer's size, under the same
-    /// ordering rule as `pushFrame`. Like a failed `pushFrame`, a failed
-    /// `pushRgba` ends the video.
-    #[napi]
-    pub fn push_rgba(&mut self, rgba: Buffer, width: f64, height: f64, frame: f64) -> Result<()> {
-        let pushed = (|| {
-            let width = count("width", width)?;
-            let height = count("height", height)?;
-            let frame = count("frame", frame)?;
-            let shared = self.shared.clone();
-            let mut gpu = shared.lock();
-            self.writer()?
-                .push_rgba(&mut gpu, rgba.to_vec(), width, height, frame)
-                .map_err(from_render)
-        })();
-        if pushed.is_err() {
-            self.close();
-        }
-        pushed
-    }
-
     /// Renders `frame` of this scene and queues it for encoding.
     #[napi]
     pub fn push_frame(
