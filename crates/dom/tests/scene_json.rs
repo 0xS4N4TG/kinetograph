@@ -244,6 +244,24 @@ fn a_parents_perspective_makes_the_childs_matrix_a_perspective_one() {
 }
 
 #[test]
+fn the_perspective_terms_of_a_matrix_keep_their_precision() {
+    // A distant camera: the w the x axis gains is sin(30deg) / 20000 = 2.5e-5,
+    // which four decimals turn into 0 (and 4e-5 into 1e-4: a slope 2.5 times too steep).
+    let out = paint(
+        r#"<div style="position:absolute;left:0;top:0;width:200px;height:100px;perspective:20000px"><div id="c" style="width:100px;height:80px;background:#000;transform:rotateY(30deg)"></div></div>"#,
+        300,
+        200,
+    );
+    let m: Vec<f64> = find(&out.layers, "c")["transform"]["matrix"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    assert!((m[3].abs() - 2.5e-5).abs() < 1e-8, "{m:?}");
+}
+
+#[test]
 fn backface_and_preserve_3d_reach_the_layer() {
     let out = paint(
         r#"<div id="a" style="transform-style:preserve-3d;width:50px;height:50px"><div id="b" style="width:30px;height:30px;background:#000;transform:rotateY(180deg);backface-visibility:hidden"></div></div>"#,

@@ -11,7 +11,7 @@ use super::background::blend_name;
 use super::deco::box_geom;
 use super::geom::{BoxGeom, Region};
 use super::mat::Mat4;
-use super::util::{Layer, current_color, hex, lp, num, num4, resolve_color, shift};
+use super::util::{Layer, current_color, hex, lp, num, num_exact, num4, resolve_color, shift};
 use super::{Origin, Painter};
 use crate::transform::{Matrix, local_transform};
 
@@ -249,7 +249,7 @@ impl<'a> Painter<'a> {
             };
         }
         let mut t = json!({ "x": num(x), "y": num(y), "anchorX": num(ox), "anchorY": num(oy) });
-        t["matrix"] = Value::Array(m.0.iter().map(|v| num4(*v)).collect());
+        t["matrix"] = Value::Array(m.0.iter().map(|v| num_exact(*v)).collect());
         TransformFields {
             transform: Some(t),
             preserve3d,
