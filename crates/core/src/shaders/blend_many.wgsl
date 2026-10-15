@@ -160,9 +160,25 @@ fn fs_blend_many(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
             }
         }
         let s = layer * slot.opacity;
-        let mixed = blend_fn(slot.mode, unpremultiply(b), unpremultiply(s));
-        let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
+        let mode = slot.mode & 0xffffu;
         let a = s.a + b.a * (1.0 - s.a);
+        if (slot.mode >> 16u) == 1u {
+            // As `fs_blend` in sRGB (`Scene::blend_space`): the formulas on
+            // the encoded colours, then back to linear light.
+            if a <= 0.0 {
+                b = vec4<f32>(0.0);
+                continue;
+            }
+            let cb = linear_to_srgb(clamp(unpremultiply(b), vec3<f32>(0.0), vec3<f32>(1.0)));
+            let cs = linear_to_srgb(clamp(unpremultiply(s), vec3<f32>(0.0), vec3<f32>(1.0)));
+            let mixed_e = blend_fn(mode, cb, cs);
+            let rgb_e = cs * s.a * (1.0 - b.a) + cb * b.a * (1.0 - s.a) + s.a * b.a * mixed_e;
+            let rgb = srgb_to_linear(rgb_e / a) * a;
+            b = vec4<f32>(store_f16(rgb.x), store_f16(rgb.y), store_f16(rgb.z), store_f16(a));
+            continue;
+        }
+        let mixed = blend_fn(mode, unpremultiply(b), unpremultiply(s));
+        let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
         b = vec4<f32>(store_f16(rgb.x), store_f16(rgb.y), store_f16(rgb.z), store_f16(a));
     }
     return b;

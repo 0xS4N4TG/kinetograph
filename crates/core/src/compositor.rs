@@ -999,6 +999,8 @@ impl Compositor {
     /// The pass of `blend_many`: `layers` (at most `BLEND_SLOTS`) over `dst`
     /// into `target`.
     fn blend_many_pass(&self, dst: &Tex, layers: &[BlendLayer], target: &Tex) {
+        // Bit 16 of a slot's mode says to composite in sRGB, as in `blend`.
+        let space_bit: u32 = if self.srgb_blend { 1 << 16 } else { 0 };
         let mut bytes = Vec::with_capacity(48 + 64 * BLEND_SLOTS);
         let mut put = |values: &[[u8; 4]]| bytes.extend(values.iter().flatten());
         let int = |v: i32| v.to_le_bytes();
@@ -1045,7 +1047,7 @@ impl Compositor {
                     put(&[int(b.x0), int(b.y0), int(b.x1), int(b.y1)]);
                     put(&[
                         l.opacity.to_le_bytes(),
-                        mode_index(l.mode).to_le_bytes(),
+                        (mode_index(l.mode) | space_bit).to_le_bytes(),
                         kind.to_le_bytes(),
                         [0; 4],
                     ]);
