@@ -1,0 +1,35 @@
+{
+  "name": "@kinetograph/studio",
+  "version": "0.1.0",
+  "description": "kinetograph studio: a local web server and browser UI whose preview frames the addon renders",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "default": "./dist/protocol.js"
+    }
+  },
+  "files": [
+    "dist",
+    "ui/dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@kinetograph/core": "0.1.0",
+    "@kinetograph/native": "0.1.0",
+    "@kinetograph/scene": "0.1.0",
+    "kinetograph": "0.1.0",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2"
+  }
+}

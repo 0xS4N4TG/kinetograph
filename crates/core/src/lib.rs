@@ -7,7 +7,10 @@ pub mod box_shadow;
 pub mod cache;
 pub mod color;
 pub mod compositor;
+pub mod dom_layout;
 pub mod error;
+pub mod filter;
+pub mod gif;
 #[cfg(test)]
 mod hash;
 pub mod inspect;
@@ -15,6 +18,7 @@ mod layout;
 pub mod lottie;
 pub mod lut;
 pub mod mesh;
+pub mod pass_timer;
 pub mod pool;
 pub mod render;
 pub mod resolve;
@@ -23,6 +27,7 @@ pub mod shader;
 pub mod text;
 pub mod turbulence;
 pub mod uniforms;
+pub mod video;
 pub mod warp;
 
 #[cfg(test)]

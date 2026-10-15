@@ -10,7 +10,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { Layer, TimelineContext, useTimeline, type TimelineState, type VideoConfig } from '@kinetograph/react';
+import { Layer, SequenceHost, TimelineContext, useTimeline, type TimelineState, type VideoConfig } from '@kinetograph/react';
 
 /** The frame, relative to the enclosing Sequences (fractional on a motion-blur sub-frame). */
 export function useCurrentFrame(): number {
@@ -39,9 +39,43 @@ function checkNumber(component: string, prop: string, value: unknown, { allowInf
 }
 
 function Scoped({ state, layout, children }: { state: TimelineState; layout?: LayoutProp; children: ReactNode }) {
-  // `layout="none"` is Remotion's "no wrapper": the children go straight into the parent.
-  const inner = layout === 'none' ? <>{children}</> : <Layer>{children}</Layer>;
+  // `layout="none"` is Remotion's "no wrapper": the children go straight into the parent. The wrapper is Remotion's
+  // AbsoluteFill: with DOM elements inside it is that `div` (docs/ENGINE.md §10), else a plain layer.
+  const inner =
+    layout === 'none' ? <>{children}</> : <Layer domFill={{ style: {}, background: false }}>{children}</Layer>;
   return <TimelineContext.Provider value={state}>{inner}</TimelineContext.Provider>;
+}
+
+/** The absolute frame a Sequence key says its Sequence starts at: the number after the key's last `@`. */
+function keyStart(key: string): number {
+  const at = key.lastIndexOf('@');
+  return Number(key.slice(at + 1, key.indexOf('+', at)));
+}
+
+/**
+ * The absolute frame at which `parent`'s frame 0 falls. A motion-blur sub-frame's two numbers carry rounding noise, so
+ * a start within a hair of a whole frame is that frame. Inside a `<Freeze>` the frame is pinned and says nothing about
+ * the start, so the enclosing Sequence's key does.
+ */
+function startOf(parent: TimelineState): number {
+  if (parent.frozen) return parent.sequence ? keyStart(parent.sequence) : 0;
+  const start = parent.absoluteFrame - parent.frame;
+  const whole = Math.round(start);
+  return Math.abs(start - whole) < 1e-6 ? whole : start;
+}
+
+/**
+ * What the timeline records for a Sequence or Loop (docs/AUTHORING.md §11.4): rendered whether or not the Sequence is
+ * showing. `from` is relative to the enclosing Sequence and `duration` already clamped.
+ */
+function recorded(parent: TimelineState, name: string | undefined, label: 'Sequence' | 'Loop', from: number, duration: number) {
+  const parentKey = parent.sequence ?? null;
+  const absoluteFrom = startOf(parent) + from;
+  const key = `${parentKey ?? ''}/${name ?? label}@${absoluteFrom}+${duration}`;
+  return {
+    key,
+    sequence: { key, name: name ?? (label === 'Loop' ? label : null), from: absoluteFrom, durationInFrames: duration, parent: parentKey },
+  };
 }
 
 export interface SequenceProps {
@@ -56,7 +90,7 @@ export interface SequenceProps {
  * Shows its children from frame `from` for `durationInFrames`, with time
  * shifted so their frame 0 is `from`. The children sit in a plain `<Layer>`.
  */
-export function Sequence({ from = 0, durationInFrames = Infinity, layout, children }: SequenceProps): ReactNode {
+export function Sequence({ from = 0, durationInFrames = Infinity, name, layout, children }: SequenceProps): ReactNode {
   const parent = useTimeline();
   checkNumber('Sequence', 'from', from);
   checkNumber('Sequence', 'durationInFrames', durationInFrames, { allowInfinity: true });
@@ -66,11 +100,16 @@ export function Sequence({ from = 0, durationInFrames = Infinity, layout, childr
   // A Sequence cannot outlast what is left of the one around it.
   const actualDuration = Math.min(durationInFrames, parent.durationInFrames - from);
   const relative = parent.frame - from;
-  if (relative < 0 || relative >= actualDuration) return null;
+  const showing = relative >= 0 && relative < actualDuration;
+  const { key, sequence } = recorded(parent, name, 'Sequence', from, Math.max(0, actualDuration));
   return (
-    <Scoped state={{ ...parent, frame: relative, durationInFrames: actualDuration }} layout={layout}>
-      {children}
-    </Scoped>
+    <SequenceHost sequence={sequence} wrapped={layout !== 'none'}>
+      {showing ? (
+        <Scoped state={{ ...parent, frame: relative, durationInFrames: actualDuration, sequence: key }} layout={layout}>
+          {children}
+        </Scoped>
+      ) : undefined}
+    </SequenceHost>
   );
 }
 
@@ -129,7 +168,7 @@ export interface LoopProps {
 }
 
 /** Plays its children over and over, `times` times (forever by default). */
-export function Loop({ durationInFrames, times = Infinity, layout, children }: LoopProps): ReactNode {
+export function Loop({ durationInFrames, times = Infinity, layout, name, children }: LoopProps): ReactNode {
   const parent = useTimeline();
   checkNumber('Loop', 'durationInFrames', durationInFrames);
   checkNumber('Loop', 'times', times, { allowInfinity: true });
@@ -138,11 +177,16 @@ export function Loop({ durationInFrames, times = Infinity, layout, children }: L
   }
   if (times <= 0) throw new TypeError(`The "times" prop of <Loop> must be greater than 0, but got ${times}`);
   const total = Math.min(durationInFrames * times, parent.durationInFrames);
-  if (parent.frame < 0 || parent.frame >= total) return null;
+  const showing = parent.frame >= 0 && parent.frame < total;
+  const { key, sequence } = recorded(parent, name, 'Loop', 0, total);
   return (
-    <Scoped state={{ ...parent, frame: parent.frame % durationInFrames, durationInFrames }} layout={layout}>
-      {children}
-    </Scoped>
+    <SequenceHost sequence={sequence} wrapped={layout !== 'none'}>
+      {showing ? (
+        <Scoped state={{ ...parent, frame: parent.frame % durationInFrames, durationInFrames, sequence: key }} layout={layout}>
+          {children}
+        </Scoped>
+      ) : undefined}
+    </SequenceHost>
   );
 }
 

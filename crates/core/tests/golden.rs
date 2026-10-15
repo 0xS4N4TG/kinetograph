@@ -70,6 +70,21 @@ fn check(name: &str, frame: &Frame) {
 }
 
 #[test]
+fn filter_graphs_match_golden() {
+    // 39 SVG filters on one source, in a grid, checked against Chrome's
+    // rendering of the same <filter> elements (docs/SCENE.md, "filterGraph").
+    let frame = render_still(scene("tests/scenes/filter-graph.json"), 0).unwrap();
+    check("filter-graph", &frame);
+}
+
+#[test]
+fn filter_graphs_on_turned_layers_match_golden() {
+    // The same kind of filters on layers that are rotated and scaled.
+    let frame = render_still(scene("tests/scenes/filter-graph-turned.json"), 0).unwrap();
+    check("filter-graph-turned", &frame);
+}
+
+#[test]
 fn papercut_card_matches_golden() {
     let frame = render_still(scene("../../examples/papercut-card.json"), 30).unwrap();
     check("papercut-card-f30", &frame);
@@ -443,4 +458,27 @@ fn origin_and_align_match_golden() {
     // width (outlined) and centred with no wrap width.
     let frame = render_still(scene("tests/scenes/origin-align.json"), 15).unwrap();
     check("origin-align", &frame);
+}
+
+#[test]
+fn video_layers_match_golden() {
+    // Frame 20 of 48 at 24 fps: 0.83 s into the clip. Covers a clip at its
+    // own size scaled up, `contain` and `cover` in a square, a frame held by
+    // `frame`, a clip at twice the rate that is trimmed and looped, a WebM
+    // whose first picture is not at 0 starting late, a clip with a shadow, a
+    // clip and an inset clip on a turned layer, a motion-blurred clip at
+    // three times the rate, and two clips in a flex row.
+    let frame = render_still(scene("tests/scenes/video.json"), 20).unwrap();
+    check("video", &frame);
+}
+
+#[test]
+fn gif_layers_match_golden() {
+    // Frame 15 of 30: half a second in, which is the end of the GIF's 500 ms.
+    // Covers each of its five pictures picked by `time` (the last has
+    // transparent corners), the frame's own time looped (back to the first
+    // picture) and held (the last), a time that is animated, `contain` and
+    // `cover`, and a turned layer with a shadow and half transparent.
+    let frame = render_still(scene("tests/scenes/gif.json"), 15).unwrap();
+    check("gif", &frame);
 }

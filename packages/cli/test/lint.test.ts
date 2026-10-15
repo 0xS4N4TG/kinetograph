@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { SceneJson } from '@kinetograph/scene';
-import { lintAudio, lintInspect, lintScene, mergeFindings } from '../src/lint.js';
+import type { SceneJson, Unsupported } from '@kinetograph/scene';
+import { lintAudio, lintCompat, lintInspect, lintScene, mergeFindings, sortIssues } from '../src/lint.js';
 import type { InspectLayer, InspectResult } from '../src/native.js';
 
 function layer(over: Partial<InspectLayer> & { id: string }): InspectLayer {
@@ -187,6 +187,30 @@ describe('lintScene', () => {
     const ok = scene({ layers: [{ id: 'a', type: 'text', text: 'x', font: 'DM Sans', size: 20 }] });
     expect(lintScene(ok, '/proj', () => true)).toEqual([]);
   });
+
+  it('finds a missing video or gif file, at any depth, naming the layer and the file', () => {
+    const media = scene({
+      fonts: {},
+      layers: [
+        { id: 'clip', type: 'video', src: 'clips/gone.mp4' },
+        { id: 'g', type: 'group', children: [{ id: 'spinner', type: 'gif', src: 'spin.gif' }] },
+        { id: 'here', type: 'video', src: 'clips/there.mp4' },
+        { id: 'there', type: 'gif', src: 'there.gif' },
+      ],
+    });
+    const findings = lintScene(media, '/proj', exists(['clips/there.mp4', 'there.gif']));
+    expect(findings).toEqual([
+      { rule: 'missing-asset', severity: 'error', layer: 'clip', message: 'video file not found: clips/gone.mp4' },
+      { rule: 'missing-asset', severity: 'error', layer: 'spinner', message: 'gif file not found: spin.gif' },
+    ]);
+  });
+
+  it('resolves a video src against the base directory, so absolute staticFile paths work', () => {
+    const seen: string[] = [];
+    const media = scene({ fonts: {}, layers: [{ id: 'v', type: 'video', src: '/abs/public/a.mp4' }, { id: 'w', type: 'video', src: 'b.mp4' }] });
+    lintScene(media, '/proj', (path) => (seen.push(path), true));
+    expect(seen).toEqual(['/abs/public/a.mp4', '/proj/b.mp4']);
+  });
 });
 
 describe('lintAudio and mergeFindings', () => {
@@ -196,6 +220,11 @@ describe('lintAudio and mergeFindings', () => {
       expect.objectContaining({ rule: 'missing-asset', layer: 'music' }),
     ]);
     expect(lintAudio([clip], '/p', () => true)).toEqual([]);
+  });
+
+  it('leaves the sound of a <Video> to its layer, which already reports the missing file', () => {
+    const sound = { id: 'v', src: 'a.mp4', from: 0, trimBefore: 0, trimAfter: null, playbackRate: 1, volume: 1, loop: false, muted: false, video: true };
+    expect(lintAudio([sound], '/p', () => false)).toEqual([]);
   });
 
   it('merges a finding seen at several frames into one issue and puts errors first', () => {
@@ -210,5 +239,53 @@ describe('lintAudio and mergeFindings', () => {
       ['missing-font', [30]],
       ['off-canvas', [0, 30, 60]],
     ]);
+  });
+});
+
+describe('lintCompat', () => {
+  const item = (over: Partial<Unsupported> = {}): Unsupported => ({
+    path: '$0.2 <div>', element: 'div', property: 'transform', value: 'skewX(10deg)', reason: 'skew is not supported', ...over,
+  });
+
+  it('is empty when every checked frame is drawn natively', () => {
+    expect(lintCompat([{ frame: 0, unsupported: [] }, { frame: 30, unsupported: [] }])).toEqual([]);
+  });
+
+  it('makes one warning per issue group, with the checked frames it holds at', () => {
+    const filter = item({ element: 'span', property: 'filter', value: 'url(#f)', reason: 'url filters are not supported' });
+    const issues = lintCompat([
+      { frame: 0, unsupported: [] },
+      { frame: 10, unsupported: [item(), filter] },
+      { frame: 20, unsupported: [item({ value: 'skewY(3deg)', path: '$1 <div>' })] },
+      { frame: 30, unsupported: [item()] },
+    ]);
+    expect(issues).toEqual([
+      {
+        rule: 'compat',
+        severity: 'warning',
+        layer: null,
+        message: 'not drawn natively, so Chrome renders the frame: div transform: skew is not supported (skewX(10deg); skewY(3deg)) at $0.2 <div>, $1 <div>',
+        frames: [10, 20, 30],
+      },
+      {
+        rule: 'compat',
+        severity: 'warning',
+        layer: null,
+        message: 'not drawn natively, so Chrome renders the frame: span filter: url filters are not supported (url(#f)) at $0.2 <div>',
+        frames: [10],
+      },
+    ]);
+  });
+
+  it('names an unsupported element without a property or value', () => {
+    const canvas = item({ element: 'canvas', property: null, value: null, reason: 'element not supported', path: '$0 <canvas>' });
+    const [issue] = lintCompat([{ frame: 4, unsupported: [canvas] }]);
+    expect(issue!.message).toBe('not drawn natively, so Chrome renders the frame: canvas: element not supported at $0 <canvas>');
+  });
+
+  it('sorts with the other findings: errors first, then by first frame', () => {
+    const compat = lintCompat([{ frame: 0, unsupported: [item()] }]);
+    const merged = mergeFindings([{ frame: 50, findings: [{ rule: 'missing-font', severity: 'error', layer: null, message: 'f' }] }]);
+    expect(sortIssues([...compat, ...merged]).map((i) => i.rule)).toEqual(['missing-font', 'compat']);
   });
 });

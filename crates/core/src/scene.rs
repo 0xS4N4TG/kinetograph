@@ -1,7 +1,9 @@
 //! The JSON scene graph. See docs/SCENE.md for the format.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use vello::kurbo::BezPath;
@@ -11,6 +13,7 @@ use crate::color::Color;
 use crate::error::{Error, Result};
 use crate::resolve::MAX_BLUR_RADIUS;
 use crate::turbulence::MAX_OCTAVES;
+use crate::video::VideoInfo;
 
 /// Largest canvas side; wgpu's default texture limit.
 pub const MAX_SIDE: u32 = 8192;
@@ -33,16 +36,37 @@ pub struct Scene {
     /// The viewpoint that layers with a 3D transform are drawn from. Without
     /// one, 3D transforms are orthographic: no perspective.
     pub camera: Option<Camera>,
+    /// The colour space layers are blended in.
+    #[serde(default)]
+    pub blend_space: BlendSpace,
     /// Bottom layer first.
     pub layers: Vec<Layer>,
     /// Directory that asset paths resolve against (the scene file's directory).
     #[serde(skip)]
     pub base_dir: PathBuf,
     /// The natural size in pixels of the image (and Lottie) files that a layer
-    /// leaves a size out for, by `src`. Read from the files' headers when the
-    /// scene loads, so that resolving a frame needs no I/O.
+    /// leaves a size out for, and of every video and GIF, by `src`. Read from
+    /// the files' headers when the scene loads, so that resolving a frame
+    /// needs no I/O.
     #[serde(skip)]
     pub asset_sizes: BTreeMap<String, (f64, f64)>,
+    /// What the container of every video file says (`video::probe`), by
+    /// `src`, read when the scene loads.
+    #[serde(skip)]
+    pub videos: BTreeMap<String, Arc<VideoInfo>>,
+}
+
+/// The colour space a layer is composited and blended in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlendSpace {
+    /// Linear light: physically right, and what the scene format has always
+    /// done.
+    #[default]
+    Linear,
+    /// sRGB-encoded values, as CSS and every browser composite: a half
+    /// transparent black over white is mid grey (128), not light grey (188).
+    Srgb,
 }
 
 fn default_background() -> Color {
@@ -173,6 +197,8 @@ pub enum LayerKind {
     Noise(NoiseLayer),
     MeshGradient(MeshGradientLayer),
     Lottie(LottieLayer),
+    Video(VideoLayer),
+    Gif(GifLayer),
 }
 
 impl LayerKind {
@@ -186,6 +212,8 @@ impl LayerKind {
             LayerKind::Noise(_) => "noise",
             LayerKind::MeshGradient(_) => "meshGradient",
             LayerKind::Lottie(_) => "lottie",
+            LayerKind::Video(_) => "video",
+            LayerKind::Gif(_) => "gif",
         }
     }
 
@@ -225,6 +253,32 @@ pub struct Transform {
     /// move the layer.
     pub origin_x: Num,
     pub origin_y: Num,
+    /// A CSS `matrix3d()` (sixteen numbers, column-major) applied about the
+    /// anchor, after `scale` and `rotation`: the whole CSS transform of a box
+    /// in one matrix (skew, per-axis scale, 3D, `perspective()`). A matrix
+    /// that only moves the plane (no z, no perspective) is folded into the 2D
+    /// matrix, so the layer stays sharp; any other warps the finished layer
+    /// like `rotateX` does. Not animated.
+    pub matrix: Option<[f64; 16]>,
+    /// CSS's `backface-visibility: hidden`: the layer is not drawn while its
+    /// back faces the viewer (its 3D placement has turned it over).
+    pub backface_hidden: bool,
+}
+
+/// Whether `m` (a `matrix3d()`) moves the z = 0 plane within itself and has
+/// no perspective: it is a 2D affine.
+pub fn matrix_is_affine_2d(m: &[f64; 16]) -> bool {
+    let zero = |v: f64| v.abs() < 1e-12;
+    zero(m[2])
+        && zero(m[3])
+        && zero(m[6])
+        && zero(m[7])
+        && zero(m[8])
+        && zero(m[9])
+        && (m[10] - 1.0).abs() < 1e-12
+        && zero(m[11])
+        && zero(m[14])
+        && (m[15] - 1.0).abs() < 1e-12
 }
 
 impl Transform {
@@ -233,6 +287,10 @@ impl Transform {
         [&self.rotate_x, &self.rotate_y, &self.z]
             .iter()
             .any(|n| n.min() != 0.0 || n.max() != 0.0)
+            || self
+                .matrix
+                .as_ref()
+                .is_some_and(|m| !matrix_is_affine_2d(m))
     }
 }
 
@@ -250,6 +308,8 @@ impl Default for Transform {
             z: Num::Const(0.0),
             origin_x: Num::Const(0.0),
             origin_y: Num::Const(0.0),
+            matrix: None,
+            backface_hidden: false,
         }
     }
 }
@@ -457,6 +517,8 @@ pub enum Effect {
         bottom_right: Option<[Num; 2]>,
         bottom_left: Option<[Num; 2]>,
     },
+    /// An SVG `<filter>`: a graph of primitives. See `filter.rs`.
+    FilterGraph(crate::filter::FilterGraph),
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
@@ -714,6 +776,7 @@ impl Effect {
             }
             // Warps what is in the texture, which paints nothing new.
             Effect::CornerPin { .. } => 0.0,
+            Effect::FilterGraph(graph) => graph.reach(layer_scale),
             // Whatever the shader declares it paints.
             Effect::Shader(shader) => shader.padding.max().max(0.0),
         }
@@ -801,6 +864,9 @@ pub enum MatteMode {
     Luminance,
     /// Keep the layer where the source is dark or transparent.
     LuminanceInverted,
+    /// Like `Luminance`, but the luminance is taken from the sRGB-encoded
+    /// colour (SVG's `<mask>`, whose `color-interpolation` is `sRGB`).
+    SrgbLuminance,
 }
 
 /// Colour stops along a line, around a point or around an angle. All
@@ -816,6 +882,10 @@ pub struct Gradient {
     /// What the coordinates are measured in.
     #[serde(default)]
     pub units: Units,
+    /// A matrix `[a, b, c, d, e, f]` (SVG's `matrix()`) that takes the
+    /// gradient's space to the space of what it paints, after `units`
+    /// (SVG's `gradientTransform`).
+    pub transform: Option<[f64; 6]>,
 }
 
 /// The space a gradient's coordinates are in.
@@ -837,7 +907,17 @@ pub enum GradientGeometry {
     /// Offset 0 is at (x0, y0), offset 1 at (x1, y1).
     Linear { x0: Num, y0: Num, x1: Num, y1: Num },
     /// Offset 1 is at distance `r` from the centre.
-    Radial { cx: Num, cy: Num, r: Num },
+    Radial {
+        cx: Num,
+        cy: Num,
+        r: Num,
+        /// A focal circle the gradient starts from instead of the centre's
+        /// (SVG's `fx`, `fy`, `fr`): offset 0 is on it, offset 1 on the
+        /// circle of `cx`, `cy`, `r`.
+        fx: Option<Num>,
+        fy: Option<Num>,
+        fr: Option<Num>,
+    },
     /// Offset 0 is `angle` degrees clockwise from 12 o'clock (as in CSS);
     /// offset 1 is a full turn later.
     Conic {
@@ -873,9 +953,34 @@ pub enum Extend {
 /// What a shape's `fill` or a text layer's `color` paints with: a colour
 /// string or a gradient object.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Paint {
     Solid(Color),
     Gradient(Gradient),
+    /// A picture, once or tiled: CSS's `background-image: url()` with
+    /// `background-repeat`.
+    Image(ImagePaint),
+}
+
+/// A picture as a paint: drawn `width` x `height` with its top-left corner at
+/// (`x`, `y`) in the painted layer's space, and repeated across the plane in
+/// the directions that repeat; in the others its edge pixels are held (so cut
+/// the shape to the tile). `{ "type": "image", "src": "tile.png", "width": 64,
+/// "height": 64, "repeatX": true, "repeatY": true }`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePaint {
+    pub src: String,
+    #[serde(default = "zero")]
+    pub x: Num,
+    #[serde(default = "zero")]
+    pub y: Num,
+    pub width: Num,
+    pub height: Num,
+    #[serde(default)]
+    pub repeat_x: bool,
+    #[serde(default)]
+    pub repeat_y: bool,
 }
 
 impl<'de> Deserialize<'de> for Paint {
@@ -887,6 +992,13 @@ impl<'de> Deserialize<'de> for Paint {
         match value {
             serde_json::Value::String(s) => {
                 Color::parse(&s).map(Paint::Solid).map_err(D::Error::custom)
+            }
+            serde_json::Value::Object(ref o)
+                if o.get("type").and_then(serde_json::Value::as_str) == Some("image") =>
+            {
+                ImagePaint::deserialize(value)
+                    .map(Paint::Image)
+                    .map_err(|e| D::Error::custom(format!("bad image paint: {e}")))
             }
             serde_json::Value::Object(_) => Gradient::deserialize(value)
                 .map(Paint::Gradient)
@@ -905,6 +1017,10 @@ pub struct ShapeLayer {
     /// A colour or a gradient, in the layer's own coordinates.
     pub fill: Option<Paint>,
     pub stroke: Option<Stroke>,
+    /// Which parts of a path with crossings or holes the fill covers
+    /// (default `nonzero`).
+    #[serde(default)]
+    pub fill_rule: FillRule,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -934,14 +1050,61 @@ pub enum Geometry {
 pub struct Stroke {
     pub color: Color,
     pub width: Num,
+    /// How an open end is finished (default `butt`).
+    #[serde(default)]
+    pub cap: StrokeCap,
+    /// How a corner is finished (default `round`).
+    #[serde(default)]
+    pub join: StrokeJoin,
+    /// A `miter` join longer than this many stroke widths is bevelled
+    /// (default 4, as in SVG).
+    pub miter_limit: Option<Num>,
+    /// Lengths of the dashes and the gaps between them, alternating, starting
+    /// with a dash and repeating; an odd count is repeated to make it even,
+    /// as in SVG. Empty: a solid line.
+    #[serde(default)]
+    pub dash_array: Vec<Num>,
+    /// How far into the pattern the stroke starts.
+    pub dash_offset: Option<Num>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StrokeCap {
+    #[default]
+    Butt,
+    Round,
+    Square,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StrokeJoin {
+    #[default]
+    Round,
+    Miter,
+    Bevel,
+}
+
+/// SVG's `fill-rule`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum FillRule {
+    #[default]
+    #[serde(rename = "nonzero")]
+    NonZero,
+    #[serde(rename = "evenodd")]
+    EvenOdd,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextLayer {
+    #[serde(default)]
     pub text: String,
     /// A key of the scene's `fonts` map.
+    #[serde(default)]
     pub font: String,
+    #[serde(default = "one")]
     pub size: Num,
     /// A colour or a gradient; a gradient's coordinates are in the text box.
     pub color: Paint,
@@ -958,6 +1121,43 @@ pub struct TextLayer {
     /// than the text styles the first characters only.
     #[serde(default)]
     pub chars: Vec<Option<CharStyle>>,
+    /// Glyphs shaped and positioned by someone else (the DOM painter, from
+    /// Blitz's Parley layouts). When there are any, `text`, `font`, `size`,
+    /// `maxWidth`, `align`, `lineHeight` and `chars` are not used; the box is
+    /// `boxWidth` x `boxHeight`.
+    #[serde(default)]
+    pub runs: Vec<GlyphRun>,
+    /// The box of a layer with `runs`, in pixels.
+    pub box_width: Option<Num>,
+    pub box_height: Option<Num>,
+}
+
+/// A run of glyphs that share a font file and size, already positioned
+/// (`docs/SCENE.md`, "Glyph runs").
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlyphRun {
+    /// The font file, relative to the scene (an absolute path works too).
+    pub src: String,
+    /// The face in a font collection.
+    #[serde(default)]
+    pub index: u32,
+    /// Font size in pixels.
+    pub size: f32,
+    /// Variable-font coordinates, normalised (F2Dot14 as an integer).
+    #[serde(default)]
+    pub coords: Vec<i16>,
+    /// Synthetic italic: degrees the glyphs lean to the right (CSS's 14 for
+    /// `font-style: italic` on a face without one).
+    #[serde(default)]
+    pub skew: f32,
+    /// Synthetic bold: how many pixels the outlines grow on each side
+    /// (about a 24th of the size for a face that has no bold).
+    #[serde(default)]
+    pub embolden: f32,
+    /// `[glyph id, x, y]` for each glyph, `x` and `y` the origin of the glyph
+    /// (on the baseline) in the layer's box.
+    pub glyphs: Vec<[f32; 3]>,
 }
 
 /// How one character of a text layer differs from the layer, in text-box
@@ -1028,6 +1228,63 @@ pub struct LottieLayer {
     pub looped: bool,
 }
 
+/// A video file, one picture per frame (`docs/SCENE.md`, "video").
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoLayer {
+    /// Any file FFmpeg reads with a video stream, relative to the scene.
+    pub src: String,
+    /// The box the picture is fitted into; omitted sides are the stream's
+    /// size, or keep its aspect ratio, as an image's do.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+    #[serde(default)]
+    pub fit: Fit,
+    /// The scene frame the clip's clock reads. Omitted: the frame being
+    /// rendered.
+    pub frame: Option<Num>,
+    /// The scene frame on which the clip's own frame 0 falls.
+    #[serde(default)]
+    pub from: f64,
+    /// Scene frames skipped at the start of the file.
+    #[serde(default)]
+    pub trim_before: f64,
+    /// Scene frames from the start of the file at which the clip ends.
+    /// Omitted: the end of the stream.
+    pub trim_after: Option<f64>,
+    /// How many clip frames pass per scene frame, above 0.
+    #[serde(default = "one_f64")]
+    pub playback_rate: f64,
+    /// Past the end: start again at `trimBefore` (`true`), or hold the last
+    /// picture (`false`).
+    #[serde(default, rename = "loop")]
+    pub looped: bool,
+}
+
+/// An animated GIF (`docs/SCENE.md`, "gif").
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifLayer {
+    /// A `.gif`, relative to the scene.
+    pub src: String,
+    /// The box the picture is fitted into; omitted sides are the logical
+    /// screen's size, or keep its aspect ratio.
+    pub width: Option<Num>,
+    pub height: Option<Num>,
+    #[serde(default)]
+    pub fit: Fit,
+    /// Seconds into the animation. Omitted: the time of the frame
+    /// (`frame / fps`).
+    pub time: Option<Num>,
+    /// Past the end: wrap round (`true`), or hold the last picture (`false`).
+    #[serde(default = "yes", rename = "loop")]
+    pub looped: bool,
+}
+
+fn one_f64() -> f64 {
+    1.0
+}
+
 /// How an image is fitted to its box (CSS's `object-fit`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1050,6 +1307,14 @@ pub struct GroupLayer {
     /// into the group's parent, in their own 3D positions, sorted by depth.
     #[serde(default)]
     pub preserve3d: bool,
+    /// The group does not isolate its children: one that blends with a mode
+    /// other than `normal` blends with what is behind the group, as if the
+    /// group were not there (CSS's `isolation: auto` on an element that is not
+    /// a stacking context). Only a group that is otherwise plain (opacity 1,
+    /// `normal` blending, no effects, clip, mask or matte) can be passed
+    /// through; any other still has a buffer.
+    #[serde(default)]
+    pub pass_through: bool,
     /// Flex layout of the children, applied when the scene is resolved.
     pub layout: Option<Layout>,
 }
@@ -1283,7 +1548,62 @@ impl Scene {
         scene.base_dir = base_dir;
         scene.validate()?;
         scene.measure_assets()?;
+        scene.measure_media()?;
         Ok(scene)
+    }
+
+    /// Reads the container of every video and the header of every GIF into
+    /// `videos` and `asset_sizes` (no picture is decoded), and checks what
+    /// only the file can tell: that a video's `trimBefore` is inside it.
+    fn measure_media(&mut self) -> Result<()> {
+        let mut wanted = Vec::new();
+        walk_layers(&self.layers, &mut |layer| match &layer.kind {
+            LayerKind::Video(v) => wanted.push((layer.id.clone(), Some(v.clone()), v.src.clone())),
+            LayerKind::Gif(g) => wanted.push((layer.id.clone(), None, g.src.clone())),
+            _ => {}
+        });
+        for (id, video, src) in wanted {
+            let path = self.base_dir.join(&src);
+            let Some(video) = video else {
+                if let Entry::Vacant(slot) = self.asset_sizes.entry(src) {
+                    let (width, height) = image::image_dimensions(&path).map_err(|e| {
+                        Error::Scene(format!(
+                            "layer {id:?}: cannot read the size of gif {}: {e}",
+                            path.display()
+                        ))
+                    })?;
+                    slot.insert((f64::from(width), f64::from(height)));
+                }
+                continue;
+            };
+            let info = match self.videos.get(&src) {
+                Some(info) => info.clone(),
+                None => {
+                    let info = crate::video::probe(&path).map_err(|e| {
+                        Error::Scene(format!(
+                            "layer {id:?}: cannot read video {}: {e}",
+                            path.display()
+                        ))
+                    })?;
+                    self.videos.insert(src.clone(), info.clone());
+                    self.asset_sizes
+                        .insert(src.clone(), (f64::from(info.width), f64::from(info.height)));
+                    info
+                }
+            };
+            if video.trim_before / self.fps >= info.duration {
+                return Err(Error::Scene(format!(
+                    "layer {id:?}: trimBefore {} is at or past the end of video {} \
+                     (it lasts {:.3} s, {:.1} frames at {} fps)",
+                    video.trim_before,
+                    path.display(),
+                    info.duration,
+                    info.duration * self.fps,
+                    self.fps
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Reads the pixel size of every image that leaves its `width` or
@@ -1312,7 +1632,7 @@ impl Scene {
                     ))
                 })?
             } else {
-                let (width, height) = image::image_dimensions(&path).map_err(|e| {
+                let (width, height) = image_dimensions(&self.base_dir, &src).map_err(|e| {
                     Error::Scene(format!(
                         "layer {id:?}: cannot read the size of image {}: {e}",
                         path.display()
@@ -1444,6 +1764,9 @@ impl Scene {
                     Effect::Displace { turbulence, .. } => {
                         validate_turbulence(&layer.id, "displace", turbulence)?;
                     }
+                    Effect::FilterGraph(graph) => {
+                        graph.validate(&layer.id, layer.kind.has_box())?
+                    }
                     Effect::CornerPin { .. } if !layer.kind.has_box() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: cornerPin needs a box, and a group without a layout has none; pin a \
@@ -1506,8 +1829,40 @@ impl Scene {
                     if let Some(Paint::Gradient(g)) = &s.fill {
                         validate_gradient(&layer.id, "fill gradient", g)?;
                     }
+                    if let Some(Paint::Image(i)) = &s.fill {
+                        validate_image_paint(&layer.id, i)?;
+                    }
                     if let Some(stroke) = &s.stroke {
                         non_negative("stroke width", &stroke.width)?;
+                    }
+                }
+                LayerKind::Text(t) if !t.runs.is_empty() => {
+                    for run in &t.runs {
+                        let path = self.base_dir.join(&run.src);
+                        if !path.is_file() {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: glyph run font {} is not a file",
+                                layer.id,
+                                path.display()
+                            )));
+                        }
+                        if run.size.is_nan() || run.size <= 0.0 {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: glyph run size must be positive",
+                                layer.id
+                            )));
+                        }
+                    }
+                    if let Paint::Gradient(g) = &t.color {
+                        validate_gradient(&layer.id, "color gradient", g)?;
+                    }
+                    if let Paint::Image(i) = &t.color {
+                        validate_image_paint(&layer.id, i)?;
+                    }
+                    for (what, side) in [("boxWidth", &t.box_width), ("boxHeight", &t.box_height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
                     }
                 }
                 LayerKind::Text(t) => {
@@ -1525,6 +1880,9 @@ impl Scene {
                     }
                     if let Paint::Gradient(g) = &t.color {
                         validate_gradient(&layer.id, "color gradient", g)?;
+                    }
+                    if let Paint::Image(i) = &t.color {
+                        validate_image_paint(&layer.id, i)?;
                     }
                     if let Some(max_width) = &t.max_width {
                         non_negative("maxWidth", max_width)?;
@@ -1574,6 +1932,51 @@ impl Scene {
                         )));
                     }
                     for (what, side) in [("width", &l.width), ("height", &l.height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
+                    }
+                }
+                LayerKind::Video(v) => {
+                    let bad =
+                        |msg: String| Err(Error::Scene(format!("layer {:?}: {msg}", layer.id)));
+                    if v.src.trim().is_empty() {
+                        return bad("video needs a src, the path of a video file".into());
+                    }
+                    for (what, side) in [("width", &v.width), ("height", &v.height)] {
+                        if let Some(side) = side {
+                            non_negative(what, side)?;
+                        }
+                    }
+                    if !(v.from.is_finite() && v.trim_before.is_finite() && v.trim_before >= 0.0) {
+                        return bad(format!(
+                            "video from must be a number and trimBefore a number not below 0, got {} and {}",
+                            v.from, v.trim_before
+                        ));
+                    }
+                    if let Some(after) = v.trim_after
+                        && !(after.is_finite() && after > v.trim_before)
+                    {
+                        return bad(format!(
+                            "video trimAfter must be above trimBefore ({}), got {after}",
+                            v.trim_before
+                        ));
+                    }
+                    if !(v.playback_rate.is_finite() && v.playback_rate > 0.0) {
+                        return bad(format!(
+                            "video playbackRate must be above 0, got {}",
+                            v.playback_rate
+                        ));
+                    }
+                }
+                LayerKind::Gif(g) => {
+                    if g.src.trim().is_empty() {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: gif needs a src, the path of a .gif file",
+                            layer.id
+                        )));
+                    }
+                    for (what, side) in [("width", &g.width), ("height", &g.height)] {
                         if let Some(side) = side {
                             non_negative(what, side)?;
                         }
@@ -1973,6 +2376,21 @@ fn validate_units(layer: &Layer, what: &str, g: &Gradient) -> Result<()> {
             "layer {:?}: {what} uses \"units\": \"box\", and a group without a layout has no box; use the default \
              units, or put the group's children in a layer that has a box",
             layer.id
+        )));
+    }
+    Ok(())
+}
+
+/// Checks an image paint: it has a file and a size to draw it at.
+fn validate_image_paint(id: &str, i: &ImagePaint) -> Result<()> {
+    if i.src.trim().is_empty() {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: image paint needs a src"
+        )));
+    }
+    if i.width.min() <= 0.0 || i.height.min() <= 0.0 {
+        return Err(Error::Scene(format!(
+            "layer {id:?}: image paint width and height must be above 0"
         )));
     }
     Ok(())
@@ -4076,6 +4494,159 @@ mod tests {
         );
     }
 
+    // --- Video and GIF. ---------------------------------------------------------
+
+    fn media() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media")
+    }
+
+    /// A 24 fps scene with one layer of `kind`.
+    fn media_scene(kind: &str, layer: &str) -> Result<Scene> {
+        Scene::from_json(
+            &format!(
+                r##"{{"width": 100, "height": 100, "fps": 24, "durationInFrames": 10, "layers": [
+                  {{"id": "m", "type": "{kind}", {layer}}}]}}"##
+            ),
+            media(),
+        )
+    }
+
+    fn media_error(kind: &str, layer: &str) -> String {
+        media_scene(kind, layer).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn a_video_layer_takes_a_file_a_box_and_a_clip() {
+        let scene = media_scene(
+            "video",
+            r#""src": "clip.mp4", "width": 40, "fit": "cover", "from": 6, "trimBefore": 12,
+               "trimAfter": 36, "playbackRate": 1.5, "loop": true,
+               "frame": [{"frame": 0, "value": 0}, {"frame": 9, "value": 18}]"#,
+        )
+        .unwrap();
+        let LayerKind::Video(v) = &scene.layers[0].kind else {
+            panic!("not a video layer");
+        };
+        assert_eq!(v.src, "clip.mp4");
+        assert_eq!(v.fit, Fit::Cover);
+        assert_eq!(
+            (v.from, v.trim_before, v.trim_after, v.playback_rate),
+            (6.0, 12.0, Some(36.0), 1.5)
+        );
+        assert!(v.looped);
+        assert_eq!(v.frame.as_ref().unwrap().at(9.0), 18.0);
+        assert_eq!(scene.layers[0].kind.name(), "video");
+        assert!(scene.layers[0].kind.has_box());
+        // The container is read when the scene loads, not decoded: the size
+        // is there for a layer that leaves a side out, and so is the clip.
+        assert_eq!(scene.asset_sizes["clip.mp4"], (64.0, 36.0));
+        assert_eq!(scene.videos["clip.mp4"].video_codec, "h264");
+        // The defaults.
+        let scene = media_scene("video", r#""src": "clip.mp4""#).unwrap();
+        let LayerKind::Video(v) = &scene.layers[0].kind else {
+            panic!("not a video layer");
+        };
+        assert!(v.width.is_none() && v.frame.is_none() && v.trim_after.is_none());
+        assert_eq!(
+            (v.from, v.trim_before, v.playback_rate, v.looped, v.fit),
+            (0.0, 0.0, 1.0, false, Fit::Fill)
+        );
+    }
+
+    #[test]
+    fn a_bad_video_layer_is_an_error_naming_it() {
+        let named = |msg: String, words: &[&str]| {
+            assert!(msg.contains("\"m\""), "{msg}");
+            for word in words {
+                assert!(msg.contains(word), "{word}: {msg}");
+            }
+        };
+        named(
+            media_error("video", r#""src": "nope.mp4""#),
+            &["nope.mp4", "cannot read video"],
+        );
+        // A file with no video stream.
+        named(
+            media_error("video", r#""src": "tone-mono.wav""#),
+            &["no video stream"],
+        );
+        named(media_error("video", r#""src": " ""#), &["src"]);
+        named(
+            media_error("video", r#""src": "clip.mp4", "width": -2"#),
+            &["negative"],
+        );
+        named(
+            media_error("video", r#""src": "clip.mp4", "playbackRate": 0"#),
+            &["playbackRate"],
+        );
+        named(
+            media_error("video", r#""src": "clip.mp4", "trimBefore": -1"#),
+            &["trimBefore"],
+        );
+        named(
+            media_error(
+                "video",
+                r#""src": "clip.mp4", "trimBefore": 10, "trimAfter": 10"#,
+            ),
+            &["trimAfter"],
+        );
+        // clip.mp4 lasts 2 s: 48 frames at 24 fps.
+        named(
+            media_error("video", r#""src": "clip.mp4", "trimBefore": 48"#),
+            &["trimBefore", "past the end", "clip.mp4"],
+        );
+        assert!(media_scene("video", r#""src": "clip.mp4", "trimBefore": 47"#).is_ok());
+        // `trimAfter` beyond the file is allowed: the last picture is held.
+        assert!(media_scene("video", r#""src": "clip.mp4", "trimAfter": 500"#).is_ok());
+    }
+
+    #[test]
+    fn a_gif_layer_takes_a_file_a_box_a_time_and_a_loop() {
+        let scene = media_scene(
+            "gif",
+            r#""src": "spinner.gif", "width": 40, "fit": "contain", "time": 0.25, "loop": false"#,
+        )
+        .unwrap();
+        let LayerKind::Gif(g) = &scene.layers[0].kind else {
+            panic!("not a gif layer");
+        };
+        assert_eq!(
+            (g.src.as_str(), g.fit, g.looped),
+            ("spinner.gif", Fit::Contain, false)
+        );
+        assert_eq!(g.time.as_ref().unwrap().at(0.0), 0.25);
+        assert_eq!(scene.layers[0].kind.name(), "gif");
+        // The logical screen is read when the scene loads.
+        assert_eq!(scene.asset_sizes["spinner.gif"], (32.0, 24.0));
+        // Looping is the default.
+        let scene = media_scene("gif", r#""src": "spinner.gif""#).unwrap();
+        let LayerKind::Gif(g) = &scene.layers[0].kind else {
+            panic!("not a gif layer");
+        };
+        assert!(g.looped && g.time.is_none());
+        // Errors name the layer.
+        for (layer, word) in [
+            (r#""src": "nope.gif""#, "nope.gif"),
+            (r#""src": " ""#, "src"),
+            (r#""src": "spinner.gif", "height": -1"#, "negative"),
+        ] {
+            let msg = media_error("gif", layer);
+            assert!(msg.contains("\"m\"") && msg.contains(word), "{msg}");
+        }
+    }
+
+    #[test]
+    fn video_and_gif_count_nothing_in_the_margin() {
+        let scene = media_scene(
+            "video",
+            r#""src": "clip.mp4", "effects": [{"type": "blur", "radius": 9}]"#,
+        )
+        .unwrap();
+        assert_eq!(scene.margin(), 0);
+        let scene = media_scene("gif", r#""src": "spinner.gif""#).unwrap();
+        assert_eq!(scene.margin(), 0);
+    }
+
     // --- Per-character styles. ------------------------------------------------
 
     fn chars_scene(chars: &str) -> Result<Scene> {
@@ -4426,5 +4997,80 @@ mod tests {
             ),
         );
         assert_eq!(scene_of(&big).unwrap().margin(), 50);
+    }
+}
+
+/// The bytes of a `data:` URL (`data:image/png;base64,...` or percent-encoded
+/// text), decoded in memory: a picture that needs no file.
+pub(crate) fn data_uri_bytes(src: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    let rest = src.strip_prefix("data:")?;
+    let (meta, data) = rest.split_once(',')?;
+    if meta.ends_with(";base64") {
+        let clean: Vec<u8> = percent_decode(data)
+            .into_iter()
+            .filter(|b| !b.is_ascii_whitespace())
+            .collect();
+        base64::engine::general_purpose::STANDARD.decode(clean).ok()
+    } else {
+        Some(percent_decode(data))
+    }
+}
+
+fn percent_decode(s: &str) -> Vec<u8> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let (Some(h), Some(l)) = (
+                (b[i + 1] as char).to_digit(16),
+                (b[i + 2] as char).to_digit(16),
+            )
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The pixel size of the image `src` (a file relative to `base_dir`, or a
+/// `data:` URL), from its header.
+pub(crate) fn image_dimensions(
+    base_dir: &Path,
+    src: &str,
+) -> std::result::Result<(u32, u32), String> {
+    if let Some(bytes) = data_uri_bytes(src) {
+        return image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?
+            .into_dimensions()
+            .map_err(|e| e.to_string());
+    }
+    image::image_dimensions(base_dir.join(src)).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod data_uri_tests {
+    use super::*;
+
+    // A 1x1 PNG.
+    const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    #[test]
+    fn a_data_uri_is_decoded_in_memory() {
+        let bytes = data_uri_bytes(PNG).unwrap();
+        assert_eq!(&bytes[1..4], b"PNG");
+        assert_eq!(
+            image_dimensions(Path::new("/nowhere"), PNG).unwrap(),
+            (1, 1)
+        );
+        assert!(data_uri_bytes("tile.png").is_none());
+        assert_eq!(data_uri_bytes("data:text/plain,a%20b").unwrap(), b"a b");
     }
 }

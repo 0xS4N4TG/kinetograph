@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CompositionInfo, FrameRenderer } from '@kinetograph/core';
-import type { AudioClipJson } from '@kinetograph/scene';
+import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetograph/scene';
 import { bundleProject } from './bundle.js';
 import { CliError } from './errors.js';
 import { native } from './native.js';
@@ -14,12 +14,23 @@ interface ProjectModule {
   createFrameRenderer(id: string, options?: { inputProps?: Record<string, unknown> }): FrameRenderer;
   setPublicDir(dir: string): void;
   setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
+  setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
+  setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
+  setDomAddon(addon: object | null): void;
+  setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
+  /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
+  stylesheetNotes(): string[];
+  getFonts(): Record<string, string>;
 }
 
 export interface FrameOutput {
   /** The frame's scene as the addon takes it. */
   sceneJson: string;
   audio: AudioClipJson[];
+  /** Every `<Sequence>` in the frame's tree (docs/AUTHORING.md §11.4); none for a scene file. */
+  sequences?: SequenceJson[];
+  /** What compat mode cannot draw natively on this frame (docs/COMPAT.md §6.1); none for a scene file. */
+  unsupported?: Unsupported[];
   /** ms spent in `renderFrame` and in `JSON.stringify` (0 for a scene file), for `bench`. */
   jsMs: number;
   stringifyMs: number;
@@ -34,12 +45,22 @@ export interface Source {
   composition: CompositionInfo;
   /** Frames can be asked for in any order, but a project's clock only runs forward, so ascending is cheapest. */
   frame(frame: number): Promise<FrameOutput>;
+  /** `--props`: what the composition was opened with, for the Chrome fallback to open it with too (docs/COMPAT.md §6.2). */
+  inputProps?: Record<string, unknown>;
+  /** The fonts registered so far (`getFonts()`): key to file. Downloaded ones are in it once a frame has been drawn. */
+  fonts?(): Record<string, string>;
+  /** Where `staticFile` reads from. */
+  publicDir?: string;
+  /** Problems with the project's stylesheets, for `doctor`. */
+  notes?(): string[];
   dispose(): void;
 }
 
 export interface OpenOptions {
   comp?: string;
   props?: string;
+  /** An already built bundle of the entry (the studio's): used instead of bundling again. */
+  bundleFile?: string;
 }
 
 export function isSceneFile(entry: string): boolean {
@@ -66,13 +87,30 @@ function requireEntry(entry: string): string {
   return absolute;
 }
 
-async function loadProject(entry: string): Promise<ProjectModule> {
-  const { file } = await bundleProject(entry);
+/**
+ * Where `staticFile` reads from: `public/` beside the entry, or else `public/` beside the nearest package.json (where
+ * Remotion keeps it, with the entry in `src/`). Beside the entry when neither exists.
+ */
+export function publicDirOf(entry: string): string {
+  const beside = join(dirname(entry), 'public');
+  if (existsSync(beside)) return beside;
+  for (let dir = dirname(entry); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, 'package.json'))) {
+      const atRoot = join(dir, 'public');
+      return existsSync(atRoot) ? atRoot : beside;
+    }
+    if (dirname(dir) === dir) return beside;
+  }
+}
+
+async function loadProject(entry: string, bundleFile?: string): Promise<ProjectModule> {
+  const file = bundleFile ?? (await bundleProject(entry)).file;
   process.setSourceMapsEnabled(true);
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
   // before setPublicDir below can.
-  const publicDir = join(dirname(entry), 'public');
+  const publicDir = publicDirOf(entry);
   process.env.KINETOGRAPH_PUBLIC_DIR = publicDir;
+  process.env.KINETOGRAPH_BASE_DIR = dirname(entry);
   let mod: ProjectModule;
   try {
     mod = (await import(pathToFileURL(file).href)) as ProjectModule;
@@ -84,14 +122,20 @@ async function loadProject(entry: string): Promise<ProjectModule> {
   }
   mod.setPublicDir(publicDir);
   mod.setLayoutText(native().layoutText);
+  // The DOM engine: islands are styled, laid out and painted by the addon, relative paths resolve from the entry.
+  mod.setDomAddon(native());
+  mod.setDomEnvironment({ baseDir: dirname(entry), publicDir });
+  // A relative `src` is read from where the scenes' assets are (the entry's directory), not the working directory.
+  mod.setMediaProbe((path, baseDir) => native().probeMedia(path, baseDir ?? dirname(entry)));
+  mod.setAudioDecoder((path, sampleRate) => native().decodeAudio(path, sampleRate, dirname(entry)));
   return mod;
 }
 
 /** The compositions a project (or a scene file, which is one) offers. */
-export async function listCompositions(entry: string): Promise<CompositionInfo[]> {
+export async function listCompositions(entry: string, options: { bundleFile?: string } = {}): Promise<CompositionInfo[]> {
   const absolute = requireEntry(entry);
   if (isSceneFile(absolute)) return [sceneComposition(absolute, readFileSync(absolute, 'utf8'))];
-  return (await loadProject(absolute)).getCompositions();
+  return (await loadProject(absolute, options.bundleFile)).getCompositions();
 }
 
 function sceneComposition(file: string, text: string): CompositionInfo {
@@ -117,13 +161,13 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       entry: absolute,
       baseDir,
       composition: sceneComposition(absolute, text),
-      frame: async () => ({ sceneJson: text, audio: [], jsMs: 0, stringifyMs: 0 }),
+      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: [], jsMs: 0, stringifyMs: 0 }),
       dispose: () => {},
     };
   }
 
   const inputProps = parseProps(options.props);
-  const mod = await loadProject(absolute);
+  const mod = await loadProject(absolute, options.bundleFile);
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);
@@ -154,8 +198,12 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const result = await renderer.renderFrame(frame);
       const rendered = nowMs();
       const sceneJson = JSON.stringify(result.scene);
-      return { sceneJson, audio: result.audio, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
+      return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported: result.unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
+    inputProps,
+    fonts: () => mod.getFonts(),
+    publicDir: publicDirOf(absolute),
+    notes: () => mod.stylesheetNotes(),
     dispose: () => renderer.dispose(),
   };
 }

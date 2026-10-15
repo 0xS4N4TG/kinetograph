@@ -290,12 +290,8 @@ describe('TransitionSeries', () => {
           const have = got.find((p) => p.name === want.name)!;
           expect(have.frame, `${label} ${want.name} frame`).toBeCloseTo(want.frame, 9);
           expect(have.duration, `${label} ${want.name} duration`).toBe(want.duration);
-          // A scene here keeps a wrapper for the whole of its transition's side, so it never changes shape (and is
-          // never remounted); the published package adds it only while the transition runs. Outside that window the
-          // wrapper is at rest (progress 1 entering, 0 leaving); only the frames inside the window are compared.
-          const active = have.wrappers.filter((w) =>
-            w.dir === 'entering' ? have.frame < w.duration : have.frame >= have.duration - w.duration,
-          );
+          // As in the published package, a scene is wrapped by a transition's presentation only while it runs.
+          const active = have.wrappers;
           expect(active.length, `${label} ${want.name} wrappers`).toBe(want.wrappers.length);
           // Which transition wraps it is the same; the order they are nested in is not part of the behaviour.
           const key = (w: { dir: string }) => w.dir;
@@ -320,9 +316,16 @@ describe('TransitionSeries', () => {
     }
   });
 
-  it('keeps one wrapper per scene through its transition, so a scene is not remounted when the transition ends', () => {
-    // Same structure at every frame: an element's host index path would change otherwise.
-    const rects = (frame: number) => {
+  it('mounts a presentation only while its transition runs, so one that draws something at rest is not on the scene all along', () => {
+    // A tape strip like papercut's `tapePull`: it draws at every progress, including 0.
+    const Strip = ({ children }: PresentationComponentProps<Record<string, never>>): ReactNode => (
+      <>
+        {children}
+        <Rect width={10} height={10} fill="#fff" />
+      </>
+    );
+    const strip: TransitionPresentation<Record<string, never>> = { component: Strip, props: {} };
+    const stripsAt = (frame: number) => {
       const root = createSceneRoot();
       try {
         const tree = root.render(
@@ -331,23 +334,24 @@ describe('TransitionSeries', () => {
               <TransitionSeries.Sequence durationInFrames={60}>
                 <Probe name="A" />
               </TransitionSeries.Sequence>
-              <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 30 })} />
+              <TransitionSeries.Transition presentation={strip} timing={linearTiming({ durationInFrames: 30 })} />
               <TransitionSeries.Sequence durationInFrames={60}>
                 <Probe name="B" />
               </TransitionSeries.Sequence>
             </TransitionSeries>
           </TimelineContext.Provider>,
         );
-        return tree.layers as LayerJson[];
+        const count = (layers: LayerJson[]): number =>
+          layers.reduce((n, l) => n + (l.type === 'shape' ? 1 : 0) + (l.type === 'group' ? count(l.children) : 0), 0);
+        return count(tree.layers as LayerJson[]);
       } finally {
         root.unmount();
       }
     };
-    const depth = (layers: LayerJson[]): number => Math.max(0, ...layers.map((l) => (l.type === 'group' ? 1 + depth(l.children) : 0)));
-    expect(depth(rects(40))).toBe(depth(rects(75)));
-    const opacityOf = (layers: LayerJson[]): number[] =>
-      layers.flatMap((l) => [...(typeof l.opacity === 'number' ? [l.opacity] : []), ...(l.type === 'group' ? opacityOf(l.children) : [])]);
-    expect(opacityOf(rects(45))).toContain(0.5);
-    expect(opacityOf(rects(75))).toContain(1);
+    // Scene A runs from 0 to 60 and B from 30 to 90; the transition is frames 30 to 60.
+    expect(stripsAt(10)).toBe(0);
+    expect(stripsAt(29)).toBe(0);
+    expect(stripsAt(45)).toBe(2);
+    expect(stripsAt(75)).toBe(0);
   });
 });

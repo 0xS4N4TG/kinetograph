@@ -34,7 +34,7 @@ describe('the tool list', () => {
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
 
     const still = by.still!.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
-    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'entry', 'frame', 'output', 'props']);
+    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'compat', 'entry', 'frame', 'output', 'props']);
     expect(still.properties.frame!.type).toBe('number');
     // The output of an image tool is optional (a temp file is used), a video's is not.
     expect(still.required.sort()).toEqual(['entry', 'frame']);
@@ -47,6 +47,18 @@ describe('the tool list', () => {
     );
     for (const t of tools) expect(t.description).toBeTruthy();
   });
+
+  it('gives doctor the compat report\'s arguments, the entry optional', async () => {
+    const client = await connect(async () => ({ stdout: '{}', stderr: '', code: 0 }));
+    const { tools } = await client.listTools();
+    const doctor = tools.find((t) => t.name === 'doctor')!.inputSchema as {
+      properties: Record<string, { type: string }>;
+      required?: string[];
+    };
+    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'compare', 'compare-dir', 'compare-every', 'entry', 'props', 'range']);
+    expect(doctor.properties.compare!.type).toBe('number');
+    expect(doctor.required ?? []).toEqual([]);
+  });
 });
 
 describe('toArgv', () => {
@@ -58,6 +70,9 @@ describe('toArgv', () => {
       'render', 'a.tsx', '--output', 'o.mp4', '--range', '0..9', '--draft', '--json',
     ]);
     expect(toArgv(command('render'), { entry: 'a.tsx', output: 'o.mp4', draft: false })).not.toContain('--draft');
+    expect(toArgv(command('doctor'), { entry: 'a.tsx', range: '0..30', compare: 4 })).toEqual([
+      'doctor', 'a.tsx', '--range', '0..30', '--compare', '4', '--json',
+    ]);
     expect(toArgv(command('audio analyze'), { entry: 'a.tsx' })).toEqual(['audio', 'analyze', 'a.tsx', '--json']);
     expect(toArgv(command('onion'), { entry: 'a.tsx', range: '0..30', count: 4 })).toEqual([
       'onion', 'a.tsx', '0..30', '--count', '4', '--json',

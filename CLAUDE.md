@@ -6,6 +6,9 @@ and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is a placeh
 Phases 1 and 2 (the core renderer: JSON scene graph, effects, camera, motion blur, `still`, `render`, `bench`) are
 built; see `README.md` and `docs/SCENE.md`. Before doing anything, read:
 
+- `docs/DECISION_RENDERING_CRITICAL.md`: **read first.** Decided 2026-10-15 after the first real Remotion project:
+  no Chrome ever (canvas/WebGL included), port every CSS/SVG feature natively, no Chrome stopgaps, GPU-pass work on
+  hold; plus the port list, test results and unpushed commits.
 - `docs/HANDOFF.md`: what it is, how it differs from fframes, architecture, effects list, agent CLI, roadmap, rules.
 - `docs/RESEARCH.md`: competitor scan, the papercut-vs-Blitz audit, the reference video breakdown.
 - `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.

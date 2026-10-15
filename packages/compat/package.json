@@ -1,0 +1,33 @@
+{
+  "name": "@kinetograph/compat",
+  "version": "0.1.0",
+  "description": "Remotion compat mode: DOM islands handed to the Rust CSS engine, the DOM shim for refs and browser globals, and the Chrome fallback (docs/ENGINE.md, docs/COMPAT.md)",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./shim": { "types": "./dist/shim/index.d.ts", "default": "./dist/shim/index.js" },
+    "./dom": { "types": "./dist/dom/index.d.ts", "default": "./dist/dom/index.js" },
+    "./browser": { "types": "./dist/browser/index.d.ts", "default": "./dist/browser/index.js" },
+    "./browser/prelude": { "types": "./dist/browser/prelude.d.ts", "default": "./dist/browser/prelude.js" },
+    "./doctor": { "types": "./dist/doctor.d.ts", "default": "./dist/doctor.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@kinetograph/scene": "0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react-dom": "19.3.0",
+    "jsdom": "30.1.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Text, useTimeline } from '@kinetograph/react';
+import type { ReactNode } from 'react';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setDomAddon } from '@kinetograph/compat/dom';
+import { createSceneRoot, Rect, Text, TimelineContext, useTimeline } from '@kinetograph/react';
 import { AbsoluteFill, Img, resetStyleWarnings } from '../src/fill.js';
 import { Freeze } from '../src/timeline.js';
-import { renderAt } from './scene-harness.js';
+import { renderAt, timeline } from './scene-harness.js';
 
 let warn: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
@@ -75,19 +77,6 @@ describe('AbsoluteFill', () => {
     expect(b.children ?? []).toHaveLength(0);
   });
 
-  it('warns once per ignored key, however often it renders', () => {
-    renderAt(<AbsoluteFill style={{ zIndex: 3, fontFamily: 'x' }} />);
-    renderAt(<AbsoluteFill style={{ zIndex: 4 }} />);
-    expect(warn).toHaveBeenCalledTimes(2);
-    expect(String(warn.mock.calls[0]![0])).toContain('style.zIndex');
-    expect(String(warn.mock.calls[1]![0])).toContain('style.fontFamily');
-  });
-
-  it('warns about a background that is not a colour, and about display values it cannot do', () => {
-    renderAt(<AbsoluteFill style={{ background: 'linear-gradient(red, blue)', display: 'block' }} />);
-    expect(warn).toHaveBeenCalledTimes(2);
-  });
-
   it('renders nothing for display: none', () => {
     expect(renderAt(<AbsoluteFill style={{ display: 'none' }} />).layers).toEqual([]);
   });
@@ -113,10 +102,6 @@ describe('Img', () => {
     expect(img.fit).toBeUndefined();
   });
 
-  it('warns about style it cannot honour', () => {
-    renderAt(<Img src="/a.png" style={{ objectFit: 'none', borderRadius: 8 }} />);
-    expect(warn).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe('Freeze', () => {
@@ -138,5 +123,132 @@ describe('Freeze', () => {
       </>,
     );
     expect(seen).toEqual([true, false, false]);
+  });
+});
+
+// ---- the DOM elements they are with any other key, or with DOM inside them (docs/ENGINE.md §10.1) ----
+
+/** Renders in the 1280 x 720 composition of the harness, as the frame loop makes its root. */
+function renderDom(node: ReactNode) {
+  const root = createSceneRoot({ viewport: { width: 1280, height: 720 } });
+  try {
+    return root.render(<TimelineContext.Provider value={timeline(0)}>{node}</TimelineContext.Provider>);
+  } finally {
+    root.unmount();
+  }
+}
+
+describe('as DOM elements', () => {
+  // A stand-in addon: it records the islands it is asked to draw and answers a group per island with a placeholder
+  // for each native element, as the Rust painter does.
+  const sent: any[] = [];
+  beforeAll(() => {
+    setDomAddon({
+      renderDomIsland(json: string) {
+        const request = JSON.parse(json);
+        sent.push(request);
+        const natives = request.root.children
+          .filter((c: any) => c.kind === 'native')
+          .map((c: any) => ({ type: 'native', path: c.path, x: 0, y: 0, width: c.width ?? 0, height: c.height ?? 0 }));
+        return JSON.stringify({ layers: [{ id: request.path, type: 'group', children: natives }], unsupported: [], camera: null });
+      },
+    });
+  });
+  beforeEach(() => {
+    sent.length = 0;
+  });
+  afterAll(() => setDomAddon(null));
+
+  it('AbsoluteFill with a style key the layers have no use for is a div over the whole page', () => {
+    const tree = renderDom(<AbsoluteFill style={{ backgroundColor: '#112233', zIndex: 3, backgroundImage: 'linear-gradient(red, blue)' }} />);
+    expect(warn).not.toHaveBeenCalled();
+    expect(tree.unsupported).toEqual([]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].root).toMatchObject({
+      tag: 'div',
+      path: '$0',
+      style:
+        'position: absolute; inset: 0; display: flex; flex-direction: column; background-color: #112233; z-index: 3; background-image: linear-gradient(red, blue)',
+    });
+    expect((tree.layers[0] as any).id).toBe('$0');
+  });
+
+  it('lays its children out in a column unless the author says otherwise (CSS does, not the layer mapping)', () => {
+    renderDom(
+      <AbsoluteFill style={{ flexDirection: 'row', zIndex: 1 }}>
+        <div style={{ width: 100, height: 20, backgroundColor: 'red' }} />
+        <div style={{ width: 50, height: 20, backgroundColor: 'red' }} />
+      </AbsoluteFill>,
+    );
+    expect(sent[0].root.style).toContain('flex-direction: row');
+    renderDom(
+      <AbsoluteFill style={{ zIndex: 1 }}>
+        <div />
+      </AbsoluteFill>,
+    );
+    expect(sent[1].root.style).toContain('flex-direction: column');
+  });
+
+  it('with a class name is a div carrying the class, with Tailwind and stylesheets left to the CSS engine', () => {
+    renderDom(<AbsoluteFill className="bg" />);
+    expect(sent[0].root).toMatchObject({ tag: 'div', attrs: { class: 'bg' } });
+  });
+
+  it('with only the keys the layers read, and no DOM inside, keeps the layers, so the hand ports render as before', () => {
+    const [fill] = renderAt(<AbsoluteFill style={{ backgroundColor: '#112233', opacity: 0.5, flexDirection: 'row', gap: 4 }} />).layers as any[];
+    expect(fill).toMatchObject({ type: 'group', layout: { width: 1280, height: 720, flexDirection: 'row', gap: 4 }, opacity: 0.5 });
+    expect(sent).toHaveLength(0);
+  });
+
+  it('with only the keys the layers read becomes the div when DOM elements are inside it', () => {
+    renderDom(
+      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+        <p>centred</p>
+      </AbsoluteFill>,
+    );
+    expect(sent[0].root.style).toBe('position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center');
+    expect(sent[0].root.children[0]).toMatchObject({ tag: 'p', path: '$0.0' });
+  });
+
+  it('with a value the layers cannot take (a gradient, display: grid, 2em) is the div, with no warning', () => {
+    renderDom(<AbsoluteFill style={{ background: 'linear-gradient(red, blue)', display: 'grid', gap: '2em' }} />);
+    expect(warn).not.toHaveBeenCalled();
+    expect(sent[0].root.style).toBe(
+      'position: absolute; inset: 0; display: grid; flex-direction: column; background: linear-gradient(red, blue); gap: 2em',
+    );
+  });
+
+  it('Img with a percentage size or an object-fit the image layer does not have is an img, with no warning', () => {
+    renderDom(<Img src="/a.png" style={{ width: '100%', objectFit: 'none' }} />);
+    expect(warn).not.toHaveBeenCalled();
+    expect(sent[0].root).toMatchObject({ tag: 'img', style: 'width: 100%; object-fit: none' });
+  });
+
+  it('Img with a style key the image layer has no use for is an img', () => {
+    renderDom(<Img src="/a.png" width={64} height={32} style={{ borderRadius: 8, objectFit: 'cover' }} />);
+    expect(sent[0].root).toMatchObject({
+      tag: 'img',
+      path: '$0',
+      attrs: { src: '/a.png', width: '64', height: '32' },
+      style: 'border-radius: 8px; object-fit: cover',
+    });
+  });
+
+  it('keeps its CSS position when it sits in an AbsoluteFill that is a flex column of layers', () => {
+    renderDom(
+      <AbsoluteFill>
+        <Rect width={300} height={200} fill="#fff" />
+        <AbsoluteFill style={{ zIndex: 2 }}>
+          <div style={{ position: 'absolute', top: 100, left: 50, width: 10, height: 10, backgroundColor: 'red' }} />
+        </AbsoluteFill>
+      </AbsoluteFill>,
+    );
+    // The fills hold DOM, so they are one island (docs/ENGINE.md §10): the outer `div`, the Rect a box inside it, and
+    // the inner fill its absolutely positioned `div`: out of the column's flow, as in CSS.
+    expect(sent).toHaveLength(1);
+    const [rect, inner] = sent[0].root.children;
+    expect(rect).toMatchObject({ kind: 'native', path: '$0.0', width: 300, height: 200 });
+    expect(inner).toMatchObject({ tag: 'div', path: '$0.1', style: expect.stringContaining('position: absolute; inset: 0') });
+    expect(inner.children[0]).toMatchObject({ tag: 'div', path: '$0.1.0' });
   });
 });

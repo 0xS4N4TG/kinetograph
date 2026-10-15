@@ -23,7 +23,7 @@ same pixels. Phase 3's reconciler will emit this same shape from React.
 | `camera` | object | Optional. The viewpoint for layers with a 3D transform. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first, topmost last (the same order as SVG and DOM paint order). |
 
-Asset paths (`fonts`, image `src`, `lut` `src`) resolve relative to the directory of the scene file.
+Asset paths (`fonts`, image, lottie, video and gif `src`, `lut` `src`) resolve relative to the directory of the scene file.
 
 Only the fonts listed in `fonts` exist. There is no system font lookup and no fallback, so output does not depend on
 the machine.
@@ -54,7 +54,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient` or `lottie`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `video` or `gif`. |
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
@@ -118,6 +118,21 @@ different from a browser).
 `fill` and `stroke` are both optional (a shape with neither draws nothing). The stroke is centred on the outline and
 is drawn over the fill. `fill` is a colour string or a [gradient](#gradients) (see [Gradient fills](#gradient-fills));
 `stroke.color` is a colour string only.
+
+The stroke can be finished and dashed as SVG's can:
+
+| `stroke` field | Default | Meaning |
+|---|---|---|
+| `color`, `width` | required | |
+| `cap` | `butt` | `butt`, `round` or `square`: how an open end is finished. |
+| `join` | `round` | `miter`, `round` or `bevel`: how a corner is finished. |
+| `miterLimit` | `4` | A `miter` join whose tip is longer than this many stroke widths is bevelled. |
+| `dashArray` | none | Dash and gap lengths, alternating, starting with a dash, repeated along the line; an odd count is repeated to make it even. A list that is empty, has a negative number or adds up to nothing is a solid line. |
+| `dashOffset` | `0` | How far into the pattern the line starts. |
+
+`fillRule` (`nonzero`, the default, or `evenodd`) says which parts of a path with crossings or holes the fill covers.
+A stroke's box (for the texture the shape is drawn in) grows with its joins and caps: a `miter` join reaches
+`miterLimit` half widths, a `square` cap a corner.
 
 `shape.kind` and its fields (the shape's top-left corner is the layer's origin):
 
@@ -222,7 +237,10 @@ the buffer and draws its children straight into its parent; the result is the sa
 `transform` applies to all children. `anchorX/anchorY` are in the group's
 coordinates. `"preserve3d": true` (default `false`) makes the group a 3D scene instead: see
 [preserve3d groups](#preserve3d-groups). A group with a `layout` places its children with flexbox: see
-[Layout](#layout).
+[Layout](#layout). `"passThrough": true` (default `false`) draws the children straight into the group's parent
+even if they blend with a mode other than `normal`, so they blend with what is behind the group, as if it were not
+there (CSS `isolation: auto` on an element that is not a stacking context, such as an `<svg>` root). It only takes
+effect on a group that is otherwise plain (opacity 1, `normal` blending, no effects, clip, mask or matte).
 
 ### noise
 
@@ -335,6 +353,90 @@ by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like an
 - Counts nothing in the [margin](#canvas-margin).
 - A missing or unreadable file, or one that is not an animation, is an error naming the layer, when the scene loads (if
   the box needs the file's size) or when a renderer is built from it.
+
+### video
+
+```json
+{ "id": "clip", "type": "video", "src": "clips/city.mp4", "width": 1080, "height": 608, "fit": "cover",
+  "from": 30, "trimBefore": 15, "playbackRate": 1.5, "loop": true }
+```
+
+A video file, decoded by FFmpeg (`ffmpeg-next`), one picture per frame. The picture goes in like an
+[image](#image): same box, `fit` and sampling. Like any layer it takes `effects`, `clip`, `mask`, `matte`,
+`blendMode` and `opacity`. Its sound is not part of the scene: the authoring layer plays it (AUTHORING §11.3).
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | Any file FFmpeg demuxes with a video stream (`.mp4`, `.mov`, `.webm`, `.mkv`, …), relative to the scene. Its first video stream is used. |
+| `width`, `height` | the stream's size | Animatable, not negative. As an image's: both left out is the stream's pixel size, one left out keeps its aspect ratio (of the coded size; the sample aspect ratio is ignored). |
+| `fit` | `fill` | As an image's. |
+| `frame` | the frame being rendered | Animatable. The scene frame the clip's clock reads, so a fractional motion-blur sub-frame time is the sub-frame's own time. The authoring layer sets it only to hold a picture (inside `<Freeze>`). |
+| `from` | `0` | A number, not animated. The scene frame on which the clip's own frame 0 falls. |
+| `trimBefore` | `0` | A number of scene frames, not animated, not negative. Skipped at the start of the file. |
+| `trimAfter` | none | A number of scene frames from the start of the file, not animated, greater than `trimBefore`. The clip ends there. |
+| `playbackRate` | `1` | A number above 0, not animated. |
+| `loop` | `false` | Past the end, `false` holds the last picture and `true` starts again at `trimBefore`. |
+
+Which picture is shown, for scene frame `f` (`frame`, or the frame being rendered) and the scene's `fps`:
+
+1. The clip's frame is `n = (f − from) × playbackRate`.
+2. The clip's end is `end = trimAfter`, or without it the stream's duration times `fps`, and its length is
+   `L = end − trimBefore` (scene frames).
+3. With `loop`, `n` wraps into `0 ≤ n < L` (modulo, so frames before `from` wrap too); without it `n` is clamped to
+   `0 ≤ n ≤ L`.
+4. The source time is `t = (trimBefore + n) / fps` seconds from the stream's first picture (a file whose first
+   timestamp is not 0 is measured from that first picture).
+5. The picture shown is the last one whose timestamp is at or before `t`, compared in the stream's time base
+   (`t` rounded to the nearest tick). A `t` before the first picture shows the first; a `t` at or past `end`
+   shows the last picture before `end`.
+
+- **Purity.** The picture depends only on (scene, frame): never on what was decoded before. A renderer keeps one
+  decoder per `src` that decodes forward from where it is and seeks (to the keyframe at or before the target, then
+  decodes forward) on a jump back or a jump forward of more than a second of stream time, and decoded pictures may be
+  cached; neither changes a pixel. Rendering frames out of order gives the same bytes as rendering them in order.
+- **Colour.** Pictures are converted to straight-alpha sRGB RGBA8 by `swscale` at their own size with bit-exact
+  flags (`SWS_BICUBIC | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT | SWS_BITEXACT`), using the stream's colour matrix and
+  range. An untagged matrix is BT.709 for a stream at least 720 lines tall and BT.601 below that, an untagged range
+  is limited (TV) range, as browsers do. A pixel format with alpha (VP9 or ProRes 4444 with alpha) keeps it; others
+  are opaque. Colours are then read as sRGB, as an image's are.
+- The stream's size, duration, time base and first timestamp are read when the scene loads (from the container, no
+  decoding; a file's probe is remembered while the file is unchanged, so a scene per frame does not open it per frame).
+  The first video stream that is not a cover picture is used. A stream's own duration is its length; a container that
+  gives only its own (Matroska, where it is where the last picture ends) is not trusted, and the last packets say where
+  the stream ends instead. A missing or unreadable file, one without a video stream, a `trimAfter` not above
+  `trimBefore`, a `trimBefore` at or past the end of the stream, or a `playbackRate` not above 0 is a load error naming
+  the layer.
+- Decoded pictures are cached per file (the last 64 MiB, and at least 4 pictures), and a picture reaches Vello as one
+  image, so the image atlas holds only the pictures drawn lately: Vello drops those unused for two frames when it needs
+  the room. The layer cache redraws a video layer whenever the timestamp it asks for changes, which is when its
+  picture changes and, for a clip slower than the scene, also between two frames of one picture.
+- Counts nothing in the [margin](#canvas-margin).
+
+### gif
+
+```json
+{ "id": "spinner", "type": "gif", "src": "spinner.gif", "width": 120, "height": 120, "fit": "contain", "time": 0.4 }
+```
+
+An animated GIF, decoded by the `image` crate. The picture goes in like an [image](#image) (same box, `fit` and
+sampling) and takes every layer field.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `src` | required | A `.gif`, relative to the scene. |
+| `width`, `height` | the GIF's logical screen size | As an image's. |
+| `fit` | `fill` | As an image's. |
+| `time` | the frame's time, `frame / fps` | Animatable. Seconds into the animation. |
+| `loop` | `true` | Past the end, `true` wraps round and `false` holds the last picture. A file's own loop count is ignored. |
+
+- **Timing.** Picture `i` shows from the sum of the delays of pictures `0..i` up to that plus its own delay. A delay
+  of 10 ms or less counts as 100 ms, as browsers do. The duration is the sum of all delays. A `time` below 0 shows
+  the first picture.
+- **Pictures** are the full logical screen after each frame's disposal method (none, background, previous), as the
+  `image` crate composes them, straight-alpha sRGB.
+- A missing file, or one `image` cannot read the header of, is a load error naming the layer (its logical screen is read
+  when the scene loads). A file with no pictures, or whose pictures cannot be decoded, is an error naming the layer when
+  a renderer opens it, which decodes every picture. Counts nothing in the margin.
 
 ## Layout
 
@@ -849,6 +951,75 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
 - Effects after `displace` see the displaced layer; one before it (`glow`, a shadow) is displaced with it. For the
   papercut look put the shadow after: `[displace, dropShadow]` casts the shadow of the torn edge.
 
+### filterGraph
+
+An SVG `<filter>` as a graph of primitives: `feTurbulence` into `feDisplacementMap`, `feGaussianBlur`,
+`feColorMatrix`, `feComposite`, and the rest, chained by `in`, `in2` and `result`. A port from SVG is mechanical:
+every attribute keeps its SVG name and meaning.
+
+```json
+{ "type": "filterGraph",
+  "filterUnits": "userSpaceOnUse", "x": -20, "y": -20, "width": 280, "height": 200,
+  "primitives": [
+    { "primitive": "feTurbulence", "type": "fractalNoise", "baseFrequency": 0.04, "numOctaves": 4, "seed": 7,
+      "result": "noise" },
+    { "primitive": "feDisplacementMap", "in": "SourceGraphic", "in2": "noise", "scale": 12,
+      "xChannelSelector": "R", "yChannelSelector": "G" } ] }
+```
+
+The graph runs on the layer's own pixels (`SourceGraphic`) in the layer's own space, like `displace`: lengths, the
+region and the noise are in layer pixels and follow the layer's `transform`, so a filter on a turned and scaled layer is
+the same filter turned and scaled. The result of the last primitive is the layer.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `x`, `y`, `width`, `height` | -10%, -10%, 120%, 120% of the layer's box | The filter region: nothing outside it survives, not even the layer. |
+| `filterUnits` | `objectBoundingBox` | `userSpaceOnUse`: the region is in layer pixels. `objectBoundingBox`: fractions of the layer's box (the box `inset` clips use). A group without a `layout` has no box: give it a `bbox`, or `userSpaceOnUse` with all four numbers and `primitiveUnits` `userSpaceOnUse` (a load error otherwise). |
+| `primitiveUnits` | `userSpaceOnUse` | What primitive lengths and subregions are in. `objectBoundingBox` scales `stdDeviation`, `dx`, `dy`, `radius` and subregions by the box's width and height, and `scale` and light `z` by the root of the mean of their squares. |
+| `colorInterpolationFilters` | `linearRGB` | The colour space primitives work in unless one says otherwise (`linearRGB` or `sRGB`). The layer is in linear light; a primitive in sRGB gets its inputs converted and its result converted back, so a blur, a blend or a colour matrix gives what a browser's does in either space. |
+| `bbox` | none | `[x, y, width, height]`, the box that `objectBoundingBox` units and the default region are fractions of, in layer space. For a layer that has no box (a group) and for a port from SVG: the box of the element the SVG filter was on. It is used instead of the layer's own box when both exist. |
+| `primitives` | required | In order. Each result can be named; a primitive can read the layer, any earlier result, or (left out) the previous result. |
+
+Every primitive has `primitive` (its element name), `in`, `in2` (when it has two inputs), `result`, `x`, `y`, `width`,
+`height` (the primitive subregion) and `colorInterpolationFilters`.
+
+- **Inputs.** `SourceGraphic` is the layer cut to the filter region, `SourceAlpha` the same as black with its alpha. A
+  name that no earlier primitive made reads the previous result (the layer, for the first primitive).
+  `BackgroundImage`, `BackgroundAlpha`, `FillPaint` and `StrokePaint` are empty images, as in Chrome.
+- **Subregions.** A primitive draws only inside its subregion: each side left out defaults to the union of the
+  subregions of the primitives it reads, or to the filter region if it reads the layer or nothing (and for `feTile`).
+  The subregion is cut to the filter region. Edges are hard: a pixel is in if its centre is.
+- **Numbers.** Every number is an [animatable number](#animated-numbers), also inside `values`, `tableValues` and
+  `kernelMatrix`. `stdDeviation`, `radius`, `baseFrequency` and `order` take one number or `[x, y]`.
+
+| `primitive` | Attributes | Notes |
+|---|---|---|
+| `feTurbulence` | `type` (`turbulence` default or `fractalNoise`), `baseFrequency` (0), `numOctaves` (1, 0 to 10), `seed` (0), `stitchTiles` (`true` or `false`) | The spec's reference algorithm, as the [`noise` layer](#noise) and [`displace`](#displace) have it, including `stitchTiles` (the tile is the primitive subregion). Sampled at whole canvas positions, as a browser does. Output is the raw four channels, not premultiplied, in the primitive's colour space. |
+| `feDisplacementMap` | `scale` (0), `xChannelSelector`, `yChannelSelector` (`R`, `G`, `B`, `A`; SVG's default is `A`) | `in` is moved by `in2`'s channels, read unpremultiplied and in the primitive's colour space (`in` is not converted). Nearest-pixel sampling, as a browser does. |
+| `feGaussianBlur` | `stdDeviation` (0) | Per axis; 0 on one axis blurs along the other. A round blur of 12 pixels or more uses the same pyramid as the [`blur` effect](#blur), less is exact. A turned layer is blurred along the canvas axes with the variance the turned filter has on each. At most 256. |
+| `feColorMatrix` | `type` (`matrix` default, `saturate`, `hueRotate`, `luminanceToAlpha`), `values` | On straight (unpremultiplied) colour, clamped to 0..1. A `values` of the wrong length is the identity. |
+| `feOffset` | `dx`, `dy` | In layer pixels, so it turns with the layer. Fractions of a pixel are interpolated. |
+| `feFlood` | `floodColor` (`#000000`), `floodOpacity` (1) | The colour is sRGB and converted to the primitive's space. |
+| `feComposite` | `operator` (`over`, `in`, `out`, `atop`, `xor`, `arithmetic`), `k1` to `k4` | `in` is the source, `in2` the destination. `arithmetic` is `k1*i1*i2 + k2*i1 + k3*i2 + k4` on premultiplied values, clamped. |
+| `feBlend` | `mode` | `normal`, `multiply`, `screen`, `darken`, `lighten`, `overlay`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. `in` is on top of `in2`. |
+| `feMerge` | `nodes`: the `in` of each `feMergeNode`, bottom first | |
+| `feComponentTransfer` | `funcR`, `funcG`, `funcB`, `funcA`: `{ "type": "identity" \| "table" \| "discrete" \| "linear" \| "gamma", "tableValues", "slope", "intercept", "amplitude", "exponent", "offset" }` | On straight colour. At most 32 table values. |
+| `feDropShadow` | `dx` (2), `dy` (2), `stdDeviation` (2), `floodColor`, `floodOpacity` | Made of the primitives the spec says: a blur of the alpha, an offset, a flood, `in` composite, a merge with the input. |
+| `feMorphology` | `operator` (`erode` default, `dilate`), `radius` (0) | A box of `radius` layer pixels each way, as whole pixels (at most 200 on the canvas); on a turned layer the box is along the canvas axes. |
+| `feTile` | | Repeats the input's subregion over its own. |
+| `feConvolveMatrix` | `order` (3, at most 8), `kernelMatrix`, `divisor` (sum of the kernel, or 1), `bias` (0), `targetX`, `targetY` (middle), `edgeMode` (`duplicate`, `wrap`, `none`), `preserveAlpha` | In canvas pixels (`kernelUnitLength` is not used). |
+| `feDiffuseLighting`, `feSpecularLighting` | `surfaceScale` (1), `diffuseConstant` or `specularConstant` (1), `specularExponent` (1, 1 to 128), `lightingColor` (white), `light` | `light` is `{ "type": "distant", "azimuth", "elevation" }`, `{ "type": "point", "x", "y", "z" }` or `{ "type": "spot", "x", "y", "z", "pointsAtX", "pointsAtY", "pointsAtZ", "specularExponent", "limitingConeAngle" }`. The input's alpha is the height; normals use the spec's Sobel kernels in canvas pixels, and a spot's cone fades over 0.016 of cosine like a browser's. |
+
+`feImage` is not supported yet.
+
+Loading a scene rejects a negative `stdDeviation`, `radius`, `baseFrequency` or subregion size, `numOctaves` outside 0
+to 10, a `values` or `kernelMatrix` of the wrong length, and a graph that needs a box on a layer that has none; the
+error names the layer.
+
+The [margin](#canvas-margin) counts what moves pixels: the largest offset (and a drop shadow's), half a displacement's
+`scale`, a dilation's radius and a convolution's order, summed along the graph, plus `3 * stdDeviation` of its blurs
+(a graph that only blurs counts nothing, like `blur`).
+
 ### cornerPin
 
 ```json
@@ -1028,7 +1199,7 @@ Every number is animatable, including the stop offsets.
 | `type` | Fields | Meaning |
 |---|---|---|
 | `linear` | `x0`, `y0`, `x1`, `y1` | Offset 0 is at (x0, y0) and offset 1 at (x1, y1); lines perpendicular to that axis have one colour. |
-| `radial` | `cx`, `cy`, `r` | Circles around the centre; offset 1 is at distance `r` (at least 0). |
+| `radial` | `cx`, `cy`, `r`, and optionally `fx`, `fy`, `fr` | Circles around the centre; offset 1 is at distance `r` (at least 0). With a focal circle (`fx`, `fy`, `fr`: each defaults to the centre's, and 0 for `fr`) offset 0 is on it and the circles in between grow from it to the outer one, as SVG's focal point does. |
 | `conic` | `cx`, `cy`, `angle` (default `0`) | Offset 0 points `angle` degrees clockwise from 12 o'clock, as in CSS `conic-gradient`; offset 1 is a full turn later. |
 
 Common fields:
@@ -1038,6 +1209,7 @@ Common fields:
 | `stops` | required | At least 2 `{ "offset", "color" }`. Offsets are between 0 and 1 at every keyframe. An offset lower than an earlier stop's is raised to it, as in CSS, so `[0.6, 0.3]` makes a hard edge at 0.6. Colours are plain colour strings (not animated) and may be translucent. |
 | `extend` | `pad` | Outside the first and last stop. `pad` holds the end colours. `repeat` repeats the span from the first to the last stop, which is CSS `repeating-linear-gradient` and friends; `reflect` does the same with every second span backwards. For `conic`, which already goes round, `repeat` repeats the span within the turn. |
 | `units` | `user` | What the coordinates are measured in. `user`: pixels of the painted layer. `box`: fractions of the painted layer's box, see [Box units](#box-units). |
+| `transform` | none | A matrix `[a, b, c, d, e, f]` (SVG's `matrix()`, so `x' = a x + c y + e`) that takes the gradient's space (after `units`) to the painted layer's: SVG's `gradientTransform`. A non-uniform matrix turns a circle into an ellipse and skews a line's perpendiculars. |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
@@ -1131,7 +1303,7 @@ it can be anything (text, an image, a group of shapes).
 | Field | Default | Meaning |
 |---|---|---|
 | `layer` | required | The `id` of the matte source. |
-| `mode` | `alpha` | `alpha` keeps the layer where the source is opaque; `alphaInverted` where it is transparent. `luminance` keeps it where the source is light (Rec. 709 luminance of the linear-light colour, times alpha, as in a gradient mask); `luminanceInverted` where it is dark or transparent. |
+| `mode` | `alpha` | `alpha` keeps the layer where the source is opaque; `alphaInverted` where it is transparent. `luminance` keeps it where the source is light (Rec. 709 luminance of the linear-light colour, times alpha, as in a gradient mask); `luminanceInverted` where it is dark or transparent. `srgbLuminance` takes the luminance (0.2125, 0.7154, 0.0721) of the sRGB-encoded colour instead, times alpha, which is what an SVG `<mask>` does: mid grey (`#808080`) keeps half the layer, where `luminance` keeps a fifth. |
 
 Rules:
 
@@ -1351,13 +1523,91 @@ constants) gives the sub-frames itself with `frames`:
 - Everything else about sub-frames holds: opacity is applied per sample, mattes pair sample `i` with sample `i`, and the
   layer's enclosing groups and the camera are taken at the frame itself.
 
+## Boxes from the DOM painter
+
+The painter of the full engine (`crates/dom/src/paint`, docs/ENGINE.md section 8) writes CSS boxes as the layers above
+and needs these fields, all optional, all new. Existing scenes do not change.
+
+### Glyph runs
+
+A `text` layer can carry glyphs that someone else shaped and positioned (Blitz's Parley lines), so a line breaks where
+the browser-style layout broke it, with letter and word spacing, `white-space`, `vertical-align` and per-span fonts
+already in the positions.
+
+```json
+{ "id": "p.text", "type": "text", "color": "#123", "boxWidth": 176.4, "boxHeight": 21,
+  "runs": [ { "src": "/abs/Inter.ttf", "index": 0, "size": 28, "coords": [], "skew": 0, "embolden": 0,
+              "glyphs": [[121, 0, 18], [133, 10.06, 18]] } ],
+  "transform": { "x": 18, "y": 55 } }
+```
+
+| Field | Meaning |
+|---|---|
+| `runs` | When not empty, the layer is these runs and `text`, `font`, `size`, `maxWidth`, `align`, `lineHeight` and `chars` are not used. |
+| `boxWidth`, `boxHeight` | The layer's box (for `inset` clips, box-unit gradients, a transform origin and layout), in pixels; default 0. |
+| run `src`, `index` | The font file (relative to the scene, or absolute) and the face in it. It is read once and need not be in `fonts`. A file that is not there is a load error naming the layer. |
+| run `size` | Font size in pixels. |
+| run `coords` | Normalised variable-font coordinates (F2Dot14 as integers), as Parley reports them; default none. |
+| run `skew` | Synthetic italic: degrees the glyphs lean right. |
+| run `embolden` | Synthetic bold: pixels the outlines grow on each side (a 48th of the size is Chrome's fake bold). |
+| run `glyphs` | `[glyph id, x, y]` for each glyph: the glyph's origin on its baseline, in the layer's box. |
+
+`color` is a colour, a gradient (its box is the box above) or an [image paint](#image-paints), as for any text layer.
+
+### Transform `matrix`
+
+`transform.matrix` is a CSS `matrix3d()`: sixteen numbers, column-major (`a1, b1, c1, d1, a2, ...`), applied about the
+anchor after `scale` and `rotation`, so a layer with only `x`, `y`, `anchorX`, `anchorY` (the transform origin) and
+`matrix` is a CSS box with `transform-origin`. It is how the DOM painter writes the whole CSS transform: `translate`,
+`rotate` and `scale` properties, `skew`, per-axis scale, `matrix()`, `rotate3d()`, and the `perspective()` function and
+the `perspective` property of a parent (folded into its children's matrices, so there is no scene camera for them).
+
+- A matrix that only moves the plane (no z, no perspective) is folded into the layer's flat 2D matrix, so the layer is
+  drawn sharp, never resampled.
+- Any other matrix warps the finished layer like `rotateX` does (`W` of [3D transforms](#3d-transforms-and-the-camera)
+  gets the matrix, conjugated by the layer's own `rotation` and `scale`), and counts as a 3D transform: a matte source
+  cannot have one, and a `preserve3d` group places its children by it.
+- `transform.backfaceHidden` (default `false`) is CSS's `backface-visibility: hidden`: the layer is not drawn when its
+  3D placement shows its back (the warp flips it). A layer with no 3D placement is never culled.
+
+### Gradient `transform` in CSS
+
+The DOM painter uses a gradient's `transform` (see [Gradients](#gradients), SVG's `gradientTransform`, applied after
+`units`) for CSS: `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about its centre `(cx, cy)` into an ellipse
+with radii `r` and `k * r` (CSS's `radial-gradient(ellipse ...)` whatever the box), and `border-image` maps a slice of a
+gradient onto its edge with one. It writes them with `units: user`, where the order against `units` does not matter.
+
+### Image paints
+
+A shape's `fill` and a text layer's `color` can be a picture, once or tiled, which is `background-image: url()` with
+`background-repeat` and `background-size`:
+
+```json
+{ "type": "shape", "shape": { "kind": "rect", "width": 300, "height": 200 },
+  "fill": { "type": "image", "src": "tex.png", "x": 0, "y": 0, "width": 64, "height": 64,
+            "repeatX": true, "repeatY": true } }
+```
+
+The picture is drawn `width` x `height` with its top-left corner at (`x`, `y`) in the painted layer's space, bilinearly
+resampled. It repeats along the axes with `repeatX` / `repeatY`; along an axis that does not repeat its edge pixels are
+held, so cut the shape to the tile (a shape no taller than the tile for `repeat-x`). `src` is a PNG, JPEG or GIF
+file, or a `data:` URL, which is decoded from memory (an `image` layer's `src` can be one too).
+
+### Blend space
+
+The scene's `"blendSpace"` is `"linear"` (default, as always) or `"srgb"`. In `srgb` every layer is composited, and
+every blend mode evaluated, on sRGB-encoded values as CSS does: a half-transparent black over white is mid grey (128)
+and not light grey (188), a translucent shadow is as dark as a browser's, and `multiply` and `screen` give a browser's
+numbers. Blurs, colour filters and everything inside one layer are unchanged. The DOM painter's output asks for
+`srgb` (`IslandOutput::blend_space`).
+
 ## Limits in this version
 
 - Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
-  `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
-- No video layers yet. Gradients are used by `mask`, a shape's `fill` and a text layer's
+  `halftone`, `dotMatrix`, `displace`, `filterGraph`, `cornerPin`, `shader`.
+- Gradients are used by `mask`, a shape's `fill` and a text layer's
   `color`; a `stroke` takes only a colour. A gradient in box units has no box to measure on a group without a `layout` (a load error).
 - Layout is flexbox only (`display: flex`; no grid, no block layout), with sizes in pixels (no percentages, `auto`
   margins, `min` or `max` sizes, or aspect ratios). A leaf layer is never resized by it, and does not shrink below its own
@@ -1371,6 +1621,10 @@ constants) gives the sub-frames itself with `frames`:
   effect, no outline or gradient of its own (a plain colour only), and characters are not re-flowed: the text box and
   the line breaks are those of the unstyled text. Text has one font per layer, no fallback and no bidi, so the clusters
   are those of left-to-right text.
+- `video` uses the first video stream only; rotation metadata (a phone's display matrix), the sample aspect ratio,
+  HDR transfer functions and interlacing are ignored, and a variable-frame-rate file is read by its timestamps (so it
+  plays at its recorded pace, not a constant rate). Its audio is played by the authoring layer, not by the scene.
+  `gif` ignores a file's loop count and keeps every decoded picture of a file in memory.
 - An image's size is read from its header when the scene loads, only when a side is left out; `cover` cuts the picture
   with an anti-aliased clip and `contain` leaves the rest of the box empty (no background colour).
 - `backdropBlur` on a shape frosts the shape's own geometry, not anything an earlier effect in the list painted (a

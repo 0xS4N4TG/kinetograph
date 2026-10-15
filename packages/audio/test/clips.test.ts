@@ -50,6 +50,15 @@ describe('joinClips', () => {
     expect(joined.map((j) => j.playbackRate)).toEqual([1, 2]);
   });
 
+  it('keeps toneFrequency on the timeline, and a change of it starts a new one', () => {
+    const joined = joinClips([
+      { frame: 0, audio: [clip({ toneFrequency: 1.5 })] },
+      { frame: 1, audio: [clip({ toneFrequency: 1.5 })] },
+      { frame: 2, audio: [clip()] },
+    ]);
+    expect(joined.map((j) => j.toneFrequency)).toEqual([1.5, undefined]);
+  });
+
   it('plays muted frames as volume 0 and is muted only if every frame is', () => {
     const some = joinClips([
       { frame: 0, audio: [clip({ muted: true, volume: 1 })] },

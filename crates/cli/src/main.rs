@@ -74,6 +74,10 @@ enum Command {
         /// its stages
         #[arg(long, conflicts_with_all = ["frame", "runs"])]
         range: Option<String>,
+        /// Also time each compositing pass on the GPU, in one more round of
+        /// the same frames, and print the passes grouped by kind
+        #[arg(long)]
+        passes: bool,
         /// Print the result as JSON
         #[arg(long)]
         json: bool,
@@ -109,12 +113,13 @@ fn main() -> ExitCode {
             frame,
             runs,
             range,
+            passes,
             json,
         } => (
             json,
             match range {
-                Some(range) => bench_range(&scene, &range),
-                None => bench(&scene, frame, runs),
+                Some(range) => bench_range(&scene, &range, passes),
+                None => bench(&scene, frame, runs, passes),
             },
         ),
     };
@@ -254,7 +259,7 @@ impl Stats {
     }
 }
 
-fn bench(scene_path: &Path, frame: i64, runs: u32) -> Result<Output, String> {
+fn bench(scene_path: &Path, frame: i64, runs: u32, passes: bool) -> Result<Output, String> {
     if runs == 0 {
         return Err("--runs must be at least 1".into());
     }
@@ -316,19 +321,92 @@ fn bench(scene_path: &Path, frame: i64, runs: u32) -> Result<Output, String> {
         scene_path.display(),
     );
     text.push_str(&stage_table(&stages));
-    Ok(Output {
-        text,
-        json: json!({
-            "scene": scene_path,
-            "width": width,
-            "height": height,
-            "frame": frame,
-            "runs": runs,
-            "layer_cache": false,
-            "setup_ms": setup_ms,
-            "stages_ms": stages_json(&stages),
-        }),
-    })
+    let mut json = json!({
+        "scene": scene_path,
+        "width": width,
+        "height": height,
+        "frame": frame,
+        "runs": runs,
+        "layer_cache": false,
+        "setup_ms": setup_ms,
+        "stages_ms": stages_json(&stages),
+    });
+    if passes {
+        let frames = (0..runs).map(|_| frame).collect::<Vec<_>>();
+        let (table, value) = time_passes(&mut renderer, &frames)?;
+        text.push_str(&table);
+        json["passes"] = value;
+    }
+    Ok(Output { text, json })
+}
+
+/// Renders `frames` in order with the pass timer on and groups the passes
+/// by kind: a table, and the same as JSON.
+fn time_passes(renderer: &mut Renderer, frames: &[u32]) -> Result<(String, Value), String> {
+    if !renderer.set_pass_timing(true) {
+        return Err("--passes: this GPU cannot time passes (no TIMESTAMP_QUERY)".into());
+    }
+    // (passes, ms, texels) by kind, over all the frames.
+    let mut kinds: Vec<(&'static str, u64, f64, u64)> = Vec::new();
+    let mut per_frame = Vec::new();
+    for &frame in frames {
+        renderer.render_frame(frame).map_err(|e| e.to_string())?;
+        let times = renderer.take_pass_times();
+        per_frame.push((times.len(), times.iter().map(|t| t.ms).sum::<f64>()));
+        for t in times {
+            match kinds.iter_mut().find(|k| k.0 == t.name) {
+                Some(k) => {
+                    k.1 += 1;
+                    k.2 += t.ms;
+                    k.3 += t.texels;
+                }
+                None => kinds.push((t.name, 1, t.ms, t.texels)),
+            }
+        }
+    }
+    renderer.set_pass_timing(false);
+    kinds.sort_by(|a, b| b.2.total_cmp(&a.2));
+
+    let n = frames.len().max(1) as f64;
+    let passes_mean = per_frame.iter().map(|p| p.0 as f64).sum::<f64>() / n;
+    let gpu_mean = per_frame.iter().map(|p| p.1).sum::<f64>() / n;
+    let mut text = format!(
+        "\n\npasses, per frame over {} frames: {passes_mean:.0} passes, {gpu_mean:.3} ms of GPU time\n\
+         {:<20}{:>9}{:>11}{:>10}{:>14}\n",
+        frames.len(),
+        "kind",
+        "passes",
+        "ms",
+        "us/pass",
+        "Mtexels"
+    );
+    let mut rows = Vec::new();
+    for (name, count, ms, texels) in &kinds {
+        let us = ms * 1000.0 / *count as f64;
+        let (count, ms, mtexels) = (*count as f64 / n, ms / n, *texels as f64 / n / 1e6);
+        text.push_str(&format!(
+            "{name:<20}{count:>9.1}{ms:>11.3}{us:>10.1}{mtexels:>14.1}\n"
+        ));
+        rows.push(json!({
+            "kind": name,
+            "passes_per_frame": count,
+            "ms_per_frame": ms,
+            "us_per_pass": us,
+            "mtexels_per_frame": mtexels,
+        }));
+    }
+    text.push_str(
+        "\nEach pass is timed from its start to its end on the GPU; passes can overlap,\n\
+         so their sum can differ from the frame's time. Mtexels is the size of the\n\
+         textures drawn into. Vello's rasterising and texture copies are not timed.",
+    );
+    let value = json!({
+        "frames": frames.len(),
+        "passes_per_frame": passes_mean,
+        "gpu_ms_per_frame": gpu_mean,
+        "kinds": rows,
+    });
+    Ok((text, value))
 }
 
 /// The stages' mean, min and max as a table, with the note on what the waits
@@ -368,7 +446,7 @@ fn stages_json(stages: &[(&str, Stats)]) -> serde_json::Map<String, Value> {
 /// from an empty cache, because the stage times wait for the GPU after every
 /// step and so cannot also be the time of the whole frame: first the whole
 /// frames, then the stages.
-fn bench_range(scene_path: &Path, range: &str) -> Result<Output, String> {
+fn bench_range(scene_path: &Path, range: &str, passes: bool) -> Result<Output, String> {
     let scene = Scene::load(scene_path).map_err(|e| e.to_string())?;
     let (first, last) = parse_range(range, scene.duration_in_frames)?;
     let (width, height) = (scene.width, scene.height);
@@ -452,19 +530,25 @@ fn bench_range(scene_path: &Path, range: &str) -> Result<Output, String> {
             json!({ "frame": frame, "total_ms": elapsed, "layers_reused": reused, "layers_drawn": drawn })
         })
         .collect();
-    Ok(Output {
-        text,
-        json: json!({
-            "scene": scene_path,
-            "width": width,
-            "height": height,
-            "first": first,
-            "last": last,
-            "frames": frames,
-            "layer_cache": true,
-            "setup_ms": setup_ms,
-            "stages_ms": stages_json(&stages),
-            "per_frame": frames_json,
-        }),
-    })
+    let mut json = json!({
+        "scene": scene_path,
+        "width": width,
+        "height": height,
+        "first": first,
+        "last": last,
+        "frames": frames,
+        "layer_cache": true,
+        "setup_ms": setup_ms,
+        "stages_ms": stages_json(&stages),
+        "per_frame": frames_json,
+    });
+    if passes {
+        // Once more from an empty cache, as `render` runs the range.
+        renderer.set_layer_cache(false);
+        renderer.set_layer_cache(true);
+        let (table, value) = time_passes(&mut renderer, &(first..=last).collect::<Vec<_>>())?;
+        text.push_str(&table);
+        json["passes"] = value;
+    }
+    Ok(Output { text, json })
 }

@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><style>html,body{margin:0;background:#fff}</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <filter id="rough" x="-4%" y="-4%" width="108%" height="108%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="torn" x="-6%" y="-10%" width="112%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.11" numOctaves="3" seed="11" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+  </filter></defs></svg>
+<svg width="540" height="360" style="position:absolute;left:0;top:0"><rect width="540" height="360" fill="#f3e6c8"/><rect x="40" y="200" width="300" height="60" fill="#c8d8e8"/></svg>
+<svg width="540" height="360" viewBox="0 0 540 360" style="position:absolute;left:0;top:0;overflow:visible">
+  <defs>
+    <mask id="k1" maskUnits="userSpaceOnUse" x="-540" y="-360" width="1620" height="1080">
+      <path d="M40 80L200 60L360 110L480 70" pathLength="1" fill="none" stroke="#fff" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 2" stroke-dashoffset="0.35"/>
+    </mask>
+    <filter id="b1" filterUnits="userSpaceOnUse" x="0" y="0" width="540" height="200">
+      <feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="3" seed="5" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="12" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feGaussianBlur in="d" stdDeviation="0.7"/>
+    </filter>
+  </defs>
+  <g filter="url(#b1)" style="mix-blend-mode:multiply" opacity="0.93">
+    <path d="M30 60 L210 40 L370 90 L490 50 L490 100 L370 140 L210 90 L30 110 Z" fill="#e63946" mask="url(#k1)"/>
+    <circle cx="40" cy="85" r="14" fill="#8A1A12" opacity="0.5"/>
+  </g>
+  <path d="M40 230 L300 225 L300 280 L40 290 Z" fill="#457b9d" opacity="0.93" mask="url(#k1)" filter="url(#rough)" style="mix-blend-mode:multiply"/>
+  <rect x="350" y="220" width="150" height="100" fill="#2a9d8f" filter="url(#torn)" style="mix-blend-mode:multiply"/>
+</svg></body></html>

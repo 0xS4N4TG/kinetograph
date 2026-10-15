@@ -140,7 +140,9 @@ Decisions and why:
   Determinism: animation time comes from the frame number, and any randomness in expressions must be seeded.
   Before relying on it, measure coverage: a few hundred popular LottieFiles animations rendered through it and
   compared with lottie-web.
-- **Real 3D: real Three.js first, kiss3d as backup** (revised 2026-10-14 with the Node decision). With Node as host,
+- **Real 3D: real Three.js first, kiss3d as backup** (revised 2026-10-14 with the Node decision; superseded
+  2026-10-15: Three.js compatibility is dropped for now and the engine gets its own 3D layer, see "3D layer" in §8).
+  With Node as host,
   Three.js can run as written: its `WebGPURenderer` on the `webgpu` npm package (Dawn, Google's WebGPU
   implementation, 0.6.2 released 2026-10-02), rendering offscreen to a texture that becomes a compositor layer.
   That is coverage-first by definition: react-three-fiber, drei and `@remotion/three` code runs unchanged.
@@ -192,7 +194,7 @@ behaviour on top of engine primitives; "fallback" means compat mode renders it t
 | `@remotion/google-fonts` | shim | font registration | 3 |
 | `@remotion/lottie` | native `<Lottie>` via ThorVG (dotlottie-rs, section 4) | texture layer | 3 |
 | `@remotion/gif`, `<Video>`, `<OffthreadVideo>` | native | ffmpeg decode | 4 |
-| `@remotion/three` | real Three.js on `WebGPURenderer` + Dawn (section 4); kiss3d mapping as backup; GLSL `ShaderMaterial` falls back | 3D layer | after 3 |
+| `@remotion/three` | dropped for now (2026-10-15): `doctor` reports it; the engine's own 3D layer replaces it (§8, "3D layer") | 3D layer | deferred |
 | `@remotion/captions` | shim | per-glyph text | 3 |
 | Anything else (arbitrary HTML/CSS) | fallback | `doctor` | 5 |
 
@@ -293,10 +295,28 @@ two so each half is reviewable:
   - Numbers on the M4: diorama `render` 294 (2b) → 36.5 ms/frame. The ep 13 S04Meter papercut scene, hand-ported to
     scene JSON (89 frames, 1080x1920): 3.95–4.14 s for the whole `render`, ~40 ms/frame, against 16.1–16.8 s in
     Remotion 4.0.530 (with `--concurrency` 1 or 5): **about 4.1x**. 200 small rects without effects: 167 → 40 ms.
-  - Not yet at Phase 3's 5x on that scene: 16.3 s / 5 = 3.26 s, so ~32 ms/frame after ~0.45 s of GPU setup. Most of the
-    remaining time is CPU spent encoding ~400 GPU passes per frame. Next, all byte-identical: cut out a whole page in
-    one pass, merge consecutive blends of layers that do not overlap, closed-form inset shadows for rect shapes. These
-    need the M4 to measure, so they are not cloud work.
+  - Not yet at Phase 3's 5x on that scene: 16.3 s / 5 = 3.26 s, so ~32 ms/frame after ~0.45 s of GPU setup. Next,
+    all byte-identical: cut out a whole page in one pass, merge consecutive blends of layers that do not overlap,
+    closed-form inset shadows for rect shapes. These need the M4 to measure, so they are not cloud work.
+  - **Corrected 2026-10-15: the GPU is the limit, not the CPU.** Splitting S04 across 2 processes takes as long as 1
+    (2.91 vs 2.92 s), and 3–4 take longer. `bench --passes` on S04 (89 frames): ~278 passes a frame, and a pass costs
+    ~140–300 µs of GPU time whatever its size (a `blend` averages 0.16 Mtexels and 200 µs), so the cost is per pass, not
+    per pixel. By kind: `blend` 82 passes and 16.7 ms, `to linear` 83 and 15.5 ms, the blur steps 5.1 + 2.5 ms,
+    `shadow spread` 27 and 4.0 ms, `inset shadow` 27 and 3.6 ms, `displace` 8.5 and 2.1 ms. Fewer passes is the lever.
+    Re-time Remotion in the same session as Kinetograph: Low Power Mode or battery changes both, by different amounts
+    (S04 in Remotion 16.1–16.8 s with it on, 9.2–9.5 s off; Kinetograph ~4.3 and ~2.9 s).
+  - **Fewer passes, done 2026-10-15 (stream 5, `perf/gpu-passes`, all byte-identical).** S04 went from 278 passes a
+    frame to 113, and from 2.68–2.92 s for the whole `render` to **1.25–1.28 s** (min and median of 4 rounds,
+    load 3–6), against Remotion 8.86 s min and 8.96 s median timed in the same rounds: **7.0–7.1x** (the 5x bar of Phase 3
+    is met).
+    The decoded frames of the two renders are identical (89 frame md5s). Per stage, `frame_hashes --times` ms a frame
+    (min / median of 5, interleaved, load 8–16 from other jobs): before 25.8 / 26.9; inset shadow with no blur or spread
+    in one pass 24.7 / 25.7; a leaf is cut out of its Vello page when it is wanted 21.7 / 22.7; runs of blends in one
+    pass (`blend_many`) 17.8 / 18.1; pages drawn only as far as their leaves reach and packed by colouring 17.0 / 17.1;
+    a leaf with a sharp inset shadow cut out in the same pass 15.9 / 17.4; Vello's dispatches in one compute pass
+    12.2 / 13.3; a plain leaf blended straight from its page 11.4 / 11.8. Every one of them is byte-identical to the
+    build before it on all 34 test scenes, S04's 89 frames included. Details, what was rejected and what is next: ENGINE.md
+    §11.
 **Phase 3: authoring + agents.** The N-API addon (napi-rs) exposing the Rust core; the `@kinetograph/core` TS
 package: Remotion shim, `react-reconciler` host config emitting the scene graph, determinism shim; Web Audio via
 `node-web-audio-api`; the `kinetograph` CLI in TS and the MCP server; the Remotion package table in section 5;
@@ -321,13 +341,31 @@ goldens. `cargo test` and the GPU npm tests pass except `renderer_reuse` (#12).
 - The reference rebuild works but is slow (429 ms a frame) and matches loosely (#17).
 - Merge blockers #12–#15, fixed in the cloud (see "Phase 3 fixes in a cloud session") and tested on the M4 as PRs
   #18–#21 before #11 merged. Open: #16 (`kinetograph check`), #17.
-**3D layer (after Phase 3).** Three.js on Dawn, or the kiss3d mapping if the spike fails (section 4).
+**3D layer (after Phase 3).** Decided 2026-10-15: the engine gets its own 3D, and Three.js compatibility
+(`@remotion/three`, react-three-fiber, drei, pixi) is dropped for now. Spike 2 showed Three.js runs on Dawn, but
+running it means a second GPU API in the process, a pixel readback per frame and a browser library's behaviour to
+match; our own layer is native, shares the wgpu device and stays a pure function of the frame.
+- A `3d` scene layer drawn in Rust on the compositor's wgpu device, no readback. kiss3d 0.47 (section 4) is the
+  starting point to evaluate; its feature list (meshes, metallic-roughness PBR, lights, shadows, glTF) is the scope.
+- Authoring: our own components (`<Scene3D>`, `<Mesh>`, primitives, `<Model src="x.glb">`, lights, a camera), not
+  the Three.js API. Their names may follow react-three-fiber's where that costs nothing, so agents guess right.
+- Extruded text and SVG paths as meshes, since the motion-graphics use is mostly 3D type and logos.
+- Projects that import `three` or `@remotion/three` are reported by `doctor`; nothing falls back to Chrome.
 **Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline
 of sequences and layers, scene tree from `inspect`, props panel, render queue calling `render`, hot reload on save.
 Plus video layers (`<Video>`, `<OffthreadVideo>`, `@remotion/gif`, section 5).
+**Built 2026-10-15 in one cloud session** (draft PR from `feat/studio-video`, the four stream branches merged into it
+and kept): the contract is `docs/AUTHORING.md` §11, SCENE.md's `video` and `gif`, and `packages/studio/src/protocol.ts`;
+the example is `examples/video-overlay/`. CPU checks green; nothing has rendered on a GPU yet. On the M4: the list in
+"Phase 4 in a cloud session" below.
 **Phase 5: Remotion compat mode.** CSS subset mapped onto layers (possibly via Blitz/Stylo), Chrome fallback per frame
 range, `doctor`.
+**Built 2026-10-15 in the same cloud session** (draft PR from `feat/remotion-compat` against `feat/studio-video`, the
+four stream branches merged into it and kept): the contract is `docs/COMPAT.md`; the example is `examples/compat/`,
+where `doctor` reports 126 of 150 frames native and one Chrome run (96..119, the `textDecoration` it uses on purpose).
+CPU checks green, plus a Chromium-on-CPU integration test of the fallback; nothing has rendered on a GPU yet. On the
+M4: the list in "Phase 5 in the same cloud session" below.
 
 **Building a phase in a Claude Code cloud session** (Phase 2 onwards). The cloud session writes code; all testing
 happens on the user's M4.
@@ -540,6 +578,29 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
   - Render S04 straight from its Remotion source in compat mode. Compare it with Remotion's output (`--compare`
     and a look at the frames) and with the hand port, then time all three back to back.
 
+### Deferred: browser APIs the engine does not have yet (logged 2026-10-15)
+
+Remotion projects work unchanged when their effects are CSS, SVG or plain JS. These do not, and `doctor` reports
+them. Each is to be ported natively (no Chrome), one stream each, tested against Chrome as the oracle only.
+1. **CSS gaps** (smallest). `line-clamp`: cut the shaped lines at N and add the ellipsis. Floats and tables: check
+   whether a newer Blitz lays them out before writing our own (an upgrade also means redoing the fontique patch).
+   `@container`: Stylo parses container queries; lay out once for the container sizes, restyle, lay out again. CSS
+   transitions: a transition starts when a value changes, which depends on the previous frame; to stay a pure
+   function of the frame, look back over the transition's duration for the frame the value changed and
+   interpolate from there.
+2. **Canvas 2D** (medium; the most common custom drawing in Remotion projects). A `CanvasRenderingContext2D` shim
+   records each frame's calls (paths, fill/stroke, gradients, `drawImage`, `fillText`, transforms, clips,
+   `globalAlpha`, `globalCompositeOperation`); Rust draws them as one canvas layer with Vello, whose model maps
+   almost one to one. `getImageData`/`toDataURL` need pixels at once, so those draw on the CPU.
+3. **WebGL fragment shaders** (shader transitions, Shadertoy ports): the slice of WebGL they use (one full-screen
+   quad, uniforms, textures, `drawArrays`), with their GLSL ES translated to WGSL by naga and run as a `shader`
+   pass. naga reads desktop GLSL, so GLSL ES 100 / 300 es probably needs a small rewrite step first.
+4. **Three.js and pixi**: dropped for now, see "3D layer" above. If they come back, the path is a WebGPU API in Node
+   on wgpu (`deno_webgpu`) so both run their WebGPU renderers unmodified, with GLSL materials through item 3.
+
+User shaders today are `shader({ code, uniforms })` in WGSL (SCENE.md, "shader"). Its limits, also to lift later:
+it sees only its own layer (no backdrop), runs one pass, samples no other texture, and takes only `f32` uniforms.
+
 ## 9. Rules for the build
 
 - `random(seed)` must be bit-exact with Remotion's implementation (the papercut kit seeds all jitter with it), but
@@ -551,7 +612,7 @@ renders without a hand port. It runs after Phase 4's four streams are merged, th
 
 ## 10. Open questions
 
-- Three.js `WebGPURenderer` headless on Dawn in Node: unverified (section 4). Decides Three.js vs kiss3d.
+- 3D layer: kiss3d on the shared wgpu device, or our own renderer (§8, "3D layer"). Three.js is dropped for now.
 - `react-reconciler` host config details: which React features (Suspense, context, portals) the scene graph needs.
 - Vello's filter/text quality vs Skia. Test early with the papercut grain + torn edge.
 - Licence for Kinetograph itself (MIT/Apache-2.0 matches the ecosystem; fframes is MIT).

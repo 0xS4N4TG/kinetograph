@@ -51,6 +51,10 @@ interface GradientBase {
   extend?: Extend;
   /** `box`: coordinates are fractions of the painted layer's box (AUTHORING.md §4.5). Default `user`. */
   units?: 'user' | 'box';
+  /** `[a, b, c, d, e, f]`: an affine from the gradient's space (after `units`) to the painted layer's: SVG's
+   *  `gradientTransform`. `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about `(cx, cy)` into an ellipse.
+   *  Not animated. */
+  transform?: [number, number, number, number, number, number];
 }
 export interface LinearGradient extends GradientBase {
   type: 'linear';
@@ -74,8 +78,23 @@ export interface ConicGradient extends GradientBase {
   angle?: Num;
 }
 export type Gradient = LinearGradient | RadialGradient | ConicGradient;
-/** A colour string or a gradient: a shape's `fill` and a text layer's `color`. */
-export type Paint = ColorString | Gradient;
+/** A picture as a paint, once or tiled (`background-image: url()` with `background-repeat`): drawn `width` x `height`
+ *  with its top-left corner at `(x, y)` in the painted layer's space, repeated along the axes that repeat; along the
+ *  others its edge pixels are held, so cut the shape to the tile. `src` is a PNG, JPEG or GIF file or a `data:` URL. */
+export interface ImagePaint {
+  type: 'image';
+  src: string;
+  /** Default 0. */
+  x?: Num;
+  y?: Num;
+  /** Above 0. */
+  width: Num;
+  height: Num;
+  repeatX?: boolean;
+  repeatY?: boolean;
+}
+/** A colour string, a gradient or a picture: a shape's `fill` and a text layer's `color`. */
+export type Paint = ColorString | Gradient | ImagePaint;
 
 // ---- transform, clip, mask, matte, motion blur ----
 
@@ -94,6 +113,30 @@ export interface Transform {
   rotateY?: Num;
   /** Pixels toward the viewer. */
   z?: Num;
+  /** A CSS `matrix3d()`: sixteen numbers, column-major, applied about the anchor after `scale` and `rotation`. A
+   *  matrix that only moves the plane is folded into the flat 2D matrix; any other warps the finished layer like
+   *  `rotateX`. Not animated. */
+  matrix?: number[];
+  /** CSS's `backface-visibility: hidden`: not drawn while its 3D placement shows its back. */
+  backfaceHidden?: boolean;
+}
+
+/** One run of glyphs that share a font file and size, already positioned (`TextLayer.runs`). */
+export interface GlyphRun {
+  /** The font file, relative to the scene or absolute. */
+  src: string;
+  /** The face in a font collection. Default 0. */
+  index?: number;
+  /** Font size in pixels. */
+  size: number;
+  /** Normalised variable-font coordinates (F2Dot14 as integers). */
+  coords?: number[];
+  /** Synthetic italic: degrees the glyphs lean right. */
+  skew?: number;
+  /** Synthetic bold: pixels the outlines grow on each side. */
+  embolden?: number;
+  /** `[glyph id, x, y]` for each glyph: its origin on its baseline, in the layer's box. */
+  glyphs: [number, number, number][];
 }
 
 export type Clip =
@@ -398,6 +441,12 @@ export interface TextLayer extends LayerBase {
   align?: 'left' | 'center' | 'right';
   /** One entry per Unicode code point of `text`. */
   chars?: (CharStyle | null)[];
+  /** Glyphs someone else shaped and positioned (the DOM painter). When there are any, the core does not use `text`,
+   *  `font`, `size`, `maxWidth`, `align`, `lineHeight` or `chars`, and does not require `font` to be in `fonts`. */
+  runs?: GlyphRun[];
+  /** The box of a layer with `runs`, in pixels. */
+  boxWidth?: Num;
+  boxHeight?: Num;
 }
 
 export interface ImageLayer extends LayerBase {
@@ -451,6 +500,43 @@ export interface LottieLayer extends LayerBase {
   loop?: boolean;
 }
 
+export interface VideoLayer extends LayerBase {
+  type: 'video';
+  /** Any file FFmpeg reads with a video stream, relative to the scene. */
+  src: string;
+  /** Both left out: the stream's size; one left out keeps its aspect ratio. */
+  width?: Num;
+  height?: Num;
+  /** Default `fill`. */
+  fit?: 'fill' | 'contain' | 'cover';
+  /** The scene frame the clip's clock reads. Default: the frame being rendered. */
+  frame?: Num;
+  /** The scene frame of the clip's frame 0. Default 0. */
+  from?: number;
+  /** Scene frames skipped at the start of the file. Default 0. */
+  trimBefore?: number;
+  /** Scene frames from the start of the file at which the clip ends. Default: the stream's end. */
+  trimAfter?: number;
+  /** Above 0, default 1. */
+  playbackRate?: number;
+  /** Default false. */
+  loop?: boolean;
+}
+
+export interface GifLayer extends LayerBase {
+  type: 'gif';
+  /** A `.gif`, relative to the scene. */
+  src: string;
+  width?: Num;
+  height?: Num;
+  /** Default `fill`. */
+  fit?: 'fill' | 'contain' | 'cover';
+  /** Seconds into the animation. Default: the frame's time. */
+  time?: Num;
+  /** Default true. */
+  loop?: boolean;
+}
+
 export type LayerJson =
   | ShapeLayer
   | TextLayer
@@ -458,7 +544,9 @@ export type LayerJson =
   | GroupLayer
   | NoiseLayer
   | MeshGradientLayer
-  | LottieLayer;
+  | LottieLayer
+  | VideoLayer
+  | GifLayer;
 export type LayerType = LayerJson['type'];
 
 // ---- scene ----
@@ -484,6 +572,11 @@ export interface SceneJson {
    * reach, whichever is more (SCENE.md "Canvas margin"). Default 0.
    */
   margin?: number;
+  /**
+   * The space layers are composited in: `linear` (default) or `srgb`, as CSS does (SCENE.md "Blend space"). A tree with
+   * DOM islands asks for `srgb`: the painter writes its layers for it (ENGINE.md §10.1).
+   */
+  blendSpace?: 'linear' | 'srgb';
   /** Font key to font file. */
   fonts?: Record<string, string>;
   camera?: CameraJson;
@@ -502,4 +595,35 @@ export interface AudioClipJson {
   volume: number;
   loop: boolean;
   muted: boolean;
+  /** The sound of a `<Video>`: decoded with the addon's `decodeAudio` (docs/AUTHORING.md §11.3). */
+  video?: boolean;
+  /** Remotion's `toneFrequency`: the pitch times this (0.01 to 2), the length unchanged. Left out when it is 1. */
+  toneFrequency?: number;
+}
+
+/** Something compat mode cannot draw natively (docs/COMPAT.md §6.1); a frame holding one is drawn by Chrome. */
+export interface Unsupported {
+  /** The element's host-tree path and tag: `'$0.2.1 <div>'`. */
+  path: string;
+  /** `'div'`, `'svg > text'`, … */
+  element: string;
+  /** `'transform'`; null for an unsupported element. */
+  property: string | null;
+  value: string | null;
+  reason: string;
+}
+
+/** A `<Sequence>` as the timeline sees it (docs/AUTHORING.md §11.4). */
+export interface SequenceJson {
+  /** `${parent key ?? ''}/${name ?? 'Sequence'}@${from}+${durationInFrames}`, stable across frames. */
+  key: string;
+  name: string | null;
+  /** The absolute frame of the Sequence's frame 0. */
+  from: number;
+  /** Clamped to what is left of the parent's, so always finite. */
+  durationInFrames: number;
+  /** Key of the enclosing Sequence. */
+  parent: string | null;
+  /** Id of the group its children are in on this frame; null when not showing or with `layout="none"`. */
+  layer: string | null;
 }

@@ -5,10 +5,13 @@
   "workspaces": [
     "crates/node",
     "packages/scene",
+    "packages/compat",
     "packages/react",
     "packages/core",
     "packages/audio",
-    "packages/cli"
+    "packages/cli",
+    "packages/studio/ui",
+    "packages/studio"
   ],
   "engines": {
     "node": ">=22"

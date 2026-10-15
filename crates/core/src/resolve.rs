@@ -7,14 +7,15 @@ use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
     AlignContent, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
-    Effect, Extend, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, Gradient, GradientGeometry,
-    HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind, Layout, LayoutItem,
-    MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode, NoiseChannels,
-    Paint, Position, Scene, Shadow, Spacing, Stop, TextAlign, Transform, Turbulence,
-    TurbulenceKind, Units,
+    Effect, Extend, FillRule, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun,
+    Gradient, GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind,
+    Layout, LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
+    NoiseChannels, Paint, Position, Scene, Shadow, ShapeLayer, Spacing, Stop, StrokeCap,
+    StrokeJoin, TextAlign, Transform, Turbulence, TurbulenceKind, Units,
 };
 use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
+use crate::video::{Clip as VideoClip, MediaTime};
 use crate::warp;
 
 /// The time a scene is evaluated at.
@@ -158,6 +159,10 @@ pub struct ResolvedTransform {
     /// scales about, added to the anchor.
     pub origin_x: f64,
     pub origin_y: f64,
+    /// `scene::Transform::matrix`.
+    pub matrix: Option<[f64; 16]>,
+    /// `scene::Transform::backface_hidden`.
+    pub backface_hidden: bool,
 }
 
 impl ResolvedTransform {
@@ -168,10 +173,17 @@ impl ResolvedTransform {
     /// the origin, and puts the layer back so that nothing moves while it is
     /// not turned or scaled: the pivot lands where it is without them.
     pub fn matrix(&self) -> Affine {
+        let css = self
+            .matrix
+            .filter(crate::scene::matrix_is_affine_2d)
+            .map_or(Affine::IDENTITY, |m| {
+                Affine::new([m[0], m[1], m[4], m[5], m[12], m[13]])
+            });
         if self.origin_x != 0.0 || self.origin_y != 0.0 {
             return Affine::translate((self.x + self.origin_x, self.y + self.origin_y))
                 * Affine::rotate(self.rotation.to_radians())
                 * Affine::scale(self.scale)
+                * css
                 * Affine::translate((
                     -(self.anchor_x + self.origin_x),
                     -(self.anchor_y + self.origin_y),
@@ -180,6 +192,7 @@ impl ResolvedTransform {
         Affine::translate((self.x, self.y))
             * Affine::rotate(self.rotation.to_radians())
             * Affine::scale(self.scale)
+            * css
             * Affine::translate((-self.anchor_x, -self.anchor_y))
     }
 }
@@ -223,6 +236,7 @@ pub enum ResolvedEffect {
     DotMatrix(ResolvedDotMatrix),
     Displace(ResolvedDisplace),
     CornerPin(ResolvedCornerPin),
+    FilterGraph(Box<crate::filter::ResolvedFilterGraph>),
     Shader(ResolvedShader),
 }
 
@@ -424,11 +438,76 @@ pub struct ResolvedMatte {
     pub mode: MatteMode,
 }
 
+/// How a shape is filled and stroked, beyond its colours and the stroke's
+/// width, at one frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeStyle {
+    pub fill_rule: FillRule,
+    pub cap: StrokeCap,
+    pub join: StrokeJoin,
+    pub miter_limit: f64,
+    /// Dash lengths and gaps, alternating; empty for a solid line.
+    pub dash: Vec<f64>,
+    pub dash_offset: f64,
+}
+
+impl Default for ShapeStyle {
+    fn default() -> ShapeStyle {
+        ShapeStyle {
+            fill_rule: FillRule::NonZero,
+            cap: StrokeCap::Butt,
+            join: StrokeJoin::Round,
+            miter_limit: 4.0,
+            dash: Vec::new(),
+            dash_offset: 0.0,
+        }
+    }
+}
+
+impl ShapeStyle {
+    fn resolve(shape: &ShapeLayer, f: f64) -> ShapeStyle {
+        let mut style = ShapeStyle {
+            fill_rule: shape.fill_rule,
+            ..ShapeStyle::default()
+        };
+        if let Some(stroke) = &shape.stroke {
+            style.cap = stroke.cap;
+            style.join = stroke.join;
+            style.miter_limit = stroke
+                .miter_limit
+                .as_ref()
+                .map_or(4.0, |n| n.at(f))
+                .max(1.0);
+            let dash: Vec<f64> = stroke.dash_array.iter().map(|n| n.at(f)).collect();
+            // A pattern that is empty, has a negative or no length is a solid
+            // line, as in SVG.
+            if dash.iter().all(|d| d.is_finite() && *d >= 0.0) && dash.iter().sum::<f64>() > 0.0 {
+                style.dash = dash;
+                style.dash_offset = stroke.dash_offset.as_ref().map_or(0.0, |n| n.at(f));
+            }
+        }
+        style
+    }
+}
+
 /// What a shape's fill or a text's colour paints with, at one frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedPaint {
     Solid(Color),
     Gradient(ResolvedGradient),
+    Image(ResolvedImagePaint),
+}
+
+/// `scene::ImagePaint` at one frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedImagePaint {
+    pub src: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub repeat_x: bool,
+    pub repeat_y: bool,
 }
 
 /// A gradient at one frame, in the space of whatever it paints.
@@ -441,6 +520,9 @@ pub struct ResolvedGradient {
     /// Whether the coordinates are pixels of the painted layer or fractions
     /// of its box.
     pub units: Units,
+    /// Takes the gradient's space (after `units`) to the painted layer's
+    /// (`Gradient::transform`).
+    pub transform: Affine,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -455,6 +537,15 @@ pub enum ResolvedGradientGeometry {
         cx: f64,
         cy: f64,
         r: f64,
+    },
+    /// A radial gradient that starts on the focal circle (`fx`, `fy`, `fr`).
+    FocalRadial {
+        cx: f64,
+        cy: f64,
+        r: f64,
+        fx: f64,
+        fy: f64,
+        fr: f64,
     },
     /// `angle` in degrees clockwise from 12 o'clock.
     Conic {
@@ -476,6 +567,8 @@ pub enum ResolvedKind {
         geometry: ResolvedGeometry,
         fill: Option<ResolvedPaint>,
         stroke: Option<(Color, f64)>,
+        /// The fill rule and how the stroke is drawn.
+        style: ShapeStyle,
     },
     Text {
         text: String,
@@ -489,6 +582,11 @@ pub enum ResolvedKind {
         /// One entry per code point of `text` that has one: its own style, or
         /// `None` for a character drawn as the layer is.
         chars: Vec<Option<ResolvedChar>>,
+        /// Glyphs positioned by someone else; when there are any, the fields
+        /// above that shape text are not used (`scene::TextLayer::runs`).
+        runs: Vec<GlyphRun>,
+        /// The box of a layer with `runs`.
+        box_size: (f32, f32),
     },
     Image {
         src: String,
@@ -501,6 +599,8 @@ pub enum ResolvedKind {
         children: Vec<ResolvedLayer>,
         /// The children are drawn straight into the parent, depth sorted.
         preserve3d: bool,
+        /// `GroupLayer::pass_through`.
+        pass_through: bool,
         /// The flex layout the children were placed by.
         layout: Option<ResolvedLayout>,
         /// With a `layout`: the size it gave the group, whose box is
@@ -512,6 +612,27 @@ pub enum ResolvedKind {
         src: String,
         width: f64,
         height: f64,
+        /// Seconds into the animation.
+        time: f64,
+        looped: bool,
+    },
+    /// A video's picture fitted into the box `(0, 0, width, height)` like an
+    /// image.
+    Video {
+        src: String,
+        width: f64,
+        height: f64,
+        fit: Fit,
+        /// The time in the file and the picture it picks.
+        time: MediaTime,
+    },
+    /// A GIF's picture fitted into the box `(0, 0, width, height)` like an
+    /// image.
+    Gif {
+        src: String,
+        width: f64,
+        height: f64,
+        fit: Fit,
         /// Seconds into the animation.
         time: f64,
         looped: bool,
@@ -661,16 +782,27 @@ impl Resolver<'_> {
                 line_height,
                 max_width,
                 align,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.engine()?
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.engine()?.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let (width, height) = laid_out.box_size(*max_width);
                 Some(Rect::new(0.0, 0.0, width, height))
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Lottie { width, height, .. }
+            | ResolvedKind::Video { width, height, .. }
+            | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
@@ -796,6 +928,7 @@ impl Resolver<'_> {
                 },
                 fill: s.fill.as_ref().map(|p| resolve_paint(p, f)),
                 stroke: s.stroke.as_ref().map(|st| (st.color, st.width.at(f))),
+                style: ShapeStyle::resolve(s, f),
             },
             LayerKind::Text(t) => ResolvedKind::Text {
                 text: t.text.clone(),
@@ -819,6 +952,11 @@ impl Resolver<'_> {
                         })
                     })
                     .collect(),
+                runs: t.runs.clone(),
+                box_size: (
+                    t.box_width.as_ref().map_or(0.0, |n| n.at(f) as f32),
+                    t.box_height.as_ref().map_or(0.0, |n| n.at(f) as f32),
+                ),
             },
             LayerKind::Image(i) => {
                 let (width, height) = self.image_size(layer, i, f)?;
@@ -843,6 +981,7 @@ impl Resolver<'_> {
                     children
                 },
                 preserve3d: g.preserve3d,
+                pass_through: g.pass_through,
             },
             LayerKind::Lottie(l) => {
                 let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;
@@ -852,6 +991,38 @@ impl Resolver<'_> {
                     height,
                     time: l.time.as_ref().map_or(clock.t / clock.fps, |n| n.at(f)),
                     looped: l.looped,
+                }
+            }
+            LayerKind::Video(v) => {
+                let (width, height) = self.box_size(layer, &v.src, &v.width, &v.height, f)?;
+                let info = self.scene.videos.get(&v.src).ok_or_else(|| {
+                    Error::Render(format!(
+                        "layer {:?}: the container of {:?} was not read when the scene loaded",
+                        layer.id, v.src
+                    ))
+                })?;
+                // The scene frame the clip's clock reads: the frame being
+                // rendered, sub-frames at their own times.
+                let frame = v.frame.as_ref().map_or(clock.t, |n| n.at(f));
+                let clip = VideoClip::from(v);
+                let seconds = clip.source_time(frame, clock.fps, info.duration);
+                ResolvedKind::Video {
+                    src: v.src.clone(),
+                    width,
+                    height,
+                    fit: v.fit,
+                    time: info.media_time(seconds, clip.end(clock.fps, info.duration)),
+                }
+            }
+            LayerKind::Gif(g) => {
+                let (width, height) = self.box_size(layer, &g.src, &g.width, &g.height, f)?;
+                ResolvedKind::Gif {
+                    src: g.src.clone(),
+                    width,
+                    height,
+                    fit: g.fit,
+                    time: g.time.as_ref().map_or(clock.t / clock.fps, |n| n.at(f)),
+                    looped: g.looped,
                 }
             }
             LayerKind::MeshGradient(m) => {
@@ -924,6 +1095,15 @@ fn resolve_paint(paint: &Paint, f: f64) -> ResolvedPaint {
     match paint {
         Paint::Solid(color) => ResolvedPaint::Solid(*color),
         Paint::Gradient(g) => ResolvedPaint::Gradient(resolve_gradient(g, f)),
+        Paint::Image(i) => ResolvedPaint::Image(ResolvedImagePaint {
+            src: i.src.clone(),
+            x: i.x.at(f),
+            y: i.y.at(f),
+            width: i.width.at(f).max(0.0),
+            height: i.height.at(f).max(0.0),
+            repeat_x: i.repeat_x,
+            repeat_y: i.repeat_y,
+        }),
     }
 }
 
@@ -983,10 +1163,32 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
             x1: x1.at(f),
             y1: y1.at(f),
         },
-        GradientGeometry::Radial { cx, cy, r } => ResolvedGradientGeometry::Radial {
+        GradientGeometry::Radial {
+            cx,
+            cy,
+            r,
+            fx: None,
+            fy: None,
+            fr: None,
+        } => ResolvedGradientGeometry::Radial {
             cx: cx.at(f),
             cy: cy.at(f),
             r: r.at(f).max(0.0),
+        },
+        GradientGeometry::Radial {
+            cx,
+            cy,
+            r,
+            fx,
+            fy,
+            fr,
+        } => ResolvedGradientGeometry::FocalRadial {
+            cx: cx.at(f),
+            cy: cy.at(f),
+            r: r.at(f).max(0.0),
+            fx: fx.as_ref().map_or_else(|| cx.at(f), |n| n.at(f)),
+            fy: fy.as_ref().map_or_else(|| cy.at(f), |n| n.at(f)),
+            fr: fr.as_ref().map_or(0.0, |n| n.at(f).max(0.0)),
         },
         GradientGeometry::Conic { cx, cy, angle } => ResolvedGradientGeometry::Conic {
             cx: cx.at(f),
@@ -999,6 +1201,7 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         stops: resolve_stops(&g.stops, f),
         extend: g.extend,
         units: g.units,
+        transform: g.transform.map_or(Affine::IDENTITY, Affine::new),
     }
 }
 
@@ -1055,6 +1258,8 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
         z: t.z.at(f),
         origin_x: 0.0,
         origin_y: 0.0,
+        matrix: t.matrix,
+        backface_hidden: t.backface_hidden,
     }
 }
 
@@ -1217,6 +1422,7 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             corners: [top_left, top_right, bottom_right, bottom_left]
                 .map(|c| c.as_ref().map(|[x, y]| [x.at(f), y.at(f)])),
         }),
+        Effect::FilterGraph(g) => ResolvedEffect::FilterGraph(Box::new(g.resolve(f))),
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
@@ -2455,6 +2661,119 @@ mod tests {
             })
             .collect();
         assert_eq!(times, [(15.0 - 0.25) / 30.0, (15.0 + 0.25) / 30.0]);
+    }
+
+    /// A 24 fps, 60 frame scene with video layer `clip` (clip.mp4, 2 s, a
+    /// picture every 512 ticks of 1/12288 s) and `layer`'s fields.
+    fn video_scene(layer: &str) -> Scene {
+        let json = format!(
+            r##"{{"width": 100, "height": 100, "fps": 24, "durationInFrames": 60, "layers": [
+              {{"id": "clip", "type": "video", "src": "clip.mp4", {layer}}}]}}"##
+        );
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+        Scene::from_json(&json, base).unwrap()
+    }
+
+    fn video_at(scene: &Scene, frame: u32) -> (f64, i64) {
+        match &scene.resolve(frame).unwrap().layers[0].kind {
+            ResolvedKind::Video { time, .. } => (time.seconds, time.ts),
+            _ => panic!("not a video layer"),
+        }
+    }
+
+    #[test]
+    fn a_video_box_is_the_streams_size_or_keeps_its_aspect_ratio() {
+        let boxed = |layer: &str| match video_scene(layer).resolve(0).unwrap().layers.remove(0).kind
+        {
+            ResolvedKind::Video {
+                width, height, fit, ..
+            } => (width, height, fit),
+            _ => panic!("not a video layer"),
+        };
+        // clip.mp4 is 64 x 36.
+        assert_eq!(boxed(r#""loop": false"#), (64.0, 36.0, Fit::Fill));
+        assert_eq!(boxed(r#""width": 32"#), (32.0, 18.0, Fit::Fill));
+        assert_eq!(boxed(r#""height": 72"#), (128.0, 72.0, Fit::Fill));
+        assert_eq!(
+            boxed(r#""width": 10, "height": 20, "fit": "cover""#),
+            (10.0, 20.0, Fit::Cover)
+        );
+    }
+
+    #[test]
+    fn a_video_shows_the_picture_its_frame_picks() {
+        // At the clip's own 24 fps, frame n is picture n (512 ticks each).
+        let scene = video_scene(r#""loop": false"#);
+        assert_eq!(video_at(&scene, 0), (0.0, 0));
+        assert_eq!(video_at(&scene, 12), (0.5, 12 * 512));
+        // The file ends at 2 s (24576 ticks): frame 48 and later ask for the
+        // last tick before the end, which is in the last picture.
+        assert_eq!(video_at(&scene, 48).1, 24575);
+        assert_eq!(video_at(&scene, 59), (2.0, 24575));
+        // `from`, `trimBefore` and `playbackRate` move and speed the clip.
+        let scene = video_scene(r#""from": 10, "trimBefore": 6, "playbackRate": 2"#);
+        assert_eq!(video_at(&scene, 5), (0.25, 6 * 512));
+        assert_eq!(video_at(&scene, 10), (0.25, 6 * 512));
+        assert_eq!(video_at(&scene, 11), ((6.0 + 2.0) / 24.0, 8 * 512));
+        // A looped, trimmed clip: file frames 12 to 36, 24 frames long.
+        let scene = video_scene(r#""trimBefore": 12, "trimAfter": 36, "loop": true"#);
+        assert_eq!(video_at(&scene, 0).1, 12 * 512);
+        assert_eq!(video_at(&scene, 23).1, 35 * 512);
+        assert_eq!(video_at(&scene, 24).1, 12 * 512);
+        // Not looped, it holds the last tick before `trimAfter` (1.5 s).
+        let scene = video_scene(r#""trimBefore": 12, "trimAfter": 36"#);
+        assert_eq!(video_at(&scene, 40).1, 18431);
+        // A time between pictures is its own tick; the decoder picks the
+        // picture at or before it.
+        let scene = video_scene(r#""playbackRate": 0.5"#);
+        assert_eq!(video_at(&scene, 3), (1.5 / 24.0, 768));
+        // `frame` holds or moves the clip's clock apart from the scene's.
+        let scene = video_scene(r#""frame": 20"#);
+        assert_eq!(video_at(&scene, 0).1, 20 * 512);
+        assert_eq!(video_at(&scene, 50).1, 20 * 512);
+        let scene =
+            video_scene(r#""frame": [{"frame": 0, "value": 0}, {"frame": 10, "value": 30}]"#);
+        assert_eq!(video_at(&scene, 5).1, 15 * 512);
+    }
+
+    #[test]
+    fn a_video_sub_frame_is_at_its_own_time() {
+        let scene = video_scene(r#""motionBlur": {"samples": 2, "shutter": 1}"#);
+        let layers = scene.resolve(24).unwrap().layers;
+        let times: Vec<f64> = layers[0]
+            .motion
+            .iter()
+            .map(|m| match &m.kind {
+                ResolvedKind::Video { time, .. } => time.seconds,
+                _ => panic!("not a video layer"),
+            })
+            .collect();
+        assert_eq!(times, [(24.0 - 0.25) / 24.0, (24.0 + 0.25) / 24.0]);
+    }
+
+    #[test]
+    fn a_gif_time_follows_the_frame_unless_given() {
+        let gif_at = |layer: &str, frame: u32| {
+            let json = format!(
+                r##"{{"width": 100, "height": 100, "fps": 24, "durationInFrames": 60, "layers": [
+                  {{"id": "g", "type": "gif", "src": "spinner.gif", {layer}}}]}}"##
+            );
+            let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+            let scene = Scene::from_json(&json, base).unwrap();
+            match scene.resolve(frame).unwrap().layers.remove(0).kind {
+                ResolvedKind::Gif {
+                    time,
+                    looped,
+                    width,
+                    height,
+                    ..
+                } => (time, looped, width, height),
+                _ => panic!("not a gif layer"),
+            }
+        };
+        assert_eq!(gif_at(r#""loop": false"#, 12), (0.5, false, 32.0, 24.0));
+        assert_eq!(gif_at(r#""height": 48"#, 0), (0.0, true, 64.0, 48.0));
+        assert_eq!(gif_at(r#""time": 1.25"#, 12).0, 1.25);
     }
 
     #[test]

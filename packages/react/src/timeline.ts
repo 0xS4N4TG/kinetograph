@@ -26,6 +26,8 @@ export interface TimelineState {
   config: VideoConfig;
   /** Inside an active `<Freeze>`; `<Audio>` is silent there. */
   frozen: boolean;
+  /** Key of the enclosing `<Sequence>` (docs/AUTHORING.md §11.4); unset or null outside one. */
+  sequence?: string | null;
 }
 
 export const TimelineContext = createContext<TimelineState | null>(null);

@@ -57,3 +57,60 @@ arithmetic gave exactly the offset-0 fractions and texels at every offset. Build
 
 Remove `vendor/vello_shaders`, the `[patch.crates-io]` entry and this file once a `vello_shaders` release does the
 same. The change is small enough to offer upstream as a pull request against `research/vello_shaders/shader/fine.wgsl`.
+
+## fontique 0.12.0
+
+- Upstream: crates.io `fontique` 0.12.0 (`linebender/parley`, `fontique`, commit
+  `6e1143dda817360dd3a2a64f9133c6e5dfabd881` per `.cargo_vcs_info.json`). Licence: Apache-2.0 OR MIT; both licence files
+  are kept.
+- Wired in by `[patch.crates-io]` in the root `Cargo.toml`, so `parley` (and Blitz's text) build against it. The copy was
+  committed unchanged first, so the commit on top of it is the whole change.
+- Changed file: `src/font.rs`. Nothing else differs from the release.
+
+### Why
+
+A project registers a font file under one weight (`fontKey`: `Inter:800`). Google's files for such a weight are
+variable fonts (a `wght` axis from 100 to 900, default 400). fontique's `FontInfo::synthesis` sets the axis to the
+*requested* weight, so text at `font-weight: 400` shows the 400 instance of a file registered as 800. A browser does
+not: `@font-face { font-weight: 800; src: url(inter-800.woff2) }` clamps the used `wght` to the descriptor, so the same
+text is drawn at 800 (and gets the faux bold if it asks for 600 or more over a lighter face). The papercut project
+asks Inter for 400, 800 and 900 with only the 800 file registered.
+
+### The change
+
+`FontInfoOverride` has a new field `pin_weight: bool` (default false); `FontInfo` remembers it. When set,
+`synthesis()` takes the weight for the `wght` axis from the face (the override's weight) instead of the request, and
+sets `embolden` when the request is more than 200 heavier than the face, as it already does for fonts without the
+axis. Fonts without a `wght` axis and every font registered without the flag behave as before. `kinetograph-dom`
+registers every project font with the flag (`crates/dom/src/fonts.rs`).
+
+### Dropping the patch
+
+Remove `vendor/fontique`, the `[patch.crates-io]` entry and this section once fontique can hold an axis at the face's
+weight. The change is small enough to offer upstream.
+
+## vello 0.11.0
+
+- Upstream: crates.io `vello` 0.11.0 (same commit as `vello_shaders`). Licence: Apache-2.0 OR MIT, both kept.
+- Wired in by `[patch.crates-io]` in the root `Cargo.toml`. The unchanged copy was committed first.
+- Changed file: `src/wgpu_engine.rs`.
+
+### Why
+
+`WgpuEngine::run_recording` began a compute pass for each dispatch, about 17 for each `render_to_texture`, and S04
+draws about 20 pages a frame: some 340 Metal compute encoders a frame, each with its creation cost on the CPU.
+
+### The change
+
+Consecutive dispatches share one compute pass (`open_pass`). The pass is ended before anything that puts a command on
+the encoder itself (a buffer clear, a texture copy, a draw, a download), and before a bind group is made while a clear
+is pending, since making one can clear a buffer. Dispatches in one pass are ordered, and storage writes of one are
+seen by the next, so the output is the same: all 34 test scenes render byte-identically. The `wgpu-profiler` code in
+that file is adjusted but not built (the feature is off).
+
+### Dropping the patch
+
+Remove `vendor/vello`, its `[patch.crates-io]` entry and this section once a vello release does the same.
+
+The same file's `render.rs` also keeps the MSAA mask tables: `make_mask_lut_16` was computed again for every
+`render_to_texture` (a twentieth of a frame's CPU time on a busy scene), and is now computed once (`OnceLock`).

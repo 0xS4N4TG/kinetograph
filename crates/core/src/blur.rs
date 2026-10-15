@@ -23,10 +23,13 @@
 //! the pixels that are not drawn are the ones a full blur leaves at zero, or
 //! that nothing drawn reads.
 
+use std::sync::Arc;
+
 use vello::wgpu;
 
 use crate::bounds::PixelRect;
 use crate::compositor::{Input, LINEAR_FORMAT, Tex, new_texture};
+use crate::pass_timer::{self, PassTimer};
 use crate::pool::Pool;
 use crate::uniforms::Uniforms;
 
@@ -48,6 +51,8 @@ pub struct Blur {
     up: wgpu::RenderPipeline,
     /// The images of the pyramid, by size.
     scratch: Pool<Tex>,
+    /// The compositor's pass timer, when it is on.
+    pub(crate) timer: Option<Arc<PassTimer>>,
 }
 
 impl Blur {
@@ -131,6 +136,7 @@ impl Blur {
             up: pipeline("fs_up"),
             layout,
             scratch: Pool::new(SCRATCH_BYTES),
+            timer: None,
         }
     }
 
@@ -324,6 +330,16 @@ impl Blur {
                 },
             ],
         });
+        let name = if std::ptr::eq(pipeline, &self.pad) {
+            "blur pad"
+        } else if std::ptr::eq(pipeline, &self.down) {
+            "blur down"
+        } else if std::ptr::eq(pipeline, &self.gauss) {
+            "blur gaussian"
+        } else {
+            "blur up"
+        };
+        let stamp = self.timer.as_ref().map(|t| t.stamp(name, target));
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("blur"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -335,6 +351,7 @@ impl Blur {
                     store: wgpu::StoreOp::Store,
                 },
             })],
+            timestamp_writes: pass_timer::writes(&stamp),
             ..Default::default()
         });
         if region.is_empty() {

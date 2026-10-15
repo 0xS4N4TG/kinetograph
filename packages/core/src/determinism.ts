@@ -13,16 +13,28 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
-/** The real functions, captured when this module is first evaluated (before `installDeterminism`). */
-export const realTimers = {
+/**
+ * The real functions, captured when this module is first evaluated (before `installDeterminism`). Bound to the global
+ * object: a browser's timers throw "Illegal invocation" when called as methods of another object (in Chrome frames).
+ */
+const originalTimers = {
   setTimeout: globalThis.setTimeout,
   clearTimeout: globalThis.clearTimeout,
   setInterval: globalThis.setInterval,
   clearInterval: globalThis.clearInterval,
-  setImmediate: globalThis.setImmediate,
+};
+export const realTimers = {
+  setTimeout: globalThis.setTimeout.bind(globalThis),
+  clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  setInterval: globalThis.setInterval.bind(globalThis),
+  clearInterval: globalThis.clearInterval.bind(globalThis),
+  setImmediate: globalThis.setImmediate?.bind(globalThis),
 };
 
 const RealDate = globalThis.Date;
+const realCrypto = (globalThis as { crypto?: { getRandomValues?: unknown; randomUUID?: unknown } }).crypto;
+const realGetRandomValues = realCrypto?.getRandomValues;
+const realRandomUUID = realCrypto?.randomUUID;
 const realMathRandom = Math.random;
 const realRequestAnimationFrame = (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
 const realCancelAnimationFrame = (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
@@ -244,6 +256,22 @@ function virtualRandom(): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
+/** The bytes `crypto.getRandomValues` fills, from the seeded generator, so a frame does not depend on the machine. */
+function virtualGetRandomValues<T extends ArrayBufferView | null>(array: T): T {
+  if (array === null) return array;
+  const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(virtualRandom() * 256);
+  return array;
+}
+
+function virtualRandomUUID(): string {
+  const bytes = virtualGetRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 const VirtualDate: DateConstructor = new Proxy(RealDate, {
   construct(target, args, newTarget) {
     if (args.length === 0) return new target(dateNow());
@@ -266,6 +294,11 @@ export function installDeterminism(): void {
   g.Date = VirtualDate;
   Math.random = virtualRandom;
   if (globalThis.performance) globalThis.performance.now = () => virtualMs;
+  if (realCrypto) {
+    const patch = realCrypto as { getRandomValues: unknown; randomUUID: unknown };
+    patch.getRandomValues = virtualGetRandomValues;
+    patch.randomUUID = virtualRandomUUID;
+  }
   g.setTimeout = virtualSetTimeout;
   g.setInterval = virtualSetInterval;
   g.clearTimeout = virtualClear;
@@ -287,10 +320,15 @@ export function uninstallDeterminism(): void {
   Math.random = realMathRandom;
   // `now` was an own property of the instance; dropping it exposes the prototype's real one again.
   if (globalThis.performance) delete (globalThis.performance as { now?: unknown }).now;
-  g.setTimeout = realTimers.setTimeout;
-  g.setInterval = realTimers.setInterval;
-  g.clearTimeout = realTimers.clearTimeout;
-  g.clearInterval = realTimers.clearInterval;
+  if (realCrypto) {
+    const patch = realCrypto as { getRandomValues: unknown; randomUUID: unknown };
+    patch.getRandomValues = realGetRandomValues;
+    if (realRandomUUID !== undefined) patch.randomUUID = realRandomUUID;
+  }
+  g.setTimeout = originalTimers.setTimeout;
+  g.setInterval = originalTimers.setInterval;
+  g.clearTimeout = originalTimers.clearTimeout;
+  g.clearInterval = originalTimers.clearInterval;
   if (realRequestAnimationFrame === undefined) delete g.requestAnimationFrame;
   else g.requestAnimationFrame = realRequestAnimationFrame;
   if (realCancelAnimationFrame === undefined) delete g.cancelAnimationFrame;

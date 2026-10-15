@@ -98,11 +98,20 @@ pub struct InspectText {
     pub lines: Vec<InspectLine>,
 }
 
+/// Where in its file a video or GIF layer is.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct InspectMedia {
+    /// Seconds: for a video the source time of `docs/SCENE.md`'s "video"
+    /// rules (from the stream's first picture), for a GIF its `time`.
+    pub time: f64,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectLayer {
     pub id: String,
-    /// `shape`, `text`, `image`, `group`, `noise` or `meshGradient`.
+    /// `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`,
+    /// `video` or `gif`.
     #[serde(rename = "type")]
     pub kind: &'static str,
     pub opacity: f64,
@@ -138,6 +147,9 @@ pub struct InspectLayer {
     pub text: Option<InspectText>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub src: Option<String>,
+    /// A video's or GIF's time in the file (computed, nothing is decoded).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media: Option<InspectMedia>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<InspectLayer>>,
 }
@@ -361,9 +373,19 @@ impl Walk<'_> {
                 _ => None,
             },
             src: match &r.kind {
-                ResolvedKind::Image { src, .. } | ResolvedKind::Lottie { src, .. } => {
-                    Some(src.clone())
-                }
+                ResolvedKind::Image { src, .. }
+                | ResolvedKind::Lottie { src, .. }
+                | ResolvedKind::Video { src, .. }
+                | ResolvedKind::Gif { src, .. } => Some(src.clone()),
+                _ => None,
+            },
+            media: match &r.kind {
+                ResolvedKind::Video { time, .. } => Some(InspectMedia {
+                    time: finite(time.seconds),
+                }),
+                ResolvedKind::Gif { time, .. } => Some(InspectMedia {
+                    time: finite(*time),
+                }),
                 _ => None,
             },
             children,
@@ -401,11 +423,20 @@ impl Walk<'_> {
                 line_height,
                 max_width,
                 align,
+                runs,
+                box_size,
                 ..
             } => {
-                let laid_out =
-                    self.text
-                        .layout(text, font, *size, *line_height, *max_width, *align);
+                let laid_out = self.text.layout_layer(
+                    text,
+                    font,
+                    *size,
+                    *line_height,
+                    *max_width,
+                    *align,
+                    runs,
+                    *box_size,
+                );
                 let width = max_width.unwrap_or(laid_out.width);
                 let b = Rect::new(0.0, 0.0, f64::from(width), f64::from(laid_out.height));
                 Boxes {
@@ -417,7 +448,9 @@ impl Walk<'_> {
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. }
-            | ResolvedKind::Lottie { width, height, .. } => {
+            | ResolvedKind::Lottie { width, height, .. }
+            | ResolvedKind::Video { width, height, .. }
+            | ResolvedKind::Gif { width, height, .. } => {
                 let b = Rect::new(0.0, 0.0, *width, *height);
                 Boxes {
                     layer: Some(b),
@@ -590,6 +623,7 @@ impl Walk<'_> {
                 | ResolvedEffect::Halftone(_)
                 | ResolvedEffect::DotMatrix(_)
                 | ResolvedEffect::CornerPin(_)
+                | ResolvedEffect::FilterGraph(_)
                 | ResolvedEffect::Shader(_) => b,
             };
         }
@@ -598,6 +632,11 @@ impl Walk<'_> {
         for effect in &layer.effects {
             if let Effect::Shader(shader) = effect {
                 b = inflate(b, shader.padding.at(self.t).max(0.0));
+            }
+            // A filter graph moves pixels as far as its offsets and
+            // displacements say; its region is not known without the box.
+            if let Effect::FilterGraph(graph) = effect {
+                b = inflate(b, graph.reach(bounds::max_stretch(matrix)));
             }
         }
         b
@@ -716,6 +755,8 @@ fn kind_name(kind: &LayerKind) -> &'static str {
         LayerKind::Noise(_) => "noise",
         LayerKind::MeshGradient(_) => "meshGradient",
         LayerKind::Lottie(_) => "lottie",
+        LayerKind::Video(_) => "video",
+        LayerKind::Gif(_) => "gif",
     }
 }
 
@@ -743,6 +784,7 @@ fn effect_name(effect: &Effect) -> &'static str {
         Effect::DotMatrix { .. } => "dotMatrix",
         Effect::Displace { .. } => "displace",
         Effect::CornerPin { .. } => "cornerPin",
+        Effect::FilterGraph(_) => "filterGraph",
         Effect::Shader(_) => "shader",
     }
 }
@@ -1037,6 +1079,57 @@ mod tests {
             ("image", Some("examples/card-art.png"))
         );
         close(bounds_of(&photo), (0.0, 0.0, 80.0, 60.0));
+    }
+
+    #[test]
+    fn video_and_gif_report_their_source_and_media_time() {
+        const MEDIA: &str = "crates/core/tests/scenes/media";
+        let s = scene_with(
+            json!({ "fps": 24 }),
+            json!([
+                { "id": "clip", "type": "video", "src": format!("{MEDIA}/clip.mp4"),
+                  "width": 64, "height": 36, "from": 6, "trimBefore": 12, "playbackRate": 2 },
+                { "id": "end", "type": "video", "src": format!("{MEDIA}/clip.mp4"),
+                  "width": 64, "height": 36, "trimAfter": 36 },
+                { "id": "spin", "type": "gif", "src": format!("{MEDIA}/spinner.gif"),
+                  "width": 32, "height": 24, "time": 0.4 },
+                { "id": "spin-frame", "type": "gif", "src": format!("{MEDIA}/spinner.gif") },
+            ]),
+        );
+        let at = |frame| inspect(&s, frame).unwrap().layers;
+        let layers = at(12);
+        // (12 - 6) * 2 = 12 clip frames after `trimBefore` 12: 24 frames, 1 s.
+        assert_eq!(
+            (layers[0].kind, layers[0].media),
+            ("video", Some(InspectMedia { time: 1.0 }))
+        );
+        assert_eq!(
+            layers[0].src.as_deref(),
+            Some("crates/core/tests/scenes/media/clip.mp4")
+        );
+        close(bounds_of(&layers[0]), (0.0, 0.0, 64.0, 36.0));
+        // `trimAfter` 36 frames ends the clip at 1.5 s.
+        assert_eq!(layers[1].media, Some(InspectMedia { time: 0.5 }));
+        assert_eq!(at(59)[1].media, Some(InspectMedia { time: 1.5 }));
+        // A GIF's time is its `time`, or the frame's.
+        assert_eq!(
+            (layers[2].kind, layers[2].media),
+            ("gif", Some(InspectMedia { time: 0.4 }))
+        );
+        assert_eq!(layers[3].media, Some(InspectMedia { time: 0.5 }));
+        close(bounds_of(&layers[3]), (0.0, 0.0, 32.0, 24.0));
+        // Other layers have none, and it serialises as `media: { time }`.
+        let shape = scene(json!([rect("r", json!({}))]));
+        assert_eq!(inspect(&shape, 0).unwrap().layers[0].media, None);
+        let json = serde_json::to_value(&layers[0]).unwrap();
+        assert_eq!(json["type"], "video");
+        assert_eq!(json["media"]["time"], 1.0);
+        assert!(
+            serde_json::to_value(&inspect(&shape, 0).unwrap().layers[0])
+                .unwrap()
+                .get("media")
+                .is_none()
+        );
     }
 
     #[test]
