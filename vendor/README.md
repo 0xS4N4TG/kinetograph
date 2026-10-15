@@ -80,3 +80,6 @@ that file is adjusted but not built (the feature is off).
 ### Dropping the patch
 
 Remove `vendor/vello`, its `[patch.crates-io]` entry and this section once a vello release does the same.
+
+The same file's `render.rs` also keeps the MSAA mask tables: `make_mask_lut_16` was computed again for every
+`render_to_texture` (a twentieth of a frame's CPU time on a busy scene), and is now computed once (`OnceLock`).

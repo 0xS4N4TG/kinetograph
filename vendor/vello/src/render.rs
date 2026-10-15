@@ -581,9 +581,13 @@ impl Render {
             }
             _ => {
                 if self.mask_buf.is_none() {
+                    // The tables do not change, and computing the 16 sample one
+                    // took a twentieth of a frame's time on a busy scene.
+                    static LUT_16: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+                    static LUT_8: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
                     let mask_lut = match fine.aa_config {
-                        AaConfig::Msaa16 => make_mask_lut_16(),
-                        AaConfig::Msaa8 => make_mask_lut(),
+                        AaConfig::Msaa16 => LUT_16.get_or_init(make_mask_lut_16).clone(),
+                        AaConfig::Msaa8 => LUT_8.get_or_init(make_mask_lut).clone(),
                         _ => unreachable!(),
                     };
                     let buf = recording.upload("vello.mask_lut", mask_lut);
