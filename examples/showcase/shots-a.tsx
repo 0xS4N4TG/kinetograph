@@ -6,7 +6,7 @@ import React from 'react';
 import { Easing, interpolate, random, spring, useCurrentFrame } from 'remotion';
 import { Ellipse, Layer, Path, Rect, Text, backdropBlur, blur, dropShadow, glow, gradientMap, grain, linearGradient } from '@kinetograph/core';
 import { FPS, H, INK, MONO, SANS, W, blink, clamp, ramp, useSpring } from './common.js';
-import { CARD_W, CardArt, Landscape, PROFILE_PATH, roundedPath } from './art.js';
+import { CARD_W, CardArt, Landscape, profilePath, roundedPath } from './art.js';
 import { WIDTHS as M } from './widths.js';
 
 // ---- shot 1: a gradient-mapped figure cut into sliding bands, words on the voiceover ----
@@ -61,16 +61,24 @@ function figureMap(frame: number) {
 const Figure: React.FC<{ frame: number }> = ({ frame }) => {
   const push = interpolate(frame, [0, 92], [1, 1.09]);
   const drift = interpolate(frame, [0, 92], [0, 46]);
+  // A slow look up and back, breathing, and the hair swinging behind.
+  const nod = -4 * Math.sin(frame * 0.09) - 2 * Math.sin(frame * 0.23 + 1);
+  const breathe = 10 * Math.sin(frame * 0.16);
+  const sway = 18 * Math.sin(frame * 0.12 + 0.6);
+  // The light on the head turns with it (about the neck at 1010, 640).
+  const r = (nod * Math.PI) / 180;
+  const lightX = 1010 - 25 * Math.cos(r) + 355 * Math.sin(r);
+  const lightY = 640 - 25 * Math.sin(r) - 355 * Math.cos(r);
   return (
     <>
       <Rect width={W} height={H} fill={linearGradient(keyed(frame, SKIES), { angle: 180 })} />
       <Layer x={W / 2} y={H / 2 + drift} scale={push} origin="center" effects={[gradientMap({ stops: figureMap(frame) })]}>
         <Layer x={-W / 2} y={-H / 2} effects={[blur(12)]}>
-          <Path d={PROFILE_PATH} fill={linearGradient(['#d0d0d0', '#a4a4a4', '#9c9c9c'], { angle: 180 })} />
+          <Path d={profilePath(nod, breathe, sway)} fill={linearGradient(['#d0d0d0', '#a4a4a4', '#9c9c9c'], { angle: 180 })} />
         </Layer>
         <Layer x={-W / 2} y={-H / 2} effects={[blur(72)]}>
-          <Rect x={850} y={200} width={270} height={170} radius={85} fill="#ffffff" opacity={0.75} />
-          <Rect x={1080} y={930} width={200} height={150} radius={75} fill="#f4f4f4" opacity={0.6} />
+          <Rect x={lightX - 135} y={lightY - 85} width={270} height={170} radius={85} fill="#ffffff" opacity={0.75} />
+          <Rect x={1080} y={930 - breathe} width={200} height={150} radius={75} fill="#f4f4f4" opacity={0.6} />
         </Layer>
       </Layer>
     </>

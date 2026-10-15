@@ -66,6 +66,30 @@ export const PROFILE_PATH =
   'L 1175 385 L 1150 412 L 1160 432 L 1148 452 L 1152 495 C 1140 520 1100 540 1080 560 ' +
   'C 1040 610 1010 660 1000 700 C 1060 750 1240 860 1330 1080 Z';
 
+/**
+ * The profile, posed: the head turned `nod` degrees about the neck (it fades
+ * out down the neck), the shoulders raised by `breathe` px and the ends of the
+ * hair swung by `sway` px.
+ */
+export function profilePath(nod: number, breathe: number, sway: number): string {
+  const r = (nod * Math.PI) / 180;
+  const [px, py] = [1010, 640];
+  return PROFILE_PATH.replace(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g, (_m, xs: string, ys: string) => {
+    let x = Number(xs);
+    let y = Number(ys);
+    const head = Math.min(1, Math.max(0, (640 - y) / 280));
+    if (head > 0) {
+      const a = r * head;
+      const dx = x - px;
+      const dy = y - py;
+      [x, y] = [px + dx * Math.cos(a) - dy * Math.sin(a), py + dx * Math.sin(a) + dy * Math.cos(a)];
+    }
+    if (x > 990 && y > 650) y -= breathe * Math.min(1, (y - 650) / 200);
+    if (y > 700 && x < 760) x += sway * Math.min(1, (y - 700) / 380);
+    return `${x.toFixed(1)} ${y.toFixed(1)}`;
+  });
+}
+
 // ---- cards for shot 7: 220 x 300, centred on (0, 0) ----
 
 export const CARD_W = 220;
