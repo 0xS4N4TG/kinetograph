@@ -11,6 +11,7 @@ use super::background::blend_name;
 use super::deco::box_geom;
 use super::geom::{BoxGeom, Region};
 use super::mat::Mat4;
+use crate::transform::{Matrix, local_transform};
 use super::util::{Layer, current_color, hex, lp, num, num4, resolve_color, shift};
 use super::{Origin, Painter};
 
@@ -372,28 +373,35 @@ fn unused(_: &mut Value) {
 
 impl<'a> Painter<'a> {
     /// `[x, y, width, height]` of what a `url()` filter's percentages and
-    /// `objectBoundingBox` units are of: the border box, or, for a box with no
-    /// area (a `width: 0; height: 0` wrapper whose content overflows it, as
-    /// papercut's props are), the box of what is inside it. A filter region
-    /// of 108% of nothing would draw nothing, and Chrome draws the content.
+    /// `objectBoundingBox` units are of, in the element's own frame: Chrome
+    /// takes the box of the element and everything painted inside it (its
+    /// descendants' boxes, through their transforms, up to an `overflow` clip),
+    /// not the border box. Papercut's props depend on it: a `Paper` div with
+    /// `filter: url(#rough)` sits in a `width: 0; height: 0` wrapper, or holds a
+    /// cap and an arm that stick out of its body, and a region of 108% of the
+    /// border box would draw nothing or cut them off.
     fn filter_bbox(&self, node: &Node, geom: &BoxGeom) -> [f64; 4] {
-        if geom.w > 0.0 && geom.h > 0.0 {
-            return [0.0, 0.0, geom.w, geom.h];
-        }
         let mut found: Option<(f64, f64, f64, f64)> = None;
-        self.union_descendant_boxes(node, (0.0, 0.0), &mut found, 0);
+        if geom.w > 0.0 && geom.h > 0.0 {
+            found = Some((0.0, 0.0, geom.w, geom.h));
+        }
+        self.union_descendant_boxes(node, &Matrix::identity(), &mut found, 0);
+        // Rounded, so a turned box does not leave 110.00000000000003 behind.
+        let r = |v: f64| (v * 1000.0).round() / 1000.0;
         match found {
-            Some((x0, y0, x1, y1)) => [x0, y0, x1 - x0, y1 - y0],
+            Some((x0, y0, x1, y1)) => [r(x0), r(y0), r(x1 - x0), r(y1 - y0)],
             None => [0.0, 0.0, geom.w, geom.h],
         }
     }
 
-    /// The union of the border boxes of `node`'s descendants that have an
-    /// area, in the frame of `node`'s border box (`origin` is that of `node`).
+    /// Adds the border boxes of `node`'s descendants that have an area to
+    /// `found` (`x0, y0, x1, y1`), mapped by `to_frame`, which takes `node`'s
+    /// own coordinates to the frame of the filtered element. A descendant that
+    /// clips its overflow shows no more than its own box.
     fn union_descendant_boxes(
         &self,
         node: &Node,
-        origin: (f64, f64),
+        to_frame: &Matrix,
         found: &mut Option<(f64, f64, f64, f64)>,
         depth: usize,
     ) {
@@ -409,19 +417,40 @@ impl<'a> Painter<'a> {
         for cid in children {
             let child = self.node(cid);
             let l = child.final_layout();
-            let at = (
-                origin.0 + f64::from(l.location.x),
-                origin.1 + f64::from(l.location.y),
-            );
             let (w, h) = (f64::from(l.size.width), f64::from(l.size.height));
-            if w > 0.0 && h > 0.0 {
-                let (x1, y1) = (at.0 + w, at.1 + h);
-                *found = Some(match *found {
-                    Some((a, b, c, d)) => (a.min(at.0), b.min(at.1), c.max(x1), d.max(y1)),
-                    None => (at.0, at.1, x1, y1),
-                });
+            // Its box coordinates to the frame: its own transform, then its
+            // place in `node`.
+            let mut m = Matrix::identity();
+            if let Some(local) = local_transform(child, (l.size.width, l.size.height)) {
+                m = m.then(&local);
             }
-            self.union_descendant_boxes(child, at, found, depth + 1);
+            let m = m
+                .then(&Matrix::translation(
+                    f64::from(l.location.x),
+                    f64::from(l.location.y),
+                    0.0,
+                ))
+                .then(to_frame);
+            if w > 0.0 && h > 0.0 {
+                let mut min = (f64::INFINITY, f64::INFINITY);
+                let mut max = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+                for (x, y) in [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)] {
+                    let p = m.transform_point2d(euclid::default::Point2D::new(x, y));
+                    if let Some(p) = p {
+                        min = (min.0.min(p.x), min.1.min(p.y));
+                        max = (max.0.max(p.x), max.1.max(p.y));
+                    }
+                }
+                if min.0.is_finite() && max.0.is_finite() {
+                    *found = Some(match *found {
+                        Some((a, b, c, d)) => (a.min(min.0), b.min(min.1), c.max(max.0), d.max(max.1)),
+                        None => (min.0, min.1, max.0, max.1),
+                    });
+                }
+            }
+            if !self.clips_overflow(child) {
+                self.union_descendant_boxes(child, &m, found, depth + 1);
+            }
         }
     }
 

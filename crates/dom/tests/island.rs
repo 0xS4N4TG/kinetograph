@@ -116,6 +116,71 @@ fn a_url_filter_on_an_empty_box_takes_the_box_of_its_content() {
     assert_eq!(g["bbox"], json!([-110, -23, 670, 46]), "{g}");
 }
 
+/// The critter's cap sits above its body's box and its arm turns out of it, all
+/// inside the `Paper` div that has the filter: the region is the box of all of
+/// it (Chrome's visual bounds), or the cap and the arm are cut off.
+#[test]
+fn a_url_filter_takes_the_box_of_content_that_sticks_out_through_transforms() {
+    let filter = el_attrs(
+        "filter",
+        "$0.0",
+        json!({ "id": "rough", "x": "-4%", "y": "-4%", "width": "108%", "height": "108%" }),
+        "",
+        vec![el_attrs(
+            "feTurbulence",
+            "$0.0.0",
+            json!({ "type": "fractalNoise", "baseFrequency": "0.035" }),
+            "",
+            vec![],
+        )],
+    );
+    let defs = el_attrs(
+        "svg",
+        "$0.0",
+        json!({ "width": "0", "height": "0" }),
+        "position:absolute",
+        vec![el("defs", "$0.0.0", "", vec![filter])],
+    );
+    let cap = el(
+        "div",
+        "$0.1.0",
+        "position:absolute;left:10px;top:-30px;width:80px;height:30px;background:#36a",
+        vec![],
+    );
+    // A 100 x 10 arm at the right edge, turned up 90 degrees about its start:
+    // it reaches 100 above the body.
+    let arm = el(
+        "div",
+        "$0.1.1",
+        "position:absolute;left:100px;top:40px;width:100px;height:10px;transform-origin:0 0;rotate:-90deg;background:#d73",
+        vec![],
+    );
+    let paper = el(
+        "div",
+        "$0.1",
+        "position:absolute;left:200px;top:200px;width:100px;height:100px;\
+         filter:url(#rough)",
+        vec![cap, arm],
+    );
+    let req = request(el("div", "$0", "width:1000px;height:500px", vec![defs, paper]));
+    let parsed = common::parse(&req);
+    let island = document::resolve(&parsed).expect("resolves");
+    let out = paint(&island.doc, &parsed);
+    fn graph(layers: &[serde_json::Value]) -> Option<&serde_json::Value> {
+        layers.iter().find_map(|l| {
+            l["effects"]
+                .as_array()
+                .and_then(|e| e.iter().find(|e| e["type"] == "filterGraph"))
+                .or_else(|| graph(l["children"].as_array().map_or(&[], |c| c.as_slice())))
+        })
+    }
+    let g = graph(&out.layers).unwrap_or_else(|| panic!("no filterGraph in {:?}", out.layers));
+    // x: the box 0..100 and the arm's 100..200 turned to x 100..110; y: the arm
+    // from 40 up to -60 (it turns about (100, 40): x 100..110, y -60..40),
+    // the cap from -30; so y -60..100.
+    assert_eq!(g["bbox"], json!([0, -60, 110, 160]), "{g}");
+}
+
 /// A centred line is shorter than its box and sits inside it; the text layer's
 /// box has to hold the glyphs, or the compositor cuts the end of the line off
 /// (the last letter of papercut's centred banners).

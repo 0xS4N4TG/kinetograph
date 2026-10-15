@@ -497,9 +497,19 @@ impl<'a> Painter<'a> {
 
     /// Whether `node` makes a stacking context: Blitz's rule plus what it
     /// leaves out (`mix-blend-mode`, `perspective`, `preserve-3d`,
-    /// `backdrop-filter`).
+    /// `backdrop-filter`, a `url()` filter).
     pub fn is_sc(&self, node: &Node, parent_flex: bool) -> bool {
         if node.is_stacking_context_root(parent_flex) {
+            return true;
+        }
+        // A `filter` of `url()` references alone is not in Stylo's filter
+        // list (the shim mirrors it into `--kg-filter`), but still makes a
+        // stacking context.
+        if node.is_element()
+            && self
+                .kg_value(node, "--kg-filter")
+                .is_some_and(|f| f != "none")
+        {
             return true;
         }
         node.primary_styles().is_some_and(|s| {
