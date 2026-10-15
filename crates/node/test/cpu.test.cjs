@@ -158,3 +158,83 @@ test('parseRange follows the Rust CLI', () => {
   rejects(() => native.parseRange('5..5', 90), 'INVALID_ARG', /no frames/);
   rejects(() => native.parseRange('1..2', -1), 'INVALID_ARG', /durationInFrames/);
 });
+
+const media = 'crates/core/tests/scenes/media';
+
+test('probeMedia reads a video header without decoding', () => {
+  const clip = native.probeMedia(`${media}/clip.mp4`, repo);
+  assert.equal(clip.kind, 'video');
+  assert.deepEqual([clip.width, clip.height], [64, 36]);
+  assert.equal(clip.fps, 24);
+  assert.equal(clip.frames, 48);
+  assert.ok(Math.abs(clip.durationInSeconds - 2) < 1e-3, clip.durationInSeconds);
+  assert.equal(clip.hasAudio, false);
+  assert.equal(clip.videoCodec, 'h264');
+  assert.ok(!clip.audioCodec);
+
+  // A file with sound; the path may also be absolute (baseDir is then ignored).
+  const talking = native.probeMedia(path.join(repo, media, 'with-audio.mp4'));
+  assert.equal(talking.hasAudio, true);
+  assert.equal(talking.audioCodec, 'aac');
+  assert.ok(Math.abs(talking.durationInSeconds - 1) < 0.05, talking.durationInSeconds);
+
+  // A WebM has no frame count; its duration is its length, not where it ends.
+  const webm = native.probeMedia(`${media}/offset.webm`, repo);
+  assert.equal(webm.videoCodec, 'vp9');
+  assert.ok(!webm.frames);
+  assert.ok(Math.abs(webm.durationInSeconds - 1.2) < 0.05, webm.durationInSeconds);
+});
+
+test('probeMedia reads a GIF: its screen, pictures and summed delays', () => {
+  const gif = native.probeMedia(`${media}/spinner.gif`, repo);
+  assert.equal(gif.kind, 'gif');
+  assert.deepEqual([gif.width, gif.height], [32, 24]);
+  assert.equal(gif.frames, 5);
+  // Delays 0, 10, 40, 200 and 60 ms; a delay of 10 ms or less counts as 100.
+  assert.ok(Math.abs(gif.durationInSeconds - 0.5) < 1e-9, gif.durationInSeconds);
+  assert.ok(!gif.fps);
+  assert.equal(gif.hasAudio, false);
+  assert.equal(gif.videoCodec, 'gif');
+});
+
+test('probeMedia errors', () => {
+  rejects(() => native.probeMedia(`${media}/nope.mp4`, repo), 'IO', /nope\.mp4/);
+  // Neither a video nor a GIF: a sound, and a script.
+  rejects(() => native.probeMedia(`${media}/tone-mono.wav`, repo), 'INVALID_ARG', /no video stream/);
+  rejects(() => native.probeMedia(`${media}/make_gif.py`, repo), 'INVALID_ARG', /make_gif\.py/);
+});
+
+const peak = (samples) => samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+
+test('decodeAudio resamples and keeps mono or stereo', () => {
+  // 0.25 s of a mono 8 kHz sine, to 48 kHz.
+  const mono = native.decodeAudio(`${media}/tone-mono.wav`, 48000, repo);
+  assert.equal(mono.sampleRate, 48000);
+  assert.equal(mono.channels.length, 1);
+  assert.ok(mono.channels[0] instanceof Float32Array);
+  assert.ok(Math.abs(mono.channels[0].length - 12000) <= 16, mono.channels[0].length);
+  assert.ok(peak(mono.channels[0]) > 0.1 && peak(mono.channels[0]) <= 1.01);
+  // The same rate: the 2000 samples as they are.
+  const same = native.decodeAudio(`${media}/tone-mono.wav`, 8000, repo);
+  assert.equal(same.channels[0].length, 2000);
+
+  // The stereo AAC track of an MP4, 1 s; both channels carry the tone.
+  const stereo = native.decodeAudio(`${media}/with-audio.mp4`, 44100, repo);
+  assert.equal(stereo.channels.length, 2);
+  assert.equal(stereo.channels[0].length, stereo.channels[1].length);
+  assert.ok(Math.abs(stereo.channels[0].length - 44100) <= 2048, stereo.channels[0].length);
+  assert.ok(peak(stereo.channels[0]) > 0.1 && peak(stereo.channels[1]) > 0.1);
+
+  // Six channels are downmixed to two, and the front left reaches both.
+  const surround = native.decodeAudio(`${media}/surround.wav`, 8000, repo);
+  assert.equal(surround.channels.length, 2);
+  assert.equal(surround.channels[0].length, 800);
+  assert.ok(peak(surround.channels[0]) > 0.05);
+});
+
+test('decodeAudio returns null without an audio stream, and errors', () => {
+  assert.equal(native.decodeAudio(`${media}/clip.mp4`, 48000, repo), null);
+  rejects(() => native.decodeAudio(`${media}/nope.wav`, 48000, repo), 'IO', /nope\.wav/);
+  rejects(() => native.decodeAudio(`${media}/make_gif.py`, 48000, repo), 'INVALID_ARG', /make_gif\.py/);
+  rejects(() => native.decodeAudio(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /sampleRate/);
+});
