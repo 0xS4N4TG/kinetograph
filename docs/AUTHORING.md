@@ -501,7 +501,8 @@ correctly, only with a rebuild. Set it to the largest reach of any frame. To fin
 `margin` from `kinetograph inspect <entry> --frame N` at the frames with the biggest shadows, glows and displacements
 (or, for an empty-layer trick like `dropShadow({ x: 44, blur: 0 })` that pins it, replace the trick with the prop).
 It depends on nothing but the composition, so any frame, in any order or range, is the same scene as in a full
-render. The prop is not a `calculateMetadata` result.
+render. When the reach depends on the input props (a shadow size passed in), `calculateMetadata` can return `margin`
+as well, checked the same way; it wins over the prop, and like the prop it is the same for every frame.
 
 `registerFont` is also behind `@kinetograph/core/fonts` as `loadFont({ family, url, weight, style })` (Remotion's
 `@remotion/fonts`, with `url` a path). `@kinetograph/core/google-fonts` provides `makeGoogleFont(familyName)`, which

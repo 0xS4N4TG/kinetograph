@@ -161,6 +161,49 @@ describe('the frame loop', () => {
     }
   });
 
+  it('takes a margin from calculateMetadata over the prop, worked out from the props', async () => {
+    registerRoot(() => (
+      <>
+        <Composition
+          id="FromProps"
+          component={Mover}
+          width={100}
+          height={50}
+          fps={24}
+          durationInFrames={10}
+          margin={44}
+          defaultProps={{ shadow: 60 }}
+          calculateMetadata={({ props }) => ({ margin: props.shadow as number })}
+        />
+        <Composition
+          id="Async"
+          component={Mover}
+          width={100}
+          height={50}
+          fps={24}
+          durationInFrames={10}
+          calculateMetadata={async () => ({ margin: 12 })}
+        />
+        <Composition
+          id="Bad"
+          component={Mover}
+          width={100}
+          height={50}
+          fps={24}
+          durationInFrames={10}
+          calculateMetadata={async () => ({ margin: 4.5 })}
+        />
+      </>
+    ));
+    const fromProps = createFrameRenderer('FromProps');
+    for (const frame of [0, 7, 3]) expect((await fromProps.renderFrame(frame)).scene.margin).toBe(60);
+    expect((await createFrameRenderer('FromProps', { inputProps: { shadow: 30 } }).renderFrame(1)).scene.margin).toBe(30);
+    expect((await createFrameRenderer('Async').renderFrame(1)).scene.margin).toBe(12);
+    await expect(createFrameRenderer('Bad').renderFrame(0)).rejects.toThrow(/"margin" of composition "Bad".*whole number/);
+    // The margin is a render setting, not part of the compositions listing.
+    expect(getCompositions().find((c) => c.id === 'FromProps')).not.toHaveProperty('margin');
+  });
+
   it('passes input props over the defaults', async () => {
     registerOne();
     const renderer = createFrameRenderer('Main', { inputProps: { label: 'override' } });
