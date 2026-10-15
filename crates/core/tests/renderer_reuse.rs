@@ -18,7 +18,7 @@ fn load(path: &str) -> Scene {
 fn scenes() -> Vec<(&'static str, Scene, u32)> {
     [
         // 360x200 canvas with a shape, text and an image.
-        ("examples/basic.json", 20),
+        ("../../examples/basic.json", 20),
         // A margin for the shadows, and animated shadow values.
         ("tests/scenes/shadows.json", 15),
         // A custom WGSL pipeline.
@@ -26,7 +26,7 @@ fn scenes() -> Vec<(&'static str, Scene, u32)> {
         // An image with a gradient map, which reads a table.
         ("tests/scenes/gradient-map.json", 15),
         // A different size, many images and the font twice.
-        ("examples/papercut-card.json", 30),
+        ("../../examples/papercut-card.json", 30),
         // A mesh gradient, whose pass depends on the canvas size.
         ("tests/scenes/mesh-gradient.json", 15),
         // Layers that stay the same from one frame to the next.
@@ -137,7 +137,7 @@ fn a_name_that_means_another_file_is_read_again() {
 
 #[test]
 fn a_scene_that_cannot_load_leaves_the_renderer_as_it_was() {
-    let scene = load("examples/basic.json");
+    let scene = load("../../examples/basic.json");
     let mut renderer = Renderer::new(scene.clone()).unwrap();
     let before = renderer.render_frame(20).unwrap();
 

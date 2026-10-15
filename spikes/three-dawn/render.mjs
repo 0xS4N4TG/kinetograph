@@ -31,6 +31,12 @@ const gpu = create([]);
 // Node has a `navigator` already; it just has no `gpu`.
 Object.defineProperty(globalThis.navigator, 'gpu', { value: gpu, configurable: true });
 
+// The renderer starts an animation loop on `self.requestAnimationFrame` when it initialises, and Node has neither.
+// Every frame here is drawn by an explicit `render` call, so the loop is given a frame request that never fires.
+globalThis.self ??= globalThis;
+globalThis.requestAnimationFrame ??= () => 0;
+globalThis.cancelAnimationFrame ??= () => {};
+
 // GLTFExporter reads the buffers it builds through FileReader.
 globalThis.FileReader ??= class FileReader {
   readAsArrayBuffer(blob) {
