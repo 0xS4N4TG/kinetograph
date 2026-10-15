@@ -1,8 +1,11 @@
 //! A scene evaluated at one frame: every animated number is a plain value.
 
+use std::sync::Arc;
+
 use vello::kurbo::{Affine, BezPath, Rect, Shape};
 
 use crate::anim::Num;
+use crate::canvas::CanvasOp;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
 use crate::scene::{
@@ -637,6 +640,12 @@ pub enum ResolvedKind {
         time: f64,
         looped: bool,
     },
+    /// What a Canvas 2D context drew, in the box `(0, 0, width, height)`.
+    Canvas {
+        width: f64,
+        height: f64,
+        ops: Arc<Vec<CanvasOp>>,
+    },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
     MeshGradient {
@@ -804,6 +813,7 @@ impl Resolver<'_> {
             | ResolvedKind::Video { width, height, .. }
             | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
+            | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
@@ -1050,6 +1060,11 @@ impl Resolver<'_> {
                     colors: m.colors.clone(),
                 }
             }
+            LayerKind::Canvas(c) => ResolvedKind::Canvas {
+                width: c.width.at(f),
+                height: c.height.at(f),
+                ops: c.commands.0.clone(),
+            },
             LayerKind::Noise(n) => ResolvedKind::Noise {
                 width: n.width.at(f),
                 height: n.height.at(f),

@@ -17,6 +17,7 @@ use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::cache::{self, Inputs, LayerCache};
+use crate::canvas;
 use crate::color::Color;
 use crate::compositor::{BlendLayer, BlendSource, Compositor, Readback, Tex};
 use crate::error::{Error, Result};
@@ -1450,6 +1451,7 @@ impl Renderer {
             | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Video { width, height, .. }
             | ResolvedKind::Gif { width, height, .. }
+            | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::Noise { width, height, .. } => Rect::new(0.0, 0.0, *width, *height),
             ResolvedKind::Group { .. } | ResolvedKind::MeshGradient { .. } => return Ok(whole),
         };
@@ -1680,6 +1682,18 @@ impl Renderer {
                     self.vello_scene.draw_image(&image, matrix * to_box);
                 }
             }
+            ResolvedKind::Canvas { width, height, ops } => {
+                canvas::encode(
+                    &mut self.vello_scene,
+                    &mut canvas::Drawing {
+                        text: &mut self.text,
+                        images: &self.images,
+                    },
+                    (*width, *height),
+                    ops,
+                    matrix,
+                )?;
+            }
             // The box in opaque white: the noise pass fills its coverage.
             ResolvedKind::Noise { width, height, .. } => {
                 self.vello_scene.fill(
@@ -1848,6 +1862,7 @@ impl Renderer {
             | ResolvedKind::Lottie { width, height, .. }
             | ResolvedKind::Video { width, height, .. }
             | ResolvedKind::Gif { width, height, .. }
+            | ResolvedKind::Canvas { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
@@ -2608,7 +2623,7 @@ fn is_similarity(m: Affine) -> bool {
 /// that span and the stops stretched to fill 0..=1. A gradient with no
 /// extent (zero length or radius, or all stops at one offset in a repeating
 /// gradient) is the solid colour of its last stop.
-fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
+pub(crate) fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
     let last = g.stops[g.stops.len() - 1];
     let solid = (peniko::Brush::Solid(to_peniko(last.1)), Affine::IDENTITY);
     let (lo, hi) = match g.extend {
@@ -2705,6 +2720,9 @@ fn draws_image(kind: &ResolvedKind) -> bool {
         && matches!(color, ResolvedPaint::Image(_))
     {
         return true;
+    }
+    if let ResolvedKind::Canvas { ops, .. } = kind {
+        return canvas::draws_pictures(ops);
     }
     matches!(
         kind,
@@ -2854,7 +2872,7 @@ fn new_vello(device: &wgpu::Device) -> Result<vello::Renderer> {
     .map_err(|e| Error::Render(format!("Vello init failed: {e}")))
 }
 
-fn to_peniko(c: Color) -> peniko::Color {
+pub(crate) fn to_peniko(c: Color) -> peniko::Color {
     peniko::Color::from_rgba8(c.r, c.g, c.b, c.a)
 }
 
@@ -2897,6 +2915,8 @@ fn image_sources(scene: &Scene) -> Vec<String> {
             color: Paint::Image(i),
             ..
         }) => sources.push(i.src.clone()),
+        // The pictures a canvas's commands draw.
+        LayerKind::Canvas(c) => canvas::sources(&c.commands.0, &mut sources),
         _ => {}
     });
     sources
@@ -2991,6 +3011,9 @@ struct NewAssets {
     videos: Vec<(String, FileId, VideoDecoder)>,
     gifs: Vec<(String, FileId, Gif)>,
     luts: Vec<(String, FileId, Lut)>,
+    /// Whether a canvas layer draws pictures (pixels of its own count, with no
+    /// file behind them).
+    canvas_pictures: bool,
     /// A name the renderer already held now stands for another file, so what
     /// the layer cache drew from the old one is out of date.
     rebound: bool,
@@ -2999,10 +3022,11 @@ struct NewAssets {
 impl NewAssets {
     /// Whether any of it is drawn with Vello's image renderer.
     fn has_pictures(&self) -> bool {
-        !(self.images.is_empty()
-            && self.lotties.is_empty()
-            && self.videos.is_empty()
-            && self.gifs.is_empty())
+        self.canvas_pictures
+            || !(self.images.is_empty()
+                && self.lotties.is_empty()
+                && self.videos.is_empty()
+                && self.gifs.is_empty())
     }
 }
 
@@ -3125,6 +3149,13 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         luts.push((src, id, lut));
     }
 
+    let mut canvas_pictures = false;
+    walk_layers(&scene.layers, &mut |layer| {
+        if let LayerKind::Canvas(c) = &layer.kind {
+            canvas_pictures |= canvas::draws_pictures(&c.commands.0);
+        }
+    });
+
     Ok(NewAssets {
         text,
         fonts,
@@ -3133,6 +3164,7 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         videos,
         gifs,
         luts,
+        canvas_pictures,
         rebound,
     })
 }

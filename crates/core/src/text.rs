@@ -76,6 +76,9 @@ impl LaidOutText {
 #[derive(Clone, Debug)]
 pub struct LaidOutLine {
     pub baseline: f32,
+    /// The font's ascent above the baseline and descent below it.
+    pub ascent: f32,
+    pub descent: f32,
     /// Top and bottom of the line box.
     pub top: f32,
     pub bottom: f32,
@@ -215,6 +218,8 @@ impl TextEngine {
             height: box_size.1,
             lines: vec![LaidOutLine {
                 baseline: box_size.1,
+                ascent: box_size.1,
+                descent: 0.0,
                 top: 0.0,
                 bottom: box_size.1,
                 text_range: 0..0,
@@ -292,6 +297,8 @@ impl TextEngine {
             let m = line.metrics();
             lines.push(LaidOutLine {
                 baseline: m.baseline,
+                ascent: m.baseline - m.content_block_min_coord,
+                descent: m.content_block_max_coord - m.baseline,
                 top: m.block_min_coord,
                 bottom: m.block_max_coord,
                 text_range: line.text_range(),
