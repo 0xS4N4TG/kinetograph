@@ -653,6 +653,134 @@ export interface GifLayer extends LayerBase {
   loop?: boolean;
 }
 
+// ---- scene3d (docs/SCENE.md, "scene3d") ----
+
+/** Three animatable numbers: x, y, z. */
+export type Vec3 = [Num, Num, Num];
+
+export type Geometry3D =
+  | { kind: 'box'; width?: number; height?: number; depth?: number }
+  | { kind: 'sphere'; radius?: number; segments?: number; rings?: number }
+  | { kind: 'plane'; width?: number; height?: number }
+  | { kind: 'cylinder'; radiusTop?: number; radiusBottom?: number; height?: number; segments?: number; capped?: boolean }
+  | { kind: 'torus'; radius?: number; tube?: number; tubeSegments?: number; ringSegments?: number };
+
+/** Metallic-roughness shading. */
+export interface Material3D {
+  /** Default `#ffffff`; its alpha multiplies `opacity`. */
+  color?: ColorString;
+  /** An image file, relative to the scene, multiplied by `color`. */
+  texture?: string;
+  /** 0..1, default 0. */
+  metallic?: Num;
+  /** 0..1, default 0.5. */
+  roughness?: Num;
+  /** Default black. */
+  emissive?: ColorString;
+  /** Default 1. */
+  emissiveIntensity?: Num;
+  /** 0..1, default 1. Below 1 the object is drawn after the opaque ones, farthest first. */
+  opacity?: Num;
+  /** Draws colour and emission only, with no lights. */
+  unlit?: boolean;
+  /** Draws back faces too. */
+  doubleSided?: boolean;
+}
+
+export interface Placement3D {
+  /** Default `[0, 0, 0]`. */
+  position?: Vec3;
+  /** Degrees, XYZ Euler angles. Default `[0, 0, 0]`. */
+  rotation?: Vec3;
+  /** Default 1. */
+  scale?: Num | Vec3;
+  /** Default true. */
+  visible?: boolean;
+}
+
+export interface Mesh3D extends Placement3D {
+  type: 'mesh';
+  id?: string;
+  geometry: Geometry3D;
+  material?: Material3D;
+}
+export interface Model3D extends Placement3D {
+  type: 'model';
+  id?: string;
+  /** A `.gltf` or `.glb` file, relative to the scene. */
+  src: string;
+  /** Replaces the file's own materials. */
+  material?: Material3D;
+}
+export interface Text3D extends Placement3D {
+  type: 'text';
+  id?: string;
+  text: string;
+  /** A key of the scene's `fonts`. */
+  font: string;
+  /** The em size in world units. Default 1. */
+  size?: number;
+  /** Extrusion along z, centred on the origin. Default 0.2. */
+  depth?: number;
+  /** Default `center`. */
+  align?: 'left' | 'center' | 'right';
+  lineHeight?: number;
+  material?: Material3D;
+}
+export interface Extrude3D extends Placement3D {
+  type: 'extrude';
+  id?: string;
+  /** SVG path data; y points down, as in SVG. */
+  path: string;
+  /** The longer side of the path's box in world units. Default 1. */
+  size?: number;
+  depth?: number;
+  fillRule?: 'nonzero' | 'evenodd';
+  material?: Material3D;
+}
+export interface Group3D extends Placement3D {
+  type: 'group';
+  id?: string;
+  children?: Object3DJson[];
+}
+export type Object3DJson = Mesh3D | Model3D | Text3D | Extrude3D | Group3D;
+
+export interface Camera3DJson {
+  /** Default `perspective`. */
+  type?: 'perspective' | 'orthographic';
+  /** Perspective: vertical field of view in degrees, default 45. */
+  fov?: Num;
+  /** Orthographic: the world height shown, default 4. */
+  height?: Num;
+  /** Default 0.1. */
+  near?: Num;
+  /** Default 100. */
+  far?: Num;
+  /** Default `[0, 0, 5]`. */
+  position?: Vec3;
+  /** Default `[0, 0, 0]`. */
+  target?: Vec3;
+  /** Default `[0, 1, 0]`; not animated. */
+  up?: [number, number, number];
+}
+
+export type Light3DJson =
+  | { type: 'ambient'; color?: ColorString; intensity?: Num }
+  | { type: 'directional'; direction?: Vec3; color?: ColorString; intensity?: Num }
+  | { type: 'point'; position: Vec3; color?: ColorString; intensity?: Num; range?: Num };
+
+export interface Scene3DLayer extends LayerBase {
+  type: 'scene3d';
+  width: Num;
+  height: Num;
+  /** 1 or 4, default 4. */
+  msaa?: 1 | 4;
+  camera?: Camera3DJson;
+  /** At most 8. */
+  lights?: Light3DJson[];
+  objects?: Object3DJson[];
+}
+
 export type LayerJson =
   | ShapeLayer
   | TextLayer
@@ -662,6 +790,7 @@ export type LayerJson =
   | MeshGradientLayer
   | LottieLayer
   | CanvasLayer
+  | Scene3DLayer
   | VideoLayer
   | GifLayer;
 export type LayerType = LayerJson['type'];

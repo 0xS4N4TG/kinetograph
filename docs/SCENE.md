@@ -54,7 +54,7 @@ Every layer has these fields:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | string | required | Unique across the whole scene, including nested layers. |
-| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `canvas`, `video` or `gif`. |
+| `type` | string | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `canvas`, `scene3d`, `video` or `gif`. |
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
@@ -420,6 +420,94 @@ default `source-over`).
 - The pictures a canvas draws from files (`kind: "src"`) are read when a renderer is built from the scene, as an image
   layer's are. A bad path or block of pixels is an error naming the layer when the scene loads.
 - Rendering is a pure function of the commands, the fonts and the files they name.
+- Counts nothing in the [margin](#canvas-margin).
+
+### scene3d
+
+```json
+{ "id": "hero", "type": "scene3d", "width": 960, "height": 540,
+  "camera": { "type": "perspective", "fov": 40, "position": [0, 2, 8], "target": [0, 0.5, 0] },
+  "lights": [
+    { "type": "ambient", "color": "#aab4ff", "intensity": 0.3 },
+    { "type": "directional", "direction": [-1, -1, -1], "intensity": 1.6 },
+    { "type": "point", "position": [2, 3, 4], "intensity": 12, "range": 10 }
+  ],
+  "objects": [
+    { "type": "mesh", "geometry": { "kind": "torus", "radius": 0.6, "tube": 0.2 },
+      "material": { "color": "#c77dff", "roughness": 0.3 },
+      "rotation": [60, [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 90 }], 0] },
+    { "type": "text", "text": "Hello", "font": "DM Sans", "size": 1, "depth": 0.3, "position": [0, 1.6, 0] }
+  ] }
+```
+
+A 3D scene, drawn by the engine's own renderer into the box `(0, 0, width, height)` and then a layer like any other: it
+takes `effects`, `clip`, `mask`, `matte`, `blendMode`, `opacity`, `motionBlur` and the 2D and 3D layer `transform`
+(which turn and place the finished picture, as for every layer). Around the objects it is transparent, so 2D layers
+behind it show. The scene is drawn straight into a compositor texture on the same GPU device, with no readback.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `width`, `height` | required | Animatable, not negative: the box in layer pixels. The camera's aspect ratio is `width / height`. The box cuts the scene, along its own edges when the layer is turned. |
+| `msaa` | `4` | Samples per pixel: `1` or `4`. |
+| `camera` | see below | One camera. |
+| `lights` | `[]` | At most 8. With none, lit meshes are black (emissive and `unlit` ones still show). |
+| `objects` | `[]` | Meshes, models, text, paths and groups, in drawing order. |
+
+Space: right-handed, +y up, the camera looks down its own -z (as glTF and three.js). Angles are degrees. Every number
+below that is not marked "not animated" is an animatable number.
+
+**camera**: `type` (`perspective`, default, or `orthographic`), `fov` (vertical, degrees, in (0, 180), default 45) or
+`height` (orthographic: the world height shown, default 4), `near` (0.1), `far` (100), `position` (`[0, 0, 5]`),
+`target` (`[0, 0, 0]`), `up` (`[0, 1, 0]`, not animated). A camera whose position is its target, or that looks along
+its up vector, is an error at that frame.
+
+**lights** (`color` default white, `intensity` default 1; a light's colour is linear light times its intensity):
+
+| `type` | Fields | Meaning |
+|---|---|---|
+| `ambient` | `color`, `intensity` | The same on every surface from every direction: diffuse, plus a little specular so that metals are not black. |
+| `directional` | `direction` (the way it travels, default `[-1, -1, -1]`) | Parallel light. A surface facing it head on, with base colour `c`, reflects `c * intensity`. |
+| `point` | `position`, `range` (default 0) | Falls off as `1 / d^2`, so `intensity` is what a directional light of that intensity would give at distance 1. With a `range` above 0 it fades smoothly to nothing at that distance. |
+
+**objects**. Every object takes `position` (`[0, 0, 0]`), `rotation` (XYZ Euler degrees, `[0, 0, 0]`: the matrix is
+`T * Rx * Ry * Rz * S`, as three.js), `scale` (a number or `[x, y, z]`, 1), `visible` (true) and an `id` (for people;
+not checked for uniqueness).
+
+| `type` | Fields | Draws |
+|---|---|---|
+| `mesh` | `geometry`, `material` | A primitive. |
+| `model` | `src`, `material` | A glTF 2.0 file (`.gltf` with its files, or `.glb`), relative to the scene. With a `material` it replaces every material of the file. |
+| `text` | `text`, `font`, `size` (em in world units, 1), `depth` (0.2), `align` (`center`), `lineHeight` | Text from the scene's `fonts`, shaped by the text engine and extruded `depth` along z, centred on the origin (the block of text, whatever the alignment of its lines). `\n` breaks lines. |
+| `extrude` | `path`, `size` (1), `depth` (0.2), `fillRule` | SVG path data, extruded. y points down as in SVG; it comes out upright, centred, its longer side `size` long. Holes stay holes. |
+| `group` | `children` | Objects that move together. |
+
+`geometry` (`kind`; sizes are plain numbers, not animated: animate `scale`): `box` (`width`, `height`, `depth`, 1),
+`sphere` (`radius` 0.5, `segments` 32, `rings` 16), `plane` (`width`, `height`; in the xy plane facing +z), `cylinder`
+(`radiusTop`, `radiusBottom` 0.5, `height` 1, `segments` 32, `capped` true; along y; a top radius of 0 is a cone),
+`torus` (`radius` 0.5, `tube` 0.2, `tubeSegments` 16, `ringSegments` 48; in the xy plane). Round shapes are cut into
+3 to 256 segments.
+
+`material`: `color` (`#ffffff`; its alpha multiplies `opacity`), `texture` (an image file multiplied by `color`),
+`metallic` (0), `roughness` (0.5), `emissive` (black) and `emissiveIntensity` (1), `opacity` (1), `unlit` (draw colour
+and emission only), `doubleSided` (draw back faces, lit as fronts). Shading is metallic-roughness, lean: Lambert diffuse
+plus GGX specular per light.
+
+- **Depth and transparency.** Opaque objects are depth tested, in any order. Objects that are not opaque (`opacity`
+  below 1, a translucent `color` or texture, a glTF `BLEND` material) are drawn afterwards, farthest first by the middle
+  of their box, blended and without writing depth. Triangles within one translucent object are not sorted.
+- **glTF.** Read: the default scene's node tree and transforms, triangle meshes with positions, normals (flat ones when
+  absent), first texture coordinates and indices, and each material's base colour factor and texture, metallic and
+  roughness factors, emissive factor, `doubleSided` and `alphaMode` (`BLEND` blends; `OPAQUE` and `MASK` draw opaque).
+  Not read: animations, skins, morph targets, cameras, lights, normal, occlusion, metallic-roughness and emissive
+  textures, texture transforms, `KHR_*` extensions. A model is placed as the file says, with no automatic fit.
+- **Extrusion.** Walls are smooth where neighbouring edges bend by less than 40 degrees and hard beyond. No bevel.
+- **Determinism.** The frame is a pure function of the scene, its fonts and the files it names. Meshes of text and paths
+  are built once per distinct spec and kept.
+- **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
+  Text must use a key of the scene's `fonts`, checked when the scene loads.
+- **Not drawn (v1).** Shadows, image-based or environment lighting (metals are dark away from a light), spot lights,
+  normal and other texture maps, skinned and morph animation, glTF animation, bevels, fog, post effects beyond the
+  layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).
 
 ### video

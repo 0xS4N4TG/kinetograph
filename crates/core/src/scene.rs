@@ -200,6 +200,7 @@ pub enum LayerKind {
     Video(VideoLayer),
     Gif(GifLayer),
     Canvas(CanvasLayer),
+    Scene3d(crate::scene3d::Scene3dLayer),
 }
 
 impl LayerKind {
@@ -216,6 +217,7 @@ impl LayerKind {
             LayerKind::Video(_) => "video",
             LayerKind::Gif(_) => "gif",
             LayerKind::Canvas(_) => "canvas",
+            LayerKind::Scene3d(_) => "scene3d",
         }
     }
 
@@ -1944,6 +1946,9 @@ impl Scene {
                     if let Some(bad) = crate::canvas::bad_path(&c.commands.0) {
                         return Err(Error::Scene(format!("layer {:?}: canvas: {bad}", layer.id)));
                     }
+                }
+                LayerKind::Scene3d(s) => {
+                    s.validate(&layer.id, &|font| self.fonts.contains_key(font))?;
                 }
                 LayerKind::Lottie(l) => {
                     if l.src.trim().is_empty() {

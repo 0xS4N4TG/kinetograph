@@ -646,6 +646,12 @@ pub enum ResolvedKind {
         height: f64,
         ops: Arc<Vec<CanvasOp>>,
     },
+    /// A 3D scene drawn into the box `(0, 0, width, height)`.
+    Scene3d {
+        width: f64,
+        height: f64,
+        scene: Arc<crate::scene3d::Resolved3d>,
+    },
     /// A grid of coloured points; the box `(0, 0, width, height)` in layer
     /// space is where the points are when none are given.
     MeshGradient {
@@ -814,6 +820,7 @@ impl Resolver<'_> {
             | ResolvedKind::Gif { width, height, .. }
             | ResolvedKind::Noise { width, height, .. }
             | ResolvedKind::Canvas { width, height, .. }
+            | ResolvedKind::Scene3d { width, height, .. }
             | ResolvedKind::MeshGradient { width, height, .. } => {
                 Some(Rect::new(0.0, 0.0, *width, *height))
             }
@@ -1064,6 +1071,11 @@ impl Resolver<'_> {
                 width: c.width.at(f),
                 height: c.height.at(f),
                 ops: c.commands.0.clone(),
+            },
+            LayerKind::Scene3d(s) => ResolvedKind::Scene3d {
+                width: s.width.at(f),
+                height: s.height.at(f),
+                scene: Arc::new(s.resolve(&layer.id, f)?),
             },
             LayerKind::Noise(n) => ResolvedKind::Noise {
                 width: n.width.at(f),

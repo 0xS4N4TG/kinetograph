@@ -124,6 +124,64 @@ fn canvas_commands_match_golden() {
 }
 
 #[test]
+fn scene3d_primitives_match_golden() {
+    // Frame 15 of 30: halfway through the box and cylinder turning. A box, a
+    // sphere, a cylinder, a cone and a torus on a plane, under an ambient
+    // and a directional light (docs/SCENE.md, "scene3d").
+    let frame = render_still(scene("tests/scenes/scene3d-primitives.json"), 15).unwrap();
+    check("scene3d-primitives", &frame);
+}
+
+#[test]
+fn scene3d_lights_match_golden() {
+    // Four layers: ambient only, directional only, two point lights (one with
+    // a range), and all three kinds together.
+    let frame = render_still(scene("tests/scenes/scene3d-lights.json"), 0).unwrap();
+    check("scene3d-lights", &frame);
+}
+
+#[test]
+fn scene3d_materials_match_golden() {
+    // Metallic 0, 0.5 and 1 down, roughness 0.1, 0.5 and 0.9 across.
+    let frame = render_still(scene("tests/scenes/scene3d-materials.json"), 0).unwrap();
+    check("scene3d-materials", &frame);
+}
+
+#[test]
+fn scene3d_material_kinds_match_golden() {
+    // Frame 10 of 30: an emissive sphere, an unlit box, translucent spheres in
+    // front of and behind an opaque box, and a textured double-sided plane
+    // turning (its texture's lower half is translucent).
+    let frame = render_still(scene("tests/scenes/scene3d-material-kinds.json"), 10).unwrap();
+    check("scene3d-material-kinds", &frame);
+}
+
+#[test]
+fn scene3d_model_matches_golden() {
+    // Frame 15 of 30: a glTF model (two meshes under a node tree, one
+    // textured) as it is, and again with its materials replaced.
+    let frame = render_still(scene("tests/scenes/scene3d-model.json"), 15).unwrap();
+    check("scene3d-model", &frame);
+}
+
+#[test]
+fn scene3d_text_matches_golden() {
+    // Frame 10 of 30: extruded text (one line, and two lines left aligned)
+    // and an extruded SVG path with a hole.
+    let frame = render_still(scene("tests/scenes/scene3d-text.json"), 10).unwrap();
+    check("scene3d-text", &frame);
+}
+
+#[test]
+fn scene3d_layers_composite_with_2d_layers_and_effects() {
+    // Frame 12 of 30: 3D layers under a drop shadow, under a blur and the
+    // screen blend mode, with a layer rotation and a 3D turn, among shapes
+    // and text.
+    let frame = render_still(scene("tests/scenes/scene3d-composite.json"), 12).unwrap();
+    check("scene3d-composite", &frame);
+}
+
+#[test]
 fn shadows_match_golden() {
     // Frame 15 of 30: halfway through every shadow animation. The scene has a
     // margin (its largest reach is the off-canvas layer's shadow), so this

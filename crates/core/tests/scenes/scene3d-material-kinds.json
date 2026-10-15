@@ -1,0 +1,66 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#1a1d26",
+  "layers": [
+    {
+      "id": "stage",
+      "type": "scene3d",
+      "width": 480,
+      "height": 270,
+      "camera": { "fov": 38, "position": [0, 1.2, 8], "target": [0, 0, 0] },
+      "lights": [
+        { "type": "ambient", "intensity": 0.3 },
+        { "type": "directional", "direction": [-0.4, -0.8, -1], "intensity": 1.5 }
+      ],
+      "objects": [
+        {
+          "id": "emissive",
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 0.7 },
+          "material": { "color": "#201008", "roughness": 0.8, "emissive": "#ff7a1a", "emissiveIntensity": 1.6 },
+          "position": [-3.4, 0, 0]
+        },
+        {
+          "id": "unlit",
+          "type": "mesh",
+          "geometry": { "kind": "box", "width": 1.2, "height": 1.2, "depth": 1.2 },
+          "material": { "color": "#4cc9f0", "unlit": true },
+          "position": [-1.7, 0, 0],
+          "rotation": [25, 35, 0]
+        },
+        {
+          "id": "solid",
+          "type": "mesh",
+          "geometry": { "kind": "box", "width": 1.1, "height": 1.6, "depth": 0.8 },
+          "material": { "color": "#e63946", "roughness": 0.5 },
+          "position": [0.2, 0, -0.4]
+        },
+        {
+          "id": "glass-front",
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 0.8 },
+          "material": { "color": "#a8dadc", "opacity": 0.45, "roughness": 0.15 },
+          "position": [-0.1, 0, 0.9]
+        },
+        {
+          "id": "glass-back",
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 0.8 },
+          "material": { "color": "#ffd166", "opacity": 0.45, "roughness": 0.15 },
+          "position": [0.5, 0.2, -1.0]
+        },
+        {
+          "id": "textured",
+          "type": "mesh",
+          "geometry": { "kind": "plane", "width": 2, "height": 2 },
+          "material": { "texture": "media/checker.png", "roughness": 0.7, "doubleSided": true },
+          "position": [2.9, 0, 0],
+          "rotation": [0, [{ "frame": 0, "value": -35 }, { "frame": 30, "value": 35 }], 0]
+        }
+      ]
+    }
+  ]
+}

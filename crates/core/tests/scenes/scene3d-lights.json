@@ -1,0 +1,63 @@
+{
+  "width": 480,
+  "height": 240,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#101218",
+  "layers": [
+    {
+      "id": "ambient",
+      "type": "scene3d",
+      "width": 120,
+      "height": 240,
+      "camera": { "fov": 45, "position": [0, 0, 6] },
+      "lights": [{ "type": "ambient", "color": "#ff8a80", "intensity": 1 }],
+      "objects": [
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 1 }, "material": { "color": "#ffffff" } }
+      ]
+    },
+    {
+      "id": "directional",
+      "type": "scene3d",
+      "width": 120,
+      "height": 240,
+      "transform": { "x": 120 },
+      "camera": { "fov": 45, "position": [0, 0, 6] },
+      "lights": [{ "type": "directional", "direction": [1, -1, -1], "color": "#ffffff", "intensity": 1.5 }],
+      "objects": [
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 1 }, "material": { "color": "#ffffff", "roughness": 0.3 } }
+      ]
+    },
+    {
+      "id": "point",
+      "type": "scene3d",
+      "width": 120,
+      "height": 240,
+      "transform": { "x": 240 },
+      "camera": { "fov": 45, "position": [0, 0, 6] },
+      "lights": [
+        { "type": "point", "position": [-1.6, 1.2, 1.4], "color": "#ffd9a0", "intensity": 6 },
+        { "type": "point", "position": [1.8, -1.2, 1.0], "color": "#7aa2ff", "intensity": 4, "range": 4 }
+      ],
+      "objects": [
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 1 }, "material": { "color": "#ffffff", "roughness": 0.4 } }
+      ]
+    },
+    {
+      "id": "combined",
+      "type": "scene3d",
+      "width": 120,
+      "height": 240,
+      "transform": { "x": 360 },
+      "camera": { "fov": 45, "position": [0, 0, 6] },
+      "lights": [
+        { "type": "ambient", "color": "#4060a0", "intensity": 0.5 },
+        { "type": "directional", "direction": [-1, -0.6, -1], "color": "#fff1d6", "intensity": 1.2 },
+        { "type": "point", "position": [1.5, 0.5, -1.5], "color": "#ff4fa0", "intensity": 6 }
+      ],
+      "objects": [
+        { "type": "mesh", "geometry": { "kind": "sphere", "radius": 1 }, "material": { "color": "#dddddd", "roughness": 0.5, "metallic": 0.2 } }
+      ]
+    }
+  ]
+}
