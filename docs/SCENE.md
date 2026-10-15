@@ -85,7 +85,9 @@ afterwards.
 `originX` and `originY` say where the layer turns and scales without knowing its size: a point of its box (the box
 `inset` clips use, see [Clip paths](#clip-paths)) as a fraction of the box's width and height, so `0.5, 0.5` is the
 centre and `1, 1` the bottom-right corner. The pivot of `rotation`, `scale` and, in 3D, `rotateX` and `rotateY` is then
-the anchor plus `(originX * width, originY * height)`.
+the anchor plus `(box.x + originX * width, box.y + originY * height)`, where `box.x, box.y` is the box's top-left
+corner: `0, 0` for every layer but a path, whose box is its bounding box. An origin left at `0, 0` (the default)
+keeps the pivot at the anchor, even for a path.
 
 Like CSS's `transform-origin`, the origin changes the pivot and does not move the layer: with no turn and no scale the
 layer is where it would be without an origin, with its anchor at `(x, y)`, and the pivot sits at `(x, y)` plus the

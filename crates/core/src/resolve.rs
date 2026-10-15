@@ -749,8 +749,10 @@ impl Resolver<'_> {
     }
 
     /// The transform at time `f`. Its origin, a fraction of the layer's box,
-    /// is turned into pixels here; the box is only worked out when the origin
-    /// is not zero, since measuring text costs a layout.
+    /// is turned into pixels from the box's top-left corner here (a path's box
+    /// need not start at 0, 0). The box is only worked out when an origin is
+    /// given, animated or not zero, since measuring text costs a layout; an
+    /// origin left at 0, 0 keeps the pivot at the anchor.
     fn transform(
         &mut self,
         t: &Transform,
@@ -758,12 +760,12 @@ impl Resolver<'_> {
         kind: &ResolvedKind,
     ) -> Result<ResolvedTransform> {
         let mut resolved = resolve_transform(t, f);
-        let (ox, oy) = (t.origin_x.at(f), t.origin_y.at(f));
-        if (ox != 0.0 || oy != 0.0)
+        let given = |n: &Num| !matches!(n, Num::Const(v) if *v == 0.0);
+        if (given(&t.origin_x) || given(&t.origin_y))
             && let Some(b) = self.layer_box(kind)?
         {
-            resolved.origin_x = ox * b.width();
-            resolved.origin_y = oy * b.height();
+            resolved.origin_x = b.x0 + t.origin_x.at(f) * b.width();
+            resolved.origin_y = b.y0 + t.origin_y.at(f) * b.height();
         }
         Ok(resolved)
     }
@@ -2335,9 +2337,10 @@ mod tests {
         // 100 x 40: half the width, and the animated fraction 0.5 of 40.
         let t = &layers[0].transform;
         assert_eq!((t.origin_x, t.origin_y), (50.0, 20.0));
-        // A path's box is its bounding box (40 x 40).
+        // A path's box is its bounding box, 40 x 40 from (20, 10): the
+        // origin is the middle of its right side, not measured from 0, 0.
         let t = &layers[1].transform;
-        assert_eq!((t.origin_x, t.origin_y), (40.0, 20.0));
+        assert_eq!((t.origin_x, t.origin_y), (60.0, 30.0));
         // Text: half the laid-out width.
         let mut engine = TextEngine::new(&scene.fonts, &scene.base_dir).unwrap();
         let width = f64::from(

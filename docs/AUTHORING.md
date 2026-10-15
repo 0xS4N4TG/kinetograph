@@ -242,7 +242,9 @@ Numbers in both are animatable. Semantics:
 size. Like CSS's `transform-origin`, it moves the pivot and not the layer: with `(ox, oy)` the origin in pixels the
 matrix is `translate(x + ox, y + oy) * rotate * scale * translate(-(anchorX + ox), -(anchorY + oy))`, so with no turn
 or scale the layer sits where it would without an origin, and `0.5, 0.5` scales and turns it about its centre without
-knowing its size. The 3D turn uses the same pivot. A layer without a box (a group without `layout`) ignores them.
+knowing its size. `(ox, oy)` is measured from the box's top-left corner, which for a path is its bounding box's,
+not `0, 0` (fixed on the M4: a path at x 300–360 with origin `0.5` turned about x 30). The 3D turn uses the same
+pivot. A layer without a box (a group without `layout`) ignores them.
 (Changed at stream 4's merge from "added to the anchor", which would have moved every layer given `origin: 'center'`
 by half its size; see SCENE.md, Transform origin.)
 
