@@ -213,39 +213,10 @@ impl Compositor {
         let program = self.glsl_program(program_spec)?;
 
         // State.
-        let [vx, vy, vw, vh] = draw.viewport;
-        if vw < 0 || vh < 0 {
-            return Err(render_error("the viewport has a negative size"));
-        }
-        if vx < 0 || vy < 0 || vx + vw > size.0 as i32 || vy + vh > size.1 as i32 {
-            return Err(render_error(format!(
-                "unsupported: the viewport ({vx}, {vy}, {vw}, {vh}) reaches outside the {} x {} \
-                 drawing buffer",
-                size.0, size.1
-            )));
-        }
-        let viewport = [
-            vx as f32,
-            (size.1 as i32 - vy - vh) as f32,
-            vw as f32,
-            vh as f32,
-        ];
-        let scissor = match draw.scissor {
-            Some([sx, sy, sw, sh]) => {
-                let x0 = sx.clamp(0, size.0 as i32);
-                let x1 = (sx + sw).clamp(0, size.0 as i32);
-                let top = (size.1 as i32 - sy - sh).clamp(0, size.1 as i32);
-                let bottom = (size.1 as i32 - sy).clamp(0, size.1 as i32);
-                [
-                    x0 as u32,
-                    top as u32,
-                    (x1 - x0) as u32,
-                    (bottom - top) as u32,
-                ]
-            }
-            None => [0, 0, size.0, size.1],
-        };
-        if vw == 0 || vh == 0 || scissor[2] == 0 || scissor[3] == 0 || draw.count == 0 {
+        let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size)?;
+        let (vw, vh) = (viewport[2], viewport[3]);
+        check_vertex_range(draw.first, draw.count)?;
+        if vw == 0.0 || vh == 0.0 || scissor[2] == 0 || scissor[3] == 0 || draw.count == 0 {
             return Ok(None);
         }
 
@@ -1008,6 +979,115 @@ impl Compositor {
             layout,
             sampler,
         }
+    }
+}
+
+/// The most vertices (or indices) one draw may read: a triangle fan is
+/// expanded to a list three times as long, so this also bounds memory.
+const MAX_DRAW_VERTICES: u32 = 1 << 22;
+
+/// Rejects a draw whose `first + count` overflows or reads too many vertices.
+fn check_vertex_range(first: u32, count: u32) -> Result<()> {
+    if first.checked_add(count).is_none() || count > MAX_DRAW_VERTICES {
+        return Err(render_error(format!(
+            "the draw of {count} vertices from {first} is out of range (at most {MAX_DRAW_VERTICES} \
+             vertices a draw)"
+        )));
+    }
+    Ok(())
+}
+
+/// The viewport (x, y from the top, width, height) and the scissor rectangle
+/// (x, y from the top, width, height; the whole buffer without one) of a
+/// draw into a buffer of `size`. Done in `i64`, so no sum can overflow, and
+/// a negative size or a viewport outside the buffer is an error.
+fn draw_rects(
+    viewport: [i32; 4],
+    scissor: Option<[i32; 4]>,
+    size: (u32, u32),
+) -> Result<([f32; 4], [u32; 4])> {
+    let (w, h) = (i64::from(size.0), i64::from(size.1));
+    let [vx, vy, vw, vh] = viewport.map(i64::from);
+    if vw < 0 || vh < 0 {
+        return Err(render_error("the viewport has a negative size"));
+    }
+    if vx < 0 || vy < 0 || vx + vw > w || vy + vh > h {
+        return Err(render_error(format!(
+            "unsupported: the viewport ({vx}, {vy}, {vw}, {vh}) reaches outside the {w} x {h} \
+             drawing buffer"
+        )));
+    }
+    let viewport = [vx as f32, (h - vy - vh) as f32, vw as f32, vh as f32];
+    let scissor = match scissor {
+        Some(rect) => {
+            let [sx, sy, sw, sh] = rect.map(i64::from);
+            if sw < 0 || sh < 0 {
+                return Err(render_error("the scissor box has a negative size"));
+            }
+            let x0 = sx.clamp(0, w);
+            let x1 = (sx + sw).clamp(0, w);
+            let top = (h - sy - sh).clamp(0, h);
+            let bottom = (h - sy).clamp(0, h);
+            if x1 < x0 || bottom < top {
+                return Err(render_error("the scissor box is inverted"));
+            }
+            [
+                x0 as u32,
+                top as u32,
+                (x1 - x0) as u32,
+                (bottom - top) as u32,
+            ]
+        }
+        None => [0, 0, size.0, size.1],
+    };
+    Ok((viewport, scissor))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rectangles_are_checked_without_overflow() {
+        let size = (16, 16);
+        assert!(draw_rects([0, 0, 16, 16], None, size).is_ok());
+        let (v, s) = draw_rects([0, 0, 16, 8], Some([0, 0, 16, 8]), size).unwrap();
+        assert_eq!((v[1], s[1]), (8.0, 8));
+        for bad in [
+            [0, 0, -1, 4],
+            [i32::MAX, 0, i32::MAX, 4],
+            [0, i32::MIN, 4, 4],
+        ] {
+            assert!(draw_rects(bad, None, size).is_err(), "{bad:?}");
+        }
+        for bad in [[0, 0, -1, 4], [0, 0, 4, -1]] {
+            assert!(
+                draw_rects([0, 0, 16, 16], Some(bad), size).is_err(),
+                "{bad:?}"
+            );
+        }
+        // Huge scissors are clamped, not wrapped.
+        let (_, s) = draw_rects(
+            [0, 0, 16, 16],
+            Some([i32::MAX, i32::MAX, i32::MAX, i32::MAX]),
+            size,
+        )
+        .unwrap();
+        assert_eq!(s[2] * s[3], 0);
+        let (_, s) = draw_rects(
+            [0, 0, 16, 16],
+            Some([i32::MIN, i32::MIN, i32::MAX, i32::MAX]),
+            size,
+        )
+        .unwrap();
+        assert!(s[2] <= 16 && s[3] <= 16);
+    }
+
+    #[test]
+    fn a_draw_that_overflows_or_is_huge_is_refused() {
+        assert!(check_vertex_range(0, 6).is_ok());
+        assert!(check_vertex_range(u32::MAX, 1).is_err());
+        assert!(check_vertex_range(0, MAX_DRAW_VERTICES + 1).is_err());
     }
 }
 
