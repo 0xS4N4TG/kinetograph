@@ -23,12 +23,20 @@ fn builtin_shaders_are_valid_wgsl() {
     let shaders = files_with_extension("src/shaders", "wgsl");
     assert!(!shaders.is_empty(), "no shaders found");
     // The helpers the compositor puts in front of the shaders that call them
-    // (`compositor::shader_source`). hash.wgsl and turbulence.wgsl stand
-    // alone; place.wgsl reads the `tex_a` of the shader it is put in front
+    // (`compositor::shader_source`). hash.wgsl, turbulence.wgsl,
+    // blend_math.wgsl and f16.wgsl stand alone; place.wgsl reads the `tex_a` of the shader it is put in front
     // of, so it is checked with a declaration of its own.
     for path in shaders {
         let source = std::fs::read_to_string(&path).unwrap();
-        let source = if path.ends_with("hash.wgsl") || path.ends_with("turbulence.wgsl") {
+        let source = if [
+            "hash.wgsl",
+            "turbulence.wgsl",
+            "blend_math.wgsl",
+            "f16.wgsl",
+        ]
+        .iter()
+        .any(|name| path.ends_with(name))
+        {
             source
         } else if path.ends_with("place.wgsl") {
             format!("@group(0) @binding(0) var tex_a: texture_2d<f32>;\n{source}")
@@ -37,9 +45,12 @@ fn builtin_shaders_are_valid_wgsl() {
         };
         let module = naga::front::wgsl::parse_str(&source)
             .unwrap_or_else(|e| panic!("{}: {}", path.display(), e.emit_to_string(&source)));
+        // `store_f16` (shadow.wgsl) packs floats to halves, which wgpu allows
+        // on Metal.
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::default(),
+            naga::valid::Capabilities::default()
+                | naga::valid::Capabilities::SHADER_FLOAT16_IN_FLOAT32,
         )
         .validate(&module)
         .unwrap_or_else(|e| panic!("{}: {}", path.display(), e.emit_to_string(&source)));
@@ -83,6 +94,7 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
         "dither.wgsl",
         "dot_matrix.wgsl",
         "lut.wgsl",
+        "page.wgsl",
     ] {
         assert_eq!(declared_bindings(file), shared, "{file}");
     }

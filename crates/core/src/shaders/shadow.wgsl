@@ -106,3 +106,34 @@ fn fs_inset(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let shadow = params.color * (shadow_alpha(canvas_pos(p)) * layer.a);
     return shadow + layer * (1.0 - shadow.a);
 }
+
+// The inverted alpha that fs_spread writes when it has nothing to spread
+// (spread 0, invert on), without the pass: 1 - alpha, rounded as the texture
+// it would have been written to rounds it. Not masked to the box that pass
+// would have drawn, which nothing in the inset shadow reads outside of, but
+// 0 outside the canvas texture (params.spread.xy is its size), where that
+// pass's texture ended.
+fn inverted_alpha_a(xy: vec2<i32>) -> f32 {
+    if any(xy < vec2<i32>(0)) || any(xy >= vec2<i32>(params.spread.xy)) {
+        return 0.0;
+    }
+    return store_f16(1.0 - alpha_a(xy));
+}
+
+fn inverted_shadow_alpha(p: vec2<f32>) -> f32 {
+    let q = p - params.offset.xy - vec2<f32>(0.5);
+    let i = vec2<i32>(floor(q));
+    let f = q - floor(q);
+    let top = mix(inverted_alpha_a(i), inverted_alpha_a(i + vec2<i32>(1, 0)), f.x);
+    let bottom = mix(inverted_alpha_a(i + vec2<i32>(0, 1)), inverted_alpha_a(i + vec2<i32>(1, 1)), f.x);
+    return mix(top, bottom, f.y);
+}
+
+// fs_inset for an inset shadow with no blur and no spread: the shadow alpha
+// is the layer's own inverted alpha, read from tex_a.
+@fragment
+fn fs_inset_inverted(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let layer = load_a(canvas_xy(p));
+    let shadow = params.color * (inverted_shadow_alpha(canvas_pos(p)) * layer.a);
+    return shadow + layer * (1.0 - shadow.a);
+}

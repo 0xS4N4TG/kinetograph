@@ -15,6 +15,10 @@ license = "MIT OR Apache-2.0"
 # fontique 0.12 follows the requested weight on a variable font's `wght` axis;
 # a face registered at one weight must stay at it, as a CSS @font-face with a
 # single font-weight does (vendor/README.md).
+#
+# vello starts a compute pass for each of its dispatches, about 17 for each
+# page; see vendor/README.md.
 [patch.crates-io]
+vello = { path = "vendor/vello" }
 vello_shaders = { path = "vendor/vello_shaders" }
 fontique = { path = "vendor/fontique" }

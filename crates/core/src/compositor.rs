@@ -89,6 +89,7 @@
 
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use glam::DMat3;
 use vello::kurbo::{Affine, Rect};
@@ -101,6 +102,7 @@ use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::lut::Lut;
 use crate::mesh;
+use crate::pass_timer::{self, PassTime, PassTimer, Stamp};
 use crate::pool::{Pool, Pooled};
 use crate::resolve::{
     ResolvedCornerPin, ResolvedDisplace, ResolvedDither, ResolvedDotMatrix, ResolvedEffect,
@@ -170,6 +172,51 @@ impl Pooled for Tex {
     }
 }
 
+/// What `Compositor::blend_many` composites.
+#[derive(Clone, Copy)]
+pub enum BlendSource<'a> {
+    Texture(&'a Tex),
+    /// A leaf that is still in its Vello page: the page's texture and the
+    /// pixels Vello drew of it, optionally the page that holds the leaf's clip
+    /// shape in white, and the box of the canvas where the leaf, cut to its
+    /// clip's box, is not transparent. It is cut out of the page and masked
+    /// as the passes `from_srgb8` and `mask` would.
+    Page {
+        leaf: (&'a wgpu::TextureView, PixelRect),
+        clip: Option<(&'a wgpu::TextureView, PixelRect)>,
+        bounds: PixelRect,
+    },
+}
+
+impl BlendSource<'_> {
+    fn bounds(&self) -> PixelRect {
+        match self {
+            BlendSource::Texture(t) => t.bounds,
+            BlendSource::Page { bounds, .. } => *bounds,
+        }
+    }
+}
+
+/// A layer for `Compositor::blend_many`: what it is made of, its opacity and
+/// blend mode.
+#[derive(Clone, Copy)]
+pub struct BlendLayer<'a> {
+    pub source: BlendSource<'a>,
+    pub opacity: f32,
+    pub mode: BlendMode,
+}
+
+/// How many recorded passes and copies `submit_if_large` lets wait.
+const SUBMIT_OPS: u32 = 512;
+
+/// How many layers one `blend_many` pass composites (`SLOTS` in
+/// `shaders/blend_many.wgsl`).
+const BLEND_SLOTS: usize = 7;
+
+/// Texels that a `blend_many` pass may draw beyond twice what its layers
+/// cover, so that small layers still go together.
+const BLEND_SLACK: i64 = 64 * 64;
+
 /// A texture a pass reads, and where it sits on the canvas (the `a` or `b` of
 /// `Place` in `shaders/place.wgsl`). What a pass reads outside it is
 /// transparent.
@@ -226,6 +273,10 @@ pub struct Compositor {
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    /// Up to `BLEND_SLOTS` blends in one pass (`shaders/blend_many.wgsl`),
+    /// on its own bind group layout: the canvas, the layers, the uniforms.
+    blend_many: wgpu::RenderPipeline,
+    blend_many_layout: wgpu::BindGroupLayout,
     mask: wgpu::RenderPipeline,
     matte: wgpu::RenderPipeline,
     accumulate: wgpu::RenderPipeline,
@@ -235,6 +286,14 @@ pub struct Compositor {
     /// The layer over its shadow in closed form (`shaders/shadow_box.wgsl`).
     drop_box: wgpu::RenderPipeline,
     inset_shadow: wgpu::RenderPipeline,
+    /// An inset shadow with no spread and no blur, which inverts the layer's
+    /// alpha itself.
+    inset_inverted: wgpu::RenderPipeline,
+    /// `inset_inverted` on a leaf that is still in its Vello page, cut out
+    /// and converted as it is read (`shaders/page.wgsl`).
+    inset_page: wgpu::RenderPipeline,
+    /// A leaf cut out of its page and masked by its clip's page.
+    leaf_clip: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
@@ -288,8 +347,18 @@ pub struct Compositor {
     /// here instead of submitting one by one, which costs the driver far
     /// more than the passes themselves.
     pending: RefCell<Option<wgpu::CommandEncoder>>,
+    /// How many times `encoder` has been asked for since the last `submit`:
+    /// about how many passes and copies `pending` holds.
+    recorded: std::cell::Cell<u32>,
     /// The passes' uniform blocks.
     uniforms: RefCell<Uniforms>,
+    /// Times each pass when `bench --passes` asks (`set_pass_timing`).
+    timer: Option<Arc<PassTimer>>,
+    /// Whether passes that do the work of several are used (`set_fusion`).
+    fusion: bool,
+    /// What the pass timer calls each built-in pipeline's passes; a custom
+    /// shader's are "shader".
+    names: HashMap<wgpu::RenderPipeline, &'static str>,
 }
 
 impl Compositor {
@@ -306,6 +375,12 @@ impl Compositor {
         luts: &HashMap<String, Lut>,
     ) -> Compositor {
         let shader = shader_module(device, "composite", include_str!("shaders/composite.wgsl"));
+        let blend_many_shader = shader_module(
+            device,
+            "blend many",
+            include_str!("shaders/blend_many.wgsl"),
+        );
+        let page_shader = shader_module(device, "page", include_str!("shaders/page.wgsl"));
         let shadow_shader = shader_module(device, "shadow", include_str!("shaders/shadow.wgsl"));
         let shadow_box_shader = shader_module(
             device,
@@ -397,6 +472,18 @@ impl Compositor {
             "fs_warp",
             LINEAR_FORMAT,
         );
+        let blend_many_layout = blend_many_bind_group_layout(device);
+        let blend_many = fullscreen_pipeline(
+            device,
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blend many"),
+                bind_group_layouts: &[Some(&blend_many_layout)],
+                immediate_size: 0,
+            }),
+            &blend_many_shader,
+            "fs_blend_many",
+            LINEAR_FORMAT,
+        );
         let turbulence_layout = turbulence_bind_group_layout(device);
         let displace_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -466,7 +553,7 @@ impl Compositor {
                 )
             })
             .collect();
-        Compositor {
+        let mut compositor = Compositor {
             device: device.clone(),
             queue: queue.clone(),
             width: width + 2 * margin,
@@ -476,6 +563,8 @@ impl Compositor {
             srgb_blend: false,
             to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
+            blend_many,
+            blend_many_layout,
             mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
             matte: pipeline(&shader, "fs_matte", LINEAR_FORMAT),
             accumulate: pipeline(&shader, "fs_accumulate", LINEAR_FORMAT),
@@ -484,6 +573,9 @@ impl Compositor {
             drop_shadow: pipeline(&shadow_shader, "fs_drop", LINEAR_FORMAT),
             drop_box: pipeline(&shadow_box_shader, "fs_drop_box", LINEAR_FORMAT),
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
+            inset_inverted: pipeline(&shadow_shader, "fs_inset_inverted", LINEAR_FORMAT),
+            inset_page: pipeline(&page_shader, "fs_inset_page", LINEAR_FORMAT),
+            leaf_clip: pipeline(&page_shader, "fs_leaf_clip", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
@@ -525,8 +617,74 @@ impl Compositor {
             layout,
             pool: Pool::new(POOL_BYTES),
             pending: RefCell::new(None),
+            recorded: std::cell::Cell::new(0),
             uniforms: RefCell::new(Uniforms::new(device, queue)),
-        }
+            timer: None,
+            fusion: true,
+            names: HashMap::new(),
+        };
+        let c = &compositor;
+        compositor.names = [
+            (&c.to_linear, "to linear"),
+            (&c.blend, "blend"),
+            (&c.blend_many, "blend"),
+            (&c.mask, "mask"),
+            (&c.matte, "matte"),
+            (&c.accumulate, "accumulate"),
+            (&c.encode, "encode"),
+            (&c.spread, "shadow spread"),
+            (&c.drop_shadow, "drop shadow"),
+            (&c.drop_box, "drop shadow (box)"),
+            (&c.inset_shadow, "inset shadow"),
+            (&c.inset_inverted, "inset shadow"),
+            (&c.inset_page, "inset shadow"),
+            (&c.leaf_clip, "to linear"),
+            (&c.color, "colour filter"),
+            (&c.glow, "glow"),
+            (&c.aberration, "aberration"),
+            (&c.gradient_map, "gradient map"),
+            (&c.grain, "grain"),
+            (&c.dither, "dither"),
+            (&c.halftone, "halftone"),
+            (&c.dot_matrix, "dot matrix"),
+            (&c.warp, "warp"),
+            (&c.displace, "displace"),
+            (&c.noise, "noise"),
+            (&c.lut, "lut"),
+        ]
+        .into_iter()
+        .map(|(pipeline, name)| (pipeline.clone(), name))
+        .collect();
+        compositor
+    }
+
+    /// Turns the pass timer on or off; `false` if the device cannot time
+    /// passes. Turning it on starts an empty record.
+    pub fn set_pass_timing(&mut self, on: bool) -> bool {
+        self.timer = on
+            .then(|| PassTimer::new(&self.device, &self.queue).map(Arc::new))
+            .flatten();
+        self.blur.timer = self.timer.clone();
+        self.timer.is_some()
+    }
+
+    /// Turns the passes that do the work of several off (`false`) or back on.
+    /// They draw exactly what the passes they replace draw, bit for bit; the
+    /// switch is for tests that check that.
+    pub fn set_fusion(&mut self, on: bool) {
+        self.fusion = on;
+    }
+
+    /// The GPU time of every pass recorded since the last call (or since
+    /// the timer was turned on). Submits what is pending and waits for it.
+    pub fn take_pass_times(&self) -> Vec<PassTime> {
+        self.submit();
+        self.timer.as_ref().map(|t| t.take()).unwrap_or_default()
+    }
+
+    /// Timestamps for a pass called `name` into `target`, when timing.
+    fn stamp(&self, name: &'static str, target: &wgpu::TextureView) -> Option<Stamp> {
+        self.timer.as_ref().map(|t| t.stamp(name, target))
     }
 
     /// Makes the textures `width` x `height` (the canvas) plus `margin` on
@@ -572,6 +730,7 @@ impl Compositor {
 
     /// The encoder the passes record into, until the next `submit`.
     fn encoder(&self) -> RefMut<'_, wgpu::CommandEncoder> {
+        self.recorded.set(self.recorded.get() + 1);
         RefMut::map(self.pending.borrow_mut(), |pending| {
             pending.get_or_insert_with(|| self.device.create_command_encoder(&Default::default()))
         })
@@ -583,7 +742,18 @@ impl Compositor {
     pub fn submit(&self) -> Option<wgpu::SubmissionIndex> {
         self.uniforms.borrow_mut().upload();
         let encoder = self.pending.borrow_mut().take()?;
+        self.recorded.set(0);
         Some(self.queue.submit([encoder.finish()]))
+    }
+
+    /// Submits what is recorded if there is a great deal of it. One command
+    /// buffer of several thousand passes is not accepted by the driver (the
+    /// submission fails without an error), so a frame of thousands of layers
+    /// is sent in pieces.
+    pub fn submit_if_large(&self) {
+        if self.recorded.get() >= SUBMIT_OPS {
+            self.submit();
+        }
     }
 
     /// Starts a frame: the uniform blocks of the last one are no longer
@@ -653,25 +823,17 @@ impl Compositor {
             return None;
         }
         let full = self.target_full(src.bounds);
+        let stamp = self.stamp("clear", &full.view);
         let mut encoder = self.encoder();
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("clear"),
             color_attachments: &[Some(clear_attachment(&full.view, wgpu::Color::TRANSPARENT))],
+            timestamp_writes: pass_timer::writes(&stamp),
             ..Default::default()
         });
         copy_box(&mut encoder, src, &full, src.bounds);
         drop(encoder);
         Some(full)
-    }
-
-    /// The Vello output texture, which is the size of the canvas, as a pass
-    /// input.
-    fn vello_input<'a>(&self, view: &'a wgpu::TextureView) -> Input<'a> {
-        Input {
-            view,
-            origin: [0, 0],
-            size: [self.width, self.height],
-        }
     }
 
     /// A texture filled with `color` (linear, premultiplied), the size of
@@ -707,10 +869,12 @@ impl Compositor {
     }
 
     fn clear(&self, tex: &Tex, color: wgpu::Color) {
+        let stamp = self.stamp("clear", &tex.view);
         self.encoder()
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear"),
                 color_attachments: &[Some(clear_attachment(&tex.view, color))],
+                timestamp_writes: pass_timer::writes(&stamp),
                 ..Default::default()
             });
     }
@@ -737,25 +901,6 @@ impl Compositor {
         };
         self.pass(&self.to_linear, input, input, 0.0, 0, &target);
         target
-    }
-
-    /// `from_srgb8` for each of `regions` of a Vello output that was drawn
-    /// over the whole canvas, as one texture each.
-    pub fn from_srgb8_many(
-        &mut self,
-        vello_output: &wgpu::TextureView,
-        regions: &[PixelRect],
-    ) -> Vec<Tex> {
-        let input = self.vello_input(vello_output);
-        regions
-            .iter()
-            .map(|&region| {
-                let target = self.target(region);
-                let bind_group = self.composite_bind_group(input, input, &[0u8; 16], &target);
-                self.encode_draw(&mut self.encoder(), &self.to_linear, &bind_group, &target);
-                target
-            })
-            .collect()
     }
 
     /// Composites `src` over `dst` with the layer's opacity and blend mode.
@@ -796,6 +941,144 @@ impl Compositor {
         dst
     }
 
+    /// Composites each of `layers` over `dst`, in order: what `blend` does
+    /// for each, in fewer passes. Layers that are next to each other, blend
+    /// separably and together cover little more than they do apart go through
+    /// one pass, which composites them one after the other for each pixel and
+    /// rounds to a half float in between, as the texture the separate passes
+    /// write would. So the result is the same, bit for bit.
+    pub fn blend_many(&mut self, mut dst: Tex, layers: &[BlendLayer]) -> Tex {
+        // A texture that needs the whole texture to blend (a non-separable
+        // mode), or is out of the way, is blended on its own, as it always
+        // was. A page leaf is always separable and has something to draw.
+        let alone = |l: &BlendLayer| {
+            matches!(l.source, BlendSource::Texture(_))
+                && (mode_index(l.mode) >= FIRST_NON_SEPARABLE_MODE || l.source.bounds().is_empty())
+        };
+        let area = |r: PixelRect| i64::from(r.width()) * i64::from(r.height());
+        let mut i = 0;
+        while i < layers.len() {
+            let first = &layers[i];
+            let mut end = i + 1;
+            if self.fusion && !alone(first) {
+                let (mut region, mut covered) =
+                    (first.source.bounds(), area(first.source.bounds()));
+                while end < layers.len() && end - i < BLEND_SLOTS && !alone(&layers[end]) {
+                    let bounds = layers[end].source.bounds();
+                    let (joined, together) = (region.union(bounds), covered + area(bounds));
+                    // Not so spread out that the pass draws mostly what none
+                    // of the layers touches.
+                    if area(joined) > 2 * together + BLEND_SLACK {
+                        break;
+                    }
+                    (region, covered, end) = (joined, together, end + 1);
+                }
+            }
+            match (first.source, end - i) {
+                (BlendSource::Texture(texture), 1) => {
+                    dst = self.blend(dst, texture, first.opacity, first.mode);
+                }
+                _ => {
+                    let group = &layers[i..end];
+                    let region = group
+                        .iter()
+                        .fold(PixelRect::EMPTY, |r, l| r.union(l.source.bounds()));
+                    self.update(&mut dst, region, |c, dst, temp| {
+                        c.blend_many_pass(dst, group, temp);
+                    });
+                    dst.bounds = group
+                        .iter()
+                        .fold(dst.bounds, |r, l| r.union(l.source.bounds()));
+                }
+            }
+            i = end;
+        }
+        dst
+    }
+
+    /// The pass of `blend_many`: `layers` (at most `BLEND_SLOTS`) over `dst`
+    /// into `target`.
+    fn blend_many_pass(&self, dst: &Tex, layers: &[BlendLayer], target: &Tex) {
+        let mut bytes = Vec::with_capacity(48 + 64 * BLEND_SLOTS);
+        let mut put = |values: &[[u8; 4]]| bytes.extend(values.iter().flatten());
+        let int = |v: i32| v.to_le_bytes();
+        let placed = |origin: [i32; 2], size: [u32; 2]| {
+            [
+                int(origin[0]),
+                int(origin[1]),
+                int(size[0] as i32),
+                int(size[1] as i32),
+            ]
+        };
+        let paged = |(_, area): (&wgpu::TextureView, PixelRect)| {
+            placed([area.x0, area.y0], [area.width(), area.height()])
+        };
+        put(&[int(target.origin[0]), int(target.origin[1]), int(0), int(0)]);
+        put(&placed(dst.origin, dst.size));
+        put(&[(layers.len() as u32).to_le_bytes(), [0; 4], [0; 4], [0; 4]]);
+        // The two textures of each slot, `a` and `b`; a slot that does not use
+        // one binds the canvas.
+        let mut views: Vec<(&wgpu::TextureView, &wgpu::TextureView)> = Vec::new();
+        for slot in 0..BLEND_SLOTS {
+            match layers.get(slot) {
+                Some(l) => {
+                    let b = l.source.bounds();
+                    let (kind, place, clip, a_view, b_view) = match l.source {
+                        BlendSource::Texture(t) => (
+                            0u32,
+                            placed(t.origin, t.size),
+                            [[0; 4]; 4],
+                            &t.view,
+                            &dst.view,
+                        ),
+                        BlendSource::Page {
+                            leaf, clip: None, ..
+                        } => (1, paged(leaf), [[0; 4]; 4], leaf.0, &dst.view),
+                        BlendSource::Page {
+                            leaf,
+                            clip: Some(clip),
+                            ..
+                        } => (2, paged(leaf), paged(clip), leaf.0, clip.0),
+                    };
+                    put(&place);
+                    put(&clip);
+                    put(&[int(b.x0), int(b.y0), int(b.x1), int(b.y1)]);
+                    put(&[
+                        l.opacity.to_le_bytes(),
+                        mode_index(l.mode).to_le_bytes(),
+                        kind.to_le_bytes(),
+                        [0; 4],
+                    ]);
+                    views.push((a_view, b_view));
+                }
+                None => {
+                    put(&[[0; 4]; 16]);
+                    views.push((&dst.view, &dst.view));
+                }
+            }
+        }
+        let uniform = self.uniform(&bytes);
+        let entry = |binding, view| wgpu::BindGroupEntry {
+            binding,
+            resource: wgpu::BindingResource::TextureView(view),
+        };
+        let mut entries = vec![entry(0, &dst.view)];
+        for (slot, (a, b)) in views.into_iter().enumerate() {
+            entries.push(entry(2 * slot as u32 + 1, a));
+            entries.push(entry(2 * slot as u32 + 2, b));
+        }
+        entries.push(wgpu::BindGroupEntry {
+            binding: 2 * BLEND_SLOTS as u32 + 1,
+            resource: uniform.binding(),
+        });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blend many"),
+            layout: &self.blend_many_layout,
+            entries: &entries,
+        });
+        self.draw(&self.blend_many, &bind_group, target);
+    }
+
     /// Draws `region` of a new texture with `draw`, which is given `dst` and
     /// that texture, and copies the result over the same box of `dst`, which
     /// must hold it. It is how a pass that reads `dst` changes it in place:
@@ -832,12 +1115,30 @@ impl Compositor {
         mode: MaskMode,
         keep: PixelRect,
     ) -> Tex {
+        let whole = self.whole();
+        self.mask_from(src, vello_output, whole, mode, keep)
+    }
+
+    /// `mask` with a Vello output that drew only `area` of the canvas, from
+    /// the top left corner of the texture: it is transparent outside.
+    pub fn mask_from(
+        &mut self,
+        src: Tex,
+        vello_output: &wgpu::TextureView,
+        area: PixelRect,
+        mode: MaskMode,
+        keep: PixelRect,
+    ) -> Tex {
         let mode = match mode {
             MaskMode::Alpha => 0,
             MaskMode::Luminance => 2,
         };
         let target = self.target(src.bounds.intersect(keep));
-        let vello = self.vello_input(vello_output);
+        let vello = Input {
+            view: vello_output,
+            origin: [area.x0, area.y0],
+            size: [area.width(), area.height()],
+        };
         self.pass(&self.mask, src.input(), vello, 0.0, mode, &target);
         self.release(src);
         target
@@ -1388,6 +1689,7 @@ impl Compositor {
                 usage: wgpu::BufferUsages::VERTEX,
             });
         {
+            let stamp = self.stamp("mesh", &target.view);
             let mut encoder = self.encoder();
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("mesh"),
@@ -1401,6 +1703,7 @@ impl Compositor {
                         store: wgpu::StoreOp::Discard,
                     },
                 })],
+                timestamp_writes: pass_timer::writes(&stamp),
                 ..Default::default()
             });
             pass.set_pipeline(&self.mesh);
@@ -1560,6 +1863,91 @@ impl Compositor {
         target
     }
 
+    /// Whether the passes that read Vello pages directly are in use.
+    pub fn is_fused(&self) -> bool {
+        self.fusion
+    }
+
+    /// Whether `blend_many` can composite a layer in `mode` from a page: the
+    /// mode works pixel by pixel (see `blend`).
+    pub fn blends_per_pixel(&self, mode: BlendMode) -> bool {
+        mode_index(mode) < FIRST_NON_SEPARABLE_MODE
+    }
+
+    /// The leaf whose pixels are in the box `region` of the page `leaf` (drawn
+    /// over `leaf_area`) masked by the clip shape in `clip` (drawn over
+    /// `clip_area`) inside `keep`: what `from_srgb8` and then `mask` make, in
+    /// one pass. `region` and `keep` must overlap.
+    pub fn leaf_clipped_from_page(
+        &mut self,
+        leaf: (&wgpu::TextureView, PixelRect),
+        clip: (&wgpu::TextureView, PixelRect),
+        region: PixelRect,
+        keep: PixelRect,
+    ) -> Tex {
+        let kept = region.intersect(keep);
+        let target = self.target(kept);
+        fn input(page: (&wgpu::TextureView, PixelRect)) -> Input<'_> {
+            Input {
+                view: page.0,
+                origin: [page.1.x0, page.1.y0],
+                size: [page.1.width(), page.1.height()],
+            }
+        }
+        let mut params: Vec<u8> = [kept.x0, kept.y0, kept.x1, kept.y1]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        params.extend(floats(&[0.0; 8]));
+        self.run_pass(&self.leaf_clip, input(leaf), input(clip), &params, &target);
+        target
+    }
+
+    /// Whether the inset shadow `shadow` has no blur and no spread, which
+    /// lets one pass draw it from the layer itself (`shadow`,
+    /// `inset_from_page`).
+    pub fn is_sharp_inset(&self, shadow: &ResolvedShadow) -> bool {
+        self.fusion
+            && shadow.spread == 0.0
+            && (shadow.blur.is_nan() || shadow.blur < blur::MIN_RADIUS)
+    }
+
+    /// The leaf whose pixels are the box `region` of the Vello page `page`
+    /// (drawn over `area` of the canvas), with the inset shadow `shadow`,
+    /// which `is_sharp_inset`, over it: what `from_srgb8` and then `shadow`
+    /// make, in one pass.
+    pub fn inset_from_page(
+        &mut self,
+        page: &wgpu::TextureView,
+        area: PixelRect,
+        region: PixelRect,
+        shadow: &ResolvedShadow,
+    ) -> Tex {
+        let target = self.target(region);
+        let input = Input {
+            view: page,
+            origin: [area.x0, area.y0],
+            size: [area.width(), area.height()],
+        };
+        let [r, g, b, a] = shadow.color.linear_premultiplied();
+        let mut params: Vec<u8> = [region.x0, region.y0, region.x1, region.y1]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        params.extend(floats(&[
+            shadow.x,
+            shadow.y,
+            self.width as f32,
+            self.height as f32,
+            r as f32,
+            g as f32,
+            b as f32,
+            a as f32,
+        ]));
+        self.run_pass(&self.inset_page, input, input, &params, &target);
+        target
+    }
+
     /// Adds a drop shadow under `src`, or an inset shadow over it. `src`
     /// goes back to the pool; the result is a new texture.
     ///
@@ -1572,6 +1960,36 @@ impl Compositor {
             return src;
         }
         let spread = if inset { -shadow.spread } else { shadow.spread };
+        // An inset shadow with no spread and no blur is the layer's alpha
+        // inverted and shifted: one pass reads the inversion where it needs it
+        // instead of a pass writing it out first.
+        if inset && self.is_sharp_inset(shadow) {
+            let [r, g, b, a] = shadow.color.linear_premultiplied();
+            let params = floats(&[
+                self.width as f32,
+                self.height as f32,
+                0.0,
+                0.0,
+                shadow.x,
+                shadow.y,
+                0.0,
+                0.0,
+                r as f32,
+                g as f32,
+                b as f32,
+                a as f32,
+            ]);
+            let target = self.target(src.bounds);
+            self.run_pass(
+                &self.inset_inverted,
+                src.input(),
+                src.input(),
+                &params,
+                &target,
+            );
+            self.release(src);
+            return target;
+        }
         // The shadow of a drop shadow is wherever it is non-zero. An inset
         // shadow is only seen inside the layer, where the shadow alpha is
         // read around the layer by the offset.
@@ -1893,30 +2311,7 @@ impl Compositor {
         extra: Option<&wgpu::BindGroup>,
         target: &Tex,
     ) {
-        let uniform = self.uniform(params);
-        let place = self.place_buffer(target, a, b);
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("composite"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(a.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(b.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: uniform.binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: place.binding(),
-                },
-            ],
-        });
+        let bind_group = self.composite_bind_group(a, b, params, target);
         self.draw_with(pipeline, &bind_group, extra, target);
     }
 
@@ -1994,17 +2389,6 @@ impl Compositor {
         self.encode_draw_with(&mut self.encoder(), pipeline, bind_group, extra, target);
     }
 
-    /// `draw`, recorded into `encoder` to be submitted with other work.
-    fn encode_draw(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        pipeline: &wgpu::RenderPipeline,
-        bind_group: &wgpu::BindGroup,
-        target: &Tex,
-    ) {
-        self.encode_draw_with(encoder, pipeline, bind_group, None, target);
-    }
-
     /// `draw_with`, recorded into `encoder`.
     fn encode_draw_with(
         &self,
@@ -2023,12 +2407,15 @@ impl Compositor {
                 target.size[0] as i32,
                 target.size[1] as i32,
             ));
+        let name = self.names.get(pipeline).copied().unwrap_or("shader");
+        let stamp = self.stamp(name, &target.view);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("composite"),
             color_attachments: &[Some(clear_attachment(
                 &target.view,
                 wgpu::Color::TRANSPARENT,
             ))],
+            timestamp_writes: pass_timer::writes(&stamp),
             ..Default::default()
         });
         if !region.is_empty() {
@@ -2276,6 +2663,36 @@ fn mesh_vertex_bytes(vertices: &[mesh::Vertex]) -> Vec<u8> {
     floats(&flat)
 }
 
+/// The bind group of `blend_many`: the canvas, two textures for each of
+/// `BLEND_SLOTS` layers (all read with `textureLoad`) and the uniform block.
+fn blend_many_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let texture = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    };
+    let mut entries: Vec<_> = (0..=2 * BLEND_SLOTS as u32).map(texture).collect();
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 2 * BLEND_SLOTS as u32 + 1,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    });
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("blend many"),
+        entries: &entries,
+    })
+}
+
 /// The bind group of passes that resample the layer: the layer as a
 /// filterable texture, a filtering sampler and one uniform block.
 fn filtered_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -2399,7 +2816,9 @@ fn upload_lut(device: &wgpu::Device, queue: &wgpu::Queue, lut: &Lut) -> LutTextu
 /// call `hash` or `cell_hash` get `shaders/hash.wgsl` put in front of their
 /// source, those that call `turbulence_value` get `shaders/turbulence.wgsl`,
 /// and those that place their textures on the canvas (`canvas_xy`,
-/// `canvas_pos` or `load_a`) get `shaders/place.wgsl`.
+/// `canvas_pos` or `load_a`) get `shaders/place.wgsl`, those that call
+/// `blend_fn` get `shaders/blend_math.wgsl` (with the sRGB conversions it
+/// uses), and those that call `store_f16` get `shaders/f16.wgsl`.
 pub(crate) fn shader_source(source: &str) -> String {
     let mut full = String::new();
     if source.contains("hash(") {
@@ -2413,6 +2832,12 @@ pub(crate) fn shader_source(source: &str) -> String {
         .any(|name| source.contains(name))
     {
         full.push_str(include_str!("shaders/place.wgsl"));
+    }
+    if source.contains("blend_fn(") {
+        full.push_str(include_str!("shaders/blend_math.wgsl"));
+    }
+    if source.contains("store_f16(") {
+        full.push_str(include_str!("shaders/f16.wgsl"));
     }
     full.push_str(source);
     full

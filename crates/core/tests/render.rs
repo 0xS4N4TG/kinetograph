@@ -241,6 +241,9 @@ fn turning_the_layer_cache_off_gives_back_what_it_kept() {
     renderer.set_layer_cache(true);
     let first = renderer.render_frame(20).unwrap();
     let again = renderer.render_frame(20).unwrap();
+    // A plain leaf is cached from its third frame (`LayerCache::note`).
+    let third = renderer.render_frame(20).unwrap();
+    assert_eq!(third.rgba, plain.rgba);
     let (hits, misses) = renderer.layer_cache_counts();
     assert!(hits > 0 && misses > 0);
     assert_eq!((&first.rgba, &again.rgba), (&plain.rgba, &plain.rgba));

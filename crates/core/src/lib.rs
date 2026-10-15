@@ -18,6 +18,7 @@ mod layout;
 pub mod lottie;
 pub mod lut;
 pub mod mesh;
+pub mod pass_timer;
 pub mod pool;
 pub mod render;
 pub mod resolve;

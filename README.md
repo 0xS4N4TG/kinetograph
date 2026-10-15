@@ -114,6 +114,10 @@ and no more than 1 GiB of textures is kept.
   and how many were drawn and kept (`drawn`), then the stage means, minimums and maximums over the frames. The range is
   rendered twice from an empty cache, first the whole frames and then the stages (which wait for the GPU after every
   step, so they cannot also be the frame's time). `--range` cannot be combined with `--frame` or `--runs`.
+- `bench --passes` (with either form) renders the frames once more with a GPU timestamp around every compositing pass
+  and groups the passes by kind (`blend`, `to linear`, each blur step and shadow, `displace`, `clear`, …): passes per
+  frame, their GPU time, time per pass and the texels drawn into. Passes can overlap on the GPU, so their sum is not
+  the frame's time. Vello's rasterising and copies between textures cannot be timed this way and are not in it.
 
 Checks: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. The golden-image tests compare
 against PNGs in `crates/core/tests/golden/` made on an Apple M4; regenerate them with
