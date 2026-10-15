@@ -259,6 +259,12 @@ export const BROWSER_CSS = `
 .kg-layer.kg-flex > .kg-abs { position: absolute; left: 0; top: 0; }
 .kg-layer.kg-flex > .kg-el:not(.kg-abs), .kg-layer.kg-flex > .kg-item:not(.kg-abs) { position: relative; }
 .kg-layer:not(.kg-flex) > .kg-box, .kg-layer.kg-flex > .kg-box.kg-abs { width: var(--kg-w); height: var(--kg-h); }
-.kg-layer.kg-flex > .kg-box:not(.kg-abs) { width: 0; height: 0; }
+/* A group without a layout takes no room in a flex parent, but what is inside it is laid out in the composition's box
+   (docs/COMPAT.md §5.1), as it is in a DOM parent: a <Sequence>'s AbsoluteFill fills the frame. */
+.kg-layer.kg-flex > .kg-box:not(.kg-abs) {
+  width: var(--kg-w); height: var(--kg-h); flex: none;
+  margin-right: calc(-1 * var(--kg-w)); margin-bottom: calc(-1 * var(--kg-h));
+}
+:not(.kg-layer) > .kg-layer.kg-box { width: var(--kg-w); height: var(--kg-h); }
 .kg-leaf { display: block; }
 `;
