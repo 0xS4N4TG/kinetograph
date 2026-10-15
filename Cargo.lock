@@ -1857,9 +1857,16 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "bytes",
+ "data-url",
+ "euclid",
  "kinetograph-core",
+ "parley",
+ "percent-encoding",
  "serde",
  "serde_json",
+ "stylo",
+ "url",
 ]
 
 [[package]]
