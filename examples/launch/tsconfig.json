@@ -8,9 +8,14 @@
       ],
       "@/*": [
         "./*"
+      ],
+      "@remotion/layout-utils": [
+        "../../packages/core/dist/layout-utils.d.ts"
       ]
     },
-    "baseUrl": "."
+    "baseUrl": ".",
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
   },
   "include": [
     "*.tsx",
