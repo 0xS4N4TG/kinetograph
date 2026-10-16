@@ -595,6 +595,8 @@ export interface GifProps extends CommonProps {
   playbackRate?: number;
   /** Default `loop`. */
   loopBehavior?: 'loop' | 'pause-after-finish' | 'unmount-after-finish';
+  /** Seconds into the animation, in place of the frame clock: for a caller that picks the picture itself (`<AnimatedImage>`). */
+  time?: number;
   /**
    * The GIF's duration, which `loopBehavior="unmount-after-finish"` needs. Set by `Gif` from `@kinetograph/core/gif`,
    * which probes the file (this package cannot).
@@ -619,7 +621,7 @@ export function Gif(props: GifProps): ReactNode {
     );
   }
   // Remotion's <Gif> reads useCurrentFrame(), so the time is relative to the enclosing Sequence.
-  const time = (frame / config.fps) * playbackRate;
+  const time = props.time ?? (frame / config.fps) * playbackRate;
   if (loopBehavior === 'unmount-after-finish') {
     if (props.durationInSeconds === undefined) {
       throw new Error(

@@ -126,6 +126,8 @@ export type {
   HtmlInCanvasProps,
 } from './html-in-canvas.js';
 export { createEffect, Solid, CanvasImage } from './effects.js';
+export { AnimatedImage } from './animated-image.js';
+export type { AnimatedImageLoopBehavior, AnimatedImageProps } from './animated-image.js';
 export type {
   Backend,
   CanvasImageProps,

@@ -648,6 +648,15 @@ Mapping onto the engine:
   - `<IFrame>` is the `iframe` element, which the CSS engine reports as unsupported (`--strict` fails on it).
   - `<Artifact>` draws nothing and says that its file is not written: a render produces the video only.
   They take `from`, `durationInFrames`, `name`, `hidden`, `freeze` and the crop props as `Interactive` does.
+- `<AnimatedImage src width height fit loopBehavior playbackRate>` (`loopBehavior`: `loop`, `pause-after-finish`,
+  `clear-after-finish`). A GIF is a native `gif` layer (§11.3) shown at the picture Remotion's `ImageDecoder` path picks
+  for that time: of the picture that has started and the next, the one whose start is nearer (so a picture changes
+  half its delay early), with the next on an exact tie. The pictures' starts are read from the file's graphic control
+  extensions (a delay of 10 ms or less shows for 100 ms, as in the `gif` layer; checked against the engine's
+  `probeMedia` on the repository's GIFs). `playbackRate` scales the time and shortens `durationInFrames`; a `loop`
+  without a `durationInFrames` is `loopBehavior="loop"`. With `className`, `style` or a crop the layer sits in a `div`.
+  A file that is not an animated GIF is drawn as a still (`Img`); an animated PNG or WebP is that too, with a warning,
+  because the engine decodes GIF animation only.
 - Names that exist so a project bundles: `Html5Audio` and `Html5Video` are `Audio` and `Video`; `MediaPlaybackError`
   is Remotion's error class; `Experimental.Clipper` and `Experimental.Null` throw when rendered (Remotion removed them
   in 4.0.228) and `Experimental.useIsPlayer()` is false; `Config.*` calls do nothing and say once that there is no
@@ -925,12 +934,13 @@ trims, rate, loop and `<Freeze>` work as for `<Audio>`.
 
 `@kinetograph/core/gif` is `@remotion/gif`: `Gif` (`src`, `width`, `height`, `fit` (default `fill`), `style`,
 `playbackRate` (default 1), `loopBehavior`: `loop` (default), `pause-after-finish`, `unmount-after-finish`; `onLoad`,
-`onError` accepted) emits a `gif` layer with `time = frame / fps * playbackRate` and `loop = loopBehavior ===
-'loop'`, and renders nothing past the GIF's duration with `unmount-after-finish`. `getGifDurationInSeconds(src):
-Promise<number>`. `@kinetograph/core/media-utils` is `@remotion/media-utils`' `getVideoMetadata(src): Promise<{
-durationInSeconds, width, height, aspectRatio, isRemote: false, fps }>`. Both read `probeMedia`, which the host
-passes in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the
-CLI's synthetic entry re-exports next to `setLayoutText`.
+`onError` accepted) emits a `gif` layer with `time = frame / fps * playbackRate` (the native element also takes a
+`time`, which `<AnimatedImage>` sets) and `loop = loopBehavior === 'loop'`, and renders nothing past the GIF's duration
+with `unmount-after-finish`. `getGifDurationInSeconds(src): Promise<number>`. `@kinetograph/core/media-utils` is
+`@remotion/media-utils`' `getVideoMetadata(src): Promise<{ durationInSeconds, width, height, aspectRatio, isRemote:
+false, fps }>`. Both read `probeMedia`, which the host passes in as it does `layoutText`:
+`setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the CLI's synthetic entry re-exports next
+to `setLayoutText`.
 
 ### 11.4 Timeline data (stream 3)
 
