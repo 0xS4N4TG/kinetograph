@@ -601,7 +601,10 @@ stretches it with a flat matrix, so the commands are drawn sharp at the box's si
 group that carries the clip. A canvas nothing was drawn on draws nothing and is not reported. The cases of
 `crates/dom/tests/canvas.rs` are Canvas 2D scripts (`tests/canvas/*.js`) that Chrome runs and the engine draws from
 the recorded commands (`node crates/dom/tools/canvas-cases.mjs` makes the `.json` files): paths 0.35, gradients, a
-clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4 mean levels from Chrome.
+clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4, shadows (soft, hard, under a
+transform and an alpha) and each `filter` function 0.80 mean levels from Chrome. A command that carries a `url()`
+filter (`unsupportedFilter`, which the context writes because the renderer does not draw it) is reported as an
+unsupported `filter` of the canvas, also when it is inside a canvas the first draws.
 
 A canvas with a WebGL context is the same with `data-kg-webgl` and a `glsl` layer (SCENE.md, "glsl"). The core
 translates each program once (`crates/core/src/glsl.rs`: a token-level rewrite of GLSL ES 100 and 300 es to the Vulkan

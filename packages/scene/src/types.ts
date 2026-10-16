@@ -554,13 +554,39 @@ export type CanvasBlend =
   /** What `clearRect` writes. */
   | 'clear';
 
-/** What every drawing command is drawn with; the defaults are the identity, 1 and `source-over`. */
+/** `shadowColor`, `shadowBlur`, `shadowOffsetX` and `shadowOffsetY`, in canvas pixels. */
+export interface CanvasShadow {
+  color: string;
+  /** `shadowBlur`: the blur's standard deviation is half of it. Default 0. */
+  blur?: number;
+  x?: number;
+  y?: number;
+}
+
+/** One function of a `filter` list. The numbers are CSS's: lengths in pixels, angles in degrees, amounts 1 for no change. */
+export type CanvasFilterFn =
+  | { type: 'blur'; radius: number }
+  | { type: 'brightness' | 'contrast' | 'grayscale' | 'invert' | 'saturate' | 'sepia'; amount: number }
+  | { type: 'hueRotate'; angle: number }
+  /** `blur` is the standard deviation, half the CSS length. */
+  | { type: 'dropShadow'; x: number; y: number; blur: number; color: string };
+
+/**
+ * What every drawing command is drawn with; the defaults are the identity, 1 and `source-over`, no shadow and no
+ * filter.
+ */
 export interface CanvasState {
   /** Takes the command's own space to the canvas. */
   m?: CanvasMatrix;
-  /** `globalAlpha`. */
+  /** `globalAlpha`, times the `opacity()` of the `filter`. */
   a?: number;
   blend?: CanvasBlend;
+  /** Present only when the shadow shows: a colour with alpha, and a blur or an offset. */
+  shadow?: CanvasShadow;
+  /** `filter`, in order; `opacity()` is in `a`. */
+  filter?: CanvasFilterFn[];
+  /** The `url()` references in the `filter`, which are not drawn: the host reports them. */
+  unsupportedFilter?: string;
 }
 
 export interface CanvasLine {
