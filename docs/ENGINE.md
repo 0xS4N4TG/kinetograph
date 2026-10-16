@@ -601,7 +601,10 @@ stretches it with a flat matrix, so the commands are drawn sharp at the box's si
 group that carries the clip. A canvas nothing was drawn on draws nothing and is not reported. The cases of
 `crates/dom/tests/canvas.rs` are Canvas 2D scripts (`tests/canvas/*.js`) that Chrome runs and the engine draws from
 the recorded commands (`node crates/dom/tools/canvas-cases.mjs` makes the `.json` files): paths 0.35, gradients, a
-clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4 mean levels from Chrome.
+clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4, shadows (soft, hard, under a
+transform and an alpha) and each `filter` function 0.80 mean levels from Chrome. A command that carries a `url()`
+filter (`unsupportedFilter`, which the context writes because the renderer does not draw it) is reported as an
+unsupported `filter` of the canvas, also when it is inside a canvas the first draws.
 
 A canvas with a WebGL context is the same with `data-kg-webgl` and a `glsl` layer (SCENE.md, "glsl"). The core
 translates each program once (`crates/core/src/glsl.rs`: a token-level rewrite of GLSL ES 100 and 300 es to the Vulkan
@@ -611,9 +614,14 @@ not keep the uniform array strides), and `compositor/glsl.rs` replays the draws 
 uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
 travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
 from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
-`crates/dom/tests/webgl.rs` runs three cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
-them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0 and texture sampling 0.05 mean
-levels from Chrome, none more than 1 level off. `renderCanvas` (the addon) keeps one renderer, so a call no longer
+A framebuffer's texture is a second kind of target: the replay makes one render pass for each run of draws to the same
+target, in the order recorded. GL's rows count up from the bottom and a texture's first row is its bottom one, so a
+program that draws into a texture is translated upside down (`flip_y`: the vertex shader negates `gl_Position.y`,
+`gl_FragCoord.y` is wgpu's own) with the viewport, scissor and front face turned to match, and sampling needs
+nothing. A frame starts every target zeroed (wgpu's lazy clear), so a target is a function of the frame's own ops.
+`crates/dom/tests/webgl.rs` runs four cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
+them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0, texture sampling 0.05 and two
+render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
 ### Not drawn (reported as `Unsupported`, `audit.rs`)

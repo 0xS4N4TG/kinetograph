@@ -11,6 +11,11 @@
 //!
 //! Nothing here reads anything but the commands, the fonts and the pictures
 //! they name, so a canvas is a pure function of its commands.
+//!
+//! Vello has no blur, so a command with a shadow or a `filter` is drawn alone
+//! on a transparent canvas, run through the compositor's blur and colour
+//! passes, and comes back to the scene as a picture (`Effects`), composited
+//! where the command stands in the list with its alpha, blend mode and clip.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,10 +25,14 @@ use serde::Deserialize;
 use vello::kurbo::{Affine, BezPath, Cap, Join, Rect, Shape, Stroke};
 use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
 
+use crate::anim::Num;
 use crate::color::Color;
 use crate::error::{Error, Result};
-use crate::resolve::{ResolvedGradient, ResolvedGradientGeometry};
-use crate::scene::{Extend, TextAlign, Units};
+use crate::resolve::{
+    Clock, ResolvedEffect, ResolvedGradient, ResolvedGradientGeometry, ResolvedShadow,
+    resolve_effects,
+};
+use crate::scene::{Effect, Extend, MAX_SHADOW_SIZE, Shadow, TextAlign, Units};
 use crate::text::TextEngine;
 
 /// The commands of a canvas layer, shared between the scene and the frames
@@ -88,11 +97,186 @@ pub struct DrawState {
     /// `globalCompositeOperation`.
     #[serde(default)]
     pub blend: CanvasBlend,
+    /// The shadow, when `shadowColor` and the rest make one show.
+    #[serde(default)]
+    pub shadow: Option<CanvasShadow>,
+    /// `filter`, the functions in order.
+    #[serde(default)]
+    pub filter: Vec<FilterFn>,
 }
 
 impl DrawState {
     fn matrix(&self) -> Affine {
         Affine::new(self.m)
+    }
+
+    /// Whether the command is drawn alone first and run through GPU passes.
+    fn has_effects(&self) -> bool {
+        self.shadow.is_some() || !self.filter.is_empty()
+    }
+
+    /// The state a shadow's and a filter's source is drawn in: the same
+    /// matrix, and none of what the picture is composited with afterwards.
+    fn bare(&self) -> DrawState {
+        DrawState {
+            m: self.m,
+            a: 1.0,
+            blend: CanvasBlend::SourceOver,
+            shadow: None,
+            filter: Vec::new(),
+        }
+    }
+}
+
+/// `shadowColor`, `shadowBlur`, `shadowOffsetX` and `shadowOffsetY`, in canvas
+/// pixels (the transform changes none of them).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct CanvasShadow {
+    pub color: Color,
+    /// `shadowBlur`; the blur's standard deviation is half of it.
+    #[serde(default)]
+    pub blur: f64,
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+}
+
+impl CanvasShadow {
+    /// The shadow in the pixels the passes work in; `to_device` takes the
+    /// canvas's pixels to those.
+    fn resolved(&self, to_device: Affine) -> ResolvedShadow {
+        let (x, y) = device_offset(to_device, self.x, self.y);
+        ResolvedShadow {
+            x: x as f32,
+            y: y as f32,
+            blur: device_length(to_device, self.blur / 2.0).clamp(0.0, MAX_SHADOW_SIZE) as f32,
+            spread: 0.0,
+            color: self.color,
+        }
+    }
+}
+
+/// A blur's length in the canvas's pixels, in the pixels the passes work in:
+/// a layer that is scaled (CSS stretching a canvas) scales it, a turn does not
+/// change it.
+fn device_length(to_device: Affine, length: f64) -> f64 {
+    length * to_device.determinant().abs().sqrt()
+}
+
+/// A shadow's offset in the canvas's pixels, in the pixels the passes work in:
+/// it turns and scales with the layer.
+fn device_offset(to_device: Affine, x: f64, y: f64) -> (f64, f64) {
+    let [a, b, c, d, _, _] = to_device.as_coeffs();
+    (a * x + c * y, b * x + d * y)
+}
+
+/// One function of a `filter` list, named as the scene's effects of the same
+/// names are (`blur` takes the standard deviation, as the CSS `blur()` does).
+/// `opacity()` is not here: the context multiplies it into the command's `a`.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum FilterFn {
+    Blur {
+        radius: f64,
+    },
+    Brightness {
+        amount: f64,
+    },
+    Contrast {
+        amount: f64,
+    },
+    Grayscale {
+        amount: f64,
+    },
+    /// Degrees.
+    HueRotate {
+        angle: f64,
+    },
+    Invert {
+        amount: f64,
+    },
+    Saturate {
+        amount: f64,
+    },
+    Sepia {
+        amount: f64,
+    },
+    DropShadow {
+        x: f64,
+        y: f64,
+        /// The standard deviation.
+        #[serde(default)]
+        blur: f64,
+        color: Color,
+    },
+}
+
+impl FilterFn {
+    /// The scene effect that runs the function, with its lengths in the
+    /// pixels the passes work in (`to_device` takes the canvas's to those).
+    fn effect(&self, to_device: Affine) -> Effect {
+        let num = Num::Const;
+        match *self {
+            FilterFn::Blur { radius } => Effect::Blur {
+                radius: num(device_length(to_device, radius)),
+            },
+            FilterFn::Brightness { amount } => Effect::Brightness {
+                amount: num(amount),
+            },
+            FilterFn::Contrast { amount } => Effect::Contrast {
+                amount: num(amount),
+            },
+            FilterFn::Grayscale { amount } => Effect::Grayscale {
+                amount: num(amount),
+            },
+            FilterFn::HueRotate { angle } => Effect::HueRotate { angle: num(angle) },
+            FilterFn::Invert { amount } => Effect::Invert {
+                amount: num(amount),
+            },
+            FilterFn::Saturate { amount } => Effect::Saturate {
+                amount: num(amount),
+            },
+            FilterFn::Sepia { amount } => Effect::Sepia {
+                amount: num(amount),
+            },
+            FilterFn::DropShadow { x, y, blur, color } => {
+                let (x, y) = device_offset(to_device, x, y);
+                Effect::DropShadow(Shadow {
+                    x: num(x),
+                    y: num(y),
+                    blur: num(device_length(to_device, blur)),
+                    spread: num(0.0),
+                    color,
+                })
+            }
+        }
+    }
+}
+
+/// The passes a `filter` list runs: the ones a layer's `blur`, colour filters
+/// and `dropShadow` effects run, colour filters in a row merged into one.
+fn filter_effects(filter: &[FilterFn], to_device: Affine) -> Vec<ResolvedEffect> {
+    let effects: Vec<Effect> = filter.iter().map(|f| f.effect(to_device)).collect();
+    // The numbers are constants, so any moment gives the same passes.
+    let clock = Clock {
+        t: 0.0,
+        frame: 0,
+        fps: 30.0,
+    };
+    resolve_effects(&effects, clock)
+}
+
+impl CanvasOp {
+    /// The state of a command that draws; `None` for a clip.
+    fn state(&self) -> Option<&DrawState> {
+        match self {
+            CanvasOp::Fill(FillOp { state, .. })
+            | CanvasOp::Stroke(StrokeOp { state, .. })
+            | CanvasOp::Text(TextOp { state, .. })
+            | CanvasOp::Image(ImageOp { state, .. }) => Some(state),
+            CanvasOp::Clip(_) | CanvasOp::Unclip => None,
+        }
     }
 }
 
@@ -491,14 +675,29 @@ pub fn sources(ops: &[CanvasOp], out: &mut Vec<String>) {
     }
 }
 
-/// Whether any command draws a picture, which picks Vello's image renderer.
+/// Whether any command draws a picture, which picks Vello's image renderer: a
+/// picture of a source or a pattern, or what a shadow or a filter made
+/// (`Effects`).
 pub fn draws_pictures(ops: &[CanvasOp]) -> bool {
     ops.iter().any(|op| match op {
         CanvasOp::Image(_) => true,
         CanvasOp::Fill(FillOp { paint, .. })
         | CanvasOp::Stroke(StrokeOp { paint, .. })
-        | CanvasOp::Text(TextOp { paint, .. }) => matches!(paint, CanvasPaint::Pattern { .. }),
+        | CanvasOp::Text(TextOp { paint, .. }) => {
+            matches!(paint, CanvasPaint::Pattern { .. })
+                || op.state().is_some_and(DrawState::has_effects)
+        }
         _ => false,
+    })
+}
+
+/// Whether any command, or any in the canvases they draw, has a shadow or a
+/// filter. Those canvases are drawn alone (`Effects` run between their
+/// commands), not on a page with other layers.
+pub fn has_effects(ops: &[CanvasOp]) -> bool {
+    ops.iter().any(|op| {
+        op.state().is_some_and(DrawState::has_effects)
+            || matches!(op, CanvasOp::Image(ImageOp { source: CanvasSource::Canvas { commands, .. }, .. }) if has_effects(commands))
     })
 }
 
@@ -528,6 +727,42 @@ pub struct Drawing<'a> {
     pub text: &'a mut TextEngine,
     /// The scene's pictures by `src`.
     pub images: &'a HashMap<String, ImageData>,
+    /// Runs the GPU passes of shadows and filters. Without it they are not
+    /// drawn.
+    pub effects: Option<&'a mut dyn Effects>,
+}
+
+/// The GPU passes behind shadows and filters, which the renderer owns.
+pub trait Effects {
+    /// Draws `alone` (one command, in the pixels `encode` draws in) on a
+    /// transparent canvas, runs `filter` over it, and gives back the pictures
+    /// of the result and of the shadow it casts. `bounds` is where the
+    /// command can touch, `pictures` whether it needs Vello's image renderer.
+    fn run(
+        &mut self,
+        alone: &vello::Scene,
+        pictures: bool,
+        bounds: Rect,
+        filter: &[ResolvedEffect],
+        shadow: Option<&ResolvedShadow>,
+    ) -> Result<Rendered>;
+}
+
+/// What `Effects::run` made.
+#[derive(Default)]
+pub struct Rendered {
+    /// The command with its `filter` applied; none when the filter was empty
+    /// (the command is then drawn as it is) or left nothing.
+    pub shape: Option<Placed>,
+    /// The shadow it casts, if it has one.
+    pub shadow: Option<Placed>,
+}
+
+/// A picture of straight-alpha sRGB pixels and the pixel of the scene its top
+/// left corner lies on.
+pub struct Placed {
+    pub image: ImageData,
+    pub at: (f64, f64),
 }
 
 /// Adds the canvas `(0, 0, width, height)` drawn with `ops` to `scene` under
@@ -543,44 +778,25 @@ pub fn encode(
     scene.push_clip_layer(Fill::NonZero, matrix, &bounds);
     let mut open = 0_usize;
     for op in ops {
-        match op {
-            CanvasOp::Fill(f) => {
-                let path = parse(&f.path)?;
-                let m = matrix * f.state.matrix();
-                let (brush, brush_transform) = brush(&f.paint, f.state.a, drawing.images)?;
-                blended(scene, f.state.blend, matrix, bounds, m, &path, 1.0, |s| {
-                    s.fill(f.rule.fill(), m, &brush, brush_transform, &path);
-                });
-            }
-            CanvasOp::Stroke(st) => {
-                let path = parse(&st.path)?;
-                let m = matrix * st.state.matrix();
-                let (brush, brush_transform) = brush(&st.paint, st.state.a, drawing.images)?;
-                let stroke = st.line.stroke();
-                blended(
-                    scene,
-                    st.state.blend,
-                    matrix,
-                    bounds,
-                    m,
-                    &path,
-                    st.line.reach(),
-                    |s| s.stroke(&stroke, m, &brush, brush_transform, &path),
-                );
-            }
-            CanvasOp::Clip(c) => {
+        match (op, op.state()) {
+            (CanvasOp::Clip(c), _) => {
                 let path = parse(&c.path)?;
                 scene.push_clip_layer(c.rule.fill(), matrix * Affine::new(c.m), &path);
                 open += 1;
             }
-            CanvasOp::Unclip => {
+            (CanvasOp::Unclip, _) => {
                 if open > 0 {
                     scene.pop_layer();
                     open -= 1;
                 }
             }
-            CanvasOp::Text(t) => text(scene, drawing, t, matrix, bounds)?,
-            CanvasOp::Image(i) => image(scene, drawing, i, matrix, bounds)?,
+            (_, Some(state)) if state.has_effects() && drawing.effects.is_some() => {
+                draw_with_effects(scene, drawing, op, state, matrix, bounds)?;
+            }
+            (_, Some(state)) => {
+                draw(scene, drawing, op, state, matrix, bounds)?;
+            }
+            (_, None) => unreachable!("a command that is not a clip has a state"),
         }
     }
     for _ in 0..open {
@@ -588,6 +804,112 @@ pub fn encode(
     }
     scene.pop_layer();
     Ok(())
+}
+
+/// Draws the fill, stroke, text or image `op` under `state` (the command's, or
+/// a bare one) and returns the box of the pixels it can touch.
+fn draw(
+    scene: &mut vello::Scene,
+    drawing: &mut Drawing,
+    op: &CanvasOp,
+    state: &DrawState,
+    matrix: Affine,
+    canvas: Rect,
+) -> Result<Rect> {
+    match op {
+        CanvasOp::Fill(f) => {
+            let path = parse(&f.path)?;
+            let m = matrix * state.matrix();
+            let (brush, brush_transform) = brush(&f.paint, state.a, drawing.images)?;
+            blended(scene, state.blend, matrix, canvas, m, &path, 1.0, |s| {
+                s.fill(f.rule.fill(), m, &brush, brush_transform, &path);
+            });
+            Ok(m.transform_rect_bbox(path.bounding_box().inflate(1.0, 1.0)))
+        }
+        CanvasOp::Stroke(st) => {
+            let path = parse(&st.path)?;
+            let m = matrix * state.matrix();
+            let (brush, brush_transform) = brush(&st.paint, state.a, drawing.images)?;
+            let stroke = st.line.stroke();
+            let reach = st.line.reach();
+            blended(scene, state.blend, matrix, canvas, m, &path, reach, |s| {
+                s.stroke(&stroke, m, &brush, brush_transform, &path);
+            });
+            Ok(m.transform_rect_bbox(path.bounding_box().inflate(reach, reach)))
+        }
+        CanvasOp::Text(t) => text(scene, drawing, t, state, matrix, canvas),
+        CanvasOp::Image(i) => image(scene, drawing, i, state, matrix, canvas),
+        CanvasOp::Clip(_) | CanvasOp::Unclip => unreachable!("clips are not drawn"),
+    }
+}
+
+/// Draws `op` as `draw` does, but through `drawing.effects`: alone first, run
+/// through the filter and the shadow's blur, then the shadow and the result
+/// composited, each with the command's alpha and blend mode.
+fn draw_with_effects(
+    scene: &mut vello::Scene,
+    drawing: &mut Drawing,
+    op: &CanvasOp,
+    state: &DrawState,
+    matrix: Affine,
+    canvas: Rect,
+) -> Result<()> {
+    let mut alone = vello::Scene::new();
+    let bounds = draw(&mut alone, drawing, op, &state.bare(), matrix, canvas)?;
+    let filter = filter_effects(&state.filter, matrix);
+    let shadow = state.shadow.as_ref().map(|s| s.resolved(matrix));
+    let pictures = draws_pictures(std::slice::from_ref(op));
+    let effects = drawing
+        .effects
+        .as_mut()
+        .expect("the caller checked for effects");
+    let rendered = effects.run(&alone, pictures, bounds, &filter, shadow.as_ref())?;
+    if let Some(shadow) = &rendered.shadow {
+        place(scene, state, matrix, canvas, shadow);
+    }
+    if state.filter.is_empty() {
+        draw(scene, drawing, op, state, matrix, canvas)?;
+    } else if let Some(shape) = &rendered.shape {
+        place(scene, state, matrix, canvas, shape);
+    }
+    Ok(())
+}
+
+/// Composites a picture a shadow or a filter made, with the alpha and blend
+/// mode of `state`.
+fn place(
+    scene: &mut vello::Scene,
+    state: &DrawState,
+    canvas_matrix: Affine,
+    canvas: Rect,
+    placed: &Placed,
+) {
+    let size = (
+        f64::from(placed.image.width),
+        f64::from(placed.image.height),
+    );
+    let rect = Rect::from_origin_size((0.0, 0.0), size);
+    let at = Affine::translate(placed.at);
+    // Whole pixels on whole pixels: no sampling filter would change them.
+    let brush = peniko::Brush::Image(peniko::ImageBrush {
+        image: placed.image.clone(),
+        sampler: peniko::ImageSampler {
+            quality: peniko::ImageQuality::Low,
+            ..Default::default()
+        },
+    })
+    .multiply_alpha(state.a);
+    let path = Rect::from_origin_size(placed.at, size).into_path(0.1);
+    blended(
+        scene,
+        state.blend,
+        canvas_matrix,
+        canvas,
+        Affine::IDENTITY,
+        &path,
+        0.0,
+        |s| s.fill(Fill::NonZero, at, &brush, None, &rect),
+    );
 }
 
 fn parse(d: &str) -> Result<BezPath> {
@@ -747,10 +1069,11 @@ fn image(
     scene: &mut vello::Scene,
     drawing: &mut Drawing,
     op: &ImageOp,
+    state: &DrawState,
     canvas_matrix: Affine,
     canvas: Rect,
-) -> Result<()> {
-    let m = canvas_matrix * op.state.matrix();
+) -> Result<Rect> {
+    let m = canvas_matrix * state.matrix();
     let dest = Rect::new(op.dx, op.dy, op.dx + op.dw, op.dy + op.dh);
     let (natural_w, natural_h) = match &op.source {
         CanvasSource::Src { src } => match drawing.images.get(src) {
@@ -768,7 +1091,7 @@ fn image(
     let (sw, sh) = (op.sw.unwrap_or(natural_w), op.sh.unwrap_or(natural_h));
     if !(sw > 0.0 && sh > 0.0 && op.dw != 0.0 && op.dh != 0.0 && natural_w > 0.0 && natural_h > 0.0)
     {
-        return Ok(());
+        return Ok(Rect::ZERO);
     }
     // The source rectangle onto the destination one. A negative `dw` or `dh`
     // flips, as the canvas does.
@@ -776,12 +1099,12 @@ fn image(
         * Affine::scale_non_uniform(op.dw / sw, op.dh / sh)
         * Affine::translate((-sx, -sy));
     let dest = dest.abs();
-    let state = &op.state;
+    let touched = m.transform_rect_bbox(dest.inflate(1.0, 1.0));
     let Some(mode) = state.blend.mode() else {
         scene.push_clip_layer(Fill::NonZero, m, &dest);
         draw_source(scene, drawing, &op.source, m * to_dest, op, state.a)?;
         scene.pop_layer();
-        return Ok(());
+        return Ok(touched);
     };
     if state.blend.reaches_whole_canvas() {
         scene.push_layer(Fill::NonZero, mode, 1.0, canvas_matrix, &canvas);
@@ -794,7 +1117,7 @@ fn image(
         scene.pop_layer();
     }
     scene.pop_layer();
-    Ok(())
+    Ok(touched)
 }
 
 /// Draws a whole source at its natural size under `matrix`.
@@ -851,23 +1174,24 @@ fn text(
     scene: &mut vello::Scene,
     drawing: &mut Drawing,
     op: &TextOp,
+    state: &DrawState,
     canvas_matrix: Affine,
     canvas: Rect,
-) -> Result<()> {
+) -> Result<Rect> {
     if op.text.is_empty() || op.size.is_nan() || op.size <= 0.0 {
-        return Ok(());
+        return Ok(Rect::ZERO);
     }
     let laid = drawing
         .text
         .layout(&op.text, &op.font, op.size, None, None, TextAlign::Left);
     let Some(line) = laid.lines.first() else {
-        return Ok(());
+        return Ok(Rect::ZERO);
     };
     let width = f64::from(laid.width);
     // `maxWidth` squeezes wider text to fit, as the canvas does.
     let squeeze = match op.max_width {
         Some(max) if max > 0.0 && width > max => max / width,
-        Some(max) if max <= 0.0 => return Ok(()),
+        Some(max) if max <= 0.0 => return Ok(Rect::ZERO),
         _ => 1.0,
     };
     let left = match op.align {
@@ -890,14 +1214,14 @@ fn text(
     let origin = Affine::translate((op.x, op.y + down))
         * Affine::scale_non_uniform(squeeze, 1.0)
         * Affine::translate((left, -f64::from(line.baseline)));
-    let m = canvas_matrix * op.state.matrix() * origin;
-    let (brush, brush_transform) = brush(&op.paint, op.state.a, drawing.images)?;
+    let m = canvas_matrix * state.matrix() * origin;
+    let (brush, brush_transform) = brush(&op.paint, state.a, drawing.images)?;
     let stroke = op.line.as_ref().map(LineStyle::stroke);
     let reach = op.line.as_ref().map_or(0.0, LineStyle::reach);
     let touched = Rect::new(0.0, 0.0, width, f64::from(laid.height)).inflate(reach, reach);
-    let mode = op.state.blend.mode();
+    let mode = state.blend.mode();
     match mode {
-        Some(mode) if op.state.blend.reaches_whole_canvas() => {
+        Some(mode) if state.blend.reaches_whole_canvas() => {
             scene.push_layer(Fill::NonZero, mode, 1.0, canvas_matrix, &canvas);
         }
         Some(mode) => scene.push_layer(Fill::NonZero, mode, 1.0, m, &touched),
@@ -929,7 +1253,9 @@ fn text(
     if mode.is_some() {
         scene.pop_layer();
     }
-    Ok(())
+    // Ink may reach past the line box by about a font size (`text_bounds`).
+    let em = f64::from(op.size);
+    Ok(m.transform_rect_bbox(touched.inflate(em, em)))
 }
 
 #[cfg(test)]
@@ -1048,5 +1374,92 @@ mod tests {
             .unwrap()
         };
         assert!(line("round").reach() < line("miter").reach());
+    }
+
+    const SHADOWED: &str = r##"{"op": "fill", "path": "M0 0H4V4Z", "paint": {"type": "color", "color": "#fff"},
+        "shadow": {"color": "#00000080", "blur": 12, "x": 3, "y": -2}}"##;
+
+    #[test]
+    fn a_shadow_blurs_with_half_its_blur_as_the_deviation() {
+        let parsed = ops(&format!("[{SHADOWED}]"));
+        let shadow = parsed[0].state().unwrap().shadow.as_ref().unwrap();
+        let resolved = shadow.resolved(Affine::IDENTITY);
+        assert_eq!((resolved.x, resolved.y, resolved.blur), (3.0, -2.0, 6.0));
+        // The layer's scale and turn reach it: doubled, then a quarter turn.
+        let scaled = shadow.resolved(Affine::scale(2.0));
+        assert_eq!((scaled.x, scaled.y, scaled.blur), (6.0, -4.0, 12.0));
+        let turned = shadow.resolved(Affine::rotate(std::f64::consts::FRAC_PI_2));
+        assert!((turned.x - 2.0).abs() < 1e-5 && (turned.y - 3.0).abs() < 1e-5);
+        assert!((turned.blur - 6.0).abs() < 1e-5);
+        assert_eq!(resolved.spread, 0.0);
+        assert_eq!(resolved.color, Color::parse("#00000080").unwrap());
+        // A blur past the limit is held to it.
+        let huge = CanvasShadow {
+            blur: 10_000.0,
+            ..shadow.clone()
+        };
+        assert_eq!(huge.resolved(Affine::IDENTITY).blur, MAX_SHADOW_SIZE as f32);
+    }
+
+    #[test]
+    fn a_filter_list_runs_the_scenes_passes_and_merges_colour_filters() {
+        let parsed = ops(
+            r##"[{"op": "fill", "path": "M0 0H4V4Z", "paint": {"type": "color", "color": "#fff"},
+                  "filter": [{"type": "brightness", "amount": 2}, {"type": "invert", "amount": 1},
+                             {"type": "blur", "radius": 3},
+                             {"type": "hueRotate", "angle": 90}, {"type": "sepia", "amount": 0.5},
+                             {"type": "dropShadow", "x": 1, "y": 2, "blur": 4, "color": "#f00"}]}]"##,
+        );
+        let filter = &parsed[0].state().unwrap().filter;
+        let effects = filter_effects(filter, Affine::IDENTITY);
+        assert!(matches!(
+            effects[..],
+            [
+                ResolvedEffect::ColorMatrix(_),
+                ResolvedEffect::Blur { radius: 3.0 },
+                ResolvedEffect::ColorMatrix(_),
+                ResolvedEffect::DropShadow(_),
+            ]
+        ));
+        let (ResolvedEffect::ColorMatrix(first), ResolvedEffect::DropShadow(shadow)) =
+            (&effects[0], &effects[3])
+        else {
+            unreachable!();
+        };
+        assert_eq!(
+            *first,
+            crate::color::ColorMatrix::brightness(2.0)
+                .then(&crate::color::ColorMatrix::invert(1.0))
+        );
+        assert_eq!((shadow.x, shadow.y, shadow.blur), (1.0, 2.0, 4.0));
+        // A layer scaled by 2 doubles the lengths of the blur and the drop shadow.
+        let effects = filter_effects(filter, Affine::scale(2.0));
+        assert!(matches!(effects[1], ResolvedEffect::Blur { radius: 6.0 }));
+        let ResolvedEffect::DropShadow(shadow) = &effects[3] else {
+            unreachable!();
+        };
+        assert_eq!((shadow.x, shadow.y, shadow.blur), (2.0, 4.0, 8.0));
+    }
+
+    #[test]
+    fn only_commands_with_a_shadow_or_a_filter_need_the_effects() {
+        let plain = ops(
+            r##"[{"op": "fill", "path": "M0 0H4V4Z", "paint": {"type": "color", "color": "#fff"}},
+                {"op": "clip", "path": "M0 0H4V4Z"}, {"op": "unclip"}]"##,
+        );
+        assert!(!has_effects(&plain) && !draws_pictures(&plain));
+        let shadowed = ops(&format!("[{SHADOWED}]"));
+        assert!(has_effects(&shadowed) && draws_pictures(&shadowed));
+        let filtered = ops(
+            r##"[{"op": "stroke", "path": "M0 0L4 4", "paint": {"type": "color", "color": "#fff"},
+                  "filter": [{"type": "blur", "radius": 1}]}]"##,
+        );
+        assert!(has_effects(&filtered) && draws_pictures(&filtered));
+        // Inside a canvas another draws.
+        let nested = ops(&format!(
+            r##"[{{"op": "image", "source": {{"kind": "canvas", "width": 4, "height": 4,
+                  "commands": [{SHADOWED}]}}, "dx": 0, "dy": 0, "dw": 4, "dh": 4}}]"##
+        ));
+        assert!(has_effects(&nested));
     }
 }

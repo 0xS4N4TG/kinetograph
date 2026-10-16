@@ -469,9 +469,25 @@ The context and the globals around it:
 | Pictures | `drawImage` (three forms) of an `<img>`, `new Image()` (a project file or a `data:` URL), another canvas (`<canvas>`, `document.createElement('canvas')`, `OffscreenCanvas`: its commands, drawn as a whole) or `ImageData`; `createImageData`, `putImageData` (with a dirty rectangle), `getImageData` |
 | Elsewhere | `canvas.width`/`height` (setting either empties the canvas and resets the context), `toDataURL()` (always PNG), `toBlob`, `OffscreenCanvas`, `Path2D`, `ImageData`, `CanvasGradient`, `CanvasPattern`, `CanvasRenderingContext2D` as globals |
 
-Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `shadowColor`, `shadowOffsetX/Y`,
-`filter`, `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`,
-`direction`, `imageSmoothingQuality`. `isPointInPath` and `isPointInStroke` return `false`. `getContext('webgl')` and
+Kept and drawn with nothing (reading back what was set works): `letterSpacing`, `wordSpacing`, `fontKerning`,
+`fontStretch`, `fontVariantCaps`, `textRendering`, `direction`, `imageSmoothingQuality`. `isPointInPath` and
+`isPointInStroke` return `false`.
+
+Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `crates/dom/tests/canvas/canvas_effects.js`):
+
+- **Shadows.** `shadowColor`, `shadowBlur`, `shadowOffsetX/Y` shadow what `fill`, `stroke`, `fillText`, `strokeText`,
+  `fillRect`, `strokeRect` and `drawImage` draw, as the spec has it: while the colour has alpha and the blur or an offset
+  is not 0, the shape casts a shadow under itself, blurred with a deviation of half `shadowBlur` and offset by
+  `shadowOffsetX/Y`, which the transform does not change. `globalAlpha`, `globalCompositeOperation` and the clip apply
+  to the shadow and to the shape.
+- **`filter`.** `none`, or a list of `blur()`, `brightness()`, `contrast()`, `drop-shadow()`, `grayscale()`,
+  `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`, with CSS's units (`px`, `pt`, `em` as 16 px,
+  `%` or a number, `deg`, `rad`, `grad`, `turn`). It runs over each command's drawing before its shadow is cast. A value
+  that is not a filter list is ignored, and a `url()` reference is kept and reported as unsupported (the rest of the
+  list is drawn). `clearRect` and `putImageData` are not filtered, nor do they cast shadows.
+- A command with either costs GPU passes of its own (drawn alone, blurred, drawn again as a picture), so a canvas with
+  hundreds of shadowed shapes is slower than one without, and one frame may not make more than 50 million pixels of
+  such pictures per canvas layer (SCENE.md, "canvas"). `getContext('webgl')` and
 `'webgl2'` return a recording WebGL context (§6.7); `'webgpu'` throws `unsupported:`; another context type returns `null`.
 
 - **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family
@@ -545,12 +561,26 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   `clearColor`, `clear`, `drawArrays` and `drawElements` of triangles. `getShaderParameter(COMPILE_STATUS)` is true:
   a shader naga cannot read fails when the scene loads, naming the line. `getExtension('OES_standard_derivatives')`
   answers (derivatives always work); other extensions return `null`.
+- **Framebuffers** (multi-pass shaders: render to a texture, then sample it; ping-pong; blur passes):
+  `createFramebuffer`, `bindFramebuffer` (`FRAMEBUFFER`, and in WebGL 2 `DRAW_FRAMEBUFFER` and `READ_FRAMEBUFFER`),
+  `framebufferTexture2D` of an RGBA, `UNSIGNED_BYTE` `TEXTURE_2D` to `COLOR_ATTACHMENT0`, `checkFramebufferStatus`,
+  `deleteFramebuffer`, `isFramebuffer`; binding `null` returns to the canvas. Draws, `clear` and `viewport` act on the
+  bound framebuffer's texture, in GL's orientation (its first row is the bottom one), and the texture can then be
+  sampled by later draws. Call `viewport` after binding a framebuffer, as GL needs. Allocate the texture with
+  `texImage2D(..., null)` (or `texStorage2D`); one that holds uploaded pixels, or is not RGBA, cannot be drawn into. A
+  framebuffer with no texture, or a texture not yet specified, is incomplete: `checkFramebufferStatus` says so and a
+  draw or clear sets `INVALID_FRAMEBUFFER_OPERATION`. A draw that samples the texture it draws into sets
+  `INVALID_OPERATION` and draws nothing. A render is a function of its own frame: every framebuffer texture starts a
+  frame transparent black, so a pass reading what an earlier frame left reads black. A texture drawn into cannot be
+  given `generateMipmap` or `texSubImage2D`; sample it with `LINEAR` or `NEAREST` (a mipmapped minification filter
+  without levels is incomplete, and reads black).
 - The drawing buffer is a browser's: the first draw or clear after a frame starts it afresh, and a frame that draws
   nothing keeps the picture. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  framebuffers, depth and stencil tests, `readPixels`, points and lines, instancing, cube and float textures,
-  `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas. Enabling the depth test is accepted but
+  renderbuffers and depth and stencil attachments, depth and stencil tests, `readPixels`, points and lines,
+  instancing, cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
+  Enabling the depth test is accepted but
   the first draw with it on throws, because a flat quad does not need it and a scene that does is drawn wrongly
   without it.
 
@@ -588,7 +618,8 @@ frame (§8).
 Exported from `@kinetograph/core` (and so from `remotion` through the CLI's alias), behaving as Remotion documents
 them: `useCurrentFrame`, `useVideoConfig`, `interpolate`, `interpolateColors`, `spring`, `measureSpring`, `Easing`,
 `random`, `Sequence`, `Series`, `Loop`, `Freeze`, `AbsoluteFill`, `Img`, `Audio` (re-exported from react), `staticFile`,
-`delayRender`, `continueRender`, `cancelRender`, `Composition`, `Still`, `Folder`, `registerRoot`, `getInputProps`.
+`delayRender`, `continueRender`, `cancelRender`, `getRemotionEnvironment`, `Composition`, `Still`, `Folder`,
+`registerRoot`, `getInputProps`.
 `random(seed)` is bit-exact with Remotion's; the rest match its documented behaviour, tested against values recorded
 from the published package (§10).
 
@@ -611,6 +642,57 @@ Mapping onto the engine:
   `<entry directory>/public`, set by the CLI).
 - `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s
   (real time, used only for the error) with the labels still open. `cancelRender(err)` fails the frame.
+  `useDelayRender()` returns the same three functions.
+- Every frame is a render, so the hooks that read the Studio's or the Player's state answer what a render sees:
+  `useRemotionEnvironment()` is `getRemotionEnvironment()` (`isRendering` only), `useCurrentScale()` and
+  `usePixelDensity()` are 1 (there is no render `scale` option, and `devicePixelRatio` is 1), `useBufferState()`
+  hands out a `delayPlayback()` whose `unblock()` does nothing, and `useIsInsideNonPremountFreeze()` is whether a
+  `<Freeze>` is active around the component.
+- The public folder: `getStaticFiles()` lists it (`{ src, name, sizeInBytes, lastModified }`, by name, hidden files
+  left out); `watchStaticFile()` is the Studio's reload hook and does nothing, saying so once; `prefetch(src)`
+  resolves at once with `src` minus its `#` fragment, as it does in a Remotion render, and throws the offline error
+  for a remote URL.
+- `interpolate` takes `easing` as one function or an array with one per segment, and `posterize` (the input is held
+  at the last multiple of it, so the output steps); `assertValidInterpolateEasingOption` and
+  `assertValidInterpolatePosterizeOption` are the checks it runs. Its values are recorded from the published package.
+  Not yet: string, tuple and boolean output ranges, `output: 'perceptual-scale'` and `outputType`.
+- The components Remotion's Studio edits, `Track` and `Interactive` (`Interactive.Div`, `.Span`, `.Svg`, `.Circle`, …
+  and `Interactive.create()`, `withSchema()`): each is a `<Sequence layout="none">` around the element, so it shows from
+  `from` for `durationInFrames` under the name `<Interactive.Div>` (or `name`), is drawn from its props, and takes
+  `hidden`, `freeze` and the four `crop*` props (a `clip-path: inset(…)`, rounded to the element's `border-radius`;
+  recorded from the published package). `trimBefore`, `playbackRate` and `loop` are accepted with a warning that
+  `<Sequence>` does not apply them yet; `premountFor` and the like are the preview's and a render ignores them as
+  Remotion does. `Interactive.create({ Component, layout: 'absolute-fill' })` puts the component in a clipped `div` of
+  the `width` and `height` props. The field tables (`Interactive.baseSchema`, …, and `absoluteFillSchema`) are
+  Remotion's data, unused in a render.
+- Canvas components. A browser canvas is what Remotion runs its effects, `<HtmlInCanvas>` and `<Artifact>` on, and there
+  is none, so these are accepted, draw what they can, and warn once about what they leave out:
+  - `createEffect(definition)` returns the factory and its descriptors (key with the `disabled` flag, schema with the
+    `disabled` field; recorded from the published package). An `effects` prop with an enabled effect draws the picture
+    without it.
+  - `<Solid width height color>` is the `div` of that size and colour; `<CanvasImage src width height fit>` is the `Img`
+    (an image layer when nothing needs CSS, an `img` with the `object-fit` and crop when it does).
+  - `<HtmlInCanvas width height>` shows its children in a clipped box of its size, which is what its canvas shows when
+    nothing paints over it; `onPaint` and `onInit` are not run. `isHtmlInCanvasSupported()` is false, so a project can
+    take another path; `getHtmlInCanvasUnsupportedMessage()` and `HTML_IN_CANVAS_UNSUPPORTED_MESSAGE` say why.
+  - `<IFrame>` is the `iframe` element, which the CSS engine reports as unsupported (`--strict` fails on it).
+  - `<Artifact>` draws nothing and says that its file is not written: a render produces the video only.
+  They take `from`, `durationInFrames`, `name`, `hidden`, `freeze` and the crop props as `Interactive` does.
+- `<AnimatedImage src width height fit loopBehavior playbackRate>` (`loopBehavior`: `loop`, `pause-after-finish`,
+  `clear-after-finish`). A GIF is a native `gif` layer (§11.3) shown at the picture Remotion's `ImageDecoder` path picks
+  for that time: of the picture that has started and the next, the one whose start is nearer (so a picture changes
+  half its delay early), with the next on an exact tie. The pictures' starts are read from the file's graphic control
+  extensions (a delay of 10 ms or less shows for 100 ms, as in the `gif` layer; checked against the engine's
+  `probeMedia` on the repository's GIFs). `playbackRate` scales the time and shortens `durationInFrames`; a `loop`
+  without a `durationInFrames` is `loopBehavior="loop"`. With `className`, `style` or a crop the layer sits in a `div`.
+  A file that is not an animated GIF is drawn as a still (`Img`); an animated PNG or WebP is that too, with a warning,
+  because the engine decodes GIF animation only.
+- Names that exist so a project bundles: `Html5Audio` and `Html5Video` are `Audio` and `Video`; `MediaPlaybackError`
+  is Remotion's error class; `Experimental.Clipper` and `Experimental.Null` throw when rendered (Remotion removed them
+  in 4.0.228) and `Experimental.useIsPlayer()` is false; `Config.*` calls do nothing and say once that there is no
+  `remotion.config.ts`.
+- `getRemotionEnvironment()` always reports `isRendering: true` and every other flag false: the studio preview and the
+  output file come from the same render path, so a component that branches on it draws the same frame in both.
 
 ### 7.2 Compositions and fonts
 
@@ -699,14 +781,15 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/transitions` (+ `/transitions/fade`, `/slide`, `/wipe`, `/flip`, `/clock-wipe`, `/iris`, `/none`) | `@remotion/transitions` | `TransitionSeries`, `linearTiming`, `springTiming`; presentations render `<Layer>`s with opacity, transforms and clips |
 | `@kinetograph/core/motion-blur` | `@remotion/motion-blur` | `Trail`; `CameraMotionBlur` is `<Layer motionBlur={{ samples, shutter: shutterAngle / 360 }}>` |
 | `@kinetograph/core/noise` | `@remotion/noise` | `noise2D/3D/4D(seed, …)` |
-| `@kinetograph/core/paths` | `@remotion/paths` | pure path maths |
-| `@kinetograph/core/shapes` | `@remotion/shapes` | `make*` functions; components render `<Path>` |
-| `@kinetograph/core/layout-utils` | `@remotion/layout-utils` | `measureText`, `fitText`, `fillTextBox` through `layoutText` (§3), fonts from `getFonts()` |
+| `@kinetograph/core/paths` | `@remotion/paths` | pure path maths: `parsePath`, `serializeInstructions`, `reduceInstructions`, `normalizePath`, `getLength`, `getBoundingBox`, `scalePath`, `interpolatePath`, `interpolatePaths(input, inputRange, paths, { easing, posterize, extrapolateLeft, extrapolateRight })`, `warpPath(path, transformer, { interpolationThreshold })`, …; the blends and the warp match the published package digit for digit (arcs aside) |
+| `@kinetograph/core/shapes` | `@remotion/shapes` | `make*` functions (`makeRect`, `makeCircle`, `makeEllipse`, `makeTriangle`, `makeStar`, `makePolygon`, `makePie`, `makeHeart`, `makeArrow`, `makeCallout`, `makeSpark`) and the `Instruction` type; components render `<Path>`. `makeArrow`, `makeCallout` and `makeSpark` match the published package's paths exactly |
+| `@kinetograph/core/layout-utils` | `@remotion/layout-utils` | `measureText`, `fitText`, `fillTextBox`, `fitTextOnNLines` through `layoutText` (§3), fonts from `getFonts()`; the box filling and the size search follow the published package step by step and give its results on a recorded set of texts |
 | `@kinetograph/core/animation-utils` | `@remotion/animation-utils` | `interpolateStyles`, `makeTransform` |
 | `@kinetograph/core/captions` | `@remotion/captions` | `parseSrt`, `serializeSrt`, `createTikTokStyleCaptions` |
 | `@kinetograph/core/google-fonts` | `@remotion/google-fonts/*` | §7.2 |
 | `@kinetograph/core/fonts` | `@remotion/fonts` | §7.2 |
-| `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>` |
+| `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>`; `getLottieMetadata(animationData)` (`{ fps, durationInSeconds, durationInFrames, width, height }` or null, as the published package) |
+| `@kinetograph/core/media` | `@remotion/media` | `Audio` and `Video` (also as `experimental_Audio` and `experimental_Video`), `getTargetSampleRate()` (48000) |
 | `@kinetograph/core/sfx` | `@remotion/sfx` | the 32 sound-effect URLs of the package (`whip`, `ding`, …), for `<Audio src>`. The mix downloads each once into `~/.cache/kinetograph/sfx` (`resolveSoundSource`, `@kinetograph/core/sound-source`), so a render after the first is offline; the CLI's `render` and `audio analyze` pass it to `renderAudio` as `resolveSource`, and `lint` does not look for these URLs on disk |
 | `@kinetograph/core/zod-types` | `@remotion/zod-types` | `zColor`, `zMatrix`, `zTextarea` and `ZodZypesInternals`: zod schemas with Remotion's brands in their descriptions, accepting and refusing what the published ones do (a colour is any string Remotion's colour parser reads, `lab()`, `oklch()` and `hwb()` included). `zod` 4 is an optional peer dependency of the core. `<Composition schema>` is accepted and not validated |
 | `@kinetograph/core/timeline-utils` (+ `/timeline-utils/audio-waveform-worker`) | `@remotion/timeline-utils` | the Studio timeline's helpers, 33 exports. Pure ones (`getLoopDisplaySegments`, `sliceWaveformPeaks`, `calculateTimestampSlots`, …), `drawBars` into a canvas, `loadWaveformPeaks` and `subscribeToWaveformPeaks` (a path, decoded by the addon at 48 kHz, no worker) and the frame cache work, each against values recorded from the published package. `extractFrames`, `resizeVideoFrame` with a scale other than 1, and `renderFrameStripToCanvas` for frames not in the cache throw `UnsupportedApiError` (`@kinetograph/core`'s `unsupported.ts`): the addon decodes video inside the renderer and has no call that returns a picture |
@@ -895,12 +978,14 @@ trims, rate, loop and `<Freeze>` work as for `<Audio>`.
 
 `@kinetograph/core/gif` is `@remotion/gif`: `Gif` (`src`, `width`, `height`, `fit` (default `fill`), `style`,
 `playbackRate` (default 1), `loopBehavior`: `loop` (default), `pause-after-finish`, `unmount-after-finish`; `onLoad`,
-`onError` accepted) emits a `gif` layer with `time = frame / fps * playbackRate` and `loop = loopBehavior ===
-'loop'`, and renders nothing past the GIF's duration with `unmount-after-finish`. `getGifDurationInSeconds(src):
-Promise<number>`. `@kinetograph/core/media-utils` is `@remotion/media-utils`' `getVideoMetadata(src): Promise<{
-durationInSeconds, width, height, aspectRatio, isRemote: false, fps }>`. Both read `probeMedia`, which the host
-passes in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the
-CLI's synthetic entry re-exports next to `setLayoutText`.
+`onError` accepted) emits a `gif` layer with `time = frame / fps * playbackRate` (the native element also takes a
+`time`, which `<AnimatedImage>` sets) and `loop = loopBehavior === 'loop'`, and renders nothing past the GIF's duration
+with `unmount-after-finish`. `getGifDurationInSeconds(src): Promise<number>`. `preloadGif(src)` probes the file now and
+returns `{ waitUntilDone, free }`: `waitUntilDone()` resolves, or rejects with what is wrong with the file, and `free()`
+does nothing. `@kinetograph/core/media-utils` is `@remotion/media-utils`' `getVideoMetadata(src): Promise<{
+durationInSeconds, width, height, aspectRatio, isRemote: false, fps }>`. Both read `probeMedia`, which the host passes
+in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the CLI's
+synthetic entry re-exports next to `setLayoutText`.
 
 ### 11.4 Timeline data (stream 3)
 
@@ -1002,6 +1087,16 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
   average, centred on the frame's time and scaled so a full-scale sine reads 1. `smoothing` (default true) averages
   the frames before and after. `optimizeFor` is accepted and changes nothing. This follows Remotion's documented
   behaviour, not its numbers: bars from the two have the same shape, not the same values.
-- `getWaveformPortion({ audioData, startTimeInSeconds, durationInSeconds, numberOfSamples })`: `numberOfSamples`
-  bars `{ index, amplitude }`, each the mean absolute sample of the channels' average over its stretch.
+- `getWaveformPortion({ audioData, startTimeInSeconds, durationInSeconds, numberOfSamples, channel, outputRange,
+  dataOffsetInSeconds, normalize })`: `numberOfSamples` bars `{ index, amplitude }` of one `channel` (default 0), each
+  the mean absolute sample of its block; scaled so the loudest is 1 unless `normalize` is false (default true);
+  `outputRange: 'minus-one-to-one'` makes every other bar negative; a window outside the file is silence. Matches the
+  published package on recorded windows, errors included.
+- `visualizeAudioWaveform({ audioData, frame, fps, windowInSeconds, numberOfSamples, channel, dataOffsetInSeconds,
+  normalize })`: `getWaveformPortion` over the window centred on the frame, as `numberOfSamples` numbers from -1 to 1
+  to draw as a line (`normalize` default false); a window with fewer samples than bars is an error.
+- `getAudioDuration` is `getAudioDurationInSeconds` under its old name. `getImageDimensions(src)` reads the size of a
+  PNG, JPEG, GIF, WebP, BMP or SVG file (or `data:` URL) from its header. `createSmoothSvgPath({ points })` is the
+  cubic path through the points, and `audioBufferToDataUrl(buffer)` the 32-bit float WAV of an `AudioBuffer` as a
+  `data:` URL (stereo interleaved; both match the published package digit for digit).
 

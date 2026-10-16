@@ -3,6 +3,15 @@
 //! target as a browser's drawing buffer is, and `shaders/glsl_blit.wgsl` then
 //! places that on the canvas.
 //!
+//! A framebuffer's texture is a second kind of target (`GlslTexture::target`):
+//! a draw or clear that names one goes to it, and a later draw samples it like
+//! any texture. GL's rows count up from the bottom and a texture's first row
+//! is its bottom one, so a program that draws into a texture is translated
+//! upside down (`gl::translate`'s `flip_y`) and its viewport, scissor and
+//! winding are turned to match; sampling then needs nothing. A frame starts
+//! with every target transparent black, and the ops run in order, one render
+//! pass for each run of draws to the same target.
+//!
 //! Programs, pipelines and textures are made the first time a draw needs them
 //! and kept by what they are made from, so a frame that draws what the last
 //! one did builds nothing. Everything the recording says is checked before
@@ -10,6 +19,7 @@
 //! finished, which is too late to say which call it was.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::path::Path;
 
 use base64::Engine as _;
@@ -36,11 +46,21 @@ struct Uploaded {
     mipmapped: bool,
 }
 
+/// What draws go to: the drawing buffer, or a framebuffer's texture.
 struct Target {
     size: (u32, u32),
     view: wgpu::TextureView,
     // Kept alive with its view.
     _texture: wgpu::Texture,
+}
+
+/// The draws of a replay that go to one target, in order, and how the pass
+/// starts: with a clear, or (`None`) from what the target holds.
+struct Pass<'c> {
+    /// The id of a target texture; the drawing buffer without one.
+    target: Option<&'c str>,
+    clear: Option<[f64; 4]>,
+    draws: Vec<Prepared>,
 }
 
 struct Blit {
@@ -69,6 +89,8 @@ fn render_error(what: impl std::fmt::Display) -> Error {
 const MAX_BUFFER_SIDE: u32 = 8192;
 /// How many uploaded textures are kept before the least recently made go.
 const MAX_TEXTURES: usize = 64;
+/// The most the target textures of one layer may hold together.
+const MAX_TARGET_BYTES: u64 = 512 << 20;
 
 impl Compositor {
     /// Runs the recording `content` into a `width` x `height` drawing buffer
@@ -123,76 +145,170 @@ impl Compositor {
             });
         }
 
-        // Everything before the last clear is gone with it.
+        // Everything drawn to the drawing buffer before its last clear is gone
+        // with it. A target's draws stay: later draws may sample them.
         let last_clear = content
             .ops
             .iter()
-            .rposition(|op| matches!(op, GlslOp::Clear { .. }));
-        let clear = match last_clear.map(|i| &content.ops[i]) {
-            Some(GlslOp::Clear { color }) => *color,
-            _ if content.alpha => [0.0; 4],
-            _ => [0.0, 0.0, 0.0, 1.0],
+            .rposition(|op| matches!(op, GlslOp::Clear { target: None, .. }));
+        // What a target holds before its first pass.
+        let blank = |target: Option<&str>| match target {
+            None if !content.alpha => [0.0, 0.0, 0.0, 1.0],
+            _ => [0.0; 4],
         };
-        let draws: Vec<&GlslDraw> = content
-            .ops
-            .iter()
-            .skip(last_clear.map_or(0, |i| i + 1))
-            .filter_map(|op| match op {
-                GlslOp::Draw(d) => Some(&**d),
-                GlslOp::Clear { .. } => None,
-            })
-            .collect();
 
         let mut buffers: HashMap<&str, (Vec<u8>, Option<wgpu::Buffer>)> = HashMap::new();
-        let mut prepared = Vec::new();
-        for draw in draws {
-            if let Some(p) = self.glsl_prepare(content, draw, size, base_dir, &mut buffers)? {
-                prepared.push(p);
+        let mut targets: HashMap<&str, Target> = HashMap::new();
+        let mut passes: Vec<Pass> = Vec::new();
+        let mut started: HashSet<Option<&str>> = HashSet::new();
+        for (i, op) in content.ops.iter().enumerate() {
+            let (target, clear) = match op {
+                GlslOp::Clear { color, target } => (target.as_deref(), Some(*color)),
+                GlslOp::Draw(d) => (d.target.as_deref(), None),
+            };
+            if target.is_none() && last_clear.is_some_and(|c| i < c) {
+                continue;
+            }
+            if let Some(id) = target {
+                self.glsl_target(&mut targets, content, id)?;
+            }
+            if clear.is_some() || passes.last().is_none_or(|p| p.target != target) {
+                let first = started.insert(target);
+                passes.push(Pass {
+                    target,
+                    clear: clear.or_else(|| first.then(|| blank(target))),
+                    draws: Vec::new(),
+                });
+            }
+            if let GlslOp::Draw(draw) = op
+                && let Some(p) =
+                    self.glsl_prepare(content, draw, size, base_dir, &mut buffers, &mut targets)?
+            {
+                passes.last_mut().expect("pushed above").draws.push(p);
             }
         }
+        // The drawing buffer is cleared even when nothing is drawn to it.
+        if started.insert(None) {
+            passes.push(Pass {
+                target: None,
+                clear: Some(blank(None)),
+                draws: Vec::new(),
+            });
+        }
 
-        let target = self.glsl.target.as_ref().expect("made above");
-        let stamp = self.stamp("glsl", &target.view);
-        let mut encoder = self.encoder();
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("glsl"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target.view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: clear[0],
-                        g: clear[1],
-                        b: clear[2],
-                        a: clear[3],
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            timestamp_writes: pass_timer::writes(&stamp),
-            ..Default::default()
-        });
-        for p in &prepared {
-            pass.set_pipeline(&p.pipeline);
-            pass.set_bind_group(0, &p.bind_group, &[]);
-            let [x, y, w, h] = p.viewport;
-            pass.set_viewport(x, y, w, h, 0.0, 1.0);
-            let [sx, sy, sw, sh] = p.scissor;
-            pass.set_scissor_rect(sx, sy, sw, sh);
-            pass.set_blend_constant(p.blend_constant);
-            for (slot, (buffer, offset)) in p.vertex_buffers.iter().enumerate() {
-                pass.set_vertex_buffer(slot as u32, buffer.slice(*offset..));
-            }
-            match &p.indices {
-                Some((buffer, count)) => {
-                    pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..*count, 0, 0..1);
+        let canvas = self.glsl.target.as_ref().expect("made above");
+        for pass in &passes {
+            let (view, name) = match pass.target {
+                None => (&canvas.view, "glsl"),
+                Some(id) => (&targets[id].view, "glsl target"),
+            };
+            let stamp = self.stamp(name, view);
+            let mut encoder = self.encoder();
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(name),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: match pass.clear {
+                            Some([r, g, b, a]) => wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }),
+                            None => wgpu::LoadOp::Load,
+                        },
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                timestamp_writes: pass_timer::writes(&stamp),
+                ..Default::default()
+            });
+            for p in &pass.draws {
+                rpass.set_pipeline(&p.pipeline);
+                rpass.set_bind_group(0, &p.bind_group, &[]);
+                let [x, y, w, h] = p.viewport;
+                rpass.set_viewport(x, y, w, h, 0.0, 1.0);
+                let [sx, sy, sw, sh] = p.scissor;
+                rpass.set_scissor_rect(sx, sy, sw, sh);
+                rpass.set_blend_constant(p.blend_constant);
+                for (slot, (buffer, offset)) in p.vertex_buffers.iter().enumerate() {
+                    rpass.set_vertex_buffer(slot as u32, buffer.slice(*offset..));
                 }
-                None => pass.draw(p.vertices.0..p.vertices.1, 0..1),
+                match &p.indices {
+                    Some((buffer, count)) => {
+                        rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        rpass.draw_indexed(0..*count, 0, 0..1);
+                    }
+                    None => rpass.draw(p.vertices.0..p.vertices.1, 0..1),
+                }
             }
         }
         Ok(())
+    }
+
+    /// The target texture `id` names, made the first time a pass or a sampler
+    /// needs it (wgpu gives it zeroes). Its size is the recorded texture's,
+    /// and the targets of a layer hold `MAX_TARGET_BYTES` together at most.
+    fn glsl_target<'a, 'c>(
+        &self,
+        targets: &'a mut HashMap<&'c str, Target>,
+        content: &'c GlslContent,
+        id: &'c str,
+    ) -> Result<&'a Target> {
+        if !targets.contains_key(id) {
+            let texture = content
+                .textures
+                .get(id)
+                .filter(|t| t.target)
+                .ok_or_else(|| {
+                    render_error(format!(
+                        "an op targets {id:?}, which is not a target texture of the recording"
+                    ))
+                })?;
+            let (width, height) = (texture.width, texture.height);
+            let limit = self
+                .device
+                .limits()
+                .max_texture_dimension_2d
+                .min(MAX_BUFFER_SIDE);
+            if width == 0 || height == 0 || width > limit || height > limit {
+                return Err(render_error(format!(
+                    "unsupported: a {width} x {height} render target; the sides are 1 to {limit}"
+                )));
+            }
+            let held: u64 = targets
+                .values()
+                .map(|t| u64::from(t.size.0) * u64::from(t.size.1) * 4)
+                .sum();
+            if held + u64::from(width) * u64::from(height) * 4 > MAX_TARGET_BYTES {
+                return Err(render_error(format!(
+                    "unsupported: the render targets hold more than {} MiB",
+                    MAX_TARGET_BYTES >> 20
+                )));
+            }
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("glsl render target"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            targets.insert(
+                id,
+                Target {
+                    size: (width, height),
+                    view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                    _texture: texture,
+                },
+            );
+        }
+        Ok(&targets[id])
     }
 
     /// Everything one draw needs, or `None` if it draws nothing.
@@ -203,6 +319,7 @@ impl Compositor {
         size: (u32, u32),
         base_dir: &Path,
         buffers: &mut HashMap<&'c str, (Vec<u8>, Option<wgpu::Buffer>)>,
+        targets: &mut HashMap<&'c str, Target>,
     ) -> Result<Option<Prepared>> {
         let program_spec = content.programs.get(&draw.program).ok_or_else(|| {
             render_error(format!(
@@ -210,10 +327,16 @@ impl Compositor {
                 draw.program
             ))
         })?;
-        let program = self.glsl_program(program_spec)?;
+        // A texture is drawn upside down, so that its rows are GL's.
+        let flip = draw.target.is_some();
+        let size = match draw.target.as_deref() {
+            Some(id) => self.glsl_target(targets, content, id)?.size,
+            None => size,
+        };
+        let program = self.glsl_program(program_spec, flip)?;
 
         // State.
-        let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size)?;
+        let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size, flip)?;
         let (vw, vh) = (viewport[2], viewport[3]);
         check_vertex_range(draw.first, draw.count)?;
         if vw == 0.0 || vh == 0.0 || scissor[2] == 0 || scissor[3] == 0 || draw.count == 0 {
@@ -358,7 +481,22 @@ impl Compositor {
                             state.texture
                         ))
                     })?;
-                    let uploaded = self.glsl_texture(&state.texture, texture, base_dir)?;
+                    let uploaded = if texture.target {
+                        if draw.target.as_deref() == Some(state.texture.as_str()) {
+                            return Err(render_error(format!(
+                                "a draw samples the texture {:?} it renders to (WebGL refuses such a \
+                                 draw with INVALID_OPERATION)",
+                                state.texture
+                            )));
+                        }
+                        let target = self.glsl_target(targets, content, &state.texture)?;
+                        Arc::new(Uploaded {
+                            view: target.view.clone(),
+                            mipmapped: false,
+                        })
+                    } else {
+                        self.glsl_texture(&state.texture, texture, base_dir)?
+                    };
                     self.glsl_sampler(state, uploaded)
                 }
                 None => {
@@ -464,15 +602,15 @@ impl Compositor {
     }
 
     /// The program, translated and compiled the first time it is drawn.
-    fn glsl_program(&mut self, spec: &gl::GlslProgram) -> Result<Arc<Program>> {
+    fn glsl_program(&mut self, spec: &gl::GlslProgram, flip_y: bool) -> Result<Arc<Program>> {
         let key = format!(
-            "{}\u{0}{}\u{0}{:?}",
+            "{}\u{0}{}\u{0}{:?}\u{0}{flip_y}",
             spec.vertex, spec.fragment, spec.attributes
         );
         if let Some(p) = self.glsl.programs.get(&key) {
             return Ok(p.clone());
         }
-        let translated = gl::translate(spec).map_err(render_error)?;
+        let translated = gl::translate(spec, flip_y).map_err(render_error)?;
         if !translated.vertex.samplers.is_empty() {
             return Err(render_error(
                 "unsupported: a texture read in the vertex shader (vertex texture fetch)",
@@ -579,9 +717,12 @@ impl Compositor {
                 }
             },
         };
-        let front_face = match draw.cull.as_ref().map(|c| c.front.as_str()) {
-            Some("CW") => wgpu::FrontFace::Cw,
-            _ => wgpu::FrontFace::Ccw,
+        // A texture is drawn upside down, which turns a winding around.
+        let clockwise = draw.cull.as_ref().is_some_and(|c| c.front == "CW");
+        let front_face = if clockwise != draw.target.is_some() {
+            wgpu::FrontFace::Cw
+        } else {
+            wgpu::FrontFace::Ccw
         };
         let mut mask = wgpu::ColorWrites::empty();
         for (on, bit) in draw.color_mask.iter().zip([
@@ -1011,11 +1152,14 @@ fn check_vertex_range(first: u32, count: u32) -> Result<()> {
 /// The viewport (x, y from the top, width, height) and the scissor rectangle
 /// (x, y from the top, width, height; the whole buffer without one) of a
 /// draw into a buffer of `size`. Done in `i64`, so no sum can overflow, and
-/// a negative size or a viewport outside the buffer is an error.
+/// a negative size or a viewport outside the buffer is an error. GL's y
+/// counts up from the bottom row; `flip` is for a texture, drawn upside down,
+/// whose rows count that way already.
 fn draw_rects(
     viewport: [i32; 4],
     scissor: Option<[i32; 4]>,
     size: (u32, u32),
+    flip: bool,
 ) -> Result<([f32; 4], [u32; 4])> {
     let (w, h) = (i64::from(size.0), i64::from(size.1));
     let [vx, vy, vw, vh] = viewport.map(i64::from);
@@ -1025,10 +1169,11 @@ fn draw_rects(
     if vx < 0 || vy < 0 || vx + vw > w || vy + vh > h {
         return Err(render_error(format!(
             "unsupported: the viewport ({vx}, {vy}, {vw}, {vh}) reaches outside the {w} x {h} \
-             drawing buffer"
+             buffer it draws into (call viewport after binding a framebuffer)"
         )));
     }
-    let viewport = [vx as f32, (h - vy - vh) as f32, vw as f32, vh as f32];
+    let top_of = |y: i64, height: i64| if flip { y } else { h - y - height };
+    let viewport = [vx as f32, top_of(vy, vh) as f32, vw as f32, vh as f32];
     let scissor = match scissor {
         Some(rect) => {
             let [sx, sy, sw, sh] = rect.map(i64::from);
@@ -1037,8 +1182,8 @@ fn draw_rects(
             }
             let x0 = sx.clamp(0, w);
             let x1 = (sx + sw).clamp(0, w);
-            let top = (h - sy - sh).clamp(0, h);
-            let bottom = (h - sy).clamp(0, h);
+            let top = top_of(sy, sh).clamp(0, h);
+            let bottom = (top_of(sy, sh) + sh).clamp(0, h);
             if x1 < x0 || bottom < top {
                 return Err(render_error("the scissor box is inverted"));
             }
@@ -1270,37 +1415,50 @@ mod tests {
     #[test]
     fn rectangles_are_checked_without_overflow() {
         let size = (16, 16);
-        assert!(draw_rects([0, 0, 16, 16], None, size).is_ok());
-        let (v, s) = draw_rects([0, 0, 16, 8], Some([0, 0, 16, 8]), size).unwrap();
+        for flip in [false, true] {
+            assert!(draw_rects([0, 0, 16, 16], None, size, flip).is_ok());
+            for bad in [
+                [0, 0, -1, 4],
+                [i32::MAX, 0, i32::MAX, 4],
+                [0, i32::MIN, 4, 4],
+            ] {
+                assert!(draw_rects(bad, None, size, flip).is_err(), "{bad:?}");
+            }
+            for bad in [[0, 0, -1, 4], [0, 0, 4, -1]] {
+                assert!(
+                    draw_rects([0, 0, 16, 16], Some(bad), size, flip).is_err(),
+                    "{bad:?}"
+                );
+            }
+            // Huge scissors are clamped, not wrapped.
+            let (_, s) = draw_rects(
+                [0, 0, 16, 16],
+                Some([i32::MAX, i32::MAX, i32::MAX, i32::MAX]),
+                size,
+                flip,
+            )
+            .unwrap();
+            assert_eq!(s[2] * s[3], 0);
+            let (_, s) = draw_rects(
+                [0, 0, 16, 16],
+                Some([i32::MIN, i32::MIN, i32::MAX, i32::MAX]),
+                size,
+                flip,
+            )
+            .unwrap();
+            assert!(s[2] <= 16 && s[3] <= 16);
+        }
+    }
+
+    #[test]
+    fn a_texture_counts_rows_from_gls_bottom() {
+        let size = (16, 16);
+        // The drawing buffer's rows count from the top, GL's from the bottom.
+        let (v, s) = draw_rects([0, 0, 16, 8], Some([0, 0, 16, 8]), size, false).unwrap();
         assert_eq!((v[1], s[1]), (8.0, 8));
-        for bad in [
-            [0, 0, -1, 4],
-            [i32::MAX, 0, i32::MAX, 4],
-            [0, i32::MIN, 4, 4],
-        ] {
-            assert!(draw_rects(bad, None, size).is_err(), "{bad:?}");
-        }
-        for bad in [[0, 0, -1, 4], [0, 0, 4, -1]] {
-            assert!(
-                draw_rects([0, 0, 16, 16], Some(bad), size).is_err(),
-                "{bad:?}"
-            );
-        }
-        // Huge scissors are clamped, not wrapped.
-        let (_, s) = draw_rects(
-            [0, 0, 16, 16],
-            Some([i32::MAX, i32::MAX, i32::MAX, i32::MAX]),
-            size,
-        )
-        .unwrap();
-        assert_eq!(s[2] * s[3], 0);
-        let (_, s) = draw_rects(
-            [0, 0, 16, 16],
-            Some([i32::MIN, i32::MIN, i32::MAX, i32::MAX]),
-            size,
-        )
-        .unwrap();
-        assert!(s[2] <= 16 && s[3] <= 16);
+        // A texture's first row is GL's bottom one.
+        let (v, s) = draw_rects([0, 2, 16, 8], Some([0, 3, 16, 4]), size, true).unwrap();
+        assert_eq!((v[1], s[1], s[3]), (2.0, 3, 4));
     }
 
     #[test]
