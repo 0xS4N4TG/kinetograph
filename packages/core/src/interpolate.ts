@@ -7,9 +7,12 @@ import type { EasingFunction } from './easing.js';
 
 export type ExtrapolateType = 'extend' | 'identity' | 'clamp' | 'wrap';
 export interface InterpolateOptions {
-  easing?: (t: number) => number;
+  /** One easing for every segment, or one per segment between the keyframes. */
+  easing?: EasingFunction | readonly EasingFunction[];
   extrapolateLeft?: ExtrapolateType;
   extrapolateRight?: ExtrapolateType;
+  /** Holds the input at the last multiple of this below it, so the output steps (a value drawn "on twos"). */
+  posterize?: number;
 }
 
 const linear: EasingFunction = (t) => t;
@@ -77,6 +80,31 @@ function checkRange(name: string, range: readonly number[]): void {
   }
 }
 
+/** Throws unless `easing` is a function, or one function per segment of an input range of `inputRangeLength` keyframes. */
+export function assertValidInterpolateEasingOption(
+  easing: EasingFunction | readonly EasingFunction[] | undefined,
+  inputRangeLength: number,
+): void {
+  if (easing === undefined || typeof easing === 'function') return;
+  const expectedLength = inputRangeLength - 1;
+  if (easing.length !== expectedLength) {
+    throw new Error(
+      `When easing is an array, it must have one entry per segment between keyframes (length inputRange.length - 1 = ${expectedLength}), but got length ${easing.length}`,
+    );
+  }
+  easing.forEach((entry, i) => {
+    if (typeof entry !== 'function') throw new Error(`easing[${i}] must be a function`);
+  });
+}
+
+/** Throws unless `posterize` is left out or a positive, finite number. */
+export function assertValidInterpolatePosterizeOption(posterize: number | undefined): void {
+  if (posterize === undefined) return;
+  if (typeof posterize !== 'number' || !Number.isFinite(posterize) || posterize <= 0) {
+    throw new Error(`posterize must be a positive finite number, but got ${posterize}`);
+  }
+}
+
 export function interpolate(
   input: number,
   inputRange: readonly number[],
@@ -100,15 +128,19 @@ export function interpolate(
       );
     }
   }
+  assertValidInterpolateEasingOption(options?.easing, inputRange.length);
+  assertValidInterpolatePosterizeOption(options?.posterize);
   if (typeof input !== 'number') throw new TypeError('Cannot interpolate an input which is not a number');
 
   if (inputRange.length === 1) return outputRange[0]!;
-  const segment = findSegment(input, inputRange);
+  const held = options?.posterize === undefined ? input : Math.floor(input / options.posterize) * options.posterize;
+  const segment = findSegment(held, inputRange);
+  const easing = options?.easing;
   return interpolateSegment(
-    input,
+    held,
     [inputRange[segment]!, inputRange[segment + 1]!],
     [outputRange[segment]!, outputRange[segment + 1]!],
-    options?.easing ?? linear,
+    easing === undefined ? linear : typeof easing === 'function' ? easing : easing[segment]!,
     options?.extrapolateLeft ?? 'extend',
     options?.extrapolateRight ?? 'extend',
   );

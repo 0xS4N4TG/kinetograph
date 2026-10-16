@@ -79,6 +79,11 @@ fn webgl_texture() {
 }
 
 #[test]
+fn webgl_framebuffer() {
+    run("webgl_framebuffer", 1.0);
+}
+
+#[test]
 fn a_canvas_with_a_recording_is_one_glsl_layer_at_its_bitmap_size() {
     let recording = case_file("webgl_gradient", "json");
     let body = format!(
@@ -97,7 +102,12 @@ fn a_canvas_with_a_recording_is_one_glsl_layer_at_its_bitmap_size() {
 
 #[test]
 fn the_committed_recordings_parse_as_the_scene_format_does() {
-    for name in ["webgl_gradient", "webgl_noise", "webgl_texture"] {
+    for name in [
+        "webgl_gradient",
+        "webgl_noise",
+        "webgl_texture",
+        "webgl_framebuffer",
+    ] {
         let content: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let mut layer = serde_json::json!({ "id": "c", "type": "glsl", "width": 10, "height": 10 });
         layer

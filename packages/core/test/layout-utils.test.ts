@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TextLayoutRequest } from '@kinetograph/native';
 import { clearFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
-import { fillTextBox, fitText, measureText, setLayoutText } from '../src/layout-utils.js';
+import { fillTextBox, fitText, fitTextOnNLines, measureText, setLayoutText } from '../src/layout-utils.js';
+import { fixture } from './helpers.js';
 
 // A stand-in for the text engine: every character is 0.5 em wide, a line is 1.2 em tall, '|' is 0.25 em, and
 // spaces at the ends are trimmed as the real one does.
@@ -105,15 +106,62 @@ describe('fillTextBox', () => {
     expect(box.add(piece('eeee '))).toEqual({ exceedsBox: false, newLine: true });
   });
 
-  it('says when the box is overfull', () => {
+  it('says when the box is overfull, and then leaves it as it was', () => {
     const box = fillTextBox({ maxBoxWidth: 30, maxLines: 2 });
     expect(box.add(piece('aaaaa'))).toEqual({ exceedsBox: false, newLine: false });
     expect(box.add(piece('bbbbb'))).toEqual({ exceedsBox: false, newLine: true });
-    expect(box.add(piece('ccccc'))).toEqual({ exceedsBox: true, newLine: true });
+    expect(box.add(piece('ccccc'))).toEqual({ exceedsBox: true, newLine: false });
+    expect(box.add(piece('d'))).toEqual({ exceedsBox: false, newLine: false });
   });
 
   it('says a piece wider than the box does not fit', () => {
     const box = fillTextBox({ maxBoxWidth: 20, maxLines: 5 });
     expect(box.add(piece('aaaaaaaa')).exceedsBox).toBe(true);
+  });
+
+  it('measures a line rounded up, and drops the leading space of a piece that starts a line', () => {
+    // ' bb' is 15 wide; with the space dropped on a new line it is 10
+    const box = fillTextBox({ maxBoxWidth: 20, maxLines: 3 });
+    expect(box.add(piece('aaaa'))).toEqual({ exceedsBox: false, newLine: false });
+    expect(box.add(piece(' bb'))).toEqual({ exceedsBox: false, newLine: true });
+    expect(box.add(piece(' c'))).toEqual({ exceedsBox: false, newLine: false });
+    // 10.1 wide pieces: the line is 20.2 wide, rounded up to 21
+    const wide = fillTextBox({ maxBoxWidth: 20, maxLines: 2 });
+    expect(wide.add({ text: 'ab', fontFamily: 'Inter', fontSize: 10.1 })).toEqual({ exceedsBox: false, newLine: false });
+    expect(wide.add({ text: 'cd', fontFamily: 'Inter', fontSize: 10.1 })).toEqual({ exceedsBox: false, newLine: true });
+  });
+
+  it('matches the published package on every recorded sequence of pieces', () => {
+    for (const c of fixture('layout-utils.json').box) {
+      const box = fillTextBox({ maxBoxWidth: c.maxBoxWidth, maxLines: c.maxLines });
+      const results = c.pieces.map((p: any) => box.add(p));
+      expect(results, JSON.stringify(c.pieces)).toEqual(c.results);
+    }
+  });
+});
+
+describe('fitTextOnNLines', () => {
+  it('matches the published package on every recorded text, box and size limit', () => {
+    const { fit } = fixture('layout-utils.json');
+    expect(fit.length).toBeGreaterThan(20);
+    for (const c of fit) {
+      const label = JSON.stringify(c.options);
+      expect(fitTextOnNLines({ fontFamily: 'Inter', ...c.options }), label).toEqual(c.output);
+    }
+  });
+
+  it('finds the largest hundredth of a pixel at which the words fit', () => {
+    // 'ab cd' on one line: 5 characters at half the size each, so 200 wide fits at 80
+    expect(fitTextOnNLines({ text: 'ab cd', fontFamily: 'Inter', maxLines: 1, maxBoxWidth: 200 })).toEqual({ fontSize: 80, lines: ['ab cd'] });
+    // on two lines the longer word, 2 characters, sets it: 200 wide fits at 200
+    expect(fitTextOnNLines({ text: 'ab cd', fontFamily: 'Inter', maxLines: 2, maxBoxWidth: 200 }).lines).toEqual(['ab', 'cd']);
+  });
+
+  it('stops at maxFontSize', () => {
+    expect(fitTextOnNLines({ text: 'ab', fontFamily: 'Inter', maxLines: 1, maxBoxWidth: 10000, maxFontSize: 30 })).toEqual({ fontSize: 30, lines: ['ab'] });
+  });
+
+  it('gives the smallest size and no lines when nothing fits', () => {
+    expect(fitTextOnNLines({ text: 'ab', fontFamily: 'Inter', maxLines: 1, maxBoxWidth: 0.01 })).toEqual({ fontSize: 0.1, lines: [] });
   });
 });

@@ -10,6 +10,7 @@ import {
   createCanvasContext,
   glslShader,
   fontKey,
+  unsupportedFilters,
   type AudioClipJson,
   type CameraJson,
   type CharStyle,
@@ -546,6 +547,9 @@ class Emitter {
         // The function draws on a context of its own, made empty for this frame: a canvas is a function of its props.
         const context = createCanvasContext({ size: () => ({ width, height }), ...canvasEnvironment(this.options.fonts) });
         draw(context);
+        for (const value of unsupportedFilters(context.commands)) {
+          this.unsupported.push({ path: `${path} <${name}>`, element: name, property: 'filter', value, reason: 'a url() filter is not drawn on a canvas' });
+        }
         return { id, type: 'canvas', width, height, commands: context.commands, ...commonOf(props, name) } as LayerJson;
       }
       case 'kg-glsl': {

@@ -1,7 +1,7 @@
 # Kinetograph
 
 A browserless programmatic video engine: agents write Remotion-shaped TypeScript and Web Audio code, Node runs it,
-and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is a placeholder name.
+and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is the final name (decided 2026-10-16).
 
 Phases 0 to 5 are built and merged into `main` (core renderer, effects, authoring, studio and video layers, Remotion
 compat on a native DOM engine, GPU-pass work); see `README.md` and `docs/SCENE.md`. Before doing anything, read:

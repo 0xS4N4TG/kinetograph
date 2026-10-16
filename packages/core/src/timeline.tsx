@@ -205,3 +205,8 @@ export function Freeze({ frame, active = true, children }: FreezeProps): ReactNo
   const state = frozen ? { ...parent, frame, frozen: true } : parent;
   return <TimelineContext.Provider value={state}>{children}</TimelineContext.Provider>;
 }
+
+/** Whether the component is inside an active `<Freeze>`. (Remotion leaves out the freeze of a premount; nothing premounts here.) */
+export function useIsInsideNonPremountFreeze(): boolean {
+  return useTimeline().frozen;
+}

@@ -83,9 +83,39 @@ describe('shape components', () => {
       <S.Polygon key="6" points={6} radius={5} />,
       <S.Pie key="7" radius={5} progress={0.3} />,
       <S.Heart key="8" height={10} />,
+      <S.Arrow key="9" />,
+      <S.Callout key="10" />,
+      <S.Spark key="11" width={10} height={14} />,
     ];
     const layers = renderAt(<>{nodes}</>).layers;
-    expect(layers).toHaveLength(8);
+    expect(layers).toHaveLength(11);
     expect(new Set(layers.map((l) => l.type))).toEqual(new Set(['shape']));
+  });
+});
+
+describe('makeArrow, makeCallout and makeSpark', () => {
+  const recorded = fixture('shapes-arrow-callout-spark.json');
+
+  it('match the published package: path, instructions, size and transform origin, and its errors', () => {
+    expect(recorded.cases.length).toBeGreaterThan(80);
+    for (const c of recorded.cases) {
+      const label = `${c.fn}(${JSON.stringify(c.options)})`;
+      const make = (S as any)[c.fn];
+      if (c.result.error) {
+        expect(() => make(c.options), label).toThrow(c.result.error);
+      } else {
+        expect(make(c.options), label).toEqual(c.result);
+      }
+    }
+  });
+
+  it('draw their path with the paint given, defaults and all', () => {
+    const [arrow] = renderAt(<S.Arrow direction="up" fill="#0f0" />).layers as any[];
+    expect(arrow).toMatchObject({ type: 'shape', shape: { kind: 'path', d: S.makeArrow({ direction: 'up' }).path }, fill: '#0f0' });
+    const [callout] = renderAt(<S.Callout pointerDirection="left" cornerRadius={8} stroke="#000" strokeWidth={2} />).layers as any[];
+    expect(callout.shape.d).toBe(S.makeCallout({ pointerDirection: 'left', cornerRadius: 8 }).path);
+    expect(callout.stroke).toEqual({ color: '#000', width: 2 });
+    const [spark] = renderAt(<S.Spark width={40} height={60} edgeRoundness={0.5} />).layers as any[];
+    expect(spark.shape.d).toBe(S.makeSpark({ width: 40, height: 60, edgeRoundness: 0.5 }).path);
   });
 });
