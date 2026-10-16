@@ -710,6 +710,7 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/sfx` | `@remotion/sfx` | the 32 sound-effect URLs of the package (`whip`, `ding`, …), for `<Audio src>`. The mix downloads each once into `~/.cache/kinetograph/sfx` (`resolveSoundSource`, `@kinetograph/core/sound-source`), so a render after the first is offline; the CLI's `render` and `audio analyze` pass it to `renderAudio` as `resolveSource`, and `lint` does not look for these URLs on disk |
 | `@kinetograph/core/zod-types` | `@remotion/zod-types` | `zColor`, `zMatrix`, `zTextarea` and `ZodZypesInternals`: zod schemas with Remotion's brands in their descriptions, accepting and refusing what the published ones do (a colour is any string Remotion's colour parser reads, `lab()`, `oklch()` and `hwb()` included). `zod` 4 is an optional peer dependency of the core. `<Composition schema>` is accepted and not validated |
 | `@kinetograph/core/timeline-utils` (+ `/timeline-utils/audio-waveform-worker`) | `@remotion/timeline-utils` | the Studio timeline's helpers, 33 exports. Pure ones (`getLoopDisplaySegments`, `sliceWaveformPeaks`, `calculateTimestampSlots`, …), `drawBars` into a canvas, `loadWaveformPeaks` and `subscribeToWaveformPeaks` (a path, decoded by the addon at 48 kHz, no worker) and the frame cache work, each against values recorded from the published package. `extractFrames`, `resizeVideoFrame` with a scale other than 1, and `renderFrameStripToCanvas` for frames not in the cache throw `UnsupportedApiError` (`@kinetograph/core`'s `unsupported.ts`): the addon decodes video inside the renderer and has no call that returns a picture |
+| `@kinetograph/core/media-parser` (+ `/media-parser/node`, `/web`, `/universal`, `/node-writer`, `/worker`, `/server-worker`, `/worker-web-entry`, `/worker-server-entry`) | `@remotion/media-parser` | `parseMedia` and `downloadAndParseMedia` for a **local file** (a path, a `file:` URL; a URL to the network is the "renders offline" error), `mediaParserController`, the errors (`IsAnImageError`, `IsAPdfError`, `IsAnUnsupportedFileTypeError`, `MediaParserAbortError`), readers and `nodeWriter`. FFmpeg reads the container through the addon's `probeStreams` and `scanStreams` (`crates/node/src/streams.rs`), so every field of the published parser is answered, checked against it on MP4, WebM, transport-stream, MP3, AAC, FLAC and WAV files (test/media-parser.test.ts). Known differences: MP4's `trackMediaTimeOffsetInTrackTimescale` is 0; the `slow*` bitrates and durations are within a few percent; raw AAC gets a correct `AudioSpecificConfig`; metadata keys follow FFmpeg's names except for Matroska (lower case), MP3 (ID3 frame ids) and WAV (RIFF chunk ids). Throws `UnsupportedApiError`: `slowStructure` (the box tree), `onAudioTrack` / `onVideoTrack` (encoded samples), a `Blob` source, M3U8 playlists, `simulateSeek`; `seek()` and `seekingHints` change nothing. `MediaParserInternals` has `Log`, `createAacCodecPrivate`, `internalParseMedia` and `fieldsNeedSamplesMap` only |
 | `@kinetograph/core/determinism`, `/determinism/install` | none | §7.4 |
 
 `@kinetograph/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from
@@ -838,6 +839,14 @@ export interface MediaInfo {
 }
 /** Reads a video's or GIF's header (no decoding). `IO` for a missing file, `INVALID_ARG` for one that is neither. */
 export function probeMedia(path: string, baseDir?: string): MediaInfo;
+/** What the container of any file FFmpeg opens says (`MediaStreams`: format, duration, start, tags, and per stream the
+ *  codec, ids, time base, size, rotation, colour, rate and channels, the codec's private data, a cover picture), nothing
+ *  decoded; files with no video stream are fine. `IO` for a missing file, `INVALID_ARG` for one FFmpeg cannot open. For
+ *  `@remotion/media-parser` (§7.5). */
+export function probeStreams(path: string, baseDir?: string): MediaStreams;
+/** Every packet of a file, not decoded, totalled per stream (`StreamScan`: count, bytes, first dts, first and last time,
+ *  the keyframes with position and size). For the "slow" fields of `parseMedia`. */
+export function scanStreams(path: string, baseDir?: string): StreamScan[];
 /** The first audio stream of any file FFmpeg reads, decoded and resampled (swresample) to `sampleRate`, keeping its
  *  channel count (mono or stereo; more channels are downmixed to stereo). null when the file has no audio stream. */
 export function decodeAudio(path: string, sampleRate: number, baseDir?: string): AudioPcm | null;

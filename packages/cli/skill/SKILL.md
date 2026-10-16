@@ -79,6 +79,9 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   check the props against the schema.
 - `@remotion/timeline-utils` (waveform peaks and drawing, loop and frame-strip maths) works for local files; what needs
   video pictures as WebCodecs frames (`extractFrames`) throws an `UnsupportedApiError` saying so.
+- `@remotion/media-parser`'s `parseMedia` reads local files (`staticFile('clip.mp4')`) through FFmpeg: duration,
+  dimensions, fps, codecs, tracks, rotation, sample rate, metadata, and the slow fields. Not the box tree
+  (`slowStructure`) or sample callbacks (`onVideoTrack`); URLs fail, as everywhere (offline).
 - Rendering is a pure function of the frame number. `Math.random()`, `Date.now()` and timers are driven by the frame;
   use `random(seed)` for jitter. Never read the real clock.
 - Register fonts before text is laid out. Text with a font that is not registered is a lint error.

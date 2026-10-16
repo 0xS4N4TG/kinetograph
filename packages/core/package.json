@@ -26,6 +26,8 @@
     "./zod-types": { "types": "./dist/zod-types.d.ts", "default": "./dist/zod-types.js" },
     "./timeline-utils": { "types": "./dist/timeline-utils/index.d.ts", "default": "./dist/timeline-utils/index.js" },
     "./timeline-utils/audio-waveform-worker": { "types": "./dist/timeline-utils/audio-waveform-worker.d.ts", "default": "./dist/timeline-utils/audio-waveform-worker.js" },
+    "./media-parser": { "types": "./dist/media-parser/index.d.ts", "default": "./dist/media-parser/index.js" },
+    "./media-parser/*": { "types": "./dist/media-parser/*.d.ts", "default": "./dist/media-parser/*.js" },
     "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
     "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" },
     "./web/install": { "types": "./dist/web-install.d.ts", "default": "./dist/web-install.js" }

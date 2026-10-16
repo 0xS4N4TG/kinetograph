@@ -24,6 +24,10 @@ describe('resolveSpecifier', () => {
       kind: 'path',
       target: '@kinetograph/core/timeline-utils/audio-waveform-worker',
     });
+    expect(resolveSpecifier('@remotion/media-parser')).toEqual({ kind: 'path', target: '@kinetograph/core/media-parser' });
+    for (const sub of ['node', 'web', 'universal', 'node-writer', 'worker', 'server-worker', 'worker-web-entry', 'worker-server-entry']) {
+      expect(resolveSpecifier(`@remotion/media-parser/${sub}`)).toEqual({ kind: 'path', target: `@kinetograph/core/media-parser/${sub}` });
+    }
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
   });
 
@@ -74,6 +78,7 @@ describe('syntheticEntry', () => {
       `export * from '@kinetograph/core';`,
       `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
       `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
+      `export { setMediaParserAddon } from '@kinetograph/core/media-parser';`,
       `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
     ]);
   });
@@ -220,6 +225,32 @@ describe('bundleProject', () => {
     const code = readFileSync(file, 'utf8');
     expect(code).toContain('packages/core/dist/timeline-utils/waveform.js');
     // The worker module has no code to carry; that it resolved is the point.
+  });
+
+  it('bundles @remotion/media-parser with every subpath onto the core, and the host can hand its addon over', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import { parseMedia, mediaParserController } from '@remotion/media-parser';`,
+        `import { nodeReader } from '@remotion/media-parser/node';`,
+        `import { webReader } from '@remotion/media-parser/web';`,
+        `import { universalReader } from '@remotion/media-parser/universal';`,
+        `import { nodeWriter } from '@remotion/media-parser/node-writer';`,
+        `import { parseMediaOnWebWorker } from '@remotion/media-parser/worker';`,
+        `import { parseMediaOnServerWorker } from '@remotion/media-parser/server-worker';`,
+        `import '@remotion/media-parser/worker-web-entry';`,
+        `import '@remotion/media-parser/worker-server-entry';`,
+        `registerRoot(() => null);`,
+        `console.log(parseMedia, mediaParserController, nodeReader, webReader, universalReader, nodeWriter, parseMediaOnWebWorker, parseMediaOnServerWorker);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/media-parser/parse-media.js');
+    expect(code).toContain('packages/core/dist/media-parser/readers.js');
+    // `setMediaParserAddon` (re-exported by the synthetic entry) and the project's `parseMedia` share one module.
+    expect(code.match(/function setMediaParserAddon\(/g)).toHaveLength(1);
+    expect(code).toMatch(/export \{[^}]*setMediaParserAddon[^}]*\}/);
   });
 
   it('leaves one file per entry, replaced when the code changes', async () => {
