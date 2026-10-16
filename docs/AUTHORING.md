@@ -635,6 +635,19 @@ Mapping onto the engine:
   Remotion does. `Interactive.create({ Component, layout: 'absolute-fill' })` puts the component in a clipped `div` of
   the `width` and `height` props. The field tables (`Interactive.baseSchema`, …, and `absoluteFillSchema`) are
   Remotion's data, unused in a render.
+- Canvas components. A browser canvas is what Remotion runs its effects, `<HtmlInCanvas>` and `<Artifact>` on, and there
+  is none, so these are accepted, draw what they can, and warn once about what they leave out:
+  - `createEffect(definition)` returns the factory and its descriptors (key with the `disabled` flag, schema with the
+    `disabled` field; recorded from the published package). An `effects` prop with an enabled effect draws the picture
+    without it.
+  - `<Solid width height color>` is the `div` of that size and colour; `<CanvasImage src width height fit>` is the `Img`
+    (an image layer when nothing needs CSS, an `img` with the `object-fit` and crop when it does).
+  - `<HtmlInCanvas width height>` shows its children in a clipped box of its size, which is what its canvas shows when
+    nothing paints over it; `onPaint` and `onInit` are not run. `isHtmlInCanvasSupported()` is false, so a project can
+    take another path; `getHtmlInCanvasUnsupportedMessage()` and `HTML_IN_CANVAS_UNSUPPORTED_MESSAGE` say why.
+  - `<IFrame>` is the `iframe` element, which the CSS engine reports as unsupported (`--strict` fails on it).
+  - `<Artifact>` draws nothing and says that its file is not written: a render produces the video only.
+  They take `from`, `durationInFrames`, `name`, `hidden`, `freeze` and the crop props as `Interactive` does.
 - Names that exist so a project bundles: `Html5Audio` and `Html5Video` are `Audio` and `Video`; `MediaPlaybackError`
   is Remotion's error class; `Experimental.Clipper` and `Experimental.Null` throw when rendered (Remotion removed them
   in 4.0.228) and `Experimental.useIsPlayer()` is false; `Config.*` calls do nothing and say once that there is no

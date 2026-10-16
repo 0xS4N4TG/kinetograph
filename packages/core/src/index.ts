@@ -107,6 +107,37 @@ export { MediaPlaybackError } from './media-error.js';
 export { Config, Experimental } from './legacy.js';
 export { Interactive, Track } from './interactive.js';
 export type { InteractiveCreateOptions, InteractiveElementProps, TrackProps } from './interactive.js';
+export { IFrame } from './iframe.js';
+export type { IFrameProps } from './iframe.js';
+export { Artifact } from './artifact.js';
+export type { ArtifactProps, DownloadBehavior } from './artifact.js';
+export {
+  HtmlInCanvas,
+  HTML_IN_CANVAS_UNSUPPORTED_MESSAGE,
+  getHtmlInCanvasUnsupportedMessage,
+  isHtmlInCanvasSupported,
+} from './html-in-canvas.js';
+export type {
+  HtmlInCanvasOnInit,
+  HtmlInCanvasOnInitCleanup,
+  HtmlInCanvasOnPaint,
+  HtmlInCanvasOnPaintParams,
+  HtmlInCanvasPixelDensity,
+  HtmlInCanvasProps,
+} from './html-in-canvas.js';
+export { createEffect, Solid, CanvasImage } from './effects.js';
+export type {
+  Backend,
+  CanvasImageProps,
+  EffectApplyParams,
+  EffectCanvas,
+  EffectDefinition,
+  EffectDescriptor,
+  EffectFactory,
+  EffectsOutputSize,
+  EffectsProp,
+  SolidProps,
+} from './effects.js';
 export { absoluteFillSchema } from './interactivity-schema.js';
 export type { InteractivitySchema, SchemaField } from './interactivity-schema.js';
 export type { CropProps, SequenceTimingProps } from './sequenced.js';
