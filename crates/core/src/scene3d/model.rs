@@ -194,7 +194,7 @@ impl Model {
             ));
         };
         let duration = self.animations[index].duration;
-        let time = match (duration > 0.0, looping) {
+        let time = match (duration > 0.0 && time.is_finite(), looping) {
             (false, _) => 0.0,
             (true, true) => time.rem_euclid(duration),
             (true, false) => time.clamp(0.0, duration),
@@ -327,6 +327,11 @@ impl Model {
     }
 }
 
+/// Whether keyframe times are all finite and never fall (a NaN fails both).
+fn rising(times: &[f32]) -> bool {
+    times.iter().all(|t| t.is_finite()) && times.windows(2).all(|w| w[1] >= w[0])
+}
+
 /// A per-vertex attribute of the file in the order of the mesh's vertices:
 /// as it is, or, for flat shading (each triangle has vertices of its own, one
 /// for each index), spread through `indices`.
@@ -415,16 +420,24 @@ impl Channel {
         let widen = |v: &[f32]| -> Vec<f64> { v.iter().map(|x| f64::from(*x)).collect() };
         let at = |k: usize| f64::from(self.times[k]);
         let last = self.times.len() - 1;
-        if time <= at(0) {
+        // Not a time at all: the first keyframe, as for a time before it.
+        if !time.is_finite() || time <= at(0) {
             return widen(value(0));
         }
         if time >= at(last) {
             return widen(value(last));
         }
         // The first keyframe after `time`; the one before it is at or before.
-        let next = self.times.partition_point(|&k| f64::from(k) <= time);
+        // (Clamped, so that nothing a file holds can index past its keys.)
+        let next = self
+            .times
+            .partition_point(|&k| f64::from(k) <= time)
+            .clamp(1, last);
         let prev = next - 1;
         let dt = at(next) - at(prev);
+        if dt <= 0.0 {
+            return widen(value(next));
+        }
         let s = (time - at(prev)) / dt;
         let (a, b) = (widen(value(prev)), widen(value(next)));
         let mut out = match self.interpolation {
@@ -839,8 +852,11 @@ impl Loader<'_> {
                     if times.is_empty() {
                         continue;
                     }
-                    if times.windows(2).any(|w| w[1] < w[0]) {
-                        return Err(format!("animation {}: keyframe times do not rise", label()));
+                    if !rising(&times) {
+                        return Err(format!(
+                            "animation {}: keyframe times are not finite and rising",
+                            label()
+                        ));
                     }
                     let per_key = if interpolation == Interpolation::CubicSpline {
                         3
@@ -1052,6 +1068,49 @@ mod tests {
             mover(5.0).transform_point3(DVec3::ZERO),
             DVec3::new(2.0, 0.0, 0.0),
         );
+    }
+
+    #[test]
+    fn keyframe_times_must_be_finite_and_rising() {
+        assert!(rising(&[0.0, 0.5, 0.5, 1.0]));
+        assert!(!rising(&[0.0, f32::NAN, 1.0]));
+        assert!(!rising(&[f32::NAN]));
+        assert!(!rising(&[0.0, f32::INFINITY]));
+        assert!(!rising(&[0.0, 1.0, 0.5]));
+    }
+
+    #[test]
+    fn a_time_that_is_not_a_number_or_a_malformed_sequence_never_panics() {
+        let channel = |times: Vec<f32>| Channel {
+            node: 0,
+            target: Target::Translation,
+            interpolation: Interpolation::Linear,
+            values: (0..times.len() * 3).map(|i| i as f32).collect(),
+            times,
+            width: 3,
+        };
+        let sound = channel(vec![0.0, 1.0]);
+        for time in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let v = sound.sample(time);
+            assert_eq!(v.len(), 3);
+            assert!(v.iter().all(|x| x.is_finite()), "{time}: {v:?}");
+        }
+        // Keys a NaN spoils (the loader refuses them) still cannot index out of range.
+        for times in [
+            vec![0.0, f32::NAN, 1.0],
+            vec![f32::NAN, f32::NAN],
+            vec![1.0, 0.0, 0.5],
+        ] {
+            let bad = channel(times);
+            for time in [-1.0, 0.0, 0.25, 0.5, 2.0, f64::NAN] {
+                assert_eq!(bad.sample(time).len(), 3);
+            }
+        }
+        // A model's playback also turns such a time into the clip's start.
+        let model = open("animated.glb");
+        let name = ClipRef::Name("move".into());
+        assert_eq!(model.playback(&name, f64::NAN, true), Ok((0, 0.0)));
+        assert_eq!(model.playback(&name, f64::INFINITY, false), Ok((0, 0.0)));
     }
 
     #[test]
