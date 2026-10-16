@@ -106,8 +106,8 @@ export const S07: React.FC = () => {
           ...(collapse > 0.01 ? [gradientMap({ stops: PALE, amount: collapse * 0.85 }), blur(collapse * 12)] : []),
         ];
         return (
+          <AbsoluteFill key={i}>
           <Layer
-            key={i}
             id={`card-${i}`}
             x={x}
             y={y}
@@ -121,6 +121,7 @@ export const S07: React.FC = () => {
               ? <Video src={c.src} width={c.w} height={c.h} fit="cover" loop muted />
               : <Image src={c.src} width={c.w} height={c.h} fit="cover" />}
           </Layer>
+          </AbsoluteFill>
         );
       })}
       {typing && (
