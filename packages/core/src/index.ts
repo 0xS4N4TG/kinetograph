@@ -81,7 +81,7 @@ export { Gif } from './gif.js';
 export { useCurrentFrame, useVideoConfig, useIsInsideNonPremountFreeze, Sequence, Series, Loop, Freeze } from './timeline.js';
 export type { SequenceProps, SeriesSequenceProps, LoopProps, FreezeProps } from './timeline.js';
 
-export { interpolate } from './interpolate.js';
+export { interpolate, assertValidInterpolateEasingOption, assertValidInterpolatePosterizeOption } from './interpolate.js';
 export type { ExtrapolateType, InterpolateOptions } from './interpolate.js';
 export { interpolateColors } from './interpolate-colors.js';
 export type { InterpolateColorsOptions } from './interpolate-colors.js';

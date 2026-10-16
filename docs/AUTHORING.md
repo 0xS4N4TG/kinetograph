@@ -622,6 +622,10 @@ Mapping onto the engine:
   left out); `watchStaticFile()` is the Studio's reload hook and does nothing, saying so once; `prefetch(src)`
   resolves at once with `src` minus its `#` fragment, as it does in a Remotion render, and throws the offline error
   for a remote URL.
+- `interpolate` takes `easing` as one function or an array with one per segment, and `posterize` (the input is held
+  at the last multiple of it, so the output steps); `assertValidInterpolateEasingOption` and
+  `assertValidInterpolatePosterizeOption` are the checks it runs. Its values are recorded from the published package.
+  Not yet: string, tuple and boolean output ranges, `output: 'perceptual-scale'` and `outputType`.
 - Names that exist so a project bundles: `Html5Audio` and `Html5Video` are `Audio` and `Video`; `MediaPlaybackError`
   is Remotion's error class; `Experimental.Clipper` and `Experimental.Null` throw when rendered (Remotion removed them
   in 4.0.228) and `Experimental.useIsPlayer()` is false; `Config.*` calls do nothing and say once that there is no
