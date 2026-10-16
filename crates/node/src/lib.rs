@@ -16,7 +16,7 @@ mod error;
 mod layout;
 mod media;
 mod preview;
-mod streams;
+pub mod streams;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

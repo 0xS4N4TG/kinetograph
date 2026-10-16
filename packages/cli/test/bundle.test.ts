@@ -24,6 +24,8 @@ describe('resolveSpecifier', () => {
       kind: 'path',
       target: '@kinetograph/core/timeline-utils/audio-waveform-worker',
     });
+    expect(resolveSpecifier('@remotion/webcodecs/web-fs')).toEqual({ kind: 'path', target: '@kinetograph/core/webcodecs/web-fs' });
+    expect(resolveSpecifier('@remotion/canvas')).toEqual({ kind: 'path', target: '@kinetograph/core/canvas' });
     expect(resolveSpecifier('@remotion/media-parser')).toEqual({ kind: 'path', target: '@kinetograph/core/media-parser' });
     for (const sub of ['node', 'web', 'universal', 'node-writer', 'worker', 'server-worker', 'worker-web-entry', 'worker-server-entry']) {
       expect(resolveSpecifier(`@remotion/media-parser/${sub}`)).toEqual({ kind: 'path', target: `@kinetograph/core/media-parser/${sub}` });
@@ -251,6 +253,25 @@ describe('bundleProject', () => {
     // `setMediaParserAddon` (re-exported by the synthetic entry) and the project's `parseMedia` share one module.
     expect(code.match(/function setMediaParserAddon\(/g)).toHaveLength(1);
     expect(code).toMatch(/export \{[^}]*setMediaParserAddon[^}]*\}/);
+  });
+
+  it('bundles @remotion/webcodecs with its subpaths and @remotion/canvas onto the core', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import { convertMedia, createVideoDecoder, webcodecsController } from '@remotion/webcodecs';`,
+        `import { bufferWriter } from '@remotion/webcodecs/buffer';`,
+        `import { webFsWriter } from '@remotion/webcodecs/web-fs';`,
+        `import { extractFramesOnWebWorker } from '@remotion/webcodecs/worker';`,
+        `import { Canvas, createCanvasController } from '@remotion/canvas';`,
+        `registerRoot(() => null);`,
+        `console.log(convertMedia, createVideoDecoder, webcodecsController, bufferWriter, webFsWriter, extractFramesOnWebWorker, Canvas, createCanvasController);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/webcodecs/convert-media.js');
+    expect(code).toContain('packages/core/dist/canvas.js');
   });
 
   it('leaves one file per entry, replaced when the code changes', async () => {

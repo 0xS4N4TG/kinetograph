@@ -30,6 +30,8 @@ const REMOTION_PACKAGES = new Set([
   'zod-types',
   'timeline-utils',
   'media-parser',
+  'webcodecs',
+  'canvas',
 ]);
 
 export type Resolution =
