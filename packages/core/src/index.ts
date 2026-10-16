@@ -96,6 +96,8 @@ export type { AbsoluteFillProps, FillStyle, ImgProps } from './fill.js';
 // ---- assets and async ----
 export { staticFile, setPublicDir, delayRender, continueRender, cancelRender } from './assets.js';
 export type { DelayRenderOptions } from './assets.js';
+export { getRemotionEnvironment } from './environment.js';
+export type { RemotionEnvironment } from './environment.js';
 
 // ---- compositions and fonts (AUTHORING.md §7.2) ----
 export {

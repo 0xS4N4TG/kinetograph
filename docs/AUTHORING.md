@@ -588,7 +588,8 @@ frame (§8).
 Exported from `@kinetograph/core` (and so from `remotion` through the CLI's alias), behaving as Remotion documents
 them: `useCurrentFrame`, `useVideoConfig`, `interpolate`, `interpolateColors`, `spring`, `measureSpring`, `Easing`,
 `random`, `Sequence`, `Series`, `Loop`, `Freeze`, `AbsoluteFill`, `Img`, `Audio` (re-exported from react), `staticFile`,
-`delayRender`, `continueRender`, `cancelRender`, `Composition`, `Still`, `Folder`, `registerRoot`, `getInputProps`.
+`delayRender`, `continueRender`, `cancelRender`, `getRemotionEnvironment`, `Composition`, `Still`, `Folder`,
+`registerRoot`, `getInputProps`.
 `random(seed)` is bit-exact with Remotion's; the rest match its documented behaviour, tested against values recorded
 from the published package (§10).
 
@@ -611,6 +612,8 @@ Mapping onto the engine:
   `<entry directory>/public`, set by the CLI).
 - `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s
   (real time, used only for the error) with the labels still open. `cancelRender(err)` fails the frame.
+- `getRemotionEnvironment()` always reports `isRendering: true` and every other flag false: the studio preview and the
+  output file come from the same render path, so a component that branches on it draws the same frame in both.
 
 ### 7.2 Compositions and fonts
 
