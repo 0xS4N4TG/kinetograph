@@ -671,6 +671,9 @@ Phase 6 (above), done 2026-10-16: items 1, 2 and 3 are done, item 4 stays droppe
 4. **Three.js and pixi**: dropped for now, see "3D layer" above. If they come back, the path is a WebGPU API in Node
    on wgpu (`deno_webgpu`) so both run their WebGPU renderers unmodified, with GLSL materials through item 3.
 
+Open issues for a later run (the snapcn.dev scan, what is left of the Remotion API, engine features not done, test
+flakiness) are logged in `docs/OPEN_ISSUES.md`.
+
 User shaders today are `shader({ code, uniforms })` in WGSL (SCENE.md, "shader"). Its limits, also to lift later:
 it sees only its own layer (no backdrop), runs one pass, samples no other texture, and takes only `f32` uniforms.
 
