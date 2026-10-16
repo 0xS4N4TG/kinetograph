@@ -790,10 +790,35 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/fonts` | `@remotion/fonts` | §7.2 |
 | `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>`; `getLottieMetadata(animationData)` (`{ fps, durationInSeconds, durationInFrames, width, height }` or null, as the published package) |
 | `@kinetograph/core/media` | `@remotion/media` | `Audio` and `Video` (also as `experimental_Audio` and `experimental_Video`), `getTargetSampleRate()` (48000) |
+| `@kinetograph/core/rive` | `@remotion/rive` | `RemotionRiveCanvas`, §7.6 |
 | `@kinetograph/core/determinism`, `/determinism/install` | none | §7.4 |
 
 `@kinetograph/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from
 one place.
+
+### 7.6 `@remotion/rive`
+
+`import { RemotionRiveCanvas } from '@remotion/rive'` (also `@kinetograph/core/rive`). Remotion plays a `.riv` file with
+Rive's WebAssembly runtime in a `<canvas>`; Kinetograph plays it with Rive's own C++ runtime, built into the addon from
+`rive-rs` (`vendor/rive`, licences in `vendor/README.md`), and the component hands the runtime's draw calls to the
+`<canvas>`'s 2D context as commands, so the element is laid out and styled like the DOM element it is in Remotion and is
+drawn natively with Vello.
+
+| Prop | |
+|---|---|
+| `src` | a `.riv` path or `staticFile(...)`; a URL is an error (a frame must not depend on the network) |
+| `artboard`, `animation` | by name or position; the default artboard and its first animation (else its default state machine) when left out |
+| `stateMachine` | not in Remotion's props: plays a state machine instead, from its start with its inputs at their defaults, stepped at 1/60 s |
+| `fit`, `alignment` | as Remotion's: `contain`, `cover`, `fill`, `fit-width`, `fit-height`, `none`, `scale-down`; nine alignments |
+| `from`, `durationInFrames`, `name` | as `<Sequence>`'s |
+| `className`, `style` | on the `<canvas>`, which is as large as the composition |
+| `ref` | the four getters answer `null` (the runtime is in the addon) |
+| `onLoad`, `assetLoader`, `effects`, `effectsOutputSize` | reported as unsupported (a warning; `--strict` fails) |
+
+A frame is played from the file's start to `frame / fps`, never from what was played before, so a frame is a pure function
+of the file and the frame number. Pictures embedded in a file are decoded and written as PNGs under
+`~/.cache/kinetograph/rive` for the commands to name; fonts embedded in the file are shaped by the runtime. The test file
+`crates/rive/tests/assets/volume_bars.riv` is from `rive-app/rive-runtime` (MIT).
 
 ## 8. `@kinetograph/audio` (stream 5)
 

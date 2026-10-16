@@ -169,6 +169,18 @@ describe('bundleProject', () => {
     expect(warnings.join('\n')).toContain('uses Tailwind, but the project has none that can build it');
   });
 
+  it('bundles @remotion/rive onto the core', async () => {
+    const dir = project({
+      'index.tsx': [
+        `import { registerRoot } from 'remotion';`,
+        `import { RemotionRiveCanvas } from '@remotion/rive';`,
+        `registerRoot(() => <RemotionRiveCanvas src="a.riv" />);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.tsx'));
+    expect(readFileSync(file, 'utf8')).toContain('packages/core/dist/rive.js');
+  });
+
   it('leaves one file per entry, replaced when the code changes', async () => {
     const dir = project({ 'index.ts': `console.log('v1');` });
     const first = await bundleProject(join(dir, 'index.ts'));
