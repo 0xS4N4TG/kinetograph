@@ -22,8 +22,8 @@ export const OUT = Easing.bezier(0.16, 1, 0.3, 1);
 /** Our own renders (showcase, showcase-3d, rajz cards, papercut ep13), the picture pool of the collage and flicker. */
 export const POOL = [
   '01-showcase-v1', '02-showcase-v1', '03-showcase-v1', '04-showcase-v1', '06-showcase-v1', '07-showcase-v1',
-  '08-showcase-v1', '10-showcase-v1', '11-showcase-3d', '12-showcase-3d', '13-showcase-3d', '15-rajz-cards',
-  '16-ep13-5s', '17-ep13-5s', '18-ep13-5s', '19-open-v4',
+  '08-showcase-v1', '10-showcase-v1', '11-showcase-3d', '12-showcase-3d', '13-showcase-3d',
+  '16-ep13-5s', '17-ep13-5s', '18-ep13-5s', '19-open-v4', '20-open-v4',
 ].map((n) => staticFile(`pool/${n}.jpg`));
 
 /** Paper texture and vignette over a paper scene. */
