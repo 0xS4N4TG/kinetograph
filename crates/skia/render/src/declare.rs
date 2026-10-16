@@ -3,17 +3,17 @@
 //! context's stack, children before their parent, and `render::materialize`
 //! sets them on the paint when the node's children are all known.
 
-use skia_safe::runtime_effect::{uniform, ChildPtr};
+use skia_safe::runtime_effect::{ChildPtr, uniform};
 use skia_safe::{
-    color_filters, gradient, gradient::Gradient, image_filters, luma_color_filter,
-    shaders, BlendMode, Color4f, ColorChannel, ColorFilter, Data, ISize, ImageFilter, Matrix, MaskFilter, PathEffect,
-    RuntimeEffect, Shader, TileMode, Vector,
+    BlendMode, Color4f, ColorChannel, ColorFilter, Data, ISize, ImageFilter, MaskFilter, Matrix,
+    PathEffect, RuntimeEffect, Shader, TileMode, Vector, color_filters, gradient,
+    gradient::Gradient, image_filters, luma_color_filter, shaders,
 };
 
-use crate::enums;
-use crate::render::{compose, is_image_filter, is_shader, node, transform_of, Ctx, Node};
-use crate::value::{err, Props};
 use crate::Error;
+use crate::enums;
+use crate::render::{Ctx, Node, compose, is_image_filter, is_shader, node, transform_of};
+use crate::value::{Props, err};
 
 fn missing<T>(node: Node, what: &str) -> Result<T, Error> {
     err(format!("{} needs {what}", node.kind))
@@ -60,7 +60,9 @@ fn gradient_parts(n: Node) -> Result<GradientParts, Error> {
         .array("colors")
         .ok_or_else(|| Error(format!("{} needs colors", n.kind)))?
         .iter()
-        .map(|c| crate::value::color(c).ok_or_else(|| Error("a gradient colour must be a colour".into())))
+        .map(|c| {
+            crate::value::color(c).ok_or_else(|| Error("a gradient colour must be a colour".into()))
+        })
         .collect::<Result<_, _>>()?;
     if colors.is_empty() {
         return missing(n, "at least one colour");
@@ -80,34 +82,52 @@ fn gradient_parts(n: Node) -> Result<GradientParts, Error> {
 
 impl GradientParts {
     fn gradient(&self) -> Gradient<'_> {
-        let colors = gradient::Colors::new(&self.colors, self.positions.as_deref(), self.mode, None);
+        let colors =
+            gradient::Colors::new(&self.colors, self.positions.as_deref(), self.mode, None);
         Gradient::new(colors, gradient::Interpolation::from_flags(self.flags))
     }
 }
 
 fn point(n: Node, key: &str) -> Result<skia_safe::Point, Error> {
-    n.props.point(key)?.ok_or_else(|| Error(format!("{} needs {key}", n.kind)))
+    n.props
+        .point(key)?
+        .ok_or_else(|| Error(format!("{} needs {key}", n.kind)))
 }
 
 fn number(n: Node, key: &str) -> Result<f32, Error> {
-    n.props.f32(key)?.ok_or_else(|| Error(format!("{} needs {key}", n.kind)))
+    n.props
+        .f32(key)?
+        .ok_or_else(|| Error(format!("{} needs {key}", n.kind)))
 }
 
 fn declare_shader(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
     let shader = match n.kind {
         "LinearGradient" => {
             let parts = gradient_parts(n)?;
-            shaders::linear_gradient((point(n, "start")?, point(n, "end")?), &parts.gradient(), &parts.matrix)
+            shaders::linear_gradient(
+                (point(n, "start")?, point(n, "end")?),
+                &parts.gradient(),
+                &parts.matrix,
+            )
         }
         "RadialGradient" => {
             let parts = gradient_parts(n)?;
-            shaders::radial_gradient((point(n, "c")?, number(n, "r")?), &parts.gradient(), &parts.matrix)
+            shaders::radial_gradient(
+                (point(n, "c")?, number(n, "r")?),
+                &parts.gradient(),
+                &parts.matrix,
+            )
         }
         "SweepGradient" => {
             let parts = gradient_parts(n)?;
             let start = n.props.f32_or("start", 0.0)?;
             let end = n.props.f32_or("end", 360.0)?;
-            shaders::sweep_gradient(point(n, "c")?, (start, end), &parts.gradient(), &parts.matrix)
+            shaders::sweep_gradient(
+                point(n, "c")?,
+                (start, end),
+                &parts.gradient(),
+                &parts.matrix,
+            )
         }
         "TwoPointConicalGradient" => {
             let parts = gradient_parts(n)?;
@@ -119,8 +139,14 @@ fn declare_shader(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
             )
         }
         "ColorShader" => {
-            let color = n.props.color("color")?.ok_or_else(|| Error("ColorShader needs a color".into()))?;
-            Some(shaders::color_in_space(color, skia_safe::ColorSpace::new_srgb()))
+            let color = n
+                .props
+                .color("color")?
+                .ok_or_else(|| Error("ColorShader needs a color".into()))?;
+            Some(shaders::color_in_space(
+                color,
+                skia_safe::ColorSpace::new_srgb(),
+            ))
         }
         "Turbulence" | "FractalNoise" => {
             let frequency = (number(n, "freqX")?, number(n, "freqY")?);
@@ -139,7 +165,11 @@ fn declare_shader(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
         "ImageShader" => image_shader(ctx, n)?,
         "Shader" => runtime_shader(ctx, n)?,
         "Blend" => {
-            let mode = enums::blend_mode(n.props.str("mode").ok_or_else(|| Error("Blend needs a mode".into()))?)?;
+            let mode = enums::blend_mode(
+                n.props
+                    .str("mode")
+                    .ok_or_else(|| Error("Blend needs a mode".into()))?,
+            )?;
             let all = std::mem::take(&mut ctx.shaders);
             match compose(all, |dst, src| Some(shaders::blend(mode, dst, src))) {
                 Some(shader) => {
@@ -164,7 +194,11 @@ fn image_shader(ctx: &mut Ctx, n: Node) -> Result<Option<Shader>, Error> {
     let mut matrix = Matrix::new_identity();
     if let Some(rect) = n.props.rect()? {
         let fit = n.props.str("fit").unwrap_or("fill");
-        let (src, dst) = crate::draw::fit_rects(fit, skia_safe::Rect::from_wh(image.width() as f32, image.height() as f32), rect);
+        let (src, dst) = crate::draw::fit_rects(
+            fit,
+            skia_safe::Rect::from_wh(image.width() as f32, image.height() as f32),
+            rect,
+        );
         let sx = dst.width() / src.width();
         let sy = dst.height() / src.height();
         matrix.pre_translate((dst.left - src.left * sx, dst.top - src.top * sy));
@@ -185,7 +219,12 @@ fn effect_source<'a>(n: Node<'a>) -> Result<&'a str, Error> {
     n.props
         .props("source")
         .and_then(|s| s.str("sksl"))
-        .ok_or_else(|| Error(format!("{} needs a source made by Skia.RuntimeEffect.Make", n.kind)))
+        .ok_or_else(|| {
+            Error(format!(
+                "{} needs a source made by Skia.RuntimeEffect.Make",
+                n.kind
+            ))
+        })
 }
 
 fn runtime_shader(ctx: &mut Ctx, n: Node) -> Result<Option<Shader>, Error> {
@@ -194,11 +233,21 @@ fn runtime_shader(ctx: &mut Ctx, n: Node) -> Result<Option<Shader>, Error> {
     // The children shaders were pushed just before this one, in the order the effect names its children.
     let wanted = effect.children().len();
     let at = ctx.shaders.len().saturating_sub(wanted);
-    let children: Vec<ChildPtr> = ctx.shaders.split_off(at).into_iter().map(ChildPtr::from).collect();
+    let children: Vec<ChildPtr> = ctx
+        .shaders
+        .split_off(at)
+        .into_iter()
+        .map(ChildPtr::from)
+        .collect();
     if children.len() != wanted {
         return err(format!(
             "the effect has {wanted} child shaders ({}) and got {}",
-            effect.children().iter().map(|c| c.name()).collect::<Vec<_>>().join(", "),
+            effect
+                .children()
+                .iter()
+                .map(|c| c.name())
+                .collect::<Vec<_>>()
+                .join(", "),
             children.len()
         ));
     }
@@ -220,17 +269,21 @@ pub fn pack_uniforms(effect: &RuntimeEffect, values: Option<Props>) -> Result<Da
                 let mut flat = Vec::new();
                 for item in a {
                     match item {
-                        serde_json::Value::Array(inner) => flat.extend(inner.iter().filter_map(serde_json::Value::as_f64)),
+                        serde_json::Value::Array(inner) => {
+                            flat.extend(inner.iter().filter_map(serde_json::Value::as_f64))
+                        }
                         other => flat.extend(other.as_f64()),
                     }
                 }
                 flat
             }
             serde_json::Value::Bool(b) => vec![f64::from(*b)],
-            other => other
-                .as_f64()
-                .map(|n| vec![n])
-                .ok_or_else(|| Error(format!("the uniform {} must be a number or a list of numbers", u.name())))?,
+            other => other.as_f64().map(|n| vec![n]).ok_or_else(|| {
+                Error(format!(
+                    "the uniform {} must be a number or a list of numbers",
+                    u.name()
+                ))
+            })?,
         };
         let per = match u.ty() {
             uniform::Type::Float | uniform::Type::Int => 1,
@@ -242,7 +295,11 @@ pub fn pack_uniforms(effect: &RuntimeEffect, values: Option<Props>) -> Result<Da
         };
         let wanted = per * u.count().max(1) as usize;
         if numbers.len() != wanted {
-            return err(format!("the uniform {} takes {wanted} numbers, got {}", u.name(), numbers.len()));
+            return err(format!(
+                "the uniform {} takes {wanted} numbers, got {}",
+                u.name(),
+                numbers.len()
+            ));
         }
         let integer = matches!(
             u.ty(),
@@ -250,7 +307,11 @@ pub fn pack_uniforms(effect: &RuntimeEffect, values: Option<Props>) -> Result<Da
         );
         for (i, number) in numbers.iter().enumerate() {
             let at = u.offset() + i * 4;
-            let word = if integer { (*number as i32).to_ne_bytes() } else { (*number as f32).to_ne_bytes() };
+            let word = if integer {
+                (*number as i32).to_ne_bytes()
+            } else {
+                (*number as f32).to_ne_bytes()
+            };
             bytes[at..at + 4].copy_from_slice(&word);
         }
     }
@@ -267,8 +328,16 @@ pub struct EffectInfo {
 pub fn compile_effect(sksl: &str) -> Result<EffectInfo, Error> {
     let effect = RuntimeEffect::make_for_shader(sksl, None).map_err(Error)?;
     Ok(EffectInfo {
-        uniforms: effect.uniforms().iter().map(|u| (u.name().to_string(), u.size_in_bytes() / 4)).collect(),
-        children: effect.children().iter().map(|c| c.name().to_string()).collect(),
+        uniforms: effect
+            .uniforms()
+            .iter()
+            .map(|u| (u.name().to_string(), u.size_in_bytes() / 4))
+            .collect(),
+        children: effect
+            .children()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect(),
     })
 }
 
@@ -280,20 +349,30 @@ pub fn color_filters(ctx: &mut Ctx, nodes: &[Node]) -> Result<(), Error> {
         color_filters(ctx, &children)?;
         let filter: Option<ColorFilter> = match n.kind {
             "BlendColorFilter" => {
-                let color = n.props.color("color")?.ok_or_else(|| Error("BlendColorFilter needs a color".into()))?;
+                let color = n
+                    .props
+                    .color("color")?
+                    .ok_or_else(|| Error("BlendColorFilter needs a color".into()))?;
                 let mode = enums::blend_mode(n.props.str("mode").unwrap_or("srcOver"))?;
                 color_filters::blend(color.to_color(), mode)
             }
             "MatrixColorFilter" => {
-                let m = n.props.f32s("matrix")?.ok_or_else(|| Error("ColorMatrix needs a matrix".into()))?;
-                let m: [f32; 20] = m.try_into().map_err(|_| Error("a colour matrix is 20 numbers".into()))?;
+                let m = n
+                    .props
+                    .f32s("matrix")?
+                    .ok_or_else(|| Error("ColorMatrix needs a matrix".into()))?;
+                let m: [f32; 20] = m
+                    .try_into()
+                    .map_err(|_| Error("a colour matrix is 20 numbers".into()))?;
                 Some(color_filters::matrix_row_major(&m, None))
             }
             "LerpColorFilter" => {
                 let second = ctx.color_filters.pop();
                 let first = ctx.color_filters.pop();
                 match (first, second) {
-                    (Some(first), Some(second)) => color_filters::lerp(number(*n, "t")?, first, second),
+                    (Some(first), Some(second)) => {
+                        color_filters::lerp(number(*n, "t")?, first, second)
+                    }
                     _ => return err("LerpColorFilter needs two colour filters"),
                 }
             }
@@ -302,12 +381,16 @@ pub fn color_filters(ctx: &mut Ctx, nodes: &[Node]) -> Result<(), Error> {
             "SRGBToLinearGammaColorFilter" => Some(color_filters::srgb_to_linear_gamma()),
             other => return err(format!("unknown colour filter {other}")),
         };
-        ctx.color_filters
-            .push(filter.ok_or_else(|| Error(format!("{} could not be made from its props", n.kind)))?);
+        ctx.color_filters.push(
+            filter.ok_or_else(|| Error(format!("{} could not be made from its props", n.kind)))?,
+        );
         if n.kind != "LerpColorFilter" && !children.is_empty() && ctx.color_filters.len() > 1 {
             let outer = ctx.color_filters.pop().expect("two");
             let inner = ctx.color_filters.pop().expect("two");
-            ctx.color_filters.push(color_filters::compose(outer, inner).ok_or_else(|| Error("colour filters could not be composed".into()))?);
+            ctx.color_filters.push(
+                color_filters::compose(outer, inner)
+                    .ok_or_else(|| Error("colour filters could not be composed".into()))?,
+            );
         }
     }
     Ok(())
@@ -330,7 +413,10 @@ pub fn image_filters(ctx: &mut Ctx, nodes: &[Node]) -> Result<(), Error> {
         if n.kind != "BlendImageFilter" && !children.is_empty() && ctx.image_filters.len() > 1 {
             let outer = ctx.image_filters.pop().expect("two");
             let inner = ctx.image_filters.pop().expect("two");
-            ctx.image_filters.push(image_filters::compose(outer, inner).ok_or_else(|| Error("image filters could not be composed".into()))?);
+            ctx.image_filters.push(
+                image_filters::compose(outer, inner)
+                    .ok_or_else(|| Error("image filters could not be composed".into()))?,
+            );
         }
     }
     Ok(())
@@ -339,34 +425,65 @@ pub fn image_filters(ctx: &mut Ctx, nodes: &[Node]) -> Result<(), Error> {
 fn declare_image_filter(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
     let filter: Option<ImageFilter> = match n.kind {
         "BlurImageFilter" => {
-            let sigma = n.props.radius("blur")?.ok_or_else(|| Error("Blur needs a blur".into()))?;
+            let sigma = n
+                .props
+                .radius("blur")?
+                .ok_or_else(|| Error("Blur needs a blur".into()))?;
             let mode = enums::tile_mode(n.props.str("mode").unwrap_or("decal"))?;
             image_filters::blur((sigma.x, sigma.y), mode, None, None)
         }
         "MorphologyImageFilter" => {
-            let r = n.props.radius("radius")?.ok_or_else(|| Error("Morphology needs a radius".into()))?;
+            let r = n
+                .props
+                .radius("radius")?
+                .ok_or_else(|| Error("Morphology needs a radius".into()))?;
             match n.props.str("operator") {
                 Some("erode") => image_filters::erode((r.x, r.y), None, None),
                 _ => image_filters::dilate((r.x, r.y), None, None),
             }
         }
-        "OffsetImageFilter" => image_filters::offset(Vector::new(number(n, "x")?, number(n, "y")?), None, None),
+        "OffsetImageFilter" => {
+            image_filters::offset(Vector::new(number(n, "x")?, number(n, "y")?), None, None)
+        }
         "DropShadowImageFilter" => {
-            let color = n.props.color("color")?.ok_or_else(|| Error("Shadow needs a color".into()))?;
+            let color = n
+                .props
+                .color("color")?
+                .ok_or_else(|| Error("Shadow needs a color".into()))?;
             let (dx, dy, blur) = (number(n, "dx")?, number(n, "dy")?, number(n, "blur")?);
             let shadow_only = n.props.bool("shadowOnly") == Some(true);
             if n.props.bool("inner") == Some(true) {
                 inner_shadow(dx, dy, blur, color, shadow_only)
             } else if shadow_only {
-                image_filters::drop_shadow_only(Vector::new(dx, dy), (blur, blur), color, None, None, None)
+                image_filters::drop_shadow_only(
+                    Vector::new(dx, dy),
+                    (blur, blur),
+                    color,
+                    None,
+                    None,
+                    None,
+                )
             } else {
-                image_filters::drop_shadow(Vector::new(dx, dy), (blur, blur), color, None, None, None)
+                image_filters::drop_shadow(
+                    Vector::new(dx, dy),
+                    (blur, blur),
+                    color,
+                    None,
+                    None,
+                    None,
+                )
             }
         }
         "BlendImageFilter" => {
-            let mode = enums::blend_mode(n.props.str("mode").ok_or_else(|| Error("Blend needs a mode".into()))?)?;
+            let mode = enums::blend_mode(
+                n.props
+                    .str("mode")
+                    .ok_or_else(|| Error("Blend needs a mode".into()))?,
+            )?;
             let all = std::mem::take(&mut ctx.image_filters);
-            match compose(all, |background, foreground| image_filters::blend(mode, background, foreground, None)) {
+            match compose(all, |background, foreground| {
+                image_filters::blend(mode, background, foreground, None)
+            }) {
                 Some(filter) => {
                     ctx.image_filters.push(filter);
                     return Ok(());
@@ -375,7 +492,10 @@ fn declare_image_filter(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
             }
         }
         "DisplacementMapImageFilter" => {
-            let shader = ctx.shaders.pop().ok_or_else(|| Error("DisplacementMap expects a shader as child".into()))?;
+            let shader = ctx
+                .shaders
+                .pop()
+                .ok_or_else(|| Error("DisplacementMap expects a shader as child".into()))?;
             let map = image_filters::shader(shader, None);
             let channel = |key: &str| -> Result<ColorChannel, Error> {
                 Ok(match n.props.str(key).unwrap_or("r") {
@@ -386,7 +506,13 @@ fn declare_image_filter(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
                     other => return err(format!("unknown colour channel {other:?}")),
                 })
             };
-            image_filters::displacement_map((channel("channelX")?, channel("channelY")?), number(n, "scale")?, map, None, None)
+            image_filters::displacement_map(
+                (channel("channelX")?, channel("channelY")?),
+                number(n, "scale")?,
+                map,
+                None,
+                None,
+            )
         }
         "RuntimeShaderImageFilter" => {
             let effect = ctx.assets.effect(effect_source(n)?)?;
@@ -410,11 +536,24 @@ fn set_builder_uniforms(
     let bytes = packed.as_bytes();
     for u in effect.uniforms() {
         let slice = &bytes[u.offset()..u.offset() + u.size_in_bytes()];
-        let result = if matches!(u.ty(), uniform::Type::Int | uniform::Type::Int2 | uniform::Type::Int3 | uniform::Type::Int4) {
-            let ints: Vec<i32> = slice.chunks_exact(4).map(|c| i32::from_ne_bytes([c[0], c[1], c[2], c[3]])).collect();
+        let result = if matches!(
+            u.ty(),
+            uniform::Type::Int | uniform::Type::Int2 | uniform::Type::Int3 | uniform::Type::Int4
+        ) {
+            let ints: Vec<i32> = slice
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| i32::from_ne_bytes(*c))
+                .collect();
             builder.set_uniform_int(u.name(), &ints)
         } else {
-            let floats: Vec<f32> = slice.chunks_exact(4).map(|c| f32::from_ne_bytes([c[0], c[1], c[2], c[3]])).collect();
+            let floats: Vec<f32> = slice
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_ne_bytes(*c))
+                .collect();
             builder.set_uniform_float(u.name(), &floats)
         };
         result.map_err(|e| Error(format!("uniform {}: {e}", u.name())))?;
@@ -423,9 +562,17 @@ fn set_builder_uniforms(
 }
 
 /// RN-Skia's inner shadow: the shadow of what is outside the shape, cut to the shape.
-fn inner_shadow(dx: f32, dy: f32, blur: f32, color: Color4f, shadow_only: bool) -> Option<ImageFilter> {
+fn inner_shadow(
+    dx: f32,
+    dy: f32,
+    blur: f32,
+    color: Color4f,
+    shadow_only: bool,
+) -> Option<ImageFilter> {
     let black = Color4f::new(0.0, 0.0, 0.0, 1.0);
-    let filter = |c: Color4f, mode: BlendMode| image_filters::color_filter(color_filters::blend(c.to_color(), mode)?, None, None);
+    let filter = |c: Color4f, mode: BlendMode| {
+        image_filters::color_filter(color_filters::blend(c.to_color(), mode)?, None, None)
+    };
     let source_graphic = filter(black, BlendMode::Dst)?;
     let source_alpha = filter(black, BlendMode::SrcIn)?;
     let outside = filter(color, BlendMode::SrcOut)?;
@@ -441,10 +588,13 @@ fn inner_shadow(dx: f32, dy: f32, blur: f32, color: Color4f, shadow_only: bool) 
 // ---- mask filter ----
 
 pub fn mask_filter(props: Props) -> Result<MaskFilter, Error> {
-    let blur = props.f32("blur")?.ok_or_else(|| Error("BlurMask needs a blur".into()))?;
+    let blur = props
+        .f32("blur")?
+        .ok_or_else(|| Error("BlurMask needs a blur".into()))?;
     let style = enums::blur_style(props.str("style").unwrap_or("normal"))?;
     let respect = props.bool("respectCTM").unwrap_or(true);
-    MaskFilter::blur(style, blur, respect).ok_or_else(|| Error("the blur mask filter could not be made".into()))
+    MaskFilter::blur(style, blur, respect)
+        .ok_or_else(|| Error("the blur mask filter could not be made".into()))
 }
 
 // ---- path effects ----
@@ -455,30 +605,52 @@ pub fn path_effects(ctx: &mut Ctx, nodes: &[Node]) -> Result<(), Error> {
         path_effects(ctx, &children)?;
         let effect: Option<PathEffect> = match n.kind {
             "DashPathEffect" => {
-                let intervals = n.props.f32s("intervals")?.ok_or_else(|| Error("DashPathEffect needs intervals".into()))?;
+                let intervals = n
+                    .props
+                    .f32s("intervals")?
+                    .ok_or_else(|| Error("DashPathEffect needs intervals".into()))?;
                 PathEffect::dash(&intervals, n.props.f32_or("phase", 0.0)?)
             }
             "CornerPathEffect" => PathEffect::corner_path(number(*n, "r")?),
-            "DiscretePathEffect" => {
-                PathEffect::discrete(number(*n, "length")?, number(*n, "deviation")?, Some(number(*n, "seed")? as u32))
-            }
+            "DiscretePathEffect" => PathEffect::discrete(
+                number(*n, "length")?,
+                number(*n, "deviation")?,
+                Some(number(*n, "seed")? as u32),
+            ),
             "Line2DPathEffect" => {
-                let matrix = n.props.matrix("matrix")?.ok_or_else(|| Error("Line2DPathEffect needs a matrix".into()))?;
+                let matrix = n
+                    .props
+                    .matrix("matrix")?
+                    .ok_or_else(|| Error("Line2DPathEffect needs a matrix".into()))?;
                 PathEffect::line_2d(number(*n, "width")?, &matrix)
             }
             "Path2DPathEffect" => {
-                let matrix = n.props.matrix("matrix")?.ok_or_else(|| Error("Path2DPathEffect needs a matrix".into()))?;
-                let path = n.props.path("path")?.ok_or_else(|| Error("Path2DPathEffect needs a path".into()))?;
+                let matrix = n
+                    .props
+                    .matrix("matrix")?
+                    .ok_or_else(|| Error("Path2DPathEffect needs a matrix".into()))?;
+                let path = n
+                    .props
+                    .path("path")?
+                    .ok_or_else(|| Error("Path2DPathEffect needs a path".into()))?;
                 Some(PathEffect::path_2d(&matrix, &path))
             }
             "Path1DPathEffect" => {
-                let path = n.props.path("path")?.ok_or_else(|| Error("Path1DPathEffect needs a path".into()))?;
+                let path = n
+                    .props
+                    .path("path")?
+                    .ok_or_else(|| Error("Path1DPathEffect needs a path".into()))?;
                 let style = match n.props.str("style").unwrap_or("translate") {
                     "rotate" => skia_safe::path_1d_path_effect::Style::Rotate,
                     "morph" => skia_safe::path_1d_path_effect::Style::Morph,
                     _ => skia_safe::path_1d_path_effect::Style::Translate,
                 };
-                PathEffect::path_1d(&path, number(*n, "advance")?, n.props.f32_or("phase", 0.0)?, style)
+                PathEffect::path_1d(
+                    &path,
+                    number(*n, "advance")?,
+                    n.props.f32_or("phase", 0.0)?,
+                    style,
+                )
             }
             "SumPathEffect" => {
                 let all = std::mem::take(&mut ctx.path_effects);
@@ -492,8 +664,9 @@ pub fn path_effects(ctx: &mut Ctx, nodes: &[Node]) -> Result<(), Error> {
             }
             other => return err(format!("unknown path effect {other}")),
         };
-        ctx.path_effects
-            .push(effect.ok_or_else(|| Error(format!("{} could not be made from its props", n.kind)))?);
+        ctx.path_effects.push(
+            effect.ok_or_else(|| Error(format!("{} could not be made from its props", n.kind)))?,
+        );
         if n.kind != "SumPathEffect" && !children.is_empty() && ctx.path_effects.len() > 1 {
             let outer = ctx.path_effects.pop().expect("two");
             let inner = ctx.path_effects.pop().expect("two");

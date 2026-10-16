@@ -67,14 +67,18 @@ impl<'a> Props<'a> {
     pub fn color(&self, key: &str) -> Result<Option<Color4f>, Error> {
         match self.get(key) {
             None => Ok(None),
-            Some(v) => color(v).map(Some).ok_or_else(|| Error(format!("{key} must be a colour"))),
+            Some(v) => color(v)
+                .map(Some)
+                .ok_or_else(|| Error(format!("{key} must be a colour"))),
         }
     }
 
     pub fn point(&self, key: &str) -> Result<Option<Point>, Error> {
         match self.get(key) {
             None => Ok(None),
-            Some(v) => point(v).map(Some).ok_or_else(|| Error(format!("{key} must be a point"))),
+            Some(v) => point(v)
+                .map(Some)
+                .ok_or_else(|| Error(format!("{key} must be a point"))),
         }
     }
 
@@ -84,7 +88,9 @@ impl<'a> Props<'a> {
             None => Ok(None),
             Some(v) => match as_f32(v) {
                 Some(r) => Ok(Some(Vector::new(r, r))),
-                None => point(v).map(Some).ok_or_else(|| Error(format!("{key} must be a radius"))),
+                None => point(v)
+                    .map(Some)
+                    .ok_or_else(|| Error(format!("{key} must be a radius"))),
             },
         }
     }
@@ -92,7 +98,9 @@ impl<'a> Props<'a> {
     /// `rect` (an object), else `x`, `y`, `width` and `height`.
     pub fn rect(&self) -> Result<Option<Rect>, Error> {
         if let Some(rect) = self.get("rect") {
-            return rect_of(rect).map(Some).ok_or_else(|| Error("rect must be a rect".into()));
+            return rect_of(rect)
+                .map(Some)
+                .ok_or_else(|| Error("rect must be a rect".into()));
         }
         match (self.f32("width")?, self.f32("height")?) {
             (Some(width), Some(height)) => {
@@ -107,7 +115,9 @@ impl<'a> Props<'a> {
     pub fn matrix(&self, key: &str) -> Result<Option<Matrix>, Error> {
         match self.get(key) {
             None => Ok(None),
-            Some(v) => matrix(v).map(Some).ok_or_else(|| Error(format!("{key} must be a matrix"))),
+            Some(v) => matrix(v)
+                .map(Some)
+                .ok_or_else(|| Error(format!("{key} must be a matrix"))),
         }
     }
 
@@ -159,8 +169,12 @@ pub fn rrect_of(v: &Value) -> Option<RRect> {
 pub fn matrix(v: &Value) -> Option<Matrix> {
     let m = floats(v)?;
     match m.len() {
-        9 => Some(Matrix::new_all(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])),
-        16 => Some(Matrix::new_all(m[0], m[4], m[12], m[1], m[5], m[13], m[3], m[7], m[15])),
+        9 => Some(Matrix::new_all(
+            m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8],
+        )),
+        16 => Some(Matrix::new_all(
+            m[0], m[4], m[12], m[1], m[5], m[13], m[3], m[7], m[15],
+        )),
         _ => None,
     }
 }
@@ -170,7 +184,9 @@ pub fn path(v: &Value) -> Result<Path, Error> {
     let (d, fill) = match v {
         Value::String(d) => (d.as_str(), None),
         Value::Object(o) => (
-            o.get("d").and_then(Value::as_str).ok_or_else(|| Error("path needs d".into()))?,
+            o.get("d")
+                .and_then(Value::as_str)
+                .ok_or_else(|| Error("path needs d".into()))?,
             o.get("fillType").and_then(Value::as_str),
         ),
         _ => return err("path must be SVG path data"),

@@ -10,11 +10,14 @@ use skia_safe::{
 
 use crate::enums;
 use crate::render::{Ctx, Node, default_paint};
-use crate::value::{rect_of, rrect_of, Props};
-use crate::{text, Error};
+use crate::value::{Props, rect_of, rrect_of};
+use crate::{Error, text};
 
 pub fn draw(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
-    if matches!(n.kind, "Group" | "Layer" | "BackdropFilter" | "BoxShadow" | "Paint") {
+    if matches!(
+        n.kind,
+        "Group" | "Layer" | "BackdropFilter" | "BoxShadow" | "Paint"
+    ) {
         return Ok(());
     }
     let mut paints = vec![ctx.paint().clone()];
@@ -46,12 +49,18 @@ fn draw_with(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
                 Some(c) => c,
                 None => Point::new(props.f32_or("cx", 0.0)?, props.f32_or("cy", 0.0)?),
             };
-            let r = props.f32("r")?.ok_or_else(|| Error("Circle needs r".into()))?;
+            let r = props
+                .f32("r")?
+                .ok_or_else(|| Error("Circle needs r".into()))?;
             canvas.draw_circle(c, r, paint);
         }
         "Line" => {
-            let p1 = props.point("p1")?.ok_or_else(|| Error("Line needs p1".into()))?;
-            let p2 = props.point("p2")?.ok_or_else(|| Error("Line needs p2".into()))?;
+            let p1 = props
+                .point("p1")?
+                .ok_or_else(|| Error("Line needs p1".into()))?;
+            let p2 = props
+                .point("p2")?
+                .ok_or_else(|| Error("Line needs p2".into()))?;
             canvas.draw_line(p1, p2, paint);
         }
         "Points" => {
@@ -79,12 +88,18 @@ fn draw_with(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
 }
 
 fn rect_prop(n: Node) -> Result<Rect, Error> {
-    n.props.rect()?.ok_or_else(|| Error(format!("{} needs x, y, width and height, or a rect", n.kind)))
+    n.props.rect()?.ok_or_else(|| {
+        Error(format!(
+            "{} needs x, y, width and height, or a rect",
+            n.kind
+        ))
+    })
 }
 
 fn rrect_prop(n: Node) -> Result<RRect, Error> {
     if let Some(held) = n.props.get("rect") {
-        return rrect_of(held).ok_or_else(|| Error("RoundedRect rect must be a rounded rect".into()));
+        return rrect_of(held)
+            .ok_or_else(|| Error("RoundedRect rect must be a rounded rect".into()));
     }
     let rect = rect_prop(n)?;
     let r = n.props.radius("r")?.unwrap_or_default();
@@ -97,7 +112,9 @@ fn rounded(v: Option<&Value>, key: &str) -> Result<RRect, Error> {
     if v.get("rx").is_some() {
         return rrect_of(v).ok_or_else(|| Error(format!("{key} must be a rounded rect")));
     }
-    rect_of(v).map(RRect::new_rect).ok_or_else(|| Error(format!("{key} must be a rect or a rounded rect")))
+    rect_of(v)
+        .map(RRect::new_rect)
+        .ok_or_else(|| Error(format!("{key} must be a rect or a rounded rect")))
 }
 
 pub fn points_of(props: Props, key: &str) -> Result<Vec<Point>, Error> {
@@ -105,20 +122,25 @@ pub fn points_of(props: Props, key: &str) -> Result<Vec<Point>, Error> {
         .array(key)
         .ok_or_else(|| Error(format!("{key} must be a list of points")))?
         .iter()
-        .map(|p| crate::value::point(p).ok_or_else(|| Error(format!("{key} must be a list of points"))))
+        .map(|p| {
+            crate::value::point(p).ok_or_else(|| Error(format!("{key} must be a list of points")))
+        })
         .collect()
 }
 
 fn draw_path(canvas: &Canvas, props: Props, paint: &Paint) -> Result<(), Error> {
-    let mut path = props.path("path")?.ok_or_else(|| Error("Path needs a path".into()))?;
+    let mut path = props
+        .path("path")?
+        .ok_or_else(|| Error("Path needs a path".into()))?;
     if let Some(fill) = props.str("fillType") {
         path = path.with_fill_type(crate::value::fill_type(fill));
     }
     let start = props.f32_or("start", 0.0)?.clamp(0.0, 1.0);
     let end = props.f32_or("end", 1.0)?.clamp(0.0, 1.0);
     if start != 0.0 || end != 1.0 {
-        let trim = skia_safe::trim_path_effect::new(start, end, skia_safe::trim_path_effect::Mode::Normal)
-            .ok_or_else(|| Error("the path could not be trimmed".into()))?;
+        let trim =
+            skia_safe::trim_path_effect::new(start, end, skia_safe::trim_path_effect::Mode::Normal)
+                .ok_or_else(|| Error("the path could not be trimmed".into()))?;
         let rec = skia_safe::StrokeRec::new_fill();
         path = trim
             .filter_path(&path, &rec, path.bounds())
@@ -153,7 +175,10 @@ fn draw_path(canvas: &Canvas, props: Props, paint: &Paint) -> Result<(), Error> 
 
 /// The picture of an `image` prop (`{ src }`), read once.
 pub fn image_of(ctx: &mut Ctx, v: &Value) -> Result<Image, Error> {
-    let src = v.get("src").and_then(Value::as_str).ok_or_else(|| Error("an image needs a src".into()))?;
+    let src = v
+        .get("src")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error("an image needs a src".into()))?;
     let path = ctx.file(src);
     ctx.assets.image(&path)
 }
@@ -165,7 +190,11 @@ pub fn sampling_of(props: Props) -> Result<SamplingOptions, Error> {
     if let (Some(b), Some(c)) = (s.f32("B")?, s.f32("C")?) {
         return Ok(SamplingOptions::from(CubicResampler { b, c }));
     }
-    let filter = if s.str("filter") == Some("nearest") { FilterMode::Nearest } else { FilterMode::Linear };
+    let filter = if s.str("filter") == Some("nearest") {
+        FilterMode::Nearest
+    } else {
+        FilterMode::Linear
+    };
     let mipmap = match s.str("mipmap") {
         Some("nearest") => MipmapMode::Nearest,
         Some("linear") => MipmapMode::Linear,
@@ -188,7 +217,11 @@ pub fn fit_rects(fit: &str, source: Rect, target: Rect) -> (Rect, Rect) {
         match fit {
             "fill" => ((iw, ih), (ow, oh)),
             "cover" => {
-                let src = if ow / oh > iw / ih { (iw, iw * oh / ow) } else { (ih * ow / oh, ih) };
+                let src = if ow / oh > iw / ih {
+                    (iw, iw * oh / ow)
+                } else {
+                    (ih * ow / oh, ih)
+                };
                 (src, (ow, oh))
             }
             "fitWidth" => {
@@ -216,13 +249,22 @@ pub fn fit_rects(fit: &str, source: Rect, target: Rect) -> (Rect, Rect) {
             }
             // "contain", and what RN-Skia treats as it.
             _ => {
-                let dst = if ow / oh > iw / ih { (iw * oh / ih, oh) } else { (ow, ih * ow / iw) };
+                let dst = if ow / oh > iw / ih {
+                    (iw * oh / ih, oh)
+                } else {
+                    (ow, ih * ow / iw)
+                };
                 ((iw, ih), dst)
             }
         }
     };
     let inscribe = |size: (f32, f32), r: Rect| {
-        Rect::from_xywh(r.left + (r.width() - size.0) / 2.0, r.top + (r.height() - size.1) / 2.0, size.0, size.1)
+        Rect::from_xywh(
+            r.left + (r.width() - size.0) / 2.0,
+            r.top + (r.height() - size.1) / 2.0,
+            size.0,
+            size.1,
+        )
     };
     (inscribe(src, source), inscribe(dst, target))
 }
@@ -234,10 +276,19 @@ fn draw_image(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
     let image = image_of(ctx, held)?;
     let target = rect_prop(n)?;
     let fit = n.props.str("fit").unwrap_or("contain");
-    let (src, dst) = fit_rects(fit, Rect::from_wh(image.width() as f32, image.height() as f32), target);
+    let (src, dst) = fit_rects(
+        fit,
+        Rect::from_wh(image.width() as f32, image.height() as f32),
+        target,
+    );
     let sampling = sampling_of(n.props)?;
-    ctx.canvas
-        .draw_image_rect_with_sampling_options(&image, Some((&src, SrcRectConstraint::Fast)), dst, sampling, paint);
+    ctx.canvas.draw_image_rect_with_sampling_options(
+        &image,
+        Some((&src, SrcRectConstraint::Fast)),
+        dst,
+        sampling,
+        paint,
+    );
     Ok(())
 }
 
@@ -245,11 +296,16 @@ fn draw_image(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
 
 fn draw_box(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
     let canvas = ctx.canvas;
-    let held = n.props.get("box").ok_or_else(|| Error("Box needs a box".into()))?;
+    let held = n
+        .props
+        .get("box")
+        .ok_or_else(|| Error("Box needs a box".into()))?;
     let boxed = if held.get("rx").is_some() {
         rrect_of(held).ok_or_else(|| Error("box must be a rect or a rounded rect".into()))?
     } else {
-        RRect::new_rect(rect_of(held).ok_or_else(|| Error("box must be a rect or a rounded rect".into()))?)
+        RRect::new_rect(
+            rect_of(held).ok_or_else(|| Error("box must be a rect or a rounded rect".into()))?,
+        )
     };
     let opacity = paint.alpha_f();
     let mut shadows = Vec::new();
@@ -261,24 +317,43 @@ fn draw_box(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
     }
     let shadow_paint = |p: Props| -> Result<Paint, Error> {
         let mut shadow = default_paint();
-        let color = p.color("color")?.unwrap_or(skia_safe::Color4f::new(0.0, 0.0, 0.0, 1.0));
+        let color = p
+            .color("color")?
+            .unwrap_or(skia_safe::Color4f::new(0.0, 0.0, 0.0, 1.0));
         shadow.set_color4f(color, None);
         shadow.set_alpha_f(shadow.alpha_f() * opacity);
-        let blur = p.f32("blur")?.ok_or_else(|| Error("BoxShadow needs a blur".into()))?;
-        shadow.set_mask_filter(skia_safe::MaskFilter::blur(skia_safe::BlurStyle::Normal, blur, true));
+        let blur = p
+            .f32("blur")?
+            .ok_or_else(|| Error("BoxShadow needs a blur".into()))?;
+        shadow.set_mask_filter(skia_safe::MaskFilter::blur(
+            skia_safe::BlurStyle::Normal,
+            blur,
+            true,
+        ));
         Ok(shadow)
     };
     let grown = |b: &RRect, dx: f32, dy: f32, tx: f32, ty: f32| {
         let r = b.rect();
         RRect::new_rect_xy(
-            Rect::from_xywh(r.left - dx + tx, r.top - dy + ty, r.width() + 2.0 * dx, r.height() + 2.0 * dy),
+            Rect::from_xywh(
+                r.left - dx + tx,
+                r.top - dy + ty,
+                r.width() + 2.0 * dx,
+                r.height() + 2.0 * dy,
+            ),
             b.simple_radii().x + dx,
             b.simple_radii().y + dy,
         )
     };
     for p in shadows.iter().filter(|p| p.bool("inner") != Some(true)) {
         let spread = p.f32_or("spread", 0.0)?;
-        let rect = grown(&boxed, spread, spread, p.f32_or("dx", 0.0)?, p.f32_or("dy", 0.0)?);
+        let rect = grown(
+            &boxed,
+            spread,
+            spread,
+            p.f32_or("dx", 0.0)?,
+            p.f32_or("dy", 0.0)?,
+        );
         canvas.draw_rrect(rect, &shadow_paint(*p)?);
     }
     canvas.draw_rrect(boxed, paint);
@@ -299,23 +374,43 @@ fn draw_box(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
 
 fn draw_vertices(canvas: &Canvas, props: Props, paint: &Paint) -> Result<(), Error> {
     let positions = points_of(props, "vertices")?;
-    let textures = if props.has("textures") { Some(points_of(props, "textures")?) } else { None };
+    let textures = if props.has("textures") {
+        Some(points_of(props, "textures")?)
+    } else {
+        None
+    };
     let colors: Option<Vec<skia_safe::Color>> = match props.array("colors") {
         Some(list) => Some(
             list.iter()
-                .map(|c| crate::value::color(c).map(|c| c.to_color()).ok_or_else(|| Error("colors must be colours".into())))
+                .map(|c| {
+                    crate::value::color(c)
+                        .map(|c| c.to_color())
+                        .ok_or_else(|| Error("colors must be colours".into()))
+                })
                 .collect::<Result<_, _>>()?,
         ),
         None => None,
     };
-    let indices: Option<Vec<u16>> = props.f32s("indices")?.map(|i| i.into_iter().map(|n| n as u16).collect());
+    let indices: Option<Vec<u16>> = props
+        .f32s("indices")?
+        .map(|i| i.into_iter().map(|n| n as u16).collect());
     let mode = match props.str("mode").unwrap_or("triangles") {
         "triangleStrip" => VertexMode::TriangleStrip,
         "triangleFan" => VertexMode::TriangleFan,
         _ => VertexMode::Triangles,
     };
-    let vertices = Vertices::new_copy(mode, &positions, textures.as_deref().unwrap_or(&[]), colors.as_deref().unwrap_or(&[]), indices.as_deref());
-    let default_blend = if colors.is_some() { BlendMode::DstOver } else { BlendMode::SrcOver };
+    let vertices = Vertices::new_copy(
+        mode,
+        &positions,
+        textures.as_deref().unwrap_or(&[]),
+        colors.as_deref().unwrap_or(&[]),
+        indices.as_deref(),
+    );
+    let default_blend = if colors.is_some() {
+        BlendMode::DstOver
+    } else {
+        BlendMode::SrcOver
+    };
     let blend = match props.str("blendMode") {
         Some(name) => enums::blend_mode(name)?,
         None => default_blend,

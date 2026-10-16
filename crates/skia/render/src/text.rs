@@ -8,16 +8,18 @@ use std::path::Path as FsPath;
 
 use serde_json::Value;
 use skia_safe::textlayout::{
-    FontCollection, ParagraphBuilder, ParagraphStyle, TextAlign, TextDecoration, TextStyle, TypefaceFontProvider,
+    FontCollection, ParagraphBuilder, ParagraphStyle, TextAlign, TextDecoration, TextStyle,
+    TypefaceFontProvider,
 };
 use skia_safe::{
-    Font, FontMgr, FontStyle, Paint, Point, RSXform, TextBlob, font_style::{Slant, Weight, Width},
+    Font, FontMgr, FontStyle, Paint, Point, RSXform, TextBlob,
+    font_style::{Slant, Weight, Width},
 };
 
+use crate::Error;
 use crate::assets::Assets;
 use crate::render::{Ctx, Node};
-use crate::value::{err, Props};
-use crate::Error;
+use crate::value::{Props, err};
 
 /// A `{ file, size }` font; `embolden` and `skewX` are read too.
 pub fn font_of(ctx: &mut Ctx, v: &Value) -> Result<Font, Error> {
@@ -26,7 +28,9 @@ pub fn font_of(ctx: &mut Ctx, v: &Value) -> Result<Font, Error> {
 
 fn font_in(assets: &mut Assets, base: &FsPath, v: &Value) -> Result<Font, Error> {
     let p = Props(v);
-    let file = p.str("file").ok_or_else(|| Error("a font needs a file: register it and use useFont or matchFont".into()))?;
+    let file = p.str("file").ok_or_else(|| {
+        Error("a font needs a file: register it and use useFont or matchFont".into())
+    })?;
     let typeface = assets.typeface(&base.join(file))?;
     let mut font = Font::new(typeface, p.f32_or("size", 14.0)?);
     if let Some(on) = p.bool("embolden") {
@@ -63,7 +67,10 @@ fn draw_on_path(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
         return Ok(());
     };
     let font = font_of(ctx, font)?;
-    let path = n.props.path("path")?.ok_or_else(|| Error("TextPath needs a path".into()))?;
+    let path = n
+        .props
+        .path("path")?
+        .ok_or_else(|| Error("TextPath needs a path".into()))?;
     let text = n.props.str("text").unwrap_or_default();
     let glyphs = font.str_to_glyphs_vec(text);
     let mut widths = vec![0.0; glyphs.len()];
@@ -73,7 +80,9 @@ fn draw_on_path(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
     let mut distance = n.props.f32_or("initialOffset", 0.0)?;
     let mut transforms = Vec::new();
     for width in &widths {
-        let Some(current) = contour.as_ref() else { break };
+        let Some(current) = contour.as_ref() else {
+            break;
+        };
         distance += width / 2.0;
         if distance > current.length() {
             contour = contours.next();
@@ -82,8 +91,14 @@ fn draw_on_path(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
             distance = width / 2.0;
         }
         let current = contour.as_ref().expect("checked above");
-        let Some((p, t)) = current.pos_tan(distance) else { break };
-        transforms.push(RSXform::new(t.x, t.y, Point::new(p.x - width / 2.0 * t.x, p.y - width / 2.0 * t.y)));
+        let Some((p, t)) = current.pos_tan(distance) else {
+            break;
+        };
+        transforms.push(RSXform::new(
+            t.x,
+            t.y,
+            Point::new(p.x - width / 2.0 * t.x, p.y - width / 2.0 * t.y),
+        ));
         distance += width / 2.0;
     }
     let shown: String = text.chars().take(transforms.len()).collect();
@@ -101,7 +116,11 @@ fn text_style(p: Props, families_of: &[String]) -> Result<TextStyle, Error> {
         style.set_color(color.to_color());
     }
     let families: Vec<String> = match p.array("fontFamilies") {
-        Some(list) => list.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+        Some(list) => list
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
         None => families_of.to_vec(),
     };
     if !families.is_empty() {
@@ -182,7 +201,12 @@ fn draw_paragraph(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
         style.set_text_style(&text_style(text, &families)?);
     }
     let mut builder = ParagraphBuilder::new(&style, collection);
-    builder.push_style(&text_style(style_props.props("textStyle").unwrap_or(Props(&Value::Null)), &families)?);
+    builder.push_style(&text_style(
+        style_props
+            .props("textStyle")
+            .unwrap_or(Props(&Value::Null)),
+        &families,
+    )?);
     for op in held.array("ops").map(Vec::as_slice).unwrap_or_default() {
         let o = Props(op);
         match o.str("type") {
@@ -200,8 +224,15 @@ fn draw_paragraph(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
         }
     }
     let mut paragraph = builder.build();
-    paragraph.layout(n.props.f32("width")?.ok_or_else(|| Error("Paragraph needs a width".into()))?);
-    paragraph.paint(ctx.canvas, Point::new(n.props.f32_or("x", 0.0)?, n.props.f32_or("y", 0.0)?));
+    paragraph.layout(
+        n.props
+            .f32("width")?
+            .ok_or_else(|| Error("Paragraph needs a width".into()))?,
+    );
+    paragraph.paint(
+        ctx.canvas,
+        Point::new(n.props.f32_or("x", 0.0)?, n.props.f32_or("y", 0.0)?),
+    );
     Ok(())
 }
 
@@ -222,7 +253,12 @@ pub struct TextMeasure {
 }
 
 /// `font.measureText`, `getGlyphIDs`, `getGlyphWidths` and `getMetrics`.
-pub fn measure_text(assets: &mut Assets, base: &FsPath, font: &Value, text: &str) -> Result<TextMeasure, Error> {
+pub fn measure_text(
+    assets: &mut Assets,
+    base: &FsPath,
+    font: &Value,
+    text: &str,
+) -> Result<TextMeasure, Error> {
     let font = font_in(assets, base, font)?;
     let (width, bounds) = font.measure_str(text, None);
     let (_, metrics) = font.metrics();

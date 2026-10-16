@@ -13,7 +13,14 @@ fn draw(nodes: Value) -> Output {
 
 fn draw_at(nodes: Value, size: u32) -> Output {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    render(size, size, nodes.as_array().unwrap(), &mut Assets::default(), base).unwrap()
+    render(
+        size,
+        size,
+        nodes.as_array().unwrap(),
+        &mut Assets::default(),
+        base,
+    )
+    .unwrap()
 }
 
 fn px(out: &Output, x: usize, y: usize) -> [u8; 4] {
@@ -22,12 +29,17 @@ fn px(out: &Output, x: usize, y: usize) -> [u8; 4] {
 }
 
 fn near(a: [u8; 4], b: [u8; 4], tolerance: i32) -> bool {
-    a.iter().zip(&b).all(|(x, y)| (i32::from(*x) - i32::from(*y)).abs() <= tolerance)
+    a.iter()
+        .zip(&b)
+        .all(|(x, y)| (i32::from(*x) - i32::from(*y)).abs() <= tolerance)
 }
 
 fn assert_px(out: &Output, x: usize, y: usize, expected: [u8; 4]) {
     let got = px(out, x, y);
-    assert!(near(got, expected, 2), "({x}, {y}) is {got:?}, expected {expected:?}");
+    assert!(
+        near(got, expected, 2),
+        "({x}, {y}) is {got:?}, expected {expected:?}"
+    );
 }
 
 const RED: [u8; 4] = [255, 0, 0, 255];
@@ -45,7 +57,9 @@ fn rect(props: Value) -> Value {
 
 #[test]
 fn a_rect_is_filled_with_its_color() {
-    let out = draw(json!([rect(json!({ "x": 4, "y": 4, "width": 8, "height": 8, "color": [1, 0, 0, 1] }))]));
+    let out = draw(json!([rect(
+        json!({ "x": 4, "y": 4, "width": 8, "height": 8, "color": [1, 0, 0, 1] })
+    )]));
     assert_px(&out, 8, 8, RED);
     assert_px(&out, 2, 2, CLEAR);
     assert_px(&out, 20, 20, CLEAR);
@@ -56,7 +70,10 @@ fn a_group_passes_its_paint_to_the_nodes_in_it() {
     let out = draw(json!([node(
         "Group",
         json!({ "color": [0, 0, 1, 1] }),
-        vec![rect(json!({ "x": 0, "y": 0, "width": 8, "height": 8 })), rect(json!({ "x": 16, "y": 0, "width": 8, "height": 8, "color": [0, 1, 0, 1] }))]
+        vec![
+            rect(json!({ "x": 0, "y": 0, "width": 8, "height": 8 })),
+            rect(json!({ "x": 16, "y": 0, "width": 8, "height": 8, "color": [0, 1, 0, 1] }))
+        ]
     )]));
     assert_px(&out, 4, 4, BLUE);
     assert_px(&out, 20, 4, GREEN);
@@ -67,10 +84,19 @@ fn opacity_multiplies_down_the_groups() {
     let out = draw(json!([node(
         "Group",
         json!({ "opacity": 0.5 }),
-        vec![node("Group", json!({ "opacity": 0.5 }), vec![rect(json!({ "x": 0, "y": 0, "width": 8, "height": 8, "color": [1, 0, 0, 1] }))])]
+        vec![node(
+            "Group",
+            json!({ "opacity": 0.5 }),
+            vec![rect(
+                json!({ "x": 0, "y": 0, "width": 8, "height": 8, "color": [1, 0, 0, 1] })
+            )]
+        )]
     )]));
     let got = px(&out, 4, 4);
-    assert!(i32::from(got[3]).abs_diff(64) <= 2 && got[0] == 255, "{got:?}");
+    assert!(
+        i32::from(got[3]).abs_diff(64) <= 2 && got[0] == 255,
+        "{got:?}"
+    );
 }
 
 #[test]
@@ -85,10 +111,26 @@ fn a_stroke_draws_the_outline_only() {
 #[test]
 fn circles_ovals_lines_and_rounded_rects() {
     let out = draw(json!([
-        node("Circle", json!({ "c": { "x": 8, "y": 8 }, "r": 6, "color": [1, 0, 0, 1] }), vec![]),
-        node("Circle", json!({ "cx": 24, "cy": 8, "r": 6, "color": [0, 1, 0, 1] }), vec![]),
-        node("RoundedRect", json!({ "x": 2, "y": 18, "width": 12, "height": 12, "r": 6, "color": [0, 0, 1, 1] }), vec![]),
-        node("Line", json!({ "p1": { "x": 18, "y": 24 }, "p2": { "x": 30, "y": 24 }, "style": "stroke", "strokeWidth": 4, "color": [1, 0, 0, 1] }), vec![]),
+        node(
+            "Circle",
+            json!({ "c": { "x": 8, "y": 8 }, "r": 6, "color": [1, 0, 0, 1] }),
+            vec![]
+        ),
+        node(
+            "Circle",
+            json!({ "cx": 24, "cy": 8, "r": 6, "color": [0, 1, 0, 1] }),
+            vec![]
+        ),
+        node(
+            "RoundedRect",
+            json!({ "x": 2, "y": 18, "width": 12, "height": 12, "r": 6, "color": [0, 0, 1, 1] }),
+            vec![]
+        ),
+        node(
+            "Line",
+            json!({ "p1": { "x": 18, "y": 24 }, "p2": { "x": 30, "y": 24 }, "style": "stroke", "strokeWidth": 4, "color": [1, 0, 0, 1] }),
+            vec![]
+        ),
     ]));
     assert_px(&out, 8, 8, RED);
     assert_px(&out, 24, 8, GREEN);
@@ -100,9 +142,17 @@ fn circles_ovals_lines_and_rounded_rects() {
 #[test]
 fn a_path_is_filled_by_its_fill_rule() {
     let star = "M2 2H30V30H2ZM10 10H22V22H10Z";
-    let winding = draw(json!([node("Path", json!({ "path": star, "color": [1, 0, 0, 1] }), vec![])]));
+    let winding = draw(json!([node(
+        "Path",
+        json!({ "path": star, "color": [1, 0, 0, 1] }),
+        vec![]
+    )]));
     assert_px(&winding, 16, 16, RED);
-    let even_odd = draw(json!([node("Path", json!({ "path": { "d": star, "fillType": "evenOdd" }, "color": [1, 0, 0, 1] }), vec![])]));
+    let even_odd = draw(json!([node(
+        "Path",
+        json!({ "path": { "d": star, "fillType": "evenOdd" }, "color": [1, 0, 0, 1] }),
+        vec![]
+    )]));
     assert_px(&even_odd, 16, 16, CLEAR);
     assert_px(&even_odd, 5, 5, RED);
 }
@@ -139,14 +189,24 @@ fn a_linear_gradient_child_paints_the_node() {
 fn radial_sweep_and_conical_gradients_make_shaders() {
     let colors = json!([[1, 0, 0, 1], [0, 1, 0, 1]]);
     for (kind, props) in [
-        ("RadialGradient", json!({ "c": { "x": 16, "y": 16 }, "r": 16, "colors": colors })),
-        ("SweepGradient", json!({ "c": { "x": 16, "y": 16 }, "colors": colors })),
+        (
+            "RadialGradient",
+            json!({ "c": { "x": 16, "y": 16 }, "r": 16, "colors": colors }),
+        ),
+        (
+            "SweepGradient",
+            json!({ "c": { "x": 16, "y": 16 }, "colors": colors }),
+        ),
         (
             "TwoPointConicalGradient",
             json!({ "start": { "x": 8, "y": 16 }, "startR": 2, "end": { "x": 24, "y": 16 }, "endR": 8, "colors": colors }),
         ),
     ] {
-        let out = draw(json!([node("Fill", json!({}), vec![node(kind, props, vec![])])]));
+        let out = draw(json!([node(
+            "Fill",
+            json!({}),
+            vec![node(kind, props, vec![])]
+        )]));
         assert!(px(&out, 16, 16)[3] == 255, "{kind}");
     }
 }
@@ -156,14 +216,18 @@ fn a_transform_moves_the_group_and_an_origin_turns_it_about_a_point() {
     let moved = draw(json!([node(
         "Group",
         json!({ "transform": [{ "translateX": 16 }, { "translateY": 8 }] }),
-        vec![rect(json!({ "x": 0, "y": 0, "width": 8, "height": 8, "color": [1, 0, 0, 1] }))]
+        vec![rect(
+            json!({ "x": 0, "y": 0, "width": 8, "height": 8, "color": [1, 0, 0, 1] })
+        )]
     )]));
     assert_px(&moved, 20, 12, RED);
     assert_px(&moved, 4, 4, CLEAR);
     let turned = draw(json!([node(
         "Group",
         json!({ "transform": [{ "rotate": std::f64::consts::FRAC_PI_2 }], "origin": { "x": 16, "y": 16 } }),
-        vec![rect(json!({ "x": 16, "y": 16, "width": 8, "height": 8, "color": [1, 0, 0, 1] }))]
+        vec![rect(
+            json!({ "x": 16, "y": 16, "width": 8, "height": 8, "color": [1, 0, 0, 1] })
+        )]
     )]));
     // A quarter turn clockwise about the centre takes the lower right to the lower left.
     assert_px(&turned, 12, 20, RED);
@@ -176,7 +240,9 @@ fn a_clip_cuts_what_is_drawn_and_invert_clip_cuts_the_other_way() {
         draw(json!([node(
             "Group",
             json!({ "clip": { "x": 0, "y": 0, "width": 16, "height": 32 }, "invertClip": invert }),
-            vec![rect(json!({ "x": 0, "y": 0, "width": 32, "height": 32, "color": [1, 0, 0, 1] }))]
+            vec![rect(
+                json!({ "x": 0, "y": 0, "width": 32, "height": 32, "color": [1, 0, 0, 1] })
+            )]
         )]))
     };
     let kept = rect_in(false);
@@ -194,7 +260,11 @@ fn paint_children_repeat_the_drawing_once_for_each() {
         json!({ "x": 8, "y": 8, "width": 16, "height": 16 }),
         vec![
             node("Paint", json!({ "color": [1, 0, 0, 1] }), vec![]),
-            node("Paint", json!({ "color": [0, 0, 1, 1], "style": "stroke", "strokeWidth": 4 }), vec![]),
+            node(
+                "Paint",
+                json!({ "color": [0, 0, 1, 1], "style": "stroke", "strokeWidth": 4 }),
+                vec![]
+            ),
         ]
     )]));
     // The inherited paint (black) fills, then the red fill, then the blue stroke on top.
@@ -211,7 +281,10 @@ fn a_blur_child_blurs_what_the_node_draws() {
     )]));
     assert_px(&out, 16, 16, RED);
     let edge = px(&out, 8, 16);
-    assert!(edge[3] > 40 && edge[3] < 215, "the edge is half way: {edge:?}");
+    assert!(
+        edge[3] > 40 && edge[3] < 215,
+        "the edge is half way: {edge:?}"
+    );
     assert!(px(&out, 2, 16)[3] < 40);
 }
 
@@ -220,7 +293,11 @@ fn a_blur_mask_blurs_the_shape_not_the_layer() {
     let out = draw(json!([node(
         "Rect",
         json!({ "x": 8, "y": 8, "width": 16, "height": 16, "color": [1, 0, 0, 1] }),
-        vec![node("BlurMaskFilter", json!({ "blur": 3, "style": "normal" }), vec![])]
+        vec![node(
+            "BlurMaskFilter",
+            json!({ "blur": 3, "style": "normal" }),
+            vec![]
+        )]
     )]));
     let edge = px(&out, 8, 16);
     assert!(edge[3] > 40 && edge[3] < 215, "{edge:?}");
@@ -231,7 +308,11 @@ fn a_drop_shadow_adds_a_shadow_behind() {
     let out = draw(json!([node(
         "Rect",
         json!({ "x": 4, "y": 4, "width": 12, "height": 12, "color": [1, 0, 0, 1] }),
-        vec![node("DropShadowImageFilter", json!({ "dx": 8, "dy": 8, "blur": 0, "color": [0, 0, 1, 1] }), vec![])]
+        vec![node(
+            "DropShadowImageFilter",
+            json!({ "dx": 8, "dy": 8, "blur": 0, "color": [0, 0, 1, 1] }),
+            vec![]
+        )]
     )]));
     assert_px(&out, 8, 8, RED);
     assert_px(&out, 20, 20, BLUE);
@@ -254,7 +335,11 @@ fn a_dash_path_effect_breaks_the_line() {
     let out = draw(json!([node(
         "Line",
         json!({ "p1": { "x": 0, "y": 16 }, "p2": { "x": 32, "y": 16 }, "style": "stroke", "strokeWidth": 4, "color": [1, 0, 0, 1] }),
-        vec![node("DashPathEffect", json!({ "intervals": [8, 8], "phase": 0 }), vec![])]
+        vec![node(
+            "DashPathEffect",
+            json!({ "intervals": [8, 8], "phase": 0 }),
+            vec![]
+        )]
     )]));
     assert_px(&out, 4, 16, RED);
     assert_px(&out, 12, 16, CLEAR);
@@ -282,7 +367,9 @@ fn a_layer_composites_its_children_together_before_the_paint() {
 fn a_blend_mode_changes_how_a_node_meets_the_ones_before() {
     let out = draw(json!([
         rect(json!({ "x": 0, "y": 0, "width": 32, "height": 32, "color": [1, 1, 0, 1] })),
-        rect(json!({ "x": 0, "y": 0, "width": 32, "height": 32, "color": [0, 1, 1, 1], "blendMode": "multiply" })),
+        rect(
+            json!({ "x": 0, "y": 0, "width": 32, "height": 32, "color": [0, 1, 1, 1], "blendMode": "multiply" })
+        ),
     ]));
     // Yellow times cyan is green.
     assert_px(&out, 16, 16, GREEN);
@@ -308,16 +395,53 @@ fn a_runtime_effect_runs_skia_sksl() {
 
 #[test]
 fn a_runtime_effect_that_does_not_compile_is_an_error_with_skias_message() {
-    let tree = json!([node("Fill", json!({}), vec![node("Shader", json!({ "source": { "sksl": "half4 main(float2 xy) { return nope; }" }, "uniforms": {} }), vec![])])]);
-    let message = render(8, 8, tree.as_array().unwrap(), &mut Assets::default(), PathBuf::new()).err().unwrap().to_string();
-    assert!(message.contains("SkSL") && message.contains("nope"), "{message}");
+    let tree = json!([node(
+        "Fill",
+        json!({}),
+        vec![node(
+            "Shader",
+            json!({ "source": { "sksl": "half4 main(float2 xy) { return nope; }" }, "uniforms": {} }),
+            vec![]
+        )]
+    )]);
+    let message = render(
+        8,
+        8,
+        tree.as_array().unwrap(),
+        &mut Assets::default(),
+        PathBuf::new(),
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(
+        message.contains("SkSL") && message.contains("nope"),
+        "{message}"
+    );
 }
 
 #[test]
 fn a_missing_uniform_is_named() {
     let sksl = "uniform float t; half4 main(float2 xy) { return half4(t, 0, 0, 1); }";
-    let tree = json!([node("Fill", json!({}), vec![node("Shader", json!({ "source": { "sksl": sksl }, "uniforms": {} }), vec![])])]);
-    let message = render(8, 8, tree.as_array().unwrap(), &mut Assets::default(), PathBuf::new()).err().unwrap().to_string();
+    let tree = json!([node(
+        "Fill",
+        json!({}),
+        vec![node(
+            "Shader",
+            json!({ "source": { "sksl": sksl }, "uniforms": {} }),
+            vec![]
+        )]
+    )]);
+    let message = render(
+        8,
+        8,
+        tree.as_array().unwrap(),
+        &mut Assets::default(),
+        PathBuf::new(),
+    )
+    .err()
+    .unwrap()
+    .to_string();
     assert!(message.contains("uniform t"), "{message}");
 }
 
@@ -325,10 +449,17 @@ fn a_missing_uniform_is_named() {
 fn text_is_drawn_with_a_registered_font() {
     let font = json!({ "file": "assets/fonts/DMSans-Medium.ttf", "size": 24 });
     let out = draw_at(
-        json!([node("Text", json!({ "x": 2, "y": 24, "text": "H", "font": font, "color": [1, 0, 0, 1] }), vec![])]),
+        json!([node(
+            "Text",
+            json!({ "x": 2, "y": 24, "text": "H", "font": font, "color": [1, 0, 0, 1] }),
+            vec![]
+        )]),
         32,
     );
-    let drawn = (0..32usize).flat_map(|y| (0..32usize).map(move |x| (x, y))).filter(|&(x, y)| px(&out, x, y)[3] > 200).count();
+    let drawn = (0..32usize)
+        .flat_map(|y| (0..32usize).map(move |x| (x, y)))
+        .filter(|&(x, y)| px(&out, x, y)[3] > 200)
+        .count();
     assert!(drawn > 30, "{drawn} pixels of H");
 }
 
@@ -344,7 +475,11 @@ fn the_same_tree_gives_the_same_pixels() {
     let tree = json!([node(
         "Circle",
         json!({ "cx": 16, "cy": 16, "r": 12 }),
-        vec![node("RadialGradient", json!({ "c": { "x": 16, "y": 16 }, "r": 12, "colors": [[1, 0, 0, 1], [0, 0, 1, 1]] }), vec![])]
+        vec![node(
+            "RadialGradient",
+            json!({ "c": { "x": 16, "y": 16 }, "r": 12, "colors": [[1, 0, 0, 1], [0, 0, 1, 1]] }),
+            vec![]
+        )]
     )]);
     assert_eq!(draw(tree.clone()).rgba, draw(tree).rgba);
 }

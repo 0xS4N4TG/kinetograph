@@ -12,14 +12,14 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 use skia_safe::{
-    Canvas, ColorFilter, ImageFilter, ImageInfo, AlphaType, ColorType, Paint, PathEffect, Shader,
-    color_filters, canvas::SaveLayerRec, image_filters, surfaces, Matrix, ClipOp,
+    AlphaType, Canvas, ClipOp, ColorFilter, ColorType, ImageFilter, ImageInfo, Matrix, Paint,
+    PathEffect, Shader, canvas::SaveLayerRec, color_filters, image_filters, surfaces,
 };
 
 use crate::assets::Assets;
 use crate::enums;
-use crate::value::{err, Props};
-use crate::{declare, draw, Error, Output, Unsupported};
+use crate::value::{Props, err};
+use crate::{Error, Output, Unsupported, declare, draw};
 
 /// One node of the tree: `{ type, props, children }`.
 #[derive(Clone, Copy)]
@@ -30,12 +30,18 @@ pub struct Node<'a> {
 }
 
 pub fn node(v: &Value) -> Result<Node<'_>, Error> {
-    let kind = v.get("type").and_then(Value::as_str).ok_or_else(|| Error("a node needs a type".into()))?;
+    let kind = v
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error("a node needs a type".into()))?;
     static NONE: Value = Value::Null;
     Ok(Node {
         kind,
         props: Props(v.get("props").unwrap_or(&NONE)),
-        children: v.get("children").and_then(Value::as_array).map_or(&[], Vec::as_slice),
+        children: v
+            .get("children")
+            .and_then(Value::as_array)
+            .map_or(&[], Vec::as_slice),
     })
 }
 
@@ -59,7 +65,9 @@ impl Ctx<'_> {
     }
 
     fn paint_mut(&mut self) -> &mut Paint {
-        self.paints.last_mut().expect("the paint stack is never empty")
+        self.paints
+            .last_mut()
+            .expect("the paint stack is never empty")
     }
 
     pub fn leave_out(&mut self, element: &str, property: Option<&str>, reason: impl Into<String>) {
@@ -97,8 +105,14 @@ pub fn render(
     if width == 0 || height == 0 {
         return err("the canvas has no area");
     }
-    let info = ImageInfo::new((width as i32, height as i32), ColorType::RGBA8888, AlphaType::Premul, None);
-    let mut surface = surfaces::raster(&info, None, None).ok_or_else(|| Error("no surface of that size".into()))?;
+    let info = ImageInfo::new(
+        (width as i32, height as i32),
+        ColorType::RGBA8888,
+        AlphaType::Premul,
+        None,
+    );
+    let mut surface = surfaces::raster(&info, None, None)
+        .ok_or_else(|| Error("no surface of that size".into()))?;
     let unsupported = {
         let mut ctx = Ctx {
             canvas: surface.canvas(),
@@ -118,7 +132,12 @@ pub fn render(
         ctx.unsupported
     };
     // Skia draws premultiplied; the canvas layer takes straight alpha.
-    let straight = ImageInfo::new((width as i32, height as i32), ColorType::RGBA8888, AlphaType::Unpremul, None);
+    let straight = ImageInfo::new(
+        (width as i32, height as i32),
+        ColorType::RGBA8888,
+        AlphaType::Unpremul,
+        None,
+    );
     let mut rgba = vec![0u8; width as usize * height as usize * 4];
     if !surface.read_pixels(&straight, &mut rgba, width as usize * 4, (0, 0)) {
         return err("the picture could not be read back");
@@ -282,16 +301,18 @@ fn materialize(ctx: &mut Ctx) {
     let image_filters = std::mem::take(&mut ctx.image_filters);
     let path_effects = std::mem::take(&mut ctx.path_effects);
     let paint = ctx.paint_mut();
-    if let Some(filter) = compose(color_filters, |outer, inner| color_filters::compose(outer, inner)) {
+    if let Some(filter) = compose(color_filters, color_filters::compose) {
         paint.set_color_filter(filter);
     }
     if let Some(shader) = shaders.last() {
         paint.set_shader(shader.clone());
     }
-    if let Some(filter) = compose(image_filters, |outer, inner| image_filters::compose(outer, inner)) {
+    if let Some(filter) = compose(image_filters, image_filters::compose) {
         paint.set_image_filter(filter);
     }
-    if let Some(effect) = compose(path_effects, |outer, inner| Some(PathEffect::compose(outer, inner))) {
+    if let Some(effect) = compose(path_effects, |outer, inner| {
+        Some(PathEffect::compose(outer, inner))
+    }) {
         paint.set_path_effect(effect);
     }
 }
@@ -376,7 +397,9 @@ fn visit(ctx: &mut Ctx, node: Node) -> Result<(), Error> {
         materialize(ctx);
         let paint = ctx.declared.pop();
         match paint {
-            Some(paint) => ctx.canvas.save_layer(&SaveLayerRec::default().paint(&paint)),
+            Some(paint) => ctx
+                .canvas
+                .save_layer(&SaveLayerRec::default().paint(&paint)),
             None => ctx.canvas.save_layer(&SaveLayerRec::default()),
         };
     }
@@ -408,7 +431,8 @@ fn backdrop(ctx: &mut Ctx) {
     ctx.image_filters.clear();
     ctx.path_effects.clear();
     if let Some(filter) = filter {
-        ctx.canvas.save_layer(&SaveLayerRec::default().backdrop(&filter));
+        ctx.canvas
+            .save_layer(&SaveLayerRec::default().backdrop(&filter));
         ctx.canvas.restore();
     }
 }
@@ -427,7 +451,8 @@ fn save_ctm(ctx: &mut Ctx, props: Props) -> Result<bool, Error> {
         }
         Some(held) => {
             let paint = paint_of(ctx, held)?;
-            ctx.canvas.save_layer(&SaveLayerRec::default().paint(&paint));
+            ctx.canvas
+                .save_layer(&SaveLayerRec::default().paint(&paint));
         }
         None => {
             ctx.canvas.save();
@@ -437,7 +462,11 @@ fn save_ctm(ctx: &mut Ctx, props: Props) -> Result<bool, Error> {
         ctx.canvas.concat(&matrix);
     }
     if let Some(clip) = clip {
-        let op = if props.bool("invertClip") == Some(true) { ClipOp::Difference } else { ClipOp::Intersect };
+        let op = if props.bool("invertClip") == Some(true) {
+            ClipOp::Difference
+        } else {
+            ClipOp::Intersect
+        };
         clip_to(ctx.canvas, clip, op)?;
     }
     Ok(true)
@@ -448,9 +477,18 @@ fn clip_to(canvas: &Canvas, clip: &Value, op: ClipOp) -> Result<(), Error> {
     if clip.is_string() || clip.get("d").is_some() {
         canvas.clip_path(&path(clip)?, op, true);
     } else if clip.get("rx").is_some() {
-        canvas.clip_rrect(rrect_of(clip).ok_or_else(|| Error("clip must be a rounded rect".into()))?, op, true);
+        canvas.clip_rrect(
+            rrect_of(clip).ok_or_else(|| Error("clip must be a rounded rect".into()))?,
+            op,
+            true,
+        );
     } else {
-        canvas.clip_rect(rect_of(clip).ok_or_else(|| Error("clip must be a rect, a rounded rect or a path".into()))?, op, true);
+        canvas.clip_rect(
+            rect_of(clip)
+                .ok_or_else(|| Error("clip must be a rect, a rounded rect or a path".into()))?,
+            op,
+            true,
+        );
     }
     Ok(())
 }
@@ -490,7 +528,12 @@ fn apply_transform(m: &mut Matrix, item: &Value) -> Result<(), Error> {
         .as_object()
         .and_then(|o| o.iter().next())
         .ok_or_else(|| Error("a transform is a list of { name: value }".into()))?;
-    let n = || value.as_f64().map(|n| n as f32).ok_or_else(|| Error(format!("{key} must be a number")));
+    let n = || {
+        value
+            .as_f64()
+            .map(|n| n as f32)
+            .ok_or_else(|| Error(format!("{key} must be a number")))
+    };
     match key.as_str() {
         "translateX" => m.pre_translate((n()?, 0.0)),
         "translateY" => m.pre_translate((0.0, n()?)),
@@ -501,7 +544,8 @@ fn apply_transform(m: &mut Matrix, item: &Value) -> Result<(), Error> {
         "skewY" => m.pre_skew((0.0, n()?), None),
         "rotate" | "rotateZ" => m.pre_rotate(n()?.to_degrees(), None),
         "matrix" => {
-            let inner = crate::value::matrix(value).ok_or_else(|| Error("matrix must be a matrix".into()))?;
+            let inner = crate::value::matrix(value)
+                .ok_or_else(|| Error("matrix must be a matrix".into()))?;
             m.pre_concat(&inner)
         }
         other => return err(format!("unknown transform {other:?}")),

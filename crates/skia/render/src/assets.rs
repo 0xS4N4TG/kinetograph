@@ -35,7 +35,8 @@ impl Assets {
         if let Some(effect) = self.effects.get(sksl) {
             return Ok(effect.clone());
         }
-        let effect = RuntimeEffect::make_for_shader(sksl, None).map_err(|message| Error(format!("SkSL: {message}")))?;
+        let effect = RuntimeEffect::make_for_shader(sksl, None)
+            .map_err(|message| Error(format!("SkSL: {message}")))?;
         self.effects.insert(sksl.to_string(), effect.clone());
         Ok(effect)
     }

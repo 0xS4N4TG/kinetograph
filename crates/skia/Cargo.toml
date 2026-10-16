@@ -3,7 +3,7 @@
 # builds skia-safe. Build it from here (docs/AUTHORING.md §7.7).
 [workspace]
 resolver = "3"
-members = ["render"]
+members = ["render", "node"]
 
 [workspace.package]
 version = "0.1.0"

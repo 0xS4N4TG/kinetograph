@@ -12,6 +12,7 @@ mod assets;
 mod declare;
 mod draw;
 mod enums;
+mod paths;
 mod render;
 mod text;
 mod value;
@@ -19,9 +20,10 @@ mod value;
 use std::fmt;
 
 pub use assets::Assets;
-pub use declare::{compile_effect, EffectInfo};
+pub use declare::{EffectInfo, compile_effect};
+pub use paths::path_call;
 pub use render::render;
-pub use text::{measure_text, FontMetrics, TextMeasure};
+pub use text::{FontMetrics, TextMeasure, measure_text};
 pub use value::Props;
 
 #[derive(Debug)]
