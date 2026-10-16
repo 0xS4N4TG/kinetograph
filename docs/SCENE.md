@@ -582,7 +582,8 @@ behind it show. The scene is drawn straight into a compositor texture on the sam
 | `width`, `height` | required | Animatable, not negative: the box in layer pixels. The camera's aspect ratio is `width / height`. The box cuts the scene, along its own edges when the layer is turned. |
 | `msaa` | `4` | Samples per pixel: `1` or `4`. |
 | `camera` | see below | One camera. |
-| `lights` | `[]` | At most 8. With none, lit meshes are black (emissive and `unlit` ones still show). |
+| `lights` | `[]` | At most 8. With none (and no `environment`), lit meshes are black (emissive and `unlit` ones still show). |
+| `environment` | none | Image-based lighting from a picture of the surroundings; see [environment](#3d-environment). |
 | `objects` | `[]` | Meshes, models, text, paths and groups, in drawing order. |
 
 Space: right-handed, +y up, the camera looks down its own -z (as glTF and three.js). Angles are degrees. Every number
@@ -598,7 +599,7 @@ its up vector, is an error at that frame.
 | `type` | Fields | Meaning |
 |---|---|---|
 | `ambient` | `color`, `intensity` | The same on every surface from every direction: diffuse, plus a little specular so that metals are not black. |
-| `directional` | `direction` (the way it travels, default `[-1, -1, -1]`) | Parallel light. A surface facing it head on, with base colour `c`, reflects `c * intensity`. |
+| `directional` | `direction` (the way it travels, default `[-1, -1, -1]`), `castShadow` (false), `shadow` | Parallel light. A surface facing it head on, with base colour `c`, reflects `c * intensity`. With `castShadow` it is shaded by a [shadow map](#3d-shadows). |
 | `point` | `position`, `range` (default 0) | Falls off as `1 / d^2`, so `intensity` is what a directional light of that intensity would give at distance 1. With a `range` above 0 it fades smoothly to nothing at that distance. |
 
 **objects**. Every object takes `position` (`[0, 0, 0]`), `rotation` (XYZ Euler degrees, `[0, 0, 0]`: the matrix is
@@ -608,10 +609,12 @@ not checked for uniqueness).
 | `type` | Fields | Draws |
 |---|---|---|
 | `mesh` | `geometry`, `material` | A primitive. |
-| `model` | `src`, `material` | A glTF 2.0 file (`.gltf` with its files, or `.glb`), relative to the scene. With a `material` it replaces every material of the file. |
+| `model` | `src`, `material`, `animation`, `time`, `loop` | A glTF 2.0 file (`.gltf` with its files, or `.glb`), relative to the scene. With a `material` it replaces every material of the file. With an `animation` (a clip's name, or its position in the file) the model is posed by that clip; see [glTF](#3d-gltf). |
 | `text` | `text`, `font`, `size` (em in world units, 1), `depth` (0.2), `align` (`center`), `lineHeight` | Text from the scene's `fonts`, shaped by the text engine and extruded `depth` along z, centred on the origin (the block of text, whatever the alignment of its lines). `\n` breaks lines. |
 | `extrude` | `path`, `size` (1), `depth` (0.2), `fillRule` | SVG path data, extruded. y points down as in SVG; it comes out upright, centred, its longer side `size` long. Holes stay holes. |
 | `group` | `children` | Objects that move together. |
+
+`mesh`, `model`, `text` and `extrude` also take `castShadow` and `receiveShadow` (both false; see [shadows](#3d-shadows)).
 
 `geometry` (`kind`; sizes are plain numbers, not animated: animate `scale`): `box` (`width`, `height`, `depth`, 1),
 `sphere` (`radius` 0.5, `segments` 32, `rings` 16), `plane` (`width`, `height`; in the xy plane facing +z), `cylinder`
@@ -619,27 +622,93 @@ not checked for uniqueness).
 `torus` (`radius` 0.5, `tube` 0.2, `tubeSegments` 16, `ringSegments` 48; in the xy plane). Round shapes are cut into
 3 to 256 segments.
 
+<a id="3d-environment"></a>**environment**: `src` (required), `intensity` (1), `rotation` (0), `background` (false),
+`backgroundIntensity` (1), `backgroundBlur` (0). `src` is an equirectangular picture, relative to the scene: a
+Radiance `.hdr` (linear light, any brightness; a sun can be 1000 times white) or a `.png` or `.jpg` (sRGB, so no
+brighter than white). Its centre is toward +x, its top is +y, and it runs counter-clockwise seen from above (a point
+a quarter of the way across from the centre is toward +z), as three.js reads it; `rotation` turns it that many degrees
+about y, counter-clockwise seen from above, and is animatable like `intensity`, `backgroundIntensity` and
+`backgroundBlur`.
+
+- The picture is light arriving from every direction, and it adds to `lights`. A lit surface gets its diffuse light
+  from the picture's cosine-weighted average around the surface's normal and its specular light from the picture
+  blurred by the roughness (a mirror at roughness 0, a blur of the whole hemisphere at 1), weighted by the surface's
+  Fresnel and an analytic fit of the split-sum BRDF table. A white surface in an all-white picture comes out within a
+  few percent of white. `unlit` surfaces and emission ignore it; `intensity` multiplies it (0 is none). It does not
+  cast shadows: a light does.
+- With `background: true` the layer draws the picture behind the objects, in the direction the camera sees through each
+  pixel (`backgroundBlur`, 0 to 1, blurs it by the same blurring as roughness 0 to 1; `backgroundIntensity` multiplies
+  it). The layer is then opaque over its box, so 2D layers behind it no longer show. Without it, the layer stays
+  transparent around the objects.
+- The picture is read when the renderer is built. The first frame that draws a scene with it makes the two cube maps
+  the lighting reads, on the GPU, and they are kept for as long as the picture is loaded: a 2048 x 1024 `.hdr` adds
+  about 90 ms once (reading, decoding and making the maps, measured on an M4 in `still`). After that an environment
+  costs, in a 1080p layer, about 0.3 ms of raster time (0.5 to 0.8 ms of GPU time for the pass with two spheres and a
+  background): one more draw for the background and two texture reads per lit pixel. Maps are 16-bit floats; the
+  specular map's face is a quarter of the picture's width rounded up to a power of two, from 16 to 1024 texels.
+  OpenEXR is not read.
+
 `material`: `color` (`#ffffff`; its alpha multiplies `opacity`), `texture` (an image file multiplied by `color`),
 `metallic` (0), `roughness` (0.5), `emissive` (black) and `emissiveIntensity` (1), `opacity` (1), `unlit` (draw colour
 and emission only), `doubleSided` (draw back faces, lit as fronts). Shading is metallic-roughness, lean: Lambert diffuse
-plus GGX specular per light.
+plus GGX specular per light, and the environment if there is one.
 
 - **Depth and transparency.** Opaque objects are depth tested, in any order. Objects that are not opaque (`opacity`
   below 1, a translucent `color` or texture, a glTF `BLEND` material) are drawn afterwards, farthest first by the middle
   of their box, blended and without writing depth. Triangles within one translucent object are not sorted.
-- **glTF.** Read: the default scene's node tree and transforms, triangle meshes with positions, normals (flat ones when
-  absent), first texture coordinates and indices, and each material's base colour factor and texture, metallic and
-  roughness factors, emissive factor, `doubleSided` and `alphaMode` (`BLEND` blends; `OPAQUE` and `MASK` draw opaque).
-  Not read: animations, skins, morph targets, cameras, lights, normal, occlusion, metallic-roughness and emissive
-  textures, texture transforms, `KHR_*` extensions. A model is placed as the file says, with no automatic fit.
+- <a id="3d-gltf"></a>**glTF.** Read: the default scene's node tree and transforms, triangle meshes with positions,
+  normals (flat ones when absent), first texture coordinates and indices, each material's base colour factor and
+  texture, metallic and roughness factors, emissive factor, `doubleSided` and `alphaMode` (`BLEND` blends; `OPAQUE` and
+  `MASK` draw opaque), and the animation, morph targets and skins below. A model is placed as the file says, with no
+  automatic fit.
+  - **Animation.** `animation` picks one of the file's clips by name or by position; without it the model stands as the
+    file has it (its nodes' own transforms, its meshes' own morph weights). The clip is read at `time` seconds, an
+    animatable number whose default is the scene's own time, `frame / fps` (so a clip plays in step with the video; a
+    motion-blurred sub-frame reads the sub-frame's time). A `loop` clip (default true) starts again when it ends,
+    before its start too: `time` wraps into `0 <= t < length`, which makes its length itself the first frame of the next
+    round; with `loop: false` the time is held between 0 and the length, so the last pose stays. The length is the
+    time of the last keyframe of any channel. A clip the file does not have is an error naming the clips it has.
+    Channels animate a node's translation, rotation and scale and a mesh's morph weights, each `LINEAR` (rotations by
+    spherical interpolation, the short way round), `STEP` or `CUBICSPLINE` (Hermite, with the file's tangents; rotations
+    renormalised). Before the first keyframe and after the last the value is held. A node a clip does not animate keeps
+    the transform the file gives it.
+  - **Morph targets.** Position displacements, and normal displacements when the file has them, scaled by the weights
+    and added; for a mesh with no normals the flat ones are made again from the moved positions. Tangent displacements
+    are not read. The weights come from the clip, else the node's, else the mesh's.
+  - **Skins.** A mesh on a node with a skin is moved by the skin's joints, each vertex by up to 4 of them
+    (`JOINTS_0`, `WEIGHTS_0`; the weights are made to sum to 1) through the joint matrices
+    `world(joint) * inverseBind(joint)`, so an animated character deforms. The mesh node's own transform does not apply
+    to a skinned mesh, as the glTF spec says. Normals are turned by the same blend. Morph targets are applied before the
+    skin.
+  - Morphs and skins are done on the CPU, once for each frame a deformed model's pose changes (a model with no clip is
+    deformed once and kept); the result is drawn like any mesh, so it takes lights, shadows and the environment.
+  - **Not read**, and reported: textures other than the base colour (normal, occlusion, metallic-roughness, emissive), a
+    base colour texture on a texture coordinate set above 0, `alphaMode: MASK` (drawn opaque), primitives that are not
+    lists of triangles (points, lines, strips and fans are left out), more than 4 joints a vertex (`JOINTS_1` is
+    dropped), scenes other than the default, and every glTF extension the file lists in `extensionsUsed` (this includes
+    `KHR_texture_transform` and `KHR_materials_*`). Cameras and lights in the file are not read and not reported. Each
+    kind of thing is listed once for a file as unsupported content on every frame that draws the model (element
+    `Model`, property the feature, value the file), so `render`, `still` and `strip` warn and `--strict` fails (COMPAT.md
+    §6.1); the addon's `modelUnsupported(src, baseDir)` is what lists them.
+- <a id="3d-shadows"></a>**Shadows.** A directional light with `castShadow: true` draws a shadow map: a depth image of the
+  objects with `castShadow` seen along the light, fitted automatically to their boxes (so the map's resolution follows
+  the scene's size, and a ground plane that only receives does not stretch it). The objects with `receiveShadow` are
+  dimmed in the light by what the map says is in the way, with a 3 x 3 percentage-closer filter; the light's own
+  diffuse and specular are dimmed, ambient light is not. At most 4 lights cast shadows. `shadow` holds `mapSize` (the
+  side in texels, 64 to 4096, default 2048), `bias` (1) and `normalBias` (1.5), both in texels of the fitted map (so a
+  setting does not depend on the scene's scale; raise them if a surface speckles itself, lower them if a shadow
+  detaches from its object), and `radius` (1), half the width of the soft edge in texels (0 is the hardest the map's
+  resolution allows). Every face of a caster is drawn into the map, translucent objects included as if opaque; a
+  surface beyond the casters' far end is lit unless something is in front of it. Point lights cast no shadows, and
+  nothing shadows an ambient or `unlit` surface. The map is a pure function of the frame: nothing in it depends on the
+  camera, so a camera move does not make it shimmer.
 - **Extrusion.** Walls are smooth where neighbouring edges bend by less than 40 degrees and hard beyond. No bevel.
 - **Determinism.** The frame is a pure function of the scene, its fonts and the files it names. Meshes of text and paths
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Shadows, image-based or environment lighting (metals are dark away from a light), spot lights,
-  normal and other texture maps, skinned and morph animation, glTF animation, bevels, fog, post effects beyond the
-  layer's own effects, and more than 8 lights.
+- **Not drawn (v1).** Point-light shadows, spot lights, normal and other texture maps, bevels, fog, post effects
+  beyond the layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).
 
 ### video

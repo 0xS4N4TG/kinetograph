@@ -1,0 +1,76 @@
+{
+  "width": 640,
+  "height": 360,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#10131a",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    {
+      "id": "stage",
+      "type": "scene3d",
+      "width": 640,
+      "height": 360,
+      "camera": { "fov": 38, "position": [-1.5, 4.2, 9], "target": [0, 0.6, 0] },
+      "lights": [
+        { "type": "ambient", "color": "#7f8cff", "intensity": 0.25 },
+        {
+          "type": "directional",
+          "direction": [-0.6, -1, -0.45],
+          "color": "#fff2dc",
+          "intensity": 1.5,
+          "castShadow": true,
+          "shadow": { "mapSize": 2048, "radius": 1.5 }
+        },
+        { "type": "point", "position": [3.5, 2.5, 3], "color": "#ff7a9a", "intensity": 8, "range": 9 }
+      ],
+      "objects": [
+        {
+          "type": "mesh",
+          "geometry": { "kind": "plane", "width": 16, "height": 10 },
+          "material": { "color": "#bdb6a8", "roughness": 0.9 },
+          "rotation": [-90, 0, 0],
+          "receiveShadow": true
+        },
+        {
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 0.9, "segments": 64, "rings": 32 },
+          "material": { "color": "#e8573f", "roughness": 0.35 },
+          "position": [-2.2, 0.9, 0.3],
+          "castShadow": true,
+          "receiveShadow": true
+        },
+        {
+          "type": "mesh",
+          "geometry": { "kind": "box", "width": 1.4, "height": 2.2, "depth": 1.4 },
+          "material": { "color": "#3f7ae8", "roughness": 0.5 },
+          "position": [0.2, 1.1, -0.6],
+          "rotation": [0, [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 60 }], 0],
+          "castShadow": true,
+          "receiveShadow": true
+        },
+        {
+          "type": "mesh",
+          "geometry": { "kind": "torus", "radius": 0.7, "tube": 0.22, "tubeSegments": 32, "ringSegments": 64 },
+          "material": { "color": "#9be87a", "roughness": 0.3, "metallic": 0.2 },
+          "position": [2.6, 0.95, 0.6],
+          "rotation": [65, 25, 0],
+          "castShadow": true,
+          "receiveShadow": true
+        },
+        {
+          "type": "text",
+          "text": "Shadow",
+          "font": "DM Sans",
+          "size": 1.1,
+          "depth": 0.4,
+          "position": [-0.3, 0.6, 2.6],
+          "rotation": [-10, 0, 0],
+          "material": { "color": "#f6f0e4", "roughness": 0.45 },
+          "castShadow": true,
+          "receiveShadow": true
+        }
+      ]
+    }
+  ]
+}

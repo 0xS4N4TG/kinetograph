@@ -1894,6 +1894,7 @@ dependencies = [
  "ffmpeg-next",
  "glam",
  "gltf",
+ "half",
  "image",
  "lyon_tessellation",
  "naga",

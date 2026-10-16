@@ -19,6 +19,7 @@ import type {
   Clip,
   ColorString,
   Effect,
+  Environment3DJson,
   Geometry3D,
   Layout,
   LayoutItem,
@@ -29,6 +30,7 @@ import type {
   Num,
   Paint,
   SequenceJson,
+  Shadow3DOptions,
   Stroke,
   Turbulence,
   Vec3,
@@ -192,6 +194,8 @@ export interface Scene3DProps extends CommonProps {
   height: Num;
   /** Samples per pixel, 1 or 4 (default 4). */
   msaa?: 1 | 4;
+  /** Image-based lighting: the path of an equirectangular `.hdr`, `.png` or `.jpg`, or `{ src, intensity, rotation, background, ... }`. */
+  environment?: string | Environment3DJson;
   /** `<Camera3D>`, lights and the objects. */
   children?: ReactNode;
 }
@@ -216,6 +220,9 @@ export interface DirectionalLightProps {
   direction?: Vec3;
   color?: ColorString;
   intensity?: Num;
+  /** Shade what the objects with `castShadow` block, on the ones with `receiveShadow`. At most 4 lights do. */
+  castShadow?: boolean;
+  shadow?: Shadow3DOptions;
 }
 export interface PointLightProps {
   position: Vec3;
@@ -234,17 +241,30 @@ export interface Object3DProps {
   scale?: Num | Vec3;
   visible?: boolean;
 }
-export interface MeshProps extends Object3DProps {
+/** What the objects that are drawn (not groups) take. */
+export interface Drawn3DProps extends Object3DProps {
+  /** Blocks the light of the directional lights that `castShadow`. */
+  castShadow?: boolean;
+  /** Is shaded by what blocks those lights. */
+  receiveShadow?: boolean;
+}
+export interface MeshProps extends Drawn3DProps {
   geometry: Geometry3D;
   material?: Material3D;
 }
-export interface ModelProps extends Object3DProps {
+export interface ModelProps extends Drawn3DProps {
   /** A `.gltf` or `.glb` file. */
   src: string;
   /** Replaces the file's own materials. */
   material?: Material3D;
+  /** The file's clip to play: its name, or its position in the file. With none the model stands as the file has it. */
+  animation?: string | number;
+  /** Seconds into the clip. Default: the scene's own time, `frame / fps`. */
+  time?: Num;
+  /** A clip that is over starts again (default true); `false` holds its last pose. */
+  loop?: boolean;
 }
-export interface Text3DProps extends Object3DProps {
+export interface Text3DProps extends Drawn3DProps {
   /** The text: strings and numbers, as for `<Text>`. */
   children?: ReactNode;
   font: string;
@@ -258,7 +278,7 @@ export interface Text3DProps extends Object3DProps {
   lineHeight?: number;
   material?: Material3D;
 }
-export interface ExtrudeProps extends Object3DProps {
+export interface ExtrudeProps extends Drawn3DProps {
   /** SVG path data. */
   path: string;
   /** The longer side of the path's box in world units. */

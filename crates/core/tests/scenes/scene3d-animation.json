@@ -1,0 +1,43 @@
+{
+  "width": 640,
+  "height": 360,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#14161c",
+  "layers": [
+    {
+      "id": "clips",
+      "type": "scene3d",
+      "width": 640,
+      "height": 360,
+      "camera": { "fov": 34, "position": [0, 1.2, 11], "target": [0, 0.6, 0] },
+      "lights": [
+        { "type": "ambient", "intensity": 0.35 },
+        { "type": "directional", "direction": [-0.5, -1, -0.8], "intensity": 2.2 }
+      ],
+      "objects": [
+        {
+          "type": "model",
+          "src": "media/animated.glb",
+          "animation": "move",
+          "position": [-4.6, 0, 0]
+        },
+        {
+          "type": "model",
+          "src": "media/morph.glb",
+          "animation": "grow",
+          "position": [-0.4, 0, 0],
+          "scale": 1.6,
+          "material": { "color": "#4fc3f7", "roughness": 0.4, "doubleSided": true }
+        },
+        {
+          "type": "model",
+          "src": "media/skin.glb",
+          "animation": "bend",
+          "position": [3.6, -1, 0],
+          "material": { "color": "#f2c14e", "roughness": 0.5, "doubleSided": true }
+        }
+      ]
+    }
+  ]
+}

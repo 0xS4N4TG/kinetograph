@@ -507,20 +507,25 @@ Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `cr
 
 ### 6.6 The 3D layer
 
-`<Scene3D width height msaa?>` is a `scene3d` layer (SCENE.md, "scene3d"); it takes the common layer props
+`<Scene3D width height msaa? environment?>` is a `scene3d` layer (SCENE.md, "scene3d"); it takes the common layer props
 (`x`, `rotateY`, `effects`, `blendMode`, ...) and these children, all of which must be inside it:
 
 | Element | Props |
 |---|---|
 | `<Camera3D>` | `type`, `fov`, `height`, `near`, `far`, `position`, `target`, `up`. At most one. |
-| `<AmbientLight>`, `<DirectionalLight>`, `<PointLight>` | `color`, `intensity`; `direction`; `position`, `range`. |
+| `<AmbientLight>`, `<DirectionalLight>`, `<PointLight>` | `color`, `intensity`; `direction`, `castShadow`, `shadow`; `position`, `range`. |
 | `<Mesh geometry material?>` | `geometry` is `{ kind: 'box' \| 'sphere' \| 'plane' \| 'cylinder' \| 'torus', ... }`. |
-| `<Model src material?>` | A glTF or GLB file. |
+| `<Model src material? animation? time? loop?>` | A glTF or GLB file. `animation` is the name or position of one of its clips; `time` is seconds into the clip (default `frame / fps`), `loop` (default true) says what a clip does at its end. |
 | `<Text3D font size depth align lineHeight material>` | The text is the children (strings and numbers); `weight` and `fontStyle` pick the font key as for `<Text>`. |
 | `<Extrude path size depth fillRule material>` | SVG path data. |
 | `<Group3D>` | Objects that move together. |
 
-Every object takes `position`, `rotation` (degrees), `scale` (a number or `[x, y, z]`), `visible` and `id`. Every
+`environment` is the path of an equirectangular `.hdr`, `.png` or `.jpg` that lights the scene (image-based lighting), or
+`{ src, intensity, rotation, background, backgroundIntensity, backgroundBlur }` (SCENE.md, "scene3d", "environment").
+
+Every object takes `position`, `rotation` (degrees), `scale` (a number or `[x, y, z]`), `visible` and `id`; `<Mesh>`,
+`<Model>`, `<Text3D>` and `<Extrude>` also take `castShadow` and `receiveShadow`, which do something under a
+`<DirectionalLight castShadow shadow={{ mapSize, bias, normalBias, radius }}>` (SCENE.md, "scene3d"). Every
 number is an animatable `Num`, so a frame-driven value is `useCurrentFrame()` arithmetic or `interpolate`d, as anywhere.
 
 ```tsx
@@ -921,6 +926,9 @@ export function probeMedia(path: string, baseDir?: string): MediaInfo;
 /** The first audio stream of any file FFmpeg reads, decoded and resampled (swresample) to `sampleRate`, keeping its
  *  channel count (mono or stereo; more channels are downmixed to stereo). null when the file has no audio stream. */
 export function decodeAudio(path: string, sampleRate: number, baseDir?: string): AudioPcm | null;
+/** What a glTF or GLB model uses that the 3D layer does not read (SCENE.md, "scene3d", "glTF"), one entry for each
+ *  kind of thing; empty for a file that uses nothing of the kind. `IO`/render error for a file that cannot be read. */
+export function modelUnsupported(src: string, baseDir?: string): { feature: string; reason: string }[];
 
 // ---- GPU ----
 export interface PreviewOptions {

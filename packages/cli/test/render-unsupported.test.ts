@@ -81,6 +81,20 @@ describe('renderSource with unsupported content', () => {
     expect(calls.aborted).toBe(1);
   });
 
+  it('lists what a .json scene holds that the engine cannot draw on every frame of the range, and fails under strict', async () => {
+    const note: Unsupported = { path: 's <Model>', element: 'Model', property: 'KHR_materials_clearcoat', value: 'car.glb', reason: 'this glTF extension is not read' };
+    const scene = project([], { kind: 'scene', frame: async () => ({ sceneJson: '{}', audio: [], unsupported: [note], jsMs: 0, stringifyMs: 0 }) });
+    const { renderer, calls } = setup();
+    const result = await renderSource(scene, renderer, { output: 'out.mp4', range: '2..6' });
+    expect(calls.render).toHaveLength(1);
+    expect(result.compat).toEqual({
+      unsupportedFrames: 4,
+      leftOut: [{ element: 'Model', property: 'KHR_materials_clearcoat', reason: note.reason, values: ['car.glb'], frames: 4, firstFrame: 2, lastFrame: 5 }],
+    });
+    await expect(renderSource(scene, renderer, { output: 'out.mp4', strict: true })).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' });
+    expect(calls.render).toHaveLength(1);
+  });
+
   it('leaves a .json scene to the addon whole', async () => {
     const { renderer, calls } = setup();
     const result = await renderSource(project([], { kind: 'scene' }), renderer, { output: 'out.mp4', strict: true });

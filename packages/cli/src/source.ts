@@ -5,6 +5,7 @@ import type { CompositionInfo, FrameRenderer } from '@kinetograph/core';
 import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetograph/scene';
 import { bundleProject } from './bundle.js';
 import { CliError } from './errors.js';
+import { modelNotes } from './model-notes.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
 
@@ -147,6 +148,8 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
   const absolute = requireEntry(entry);
   const baseDir = dirname(absolute);
 
+  const notes = modelNotes(baseDir);
+
   if (isSceneFile(absolute)) {
     const text = readFileSync(absolute, 'utf8');
     return {
@@ -154,7 +157,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       entry: absolute,
       baseDir,
       composition: sceneComposition(absolute, text),
-      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: [], jsMs: 0, stringifyMs: 0 }),
+      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: notes(text), jsMs: 0, stringifyMs: 0 }),
       dispose: () => {},
     };
   }
@@ -191,7 +194,8 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const result = await renderer.renderFrame(frame);
       const rendered = nowMs();
       const sceneJson = JSON.stringify(result.scene);
-      return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported: result.unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
+      const unsupported = [...result.unsupported, ...notes(sceneJson)];
+      return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
     notes: () => mod.stylesheetNotes(),
     dispose: () => renderer.dispose(),

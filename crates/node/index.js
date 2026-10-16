@@ -786,6 +786,7 @@ module.exports.domLayoutBoxes = nativeBinding.domLayoutBoxes
 module.exports.inspect = nativeBinding.inspect
 module.exports.layoutDom = nativeBinding.layoutDom
 module.exports.layoutText = nativeBinding.layoutText
+module.exports.modelUnsupported = nativeBinding.modelUnsupported
 module.exports.parseRange = nativeBinding.parseRange
 module.exports.probeMedia = nativeBinding.probeMedia
 module.exports.renderCanvas = nativeBinding.renderCanvas

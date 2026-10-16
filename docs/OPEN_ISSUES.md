@@ -95,8 +95,9 @@ filled on 2026-10-16. What is left:
   texture, `readPixels`, `blitFramebuffer` (not defined, so it is a TypeError rather than an `unsupported:` message),
   points and lines, instancing, cube/3D/float textures, multisampled edges. Framebuffer textures start every frame
   blank; a frame that only draws to framebuffers still clears the canvas, where a browser keeps the last picture.
-- **3D (`scene3d`)**: spot lights, the texture maps beyond base colour, bevels, a `doctor` report for `three`
-  imports. Shadows, image-based lighting, glTF animation and skins were in flight on 2026-10-16.
+- **3D (`scene3d`)**: spot lights, point-light shadows, the texture maps beyond base colour, bevels, GPU skinning (the
+  CPU deforms morphs and skins once per pose), a `doctor` report for `three` imports. Shadows, image-based lighting
+  and glTF animation, morph targets and skins are done (2026-10-16).
 - **CSS**: `@starting-style`, container `style()` queries, cancelling a running transition, `preserve-3d` (above).
 - **WGSL `shader()`**: sees only its own layer, one pass, no other texture, `f32` uniforms only.
 

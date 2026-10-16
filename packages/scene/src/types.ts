@@ -831,21 +831,35 @@ export interface Placement3D {
   visible?: boolean;
 }
 
-export interface Mesh3D extends Placement3D {
+/** Which objects cast and receive shadows (a directional light's `castShadow` turns the shadow map on). */
+export interface Shadowing3D {
+  /** Default false. */
+  castShadow?: boolean;
+  /** Default false. */
+  receiveShadow?: boolean;
+}
+
+export interface Mesh3D extends Placement3D, Shadowing3D {
   type: 'mesh';
   id?: string;
   geometry: Geometry3D;
   material?: Material3D;
 }
-export interface Model3D extends Placement3D {
+export interface Model3D extends Placement3D, Shadowing3D {
   type: 'model';
   id?: string;
   /** A `.gltf` or `.glb` file, relative to the scene. */
   src: string;
   /** Replaces the file's own materials. */
   material?: Material3D;
+  /** The file's clip to play: its name, or its position in the file. With none the model stands as the file has it. */
+  animation?: string | number;
+  /** Seconds into the clip; animatable. Default: the scene's own time, `frame / fps`. */
+  time?: Num;
+  /** A clip that is over starts again (default true); `false` holds its last pose. */
+  loop?: boolean;
 }
-export interface Text3D extends Placement3D {
+export interface Text3D extends Placement3D, Shadowing3D {
   type: 'text';
   id?: string;
   text: string;
@@ -860,7 +874,7 @@ export interface Text3D extends Placement3D {
   lineHeight?: number;
   material?: Material3D;
 }
-export interface Extrude3D extends Placement3D {
+export interface Extrude3D extends Placement3D, Shadowing3D {
   type: 'extrude';
   id?: string;
   /** SVG path data; y points down, as in SVG. */
@@ -897,10 +911,49 @@ export interface Camera3DJson {
   up?: [number, number, number];
 }
 
+/** A directional light's shadow map. The map covers the objects that cast shadows. */
+export interface Shadow3DOptions {
+  /** Texels along each side of the square map, 64 to 4096. Default 2048. */
+  mapSize?: number;
+  /** Texels a surface is moved toward the light before its depth is compared. Default 1. */
+  bias?: number;
+  /** Texels a surface is moved along its normal, more the more it leans away from the light. Default 1.5. */
+  normalBias?: number;
+  /** Half the width of the soft edge, in texels. Default 1. */
+  radius?: number;
+}
+
 export type Light3DJson =
   | { type: 'ambient'; color?: ColorString; intensity?: Num }
-  | { type: 'directional'; direction?: Vec3; color?: ColorString; intensity?: Num }
+  | {
+      type: 'directional';
+      direction?: Vec3;
+      color?: ColorString;
+      intensity?: Num;
+      /** Shade what the objects that cast shadows block. At most 4 lights do. Default false. */
+      castShadow?: boolean;
+      shadow?: Shadow3DOptions;
+    }
   | { type: 'point'; position: Vec3; color?: ColorString; intensity?: Num; range?: Num };
+
+/**
+ * Image-based lighting: an equirectangular picture of the surroundings. Its centre is toward +x and its top is +y, as
+ * three.js reads it. It adds to the lights.
+ */
+export interface Environment3DJson {
+  /** A Radiance `.hdr` (linear light, any brightness), or a `.png` or `.jpg` (sRGB), relative to the scene. */
+  src: string;
+  /** What the lighting from the picture is multiplied by. Default 1. */
+  intensity?: Num;
+  /** Degrees the picture is turned about y, counter-clockwise seen from above. Default 0. */
+  rotation?: Num;
+  /** Draw the picture behind the objects, which makes the layer opaque over its box. Default false. */
+  background?: boolean;
+  /** What the background is multiplied by. Default 1. */
+  backgroundIntensity?: Num;
+  /** 0 to 1: how blurred the background is. Default 0. */
+  backgroundBlur?: Num;
+}
 
 export interface Scene3DLayer extends LayerBase {
   type: 'scene3d';
@@ -909,6 +962,7 @@ export interface Scene3DLayer extends LayerBase {
   /** 1 or 4, default 4. */
   msaa?: 1 | 4;
   camera?: Camera3DJson;
+  environment?: Environment3DJson;
   /** At most 8. */
   lights?: Light3DJson[];
   objects?: Object3DJson[];

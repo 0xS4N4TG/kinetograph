@@ -121,6 +121,7 @@ use crate::turbulence::{self, Tables};
 use crate::uniforms::{Block, Uniforms};
 use crate::warp;
 
+mod environment;
 mod filter_graph;
 mod glsl;
 mod scene3d;

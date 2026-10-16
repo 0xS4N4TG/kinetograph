@@ -132,6 +132,18 @@ export interface MediaInfo {
   audioCodec?: string
 }
 
+/**
+ * Reads a glTF or GLB model and lists what it uses that the 3D layer does not
+ * read (docs/SCENE.md, "scene3d"); a file that cannot be read is an error.
+ */
+export declare function modelUnsupported(src: string, baseDir?: string | undefined | null): Array<ModelUnsupported>
+
+/** A glTF feature a model file uses that the 3D layer does not read. */
+export interface ModelUnsupported {
+  feature: string
+  reason: string
+}
+
 /** `"10..40"` or `"10..=40"` -> `[first, last]`, inclusive. */
 export declare function parseRange(range: string, durationInFrames: number): Array<number>
 
