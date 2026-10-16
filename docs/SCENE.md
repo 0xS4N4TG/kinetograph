@@ -448,8 +448,8 @@ Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fra
 | `width`, `height` | required | Animatable, not negative. The drawing buffer's size in pixels (rounded). |
 | `programs` | `{}` | By id: `vertex` and `fragment` (GLSL ES 100, or 300 es with `#version 300 es`) and the `attributes` (name to location) the link gave the vertex shader. |
 | `buffers` | `{}` | By id: base64 bytes. |
-| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL) or `pixels` (base64 straight-alpha RGBA8 with `width` and `height`), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded) and `mipmaps` (`generateMipmap` was called). |
-| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a) throws away everything before it. A `draw` runs one program. |
+| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL) or `pixels` (base64 straight-alpha RGBA8 with `width` and `height`), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded) and `mipmaps` (`generateMipmap` was called). `target: true` with `width` and `height` and no pixels is a framebuffer's texture (below). |
+| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a) of the drawing buffer throws away every draw to the drawing buffer before it. A `draw` runs one program. Both take an optional `target`, the id of a target texture to go to instead of the drawing buffer. |
 | `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
 
 A `draw` carries `program`, `mode` (`triangles`, `triangleStrip`, `triangleFan`), `first` and `count`, `indices`
@@ -473,13 +473,21 @@ How it is drawn:
   light like a picture is. The first frame costs the compile of each program; every later frame reuses the pipeline.
 - A texture whose minification filter reads mipmaps it does not have (WebGL's default filter, without
   `generateMipmap`) is incomplete and samples as opaque black, as in a browser.
+- A texture with `target: true` is what a framebuffer draws into (`width` x `height`, 1 to 8192 each way, RGBA8, 512
+  MiB for all of a layer's targets). The ops run in order, one render pass for each run of ops to the same target, so a
+  draw samples a target as the earlier ops left it, and a target nothing was drawn to is transparent black. A target
+  is not carried from one frame to the next. Its first row is GL's bottom one (so the viewport and scissor of a draw
+  into it, `gl_FragCoord` and the winding of a face are GL's, and sampling it needs no flip). A draw's `viewport` must
+  lie inside its target. A draw that samples its own target is an error (WebGL gives `INVALID_OPERATION`), and so is
+  a `target` that is not a target texture.
 - Rendering is a pure function of the recording and the files it names; nothing reads a clock.
 
-Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored): rendering to a
-framebuffer or renderbuffer, the depth and stencil tests, `readPixels`, points and lines, instanced drawing, integer
-and constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures, texture levels
-other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, several colour outputs, a texture read in
-the vertex shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
+Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
+renderbuffers, depth and stencil attachments, the depth and stencil tests, `readPixels`, points and lines, instanced
+drawing, integer and constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures,
+texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, several colour outputs (so
+one colour attachment), a framebuffer texture that is not RGBA or holds uploaded pixels, a texture read in the vertex
+shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
 `antialias: true` smooths them); a full-screen quad has none. The shaders' maths is the GPU's: a `sin` of a large
 argument can differ from Chrome's last digits.
 
