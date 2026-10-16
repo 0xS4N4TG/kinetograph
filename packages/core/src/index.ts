@@ -76,7 +76,7 @@ export type {
 export { Gif } from './gif.js';
 
 // ---- time ----
-export { useCurrentFrame, useVideoConfig, Sequence, Series, Loop, Freeze } from './timeline.js';
+export { useCurrentFrame, useVideoConfig, useIsInsideNonPremountFreeze, Sequence, Series, Loop, Freeze } from './timeline.js';
 export type { SequenceProps, SeriesSequenceProps, LoopProps, FreezeProps } from './timeline.js';
 
 export { interpolate } from './interpolate.js';
@@ -94,10 +94,14 @@ export { AbsoluteFill, Img } from './fill.js';
 export type { AbsoluteFillProps, FillStyle, ImgProps } from './fill.js';
 
 // ---- assets and async ----
-export { staticFile, setPublicDir, delayRender, continueRender, cancelRender } from './assets.js';
+export { staticFile, setPublicDir, delayRender, continueRender, cancelRender, useDelayRender } from './assets.js';
 export type { DelayRenderOptions } from './assets.js';
-export { getRemotionEnvironment } from './environment.js';
+export { getRemotionEnvironment, useRemotionEnvironment } from './environment.js';
 export type { RemotionEnvironment } from './environment.js';
+
+// ---- preview state (Studio and Player), fixed to what a render sees ----
+export { useCurrentScale, usePixelDensity, useBufferState } from './hooks.js';
+export type { DelayPlaybackHandle, OutsideRemotionOptions, UseBufferState } from './hooks.js';
 
 // ---- compositions and fonts (AUTHORING.md §7.2) ----
 export {

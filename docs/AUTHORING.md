@@ -612,6 +612,12 @@ Mapping onto the engine:
   `<entry directory>/public`, set by the CLI).
 - `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s
   (real time, used only for the error) with the labels still open. `cancelRender(err)` fails the frame.
+  `useDelayRender()` returns the same three functions.
+- Every frame is a render, so the hooks that read the Studio's or the Player's state answer what a render sees:
+  `useRemotionEnvironment()` is `getRemotionEnvironment()` (`isRendering` only), `useCurrentScale()` and
+  `usePixelDensity()` are 1 (there is no render `scale` option, and `devicePixelRatio` is 1), `useBufferState()`
+  hands out a `delayPlayback()` whose `unblock()` does nothing, and `useIsInsideNonPremountFreeze()` is whether a
+  `<Freeze>` is active around the component.
 - `getRemotionEnvironment()` always reports `isRendering: true` and every other flag false: the studio preview and the
   output file come from the same render path, so a component that branches on it draws the same frame in both.
 

@@ -15,3 +15,10 @@ export interface RemotionEnvironment {
 export function getRemotionEnvironment(): RemotionEnvironment {
   return { isStudio: false, isRendering: true, isPlayer: false, isReadOnlyStudio: false, isClientSideRendering: false };
 }
+
+const environment = getRemotionEnvironment();
+
+/** The hook form of `getRemotionEnvironment()`. The same object every call, so it is safe in a dependency list. */
+export function useRemotionEnvironment(): RemotionEnvironment {
+  return environment;
+}
