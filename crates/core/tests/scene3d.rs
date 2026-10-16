@@ -442,3 +442,210 @@ fn bad_shadow_settings_name_the_problem() {
     let five = vec![format!("{cast}}}"); 5].join(",");
     assert!(err(&five).contains("5 lights that cast shadows"));
 }
+
+// ---- environment maps ----
+
+/// A sphere of radius 3 (pixels 20 to 80 of the 100 x 100 view) lit by
+/// `environment`, a JSON object, alone.
+fn env_sphere(environment: &str, material: &str) -> Frame {
+    render(&format!(
+        r##"{ORTHO}, "environment": {environment},
+            "objects": [{{"type": "mesh", "geometry": {{"kind": "sphere", "radius": 3, "segments": 64, "rings": 32}},
+                          "material": {material}}}]"##
+    ))
+}
+
+/// The picture `src` turned `rotation` degrees, with nothing in the scene:
+/// what the background shows when the camera looks down -z.
+fn env_background(src: &str, extra: &str) -> Frame {
+    render(&format!(
+        r##""camera": {{"fov": 40, "position": [0, 0, 5]}},
+           "environment": {{"src": "media/{src}", "background": true {extra}}}"##
+    ))
+}
+
+/// The bands picture's colours, toward -x, -z, +x and +z.
+const RED: [u8; 3] = [230, 40, 40];
+const GREEN: [u8; 3] = [40, 200, 60];
+const BLUE: [u8; 3] = [50, 80, 235];
+const YELLOW: [u8; 3] = [240, 220, 50];
+
+fn near(got: [u8; 4], want: [u8; 3], tolerance: i32) {
+    for c in 0..3 {
+        assert!(
+            (i32::from(got[c]) - i32::from(want[c])).abs() <= tolerance,
+            "{got:?} is not {want:?} within {tolerance}"
+        );
+    }
+}
+
+#[test]
+fn a_white_furnace_lights_a_white_surface_to_its_own_colour() {
+    let sphere = |intensity: f64| {
+        env_sphere(
+            &format!(r#"{{"src": "media/flat.png", "intensity": {intensity}}}"#),
+            r##"{"color": "#ffffff", "roughness": 1}"##,
+        )
+    };
+    // Energy is kept: what the diffuse and specular terms give together is
+    // within a few percent of 1.
+    let p = px(&sphere(1.0), 50, 50);
+    assert!((244..=255).contains(&p[0]), "{p:?}");
+    // The intensity scales it, in linear light: 0.5 is sRGB 188.
+    let half = px(&sphere(0.5), 50, 50);
+    assert!((i32::from(half[0]) - 187).abs() <= 5, "{half:?}");
+    // None is no light.
+    assert_eq!(px(&sphere(0.0), 50, 50), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_mirror_shows_the_environment_in_the_direction_it_reflects() {
+    let mirror = |extra: &str| {
+        env_sphere(
+            &format!(r#"{{"src": "media/bands.png" {extra}}}"#),
+            r##"{"color": "#ffffff", "metallic": 1, "roughness": 0}"##,
+        )
+    };
+    // Seen from +z: the middle reflects +z, the left -x and the right +x.
+    let frame = mirror("");
+    near(px(&frame, 50, 50), YELLOW, 25);
+    near(px(&frame, 35, 50), RED, 25);
+    near(px(&frame, 65, 50), BLUE, 25);
+    // The picture turns counter-clockwise seen from above: its red, which
+    // was toward -x, is now toward +z, and its yellow toward +x.
+    let turned = mirror(r#", "rotation": 90"#);
+    near(px(&turned, 50, 50), RED, 25);
+    near(px(&turned, 65, 50), YELLOW, 25);
+}
+
+#[test]
+fn a_rough_surface_sees_a_blurred_environment() {
+    let at = |roughness: f64, x: usize| {
+        let frame = env_sphere(
+            r#"{"src": "media/bands.png"}"#,
+            &format!(r##"{{"color": "#ffffff", "metallic": 1, "roughness": {roughness}}}"##),
+        );
+        px(&frame, x, 50)
+    };
+    // Between the bands the mirror is one colour or the other; the rough
+    // metal mixes them: its red and blue are nearer each other.
+    let spread = |p: [u8; 4]| i32::from(p[0]) - i32::from(p[2]);
+    let (left_mirror, left_rough) = (at(0.0, 35), at(0.9, 35));
+    let (right_mirror, right_rough) = (at(0.0, 65), at(0.9, 65));
+    let gap = |a: [u8; 4], b: [u8; 4]| (spread(a) - spread(b)).abs();
+    assert!(
+        gap(left_rough, right_rough) < gap(left_mirror, right_mirror) * 3 / 4,
+        "{left_mirror:?} {right_mirror:?} {left_rough:?} {right_rough:?}"
+    );
+}
+
+#[test]
+fn an_environment_does_not_touch_unlit_surfaces() {
+    let frame = env_sphere(
+        r#"{"src": "media/bands.png"}"#,
+        r##"{"color": "#ff8000", "unlit": true}"##,
+    );
+    assert_eq!(px(&frame, 50, 50), [255, 128, 0, 255]);
+}
+
+#[test]
+fn the_background_is_the_environment_seen_through_each_pixel() {
+    // The camera looks down -z, which the bands picture paints green; the
+    // layer is opaque over its box.
+    let frame = env_background("bands.png", "");
+    near(px(&frame, 50, 50), GREEN, 6);
+    // Across the field of view (40 degrees) it stays within the one band.
+    near(px(&frame, 5, 50), GREEN, 6);
+    near(px(&frame, 95, 95), GREEN, 6);
+    // Turned by 90 degrees the picture's +x, blue, is toward -z.
+    near(
+        px(&env_background("bands.png", r#", "rotation": 90"#), 50, 50),
+        BLUE,
+        6,
+    );
+    // With no `background`, the environment only lights: nothing is drawn.
+    let none = render(r#""environment": {"src": "media/bands.png"}"#);
+    assert!(none.rgba.chunks(4).all(|p| p == BACKGROUND));
+}
+
+#[test]
+fn the_background_has_an_intensity_and_a_blur() {
+    let half = px(
+        &env_background("bands.png", r#", "backgroundIntensity": 0.5"#),
+        50,
+        50,
+    );
+    // Green's 200 is linear 0.578; half of it is sRGB 146.
+    assert!((i32::from(half[1]) - 146).abs() <= 4, "{half:?}");
+    // Blurred all the way it is the average of the sky: the four bands mix
+    // into something that leans to no one colour.
+    let blurred = px(
+        &env_background("bands.png", r#", "backgroundBlur": 1"#),
+        50,
+        50,
+    );
+    let spread = blurred[..3].iter().max().unwrap() - blurred[..3].iter().min().unwrap();
+    assert!(spread < 100, "{blurred:?}");
+}
+
+#[test]
+fn objects_are_drawn_over_the_background() {
+    let frame = render(&format!(
+        r##"{ORTHO}, "environment": {{"src": "media/bands.png", "background": true}},
+            "objects": [{}]"##,
+        quad("#ff00ff", 4.0, 0.0, "")
+    ));
+    assert_eq!(px(&frame, 50, 50), [255, 0, 255, 255]);
+    near(px(&frame, 10, 10), GREEN, 40);
+}
+
+#[test]
+fn an_hdr_picture_can_be_brighter_than_white() {
+    // The studio's key light is 14 times white: a mirror reflecting it is
+    // white, a surface lit only by the sky is not.
+    let frame = env_sphere(
+        r#"{"src": "media/studio.hdr"}"#,
+        r##"{"color": "#ffffff", "metallic": 1, "roughness": 0.05}"##,
+    );
+    assert!(
+        frame.rgba.chunks(4).any(|p| p[..3] == [255, 255, 255]),
+        "the key light shows white"
+    );
+    // And the diffuse, rough side of the same picture is not white anywhere.
+    let rough = env_sphere(
+        r#"{"src": "media/studio.hdr", "intensity": 0.2}"#,
+        r##"{"color": "#808080", "roughness": 1}"##,
+    );
+    assert!(rough.rgba.chunks(4).all(|p| p[0] < 255));
+}
+
+#[test]
+fn environments_are_deterministic_and_animate() {
+    let body = r##""camera": {"fov": 40, "position": [0, 0, 7]},
+        "environment": {"src": "media/studio.hdr", "background": true,
+                        "rotation": [{"frame": 0, "value": 0}, {"frame": 29, "value": 120}]},
+        "objects": [{"type": "mesh", "geometry": {"kind": "sphere"},
+                     "material": {"color": "#c0c0d0", "metallic": 1, "roughness": 0.2}}]"##;
+    let a = render_still(scene(body), 6).unwrap().rgba;
+    assert_eq!(a, render_still(scene(body), 6).unwrap().rgba);
+    let mut renderer = Renderer::new(scene(body)).unwrap();
+    let c = renderer.render_frame(6).unwrap().rgba;
+    let other = renderer.render_frame(25).unwrap().rgba;
+    assert_eq!(a, renderer.render_frame(6).unwrap().rgba);
+    assert_eq!(a, c);
+    assert_ne!(c, other);
+}
+
+#[test]
+fn a_bad_environment_is_reported_by_name_when_the_renderer_is_built() {
+    let build = |src: &str| {
+        let s = scene(&format!(r#""environment": {{"src": "{src}"}}"#));
+        match Renderer::new(s) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("{src} must fail"),
+        }
+    };
+    assert!(build("media/nope.hdr").contains("nope.hdr"));
+    // Not a picture.
+    assert!(build("media/make_env.py").contains("make_env.py"));
+}

@@ -182,6 +182,15 @@ fn scene3d_shadows_match_golden() {
 }
 
 #[test]
+fn scene3d_environment_matches_golden() {
+    // Frame 15 of 30: four spheres lit by an HDR environment alone (rough and
+    // smooth gold, a half-metal, a red dielectric), and a metal torus in front
+    // of the same picture as a blurred background, turning with the frame.
+    let frame = render_still(scene("tests/scenes/scene3d-environment.json"), 15).unwrap();
+    check("scene3d-environment", &frame);
+}
+
+#[test]
 fn scene3d_layers_composite_with_2d_layers_and_effects() {
     // Frame 12 of 30: 3D layers under a drop shadow, under a blur and the
     // screen blend mode, with a layer rotation and a 3D turn, among shapes

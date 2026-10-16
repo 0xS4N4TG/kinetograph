@@ -1,9 +1,10 @@
 //! The 3D layer's pass: a `scene3d::draw::DrawScene` drawn with a depth buffer
 //! (`shaders/scene3d.wgsl`) into a texture the size of the padded canvas.
 //!
-//! Meshes and textures are uploaded the first time they are drawn and kept
-//! while the CPU side holds them (`Weak`), so a mesh that is built once (a
-//! primitive, a model, a line of text) is uploaded once.
+//! Meshes, textures and environment maps are uploaded (or, for the maps,
+//! made: `environment.rs`) the first time they are drawn and kept while the
+//! CPU side holds them (`Weak`), so a mesh that is built once (a primitive, a
+//! model, a line of text) is uploaded once.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -12,9 +13,11 @@ use glam::DMat3;
 use vello::kurbo::Affine;
 use vello::wgpu::util::TextureDataOrder;
 
+use super::environment::{Baked, Baker, empty_cube};
 use super::*;
 use crate::scene3d::MAX_SHADOW_LIGHTS;
 use crate::scene3d::draw::{DrawItem, DrawScene, Texture};
+use crate::scene3d::environment::Environment;
 use crate::scene3d::mesh::{MeshData, VERTEX_BYTES, Vertex3};
 
 /// Bytes of the per-draw block in `shaders/scene3d.wgsl`.
@@ -37,9 +40,15 @@ pub(super) struct State {
     /// Bound for the slots that hold no map: one texel, never read.
     empty_shadow: wgpu::TextureView,
     shadow_sampler: wgpu::Sampler,
+    /// Makes the environment maps; built when the first environment is.
+    baker: Option<Baker>,
+    environments: HashMap<u64, GpuEnvironment>,
+    /// Bound where a scene has no environment: a cube of one black texel.
+    empty_cube: wgpu::TextureView,
+    environment_sampler: wgpu::Sampler,
     sampler: wgpu::Sampler,
-    /// Opaque and blended pipelines, by samples per pixel.
-    pipelines: HashMap<u32, (wgpu::RenderPipeline, wgpu::RenderPipeline)>,
+    /// The pipelines, by samples per pixel.
+    pipelines: HashMap<u32, Pipelines>,
     /// The multisampled colour and the depth, by samples per pixel, at the
     /// padded canvas's size.
     targets: HashMap<u32, Target>,
@@ -70,6 +79,31 @@ struct GpuTexture {
 struct ShadowMap {
     size: u32,
     view: wgpu::TextureView,
+}
+
+struct GpuEnvironment {
+    owner: Weak<Environment>,
+    baked: Baked,
+}
+
+struct Pipelines {
+    opaque: wgpu::RenderPipeline,
+    blended: wgpu::RenderPipeline,
+    /// The environment as the background: drawn before everything.
+    background: wgpu::RenderPipeline,
+}
+
+fn cube_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::Cube,
+            multisampled: false,
+        },
+        count: None,
+    }
 }
 
 fn shadow_map_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
@@ -128,6 +162,14 @@ impl State {
                     binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+                cube_entry(6),
+                cube_entry(7),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -221,6 +263,15 @@ impl State {
             ..Default::default()
         });
         let empty_shadow = shadow_texture(device, 1).create_view(&Default::default());
+        let environment_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("scene3d environment"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("scene3d"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -248,6 +299,10 @@ impl State {
             shadow_maps: Default::default(),
             empty_shadow,
             shadow_sampler,
+            baker: None,
+            environments: HashMap::new(),
+            empty_cube: empty_cube(device, queue),
+            environment_sampler,
             sampler,
             pipelines: HashMap::new(),
             targets: HashMap::new(),
@@ -257,12 +312,50 @@ impl State {
         }
     }
 
-    fn pipelines(
-        &mut self,
-        device: &wgpu::Device,
-        samples: u32,
-    ) -> &(wgpu::RenderPipeline, wgpu::RenderPipeline) {
+    fn pipelines(&mut self, device: &wgpu::Device, samples: u32) -> &Pipelines {
         self.pipelines.entry(samples).or_insert_with(|| {
+            let multisample = wgpu::MultisampleState {
+                count: samples,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            };
+            let background_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("scene3d background"),
+                    bind_group_layouts: &[Some(&self.frame_layout)],
+                    immediate_size: 0,
+                });
+            let background = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("scene3d background"),
+                layout: Some(&background_layout),
+                vertex: wgpu::VertexState {
+                    module: &self.shader,
+                    entry_point: Some("vs_background"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &self.shader,
+                    entry_point: Some("fs_background"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: LINEAR_FORMAT,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample,
+                multiview_mask: None,
+                cache: None,
+            });
             let attributes =
                 wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
             let make = |blend: bool| {
@@ -304,16 +397,16 @@ impl State {
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
-                    multisample: wgpu::MultisampleState {
-                        count: samples,
-                        mask: !0,
-                        alpha_to_coverage_enabled: false,
-                    },
+                    multisample,
                     multiview_mask: None,
                     cache: None,
                 })
             };
-            (make(false), make(true))
+            Pipelines {
+                opaque: make(false),
+                blended: make(true),
+                background,
+            }
         })
     }
 
@@ -367,6 +460,33 @@ impl State {
         }
     }
 
+    /// Makes the maps of `scene`'s environment unless they are made, and
+    /// forgets those of the environments the CPU side has let go of. The
+    /// passes that make them go into `encoder`, ahead of the scene's own.
+    fn bake(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        scene: &DrawScene,
+    ) {
+        self.environments.retain(|_, e| e.owner.strong_count() > 0);
+        let Some(environment) = &scene.environment else {
+            return;
+        };
+        let map = &environment.map;
+        if !self.environments.contains_key(&map.id) {
+            let baker = self.baker.get_or_insert_with(|| Baker::new(device));
+            self.environments.insert(
+                map.id,
+                GpuEnvironment {
+                    owner: Arc::downgrade(map),
+                    baked: baker.bake(device, queue, encoder, map),
+                },
+            );
+        }
+    }
+
     /// Uploads what `scene` draws that is not on the GPU yet, and forgets
     /// what the CPU side has let go of.
     fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: &DrawScene) {
@@ -411,10 +531,15 @@ impl State {
 }
 
 /// Bytes of the per-frame block: two matrices, the eye, the ambient light,
-/// `MAX_LIGHTS` lights of three vectors and `MAX_SHADOW_LIGHTS` shadows of a
-/// matrix and a vector.
-const FRAME_BYTES: u64 =
-    64 * 2 + 16 * 2 + (crate::scene3d::MAX_LIGHTS as u64) * 48 + (MAX_SHADOW_LIGHTS as u64) * 80;
+/// `MAX_LIGHTS` lights of three vectors, `MAX_SHADOW_LIGHTS` shadows of a
+/// matrix and a vector, a matrix, a 3 x 3 matrix and a vector.
+const FRAME_BYTES: u64 = 64 * 2
+    + 16 * 2
+    + (crate::scene3d::MAX_LIGHTS as u64) * 48
+    + (MAX_SHADOW_LIGHTS as u64) * 80
+    + 64
+    + 48
+    + 16;
 
 fn upload_texture(
     device: &wgpu::Device,
@@ -509,7 +634,8 @@ fn push_mat4(out: &mut Vec<u8>, m: &glam::Mat4) {
     push(out, &m.to_cols_array());
 }
 
-fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool) -> Vec<u8> {
+/// `max_lod` is the last level of the environment's specular map.
+fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool, max_lod: f32) -> Vec<u8> {
     let mut out = Vec::with_capacity(FRAME_BYTES as usize);
     push_mat4(&mut out, &scene.view_proj);
     push_mat4(&mut out, place);
@@ -575,6 +701,20 @@ fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool) -> Vec<u8>
             None => push(&mut out, &[0.0; 20]),
         }
     }
+    push_mat4(&mut out, &scene.view_proj.inverse());
+    match &scene.environment {
+        Some(e) => {
+            for column in e.rotation.to_cols_array_2d() {
+                push(&mut out, &[column[0], column[1], column[2], 0.0]);
+            }
+            let (background, blur) = e.background.map_or((0.0, 0.0), |b| (b.intensity, b.blur));
+            push(
+                &mut out,
+                &[e.intensity, max_lod, background, blur * max_lod],
+            );
+        }
+        None => push(&mut out, &[0.0; 16]),
+    }
     debug_assert_eq!(out.len() as u64, FRAME_BYTES);
     out
 }
@@ -615,15 +755,24 @@ impl Compositor {
             .take()
             .unwrap_or_else(|| State::new(&self.device, &self.queue));
         state.upload(&self.device, &self.queue, scene);
+        state.bake(&self.device, &self.queue, &mut self.encoder(), scene);
         state.shadow_maps(&self.device, scene);
         state.pipelines(&self.device, scene.msaa);
         state.target(&self.device, scene.msaa, [self.width, self.height]);
 
+        let baked = scene
+            .environment
+            .as_ref()
+            .map(|e| &state.environments[&e.map.id].baked);
+        let max_lod = baked.map_or(0.0, |b| b.max_lod);
+        let (specular, diffuse) = baked.map_or((&state.empty_cube, &state.empty_cube), |b| {
+            (&b.specular, &b.diffuse)
+        });
         let frame = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("scene3d frame"),
-                contents: &frame_bytes(scene, &place, mirrored),
+                contents: &frame_bytes(scene, &place, mirrored, max_lod),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
         let shadow_view = |slot: usize| {
@@ -658,6 +807,18 @@ impl Compositor {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::Sampler(&state.shadow_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(specular),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(diffuse),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::Sampler(&state.environment_sampler),
                 },
             ],
         });
@@ -752,7 +913,7 @@ impl Compositor {
         }
 
         {
-            let (opaque, blended) = &state.pipelines[&scene.msaa];
+            let pipelines = &state.pipelines[&scene.msaa];
             let attachments = &state.targets[&scene.msaa];
             let stamp = self.stamp("scene3d", &target.view);
             let mut encoder = self.encoder();
@@ -791,8 +952,20 @@ impl Compositor {
                 ..Default::default()
             });
             pass.set_bind_group(0, &frame_group, &[]);
+            if scene
+                .environment
+                .as_ref()
+                .is_some_and(|e| e.background.is_some())
+            {
+                pass.set_pipeline(&pipelines.background);
+                pass.draw(0..3, 0..1);
+            }
             for (i, item) in scene.items.iter().enumerate() {
-                pass.set_pipeline(if i < scene.opaque { opaque } else { blended });
+                pass.set_pipeline(if i < scene.opaque {
+                    &pipelines.opaque
+                } else {
+                    &pipelines.blended
+                });
                 let mesh = &state.meshes[&item.mesh.id];
                 let texture = item
                     .texture
@@ -867,9 +1040,10 @@ mod tests {
             lights: Vec::new(),
             items: Vec::new(),
             opaque: 0,
+            environment: None,
         };
         assert_eq!(
-            frame_bytes(&scene, &glam::Mat4::IDENTITY, false).len() as u64,
+            frame_bytes(&scene, &glam::Mat4::IDENTITY, false, 0.0).len() as u64,
             FRAME_BYTES
         );
     }

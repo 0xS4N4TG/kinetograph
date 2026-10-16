@@ -18,6 +18,7 @@ import type {
   Clip,
   ColorString,
   Effect,
+  Environment3DJson,
   Geometry3D,
   Layout,
   LayoutItem,
@@ -186,6 +187,8 @@ export interface Scene3DProps extends CommonProps {
   height: Num;
   /** Samples per pixel, 1 or 4 (default 4). */
   msaa?: 1 | 4;
+  /** Image-based lighting: the path of an equirectangular `.hdr`, `.png` or `.jpg`, or `{ src, intensity, rotation, background, ... }`. */
+  environment?: string | Environment3DJson;
   /** `<Camera3D>`, lights and the objects. */
   children?: ReactNode;
 }

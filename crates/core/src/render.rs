@@ -34,9 +34,10 @@ use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Paint, Scene, ShapeLayer, TextLayer,
     Units, walk_layers,
 };
-use crate::scene3d::Resolved3d;
 use crate::scene3d::draw::{Assets3d, Texture};
+use crate::scene3d::environment::Environment;
 use crate::scene3d::model::Model;
+use crate::scene3d::{Resolved3d, Sources3d};
 use crate::text::{LaidOutText, TextEngine};
 use crate::video::{VideoDecoder, Videos, open_video, video_sources};
 use crate::warp;
@@ -328,6 +329,10 @@ impl Renderer {
         for (src, id, texture) in fresh.textures3d {
             self.assets3d.insert_texture(src.clone(), texture);
             self.loaded.textures3d.insert(src, id);
+        }
+        for (src, id, environment) in fresh.environments {
+            self.assets3d.insert_environment(src.clone(), environment);
+            self.loaded.environments.insert(src, id);
         }
         let mut luts = HashMap::new();
         for (src, id, lut) in fresh.luts {
@@ -3095,17 +3100,18 @@ pub(crate) fn load_images(scene: &Scene) -> Result<HashMap<String, ImageData>> {
     Ok(images)
 }
 
-/// The model and texture files the 3D layers of `scene` name.
-pub(crate) fn scene3d_sources(scene: &Scene) -> (Vec<String>, Vec<String>) {
-    let (mut models, mut textures) = (Vec::new(), Vec::new());
+/// The model, texture and environment files the 3D layers of `scene` name.
+pub(crate) fn scene3d_sources(scene: &Scene) -> Sources3d {
+    let mut all = Sources3d::default();
     walk_layers(&scene.layers, &mut |layer| {
         if let LayerKind::Scene3d(s) = &layer.kind {
-            let (m, t) = s.sources();
-            models.extend(m);
-            textures.extend(t);
+            let sources = s.sources();
+            all.models.extend(sources.models);
+            all.textures.extend(sources.textures);
+            all.environments.extend(sources.environments);
         }
     });
-    (models, textures)
+    all
 }
 
 /// A file as the renderer read it. Two scenes that name the same file get
@@ -3146,6 +3152,7 @@ struct Loaded {
     luts: HashMap<String, FileId>,
     models: HashMap<String, FileId>,
     textures3d: HashMap<String, FileId>,
+    environments: HashMap<String, FileId>,
 }
 
 /// What reading a scene's assets found that the renderer did not hold yet
@@ -3163,6 +3170,7 @@ struct NewAssets {
     luts: Vec<(String, FileId, Lut)>,
     models: Vec<(String, FileId, Model)>,
     textures3d: Vec<(String, FileId, Texture)>,
+    environments: Vec<(String, FileId, Environment)>,
     /// Whether a canvas layer draws pictures (pixels of its own count, with no
     /// file behind them).
     canvas_pictures: bool,
@@ -3301,10 +3309,10 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         luts.push((src, id, lut));
     }
 
-    let (model_srcs, texture_srcs) = scene3d_sources(scene);
+    let sources3d = scene3d_sources(scene);
     let mut models = Vec::new();
     let mut seen = HashSet::new();
-    for src in model_srcs {
+    for src in sources3d.models {
         if !seen.insert(src.clone()) {
             continue;
         }
@@ -3320,7 +3328,7 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
 
     let mut textures3d = Vec::new();
     let mut seen = HashSet::new();
-    for src in texture_srcs {
+    for src in sources3d.textures {
         if !seen.insert(src.clone()) {
             continue;
         }
@@ -3332,6 +3340,22 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         }
         let texture = Texture::open(&scene.base_dir, &src)?;
         textures3d.push((src, id, texture));
+    }
+
+    let mut environments = Vec::new();
+    let mut seen = HashSet::new();
+    for src in sources3d.environments {
+        if !seen.insert(src.clone()) {
+            continue;
+        }
+        let id = FileId::of(&scene.base_dir.join(&src));
+        match loaded.environments.get(&src) {
+            Some(held) if *held == id => continue,
+            Some(_) => rebound = true,
+            None => {}
+        }
+        let environment = Environment::open(&scene.base_dir, &src)?;
+        environments.push((src, id, environment));
     }
 
     let mut canvas_pictures = false;
@@ -3351,6 +3375,7 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         luts,
         models,
         textures3d,
+        environments,
         canvas_pictures,
         rebound,
     })

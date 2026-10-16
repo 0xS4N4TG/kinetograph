@@ -511,7 +511,8 @@ behind it show. The scene is drawn straight into a compositor texture on the sam
 | `width`, `height` | required | Animatable, not negative: the box in layer pixels. The camera's aspect ratio is `width / height`. The box cuts the scene, along its own edges when the layer is turned. |
 | `msaa` | `4` | Samples per pixel: `1` or `4`. |
 | `camera` | see below | One camera. |
-| `lights` | `[]` | At most 8. With none, lit meshes are black (emissive and `unlit` ones still show). |
+| `lights` | `[]` | At most 8. With none (and no `environment`), lit meshes are black (emissive and `unlit` ones still show). |
+| `environment` | none | Image-based lighting from a picture of the surroundings; see [environment](#3d-environment). |
 | `objects` | `[]` | Meshes, models, text, paths and groups, in drawing order. |
 
 Space: right-handed, +y up, the camera looks down its own -z (as glTF and three.js). Angles are degrees. Every number
@@ -550,10 +551,36 @@ not checked for uniqueness).
 `torus` (`radius` 0.5, `tube` 0.2, `tubeSegments` 16, `ringSegments` 48; in the xy plane). Round shapes are cut into
 3 to 256 segments.
 
+<a id="3d-environment"></a>**environment**: `src` (required), `intensity` (1), `rotation` (0), `background` (false),
+`backgroundIntensity` (1), `backgroundBlur` (0). `src` is an equirectangular picture, relative to the scene: a
+Radiance `.hdr` (linear light, any brightness; a sun can be 1000 times white) or a `.png` or `.jpg` (sRGB, so no
+brighter than white). Its centre is toward +x, its top is +y, and it runs counter-clockwise seen from above (a point
+a quarter of the way across from the centre is toward +z), as three.js reads it; `rotation` turns it that many degrees
+about y, counter-clockwise seen from above, and is animatable like `intensity`, `backgroundIntensity` and
+`backgroundBlur`.
+
+- The picture is light arriving from every direction, and it adds to `lights`. A lit surface gets its diffuse light
+  from the picture's cosine-weighted average around the surface's normal and its specular light from the picture
+  blurred by the roughness (a mirror at roughness 0, a blur of the whole hemisphere at 1), weighted by the surface's
+  Fresnel and an analytic fit of the split-sum BRDF table. A white surface in an all-white picture comes out within a
+  few percent of white. `unlit` surfaces and emission ignore it; `intensity` multiplies it (0 is none). It does not
+  cast shadows: a light does.
+- With `background: true` the layer draws the picture behind the objects, in the direction the camera sees through each
+  pixel (`backgroundBlur`, 0 to 1, blurs it by the same blurring as roughness 0 to 1; `backgroundIntensity` multiplies
+  it). The layer is then opaque over its box, so 2D layers behind it no longer show. Without it, the layer stays
+  transparent around the objects.
+- The picture is read when the renderer is built. The first frame that draws a scene with it makes the two cube maps
+  the lighting reads, on the GPU, and they are kept for as long as the picture is loaded: a 2048 x 1024 `.hdr` adds
+  about 90 ms once (reading, decoding and making the maps, measured on an M4 in `still`). After that an environment
+  costs, in a 1080p layer, about 0.3 ms of raster time (0.5 to 0.8 ms of GPU time for the pass with two spheres and a
+  background): one more draw for the background and two texture reads per lit pixel. Maps are 16-bit floats; the
+  specular map's face is a quarter of the picture's width rounded up to a power of two, from 16 to 1024 texels.
+  OpenEXR is not read.
+
 `material`: `color` (`#ffffff`; its alpha multiplies `opacity`), `texture` (an image file multiplied by `color`),
 `metallic` (0), `roughness` (0.5), `emissive` (black) and `emissiveIntensity` (1), `opacity` (1), `unlit` (draw colour
 and emission only), `doubleSided` (draw back faces, lit as fronts). Shading is metallic-roughness, lean: Lambert diffuse
-plus GGX specular per light.
+plus GGX specular per light, and the environment if there is one.
 
 - **Depth and transparency.** Opaque objects are depth tested, in any order. Objects that are not opaque (`opacity`
   below 1, a translucent `color` or texture, a glTF `BLEND` material) are drawn afterwards, farthest first by the middle
@@ -580,7 +607,7 @@ plus GGX specular per light.
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Point-light shadows, image-based or environment lighting (metals are dark away from a light), spot lights,
+- **Not drawn (v1).** Point-light shadows, spot lights,
   normal and other texture maps, skinned and morph animation, glTF animation, bevels, fog, post effects beyond the
   layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).

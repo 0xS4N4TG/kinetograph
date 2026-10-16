@@ -890,6 +890,25 @@ export type Light3DJson =
     }
   | { type: 'point'; position: Vec3; color?: ColorString; intensity?: Num; range?: Num };
 
+/**
+ * Image-based lighting: an equirectangular picture of the surroundings. Its centre is toward +x and its top is +y, as
+ * three.js reads it. It adds to the lights.
+ */
+export interface Environment3DJson {
+  /** A Radiance `.hdr` (linear light, any brightness), or a `.png` or `.jpg` (sRGB), relative to the scene. */
+  src: string;
+  /** What the lighting from the picture is multiplied by. Default 1. */
+  intensity?: Num;
+  /** Degrees the picture is turned about y, counter-clockwise seen from above. Default 0. */
+  rotation?: Num;
+  /** Draw the picture behind the objects, which makes the layer opaque over its box. Default false. */
+  background?: boolean;
+  /** What the background is multiplied by. Default 1. */
+  backgroundIntensity?: Num;
+  /** 0 to 1: how blurred the background is. Default 0. */
+  backgroundBlur?: Num;
+}
+
 export interface Scene3DLayer extends LayerBase {
   type: 'scene3d';
   width: Num;
@@ -897,6 +916,7 @@ export interface Scene3DLayer extends LayerBase {
   /** 1 or 4, default 4. */
   msaa?: 1 | 4;
   camera?: Camera3DJson;
+  environment?: Environment3DJson;
   /** At most 8. */
   lights?: Light3DJson[];
   objects?: Object3DJson[];

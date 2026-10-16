@@ -132,6 +132,13 @@ describe('<Scene3D>', () => {
     ]);
   });
 
+  it('takes an environment as a path or as options', () => {
+    expect(only(<Scene3D width={1} height={1} environment="sky.hdr" />).environment).toEqual({ src: 'sky.hdr' });
+    const options = { src: 'sky.hdr', intensity: 0.5, rotation: turn, background: true, backgroundBlur: 0.2 };
+    expect(only(<Scene3D width={1} height={1} environment={options} />).environment).toEqual(options);
+    expect(only(<Scene3D width={1} height={1} />)).not.toHaveProperty('environment');
+  });
+
   it('maps a font weight and style to the font key, as <Text> does', () => {
     const layer = only(
       <Scene3D width={1} height={1}>

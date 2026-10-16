@@ -14,6 +14,7 @@
 //! three.js does (the matrix is `T * Rx * Ry * Rz * S`).
 
 pub mod draw;
+pub mod environment;
 pub mod extrude;
 pub mod mesh;
 pub mod model;
@@ -54,6 +55,9 @@ pub struct Scene3dLayer {
     /// black meshes (but for emissive and unlit ones).
     #[serde(default)]
     pub lights: Vec<Light3d>,
+    /// The surroundings, as light for every lit surface and, if asked, as
+    /// the picture behind the objects.
+    pub environment: Option<Environment3d>,
     /// Drawn in this order when opaque; see `docs/SCENE.md` for transparency.
     #[serde(default)]
     pub objects: Vec<Object3d>,
@@ -174,6 +178,37 @@ pub enum Light3d {
         #[serde(default = "zero")]
         range: Num,
     },
+}
+
+/// Image-based lighting: an equirectangular picture of the surroundings, read
+/// as light arriving from every direction. Its centre is toward +x and its
+/// top is +y, as three.js reads it. It adds to the lights: a lit surface
+/// shows the picture's blurred average (diffuse) and, the smoother and more
+/// metallic it is, a sharper reflection of it.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Environment3d {
+    /// A Radiance `.hdr` (linear light, any brightness), or a `.png` or
+    /// `.jpg` (sRGB, no brighter than white), relative to the scene.
+    pub src: String,
+    /// What the lighting from the picture is multiplied by.
+    #[serde(default = "one")]
+    pub intensity: Num,
+    /// Degrees the picture is turned about y, counter-clockwise seen from
+    /// above.
+    #[serde(default = "zero")]
+    pub rotation: Num,
+    /// Draw the picture behind the objects, which makes the layer opaque
+    /// over its box.
+    #[serde(default)]
+    pub background: bool,
+    /// What the background is multiplied by.
+    #[serde(default = "one")]
+    pub background_intensity: Num,
+    /// 0 to 1: how blurred the background is, from the picture as it is to
+    /// the average of its surroundings.
+    #[serde(default = "zero")]
+    pub background_blur: Num,
 }
 
 fn default_direction() -> Vec3N {
@@ -499,6 +534,7 @@ pub struct Resolved3d {
     pub msaa: u32,
     pub camera: ResolvedCamera3d,
     pub lights: Vec<ResolvedLight3d>,
+    pub environment: Option<ResolvedEnvironment3d>,
     /// Every drawable object, flattened, in document order.
     pub objects: Vec<ResolvedObject3d>,
 }
@@ -533,6 +569,22 @@ pub enum ResolvedLight3d {
         color: [f64; 3],
         range: f64,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedEnvironment3d {
+    pub src: String,
+    pub intensity: f64,
+    /// Radians about y.
+    pub rotation: f64,
+    pub background: Option<ResolvedBackground3d>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedBackground3d {
+    pub intensity: f64,
+    /// 0 to 1.
+    pub blur: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -688,6 +740,11 @@ impl Scene3dLayer {
         if DVec3::from(cam.up).length() < 1e-9 {
             return bad("camera up must not be (0, 0, 0)".into());
         }
+        if let Some(environment) = &self.environment
+            && environment.src.trim().is_empty()
+        {
+            return bad("environment needs a src, the path of a .hdr, .png or .jpg picture".into());
+        }
         validate_objects(layer, &self.objects, fonts)
     }
 
@@ -748,25 +805,46 @@ impl Scene3dLayer {
                 },
             })
             .collect();
+        let environment = self.environment.as_ref().map(|e| ResolvedEnvironment3d {
+            src: e.src.clone(),
+            intensity: e.intensity.at(f).max(0.0),
+            rotation: e.rotation.at(f).to_radians(),
+            background: e.background.then(|| ResolvedBackground3d {
+                intensity: e.background_intensity.at(f).max(0.0),
+                blur: e.background_blur.at(f).clamp(0.0, 1.0),
+            }),
+        });
         let mut objects = Vec::new();
         flatten(&self.objects, DMat4::IDENTITY, f, &mut objects);
         Ok(Resolved3d {
             msaa: self.msaa,
             camera,
             lights,
+            environment,
             objects,
         })
     }
 
-    /// The model and texture files the scene names.
-    pub fn sources(&self) -> (Vec<String>, Vec<String>) {
-        let (mut models, mut textures) = (Vec::new(), Vec::new());
-        collect_sources(&self.objects, &mut models, &mut textures);
-        (models, textures)
+    /// The files the scene names.
+    pub fn sources(&self) -> Sources3d {
+        let mut sources = Sources3d::default();
+        sources
+            .environments
+            .extend(self.environment.as_ref().map(|e| e.src.clone()));
+        collect_sources(&self.objects, &mut sources);
+        sources
     }
 }
 
-fn collect_sources(objects: &[Object3d], models: &mut Vec<String>, textures: &mut Vec<String>) {
+/// The files a 3D scene names, relative to the scene.
+#[derive(Debug, Default, PartialEq)]
+pub struct Sources3d {
+    pub models: Vec<String>,
+    pub textures: Vec<String>,
+    pub environments: Vec<String>,
+}
+
+fn collect_sources(objects: &[Object3d], sources: &mut Sources3d) {
     for object in objects {
         let material = match object {
             Object3d::Mesh { material, .. }
@@ -775,12 +853,14 @@ fn collect_sources(objects: &[Object3d], models: &mut Vec<String>, textures: &mu
             Object3d::Model { material, .. } => material.as_ref(),
             Object3d::Group { .. } => None,
         };
-        textures.extend(material.and_then(|m| m.texture.clone()));
+        sources
+            .textures
+            .extend(material.and_then(|m| m.texture.clone()));
     }
     for object in objects {
         match object {
-            Object3d::Model { src, .. } => models.push(src.clone()),
-            Object3d::Group { children, .. } => collect_sources(children, models, textures),
+            Object3d::Model { src, .. } => sources.models.push(src.clone()),
+            Object3d::Group { children, .. } => collect_sources(children, sources),
             _ => {}
         }
     }
@@ -1202,10 +1282,13 @@ mod tests {
               {"type": "group", "children": [{"type": "model", "src": "a.glb"}]},
               {"type": "mesh", "geometry": {"kind": "box"}, "material": {"texture": "t.png"}}]}"#,
         );
-        let (models, textures) = l.sources();
         assert_eq!(
-            (models, textures),
-            (vec!["a.glb".into()], vec!["t.png".into()])
+            l.sources(),
+            Sources3d {
+                models: vec!["a.glb".into()],
+                textures: vec!["t.png".into()],
+                environments: vec![],
+            }
         );
     }
 }

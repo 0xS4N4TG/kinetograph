@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use glam::{DMat4, DVec3, DVec4, Mat3, Mat4, Vec3};
 
+use super::environment::Environment;
 use super::mesh::{MeshData, primitive};
 use super::model::Model;
 use super::{
@@ -242,6 +243,25 @@ pub struct DrawScene {
     /// `opaque` are the opaque ones.
     pub items: Vec<DrawItem>,
     pub opaque: usize,
+    pub environment: Option<EnvironmentDraw>,
+}
+
+/// The environment map as the pass reads it.
+pub struct EnvironmentDraw {
+    pub map: Arc<Environment>,
+    /// What the lighting from the map is multiplied by.
+    pub intensity: f32,
+    /// World directions to the map's: the picture's turn, undone.
+    pub rotation: Mat3,
+    /// Drawn behind the objects when there is one.
+    pub background: Option<Background>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Background {
+    pub intensity: f32,
+    /// 0 to 1.
+    pub blur: f32,
 }
 
 impl DrawScene {
@@ -304,6 +324,7 @@ pub fn view_projection(c: &ResolvedCamera3d, aspect: f64) -> (DMat4, DMat4) {
 pub struct Assets3d {
     models: HashMap<String, Arc<Model>>,
     textures: HashMap<String, Arc<Texture>>,
+    environments: HashMap<String, Arc<Environment>>,
     /// The meshes of primitives, text and paths, by the spec's `Debug` text.
     meshes: HashMap<String, Arc<MeshData>>,
 }
@@ -317,8 +338,12 @@ impl Assets3d {
         self.textures.insert(src, Arc::new(texture));
     }
 
+    pub fn insert_environment(&mut self, src: String, environment: Environment) {
+        self.environments.insert(src, Arc::new(environment));
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.models.is_empty() && self.textures.is_empty()
+        self.models.is_empty() && self.textures.is_empty() && self.environments.is_empty()
     }
 
     /// Forgets the meshes built from fonts: they are out of date when a
@@ -498,6 +523,27 @@ impl Assets3d {
             .chain(translucent)
             .map(|(item, _)| item)
             .collect();
+        let environment = scene
+            .environment
+            .as_ref()
+            .map(|e| {
+                let map = self.environments.get(&e.src).cloned().ok_or_else(|| {
+                    Error::Render(format!(
+                        "layer {layer:?}: environment {:?} was not loaded",
+                        e.src
+                    ))
+                })?;
+                Ok(EnvironmentDraw {
+                    map,
+                    intensity: e.intensity as f32,
+                    rotation: Mat3::from_rotation_y(-e.rotation as f32),
+                    background: e.background.map(|b| Background {
+                        intensity: b.intensity as f32,
+                        blur: b.blur as f32,
+                    }),
+                })
+            })
+            .transpose()?;
         Ok(DrawScene {
             size,
             msaa: scene.msaa,
@@ -507,6 +553,7 @@ impl Assets3d {
             lights,
             items,
             opaque: opaque_count,
+            environment,
         })
     }
 }

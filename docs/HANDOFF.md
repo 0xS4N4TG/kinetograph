@@ -376,9 +376,13 @@ match; our own layer is native, shares the wgpu device and stays a pure function
 - **Shadows, 2026-10-16:** directional lights cast PCF-filtered shadow maps (`castShadow`
   on the light, `castShadow`/`receiveShadow` on `mesh`, `model`, `text`, `extrude`), fitted to the casters' boxes;
   `scene3d_shadow.wgsl` is the depth pass, `scene3d.wgsl` reads up to 4 maps.
-- **Deferred:** point-light shadows; image-based lighting and environment maps (metals look dark away from a light); spot
-  lights; normal, occlusion, metallic-roughness and emissive maps; glTF animation, skins and morph targets; bevels on
-  extrusions; `KHR_*` glTF extensions; sorting within a translucent object; animated primitive sizes (animate `scale`);
+- **Image-based lighting, 2026-10-16:** `<Scene3D environment>` (SCENE.md, "scene3d") reads an equirectangular `.hdr`,
+  `.png` or `.jpg` (`scene3d/environment.rs`, 16-bit float texels) and, the first time a scene draws with it, the GPU
+  makes a diffuse irradiance cube and a specular cube prefiltered by GGX roughness (`environment.wgsl`,
+  `compositor/environment.rs`); `scene3d.wgsl` reads them with the analytic split-sum fit, so no table is stored. The
+  picture can also be the (blurrable) background, which makes the layer opaque over its box.
+- **Deferred:** point-light shadows; spot lights; normal, occlusion, metallic-roughness and emissive maps; glTF
+  animation, skins and morph targets; bevels on extrusions; `KHR_*` glTF extensions; sorting within a translucent object; animated primitive sizes (animate `scale`);
   fog and depth of field; more than 8 lights; automatic model fit; the `doctor` report for projects that import
   `three`; the studio's scene tree showing 3D objects. Not decided yet: a 3D layer that shares one depth buffer with
   `preserve3d` groups.

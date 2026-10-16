@@ -491,7 +491,7 @@ Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `sh
 
 ### 6.6 The 3D layer
 
-`<Scene3D width height msaa?>` is a `scene3d` layer (SCENE.md, "scene3d"); it takes the common layer props
+`<Scene3D width height msaa? environment?>` is a `scene3d` layer (SCENE.md, "scene3d"); it takes the common layer props
 (`x`, `rotateY`, `effects`, `blendMode`, ...) and these children, all of which must be inside it:
 
 | Element | Props |
@@ -503,6 +503,9 @@ Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `sh
 | `<Text3D font size depth align lineHeight material>` | The text is the children (strings and numbers); `weight` and `fontStyle` pick the font key as for `<Text>`. |
 | `<Extrude path size depth fillRule material>` | SVG path data. |
 | `<Group3D>` | Objects that move together. |
+
+`environment` is the path of an equirectangular `.hdr`, `.png` or `.jpg` that lights the scene (image-based lighting), or
+`{ src, intensity, rotation, background, backgroundIntensity, backgroundBlur }` (SCENE.md, "scene3d", "environment").
 
 Every object takes `position`, `rotation` (degrees), `scale` (a number or `[x, y, z]`), `visible` and `id`; `<Mesh>`,
 `<Model>`, `<Text3D>` and `<Extrude>` also take `castShadow` and `receiveShadow`, which do something under a

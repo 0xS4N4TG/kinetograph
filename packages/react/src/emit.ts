@@ -569,6 +569,9 @@ class Emitter {
           id,
           type: 'scene3d',
           ...pick(props, ['width', 'height', 'msaa']),
+          ...(props.environment !== undefined
+            ? { environment: typeof props.environment === 'string' ? { src: props.environment } : props.environment }
+            : {}),
           ...this.scene3d(element),
           ...commonOf(props, name),
         } as LayerJson;

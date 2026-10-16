@@ -1,0 +1,68 @@
+{
+  "width": 640,
+  "height": 480,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#101218",
+  "layers": [
+    {
+      "id": "lit",
+      "type": "scene3d",
+      "width": 640,
+      "height": 240,
+      "camera": { "fov": 27, "position": [0, 0.3, 9], "target": [0, 0, 0] },
+      "environment": { "src": "media/studio.hdr", "intensity": 1, "rotation": 20 },
+      "objects": [
+        {
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 1, "segments": 64, "rings": 32 },
+          "material": { "color": "#f3c04a", "metallic": 1, "roughness": 0.08 },
+          "position": [-3.3, 0, 0]
+        },
+        {
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 1, "segments": 64, "rings": 32 },
+          "material": { "color": "#f3c04a", "metallic": 1, "roughness": 0.35 },
+          "position": [-1.1, 0, 0]
+        },
+        {
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 1, "segments": 64, "rings": 32 },
+          "material": { "color": "#d8d8d8", "metallic": 0.5, "roughness": 0.6 },
+          "position": [1.1, 0, 0]
+        },
+        {
+          "type": "mesh",
+          "geometry": { "kind": "sphere", "radius": 1, "segments": 64, "rings": 32 },
+          "material": { "color": "#c0392b", "metallic": 0, "roughness": 0.25 },
+          "position": [3.3, 0, 0]
+        }
+      ]
+    },
+    {
+      "id": "backdrop",
+      "type": "scene3d",
+      "width": 640,
+      "height": 240,
+      "transform": { "y": 240 },
+      "camera": { "fov": 60, "position": [0, 0, 6], "target": [0, 0, 0] },
+      "environment": {
+        "src": "media/studio.hdr",
+        "intensity": 0.8,
+        "rotation": [{ "frame": 0, "value": 0 }, { "frame": 30, "value": 60 }],
+        "background": true,
+        "backgroundIntensity": 0.5,
+        "backgroundBlur": 0.3
+      },
+      "lights": [{ "type": "ambient", "intensity": 0.05 }],
+      "objects": [
+        {
+          "type": "mesh",
+          "geometry": { "kind": "torus", "radius": 1.1, "tube": 0.45, "tubeSegments": 48, "ringSegments": 96 },
+          "material": { "color": "#e8e8ee", "metallic": 1, "roughness": 0.15 },
+          "rotation": [35, 25, 0]
+        }
+      ]
+    }
+  ]
+}
