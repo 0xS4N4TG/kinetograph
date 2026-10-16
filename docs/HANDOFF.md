@@ -661,10 +661,12 @@ Phase 6 (above), done 2026-10-16: items 1, 2 and 3 are done, item 4 stays droppe
    naga reads and run on the shared wgpu device (SCENE.md "glsl", AUTHORING.md §6.7, ENGINE.md §8). Natively:
    `<GlslShader>` / `glslShader()`. Programs, buffers, uniforms (floats, ints, bools, vectors, matrices, arrays),
    2D textures with wrap, filter and mipmaps, indexed and strip/fan triangles, viewport, scissor, blending, colour
-   mask, culling, clear. Checked against Chrome (gradient, noise, texture: at most 1 level off). Not done, and
-   `unsupported:` when used: framebuffers (multi-pass), depth and stencil, `readPixels`, points and lines,
-   instancing, cube/3D/float textures, multisampled edges. `renderCanvas` no longer opens the GPU on every call
-   (31 ms to 1.1 ms).
+   mask, culling, clear. Checked against Chrome (gradient, noise, texture: at most 1 level off). Framebuffer objects
+   followed (2026-10-16): a framebuffer with an RGBA texture on `COLOR_ATTACHMENT0` takes clears and draws, and later
+   draws sample the texture (render to texture, ping-pong, blur passes), also at most 1 level off Chrome; a frame
+   starts every texture blank, so nothing carries over from an earlier frame. Not done, and `unsupported:` when used:
+   renderbuffers and depth and stencil attachments, `readPixels`, points and lines, instancing, cube/3D/float
+   textures, multisampled edges. `renderCanvas` no longer opens the GPU on every call (31 ms to 1.1 ms).
 4. **Three.js and pixi**: dropped for now, see "3D layer" above. If they come back, the path is a WebGPU API in Node
    on wgpu (`deno_webgpu`) so both run their WebGPU renderers unmodified, with GLSL materials through item 3.
 

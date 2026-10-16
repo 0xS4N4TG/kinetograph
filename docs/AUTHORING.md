@@ -545,12 +545,26 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   `clearColor`, `clear`, `drawArrays` and `drawElements` of triangles. `getShaderParameter(COMPILE_STATUS)` is true:
   a shader naga cannot read fails when the scene loads, naming the line. `getExtension('OES_standard_derivatives')`
   answers (derivatives always work); other extensions return `null`.
+- **Framebuffers** (multi-pass shaders: render to a texture, then sample it; ping-pong; blur passes):
+  `createFramebuffer`, `bindFramebuffer` (`FRAMEBUFFER`, and in WebGL 2 `DRAW_FRAMEBUFFER` and `READ_FRAMEBUFFER`),
+  `framebufferTexture2D` of an RGBA, `UNSIGNED_BYTE` `TEXTURE_2D` to `COLOR_ATTACHMENT0`, `checkFramebufferStatus`,
+  `deleteFramebuffer`, `isFramebuffer`; binding `null` returns to the canvas. Draws, `clear` and `viewport` act on the
+  bound framebuffer's texture, in GL's orientation (its first row is the bottom one), and the texture can then be
+  sampled by later draws. Call `viewport` after binding a framebuffer, as GL needs. Allocate the texture with
+  `texImage2D(..., null)` (or `texStorage2D`); one that holds uploaded pixels, or is not RGBA, cannot be drawn into. A
+  framebuffer with no texture, or a texture not yet specified, is incomplete: `checkFramebufferStatus` says so and a
+  draw or clear sets `INVALID_FRAMEBUFFER_OPERATION`. A draw that samples the texture it draws into sets
+  `INVALID_OPERATION` and draws nothing. A render is a function of its own frame: every framebuffer texture starts a
+  frame transparent black, so a pass reading what an earlier frame left reads black. A texture drawn into cannot be
+  given `generateMipmap` or `texSubImage2D`; sample it with `LINEAR` or `NEAREST` (a mipmapped minification filter
+  without levels is incomplete, and reads black).
 - The drawing buffer is a browser's: the first draw or clear after a frame starts it afresh, and a frame that draws
   nothing keeps the picture. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  framebuffers, depth and stencil tests, `readPixels`, points and lines, instancing, cube and float textures,
-  `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas. Enabling the depth test is accepted but
+  renderbuffers and depth and stencil attachments, depth and stencil tests, `readPixels`, points and lines,
+  instancing, cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
+  Enabling the depth test is accepted but
   the first draw with it on throws, because a flat quad does not need it and a scene that does is drawn wrongly
   without it.
 

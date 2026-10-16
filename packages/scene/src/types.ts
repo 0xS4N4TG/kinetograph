@@ -636,6 +636,8 @@ export interface GlslTexture {
   premultiply?: boolean;
   /** `generateMipmap` was called. */
   mipmaps?: boolean;
+  /** A framebuffer's texture: `width` by `height`, drawn into by the ops that name it as their `target`. */
+  target?: boolean;
 }
 
 export interface GlslAttribute {
@@ -688,9 +690,11 @@ export interface GlslDraw {
   blend?: GlslBlend;
   colorMask?: [boolean, boolean, boolean, boolean];
   cull?: { face: string; front: string };
+  /** The id of the target texture it draws into; the drawing buffer without one. */
+  target?: string;
 }
 
-export type GlslOp = { op: 'clear'; color: [number, number, number, number] } | ({ op: 'draw' } & GlslDraw);
+export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw);
 
 /** What a WebGL context did: the programs, data and calls of a `glsl` layer. */
 export interface GlslContent {

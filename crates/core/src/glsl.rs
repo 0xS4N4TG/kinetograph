@@ -14,8 +14,10 @@
 //! rewritten to that (`rewrite`): `attribute`, `varying` and `in`/`out` get
 //! locations, loose uniforms become one uniform block, a `sampler2D` becomes a
 //! texture and a sampler, `gl_FragColor` an output, and `gl_FragCoord` is
-//! turned so that y counts up from the bottom row, as GL's does. The drawing is
-//! in `compositor/glsl.rs`.
+//! turned so that y counts up from the bottom row, as GL's does. A program that
+//! draws into a texture (a framebuffer's) is turned the other way up, so that
+//! the texture holds GL's rows, bottom first. The drawing is in
+//! `compositor/glsl.rs`.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -108,14 +110,21 @@ pub struct GlslTexture {
     /// `generateMipmap` was called after the upload.
     #[serde(default)]
     pub mipmaps: bool,
+    /// A framebuffer's texture: `width` x `height`, transparent black, with no
+    /// `src` or `pixels`. The ops that name it as their `target` draw into it,
+    /// and later draws sample what they left.
+    #[serde(default)]
+    pub target: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum GlslOp {
-    /// `clear(COLOR_BUFFER_BIT)` with this clear colour.
+    /// `clear(COLOR_BUFFER_BIT)` with this clear colour, of the drawing buffer
+    /// or of the target texture `target` names.
     Clear {
         color: [f64; 4],
+        target: Option<String>,
     },
     Draw(Box<GlslDraw>),
 }
@@ -266,6 +275,9 @@ pub struct GlslDraw {
     #[serde(default = "all_true")]
     pub color_mask: [bool; 4],
     pub cull: Option<GlslCull>,
+    /// The target texture the draw renders to; the drawing buffer without
+    /// one.
+    pub target: Option<String>,
 }
 
 fn all_true() -> [bool; 4] {
@@ -472,6 +484,8 @@ struct RewriteInput<'a> {
     attribute_locations: &'a BTreeMap<String, u32>,
     /// What the vertex stage wrote, for the fragment stage to read.
     varyings: &'a mut Varyings,
+    /// The program draws into a texture, whose first row is GL's bottom one.
+    flip_y: bool,
 }
 
 #[derive(Default)]
@@ -510,6 +524,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         stage,
         attribute_locations,
         varyings,
+        flip_y,
     } = input;
     let src = strip_comments(src);
     let fragment = stage == ShaderStage::Fragment;
@@ -674,10 +689,17 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         if !has_out {
             prelude.push_str("layout(location=0) out vec4 _k_FragColor; ");
         }
-        prelude.push_str(
-            "vec4 _k_FragCoord() { return vec4(gl_FragCoord.x, _k_fbh - gl_FragCoord.y, \
-             gl_FragCoord.z, gl_FragCoord.w); } ",
-        );
+        // wgpu counts rows from the top. GL's y counts up from the bottom row,
+        // which a texture's rows (stored the other way up) already do.
+        let y = if flip_y {
+            "gl_FragCoord.y"
+        } else {
+            "_k_fbh - gl_FragCoord.y"
+        };
+        prelude.push_str(&format!(
+            "vec4 _k_FragCoord() {{ return vec4(gl_FragCoord.x, {y}, gl_FragCoord.z, \
+             gl_FragCoord.w); }} "
+        ));
     }
     if uses_point_size {
         prelude.push_str("float _k_PointSize; ");
@@ -722,6 +744,10 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     if !fragment {
         // GL's clip space is -w..w deep, wgpu's 0..w.
         wrapper.push_str("gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5; ");
+        // A texture's first row is GL's bottom one, wgpu's top.
+        if flip_y {
+            wrapper.push_str("gl_Position.y = -gl_Position.y; ");
+        }
     }
     wrapper.push('}');
 
@@ -1469,20 +1495,23 @@ fn member_of(
 }
 
 /// Translates one program: both stages, with the vertex outputs and the
-/// fragment inputs matched by name.
-pub fn translate(program: &GlslProgram) -> std::result::Result<Translated, String> {
+/// fragment inputs matched by name. `flip_y` is for a program that draws into a
+/// texture rather than the drawing buffer (`compositor/glsl.rs`).
+pub fn translate(program: &GlslProgram, flip_y: bool) -> std::result::Result<Translated, String> {
     let mut varyings = Varyings::default();
     let vr = rewrite(RewriteInput {
         src: &program.vertex,
         stage: ShaderStage::Vertex,
         attribute_locations: &program.attributes,
         varyings: &mut varyings,
+        flip_y,
     })?;
     let fr = rewrite(RewriteInput {
         src: &program.fragment,
         stage: ShaderStage::Fragment,
         attribute_locations: &BTreeMap::new(),
         varyings: &mut varyings,
+        flip_y,
     })?;
     Ok(Translated {
         vertex: parse_stage(ShaderStage::Vertex, vr)?,
@@ -1657,7 +1686,7 @@ pub fn next_level(rgba: &[u8], width: u32, height: u32) -> (Vec<u8>, u32, u32) {
 /// cannot read fails when it loads.
 pub fn validate(layer_id: &str, content: &GlslContent) -> Result<()> {
     for (id, program) in &content.programs {
-        translate(program)
+        translate(program, false)
             .map_err(|e| Error::Scene(format!("layer {layer_id:?}: glsl program {id:?}: {e}")))?;
     }
     Ok(())
@@ -1666,6 +1695,11 @@ pub fn validate(layer_id: &str, content: &GlslContent) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A program as the drawing buffer's.
+    fn translate(program: &GlslProgram) -> std::result::Result<Translated, String> {
+        super::translate(program, false)
+    }
 
     fn program(vertex: &str, fragment: &str) -> GlslProgram {
         GlslProgram {
@@ -1784,6 +1818,19 @@ mod tests {
         assert_eq!(t.fragment.samplers.len(), 1);
         assert!(t.fragment.uses_frag_coord);
         assert!(t.fragment.fbh_offset.is_some());
+    }
+
+    #[test]
+    fn a_program_that_draws_into_a_texture_translates_upside_down() {
+        let p = program(
+            QUAD_ES1,
+            "precision mediump float; varying vec2 v_uv; \
+             void main() { gl_FragColor = vec4(gl_FragCoord.xy / 8.0, v_uv); }",
+        );
+        for flip_y in [false, true] {
+            let t = super::translate(&p, flip_y).unwrap();
+            assert!(t.fragment.uses_frag_coord, "{flip_y}");
+        }
     }
 
     #[test]
