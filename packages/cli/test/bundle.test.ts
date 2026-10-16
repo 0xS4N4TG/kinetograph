@@ -18,6 +18,7 @@ describe('resolveSpecifier', () => {
       expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetograph/core/${pkg}` });
     }
     expect(resolveSpecifier('@remotion/sfx')).toEqual({ kind: 'path', target: '@kinetograph/core/sfx' });
+    expect(resolveSpecifier('@remotion/zod-types')).toEqual({ kind: 'path', target: '@kinetograph/core/zod-types' });
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
   });
 
@@ -183,6 +184,21 @@ describe('bundleProject', () => {
     const code = readFileSync(file, 'utf8');
     expect(code).toContain('packages/core/dist/sfx.js');
     expect(code).toContain('https://remotion.media/whip.wav');
+  });
+
+  it('bundles @remotion/zod-types onto the core, with the zod it resolves, for a <Composition schema>', async () => {
+    const dir = project({
+      'index.tsx': [
+        `import { Composition, registerRoot } from 'remotion';`,
+        `import { zColor, zMatrix, zTextarea } from '@remotion/zod-types';`,
+        `const schema = [zColor(), zMatrix(), zTextarea()];`,
+        `registerRoot(() => <Composition id="A" component={() => null} width={10} height={10} fps={30} durationInFrames={1} schema={schema} />);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.tsx'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/zod-types.js');
+    expect(code).toContain('__remotion-color');
   });
 
   it('leaves one file per entry, replaced when the code changes', async () => {

@@ -75,6 +75,8 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   and a frame holding something it cannot draw yet is drawn without it (or approximated) and the command warns.
 - `@remotion/sfx` sounds (`whip`, `ding`, …) play with `<Audio src={whip} />`. The first render downloads each sound
   into `~/.cache/kinetograph/sfx`; after that it is offline.
+- `@remotion/zod-types` (`zColor`, `zMatrix`, `zTextarea`) bundles for a `<Composition schema>`; Kinetograph does not
+  check the props against the schema.
 - Rendering is a pure function of the frame number. `Math.random()`, `Date.now()` and timers are driven by the frame;
   use `random(seed)` for jitter. Never read the real clock.
 - Register fonts before text is laid out. Text with a font that is not registered is a lint error.

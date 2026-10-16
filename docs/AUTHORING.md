@@ -708,6 +708,7 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/fonts` | `@remotion/fonts` | §7.2 |
 | `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>` |
 | `@kinetograph/core/sfx` | `@remotion/sfx` | the 32 sound-effect URLs of the package (`whip`, `ding`, …), for `<Audio src>`. The mix downloads each once into `~/.cache/kinetograph/sfx` (`resolveSoundSource`, `@kinetograph/core/sound-source`), so a render after the first is offline; the CLI's `render` and `audio analyze` pass it to `renderAudio` as `resolveSource`, and `lint` does not look for these URLs on disk |
+| `@kinetograph/core/zod-types` | `@remotion/zod-types` | `zColor`, `zMatrix`, `zTextarea` and `ZodZypesInternals`: zod schemas with Remotion's brands in their descriptions, accepting and refusing what the published ones do (a colour is any string Remotion's colour parser reads, `lab()`, `oklch()` and `hwb()` included). `zod` 4 is an optional peer dependency of the core. `<Composition schema>` is accepted and not validated |
 | `@kinetograph/core/determinism`, `/determinism/install` | none | §7.4 |
 
 `@kinetograph/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from

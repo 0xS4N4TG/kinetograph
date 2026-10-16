@@ -23,6 +23,7 @@
     "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
     "./sfx": { "types": "./dist/sfx.d.ts", "default": "./dist/sfx.js" },
     "./sound-source": { "types": "./dist/sound-source.d.ts", "default": "./dist/sound-source.js" },
+    "./zod-types": { "types": "./dist/zod-types.d.ts", "default": "./dist/zod-types.js" },
     "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
     "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" },
     "./web/install": { "types": "./dist/web-install.d.ts", "default": "./dist/web-install.js" }
@@ -39,9 +40,14 @@
     "@kinetograph/scene": "0.1.0"
   },
   "peerDependencies": {
-    "react": "^19.3.0"
+    "react": "^19.3.0",
+    "zod": "^4.6.7"
+  },
+  "peerDependenciesMeta": {
+    "zod": { "optional": true }
   },
   "devDependencies": {
-    "react": "19.3.1"
+    "react": "19.3.1",
+    "zod": "4.6.7"
   }
 }

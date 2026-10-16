@@ -1,0 +1,2174 @@
+{
+  "brands": {
+    "color": "__remotion-color",
+    "textarea": "__remotion-textarea",
+    "matrix": "__remotion-matrix"
+  },
+  "descriptions": {
+    "color": "__remotion-color",
+    "matrix": "__remotion-matrix",
+    "textarea": "__remotion-textarea"
+  },
+  "typeNames": {
+    "color": "string",
+    "matrix": "array",
+    "textarea": "string"
+  },
+  "processColor": [
+    [
+      "rgb(0,  -90, 300)",
+      4278190335
+    ],
+    [
+      "rgba(100, 360, -90, 0.333)",
+      1432682240
+    ],
+    [
+      "rgb(1e2,1, 720)",
+      null
+    ],
+    [
+      "lch(.5% .5% 0.25deg)",
+      4278452482
+    ],
+    [
+      "lab(720 0.5 100% / 50%)",
+      2164260863
+    ],
+    [
+      "rgb(33.333, 12.5, +7)",
+      4280355847
+    ],
+    [
+      "oklab(-5% none 0.25 / 0.5)",
+      2147492608
+    ],
+    [
+      "oklch(1e2 -5% 0.5deg / 25%)",
+      null
+    ],
+    [
+      "crimson",
+      4292613180
+    ],
+    [
+      "#8CC42",
+      null
+    ],
+    [
+      "lab(33.3% none none / 50%)",
+      2152615502
+    ],
+    [
+      "oklab(none none -5%)",
+      4278190080
+    ],
+    [
+      "oklch(300 33.3% 256 / 25%)",
+      1090519039
+    ],
+    [
+      "lab(33.333 33.3% .5%)",
+      4287114575
+    ],
+    [
+      "#g0f082bE",
+      null
+    ],
+    [
+      "rgb(1 2 3)",
+      null
+    ],
+    [
+      "hwb(300turn 33.3% none/0.2)",
+      861230421
+    ],
+    [
+      "#bb88F8",
+      4290480376
+    ],
+    [
+      "rgba(-90, 720, 0.25, 0.333)",
+      1426128640
+    ],
+    [
+      "rgba(255, -90, 360, .25)",
+      1090453759
+    ],
+    [
+      "lch(-5% -90 256rad)",
+      4281270272
+    ],
+    [
+      "rgba(0.5, -3, 300, 0)",
+      255
+    ],
+    [
+      "hwb(360 none 256 / 50%)",
+      2147483648
+    ],
+    [
+      "lab(720 1 .5 / 50%)",
+      2164260863
+    ],
+    [
+      "hsla(100, 100%, 100%, 2)",
+      4294967295
+    ],
+    [
+      "cornflowerblue",
+      4284782061
+    ],
+    [
+      "#258DF9d95",
+      null
+    ],
+    [
+      "hsl(1e2, 33.3%, 33.3%)",
+      null
+    ],
+    [
+      "hwb(0.25deg 50% +7 / 0.5)",
+      2148602129
+    ],
+    [
+      "#DbDeB",
+      null
+    ],
+    [
+      "#aD0f1D2cd",
+      null
+    ],
+    [
+      " darkgreen",
+      null
+    ],
+    [
+      "oklch(1e2 120% 12.5rad / 0.5)",
+      null
+    ],
+    [
+      "#67D4A3b",
+      null
+    ],
+    [
+      "lab(12.5 256 none / 50%)",
+      2164195382
+    ],
+    [
+      "hwb(255turn -90 0% / 50%)",
+      2147483648
+    ],
+    [
+      "hsla(720, 100%, 33.3%, 0.5)",
+      2158624768
+    ],
+    [
+      "lch(0% .5 33.333turn)",
+      4278190080
+    ],
+    [
+      "lch(12.5 300 0.5)",
+      4294901819
+    ],
+    [
+      "oklch(33.3% 100% 33.333rad / 25%)",
+      1078931456
+    ],
+    [
+      "hsla(0.25, 0%, -5%, .25)",
+      1073741824
+    ],
+    [
+      "hwb(+7deg 100% -3 / 50%)",
+      2164260863
+    ],
+    [
+      "x",
+      null
+    ],
+    [
+      "hsl(1 2% 3%)",
+      null
+    ],
+    [
+      " indigo",
+      null
+    ],
+    [
+      "lch(none -5% 360rad / 0.5)",
+      2147483664
+    ],
+    [
+      "rgb(360,  0, 720)",
+      4294902015
+    ],
+    [
+      "hwb(720deg none none/0.2)",
+      855638016
+    ],
+    [
+      "rgb(33.333, 0.5, 0)",
+      4280352768
+    ],
+    [
+      "",
+      null
+    ],
+    [
+      "hsla(720, 100%, 50%, 2)",
+      4294901760
+    ],
+    [
+      "lch(none .5% 300rad / 0.5)",
+      2147483650
+    ],
+    [
+      "rgba(-3, 1e2, 0, 2)",
+      null
+    ],
+    [
+      " antiquewhite",
+      null
+    ],
+    [
+      "oklch(none none 1e2rad)",
+      null
+    ],
+    [
+      "hsla(.5, 120%, 100%, 1)",
+      4294967295
+    ],
+    [
+      "hsl(1e2, .5%, -5%)",
+      null
+    ],
+    [
+      "rgb(300, 33.333, -3)",
+      4294910208
+    ],
+    [
+      "AZURE",
+      null
+    ],
+    [
+      "hsl(1 2% 3%)",
+      null
+    ],
+    [
+      "oklab(none none none)",
+      4278190080
+    ],
+    [
+      "rgba(360, -90, 256, 1)",
+      4294902015
+    ],
+    [
+      "lch(100% 33.333 720turn)",
+      4294961407
+    ],
+    [
+      "hwb(0rad none none/0.2)",
+      872349696
+    ],
+    [
+      "lab(none none 120%)",
+      4282449920
+    ],
+    [
+      "oklch(none 33.333 1 / 25%)",
+      1090453504
+    ],
+    [
+      "hsla(0.25, 100%, .5%, 1)",
+      4278386688
+    ],
+    [
+      "RGB(1,2,3)",
+      null
+    ],
+    [
+      "INDIGO",
+      null
+    ],
+    [
+      "#7ag",
+      null
+    ],
+    [
+      "lch(50% 255 0.5rad / 0.5)",
+      2164195328
+    ],
+    [
+      "rgb(1 2 3)",
+      null
+    ],
+    [
+      "LAWNGREEN",
+      null
+    ],
+    [
+      "rgb(1,12.5, +7)",
+      4278258695
+    ],
+    [
+      "hwb(300deg none 720)",
+      4278190080
+    ],
+    [
+      "hwb(100turn none none / 0.5)",
+      2147483648
+    ],
+    [
+      "rgb(720,100, 360)",
+      4294927615
+    ],
+    [
+      "hotpink",
+      4294928820
+    ],
+    [
+      "AQUAMARINE",
+      null
+    ],
+    [
+      "#BDEB6BBbd",
+      null
+    ],
+    [
+      "burntsienna",
+      4293557853
+    ],
+    [
+      "DARKBLUE",
+      null
+    ],
+    [
+      "oklab(none none -90 / 0.5)",
+      2164195583
+    ],
+    [
+      "hsl(1 2% 3%)",
+      null
+    ],
+    [
+      "",
+      null
+    ],
+    [
+      "rgba(256, 100, 33.333, 50%)",
+      null
+    ],
+    [
+      "x",
+      null
+    ],
+    [
+      "oklch(0.25 256 -90 / 0.5)",
+      2164195583
+    ],
+    [
+      " darkblue",
+      null
+    ],
+    [
+      "#2DC9d7A2",
+      2720909783
+    ],
+    [
+      "hwb(-90grad none 120%/0.2)",
+      855638016
+    ],
+    [
+      " lightslategrey",
+      null
+    ],
+    [
+      "lch(0.25 33.3% .5rad / 0.5)",
+      2151350272
+    ],
+    [
+      "lch(-5% none 12.5)",
+      4278190080
+    ],
+    [
+      "oklch(-90 100 1rad / 25%)",
+      1090518784
+    ],
+    [
+      "oklab(none -3 none)",
+      4278255396
+    ],
+    [
+      "rgb(1 2 3)",
+      null
+    ],
+    [
+      "rgba(1, 0.5, 12.5, 0.5)",
+      2147549196
+    ],
+    [
+      "lab(100% 0% none / 50%)",
+      2164260863
+    ],
+    [
+      "hsla(720, -5%, 120%, .25)",
+      1090519039
+    ],
+    [
+      "oklch(1e2 12.5 100turn / 25%)",
+      null
+    ],
+    [
+      "palevioletred",
+      4292571283
+    ],
+    [
+      "oklab(120% 255 .5% / 0.5)",
+      2164195328
+    ],
+    [
+      " cyan",
+      null
+    ],
+    [
+      "hsla(1, 50%, -5%, 2)",
+      4278190080
+    ],
+    [
+      "seashell",
+      4294964718
+    ],
+    [
+      "hwb(+7 .5 -90/0.2)",
+      872415104
+    ],
+    [
+      "rgb(720, 100, .5)",
+      4294927360
+    ],
+    [
+      "rgb(1 2 3)",
+      null
+    ],
+    [
+      "oklab(-5% 1 none)",
+      4285923328
+    ],
+    [
+      "rgba(12.5, -90, -3, 50%)",
+      null
+    ],
+    [
+      "oklab(100 none 720 / 0.5)",
+      2147548928
+    ],
+    [
+      "hwb(0.25deg none -5%)",
+      4294902016
+    ],
+    [
+      "hsl(-90, -5%, 50%)",
+      4286611584
+    ],
+    [
+      "lch(33.333 .5% 0rad / 0.5)",
+      2152746574
+    ],
+    [
+      "lab(none .5% none)",
+      4278321152
+    ],
+    [
+      "oklch(-90 none 360deg / 25%)",
+      1073741824
+    ],
+    [
+      "#A8ggg6CB0",
+      null
+    ],
+    [
+      "#6fgEde",
+      null
+    ],
+    [
+      "rgba(1e2, 0, -3, 0.333)",
+      null
+    ],
+    [
+      "oklab(120% 12.5 360)",
+      4278255360
+    ],
+    [
+      "hsla(1, 50%, 50%, .25)",
+      1086276160
+    ],
+    [
+      " gainsboro",
+      null
+    ],
+    [
+      "rgb(100,100, 0)",
+      4284769280
+    ],
+    [
+      "hwb(1e2turn none 33.3%)",
+      null
+    ],
+    [
+      "lch(0 none 0.25)",
+      4278190080
+    ],
+    [
+      "rgb(360, 360, +7)",
+      4294967047
+    ],
+    [
+      " darkorchid",
+      null
+    ],
+    [
+      "",
+      null
+    ],
+    [
+      "#dFg4",
+      null
+    ],
+    [
+      "grey",
+      4286611584
+    ],
+    [
+      "hwb(0.25grad 100% 300 / 50%)",
+      2147549441
+    ],
+    [
+      " slategrey",
+      null
+    ],
+    [
+      "oklab(.5 +7 0%)",
+      4294901760
+    ],
+    [
+      "lab(none 100% 100% / 0.5)",
+      2156003328
+    ],
+    [
+      "rgb(+7,  1e2, 720)",
+      null
+    ],
+    [
+      "OLIVEDRAB",
+      null
+    ],
+    [
+      " rebeccapurple",
+      null
+    ],
+    [
+      "rgb(1 2 3)",
+      null
+    ],
+    [
+      "hsl(256, 0%, 0%)",
+      4278190080
+    ],
+    [
+      "oklab(120% 100% 720 / 0.5)",
+      2147548928
+    ],
+    [
+      "antiquewhite",
+      4294634455
+    ],
+    [
+      "saddlebrown",
+      4287317267
+    ],
+    [
+      "BURNTSIENNA",
+      null
+    ],
+    [
+      "hwb(255rad none 256 / none)",
+      4278190080
+    ],
+    [
+      "hwb(+7grad 0 360 / 50%)",
+      2147483648
+    ],
+    [
+      " steelblue",
+      null
+    ],
+    [
+      "hwb(255 50% none)",
+      4288643327
+    ],
+    [
+      "lab(none 1 -3 / 0.5)",
+      2147483655
+    ],
+    [
+      "darkcyan",
+      4278225803
+    ],
+    [
+      "lch(0% none 0.25rad)",
+      4278190080
+    ],
+    [
+      "lch(none .5% 1deg)",
+      4278321152
+    ],
+    [
+      "lch(0.25 33.333 1turn / 0.5)",
+      2150432770
+    ],
+    [
+      "lch(-3 33.3% 100grad / 0.5)",
+      2150105123
+    ],
+    [
+      "hwb(0.25deg +7 .5% / 50%)",
+      2164260863
+    ],
+    [
+      "oklab(120% 120% 12.5)",
+      4278255360
+    ],
+    [
+      "hsla(+7, -5%, 33.3%, 1)",
+      4283782485
+    ],
+    [
+      "hwb(-3grad 120% none)",
+      4294967295
+    ],
+    [
+      "oklch(none 50% -3rad / 25%)",
+      1073742337
+    ],
+    [
+      "hwb(-3turn 12.5 none)",
+      4294967295
+    ],
+    [
+      "rgb(-3,  255, 255)",
+      4278255615
+    ],
+    [
+      "darkorchid",
+      4288230092
+    ],
+    [
+      "hsla(+7, 0%, .5%, 1)",
+      4278255873
+    ],
+    [
+      "hwb(33.333 .5 120% / 0.5)",
+      2152418123
+    ],
+    [
+      "lch(100 0% 300)",
+      4294967295
+    ],
+    [
+      "oklch(0% 120% 12.5 / 0.5)",
+      2150957056
+    ],
+    [
+      "lavenderblush",
+      4294963445
+    ],
+    [
+      "hwb(720 .5% 1 / 0.5)",
+      2147549441
+    ],
+    [
+      "hsl(360, 33.3%, 100%)",
+      4294967295
+    ],
+    [
+      "oklch(none .5% 33.333deg)",
+      4278190080
+    ],
+    [
+      "#0bd5C1",
+      4278965697
+    ],
+    [
+      "rgb(720,  100, -90)",
+      4294927360
+    ],
+    [
+      "mediumpurple",
+      4287852763
+    ],
+    [
+      "lab(none none none / 0.5)",
+      2147483648
+    ],
+    [
+      "darkseagreen",
+      4287609999
+    ],
+    [
+      "silver",
+      4290822336
+    ],
+    [
+      "lch(1e2 300 +7)",
+      null
+    ],
+    [
+      "x",
+      null
+    ],
+    [
+      "aliceblue",
+      4293982463
+    ],
+    [
+      "rgba(1e2, 720, 33.333, 0)",
+      null
+    ],
+    [
+      "rgb(0.5,-90, 1e2)",
+      null
+    ],
+    [
+      "hsl(12.5, 50%, 120%)",
+      4294967295
+    ],
+    [
+      "rgb(1,2,3",
+      null
+    ],
+    [
+      "lab(33.333 120% 0%)",
+      4294901846
+    ],
+    [
+      " darkblue",
+      null
+    ],
+    [
+      "hsl(-3, 100%, 33.3%)",
+      4289331208
+    ],
+    [
+      "SILVER",
+      null
+    ],
+    [
+      "#D43B2",
+      null
+    ],
+    [
+      "BLACK",
+      null
+    ],
+    [
+      "oklch(-90 100% 256 / 0.5)",
+      2147483648
+    ],
+    [
+      "oklch(50% 720 0rad / 0.5)",
+      2164195328
+    ],
+    [
+      "#E0ade7C",
+      null
+    ],
+    [
+      "#dAcf",
+      4292717260
+    ],
+    [
+      "hsla(720, -5%, 120%, 0.5)",
+      2164260863
+    ],
+    [
+      "lab(1e2 none none / 50%)",
+      null
+    ],
+    [
+      "lab(50% 720 none)",
+      4294901964
+    ],
+    [
+      "#4g3Dg5",
+      null
+    ],
+    [
+      "rgba(256, 256, 300, 0.333)",
+      1442840575
+    ],
+    [
+      "hsla(0, 50%, -5%, 0.5)",
+      2147483648
+    ],
+    [
+      "rgba(12.5, 255, 1, 50%)",
+      null
+    ],
+    [
+      "hsla(100, 120%, 0%, 0.5)",
+      2147483648
+    ],
+    [
+      "rgba(360, 0.5, 360, 1)",
+      4294902015
+    ],
+    [
+      "#B7b4",
+      1153136571
+    ],
+    [
+      "rgb(300,  100, 256)",
+      4294927615
+    ],
+    [
+      "rgba(0.25, 0.25, 360, .25)",
+      1073742079
+    ],
+    [
+      "hwb(33.333turn 12.5 none/0.2)",
+      872415231
+    ],
+    [
+      "oklch(-5% none 33.333turn)",
+      4278190080
+    ],
+    [
+      "oklch(none 50% 1deg / 25%)",
+      1074200576
+    ],
+    [
+      " lightpink",
+      null
+    ],
+    [
+      "rgb(100,  1, 1)",
+      4284743937
+    ],
+    [
+      "hsl(+7, -5%, .5%)",
+      4278255873
+    ],
+    [
+      "hsl(360, 0%, 0%)",
+      4278190080
+    ],
+    [
+      "#BfdeC67E5",
+      null
+    ],
+    [
+      " lightcoral",
+      null
+    ],
+    [
+      "oklab(.5% .5 none)",
+      4281597952
+    ],
+    [
+      "oklab(33.3% 0.25 none / 0.5)",
+      2156331057
+    ],
+    [
+      "rgba(+7, -3, 720, 2)",
+      4278649087
+    ],
+    [
+      "oklch(none 720 -3rad / 25%)",
+      1073807359
+    ],
+    [
+      " lightseagreen",
+      null
+    ],
+    [
+      " lavender",
+      null
+    ],
+    [
+      "hsla(360, 50%, 120%, 0.5)",
+      2164260863
+    ],
+    [
+      "hsl(33.333, .5%, 100%)",
+      4294967295
+    ],
+    [
+      "rgba(0.25, 0.5, +7, 50%)",
+      null
+    ],
+    [
+      "rgb(255, 1e2, 100)",
+      null
+    ],
+    [
+      "hwb(256 none 120% / 50%)",
+      2147483648
+    ],
+    [
+      "RGB(1,2,3)",
+      null
+    ],
+    [
+      " darkmagenta",
+      null
+    ],
+    [
+      "#D30",
+      4292686592
+    ],
+    [
+      "#9F8gAg",
+      null
+    ],
+    [
+      "oklab(50% -5% 12.5 / 0.5)",
+      2147548928
+    ],
+    [
+      "rgb(256,1e2, 100)",
+      null
+    ],
+    [
+      " darkred",
+      null
+    ],
+    [
+      "MEDIUMSEAGREEN",
+      null
+    ],
+    [
+      "hsl(1 2% 3%)",
+      null
+    ],
+    [
+      " coral",
+      null
+    ],
+    [
+      "oklch(120% .5 255 / 0.5)",
+      2147549183
+    ],
+    [
+      "hwb(+7rad -5% 100%)",
+      4278190080
+    ],
+    [
+      "POWDERBLUE",
+      null
+    ],
+    [
+      "hwb(1e2 +7 -90 / 50%)",
+      null
+    ],
+    [
+      "oklab(1e2 256 -5% / 0.5)",
+      null
+    ],
+    [
+      "rgba(720, 360, -90, 0.333)",
+      1442840320
+    ],
+    [
+      "hsla(1, 100%, 0%, 1)",
+      4278190080
+    ],
+    [
+      "#B9E2",
+      582719982
+    ],
+    [
+      "MOCCASIN",
+      null
+    ],
+    [
+      "hwb(360 none 0%/0.2)",
+      872349696
+    ],
+    [
+      "rgba(256, 0.5, 100, .25)",
+      1090453604
+    ],
+    [
+      "lch(none .5% 360grad)",
+      4278190080
+    ],
+    [
+      "RGB(1,2,3)",
+      null
+    ],
+    [
+      "lch(none .5% .5deg)",
+      4278321152
+    ],
+    [
+      "lch(-90 -5% 0 / 0.5)",
+      2147483648
+    ],
+    [
+      "hwb(.5deg none none / 0.5)",
+      2164195840
+    ],
+    [
+      "ghostwhite",
+      4294506751
+    ],
+    [
+      "lch(none 0% 0 / 0.5)",
+      2147483648
+    ],
+    [
+      "oklab(-5% .5% 33.3% / 0.5)",
+      2147486464
+    ],
+    [
+      "#4dd6FFd8A",
+      null
+    ],
+    [
+      "hsla(256, 33.3%, 0%, .25)",
+      1073741824
+    ],
+    [
+      "oklch(0.25 0% 300deg / 0.5)",
+      2149720610
+    ],
+    [
+      "#e5E82C",
+      4293257260
+    ],
+    [
+      "hsla(1e2, 100%, 120%, 0)",
+      null
+    ],
+    [
+      "lab(0% none .5%)",
+      4278255616
+    ],
+    [
+      "lab(1 0.5 +7)",
+      4279042816
+    ],
+    [
+      "lch(-3 1e2 300rad)",
+      null
+    ],
+    [
+      "hwb(33.333grad 100 1e2 / 50%)",
+      null
+    ],
+    [
+      "hsla(.5, 50%, 100%, 2)",
+      4294967295
+    ],
+    [
+      "lch(0 720 12.5)",
+      4294901840
+    ],
+    [
+      "rgb(-3,100, 0)",
+      4278215680
+    ],
+    [
+      "#6d0E304g2",
+      null
+    ],
+    [
+      "oklab(none none 12.5 / 0.5)",
+      2147548928
+    ],
+    [
+      "lch(33.3% -3 .5 / 0.5)",
+      2152288334
+    ],
+    [
+      "rgb(-90, 12.5, 33.333)",
+      4278193185
+    ],
+    [
+      "lab(.5% none 1 / 0.5)",
+      2147680768
+    ],
+    [
+      "hsla(-3, 50%, -5%, 1)",
+      4278190080
+    ],
+    [
+      "lab(0% none none)",
+      4278190080
+    ],
+    [
+      "hsla(12.5, 100%, -5%, .25)",
+      1073741824
+    ],
+    [
+      "hsl(256, 120%, 100%)",
+      4294967295
+    ],
+    [
+      " lightpink",
+      null
+    ],
+    [
+      "rgba(0.5, .5, 1, 50%)",
+      null
+    ],
+    [
+      "hsla(360, 120%, 0%, .25)",
+      1073741824
+    ],
+    [
+      "lch(.5% -5% 12.5grad / 0.5)",
+      2147485696
+    ],
+    [
+      "lch(none 255 256rad)",
+      4278216191
+    ],
+    [
+      "hwb(-90rad .5 .5/0.2)",
+      864059520
+    ],
+    [
+      "hwb(300turn none none / 50%)",
+      2147483648
+    ],
+    [
+      "oklch(.5% 1e2 300rad / 25%)",
+      null
+    ],
+    [
+      "oklch(33.3% none +7turn)",
+      4281742902
+    ],
+    [
+      "hsla(12.5, 33.3%, 100%, .25)",
+      1090519039
+    ],
+    [
+      "oklab(+7 33.3% 33.3% / 0.5)",
+      2164260863
+    ],
+    [
+      "lch(1e2 .5% 0.25deg / 0.5)",
+      null
+    ],
+    [
+      "hsl(33.333, 0%, 50%)",
+      4286611584
+    ],
+    [
+      "hsla(100, 120%, 33.3%, 0)",
+      3779072
+    ],
+    [
+      "lch(-3 none 720turn / 0.5)",
+      2147483648
+    ],
+    [
+      "hsl(1, 100%, 50%)",
+      4294902784
+    ],
+    [
+      "lab(+7 none 0% / 0.5)",
+      2148865301
+    ],
+    [
+      "#0c3DFa9",
+      null
+    ],
+    [
+      "hsla(1e2, 120%, 120%, 0)",
+      null
+    ],
+    [
+      "rgba(-90, .5, 1e2, 1)",
+      null
+    ],
+    [
+      "hsla(-90, 50%, 33.3%, 2)",
+      4283771519
+    ],
+    [
+      "oklab(-90 33.3% none)",
+      4278190080
+    ],
+    [
+      "hsl(0.5, 120%, 100%)",
+      4294967295
+    ],
+    [
+      "oklab(none 33.3% -3)",
+      4294902015
+    ],
+    [
+      "hsla(1e2, 33.3%, 50%, 0)",
+      null
+    ],
+    [
+      "mediumspringgreen",
+      4278254234
+    ],
+    [
+      "wheat",
+      4294303411
+    ],
+    [
+      "rgb(1e2,1, 255)",
+      null
+    ],
+    [
+      "x",
+      null
+    ],
+    [
+      "BURLYWOOD",
+      null
+    ],
+    [
+      "lab(0.25 0% 33.3% / 50%)",
+      2149580800
+    ],
+    [
+      "lab(none 33.333 33.333 / 0.5)",
+      2151088128
+    ],
+    [
+      "rgba(12.5, 33.333, .5, -1)",
+      794880
+    ],
+    [
+      "hwb(256deg none none)",
+      4282646783
+    ],
+    [
+      "MEDIUMSLATEBLUE",
+      null
+    ],
+    [
+      "rgb(360, 12.5, 255)",
+      4294905087
+    ],
+    [
+      "lab(none .5% 33.3% / 0.5)",
+      2149646336
+    ],
+    [
+      "rgba(.5, 256, 0, .25)",
+      1073807104
+    ],
+    [
+      "rgb(1,-3, .5)",
+      4278255616
+    ],
+    [
+      "lightyellow",
+      4294967264
+    ],
+    [
+      "lab(120% none 12.5)",
+      4294967295
+    ],
+    [
+      "lab(256 12.5 none)",
+      4294967295
+    ],
+    [
+      "hsla(360, 0%, -5%, 1)",
+      4278190080
+    ],
+    [
+      "rgb(256,360, 300)",
+      4294967295
+    ],
+    [
+      "rgb(1 2 3)",
+      null
+    ],
+    [
+      "PAPAYAWHIP",
+      null
+    ],
+    [
+      "oklch(50% none 12.5)",
+      4284703587
+    ],
+    [
+      "oklab(0% 33.3% none)",
+      4278321152
+    ],
+    [
+      "lab(none +7 120% / 50%)",
+      2151940096
+    ],
+    [
+      "rgb(300, 0.5, -90)",
+      4294901760
+    ],
+    [
+      "BROWN",
+      null
+    ],
+    [
+      "lab(none 720 0.25)",
+      4294901886
+    ],
+    [
+      "oklch(none +7 300grad / 0.5)",
+      2164195583
+    ],
+    [
+      "wheat",
+      4294303411
+    ],
+    [
+      "#fe1",
+      4294962705
+    ],
+    [
+      "burntsienna",
+      4293557853
+    ],
+    [
+      " rosybrown",
+      null
+    ],
+    [
+      "rgba(255, 720, 12.5, 1)",
+      4294967052
+    ],
+    [
+      "#EF8aa3",
+      4293888675
+    ],
+    [
+      "rgba(+7, 100, 12.5, .25)",
+      1074226188
+    ],
+    [
+      "rgba(1, 0, 1e2, 0.5)",
+      null
+    ],
+    [
+      "hwb(720 100% 100% / 50%)",
+      2155905152
+    ],
+    [
+      "RGB(1,2,3)",
+      null
+    ],
+    [
+      "DARKSLATEGREY",
+      null
+    ],
+    [
+      "oklch(none none .5turn / 0.5)",
+      2147483648
+    ],
+    [
+      "lch(-90 720 0.25 / 0.5)",
+      2164195328
+    ],
+    [
+      "hsl(+7, -5%, .5%)",
+      4278255873
+    ],
+    [
+      "rgba(0.5, 0, -90, 1)",
+      4278190080
+    ],
+    [
+      "lab(0% -5% -90 / 50%)",
+      2147490693
+    ],
+    [
+      "x",
+      null
+    ],
+    [
+      "lch(none -90 0.5deg / 0.5)",
+      2147493888
+    ],
+    [
+      "hwb(0.5 720 0 / 0.5)",
+      2164260863
+    ],
+    [
+      "#6a468D3E",
+      1047152269
+    ],
+    [
+      "hwb(256 none none / 50%)",
+      2151940351
+    ],
+    [
+      "hsla(360, 50%, 33.3%, 1)",
+      4286523946
+    ],
+    [
+      " powderblue",
+      null
+    ],
+    [
+      "oklab(360 33.333 none / 0.5)",
+      2164260863
+    ],
+    [
+      "#cBa53",
+      null
+    ],
+    [
+      "oklab(none 100 100% / 0.5)",
+      2164195328
+    ],
+    [
+      "hwb(+7turn 1 none)",
+      4294967295
+    ],
+    [
+      "cadetblue",
+      4284456608
+    ],
+    [
+      "rgb(1 2 3)",
+      null
+    ],
+    [
+      " indianred",
+      null
+    ],
+    [
+      "palegoldenrod",
+      4293847210
+    ],
+    [
+      "DARKSLATEGREY",
+      null
+    ],
+    [
+      "rgb(1,2,3",
+      null
+    ],
+    [
+      "rgba(12.5, -90, 720, 50%)",
+      null
+    ],
+    [
+      "hwb(12.5rad .5% .5% / 50%)",
+      2147549457
+    ],
+    [
+      "oklch(-5% 33.3% -90deg)",
+      4278190090
+    ],
+    [
+      "hwb(-3rad none none / 0.5)",
+      2147540479
+    ],
+    [
+      "rgb(1,2,3",
+      null
+    ],
+    [
+      " darkmagenta",
+      null
+    ],
+    [
+      " powderblue",
+      null
+    ],
+    [
+      "oklab(100% -3 100% / 0.5)",
+      2147548928
+    ],
+    [
+      "rgba(-3, 360, 12.5, -1)",
+      65292
+    ],
+    [
+      "lch(100 none 1turn)",
+      4294967295
+    ],
+    [
+      "rgba(0.5, 0.5, 300, 0.5)",
+      2147483903
+    ],
+    [
+      "hsl(1, -5%, 120%)",
+      4294967295
+    ],
+    [
+      "oklab(none 1 33.3%)",
+      4288151552
+    ],
+    [
+      "aqua",
+      4278255615
+    ],
+    [
+      "tomato",
+      4294927175
+    ],
+    [
+      "gainsboro",
+      4292664540
+    ],
+    [
+      "lab(-3 none 255 / 0.5)",
+      2152923136
+    ],
+    [
+      "rgba(33.333, 360, 0, 0.333)",
+      1428291328
+    ],
+    [
+      "lch(720 50% 720deg)",
+      4294967295
+    ],
+    [
+      "oklch(none 50% 33.333 / 0.5)",
+      2147942656
+    ],
+    [
+      "hwb(12.5turn none 120% / 0.5)",
+      2147483648
+    ],
+    [
+      "lab(0.5 -90 1 / 0.5)",
+      2147494144
+    ],
+    [
+      "oklab(none 0% 0)",
+      4278190080
+    ],
+    [
+      "#fg7970F",
+      null
+    ],
+    [
+      " floralwhite",
+      null
+    ],
+    [
+      "hsl(1e2, 0%, 100%)",
+      null
+    ],
+    [
+      " rosybrown",
+      null
+    ],
+    [
+      "#E0cE0a748",
+      null
+    ],
+    [
+      "peru",
+      4291659071
+    ],
+    [
+      "lime",
+      4278255360
+    ],
+    [
+      "rgba(-90, 0.25, 300, .25)",
+      1073742079
+    ],
+    [
+      "hsla(0.25, 0%, 120%, 1)",
+      4294967295
+    ],
+    [
+      "rgb(0.25,  12.5, +7)",
+      4278193159
+    ],
+    [
+      "hsl(256, 50%, .5%)",
+      4278255874
+    ],
+    [
+      "linen",
+      4294635750
+    ],
+    [
+      "hsla(720, 120%, .5%, 1)",
+      4278386688
+    ],
+    [
+      "LAVENDERBLUSH",
+      null
+    ],
+    [
+      "rgba(255, 360, 360, 1)",
+      4294967295
+    ],
+    [
+      "hsla(100, 0%, 100%, .25)",
+      1090519039
+    ]
+  ],
+  "parse": [
+    {
+      "input": "red",
+      "parsed": {
+        "a": 255,
+        "r": 255,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "#f00",
+      "parsed": {
+        "a": 255,
+        "r": 255,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "#ff0000",
+      "parsed": {
+        "a": 255,
+        "r": 255,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "#FF000080",
+      "parsed": {
+        "a": 128,
+        "r": 255,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "#f008",
+      "parsed": {
+        "a": 136,
+        "r": 255,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "rgb(1, 2, 3)",
+      "parsed": {
+        "a": 255,
+        "r": 1,
+        "g": 2,
+        "b": 3
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "rgba(10, 20, 30, 0.5)",
+      "parsed": {
+        "a": 128,
+        "r": 10,
+        "g": 20,
+        "b": 30
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "hsl(120, 100%, 50%)",
+      "parsed": {
+        "a": 255,
+        "r": 0,
+        "g": 255,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "hsla(240, 100%, 50%, 0.25)",
+      "parsed": {
+        "a": 64,
+        "r": 0,
+        "g": 0,
+        "b": 255
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "transparent",
+      "parsed": {
+        "a": 0,
+        "r": 0,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "hwb(0 0% 0%)",
+      "parsed": {
+        "a": 255,
+        "r": 255,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "white",
+      "parsed": {
+        "a": 255,
+        "r": 255,
+        "g": 255,
+        "b": 255
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "rebeccapurple",
+      "parsed": {
+        "a": 255,
+        "r": 102,
+        "g": 51,
+        "b": 153
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "notacolor",
+      "parsed": null,
+      "error": "invalid color string notacolor provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "",
+      "parsed": null,
+      "error": "invalid color string  provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "#ggg",
+      "parsed": null,
+      "error": "invalid color string #ggg provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "#12",
+      "parsed": null,
+      "error": "invalid color string #12 provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "rgb(300, 0, 0)",
+      "parsed": {
+        "a": 255,
+        "r": 255,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "rgba(0,0,0,2)",
+      "parsed": {
+        "a": 255,
+        "r": 0,
+        "g": 0,
+        "b": 0
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "rgb(0 0 0 / 50%)",
+      "parsed": null,
+      "error": "invalid color string rgb(0 0 0 / 50%) provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "currentColor",
+      "parsed": null,
+      "error": "invalid color string currentColor provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "var(--x)",
+      "parsed": null,
+      "error": "invalid color string var(--x) provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "oklch(0.5 0.1 100)",
+      "parsed": {
+        "a": 255,
+        "r": 113,
+        "g": 100,
+        "b": 11
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "hsl(0deg 100% 50%)",
+      "parsed": null,
+      "error": "invalid color string hsl(0deg 100% 50%) provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "rgb(10%, 20%, 30%)",
+      "parsed": null,
+      "error": "invalid color string rgb(10%, 20%, 30%) provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": " red ",
+      "parsed": null,
+      "error": "invalid color string  red  provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "RED",
+      "parsed": null,
+      "error": "invalid color string RED provided",
+      "success": false,
+      "message": [
+        "Invalid color"
+      ]
+    },
+    {
+      "input": "#abcd",
+      "parsed": {
+        "a": 221,
+        "r": 170,
+        "g": 187,
+        "b": 204
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    },
+    {
+      "input": "lab(50% 0 0)",
+      "parsed": {
+        "a": 255,
+        "r": 119,
+        "g": 119,
+        "b": 119
+      },
+      "error": null,
+      "success": true,
+      "message": null
+    }
+  ],
+  "matrix": [
+    {
+      "input": [],
+      "success": false,
+      "messages": [
+        "Invalid matrix, must be a square matrix"
+      ]
+    },
+    {
+      "input": [
+        1
+      ],
+      "success": true,
+      "messages": null
+    },
+    {
+      "input": [
+        1,
+        0,
+        0,
+        1
+      ],
+      "success": true,
+      "messages": null
+    },
+    {
+      "input": [
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "success": false,
+      "messages": [
+        "Invalid matrix, must be a square matrix"
+      ]
+    },
+    {
+      "input": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "success": true,
+      "messages": null
+    },
+    {
+      "input": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "success": true,
+      "messages": null
+    },
+    {
+      "input": [
+        0.01,
+        0.02,
+        0.03,
+        0.04
+      ],
+      "success": true,
+      "messages": null
+    },
+    {
+      "input": [
+        0.005
+      ],
+      "success": false,
+      "messages": [
+        "Invalid number: must be a multiple of 0.01"
+      ]
+    },
+    {
+      "input": [
+        1.234
+      ],
+      "success": false,
+      "messages": [
+        "Invalid number: must be a multiple of 0.01"
+      ]
+    },
+    {
+      "input": [
+        1,
+        2,
+        3
+      ],
+      "success": false,
+      "messages": [
+        "Invalid matrix, must be a square matrix"
+      ]
+    },
+    {
+      "input": [
+        1,
+        "a",
+        3,
+        4
+      ],
+      "success": false,
+      "messages": [
+        "Invalid input: expected number, received string"
+      ]
+    },
+    {
+      "input": "x",
+      "success": false,
+      "messages": [
+        "Invalid input: expected array, received string"
+      ]
+    },
+    {
+      "input": null,
+      "success": false,
+      "messages": [
+        "Invalid input: expected array, received null"
+      ]
+    },
+    {
+      "input": [
+        0.1,
+        0.2,
+        0.3,
+        0.4
+      ],
+      "success": true,
+      "messages": null
+    },
+    {
+      "input": [
+        1.5,
+        2.25,
+        3.5,
+        4.75
+      ],
+      "success": true,
+      "messages": null
+    },
+    {
+      "input": [
+        1e-9
+      ],
+      "success": false,
+      "messages": [
+        "Invalid number: must be a multiple of 0.01"
+      ]
+    },
+    {
+      "input": [
+        0.3
+      ],
+      "success": true,
+      "messages": null
+    }
+  ],
+  "textareas": [
+    {
+      "input": "",
+      "success": true,
+      "data": "",
+      "messages": null
+    },
+    {
+      "input": "hello\nworld",
+      "success": true,
+      "data": "hello\nworld",
+      "messages": null
+    },
+    {
+      "input": 123,
+      "success": false,
+      "data": null,
+      "messages": [
+        "Invalid input: expected string, received number"
+      ]
+    },
+    {
+      "input": null,
+      "success": false,
+      "data": null,
+      "messages": [
+        "Invalid input: expected string, received null"
+      ]
+    },
+    {
+      "input": "__undefined__",
+      "success": false,
+      "data": null,
+      "messages": [
+        "Invalid input: expected string, received undefined"
+      ]
+    },
+    {
+      "input": [
+        "a"
+      ],
+      "success": false,
+      "data": null,
+      "messages": [
+        "Invalid input: expected string, received array"
+      ]
+    }
+  ],
+  "exports": [
+    "ZodZypesInternals",
+    "zColor",
+    "zMatrix",
+    "zTextarea"
+  ],
+  "internalsKeys": [
+    "REMOTION_COLOR_BRAND",
+    "REMOTION_MATRIX_BRAND",
+    "REMOTION_TEXTAREA_BRAND",
+    "parseColor"
+  ]
+}

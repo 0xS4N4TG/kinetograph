@@ -27,6 +27,7 @@ const REMOTION_PACKAGES = new Set([
   'media-utils',
   'media',
   'sfx',
+  'zod-types',
 ]);
 
 export type Resolution =
