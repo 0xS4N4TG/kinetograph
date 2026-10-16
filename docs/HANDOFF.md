@@ -381,11 +381,16 @@ match; our own layer is native, shares the wgpu device and stays a pure function
   makes a diffuse irradiance cube and a specular cube prefiltered by GGX roughness (`environment.wgsl`,
   `compositor/environment.rs`); `scene3d.wgsl` reads them with the analytic split-sum fit, so no table is stored. The
   picture can also be the (blurrable) background, which makes the layer opaque over its box.
-- **Deferred:** point-light shadows; spot lights; normal, occlusion, metallic-roughness and emissive maps; glTF
-  animation, skins and morph targets; bevels on extrusions; `KHR_*` glTF extensions; sorting within a translucent object; animated primitive sizes (animate `scale`);
-  fog and depth of field; more than 8 lights; automatic model fit; the `doctor` report for projects that import
-  `three`; the studio's scene tree showing 3D objects. Not decided yet: a 3D layer that shares one depth buffer with
-  `preserve3d` groups.
+- **glTF animation, morph targets and skins, 2026-10-16:** `<Model animation time loop>` plays a clip of the file
+  (translation, rotation, scale and weight channels; LINEAR, STEP, CUBICSPLINE), a pure function of the frame (the time
+  defaults to `frame / fps`); morph targets and skins deform the mesh on the CPU per pose (`scene3d/model.rs`:
+  `Model::pose`, `Model::placed`). What a file uses that is not read is reported as unsupported content per frame
+  (COMPAT.md §6.1; `packages/cli/src/model-notes.ts`, the addon's `modelUnsupported`).
+- **Deferred:** point-light shadows; spot lights; normal, occlusion, metallic-roughness and emissive maps; GPU skinning
+  (the CPU does it); bevels on extrusions; `KHR_*` glTF extensions (reported when a file uses them); sorting within a
+  translucent object; animated primitive sizes (animate `scale`); fog and depth of field; more than 8 lights;
+  automatic model fit; the `doctor` report for projects that import `three`; the studio's scene tree showing 3D
+  objects. Not decided yet: a 3D layer that shares one depth buffer with `preserve3d` groups.
 - Projects that import `three` or `@remotion/three` are reported by `doctor`; nothing is drawn by Chrome.
 **Phase 4: studio.** `kinetograph studio` (section 4): a local web server and browser UI in React, Tailwind CSS and
 shadcn/ui (zinc, dark). Composition list, preview streamed from the addon with play, scrub and frame step, timeline

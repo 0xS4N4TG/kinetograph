@@ -1087,7 +1087,7 @@ impl Resolver<'_> {
             LayerKind::Scene3d(s) => ResolvedKind::Scene3d {
                 width: s.width.at(f),
                 height: s.height.at(f),
-                scene: Arc::new(s.resolve(&layer.id, f)?),
+                scene: Arc::new(s.resolve(&layer.id, f, clock.t / clock.fps)?),
             },
             LayerKind::Noise(n) => ResolvedKind::Noise {
                 width: n.width.at(f),

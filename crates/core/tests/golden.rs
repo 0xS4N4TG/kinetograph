@@ -191,6 +191,15 @@ fn scene3d_environment_matches_golden() {
 }
 
 #[test]
+fn scene3d_animation_matches_golden() {
+    // Frame 15 of 30, half a second into every clip: a cube turning, moving
+    // and growing (with a second cube on a spline), a quad whose top corners
+    // slide with a morph weight, and a two-joint bar bent by its skin.
+    let frame = render_still(scene("tests/scenes/scene3d-animation.json"), 15).unwrap();
+    check("scene3d-animation", &frame);
+}
+
+#[test]
 fn scene3d_layers_composite_with_2d_layers_and_effects() {
     // Frame 12 of 30: 3D layers under a drop shadow, under a blur and the
     // screen blend mode, with a layer rotation and a 3D turn, among shapes

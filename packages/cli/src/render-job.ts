@@ -44,12 +44,19 @@ export async function renderSource(
   const { range, encoder, draft = false } = options;
   const { durationInFrames, fps, width, height } = source.composition;
 
-  // A JSON scene goes to the addon whole: it has keyframes and no audio.
+  // A JSON scene goes to the addon whole: it has keyframes and no audio. What it holds that the engine cannot draw
+  // (the glTF features a model uses that are not read) is the same on every frame.
   if (source.kind === 'scene') {
-    let { sceneJson } = await source.frame(0);
+    let { sceneJson, unsupported = [] } = await source.frame(0);
+    const leftOut = new LeftOutCollector();
+    if (unsupported.length > 0) {
+      const [first, last] = frameRange(range, durationInFrames);
+      if (options.strict) throw strictError(first, unsupported);
+      for (let frame = first; frame <= last; frame++) leftOut.add(frame, unsupported);
+    }
     if (draft) sceneJson = JSON.stringify(draftScene(JSON.parse(sceneJson) as SceneJson));
     const summary = renderer.render(sceneJson, options.output, { range, encoder, baseDir: source.baseDir });
-    return { ...summary, compat: new LeftOutCollector().report() };
+    return { ...summary, compat: leftOut.report() };
   }
 
   const [first, last] = frameRange(range, durationInFrames);

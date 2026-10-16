@@ -649,3 +649,149 @@ fn a_bad_environment_is_reported_by_name_when_the_renderer_is_built() {
     // Not a picture.
     assert!(build("media/make_env.py").contains("make_env.py"));
 }
+
+// ---- glTF animation, morph targets and skins ----
+
+/// `src` in the 100 x 100 orthographic view (10 pixels a unit, the origin at
+/// (50, 50), y up), lit by a full ambient light, with `extra` in the model's
+/// fields.
+fn model_frame(src: &str, extra: &str, frame: u32) -> Frame {
+    let body = format!(
+        r##"{ORTHO}, "lights": [{{"type": "ambient", "intensity": 1}}],
+            "objects": [{{"type": "model", "src": "media/{src}" {extra}}}]"##
+    );
+    render_still(scene(&body), frame).unwrap()
+}
+
+fn drawn(frame: &Frame, x: usize, y: usize) -> bool {
+    px(frame, x, y) != BACKGROUND
+}
+
+#[test]
+fn a_model_without_a_clip_stands_as_the_file_has_it() {
+    let frame = model_frame("animated.glb", "", 0);
+    // "mover" is a unit cube at the origin, "cubic" one at (0, 2, 0).
+    assert!(drawn(&frame, 50, 50) && drawn(&frame, 50, 30));
+    assert!(!drawn(&frame, 70, 50) && !drawn(&frame, 60, 30));
+    // The time does not matter when there is no clip.
+    assert_eq!(frame.rgba, model_frame("animated.glb", "", 20).rgba);
+}
+
+#[test]
+fn a_clip_moves_the_nodes_it_targets_at_the_time_it_is_given() {
+    // One second in, held there: "mover" is two units right, "cubic" is at x = 1.
+    let frame = model_frame(
+        "animated.glb",
+        r#", "animation": "move", "time": 1, "loop": false"#,
+        0,
+    );
+    assert!(drawn(&frame, 70, 50) && !drawn(&frame, 50, 50));
+    assert!(drawn(&frame, 60, 30) && !drawn(&frame, 48, 30));
+    // The clip can be named by its position in the file.
+    let by_index = model_frame(
+        "animated.glb",
+        r#", "animation": 0, "time": 1, "loop": false"#,
+        0,
+    );
+    assert_eq!(frame.rgba, by_index.rgba);
+}
+
+#[test]
+fn without_a_time_a_clip_plays_at_the_scenes_own_clock() {
+    // The scene runs at 30 fps: frame 15 is half a second in, when "mover"
+    // has gone one unit and its STEP scale has doubled it (x from 0 to 2).
+    let clip = r#", "animation": "move""#;
+    let at_15 = model_frame("animated.glb", clip, 15);
+    assert!(drawn(&at_15, 65, 50), "the scaled cube reaches x = 1.5");
+    assert!(!drawn(&model_frame("animated.glb", clip, 0), 65, 50));
+    // A time of its own, keyframed in frames, is the same clip: frame 15 of
+    // a time that runs from 0 to 1 s over 30 frames is 0.5 s.
+    let keyed = model_frame(
+        "animated.glb",
+        r#", "animation": "move", "time": [{"frame": 0, "value": 0}, {"frame": 30, "value": 1}]"#,
+        15,
+    );
+    assert_eq!(at_15.rgba, keyed.rgba);
+}
+
+#[test]
+fn a_clip_loops_or_holds_its_last_pose() {
+    let at = |time: &str, looping: &str| {
+        model_frame(
+            "animated.glb",
+            &format!(r#", "animation": "move", "time": {time} {looping}"#),
+            0,
+        )
+        .rgba
+    };
+    // 2.25 s into a 1 s clip is 0.25 s into it again, or the clip's end.
+    assert_eq!(at("2.25", ""), at("0.25", ""));
+    assert_eq!(
+        at("2.25", r#", "loop": false"#),
+        at("1", r#", "loop": false"#)
+    );
+    assert_ne!(at("2.25", ""), at("2.25", r#", "loop": false"#));
+    // A looping clip is back at its start at its own length.
+    assert_eq!(at("1", ""), at("0", ""));
+}
+
+#[test]
+fn an_unknown_clip_is_an_error_that_names_the_clips_the_file_has() {
+    let body =
+        r##""objects": [{"type": "model", "src": "media/animated.glb", "animation": "run"}]"##;
+    let err = render_still(scene(body), 0)
+        .err()
+        .expect("no clip called run");
+    let text = err.to_string();
+    assert!(
+        text.contains("\"run\"") && text.contains("move, spin") && text.contains("animated.glb"),
+        "{text}"
+    );
+}
+
+#[test]
+fn morph_target_weights_reshape_the_mesh() {
+    // The quad's top corners move +x by the weight: at weight 1 the point
+    // (1.2, 0.9) is inside it, at weight 0 it is not.
+    let at = |time: f64| {
+        let clip = format!(r#", "animation": "grow", "time": {time}, "loop": false"#);
+        model_frame("morph.glb", &clip, 0)
+    };
+    assert!(!drawn(&at(0.0), 62, 41));
+    assert!(drawn(&at(1.0), 62, 41));
+    // Without a clip the mesh's own weight (0.5) applies: the corner is at 1.0.
+    let rest = model_frame("morph.glb", "", 0);
+    assert!(drawn(&rest, 57, 41) && !drawn(&rest, 62, 41));
+}
+
+#[test]
+fn a_skinned_mesh_bends_with_its_joints() {
+    let at = |time: f64| {
+        let clip = format!(r#", "animation": "bend", "time": {time}, "loop": false"#);
+        model_frame("skin.glb", &clip, 0)
+    };
+    let straight = at(0.0);
+    let bent = at(1.0);
+    // Straight, the bar stands from y = 0 to 2 at x = 0 (rows 50 to 30).
+    assert!(drawn(&straight, 50, 32) && !drawn(&straight, 42, 40));
+    // Bent 90 degrees about its middle: the upper half lies to the left.
+    assert!(drawn(&bent, 42, 40) && !drawn(&bent, 50, 32));
+    // Its lower half stays where it was.
+    assert!(drawn(&bent, 50, 45));
+}
+
+#[test]
+fn animated_models_are_a_pure_function_of_the_frame() {
+    let body = r##""camera": {"type": "orthographic", "height": 10, "position": [0, 0, 5]},
+        "lights": [{"type": "ambient", "intensity": 1}],
+        "objects": [{"type": "model", "src": "media/skin.glb", "animation": "bend"},
+                    {"type": "model", "src": "media/morph.glb", "animation": "grow", "position": [3, 0, 0]},
+                    {"type": "model", "src": "media/animated.glb", "animation": "move", "position": [-3, 0, 0]}]"##;
+    let mut renderer = Renderer::new(scene(body)).unwrap();
+    let first = renderer.render_frame(9).unwrap().rgba;
+    let other = renderer.render_frame(24).unwrap().rgba;
+    let again = renderer.render_frame(9).unwrap().rgba;
+    assert_eq!(first, again);
+    assert_ne!(first, other);
+    assert_eq!(first, render_still(scene(body), 9).unwrap().rgba);
+}

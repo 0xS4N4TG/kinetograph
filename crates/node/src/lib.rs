@@ -3,7 +3,7 @@
 //! is specified in `docs/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
-//! `parseRange`, `probeMedia`, `decodeAudio`, `version`) never open a device; `new Renderer()` does, once,
+//! `parseRange`, `probeMedia`, `decodeAudio`, `modelUnsupported`, `version`) never open a device; `new Renderer()` does, once,
 //! and every scene given to it afterwards reuses that setup.
 //!
 //! Every call is synchronous and runs on the JS thread. A thrown error is an
@@ -25,6 +25,7 @@ use kinetograph_cli::encode::AudioPcm as Pcm;
 use kinetograph_cli::render::{
     SceneRequest, VideoWriter as Writer, parse_range as parse_frame_range, render_scene,
 };
+use kinetograph_core::scene3d::model::Model;
 use kinetograph_core::{Error as CoreError, Scene};
 use napi::bindgen_prelude::{Buffer, Float32Array};
 use napi_derive::napi;
@@ -225,6 +226,28 @@ pub fn decode_audio(
 ) -> Result<Option<AudioPcm>> {
     let sample_rate = count("sampleRate", sample_rate)?;
     media::decode_audio(&resolve_base(base_dir).join(path), sample_rate)
+}
+
+/// A glTF feature a model file uses that the 3D layer does not read.
+#[napi(object)]
+pub struct ModelUnsupported {
+    pub feature: String,
+    pub reason: String,
+}
+
+/// Reads a glTF or GLB model and lists what it uses that the 3D layer does not
+/// read (docs/SCENE.md, "scene3d"); a file that cannot be read is an error.
+#[napi]
+pub fn model_unsupported(src: String, base_dir: Option<String>) -> Result<Vec<ModelUnsupported>> {
+    let model = Model::open(&resolve_base(base_dir), &src).map_err(from_core)?;
+    Ok(model
+        .unsupported
+        .into_iter()
+        .map(|u| ModelUnsupported {
+            feature: u.feature,
+            reason: u.reason,
+        })
+        .collect())
 }
 
 /// CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a

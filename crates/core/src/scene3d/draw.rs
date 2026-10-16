@@ -480,21 +480,27 @@ impl Assets3d {
                 .map(|src| self.texture(layer, src))
                 .transpose()?;
             match &object.content {
-                Content3d::Model { src } => {
+                Content3d::Model { src, animation } => {
                     let model = self.models.get(src).cloned().ok_or_else(|| {
                         Error::Render(format!("layer {layer:?}: model {src:?} was not loaded"))
                     })?;
-                    for part in &model.parts {
+                    let at = animation
+                        .as_ref()
+                        .map(|a| model.playback(&a.clip, a.time, a.looping))
+                        .transpose()
+                        .map_err(|msg| {
+                            Error::Render(format!("layer {layer:?}: model {src:?} {msg}"))
+                        })?;
+                    let pose = model.pose(at);
+                    for placed in model.placed(&pose, at.is_none()) {
+                        let part = placed.part;
                         match own {
-                            Some(m) => add(
-                                part.mesh.clone(),
-                                &part.local,
-                                m.into(),
-                                own_texture.clone(),
-                            ),
+                            Some(m) => {
+                                add(placed.mesh, &placed.local, m.into(), own_texture.clone())
+                            }
                             None => add(
-                                part.mesh.clone(),
-                                &part.local,
+                                placed.mesh,
+                                &placed.local,
                                 part.material.clone(),
                                 part.texture.clone(),
                             ),

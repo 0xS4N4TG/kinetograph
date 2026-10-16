@@ -132,6 +132,21 @@ describe('<Scene3D>', () => {
     ]);
   });
 
+  it('passes the clip a model plays', () => {
+    const layer = only(
+      <Scene3D width={1} height={1}>
+        <Model src="walk.glb" animation="Walk" time={turn} loop={false} />
+        <Model src="walk.glb" animation={1} />
+        <Model src="walk.glb" />
+      </Scene3D>,
+    );
+    expect(layer.objects).toEqual([
+      { type: 'model', src: 'walk.glb', animation: 'Walk', time: turn, loop: false },
+      { type: 'model', src: 'walk.glb', animation: 1 },
+      { type: 'model', src: 'walk.glb' },
+    ]);
+  });
+
   it('takes an environment as a path or as options', () => {
     expect(only(<Scene3D width={1} height={1} environment="sky.hdr" />).environment).toEqual({ src: 'sky.hdr' });
     const options = { src: 'sky.hdr', intensity: 0.5, rotation: turn, background: true, backgroundBlur: 0.2 };

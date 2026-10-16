@@ -29,6 +29,7 @@ use crate::anim::Num;
 use crate::color::Color;
 use crate::error::{Error, Result};
 use crate::scene::{FillRule, TextAlign};
+use model::ClipRef;
 
 /// The most lights a scene has, ambient ones included.
 pub const MAX_LIGHTS: usize = 8;
@@ -314,12 +315,19 @@ pub enum Object3d {
         shadowing: Shadowing3d,
     },
     /// A glTF or GLB file. `material`, when given, replaces the file's own
-    /// materials.
+    /// materials. With an `animation` (a clip's name or its position in the
+    /// file) the model is posed by the clip at `time` seconds; the default
+    /// time is the scene's own, `frame / fps`. A `looping` clip starts again
+    /// at its end; one that does not holds its last pose.
     Model {
         #[serde(default)]
         id: String,
         src: String,
         material: Option<Material3d>,
+        animation: Option<ClipRef>,
+        time: Option<Num>,
+        #[serde(rename = "loop", default = "yes")]
+        looping: bool,
         #[serde(flatten)]
         placement: Placement3d,
         #[serde(flatten)]
@@ -600,9 +608,21 @@ pub struct ResolvedObject3d {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Content3d {
     Primitive(Geometry3d),
-    Model { src: String },
+    Model {
+        src: String,
+        animation: Option<Playback>,
+    },
     Text(TextSpec),
     Extrude(ExtrudeSpec),
+}
+
+/// A clip playing at one moment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Playback {
+    pub clip: ClipRef,
+    /// Seconds into the clip.
+    pub time: f64,
+    pub looping: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -748,8 +768,9 @@ impl Scene3dLayer {
         validate_objects(layer, &self.objects, fonts)
     }
 
-    /// The scene at frame `f`.
-    pub fn resolve(&self, layer: &str, f: f64) -> Result<Resolved3d> {
+    /// The scene at frame `f`, which is `seconds` into the scene (what a
+    /// model's clip is at when it is given no time of its own).
+    pub fn resolve(&self, layer: &str, f: f64, seconds: f64) -> Result<Resolved3d> {
         let cam = &self.camera;
         let camera = ResolvedCamera3d {
             orthographic: cam.kind == CameraKind::Orthographic,
@@ -815,7 +836,7 @@ impl Scene3dLayer {
             }),
         });
         let mut objects = Vec::new();
-        flatten(&self.objects, DMat4::IDENTITY, f, &mut objects);
+        flatten(&self.objects, DMat4::IDENTITY, f, seconds, &mut objects);
         Ok(Resolved3d {
             msaa: self.msaa,
             camera,
@@ -983,7 +1004,13 @@ fn geometry_problem(g: &Geometry3d) -> Option<String> {
     }
 }
 
-fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedObject3d>) {
+fn flatten(
+    objects: &[Object3d],
+    parent: DMat4,
+    f: f64,
+    seconds: f64,
+    out: &mut Vec<ResolvedObject3d>,
+) {
     for object in objects {
         let (id, placement) = match object {
             Object3d::Mesh { id, placement, .. }
@@ -1020,10 +1047,20 @@ fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedOb
             Object3d::Model {
                 src,
                 material,
+                animation,
+                time,
+                looping,
                 shadowing,
                 ..
             } => push(
-                Content3d::Model { src: src.clone() },
+                Content3d::Model {
+                    src: src.clone(),
+                    animation: animation.as_ref().map(|clip| Playback {
+                        clip: clip.clone(),
+                        time: time.as_ref().map_or(seconds, |t| t.at(f)),
+                        looping: *looping,
+                    }),
+                },
                 material.as_ref().map(|m| m.resolve(f)),
                 *shadowing,
             ),
@@ -1067,7 +1104,7 @@ fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedOb
                 Some(material.resolve(f)),
                 *shadowing,
             ),
-            Object3d::Group { children, .. } => flatten(children, world, f, out),
+            Object3d::Group { children, .. } => flatten(children, world, f, seconds, out),
         }
     }
 }
@@ -1093,7 +1130,7 @@ mod tests {
         l.validate("s", &has_font).unwrap();
         assert_eq!(l.msaa, 4);
         assert_eq!(l.camera.kind, CameraKind::Perspective);
-        let r = l.resolve("s", 0.0).unwrap();
+        let r = l.resolve("s", 0.0, 0.0).unwrap();
         assert_eq!(r.camera.position, DVec3::new(0.0, 0.0, 5.0));
         assert_eq!(r.camera.lens, 45.0);
         assert!(r.objects.is_empty() && r.lights.is_empty());
@@ -1109,7 +1146,7 @@ mod tests {
               ]}
             ]}"#,
         );
-        let at = |f| l.resolve("s", f).unwrap().objects[0].world;
+        let at = |f| l.resolve("s", f, f / 30.0).unwrap().objects[0].world;
         // The child is at x = 2 at frame 5, in a group at x = 1 scaled by 2.
         let p = at(5.0).transform_point3(DVec3::ZERO);
         assert!((p - DVec3::new(5.0, 0.0, 0.0)).length() < 1e-12, "{p:?}");
@@ -1123,7 +1160,7 @@ mod tests {
             r#"{"width": 10, "height": 10, "objects": [
               {"type": "mesh", "geometry": {"kind": "box"}, "rotation": [0, 90, 0]}]}"#,
         );
-        let world = l.resolve("s", 0.0).unwrap().objects[0].world;
+        let world = l.resolve("s", 0.0, 0.0).unwrap().objects[0].world;
         // +90 degrees about y takes +x to -z (right-handed).
         let p = world.transform_vector3(DVec3::X);
         assert!((p - DVec3::NEG_Z).length() < 1e-12, "{p:?}");
@@ -1137,7 +1174,7 @@ mod tests {
                 {"type": "mesh", "geometry": {"kind": "sphere"}}]},
               {"type": "mesh", "geometry": {"kind": "plane"}}]}"#,
         );
-        assert_eq!(l.resolve("s", 0.0).unwrap().objects.len(), 1);
+        assert_eq!(l.resolve("s", 0.0, 0.0).unwrap().objects.len(), 1);
     }
 
     #[test]
@@ -1148,7 +1185,7 @@ mod tests {
               {"type": "directional", "direction": [0, -2, 0]},
               {"type": "point", "position": [0, 1, 0], "intensity": 10, "range": 8}]}"##,
         );
-        let r = l.resolve("s", 0.0).unwrap();
+        let r = l.resolve("s", 0.0, 0.0).unwrap();
         let ResolvedLight3d::Ambient { color } = r.lights[0] else {
             panic!("not ambient");
         };
@@ -1175,7 +1212,7 @@ mod tests {
                             {"type": "mesh", "geometry": {"kind": "box"}}]}"#,
         );
         l.validate("s", &has_font).unwrap();
-        let r = l.resolve("s", 0.0).unwrap();
+        let r = l.resolve("s", 0.0, 0.0).unwrap();
         let ResolvedLight3d::Directional { shadow, .. } = &r.lights[0] else {
             panic!("not directional");
         };
@@ -1205,6 +1242,42 @@ mod tests {
     }
 
     #[test]
+    fn a_models_clip_is_played_at_its_time_or_the_scenes() {
+        let l = layer(
+            r#"{"width": 10, "height": 10, "objects": [
+                {"type": "model", "src": "a.glb", "animation": "Walk",
+                 "time": [{"frame": 0, "value": 0}, {"frame": 30, "value": 3}], "loop": false},
+                {"type": "model", "src": "a.glb", "animation": 2},
+                {"type": "model", "src": "a.glb"}]}"#,
+        );
+        l.validate("s", &has_font).unwrap();
+        // Frame 15, which is 0.4 s into the scene.
+        let r = l.resolve("s", 15.0, 0.4).unwrap();
+        let playback = |i: usize| match &r.objects[i].content {
+            Content3d::Model { animation, .. } => animation.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            playback(0),
+            Some(Playback {
+                clip: ClipRef::Name("Walk".into()),
+                time: 1.5,
+                looping: false
+            })
+        );
+        // Without a time the scene's own: and a clip loops unless told not to.
+        assert_eq!(
+            playback(1),
+            Some(Playback {
+                clip: ClipRef::Index(2),
+                time: 0.4,
+                looping: true
+            })
+        );
+        assert_eq!(playback(2), None);
+    }
+
+    #[test]
     fn material_opacity_multiplies_the_colour_alpha() {
         let l = layer(
             r##"{"width": 10, "height": 10, "objects": [
@@ -1212,7 +1285,7 @@ mod tests {
                "material": {"color": "#ffffff80", "opacity": 0.5, "roughness": 3, "emissive": "#ff0000",
                             "emissiveIntensity": 2}}]}"##,
         );
-        let m = l.resolve("s", 0.0).unwrap().objects[0]
+        let m = l.resolve("s", 0.0, 0.0).unwrap().objects[0]
             .material
             .clone()
             .unwrap();
@@ -1262,13 +1335,13 @@ mod tests {
         let l = layer(
             r#"{"width": 1, "height": 1, "camera": {"position": [0, 5, 0], "target": [0, 0, 0]}}"#,
         );
-        let e = l.resolve("hero", 3.0).unwrap_err().to_string();
+        let e = l.resolve("hero", 3.0, 0.1).unwrap_err().to_string();
         assert!(e.contains("up vector"), "{e}");
         let l = layer(
             r#"{"width": 1, "height": 1, "camera": {"position": [1, 1, 1], "target": [1, 1, 1]}}"#,
         );
         assert!(
-            l.resolve("hero", 0.0)
+            l.resolve("hero", 0.0, 0.0)
                 .unwrap_err()
                 .to_string()
                 .contains("same point")

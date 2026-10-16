@@ -131,6 +131,10 @@ interface Unsupported {
   unsupported items as a warning.
 - **What counts.** An unsupported item counts only on frames where its element is in the tree. Subtrees with
   `display: none` and boxes with `visibility: hidden` are not checked.
+- **glTF models.** What a `<Model>`'s (or a `model` object's) file uses that the 3D layer does not read (SCENE.md,
+  "scene3d", "glTF") is listed like the above, on every frame that draws the model: element `Model`, property the
+  feature (`KHR_materials_clearcoat`, `normal textures`, ...), value the file. The CLI asks the addon
+  (`modelUnsupported`) once for each file; a file it cannot read says nothing, and the render fails on it.
 
 ### 6.2 Chrome as a test oracle
 

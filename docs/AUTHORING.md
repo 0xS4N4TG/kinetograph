@@ -499,7 +499,7 @@ Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `sh
 | `<Camera3D>` | `type`, `fov`, `height`, `near`, `far`, `position`, `target`, `up`. At most one. |
 | `<AmbientLight>`, `<DirectionalLight>`, `<PointLight>` | `color`, `intensity`; `direction`, `castShadow`, `shadow`; `position`, `range`. |
 | `<Mesh geometry material?>` | `geometry` is `{ kind: 'box' \| 'sphere' \| 'plane' \| 'cylinder' \| 'torus', ... }`. |
-| `<Model src material?>` | A glTF or GLB file. |
+| `<Model src material? animation? time? loop?>` | A glTF or GLB file. `animation` is the name or position of one of its clips; `time` is seconds into the clip (default `frame / fps`), `loop` (default true) says what a clip does at its end. |
 | `<Text3D font size depth align lineHeight material>` | The text is the children (strings and numbers); `weight` and `fontStyle` pick the font key as for `<Text>`. |
 | `<Extrude path size depth fillRule material>` | SVG path data. |
 | `<Group3D>` | Objects that move together. |
@@ -842,6 +842,9 @@ export function probeMedia(path: string, baseDir?: string): MediaInfo;
 /** The first audio stream of any file FFmpeg reads, decoded and resampled (swresample) to `sampleRate`, keeping its
  *  channel count (mono or stereo; more channels are downmixed to stereo). null when the file has no audio stream. */
 export function decodeAudio(path: string, sampleRate: number, baseDir?: string): AudioPcm | null;
+/** What a glTF or GLB model uses that the 3D layer does not read (SCENE.md, "scene3d", "glTF"), one entry for each
+ *  kind of thing; empty for a file that uses nothing of the kind. `IO`/render error for a file that cannot be read. */
+export function modelUnsupported(src: string, baseDir?: string): { feature: string; reason: string }[];
 
 // ---- GPU ----
 export interface PreviewOptions {

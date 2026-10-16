@@ -538,7 +538,7 @@ not checked for uniqueness).
 | `type` | Fields | Draws |
 |---|---|---|
 | `mesh` | `geometry`, `material` | A primitive. |
-| `model` | `src`, `material` | A glTF 2.0 file (`.gltf` with its files, or `.glb`), relative to the scene. With a `material` it replaces every material of the file. |
+| `model` | `src`, `material`, `animation`, `time`, `loop` | A glTF 2.0 file (`.gltf` with its files, or `.glb`), relative to the scene. With a `material` it replaces every material of the file. With an `animation` (a clip's name, or its position in the file) the model is posed by that clip; see [glTF](#3d-gltf). |
 | `text` | `text`, `font`, `size` (em in world units, 1), `depth` (0.2), `align` (`center`), `lineHeight` | Text from the scene's `fonts`, shaped by the text engine and extruded `depth` along z, centred on the origin (the block of text, whatever the alignment of its lines). `\n` breaks lines. |
 | `extrude` | `path`, `size` (1), `depth` (0.2), `fillRule` | SVG path data, extruded. y points down as in SVG; it comes out upright, centred, its longer side `size` long. Holes stay holes. |
 | `group` | `children` | Objects that move together. |
@@ -585,11 +585,40 @@ plus GGX specular per light, and the environment if there is one.
 - **Depth and transparency.** Opaque objects are depth tested, in any order. Objects that are not opaque (`opacity`
   below 1, a translucent `color` or texture, a glTF `BLEND` material) are drawn afterwards, farthest first by the middle
   of their box, blended and without writing depth. Triangles within one translucent object are not sorted.
-- **glTF.** Read: the default scene's node tree and transforms, triangle meshes with positions, normals (flat ones when
-  absent), first texture coordinates and indices, and each material's base colour factor and texture, metallic and
-  roughness factors, emissive factor, `doubleSided` and `alphaMode` (`BLEND` blends; `OPAQUE` and `MASK` draw opaque).
-  Not read: animations, skins, morph targets, cameras, lights, normal, occlusion, metallic-roughness and emissive
-  textures, texture transforms, `KHR_*` extensions. A model is placed as the file says, with no automatic fit.
+- <a id="3d-gltf"></a>**glTF.** Read: the default scene's node tree and transforms, triangle meshes with positions,
+  normals (flat ones when absent), first texture coordinates and indices, each material's base colour factor and
+  texture, metallic and roughness factors, emissive factor, `doubleSided` and `alphaMode` (`BLEND` blends; `OPAQUE` and
+  `MASK` draw opaque), and the animation, morph targets and skins below. A model is placed as the file says, with no
+  automatic fit.
+  - **Animation.** `animation` picks one of the file's clips by name or by position; without it the model stands as the
+    file has it (its nodes' own transforms, its meshes' own morph weights). The clip is read at `time` seconds, an
+    animatable number whose default is the scene's own time, `frame / fps` (so a clip plays in step with the video; a
+    motion-blurred sub-frame reads the sub-frame's time). A `loop` clip (default true) starts again when it ends,
+    before its start too: `time` wraps into `0 <= t < length`, which makes its length itself the first frame of the next
+    round; with `loop: false` the time is held between 0 and the length, so the last pose stays. The length is the
+    time of the last keyframe of any channel. A clip the file does not have is an error naming the clips it has.
+    Channels animate a node's translation, rotation and scale and a mesh's morph weights, each `LINEAR` (rotations by
+    spherical interpolation, the short way round), `STEP` or `CUBICSPLINE` (Hermite, with the file's tangents; rotations
+    renormalised). Before the first keyframe and after the last the value is held. A node a clip does not animate keeps
+    the transform the file gives it.
+  - **Morph targets.** Position displacements, and normal displacements when the file has them, scaled by the weights
+    and added; for a mesh with no normals the flat ones are made again from the moved positions. Tangent displacements
+    are not read. The weights come from the clip, else the node's, else the mesh's.
+  - **Skins.** A mesh on a node with a skin is moved by the skin's joints, each vertex by up to 4 of them
+    (`JOINTS_0`, `WEIGHTS_0`; the weights are made to sum to 1) through the joint matrices
+    `world(joint) * inverseBind(joint)`, so an animated character deforms. The mesh node's own transform does not apply
+    to a skinned mesh, as the glTF spec says. Normals are turned by the same blend. Morph targets are applied before the
+    skin.
+  - Morphs and skins are done on the CPU, once for each frame a deformed model's pose changes (a model with no clip is
+    deformed once and kept); the result is drawn like any mesh, so it takes lights, shadows and the environment.
+  - **Not read**, and reported: textures other than the base colour (normal, occlusion, metallic-roughness, emissive), a
+    base colour texture on a texture coordinate set above 0, `alphaMode: MASK` (drawn opaque), primitives that are not
+    lists of triangles (points, lines, strips and fans are left out), more than 4 joints a vertex (`JOINTS_1` is
+    dropped), scenes other than the default, and every glTF extension the file lists in `extensionsUsed` (this includes
+    `KHR_texture_transform` and `KHR_materials_*`). Cameras and lights in the file are not read and not reported. Each
+    kind of thing is listed once for a file as unsupported content on every frame that draws the model (element
+    `Model`, property the feature, value the file), so `render`, `still` and `strip` warn and `--strict` fails (COMPAT.md
+    §6.1); the addon's `modelUnsupported(src, baseDir)` is what lists them.
 - <a id="3d-shadows"></a>**Shadows.** A directional light with `castShadow: true` draws a shadow map: a depth image of the
   objects with `castShadow` seen along the light, fitted automatically to their boxes (so the map's resolution follows
   the scene's size, and a ground plane that only receives does not stretch it). The objects with `receiveShadow` are
@@ -607,9 +636,8 @@ plus GGX specular per light, and the environment if there is one.
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Point-light shadows, spot lights,
-  normal and other texture maps, skinned and morph animation, glTF animation, bevels, fog, post effects beyond the
-  layer's own effects, and more than 8 lights.
+- **Not drawn (v1).** Point-light shadows, spot lights, normal and other texture maps, bevels, fog, post effects
+  beyond the layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).
 
 ### video

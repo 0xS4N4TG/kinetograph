@@ -812,6 +812,12 @@ export interface Model3D extends Placement3D, Shadowing3D {
   src: string;
   /** Replaces the file's own materials. */
   material?: Material3D;
+  /** The file's clip to play: its name, or its position in the file. With none the model stands as the file has it. */
+  animation?: string | number;
+  /** Seconds into the clip; animatable. Default: the scene's own time, `frame / fps`. */
+  time?: Num;
+  /** A clip that is over starts again (default true); `false` holds its last pose. */
+  loop?: boolean;
 }
 export interface Text3D extends Placement3D, Shadowing3D {
   type: 'text';

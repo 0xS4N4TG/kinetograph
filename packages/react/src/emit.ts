@@ -411,7 +411,7 @@ class Emitter {
       }
       case 'kg-model':
         if (typeof props.src !== 'string') throw new Error('<Model> needs a src, the path of a .gltf or .glb file');
-        return { type: 'model', src: props.src, ...material, ...shadowing, ...placement } as Object3DJson;
+        return { type: 'model', src: props.src, ...pick(props, ['animation', 'time', 'loop']), ...material, ...shadowing, ...placement } as Object3DJson;
       case 'kg-text3d':
         if (typeof props.font !== 'string') throw new Error('<Text3D> needs a font, a key of the scene\'s fonts');
         return {
