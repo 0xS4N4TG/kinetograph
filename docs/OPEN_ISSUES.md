@@ -35,9 +35,16 @@ used.
    - `SVGTextContentElement.getNumberOfChars()` / `getStartPositionOfChar()` (font-shuffle).
    - The rendered host elements are a read-only view (`DomElement`, `packages/compat/src/shim/element.ts`): no
      `prepend`, `append`, `insertBefore`. Libraries that mount their own nodes break, e.g. `@paper-design/shaders`
-     (pulsing-border) at `document.head.prepend` and `parentElement.prepend(canvas)`. This is the one gap that
-     touches the design: the shim would need a writable DOM beside React's. Its later WebGL2 needs
+     (pulsing-border) at `document.head.prepend` and `parentElement.prepend(canvas)`. Its later WebGL2 needs
      (`getShaderPrecisionFormat`, `IntersectionObserver`) are untested.
+     Planned approach, no DOM library: the reconciler's host tree is already mutable (`packages/react/src/root.ts`,
+     `appendChild`/`insertBefore`/`removeChild`) and is what emit serialises, so give `DomElement` the tree methods
+     (`append`, `prepend`, `appendChild`, `insertBefore`, `removeChild`, `replaceChildren`, `remove`, `textContent`)
+     on top of those same operations, bumping the tree generation; make `document.createElement`/`createTextNode`/
+     `createElementNS` return detached host nodes; give `document.head`/`body` real nodes (a `<style>` put there is a
+     stylesheet); add `MutationObserver`, and `IntersectionObserver` that reports everything visible. A JS DOM
+     (linkedom, happy-dom) would add a second tree to keep in step with React's. The risk to test: React's own
+     insertions must land right when a parent also holds nodes a library added.
 6. **Remote `new FontFace(name, 'url(https://…)')`** (check-cycle, capture-reveal, font-shuffle; small). Refused by
    design (a frame must not depend on the network) with a clear message, but the error code is `INTERNAL` and `lint`
    and `doctor` abort instead of reporting it. Fix the code and the reporting; consider downloading the file once into
