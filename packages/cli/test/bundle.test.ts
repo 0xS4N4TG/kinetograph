@@ -18,6 +18,19 @@ describe('resolveSpecifier', () => {
     for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie', 'gif', 'media-utils', 'media', 'light-leaks', 'starburst']) {
       expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetograph/core/${pkg}` });
     }
+    expect(resolveSpecifier('@remotion/sfx')).toEqual({ kind: 'path', target: '@kinetograph/core/sfx' });
+    expect(resolveSpecifier('@remotion/zod-types')).toEqual({ kind: 'path', target: '@kinetograph/core/zod-types' });
+    expect(resolveSpecifier('@remotion/timeline-utils')).toEqual({ kind: 'path', target: '@kinetograph/core/timeline-utils' });
+    expect(resolveSpecifier('@remotion/timeline-utils/audio-waveform-worker')).toEqual({
+      kind: 'path',
+      target: '@kinetograph/core/timeline-utils/audio-waveform-worker',
+    });
+    expect(resolveSpecifier('@remotion/webcodecs/web-fs')).toEqual({ kind: 'path', target: '@kinetograph/core/webcodecs/web-fs' });
+    expect(resolveSpecifier('@remotion/canvas')).toEqual({ kind: 'path', target: '@kinetograph/core/canvas' });
+    expect(resolveSpecifier('@remotion/media-parser')).toEqual({ kind: 'path', target: '@kinetograph/core/media-parser' });
+    for (const sub of ['node', 'web', 'universal', 'node-writer', 'worker', 'server-worker', 'worker-web-entry', 'worker-server-entry']) {
+      expect(resolveSpecifier(`@remotion/media-parser/${sub}`)).toEqual({ kind: 'path', target: `@kinetograph/core/media-parser/${sub}` });
+    }
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
   });
 
@@ -68,6 +81,7 @@ describe('syntheticEntry', () => {
       `export * from '@kinetograph/core';`,
       `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
       `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
+      `export { setMediaParserAddon } from '@kinetograph/core/media-parser';`,
       `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
     ]);
   });
@@ -168,6 +182,97 @@ describe('bundleProject', () => {
     // No Tailwind in this project: the file is registered as it is, and the problem is reported (doctor prints it).
     expect(code).toContain('noteStylesheetProblem(');
     expect(warnings.join('\n')).toContain('uses Tailwind, but the project has none that can build it');
+  });
+
+  it('bundles @remotion/sfx onto the core, and the sounds are the URLs the mix downloads', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot, Audio } from 'remotion';`,
+        `import { whip, vineBoom } from '@remotion/sfx';`,
+        `registerRoot(() => null);`,
+        `console.log(Audio, whip, vineBoom);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/sfx.js');
+    expect(code).toContain('https://remotion.media/whip.wav');
+  });
+
+  it('bundles @remotion/zod-types onto the core, with the zod it resolves, for a <Composition schema>', async () => {
+    const dir = project({
+      'index.tsx': [
+        `import { Composition, registerRoot } from 'remotion';`,
+        `import { zColor, zMatrix, zTextarea } from '@remotion/zod-types';`,
+        `const schema = [zColor(), zMatrix(), zTextarea()];`,
+        `registerRoot(() => <Composition id="A" component={() => null} width={10} height={10} fps={30} durationInFrames={1} schema={schema} />);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.tsx'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/zod-types.js');
+    expect(code).toContain('__remotion-color');
+  });
+
+  it('bundles @remotion/timeline-utils and its waveform worker module onto the core', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import { loadWaveformPeaks, sliceWaveformPeaks, extractFrames } from '@remotion/timeline-utils';`,
+        `import '@remotion/timeline-utils/audio-waveform-worker';`,
+        `registerRoot(() => null);`,
+        `console.log(loadWaveformPeaks, sliceWaveformPeaks, extractFrames);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/timeline-utils/waveform.js');
+    // The worker module has no code to carry; that it resolved is the point.
+  });
+
+  it('bundles @remotion/media-parser with every subpath onto the core, and the host can hand its addon over', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import { parseMedia, mediaParserController } from '@remotion/media-parser';`,
+        `import { nodeReader } from '@remotion/media-parser/node';`,
+        `import { webReader } from '@remotion/media-parser/web';`,
+        `import { universalReader } from '@remotion/media-parser/universal';`,
+        `import { nodeWriter } from '@remotion/media-parser/node-writer';`,
+        `import { parseMediaOnWebWorker } from '@remotion/media-parser/worker';`,
+        `import { parseMediaOnServerWorker } from '@remotion/media-parser/server-worker';`,
+        `import '@remotion/media-parser/worker-web-entry';`,
+        `import '@remotion/media-parser/worker-server-entry';`,
+        `registerRoot(() => null);`,
+        `console.log(parseMedia, mediaParserController, nodeReader, webReader, universalReader, nodeWriter, parseMediaOnWebWorker, parseMediaOnServerWorker);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/media-parser/parse-media.js');
+    expect(code).toContain('packages/core/dist/media-parser/readers.js');
+    // `setMediaParserAddon` (re-exported by the synthetic entry) and the project's `parseMedia` share one module.
+    expect(code.match(/function setMediaParserAddon\(/g)).toHaveLength(1);
+    expect(code).toMatch(/export \{[^}]*setMediaParserAddon[^}]*\}/);
+  });
+
+  it('bundles @remotion/webcodecs with its subpaths and @remotion/canvas onto the core', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import { convertMedia, createVideoDecoder, webcodecsController } from '@remotion/webcodecs';`,
+        `import { bufferWriter } from '@remotion/webcodecs/buffer';`,
+        `import { webFsWriter } from '@remotion/webcodecs/web-fs';`,
+        `import { extractFramesOnWebWorker } from '@remotion/webcodecs/worker';`,
+        `import { Canvas, createCanvasController } from '@remotion/canvas';`,
+        `registerRoot(() => null);`,
+        `console.log(convertMedia, createVideoDecoder, webcodecsController, bufferWriter, webFsWriter, extractFramesOnWebWorker, Canvas, createCanvasController);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/webcodecs/convert-media.js');
+    expect(code).toContain('packages/core/dist/canvas.js');
   });
 
   it('leaves one file per entry, replaced when the code changes', async () => {

@@ -206,6 +206,25 @@ describe('renderAudio with <Audio> clips', () => {
     expect(peakBetween(pcm.channels[0]!, RATE, 0.1, 0.9)).toBeGreaterThan(0.45);
   });
 
+  it('reads the file resolveSource names for a clip, once per file', async () => {
+    const { dir, name } = writeWav(twoLevels(), RATE);
+    const asked: string[] = [];
+    const pcm = await renderAudio({
+      fps: FPS, first: 0, last: 29, baseDir: dir,
+      clips: [
+        timeline({ frames: [0, 29], src: 'https://example.com/a.wav' }),
+        timeline({ frames: [0, 29], src: 'https://example.com/a.wav', id: 'again' }),
+      ],
+      resolveSource: async (src) => {
+        asked.push(src);
+        return name;
+      },
+    });
+    expect(asked).toEqual(['https://example.com/a.wav', 'https://example.com/a.wav']);
+    // Two copies of the 0.25 sine, in phase.
+    expect(peakBetween(pcm.channels[0]!, RATE, 0.1, 0.9)).toBeCloseTo(0.5, 2);
+  });
+
   it('says which file it could not read', async () => {
     await expect(
       renderAudio({ fps: FPS, first: 0, last: 9, baseDir: '/nonexistent', clips: [timeline({ frames: [0, 9], src: 'gone.wav' })] }),

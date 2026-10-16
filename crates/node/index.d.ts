@@ -104,6 +104,14 @@ export declare function domLayoutBoxes(requestJson: string): string
 /** The scene resolved at `frame`, as an `InspectResult` JSON string. */
 export declare function inspect(sceneJson: string, frame: number, baseDir?: string | undefined | null): string
 
+/** A keyframe's packet: where it is in the file and how big, and when it is decoded and shown. */
+export interface Keyframe {
+  position: number
+  size: number
+  ptsInSeconds?: number
+  dtsInSeconds?: number
+}
+
 /**
  * CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a
  * `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out.
@@ -144,6 +152,25 @@ export interface ModelUnsupported {
   reason: string
 }
 
+export interface MediaStreams {
+  /** FFmpeg's name for the container format: `mov,mp4,m4a,3gp,3g2,mj2`, `matroska,webm`, `mp3`, ... */
+  format: string
+  durationInSeconds?: number
+  /** When the file's first stream starts: not 0 for a transport stream, whose clock starts where the muxer set it. */
+  startInSeconds?: number
+  bitRate?: number
+  tags: Array<MediaTag>
+  streams: Array<StreamDetails>
+}
+
+/** One entry of the metadata of the container (no `stream`) or of one of its streams. */
+export interface MediaTag {
+  /** The index of the stream the tag belongs to; container ids are not always distinct. */
+  stream?: number
+  key: string
+  value: string
+}
+
 /** `"10..40"` or `"10..=40"` -> `[first, last]`, inclusive. */
 export declare function parseRange(range: string, durationInFrames: number): Array<number>
 
@@ -166,6 +193,9 @@ export interface PreviewOptions {
 
 /** Reads a video's or GIF's header, without decoding a picture. */
 export declare function probeMedia(path: string, baseDir?: string | undefined | null): MediaInfo
+
+/** Reads a file's container, without decoding anything (docs/AUTHORING.md §3). */
+export declare function probeStreams(path: string, baseDir?: string | undefined | null): MediaStreams
 
 /**
  * A Canvas 2D context's commands drawn on a transparent canvas (docs/SCENE.md,
@@ -216,6 +246,9 @@ export interface RgbaFrame {
   data: Buffer
 }
 
+/** Reads every packet of a file, without decoding, and totals them per stream: the "slow" fields of `parseMedia`. */
+export declare function scanStreams(path: string, baseDir?: string | undefined | null): Array<StreamScan>
+
 export interface SceneInfo {
   width: number
   height: number
@@ -228,6 +261,68 @@ export interface Stats {
   mean: number
   min: number
   max: number
+}
+
+/** One stream of a container, as its header describes it. */
+export interface StreamDetails {
+  index: number
+  /** The container's number for the track (an MP4's `track_ID`, a Matroska `TrackNumber`). */
+  id: number
+  /** `video`, `audio` or `other`. */
+  kind: string
+  /** FFmpeg's codec name: `h264`, `hevc`, `vp9`, `aac`, `pcm_s16le`, ... */
+  codec: string
+  /** The codec's four-character tag as the container stores it (`avc1`), if it has one. */
+  codecTag?: string
+  profile?: number
+  level?: number
+  bitRate?: number
+  timeBaseNumerator: number
+  timeBaseDenominator: number
+  startInSeconds?: number
+  durationInSeconds?: number
+  /** The number of pictures or packets the container says the stream has. */
+  frames?: number
+  /** The codec's private data as the container keeps it (an `avcC` record, an AAC `AudioSpecificConfig`, ...). */
+  extradata?: Buffer
+  width: number
+  height: number
+  sampleAspectRatioNumerator: number
+  sampleAspectRatioDenominator: number
+  /** A video stream's average frame rate. */
+  frameRate?: number
+  /** How far, clockwise and in degrees from 0 up to 360, a player turns the pictures. */
+  rotation: number
+  /**
+   * FFmpeg's numbers (the H.273 ones for the last three): `AVColorRange` (1 limited, 2 full),
+   * `AVColorPrimaries`, `AVColorTransferCharacteristic`, `AVColorSpace`.
+   */
+  colorRange: number
+  colorPrimaries: number
+  colorTransfer: number
+  colorSpace: number
+  /** Bits per sample of the picture where the stream says (`bits_per_raw_sample`). */
+  bitDepth?: number
+  sampleRate: number
+  channels: number
+  /** Bits per sample of uncompressed audio (`bits_per_coded_sample`). */
+  bitsPerSample: number
+  /** The picture, for a stream that is the cover art of the file and no video. */
+  attachedPicture?: Buffer
+}
+
+/** What the packets of one stream add up to. */
+export interface StreamScan {
+  index: number
+  packets: number
+  /** The sum of the packets' sizes. */
+  bytes: number
+  /** The earliest time a packet is shown, and the latest time one ends. */
+  startInSeconds?: number
+  endInSeconds?: number
+  /** When the first packet is decoded; before 0 for a stream with a delay (B-frames, an encoder's priming). */
+  firstDtsInSeconds?: number
+  keyframes: Array<Keyframe>
 }
 
 export interface TextGlyph {

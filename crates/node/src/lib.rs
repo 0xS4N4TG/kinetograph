@@ -3,8 +3,8 @@
 //! is specified in `docs/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
-//! `parseRange`, `probeMedia`, `decodeAudio`, `modelUnsupported`, `version`) never open a device; `new Renderer()` does, once,
-//! and every scene given to it afterwards reuses that setup.
+//! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `version`) never
+//! open a device; `new Renderer()` does, once, and every scene given to it afterwards reuses that setup.
 //!
 //! Every call is synchronous and runs on the JS thread. A thrown error is an
 //! `Error` whose `code` is one of `error::Code`.
@@ -16,6 +16,7 @@ mod error;
 mod layout;
 mod media;
 mod preview;
+pub mod streams;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

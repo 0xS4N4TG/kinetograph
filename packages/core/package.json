@@ -23,6 +23,16 @@
     "./light-leaks": { "types": "./dist/light-leaks.d.ts", "default": "./dist/light-leaks.js" },
     "./starburst": { "types": "./dist/starburst.d.ts", "default": "./dist/starburst.js" },
     "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
+    "./sfx": { "types": "./dist/sfx.d.ts", "default": "./dist/sfx.js" },
+    "./sound-source": { "types": "./dist/sound-source.d.ts", "default": "./dist/sound-source.js" },
+    "./zod-types": { "types": "./dist/zod-types.d.ts", "default": "./dist/zod-types.js" },
+    "./timeline-utils": { "types": "./dist/timeline-utils/index.d.ts", "default": "./dist/timeline-utils/index.js" },
+    "./timeline-utils/audio-waveform-worker": { "types": "./dist/timeline-utils/audio-waveform-worker.d.ts", "default": "./dist/timeline-utils/audio-waveform-worker.js" },
+    "./media-parser": { "types": "./dist/media-parser/index.d.ts", "default": "./dist/media-parser/index.js" },
+    "./media-parser/*": { "types": "./dist/media-parser/*.d.ts", "default": "./dist/media-parser/*.js" },
+    "./webcodecs": { "types": "./dist/webcodecs/index.d.ts", "default": "./dist/webcodecs/index.js" },
+    "./webcodecs/*": { "types": "./dist/webcodecs/*.d.ts", "default": "./dist/webcodecs/*.js" },
+    "./canvas": { "types": "./dist/canvas.d.ts", "default": "./dist/canvas.js" },
     "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
     "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" },
     "./web/install": { "types": "./dist/web-install.d.ts", "default": "./dist/web-install.js" }
@@ -39,9 +49,14 @@
     "@kinetograph/scene": "0.1.0"
   },
   "peerDependencies": {
-    "react": "^19.3.0"
+    "react": "^19.3.0",
+    "zod": "^4.6.7"
+  },
+  "peerDependenciesMeta": {
+    "zod": { "optional": true }
   },
   "devDependencies": {
-    "react": "19.3.1"
+    "react": "19.3.1",
+    "zod": "4.6.7"
   }
 }

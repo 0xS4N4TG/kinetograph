@@ -73,6 +73,18 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   For new work, use the elements below. `<div>`s, `className`, stylesheets (`.css` imports, `<style>`, Tailwind) and SVG
   also work (compat mode, see "Compat mode and doctor"): the engine's own CSS engine styles, lays out and draws them,
   and a frame holding something it cannot draw yet is drawn without it (or approximated) and the command warns.
+- `@remotion/sfx` sounds (`whip`, `ding`, …) play with `<Audio src={whip} />`. The first render downloads each sound
+  into `~/.cache/kinetograph/sfx`; after that it is offline.
+- `@remotion/zod-types` (`zColor`, `zMatrix`, `zTextarea`) bundles for a `<Composition schema>`; Kinetograph does not
+  check the props against the schema.
+- `@remotion/timeline-utils` (waveform peaks and drawing, loop and frame-strip maths) works for local files; what needs
+  video pictures as WebCodecs frames (`extractFrames`) throws an `UnsupportedApiError` saying so.
+- `@remotion/media-parser`'s `parseMedia` reads local files (`staticFile('clip.mp4')`) through FFmpeg: duration,
+  dimensions, fps, codecs, tracks, rotation, sample rate, metadata, and the slow fields. Not the box tree
+  (`slowStructure`) or sample callbacks (`onVideoTrack`); URLs fail, as everywhere (offline).
+- `@remotion/webcodecs` bundles; `convertMedia` writes a file's sound to WAV and the lists and track checks work, the
+  rest (video encode and decode, `extractFrames`) throws an `UnsupportedApiError`. `@remotion/canvas` is Remotion
+  Studio's editor canvas: it bundles, and every call throws the same error.
 - Rendering is a pure function of the frame number. `Math.random()`, `Date.now()` and timers are driven by the frame;
   use `random(seed)` for jitter. Never read the real clock.
 - Register fonts before text is laid out. Text with a font that is not registered is a lint error.

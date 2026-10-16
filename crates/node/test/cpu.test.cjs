@@ -204,7 +204,40 @@ test('probeMedia errors', () => {
   rejects(() => native.probeMedia(`${media}/make_gif.py`, repo), 'INVALID_ARG', /make_gif\.py/);
 });
 
-const peak = (samples) => samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+test('probeStreams reads every stream of a container, with or without video', () => {
+  const talking = native.probeStreams(`${media}/with-audio.mp4`, repo);
+  assert.match(talking.format, /mp4/);
+  assert.ok(talking.durationInSeconds > 0.9 && talking.durationInSeconds < 1.1);
+  const [video, audio] = talking.streams;
+  assert.equal(video.kind, 'video');
+  assert.equal(video.codec, 'h264');
+  assert.ok(video.width > 0 && video.height > 0);
+  assert.equal(video.rotation, 0);
+  assert.equal(audio.kind, 'audio');
+  assert.equal(audio.codec, 'aac');
+  assert.ok(audio.sampleRate > 0 && audio.channels > 0);
+  assert.ok(audio.extradata instanceof Uint8Array && audio.extradata.length >= 2);
+
+  // A sound alone is a container too (probeMedia refuses it).
+  const wav = native.probeStreams(`${media}/tone-mono.wav`, repo);
+  assert.equal(wav.format, 'wav');
+  assert.equal(wav.streams.length, 1);
+  assert.deepEqual([wav.streams[0].kind, wav.streams[0].channels], ['audio', 1]);
+
+  rejects(() => native.probeStreams(`${media}/nope.mp4`, repo), 'IO', /nope\.mp4/);
+  rejects(() => native.probeStreams(`${media}/make_gif.py`, repo), 'INVALID_ARG', /make_gif\.py/);
+});
+
+test('scanStreams totals the packets of each stream and lists the keyframes', () => {
+  const scans = native.scanStreams(`${media}/clip.mp4`, repo);
+  assert.equal(scans.length, 1);
+  assert.equal(scans[0].packets, 48);
+  assert.ok(scans[0].bytes > 0);
+  assert.ok(scans[0].keyframes.length >= 1);
+  assert.ok(Math.abs(scans[0].endInSeconds - 2) < 0.1, scans[0].endInSeconds);
+});
+
+const peak = (samples) =>samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
 
 test('decodeAudio resamples and keeps mono or stereo', () => {
   // 0.25 s of a mono 8 kHz sine, to 48 kHz.

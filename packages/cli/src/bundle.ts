@@ -28,6 +28,12 @@ const REMOTION_PACKAGES = new Set([
   'media',
   'light-leaks',
   'starburst',
+  'sfx',
+  'zod-types',
+  'timeline-utils',
+  'media-parser',
+  'webcodecs',
+  'canvas',
 ]);
 
 export type Resolution =
@@ -128,6 +134,7 @@ export function syntheticEntry(entry: string): string {
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
     `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
+    `export { setMediaParserAddon } from '@kinetograph/core/media-parser';`,
     // DOM elements are styled, laid out and painted by the addon too (docs/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
     '',

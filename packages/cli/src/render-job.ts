@@ -1,4 +1,5 @@
 import { clampPcm, hasOnFrame, joinClips, renderAudio } from '@kinetograph/audio';
+import { resolveSoundSource } from '@kinetograph/core/sound-source';
 import type { Renderer, RenderSummary } from '@kinetograph/native';
 import type { AudioClipJson, SceneJson } from '@kinetograph/scene';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
@@ -81,7 +82,7 @@ export async function renderSource(
     let summary: RenderSummary;
     if (clips.length > 0 || hasOnFrame(first, last)) {
       options.progress?.('mixing audio');
-      const pcm = clampPcm(await renderAudio({ fps, first, last, clips, baseDir: source.baseDir }));
+      const pcm = clampPcm(await renderAudio({ fps, first, last, clips, baseDir: source.baseDir, resolveSource: resolveSoundSource }));
       summary = writer.finish(pcm);
     } else {
       summary = writer.finish();

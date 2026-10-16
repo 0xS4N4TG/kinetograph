@@ -17,6 +17,7 @@ interface ProjectModule {
   setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
   setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
   setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
+  setMediaParserAddon(addon: import('@kinetograph/core/media-parser').MediaParserAddon | null): void;
   setDomAddon(addon: object | null): void;
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
@@ -122,6 +123,12 @@ async function loadProject(entry: string, bundleFile?: string): Promise<ProjectM
   // A relative `src` is read from where the scenes' assets are (the entry's directory), not the working directory.
   mod.setMediaProbe((path, baseDir) => native().probeMedia(path, baseDir ?? dirname(entry)));
   mod.setAudioDecoder((path, sampleRate) => native().decodeAudio(path, sampleRate, dirname(entry)));
+  // `@remotion/media-parser` and `@remotion/webcodecs` read files through the addon, relative paths from the entry too.
+  mod.setMediaParserAddon({
+    probeStreams: (path, baseDir) => native().probeStreams(path, baseDir ?? dirname(entry)),
+    scanStreams: (path, baseDir) => native().scanStreams(path, baseDir ?? dirname(entry)),
+    decodeAudio: (path, sampleRate, baseDir) => native().decodeAudio(path, sampleRate, baseDir ?? dirname(entry)),
+  });
   return mod;
 }
 
