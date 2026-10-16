@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "The studio's browser UI (docs/AUTHORING.md §11.6): React, Vite, Tailwind CSS, shadcn/ui",
-  "license": "MIT OR Apache-2.0",
+  "license": "PolyForm-Small-Business-1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
