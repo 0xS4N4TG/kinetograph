@@ -50,6 +50,34 @@ describe('<Canvas>', () => {
     });
   });
 
+  it('writes shadows and filters on the commands and reports a url() filter, which is not drawn', () => {
+    const root = createSceneRoot();
+    const tree = root.render(
+      <TimelineContext.Provider value={timeline(0)}>
+        <Canvas
+          id="c"
+          width={40}
+          height={40}
+          draw={(ctx) => {
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowBlur = 6;
+            ctx.filter = 'url(#rough) blur(2px)';
+            ctx.fillRect(0, 0, 10, 10);
+          }}
+        />
+      </TimelineContext.Provider>,
+    );
+    root.unmount();
+    expect(canvasOf(tree.layers[0]).commands![0]).toMatchObject({
+      shadow: { color: '#00000080', blur: 6 },
+      filter: [{ type: 'blur', radius: 2 }],
+      unsupportedFilter: 'url(#rough)',
+    });
+    expect(tree.unsupported).toEqual([
+      { path: expect.stringContaining('<Canvas>'), element: 'Canvas', property: 'filter', value: 'url(#rough)', reason: expect.stringContaining('url()') },
+    ]);
+  });
+
   it('draws on a new, empty context each time the tree is read', () => {
     let calls = 0;
     const draw = (ctx: CanvasContext2D) => {

@@ -198,6 +198,18 @@ impl<'a> Painter<'a> {
         if !(width > 0.0 && height > 0.0) {
             return Vec::new();
         }
+        if kind == "canvas" {
+            let mut urls = Vec::new();
+            url_filters(&drawn, &mut urls);
+            for url in urls {
+                self.report(
+                    node,
+                    "filter",
+                    url,
+                    "a url() filter is not drawn on a canvas",
+                );
+            }
+        }
         let id = self.layer_id(node, kind);
         let mut layer = Layer::new(&id, kind)
             .set("width", num(width))
@@ -455,5 +467,19 @@ impl<'a> Painter<'a> {
 
     pub fn note_reach(&mut self, reach: f64) {
         self.margin_reach = self.margin_reach.max(reach);
+    }
+}
+
+/// The `url()` filters among a canvas's commands, also inside the canvases
+/// they draw: the context wrote them in `unsupportedFilter` because it could
+/// not have the renderer draw them.
+fn url_filters(commands: &Value, out: &mut Vec<String>) {
+    for command in commands.as_array().into_iter().flatten() {
+        if let Some(url) = command.get("unsupportedFilter").and_then(Value::as_str) {
+            out.push(url.to_string());
+        }
+        if let Some(inner) = command.pointer("/source/commands") {
+            url_filters(inner, out);
+        }
     }
 }
