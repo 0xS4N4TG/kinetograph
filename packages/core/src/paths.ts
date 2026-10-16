@@ -10,7 +10,12 @@
 //    path anyway, but a leading `m` does not move);
 //  - `scalePath` and `reversePath` reduce the path first, so arcs, quadratics
 //    and shorthands come back as cubics and lines;
-//  - `reversePath` writes `Z` glued to the last number.
+//  - `reversePath` writes `Z` glued to the last number;
+//  - `interpolatePath`, `interpolatePaths` and `warpPath` follow the published package's procedure step by step
+//    (segments split by de Casteljau until the paths are as long as each other), so their output is the same digit
+//    for digit, except where an arc was turned into cubics, whose last digits differ.
+
+import { interpolate, type ExtrapolateType, type InterpolateOptions } from './interpolate.js';
 
 // ---- instruction types ----
 
@@ -117,7 +122,8 @@ export function parsePath(path: string): Instruction[] {
       instructions.push({ type: 'Z' });
       continue;
     }
-    if (numbers.length === 0 || numbers.length % size !== 0) {
+    if (numbers.length === 0) throw new Error(`Malformed path data: ${command} was expected to have numbers afterwards`);
+    if (numbers.length % size !== 0) {
       throw new Error(
         `Malformed path data: ${command} was expected to have a multiple of ${size} numbers, but got "${command} ${numbers.join(' ')} instead"`,
       );
@@ -741,7 +747,11 @@ function cubicExtremes(p0: number, p1: number, p2: number, p3: number): number[]
 }
 
 export function getBoundingBox(path: string): BoundingBox {
-  const reduced = reduceInstructions(parsePath(path));
+  return boundingBoxOf(reduceInstructions(parsePath(path)));
+}
+
+/** The bounding box of reduced instructions: the curves' extremes count, their control points do not. */
+function boundingBoxOf(reduced: ReducedInstruction[]): BoundingBox {
   let x1 = Infinity;
   let y1 = Infinity;
   let x2 = -Infinity;
@@ -886,120 +896,309 @@ export function reversePath(path: string): string {
 }
 
 // ---- interpolation ----
+//
+// Two paths are blended by giving them the same number of instructions (the shorter one has its segments split, by
+// de Casteljau's algorithm, in proportion to the longer), turning every instruction into the kind of its partner, and
+// mixing the coordinates. This is the published package's procedure, itself taken from d3-interpolate-path.
 
-/** A path as a list of cubic-or-line instructions, with its subpaths kept apart, for interpolation. */
-function toInterpolable(path: string): ReducedInstruction[] {
-  return reduceInstructions(parsePath(path));
-}
+type Pair = [number, number];
 
-function segmentLength(from: Point, r: LineTo | CurveTo): number {
-  return r.type === 'L'
-    ? Math.hypot(r.x - from.x, r.y - from.y)
-    : cubicLengthTo({ kind: 'C', x0: from.x, y0: from.y, x1: r.cp1x, y1: r.cp1y, x2: r.cp2x, y2: r.cp2y, x3: r.x, y3: r.y }, 1);
-}
-
-/** Splits one drawing instruction in two at its middle. */
-function halve(from: Point, r: LineTo | CurveTo): [LineTo | CurveTo, LineTo | CurveTo] {
-  if (r.type === 'L') {
-    const mid = { x: (from.x + r.x) / 2, y: (from.y + r.y) / 2 };
-    return [{ type: 'L', x: mid.x, y: mid.y }, r];
+/** de Casteljau: the curve through `points` (any order) cut at `t`, as the two curves either side of the cut. */
+function decasteljau(points: Pair[], t: number): { left: Pair[]; right: Pair[] } {
+  const left: Pair[] = [];
+  const right: Pair[] = [];
+  let level = points;
+  while (level.length > 1) {
+    left.push(level[0]!);
+    right.push(level[level.length - 1]!);
+    level = level.slice(1).map((next, i): Pair => [(1 - t) * level[i]![0] + t * next[0], (1 - t) * level[i]![1] + t * next[1]]);
   }
-  const c: Cubic = { kind: 'C', x0: from.x, y0: from.y, x1: r.cp1x, y1: r.cp1y, x2: r.cp2x, y2: r.cp2y, x3: r.x, y3: r.y };
-  const lerp = (a: number, b: number) => (a + b) / 2;
-  const x01 = lerp(c.x0, c.x1), y01 = lerp(c.y0, c.y1);
-  const x12 = lerp(c.x1, c.x2), y12 = lerp(c.y1, c.y2);
-  const x23 = lerp(c.x2, c.x3), y23 = lerp(c.y2, c.y3);
-  const xa = lerp(x01, x12), ya = lerp(y01, y12);
-  const xb = lerp(x12, x23), yb = lerp(y12, y23);
-  const xm = lerp(xa, xb), ym = lerp(ya, yb);
-  return [
-    { type: 'C', cp1x: x01, cp1y: y01, cp2x: xa, cp2y: ya, x: xm, y: ym },
-    { type: 'C', cp1x: xb, cp1y: yb, cp2x: x23, cp2y: y23, x: c.x3, y: c.y3 },
-  ];
+  left.push(level[0]!);
+  right.push(level[0]!);
+  return { left, right: right.reverse() };
 }
 
-/** Adds drawing instructions to `list` by halving its longest one, until it has `count` of them. */
-function grow(list: ReducedInstruction[], count: number): ReducedInstruction[] {
-  const out = [...list];
-  const drawing = () => out.filter((r) => r.type !== 'M' && r.type !== 'Z').length;
-  while (drawing() < count) {
-    let at: Point = { x: 0, y: 0 };
-    let best = -1;
-    let bestLength = -1;
-    let bestFrom: Point = at;
-    out.forEach((r, index) => {
-      if (r.type === 'M') at = { x: r.x, y: r.y };
-      else if (r.type === 'L' || r.type === 'C') {
-        const size = segmentLength(at, r);
-        if (size > bestLength) {
-          bestLength = size;
-          best = index;
-          bestFrom = at;
-        }
-        at = { x: r.x, y: r.y };
-      }
-    });
-    if (best < 0) break;
-    out.splice(best, 1, ...halve(bestFrom, out[best] as LineTo | CurveTo));
+/** `points` (a line or a cubic's four points) cut into `count` curves of equal parameter length, each as its points. */
+function splitCurvePoints(points: Pair[], count: number): Pair[][] {
+  const pieces: Pair[][] = [];
+  let rest = points;
+  const step = 1 / count;
+  for (let i = 0; i < count - 1; i++) {
+    const cut = decasteljau(rest, step / (1 - step * i));
+    pieces.push(cut.left);
+    rest = cut.right;
   }
-  return out;
+  pieces.push(rest);
+  return pieces;
 }
 
-const toCurve = (from: Point, r: LineTo): CurveTo => ({
-  type: 'C',
-  cp1x: from.x,
-  cp1y: from.y,
-  cp2x: r.x,
-  cp2y: r.y,
-  x: r.x,
-  y: r.y,
-});
+/** The drawing instruction for a piece of a curve: a line from two points, a cubic from four. */
+function instructionFromPoints(points: Pair[]): LineTo | CurveTo {
+  const [x, y] = points[points.length - 1]!;
+  if (points.length === 4) {
+    return { type: 'C', cp1x: points[1]![0], cp1y: points[1]![1], cp2x: points[2]![0], cp2y: points[2]![1], x, y };
+  }
+  return { type: 'L', x, y };
+}
+
+/**
+ * The instructions that lead from `start` to `end` in `count` steps: a line or cubic is split into `count` pieces, and
+ * anything else (a move, a close) is `start` repeated, ending in `end`.
+ */
+function splitSegment(start: ReducedInstruction, end: ReducedInstruction, count: number): ReducedInstruction[] {
+  if (end.type === 'L' || end.type === 'C') {
+    if (start.type === 'Z') return [];
+    const points: Pair[] = [[start.x, start.y]];
+    if (end.type === 'C') points.push([end.cp1x, end.cp1y], [end.cp2x, end.cp2y]);
+    points.push([end.x, end.y]);
+    return splitCurvePoints(points, count).map(instructionFromPoints);
+  }
+  const copy: ReducedInstruction = start.type === 'M' ? { type: 'L', x: start.x, y: start.y } : start;
+  return [...new Array<ReducedInstruction>(count - 1).fill(copy), end];
+}
+
+/** `shorter` with instructions added by splitting segments, until it is as long as `reference`; every original point stays. */
+function extendInstructions(shorter: ReducedInstruction[], reference: ReducedInstruction[]): ReducedInstruction[] {
+  const ratio = (shorter.length - 1) / (reference.length - 1);
+  // How many instructions each segment of `shorter` becomes.
+  const counts: number[] = [];
+  for (let i = 0; i < reference.length - 1; i++) {
+    const at = Math.floor(ratio * i);
+    counts[at] = (counts[at] ?? 0) + 1;
+  }
+  const extended: ReducedInstruction[] = [shorter[0]!];
+  counts.forEach((count, i) => {
+    if (i === shorter.length - 1) {
+      // Past the last segment: its end repeated (a move becoming a line).
+      const last = shorter[shorter.length - 1]!;
+      extended.push(...new Array<ReducedInstruction>(count).fill(last.type === 'M' ? { type: 'L', x: last.x, y: last.y } : last));
+    } else {
+      extended.push(...splitSegment(shorter[i]!, shorter[i + 1]!, count));
+    }
+  });
+  return extended;
+}
+
+/** Where the pen is after `instructions`. */
+function endOf(instructions: ReducedInstruction[]): Point {
+  let at: Point = { x: 0, y: 0 };
+  let start: Point = at;
+  for (const r of instructions) {
+    if (r.type === 'Z') at = start;
+    else at = { x: r.x, y: r.y };
+    if (r.type === 'M') start = at;
+  }
+  return at;
+}
+
+/** `command` written as `like`'s kind, from the pen at `from`: a line is a cubic that stays on its end point, a cubic a line to its end. */
+function asKindOf(command: ReducedInstruction, like: ReducedInstruction, from: Point): ReducedInstruction {
+  if (command.type === 'M' || like.type === 'M' || command.type === like.type) return { ...command };
+  if (like.type === 'C') {
+    if (command.type !== 'L') throw new Error('unexpected');
+    return { type: 'C', cp1x: from.x, cp1y: from.y, cp2x: command.x, cp2y: command.y, x: command.x, y: command.y };
+  }
+  if (like.type === 'L') {
+    if (command.type !== 'C') throw new Error('unexpected');
+    return { type: 'L', x: command.x, y: command.y };
+  }
+  return { type: 'Z' };
+}
+
+/** A path as reduced instructions; an error for one with none. */
+function reducedOrThrow(path: string): ReducedInstruction[] {
+  const reduced = reduceInstructions(parsePath(path));
+  if (reduced.length === 0) throw new TypeError(`SVG Path "${path}" is not valid`);
+  return reduced;
+}
+
+/** The instruction `progress` of the way from `first` to `second`, which are of one kind. */
+function mixInstructions(progress: number, first: ReducedInstruction, second: ReducedInstruction): ReducedInstruction {
+  const mix = (x: number, y: number) => (1 - progress) * x + progress * y;
+  if (first.type === 'M' && second.type === 'M') return { type: 'M', x: mix(first.x, second.x), y: mix(first.y, second.y) };
+  if (first.type === 'L' && second.type === 'L') return { type: 'L', x: mix(first.x, second.x), y: mix(first.y, second.y) };
+  if (first.type === 'C' && second.type === 'C') {
+    return {
+      type: 'C',
+      cp1x: mix(first.cp1x, second.cp1x),
+      cp2x: mix(first.cp2x, second.cp2x),
+      cp1y: mix(first.cp1y, second.cp1y),
+      cp2y: mix(first.cp2y, second.cp2y),
+      x: mix(first.x, second.x),
+      y: mix(first.y, second.y),
+    };
+  }
+  if (first.type === 'Z' && second.type === 'Z') return { type: 'Z' };
+  throw new Error('mismatch');
+}
 
 export function interpolatePath(progress: number, firstPath: string, secondPath: string): string {
   // The ends are the paths themselves, whatever their structure.
   if (progress === 0) return firstPath;
   if (progress === 1) return secondPath;
-  let a = toInterpolable(firstPath);
-  let b = toInterpolable(secondPath);
-  const drawing = (list: ReducedInstruction[]) => list.filter((r) => r.type !== 'M' && r.type !== 'Z').length;
-  if (drawing(a) < drawing(b)) a = grow(a, drawing(b));
-  else if (drawing(b) < drawing(a)) b = grow(b, drawing(a));
-  if (a.length !== b.length) {
-    throw new Error('The two paths cannot be interpolated: they do not have the same structure');
+  let a = reducedOrThrow(firstPath);
+  let b = reducedOrThrow(secondPath);
+  // The paths close when both do; otherwise the close is left out.
+  const closed = a[a.length - 1]!.type === 'Z' && b[b.length - 1]!.type === 'Z';
+  if (a[a.length - 1]!.type === 'Z') a = a.slice(0, -1);
+  if (b[b.length - 1]!.type === 'Z') b = b.slice(0, -1);
+  if (a.length === 0) a = [b[0]!];
+  else if (b.length === 0) b = [a[0]!];
+  if (b.length > a.length) a = extendInstructions(a, b);
+  else if (b.length < a.length) b = extendInstructions(b, a);
+  const out = a.map((from, i) => mixInstructions(progress, asKindOf(from, b[i]!, endOf(a.slice(0, i))), b[i]!));
+  return serializeInstructions(closed ? [...out, { type: 'Z' }] : out);
+}
+
+export type InterpolatePathsOptions = Pick<InterpolateOptions, 'easing' | 'posterize'> & {
+  extrapolateLeft?: Exclude<ExtrapolateType, 'identity'>;
+  extrapolateRight?: Exclude<ExtrapolateType, 'identity'>;
+};
+
+/** Rounds away the floating-point noise of a blend (`0.30000000000000004`) without touching whole numbers or small coordinates. */
+function tidyNumbers(path: string): string {
+  return path.replace(/-?\d*\.?\d+(?:e[+-]?\d+)?/gi, (text) => {
+    const value = Number(text);
+    return Number.isInteger(value) ? text : String(Number(value.toPrecision(15)));
+  });
+}
+
+/**
+ * A path blended through several: `input` is mapped over `inputRange` as `interpolate` does (with its `easing`,
+ * `posterize` and extrapolation), and each path counts in proportion to its weight at that point. At a keyframe the
+ * path is returned as written.
+ */
+export function interpolatePaths(
+  input: number,
+  inputRange: readonly number[],
+  outputRange: readonly string[],
+  options?: InterpolatePathsOptions,
+): string {
+  if (!Array.isArray(outputRange)) throw new TypeError('outputRange must be an array of SVG path strings');
+  for (const path of outputRange) {
+    if (typeof path !== 'string') throw new TypeError('outputRange must contain only SVG path strings');
   }
-  const mix = (x: number, y: number) => x + (y - x) * progress;
-  const out: ReducedInstruction[] = [];
-  let pa: Point = { x: 0, y: 0 };
-  let pb: Point = { x: 0, y: 0 };
-  for (let k = 0; k < a.length; k++) {
-    let ra = a[k]!;
-    let rb = b[k]!;
-    if (ra.type === 'M' && rb.type === 'M') {
-      out.push({ type: 'M', x: mix(ra.x, rb.x), y: mix(ra.y, rb.y) });
-    } else if (ra.type === 'Z' && rb.type === 'Z') {
-      out.push(ra);
-    } else {
-      if (ra.type === 'L' && rb.type === 'C') ra = toCurve(pa, ra);
-      else if (ra.type === 'C' && rb.type === 'L') rb = toCurve(pb, rb);
-      if (ra.type === 'L' && rb.type === 'L') out.push({ type: 'L', x: mix(ra.x, rb.x), y: mix(ra.y, rb.y) });
-      else if (ra.type === 'C' && rb.type === 'C') {
-        out.push({
-          type: 'C',
-          cp1x: mix(ra.cp1x, rb.cp1x),
-          cp1y: mix(ra.cp1y, rb.cp1y),
-          cp2x: mix(ra.cp2x, rb.cp2x),
-          cp2y: mix(ra.cp2y, rb.cp2y),
-          x: mix(ra.x, rb.x),
-          y: mix(ra.y, rb.y),
-        });
-      } else {
-        throw new Error('The two paths cannot be interpolated: their subpaths do not line up');
-      }
+  for (const side of ['extrapolateLeft', 'extrapolateRight'] as const) {
+    const extrapolation = options?.[side];
+    if (extrapolation !== undefined && extrapolation !== 'extend' && extrapolation !== 'clamp' && extrapolation !== 'wrap') {
+      throw new TypeError(`${side} must be "extend", "clamp", or "wrap" for interpolatePaths()`);
     }
-    if (ra.type !== 'Z') pa = { x: (ra as { x: number }).x, y: (ra as { y: number }).y };
-    if (rb.type !== 'Z') pb = { x: (rb as { x: number }).x, y: (rb as { y: number }).y };
   }
-  return serializeInstructions(out);
+  // Each path's weight is the interpolation of a 1 at its keyframe and 0 at the others, so the segment, the easing
+  // overshoot and the extrapolation all act on the weights as they act on a number.
+  const weights = outputRange.map((_, pathIndex) =>
+    interpolate(input, inputRange, outputRange.map((__, index) => (index === pathIndex ? 1 : 0)), options),
+  );
+  const exact = weights.findIndex((weight, index) => weight === 1 && weights.every((other, otherIndex) => otherIndex === index || other === 0));
+  if (exact !== -1) return outputRange[exact]!;
+
+  const contributing = outputRange.map((path, index) => ({ path, weight: weights[index]! })).filter(({ weight }) => weight !== 0);
+  const paths = contributing.map(({ path }) => reducedOrThrow(path));
+  const closed = paths.every((commands) => commands[commands.length - 1]!.type === 'Z');
+  const open = paths.map((commands) => (commands[commands.length - 1]!.type === 'Z' ? commands.slice(0, -1) : commands));
+  const reference = open.reduce((longest, commands) => (commands.length > longest.length ? commands : longest));
+  const extended = open.map((commands) => (commands.length < reference.length ? extendInstructions(commands, reference) : commands));
+
+  const result = reference.map((_, at): ReducedInstruction => {
+    const commands = extended.map((path) => path[at]!);
+    if (commands.some((command) => command.type === 'Z')) {
+      if (commands.every((command) => command.type === 'Z')) return { type: 'Z' };
+      throw new TypeError('Cannot interpolate SVG paths with different subpath structures');
+    }
+    // A cubic anywhere makes the instruction a cubic everywhere, so every curve is kept.
+    const target = commands.find((command) => command.type === 'C') ?? commands[0]!;
+    const sameKind = commands.map((command, pathIndex) => {
+      if ((command.type === 'M') !== (target.type === 'M')) {
+        throw new TypeError('Cannot interpolate SVG paths with different subpath structures');
+      }
+      return asKindOf(command, target, endOf(extended[pathIndex]!.slice(0, at)));
+    });
+    const coordinates = sameKind.map((command): number[] => {
+      if (command.type === 'Z') return [];
+      return command.type === 'C' ? [command.x, command.y, command.cp1x, command.cp1y, command.cp2x, command.cp2y] : [command.x, command.y];
+    });
+    const values = coordinates[0]!.map((base, k) => {
+      const blended = coordinates.reduce((value, path, pathIndex) => value + (path[k]! - base) * contributing[pathIndex]!.weight, base);
+      // Opposite large coordinates can overflow in the subtraction: weigh the coordinates themselves then.
+      return Number.isFinite(blended) ? blended : coordinates.reduce((sum, path, pathIndex) => sum + path[k]! * contributing[pathIndex]!.weight, 0);
+    });
+    if (target.type === 'C') {
+      return { type: 'C', x: values[0]!, y: values[1]!, cp1x: values[2]!, cp1y: values[3]!, cp2x: values[4]!, cp2y: values[5]! };
+    }
+    return { type: target.type as 'M' | 'L', x: values[0]!, y: values[1]! };
+  });
+  if (closed) result.push({ type: 'Z' });
+  return tidyNumbers(serializeInstructions(result));
+}
+
+// ---- warping ----
+
+export type WarpPathFn = (point: { x: number; y: number }) => { x: number; y: number };
+
+/** `points` (a line or cubic) cut in two at the middle, the way the warp does it: `a + (b - a) * t` at each level. */
+function bisect(points: Pair[]): [Pair[], Pair[]] {
+  const levels: Pair[][] = [points];
+  while (levels.length < points.length) {
+    const previous = levels[levels.length - 1]!;
+    levels.push(previous.slice(1).map((next, i): Pair => [previous[i]![0] + (next[0] - previous[i]![0]) * 0.5, previous[i]![1] + (next[1] - previous[i]![1]) * 0.5]));
+  }
+  return [levels.map((level) => level[0]!), levels.map((_, i) => levels[levels.length - 1 - i]![i]!)];
+}
+
+/** The pieces of a line or cubic, cut in halves until each piece's ends are no further apart than `threshold`, in order. */
+function subdivide(points: Pair[], threshold: number): Pair[][] {
+  const stack = [points];
+  const pieces: Pair[][] = [];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const first = current[0]!;
+    const last = current[current.length - 1]!;
+    if (Math.sqrt((last[0] - first[0]) ** 2 + (last[1] - first[1]) ** 2) > threshold) {
+      // The first half is popped next, so it goes on last.
+      stack.push(...bisect(current).reverse());
+    } else {
+      pieces.push(current);
+    }
+  }
+  return pieces;
+}
+
+/** A close as the line back to the start of its subpath followed by the close, so that the line is warped too. */
+function withClosingLines(instructions: ReducedInstruction[]): ReducedInstruction[] {
+  let start: Pair = [0, 0];
+  return instructions.flatMap((r): ReducedInstruction[] => {
+    if (r.type === 'Z') return [{ type: 'L', x: start[0], y: start[1] }, r];
+    if (r.type === 'M') start = [r.x, r.y];
+    return [r];
+  });
+}
+
+/**
+ * Remaps the coordinates of a path with `transformer`, to warp it. Lines and curves are first cut into pieces no
+ * longer than `interpolationThreshold` (a hundredth of the path's longer side by default), so that the warp bends
+ * them rather than only their end points; the ends and control points of each piece are then moved.
+ */
+export function warpPath(path: string, transformer: WarpPathFn, options?: { interpolationThreshold?: number }): string {
+  const closed = withClosingLines(reduceInstructions(parsePath(path)));
+  const box = boundingBoxOf(closed);
+  const threshold = options?.interpolationThreshold ?? Math.max(box.y2 - box.y1, box.x2 - box.x1) * 0.01;
+  let pen: Pair = [0, 0];
+  const warped = closed.flatMap((r): ReducedInstruction[] => {
+    const points: Pair[] = [pen];
+    if (r.type !== 'Z') pen = [r.x, r.y];
+    if (r.type === 'C') points.push([r.cp1x, r.cp1y], [r.cp2x, r.cp2y], [r.x, r.y]);
+    if (r.type === 'L') points.push([r.x, r.y]);
+    const pieces = r.type === 'C' || r.type === 'L' ? subdivide(points, threshold).map(instructionFromPoints) : [r];
+    return pieces.map((piece): ReducedInstruction => {
+      if (piece.type === 'Z') return piece;
+      const { x, y } = transformer({ x: piece.x, y: piece.y });
+      if (piece.type !== 'C') return { type: piece.type, x, y };
+      const cp1 = transformer({ x: piece.cp1x, y: piece.cp1y });
+      const cp2 = transformer({ x: piece.cp2x, y: piece.cp2y });
+      return { type: 'C', x, y, cp1x: cp1.x, cp1y: cp1.y, cp2x: cp2.x, cp2y: cp2.y };
+    });
+  });
+  return serializeInstructions(warped);
 }
 
 /** A view box grown (or shrunk) about its middle by `scale`. */

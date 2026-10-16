@@ -4,8 +4,10 @@
 // The addon is found the way `layout-utils` finds `layoutText`: the host hands it over with `setMediaProbe`, and
 // failing that it is looked up when first needed (a project that never probes a file does not need the addon).
 
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { imageSizeOfBytes, projectFileOf, remoteMessage } from '@kinetograph/compat/shim';
 import type { MediaInfo } from '@kinetograph/native';
 
 export type ProbeMedia = (path: string, baseDir?: string) => MediaInfo;
@@ -291,30 +293,193 @@ export function visualizeAudio(options: {
   return frames[1]!.map((_, i) => (frames[0]![i]! + frames[1]![i]! + frames[2]![i]!) / 3);
 }
 
+/** How `getWaveformPortion` writes its bars: 0..1, or alternating below and above 0 (-1..1) so that they draw as a line. */
+export type SampleOutputRange = 'zero-to-one' | 'minus-one-to-one';
+
+export interface WaveformBar {
+  index: number;
+  amplitude: number;
+}
+
+function validateChannel(channel: unknown, numberOfChannels: number): void {
+  if (typeof channel !== 'number') throw new TypeError('"channel" must be a number');
+  if (channel % 1 !== 0) throw new TypeError(`"channel" must an integer, got ${channel}`);
+  if (Number.isNaN(channel)) throw new TypeError('The channel parameter is NaN.');
+  if (channel < 0) throw new TypeError('"channel" cannot be negative');
+  if (channel > numberOfChannels - 1) {
+    throw new TypeError(`"channel" must be ${numberOfChannels - 1} or lower. The audio has ${numberOfChannels} channels`);
+  }
+}
+
+/** `samples` as `numberOfSamples` bars: each the mean absolute value of its block of samples. */
+function waveformBars(samples: Float32Array, numberOfSamples: number, outputRange: SampleOutputRange, normalize: boolean): number[] {
+  const blockSize = Math.floor(samples.length / numberOfSamples);
+  if (blockSize === 0) return [];
+  let bars: number[] = [];
+  for (let i = 0; i < numberOfSamples; i++) {
+    let sum = 0;
+    for (let j = 0; j < blockSize; j++) sum += Math.abs(samples[blockSize * i + j]!);
+    bars.push(sum / blockSize);
+  }
+  if (normalize) {
+    const peak = Math.max(...bars);
+    const multiplier = peak === 0 ? 0 : peak ** -1;
+    bars = bars.map((bar) => bar * multiplier);
+  }
+  return outputRange === 'minus-one-to-one' ? bars.map((bar, i) => (i % 2 === 0 ? bar * -1 : bar)) : bars;
+}
+
 /**
  * The loudness of a stretch of the audio in `numberOfSamples` equal bars, as `@remotion/media-utils`'
- * `getWaveformPortion`: each bar's `amplitude` is the mean absolute sample of the channels averaged, 0..1.
+ * `getWaveformPortion`: of one `channel` (the first by default), each bar's `amplitude` the mean absolute sample of its
+ * block, scaled so that the loudest bar is 1 unless `normalize` is false. The stretch may reach outside the file
+ * (silence there); `dataOffsetInSeconds` says where in the video the data starts.
  */
 export function getWaveformPortion(options: {
   audioData: MediaUtilsAudioData;
   startTimeInSeconds: number;
   durationInSeconds: number;
   numberOfSamples: number;
-}): { index: number; amplitude: number }[] {
-  const { audioData, startTimeInSeconds, durationInSeconds, numberOfSamples } = options;
-  if (!(Number.isInteger(numberOfSamples) && numberOfSamples > 0)) {
-    throw new RangeError(`getWaveformPortion: numberOfSamples must be a whole number above 0, got ${String(numberOfSamples)}`);
+  channel?: number;
+  outputRange?: SampleOutputRange;
+  dataOffsetInSeconds?: number;
+  normalize?: boolean;
+}): WaveformBar[] {
+  const { audioData, startTimeInSeconds, durationInSeconds, numberOfSamples, channel = 0, outputRange = 'zero-to-one', dataOffsetInSeconds, normalize = true } = options;
+  validateChannel(channel, audioData.numberOfChannels);
+  const waveform = audioData.channelWaveforms[channel]!;
+  const offset = dataOffsetInSeconds ?? 0;
+  const startSample = Math.floor((startTimeInSeconds - offset) * audioData.sampleRate);
+  const endSample = Math.floor((startTimeInSeconds - offset + durationInSeconds) * audioData.sampleRate);
+  // Only the part of the stretch that lies outside the file is silence added; a negative index would count from the end.
+  const before = Math.max(0, Math.min(endSample, 0) - startSample);
+  const after = Math.max(0, endSample - Math.max(startSample, waveform.length));
+  const inside = waveform.slice(Math.min(Math.max(startSample, 0), waveform.length), Math.min(Math.max(endSample, 0), waveform.length));
+  const samples = new Float32Array(before + inside.length + after);
+  samples.set(inside, before);
+  return waveformBars(samples, numberOfSamples, outputRange, normalize).map((amplitude, index) => ({ index, amplitude }));
+}
+
+/**
+ * The waveform around `frame`, as `@remotion/media-utils`' `visualizeAudioWaveform`: `numberOfSamples` values from -1 to 1
+ * (alternating below and above 0) for the `windowInSeconds` centred on the frame's time, to draw as a line.
+ */
+export function visualizeAudioWaveform(options: {
+  audioData: MediaUtilsAudioData;
+  frame: number;
+  fps: number;
+  windowInSeconds: number;
+  numberOfSamples: number;
+  channel?: number;
+  dataOffsetInSeconds?: number;
+  normalize?: boolean;
+}): number[] {
+  const { audioData, frame, fps, windowInSeconds, numberOfSamples, channel, dataOffsetInSeconds, normalize = false } = options;
+  if (windowInSeconds * audioData.sampleRate < numberOfSamples) {
+    throw new TypeError(`${windowInSeconds}s audiodata does not have ${numberOfSamples} bars. Increase windowInSeconds or decrease numberOfSamples`);
   }
-  const start = Math.round(startTimeInSeconds * audioData.sampleRate);
-  const length = Math.max(numberOfSamples, Math.round(durationInSeconds * audioData.sampleRate));
-  const samples = monoWindow(audioData, start, length);
-  const bars: { index: number; amplitude: number }[] = [];
-  for (let index = 0; index < numberOfSamples; index++) {
-    const from = Math.floor((index * length) / numberOfSamples);
-    const to = Math.floor(((index + 1) * length) / numberOfSamples);
-    let sum = 0;
-    for (let i = from; i < to; i++) sum += Math.abs(samples[i]!);
-    bars.push({ index, amplitude: Math.min(1, to > from ? sum / (to - from) : 0) });
+  return getWaveformPortion({
+    audioData,
+    startTimeInSeconds: frame / fps - windowInSeconds / 2,
+    durationInSeconds: windowInSeconds,
+    numberOfSamples,
+    outputRange: 'minus-one-to-one',
+    channel,
+    dataOffsetInSeconds,
+    normalize,
+  }).map((bar) => bar.amplitude);
+}
+
+/** `getAudioDurationInSeconds` under its old name. */
+export const getAudioDuration = getAudioDurationInSeconds;
+
+// ---- Small helpers ----
+
+/** The pixel size of the image at `src`: a project file or a `data:` URL, from its header. */
+export async function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  if (typeof src !== 'string' || src === '') throw new TypeError(`src must be an image path, but got ${JSON.stringify(src)}`);
+  if (/^https?:\/\//i.test(src)) throw new Error(remoteMessage('getImageDimensions', src));
+  let bytes: Uint8Array;
+  if (src.startsWith('data:')) {
+    const comma = src.indexOf(',');
+    const body = src.slice(comma + 1);
+    bytes = src.slice(5, comma).endsWith(';base64') ? Buffer.from(body, 'base64') : Buffer.from(decodeURIComponent(body));
+  } else {
+    const file = projectFileOf(src);
+    if (file === null) throw new Error(`Cannot read the image at ${src}: it is not a file of the project`);
+    bytes = readFileSync(file);
   }
-  return bars;
+  const size = imageSizeOfBytes(bytes);
+  if (size === null) throw new Error(`Cannot read the size of the image at ${src}: it is not a PNG, JPEG, GIF, WebP, BMP or SVG`);
+  return size;
+}
+
+/**
+ * A smooth SVG path (`M x,y C … ` cubics) through `points`: each curve's control points lie along the line between the
+ * points either side of its end, a fifth of that line's length away.
+ */
+export function createSmoothSvgPath({ points }: { points: { x: number; y: number }[] }): string {
+  const SMOOTHING = 0.2;
+  type Point = { x: number; y: number };
+  // The control point beside `current`, along the line from `previous` to `next` (reversed for the arriving side).
+  const controlPoint = (current: Point, previous: Point | undefined, next: Point | undefined, reverse: boolean): Point => {
+    const from = previous ?? current;
+    const to = next ?? current;
+    const lengthX = to.x - from.x;
+    const lengthY = to.y - from.y;
+    const angle = Math.atan2(lengthY, lengthX) + (reverse ? Math.PI : 0);
+    const length = Math.sqrt(lengthX ** 2 + lengthY ** 2) * SMOOTHING;
+    return { x: current.x + Math.cos(angle) * length, y: current.y + Math.sin(angle) * length };
+  };
+  return points.reduce((path, current, i, all) => {
+    if (i === 0) return `M ${current.x},${current.y}`;
+    const previous = all[i - 1]!;
+    const leaving = controlPoint(previous, all[i - 2], current, false);
+    const arriving = controlPoint(current, previous, all[i + 1], true);
+    return `${path} C ${leaving.x},${leaving.y} ${arriving.x},${arriving.y} ${current.x},${current.y}`;
+  }, '');
+}
+
+/** What `audioBufferToDataUrl` reads of an `AudioBuffer`. */
+export interface AudioBufferLike {
+  numberOfChannels: number;
+  sampleRate: number;
+  getChannelData(channel: number): Float32Array;
+}
+
+/**
+ * A 32-bit float WAV of `buffer` as a `data:audio/wav;base64,…` URL. Stereo is interleaved; any other channel count
+ * writes the first channel's samples under a header that says how many there are, as Remotion's does.
+ */
+export function audioBufferToDataUrl(buffer: AudioBufferLike): string {
+  const { numberOfChannels, sampleRate } = buffer;
+  let samples = buffer.getChannelData(0);
+  if (numberOfChannels === 2) {
+    const right = buffer.getChannelData(1);
+    const interleaved = new Float32Array(samples.length + right.length);
+    for (let i = 0; i < samples.length; i++) {
+      interleaved[2 * i] = samples[i]!;
+      interleaved[2 * i + 1] = right[i]!;
+    }
+    samples = interleaved;
+  }
+  const bytesPerSample = 4;
+  const blockAlign = numberOfChannels * bytesPerSample;
+  const wav = new DataView(new ArrayBuffer(44 + samples.length * bytesPerSample));
+  const text = (offset: number, value: string) => [...value].forEach((ch, i) => wav.setUint8(offset + i, ch.charCodeAt(0)));
+  text(0, 'RIFF');
+  wav.setUint32(4, 36 + samples.length * bytesPerSample, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  wav.setUint32(16, 16, true);
+  wav.setUint16(20, 3, true); // IEEE float
+  wav.setUint16(22, numberOfChannels, true);
+  wav.setUint32(24, sampleRate, true);
+  wav.setUint32(28, sampleRate * blockAlign, true);
+  wav.setUint16(32, blockAlign, true);
+  wav.setUint16(34, 32, true);
+  text(36, 'data');
+  wav.setUint32(40, samples.length * bytesPerSample, true);
+  samples.forEach((sample, i) => wav.setFloat32(44 + i * bytesPerSample, sample, true));
+  return `data:audio/wav;base64,${Buffer.from(wav.buffer).toString('base64')}`;
 }
