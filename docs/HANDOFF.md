@@ -385,7 +385,12 @@ match; our own layer is native, shares the wgpu device and stays a pure function
   (translation, rotation, scale and weight channels; LINEAR, STEP, CUBICSPLINE), a pure function of the frame (the time
   defaults to `frame / fps`); morph targets and skins deform the mesh on the CPU per pose (`scene3d/model.rs`:
   `Model::pose`, `Model::placed`). What a file uses that is not read is reported as unsupported content per frame
-  (COMPAT.md §6.1; `packages/cli/src/model-notes.ts`, the addon's `modelUnsupported`).
+  (COMPAT.md §6.1; `packages/cli/src/model-notes.ts`, the addon's `modelUnsupported`). Tested on generated files
+  (`make_anim.py`) and on three CC0 Khronos samples (`tests/scenes/media/khronos`: Animated Morph Cube, Interpolation
+  Test, Simple Skin) for the sampling of each interpolation, the weights and the bend; goldens `scene3d-animation` and
+  `scene3d-khronos`. Benchmark, same scene and machine as above: 1.76 ms minimum a frame before (main) and after,
+  unchanged within the noise of a loaded machine (the rest pose of a deformed model is made once, and a model without
+  a clip pays nothing); a scene with a bending skin and a morphing quad at 640x360 takes 0.8 to 1.0 ms.
 - **Deferred:** point-light shadows; spot lights; normal, occlusion, metallic-roughness and emissive maps; GPU skinning
   (the CPU does it); bevels on extrusions; `KHR_*` glTF extensions (reported when a file uses them); sorting within a
   translucent object; animated primitive sizes (animate `scale`); fog and depth of field; more than 8 lights;

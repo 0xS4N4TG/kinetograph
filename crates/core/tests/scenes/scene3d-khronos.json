@@ -1,0 +1,44 @@
+{
+  "width": 800,
+  "height": 450,
+  "fps": 30,
+  "durationInFrames": 90,
+  "background": "#14161c",
+  "layers": [
+    {
+      "id": "samples",
+      "type": "scene3d",
+      "width": 800,
+      "height": 450,
+      "camera": { "fov": 40, "position": [0, 3, 22], "target": [0, 3, 0] },
+      "lights": [
+        { "type": "ambient", "intensity": 0.15 },
+        { "type": "directional", "direction": [-0.5, -1, -0.8], "intensity": 0.9 }
+      ],
+      "objects": [
+        {
+          "type": "model",
+          "src": "media/khronos/AnimatedMorphCube.glb",
+          "animation": "Square",
+          "position": [-7, 1, 0],
+          "scale": 2.5
+        },
+        {
+          "type": "model",
+          "src": "media/khronos/SimpleSkin.gltf",
+          "animation": 0,
+          "position": [-1, -1.5, 0],
+          "scale": 1.6,
+          "material": { "color": "#f2c14e", "roughness": 0.5, "doubleSided": true }
+        },
+        {
+          "type": "model",
+          "src": "media/khronos/InterpolationTest.glb",
+          "animation": "Linear Translation",
+          "position": [6, -2, 0],
+          "scale": 0.7
+        }
+      ]
+    }
+  ]
+}

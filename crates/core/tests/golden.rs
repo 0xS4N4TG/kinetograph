@@ -209,6 +209,15 @@ fn scene3d_animation_matches_golden() {
 }
 
 #[test]
+fn scene3d_khronos_samples_match_golden() {
+    // Frame 45 of 90, 1.5 s into every clip, of three models by other tools
+    // (tests/scenes/media/khronos, CC0): the Animated Morph Cube, the Simple
+    // Skin and the Interpolation Test with its linear translation clip.
+    let frame = render_still(scene("tests/scenes/scene3d-khronos.json"), 45).unwrap();
+    check("scene3d-khronos", &frame);
+}
+
+#[test]
 fn scene3d_layers_composite_with_2d_layers_and_effects() {
     // Frame 12 of 30: 3D layers under a drop shadow, under a blur and the
     // screen blend mode, with a layer rotation and a 3D turn, among shapes

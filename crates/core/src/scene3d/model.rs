@@ -1234,4 +1234,139 @@ mod tests {
             .unwrap();
         assert!(err.to_string().contains("x.glb"), "{err}");
     }
+
+    // The Khronos samples (CC0, tests/scenes/media/khronos/README.md) are files
+    // made by other tools: what they hold checks the reading, not our own files.
+
+    fn khronos(name: &str) -> Model {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media/khronos");
+        Model::open(&dir, name).unwrap_or_else(|e| panic!("{name}: {e}"))
+    }
+
+    #[test]
+    fn the_interpolation_test_clips_move_each_node_as_their_interpolation_says() {
+        let model = khronos("InterpolationTest.glb");
+        assert!(model.unsupported.is_empty());
+        let clip = |name: &str| {
+            model
+                .animations
+                .iter()
+                .position(|a| a.name.as_deref() == Some(name))
+                .unwrap_or_else(|| panic!("no clip {name}"))
+        };
+        // The node a clip moves and where it has put it at `t`.
+        let placed = |name: &str, t: f64| {
+            let node = model.animations[clip(name)].channels[0].node;
+            model.pose(Some((clip(name), t))).world[node]
+        };
+        // Linear translation: the keys are (-3.4, 6.8) and (-3.4, 10.8), half a second apart.
+        let y = |name: &str, t: f64| placed(name, t).w_axis.y;
+        assert!((y("Linear Translation", 0.25) - 8.8).abs() < 1e-5);
+        assert!((y("Linear Translation", 0.5) - 10.8).abs() < 1e-5);
+        // Step translation holds the key until the next one is reached.
+        assert!((y("Step Translation", 0.49) - 6.8).abs() < 1e-5);
+        assert!((y("Step Translation", 0.5) - 10.8).abs() < 1e-5);
+        // Linear rotation is a slerp: a quarter of a second is half of the
+        // 45 degrees about z (clockwise) of the first half second.
+        let (_, rotation, _) = placed("Linear Rotation", 0.25).to_scale_rotation_translation();
+        let half = (22.5_f64.to_radians() / 2.0).sin_cos();
+        assert!(
+            rotation.abs_diff_eq(DQuat::from_xyzw(0.0, 0.0, -half.0, half.1), 1e-6),
+            "{rotation:?}"
+        );
+        // A cubic spline passes through its keys, whatever its tangents.
+        for name in [
+            "CubicSpline Translation",
+            "CubicSpline Scale",
+            "CubicSpline Rotation",
+        ] {
+            let channel = &model.animations[clip(name)].channels[0];
+            for (k, time) in channel.times.iter().enumerate() {
+                let got = channel.sample(f64::from(*time));
+                let at_key =
+                    &channel.values[(3 * k + 1) * channel.width..(3 * k + 2) * channel.width];
+                for (g, w) in got.iter().zip(at_key) {
+                    assert!(
+                        (g - f64::from(*w)).abs() < 1e-5,
+                        "{name} key {k}: {got:?} {at_key:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_animated_morph_cube_follows_its_weights() {
+        let model = khronos("AnimatedMorphCube.glb");
+        assert_eq!(model.animations.len(), 1);
+        assert_eq!(model.animations[0].name.as_deref(), Some("Square"));
+        assert!((model.animations[0].duration - 4.2).abs() < 1e-3);
+        let base = &model.parts[0].mesh.vertices;
+        // At 0 both weights are 0: the mesh as the file has it.
+        let posed = model.placed(&model.pose(Some((0, 0.0))), false);
+        assert!(
+            posed[0]
+                .mesh
+                .vertices
+                .iter()
+                .zip(base)
+                .all(|(a, b)| a.position == b.position)
+        );
+        // At 1.5 s the first target is at nearly full weight (0.98877).
+        let pose = model.pose(Some((0, 1.5)));
+        let weight = pose.weights[0][0];
+        assert!(
+            (weight - 0.98877).abs() < 1e-4 && pose.weights[0][1] == 0.0,
+            "{:?}",
+            pose.weights
+        );
+        let posed = model.placed(&pose, false);
+        let deform = model.parts[0].deform.as_ref().unwrap();
+        for (i, v) in posed[0].mesh.vertices.iter().enumerate() {
+            let want =
+                Vec3::from(base[i].position) + Vec3::from(deform.targets[0].positions[i]) * weight;
+            near32(Vec3::from(v.position), want);
+            assert!((Vec3::from(v.normal).length() - 1.0).abs() < 1e-4);
+        }
+        assert!(
+            posed[0]
+                .mesh
+                .vertices
+                .iter()
+                .zip(base)
+                .any(|(a, b)| a.position != b.position)
+        );
+    }
+
+    #[test]
+    fn the_simple_skin_bends_at_its_joint() {
+        let model = khronos("SimpleSkin.gltf");
+        assert!((model.animations[0].duration - 5.5).abs() < 1e-6);
+        // 1 s in, the upper joint (at y = 1) has turned 90 degrees about z.
+        let bent = model.placed(&model.pose(Some((0, 1.0))), false);
+        // The file has no normals, so each triangle has vertices of its own:
+        // vertices are found by where the file puts them.
+        let rest = &model.parts[0].mesh.vertices;
+        let moved = |from: Vec3, to: Vec3| {
+            let found: Vec<_> = (0..rest.len())
+                .filter(|&i| Vec3::from(rest[i].position) == from)
+                .collect();
+            assert!(!found.is_empty(), "{from:?}");
+            for i in found {
+                near32(position(&bent[0], i), to);
+            }
+        };
+        // The lowest vertices follow the lower joint only.
+        moved(Vec3::new(-0.5, 0.0, 0.0), Vec3::new(-0.5, 0.0, 0.0));
+        // The top ones follow the upper joint only: they turn about (0, 1).
+        moved(Vec3::new(-0.5, 2.0, 0.0), Vec3::new(-1.0, 0.5, 0.0));
+        moved(Vec3::new(0.5, 2.0, 0.0), Vec3::new(-1.0, 1.5, 0.0));
+        // The middle one, at (-0.5, 1), is half and half: the mean of where each joint puts it.
+        moved(Vec3::new(-0.5, 1.0, 0.0), Vec3::new(-0.25, 0.75, 0.0));
+        // The clip is back at its start pose at 5.5 s, where the skin is the file's own.
+        let home = model.placed(&model.pose(Some((0, 5.5))), false);
+        for (i, w) in model.parts[0].mesh.vertices.iter().enumerate() {
+            near32(position(&home[0], i), Vec3::from(w.position));
+        }
+    }
 }
