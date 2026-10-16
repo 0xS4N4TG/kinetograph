@@ -1,4 +1,4 @@
-// `@remotion/layout-utils`: `measureText`, `fitText` and `fillTextBox`.
+// `@remotion/layout-utils`: `measureText`, `fitText`, `fillTextBox` and `fitTextOnNLines`.
 //
 // Remotion measures text in the browser; here the renderer's own text engine
 // does it (`layoutText` in `@kinetograph/native`), so a measurement is what the
@@ -165,32 +165,90 @@ export interface FillTextBoxOptions {
   maxLines: number;
 }
 
-export interface FillTextBoxAdd extends Omit<MeasureTextOptions, 'text'> {
-  text: string;
-}
+export type FillTextBoxAdd = MeasureTextOptions;
 
 /**
- * Fills a box with text piece by piece. `add` reports whether the piece began a
- * new line and whether the box is now overfull (too many lines, or a piece wider
- * than the box).
+ * Fills a box with text piece by piece, as Remotion's does. `add` puts a piece on the current line if the line,
+ * measured piece by piece and rounded up, still fits `maxBoxWidth`; if not, on the next line (`newLine`, its leading
+ * space dropped) unless that is past `maxLines` or the piece alone is wider than the box (`exceedsBox`, and the box
+ * is unchanged).
  */
 export function fillTextBox({ maxBoxWidth, maxLines }: FillTextBoxOptions): {
   add: (piece: FillTextBoxAdd) => { exceedsBox: boolean; newLine: boolean };
 } {
-  let lines = 1;
-  let lineWidth = 0;
+  const lines: FillTextBoxAdd[][] = Array.from({ length: maxLines }, () => []);
+  // The same piece is measured on every `add` of its line, and its answer does not change.
+  const widths = new Map<string, number>();
+  const widthOf = (piece: FillTextBoxAdd): number => {
+    const key = JSON.stringify([piece.text, piece.fontFamily, piece.fontWeight, piece.fontStyle, piece.fontSize, piece.letterSpacing, piece.textTransform, piece.fontVariantNumeric, piece.additionalStyles]);
+    let width = widths.get(key);
+    if (width === undefined) widths.set(key, (width = measureText(piece).width));
+    return width;
+  };
   return {
     add(piece) {
-      const { width } = measureText(piece);
-      let newLine = false;
-      if (lineWidth > 0 && lineWidth + width > maxBoxWidth) {
-        newLine = true;
-        lines++;
-        lineWidth = width;
-      } else {
-        lineWidth += width;
+      // The current line is the last one that holds anything.
+      const current = Math.max(0, lines.findLastIndex((line) => line.length > 0));
+      const line = lines[current]!;
+      const total = [...line, piece].reduce((sum, entry) => sum + widthOf(entry), 0);
+      if (Math.ceil(total) <= maxBoxWidth) {
+        line.push(line.length === 0 ? { ...piece, text: piece.text.trimStart() } : piece);
+        return { exceedsBox: false, newLine: false };
       }
-      return { exceedsBox: lines > maxLines || width > maxBoxWidth, newLine };
+      if (current === maxLines - 1) return { exceedsBox: true, newLine: false };
+      const first = { ...piece, text: piece.text.trimStart() };
+      if (Math.ceil(widthOf(first)) > maxBoxWidth) return { exceedsBox: true, newLine: false };
+      lines[current + 1] = [first];
+      return { exceedsBox: false, newLine: true };
     },
   };
+}
+
+export interface FitTextOnNLinesOptions extends Omit<MeasureTextOptions, 'text' | 'fontSize'> {
+  text: string;
+  maxLines: number;
+  maxBoxWidth: number;
+  /** The largest size tried. Default 2000. */
+  maxFontSize?: number;
+}
+
+/** Sizes are searched in hundredths of a pixel. */
+const FIT_PRECISION = 100;
+const FIT_MIN_FONT_SIZE = 0.1;
+
+/**
+ * The largest font size (to a hundredth) at which `text`, broken at its spaces, fits in at most `maxLines` lines of
+ * `maxBoxWidth`, and the lines it breaks into. Found by bisection on the size, filling a box at each; the text is
+ * the smallest size, on one line, when nothing fits.
+ */
+export function fitTextOnNLines({ text, maxLines, maxBoxWidth, maxFontSize, ...style }: FitTextOnNLinesOptions): { fontSize: number; lines: string[] } {
+  let low = Math.floor(FIT_MIN_FONT_SIZE * FIT_PRECISION);
+  let high = Math.floor((maxFontSize ?? 2000) * FIT_PRECISION);
+  let fontSize = FIT_MIN_FONT_SIZE;
+  let best: string[] = [];
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const size = middle / FIT_PRECISION;
+    const box = fillTextBox({ maxBoxWidth, maxLines });
+    const lines = [''];
+    let exceedsBox = false;
+    for (const word of text.split(' ')) {
+      const current = lines.length - 1;
+      const result = box.add({ ...style, text: lines[current]!.length === 0 ? word : ` ${word}`, fontSize: size });
+      if (result.exceedsBox) {
+        exceedsBox = true;
+        break;
+      }
+      if (result.newLine) lines.push('');
+      lines[lines.length - 1] += `${word} `;
+    }
+    if (!exceedsBox && lines.length - 1 < maxLines) {
+      fontSize = size;
+      best = lines;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return { fontSize, lines: best.map((line) => line.trimEnd()) };
 }
