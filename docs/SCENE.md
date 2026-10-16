@@ -380,8 +380,8 @@ project's `<canvas>` (`getContext('2d')`) both make one; the context object is `
 The context keeps the canvas's state (transform, `globalAlpha`, `globalCompositeOperation`, styles, the line style, the
 text state) and writes each command with the state it is drawn in, so the renderer holds none. Every drawing command
 takes `m` (default the identity: the matrix that takes the command's own space, where its path or text is, to the
-canvas, `[a, b, c, d, e, f]` as `setTransform`), `a` (`globalAlpha`, default 1) and `blend` (`globalCompositeOperation`,
-default `source-over`).
+canvas, `[a, b, c, d, e, f]` as `setTransform`), `a` (`globalAlpha`, default 1), `blend` (`globalCompositeOperation`,
+default `source-over`), `shadow` and `filter` (below).
 
 | `op` | Fields | Draws |
 |---|---|---|
@@ -414,9 +414,36 @@ default `source-over`).
 - **Blending space.** Inside the canvas, colours blend in sRGB, as a browser's canvas does (`globalAlpha`, gradients,
   composite operations). The finished canvas is a layer like any other, and is blended with the layers around it in
   the scene's `blendSpace`.
-- **Not drawn.** Shadows (`shadowBlur`, `shadowColor`, `shadowOffset*`), `filter`, `imageSmoothingQuality` above the
-  default, `fontKerning`, `textRendering`, `fontStretch` and hit testing (`isPointInPath`) are not part of a layer;
-  the context accepts the assignments and draws nothing for them.
+- **`shadow`** is `{ "color", "blur", "x", "y" }` (`shadowColor`, `shadowBlur`, `shadowOffsetX/Y`; `blur` and the
+  offsets default 0), written on a command only when the shadow shows: the colour has alpha, and the blur or an offset
+  is not 0. The command's shape is cast as a shadow of that colour (its alpha is the shape's alpha blurred, times the
+  colour's), blurred with a deviation of half `blur`, moved by `x, y`, and composited under the shape, each of the two
+  with the command's `a`, `blend` and the clip in force, as a browser does. The offset and the blur are in the canvas's
+  pixels: the command's `m` does not change them, the layer's transform does (a canvas stretched by CSS stretches its
+  shadows, a turned one turns them). `fillRect` and the other drawing calls cast them; `clearRect` and `putImageData`
+  do not, and a `source-in` and the other operations that act on the whole canvas do so for the shadow as well.
+- **`filter`** is a list of functions, run in order over the command's drawing before its shadow is cast and before it
+  is composited: `{ "type": "blur", "radius" }` (the deviation, pixels), `brightness`, `contrast`, `grayscale`,
+  `invert`, `saturate`, `sepia` (each `{ "type", "amount" }`, 1 or 0 for no change as CSS has it),
+  `{ "type": "hueRotate", "angle" }` (degrees) and `{ "type": "dropShadow", "x", "y", "blur", "color" }` (`blur` the
+  deviation: half the CSS length). They are the passes of the effects of the same names (`blur`, the colour filters,
+  `dropShadow`; colour filters in a row make one pass), and take lengths in the canvas's pixels like the shadow's.
+  `opacity()` is not among them: the context multiplies it into the command's `a`. The context writes the
+  functions of `filter` strings (`blur(4px)`, `brightness(150%)`, `hue-rotate(0.5turn)`, `drop-shadow(2px 2px 4px red)`,
+  lists, `none`); a value that is no filter list is ignored, as a browser ignores it, and a `url()` reference is a
+  valid value that is not drawn: the context writes it as `unsupportedFilter` on the command (the rest of the list is
+  drawn) and the host reports it as unsupported (`<Canvas>`: the tree's `unsupported`; a `<canvas>` in a DOM island:
+  the painter's), so `--strict` fails on it.
+- A command with a shadow or a filter is drawn on its own on a transparent canvas the size of its box, through the
+  compositor's passes, and the pictures come back as images that Vello draws where the command stands in the list. So
+  the canvas layer is rasterised alone (not on a page with other leaves), and the picture of a command is 8 bits, as
+  the canvas's is. A command's shadow and filtered drawing reach no further than the scene's padded canvas
+  (`margin`, which a canvas does not count), and the canvas's own box cuts them. Vello keeps them in one image atlas
+  of 8192 x 8192 pixels, and a picture is the box its command can touch (a blur's reach included), so a canvas layer's
+  pictures may total 50 million pixels in a frame (hundreds of shadows of shapes a few hundred pixels across, or 24 of
+  a whole 1080p canvas); a frame with more is an error, since Vello would leave out what does not fit.
+- **Not drawn.** `imageSmoothingQuality` above the default, `fontKerning`, `textRendering`, `fontStretch` and hit
+  testing (`isPointInPath`) are not part of a layer; the context accepts the assignments and draws nothing for them.
 - The pictures a canvas draws from files (`kind: "src"`) are read when a renderer is built from the scene, as an image
   layer's are. A bad path or block of pixels is an error naming the layer when the scene loads.
 - Rendering is a pure function of the commands, the fonts and the files they name.

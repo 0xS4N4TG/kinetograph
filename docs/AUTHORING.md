@@ -469,9 +469,25 @@ The context and the globals around it:
 | Pictures | `drawImage` (three forms) of an `<img>`, `new Image()` (a project file or a `data:` URL), another canvas (`<canvas>`, `document.createElement('canvas')`, `OffscreenCanvas`: its commands, drawn as a whole) or `ImageData`; `createImageData`, `putImageData` (with a dirty rectangle), `getImageData` |
 | Elsewhere | `canvas.width`/`height` (setting either empties the canvas and resets the context), `toDataURL()` (always PNG), `toBlob`, `OffscreenCanvas`, `Path2D`, `ImageData`, `CanvasGradient`, `CanvasPattern`, `CanvasRenderingContext2D` as globals |
 
-Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `shadowColor`, `shadowOffsetX/Y`,
-`filter`, `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`,
-`direction`, `imageSmoothingQuality`. `isPointInPath` and `isPointInStroke` return `false`. `getContext('webgl')` and
+Kept and drawn with nothing (reading back what was set works): `letterSpacing`, `wordSpacing`, `fontKerning`,
+`fontStretch`, `fontVariantCaps`, `textRendering`, `direction`, `imageSmoothingQuality`. `isPointInPath` and
+`isPointInStroke` return `false`.
+
+Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `crates/dom/tests/canvas/canvas_effects.js`):
+
+- **Shadows.** `shadowColor`, `shadowBlur`, `shadowOffsetX/Y` shadow what `fill`, `stroke`, `fillText`, `strokeText`,
+  `fillRect`, `strokeRect` and `drawImage` draw, as the spec has it: while the colour has alpha and the blur or an offset
+  is not 0, the shape casts a shadow under itself, blurred with a deviation of half `shadowBlur` and offset by
+  `shadowOffsetX/Y`, which the transform does not change. `globalAlpha`, `globalCompositeOperation` and the clip apply
+  to the shadow and to the shape.
+- **`filter`.** `none`, or a list of `blur()`, `brightness()`, `contrast()`, `drop-shadow()`, `grayscale()`,
+  `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`, with CSS's units (`px`, `pt`, `em` as 16 px,
+  `%` or a number, `deg`, `rad`, `grad`, `turn`). It runs over each command's drawing before its shadow is cast. A value
+  that is not a filter list is ignored, and a `url()` reference is kept and reported as unsupported (the rest of the
+  list is drawn). `clearRect` and `putImageData` are not filtered, nor do they cast shadows.
+- A command with either costs GPU passes of its own (drawn alone, blurred, drawn again as a picture), so a canvas with
+  hundreds of shadowed shapes is slower than one without, and one frame may not make more than 50 million pixels of
+  such pictures per canvas layer (SCENE.md, "canvas"). `getContext('webgl')` and
 `'webgl2'` return a recording WebGL context (§6.7); `'webgpu'` throws `unsupported:`; another context type returns `null`.
 
 - **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family

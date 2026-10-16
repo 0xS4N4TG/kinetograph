@@ -651,10 +651,11 @@ Phase 6 (above), done 2026-10-16: items 1, 2 and 3 are done, item 4 stays droppe
    draw>`, `document.createElement('canvas')`, `OffscreenCanvas`, `Path2D` and `ImageData` all work, with every
    composite operation, gradients, patterns, clips, text in the registered fonts, and `drawImage` of images and
    canvases; `getImageData`/`toDataURL` draw the commands on a transparent canvas through the addon (`renderCanvas`).
-   API table in AUTHORING.md §6.5, painter notes in ENGINE.md §4. Not done: shadows (`shadowBlur` and the rest are kept
-   and draw nothing; Vello has no blur but a rounded rectangle's, so a path's shadow needs a blur pass of its own),
-   `filter`, letter and word spacing, right-to-left `direction`, `isPointInPath`, patterns of a canvas, and a pattern's
-   transform.
+   API table in AUTHORING.md §6.5, painter notes in ENGINE.md §4. Shadows (`shadowColor`, `shadowBlur`,
+   `shadowOffsetX/Y`) and `filter` (the CSS functions, lists, `none`; `url()` is reported) done later on 2026-10-16:
+   Vello has no blur, so a command with either is drawn alone, run through the compositor's blur, drop-shadow and
+   colour passes, and drawn into the scene as a picture (SCENE.md, "canvas"). Not done: letter and word spacing,
+   right-to-left `direction`, `isPointInPath`, patterns of a canvas, and a pattern's transform.
 3. **WebGL fragment shaders: done** (2026-10-16, branch `feat/webgl-shaders`). A recording WebGL context
    (`createWebGLContext`, `@kinetograph/scene`; `getContext('webgl'|'webgl2')` in compat) writes its clears and draws
    as one `glsl` layer, and the core runs them with the page's own GLSL ES 100 / 300 es, rewritten to the flavour
