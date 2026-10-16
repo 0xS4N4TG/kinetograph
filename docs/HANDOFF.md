@@ -4,7 +4,7 @@ Written 2026-10-14 at the end of the design session that produced the idea. Noth
 the decisions and the reasoning behind them; `RESEARCH.md` holds the evidence (competitor scan, Blitz audit,
 reference video breakdown).
 
-"Kinetograph" is a placeholder name (Edison's first motion-picture camera). The crate name `kinetograph` was free on
+"Kinetograph" (Edison's first motion-picture camera) is the final name, decided 2026-10-16. The crate name `kinetograph` was free on
 crates.io on 2026-10-14. `zoetrope` is taken.
 
 ## 1. What it is
