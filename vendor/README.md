@@ -259,6 +259,8 @@ The repository's own submodule pins do not build together: `rive-runtime` at the
 - `rive-rs/Cargo.toml`: no `vello` feature or dependencies (it builds against an old Vello; `crates/rive` implements
   the renderer trait itself), `publish = false`.
 - `rive-rs/build.rs`: the C++ is found beside the crate (`../rive-cpp`, `../yoga`, `../harfbuzz`, `../sheenbidi`).
+- `rive-rs/src/artboard/mod.rs`, `src/state_machine/mod.rs`: `'_` on five returned types, so that `cargo clippy -D warnings`
+  at the workspace root passes.
 - `rive-rs/src/lib.rs`, `src/file.rs`: no `vello` module; `Error` implements `core::error::Error`.
 - `rive-rs/src/ffi.cpp`, `src/ffi.rs`, `src/scene.rs`: `Scene::view_transform` (the runtime's `computeAlignment` with
   the artboard's bounds, for any fit and alignment; the crate only had `contain`, centred).

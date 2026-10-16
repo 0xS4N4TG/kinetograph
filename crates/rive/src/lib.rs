@@ -125,7 +125,10 @@ impl Riv {
     /// file at `frame.time`. Pictures of the file are written to `pictures`
     /// (a directory) for the commands to name.
     pub fn frame(&self, frame: &Frame, pictures: &Path) -> Result<Vec<Value>, Error> {
-        let handle = frame.artboard.as_ref().map_or(Handle::Default, Select::handle);
+        let handle = frame
+            .artboard
+            .as_ref()
+            .map_or(Handle::Default, Select::handle);
         let Some(artboard) = Artboard::<Recorder>::instantiate(&self.file, handle) else {
             return error(match &frame.artboard {
                 Some(select) => format!("the file has no artboard {}", select.describe()),
@@ -157,13 +160,21 @@ impl Riv {
         scene.draw(&mut recorder);
         recorder.state_pop();
         match recorder.failure {
-            Some(failure) => error(format!("a picture of the file could not be written: {failure}")),
+            Some(failure) => error(format!(
+                "a picture of the file could not be written: {failure}"
+            )),
             None => Ok(recorder.commands),
         }
     }
 
-    fn scene(&self, artboard: &Artboard<Recorder>, frame: &Frame) -> Result<Box<dyn Scene<Recorder>>, Error> {
-        let missing = |what: &str, select: &Select| error(format!("the artboard has no {what} {}", select.describe()));
+    fn scene(
+        &self,
+        artboard: &Artboard<Recorder>,
+        frame: &Frame,
+    ) -> Result<Box<dyn Scene<Recorder>>, Error> {
+        let missing = |what: &str, select: &Select| {
+            error(format!("the artboard has no {what} {}", select.describe()))
+        };
         if let Some(select) = &frame.state_machine {
             return match StateMachine::<Recorder>::instantiate(artboard, select.handle()) {
                 Some(machine) => Ok(Box::new(machine)),
@@ -178,7 +189,9 @@ impl Riv {
         }
         // Remotion plays the first animation; a file with only state machines
         // plays its default one.
-        if let Some(animation) = LinearAnimation::<Recorder>::instantiate(artboard, Handle::Index(0)) {
+        if let Some(animation) =
+            LinearAnimation::<Recorder>::instantiate(artboard, Handle::Index(0))
+        {
             return Ok(Box::new(animation));
         }
         match <Box<dyn Scene<Recorder>>>::instantiate(artboard, Handle::Default) {

@@ -82,12 +82,12 @@ impl<R: Renderer> StateMachine<R> {
     }
 
     #[inline]
-    pub fn inputs(&self) -> InputIter {
+    pub fn inputs(&self) -> InputIter<'_> {
         InputIter::new(inputs::RawStateMachine(self.raw_state_machine))
     }
 
     #[inline]
-    pub fn get_bool(&self, name: &str) -> Option<Bool> {
+    pub fn get_bool(&self, name: &str) -> Option<Bool<'_>> {
         unsafe {
             NonNull::new(ffi::rive_rs_state_machine_get_bool(
                 self.raw_state_machine,
@@ -99,7 +99,7 @@ impl<R: Renderer> StateMachine<R> {
     }
 
     #[inline]
-    pub fn get_number(&self, name: &str) -> Option<Number> {
+    pub fn get_number(&self, name: &str) -> Option<Number<'_>> {
         unsafe {
             NonNull::new(ffi::rive_rs_state_machine_get_number(
                 self.raw_state_machine,
@@ -111,7 +111,7 @@ impl<R: Renderer> StateMachine<R> {
     }
 
     #[inline]
-    pub fn get_trigger(&self, name: &str) -> Option<Trigger> {
+    pub fn get_trigger(&self, name: &str) -> Option<Trigger<'_>> {
         unsafe {
             NonNull::new(ffi::rive_rs_state_machine_get_trigger(
                 self.raw_state_machine,

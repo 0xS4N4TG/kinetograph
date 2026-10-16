@@ -43,7 +43,11 @@ fn render(commands: &[Value]) -> Frame {
         "width": SIZE, "height": SIZE, "fps": 30, "durationInFrames": 1, "background": "#ffffff",
         "layers": [{ "id": "rive", "type": "canvas", "width": SIZE, "height": SIZE, "commands": commands }],
     });
-    render_still(Scene::from_json(&json.to_string(), PathBuf::new()).unwrap(), 0).unwrap()
+    render_still(
+        Scene::from_json(&json.to_string(), PathBuf::new()).unwrap(),
+        0,
+    )
+    .unwrap()
 }
 
 fn px(frame: &Frame, x: usize, y: usize) -> [u8; 4] {
@@ -108,7 +112,11 @@ fn fit_and_alignment_place_the_artboard() {
     assert_eq!(number(&high, 5), 0.0);
     assert!((number(&cover, 0) - 200.0 / 47.20703).abs() < 1e-3);
     // And the bars it draws stay inside the canvas box either way.
-    assert!(is_white(px(&top_left(Fit::Contain, Alignment { x: 0.0, y: -1.0 }), 100, 190)));
+    assert!(is_white(px(
+        &top_left(Fit::Contain, Alignment { x: 0.0, y: -1.0 }),
+        100,
+        190
+    )));
 }
 
 #[test]
@@ -117,12 +125,18 @@ fn a_missing_artboard_or_animation_is_an_error_naming_it() {
     let mut wanted = play(0.0);
     wanted.artboard = Some(Select::Name("nope".into()));
     let message = riv.frame(&wanted, &pictures()).unwrap_err().to_string();
-    assert!(message.contains("artboard") && message.contains("nope"), "{message}");
+    assert!(
+        message.contains("artboard") && message.contains("nope"),
+        "{message}"
+    );
 
     let mut wanted = play(0.0);
     wanted.animation = Some(Select::Index(9));
     let message = riv.frame(&wanted, &pictures()).unwrap_err().to_string();
-    assert!(message.contains("animation") && message.contains('9'), "{message}");
+    assert!(
+        message.contains("animation") && message.contains('9'),
+        "{message}"
+    );
 }
 
 #[test]

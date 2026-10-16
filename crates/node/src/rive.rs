@@ -89,7 +89,9 @@ fn open(path: &PathBuf) -> Result<Arc<Riv>> {
 
 /// Where the pictures embedded in a file are written for the canvas to read.
 fn pictures_dir() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
     home.join(".cache").join("kinetograph").join("rive")
 }
 

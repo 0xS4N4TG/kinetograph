@@ -47,7 +47,7 @@ impl<R: Renderer> Artboard<R> {
     }
 
     #[inline]
-    pub fn components(&mut self) -> Components {
+    pub fn components(&mut self) -> Components<'_> {
         Components::new(components::RawArtboard(self.inner.raw_artboard))
     }
 }

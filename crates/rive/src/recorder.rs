@@ -163,7 +163,10 @@ impl renderer::Path for Path {
 }
 
 fn css(color: Color) -> String {
-    format!("#{:02x}{:02x}{:02x}{:02x}", color.r, color.g, color.b, color.a)
+    format!(
+        "#{:02x}{:02x}{:02x}{:02x}",
+        color.r, color.g, color.b, color.a
+    )
 }
 
 fn stops(colors: &[Color], offsets: &[f32]) -> Value {
@@ -183,7 +186,14 @@ pub struct Gradient {
 }
 
 impl renderer::Gradient for Gradient {
-    fn new_linear(sx: f32, sy: f32, ex: f32, ey: f32, colors: &[Color], offsets: &[f32]) -> Gradient {
+    fn new_linear(
+        sx: f32,
+        sy: f32,
+        ex: f32,
+        ey: f32,
+        colors: &[Color],
+        offsets: &[f32],
+    ) -> Gradient {
         Gradient {
             paint: json!({ "type": "linear", "x0": sx, "y0": sy, "x1": ex, "y1": ey, "stops": stops(colors, offsets) }),
         }
@@ -338,7 +348,9 @@ pub struct Buffer {
 impl Buffer {
     fn f32_pairs(&self) -> Vec<[f32; 2]> {
         self.bytes
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .map(|c| {
                 [
                     f32::from_ne_bytes([c[0], c[1], c[2], c[3]]),
@@ -350,7 +362,9 @@ impl Buffer {
 
     fn u16s(&self) -> Vec<u16> {
         self.bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_ne_bytes([c[0], c[1]]))
             .collect()
     }
@@ -493,9 +507,16 @@ impl renderer::Renderer for Recorder {
         };
         let (vertices, uvs) = (vertices.f32_pairs(), uvs.f32_pairs());
         let (width, height) = (image.width as f32, image.height as f32);
-        for triangle in indices.u16s().chunks_exact(3) {
-            let corners = [triangle[0] as usize, triangle[1] as usize, triangle[2] as usize];
-            if corners.iter().any(|&i| i >= vertices.len() || i >= uvs.len()) {
+        for triangle in indices.u16s().as_chunks::<3>().0 {
+            let corners = [
+                triangle[0] as usize,
+                triangle[1] as usize,
+                triangle[2] as usize,
+            ];
+            if corners
+                .iter()
+                .any(|&i| i >= vertices.len() || i >= uvs.len())
+            {
                 continue;
             }
             // The picture is drawn in its own pixels: the matrix takes them
