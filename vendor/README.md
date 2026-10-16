@@ -1,5 +1,10 @@
 # Vendored crates
 
+Each crate here keeps its own upstream licence, not Kinetograph's (`LICENSE.md`): its licence files are in its
+directory, and our changes to it are under the same licence as the crate. `stylo` is MPL-2.0 (`stylo/LICENSE`); the
+others are MIT OR Apache-2.0. `blitz-dom/LICENSE-*` and `stylo/LICENSE` were added on 2026-10-16 from upstream
+(`DioxusLabs/blitz`, mozilla.org/MPL/2.0); the crates.io packages did not include them.
+
 ## vello_shaders 0.11.0
 
 - Upstream: crates.io `vello_shaders` 0.11.0 (`linebender/vello`, `research/vello_shaders`, commit
@@ -114,6 +119,34 @@ Remove `vendor/vello`, its `[patch.crates-io]` entry and this section once a vel
 
 The same file's `render.rs` also keeps the MSAA mask tables: `make_mask_lut_16` was computed again for every
 `render_to_texture` (a twentieth of a frame's CPU time on a busy scene), and is now computed once (`OnceLock`).
+
+## vello_encoding 0.11.0
+
+- Upstream: crates.io `vello_encoding` 0.11.0 (same commit as `vello_shaders`, `research/vello_encoding`). Licence:
+  Apache-2.0 OR MIT, both kept. Wired in by `[patch.crates-io]` in the root `Cargo.toml`, so `vello` builds against it.
+  The copy was committed unchanged first, so the commit on top of it is the whole change.
+- Changed files: `src/image_cache.rs` (`ImageCache::evict`, with a test) and `src/resolve.rs` (`Resolver::evict_image`);
+  `vendor/vello/src/lib.rs` calls it from `Renderer::unregister_texture`.
+
+### Why
+
+Vello keeps the images it draws in one atlas (at most 8192 x 8192 pixels), and an image keeps its place there until a
+later render runs out of room and finds it unused for two renders. A Canvas 2D context's shadows and filters
+(docs/SCENE.md, "canvas") are new pictures every frame, each registered with `register_texture` and unregistered once
+Vello has drawn it. `unregister_texture` removed only the texture the atlas copies from, so the atlas still held the
+pictures of the last two frames and had room for one frame's worth in three: a canvas with 12 whole-canvas pictures a
+frame lost some of its shadows from the third frame on (Vello leaves out an image it cannot place, without an error).
+
+### The change
+
+`unregister_texture` also frees the image's place in the atlas at once. Nothing else changes: images drawn through
+`Scene::draw_image` are not touched, and an image that was never registered is not found. A frame's pictures now have
+the whole atlas, and the same pixels come out whichever frames came before.
+
+### Dropping the patch
+
+Remove `vendor/vello_encoding`, its `[patch.crates-io]` entry and this section once `unregister_texture` frees the
+atlas place itself. The change is small enough to offer upstream.
 
 ## stylo 0.22.0
 

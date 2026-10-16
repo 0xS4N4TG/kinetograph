@@ -124,6 +124,15 @@ fn canvas_commands_match_golden() {
 }
 
 #[test]
+fn canvas_shadows_and_filters_match_golden() {
+    // Soft and hard shadows, and each `filter` function, in one canvas layer;
+    // the same commands the dom crate's `canvas_effects` case checks against
+    // Chrome (docs/SCENE.md, "canvas").
+    let frame = render_still(scene("tests/scenes/canvas-effects.json"), 0).unwrap();
+    check("canvas-effects", &frame);
+}
+
+#[test]
 fn scene3d_primitives_match_golden() {
     // Frame 15 of 30: halfway through the box and cylinder turning. A box, a
     // sphere, a cylinder, a cone and a torus on a plane, under an ambient

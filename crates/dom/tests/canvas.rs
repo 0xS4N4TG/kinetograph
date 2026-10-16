@@ -80,6 +80,12 @@ fn canvas_paint() {
 }
 
 #[test]
+fn canvas_effects() {
+    // Shadows (soft, hard, under a transform and a global alpha) and the filter functions, against Chrome's.
+    run("canvas_effects", "", None, 3.0);
+}
+
+#[test]
 fn canvas_scaled() {
     // The bitmap is 100 x 50; CSS makes it 200 x 100 with rounded corners. Chrome stretches the bitmap, which blurs
     // it; the engine draws the commands at the size of the box, so edges are sharp (hence the higher limit).
@@ -168,6 +174,35 @@ fn a_canvas_without_a_size_is_300_by_150() {
     );
 }
 
+#[test]
+fn a_url_filter_on_a_canvas_is_reported_where_it_is_not_drawn() {
+    // One on a command, the same on another, one inside a canvas the first draws.
+    let commands = r##"[
+        {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"unsupportedFilter":"url(#rough)"},
+        {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"unsupportedFilter":"url(#rough)"},
+        {"op":"image","source":{"kind":"canvas","width":5,"height":5,"commands":[
+          {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"unsupportedFilter":"url(#inner)"}]},
+         "dx":0,"dy":0,"dw":5,"dh":5}]"##
+        .replace('\n', "");
+    let body = format!(
+        "<canvas id=\"c\" width=\"50\" height=\"20\" data-kg-canvas='{commands}' style=\"display:block\"></canvas>"
+    );
+    let out = paintkit::paint_html(&paintkit::page(&body), 200, 100);
+    let mut urls: Vec<_> = out
+        .unsupported
+        .iter()
+        .map(|u| (u.property.as_deref(), u.value.as_deref()))
+        .collect();
+    urls.sort();
+    assert_eq!(
+        urls,
+        [
+            (Some("filter"), Some("url(#inner)")),
+            (Some("filter"), Some("url(#rough)"))
+        ]
+    );
+}
+
 /// The layer called `id`, anywhere in `layers`.
 fn find<'a>(layers: &'a [Value], id: &str) -> Option<&'a Value> {
     for layer in layers {
@@ -189,7 +224,12 @@ fn find<'a>(layers: &'a [Value], id: &str) -> Option<&'a Value> {
 fn the_committed_commands_are_what_the_recorder_makes_of_each_case() {
     // The files are made by `node crates/dom/tools/canvas-cases.mjs`; the recorder is TypeScript, so this only checks
     // that every case has its commands and that they parse as the scene format does.
-    for name in ["canvas_paths", "canvas_paint", "canvas_scaled"] {
+    for name in [
+        "canvas_paths",
+        "canvas_paint",
+        "canvas_effects",
+        "canvas_scaled",
+    ] {
         let commands: Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let scene = serde_json::json!({
             "width": 10, "height": 10, "fps": 30, "durationInFrames": 1,

@@ -2,7 +2,7 @@
   "name": "@kinetograph/core",
   "version": "0.1.0",
   "description": "Remotion-shaped authoring API for Kinetograph: frame clock, Remotion core and packages, determinism",
-  "license": "MIT OR Apache-2.0",
+  "license": "PolyForm-Small-Business-1.0.0",
   "type": "module",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },

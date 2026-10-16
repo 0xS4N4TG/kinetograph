@@ -1345,7 +1345,7 @@ impl Renderer {
                         );
                     }
                     None => {
-                        self.encode_leaf(leaf.layer, leaf.matrix)?;
+                        self.encode_leaf(leaf.layer, leaf.matrix, None)?;
                         has_images |= draws_image(&leaf.layer.kind);
                     }
                 }
@@ -1411,6 +1411,9 @@ impl Renderer {
                 | ResolvedKind::MeshGradient { .. }
                 | ResolvedKind::Glsl { .. } => {}
                 ResolvedKind::Scene3d { .. } => {}
+                // The passes of its shadows and filters run between its
+                // commands, so it is drawn alone (`rasterise`).
+                ResolvedKind::Canvas { ops, .. } if canvas::has_effects(ops) => {}
                 _ => {
                     let region = self.raster_bounds(layer, matrix)?;
                     if !region.is_empty() {
@@ -1596,12 +1599,30 @@ impl Renderer {
     fn rasterise(&mut self, layer: &ResolvedLayer, parent: Affine, area: PixelRect) -> Result<()> {
         let matrix = in_area(area, parent * layer.transform.matrix());
         self.vello_scene.reset();
-        self.encode_leaf(layer, matrix)?;
-        self.render_vello_scene(draws_image(&layer.kind), area)
+        // The pictures a canvas's shadows and filters make live in Vello's
+        // image atlas until it has drawn them.
+        let mut pictures = Vec::new();
+        let drawn = self
+            .encode_leaf(layer, matrix, Some((area, &mut pictures)))
+            .and_then(|()| self.render_vello_scene(draws_image(&layer.kind), area));
+        if let Some(renderer) = self.vello_images.as_mut() {
+            for picture in pictures {
+                renderer.unregister_texture(picture);
+            }
+        }
+        drawn
     }
 
-    /// Adds the leaf `layer`, drawn with `matrix`, to `vello_scene`.
-    fn encode_leaf(&mut self, layer: &ResolvedLayer, matrix: Affine) -> Result<()> {
+    /// Adds the leaf `layer`, drawn with `matrix`, to `vello_scene`. A canvas
+    /// layer's shadows and filters run when `effects` says where on the
+    /// canvas the scene's corner is (`rasterise`'s `area`) and holds the
+    /// pictures they make.
+    fn encode_leaf(
+        &mut self,
+        layer: &ResolvedLayer,
+        matrix: Affine,
+        effects: Option<(PixelRect, &mut Vec<ImageData>)>,
+    ) -> Result<()> {
         match &layer.kind {
             ResolvedKind::Shape {
                 geometry,
@@ -1806,11 +1827,26 @@ impl Renderer {
                 }
             }
             ResolvedKind::Canvas { width, height, ops } => {
+                let whole = self.whole();
+                let mut passes = effects.map(|(area, pictures)| CanvasPasses {
+                    device: &self.device,
+                    queue: &self.queue,
+                    vello: &mut self.vello,
+                    vello_images: self.vello_images.as_mut(),
+                    target: &self.vello_view,
+                    compositor: &mut self.compositor,
+                    area,
+                    whole,
+                    pictures,
+                });
                 canvas::encode(
                     &mut self.vello_scene,
                     &mut canvas::Drawing {
                         text: &mut self.text,
                         images: &self.images,
+                        effects: passes
+                            .as_mut()
+                            .map(|passes| passes as &mut dyn canvas::Effects),
                     },
                     (*width, *height),
                     ops,
@@ -2042,6 +2078,137 @@ impl Renderer {
                 },
             )
             .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
+    }
+}
+
+/// How many pixels of pictures the shadows and filters of one canvas layer may
+/// make: three quarters of Vello's largest image atlas (8192 x 8192), which a
+/// fuller one cannot be counted on to pack. Vello leaves out what does not
+/// fit, so past this a frame is refused instead.
+const PICTURE_PIXELS: u64 = 8192 * 8192 / 4 * 3;
+
+/// The shadows and filters of a canvas layer's commands (`canvas::Effects`):
+/// each is drawn alone with Vello, run through the compositor's passes, and
+/// handed back as a picture registered with the image renderer.
+struct CanvasPasses<'a> {
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+    vello: &'a mut vello::Renderer,
+    vello_images: Option<&'a mut vello::Renderer>,
+    /// The Vello target, which a command is drawn alone into.
+    target: &'a wgpu::TextureView,
+    compositor: &'a mut Compositor,
+    /// The pixels of the canvas that the scene being encoded starts at
+    /// (`rasterise`'s `area`).
+    area: PixelRect,
+    whole: PixelRect,
+    /// Every picture made, for the caller to unregister.
+    pictures: &'a mut Vec<ImageData>,
+}
+
+impl canvas::Effects for CanvasPasses<'_> {
+    fn run(
+        &mut self,
+        alone: &vello::Scene,
+        pictures: bool,
+        bounds: Rect,
+        filter: &[ResolvedEffect],
+        shadow: Option<&ResolvedShadow>,
+    ) -> Result<canvas::Rendered> {
+        let corner = Affine::translate((f64::from(self.area.x0), f64::from(self.area.y0)));
+        let region = device_bounds(corner, bounds).intersect(self.whole);
+        if region.is_empty() {
+            return Ok(canvas::Rendered::default());
+        }
+        // Vello draws only the box the command can touch, at the target's
+        // corner.
+        let mut moved = vello::Scene::new();
+        moved.append(
+            alone,
+            Some(Affine::translate((
+                f64::from(self.area.x0 - region.x0),
+                f64::from(self.area.y0 - region.y0),
+            ))),
+        );
+        // The commands recorded so far may read what Vello drew last.
+        self.compositor.submit();
+        let renderer = if pictures {
+            self.vello_images.as_deref_mut()
+        } else {
+            Some(&mut *self.vello)
+        }
+        .expect("scenes with a shadow or a filter get an image renderer");
+        renderer
+            .render_to_texture(
+                self.device,
+                self.queue,
+                &moved,
+                self.target,
+                &RenderParams {
+                    base_color: peniko::Color::TRANSPARENT,
+                    width: region.width(),
+                    height: region.height(),
+                    antialiasing_method: AaConfig::Msaa16,
+                },
+            )
+            .map_err(|e| Error::Render(format!("Vello render failed: {e}")))?;
+        let drawn = self.compositor.from_srgb8(self.target, region, region);
+        let filtered =
+            self.compositor
+                .apply_effects(drawn, Affine::IDENTITY, None, filter, None, None, None);
+        let shadow = shadow.map(|s| self.compositor.cast_shadow(&filtered, s));
+        let rendered = canvas::Rendered {
+            shape: if filter.is_empty() {
+                None
+            } else {
+                self.picture(&filtered)?
+            },
+            shadow: match &shadow {
+                Some(s) => self.picture(s)?,
+                None => None,
+            },
+        };
+        self.compositor.release(filtered);
+        if let Some(shadow) = shadow {
+            self.compositor.release(shadow);
+        }
+        Ok(rendered)
+    }
+}
+
+impl CanvasPasses<'_> {
+    /// `tex` as a picture of the scene, where it is non-zero. `None` when it
+    /// is nowhere.
+    fn picture(&mut self, tex: &Tex) -> Result<Option<canvas::Placed>> {
+        let region = tex.bounds.intersect(self.whole);
+        if region.is_empty() {
+            return Ok(None);
+        }
+        let made: u64 = self
+            .pictures
+            .iter()
+            .map(|p| u64::from(p.width) * u64::from(p.height))
+            .sum();
+        if made + u64::from(region.width()) * u64::from(region.height()) > PICTURE_PIXELS {
+            return Err(Error::Render(format!(
+                "canvas: the shadows and filters of one canvas layer make pictures of more than {PICTURE_PIXELS} \
+                 pixels (Vello's image atlas holds 8192 x 8192): draw fewer, or smaller ones"
+            )));
+        }
+        let texture = self.compositor.to_srgb8(tex, region);
+        let image = self
+            .vello_images
+            .as_deref_mut()
+            .expect("scenes with a shadow or a filter get an image renderer")
+            .register_texture(texture);
+        self.pictures.push(image.clone());
+        Ok(Some(canvas::Placed {
+            image,
+            at: (
+                f64::from(region.x0 - self.area.x0),
+                f64::from(region.y0 - self.area.y0),
+            ),
+        }))
     }
 }
 

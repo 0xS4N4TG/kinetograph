@@ -4,7 +4,7 @@ Written 2026-10-14 at the end of the design session that produced the idea. Noth
 the decisions and the reasoning behind them; `RESEARCH.md` holds the evidence (competitor scan, Blitz audit,
 reference video breakdown).
 
-"Kinetograph" is a placeholder name (Edison's first motion-picture camera). The crate name `kinetograph` was free on
+"Kinetograph" (Edison's first motion-picture camera) is the final name, decided 2026-10-16. The crate name `kinetograph` was free on
 crates.io on 2026-10-14. `zoetrope` is taken.
 
 ## 1. What it is
@@ -663,22 +663,28 @@ Phase 6 (above), done 2026-10-16: items 1, 2 and 3 are done, item 4 stays droppe
    draw>`, `document.createElement('canvas')`, `OffscreenCanvas`, `Path2D` and `ImageData` all work, with every
    composite operation, gradients, patterns, clips, text in the registered fonts, and `drawImage` of images and
    canvases; `getImageData`/`toDataURL` draw the commands on a transparent canvas through the addon (`renderCanvas`).
-   API table in AUTHORING.md §6.5, painter notes in ENGINE.md §4. Not done: shadows (`shadowBlur` and the rest are kept
-   and draw nothing; Vello has no blur but a rounded rectangle's, so a path's shadow needs a blur pass of its own),
-   `filter`, letter and word spacing, right-to-left `direction`, `isPointInPath`, patterns of a canvas, and a pattern's
-   transform.
+   API table in AUTHORING.md §6.5, painter notes in ENGINE.md §4. Shadows (`shadowColor`, `shadowBlur`,
+   `shadowOffsetX/Y`) and `filter` (the CSS functions, lists, `none`; `url()` is reported) done later on 2026-10-16:
+   Vello has no blur, so a command with either is drawn alone, run through the compositor's blur, drop-shadow and
+   colour passes, and drawn into the scene as a picture (SCENE.md, "canvas"). Not done: letter and word spacing,
+   right-to-left `direction`, `isPointInPath`, patterns of a canvas, and a pattern's transform.
 3. **WebGL fragment shaders: done** (2026-10-16, branch `feat/webgl-shaders`). A recording WebGL context
    (`createWebGLContext`, `@kinetograph/scene`; `getContext('webgl'|'webgl2')` in compat) writes its clears and draws
    as one `glsl` layer, and the core runs them with the page's own GLSL ES 100 / 300 es, rewritten to the flavour
    naga reads and run on the shared wgpu device (SCENE.md "glsl", AUTHORING.md §6.7, ENGINE.md §8). Natively:
    `<GlslShader>` / `glslShader()`. Programs, buffers, uniforms (floats, ints, bools, vectors, matrices, arrays),
    2D textures with wrap, filter and mipmaps, indexed and strip/fan triangles, viewport, scissor, blending, colour
-   mask, culling, clear. Checked against Chrome (gradient, noise, texture: at most 1 level off). Not done, and
-   `unsupported:` when used: framebuffers (multi-pass), depth and stencil, `readPixels`, points and lines,
-   instancing, cube/3D/float textures, multisampled edges. `renderCanvas` no longer opens the GPU on every call
-   (31 ms to 1.1 ms).
+   mask, culling, clear. Checked against Chrome (gradient, noise, texture: at most 1 level off). Framebuffer objects
+   followed (2026-10-16): a framebuffer with an RGBA texture on `COLOR_ATTACHMENT0` takes clears and draws, and later
+   draws sample the texture (render to texture, ping-pong, blur passes), also at most 1 level off Chrome; a frame
+   starts every texture blank, so nothing carries over from an earlier frame. Not done, and `unsupported:` when used:
+   renderbuffers and depth and stencil attachments, `readPixels`, points and lines, instancing, cube/3D/float
+   textures, multisampled edges. `renderCanvas` no longer opens the GPU on every call (31 ms to 1.1 ms).
 4. **Three.js and pixi**: dropped for now, see "3D layer" above. If they come back, the path is a WebGPU API in Node
    on wgpu (`deno_webgpu`) so both run their WebGPU renderers unmodified, with GLSL materials through item 3.
+
+Open issues for a later run (the snapcn.dev scan, what is left of the Remotion API, engine features not done, test
+flakiness) are logged in `docs/OPEN_ISSUES.md`.
 
 User shaders today are `shader({ code, uniforms })` in WGSL (SCENE.md, "shader"). Its limits, also to lift later:
 it sees only its own layer (no backdrop), runs one pass, samples no other texture, and takes only `f32` uniforms.

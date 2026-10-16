@@ -4,6 +4,7 @@
 // holds is a function of what it was told.
 
 import { parseCssColor, toCssColor, toSceneColor, type Rgba } from './canvas-color.js';
+import { NO_FILTER, parseFilter, type ParsedFilter } from './canvas-filter.js';
 import {
   apply,
   domError,
@@ -17,10 +18,11 @@ import {
   type Matrix,
 } from './canvas-path.js';
 import { fontKey } from './paint.js';
-import type { CanvasBlend, CanvasCommand, CanvasLayer, CanvasLine, CanvasPaint, CanvasSource } from './types.js';
+import type { CanvasBlend, CanvasCommand, CanvasLayer, CanvasLine, CanvasPaint, CanvasShadow, CanvasSource, CanvasState } from './types.js';
 
 export { Path2D } from './canvas-path.js';
 export { parseCssColor, toSceneColor } from './canvas-color.js';
+export { parseFilter, type ParsedFilter } from './canvas-filter.js';
 
 /** What `drawImage` and `createPattern` read from an image-like object: a picture and its size. */
 export interface CanvasPicture {
@@ -218,7 +220,9 @@ interface State {
   textAlign: 'start' | 'end' | 'left' | 'right' | 'center';
   textBaseline: 'top' | 'hanging' | 'middle' | 'alphabetic' | 'ideographic' | 'bottom';
   smoothing: boolean;
-  /** Properties that are kept for reading back and drawn with nothing: shadows, `filter`, the finer text settings. */
+  /** `filter` as `parseFilter` read it. */
+  filter: ParsedFilter;
+  /** Properties that are kept as set: the shadow's, `filter`'s text, and the finer text settings, which draw nothing. */
   plain: Record<string, unknown>;
   /** How many `clip` commands are open in the log. */
   clips: number;
@@ -260,6 +264,7 @@ function initial(): State {
     textAlign: 'start',
     textBaseline: 'alphabetic',
     smoothing: true,
+    filter: NO_FILTER,
     plain: { ...PLAIN_DEFAULTS },
     clips: 0,
   };
@@ -484,7 +489,7 @@ export class CanvasContext2D {
     this.state.textBaseline = oneOf(['top', 'hanging', 'middle', 'alphabetic', 'ideographic', 'bottom'] as const)(value) ?? this.state.textBaseline;
   }
 
-  // Kept and read back; the renderer draws nothing for them (SCENE.md, "canvas").
+  // The shadow's four properties are kept as set, and `drawn()` writes them on a command when they make a shadow.
   get shadowBlur(): number { return this.plainProperty('shadowBlur', nonNegative).get(); }
   set shadowBlur(value: number) { this.plainProperty('shadowBlur', nonNegative).set(value); }
   get shadowOffsetX(): number { return this.plainProperty('shadowOffsetX', finite).get(); }
@@ -494,7 +499,13 @@ export class CanvasContext2D {
   get shadowColor(): string { return this.plainProperty('shadowColor', colorText).get(); }
   set shadowColor(value: string) { this.plainProperty('shadowColor', colorText).set(value); }
   get filter(): string { return this.plainProperty('filter', text).get(); }
-  set filter(value: string) { this.plainProperty('filter', text).set(value); }
+  set filter(value: string) {
+    // A value that is not a filter list is ignored, as a context ignores it.
+    const parsed = typeof value === 'string' ? parseFilter(value) : null;
+    if (parsed === null) return;
+    this.state.filter = parsed;
+    this.plainProperty('filter', text).set(value);
+  }
   get direction(): string { return this.plainProperty('direction', oneOf(['ltr', 'rtl', 'inherit'] as const)).get(); }
   set direction(value: string) { this.plainProperty('direction', oneOf(['ltr', 'rtl', 'inherit'] as const)).set(value); }
   get letterSpacing(): string { return this.plainProperty('letterSpacing', text).get(); }
@@ -605,12 +616,32 @@ export class CanvasContext2D {
 
   // ---- drawing ----
 
+  /** `globalAlpha` with the `opacity()` of the filter in it: what a command is composited with. */
+  private alpha(): number {
+    return this.state.alpha * this.state.filter.opacity;
+  }
+
+  /** The shadow the properties make, or null when it does not show: no colour, or neither a blur nor an offset. */
+  private shadow(): CanvasShadow | null {
+    const { plain } = this.state;
+    const color = parseCssColor(plain.shadowColor as string);
+    const [blur, x, y] = [plain.shadowBlur, plain.shadowOffsetX, plain.shadowOffsetY] as number[];
+    if (color === null || color.a === 0 || (blur === 0 && x === 0 && y === 0)) return null;
+    return { color: toSceneColor(color), ...(blur !== 0 && { blur }), ...(x !== 0 && { x }), ...(y !== 0 && { y }) };
+  }
+
   /** What every command is drawn with, and the matrix `m` that takes its coordinates to the canvas. */
-  private drawn(m: Matrix = this.state.ctm): { m?: Matrix; a?: number; blend?: CanvasBlend } {
-    const out: { m?: Matrix; a?: number; blend?: CanvasBlend } = {};
+  private drawn(m: Matrix = this.state.ctm): CanvasState {
+    const out: CanvasState = {};
     if (!isIdentity(m)) out.m = [...m] as Matrix;
-    if (this.state.alpha !== 1) out.a = this.state.alpha;
+    const alpha = this.alpha();
+    if (alpha !== 1) out.a = alpha;
     if (this.state.blend !== 'source-over') out.blend = this.state.blend;
+    const shadow = this.shadow();
+    if (shadow !== null) out.shadow = shadow;
+    const { fns, unsupported } = this.state.filter;
+    if (fns.length > 0) out.filter = fns;
+    if (unsupported.length > 0) out.unsupportedFilter = unsupported.join(' ');
     return out;
   }
 
@@ -688,7 +719,7 @@ export class CanvasContext2D {
     if (![x, y, width, height].every(Number.isFinite) || width === 0 || height === 0) return;
     const fill = this.state.fill;
     // An opaque rectangle over the whole canvas hides everything drawn before it.
-    if (this.state.clips === 0 && this.state.alpha === 1 && this.state.blend === 'source-over' && 'css' in fill && fill.color.a === 1 && this.coversCanvas(x, y, width, height)) {
+    if (this.state.clips === 0 && this.alpha() === 1 && this.state.filter.fns.length === 0 && this.state.blend === 'source-over' && 'css' in fill && fill.color.a === 1 && this.coversCanvas(x, y, width, height)) {
       this.log = [];
     }
     this.log.push({ op: 'fill', path: pathData([['M', x, y], ['L', x + width, y], ['L', x + width, y + height], ['L', x, y + height], ['Z']]), paint: this.paintOf(fill), ...this.drawn() });
@@ -875,6 +906,20 @@ function colorText(value: unknown): string | undefined {
 
 export function createCanvasContext(options: CanvasContextOptions): CanvasContext2D {
   return new CanvasContext2D(options);
+}
+
+/** The `url()` filters among `commands` (and the canvases they draw), which are not drawn, each once. */
+export function unsupportedFilters(commands: readonly CanvasCommand[]): string[] {
+  const found = new Set<string>();
+  const visit = (list: readonly CanvasCommand[]): void => {
+    for (const command of list) {
+      if (command.op === 'clip' || command.op === 'unclip') continue;
+      if (command.unsupportedFilter !== undefined) found.add(command.unsupportedFilter);
+      if (command.op === 'image' && command.source.kind === 'canvas') visit(command.source.commands);
+    }
+  };
+  visit(commands);
+  return [...found];
 }
 
 /** The scene layer for a context's drawing: its commands in a box of `width` by `height`. */

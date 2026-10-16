@@ -1,8 +1,12 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { Easing } from '../src/easing.js';
 import * as P from '../src/paths.js';
 import { fixture } from './helpers.js';
 
 const data = fixture('paths.json');
+/** Blends, warps and edge cases recorded later from the published package. */
+const more = fixture('paths-interpolate-warp.json');
 
 /** Numbers in a path string compared to `tolerance` (relative to 1 + |value|); the text around them exactly. */
 function expectPathClose(actual: string, expected: string, tolerance: number, label: string) {
@@ -32,6 +36,15 @@ function expectNumbersClose(actual: any, expected: any, tolerance: number, label
 
 const hasArc = (d: string) => /[aA]/.test(d);
 const hasQuad = (d: string) => /[qQtT]/.test(d);
+
+/**
+ * The same path as recorded: exactly, but where an arc was turned into cubics, whose last digits differ from the
+ * published package's, to a relative 1e-9 per number.
+ */
+function expectSamePath(actual: string, expected: string, arcs: boolean, label: string) {
+  if (arcs) expectPathClose(actual, expected, 1e-9, label);
+  else expect(actual, label).toBe(expected);
+}
 
 describe('parse and serialize', () => {
   it('parse the same instructions as the published package', () => {
@@ -193,21 +206,12 @@ describe('transforms', () => {
 });
 
 describe('interpolatePath', () => {
-  // The published blend of two paths that differ in structure (an arc against a square, a quadratic against
-  // a line, an open path against a closed one) follows its own matching rules, which are not reproduced; the
-  // pairs below have the same drawing instructions or differ by line against curve, or by length.
-  const comparable = (from: string, to: string) =>
-    !hasArc(from + to) && !(hasQuad(from) || hasQuad(to)) && !/Z/.test(from) === !/Z/.test(to);
-
-  it('matches the recorded blends of comparable paths', () => {
-    let compared = 0;
+  it('matches every recorded blend, whatever the structure of the two paths', () => {
+    expect(data.interpolate.length).toBeGreaterThan(60);
     for (const c of data.interpolate) {
-      if (!comparable(c.from, c.to)) continue;
       const label = `${c.from} -> ${c.to} @${c.progress}`;
-      expectPathClose(P.interpolatePath(c.progress, c.from, c.to), c.result.value, 1e-9, label);
-      compared++;
+      expectSamePath(P.interpolatePath(c.progress, c.from, c.to), c.result.value, hasArc(c.from + c.to), label);
     }
-    expect(compared).toBeGreaterThan(25);
   });
 
   it('returns the paths themselves at the ends', () => {
@@ -215,7 +219,71 @@ describe('interpolatePath', () => {
     expect(P.interpolatePath(1, 'm 0 0 l 10 10', 'M 5 5 L 9 9')).toBe('M 5 5 L 9 9');
   });
 
-  it('refuses paths it cannot line up', () => {
-    expect(() => P.interpolatePath(0.5, 'M 0 0 L 10 10 Z', 'M 0 0 L 10 10')).toThrow(/cannot be interpolated/);
+  it('matches the published package on the edge cases: a close only one has, subpaths that do not line up, an empty path', () => {
+    for (const c of more.interpolatePath) {
+      const run = () => P.interpolatePath(c.progress, more.paths[c.from] ?? c.from, more.paths[c.to] ?? c.to);
+      if (c.output.error) expect(run, `${c.from} -> ${c.to}`).toThrow(c.output.error);
+      else expectSamePath(run(), c.output, hasArc(c.from + c.to), `${c.from} -> ${c.to}`);
+    }
+  });
+});
+
+/** The transformers `record-paths` used, by name. */
+const transformers: Record<string, P.WarpPathFn> = {
+  identity: (p) => p,
+  scale: (p) => ({ x: p.x * 2, y: p.y * 0.5 }),
+  wave: (p) => ({ x: p.x, y: p.y + Math.sin(p.x / 10) * 6 }),
+  swirl: (p) => ({ x: p.x + Math.cos(p.y / 7) * 4, y: p.y + Math.sin(p.x / 7) * 4 }),
+};
+
+describe('interpolatePaths', () => {
+  it('matches the published package exactly for every recorded blend, easing, posterize and extrapolation', () => {
+    expect(more.interpolatePaths.length).toBeGreaterThan(150);
+    for (const c of more.interpolatePaths) {
+      const easings: Record<string, (t: number) => number> = {
+        'in(quad)': Easing.in(Easing.quad),
+        'out(cubic)': Easing.out(Easing.cubic),
+        'inOut(ease)': Easing.inOut(Easing.ease),
+        linear: Easing.linear,
+      };
+      const options: Record<string, unknown> = {};
+      if (c.easing) options.easing = Array.isArray(c.easing) ? c.easing.map((n: string) => easings[n]) : easings[c.easing];
+      for (const key of ['posterize', 'extrapolateLeft', 'extrapolateRight']) if (c[key] !== undefined) options[key] = c[key];
+      const outputRange = typeof c.outputRange === 'string' ? c.outputRange : c.outputRange.map((n: unknown) => (typeof n === 'string' ? more.paths[n] ?? n : n));
+      const run = () => P.interpolatePaths(c.input, c.inputRange, outputRange, Object.keys(options).length ? options : undefined);
+      const label = JSON.stringify(c).slice(0, 200);
+      if (c.output.error) expect(run, label).toThrow(c.output.error);
+      else expectSamePath(run(), c.output, JSON.stringify(c.outputRange).match(/"arc"/) !== null, label);
+    }
+  });
+
+  it('returns a path as written at its keyframe', () => {
+    const [a, b] = [more.paths.squareA, more.paths.squareB];
+    expect(P.interpolatePaths(0, [0, 10], [a, b])).toBe(a);
+    expect(P.interpolatePaths(10, [0, 10], [a, b])).toBe(b);
+    expect(P.interpolatePaths(5, [0, 10], [a, b])).not.toBe(a);
+  });
+});
+
+describe('warpPath', () => {
+  it('matches the published package exactly: every recorded path, transformer and threshold', () => {
+    expect(more.warpPath.length).toBeGreaterThan(40);
+    for (const c of more.warpPath) {
+      const label = `${c.path} ${c.transformer} ${JSON.stringify(c.options)}`;
+      const warped = P.warpPath(more.paths[c.path] ?? c.path, transformers[c.transformer]!, c.options ?? undefined);
+      const arcs = hasArc(more.paths[c.path] ?? c.path);
+      if (typeof c.output === 'string') {
+        expectSamePath(warped, c.output, arcs, label);
+      } else if (!arcs) {
+        // A long path is recorded as its length and hash. (An arc is turned into cubics with different last digits.)
+        expect(warped.length, label).toBe(c.output.length);
+        expect(createHash('sha256').update(warped).digest('hex'), label).toBe(c.output.sha256);
+      }
+    }
+  });
+
+  it('cuts lines into pieces no longer than the threshold before moving them', () => {
+    const cut = P.warpPath('M 0 0 L 100 0', (p) => p, { interpolationThreshold: 30 });
+    expect(cut).toBe('M 0 0 L 25 0 L 50 0 L 75 0 L 100 0');
   });
 });

@@ -6,7 +6,7 @@ exclude = ["phase0"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "MIT OR Apache-2.0"
+license = "PolyForm-Small-Business-1.0.0"
 
 # Vello 0.11's fine shader loses low bits of an image's sample position by adding
 # the image's atlas offset before splitting it into texel and fraction (#12);
@@ -19,11 +19,16 @@ license = "MIT OR Apache-2.0"
 # vello starts a compute pass for each of its dispatches, about 17 for each
 # page; see vendor/README.md.
 #
+# vello keeps the images it has drawn in its atlas for two more renders; the
+# pictures of a canvas's shadows and filters need their place back at once
+# (vendor/README.md).
+#
 # stylo's Servo build does not parse `@container`, and blitz-dom answers no
 # container query: its `query_container_size` returns nothing (vendor/README.md).
 [patch.crates-io]
 blitz-dom = { path = "vendor/blitz-dom" }
 stylo = { path = "vendor/stylo" }
 vello = { path = "vendor/vello" }
+vello_encoding = { path = "vendor/vello_encoding" }
 vello_shaders = { path = "vendor/vello_shaders" }
 fontique = { path = "vendor/fontique" }

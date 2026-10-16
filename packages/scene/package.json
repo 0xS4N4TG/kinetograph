@@ -2,7 +2,7 @@
   "name": "@kinetograph/scene",
   "version": "0.1.0",
   "description": "Types and helpers for Kinetograph scene JSON (docs/SCENE.md)",
-  "license": "MIT OR Apache-2.0",
+  "license": "PolyForm-Small-Business-1.0.0",
   "type": "module",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }

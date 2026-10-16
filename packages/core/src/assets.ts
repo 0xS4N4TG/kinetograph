@@ -114,6 +114,13 @@ export function cancelRender(error: unknown): void {
   fail(error instanceof Error ? error : new Error(typeof error === 'string' ? error : String(error)));
 }
 
+const delayRenderHook = { delayRender, continueRender, cancelRender };
+
+/** `delayRender`, `continueRender` and `cancelRender` as Remotion's hook returns them, for a component that holds its own frame. */
+export function useDelayRender(): typeof delayRenderHook {
+  return delayRenderHook;
+}
+
 /** Handles currently open (for the frame loop and tests). */
 export function openRenderHandles(): number {
   return open.size;

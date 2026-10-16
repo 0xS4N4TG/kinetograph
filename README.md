@@ -1,21 +1,101 @@
 # Kinetograph
 
-Kinetograph is a placeholder name.
+A programmatic video engine with no browser in it. You (or an agent) write a video in TypeScript with Remotion's API,
+CSS, SVG, Canvas 2D, WebGL shaders and Web Audio; Node runs the code; a Rust GPU compositor, loaded into Node as an
+N-API addon, draws every frame. Existing Remotion projects render as they are: `remotion` and `@remotion/*` imports
+resolve to Kinetograph's own implementation of them.
 
-A programmatic video engine: agents write TypeScript, a Rust core renders it on the GPU, no browser anywhere. It keeps
-Remotion's API for visuals and the Web Audio API for sound, and puts a GPU compositor underneath them.
+**Status (2026-10-16):** the core renderer, effects, authoring layer, studio, Remotion compatibility on a native DOM
+engine (CSS, SVG, Canvas 2D, WebGL fragment shaders) and an own 3D layer are built. The papercut test project renders
+all 988 of its frames natively, and a reference scene renders 7.0x faster than Remotion (1.28 s against 8.96 s, median,
+on an Apple M4). What is left is logged in [docs/OPEN_ISSUES.md](docs/OPEN_ISSUES.md).
 
-**Status:** Phases 1 and 2 are done: a Rust workspace with a GPU compositor (shape, text, image, group, noise and
-mesh-gradient layers; blend modes, masks, mattes, the effects of [SCENE.md](docs/SCENE.md), a 2.5D camera, motion
-blur), PNG and H.264 output. Phase 3 (authoring and agents) is built and awaiting its first GPU run: projects are
-written in TSX with Remotion's API and native elements, run in Node, and rendered by the Rust core through an N-API
-addon; the `kinetograph` CLI and MCP server are the agent surface (see the [roadmap](docs/HANDOFF.md) and the
-[authoring contract](docs/AUTHORING.md)).
-
-- [Technical handoff](docs/HANDOFF.md)
-- [Research notes](docs/RESEARCH.md)
-- [Scene format](docs/SCENE.md)
+- [Technical handoff and roadmap](docs/HANDOFF.md)
+- [The DOM engine](docs/ENGINE.md) and [Remotion compatibility](docs/COMPAT.md)
 - [Authoring contract](docs/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
+- [Scene format](docs/SCENE.md)
+- [Research notes](docs/RESEARCH.md) and [the no-Chrome decision](docs/DECISION_RENDERING_CRITICAL.md)
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph project["Your project (TSX)"]
+    P["Remotion API · CSS / SVG · Canvas 2D · WebGL · Web Audio<br/>native elements and effects from @kinetograph/core"]
+  end
+
+  subgraph node["Node: the kinetograph CLI, studio and MCP server"]
+    B["esbuild bundle<br/>remotion, @remotion/* → @kinetograph/core"]
+    D["determinism shim<br/>Date, Math.random, timers, rAF driven by the frame"]
+    R["@kinetograph/react: React reconciler<br/>runs the tree once per frame"]
+    S["browser shims: DOM readback, Canvas 2D and WebGL<br/>contexts that record their calls"]
+    A["@kinetograph/audio<br/>node-web-audio-api, OfflineAudioContext"]
+    E["emit: native elements → scene layers<br/>runs of HTML/SVG → DOM islands"]
+    B --> D --> R --> E
+    R <--> S
+  end
+
+  subgraph rust["Rust: the @kinetograph/native addon (napi-rs)"]
+    DOM["kinetograph-dom: DOM engine<br/>blitz-dom + Stylo (CSS) + taffy (layout) + Parley (text),<br/>usvg (SVG); painted into scene layers"]
+    C["kinetograph-core: compositor on wgpu<br/>Vello (vectors, text, Canvas 2D), WGSL effects,<br/>GLSL via naga (WebGL), scene3d (glTF, PBR),<br/>ThorVG (Lottie), 2.5D camera, motion blur, layer cache"]
+    M["media: FFmpeg decode and encode<br/>(VideoToolbox / libx264)"]
+    DOM --> C
+    M <--> C
+  end
+
+  P --> B
+  E -- "scene JSON per frame" --> C
+  E -- "island JSON" --> DOM
+  A -- "PCM" --> M
+  C --> OUT["MP4 / MOV / PNG<br/>studio preview frames"]
+```
+
+**One frame, start to finish.**
+
+1. **Bundle.** The CLI bundles the project with esbuild. `remotion` and `@remotion/*` imports are rewritten to
+   `@kinetograph/core`, so the project's code runs unchanged; `@remotion/google-fonts` families are downloaded once and
+   cached.
+2. **Run the frame.** Node imports the bundle with a determinism shim installed: `Date`, `Math.random`, timers and
+   `requestAnimationFrame` all follow the frame number, so a frame is a pure function of (project, frame) and nothing
+   reads the wall clock. Kinetograph's React reconciler renders the tree for that frame.
+3. **Split the tree.** Native elements (`<Image>`, `<Text>`, `<Shape>`, effects, `<Scene3D>`, …) become scene layers
+   directly. Each run of plain HTML and SVG becomes a *DOM island*: its tags, attributes, inline style, stylesheets and
+   the time are sent to the addon as JSON. `<canvas>` 2D and WebGL contexts are recording contexts: each call becomes a
+   command, and the commands become one layer.
+4. **Style, lay out and paint the DOM in Rust.** `kinetograph-dom` builds a Blitz document from the island, styles it
+   with Stylo (Firefox's CSS engine), lays it out with taffy and Parley, and paints it, in CSS paint order, into the same
+   scene layers native elements use. Readback that a component needs (`getBoundingClientRect`, `getComputedStyle`,
+   `ResizeObserver`) is answered from the same document. Anything it cannot draw is reported, and `--strict` fails on
+   it.
+5. **Composite on the GPU.** `kinetograph-core` draws the layer tree with wgpu: Vello for vectors, text and Canvas 2D;
+   WGSL passes for blends, masks, blurs, shadows, filters and the rest of the effects; WebGL shaders translated from
+   GLSL by naga; the `scene3d` renderer for meshes and glTF models; ThorVG for Lottie. Layers that did not change since
+   the last frame are reused.
+6. **Encode.** Frames go to FFmpeg (VideoToolbox on macOS) on another thread while the GPU draws the next one; the
+   project's audio, rendered offline with the Web Audio API, is mixed and muxed at the end.
+
+**Where the code is.**
+
+| Path | What it is |
+|---|---|
+| `crates/core` | `kinetograph-core`: scene format, compositor, effects, text, Canvas 2D, GLSL, 3D, Lottie, video |
+| `crates/dom` | `kinetograph-dom`: the DOM engine (Blitz document, CSS, layout, paint, SVG, readback) |
+| `crates/node` | `@kinetograph/native`: the N-API addon over both |
+| `crates/cli` | the Rust `kinetograph` binary for JSON scenes (`still`, `render`, `bench`) |
+| `packages/scene` | scene types, effect helpers, the recording Canvas 2D and WebGL contexts |
+| `packages/react` | the reconciler, native elements, DOM-island emit |
+| `packages/core` | Remotion's API and `@remotion/*` packages, the frame loop, the determinism shim |
+| `packages/compat` | browser shims (DOM, readback, web APIs) and `doctor` |
+| `packages/audio` | Web Audio rendering and mixing |
+| `packages/cli` | the `kinetograph` CLI and MCP server (the agent surface) |
+| `packages/studio` | `kinetograph studio`: a local web UI whose preview frames are rendered by the addon |
+| `vendor/` | patched copies of Vello, Stylo, blitz-dom and fontique (each patch explained in `vendor/README.md`) |
+
+**Decisions behind it.** No Chrome anywhere in rendering, including canvas and WebGL: every CSS, SVG and canvas feature
+is ported natively, and Chrome for Testing is used only by tests, as a reference to compare against. Node hosts the
+engine so every npm package and Web API is there; the engine is a native addon so pixels never cross into JavaScript.
+Existing crates do text shaping, layout, CSS and rasterising; Kinetograph writes the glue. Reasons and measurements
+are in [docs/HANDOFF.md](docs/HANDOFF.md) §4 and [docs/DECISION_RENDERING_CRITICAL.md](docs/DECISION_RENDERING_CRITICAL.md).
 
 ## Projects in TSX
 
@@ -129,7 +209,8 @@ to run the reference comparisons.
 
 ## License
 
-Licensed under either of Apache License 2.0 or MIT license at your option.
+[PolyForm Small Business License 1.0.0](LICENSE.md): free for individuals, non-profits, and companies with fewer than
+100 people and under 1,000,000 USD (2019) revenue. Larger companies need a commercial licence; see
+[COMMERCIAL.md](COMMERCIAL.md). Vendored crates keep their own licences ([vendor/README.md](vendor/README.md)).
 
-- [LICENSE-APACHE](LICENSE-APACHE)
-- [LICENSE-MIT](LICENSE-MIT)
+Required Notice: Copyright 2026 Sanat Gupta (https://github.com/0xS4N4TG)

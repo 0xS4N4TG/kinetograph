@@ -2046,6 +2046,40 @@ impl Compositor {
         target
     }
 
+    /// The shadow `shadow` casts from `src`'s alpha, alone: a drop shadow
+    /// without the layer over it. `src` is only read; the result is a new
+    /// texture. A Canvas 2D `shadowColor` shadow, which is composited apart
+    /// from the shape that casts it (docs/SCENE.md, "canvas").
+    pub fn cast_shadow(&mut self, src: &Tex, shadow: &ResolvedShadow) -> Tex {
+        if src.bounds.is_empty() {
+            return self.empty();
+        }
+        let alpha = self.shadow_alpha(src, shadow.spread, shadow.blur, false, self.whole());
+        let alpha_bounds = alpha.as_ref().map_or(src.bounds, |t| t.bounds);
+        let [r, g, b, a] = shadow.color.linear_premultiplied();
+        let params = floats(&[
+            0.0, 0.0, 0.0, 0.0, shadow.x, shadow.y, 0.0, 0.0, r as f32, g as f32, b as f32,
+            a as f32,
+        ]);
+        let target = self.target(bounds::shadow_cast(alpha_bounds, shadow.x, shadow.y));
+        // The drop shadow pass puts the shadow under its first input, which
+        // here has nothing in it.
+        let bare = self.empty();
+        let alpha_input = alpha.as_ref().map_or_else(|| src.input(), |t| t.input());
+        self.run_pass(
+            &self.drop_shadow,
+            bare.input(),
+            alpha_input,
+            &params,
+            &target,
+        );
+        self.release(bare);
+        if let Some(alpha) = alpha {
+            self.release(alpha);
+        }
+        target
+    }
+
     /// The alpha of `src` grown by `spread` pixels (shrunk when negative),
     /// inverted if asked, then blurred, in the alpha channel of a new
     /// texture. `None` when none of that changes anything: the alpha of
@@ -2120,6 +2154,35 @@ impl Compositor {
             0.0,
         ]);
         self.run_pass(&self.spread, input, input, &params, target);
+    }
+
+    /// The box `region` of `tex` encoded to sRGB, straight alpha, in a new
+    /// texture of the box's size: the form Vello draws a picture from
+    /// (`vello::Renderer::register_texture`).
+    pub fn to_srgb8(&mut self, tex: &Tex, region: PixelRect) -> wgpu::Texture {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("srgb picture"),
+            size: wgpu::Extent3d {
+                width: region.width(),
+                height: region.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: READBACK_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target = Tex {
+            view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            texture,
+            origin: [region.x0, region.y0],
+            size: [region.width(), region.height()],
+            bounds: region,
+        };
+        self.pass(&self.encode, tex.input(), tex.input(), 0.0, 0, &target);
+        target.texture
     }
 
     /// Encodes a linear texture to sRGB and reads it back as tightly packed
