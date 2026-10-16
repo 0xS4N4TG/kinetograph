@@ -79,11 +79,11 @@ filled on 2026-10-16. What is left:
   writes no extra files); `trimBefore`, `playbackRate` and `loop` on `Track`, `Interactive.*`, `Solid`, `CanvasImage`
   and `HtmlInCanvas`. `IFrame` renders an `iframe`, which the CSS engine reports as unsupported.
 - Not exported: `Internals`, `FolderContext`, `PathInternals`, `AudioForPreview` (internal).
-- Packages in flight on 2026-10-16 (check their branches before starting any): `@remotion/sfx`, `zod-types`,
-  `timeline-utils`, `media-parser`, `webcodecs`, `canvas` (done on the packages branch; `webcodecs` video and audio
-  encode and decode, and `media-parser`'s box tree and sample callbacks, throw `UnsupportedApiError` and need a video
-  decoder/encoder in the addon);
-  `@remotion/skia` on real Skia (`skia-safe`, an optional addon, CPU raster first) and `@remotion/rive` (`rive-rs`).
+- Done on 2026-10-16 (merged): the 19 `@remotion/transitions` presentations, `useTransitionProgress`,
+  `@remotion/light-leaks`, `@remotion/starburst`, `@remotion/sfx`, `zod-types`, `timeline-utils`, `media-parser`,
+  `webcodecs`, `canvas`, `@remotion/rive` and `@remotion/skia` on real Skia (the optional `@kinetograph/skia` addon,
+  CPU raster). `webcodecs` video and audio encode and decode, and `media-parser`'s box tree and sample callbacks,
+  throw `UnsupportedApiError` and need a video decoder/encoder in the addon; what Skia leaves out is in section 3.
 - Not planned: `@remotion/three` and `@remotion/player` (dropped: own 3D layer, own studio); `renderer`, `bundler`,
   `cli`, `lambda` (replaced by Kinetograph's CLI); `tailwind`/`tailwind-v4` (webpack config only; Tailwind itself
   works).
@@ -103,6 +103,14 @@ filled on 2026-10-16. What is left:
   and glTF animation, morph targets and skins are done (2026-10-16).
 - **CSS**: `@starting-style`, container `style()` queries, cancelling a running transition, `preserve-3d` (above).
 - **WGSL `shader()`**: sees only its own layer, one pass, no other texture, `f32` uniforms only.
+
+- **`@remotion/skia` / `@shopify/react-native-skia`** (AUTHORING.md §7.7): `Atlas`, `Patch`, `Glyphs`, `TextBlob`,
+  `Picture` and `ImageSVG` are reported, not drawn; no Reanimated values, `FitBox`, `Skia.Surface`/`Offscreen`,
+  `Skia.Image`/`Data`/`SVG`/`Typeface` factories, `useVideo`, animated images, paragraph measurement, shaders or filters
+  set on a `Skia.Paint()` object. The raster is CPU only (about 15 ms of a 1080p frame is PNG hand-off; a GPU-backed Skia
+  would skip it). The PNGs of drawn frames are kept under `~/.cache/kinetograph/skia` (newest 400 to 600).
+- **`@remotion/rive`** (AUTHORING.md §7.6): `onLoad`, `assetLoader`, `effects` and the `ref` getters are not supported;
+  a state machine starts with its inputs at their defaults (no way to set inputs); pictures embedded in a file only.
 
 ## 4. Tests and tooling
 

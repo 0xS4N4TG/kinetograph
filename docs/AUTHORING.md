@@ -802,10 +802,91 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/media-parser` (+ `/media-parser/node`, `/web`, `/universal`, `/node-writer`, `/worker`, `/server-worker`, `/worker-web-entry`, `/worker-server-entry`) | `@remotion/media-parser` | `parseMedia` and `downloadAndParseMedia` for a **local file** (a path, a `file:` URL; a URL to the network is the "renders offline" error), `mediaParserController`, the errors (`IsAnImageError`, `IsAPdfError`, `IsAnUnsupportedFileTypeError`, `MediaParserAbortError`), readers and `nodeWriter`. FFmpeg reads the container through the addon's `probeStreams` and `scanStreams` (`crates/node/src/streams.rs`), so every field of the published parser is answered, checked against it on MP4, WebM, transport-stream, MP3, AAC, FLAC and WAV files (test/media-parser.test.ts). Known differences: MP4's `trackMediaTimeOffsetInTrackTimescale` is 0; the `slow*` bitrates and durations are within a few percent; raw AAC gets a correct `AudioSpecificConfig`; metadata keys follow FFmpeg's names except for Matroska (lower case), MP3 (ID3 frame ids) and WAV (RIFF chunk ids). Throws `UnsupportedApiError`: `slowStructure` (the box tree), `onAudioTrack` / `onVideoTrack` (encoded samples), a `Blob` source, M3U8 playlists, `simulateSeek`; `seek()` and `seekingHints` change nothing. `MediaParserInternals` has `Log`, `createAacCodecPrivate`, `internalParseMedia` and `fieldsNeedSamplesMap` only |
 | `@kinetograph/core/webcodecs` (+ `/webcodecs/buffer`, `/web-fs`, `/worker`) | `@remotion/webcodecs` | works: the container and codec lists, `canCopy*`/`canReencode*`, the default track handlers, `getPartialAudioData`, `convertMedia` of a local file's sound to `container: 'wav'` (decoded by the addon's FFmpeg), `bufferWriter`, `webcodecsController`. Throws `UnsupportedApiError`: every other `convertMedia` output (the addon has no video or audio encoder to hand frames to), `onVideoFrame`/`onAudioData` (WebCodecs objects), `createVideoDecoder`/`createAudioDecoder`/`createVideoEncoder`/`createAudioEncoder`, `convertAudioData`, `extractFrames`, `extractFramesOnWebWorker`, `webFsWriter` |
 | `@kinetograph/core/canvas` | `@remotion/canvas` | the Studio editor's canvas (an overlay of `@remotion/player` with pointer selection, hover and keyframe dragging), not a drawing API. Every name is exported and throws `UnsupportedApiError` when called or rendered, so a project that imports it bundles; for drawing, see §6.5. The published package is at 4.0.532 |
+| `@kinetograph/core/rive` | `@remotion/rive` | `RemotionRiveCanvas`, §7.6 |
+| `@kinetograph/core/skia` (+ `/skia/enable`) | `@remotion/skia`, `@shopify/react-native-skia` | `SkiaCanvas`, `Canvas` and RN-Skia's components on real Skia in the optional `@kinetograph/skia` addon, §7.7 |
 | `@kinetograph/core/determinism`, `/determinism/install` | none | §7.4 |
 
 `@kinetograph/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from
 one place.
+
+### 7.6 `@remotion/rive`
+
+`import { RemotionRiveCanvas } from '@remotion/rive'` (also `@kinetograph/core/rive`). Remotion plays a `.riv` file with
+Rive's WebAssembly runtime in a `<canvas>`; Kinetograph plays it with Rive's own C++ runtime, built into the addon from
+`rive-rs` (`vendor/rive`, licences in `vendor/README.md`), and the component hands the runtime's draw calls to the
+`<canvas>`'s 2D context as commands, so the element is laid out and styled like the DOM element it is in Remotion and is
+drawn natively with Vello.
+
+| Prop | |
+|---|---|
+| `src` | a `.riv` path or `staticFile(...)`; a URL is an error (a frame must not depend on the network) |
+| `artboard`, `animation` | by name or position; the default artboard and its first animation (else its default state machine) when left out |
+| `stateMachine` | not in Remotion's props: plays a state machine instead, from its start with its inputs at their defaults, stepped at 1/60 s |
+| `fit`, `alignment` | as Remotion's: `contain`, `cover`, `fill`, `fit-width`, `fit-height`, `none`, `scale-down`; nine alignments |
+| `from`, `durationInFrames`, `name` | as `<Sequence>`'s |
+| `className`, `style` | on the `<canvas>`, which is as large as the composition |
+| `ref` | the four getters answer `null` (the runtime is in the addon) |
+| `onLoad`, `assetLoader`, `effects`, `effectsOutputSize` | reported as unsupported (a warning; `--strict` fails) |
+
+A frame is played from the file's start to `frame / fps`, never from what was played before, so a frame is a pure function
+of the file and the frame number. Pictures embedded in a file are decoded and written as PNGs under
+`~/.cache/kinetograph/rive` for the commands to name; fonts embedded in the file are shaped by the runtime. The test file
+`crates/rive/tests/assets/volume_bars.riv` is from `rive-app/rive-runtime` (MIT).
+
+### 7.7 `@remotion/skia` and `@shopify/react-native-skia`
+
+Real Skia (`skia-safe`, Skia's CPU rasteriser) in an **optional** addon, `@kinetograph/skia` (`crates/skia/node`). It
+is its own Cargo workspace (`crates/skia`), not a member of the root one, so `cargo build`, `cargo test` and
+`cargo clippy` at the root and the default `npm run build`/`npm test` never compile or link Skia. The npm package has no
+`build` or `test` script for the same reason; build and test it with
+
+```
+npm run build:addon:release -w crates/skia/node     # downloads skia-safe's prebuilt Skia binary on the first build
+npm run test:addon -w crates/skia/node
+cargo test --manifest-path crates/skia/Cargo.toml    # the pixel tests of the primitives, filters, SkSL and text
+```
+
+The CLI maps `@remotion/skia`, `@remotion/skia/enable` and `@shopify/react-native-skia` to `@kinetograph/core/skia`.
+The addon is loaded the first time a frame draws a canvas, so a project that never imports Skia does not need it. If it
+is not installed, the first Skia canvas fails with `npm install @kinetograph/skia`.
+
+How a frame is drawn:
+
+1. `<Canvas>` (or `<SkiaCanvas width height>`) renders its children with a react-reconciler host of its own
+   (`skia/host.ts`) into a tree of `{ type, props, children }` nodes, fresh each frame. The timeline context is passed
+   in, so `useCurrentFrame()` works inside, as do hooks, context and user components. Colours become floats, `transform`
+   becomes a list, Skia objects serialise themselves (`SkPath`, `SkPaint`, `SkImage`, `SkFont`, `SkRuntimeEffect`).
+2. The addon's `renderSkia` draws the tree on Skia's raster backend with the rules of RN-Skia's own renderer (a node
+   with paint props or declaration children pushes a copy of the paint it inherits; shaders, colour filters, image
+   filters, mask filters and path effects collect from the children; `<Paint>` children repeat the drawing). It writes
+   the picture as a PNG named by the hash of its pixels under `~/.cache/kinetograph/skia` (at most 600 files are kept,
+   the oldest removed first) and the component renders an `<img>` of it, so the canvas lays out and composites like any
+   image. A frame is a pure function of the tree and the files it names; the raster backend gives the same pixels on any
+   machine, with no GPU.
+
+Supported (RN-Skia's names): `Canvas`, `Group` (`transform`, `origin`, `matrix`, `clip`, `invertClip`, `layer`, `opacity`,
+`blendMode`, paint props), `Fill`, `Rect`, `RoundedRect`, `Circle`, `Oval`, `Line`, `Points`, `DiffRect`, `Path` (`start`,
+`end`, `stroke`, `fillType`), `Box`/`BoxShadow`, `Vertices`, `Image` (`fit`, `sampling`), `Text`, `TextPath`, `Paragraph`,
+`Mask`, `BackdropFilter`/`BackdropBlur`, `Paint`; shaders `Shader` (SkSL, run by Skia), `ImageShader`, `ColorShader`, the
+four gradients, `Turbulence`, `FractalNoise`, `Blend`; image filters `Blur`, `Shadow`, `Offset`, `Morphology`,
+`DisplacementMap`, `RuntimeShader`; colour filters `ColorMatrix`, `BlendColor`, `Lerp`, `LumaColorFilter` and the two gamma
+ones; `BlurMask`; path effects `DashPathEffect`, `CornerPathEffect`, `DiscretePathEffect`, `SumPathEffect`, and the 1D and
+2D ones. `Skia.Path.Make()` builds a path (`moveTo`, `lineTo`, `quadTo`, `cubicTo`, relative forms, `arcToOval`,
+`arcToRotated`, `addRect`, `addCircle`, `addOval`, `addRRect`, `addArc`, `addPath`, `close`), and Skia answers `op`,
+`simplify`, `trim`, `dash`, `stroke`, `transform`, `getBounds`, `contains`; `Skia.Color`, `Skia.XYWHRect`,
+`Skia.RRectXY`, `Skia.Matrix`, `Skia.Paint`, `Skia.RuntimeEffect.Make` (null and Skia's message logged on a compile
+error), `Skia.ParagraphBuilder.Make`; hooks `useImage`, `useFont`, `matchFont`, `useCanvasRef`; the enums as strings.
+
+Fonts are files, as everywhere: `matchFont` and `Paragraph` find only fonts registered with `loadFont()`/`registerFont()`
+(no system fonts, so text is the same on every machine); `useFont(staticFile('a.ttf'), size)` reads a file. Pictures are
+read from the project or its `public` directory. Everything a render reads is read when the frame is drawn.
+
+Reported as unsupported (a warning; `--strict` fails) when drawn: `Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture`,
+`ImageSVG`. Not provided (an import of one fails the bundle, naming the export): Reanimated
+values and hooks (`useSharedValue`, `useDerivedValue`, `useClock`; a Remotion project drives props from the frame),
+`FitBox`/`fitbox`/`rect2rect`, `Skia.Surface`/`Offscreen`/`makeImageFromView`, `Skia.Image.*` and `Skia.Data.*` factories,
+`Skia.SVG`/`useSVG`, `Skia.Typeface`/`FontMgr`, `useVideo`, animated images, `Paragraph` measurement, a `Skia.Paint()` with a
+shader or filter set on it (use the JSX children), touch handling.
 
 ## 8. `@kinetograph/audio` (stream 5)
 

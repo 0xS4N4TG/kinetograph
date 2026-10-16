@@ -1,0 +1,21 @@
+[package]
+name = "kinetograph-rive"
+description = "Rive files (.riv) played to the commands of a canvas layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Rive's own runtime (C++, MIT) behind a Rust trait for the renderer: the
+# rive-rs crate, vendored with the C++ it builds (vendor/README.md). This crate
+# implements the renderer, as the commands the `canvas` layer draws with Vello
+# (docs/AUTHORING.md §7.6).
+rive-rs = { path = "../../vendor/rive/rive-rs" }
+serde_json = "1.0.154"
+# Pictures embedded in a file are PNG, JPEG or WebP; they are decoded here and
+# written as PNG files for the canvas to read.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+sha2 = "0.11.1"
+
+[dev-dependencies]
+kinetograph-core = { path = "../core" }

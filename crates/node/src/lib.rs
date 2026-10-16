@@ -3,8 +3,9 @@
 //! is specified in `docs/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
-//! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `version`) never
-//! open a device; `new Renderer()` does, once, and every scene given to it afterwards reuses that setup.
+//! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `riveFrame`,
+//! `version`) never open a device; `new Renderer()` does, once, and every scene given to it afterwards reuses that
+//! setup.
 //!
 //! Every call is synchronous and runs on the JS thread. A thrown error is an
 //! `Error` whose `code` is one of `error::Code`.
@@ -16,6 +17,7 @@ mod error;
 mod layout;
 mod media;
 mod preview;
+mod rive;
 pub mod streams;
 
 use std::path::{Path, PathBuf};
@@ -285,6 +287,15 @@ pub fn dom_computed_style(
     properties: Vec<String>,
 ) -> Result<Vec<String>> {
     dom::dom_computed_style(&request_json, &path, &properties)
+}
+
+/// A Rive file (`.riv`) played to a time, as the commands of a canvas layer
+/// (docs/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
+/// time, width, height, fit, alignment }` as JSON in, the commands as a JSON
+/// array out. CPU only; the file is read once.
+#[napi]
+pub fn rive_frame(request_json: String) -> Result<String> {
+    rive::rive_frame(&request_json)
 }
 
 // ---- GPU ----

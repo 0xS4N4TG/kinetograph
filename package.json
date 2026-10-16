@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": [
     "crates/node",
+    "crates/skia/node",
     "packages/scene",
     "packages/compat",
     "packages/react",

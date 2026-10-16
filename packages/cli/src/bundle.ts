@@ -34,6 +34,8 @@ const REMOTION_PACKAGES = new Set([
   'media-parser',
   'webcodecs',
   'canvas',
+  'rive',
+  'skia',
 ]);
 
 export type Resolution =
@@ -66,6 +68,11 @@ export function resolveSpecifier(specifier: string): Resolution | null {
       message: `"${specifier}" is not supported by Kinetograph yet. Run \`kinetograph doctor\` for what is.`,
     };
   }
+  // React Native Skia's components are the core's (drawn by the optional @kinetograph/skia addon, docs/AUTHORING.md §7.7).
+  if (specifier === '@shopify/react-native-skia') return { kind: 'path', target: '@kinetograph/core/skia' };
+  if (specifier.startsWith('@shopify/react-native-skia/')) {
+    return { kind: 'unsupported', message: `"${specifier}" is an internal of React Native Skia; import from "@shopify/react-native-skia".` };
+  }
   if (/^@kinetograph\/(core|react|scene|audio|compat)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   // React too: a project with its own copy of React would otherwise bundle two, and the core's hooks would run against
   // a different React from the project's components.
@@ -77,7 +84,7 @@ function aliasPlugin(): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@kinetograph\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|@kinetograph\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;

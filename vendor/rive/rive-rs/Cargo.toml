@@ -1,0 +1,22 @@
+[package]
+name = "rive-rs"
+description = "Rive runtime bindings"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dragoș Tiselice <dragos@rive.app>"]
+homepage = "https://rive.app/"
+repository = "https://github.com/rive-app/rive-rs"
+license = "MIT"
+publish = false
+
+[features]
+default = ["text", "layout"]
+text = []
+layout = []
+
+[build-dependencies]
+cc = { version = "1.0.83", features = ["parallel"] }
+walkdir = "2.4.0"
+
+[dependencies]
+bitflags = "2.4.0"

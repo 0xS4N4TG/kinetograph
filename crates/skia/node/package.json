@@ -1,0 +1,25 @@
+{
+  "name": "@kinetograph/skia",
+  "version": "0.1.0",
+  "description": "Optional Node-API addon: React Native Skia scenes drawn with Skia, for @remotion/skia and @shopify/react-native-skia projects",
+  "license": "PolyForm-Small-Business-1.0.0",
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": ["index.js", "index.d.ts", "*.node"],
+  "napi": {
+    "binaryName": "kinetograph-skia",
+    "targets": ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:addon": "napi build --platform",
+    "build:addon:release": "napi build --platform --release",
+    "test:addon": "node --test \"test/*.test.cjs\""
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.10.8"
+  }
+}

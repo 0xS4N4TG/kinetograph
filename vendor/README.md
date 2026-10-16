@@ -236,3 +236,35 @@ box's and fixed the cell's size, so a rowspan cell did not fill its rows.
 
 Remove `vendor/blitz-dom`, its `[patch.crates-io]` entry and this section once Blitz answers container queries. The change
 is small enough to offer upstream.
+
+## rive (rive-rs and the C++ it builds)
+
+- Upstream: `rive-app/rive-rs` at `3d26aa1c3865260e5ef9751ad0172dcc197ff8eb` (the crate, `rive-rs/`), whose submodules
+  are `rive-app/rive-runtime` at `24c6b5db10b458f179a8abc3b91d2824ecd96042` (`rive-cpp/`: `include/` and `src/`),
+  `rive-app/harfbuzz` branch `rive_10.1.0` (`harfbuzz/src`, pruned to the files `harfbuzz.cc` includes),
+  `rive-app/yoga` branch `rive_changes_v2_0_1_1` (`yoga/yoga`) and `Tehreer/SheenBidi` v2.6 (`sheenbidi/`). Licences:
+  MIT for rive-rs, rive-runtime and yoga, harfbuzz's own `COPYING` (MIT-style) and SheenBidi's Apache-2.0; each is kept
+  beside its code. About 14 MB.
+- Not wired in by `[patch.crates-io]`: the crate is not on crates.io. `crates/rive` depends on it by path.
+
+### Why vendored and not a git dependency
+
+The repository's own submodule pins do not build together: `rive-runtime` at the pinned commit calls
+`hb_face_create_or_fail`, which the pinned `harfbuzz` submodule does not have (it wants the `rive_10.1.0` branch), and
+`layout` (on by default) needs a `submodules/yoga` that `.gitmodules` does not list. The mirror's last commit is July
+2025. A git dependency cannot choose other submodule revisions, so the matching sources are copied here.
+
+### The changes
+
+- `rive-rs/Cargo.toml`: no `vello` feature or dependencies (it builds against an old Vello; `crates/rive` implements
+  the renderer trait itself), `publish = false`.
+- `rive-rs/build.rs`: the C++ is found beside the crate (`../rive-cpp`, `../yoga`, `../harfbuzz`, `../sheenbidi`).
+- `rive-rs/src/artboard/mod.rs`, `src/state_machine/mod.rs`: `'_` on five returned types, so that `cargo clippy -D warnings`
+  at the workspace root passes.
+- `rive-rs/src/lib.rs`, `src/file.rs`: no `vello` module; `Error` implements `core::error::Error`.
+- `rive-rs/src/ffi.cpp`, `src/ffi.rs`, `src/scene.rs`: `Scene::view_transform` (the runtime's `computeAlignment` with
+  the artboard's bounds, for any fit and alignment; the crate only had `contain`, centred).
+
+### Dropping the patch
+
+Replace this directory with a dependency on a rive-rs release that builds, if one appears.

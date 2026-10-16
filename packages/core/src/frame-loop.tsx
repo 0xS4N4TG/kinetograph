@@ -25,6 +25,7 @@ import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, setVirtualFrame, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
+import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
 
 export interface FrameResult {
   scene: SceneJson;
@@ -145,6 +146,8 @@ class Renderer implements FrameRenderer {
       }
     }
     setHistoryMode({ record: false });
+    // What components that draw through a canvas left out, as the frame's own render reported it.
+    const reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
     let layers = main.layers;
@@ -180,12 +183,13 @@ class Renderer implements FrameRenderer {
     // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
-    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: main.unsupported };
+    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: [...main.unsupported, ...reported] };
   }
 
   /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */
   private update(scene: SceneRoot, element: ReactNode): void {
     resetCanvasStates();
+    clearReportedUnsupported();
     scene.update(element);
   }
 

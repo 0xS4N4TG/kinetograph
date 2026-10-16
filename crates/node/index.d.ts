@@ -249,6 +249,14 @@ export interface RgbaFrame {
 /** Reads every packet of a file, without decoding, and totals them per stream: the "slow" fields of `parseMedia`. */
 export declare function scanStreams(path: string, baseDir?: string | undefined | null): Array<StreamScan>
 
+/**
+ * A Rive file (`.riv`) played to a time, as the commands of a canvas layer
+ * (docs/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
+ * time, width, height, fit, alignment }` as JSON in, the commands as a JSON
+ * array out. CPU only; the file is read once.
+ */
+export declare function riveFrame(requestJson: string): string
+
 export interface SceneInfo {
   width: number
   height: number
