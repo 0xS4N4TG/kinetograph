@@ -20,6 +20,21 @@ export async function getGifDurationInSeconds(src: string): Promise<number> {
 }
 
 /**
+ * Remotion's way to load a GIF before it is used. The file is read from disk, so there is nothing to wait for: it is
+ * probed now, which checks that it is a GIF and keeps the answer for `Gif`, and `waitUntilDone()` resolves, or rejects
+ * with what is wrong with the file. `free()` does nothing.
+ */
+export function preloadGif(src: string, _options?: { requestInit?: unknown }): { waitUntilDone: () => Promise<void>; free: () => void } {
+  let failure: unknown = null;
+  try {
+    gifDuration(src);
+  } catch (error) {
+    failure = error;
+  }
+  return { waitUntilDone: () => (failure === null ? Promise.resolve() : Promise.reject(failure)), free: () => undefined };
+}
+
+/**
  * An animated GIF. As `@remotion/gif`'s: `playbackRate` (default 1) and `loopBehavior` (`loop`, the default,
  * `pause-after-finish` or `unmount-after-finish`). The native element needs the duration for the last of those, so
  * this reads it from the file, and only then.

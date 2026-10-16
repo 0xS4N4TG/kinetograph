@@ -30,12 +30,17 @@ fn quad_attributes() -> String {
         .to_string()
 }
 
-/// A draw of the quad with `fragment`, `extra` being more fields of the draw
-/// (uniforms, units, blend).
-fn draw(extra: &str) -> String {
+/// A draw of the quad with the program `program`, over the 16 x 16 drawing
+/// buffer or, with `target` (a texture's id and side), that square texture;
+/// `extra` being more fields of the draw (uniforms, units, blend).
+fn draw_with(program: &str, target: Option<(&str, u32)>, extra: &str) -> String {
+    let (side, target) = match target {
+        Some((id, side)) => (side, format!(r#", "target": "{id}""#)),
+        None => (16, String::new()),
+    };
     format!(
-        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6,
-            "attributes": {}, "viewport": [0, 0, 16, 16] {}}}"#,
+        r#"{{"op": "draw", "program": "{program}", "mode": "triangles", "first": 0, "count": 6,
+            "attributes": {}, "viewport": [0, 0, {side}, {side}] {target} {}}}"#,
         quad_attributes(),
         if extra.is_empty() {
             String::new()
@@ -45,16 +50,36 @@ fn draw(extra: &str) -> String {
     )
 }
 
-fn layer(fragment: &str, extra_content: &str, ops: &str) -> String {
+/// A draw of the quad with the program `p`.
+fn draw(extra: &str) -> String {
+    draw_with("p", None, extra)
+}
+
+/// A layer with the fragment shaders `programs` (id and source), all with the
+/// quad's vertex shader.
+fn layer_of(programs: &[(&str, &str)], extra_content: &str, ops: &str) -> String {
+    let programs: Vec<String> = programs
+        .iter()
+        .map(|(id, fragment)| {
+            format!(
+                r#""{id}": {{"vertex": {}, "fragment": {}, "attributes": {{"a_pos": 0}}}}"#,
+                serde_json::to_string(QUAD_VERTEX_ES1).unwrap(),
+                serde_json::to_string(fragment).unwrap(),
+            )
+        })
+        .collect();
     format!(
         r#"{{"id": "g", "type": "glsl", "width": 16, "height": 16,
-            "programs": {{"p": {{"vertex": {}, "fragment": {}, "attributes": {{"a_pos": 0}}}}}},
+            "programs": {{{}}},
             "buffers": {{"quad": "{}"}}
             {extra_content}, "ops": [{ops}]}}"#,
-        serde_json::to_string(QUAD_VERTEX_ES1).unwrap(),
-        serde_json::to_string(fragment).unwrap(),
+        programs.join(", "),
         quad()
     )
+}
+
+fn layer(fragment: &str, extra_content: &str, ops: &str) -> String {
+    layer_of(&[("p", fragment)], extra_content, ops)
 }
 
 fn scene_of(layers: &str) -> Scene {
@@ -313,4 +338,267 @@ fn a_shader_group_names_children_it_has() {
             && message.contains("not one of its children"),
         "{message}"
     );
+}
+
+// ---- target textures (a framebuffer's) ----
+
+const FILL: &str = "precision mediump float; uniform vec4 u_color; \
+    void main() { gl_FragColor = u_color; }";
+const SHOW: &str = "precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; \
+    void main() { gl_FragColor = texture2D(u_tex, v_uv); }";
+/// `u_tex * u_scale + u_add`, for a pass that reads a target and writes another.
+const MAD: &str = "precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; \
+    uniform vec4 u_scale; uniform vec4 u_add; \
+    void main() { gl_FragColor = texture2D(u_tex, v_uv) * u_scale + u_add; }";
+
+/// `"uniforms"` from calls of a name, a kind (`f` or `i`) and values.
+fn uniforms(calls: &[(&str, &str, &[f64])]) -> String {
+    let calls: Vec<String> = calls
+        .iter()
+        .map(|(name, kind, value)| {
+            format!(r#""{name}": [{{"kind": "{kind}", "value": {value:?}}}]"#)
+        })
+        .collect();
+    format!(r#""uniforms": {{{}}}"#, calls.join(", "))
+}
+
+/// The unit 0 of a draw, holding `texture`, nearest and clamped.
+fn unit(texture: &str) -> String {
+    format!(
+        r#""units": {{"0": {{"texture": "{texture}", "min": "NEAREST", "mag": "NEAREST",
+            "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}}}"#
+    )
+}
+
+/// The fields of a draw that sample `texture` into `u_tex`.
+fn sampling(texture: &str) -> String {
+    format!("{}, {}", uniforms(&[("u_tex", "i", &[0.0])]), unit(texture))
+}
+
+fn fill(color: [f64; 4]) -> String {
+    uniforms(&[("u_color", "f", &color)])
+}
+
+/// A `MAD` pass over `texture`.
+fn mad(texture: &str, scale: [f64; 4], add: [f64; 4]) -> String {
+    format!(
+        "{}, {}",
+        uniforms(&[
+            ("u_tex", "i", &[0.0]),
+            ("u_scale", "f", &scale),
+            ("u_add", "f", &add),
+        ]),
+        unit(texture)
+    )
+}
+
+/// The `textures` of a layer: square target textures by id and side.
+fn targets(sides: &[(&str, u32)]) -> String {
+    let textures: Vec<String> = sides
+        .iter()
+        .map(|(id, side)| {
+            format!(r#""{id}": {{"target": true, "width": {side}, "height": {side}}}"#)
+        })
+        .collect();
+    format!(r#", "textures": {{{}}}"#, textures.join(", "))
+}
+
+fn ops(ops: &[String]) -> String {
+    ops.join(", ")
+}
+
+fn render_error(layer: &str) -> String {
+    render_still(scene_of(layer), 0)
+        .err()
+        .expect("must fail")
+        .to_string()
+}
+
+#[test]
+fn a_texture_drawn_into_is_sampled_upright() {
+    // The coordinates are GL's: red grows to the right and green upwards, in
+    // the texture and so on the canvas that shows it.
+    let frame = render(&layer_of(
+        &[
+            (
+                "c",
+                "precision mediump float; void main() { \
+                 gl_FragColor = vec4(gl_FragCoord.x / 8.0, gl_FragCoord.y / 8.0, 0.0, 1.0); }",
+            ),
+            ("s", SHOW),
+        ],
+        &targets(&[("rt", 8)]),
+        &ops(&[
+            draw_with("c", Some(("rt", 8)), ""),
+            draw_with("s", None, &sampling("rt")),
+        ]),
+    ));
+    near(px(&frame, 0, 15), [16, 16, 0, 255], 6);
+    near(px(&frame, 15, 15), [239, 16, 0, 255], 6);
+    near(px(&frame, 0, 0), [16, 239, 0, 255], 6);
+}
+
+#[test]
+fn clear_scissor_and_winding_follow_gls_rows_in_a_texture() {
+    // Blue everywhere, red in the lower half (GL's y counts from the bottom).
+    let frame = render(&layer_of(
+        &[("f", FILL), ("s", SHOW)],
+        &targets(&[("rt", 8)]),
+        &ops(&[
+            r#"{"op": "clear", "color": [0, 0, 1, 1], "target": "rt"}"#.into(),
+            draw_with(
+                "f",
+                Some(("rt", 8)),
+                &format!(r#""scissor": [0, 0, 8, 4], {}"#, fill([1.0, 0.0, 0.0, 1.0])),
+            ),
+            draw_with("s", None, &sampling("rt")),
+        ]),
+    ));
+    near(px(&frame, 8, 12), [255, 0, 0, 255], 3);
+    near(px(&frame, 8, 3), [0, 0, 255, 255], 3);
+
+    // The quad is counter-clockwise: it is a front face when CCW is the front
+    // and is culled when CW is, in a texture as on the canvas.
+    for (front, want) in [("CCW", [255, 255, 255, 255]), ("CW", [0, 0, 0, 255])] {
+        let cull = format!(r#""cull": {{"face": "BACK", "front": "{front}"}}"#);
+        let frame = render(&layer_of(
+            &[("f", FILL), ("s", SHOW)],
+            &targets(&[("rt", 8)]),
+            &ops(&[
+                draw_with("f", Some(("rt", 8)), &format!("{cull}, {}", fill([1.0; 4]))),
+                draw_with("s", None, &sampling("rt")),
+            ]),
+        ));
+        near(px(&frame, 8, 8), want, 2);
+    }
+}
+
+#[test]
+fn two_textures_ping_pong() {
+    // a = (0.1, 0.2, 0.3); b = a * 2; a = b + 0.05; the canvas shows a.
+    let frame = render(&layer_of(
+        &[("f", FILL), ("m", MAD), ("s", SHOW)],
+        &targets(&[("a", 8), ("b", 8)]),
+        &ops(&[
+            draw_with("f", Some(("a", 8)), &fill([0.1, 0.2, 0.3, 1.0])),
+            draw_with(
+                "m",
+                Some(("b", 8)),
+                &mad("a", [2.0, 2.0, 2.0, 1.0], [0.0; 4]),
+            ),
+            draw_with(
+                "m",
+                Some(("a", 8)),
+                &mad("b", [1.0; 4], [0.05, 0.05, 0.05, 0.0]),
+            ),
+            draw_with("s", None, &sampling("a")),
+        ]),
+    ));
+    near(px(&frame, 8, 8), [65, 117, 166, 255], 6);
+}
+
+#[test]
+fn the_drawing_buffer_sees_a_texture_as_it_was_when_it_drew() {
+    // Red is drawn into the texture and shown on all of the canvas; then the
+    // texture is blue and shown on the lower half only.
+    let frame = render(&layer_of(
+        &[("f", FILL), ("s", SHOW)],
+        &targets(&[("rt", 8)]),
+        &ops(&[
+            draw_with("f", Some(("rt", 8)), &fill([1.0, 0.0, 0.0, 1.0])),
+            draw_with("s", None, &sampling("rt")),
+            draw_with("f", Some(("rt", 8)), &fill([0.0, 0.0, 1.0, 1.0])),
+            draw_with(
+                "s",
+                None,
+                &format!(r#""scissor": [0, 0, 16, 8], {}"#, sampling("rt")),
+            ),
+        ]),
+    ));
+    near(px(&frame, 8, 3), [255, 0, 0, 255], 3);
+    near(px(&frame, 8, 12), [0, 0, 255, 255], 3);
+}
+
+#[test]
+fn a_clear_of_the_drawing_buffer_keeps_what_the_textures_were_given() {
+    let frame = render(&layer_of(
+        &[("f", FILL), ("s", SHOW)],
+        &targets(&[("rt", 8)]),
+        &ops(&[
+            draw_with("f", Some(("rt", 8)), &fill([0.0, 1.0, 0.0, 1.0])),
+            r#"{"op": "clear", "color": [1, 0, 0, 1]}"#.into(),
+            draw_with("s", None, &sampling("rt")),
+        ]),
+    ));
+    assert_eq!(px(&frame, 8, 8), [0, 255, 0, 255]);
+}
+
+#[test]
+fn a_texture_nothing_drew_into_is_transparent_black() {
+    let frame = render(&layer_of(
+        &[("s", SHOW)],
+        &targets(&[("rt", 8)]),
+        &draw_with("s", None, &sampling("rt")),
+    ));
+    assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_draw_that_samples_its_own_target_is_refused() {
+    let error = render_error(&layer_of(
+        &[("s", SHOW)],
+        &targets(&[("rt", 8)]),
+        &draw_with("s", Some(("rt", 8)), &sampling("rt")),
+    ));
+    assert!(error.contains("renders to"), "{error}");
+}
+
+#[test]
+fn a_target_must_be_a_target_texture_of_a_size_the_device_draws() {
+    let pixels = b64(&[255, 0, 0, 255]);
+    let plain =
+        format!(r#", "textures": {{"rt": {{"pixels": "{pixels}", "width": 1, "height": 1}}}}"#);
+    let error = render_error(&layer_of(
+        &[("f", FILL)],
+        &plain,
+        &draw_with("f", Some(("rt", 1)), ""),
+    ));
+    assert!(error.contains("not a target texture"), "{error}");
+    let error = render_error(&layer_of(
+        &[("f", FILL)],
+        "",
+        &draw_with("f", Some(("gone", 1)), ""),
+    ));
+    assert!(error.contains("not a target texture"), "{error}");
+
+    for side in [0, 8193] {
+        let error = render_error(&layer_of(
+            &[("f", FILL)],
+            &targets(&[("rt", side)]),
+            &draw_with("f", Some(("rt", 8)), ""),
+        ));
+        assert!(error.contains("render target"), "{error}");
+    }
+
+    // Two of the largest and a third cannot all be held.
+    let clears: Vec<String> = ["a", "b", "c"]
+        .iter()
+        .map(|id| format!(r#"{{"op": "clear", "color": [0, 0, 0, 1], "target": "{id}"}}"#))
+        .collect();
+    let error = render_error(&layer_of(
+        &[("f", FILL)],
+        &targets(&[("a", 8192), ("b", 8192), ("c", 8192)]),
+        &ops(&clears),
+    ));
+    assert!(error.contains("MiB"), "{error}");
+}
+
+#[test]
+fn a_viewport_outside_its_target_is_refused() {
+    let error = render_error(&layer_of(
+        &[("f", FILL)],
+        &targets(&[("rt", 8)]),
+        &draw_with("f", Some(("rt", 16)), ""),
+    ));
+    assert!(error.contains("reaches outside the 8 x 8"), "{error}");
 }

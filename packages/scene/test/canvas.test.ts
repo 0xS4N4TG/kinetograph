@@ -7,6 +7,7 @@ import {
   parseCssColor,
   Path2D,
   toSceneColor,
+  unsupportedFilters,
   type CanvasCommand,
   type CanvasContext2D,
 } from '../src/index.js';
@@ -120,14 +121,181 @@ describe('state', () => {
     expect(Object.keys(only(plain)).sort()).toEqual(['op', 'paint', 'path']);
   });
 
-  it('keeps shadows and filters for reading back and draws nothing for them', () => {
+  it('reads back the shadow and filter it was given', () => {
     const ctx = make();
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'red';
     ctx.filter = 'blur(2px)';
     expect([ctx.shadowBlur, ctx.shadowColor, ctx.filter]).toEqual([8, '#ff0000', 'blur(2px)']);
+    ctx.shadowBlur = -1;
+    ctx.shadowOffsetX = NaN;
+    ctx.shadowColor = 'not a colour';
+    ctx.filter = 'wobble(3)';
+    expect([ctx.shadowBlur, ctx.shadowOffsetX, ctx.shadowColor, ctx.filter]).toEqual([8, 0, '#ff0000', 'blur(2px)']);
+    ctx.filter = 'none';
+    expect(ctx.filter).toBe('none');
+  });
+});
+
+describe('shadows', () => {
+  it('write a shadow on the commands drawn while it shows', () => {
+    const ctx = make();
     ctx.fillRect(0, 0, 5, 5);
+    ctx.shadowColor = 'rgba(0, 0, 255, 0.5)';
+    ctx.shadowOffsetX = 4;
+    ctx.fillRect(0, 0, 5, 5);
+    ctx.shadowBlur = 10;
+    ctx.strokeRect(0, 0, 5, 5);
+    ctx.fillText('x', 1, 1);
+    const [plain, offset, blurred, text] = ctx.commands as (CanvasCommand & { shadow?: unknown })[];
+    expect(plain!.shadow).toBeUndefined();
+    expect(offset!.shadow).toEqual({ color: '#0000ff80', x: 4 });
+    expect(blurred!.shadow).toEqual({ color: '#0000ff80', blur: 10, x: 4 });
+    expect(text!.shadow).toEqual({ color: '#0000ff80', blur: 10, x: 4 });
+  });
+
+  it('show only with a colour that is not transparent and a blur or an offset', () => {
+    const ctx = make();
+    ctx.shadowBlur = 5;
+    ctx.fillRect(0, 0, 5, 5);
+    ctx.shadowColor = 'red';
+    ctx.shadowBlur = 0;
+    ctx.fillRect(0, 0, 5, 5);
+    ctx.shadowOffsetY = -3;
+    ctx.shadowColor = 'transparent';
+    ctx.fillRect(0, 0, 5, 5);
+    expect(ctx.commands.map((c) => 'shadow' in c)).toEqual([false, false, false]);
+  });
+
+  it('are not moved by the transform and go with save and restore', () => {
+    const ctx = make();
+    ctx.shadowColor = 'black';
+    ctx.shadowOffsetX = 3;
+    ctx.save();
+    ctx.scale(2, 2);
+    ctx.shadowOffsetX = 6;
+    ctx.fillRect(0, 0, 5, 5);
+    ctx.restore();
+    ctx.fillRect(0, 0, 5, 5);
+    const [scaled, restored] = ctx.commands as (CanvasCommand & { m?: number[]; shadow?: { x?: number } })[];
+    expect(scaled!.m).toEqual([2, 0, 0, 2, 0, 0]);
+    expect(scaled!.shadow!.x).toBe(6);
+    expect(restored!.shadow!.x).toBe(3);
+  });
+
+  it('do not touch clearRect or putImageData', () => {
+    const ctx = make();
+    ctx.shadowColor = 'black';
+    ctx.shadowBlur = 4;
+    ctx.clearRect(1, 1, 3, 3);
+    ctx.putImageData(new ImageData(2, 2), 0, 0);
+    for (const command of ctx.commands) expect(command).not.toHaveProperty('shadow');
+  });
+});
+
+describe('filter', () => {
+  const written = (css: string): unknown => {
+    const ctx = make();
+    ctx.filter = css;
+    ctx.fillRect(0, 0, 5, 5);
+    const command = only(ctx) as { filter?: unknown; a?: number };
+    return { filter: command.filter, a: command.a };
+  };
+
+  it('writes each function in order, with the numbers CSS gives them', () => {
+    expect(written('blur(4px) brightness(150%) contrast(0.5) grayscale(1) sepia(50%) invert(0.25) saturate(3) hue-rotate(0.5turn)')).toEqual({
+      filter: [
+        { type: 'blur', radius: 4 },
+        { type: 'brightness', amount: 1.5 },
+        { type: 'contrast', amount: 0.5 },
+        { type: 'grayscale', amount: 1 },
+        { type: 'sepia', amount: 0.5 },
+        { type: 'invert', amount: 0.25 },
+        { type: 'saturate', amount: 3 },
+        { type: 'hueRotate', angle: 180 },
+      ],
+      a: undefined,
+    });
+  });
+
+  it('reads units and defaults', () => {
+    expect(written('blur(3pt)')).toEqual({ filter: [{ type: 'blur', radius: 4 }], a: undefined });
+    expect(written('blur(1em)')).toEqual({ filter: [{ type: 'blur', radius: 16 }], a: undefined });
+    expect(written('hue-rotate(1.5707963267948966rad)')).toMatchObject({ filter: [{ type: 'hueRotate', angle: expect.closeTo(90, 6) }] });
+    expect(written('invert()')).toEqual({ filter: [{ type: 'invert', amount: 1 }], a: undefined });
+    expect(written('grayscale(250%)')).toEqual({ filter: [{ type: 'grayscale', amount: 1 }], a: undefined });
+    expect(written('brightness(250%)')).toEqual({ filter: [{ type: 'brightness', amount: 2.5 }], a: undefined });
+  });
+
+  it('leaves out the functions that change nothing and takes none as no filter', () => {
+    expect(written('blur(0px) brightness(1) grayscale(0) hue-rotate(0deg) saturate(100%)')).toEqual({ filter: undefined, a: undefined });
+    expect(written('none')).toEqual({ filter: undefined, a: undefined });
+  });
+
+  it('multiplies opacity() into the alpha the command is composited with', () => {
+    const ctx = make();
+    ctx.globalAlpha = 0.5;
+    ctx.filter = 'opacity(40%) blur(2px) opacity(0.5)';
+    ctx.fillRect(0, 0, 5, 5);
+    const command = only(ctx) as { a?: number; filter?: unknown };
+    expect(command.a).toBeCloseTo(0.1, 12);
+    expect(command.filter).toEqual([{ type: 'blur', radius: 2 }]);
+  });
+
+  it('writes drop-shadow with a deviation of half its blur and the colour either side', () => {
+    expect(written('drop-shadow(4px 6px 8px red)')).toEqual({ filter: [{ type: 'dropShadow', x: 4, y: 6, blur: 4, color: '#ff0000' }], a: undefined });
+    expect(written('drop-shadow(rgba(0, 0, 255, 0.5) -2px 3px)')).toEqual({ filter: [{ type: 'dropShadow', x: -2, y: 3, blur: 0, color: '#0000ff80' }], a: undefined });
+    expect(written('drop-shadow(1px 1px)')).toEqual({ filter: [{ type: 'dropShadow', x: 1, y: 1, blur: 0, color: '#000000' }], a: undefined });
+  });
+
+  it('ignores a value that is not a filter and keeps the one before', () => {
+    const ctx = make();
+    ctx.filter = 'blur(2px)';
+    for (const bad of ['blur(2)', 'blur(-2px)', 'brightness(-1)', 'drop-shadow(1px)', 'drop-shadow(1px 1px 1px red blue)', 'wobble(2px)', 'blur(2px', 'red', '']) {
+      ctx.filter = bad;
+      expect(ctx.filter).toBe('blur(2px)');
+    }
+  });
+
+  it('goes with save and restore and does not reach clearRect', () => {
+    const ctx = make();
+    ctx.save();
+    ctx.filter = 'blur(2px)';
+    ctx.clearRect(1, 1, 2, 2);
+    ctx.restore();
+    ctx.fillRect(0, 0, 5, 5);
+    expect(ctx.commands.map((c) => 'filter' in c)).toEqual([false, false]);
+    expect(ctx.filter).toBe('none');
+  });
+
+  it('does not take an opaque full-canvas rectangle for one that hides what is before it', () => {
+    const ctx = make();
+    ctx.fillRect(0, 0, 10, 10);
+    ctx.filter = 'blur(5px)';
+    ctx.fillRect(0, 0, 100, 50);
+    expect(ctx.commands).toHaveLength(2);
+    ctx.filter = 'none';
+    ctx.fillRect(0, 0, 100, 50);
     expect(ctx.commands).toHaveLength(1);
+  });
+
+  it('keeps a url() as valid and not drawn, and says so on the command', () => {
+    const ctx = make();
+    ctx.filter = 'url(#rough) blur(2px)';
+    expect(ctx.filter).toBe('url(#rough) blur(2px)');
+    ctx.fillRect(0, 0, 5, 5);
+    const command = only(ctx) as { filter?: unknown; unsupportedFilter?: string };
+    expect(command.filter).toEqual([{ type: 'blur', radius: 2 }]);
+    expect(command.unsupportedFilter).toBe('url(#rough)');
+    expect(unsupportedFilters(ctx.commands)).toEqual(['url(#rough)']);
+  });
+
+  it('finds the url() filters inside the canvases a canvas draws', () => {
+    const inner = make();
+    inner.filter = 'url("a b.svg#f")';
+    inner.fillRect(0, 0, 5, 5);
+    const commands: CanvasCommand[] = [{ op: 'image', source: { kind: 'canvas', width: 5, height: 5, commands: inner.commands }, dx: 0, dy: 0, dw: 5, dh: 5 }];
+    expect(unsupportedFilters(commands)).toEqual(['url("a b.svg#f")']);
   });
 });
 

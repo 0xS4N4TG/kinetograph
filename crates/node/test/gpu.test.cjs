@@ -237,6 +237,22 @@ test('renderCanvas draws a canvas layer on a transparent canvas, as RGBA or a PN
   const px = (x, y) => [...rgba.subarray((y * 8 + x) * 4, (y * 8 + x) * 4 + 4)];
   assert.deepEqual(px(1, 1), [255, 0, 0, 255]);
   assert.deepEqual(px(6, 1), [0, 0, 0, 0], 'the rest is transparent');
+  // A shadow is drawn too, on the transparent canvas: getImageData sees it.
+  const shadowed = native.renderCanvas(
+    request({
+      commands: [
+        {
+          op: 'fill',
+          path: 'M0 0H4V4H0Z',
+          paint: { type: 'color', color: '#ff0000' },
+          shadow: { color: '#0000ff', x: 4 },
+        },
+      ],
+    }),
+  );
+  const shadowPx = (x, y) => [...shadowed.subarray((y * 8 + x) * 4, (y * 8 + x) * 4 + 4)];
+  assert.deepEqual(shadowPx(1, 1), [255, 0, 0, 255]);
+  assert.deepEqual(shadowPx(6, 1), [0, 0, 255, 255], 'the shadow, 4 pixels on');
   const png = native.renderCanvas(request({ format: 'png' }));
   assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
   rejects(() => native.renderCanvas(request({ width: 0 })), 'INVALID_ARG', /width/);

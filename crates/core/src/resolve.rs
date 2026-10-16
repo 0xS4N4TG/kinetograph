@@ -1321,7 +1321,7 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
 
 /// Resolves a layer's effects, composing each run of colour filters into one
 /// matrix so it takes a single pass.
-fn resolve_effects(effects: &[Effect], clock: Clock) -> Vec<ResolvedEffect> {
+pub(crate) fn resolve_effects(effects: &[Effect], clock: Clock) -> Vec<ResolvedEffect> {
     let mut out: Vec<ResolvedEffect> = Vec::with_capacity(effects.len());
     for effect in effects {
         let resolved = resolve_effect(effect, clock);
