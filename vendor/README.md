@@ -1,5 +1,10 @@
 # Vendored crates
 
+Each crate here keeps its own upstream licence, not Kinetograph's (`LICENSE.md`): its licence files are in its
+directory, and our changes to it are under the same licence as the crate. `stylo` is MPL-2.0 (`stylo/LICENSE`); the
+others are MIT OR Apache-2.0. `blitz-dom/LICENSE-*` and `stylo/LICENSE` were added on 2026-10-16 from upstream
+(`DioxusLabs/blitz`, mozilla.org/MPL/2.0); the crates.io packages did not include them.
+
 ## vello_shaders 0.11.0
 
 - Upstream: crates.io `vello_shaders` 0.11.0 (`linebender/vello`, `research/vello_shaders`, commit
