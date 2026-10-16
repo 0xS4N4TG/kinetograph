@@ -82,7 +82,8 @@ filled on 2026-10-16. What is left:
 - Packages in flight on 2026-10-16 (check their branches before starting any): the 12 missing
   `@remotion/transitions` presentations, `useTransitionProgress`, `@remotion/light-leaks`, `@remotion/starburst`;
   `@remotion/sfx`, `zod-types`, `timeline-utils` (committed), `media-parser`, `webcodecs`, `canvas`;
-  `@remotion/skia` on real Skia (`skia-safe`, an optional addon, CPU raster first) and `@remotion/rive` (`rive-rs`).
+  `@remotion/rive` and `@remotion/skia` on real Skia (the optional `@kinetograph/skia` addon, CPU raster) are done on their branch;
+  what Skia leaves out is in section 3.
 - Not planned: `@remotion/three` and `@remotion/player` (dropped: own 3D layer, own studio); `renderer`, `bundler`,
   `cli`, `lambda` (replaced by Kinetograph's CLI); `tailwind`/`tailwind-v4` (webpack config only; Tailwind itself
   works).
@@ -101,6 +102,14 @@ filled on 2026-10-16. What is left:
   imports. Shadows, image-based lighting, glTF animation and skins were in flight on 2026-10-16.
 - **CSS**: `@starting-style`, container `style()` queries, cancelling a running transition, `preserve-3d` (above).
 - **WGSL `shader()`**: sees only its own layer, one pass, no other texture, `f32` uniforms only.
+
+- **`@remotion/skia` / `@shopify/react-native-skia`** (AUTHORING.md §7.7): `Atlas`, `Patch`, `Glyphs`, `TextBlob`,
+  `Picture` and `ImageSVG` are reported, not drawn; no Reanimated values, `FitBox`, `Skia.Surface`/`Offscreen`,
+  `Skia.Image`/`Data`/`SVG`/`Typeface` factories, `useVideo`, animated images, paragraph measurement, shaders or filters
+  set on a `Skia.Paint()` object. The raster is CPU only (about 15 ms of a 1080p frame is PNG hand-off; a GPU-backed Skia
+  would skip it). The PNGs of drawn frames are kept under `~/.cache/kinetograph/skia` (newest 400 to 600).
+- **`@remotion/rive`** (AUTHORING.md §7.6): `onLoad`, `assetLoader`, `effects` and the `ref` getters are not supported;
+  a state machine starts with its inputs at their defaults (no way to set inputs); pictures embedded in a file only.
 
 ## 4. Tests and tooling
 

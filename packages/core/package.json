@@ -22,6 +22,8 @@
     "./media-utils": { "types": "./dist/media-utils.d.ts", "default": "./dist/media-utils.js" },
     "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
     "./rive": { "types": "./dist/rive.d.ts", "default": "./dist/rive.js" },
+    "./skia": { "types": "./dist/skia/index.d.ts", "default": "./dist/skia/index.js" },
+    "./skia/*": { "types": "./dist/skia/*.d.ts", "default": "./dist/skia/*.js" },
     "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
     "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" },
     "./web/install": { "types": "./dist/web-install.d.ts", "default": "./dist/web-install.js" }
@@ -35,7 +37,8 @@
     "@kinetograph/compat": "0.1.0",
     "@kinetograph/native": "0.1.0",
     "@kinetograph/react": "0.1.0",
-    "@kinetograph/scene": "0.1.0"
+    "@kinetograph/scene": "0.1.0",
+    "react-reconciler": "0.34.0"
   },
   "peerDependencies": {
     "react": "^19.3.0"

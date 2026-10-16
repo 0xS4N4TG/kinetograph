@@ -95,6 +95,7 @@ fn write_png(rgba: &[u8], width: u32, height: u32, dir: &Path) -> Result<String>
             .ok_or_else(|| failed("renderSkia: the picture could not be wrapped"))?;
         let mut options = png_encoder::Options::default();
         options.z_lib_level = 1;
+        options.filter_flags = png_encoder::FilterFlag::NONE;
         let png = png_encoder::encode_image(None, &image, &options)
             .ok_or_else(|| failed("renderSkia: the picture could not be encoded"))?;
         fs::create_dir_all(dir).map_err(|e| failed(format!("{}: {e}", dir.display())))?;
@@ -103,8 +104,35 @@ fn write_png(rgba: &[u8], width: u32, height: u32, dir: &Path) -> Result<String>
         fs::write(&partial, png.as_bytes())
             .map_err(|e| failed(format!("{}: {e}", partial.display())))?;
         fs::rename(&partial, &path).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+        prune(dir);
     }
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// The pictures kept: a frame's file is read once, when its scene loads, so only the newest are worth keeping. Past
+/// `KEEP_MAX` files the oldest are removed down to `KEEP_MIN`; the one just written is the newest and stays.
+const KEEP_MAX: usize = 600;
+const KEEP_MIN: usize = 400;
+
+fn prune(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let files: Vec<_> = entries
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "png"))
+        .collect();
+    if files.len() <= KEEP_MAX {
+        return;
+    }
+    let mut dated: Vec<_> = files
+        .iter()
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .collect();
+    dated.sort();
+    for (_, path) in dated.iter().take(dated.len().saturating_sub(KEEP_MIN)) {
+        let _ = fs::remove_file(path);
+    }
 }
 
 /// What `Skia.RuntimeEffect.Make` tells a project about SkSL: `{ uniforms: [[name, floats]], children: [name] }`, or an
@@ -143,4 +171,18 @@ pub fn path_call(request_json: String) -> Result<String> {
     Ok(kinetograph_skia::path_call(&request)
         .map_err(failed)?
         .to_string())
+}
+
+/// `{ src, baseDir }` in; the picture's `{ width, height }` out (what `useImage` reports).
+#[napi]
+pub fn image_size(request_json: String) -> Result<String> {
+    let request = parse(&request_json, "imageSize")?;
+    let base = PathBuf::from(request["baseDir"].as_str().unwrap_or_default());
+    let src = request["src"]
+        .as_str()
+        .ok_or_else(|| failed("imageSize: src is required"))?;
+    let image = ASSETS
+        .with(|assets| assets.borrow_mut().image(&base.join(src)))
+        .map_err(failed)?;
+    Ok(json!({ "width": image.width(), "height": image.height() }).to_string())
 }

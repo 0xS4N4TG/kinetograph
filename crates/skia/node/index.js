@@ -779,6 +779,7 @@ function __napiStampBindingTarget(exportsObject, target) {
 module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget)
 module.exports = nativeBinding
 module.exports.compileEffect = nativeBinding.compileEffect
+module.exports.imageSize = nativeBinding.imageSize
 module.exports.measureText = nativeBinding.measureText
 module.exports.pathCall = nativeBinding.pathCall
 module.exports.renderSkia = nativeBinding.renderSkia

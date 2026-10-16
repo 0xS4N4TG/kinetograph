@@ -15,6 +15,9 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
  */
 export declare function compileEffect(sksl: string): string
 
+/** `{ src, baseDir }` in; the picture's `{ width, height }` out (what `useImage` reports). */
+export declare function imageSize(requestJson: string): string
+
 /** `{ font: { file, size }, text, baseDir }` in; `{ width, bounds, metrics, glyphIds, glyphWidths }` out. */
 export declare function measureText(requestJson: string): string
 

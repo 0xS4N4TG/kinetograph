@@ -181,6 +181,30 @@ describe('bundleProject', () => {
     expect(readFileSync(file, 'utf8')).toContain('packages/core/dist/rive.js');
   });
 
+  it('bundles @remotion/skia and @shopify/react-native-skia onto the core, and Skia is not loaded by bundling', async () => {
+    const dir = project({
+      'index.tsx': [
+        `import { registerRoot } from 'remotion';`,
+        `import { SkiaCanvas } from '@remotion/skia';`,
+        `import { enableSkia } from '@remotion/skia/enable';`,
+        `import { Rect, Skia } from '@shopify/react-native-skia';`,
+        `registerRoot(() => <SkiaCanvas width={10} height={10}><Rect x={0} y={0} width={5} height={5} /></SkiaCanvas>);`,
+        `console.log(enableSkia, Skia);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.tsx'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/skia/canvas.js');
+    // One copy of the module serves both import names.
+    expect(code.match(/function SkiaCanvas\(/g)).toHaveLength(1);
+  });
+
+  it('says where a React Native Skia internal import should come from', async () => {
+    expect(resolveSpecifier('@shopify/react-native-skia/lib/module/skia')).toMatchObject({ kind: 'unsupported' });
+    expect(resolveSpecifier('@shopify/react-native-skia')).toEqual({ kind: 'path', target: '@kinetograph/core/skia' });
+    expect(resolveSpecifier('@remotion/skia/enable')).toEqual({ kind: 'path', target: '@kinetograph/core/skia/enable' });
+  });
+
   it('leaves one file per entry, replaced when the code changes', async () => {
     const dir = project({ 'index.ts': `console.log('v1');` });
     const first = await bundleProject(join(dir, 'index.ts'));
