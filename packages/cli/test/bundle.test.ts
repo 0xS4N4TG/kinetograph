@@ -13,8 +13,9 @@ describe('resolveSpecifier', () => {
 
   it('maps @remotion/<pkg>[/sub] to the core subpath', () => {
     expect(resolveSpecifier('@remotion/transitions')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions' });
+    expect(resolveSpecifier('@remotion/transitions/book-flip')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions/book-flip' });
     expect(resolveSpecifier('@remotion/transitions/fade')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions/fade' });
-    for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie', 'gif', 'media-utils', 'media']) {
+    for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie', 'gif', 'media-utils', 'media', 'light-leaks', 'starburst']) {
       expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetograph/core/${pkg}` });
     }
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
