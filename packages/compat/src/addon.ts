@@ -18,6 +18,8 @@ export interface DomAddon {
   layoutText?(request: unknown): { width: number; height: number; lines?: { top: number; bottom: number; baseline: number }[] };
   /** A canvas's commands drawn on a transparent canvas: `{ width, height, commands, fonts, baseDir, format }` as JSON in, straight-alpha RGBA (`format: "rgba"`) or a PNG out. Needs the GPU. */
   renderCanvas?(requestJson: string): Uint8Array;
+  /** A Rive file played to a time, as a canvas's commands: `{ src, baseDir, artboard, animation, stateMachine, time, width, height, fit, alignment }` as JSON in, the commands as a JSON array out. */
+  riveFrame?(requestJson: string): string;
 }
 
 let override: Partial<DomAddon> | null = null;

@@ -26,6 +26,7 @@ const REMOTION_PACKAGES = new Set([
   'gif',
   'media-utils',
   'media',
+  'rive',
 ]);
 
 export type Resolution =
