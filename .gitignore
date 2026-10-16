@@ -30,3 +30,6 @@ phase0/fframes/compare/
 
 # Node addon build output
 *.node
+
+# Licensed overlay packs, rebuilt by examples/launch/tools/assets.sh: local only
+examples/launch/public/fx/

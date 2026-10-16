@@ -1,284 +1,152 @@
 <title>Kinetograph Launch Storyboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&family=Outfit:wght@400;600;800&family=Permanent+Marker&family=Caveat:wght@600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=DM+Sans:wght@400;500;700&display=swap">
 <style>
-/* Layout: a storyboard sheet: a timeline strip, then shot panels in a 2-up grid, each panel a 16:9 frame over a typed note card. */
+/* Layout: a storyboard sheet: a timeline strip, then one row per shot, its real rendered frames left and the typed note right. */
 :root {
-  --paper: #E9E8E6;      /* the video's paper ground */
-  --ink: #141414;        /* the video's ink ground */
-  --signal: #E0261B;     /* the one accent */
-  --mustard: #D9A621;    /* opener only */
-  --sheet: #DCDAD5;      /* page ground: paper one step darker */
-  --rule: #B9B6AF;
+  --paper: #ECEAE6;
+  --ink: #111111;
+  --signal: #E0261B;
+  --mustard: #D9A621;
+  --sheet: #DDDAD4;
+  --rule: #BBB7AF;
   --muted: #5E5B55;
-  --display: "Outfit", "Helvetica Neue", Arial, sans-serif;
-  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --display: "DM Sans", "Helvetica Neue", Arial, sans-serif;
   --type: "Courier Prime", "Courier New", monospace;
-  --hand: "Permanent Marker", "Marker Felt", cursive;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-body { background: var(--sheet); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; margin: 0; padding: 40px 24px 80px; }
-.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 40px; }
+body { background: var(--sheet); color: var(--ink); font-family: var(--display); font-size: 15px; line-height: 1.5; margin: 0; padding: 40px 20px 80px; }
+.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 36px; }
 header { display: grid; gap: 14px; }
 .eyebrow { font-family: var(--type); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-h1 { font-family: var(--display); font-weight: 800; font-size: clamp(34px, 6vw, 64px); line-height: 1; margin: 0; letter-spacing: -.02em; text-wrap: balance; }
+h1 { font-weight: 700; font-size: clamp(36px, 6vw, 68px); line-height: 1; margin: 0; letter-spacing: -.04em; }
 h1 em { font-style: normal; color: var(--signal); }
-.spine { font-family: var(--display); font-size: clamp(18px, 2.4vw, 24px); line-height: 1.35; max-width: 60ch; margin: 0; }
+.spine { font-size: clamp(18px, 2.4vw, 24px); line-height: 1.35; max-width: 60ch; margin: 0; font-weight: 500; }
 .spine span { display: block; }
 .spine .k { color: var(--signal); }
-.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-family: var(--type); font-size: 13px; color: var(--muted); }
-h2 { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 0 0 12px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--type); font-size: 13px; color: var(--muted); }
+.callout { border-left: 3px solid var(--signal); padding: 4px 0 4px 14px; max-width: 75ch; font-size: 15px; }
+h2 { font-weight: 700; font-size: 22px; margin: 0 0 12px; letter-spacing: -.01em; }
 
-/* timeline */
 .timeline { display: grid; gap: 6px; }
 .track { display: flex; height: 46px; border: 1px solid var(--ink); background: var(--ink); gap: 1px; overflow: hidden; }
-.track a { display: flex; align-items: flex-end; padding: 4px 5px; font-family: var(--type); font-size: 11px; text-decoration: none; min-width: 0; overflow: hidden; }
+.track a { display: flex; align-items: flex-end; padding: 4px 5px; font-family: var(--type); font-size: 11px; text-decoration: none; min-width: 0; overflow: hidden; color: inherit; }
 .track a:focus-visible { outline: 3px solid var(--signal); outline-offset: -3px; }
-.g-paper { background: var(--paper); color: var(--ink); }
-.g-ink { background: #2a2a2a; color: var(--paper); }
-.g-red { background: var(--signal); color: var(--paper); }
-.g-mustard { background: var(--mustard); color: var(--ink); }
-.g-burn { background: linear-gradient(90deg, #3b1c22, #e9a08c 50%, #3b1c22); color: var(--ink); }
-.g-flash { background: repeating-linear-gradient(90deg, var(--paper) 0 8px, var(--ink) 8px 16px, var(--signal) 16px 24px); color: var(--paper); }
+.g-paper { background: var(--paper); color: var(--ink) !important; }
+.g-ink { background: #2a2a2a; color: var(--paper) !important; }
+.g-mustard { background: var(--mustard); color: var(--ink) !important; }
+.g-burn { background: linear-gradient(90deg, #3b1c22, #e9a08c 50%, #3b1c22); color: var(--ink) !important; }
+.g-cream { background: #F3EFEC; color: var(--ink) !important; }
+.g-code { background: #0d1117; color: #c9d1d9 !important; }
 .ticks { display: flex; justify-content: space-between; font-family: var(--type); font-size: 11px; color: var(--muted); }
 
-/* panels */
-.board { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 28px; }
-.shot { display: grid; gap: 0; background: var(--paper); border: 1px solid var(--ink); min-width: 0; scroll-margin-top: 16px; }
-.shot svg { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border-bottom: 1px solid var(--ink); }
-.note { padding: 14px 16px 16px; display: grid; gap: 8px; font-family: var(--type); font-size: 14px; line-height: 1.45; }
+.shot { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); background: var(--paper); border: 1px solid var(--ink); scroll-margin-top: 16px; }
+@media (max-width: 860px) { .shot { grid-template-columns: 1fr; } }
+.frames { display: grid; gap: 1px; background: var(--ink); align-content: start; border-right: 1px solid var(--ink); }
+.frames.two { grid-template-columns: 1fr 1fr; }
+.frames.three { grid-template-columns: 1fr 1fr 1fr; }
+.frames figure { margin: 0; position: relative; background: var(--ink); }
+.frames img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
+.frames figcaption { position: absolute; left: 6px; bottom: 6px; font-family: var(--type); font-size: 11px; background: rgba(17,17,17,.75); color: var(--paper); padding: 1px 6px; }
+.note { padding: 16px 18px 18px; display: grid; gap: 9px; align-content: start; font-family: var(--type); font-size: 14px; line-height: 1.45; min-width: 0; }
 .note .head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .note .num { font-weight: 700; font-size: 15px; }
-.note .tc { color: var(--muted); font-variant-numeric: tabular-nums; }
+.note .tc { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .vo { border-left: 3px solid var(--signal); padding-left: 10px; }
 .vo b { font-weight: 700; }
 .lbl { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .08em; margin-right: 6px; }
+.real { font-size: 12px; color: var(--muted); }
 
-/* tables */
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 28px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 28px; }
 .card { background: var(--paper); border: 1px solid var(--ink); padding: 18px 20px; min-width: 0; }
-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-td, th { text-align: left; vertical-align: top; padding: 7px 8px 7px 0; border-top: 1px solid var(--rule); }
-th { font-family: var(--type); font-weight: 400; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); border-top: 0; }
 ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 code { font-family: var(--type); font-size: 13px; }
 .script { font-family: var(--type); font-size: 14px; display: grid; gap: 4px; }
-.script div { display: grid; grid-template-columns: 64px 1fr; gap: 10px; }
+.script div { display: grid; grid-template-columns: 58px 1fr; gap: 10px; }
 .script .t { color: var(--muted); font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: no-preference) { .blink { animation: blink 1s steps(1) infinite; } }
-@keyframes blink { 50% { opacity: 0; } }
 </style>
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Launch film · storyboard draft 1 · 16 Oct 2026</div>
+    <div class="eyebrow">Launch film · storyboard draft 2 · every frame below is a Kinetograph render</div>
     <h1>kinetograph<em>.</em> launch</h1>
     <p class="spine">
       <span>how do you make a video without a browser?</span>
       <span>you don't take screenshots.</span>
       <span class="k">you just render it.</span>
     </p>
-    <div class="meta">
-      <span>1920×1080 · 30 fps · ~45 s</span><span>VO: deep male voice</span><span>end card: kinetograph.dev</span><span>rendered by Kinetograph itself</span>
-    </div>
+    <div class="meta"><span>1920×1080 · 30 fps · ~39 s</span><span>VO: deep male voice</span><span>end card: kinetograph.dev</span><span>stills rendered in 0.14–1.1 s each</span></div>
+    <p class="callout">These aren't sketches. Each frame is a still of the shot's real composition (<code>examples/launch/frames.tsx</code>), rendered by Kinetograph on the M4. The camera is a real scanned 3D model drawn by our own 3D layer. The finale is snapcn's logo-flicker, installed with <code>shadcn add @snapcn/logo-flicker</code>. Shot 7 rebuilds the scene from <code>inspire.mp4</code>, and every picture in it is one of our own renders.</p>
   </header>
 
   <section class="timeline" aria-label="Timeline">
     <div class="track" id="track"></div>
-    <div class="ticks"><span>0s</span><span>10s</span><span>20s</span><span>30s</span><span>40s</span><span>45s</span></div>
+    <div class="ticks"><span>0s</span><span>10s</span><span>20s</span><span>30s</span><span>39s</span></div>
   </section>
 
-  <section>
-    <h2>Shots</h2>
-    <div class="board" id="board"></div>
-  </section>
+  <section id="board" style="display:grid;gap:22px"></section>
 
   <section class="cols">
     <div class="card">
-      <h2>Style DNA from the reference reel</h2>
-      <table>
-        <tr><th>In the reel</th><th>In ours</th></tr>
-        <tr><td>Paper, ink and flat red grounds, hard flips on the beat</td><td>Same three grounds; mustard once, for the opener</td></tr>
-        <tr><td>One small lowercase sans line building word by word to the VO</td><td>Same, lower third, 3-frame blur-in per word</td></tr>
-        <tr><td>Ink strokes that write themselves, then scribble out</td><td>Our own SVG strokes, plus 2 handwritten word overlays</td></tr>
-        <tr><td>Pixel-art objects bursting, orbiting, whipping past</td><td>Pixel icons we draw: browser, camera, reel, chip, coin, heart</td></tr>
-        <tr><td>Word cards on black with a cursor and one object</td><td>Feature cards: css, svg, webgl, 3d, skia</td></tr>
-        <tr><td>Objects eaten by black ink blots</td><td>The pixel melt from the showcase, on the browser</td></tr>
-        <tr><td>Thermal duotone subject with an orbit line</td><td>Our 3D camera in the same duotone</td></tr>
-        <tr><td>L O V E spaced with objects, ground flashing</td><td>K I N E T O G R A P H, logo-flicker rhythm</td></tr>
-      </table>
-    </div>
-    <div class="card">
       <h2>VO script</h2>
       <div class="script" id="script"></div>
-      <h2 style="margin-top:20px">Assets (copied in, only these)</h2>
+    </div>
+    <div class="card">
+      <h2>What each shot is made of</h2>
       <ul>
-        <li><code>16mm burn 01.mov</code>: shot 6</li>
-        <li><code>"FILM" txt.mp4</code>, <code>"IMPACT" txt.mp4</code>: shots 5, 9 (screen blend, cropped to the word)</li>
-        <li><code>overlay_6.mp4</code> paper texture (multiply) and <code>overlay_2.mp4</code> gate dust (screen)</li>
-        <li>snapcn logo-flicker: shots 3, 11</li>
-        <li>bklit bar and ring look, rebuilt frame-driven: shots 8, 9</li>
-      </ul>
-      <h2 style="margin-top:20px">Motion rules</h2>
-      <ul>
-        <li>Entrances ease out over 6–10 frames; exits ease in over 4–6 frames.</li>
-        <li>Overshoot on objects only, never on type.</li>
-        <li>One move per beat; the VO word leads the eye.</li>
-        <li>Whips use the engine's motion blur plus 2–3 frames of speed lines.</li>
+        <li><b>Real 3D:</b> Poly Haven "Vintage Video Camera" (CC0, a scanned 8 mm cine camera) with a CC0 studio HDRI, through <code>scene3d</code> and <code>gradientMap</code> for the thermal look.</li>
+        <li><b>snapcn:</b> <code>logo-flicker</code>, unmodified, flipping through 16 frames of our own renders.</li>
+        <li><b>inspire.mp4 scene:</b> rebuilt as shot 7: the "Your ___" line, cards that arrive tinted and settle to full colour, collapse to dark, then the type-on.</li>
+        <li><b>Showcase:</b> the pixel melt from shot 1 of <code>examples/showcase</code>, same code, rim recoloured.</li>
+        <li><b>Handwritten overlays:</b> <code>"FILM"</code>, <code>"IMPACT"</code>, screen-blended. <b>Transition:</b> <code>16mm burn 01</code>. <b>Grunge:</b> <code>overlay_6</code> (paper), <code>overlay_2</code> (dust).</li>
+        <li><b>Numbers:</b> S04 render times from HANDOFF (1.25 s vs 8.86 s, measured 2026-10-15); API coverage 168 / 170 public exports, measured today against remotion 4.0.536.</li>
       </ul>
     </div>
   </section>
 </div>
 
 <script>
-const P = '#E9E8E6', I = '#141414', R = '#E0261B', M = '#D9A621', G = '#8E8B85';
-
-// Pixel icons, one character per pixel: k ink, r red, w white, g grey, y gold, o orange, b blue, s skin-pink.
-const ICONS = {
-  browser: ['kkkkkkkkkkkk','krwywkkkkkkk','kkkkkkkkkkkk','kwwwwwwwwwwk','kwbbbwwwwwwk','kwbbbwgggwwk','kwwwwwwwwwwk','kwgggggggwwk','kkkkkkkkkkkk'],
-  camera:  ['....kkk.....','kkkkkkkkkkkk','kggggkkkgggk','kgggkwwwkggk','kgggkwkwkggk','kgggkwwwkggk','kggggkkkgggk','kkkkkkkkkkkk'],
-  heart:   ['.rr...rr.','rrrr.rrrr','rwrrrrrrr','rrrrrrrrr','.rrrrrrr.','..rrrrr..','...rrr...','....r....'],
-  coin:    ['..yyyy..','.yyyyyy.','yyykkyyy','yyykkyyy','yyykkyyy','yyykkyyy','.yyyyyy.','..yyyy..'],
-  reel:    ['...kkkkk...','..kgggggk..','.kgkkgkkgk.','kggkkgkkggk','kgggggggggk','kggkkgkkggk','.kgkkgkkgk.','..kgggggk..','...kkkkk...'],
-  chip:    ['.k.k.k.k.','kkkkkkkkk','.kgggggk.','kkgrrrgkk','.kgrwrgk.','kkgrrrgkk','.kgggggk.','kkkkkkkkk','.k.k.k.k.'],
-};
-const PAL = { k: I, r: R, w: '#FFFFFF', g: G, y: '#F2C230', o: '#F07A1E', b: '#3A6FD8', s: '#E9A08C' };
-function px(name, x, y, s, swap = {}) {
-  let out = '';
-  ICONS[name].forEach((row, j) => [...row].forEach((c, i) => {
-    if (c === '.') return;
-    const col = swap[c] || PAL[c];
-    out += `<rect x="${x + i * s}" y="${y + j * s}" width="${s}" height="${s}" fill="${col}"/>`;
-  }));
-  return out;
-}
-const star = (x, y, r, c = R) => `<path d="M${x} ${y - r} Q${x + r * .12} ${y - r * .12} ${x + r} ${y} Q${x + r * .12} ${y + r * .12} ${x} ${y + r} Q${x - r * .12} ${y + r * .12} ${x - r} ${y} Q${x - r * .12} ${y - r * .12} ${x} ${y - r}Z" fill="${c}"/>`;
-const vignette = (id, c) => `<defs><radialGradient id="${id}" cx="50%" cy="48%" r="70%"><stop offset="55%" stop-color="${c}" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".28"/></radialGradient></defs><rect width="1920" height="1080" fill="url(#${id})"/>`;
-const line = (t, x, y, c = I, size = 44, anchor = 'start') => `<text x="${x}" y="${y}" font-family="Outfit, Arial, sans-serif" font-size="${size}" font-weight="600" fill="${c}" text-anchor="${anchor}">${t}</text>`;
-const hand = (t, x, y, c, size, rot = -4) => `<text x="${x}" y="${y}" font-family="Permanent Marker, cursive" font-size="${size}" fill="${c}" text-anchor="middle" transform="rotate(${rot} ${x} ${y})">${t}</text>`;
-const cursor = (x, y, c) => `<rect class="blink" x="${x}" y="${y - 44}" width="14" height="54" fill="${c}"/>`;
-
 const SHOTS = [
-  { t: [0, .7], g: 'mustard', title: 'Opener: one word, full height',
-    vo: 'how', move: 'Hard cut in on frame 0. "how" lands with a 2-frame scale from 104% to 100%. Dashed rules crawl left.',
-    svg: `<rect width="1920" height="1080" fill="${M}"/>
-      <line x1="0" y1="90" x2="1920" y2="90" stroke="${I}" stroke-width="6" stroke-dasharray="40 26"/>
-      <line x1="0" y1="990" x2="1920" y2="990" stroke="${I}" stroke-width="6" stroke-dasharray="40 26"/>
-      <text x="960" y="700" font-family="Outfit, Arial" font-weight="800" font-size="560" fill="#2b2210" text-anchor="middle" letter-spacing="-20">how</text>` },
-  { t: [.7, 3], g: 'paper', title: 'The question builds',
-    vo: 'how do you make a video… without a browser?',
-    move: 'A black redaction bar wipes "how" off to the left (8 frames). The sentence builds word by word; an ink stroke writes itself under "browser" and keeps scribbling.',
-    svg: `<rect width="1920" height="1080" fill="${P}"/>${vignette('v2', P)}
-      <rect x="-40" y="250" width="760" height="200" fill="${I}"/>
-      <text x="750" y="430" font-family="Outfit, Arial" font-weight="800" font-size="230" fill="${I}" opacity=".12">ow</text>
-      ${line('how do you make a video without a browser?', 260, 640, I, 52)}
-      <path d="M1210 690 C1270 720 1330 650 1390 700 S1500 740 1560 680 C1590 650 1600 700 1640 690" fill="none" stroke="${I}" stroke-width="7" stroke-linecap="round"/>
-      <path d="M1450 760 c20 -40 40 40 60 0 s30 -30 50 10" fill="none" stroke="${I}" stroke-width="5" stroke-linecap="round" opacity=".55"/>` },
-  { t: [3, 6], g: 'ink', title: 'The problem, flickering',
-    vo: 'every frame. a screenshot.',
-    move: 'Logo-flicker rhythm: browser windows and screenshot frames for 2–3 frames each, a shutter counter rolling "frame 0001, 0002…". A red streak whips across on "screenshot".',
-    svg: `<rect width="1920" height="1080" fill="${I}"/>
-      <g opacity=".22">${px('browser', 160, 160, 26)}${px('browser', 1380, 640, 26)}</g>
-      ${px('browser', 770, 300, 32)}
-      <path d="M0 980 L1920 560 L1920 640 L0 1040Z" fill="${R}" opacity=".9"/>
-      <text x="960" y="250" font-family="Courier Prime, monospace" font-size="54" fill="${P}" text-anchor="middle">frame 0047</text>
-      ${line('every frame. a screenshot.', 960, 850, P, 52, 'middle')}` },
-  { t: [6, 8], g: 'paper', title: 'You don’t: the browser melts away',
-    vo: 'you don’t.',
-    move: 'The browser icon drains in the pixel melt from the showcase (shot 1): columns fall at staggered speeds, revealing paper. "you don’t." lands as the last column clears.',
-    svg: `<rect width="1920" height="1080" fill="${P}"/>${vignette('v4', P)}
-      <rect x="0" y="0" width="1920" height="300" fill="${I}"/>
-      ${Array.from({ length: 48 }, (_, i) => `<rect x="${i * 40}" y="300" width="40" height="${(Math.sin(i * 1.7) * .5 + .5) * 360 + 30}" fill="${I}"/>`).join('')}
-      <g opacity=".55">${px('browser', 780, 80, 30)}</g>
-      ${line('you don’t.', 960, 900, I, 60, 'middle')}` },
-  { t: [8, 11], g: 'ink', title: 'The answer, in duotone',
-    vo: 'you just render it.',
-    move: 'Our own 3D film camera (scene3d) turns slowly, gradient-mapped orange to red on black. An orbit line draws itself around it. Handwritten "FILM" flicks on in white for 1 s.',
-    svg: `<rect width="1920" height="1080" fill="${I}"/>
-      <defs><radialGradient id="thermal" cx="45%" cy="40%" r="60%"><stop offset="0" stop-color="#FFE3A0"/><stop offset=".35" stop-color="#F59A2A"/><stop offset=".75" stop-color="#E0261B"/><stop offset="1" stop-color="#5a0d08"/></radialGradient></defs>
-      <rect x="1080" y="400" width="520" height="340" rx="40" fill="url(#thermal)"/>
-      <circle cx="1210" cy="330" r="110" fill="url(#thermal)"/><circle cx="1470" cy="330" r="110" fill="url(#thermal)"/>
-      <circle cx="1340" cy="570" r="110" fill="#3a0a06"/><circle cx="1340" cy="570" r="60" fill="#F59A2A" opacity=".6"/>
-      <ellipse cx="1340" cy="500" rx="420" ry="120" fill="none" stroke="${P}" stroke-width="5" transform="rotate(-18 1340 500)"/>
-      ${hand('FILM', 1340, 920, P, 120, -6)}
-      ${line('you just render it.', 140, 560, P, 52)}` },
-  { t: [11, 11.9], g: 'burn', title: 'Transition: 16mm burn 01',
-    vo: '(music hit)', move: 'The 16mm burn plays at full frame, screen-blended over the cut, 0.9 s. Edison’s camera to our engine: the film motif.',
-    svg: `<defs><linearGradient id="burn" x1="0" x2="1"><stop offset="0" stop-color="#2a1218"/><stop offset=".45" stop-color="#E9A08C"/><stop offset=".6" stop-color="#F6D2B8"/><stop offset="1" stop-color="#3b1c22"/></linearGradient></defs>
-      <rect width="1920" height="1080" fill="url(#burn)"/>
-      <rect x="60" y="300" width="130" height="190" rx="22" fill="${I}"/>
-      <rect x="60" y="640" width="130" height="190" rx="22" fill="${I}" opacity=".0"/>
-      <text x="960" y="560" font-family="Courier Prime, monospace" font-size="44" fill="${I}" text-anchor="middle" opacity=".6">16mm burn 01.mov · screen</text>` },
-  { t: [11.9, 22], g: 'flash', title: 'Proof run: five feature cards',
-    vo: 'css. svg. webgl. 3d. skia.',
-    move: 'About 2 s per card, ground alternating ink/paper. Each card: the word with a blinking cursor, one pixel icon whipping in with a red star glint, and a live micro-demo drawn by the engine behind it. Whip with motion blur between cards.',
-    svg: `<rect width="1920" height="1080" fill="${I}"/>
-      <defs><linearGradient id="sh" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#3A6FD8"/><stop offset=".5" stop-color="#E0261B"/><stop offset="1" stop-color="#F2C230"/></linearGradient></defs>
-      <path d="M200 260 C420 120 640 420 860 260 S1180 380 1260 240 L1260 700 C1050 840 820 560 600 720 S300 640 200 760Z" fill="url(#sh)" opacity=".85"/>
-      ${px('chip', 360, 380, 26)}
-      ${star(690, 360, 90)}
-      ${line('webgl.', 1380, 520, P, 84)}${cursor(1660, 520, P)}
-      ${['css.', 'svg.', 'webgl.', '3d.', 'skia.'].map((w, i) => `<rect x="${200 + i * 312}" y="870" width="280" height="140" fill="${i % 2 ? P : '#262626'}" stroke="${i === 2 ? R : '#555'}" stroke-width="${i === 2 ? 6 : 2}"/><text x="${340 + i * 312}" y="955" font-family="Outfit, Arial" font-weight="600" font-size="40" text-anchor="middle" fill="${i % 2 ? I : P}">${w}</text>`).join('')}` },
-  { t: [22, 25], g: 'paper', title: 'Your Remotion code, unchanged',
-    vo: 'your remotion code. unchanged.',
-    move: 'Pixel icons orbit in a ring, one per Remotion API family. One gap in the ring fills with a ring gauge counting to 98% (bklit ring look, frame-driven).',
-    svg: `<rect width="1920" height="1080" fill="${P}"/>${vignette('v8', P)}
-      ${['camera', 'heart', 'coin', 'reel', 'chip', 'browser', 'coin', 'heart'].map((n, i) => { const a = i / 9 * Math.PI * 2 - Math.PI / 2; return px(n, 960 + Math.cos(a) * 360 - 120, 500 + Math.sin(a) * 300 - 110, 20); }).join('')}
-      <circle cx="960" cy="500" r="120" fill="none" stroke="#cfccc6" stroke-width="26"/>
-      <circle cx="960" cy="500" r="120" fill="none" stroke="${R}" stroke-width="26" stroke-dasharray="${2 * Math.PI * 120 * .98} 999" transform="rotate(-90 960 500)" stroke-linecap="round"/>
-      <text x="960" y="522" font-family="Outfit, Arial" font-weight="800" font-size="64" text-anchor="middle" fill="${I}">98%</text>
-      ${line('your remotion code. unchanged.', 960, 980, I, 48, 'middle')}` },
-  { t: [25, 33], g: 'ink', title: 'The numbers',
-    vo: 'same project. same frames. seven times faster.',
-    move: 'Two bars race on one scale: Remotion 8.86 s, Kinetograph 1.25 s (S04, 89 frames, measured 2026-10-15). Ours finishes first; a counter rolls to 7.0x; handwritten "IMPACT" flicks on. Small stat: 988 / 988 papercut frames native.',
-    svg: `<rect width="1920" height="1080" fill="${I}"/>
-      <text x="180" y="300" font-family="Courier Prime, monospace" font-size="36" fill="${G}">remotion</text>
-      <rect x="180" y="320" width="${1500}" height="70" fill="#4a4a4a"/>
-      <text x="1700" y="372" font-family="Courier Prime, monospace" font-size="36" fill="${P}">8.86 s</text>
-      <text x="180" y="490" font-family="Courier Prime, monospace" font-size="36" fill="${G}">kinetograph</text>
-      <rect x="180" y="510" width="${(1500 * 1.25 / 8.86).toFixed(0)}" height="70" fill="${R}"/>
-      <text x="${200 + 1500 * 1.25 / 8.86}" y="562" font-family="Courier Prime, monospace" font-size="36" fill="${P}">1.25 s</text>
-      <text x="180" y="880" font-family="Outfit, Arial" font-weight="800" font-size="280" fill="${P}">7.0x</text>
-      ${hand('IMPACT', 1380, 800, P, 130, -5)}
-      <text x="1740" y="980" font-family="Courier Prime, monospace" font-size="30" fill="${G}" text-anchor="end">988 / 988 frames native</text>` },
-  { t: [33, 36], g: 'paper', title: 'No chrome',
-    vo: 'no chrome. no screenshots. just pixels.',
-    move: 'Each phrase lands, then an ink scribble crosses it out, except "just pixels.", which gets a red hand-drawn circle.',
-    svg: `<rect width="1920" height="1080" fill="${P}"/>${vignette('v10', P)}
-      ${line('no chrome.', 300, 560, I, 64)}${line('no screenshots.', 700, 560, I, 64)}${line('just pixels.', 1260, 560, I, 64)}
-      <path d="M290 540 c60 -30 120 30 180 -5 s120 25 160 -10 M300 560 c80 10 160 -20 300 0" stroke="${I}" stroke-width="9" fill="none" stroke-linecap="round"/>
-      <path d="M690 545 c90 -25 200 30 300 -5 s100 20 170 -5" stroke="${I}" stroke-width="9" fill="none" stroke-linecap="round"/>
-      <ellipse cx="1425" cy="540" rx="210" ry="80" fill="none" stroke="${R}" stroke-width="6" transform="rotate(-4 1425 540)"/>` },
-  { t: [36, 41], g: 'flash', title: 'The name, on the beat',
-    vo: '(music)', move: 'K I N E T O G R A P H spaced across the frame; one pixel icon between letters per beat; the ground flips white, ink, red per beat (logo-flicker). Then the letters scatter over paper and get circled in red ink.',
-    svg: `<rect width="640" height="1080" fill="${P}"/><rect x="640" width="640" height="1080" fill="${I}"/><rect x="1280" width="640" height="1080" fill="${R}"/>
-      ${[...'KINETOGRAPH'].map((c, i) => `<text x="${140 + i * 164}" y="560" font-family="Outfit, Arial" font-weight="600" font-size="64" text-anchor="middle" fill="${i < 4 ? I : P}">${c}</text>`).join('')}
-      ${px('reel', 1040, 640, 18)}${px('heart', 360, 640, 18)}${px('camera', 1620, 640, 16, { k: P })}` },
-  { t: [41, 45], g: 'paper', title: 'End card',
-    vo: 'kinetograph. write remotion. render native.',
-    move: 'The scattered letters snap into the wordmark (spring, no overshoot on type). Tagline builds word by word. Small print: "this video was rendered by kinetograph in N s", N measured at the final render.',
-    svg: `<rect width="1920" height="1080" fill="${P}"/>${vignette('v12', P)}
-      <text x="960" y="520" font-family="Outfit, Arial" font-weight="800" font-size="190" text-anchor="middle" fill="${I}" letter-spacing="-6">kinetograph</text>
-      <circle cx="1688" cy="398" r="22" fill="${R}"/>
-      ${line('write remotion. render native.', 960, 640, I, 52, 'middle')}
-      <text x="960" y="820" font-family="Courier Prime, monospace" font-size="40" text-anchor="middle" fill="${I}">kinetograph.dev</text>
-      <text x="960" y="980" font-family="Courier Prime, monospace" font-size="26" text-anchor="middle" fill="${G}">this video was rendered by kinetograph in N s</text>` },
+  { t: [0, .7], g: 'mustard', title: 'Opener: one word, full height', frames: [['s01-12', 'f12']],
+    vo: 'how', move: 'Hard cut in on frame 0. "how" lands with a 2-frame settle from 104%. Dashed rules crawl left.' },
+  { t: [.7, 3], g: 'paper', title: 'The question builds', frames: [['s02-66', 'f66']],
+    vo: 'how do you make a video… without a browser?', move: 'A black redaction bar wipes "how" off. The line builds word by word, each blurring in over 4 frames. An ink stroke writes itself under "browser?".' },
+  { t: [3, 6], g: 'ink', title: 'The problem: every frame, a screenshot', frames: [['s03-31', 'f31']],
+    vo: 'every frame. a screenshot.', move: 'Browser windows stack up, their pictures flipping every 2 frames, with a shutter flash every 6. The counter climbs and a red slash cuts through.' },
+  { t: [6, 8], g: 'paper', title: 'You don’t: the browser drains away', frames: [['s04-30', 'f30']],
+    vo: 'you don’t.', move: 'The showcase’s pixel melt: the whole problem frame drains down in 40 px columns with a rim of bright cells, leaving paper. "you don’t." lands as it clears.' },
+  { t: [8, 11], g: 'ink', title: 'The answer: a real camera, in thermal', frames: [['s05-40', 'graded, f40'], ['s05-raw-40', 'same frame, ungraded']],
+    vo: 'you just render it.', move: 'A real scanned 8 mm cine camera turns slowly on black, graded to the reel’s thermal duotone with a glow. An orbit line draws itself around it, then the handwritten "FILM" flicks on.' },
+  { t: [11, 11.9], g: 'burn', title: 'Transition: 16mm burn 01', frames: [['s06-14', 'f14']],
+    vo: '(music hit)', move: 'The 16mm burn, screen-blended over the cut. The original Kinetograph was Edison’s 1891 film camera: old film into the new engine.' },
+  { t: [11.9, 17], g: 'cream', title: 'Your demo. Your launch. Your changelog.', frames: [['s07-60', 'collage'], ['s07-112', 'collapse'], ['s07-150', 'type-on']], wide: true,
+    vo: 'your demo. your launch. your changelog. videos that render for you.', move: 'The inspire.mp4 scene, rebuilt. "Your ___" swaps its word every second. Our renders arrive around it one by one, tinted, and settle to full colour in 12 frames. Then everything greys, blurs and pulls in as the ground goes dark, and "that render for you" types on with a block cursor.' },
+  { t: [17, 22], g: 'code', title: 'Drop-in: 98% of the Remotion API', frames: [['s08-8', 'push-in'], ['s08-104', 'pull-out']],
+    vo: 'your remotion code. drop-in. ninety-eight percent of the api.', move: 'The camera starts tight on from \'remotion\' as it highlights, then pulls out past the whole file onto a wall of Remotion’s exports, each ticked. The code fades, and 98% counts up over the wall.' },
+  { t: [22, 28], g: 'ink', title: 'The numbers', frames: [['s09-40', 'race'], ['s09-104', 'result']],
+    vo: 'same project. same frames. seven times faster.', move: 'Two bars race on one time scale (bklit’s bar style, rebuilt frame by frame). Kinetograph stops at 1.25 s while Remotion runs on to 8.86 s. The multiple counts up to 7.0x and the handwritten "IMPACT" lands.' },
+  { t: [28, 31], g: 'paper', title: 'No chrome', frames: [['s10-70', 'f70']],
+    vo: 'no chrome. no screenshots. just pixels.', move: 'Each phrase lands, then an ink scribble strikes it out. "just pixels." gets a red hand-drawn circle instead.' },
+  { t: [31, 35], g: 'ink', title: 'snapcn logo-flicker over our renders', frames: [['s11-30', 'flicker'], ['s11-100', 'reveal']],
+    vo: '(music)', move: 'snapcn’s logo-flicker as shipped: full-screen frames of our own renders flip every 2 frames, then cross-fade to the name. Next: a Kinetograph mark for its logo slot.' },
+  { t: [35, 39], g: 'paper', title: 'End card', frames: [['s12-60', 'f60']],
+    vo: 'kinetograph. write remotion. render native.', move: 'The wordmark settles in, then the tagline builds word by word. The small print gives this video’s own render time, measured at the final render.' },
 ];
-
-const TOTAL = 45;
 const fmt = s => s.toFixed(1).padStart(4, '0') + 's';
 document.getElementById('track').innerHTML = SHOTS.map((s, i) =>
   `<a href="#shot${i + 1}" class="g-${s.g}" style="flex:${s.t[1] - s.t[0]}" title="${i + 1}. ${s.title}">${i + 1}</a>`).join('');
-document.getElementById('board').innerHTML = SHOTS.map((s, i) => `
-  <article class="shot" id="shot${i + 1}">
-    <svg viewBox="0 0 1920 1080" role="img" aria-label="Shot ${i + 1}: ${s.title}">${s.svg}</svg>
+document.getElementById('board').innerHTML = SHOTS.map((s, i) => {
+  const cls = s.frames.length === 3 ? 'three' : s.frames.length === 2 ? 'two' : '';
+  return `<article class="shot" id="shot${i + 1}">
+    <div class="frames ${cls}">${s.frames.map(([f, c]) => `<figure><img src="board/${f}.jpg" alt="Shot ${i + 1}, ${c}" loading="lazy"><figcaption>${c}</figcaption></figure>`).join('')}</div>
     <div class="note">
       <div class="head"><span class="num">${String(i + 1).padStart(2, '0')} · ${s.title}</span><span class="tc">${fmt(s.t[0])}–${fmt(s.t[1])}</span></div>
       <div class="vo"><span class="lbl">vo</span><b>${s.vo}</b></div>
       <div><span class="lbl">move</span>${s.move}</div>
     </div>
-  </article>`).join('');
+  </article>`;
+}).join('');
 document.getElementById('script').innerHTML = SHOTS.filter(s => !s.vo.startsWith('(')).map(s =>
   `<div><span class="t">${fmt(s.t[0])}</span><span>${s.vo}</span></div>`).join('');
 </script>

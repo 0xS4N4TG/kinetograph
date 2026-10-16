@@ -1,0 +1,9 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": { "config": "", "css": "", "baseColor": "neutral", "cssVariables": true },
+  "aliases": { "components": "@/components", "utils": "@/lib/utils", "lib": "@/lib", "ui": "@/components/ui" },
+  "registries": { "@snapcn": "https://snapcn.dev/r/{name}.json" }
+}

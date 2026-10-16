@@ -1,4 +1,7 @@
-# Kinetograph launch video: storyboard (draft 1, 2026-10-16)
+# Kinetograph launch video: storyboard (draft 2, 2026-10-17)
+
+Draft 2 is `storyboard.html`: every panel is a still of the real shot, `frames.tsx`, rendered by Kinetograph. This
+file keeps the reasoning; the shot list there supersedes the one below.
 
 ## Spine
 
