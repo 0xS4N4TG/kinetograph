@@ -758,7 +758,8 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/captions` | `@remotion/captions` | `parseSrt`, `serializeSrt`, `createTikTokStyleCaptions` |
 | `@kinetograph/core/google-fonts` | `@remotion/google-fonts/*` | §7.2 |
 | `@kinetograph/core/fonts` | `@remotion/fonts` | §7.2 |
-| `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>` |
+| `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>`; `getLottieMetadata(animationData)` (`{ fps, durationInSeconds, durationInFrames, width, height }` or null, as the published package) |
+| `@kinetograph/core/media` | `@remotion/media` | `Audio` and `Video` (also as `experimental_Audio` and `experimental_Video`), `getTargetSampleRate()` (48000) |
 | `@kinetograph/core/determinism`, `/determinism/install` | none | §7.4 |
 
 `@kinetograph/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from
@@ -936,11 +937,12 @@ trims, rate, loop and `<Freeze>` work as for `<Audio>`.
 `playbackRate` (default 1), `loopBehavior`: `loop` (default), `pause-after-finish`, `unmount-after-finish`; `onLoad`,
 `onError` accepted) emits a `gif` layer with `time = frame / fps * playbackRate` (the native element also takes a
 `time`, which `<AnimatedImage>` sets) and `loop = loopBehavior === 'loop'`, and renders nothing past the GIF's duration
-with `unmount-after-finish`. `getGifDurationInSeconds(src): Promise<number>`. `@kinetograph/core/media-utils` is
-`@remotion/media-utils`' `getVideoMetadata(src): Promise<{ durationInSeconds, width, height, aspectRatio, isRemote:
-false, fps }>`. Both read `probeMedia`, which the host passes in as it does `layoutText`:
-`setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the CLI's synthetic entry re-exports next
-to `setLayoutText`.
+with `unmount-after-finish`. `getGifDurationInSeconds(src): Promise<number>`. `preloadGif(src)` probes the file now and
+returns `{ waitUntilDone, free }`: `waitUntilDone()` resolves, or rejects with what is wrong with the file, and `free()`
+does nothing. `@kinetograph/core/media-utils` is `@remotion/media-utils`' `getVideoMetadata(src): Promise<{
+durationInSeconds, width, height, aspectRatio, isRemote: false, fps }>`. Both read `probeMedia`, which the host passes
+in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the CLI's
+synthetic entry re-exports next to `setLayoutText`.
 
 ### 11.4 Timeline data (stream 3)
 
