@@ -13,6 +13,7 @@ import type {
   AudioClipJson,
   BlendMode,
   CanvasContext2D,
+  GlslPass,
   GlslTextureOptions,
   CharStyle,
   Clip,
@@ -62,6 +63,12 @@ export interface LayerProps extends CommonProps {
   preserve3d?: boolean;
   layout?: Layout;
   children?: ReactNode;
+  /**
+   * A GLSL pass that makes the layer's picture out of its children (docs/SCENE.md, "Shader groups"). A texture of the
+   * pass names a layer by `id` (`layerPicture`); a layer elsewhere in the tree that a texture names is moved in as a
+   * child, so a shader can mix two parts of the tree, as a shader transition mixes two scenes.
+   */
+  glsl?: GlslPass;
   /**
    * @internal `<AbsoluteFill>`'s layer mapping says what the CSS box it stands for is, so that a tree holding DOM
    * elements draws it as that `div` (docs/ENGINE.md §10): the author's style, and whether the first child is the

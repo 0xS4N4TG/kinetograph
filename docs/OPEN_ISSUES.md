@@ -79,9 +79,7 @@ filled on 2026-10-16. What is left:
   writes no extra files); `trimBefore`, `playbackRate` and `loop` on `Track`, `Interactive.*`, `Solid`, `CanvasImage`
   and `HtmlInCanvas`. `IFrame` renders an `iframe`, which the CSS engine reports as unsupported.
 - Not exported: `Internals`, `FolderContext`, `PathInternals`, `AudioForPreview` (internal).
-- Packages in flight on 2026-10-16 (check their branches before starting any): the 12 missing
-  `@remotion/transitions` presentations, `useTransitionProgress`, `@remotion/light-leaks`, `@remotion/starburst`;
-  `@remotion/sfx`, `zod-types`, `timeline-utils` (committed), `media-parser`, `webcodecs`, `canvas`;
+- Packages in flight on 2026-10-16 (check their branches before starting any): `@remotion/sfx`, `zod-types`, `timeline-utils` (committed), `media-parser`, `webcodecs`, `canvas`;
   `@remotion/skia` on real Skia (`skia-safe`, an optional addon, CPU raster first) and `@remotion/rive` (`rive-rs`).
 - Not planned: `@remotion/three` and `@remotion/player` (dropped: own 3D layer, own studio); `renderer`, `bundler`,
   `cli`, `lambda` (replaced by Kinetograph's CLI); `tailwind`/`tailwind-v4` (webpack config only; Tailwind itself

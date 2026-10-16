@@ -1103,6 +1103,42 @@ impl Renderer {
         let mut applied = 0;
         let mut clipped = false;
         let src = match &layer.kind {
+            // The children are the textures of a GLSL pass.
+            ResolvedKind::Group {
+                children,
+                glsl: Some(glsl),
+                ..
+            } => {
+                let mut drawn = Vec::with_capacity(children.len());
+                self.cache_path.push(layer.id.clone());
+                for child in children {
+                    let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
+                    match self.draw_layers(std::slice::from_ref(child), matrix, empty, backdrop) {
+                        Ok(tex) => drawn.push(tex),
+                        Err(e) => {
+                            self.cache_path.pop();
+                            return Err(e);
+                        }
+                    }
+                }
+                self.cache_path.pop();
+                let base_dir = self.scene.base_dir.clone();
+                let layers: Vec<(&str, &Tex)> =
+                    children.iter().map(|c| c.id.as_str()).zip(&drawn).collect();
+                let tex = self.timed(Stage::Raster, |s| {
+                    s.compositor.glsl_group(
+                        &glsl.recording.0,
+                        (glsl.width, glsl.height),
+                        matrix,
+                        &base_dir,
+                        &layers,
+                    )
+                });
+                for tex in drawn {
+                    self.compositor.release(tex);
+                }
+                tex?
+            }
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
                 self.cache_path.push(layer.id.clone());
@@ -2676,6 +2712,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
         children,
         preserve3d: false,
         pass_through,
+        glsl: None,
         ..
     } = &layer.kind
     else {

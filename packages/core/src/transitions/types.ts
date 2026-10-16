@@ -12,7 +12,12 @@ export interface PresentationComponentProps<PassedProps extends Record<string, u
   presentationDirection: PresentationDirection;
   presentationDurationInFrames: number;
   passedProps: PassedProps;
+  /** The scene is also entering from one transition and exiting into the next. */
+  bothEnteringAndExiting?: boolean;
 }
+
+/** The name the published package gives the props of a presentation's component. */
+export type TransitionPresentationComponentProps<PassedProps extends Record<string, unknown>> = PresentationComponentProps<PassedProps>;
 
 export interface TransitionPresentation<PassedProps extends Record<string, unknown>> {
   component: ComponentType<PresentationComponentProps<PassedProps>>;

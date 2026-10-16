@@ -518,6 +518,42 @@ shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled
 `antialias: true` smooths them); a full-screen quad has none. The shaders' maths is the GPU's: a `sin` of a large
 argument can differ from Chrome's last digits.
 
+### Shader groups
+
+A group with a `glsl` field is a [glsl](#glsl) layer whose textures can be its own children: shader transitions (a
+GLSL fragment shader that mixes the scene going out with the scene coming in) are this.
+
+```json
+{ "id": "pass", "type": "group",
+  "children": [ { "id": "out", "type": "group", "children": [ ... ] },
+                { "id": "in",  "type": "group", "children": [ ... ] } ],
+  "glsl": { "width": 1920, "height": 1080, "programs": { ... }, "buffers": { ... },
+            "textures": { "prev": { "layer": "in" }, "next": { "layer": "out" } },
+            "ops": [ ... ] } }
+```
+
+`glsl` has the fields of a glsl layer (`width`, `height` and the recording). A texture of the recording can be
+`{ "layer": "<id of a child>" }` instead of `src` or `pixels`.
+
+- **The picture.** The child is drawn as it would be on the canvas, under the group's matrix, and sampled as the
+  picture a browser holds for a canvas it was drawn on: sRGB-encoded, straight alpha, `width` x `height` pixels, row 0
+  at the top of the box. A texture's `flipY`, `premultiply` and `mipmaps` are not read (there is no mip chain); the
+  sampler of the draw (`min`, `mag`, `wrapS`, `wrapT`) is.
+- **Not drawn on their own.** The children of a group with a `glsl` are only ever the pictures the shader samples.
+  The group's picture is the shader's, placed like a glsl layer's. The group's own `opacity`, `effects`, `clip`, `mask`
+  and `blendMode` apply to it.
+- Rules checked when the scene loads: the texture's layer is a child of the group; the group has no `layout` and is
+  not `preserve3d`. A child is drawn with the rest of the frame's machinery (its caches, effects and blends), and the
+  pass costs one conversion of each child and the draws of the recording.
+
+- **Checked against Remotion.** Each presentation of `@remotion/transitions`, `<LightLeak>` and `<Starburst>` was drawn
+  at progress 0.25, 0.5 and 0.75 (1280 x 720, linear timing) by Remotion 4.0.536 in Chrome for Testing and by the
+  engine. The mean difference over the picture is 0.3 of 255 or less for every shader presentation, `fade`, `slide`,
+  `wipe`, `clock-wipe` and `iris`, and no more than 0.1% of pixels are over 48 levels off (edge pixels of the shapes).
+  `<LightLeak>` differs by up to 3 at the end of its retraction, a smooth gradient, and `<Starburst>` by 0 to 0.1. The
+  exception is `flip`, which is the open `preserve-3d` issue (docs/OPEN_ISSUES.md §1.3). The goldens
+  `transition-*` in `crates/core/tests/golden` are six of these frames.
+
 ### scene3d
 
 ```json

@@ -14,6 +14,17 @@
 import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslSampler, GlslTexture, GlslUniform } from './types.js';
 import { pictureOf } from './canvas.js';
 
+/** The method a picture of another layer answers a texture upload with (`layerPicture`). */
+export const LAYER_SOURCE: unique symbol = Symbol.for('kinetograph.layerSource');
+
+/**
+ * A picture of a child of a shader group (docs/SCENE.md, "Shader groups"), to upload as a texture the way a page uploads
+ * a canvas: `gl.texImage2D(..., picture)`. The renderer draws the child and samples it; nothing is read here.
+ */
+export function layerPicture(id: string, width: number, height: number): { readonly width: number; readonly height: number } {
+  return { width, height, [LAYER_SOURCE]: () => ({ id, width, height }) } as { readonly width: number; readonly height: number };
+}
+
 /** Thrown by a call the engine does not draw. The message starts with "unsupported:". */
 export class WebGLUnsupportedError extends Error {
   override name = 'WebGLUnsupportedError';
@@ -302,6 +313,8 @@ export class WebGLTexture extends WebGLObject {
   /** RGBA8, straight alpha, as uploaded. */
   pixels: Uint8Array | null = null;
   src: string | null = null;
+  /** A child of a shader group, drawn (`layerPicture`). */
+  layer: string | null = null;
   flipY = false;
   premultiply = false;
   mipmaps = false;
@@ -1161,6 +1174,7 @@ export class WebGLContext {
   textureFromSource(texture: WebGLTexture, src: string): void {
     texture.src = src;
     texture.pixels = null;
+    texture.layer = null;
     texture.uploaded = true;
     texture.blank = false;
     texture.version += 1;
@@ -1416,6 +1430,7 @@ export class WebGLContext {
     texture.flipY = this.flipY;
     texture.premultiply = this.premultiply;
     texture.mipmaps = false;
+    texture.layer = null;
     texture.uploaded = true;
     texture.version += 1;
     texture.format = internalformat;
@@ -1472,11 +1487,16 @@ export class WebGLContext {
     if (texture === null) return;
     this.checkTextureType(GL.UNSIGNED_BYTE, internalformat);
     if (levels > 1) throw new WebGLUnsupportedError('texStorage2D with more than one level; call generateMipmap');
-    Object.assign(texture, { width, height, pixels: new Uint8Array(width * height * 4), src: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: true });
+    Object.assign(texture, { width, height, pixels: new Uint8Array(width * height * 4), src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: true });
     texture.version += 1;
   }
 
   private uploadPicture(texture: WebGLTexture, source: unknown): void {
+    const layer = (source as { [LAYER_SOURCE]?: () => { id: string; width: number; height: number } } | null | undefined)?.[LAYER_SOURCE]?.();
+    if (layer !== undefined) {
+      Object.assign(texture, { layer: layer.id, width: layer.width, height: layer.height, src: null, pixels: null });
+      return;
+    }
     const picture = pictureOf(source);
     if (picture === null) {
       throw new WebGLUnsupportedError(
@@ -1749,7 +1769,11 @@ export class WebGLContext {
   private uploadedId(texture: WebGLTexture): string {
     if (texture.snapshot?.version !== texture.version) {
       const json: GlslTexture = {
-        ...(texture.src !== null ? { src: texture.src } : { pixels: toBase64(texture.pixels ?? new Uint8Array(0)) }),
+        ...(texture.layer !== null
+          ? { layer: texture.layer }
+          : texture.src !== null
+            ? { src: texture.src }
+            : { pixels: toBase64(texture.pixels ?? new Uint8Array(0)) }),
         ...(texture.pixels !== null ? { width: texture.width, height: texture.height } : {}),
         ...(texture.flipY ? { flipY: true } : {}),
         ...(texture.premultiply ? { premultiply: true } : {}),

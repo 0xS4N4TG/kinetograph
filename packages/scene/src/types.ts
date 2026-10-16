@@ -464,6 +464,8 @@ export interface GroupLayer extends LayerBase {
   children: LayerJson[];
   preserve3d?: boolean;
   layout?: Layout;
+  /** A GLSL pass that makes the group's picture out of its children, which its `layer` textures name (docs/SCENE.md, "Shader groups"). */
+  glsl?: GlslPass;
 }
 
 export interface NoiseLayer extends LayerBase {
@@ -656,6 +658,8 @@ export interface GlslTexture {
   src?: string;
   /** Base64 RGBA8, straight alpha. */
   pixels?: string;
+  /** The `id` of a child of the shader group the recording belongs to: the texture is that layer, drawn. */
+  layer?: string;
   width?: number;
   height?: number;
   flipY?: boolean;
@@ -735,6 +739,12 @@ export interface GlslContent {
 
 export interface GlslLayer extends LayerBase, Partial<GlslContent> {
   type: 'glsl';
+  width: Num;
+  height: Num;
+}
+
+/** A group's GLSL pass: a recording drawn into a buffer of `width` by `height`. */
+export interface GlslPass extends Partial<GlslContent> {
   width: Num;
   height: Num;
 }
