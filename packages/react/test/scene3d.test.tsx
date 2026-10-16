@@ -109,6 +109,29 @@ describe('<Scene3D>', () => {
     ]);
   });
 
+  it('passes the shadow switches of lights and objects', () => {
+    const layer = only(
+      <Scene3D width={100} height={100}>
+        <DirectionalLight castShadow shadow={{ mapSize: 1024, bias: 2, radius: 2 }} />
+        <Mesh geometry={{ kind: 'box' }} castShadow receiveShadow />
+        <Model src="a.glb" castShadow />
+        <Text3D font="DM Sans" receiveShadow>
+          x
+        </Text3D>
+        <Extrude path="M0 0H1V1Z" castShadow />
+      </Scene3D>,
+    );
+    expect(layer.lights).toEqual([
+      { type: 'directional', castShadow: true, shadow: { mapSize: 1024, bias: 2, radius: 2 } },
+    ]);
+    expect(layer.objects?.map((o) => [(o as { castShadow?: boolean }).castShadow, (o as { receiveShadow?: boolean }).receiveShadow])).toEqual([
+      [true, true],
+      [true, undefined],
+      [undefined, true],
+      [true, undefined],
+    ]);
+  });
+
   it('maps a font weight and style to the font key, as <Text> does', () => {
     const layer = only(
       <Scene3D width={1} height={1}>

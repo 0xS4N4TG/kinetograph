@@ -497,14 +497,16 @@ Kept and drawn with nothing (reading back what was set works): `shadowBlur`, `sh
 | Element | Props |
 |---|---|
 | `<Camera3D>` | `type`, `fov`, `height`, `near`, `far`, `position`, `target`, `up`. At most one. |
-| `<AmbientLight>`, `<DirectionalLight>`, `<PointLight>` | `color`, `intensity`; `direction`; `position`, `range`. |
+| `<AmbientLight>`, `<DirectionalLight>`, `<PointLight>` | `color`, `intensity`; `direction`, `castShadow`, `shadow`; `position`, `range`. |
 | `<Mesh geometry material?>` | `geometry` is `{ kind: 'box' \| 'sphere' \| 'plane' \| 'cylinder' \| 'torus', ... }`. |
 | `<Model src material?>` | A glTF or GLB file. |
 | `<Text3D font size depth align lineHeight material>` | The text is the children (strings and numbers); `weight` and `fontStyle` pick the font key as for `<Text>`. |
 | `<Extrude path size depth fillRule material>` | SVG path data. |
 | `<Group3D>` | Objects that move together. |
 
-Every object takes `position`, `rotation` (degrees), `scale` (a number or `[x, y, z]`), `visible` and `id`. Every
+Every object takes `position`, `rotation` (degrees), `scale` (a number or `[x, y, z]`), `visible` and `id`; `<Mesh>`,
+`<Model>`, `<Text3D>` and `<Extrude>` also take `castShadow` and `receiveShadow`, which do something under a
+`<DirectionalLight castShadow shadow={{ mapSize, bias, normalBias, radius }}>` (SCENE.md, "scene3d"). Every
 number is an animatable `Num`, so a frame-driven value is `useCurrentFrame()` arithmetic or `interpolate`d, as anywhere.
 
 ```tsx

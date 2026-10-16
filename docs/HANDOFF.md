@@ -373,7 +373,10 @@ match; our own layer is native, shares the wgpu device and stays a pure function
 - Benchmark (`examples/scene3d-reference.json`: 1920x1080, 14 objects including extruded text, a glTF model and a
   translucent set, 5 lights, MSAA 4; M4, release): 1.2 ms raster plus 1.7 ms composite for the layer, 6.7 ms the whole
   frame with PNG encoding, `bench --frame 10 --runs 20`; 7.8 ms a frame over `--range 0..60`.
-- **Deferred:** shadow maps; image-based lighting and environment maps (metals look dark away from a light); spot
+- **Shadows, 2026-10-16:** directional lights cast PCF-filtered shadow maps (`castShadow`
+  on the light, `castShadow`/`receiveShadow` on `mesh`, `model`, `text`, `extrude`), fitted to the casters' boxes;
+  `scene3d_shadow.wgsl` is the depth pass, `scene3d.wgsl` reads up to 4 maps.
+- **Deferred:** point-light shadows; image-based lighting and environment maps (metals look dark away from a light); spot
   lights; normal, occlusion, metallic-roughness and emissive maps; glTF animation, skins and morph targets; bevels on
   extrusions; `KHR_*` glTF extensions; sorting within a translucent object; animated primitive sizes (animate `scale`);
   fog and depth of field; more than 8 lights; automatic model fit; the `doctor` report for projects that import

@@ -173,6 +173,15 @@ fn scene3d_text_matches_golden() {
 }
 
 #[test]
+fn scene3d_shadows_match_golden() {
+    // Frame 15 of 30: a sphere, a turning box, a torus and extruded text on a
+    // ground, under a directional light with a shadow map and a point light
+    // that casts none.
+    let frame = render_still(scene("tests/scenes/scene3d-shadows.json"), 15).unwrap();
+    check("scene3d-shadows", &frame);
+}
+
+#[test]
 fn scene3d_layers_composite_with_2d_layers_and_effects() {
     // Frame 12 of 30: 3D layers under a drop shadow, under a blur and the
     // screen blend mode, with a layer rotation and a 3D turn, among shapes

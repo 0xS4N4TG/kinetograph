@@ -527,7 +527,7 @@ its up vector, is an error at that frame.
 | `type` | Fields | Meaning |
 |---|---|---|
 | `ambient` | `color`, `intensity` | The same on every surface from every direction: diffuse, plus a little specular so that metals are not black. |
-| `directional` | `direction` (the way it travels, default `[-1, -1, -1]`) | Parallel light. A surface facing it head on, with base colour `c`, reflects `c * intensity`. |
+| `directional` | `direction` (the way it travels, default `[-1, -1, -1]`), `castShadow` (false), `shadow` | Parallel light. A surface facing it head on, with base colour `c`, reflects `c * intensity`. With `castShadow` it is shaded by a [shadow map](#3d-shadows). |
 | `point` | `position`, `range` (default 0) | Falls off as `1 / d^2`, so `intensity` is what a directional light of that intensity would give at distance 1. With a `range` above 0 it fades smoothly to nothing at that distance. |
 
 **objects**. Every object takes `position` (`[0, 0, 0]`), `rotation` (XYZ Euler degrees, `[0, 0, 0]`: the matrix is
@@ -541,6 +541,8 @@ not checked for uniqueness).
 | `text` | `text`, `font`, `size` (em in world units, 1), `depth` (0.2), `align` (`center`), `lineHeight` | Text from the scene's `fonts`, shaped by the text engine and extruded `depth` along z, centred on the origin (the block of text, whatever the alignment of its lines). `\n` breaks lines. |
 | `extrude` | `path`, `size` (1), `depth` (0.2), `fillRule` | SVG path data, extruded. y points down as in SVG; it comes out upright, centred, its longer side `size` long. Holes stay holes. |
 | `group` | `children` | Objects that move together. |
+
+`mesh`, `model`, `text` and `extrude` also take `castShadow` and `receiveShadow` (both false; see [shadows](#3d-shadows)).
 
 `geometry` (`kind`; sizes are plain numbers, not animated: animate `scale`): `box` (`width`, `height`, `depth`, 1),
 `sphere` (`radius` 0.5, `segments` 32, `rings` 16), `plane` (`width`, `height`; in the xy plane facing +z), `cylinder`
@@ -561,12 +563,24 @@ plus GGX specular per light.
   roughness factors, emissive factor, `doubleSided` and `alphaMode` (`BLEND` blends; `OPAQUE` and `MASK` draw opaque).
   Not read: animations, skins, morph targets, cameras, lights, normal, occlusion, metallic-roughness and emissive
   textures, texture transforms, `KHR_*` extensions. A model is placed as the file says, with no automatic fit.
+- <a id="3d-shadows"></a>**Shadows.** A directional light with `castShadow: true` draws a shadow map: a depth image of the
+  objects with `castShadow` seen along the light, fitted automatically to their boxes (so the map's resolution follows
+  the scene's size, and a ground plane that only receives does not stretch it). The objects with `receiveShadow` are
+  dimmed in the light by what the map says is in the way, with a 3 x 3 percentage-closer filter; the light's own
+  diffuse and specular are dimmed, ambient light is not. At most 4 lights cast shadows. `shadow` holds `mapSize` (the
+  side in texels, 64 to 4096, default 2048), `bias` (1) and `normalBias` (1.5), both in texels of the fitted map (so a
+  setting does not depend on the scene's scale; raise them if a surface speckles itself, lower them if a shadow
+  detaches from its object), and `radius` (1), half the width of the soft edge in texels (0 is the hardest the map's
+  resolution allows). Every face of a caster is drawn into the map, translucent objects included as if opaque; a
+  surface beyond the casters' far end is lit unless something is in front of it. Point lights cast no shadows, and
+  nothing shadows an ambient or `unlit` surface. The map is a pure function of the frame: nothing in it depends on the
+  camera, so a camera move does not make it shimmer.
 - **Extrusion.** Walls are smooth where neighbouring edges bend by less than 40 degrees and hard beyond. No bevel.
 - **Determinism.** The frame is a pure function of the scene, its fonts and the files it names. Meshes of text and paths
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Shadows, image-based or environment lighting (metals are dark away from a light), spot lights,
+- **Not drawn (v1).** Point-light shadows, image-based or environment lighting (metals are dark away from a light), spot lights,
   normal and other texture maps, skinned and morph animation, glTF animation, bevels, fog, post effects beyond the
   layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).

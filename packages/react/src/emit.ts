@@ -376,7 +376,7 @@ class Emitter {
           lights.push({ type: 'ambient', ...pick(node.props, ['color', 'intensity']) });
           break;
         case 'kg-directional-light':
-          lights.push({ type: 'directional', ...pick(node.props, ['direction', 'color', 'intensity']) });
+          lights.push({ type: 'directional', ...pick(node.props, ['direction', 'color', 'intensity', 'castShadow', 'shadow']) });
           break;
         case 'kg-point-light':
           if (node.props.position === undefined) throw new Error('<PointLight> needs a position');
@@ -399,6 +399,7 @@ class Emitter {
     const { type, props } = node;
     const name = ELEMENT_NAMES[type] ?? type;
     const placement = pick(props, ['id', 'position', 'rotation', 'scale', 'visible']);
+    const shadowing = pick(props, ['castShadow', 'receiveShadow']);
     const material = pick(props, ['material']);
     switch (type) {
       case 'kg-mesh': {
@@ -406,11 +407,11 @@ class Emitter {
         if (!['box', 'sphere', 'plane', 'cylinder', 'torus'].includes(kind)) {
           throw new Error(`<Mesh> geometry.kind must be box, sphere, plane, cylinder or torus, got ${JSON.stringify(kind)}`);
         }
-        return { type: 'mesh', geometry: props.geometry, ...material, ...placement } as Object3DJson;
+        return { type: 'mesh', geometry: props.geometry, ...material, ...shadowing, ...placement } as Object3DJson;
       }
       case 'kg-model':
         if (typeof props.src !== 'string') throw new Error('<Model> needs a src, the path of a .gltf or .glb file');
-        return { type: 'model', src: props.src, ...material, ...placement } as Object3DJson;
+        return { type: 'model', src: props.src, ...material, ...shadowing, ...placement } as Object3DJson;
       case 'kg-text3d':
         if (typeof props.font !== 'string') throw new Error('<Text3D> needs a font, a key of the scene\'s fonts');
         return {
@@ -419,11 +420,12 @@ class Emitter {
           font: fontKey(props.font, props.weight, props.fontStyle),
           ...pick(props, ['size', 'depth', 'align', 'lineHeight']),
           ...material,
+          ...shadowing,
           ...placement,
         } as Object3DJson;
       case 'kg-extrude':
         if (typeof props.path !== 'string') throw new Error('<Extrude> needs a path, SVG path data');
-        return { type: 'extrude', path: props.path, ...pick(props, ['size', 'depth', 'fillRule']), ...material, ...placement } as Object3DJson;
+        return { type: 'extrude', path: props.path, ...pick(props, ['size', 'depth', 'fillRule']), ...material, ...shadowing, ...placement } as Object3DJson;
       case 'kg-group3d': {
         const children: Object3DJson[] = [];
         for (const child of node.children) {

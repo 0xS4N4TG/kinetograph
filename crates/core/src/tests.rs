@@ -108,11 +108,26 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
         vec![(0, 0), (0, 1), (0, 2), (1, 0)]
     );
     assert_eq!(declared_bindings("mesh.wgsl"), vec![(0, 0)]);
-    // The 3D layer's: the frame, the draw (a dynamic offset), the texture and
-    // its sampler.
+    // The 3D layer's: the frame with its four shadow maps and their sampler,
+    // the draw (a dynamic offset), the texture and its sampler; and its
+    // shadow pass's: the light's matrix and the draw.
     assert_eq!(
         declared_bindings("scene3d.wgsl"),
-        vec![(0, 0), (1, 0), (2, 0), (2, 1)]
+        vec![
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (0, 4),
+            (0, 5),
+            (1, 0),
+            (2, 0),
+            (2, 1)
+        ]
+    );
+    assert_eq!(
+        declared_bindings("scene3d_shadow.wgsl"),
+        vec![(0, 0), (1, 0)]
     );
 }
 

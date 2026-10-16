@@ -324,3 +324,121 @@ fn bad_scenes_fail_when_they_load() {
         other => panic!("expected a scene error, got {:?}", other.err()),
     }
 }
+
+// ---- shadows ----
+
+/// A top-down view (10 x 10 units on the 100 x 100 canvas, +x to the right,
+/// -z up) of a ground plane and a 2-unit box standing on it, under a light
+/// that travels along (1, -1, 0): the box's shadow lies to its right, from
+/// x = 1 to x = 3 on the ground. `light` is added to the light's fields,
+/// `boxed` and `ground` to the two objects'.
+fn shadow_scene(light: &str, boxed: &str, ground: &str) -> Frame {
+    render(&format!(
+        r##""camera": {{"type": "orthographic", "height": 10, "position": [0, 10, 0], "up": [0, 0, -1]}},
+           "lights": [{{"type": "ambient", "intensity": 0.2}},
+                      {{"type": "directional", "direction": [1, -1, 0], "intensity": 1 {light}}}],
+           "objects": [
+             {{"type": "mesh", "geometry": {{"kind": "plane", "width": 12, "height": 12}},
+               "material": {{"color": "#ffffff", "roughness": 1}}, "rotation": [-90, 0, 0] {ground}}},
+             {{"type": "mesh", "geometry": {{"kind": "box", "width": 2, "height": 2, "depth": 2}},
+               "material": {{"color": "#ffffff", "roughness": 1}}, "position": [0, 1, 0] {boxed}}}]"##
+    ))
+}
+
+const LIGHT_CASTS: &str = r#", "castShadow": true"#;
+const CASTS: &str = r#", "castShadow": true"#;
+const RECEIVES: &str = r#", "receiveShadow": true"#;
+
+#[test]
+fn a_shadow_falls_where_the_light_is_blocked() {
+    let frame = shadow_scene(LIGHT_CASTS, CASTS, RECEIVES);
+    let off = shadow_scene("", CASTS, RECEIVES);
+    // Ground at x = -3 is in the open; at x = 2 it is behind the box.
+    let (open, shaded) = (px(&frame, 20, 50), px(&frame, 70, 50));
+    assert_eq!(
+        open,
+        px(&off, 20, 50),
+        "the open ground is as lit as without"
+    );
+    assert!(open[0] > 150, "{open:?}");
+    // Left with the ambient light only: 0.2 of white, sRGB 124.
+    assert!((i32::from(shaded[0]) - 124).abs() <= 3, "{shaded:?}");
+    assert_eq!(
+        px(&off, 70, 50),
+        open,
+        "without a shadow map the ground is lit"
+    );
+    // Beyond the shadow's end (x = 3, pixel 80) the ground is lit again.
+    assert_eq!(px(&frame, 90, 50), open);
+}
+
+#[test]
+fn the_filter_softens_a_shadows_edge_by_its_radius() {
+    let edge = |settings: &str| -> Vec<i32> {
+        let light = format!(r#", "castShadow": true, "shadow": {settings}"#);
+        let frame = shadow_scene(&light, CASTS, RECEIVES);
+        (72..90).map(|x| i32::from(px(&frame, x, 50)[0])).collect()
+    };
+    let between = |row: &[i32]| row.iter().filter(|&&v| v > 130 && v < 235).count();
+    // A coarse map (1.2 pixels a texel) and a wide filter: a soft edge.
+    let soft = edge(r#"{"mapSize": 64, "radius": 3}"#);
+    let sharp = edge(r#"{"mapSize": 64, "radius": 0}"#);
+    assert!(between(&soft) >= 4, "{soft:?}");
+    assert!(between(&sharp) < between(&soft), "{sharp:?} {soft:?}");
+}
+
+#[test]
+fn shadows_need_a_caster_a_receiver_and_a_light_that_casts() {
+    let shaded = |light, boxed, ground| px(&shadow_scene(light, boxed, ground), 70, 50)[0];
+    assert!(shaded(LIGHT_CASTS, CASTS, RECEIVES) < 130);
+    assert!(shaded(LIGHT_CASTS, "", RECEIVES) > 150, "nothing casts");
+    assert!(
+        shaded(LIGHT_CASTS, CASTS, "") > 150,
+        "the ground does not receive"
+    );
+    assert!(shaded("", CASTS, RECEIVES) > 150, "the light casts none");
+}
+
+#[test]
+fn a_caster_does_not_shade_itself() {
+    let both = format!("{CASTS}{RECEIVES}");
+    let frame = shadow_scene(LIGHT_CASTS, &both, RECEIVES);
+    let unshadowed = shadow_scene("", "", "");
+    // The box's top face seen from above, in the middle of the picture.
+    assert_eq!(px(&frame, 50, 50), px(&unshadowed, 50, 50));
+}
+
+#[test]
+fn shadow_maps_are_deterministic_and_follow_the_frame() {
+    let body = r##""camera": {"type": "orthographic", "height": 10, "position": [0, 10, 0], "up": [0, 0, -1]},
+        "lights": [{"type": "directional", "direction": [1, -1, 0], "castShadow": true,
+                    "shadow": {"mapSize": 512, "radius": 2}}],
+        "objects": [
+          {"type": "mesh", "geometry": {"kind": "plane", "width": 12, "height": 12},
+           "material": {"roughness": 1}, "rotation": [-90, 0, 0], "receiveShadow": true},
+          {"type": "mesh", "geometry": {"kind": "sphere", "radius": 1}, "castShadow": true,
+           "position": [[{"frame": 0, "value": -3}, {"frame": 29, "value": 0}], 1, 0]}]"##;
+    let a = render_still(scene(body), 5).unwrap().rgba;
+    assert_eq!(a, render_still(scene(body), 5).unwrap().rgba);
+    assert_ne!(a, render_still(scene(body), 20).unwrap().rgba);
+}
+
+#[test]
+fn bad_shadow_settings_name_the_problem() {
+    let err = |light: &str| {
+        let json = format!(
+            r##"{{"width": 10, "height": 10, "fps": 30, "durationInFrames": 1,
+                "layers": [{{"id": "s", "type": "scene3d", "width": 10, "height": 10,
+                  "lights": [{light}]}}]}}"##
+        );
+        match Scene::from_json(&json, ".".into()) {
+            Err(Error::Scene(msg)) => msg,
+            other => panic!("expected a scene error, got {:?}", other.err()),
+        }
+    };
+    let cast = r#"{"type": "directional", "castShadow": true"#;
+    assert!(err(&format!(r#"{cast}, "shadow": {{"mapSize": 8192}}}}"#)).contains("mapSize"));
+    assert!(err(&format!(r#"{cast}, "shadow": {{"bias": -1}}}}"#)).contains("bias"));
+    let five = vec![format!("{cast}}}"); 5].join(",");
+    assert!(err(&five).contains("5 lights that cast shadows"));
+}

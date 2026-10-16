@@ -31,6 +31,10 @@ use crate::scene::{FillRule, TextAlign};
 
 /// The most lights a scene has, ambient ones included.
 pub const MAX_LIGHTS: usize = 8;
+/// The most directional lights that cast shadows.
+pub const MAX_SHADOW_LIGHTS: usize = 4;
+/// The largest side of a shadow map, in texels.
+pub const MAX_SHADOW_MAP: u32 = 4096;
 /// The most segments a round primitive is cut into.
 pub const MAX_SEGMENTS: u32 = 256;
 
@@ -142,7 +146,9 @@ pub enum Light3d {
         #[serde(default = "one")]
         intensity: Num,
     },
-    /// Parallel light: `direction` is the way it travels.
+    /// Parallel light: `direction` is the way it travels. With `cast_shadow`
+    /// the objects that cast shadows (`Shadowing3d`) shade the ones that
+    /// receive them, through a shadow map set by `shadow`.
     #[serde(rename_all = "camelCase")]
     Directional {
         #[serde(default = "default_direction")]
@@ -151,6 +157,10 @@ pub enum Light3d {
         color: Color,
         #[serde(default = "one")]
         intensity: Num,
+        #[serde(default)]
+        cast_shadow: bool,
+        #[serde(default)]
+        shadow: Shadow3d,
     },
     /// Light from a point, falling off with the square of the distance.
     /// `range` above 0 fades it to nothing at that distance.
@@ -168,6 +178,42 @@ pub enum Light3d {
 
 fn default_direction() -> Vec3N {
     Vec3N::new(-1.0, -1.0, -1.0)
+}
+
+/// How a directional light's shadow map is made. The map covers the objects
+/// that cast shadows, so a texel is a fixed fraction of the scene's size.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Shadow3d {
+    /// Texels along each side of the square map.
+    pub map_size: u32,
+    /// How far, in texels, a surface is moved toward the light before its
+    /// depth is compared: hides the stripes a surface casts on itself.
+    pub bias: f64,
+    /// How far, in texels, a surface is moved along its normal, more the
+    /// more it faces away from the light: the same fix on slopes.
+    pub normal_bias: f64,
+    /// Half the width, in texels, of the soft edge (a 3 x 3 filter).
+    pub radius: f64,
+}
+
+impl Default for Shadow3d {
+    fn default() -> Shadow3d {
+        Shadow3d {
+            map_size: 2048,
+            bias: 1.0,
+            normal_bias: 1.5,
+            radius: 1.0,
+        }
+    }
+}
+
+/// Which objects cast and receive shadows. Neither by default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Shadowing3d {
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
 }
 
 /// Placement of an object in its parent: `position`, `rotation` (degrees) and
@@ -229,6 +275,8 @@ pub enum Object3d {
         material: Material3d,
         #[serde(flatten)]
         placement: Placement3d,
+        #[serde(flatten)]
+        shadowing: Shadowing3d,
     },
     /// A glTF or GLB file. `material`, when given, replaces the file's own
     /// materials.
@@ -239,6 +287,8 @@ pub enum Object3d {
         material: Option<Material3d>,
         #[serde(flatten)]
         placement: Placement3d,
+        #[serde(flatten)]
+        shadowing: Shadowing3d,
     },
     /// Text from one of the scene's fonts, extruded.
     #[serde(rename_all = "camelCase")]
@@ -261,6 +311,8 @@ pub enum Object3d {
         material: Material3d,
         #[serde(flatten)]
         placement: Placement3d,
+        #[serde(flatten)]
+        shadowing: Shadowing3d,
     },
     /// An SVG path, extruded.
     #[serde(rename_all = "camelCase")]
@@ -281,6 +333,8 @@ pub enum Object3d {
         material: Material3d,
         #[serde(flatten)]
         placement: Placement3d,
+        #[serde(flatten)]
+        shadowing: Shadowing3d,
     },
     /// Objects that move together.
     Group {
@@ -471,6 +525,8 @@ pub enum ResolvedLight3d {
         /// Unit length: the way the light travels.
         direction: DVec3,
         color: [f64; 3],
+        /// `None`: it casts no shadows.
+        shadow: Option<Shadow3d>,
     },
     Point {
         position: DVec3,
@@ -486,6 +542,7 @@ pub struct ResolvedObject3d {
     pub content: Content3d,
     /// `None`: a model's own materials.
     pub material: Option<ResolvedMaterial3d>,
+    pub shadowing: Shadowing3d,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -581,6 +638,37 @@ impl Scene3dLayer {
                 self.lights.len()
             ));
         }
+        let mut casters = 0;
+        for light in &self.lights {
+            if let Light3d::Directional {
+                cast_shadow: true,
+                shadow,
+                ..
+            } = light
+            {
+                casters += 1;
+                if !(64..=MAX_SHADOW_MAP).contains(&shadow.map_size) {
+                    return bad(format!(
+                        "shadow mapSize must be 64 to {MAX_SHADOW_MAP}, got {}",
+                        shadow.map_size
+                    ));
+                }
+                for (what, v) in [
+                    ("bias", shadow.bias),
+                    ("normalBias", shadow.normal_bias),
+                    ("radius", shadow.radius),
+                ] {
+                    if !(v.is_finite() && v >= 0.0) {
+                        return bad(format!("shadow {what} must be 0 or more, got {v}"));
+                    }
+                }
+            }
+        }
+        if casters > MAX_SHADOW_LIGHTS {
+            return bad(format!(
+                "has {casters} lights that cast shadows; at most {MAX_SHADOW_LIGHTS} do"
+            ));
+        }
         let cam = &self.camera;
         if cam.near.min() <= 0.0 {
             return bad("camera near must be above 0".into());
@@ -641,9 +729,12 @@ impl Scene3dLayer {
                     direction,
                     color,
                     intensity,
+                    cast_shadow,
+                    shadow,
                 } => ResolvedLight3d::Directional {
                     direction: direction.at(f).try_normalize().unwrap_or(DVec3::NEG_Y),
                     color: scaled(*color, intensity.at(f).max(0.0)),
+                    shadow: cast_shadow.then_some(*shadow),
                 },
                 Light3d::Point {
                     position,
@@ -825,24 +916,36 @@ fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedOb
             continue;
         }
         let world = parent * placement.matrix(f);
-        let mut push = |content: Content3d, material: Option<ResolvedMaterial3d>| {
-            out.push(ResolvedObject3d {
-                id: id.clone(),
-                world,
-                content,
-                material,
-            });
-        };
+        let mut push =
+            |content: Content3d, material: Option<ResolvedMaterial3d>, shadowing: Shadowing3d| {
+                out.push(ResolvedObject3d {
+                    id: id.clone(),
+                    world,
+                    content,
+                    material,
+                    shadowing,
+                });
+            };
         match object {
             Object3d::Mesh {
-                geometry, material, ..
+                geometry,
+                material,
+                shadowing,
+                ..
             } => push(
                 Content3d::Primitive(geometry.clone()),
                 Some(material.resolve(f)),
+                *shadowing,
             ),
-            Object3d::Model { src, material, .. } => push(
+            Object3d::Model {
+                src,
+                material,
+                shadowing,
+                ..
+            } => push(
                 Content3d::Model { src: src.clone() },
                 material.as_ref().map(|m| m.resolve(f)),
+                *shadowing,
             ),
             Object3d::Text {
                 text,
@@ -852,6 +955,7 @@ fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedOb
                 align,
                 line_height,
                 material,
+                shadowing,
                 ..
             } => push(
                 Content3d::Text(TextSpec {
@@ -863,6 +967,7 @@ fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedOb
                     line_height: *line_height,
                 }),
                 Some(material.resolve(f)),
+                *shadowing,
             ),
             Object3d::Extrude {
                 path,
@@ -870,6 +975,7 @@ fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedOb
                 depth,
                 fill_rule,
                 material,
+                shadowing,
                 ..
             } => push(
                 Content3d::Extrude(ExtrudeSpec {
@@ -879,6 +985,7 @@ fn flatten(objects: &[Object3d], parent: DMat4, f: f64, out: &mut Vec<ResolvedOb
                     fill_rule: *fill_rule,
                 }),
                 Some(material.resolve(f)),
+                *shadowing,
             ),
             Object3d::Group { children, .. } => flatten(children, world, f, out),
         }
@@ -975,6 +1082,46 @@ mod tests {
             panic!("not a point light");
         };
         assert_eq!((color, range), ([10.0; 3], 8.0));
+    }
+
+    #[test]
+    fn shadow_settings_reach_the_resolved_scene() {
+        let l = layer(
+            r#"{"width": 10, "height": 10,
+                "lights": [{"type": "directional", "castShadow": true, "shadow": {"mapSize": 512, "bias": 2}},
+                           {"type": "directional"}],
+                "objects": [{"type": "mesh", "geometry": {"kind": "box"}, "castShadow": true},
+                            {"type": "mesh", "geometry": {"kind": "box"}, "receiveShadow": true},
+                            {"type": "mesh", "geometry": {"kind": "box"}}]}"#,
+        );
+        l.validate("s", &has_font).unwrap();
+        let r = l.resolve("s", 0.0).unwrap();
+        let ResolvedLight3d::Directional { shadow, .. } = &r.lights[0] else {
+            panic!("not directional");
+        };
+        let shadow = shadow.expect("the first light casts");
+        // The rest of the settings keep their defaults.
+        assert_eq!((shadow.map_size, shadow.bias), (512, 2.0));
+        assert_eq!(shadow.normal_bias, Shadow3d::default().normal_bias);
+        let ResolvedLight3d::Directional { shadow, .. } = &r.lights[1] else {
+            panic!("not directional");
+        };
+        assert!(shadow.is_none());
+        let flags: Vec<_> = r.objects.iter().map(|o| o.shadowing).collect();
+        assert_eq!(
+            flags,
+            [
+                Shadowing3d {
+                    cast_shadow: true,
+                    receive_shadow: false
+                },
+                Shadowing3d {
+                    cast_shadow: false,
+                    receive_shadow: true
+                },
+                Shadowing3d::default()
+            ]
+        );
     }
 
     #[test]
