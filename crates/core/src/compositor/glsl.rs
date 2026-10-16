@@ -57,6 +57,10 @@ pub(super) struct GlslGpu {
     samplers: HashMap<String, wgpu::Sampler>,
     target: Option<Target>,
     blit: Option<Blit>,
+    /// The pass that turns a group's child into a texture, and the textures
+    /// it writes, by the child's place among those a group samples.
+    input: Option<Blit>,
+    inputs: Vec<Option<Target>>,
     /// What a texture that is not complete samples as: opaque black.
     black: Option<Arc<Uploaded>>,
 }
@@ -82,23 +86,148 @@ impl Compositor {
         matrix: Affine,
         base_dir: &Path,
     ) -> Result<Tex> {
+        self.glsl_group(content, (width, height), matrix, base_dir, &[])
+    }
+
+    /// `glsl`, for a group's pass: `layers` are the group's children, drawn
+    /// on the canvas, by id, which the recording's `layer` textures name.
+    /// They are read through `matrix`, so the box `(0, 0, width, height)` of
+    /// the buffer is what they show there.
+    pub fn glsl_group(
+        &mut self,
+        content: &GlslContent,
+        (width, height): (f64, f64),
+        matrix: Affine,
+        base_dir: &Path,
+        layers: &[(&str, &Tex)],
+    ) -> Result<Tex> {
         let side = |v: f64| (v.round() as i64).clamp(0, i64::from(MAX_BUFFER_SIDE)) as u32;
         let size = (side(width), side(height));
         if size.0 == 0 || size.1 == 0 {
             return Ok(self.empty());
         }
-        self.glsl_draw(content, size, base_dir)?;
+        let mut inputs = HashMap::new();
+        for (n, (id, tex)) in layers.iter().enumerate() {
+            inputs.insert(*id, self.glsl_input(n, tex, size, matrix));
+        }
+        self.glsl_draw(content, size, base_dir, &inputs)?;
         let rt = self.glsl.target.as_ref().expect("made by glsl_draw");
         let view = rt.view.clone();
         Ok(self.glsl_place(&view, (width, height), matrix, content))
     }
 
-    /// Records the draws into the drawing buffer.
+    /// The texture a group's child `n` is sampled as (`glsl_input.wgsl`): the
+    /// child's pixels in a buffer-sized Rgba8 texture.
+    fn glsl_input(
+        &mut self,
+        n: usize,
+        tex: &Tex,
+        size: (u32, u32),
+        matrix: Affine,
+    ) -> wgpu::TextureView {
+        if self.glsl.input.is_none() {
+            self.glsl.input = Some(self.glsl_blit(
+                "glsl input",
+                include_str!("../shaders/glsl_input.wgsl"),
+                ("vs_input", "fs_input"),
+                wgpu::TextureFormat::Rgba8Unorm,
+            ));
+        }
+        while self.glsl.inputs.len() <= n {
+            self.glsl.inputs.push(None);
+        }
+        if self.glsl.inputs[n].as_ref().is_none_or(|t| t.size != size) {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("glsl group input"),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.glsl.inputs[n] = Some(Target {
+                size,
+                view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                _texture: texture,
+            });
+        }
+        let target = self.glsl.inputs[n].as_ref().expect("made above");
+        let [a, b, c, d, e, f] = matrix.as_coeffs().map(|v| v as f32);
+        let params: [f32; 12] = [
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            0.0,
+            0.0,
+            tex.origin[0] as f32,
+            tex.origin[1] as f32,
+            tex.size[0] as f32,
+            tex.size[1] as f32,
+        ];
+        let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("glsl input"),
+                contents: &bytes,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let input = self.glsl.input.as_ref().expect("made above");
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("glsl input"),
+            layout: &input.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&tex.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&input.sampler),
+                },
+            ],
+        });
+        let stamp = self.stamp("glsl input", &target.view);
+        let mut encoder = self.encoder();
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("glsl input"),
+            color_attachments: &[Some(clear_attachment(
+                &target.view,
+                wgpu::Color::TRANSPARENT,
+            ))],
+            timestamp_writes: pass_timer::writes(&stamp),
+            ..Default::default()
+        });
+        pass.set_pipeline(&input.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+        drop(pass);
+        drop(encoder);
+        target.view.clone()
+    }
+
+    /// Records the draws into the drawing buffer. `inputs` are the views of
+    /// a group's children, by id.
     fn glsl_draw(
         &mut self,
         content: &GlslContent,
         size: (u32, u32),
         base_dir: &Path,
+        inputs: &HashMap<&str, wgpu::TextureView>,
     ) -> Result<()> {
         if self.glsl.target.as_ref().is_none_or(|t| t.size != size) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -146,7 +275,9 @@ impl Compositor {
         let mut buffers: HashMap<&str, (Vec<u8>, Option<wgpu::Buffer>)> = HashMap::new();
         let mut prepared = Vec::new();
         for draw in draws {
-            if let Some(p) = self.glsl_prepare(content, draw, size, base_dir, &mut buffers)? {
+            if let Some(p) =
+                self.glsl_prepare(content, draw, size, (base_dir, inputs), &mut buffers)?
+            {
                 prepared.push(p);
             }
         }
@@ -201,7 +332,7 @@ impl Compositor {
         content: &'c GlslContent,
         draw: &'c GlslDraw,
         size: (u32, u32),
-        base_dir: &Path,
+        (base_dir, inputs): (&Path, &HashMap<&str, wgpu::TextureView>),
         buffers: &mut HashMap<&'c str, (Vec<u8>, Option<wgpu::Buffer>)>,
     ) -> Result<Option<Prepared>> {
         let program_spec = content.programs.get(&draw.program).ok_or_else(|| {
@@ -358,7 +489,21 @@ impl Compositor {
                             state.texture
                         ))
                     })?;
-                    let uploaded = self.glsl_texture(&state.texture, texture, base_dir)?;
+                    let uploaded = match &texture.layer {
+                        Some(layer) => Arc::new(Uploaded {
+                            view: inputs
+                                .get(layer.as_str())
+                                .ok_or_else(|| {
+                                    render_error(format!(
+                                        "the texture {:?} is the layer {layer:?}, which was not drawn",
+                                        state.texture
+                                    ))
+                                })?
+                                .clone(),
+                            mipmapped: false,
+                        }),
+                        None => self.glsl_texture(&state.texture, texture, base_dir)?,
+                    };
                     self.glsl_sampler(state, uploaded)
                 }
                 None => {
@@ -825,7 +970,12 @@ impl Compositor {
         content: &GlslContent,
     ) -> Tex {
         if self.glsl.blit.is_none() {
-            self.glsl.blit = Some(self.glsl_blit());
+            self.glsl.blit = Some(self.glsl_blit(
+                "glsl place",
+                include_str!("../shaders/glsl_blit.wgsl"),
+                ("vs_glsl", "fs_glsl"),
+                LINEAR_FORMAT,
+            ));
         }
         let corners = [
             (0.0, 0.0, 0.0, 0.0),
@@ -904,11 +1054,19 @@ impl Compositor {
         target
     }
 
-    fn glsl_blit(&self) -> Blit {
+    /// The pipeline of a pass that draws one texture, read through a uniform
+    /// block and a bilinear sampler, into a `format` target.
+    fn glsl_blit(
+        &self,
+        label: &'static str,
+        source: &str,
+        (vertex, fragment): (&'static str, &'static str),
+        format: wgpu::TextureFormat,
+    ) -> Blit {
         let layout = self
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("glsl place"),
+                label: Some(label),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -941,32 +1099,28 @@ impl Compositor {
         let pipeline_layout = self
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("glsl place"),
+                label: Some(label),
                 bind_group_layouts: &[Some(&layout)],
                 immediate_size: 0,
             });
-        let shader = shader_module(
-            &self.device,
-            "glsl place",
-            include_str!("../shaders/glsl_blit.wgsl"),
-        );
+        let shader = shader_module(&self.device, label, source);
         let pipeline = self
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("glsl place"),
+                label: Some(label),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: Some("vs_glsl"),
+                    entry_point: Some(vertex),
                     compilation_options: Default::default(),
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: Some("fs_glsl"),
+                    entry_point: Some(fragment),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: LINEAR_FORMAT,
+                        format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -978,7 +1132,7 @@ impl Compositor {
                 cache: None,
             });
         let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("glsl place"),
+            label: Some(label),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,

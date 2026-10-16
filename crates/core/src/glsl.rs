@@ -95,6 +95,10 @@ pub struct GlslTexture {
     pub src: Option<String>,
     /// Base64 RGBA8, straight alpha, `width * height * 4` bytes.
     pub pixels: Option<String>,
+    /// The `id` of a child of the group this recording belongs to
+    /// (`GroupLayer::glsl`): the picture is that child, drawn, as the
+    /// drawing buffer's size and place would show it.
+    pub layer: Option<String>,
     #[serde(default)]
     pub width: u32,
     #[serde(default)]
@@ -1628,7 +1632,7 @@ pub fn decode_texture(
             }
             Ok((bytes, w, h))
         }
-        _ => Err("a texture has either a src or pixels".into()),
+        _ => Err("a texture has either a src or pixels (or, in a group, a layer)".into()),
     }
 }
 

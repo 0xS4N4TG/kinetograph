@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWebGLContext, glslShader, GL, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
+import { createWebGLContext, glslShader, GL, layerPicture, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
 
 const VERTEX = 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
 const FRAGMENT = 'precision mediump float; varying vec2 v; uniform float t; uniform vec2 r[2]; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v) * t; }';
@@ -86,6 +86,22 @@ describe('the recording WebGL context', () => {
     expect(stored).toMatchObject({ width: 2, height: 1, flipY: true });
     // RGB became RGBA with opaque alpha.
     expect([...Buffer.from(stored.pixels!, 'base64')]).toEqual([255, 0, 0, 255, 0, 255, 0, 255]);
+  });
+
+  it('records a picture of a layer as a texture that names the layer, until pixels replace it', () => {
+    const { gl, program } = setup();
+    const texture = gl.createTexture();
+    gl.bindTexture(GL.TEXTURE_2D, texture);
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, layerPicture('scene-a', 8, 4));
+    gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4]));
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    const content = gl.content();
+    const [first, second] = content.ops.map((op) => (op.op === 'draw' ? content.textures[op.units['0']!.texture]! : null));
+    expect(first).toEqual({ layer: 'scene-a' });
+    expect(second).toMatchObject({ width: 1, height: 1 });
+    expect(second).not.toHaveProperty('layer');
   });
 
   it('says unsupported, naming what to do, for what it does not draw', () => {

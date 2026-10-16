@@ -233,3 +233,84 @@ fn a_draw_without_vertex_data_says_so() {
         "{error}"
     );
 }
+
+/// A shader group of the 16 x 16 scene: a rect covering the left half in red
+/// (`a`), one covering the top half in blue (`b`), and `fragment` over them,
+/// which samples both.
+fn shader_group(fragment: &str) -> String {
+    let rect = |id: &str, w: u32, h: u32, color: &str| {
+        format!(
+            r##"{{"id": "{id}", "type": "shape", "shape": {{"kind": "rect", "width": {w}, "height": {h}}},
+                "fill": "{color}"}}"##
+        )
+    };
+    let unit = |n: u32, texture: &str| {
+        format!(
+            r#""{n}": {{"texture": "{texture}", "min": "NEAREST", "mag": "NEAREST",
+                         "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}"#
+        )
+    };
+    format!(
+        r#"{{"id": "pass", "type": "group", "children": [{}, {}],
+            "glsl": {{"width": 16, "height": 16, "programs": {{"p": {{"vertex": {}, "fragment": {},
+                       "attributes": {{"a_pos": 0}}}}}},
+              "buffers": {{"quad": "{}"}},
+              "textures": {{"a": {{"layer": "a"}}, "b": {{"layer": "b"}}}},
+              "ops": [{}]}}}}"#,
+        rect("a", 8, 16, "#ff0000"),
+        rect("b", 16, 8, "#0000ff"),
+        serde_json::to_string(QUAD_VERTEX_ES1).unwrap(),
+        serde_json::to_string(fragment).unwrap(),
+        quad(),
+        draw(&format!(
+            r#""uniforms": {{"u_a": [{{"kind": "i", "value": [0]}}], "u_b": [{{"kind": "i", "value": [1]}}]}},
+               "units": {{{}, {}}}"#,
+            unit(0, "a"),
+            unit(1, "b")
+        )),
+    )
+}
+
+#[test]
+fn a_shader_group_samples_its_children_as_pictures() {
+    // Where `b` is blue (the top half) the shader shows `b`, elsewhere `a`;
+    // the rows count from the top of the group, as the pictures' do.
+    let frame = render(&shader_group(
+        "precision mediump float; varying vec2 v_uv; uniform sampler2D u_a; uniform sampler2D u_b; \
+         void main() { vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y); \
+         gl_FragColor = uv.y < 0.5 ? texture2D(u_b, uv) : texture2D(u_a, uv); }",
+    ));
+    assert_eq!(px(&frame, 12, 3), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 3, 3), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 3, 12), [255, 0, 0, 255]);
+    // `a` covers the left half only: the bottom right is the background.
+    assert_eq!(px(&frame, 12, 12), [0, 0, 0, 255]);
+}
+
+#[test]
+fn the_children_of_a_shader_group_are_not_drawn_on_their_own() {
+    // The shader paints nothing: neither child shows through.
+    let frame = render(&shader_group(
+        "precision mediump float; void main() { gl_FragColor = vec4(0.0); }",
+    ));
+    assert_eq!(px(&frame, 3, 12), [0, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 3), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_shader_group_names_children_it_has() {
+    let json = shader_group("precision mediump float; void main() { gl_FragColor = vec4(1.0); }")
+        .replace(r#""layer": "b""#, r#""layer": "nope""#);
+    let json = format!(
+        r##"{{"width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "layers": [{json}]}}"##
+    );
+    let Error::Scene(message) = Scene::from_json(&json, Default::default()).unwrap_err() else {
+        panic!("not a scene error")
+    };
+    assert!(
+        message.contains("\"pass\"")
+            && message.contains("\"nope\"")
+            && message.contains("not one of its children"),
+        "{message}"
+    );
+}

@@ -434,6 +434,15 @@ pub struct ResolvedMask {
     pub mode: MaskMode,
 }
 
+/// A group's GLSL pass at one frame: the recording drawn into a `width` x
+/// `height` buffer whose `layer` textures are the group's children.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedGlsl {
+    pub width: f64,
+    pub height: f64,
+    pub recording: crate::glsl::GlslRecording,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedMatte {
     /// The id of a sibling layer.
@@ -609,6 +618,9 @@ pub enum ResolvedKind {
         /// With a `layout`: the size it gave the group, whose box is
         /// `(0, 0, width, height)`.
         size: Option<(f64, f64)>,
+        /// `GroupLayer::glsl`: a GLSL pass in the box `(0, 0, width,
+        /// height)` over the children, which are its textures.
+        glsl: Option<ResolvedGlsl>,
     },
     /// A Lottie animation fitted into the box `(0, 0, width, height)`.
     Lottie {
@@ -1006,6 +1018,11 @@ impl Resolver<'_> {
                 },
                 preserve3d: g.preserve3d,
                 pass_through: g.pass_through,
+                glsl: g.glsl.as_ref().map(|glsl| ResolvedGlsl {
+                    width: glsl.width.at(f),
+                    height: glsl.height.at(f),
+                    recording: glsl.recording.clone(),
+                }),
             },
             LayerKind::Lottie(l) => {
                 let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;

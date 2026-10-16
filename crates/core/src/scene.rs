@@ -1347,6 +1347,11 @@ pub struct GroupLayer {
     pub pass_through: bool,
     /// Flex layout of the children, applied when the scene is resolved.
     pub layout: Option<Layout>,
+    /// A GLSL pass that makes the group's picture out of its children
+    /// (`docs/SCENE.md`, "Shader groups"): the children are drawn into
+    /// textures that the recording's `layer` textures name, and are not drawn
+    /// on their own.
+    pub glsl: Option<GlslLayer>,
 }
 
 /// A group's flex layout (`docs/SCENE.md`, "Layout"). Names and values are
@@ -1930,6 +1935,11 @@ impl Scene {
                     if let Some(layout) = &g.layout {
                         validate_layout(&layer.id, layout)?;
                     }
+                    if let Some(glsl) = &g.glsl {
+                        non_negative("width", &glsl.width)?;
+                        non_negative("height", &glsl.height)?;
+                        validate_shader_group(layer, g, glsl)?;
+                    }
                     if g.preserve3d {
                         validate_preserve3d(layer, layers)?;
                         if let Some(child) = g.children.iter().find(|c| c.motion_blur.is_some()) {
@@ -2218,6 +2228,39 @@ fn validate_preserve3d(group: &Layer, siblings: &[Layer]) -> Result<()> {
         .any(|l| l.matte.as_ref().is_some_and(|m| m.layer == group.id))
     {
         return bad("cannot be a matte source");
+    }
+    Ok(())
+}
+
+/// A group with a `glsl` pass: its children are the pass's textures.
+fn validate_shader_group(group: &Layer, g: &GroupLayer, glsl: &GlslLayer) -> Result<()> {
+    let bad = |msg: &str| {
+        Err(Error::Scene(format!(
+            "layer {:?}: a group with a glsl pass {msg}",
+            group.id
+        )))
+    };
+    if g.preserve3d {
+        return bad("cannot be a preserve3d group");
+    }
+    if g.layout.is_some() {
+        return bad("cannot have a layout");
+    }
+    crate::glsl::validate(&group.id, &glsl.recording.0)?;
+    for (id, texture) in &glsl.recording.0.textures {
+        let Some(child) = &texture.layer else {
+            continue;
+        };
+        if texture.src.is_some() || texture.pixels.is_some() {
+            return bad(&format!(
+                "has the texture {id:?} with a layer and a src or pixels; it has one of them"
+            ));
+        }
+        if !g.children.iter().any(|c| &c.id == child) {
+            return bad(&format!(
+                "has the texture {id:?} of the layer {child:?}, which is not one of its children"
+            ));
+        }
     }
     Ok(())
 }

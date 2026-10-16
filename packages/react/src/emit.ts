@@ -6,6 +6,7 @@
 
 import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
 import { canvasEnvironment, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
+import { gatherShaderInputs } from './shader-groups.js';
 import {
   createCanvasContext,
   glslShader,
@@ -460,7 +461,7 @@ class Emitter {
         return {
           id,
           type: 'group',
-          ...pick(props, ['preserve3d', 'layout']),
+          ...pick(props, ['preserve3d', 'layout', 'glsl']),
           ...commonOf(props, name),
           children: this.children(element.children, path, name),
         } as LayerJson;
@@ -607,6 +608,7 @@ class Emitter {
 export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
   const emitter = new Emitter(options, roots);
   const layers = emitter.children(roots, '', 'the root of the tree');
+  gatherShaderInputs(layers);
   if (emitter.cameras.length > 1) {
     throw new Error(`Only one <Camera> is allowed per tree, found ${emitter.cameras.length}`);
   }
