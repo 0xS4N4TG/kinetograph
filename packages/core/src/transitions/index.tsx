@@ -1,18 +1,43 @@
 // `@remotion/transitions`: `TransitionSeries` plays scenes one after another and
 // lets a transition overlap the end of one with the start of the next. The
-// presentations (`fade`, `slide`, `wipe`, `flip`, `clockWipe`, `iris`, `none`) are
-// in their own modules, as in the package. Written from the documented
+// presentations (`fade`, `slide`, `wipe`, `flip`, `clockWipe`, `iris`, `none`, and
+// the shader ones, `crossZoom`, `ripple`, ...) are in their own modules, as in the
+// package. Written from the documented
 // behaviour; the timing, the overlap arithmetic and the error messages are
 // checked against what the published package does (test/fixtures/transitions.json).
 
-import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
+import { Children, isValidElement, useId, type ReactElement, type ReactNode } from 'react';
 import { interpolate } from '../interpolate.js';
 import type { EasingFunction } from '../easing.js';
 import { measureSpring, spring, type SpringConfig } from '../spring.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
+import { EnteringContext, ExitingContext, TransitionIdContext } from './context.js';
+import { slide } from './slide.js';
 import type { PresentationDirection, TransitionPresentation, TransitionTiming } from './types.js';
 
-export type { PresentationComponentProps, PresentationDirection, TransitionPresentation, TransitionTiming } from './types.js';
+export type {
+  PresentationComponentProps,
+  PresentationDirection,
+  TransitionPresentation,
+  TransitionPresentationComponentProps,
+  TransitionTiming,
+} from './types.js';
+export { useTransitionProgress } from './context.js';
+export type { TransitionState } from './context.js';
+export { makeHtmlInCanvasPresentation } from './html-in-canvas.js';
+export type { HtmlInCanvasShader, HtmlInCanvasShaderDraw, HtmlInCanvasShaderDrawParams, ShaderCanvas } from './html-in-canvas.js';
+export { blurSlide } from './blur-slide.js';
+export type { BlurSlideDirection, BlurSlideProps } from './blur-slide.js';
+export { crossZoom } from './cross-zoom.js';
+export type { CrossZoomProps } from './cross-zoom.js';
+export { dreamyZoom } from './dreamy-zoom.js';
+export type { DreamyZoomProps } from './dreamy-zoom.js';
+export { filmBurn } from './film-burn.js';
+export type { FilmBurnProps } from './film-burn.js';
+export { linearBlur } from './linear-blur.js';
+export type { LinearBlurProps } from './linear-blur.js';
+export { pushCut } from './push-cut.js';
+export type { PushCutProps } from './push-cut.js';
 
 // ---- timings ----
 
@@ -72,7 +97,8 @@ export interface TransitionSeriesSequenceProps {
 }
 
 export interface TransitionSeriesTransitionProps<P extends Record<string, unknown> = Record<string, unknown>> {
-  presentation: TransitionPresentation<P>;
+  /** Default `slide()`. */
+  presentation?: TransitionPresentation<P>;
   timing: TransitionTiming;
 }
 
@@ -97,6 +123,8 @@ interface TransitionInfo {
   presentation: TransitionPresentation<any>;
   timing: TransitionTiming;
   duration: number;
+  /** Shared by the presentations of the scene going out and the one coming in (`TransitionIdContext`). */
+  id: string;
 }
 
 function Scene({
@@ -112,26 +140,37 @@ function Scene({
 }): ReactNode {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const wrap = (info: TransitionInfo, direction: PresentationDirection, progressFrame: number, content: ReactNode) => {
-    const Presentation = info.presentation.component;
-    return (
-      <Presentation
-        presentationProgress={info.timing.getProgress({ frame: progressFrame, fps })}
-        presentationDirection={direction}
-        presentationDurationInFrames={info.duration}
-        passedProps={info.presentation.props}
-      >
-        {content}
-      </Presentation>
-    );
-  };
-  let node = children;
   // The scene leaves during its last frames of the transition and arrives during the first. Its presentation wraps it
   // only while that transition runs, as the published package does: a presentation need not draw nothing at rest (the
   // tape strip of a papercut `tapePull` would sit on the scene for the whole of it).
   const leaving = frame - (duration - (exit?.duration ?? 0));
-  if (exit && leaving >= 0 && leaving < exit.duration) node = wrap(exit, 'exiting', leaving, node);
-  if (enter && frame >= 0 && frame < enter.duration) node = wrap(enter, 'entering', frame, node);
+  const exiting = exit !== null && leaving >= 0 && leaving < exit.duration;
+  const entering = enter !== null && frame >= 0 && frame < enter.duration;
+  const wrap = (info: TransitionInfo, direction: PresentationDirection, progressFrame: number, content: ReactNode) => {
+    const Presentation = info.presentation.component;
+    const presentationProgress = info.timing.getProgress({ frame: progressFrame, fps });
+    return (
+      <TransitionIdContext.Provider value={info.id}>
+        <Presentation
+          presentationProgress={presentationProgress}
+          presentationDirection={direction}
+          presentationDurationInFrames={info.duration}
+          passedProps={info.presentation.props}
+          bothEnteringAndExiting={entering && exiting}
+        >
+          {direction === 'entering' ? (
+            <EnteringContext.Provider value={{ enteringProgress: presentationProgress }}>{content}</EnteringContext.Provider>
+          ) : (
+            <ExitingContext.Provider value={{ exitingProgress: presentationProgress }}>{content}</ExitingContext.Provider>
+          )}
+        </Presentation>
+      </TransitionIdContext.Provider>
+    );
+  };
+  let node = children;
+  // The presentation of the transition going out is the outer one, as in the published package.
+  if (entering) node = wrap(enter, 'entering', frame, node);
+  if (exiting) node = wrap(exit, 'exiting', leaving, node);
   return <>{node}</>;
 }
 
@@ -141,6 +180,7 @@ function describe(child: unknown): string {
 
 function TransitionSeriesImpl({ children }: { children?: ReactNode }): ReactNode {
   const { fps } = useVideoConfig();
+  const series = useId().replace(/[^A-Za-z0-9]/g, '');
   const items = Children.toArray(children) as ReactNode[];
 
   const scenes: ReactNode[] = [];
@@ -177,8 +217,8 @@ function TransitionSeriesImpl({ children }: { children?: ReactNode }): ReactNode
           `A <TransitionSeries.Transition /> component must not be followed by a <TransitionSeries.Overlay /> component (nth children = ${index} and ${index + 1})`,
         );
       }
-      const { presentation, timing } = (item as ReactElement<TransitionSeriesTransitionProps>).props;
-      pending = { presentation, timing, duration: timing.getDurationInFrames({ fps }) };
+      const { presentation = slide(), timing } = (item as ReactElement<TransitionSeriesTransitionProps>).props;
+      pending = { presentation, timing, duration: timing.getDurationInFrames({ fps }), id: `transition-${series}-${index}` };
       return;
     }
 
