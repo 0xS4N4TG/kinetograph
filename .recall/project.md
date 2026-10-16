@@ -4,7 +4,7 @@
 - Language: Rust (core renderer: crates/core, CLI: crates/cli, N-API addon: crates/node) and TypeScript (npm workspaces under packages/: scene, react, core, audio, cli; contract in docs/AUTHORING.md)
 - Planned crates: wgpu, vello, parley/swash/fontique, taffy, usvg/vello_svg, ffmpeg-next, web-audio-api-rs, rmcp (see docs/HANDOFF.md §4)
 - Repo: github.com/0xS4N4TG/kinetograph (private, to be public), branch main
-- Licence: MIT OR Apache-2.0
+- Licence: PolyForm Small Business 1.0.0 (LICENSE.md); commercial licence for larger companies (COMMERCIAL.md)
 
 ## Entry points
 - `cargo build --release`; `./target/release/kinetograph still <scene.json> <frame> -o out.png`; `bench <scene.json> --frame N --runs K`.

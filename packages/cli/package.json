@@ -2,7 +2,7 @@
   "name": "kinetograph",
   "version": "0.1.0",
   "description": "Agent CLI and MCP server for the Kinetograph video engine",
-  "license": "MIT OR Apache-2.0",
+  "license": "PolyForm-Small-Business-1.0.0",
   "type": "module",
   "bin": {
     "kinetograph": "dist/cli.js"

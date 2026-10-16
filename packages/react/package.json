@@ -2,7 +2,7 @@
   "name": "@kinetograph/react",
   "version": "0.1.0",
   "description": "React reconciler emitting Kinetograph scene JSON, and the native elements",
-  "license": "MIT OR Apache-2.0",
+  "license": "PolyForm-Small-Business-1.0.0",
   "type": "module",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
