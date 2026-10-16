@@ -1,0 +1,16 @@
+[package]
+name = "kinetograph-skia"
+description = "RN-Skia's scene tree drawn with Skia's CPU rasteriser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Skia, with its prebuilt binaries (downloaded by skia-bindings' build script
+# for the target; no C++ is built here). `textlayout` is `<Paragraph>`, `webp`
+# decodes WebP pictures; the defaults are the binary cache, ICU data embedded for
+# the paragraphs, and JPEG.
+skia-safe = { version = "0.153.3", features = ["textlayout", "svg", "webp"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.154"

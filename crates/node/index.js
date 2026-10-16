@@ -790,5 +790,6 @@ module.exports.parseRange = nativeBinding.parseRange
 module.exports.probeMedia = nativeBinding.probeMedia
 module.exports.renderCanvas = nativeBinding.renderCanvas
 module.exports.renderDomIsland = nativeBinding.renderDomIsland
+module.exports.riveFrame = nativeBinding.riveFrame
 module.exports.validateScene = nativeBinding.validateScene
 module.exports.version = nativeBinding.version
