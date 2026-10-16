@@ -190,7 +190,7 @@ such content is ported natively, or left out with a warning).
 | Package | Plan | Needs from the engine | Phase |
 |---|---|---|---|
 | `remotion` core (`Sequence`, `Series`, `Loop`, `interpolate`, `spring`, …) | shim | frame clock, layer visibility | 3 |
-| `@remotion/transitions` (fade, slide, wipe, flip, iris, clockWipe) | shim | opacity, transforms, clip paths | 3 |
+| `@remotion/transitions` (fade, slide, wipe, flip, iris, clockWipe; the shader presentations are shader groups) | shim | opacity, transforms, clip paths, GLSL passes | 3 |
 | `@remotion/motion-blur` (`Trail`, `CameraMotionBlur`) | shim | sub-frame motion blur | 3 |
 | `@remotion/noise`, `paths`, `shapes`, `layout-utils`, `animation-utils` | shim (pure JS/TS) | path and shape layers | 3 |
 | `@remotion/google-fonts` | shim | font registration | 3 |

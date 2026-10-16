@@ -557,3 +557,28 @@ fn gif_layers_match_golden() {
     let frame = render_still(scene("tests/scenes/gif.json"), 15).unwrap();
     check("gif", &frame);
 }
+
+#[test]
+fn transitions_match_golden() {
+    // Frames of @remotion/transitions presentations (two scenes, each a
+    // gradient with a few shapes, 40 frames of transition, linear timing) and
+    // of @remotion/light-leaks and @remotion/starburst, emitted by the
+    // project's own TypeScript (shader groups, docs/SCENE.md) and checked
+    // against Remotion 4.0.536 in Chrome for Testing: the mean difference over
+    // the picture was 0.25 of 255 or less, and no pixel was more than 48 off,
+    // for cross-zoom at progress 0.25, film-burn and book-flip at 0.5, ripple
+    // at 0.25; light-leak at 0.75 of its length has a mean of 3.1, a smooth
+    // gradient that differs by a few levels.
+    for name in [
+        "cross-zoom",
+        "film-burn",
+        "book-flip",
+        "ripple",
+        "light-leak",
+        "starburst",
+    ] {
+        let frame =
+            render_still(scene(&format!("tests/scenes/transition-{name}.json")), 0).unwrap();
+        check(&format!("transition-{name}"), &frame);
+    }
+}

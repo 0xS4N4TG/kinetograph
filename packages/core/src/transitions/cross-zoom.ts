@@ -46,7 +46,7 @@ vec4 crossFade(vec2 uv, float dissolve) {
 }
 
 void main() {
-  float progress = u_time;
+  float progress = 1.0 - u_time;
   vec2 center = vec2(linearEase(0.25, 0.5, 1.0, progress), 0.5);
   float dissolve = exponentialEaseInOut(0.0, 1.0, 1.0, progress);
   float strength = sinusoidalEaseInOut(0.0, u_strength, 0.5, progress);
