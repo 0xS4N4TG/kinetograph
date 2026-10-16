@@ -17,6 +17,7 @@ describe('resolveSpecifier', () => {
     for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie', 'gif', 'media-utils', 'media']) {
       expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetograph/core/${pkg}` });
     }
+    expect(resolveSpecifier('@remotion/sfx')).toEqual({ kind: 'path', target: '@kinetograph/core/sfx' });
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
   });
 
@@ -167,6 +168,21 @@ describe('bundleProject', () => {
     // No Tailwind in this project: the file is registered as it is, and the problem is reported (doctor prints it).
     expect(code).toContain('noteStylesheetProblem(');
     expect(warnings.join('\n')).toContain('uses Tailwind, but the project has none that can build it');
+  });
+
+  it('bundles @remotion/sfx onto the core, and the sounds are the URLs the mix downloads', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot, Audio } from 'remotion';`,
+        `import { whip, vineBoom } from '@remotion/sfx';`,
+        `registerRoot(() => null);`,
+        `console.log(Audio, whip, vineBoom);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/sfx.js');
+    expect(code).toContain('https://remotion.media/whip.wav');
   });
 
   it('leaves one file per entry, replaced when the code changes', async () => {

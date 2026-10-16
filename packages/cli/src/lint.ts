@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describeIssue, summarize } from '@kinetograph/compat/doctor';
+import { isSfxUrl } from '@kinetograph/core/sound-source';
 import type { AudioClipJson, LayerJson, SceneJson, Unsupported } from '@kinetograph/scene';
 import type { InspectLayer, InspectResult } from './native.js';
 
@@ -202,10 +203,13 @@ export function lintScene(scene: SceneJson, baseDir: string, exists: (path: stri
   return findings;
 }
 
-/** `<Audio>` clips whose file is missing. A `<Video>`'s sound is left out: its layer reports the missing file. */
+/**
+ * `<Audio>` clips whose file is missing. A `<Video>`'s sound is left out: its layer reports the missing file. The URL of
+ * an `@remotion/sfx` sound is not a file yet: it is downloaded when the audio is mixed.
+ */
 export function lintAudio(clips: AudioClipJson[], baseDir: string, exists: (path: string) => boolean = existsSync): Finding[] {
   return clips
-    .filter((clip) => !clip.video && !exists(resolve(baseDir, clip.src)))
+    .filter((clip) => !clip.video && !isSfxUrl(clip.src) && !exists(resolve(baseDir, clip.src)))
     .map((clip) => ({
       rule: 'missing-asset',
       severity: 'error' as const,

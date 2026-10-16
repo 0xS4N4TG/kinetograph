@@ -33,6 +33,8 @@ export async function renderAudio(options: {
   baseDir?: string;
   /** Decodes the sound of `video: true` clips; default: the addon's `decodeAudio` (tests pass a stub). */
   decodeAudio?: DecodeAudio;
+  /** Turns an `<Audio src>` into the file to read, e.g. downloads a URL once; default: `src` as it is. */
+  resolveSource?: (src: string) => string | Promise<string>;
 }): Promise<AudioPcm> {
   const { fps, first, last, clips } = options;
   const sampleRate = options.sampleRate ?? 48000;
@@ -64,7 +66,8 @@ export async function renderAudio(options: {
   // `toneFrequency`: a file's sound shifted once per pitch.
   const pitched = new Map<string, AudioBuffer>();
   for (const clip of clips) {
-    const path = resolve(options.baseDir ?? process.cwd(), clip.src);
+    const source = clip.video || !options.resolveSource ? clip.src : await options.resolveSource(clip.src);
+    const path = resolve(options.baseDir ?? process.cwd(), source);
     let buffer: AudioBuffer | null | undefined;
     if (clip.video) {
       // A muted video's file is never opened for its sound.

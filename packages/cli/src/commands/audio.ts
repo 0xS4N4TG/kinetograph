@@ -1,4 +1,5 @@
 import { analyzeAudio, hasOnFrame, joinClips, renderAudio } from '@kinetograph/audio';
+import { resolveSoundSource } from '@kinetograph/core/sound-source';
 import type { AudioClipJson } from '@kinetograph/scene';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
@@ -30,7 +31,7 @@ export const audioAnalyze: Command = {
       if (clips.length === 0 && !hasOnFrame(first, last)) {
         throw new CliError('NO_AUDIO', `frames ${first}..=${last} have no onFrame callbacks and no <Audio> clips`);
       }
-      const pcm = await renderAudio({ fps, first, last, clips, baseDir: source.baseDir });
+      const pcm = await renderAudio({ fps, first, last, clips, baseDir: source.baseDir, resolveSource: resolveSoundSource });
 
       // Scene ranges are frames; the analysis takes seconds from the start of the mix.
       let scenes: [number, number][] | undefined;

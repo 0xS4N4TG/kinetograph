@@ -222,6 +222,12 @@ describe('lintAudio and mergeFindings', () => {
     expect(lintAudio([clip], '/p', () => true)).toEqual([]);
   });
 
+  it('does not look for an @remotion/sfx sound on disk: it is downloaded when the audio is mixed', () => {
+    const clip = { id: 'hit', src: 'https://remotion.media/whip.wav', from: 0, trimBefore: 0, trimAfter: null, playbackRate: 1, volume: 1, loop: false, muted: false };
+    expect(lintAudio([clip], '/p', () => false)).toEqual([]);
+    expect(lintAudio([{ ...clip, src: 'https://example.com/a.wav' }], '/p', () => false)).toHaveLength(1);
+  });
+
   it('leaves the sound of a <Video> to its layer, which already reports the missing file', () => {
     const sound = { id: 'v', src: 'a.mp4', from: 0, trimBefore: 0, trimAfter: null, playbackRate: 1, volume: 1, loop: false, muted: false, video: true };
     expect(lintAudio([sound], '/p', () => false)).toEqual([]);

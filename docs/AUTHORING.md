@@ -707,6 +707,7 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/google-fonts` | `@remotion/google-fonts/*` | §7.2 |
 | `@kinetograph/core/fonts` | `@remotion/fonts` | §7.2 |
 | `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>` |
+| `@kinetograph/core/sfx` | `@remotion/sfx` | the 32 sound-effect URLs of the package (`whip`, `ding`, …), for `<Audio src>`. The mix downloads each once into `~/.cache/kinetograph/sfx` (`resolveSoundSource`, `@kinetograph/core/sound-source`), so a render after the first is offline; the CLI's `render` and `audio analyze` pass it to `renderAudio` as `resolveSource`, and `lint` does not look for these URLs on disk |
 | `@kinetograph/core/determinism`, `/determinism/install` | none | §7.4 |
 
 `@kinetograph/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from
@@ -724,7 +725,8 @@ export function clearOnFrame(): void;
 export interface AudioClipTimeline extends Omit<AudioClipJson, 'volume'> { volumes: Map<number, number> /* frame → volume */ }
 export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): AudioClipTimeline[];
 export function renderAudio(options: { fps: number; first: number; last: number; sampleRate?: number /* 48000 */;
-                                       clips: AudioClipTimeline[]; baseDir?: string }): Promise<AudioPcm>;
+                                       clips: AudioClipTimeline[]; baseDir?: string;
+                                       resolveSource?: (src: string) => string | Promise<string> }): Promise<AudioPcm>;
 export interface AudioAnalysis {
   integratedLufs: number; truePeakDb: number; clippedSamples: number;
   silences: { start: number; end: number }[];    // seconds, below -60 dBFS for at least 0.5 s

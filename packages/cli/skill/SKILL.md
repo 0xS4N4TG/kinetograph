@@ -73,6 +73,8 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   For new work, use the elements below. `<div>`s, `className`, stylesheets (`.css` imports, `<style>`, Tailwind) and SVG
   also work (compat mode, see "Compat mode and doctor"): the engine's own CSS engine styles, lays out and draws them,
   and a frame holding something it cannot draw yet is drawn without it (or approximated) and the command warns.
+- `@remotion/sfx` sounds (`whip`, `ding`, …) play with `<Audio src={whip} />`. The first render downloads each sound
+  into `~/.cache/kinetograph/sfx`; after that it is offline.
 - Rendering is a pure function of the frame number. `Math.random()`, `Date.now()` and timers are driven by the frame;
   use `random(seed)` for jitter. Never read the real clock.
 - Register fonts before text is laid out. Text with a font that is not registered is a lint error.
