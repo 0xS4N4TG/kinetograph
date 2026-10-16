@@ -19,11 +19,16 @@ license = "MIT OR Apache-2.0"
 # vello starts a compute pass for each of its dispatches, about 17 for each
 # page; see vendor/README.md.
 #
+# vello keeps the images it has drawn in its atlas for two more renders; the
+# pictures of a canvas's shadows and filters need their place back at once
+# (vendor/README.md).
+#
 # stylo's Servo build does not parse `@container`, and blitz-dom answers no
 # container query: its `query_container_size` returns nothing (vendor/README.md).
 [patch.crates-io]
 blitz-dom = { path = "vendor/blitz-dom" }
 stylo = { path = "vendor/stylo" }
 vello = { path = "vendor/vello" }
+vello_encoding = { path = "vendor/vello_encoding" }
 vello_shaders = { path = "vendor/vello_shaders" }
 fontique = { path = "vendor/fontique" }
