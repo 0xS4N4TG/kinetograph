@@ -1042,6 +1042,16 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
   average, centred on the frame's time and scaled so a full-scale sine reads 1. `smoothing` (default true) averages
   the frames before and after. `optimizeFor` is accepted and changes nothing. This follows Remotion's documented
   behaviour, not its numbers: bars from the two have the same shape, not the same values.
-- `getWaveformPortion({ audioData, startTimeInSeconds, durationInSeconds, numberOfSamples })`: `numberOfSamples`
-  bars `{ index, amplitude }`, each the mean absolute sample of the channels' average over its stretch.
+- `getWaveformPortion({ audioData, startTimeInSeconds, durationInSeconds, numberOfSamples, channel, outputRange,
+  dataOffsetInSeconds, normalize })`: `numberOfSamples` bars `{ index, amplitude }` of one `channel` (default 0), each
+  the mean absolute sample of its block; scaled so the loudest is 1 unless `normalize` is false (default true);
+  `outputRange: 'minus-one-to-one'` makes every other bar negative; a window outside the file is silence. Matches the
+  published package on recorded windows, errors included.
+- `visualizeAudioWaveform({ audioData, frame, fps, windowInSeconds, numberOfSamples, channel, dataOffsetInSeconds,
+  normalize })`: `getWaveformPortion` over the window centred on the frame, as `numberOfSamples` numbers from -1 to 1
+  to draw as a line (`normalize` default false); a window with fewer samples than bars is an error.
+- `getAudioDuration` is `getAudioDurationInSeconds` under its old name. `getImageDimensions(src)` reads the size of a
+  PNG, JPEG, GIF, WebP, BMP or SVG file (or `data:` URL) from its header. `createSmoothSvgPath({ points })` is the
+  cubic path through the points, and `audioBufferToDataUrl(buffer)` the 32-bit float WAV of an `AudioBuffer` as a
+  `data:` URL (stereo interleaved; both match the published package digit for digit).
 

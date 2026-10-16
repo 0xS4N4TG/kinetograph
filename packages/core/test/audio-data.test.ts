@@ -85,11 +85,15 @@ describe('getWaveformPortion', () => {
     both.set(quiet);
     both.set(loud, quiet.length);
     serve({ 'two.wav': [both] });
-    const bars = getWaveformPortion({ audioData: useAudioData('two.wav')!, startTimeInSeconds: 0, durationInSeconds: 2, numberOfSamples: 2 });
+    const bars = getWaveformPortion({ audioData: useAudioData('two.wav')!, startTimeInSeconds: 0, durationInSeconds: 2, numberOfSamples: 2, normalize: false });
     // The mean of |sin| is 2/π.
     expect(bars[0]!.amplitude).toBeCloseTo((0.1 * 2) / Math.PI, 3);
     expect(bars[1]!.amplitude).toBeCloseTo((0.8 * 2) / Math.PI, 3);
     expect(bars.map((b) => b.index)).toEqual([0, 1]);
+    // Scaled so that the loudest bar is 1, unless asked not to, as Remotion's is.
+    const scaled = getWaveformPortion({ audioData: useAudioData('two.wav')!, startTimeInSeconds: 0, durationInSeconds: 2, numberOfSamples: 2 });
+    expect(scaled[1]!.amplitude).toBeCloseTo(1, 9);
+    expect(scaled[0]!.amplitude).toBeCloseTo(0.1 / 0.8, 3);
   });
 });
 
