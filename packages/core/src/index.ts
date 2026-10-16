@@ -39,6 +39,8 @@ export {
   Video,
   OffthreadVideo,
 } from '@kinetograph/react';
+// Remotion's names for the plain HTML media tags, which are the engine's <Audio> and <Video> here.
+export { Audio as Html5Audio, Video as Html5Video } from '@kinetograph/react';
 export type {
   AmbientLightProps,
   AudioProps,
@@ -98,6 +100,11 @@ export { staticFile, setPublicDir, delayRender, continueRender, cancelRender, us
 export type { DelayRenderOptions } from './assets.js';
 export { getRemotionEnvironment, useRemotionEnvironment } from './environment.js';
 export type { RemotionEnvironment } from './environment.js';
+
+export { getStaticFiles, watchStaticFile, prefetch } from './static-files.js';
+export type { PrefetchOptions, StaticFile } from './static-files.js';
+export { MediaPlaybackError } from './media-error.js';
+export { Config, Experimental } from './legacy.js';
 
 // ---- preview state (Studio and Player), fixed to what a render sees ----
 export { useCurrentScale, usePixelDensity, useBufferState } from './hooks.js';

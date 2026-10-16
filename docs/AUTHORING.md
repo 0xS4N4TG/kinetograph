@@ -618,6 +618,14 @@ Mapping onto the engine:
   `usePixelDensity()` are 1 (there is no render `scale` option, and `devicePixelRatio` is 1), `useBufferState()`
   hands out a `delayPlayback()` whose `unblock()` does nothing, and `useIsInsideNonPremountFreeze()` is whether a
   `<Freeze>` is active around the component.
+- The public folder: `getStaticFiles()` lists it (`{ src, name, sizeInBytes, lastModified }`, by name, hidden files
+  left out); `watchStaticFile()` is the Studio's reload hook and does nothing, saying so once; `prefetch(src)`
+  resolves at once with `src` minus its `#` fragment, as it does in a Remotion render, and throws the offline error
+  for a remote URL.
+- Names that exist so a project bundles: `Html5Audio` and `Html5Video` are `Audio` and `Video`; `MediaPlaybackError`
+  is Remotion's error class; `Experimental.Clipper` and `Experimental.Null` throw when rendered (Remotion removed them
+  in 4.0.228) and `Experimental.useIsPlayer()` is false; `Config.*` calls do nothing and say once that there is no
+  `remotion.config.ts`.
 - `getRemotionEnvironment()` always reports `isRendering: true` and every other flag false: the studio preview and the
   output file come from the same render path, so a component that branches on it draws the same frame in both.
 
