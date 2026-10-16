@@ -77,6 +77,8 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   into `~/.cache/kinetograph/sfx`; after that it is offline.
 - `@remotion/zod-types` (`zColor`, `zMatrix`, `zTextarea`) bundles for a `<Composition schema>`; Kinetograph does not
   check the props against the schema.
+- `@remotion/timeline-utils` (waveform peaks and drawing, loop and frame-strip maths) works for local files; what needs
+  video pictures as WebCodecs frames (`extractFrames`) throws an `UnsupportedApiError` saying so.
 - Rendering is a pure function of the frame number. `Math.random()`, `Date.now()` and timers are driven by the frame;
   use `random(seed)` for jitter. Never read the real clock.
 - Register fonts before text is laid out. Text with a font that is not registered is a lint error.

@@ -19,6 +19,11 @@ describe('resolveSpecifier', () => {
     }
     expect(resolveSpecifier('@remotion/sfx')).toEqual({ kind: 'path', target: '@kinetograph/core/sfx' });
     expect(resolveSpecifier('@remotion/zod-types')).toEqual({ kind: 'path', target: '@kinetograph/core/zod-types' });
+    expect(resolveSpecifier('@remotion/timeline-utils')).toEqual({ kind: 'path', target: '@kinetograph/core/timeline-utils' });
+    expect(resolveSpecifier('@remotion/timeline-utils/audio-waveform-worker')).toEqual({
+      kind: 'path',
+      target: '@kinetograph/core/timeline-utils/audio-waveform-worker',
+    });
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
   });
 
@@ -199,6 +204,22 @@ describe('bundleProject', () => {
     const code = readFileSync(file, 'utf8');
     expect(code).toContain('packages/core/dist/zod-types.js');
     expect(code).toContain('__remotion-color');
+  });
+
+  it('bundles @remotion/timeline-utils and its waveform worker module onto the core', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import { loadWaveformPeaks, sliceWaveformPeaks, extractFrames } from '@remotion/timeline-utils';`,
+        `import '@remotion/timeline-utils/audio-waveform-worker';`,
+        `registerRoot(() => null);`,
+        `console.log(loadWaveformPeaks, sliceWaveformPeaks, extractFrames);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/core/dist/timeline-utils/waveform.js');
+    // The worker module has no code to carry; that it resolved is the point.
   });
 
   it('leaves one file per entry, replaced when the code changes', async () => {
