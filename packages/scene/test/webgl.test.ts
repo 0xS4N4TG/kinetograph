@@ -88,6 +88,12 @@ describe('the recording WebGL context', () => {
     expect([...Buffer.from(stored.pixels!, 'base64')]).toEqual([255, 0, 0, 255, 0, 255, 0, 255]);
   });
 
+  it('names every texture unit it has, as gl.TEXTURE1 is used by multi-texture pages', () => {
+    const { gl } = setup();
+    const constants = gl as unknown as Record<string, number>;
+    for (let unit = 0; unit < 16; unit += 1) expect(constants[`TEXTURE${unit}`]).toBe(GL.TEXTURE0 + unit);
+  });
+
   it('says unsupported, naming what to do, for what it does not draw', () => {
     const { gl } = setup();
     const refused = (fn: () => void): string => {
