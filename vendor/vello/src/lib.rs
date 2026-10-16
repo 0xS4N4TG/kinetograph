@@ -600,8 +600,11 @@ impl Renderer {
     }
 
     /// Unregister a [`wgpu::Texture`] that was registered with [`register_texture`](Self::register_texture).
+    ///
+    /// The image gives its place in the atlas back at once.
     pub fn unregister_texture(&mut self, handle: ImageData) {
         self.override_image(&handle, None);
+        self.resolver.evict_image(&handle);
     }
 
     /// Reload the shaders. This should only be used during `vello` development

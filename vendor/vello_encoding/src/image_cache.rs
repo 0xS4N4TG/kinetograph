@@ -159,6 +159,12 @@ impl ImageCache {
         }
     }
 
+    pub(crate) fn evict(&mut self, image: &ImageData) {
+        if let Some(resident) = self.map.remove(&image.data.id()) {
+            self.atlas.deallocate(resident.alloc_id);
+        }
+    }
+
     pub(crate) fn can_fit_image(&self, image: &ImageData) -> bool {
         image.width <= self.atlas.size().width as u32
             && image.height <= self.atlas.size().height as u32
@@ -246,6 +252,28 @@ mod tests {
         let second = cache.get_or_insert(&image).unwrap();
         assert_eq!(first, second);
         assert_eq!(cache.images.len(), 0);
+        assert_eq!(cache.map.len(), 1);
+    }
+
+    #[test]
+    fn an_evicted_entry_frees_its_place_at_once() {
+        // Room for one 16 x 16 image and no more.
+        let mut cache = ImageCache::new_with_sizes(16, 16);
+        let (first, second) = (image(1, 16, 16), image(2, 16, 16));
+
+        cache.begin_resolve();
+        assert!(cache.get_or_insert(&first).is_some());
+        cache.finish_resolve();
+
+        // The next pass finds the atlas full, and the first image used a moment ago.
+        cache.begin_resolve();
+        assert!(cache.get_or_insert(&second).is_none());
+
+        cache.evict(&first);
+        assert!(cache.get_or_insert(&second).is_some());
+        assert_eq!(cache.map.len(), 1);
+        // Evicting what is not there changes nothing.
+        cache.evict(&first);
         assert_eq!(cache.map.len(), 1);
     }
 

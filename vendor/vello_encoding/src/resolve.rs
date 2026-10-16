@@ -178,6 +178,14 @@ impl Resolver {
         self.image_cache.mark_dirty(image);
     }
 
+    /// Frees the atlas place of `image` now, for an image that will not be drawn again.
+    ///
+    /// Without this a resident image keeps its place until a later resolve pass runs out of room
+    /// and finds it unused for two passes.
+    pub fn evict_image(&mut self, image: &ImageData) {
+        self.image_cache.evict(image);
+    }
+
     /// Resolves late bound resources and packs an encoding. Returns the packed
     /// layout and computed ramp data.
     pub fn resolve<'a>(
