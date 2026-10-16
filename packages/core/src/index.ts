@@ -105,6 +105,11 @@ export { getStaticFiles, watchStaticFile, prefetch } from './static-files.js';
 export type { PrefetchOptions, StaticFile } from './static-files.js';
 export { MediaPlaybackError } from './media-error.js';
 export { Config, Experimental } from './legacy.js';
+export { Interactive, Track } from './interactive.js';
+export type { InteractiveCreateOptions, InteractiveElementProps, TrackProps } from './interactive.js';
+export { absoluteFillSchema } from './interactivity-schema.js';
+export type { InteractivitySchema, SchemaField } from './interactivity-schema.js';
+export type { CropProps, SequenceTimingProps } from './sequenced.js';
 
 // ---- preview state (Studio and Player), fixed to what a render sees ----
 export { useCurrentScale, usePixelDensity, useBufferState } from './hooks.js';

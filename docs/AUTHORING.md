@@ -626,6 +626,15 @@ Mapping onto the engine:
   at the last multiple of it, so the output steps); `assertValidInterpolateEasingOption` and
   `assertValidInterpolatePosterizeOption` are the checks it runs. Its values are recorded from the published package.
   Not yet: string, tuple and boolean output ranges, `output: 'perceptual-scale'` and `outputType`.
+- The components Remotion's Studio edits, `Track` and `Interactive` (`Interactive.Div`, `.Span`, `.Svg`, `.Circle`, …
+  and `Interactive.create()`, `withSchema()`): each is a `<Sequence layout="none">` around the element, so it shows from
+  `from` for `durationInFrames` under the name `<Interactive.Div>` (or `name`), is drawn from its props, and takes
+  `hidden`, `freeze` and the four `crop*` props (a `clip-path: inset(…)`, rounded to the element's `border-radius`;
+  recorded from the published package). `trimBefore`, `playbackRate` and `loop` are accepted with a warning that
+  `<Sequence>` does not apply them yet; `premountFor` and the like are the preview's and a render ignores them as
+  Remotion does. `Interactive.create({ Component, layout: 'absolute-fill' })` puts the component in a clipped `div` of
+  the `width` and `height` props. The field tables (`Interactive.baseSchema`, …, and `absoluteFillSchema`) are
+  Remotion's data, unused in a render.
 - Names that exist so a project bundles: `Html5Audio` and `Html5Video` are `Audio` and `Video`; `MediaPlaybackError`
   is Remotion's error class; `Experimental.Clipper` and `Experimental.Null` throw when rendered (Remotion removed them
   in 4.0.228) and `Experimental.useIsPlayer()` is false; `Config.*` calls do nothing and say once that there is no
