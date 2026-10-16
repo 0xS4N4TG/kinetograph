@@ -6,7 +6,8 @@
 //
 // The slice that is drawn is the one shader-toy pages and shader transitions use: programs of two shaders, buffers,
 // attributes of floats (and normalised bytes and shorts), uniforms, 2D textures, `drawArrays` and `drawElements` of
-// triangles, viewport, scissor, blending, colour mask, culling and clear. Anything else throws a
+// triangles, viewport, scissor, blending, colour mask, culling and clear, into the canvas or into the texture of a
+// framebuffer (render to texture, ping-pong). Anything else throws a
 // `WebGLUnsupportedError` whose message starts with "unsupported:" and says what to do instead; a call is never
 // accepted and then ignored where it would change the picture.
 
@@ -86,6 +87,7 @@ export const GL = {
   INVALID_ENUM: 0x500,
   INVALID_VALUE: 0x501,
   INVALID_OPERATION: 0x502,
+  INVALID_FRAMEBUFFER_OPERATION: 0x506,
   OUT_OF_MEMORY: 0x505,
   CW: 0x900,
   CCW: 0x901,
@@ -206,7 +208,13 @@ export const GL = {
   RGB565: 0x8d62,
   DEPTH_COMPONENT16: 0x81a5,
   FRAMEBUFFER_COMPLETE: 0x8cd5,
+  FRAMEBUFFER_INCOMPLETE_ATTACHMENT: 0x8cd6,
+  FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: 0x8cd7,
   FRAMEBUFFER_BINDING: 0x8ca6,
+  COLOR_ATTACHMENT0: 0x8ce0,
+  DEPTH_ATTACHMENT: 0x8d00,
+  STENCIL_ATTACHMENT: 0x8d20,
+  DEPTH_STENCIL_ATTACHMENT: 0x821a,
   NONE: 0,
   BROWSER_DEFAULT_WEBGL: 0x9244,
   UNPACK_FLIP_Y_WEBGL: 0x9240,
@@ -233,7 +241,8 @@ export const GL2 = {
   SRGB8_ALPHA8: 0x8c43,
   READ_FRAMEBUFFER: 0x8ca8,
   DRAW_FRAMEBUFFER: 0x8ca9,
-  COLOR_ATTACHMENT0: 0x8ce0,
+  DRAW_FRAMEBUFFER_BINDING: 0x8ca6,
+  READ_FRAMEBUFFER_BINDING: 0x8caa,
   TEXTURE_3D: 0x806f,
   TEXTURE_2D_ARRAY: 0x8c1a,
   UNIFORM_BUFFER: 0x8a11,
@@ -282,6 +291,12 @@ export class WebGLTexture extends WebGLObject {
   premultiply = false;
   mipmaps = false;
   uploaded = false;
+  /** The internal format it was specified with. */
+  format: number = GL.RGBA;
+  /** Whether it holds transparent black (what a framebuffer's texture starts as). */
+  blank = false;
+  /** The `version` at which a framebuffer last drew in it: until it is specified again, it is a render target. */
+  drawnAt = -1;
   min: number = GL.NEAREST_MIPMAP_LINEAR;
   mag: number = GL.LINEAR;
   wrapS: number = GL.REPEAT;
@@ -289,7 +304,12 @@ export class WebGLTexture extends WebGLObject {
   version = 0;
   snapshot: { version: number; id: string; json: GlslTexture } | null = null;
 }
-export class WebGLFramebuffer extends WebGLObject {}
+export class WebGLFramebuffer extends WebGLObject {
+  /** The texture attached to COLOR_ATTACHMENT0. */
+  color: WebGLTexture | null = null;
+  /** Bound at least once, as `isFramebuffer` asks. */
+  bound = false;
+}
 export class WebGLRenderbuffer extends WebGLObject {}
 export class WebGLVertexArrayObject extends WebGLObject {
   readonly attributes: VertexAttribute[] = [];
@@ -544,6 +564,9 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
 
+/** Formats of a texture that colour cannot be drawn into. */
+const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA, GL.DEPTH_COMPONENT]);
+
 /**
  * `WebGLRenderingContext` (and, with `version: 2`, the `WebGL2RenderingContext` calls shader pages use) as a recorder.
  * `content()` is what the `glsl` layer is made of. A context keeps its objects (programs, buffers, textures) and its
@@ -565,6 +588,9 @@ export class WebGLContext {
   private arrayBuffer: WebGLBuffer | null = null;
   private defaultVao = new WebGLVertexArrayObject();
   private vao: WebGLVertexArrayObject = this.defaultVao;
+  /** What draws and clears go to, and what `readPixels` and blits would read (WebGL 2); null is the canvas. */
+  private drawFramebuffer: WebGLFramebuffer | null = null;
+  private readFramebuffer: WebGLFramebuffer | null = null;
   private activeUnit = 0;
   private readonly units = new Map<number, WebGLTexture>();
   private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false };
@@ -725,6 +751,10 @@ export class WebGLContext {
       case GL.TEXTURE_BINDING_2D:
         return this.units.get(this.activeUnit) ?? null;
       case GL.FRAMEBUFFER_BINDING:
+        return this.drawFramebuffer;
+      case GL2.READ_FRAMEBUFFER_BINDING:
+        if (this.version === 2) return this.readFramebuffer;
+        this.fail(GL.INVALID_ENUM);
         return null;
       case GL.RED_BITS:
       case GL.GREEN_BITS:
@@ -863,9 +893,15 @@ export class WebGLContext {
     if (!(mask & GL.COLOR_BUFFER_BIT)) return;
     if (this.caps.scissor) throw new WebGLUnsupportedError('clear with the scissor test on; draw a quad over the box instead');
     if (this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
+    if (this.framebufferIncomplete()) return;
     this.begin();
-    // Everything drawn before it is gone with it.
-    this.ops = [{ op: 'clear', color: [...this.clearColorValue] }];
+    const target = this.targetId();
+    if (target !== undefined) {
+      this.ops.push({ op: 'clear', color: [...this.clearColorValue], target });
+      return;
+    }
+    // Everything drawn to the canvas before it is gone with it; what went to textures stays, as later draws may read it.
+    this.ops = [...this.ops.filter((op) => op.target !== undefined), { op: 'clear', color: [...this.clearColorValue] }];
   }
 
   // ---- shaders and programs ----
@@ -1111,6 +1147,7 @@ export class WebGLContext {
     texture.src = src;
     texture.pixels = null;
     texture.uploaded = true;
+    texture.blank = false;
     texture.version += 1;
   }
   getUniform(): never {
@@ -1285,6 +1322,7 @@ export class WebGLContext {
     const texture = this.bound(target);
     if (texture === null) return;
     if (!texture.uploaded) return this.fail(GL.INVALID_OPERATION);
+    if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('generateMipmap of a texture a framebuffer drew in; sample it with LINEAR or NEAREST');
     texture.mipmaps = true;
     texture.version += 1;
   }
@@ -1365,13 +1403,21 @@ export class WebGLContext {
     texture.mipmaps = false;
     texture.uploaded = true;
     texture.version += 1;
+    texture.format = internalformat;
     if (rest.length >= 6) {
       texture.src = null;
       texture.width = width;
       texture.height = height;
-      texture.pixels = source === null || source === undefined ? new Uint8Array(width * height * 4) : this.rgbaOf(width, height, format, source as ArrayBufferView);
+      if (source === null || source === undefined) {
+        texture.pixels = new Uint8Array(width * height * 4);
+        texture.blank = true;
+      } else {
+        texture.pixels = this.rgbaOf(width, height, format, source as ArrayBufferView);
+        texture.blank = texture.pixels.every((byte) => byte === 0);
+      }
       return;
     }
+    texture.blank = false;
     this.uploadPicture(texture, source);
   }
 
@@ -1379,6 +1425,7 @@ export class WebGLContext {
     const texture = this.bound(target);
     if (texture === null) return;
     if (level !== 0 || texture.pixels === null) throw new WebGLUnsupportedError('texSubImage2D into a texture from an image file, or above level 0');
+    if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('texSubImage2D into a texture a framebuffer drew in');
     let width: number;
     let height: number;
     let format: number;
@@ -1400,6 +1447,7 @@ export class WebGLContext {
     for (let y = 0; y < height; y += 1) {
       texture.pixels.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
     }
+    texture.blank = false;
     texture.version += 1;
   }
 
@@ -1409,7 +1457,7 @@ export class WebGLContext {
     if (texture === null) return;
     this.checkTextureType(GL.UNSIGNED_BYTE, internalformat);
     if (levels > 1) throw new WebGLUnsupportedError('texStorage2D with more than one level; call generateMipmap');
-    Object.assign(texture, { width, height, pixels: new Uint8Array(width * height * 4), src: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false });
+    Object.assign(texture, { width, height, pixels: new Uint8Array(width * height * 4), src: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: true });
     texture.version += 1;
   }
 
@@ -1437,25 +1485,127 @@ export class WebGLContext {
     }
   }
 
-  // ---- unsupported objects ----
+  // ---- framebuffers ----
+  //
+  // A framebuffer draws into the RGBA texture attached to COLOR_ATTACHMENT0, which later draws sample (multi-pass
+  // shaders). The texture starts the frame transparent black: a frame is a function of its own calls, so what an
+  // earlier frame left in it does not carry over. Depth, stencil and renderbuffer attachments are not drawn.
 
   createFramebuffer(): WebGLFramebuffer {
     return new WebGLFramebuffer();
   }
+  deleteFramebuffer(framebuffer: WebGLFramebuffer | null): void {
+    if (framebuffer === null) return;
+    framebuffer.deleted = true;
+    if (this.drawFramebuffer === framebuffer) this.drawFramebuffer = null;
+    if (this.readFramebuffer === framebuffer) this.readFramebuffer = null;
+  }
+  isFramebuffer(framebuffer: unknown): boolean {
+    return framebuffer instanceof WebGLFramebuffer && framebuffer.bound && !framebuffer.deleted;
+  }
+
+  /** The bindings a framebuffer target names: `FRAMEBUFFER` both, and in WebGL 2 `DRAW_FRAMEBUFFER` or `READ_FRAMEBUFFER` one. */
+  private framebufferSides(target: number): { draw: boolean; read: boolean } {
+    const v2 = this.version === 2;
+    return {
+      draw: target === GL.FRAMEBUFFER || (v2 && target === GL2.DRAW_FRAMEBUFFER),
+      read: target === GL.FRAMEBUFFER || (v2 && target === GL2.READ_FRAMEBUFFER),
+    };
+  }
+
+  bindFramebuffer(target: number, framebuffer: WebGLFramebuffer | null): void {
+    const { draw, read } = this.framebufferSides(target);
+    if (!draw && !read) return this.fail(GL.INVALID_ENUM);
+    if (framebuffer !== null) {
+      if (framebuffer.deleted) return this.fail(GL.INVALID_OPERATION);
+      framebuffer.bound = true;
+    }
+    if (draw) this.drawFramebuffer = framebuffer;
+    if (read) this.readFramebuffer = framebuffer;
+  }
+
+  framebufferTexture2D(target: number, attachment: number, textarget: number, texture: WebGLTexture | null, level: number): void {
+    const { draw, read } = this.framebufferSides(target);
+    if (!draw && !read) return this.fail(GL.INVALID_ENUM);
+    if (attachment === GL.DEPTH_ATTACHMENT || attachment === GL.STENCIL_ATTACHMENT || attachment === GL.DEPTH_STENCIL_ATTACHMENT) {
+      if (texture !== null) throw new WebGLUnsupportedError('a depth or stencil attachment; draw without a depth buffer (disable(gl.DEPTH_TEST))');
+      return;
+    }
+    if (attachment !== GL.COLOR_ATTACHMENT0) {
+      if (this.version === 2 && attachment > GL.COLOR_ATTACHMENT0 && attachment < GL.COLOR_ATTACHMENT0 + 16) throw new WebGLUnsupportedError('several colour outputs');
+      return this.fail(GL.INVALID_ENUM);
+    }
+    const framebuffer = draw ? this.drawFramebuffer : this.readFramebuffer;
+    if (framebuffer === null) return this.fail(GL.INVALID_OPERATION);
+    if (texture !== null) {
+      if (textarget !== GL.TEXTURE_2D) return this.fail(GL.INVALID_OPERATION);
+      if (level !== 0) throw new WebGLUnsupportedError('a framebuffer attached to a texture level above 0');
+    }
+    framebuffer.color = texture;
+  }
+
+  checkFramebufferStatus(target: number): number {
+    const { draw, read } = this.framebufferSides(target);
+    if (!draw && !read) {
+      this.fail(GL.INVALID_ENUM);
+      return 0;
+    }
+    const framebuffer = draw ? this.drawFramebuffer : this.readFramebuffer;
+    return framebuffer === null ? GL.FRAMEBUFFER_COMPLETE : this.statusOf(framebuffer);
+  }
+
+  private statusOf(framebuffer: WebGLFramebuffer): number {
+    const texture = framebuffer.color;
+    if (texture === null) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
+    // Not specified yet, empty, or of a format colour cannot be drawn in.
+    if (!texture.uploaded || texture.width === 0 || texture.height === 0 || NOT_RENDERABLE.has(texture.format)) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    return GL.FRAMEBUFFER_COMPLETE;
+  }
+
+  /**
+   * Whether the bound framebuffer cannot be drawn into: an incomplete one sets INVALID_FRAMEBUFFER_OPERATION and the
+   * call does nothing. A complete one whose texture cannot be drawn here throws.
+   */
+  private framebufferIncomplete(): boolean {
+    const framebuffer = this.drawFramebuffer;
+    if (framebuffer === null) return false;
+    if (this.statusOf(framebuffer) !== GL.FRAMEBUFFER_COMPLETE) {
+      this.fail(GL.INVALID_FRAMEBUFFER_OPERATION);
+      return true;
+    }
+    const texture = framebuffer.color!;
+    if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8) {
+      throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA`);
+    }
+    if (!texture.blank) throw new WebGLUnsupportedError('drawing into a texture that holds uploaded pixels; allocate it with texImage2D(..., null)');
+    return false;
+  }
+
+  /** A texture a framebuffer draws in, as the recording names it: its size, by an id that changes when it is specified again. */
+  private registerTarget(texture: WebGLTexture): string {
+    const id = `f${texture.id}.${texture.version}`;
+    this.textures.set(id, { target: true, width: texture.width, height: texture.height });
+    return id;
+  }
+
+  /** The target the bound framebuffer's draws and clears go to; undefined for the canvas. Call it once the draw is certain. */
+  private targetId(): string | undefined {
+    const texture = this.drawFramebuffer?.color;
+    if (texture === null || texture === undefined) return undefined;
+    texture.drawnAt = texture.version;
+    return this.registerTarget(texture);
+  }
+
+  // ---- unsupported objects ----
+
   createRenderbuffer(): WebGLRenderbuffer {
     return new WebGLRenderbuffer();
   }
-  bindFramebuffer(_target: number, framebuffer: WebGLFramebuffer | null): void {
-    if (framebuffer !== null) throw new WebGLUnsupportedError('rendering to a framebuffer object (render-to-texture, multi-pass shaders)');
-  }
   bindRenderbuffer(_target: number, renderbuffer: WebGLRenderbuffer | null): void {
-    if (renderbuffer !== null) throw new WebGLUnsupportedError('renderbuffers');
-  }
-  checkFramebufferStatus(): number {
-    return GL.FRAMEBUFFER_COMPLETE;
+    if (renderbuffer !== null) throw new WebGLUnsupportedError('renderbuffers; render to a texture');
   }
   drawBuffers(buffers: number[]): void {
-    if (buffers.length !== 1 || (buffers[0] !== GL.BACK && buffers[0] !== GL2.COLOR_ATTACHMENT0)) throw new WebGLUnsupportedError('several colour outputs');
+    if (buffers.length !== 1 || (buffers[0] !== GL.BACK && buffers[0] !== GL.COLOR_ATTACHMENT0)) throw new WebGLUnsupportedError('several colour outputs');
   }
   drawArraysInstanced(mode: number, first: number, count: number, instances: number): void {
     if (instances !== 1) throw new WebGLUnsupportedError('instanced drawing');
@@ -1488,6 +1638,7 @@ export class WebGLContext {
     if (named === undefined) throw new WebGLUnsupportedError('drawing points and lines; draw triangles');
     if (this.caps.depth) throw new WebGLUnsupportedError('drawing with the depth test on (disable(gl.DEPTH_TEST); a flat quad does not need it)');
     if (this.caps.stencil) throw new WebGLUnsupportedError('drawing with the stencil test on');
+    if (this.framebufferIncomplete()) return;
     this.begin();
 
     // The program, by what it is made of.
@@ -1537,6 +1688,8 @@ export class WebGLContext {
       if (d.type !== 'sampler2D') continue;
       const unit = program.uniforms.get(d.name)?.at(-1)?.value[0] ?? 0;
       const texture = this.units.get(unit);
+      // Reading what the draw writes is undefined; WebGL refuses it.
+      if (texture !== undefined && texture === this.drawFramebuffer?.color) return this.fail(GL.INVALID_OPERATION);
       if (texture !== undefined && draw.units[String(unit)] === undefined) draw.units[String(unit)] = this.samplerOf(texture);
     }
 
@@ -1556,6 +1709,8 @@ export class WebGLContext {
     }
     if (this.caps.cull) draw.cull = { face: this.cullMode === GL.FRONT ? 'FRONT' : this.cullMode === GL.BACK ? 'BACK' : 'FRONT_AND_BACK', front: this.frontFaceMode === GL.CW ? 'CW' : 'CCW' };
     if (draw.cull?.face === 'FRONT_AND_BACK') return;
+    const target = this.targetId();
+    if (target !== undefined) draw.target = target;
     this.ops.push({ op: 'draw', ...draw });
   }
 
@@ -1571,6 +1726,12 @@ export class WebGLContext {
 
   /** The texture's state at this draw: its pixels (once, by id) and how this unit samples it. */
   private samplerOf(texture: WebGLTexture): GlslSampler {
+    const id = texture.drawnAt === texture.version ? this.registerTarget(texture) : this.uploadedId(texture);
+    return { texture: id, min: FILTERS[texture.min]!, mag: FILTERS[texture.mag]!, wrapS: WRAPS[texture.wrapS]!, wrapT: WRAPS[texture.wrapT]! };
+  }
+
+  /** An uploaded texture in the recording: its pixels, once, by an id of what they are. */
+  private uploadedId(texture: WebGLTexture): string {
     if (texture.snapshot?.version !== texture.version) {
       const json: GlslTexture = {
         ...(texture.src !== null ? { src: texture.src } : { pixels: toBase64(texture.pixels ?? new Uint8Array(0)) }),
@@ -1583,7 +1744,7 @@ export class WebGLContext {
     }
     const { id, json } = texture.snapshot;
     if (!this.textures.has(id)) this.textures.set(id, json);
-    return { texture: id, min: FILTERS[texture.min]!, mag: FILTERS[texture.mag]!, wrapS: WRAPS[texture.wrapS]!, wrapT: WRAPS[texture.wrapT]! };
+    return id;
   }
 }
 
