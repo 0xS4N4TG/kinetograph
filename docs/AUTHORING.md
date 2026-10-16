@@ -751,7 +751,7 @@ engine (ENGINE.md §10.3).
 | `@kinetograph/core/transitions` (+ `/transitions/fade`, `/slide`, `/wipe`, `/flip`, `/clock-wipe`, `/iris`, `/none`) | `@remotion/transitions` | `TransitionSeries`, `linearTiming`, `springTiming`; presentations render `<Layer>`s with opacity, transforms and clips |
 | `@kinetograph/core/motion-blur` | `@remotion/motion-blur` | `Trail`; `CameraMotionBlur` is `<Layer motionBlur={{ samples, shutter: shutterAngle / 360 }}>` |
 | `@kinetograph/core/noise` | `@remotion/noise` | `noise2D/3D/4D(seed, …)` |
-| `@kinetograph/core/paths` | `@remotion/paths` | pure path maths |
+| `@kinetograph/core/paths` | `@remotion/paths` | pure path maths: `parsePath`, `serializeInstructions`, `reduceInstructions`, `normalizePath`, `getLength`, `getBoundingBox`, `scalePath`, `interpolatePath`, `interpolatePaths(input, inputRange, paths, { easing, posterize, extrapolateLeft, extrapolateRight })`, `warpPath(path, transformer, { interpolationThreshold })`, …; the blends and the warp match the published package digit for digit (arcs aside) |
 | `@kinetograph/core/shapes` | `@remotion/shapes` | `make*` functions (`makeRect`, `makeCircle`, `makeEllipse`, `makeTriangle`, `makeStar`, `makePolygon`, `makePie`, `makeHeart`, `makeArrow`, `makeCallout`, `makeSpark`) and the `Instruction` type; components render `<Path>`. `makeArrow`, `makeCallout` and `makeSpark` match the published package's paths exactly |
 | `@kinetograph/core/layout-utils` | `@remotion/layout-utils` | `measureText`, `fitText`, `fillTextBox` through `layoutText` (§3), fonts from `getFonts()` |
 | `@kinetograph/core/animation-utils` | `@remotion/animation-utils` | `interpolateStyles`, `makeTransform` |
