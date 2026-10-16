@@ -68,65 +68,7 @@ export const S07: React.FC = () => {
   );
 };
 
-// ---- shot 8: drop-in, 98% of the Remotion API, with a camera push into the code ----
-const CODE: [string, string][][] = [
-  [['k', 'import'], ['p', ' { '], ['f', 'AbsoluteFill'], ['p', ', '], ['f', 'Sequence'], ['p', ', '], ['f', 'interpolate'], ['p', ', '], ['f', 'useCurrentFrame'], ['p', ' } '], ['k', 'from'], ['s', " 'remotion'"], ['p', ';']],
-  [['k', 'import'], ['p', ' { '], ['f', 'TransitionSeries'], ['p', ' } '], ['k', 'from'], ['s', " '@remotion/transitions'"], ['p', ';']],
-  [],
-  [['k', 'export const'], ['f', ' Launch'], ['p', ' = () => {']],
-  [['p', '  '], ['k', 'const'], ['p', ' frame = '], ['f', 'useCurrentFrame'], ['p', '();']],
-  [['p', '  '], ['k', 'const'], ['p', ' y = '], ['f', 'interpolate'], ['p', '(frame, [0, 30], [40, 0]);']],
-  [['p', '  '], ['k', 'return'], ['p', ' <'], ['f', 'AbsoluteFill'], ['p', ' style={{ transform: `translateY(${y}px)` }} />;']],
-  [['p', '};']],
-];
-const SYN: Record<string, string> = { k: '#ff7b72', f: '#d2a8ff', s: '#a5d6ff', p: '#c9d1d9' };
-const API = [
-  'AbsoluteFill', 'Sequence', 'Series', 'Loop', 'Freeze', 'Composition', 'Still', 'Img', 'Audio', 'Video', 'OffthreadVideo',
-  'interpolate', 'interpolateColors', 'spring', 'Easing', 'random', 'useCurrentFrame', 'useVideoConfig', 'staticFile',
-  'delayRender', 'continueRender', 'registerRoot', 'measureSpring', 'TransitionSeries', 'fade', 'slide', 'wipe', 'flip',
-  'clockWipe', 'iris', 'linearTiming', 'springTiming', 'makeCircle', 'makeRect', 'makeStar', 'evolvePath', 'getLength',
-  'noise2D', 'noise3D', 'Lottie', 'Gif', 'measureText', 'fitText', 'getAudioData', 'visualizeAudio', 'CameraMotionBlur',
-  'Trail', 'createTikTokStyleCaptions', 'loadFont', 'IFrame', 'AnimatedImage', 'prefetch', 'getStaticFiles', 'Html5Audio',
-];
-export const S08: React.FC = () => {
-  const frame = useCurrentFrame();
-  // Camera: starts close on `from 'remotion'`, pulls out to the whole file, then past it to the API wall.
-  const zoom = interpolate(frame, [0, 40, 70], [3.1, 1.25, 0.55], { ...CLAMP, easing: Easing.inOut(Easing.cubic) });
-  const focusX = interpolate(frame, [0, 40], [1440, 960], CLAMP);
-  const focusY = interpolate(frame, [0, 40], [340, 520], CLAMP);
-  const wall = interpolate(frame, [52, 72], [0, 1], CLAMP);
-  const hl = interpolate(frame, [4, 18], [0, 1], { ...CLAMP, easing: OUT });
-  const count = Math.round(interpolate(frame, [70, 100], [0, 98], { ...CLAMP, easing: OUT }));
-  return (
-    <AbsoluteFill style={{ background: '#0d1117' }}>
-      <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transform: `translate(${W / 2 - focusX}px, ${H / 2 - focusY}px) scale(${zoom})`, transformOrigin: `${focusX}px ${focusY}px` }}>
-        <div style={{ position: 'absolute', left: -1300, top: -900, width: 4520, display: 'flex', flexWrap: 'wrap', gap: 18, opacity: wall, fontFamily: MONO, fontSize: 30 }}>
-          {Array.from({ length: 260 }, (_, i) => API[i % API.length]).map((n, i) => (
-            <div key={i} style={{ padding: '8px 16px', borderRadius: 8, background: '#161b22', color: '#8b949e', border: '1px solid #30363d', whiteSpace: 'nowrap' }}>
-              <span style={{ color: '#3fb950', marginRight: 10 }}>✓</span>{n}
-            </div>
-          ))}
-        </div>
-        <div style={{ position: 'absolute', left: 360, top: 280, width: 1200, padding: '40px 48px', borderRadius: 18, background: '#0d1117', border: '1px solid #30363d', boxShadow: '0 40px 120px rgba(0,0,0,0.6)', fontFamily: MONO, fontSize: 24, lineHeight: '40px', opacity: 1 - wall * 0.92 }}>
-          {CODE.map((line, j) => (
-            <div key={j} style={{ whiteSpace: 'pre', height: 40, position: 'relative' }}>
-              {j === 0 && <div style={{ position: 'absolute', left: 920, top: 2, height: 36, width: 220 * hl, background: 'rgba(224,38,27,0.35)', borderRadius: 4 }} />}
-              {line.map(([c, t], k) => <span key={k} style={{ color: SYN[c], position: 'relative' }}>{t}</span>)}
-            </div>
-          ))}
-        </div>
-      </div>
-      <AbsoluteFill style={{ background: `radial-gradient(ellipse 70% 65% at 50% 50%, rgba(13,17,23,${frame >= 66 ? 0.72 : 0}) 30%, rgba(13,17,23,0.9) 100%)` }} />
-      {frame >= 66 && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 330, textAlign: 'center', color: '#f0f6fc', fontFamily: SANS }}>
-          <div style={{ fontWeight: 700, fontSize: 300, lineHeight: 1, letterSpacing: '-0.04em' }}>{count}%</div>
-          <div style={{ fontSize: 46, marginTop: 20, color: '#c9d1d9' }}>of the remotion api. drop-in.</div>
-          <div style={{ fontFamily: MONO, fontSize: 22, marginTop: 26, color: '#6e7681' }}>168 of 170 public exports · remotion 4.0.536 + 12 packages</div>
-        </div>
-      )}
-    </AbsoluteFill>
-  );
-};
+export { S08 } from './act2-s08.js';
 
 // ---- shot 9: the numbers, bars on one scale ----
 export const S09: React.FC = () => {
