@@ -140,18 +140,6 @@ export interface MediaInfo {
   audioCodec?: string
 }
 
-/**
- * Reads a glTF or GLB model and lists what it uses that the 3D layer does not
- * read (docs/SCENE.md, "scene3d"); a file that cannot be read is an error.
- */
-export declare function modelUnsupported(src: string, baseDir?: string | undefined | null): Array<ModelUnsupported>
-
-/** A glTF feature a model file uses that the 3D layer does not read. */
-export interface ModelUnsupported {
-  feature: string
-  reason: string
-}
-
 export interface MediaStreams {
   /** FFmpeg's name for the container format: `mov,mp4,m4a,3gp,3g2,mj2`, `matroska,webm`, `mp3`, ... */
   format: string
@@ -169,6 +157,18 @@ export interface MediaTag {
   stream?: number
   key: string
   value: string
+}
+
+/**
+ * Reads a glTF or GLB model and lists what it uses that the 3D layer does not
+ * read (docs/SCENE.md, "scene3d"); a file that cannot be read is an error.
+ */
+export declare function modelUnsupported(src: string, baseDir?: string | undefined | null): Array<ModelUnsupported>
+
+/** A glTF feature a model file uses that the 3D layer does not read. */
+export interface ModelUnsupported {
+  feature: string
+  reason: string
 }
 
 /** `"10..40"` or `"10..=40"` -> `[first, last]`, inclusive. */
@@ -246,9 +246,6 @@ export interface RgbaFrame {
   data: Buffer
 }
 
-/** Reads every packet of a file, without decoding, and totals them per stream: the "slow" fields of `parseMedia`. */
-export declare function scanStreams(path: string, baseDir?: string | undefined | null): Array<StreamScan>
-
 /**
  * A Rive file (`.riv`) played to a time, as the commands of a canvas layer
  * (docs/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
@@ -256,6 +253,9 @@ export declare function scanStreams(path: string, baseDir?: string | undefined |
  * array out. CPU only; the file is read once.
  */
 export declare function riveFrame(requestJson: string): string
+
+/** Reads every packet of a file, without decoding, and totals them per stream: the "slow" fields of `parseMedia`. */
+export declare function scanStreams(path: string, baseDir?: string | undefined | null): Array<StreamScan>
 
 export interface SceneInfo {
   width: number
