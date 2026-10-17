@@ -74,7 +74,7 @@ export const S01: React.FC = () => {
 
 const BAR_W = 1560;
 export const S02_WORDS = 'how do you make a video with code, without a browser?'.split(' ');
-export const S02_AT = [12, 16, 19, 20, 25, 28, 33, 37, 44, 49, 53];
+export const S02_AT = [12, 16, 19, 22, 27, 29, 35, 40, 48, 55, 61];
 const S02_SIZE = 62;
 const S02_TOP = 480;
 
@@ -157,7 +157,7 @@ const BrowserWindow: React.FC<{ w: number; shot: number; style?: React.CSSProper
 };
 
 /** "every frame. a screenshot." lands on the VO's "every single frame" (03-screenshot at frame 3). */
-export const S03_AT = [36, 52, 58, 62];
+export const S03_AT = [31, 45, 55, 63];
 export const WINDOWS = 15;
 export const WIN_EVERY = 4;
 
@@ -279,7 +279,7 @@ export const S04: React.FC = () => {
     <>
       <PaperGround />
       <AbsoluteFill style={{ transform: `scale(${grow})` }}>
-        <Words words={['you', 'don’t.']} at={[22, 25]} color={INK} size={110} weight={700} style={{ position: 'absolute', left: 0, right: 0, top: 440, justifyContent: 'center' }} />
+        <Words words={['you', 'don’t.']} at={[22, 26]} color={INK} size={110} weight={700} style={{ position: 'absolute', left: 0, right: 0, top: 440, justifyContent: 'center' }} />
       </AbsoluteFill>
       <Over>
         <Layer id="melt" clip={tops ? meltClip(tops) : undefined}>

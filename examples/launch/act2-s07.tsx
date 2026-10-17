@@ -35,7 +35,7 @@ const DOTS: [number, number, string, number][] = [
   [300, 184, '#c97a5f', 0], [1712, 160, '#c97a5f', 0], [1552, 628, '#55603f', 0], [984, 784, '#c97a5f', 0], [300, 1264 - 220, '#c97a5f', 0],
   [848, 248, '#55603f', 10], [1170, 960, '#55603f', 14], [1500, 940, '#c97a5f', 22], [560, 700, '#55603f', 30],
 ];
-export const WORDS = [{ w: 'demo', at: 4 }, { w: 'launch', at: 22 }, { w: 'changelog', at: 33 }]; // on the VO (07a at frame 4)
+export const WORDS = [{ w: 'demo', at: 8 }, { w: 'launch', at: 23 }, { w: 'changelog', at: 36 }]; // on the VO (07a at frame 4)
 export const COLLAPSE = [94, 118] as const;
 const DARK_AT = [104, 112] as const;
 export const TYPE_AT = 118;

@@ -96,7 +96,7 @@ const Tick: React.FC<{ t: number }> = ({ t }) => (
 
 /** Frames the camera holds tight on `from 'remotion'` (the VO's "Already using Remotion? Kinetograph runs your existing
  *  projects as they are."); the pull-out and the count then run on, so "98%" lands on the VO's "ninety-eight". */
-export const S08_HOLD = 80;
+export const S08_HOLD = 76;
 
 export const S08: React.FC = () => {
   const real = useCurrentFrame();
@@ -126,7 +126,7 @@ export const S08: React.FC = () => {
   const moving = frame >= 18 && frame <= 90;
   const blurFx = moving ? { samples: 10, shutter: 0.35 } : undefined;
 
-  const hl = interpolate(real, [16, 30], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) }); // on "Remotion"
+  const hl = interpolate(real, [26, 38], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) }); // on "Remotion"
   const count = Math.round(interpolate(frame, [80, 112], [0, 98], { ...CLAMP, easing: OUT }));
   const numIn = interpolate(frame, [78, 88], [0, 1], { ...CLAMP, easing: OUT });
   const subIn = interpolate(frame, [108, 118], [0, 1], { ...CLAMP, easing: OUT });

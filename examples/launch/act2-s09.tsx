@@ -18,7 +18,7 @@ const ROWS = [
 ];
 const BAR_H = 92;
 export const RACE = [12, 84] as const; // frames over which the clock runs from 0 to 8.86 s
-export const MULT_AT = 88;
+export const MULT_AT = 76;
 export const IMPACT_AT = 118;
 const IMPACT_HOLD = 17;
 

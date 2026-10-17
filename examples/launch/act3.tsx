@@ -7,7 +7,7 @@ import { LogoFlicker } from '@/components/snap-cn/logo-flicker';
 import { CLAMP, H, INK, MONO, OUT, PaperGround, RED, SANS, W } from './common.js';
 
 /** Seconds this video took to render, filled in by the final render (until then the end card prints "N"). */
-export const RENDER_SECONDS: number | null = 269;
+export const RENDER_SECONDS: number | null = 297;
 
 // ---- hand-drawn strokes ----
 type Pt = [number, number];
@@ -92,10 +92,10 @@ function loop(cx: number, cy: number, rx: number, ry: number, seed: string): Pt[
 // ---- shot 10: no chrome, no screenshots, just pixels ----
 const S10_WORDS = ['no', 'chrome.', 'no', 'screenshots.', 'just', 'pixels.'];
 // Frames each word lands, matched to the voiceover (sound.tsx places it at VO_AT.s10, in the voice's own pauses).
-export const S10_LAND = [1, 5, 17, 20, 37, 41];
+export const S10_LAND = [4, 10, 20, 24, 41, 47];
 /** The two strike-outs and the red loop, each just after its phrase is spoken. */
-export const S10_STRIKE = [[10, 21], [27, 38]] as const;
-export const S10_CIRCLE = [44, 59] as const;
+export const S10_STRIKE = [[15, 26], [31, 42]] as const;
+export const S10_CIRCLE = [50, 65] as const;
 const S10_SIZE = 76;
 const S10_TOP = 470;
 
@@ -136,7 +136,7 @@ export const S10: React.FC = () => {
 };
 
 // ---- shot 11: snapcn's logo-flicker over stills of this film itself (public/self, rendered from frames.tsx), then the name ----
-const SELF = ['s01-2', 's01-8', 's01-14', 's02-66', 's03-60', 's04-22', 's05-30', 's05-70', 's08-40', 's08-200', 's09-60', 's09-150', 's10-70']
+const SELF = ['s01-2', 'm1-85', 's01-8', 'm3-40', 's01-14', 's02-66', 'm2-40', 's03-60', 's04-22', 'm5-60', 's05-30', 's05-70', 'm4-40', 's08-40', 's08-200', 's09-60', 's09-150', 's10-70']
   .map((n) => staticFile(`self/${n}.jpg`));
 
 export const S11: React.FC = () => (
@@ -145,8 +145,8 @@ export const S11: React.FC = () => (
 
 // ---- shot 12: end card ----
 // Frames the tagline words land, matched to the voiceover (sound.tsx places it at VO_AT.s12).
-export const S12_TAG = [23, 32, 48, 55];
-export const S12_URL = 80;
+export const S12_TAG = [28, 32, 48, 53];
+export const S12_URL = 82;
 
 export const S12: React.FC<{ renderSeconds?: number | null }> = ({ renderSeconds = RENDER_SECONDS }) => {
   const frame = useCurrentFrame();

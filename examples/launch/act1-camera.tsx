@@ -83,8 +83,8 @@ export const S05: React.FC<{ graded?: boolean }> = ({ graded = true }) => {
             <Over blend="screen"><Video muted src={staticFile('fx/hand-film.mp4')} trimBefore={18} trimAfter={31} loop x={900} y={560} width={1100} height={619} /></Over>
           </Sequence>
           <AbsoluteFill>
-            <Words words={['you', 'just', 'render', 'it.']} at={[4, 7, 12, 20]} color={PAPER} size={64} style={{ position: 'absolute', left: 140, top: 510 }} />
-            <Words words={['straight', 'on', 'the', 'GPU.']} at={[24, 33, 39, 42]} color="#9a9590" size={40} style={{ position: 'absolute', left: 142, top: 600 }} />
+            <Words words={['you', 'just', 'render', 'it.']} at={[6, 8, 13, 21]} color={PAPER} size={64} style={{ position: 'absolute', left: 140, top: 510 }} />
+            <Words words={['straight', 'on', 'the', 'GPU.']} at={[31, 37, 41, 44]} color="#9a9590" size={40} style={{ position: 'absolute', left: 142, top: 600 }} />
           </AbsoluteFill>
         </>
       )}

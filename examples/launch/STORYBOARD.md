@@ -80,6 +80,17 @@ The handwritten overlays are 2160x3840 portrait, white on black: they are croppe
 
 Visual storyboard: `storyboard.html` beside this file.
 
+## Decided (2026-10-17)
+
+- VO: the Tiny Agent narrator (Qwen3-TTS clone). The whole script is read in one take and cut into lines at its own
+  pauses, so the voice keeps one pitch and energy arc; gaps between lines are lengthened only where the picture needs time.
+- A motion-graphics run between shots 7 and 8 (`act2-mg.tsx`, about 11 s), one engine API per piece, on the VO's list
+  "real 3D, isometric scenes, WebGL shaders, canvas, even glass that bends the light":
+  m1 extruded 3D wordmark with a dolly zoom and props dropping in (`<Scene3D>`); whip pan; m2 an isometric city of
+  blocks rising in a ripple (orthographic `<Camera3D>`), the camera diving into the red block; m3 domain-warped
+  marbling (`<GlslShader>`) opening on that red; iris into m4, a flow field of strokes and a spirograph (`<Canvas>`);
+  cut to m5, glass spheres ray-traced with dispersion over a plate of the wordmark (`<GlslShader>`).
+
 ## Still open
 
 - Music: needs a track with a clear beat for shots 3, 7 and 11.

@@ -12,6 +12,7 @@ import { LOOK, RISE_AT, S02_AT, S03_AT, WINDOWS, WIN_EVERY } from './act1.js';
 import { FILM_AT } from './act1-camera.js';
 import { CARDS, COLLAPSE, TEXT, TYPE_AT, WORDS } from './act2-s07.js';
 import { S08_HOLD } from './act2-s08.js';
+import { M1_DROPS, M2_DIVE, M3_TYPE, M4_SPIRO, WHIP } from './act2-mg.js';
 import { IMPACT_AT, KINETOGRAPH_S, MULT_AT, RACE, REMOTION_S } from './act2-s09.js';
 import { S10_CIRCLE, S10_LAND, S10_STRIKE, S12_TAG, S12_URL } from './act3.js';
 import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
@@ -31,7 +32,8 @@ const D = { D2: 73.42, A2: 110, D3: 146.83, F3: 174.61, A3: 220, D4: 293.66, Fs3
 const chords: { from: number; to: number; hz: number[]; level: number; cutoff: [number, number] }[] = [
   { from: 0, to: START.s04, hz: [D.D2, D.A2, D.D3, D.F3], level: 0.15, cutoff: [260, 700] },
   { from: START.s04, to: START.s07, hz: [58.27, 87.31, 116.54, D.D3], level: 0.17, cutoff: [300, 800] },
-  { from: START.s07, to: START.s08, hz: [D.D2, D.A2, D.D3, D.A3], level: 0.18, cutoff: [600, 1400] },
+  { from: START.s07, to: START.m1, hz: [D.D2, D.A2, D.D3, D.A3], level: 0.18, cutoff: [600, 1400] },
+  { from: START.m1, to: START.s08, hz: [87.31, 130.81, 174.61, 220, 261.63], level: 0.17, cutoff: [700, 1700] },
   { from: START.s08, to: START.s09, hz: [58.27, 87.31, 116.54, D.F3, 233.08], level: 0.16, cutoff: [500, 1100] },
   { from: START.s09, to: START.s10, hz: [98, D.D3, 196, 233.08], level: 0.15, cutoff: [500, 1000] },
   { from: START.s10, to: START.s11, hz: [D.D2, D.A2], level: 0.12, cutoff: [220, 420] },
@@ -91,6 +93,27 @@ for (let k = 0; k < TEXT.length; k++) {
   if (TEXT[k] === ' ') continue;
   cue(at('s07', TYPE_AT + k * 1.1), (q) => shutter(q, 0.045));
 }
+
+// ---- the motion-graphics run: a pulse from the 3D reveal to the cut into shot 8; each piece has its own sound ----
+for (let f = at('m1', 26); f < START.s08 - 4; f += BEAT) {
+  cue(f, (q) => kick(q, 0.55));
+  cue(f + BEAT / 2, (q) => hat(q, 0.035));
+}
+cue(at('m1', 24), (q) => sweep(q, sec(40), 180, 1800, 0.16, 0.7, 'm1-reveal', 0.9));
+M1_DROPS.forEach((f, i) => {
+  cue(at('m1', f + 10), (q) => kick(q, 0.35, q.sfx));
+  cue(at('m1', f + 10), (q) => pop(q, 0.3, 520 + i * 140));
+});
+cue(START.m2 - WHIP - 2, (q) => sweep(q, sec(WHIP * 2 + 4), 900, 5200, 0.34, 0.5, 'whip', 0.7));
+for (let d = 0; d < 6; d++) cue(at('m2', 2 + d * 3), (q) => tick(q, 0.06, 1300 + d * 160, 800));
+cue(at('m2', M2_DIVE - 2), (q) => sweep(q, sec(LEN.m2 - M2_DIVE + 2), 300, 4200, 0.26, 0.95, 'dive', 0.9));
+cue(START.m3, (q) => hit(q, 0.45, 0.2));
+cue(START.m3, (q) => rumble(q, sec(LEN.m3), 0.14, 0.5, 'm3-swell'));
+for (let f = M3_TYPE; f < M3_TYPE + 34; f += 2) cue(at('m3', f), (q) => shutter(q, 0.03));
+cue(START.m4, (q) => sweep(q, sec(12), 400, 3000, 0.2, 0.8, 'iris'));
+cue(at('m4', M4_SPIRO[0]), (q) => pen(q, sec(M4_SPIRO[1] - M4_SPIRO[0]), 0.13, 'pen-spiro'));
+cue(START.m5, (q) => sweep(q, sec(30), 5200, 900, 0.12, 0.15, 'm5-pull', 0.8));
+[1318.5, 1760, 2637].forEach((hz, i) => cue(at('m5', 14 + i * 5), (q) => bell(q, hz, 0.05 - i * 0.01, 2.2)));
 
 // ---- shot 8: a tick as "from 'remotion'" lights up; a whoosh on the pull-out; the counter ticks up to 98 ----
 const s08 = (orig: number): number => at('s08', orig + (S08_HOLD - 22));
