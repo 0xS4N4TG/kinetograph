@@ -21,7 +21,7 @@ export interface Cue extends Bus { t: number }
 /** Voiceover windows in seconds, [start, end], for ducking. Filled by sound-cues.ts before the first cue runs. */
 export const DUCK: [number, number][] = [];
 const DUCK_GAIN = 0.42;
-const MASTER = 0.45;
+const MASTER = 0.38;
 
 const buses = new WeakMap<Ctx, Bus>();
 
@@ -50,7 +50,7 @@ function buildBus(ctx: Ctx, base: number): Bus {
   const verb = ctx.createConvolver();
   verb.buffer = ir;
   const wet = ctx.createGain();
-  wet.gain.value = 0.55;
+  wet.gain.value = 0.28;
   verb.connect(wet).connect(limiter);
 
   const music = ctx.createGain();
@@ -58,13 +58,13 @@ function buildBus(ctx: Ctx, base: number): Bus {
   music.connect(duck);
   duck.connect(limiter);
   const musicSend = ctx.createGain();
-  musicSend.gain.value = 0.32;
+  musicSend.gain.value = 0.22;
   duck.connect(musicSend).connect(verb);
 
   const sfx = ctx.createGain();
   sfx.connect(limiter);
   const sfxSend = ctx.createGain();
-  sfxSend.gain.value = 0.22;
+  sfxSend.gain.value = 0.07;
   sfx.connect(sfxSend).connect(verb);
 
   // ducking: down 0.12 s ahead of each line, back up over 0.45 s after it
@@ -331,4 +331,29 @@ export function pen(c: Cue, seconds: number, vel: number, seed: string): void {
   }
   g.gain.setValueCurveAtTime(curve, c.t, seconds);
   n.connect(bp).connect(g).connect(c.sfx);
+}
+
+/** A film projector running: noise chopped at the 24 fps gate, band-passed to the clatter, swelling in and out. */
+export function projector(c: Cue, seconds: number, vel: number, seed: string): void {
+  const n = noiseSource(c, c.t, seed, seconds);
+  const bp = c.ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1700;
+  bp.Q.value = 1.1;
+  const g = c.ctx.createGain();
+  const steps = Math.max(8, Math.round(seconds * 24 * 4));
+  const curve = new Float32Array(steps);
+  for (let i = 0; i < steps; i++) {
+    const env = Math.sin((Math.PI * i) / (steps - 1));
+    const gate = i % 4 === 0 ? 1 : i % 4 === 1 ? 0.35 : 0.08;
+    curve[i] = vel * env * gate * (0.7 + 0.3 * random(`${seed}-g${i}`));
+  }
+  g.gain.setValueCurveAtTime(curve, c.t, seconds);
+  n.connect(bp).connect(g).connect(c.sfx);
+}
+
+/** A soft pop for something landing on screen: a short low thump and a pitched tick. */
+export function pop(c: Cue, vel: number, hz = 1300): void {
+  kick(c, vel * 0.6, c.sfx);
+  tick(c, vel * 0.5, hz, hz * 0.5);
 }
