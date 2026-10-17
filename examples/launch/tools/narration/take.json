@@ -1,0 +1,3 @@
+[
+ {"id": "full", "text": "How do you make a video with code, without a browser? Right now, a browser screenshots every single frame. With Kinetograph, you don't need one. You just render it. Straight on the GPU. Your demo, your launch, your changelog. Write it in code and it renders for you. And it goes way past text. Real 3D. Isometric scenes. WebGL shaders. Canvas. Even glass that bends the light. Already using Remotion? Kinetograph runs your existing projects as they are. It's a drop-in replacement, and it supports ninety-eight percent of the API. Same project, same frames. It finished seven times faster. No Chrome. No screenshots. Just pixels. Kinetograph. Write Remotion, render native. Try it at kinetograph dot dev."}
+]
