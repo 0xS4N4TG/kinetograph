@@ -7,7 +7,7 @@ import { LogoFlicker } from '@/components/snap-cn/logo-flicker';
 import { CLAMP, H, INK, MONO, OUT, PaperGround, RED, SANS, W } from './common.js';
 
 /** Seconds this video took to render, filled in by the final render (until then the end card prints "N"). */
-export const RENDER_SECONDS: number | null = null;
+export const RENDER_SECONDS: number | null = 269;
 
 // ---- hand-drawn strokes ----
 type Pt = [number, number];
