@@ -1,0 +1,11 @@
+[
+ {"id": "02-question", "text": "How do you make a video with code, without a browser?"},
+ {"id": "03-screenshot", "text": "Right now, a browser screenshots every single frame."},
+ {"id": "04-you-dont", "text": "With Kinetograph, you don't need one."},
+ {"id": "05-render", "text": "You just render it. Straight on the GPU."},
+ {"id": "07-your", "text": "Your demo, your launch, your changelog. Write it in code and it renders for you."},
+ {"id": "08-remotion", "text": "Already using Remotion? Kinetograph runs your existing projects as they are. It's a drop-in replacement, and it supports ninety-eight percent of the API."},
+ {"id": "09-numbers", "text": "Same project, same frames. It finished seven times faster.", "tts": "Same project, same frames. It finished seven times faster."},
+ {"id": "10-pixels", "text": "No Chrome. No screenshots. Just pixels."},
+ {"id": "12-end", "text": "Kinetograph. Write Remotion, render native. Try it at kinetograph dot dev.", "tts": "Kinetograph. Write Remotion, render native. Try it at kinetograph dot dev."}
+]

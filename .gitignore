@@ -33,3 +33,7 @@ phase0/fframes/compare/
 
 # Licensed overlay packs, rebuilt by examples/launch/tools/assets.sh: local only
 examples/launch/public/fx/
+# Narration takes and the picked lines (the picked lines are copied to public/vo): local only
+examples/launch/tools/narration/voice/takes/
+examples/launch/tools/narration/voice/final_narrator/
+examples/launch/tools/narration/*.log

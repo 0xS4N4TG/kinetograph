@@ -1,0 +1,34 @@
+{
+ "name": "Tiny Agent narrator (fast male explainer)",
+ "locked": "2026-10-02",
+ "replaces": "the chibi narrator (kept in archive-chibi/)",
+ "source": "voice-clone-93947: ref.wav = 7.45-15.2 s of Video-93947.mp4, vocals isolated with Demucs htdemucs; the user picked the takes_english sound",
+ "clone_model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+ "ref_audio": "$KINETOGRAPH_CORPUS/tiny-agent/voice/narrator_ref.wav",
+ "ref_text": "One agent handles planning, another writes the code, another runs tests, then another checks security. They all run in parallel, sharing memory, and even improving each other after every single run.",
+ "x_vector_only_mode": false,
+ "sampling": {
+  "temperature": 0.8,
+  "top_p": 0.9,
+  "seeds": "7 + 31*k",
+  "max_new_tokens": 1536,
+  "dtype": "bfloat16",
+  "device": "mps"
+ },
+ "takes_per_line": 3,
+ "tempo": 1.0,
+ "post": "silenceremove both ends (-45 dB), highpass 70 Hz, loudnorm I=-16 TP=-1.5 LRA=11, 48 kHz mono",
+ "measured": {
+  "ref": "125 Hz median, 8.7 st spread, 4.0 words/s",
+  "takes_english": "112-123 Hz, 7.6-11.1 st, 4.4-4.6 words/s, ASR word-perfect"
+ },
+ "qa_targets": {
+  "median_pitch_hz": [
+   95,
+   150
+  ],
+  "asr_match": 0.9
+ },
+ "sample": "narrator_sample_bakers.wav (takes_english/take_1, the liveliest take)",
+ "tempo_note": "2026-10-03: back to 1.0 (the clone's natural pace) at the user's request; the 0.75x cuts of ep 01-03 are in each episode's archive-slow/. History: 2026-10-02 the user had asked for 0.75x (Rubber Band R3 --fine, pitch kept)."
+}

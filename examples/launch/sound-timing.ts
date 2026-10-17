@@ -19,17 +19,17 @@ export const START = {
 export const BURN = START.s07;
 export const TOTAL = START.s12 + LEN.s12;
 
-/** The voiceover lines: file (public/vo/<file>.wav), shot, and the frame inside the shot where the line starts
- *  (with the words it lands on). Offsets for shots 10 and 12 are tied to the word frames in act3.tsx. */
+/** The voiceover lines: file (public/vo/<file>.wav), shot, and the frame inside the shot where the line starts. The
+ *  words on screen are timed from these and the word timestamps in tools/narration/voice/asr_narrator_final.json. */
 export const VO: { file: string; shot: keyof typeof START; at: number }[] = [
-  { file: '01-how', shot: 's01', at: 0 },
-  { file: '02-question', shot: 's02', at: 4 },
+  { file: '02-question', shot: 's02', at: 12 },
   { file: '03-screenshot', shot: 's03', at: 3 },
-  { file: '04-you-dont', shot: 's04', at: 26 },
-  { file: '05-render', shot: 's05', at: 2 },
-  { file: '07-your', shot: 's07', at: 6 },
+  { file: '04-you-dont', shot: 's04', at: 0 },
+  { file: '05-render', shot: 's05', at: 4 },
+  { file: '07a-your', shot: 's07', at: 4 },
+  { file: '07b-write', shot: 's07', at: 100 },
   { file: '08-remotion', shot: 's08', at: 6 },
-  { file: '09-numbers', shot: 's09', at: 8 },
+  { file: '09-numbers', shot: 's09', at: 60 },
   { file: '10-pixels', shot: 's10', at: 1 },
   { file: '12-end', shot: 's12', at: 6 },
 ];
