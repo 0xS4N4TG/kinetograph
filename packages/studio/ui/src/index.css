@@ -51,24 +51,25 @@
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
+  --radius: 0.75rem;
+  --background: oklch(0.145 0.006 265);
+  --foreground: oklch(0.97 0.003 265);
+  --card: oklch(0.175 0.007 265);
+  --card-foreground: oklch(0.97 0.003 265);
+  --popover: oklch(0.19 0.008 265);
+  --popover-foreground: oklch(0.97 0.003 265);
+  --primary: oklch(0.62 0.19 262);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.225 0.009 265);
+  --secondary-foreground: oklch(0.97 0.003 265);
+  --muted: oklch(0.2 0.008 265);
+  --muted-foreground: oklch(0.68 0.015 265);
+  --accent: oklch(0.26 0.03 262);
+  --accent-foreground: oklch(0.97 0.003 265);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.62 0.19 262);
 }
 
 @layer base {
@@ -76,6 +77,25 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(1 0 0 / 12%);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(1 0 0 / 22%);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }

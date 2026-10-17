@@ -46,7 +46,7 @@ export function Preview({ comp, onImage, lastImage, buildError, frameError }: Pr
     <div ref={boxRef} data-testid="preview" className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
       {comp && shown ? (
         <div
-          className="bg-[repeating-conic-gradient(var(--background)_0%_25%,var(--secondary)_0%_50%)] bg-[length:16px_16px] ring-1 ring-border"
+          className="overflow-hidden rounded-xl bg-[repeating-conic-gradient(var(--background)_0%_25%,var(--secondary)_0%_50%)] bg-[length:16px_16px] shadow-2xl ring-1 ring-white/10"
           style={{ width: shown.width, height: shown.height }}
         >
           <canvas

@@ -27,7 +27,7 @@ interface TransportProps {
 export function Transport({ comp, player, state }: TransportProps) {
   const disabled = comp === null;
   return (
-    <div className="flex items-center gap-1 border-t px-3 py-2">
+    <div className="flex items-center gap-1 border-t px-4 py-2.5">
       <Hint label="Previous frame (Left, Shift: 10)">
         <Button variant="ghost" size="icon-sm" aria-label="Previous frame" disabled={disabled} onClick={() => player.step(-1)}>
           <SkipBackIcon />

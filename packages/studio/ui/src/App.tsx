@@ -27,17 +27,19 @@ export function App({ api }: { api: StudioApi }) {
   return (
     <TooltipProvider>
       <div className="bg-background text-foreground flex h-screen flex-col">
-        <header className="flex h-10 shrink-0 items-center gap-3 border-b px-3 text-sm">
-          <span className="font-semibold">Kinetograph studio</span>
+        <header className="bg-card/50 flex h-12 shrink-0 items-center gap-3 border-b px-4 text-sm backdrop-blur">
+          <span className="from-primary size-6 rounded-md bg-gradient-to-br to-sky-400 shadow-[0_0_12px_-2px_var(--primary)]" aria-hidden />
+          <span className="font-semibold tracking-tight">Kinetograph studio</span>
           {entry && (
-            <span className="text-muted-foreground font-mono text-xs" title={studio.project?.entry}>
+            <span className="text-muted-foreground bg-secondary rounded-md px-2 py-0.5 font-mono text-xs" title={studio.project?.entry}>
               {entry}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
-            {studio.project && <Badge variant="outline">v{studio.project.version}</Badge>}
-            <Badge variant="outline">build {studio.buildId}</Badge>
-            <Badge variant={studio.connected ? 'secondary' : 'destructive'}>
+            {studio.project && <Badge variant="outline" className="rounded-full">v{studio.project.version}</Badge>}
+            <Badge variant="outline" className="rounded-full">build {studio.buildId}</Badge>
+            <Badge variant={studio.connected ? 'secondary' : 'destructive'} className="rounded-full">
+              <span className={`size-1.5 rounded-full ${studio.connected ? 'bg-emerald-400' : 'bg-current'}`} />
               {studio.connected ? 'connected' : 'offline'}
             </Badge>
           </div>

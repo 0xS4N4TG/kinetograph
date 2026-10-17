@@ -78,9 +78,12 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
   };
 
   return (
-    <div data-testid="timeline" className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-3 border-b px-3">
-        <span className="text-sm font-medium">Timeline</span>
+    <div data-testid="timeline" className="bg-card/40 flex h-full flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-3 border-b px-4">
+        <span className="text-sm font-semibold tracking-tight">Timeline</span>
+        <span className="text-muted-foreground bg-secondary rounded-full px-2 py-0.5 font-mono text-[10px]">
+          {duration} f
+        </span>
         <div className="ml-auto flex w-56 items-center gap-2">
           <span className="text-muted-foreground text-xs">Zoom</span>
           <Slider
@@ -95,12 +98,12 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
       </div>
       <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto">
         {comp === null ? (
-          <p className="text-muted-foreground p-4 text-sm">No composition selected.</p>
+          <p className="text-muted-foreground p-6 text-center text-sm">No composition selected.</p>
         ) : (
           <div className="relative min-w-max" style={{ width: LABEL_WIDTH + laneWidth + 16 }}>
             {/* ruler */}
-            <div className="bg-background sticky top-0 z-20 flex h-7 border-b">
-              <div className="bg-background text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center border-r px-2 text-xs" style={{ width: LABEL_WIDTH }}>
+            <div className="bg-background/95 sticky top-0 z-20 flex h-8 border-b backdrop-blur">
+              <div className="bg-background text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center border-r px-3 text-[10px] font-medium tracking-wider uppercase" style={{ width: LABEL_WIDTH }}>
                 Frames
               </div>
               <div
@@ -114,8 +117,8 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
                 onPointerCancel={onPointerUp}
               >
                 {ticks.map((f) => (
-                  <div key={f} className="absolute inset-y-0 border-l" style={{ left: f * pxPerFrame }}>
-                    <span className="text-muted-foreground absolute top-1 left-1 font-mono text-[10px]">{f}</span>
+                  <div key={f} className="absolute bottom-0 h-3 border-l border-white/20" style={{ left: f * pxPerFrame }}>
+                    <span className="text-muted-foreground absolute -top-5 left-1.5 font-mono text-[10px] tabular-nums">{f}</span>
                   </div>
                 ))}
               </div>
@@ -134,7 +137,7 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
                 onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
                 laneWidth={laneWidth}
               >
-                <Bar from={row.from} to={row.end} pxPerFrame={pxPerFrame} className="bg-secondary border">
+                <Bar from={row.from} to={row.end} pxPerFrame={pxPerFrame} className="bg-accent border-primary/30 text-accent-foreground border">
                   {row.label}
                 </Bar>
               </Row>
@@ -155,7 +158,7 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
                 laneWidth={laneWidth}
               >
                 {row.ranges.map(([first, last]) => (
-                  <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className="bg-primary/50" />
+                  <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className="from-primary/80 to-primary/50 border-primary/60 border bg-gradient-to-b shadow-sm" />
                 ))}
               </Row>
             ))}
@@ -163,11 +166,12 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
             {/* playhead */}
             <div
               data-testid="playhead"
-              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-sky-400"
+              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.7)]"
               style={{ left: LABEL_WIDTH + state.frame * pxPerFrame }}
             >
-              <div className="absolute top-0 -left-1 size-2.5 rounded-b-sm bg-sky-400" />
+              <div className="absolute top-0 -left-[5px] size-[11px] rounded-b-sm bg-sky-400 [clip-path:polygon(0_0,100%_0,100%_55%,50%_100%,0_55%)]" />
             </div>
+
           </div>
         )}
       </div>
@@ -177,7 +181,7 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="bg-muted/40 text-muted-foreground sticky left-0 flex h-5 items-center border-b px-2 text-[10px] font-medium tracking-wide uppercase">
+    <div className="bg-muted/30 text-muted-foreground sticky left-0 flex h-6 items-center border-b px-3 text-[10px] font-semibold tracking-widest uppercase">
       {children}
     </div>
   );
@@ -211,19 +215,23 @@ function Row({ label, badge, title, depth, selected, onSelect, laneWidth, childr
       onKeyDown={(event) => {
         if (onSelect && event.key === 'Enter') onSelect();
       }}
-      className={cn('group flex h-7 border-b text-xs', onSelect && 'cursor-pointer', selected && 'bg-accent/60')}
+      className={cn(
+        'group flex h-9 border-b border-white/5 text-xs transition-colors',
+        onSelect && 'hover:bg-white/[0.03] cursor-pointer',
+        selected && 'bg-primary/10 hover:bg-primary/10',
+      )}
     >
       <div
         className={cn(
           'sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r pr-2',
-          selected ? 'bg-accent' : 'bg-background',
+          selected ? 'bg-accent shadow-[inset_2px_0_0_var(--primary)]' : 'bg-background',
           indent(depth),
         )}
         style={{ width: LABEL_WIDTH }}
       >
-        <span className="truncate">{label}</span>
+        <span className="truncate font-medium">{label}</span>
         {badge && (
-          <Badge variant="outline" className="ml-auto px-1 py-0 text-[10px]">
+          <Badge variant="outline" className="text-muted-foreground ml-auto rounded-full px-1.5 py-0 text-[10px]">
             {badge}
           </Badge>
         )}
@@ -250,7 +258,7 @@ function Bar({
 }) {
   return (
     <div
-      className={cn('absolute inset-y-1 overflow-hidden rounded-sm px-1 text-[10px] leading-5 whitespace-nowrap', className)}
+      className={cn('absolute inset-y-1.5 overflow-hidden rounded-md px-2 text-[10px] leading-5 font-medium whitespace-nowrap', className)}
       style={{ left: from * pxPerFrame, width: Math.max(2, (to - from) * pxPerFrame) }}
     >
       {children}

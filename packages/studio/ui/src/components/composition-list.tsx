@@ -24,8 +24,8 @@ export function CompositionList({ compositions, selected, onSelect }: Compositio
                   aria-pressed={comp.id === selected}
                   onClick={() => onSelect(comp.id)}
                   className={cn(
-                    'hover:bg-accent/50 focus-visible:ring-ring/50 flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-[3px]',
-                    comp.id === selected && 'bg-accent text-accent-foreground',
+                    'hover:bg-white/5 focus-visible:ring-ring/50 flex w-full flex-col items-start gap-0.5 rounded-lg border border-transparent px-3 py-2 text-left text-sm outline-none transition-colors focus-visible:ring-[3px]',
+                    comp.id === selected && 'bg-primary/10 border-primary/40 text-foreground',
                   )}
                 >
                   <span className="w-full truncate font-medium">{comp.id}</span>
