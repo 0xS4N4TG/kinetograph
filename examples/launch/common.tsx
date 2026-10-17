@@ -4,6 +4,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, Img, interpolate, staticFile, useCurrentFrame } from 'remotion';
 import { loadFont as loadDMSans } from '@remotion/google-fonts/DMSans';
 import { loadFont as loadMono } from '@remotion/google-fonts/JetBrainsMono';
+import { loadFont as loadRockSalt } from '@remotion/google-fonts/RockSalt';
 
 export const W = 1920;
 export const H = 1080;
@@ -11,6 +12,7 @@ export const FPS = 30;
 
 export const SANS = loadDMSans('normal', { weights: ['400', '500', '700'] }).fontFamily;
 export const MONO = loadMono('normal', { weights: ['400', '500'] }).fontFamily;
+export const HAND = loadRockSalt('normal', { weights: ['400'] }).fontFamily;
 
 export const PAPER = '#ECEAE6';
 export const INK = '#111111';
@@ -26,21 +28,14 @@ export const POOL = [
   '16-ep13-5s', '17-ep13-5s', '18-ep13-5s', '19-open-v4', '20-open-v4',
 ].map((n) => staticFile(`pool/${n}.jpg`));
 
-/** Paper texture and vignette over a paper scene. */
+/** Paper: a bright centre falling off to soft grey edges, the reference reel's ground. */
 export const PaperGround: React.FC = () => (
-  <>
-    <AbsoluteFill style={{ background: PAPER }} />
-    <Img src={staticFile('fx/grunge-06.png')} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, mixBlendMode: 'multiply', opacity: 0.22 }} />
-    <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 48%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.22) 100%)' }} />
-  </>
+  <AbsoluteFill style={{ background: `radial-gradient(ellipse 70% 75% at 50% 46%, #F4F3F1 0%, ${PAPER} 45%, #CFCCC7 100%)` }} />
 );
 
-/** Gate dust over an ink scene. */
+/** Ink: a lifted centre falling off to black. */
 export const InkGround: React.FC = () => (
-  <>
-    <AbsoluteFill style={{ background: INK }} />
-    <Img src={staticFile('fx/grunge-02.png')} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, mixBlendMode: 'screen', opacity: 0.5 }} />
-  </>
+  <AbsoluteFill style={{ background: `radial-gradient(ellipse 70% 75% at 50% 46%, #262626 0%, ${INK} 55%, #050505 100%)` }} />
 );
 
 /** A line that builds word by word: each word blurs in over 4 frames, `per` frames apart. */
@@ -61,6 +56,6 @@ export const Build: React.FC<{ words: string[]; start: number; per: number; colo
 /** Frames of each shot at 30 fps, in order (about 39 s). The cut is the sum; shot 6, the burn, lies over the cut
  *  from shot 5 into shot 7 rather than taking time of its own. Keep a shot inside its length. */
 export const LEN = {
-  s01: 21, s02: 69, s03: 90, s04: 60, s05: 90, s06: 27,
-  s07: 153, s08: 150, s09: 180, s10: 90, s11: 120, s12: 120,
+  s01: 24, s02: 69, s03: 90, s04: 60, s05: 90, s06: 27,
+  s07: 153, s08: 210, s09: 160, s10: 75, s11: 120, s12: 135,
 } as const;

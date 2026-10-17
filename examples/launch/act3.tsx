@@ -4,7 +4,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import { measureText } from '@remotion/layout-utils';
 import { LogoFlicker } from '@/components/snap-cn/logo-flicker';
-import { CLAMP, H, INK, MONO, OUT, POOL, PaperGround, RED, SANS, W } from './common.js';
+import { CLAMP, H, INK, MONO, OUT, PaperGround, RED, SANS, W } from './common.js';
 
 /** Seconds this video took to render, filled in by the final render (until then the end card prints "N"). */
 export const RENDER_SECONDS: number | null = null;
@@ -92,7 +92,10 @@ function loop(cx: number, cy: number, rx: number, ry: number, seed: string): Pt[
 // ---- shot 10: no chrome, no screenshots, just pixels ----
 const S10_WORDS = ['no', 'chrome.', 'no', 'screenshots.', 'just', 'pixels.'];
 // Frames each word lands, matched to the voiceover (sound.tsx places it at VO_AT.s10, in the voice's own pauses).
-const S10_LAND = [1, 5, 24, 30, 57, 62];
+export const S10_LAND = [1, 5, 17, 20, 37, 41];
+/** The two strike-outs and the red loop, each just after its phrase is spoken. */
+export const S10_STRIKE = [[10, 21], [27, 38]] as const;
+export const S10_CIRCLE = [44, 59] as const;
 const S10_SIZE = 76;
 const S10_TOP = 470;
 
@@ -108,10 +111,10 @@ export const S10: React.FC = () => {
   const yc = S10_TOP + S10_SIZE * 0.53; // the middle of the lowercase letters
   const pen = Easing.bezier(0.45, 0, 0.35, 1);
   const strike = [
-    interpolate(frame, [19, 30], [0, 1], { ...CLAMP, easing: pen }),
-    interpolate(frame, [52, 63], [0, 1], { ...CLAMP, easing: pen }),
+    interpolate(frame, [...S10_STRIKE[0]], [0, 1], { ...CLAMP, easing: pen }),
+    interpolate(frame, [...S10_STRIKE[1]], [0, 1], { ...CLAMP, easing: pen }),
   ];
-  const circle = interpolate(frame, [71, 86], [0, 1], { ...CLAMP, easing: Easing.bezier(0.3, 0, 0.2, 1) });
+  const circle = interpolate(frame, [...S10_CIRCLE], [0, 1], { ...CLAMP, easing: Easing.bezier(0.3, 0, 0.2, 1) });
   return (
     <AbsoluteFill>
       <PaperGround />
@@ -132,14 +135,18 @@ export const S10: React.FC = () => {
   );
 };
 
-// ---- shot 11: snapcn's logo-flicker over our own renders, then the name ----
+// ---- shot 11: snapcn's logo-flicker over stills of this film itself (public/self, rendered from frames.tsx), then the name ----
+const SELF = ['s01-2', 's01-8', 's01-14', 's02-66', 's03-60', 's04-22', 's05-30', 's05-70', 's08-40', 's08-200', 's09-60', 's09-150', 's10-70']
+  .map((n) => staticFile(`self/${n}.jpg`));
+
 export const S11: React.FC = () => (
-  <LogoFlicker images={POOL} brandName="kinetograph" logoSrc={staticFile('brand/kinetograph-mark.png')} mode="dark" fontFamily={SANS} background={INK} />
+  <LogoFlicker images={SELF} brandName="kinetograph" logoSrc={staticFile('brand/kinetograph-mark.png')} mode="dark" fontFamily={SANS} background={INK} />
 );
 
 // ---- shot 12: end card ----
 // Frames the tagline words land, matched to the voiceover (sound.tsx places it at VO_AT.s12).
-export const S12_TAG = [38, 47, 69, 77];
+export const S12_TAG = [23, 32, 48, 55];
+export const S12_URL = 80;
 
 export const S12: React.FC<{ renderSeconds?: number | null }> = ({ renderSeconds = RENDER_SECONDS }) => {
   const frame = useCurrentFrame();
@@ -147,7 +154,7 @@ export const S12: React.FC<{ renderSeconds?: number | null }> = ({ renderSeconds
   const dot = interpolate(frame, [12, 22], [0, 1], { ...CLAMP, easing: Easing.out(Easing.back(2.2)) });
   const fade = (a: number, b: number) => interpolate(frame, [a, b], [0, 1], CLAMP);
   const words = ['write', 'remotion.', 'render', 'native.'];
-  const urlT = interpolate(frame, [92, 100], [0, 1], { ...CLAMP, easing: OUT });
+  const urlT = interpolate(frame, [S12_URL, S12_URL + 8], [0, 1], { ...CLAMP, easing: OUT });
   return (
     <AbsoluteFill>
       <PaperGround />
@@ -162,7 +169,7 @@ export const S12: React.FC<{ renderSeconds?: number | null }> = ({ renderSeconds
           })}
         </div>
         <div style={{ fontFamily: MONO, fontSize: 36, marginTop: 110, opacity: urlT, transform: `translateY(${(1 - urlT) * 14}px)` }}>kinetograph.dev</div>
-        <div style={{ fontFamily: MONO, fontSize: 22, marginTop: 120, color: '#7a7670', opacity: fade(104, 112) }}>
+        <div style={{ fontFamily: MONO, fontSize: 22, marginTop: 120, color: '#7a7670', opacity: fade(S12_URL + 16, S12_URL + 24) }}>
           this video was rendered by kinetograph in {renderSeconds ?? 'N'} s
         </div>
       </div>

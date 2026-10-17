@@ -1,8 +1,8 @@
 // Shared pieces of act 1: eases, the video grounds and the word-by-word line.
 
 import React from 'react';
-import { AbsoluteFill, Easing, Video, interpolate, staticFile, useCurrentFrame } from 'remotion';
-import { CLAMP, INK, OUT, PAPER, SANS } from './common.js';
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
+import { CLAMP, OUT, SANS } from './common.js';
 
 /** Native elements (Rect, Layer, Scene3D, Video) next to DOM ones land in the wrapper's flow, offset from the corner; each goes in
  *  an AbsoluteFill, which overlays its siblings. `blend` turns the AbsoluteFill into a CSS-blended div (the blend is the div's). */
@@ -16,24 +16,9 @@ export const BACK = Easing.out(Easing.back(1.6));
 export const IN = Easing.bezier(0.5, 0, 0.9, 0.4);
 export const IO = Easing.bezier(0.65, 0, 0.35, 1);
 
-// ---- grounds: the licensed grunge loops, as video, screen- or multiply-blended ----
+// ---- grounds: clean, with the reference reel's soft vignette (no film texture) ----
 
-/** Paper with its grain loop (multiply) and vignette. */
-export const PaperGround: React.FC = () => (
-  <>
-    <AbsoluteFill style={{ background: PAPER }} />
-    <Over blend="multiply" opacity={0.12}><Video muted src={staticFile('fx/grunge-06.mp4')} loop /></Over>
-    <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 48%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.14) 100%)' }} />
-  </>
-);
-
-/** Ink with the gate dust loop (screen). */
-export const InkGround: React.FC = () => (
-  <>
-    <AbsoluteFill style={{ background: INK }} />
-    <Over blend="screen" opacity={0.5}><Video muted src={staticFile('fx/grunge-02.mp4')} loop /></Over>
-  </>
-);
+export { PaperGround, InkGround } from './common.js';
 
 /** A line that builds word by word: each word rises 14 px and sharpens in over 6 frames (ease out, no overshoot). */
 export const Words: React.FC<{ words: string[]; at: number[]; color: string; size: number; weight?: number; style?: React.CSSProperties }> = ({

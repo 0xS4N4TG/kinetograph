@@ -7,8 +7,8 @@ import { AbsoluteFill, Freeze, Sequence, interpolate, spring, staticFile, useCur
 import { Video } from '@kinetograph/core';
 import { CLAMP, FPS, InkGround, MONO, OUT, PAPER, RED, SANS } from './common.js';
 
-const REMOTION_S = 8.86;
-const KINETOGRAPH_S = 1.25;
+export const REMOTION_S = 8.86;
+export const KINETOGRAPH_S = 1.25;
 const X0 = 380; // where 0 s sits
 const SCALE = 150; // px per second: 10 s is 1500 px
 const AXIS = [0, 2, 4, 6, 8, 10];
@@ -17,9 +17,9 @@ const ROWS = [
   { name: 'kinetograph', secs: KINETOGRAPH_S, y: 470, fill: `linear-gradient(90deg,#8f1a11,${RED})`, tip: '#ff6a5c' },
 ];
 const BAR_H = 92;
-const RACE = [12, 84] as const; // frames over which the clock runs from 0 to 8.86 s
-const MULT_AT = 88;
-const IMPACT_AT = 118;
+export const RACE = [12, 84] as const; // frames over which the clock runs from 0 to 8.86 s
+export const MULT_AT = 88;
+export const IMPACT_AT = 118;
 const IMPACT_HOLD = 17;
 
 export const S09: React.FC = () => {

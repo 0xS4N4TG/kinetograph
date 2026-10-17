@@ -28,7 +28,7 @@ const BACK_ARC = `M${CX - RX} ${CY} A${RX} ${RY} 0 0 1 ${CX + RX} ${CY}`;
 const FRONT_ARC = `M${CX + RX} ${CY} A${RX} ${RY} 0 0 1 ${CX - RX} ${CY}`;
 
 /** The frame the handwritten FILM starts drawing: its ladder and scribble take 18 frames, then it boils on (we skip the ladder it starts with). */
-const FILM_AT = 50;
+export const FILM_AT = 50;
 
 export const S05: React.FC<{ graded?: boolean }> = ({ graded = true }) => {
   const frame = useCurrentFrame();
@@ -83,7 +83,8 @@ export const S05: React.FC<{ graded?: boolean }> = ({ graded = true }) => {
             <Over blend="screen"><Video muted src={staticFile('fx/hand-film.mp4')} trimBefore={18} trimAfter={31} loop x={900} y={560} width={1100} height={619} /></Over>
           </Sequence>
           <AbsoluteFill>
-            <Words words={['you', 'just', 'render', 'it.']} at={[6, 11, 16, 22]} color={PAPER} size={64} style={{ position: 'absolute', left: 140, top: 510 }} />
+            <Words words={['you', 'just', 'render', 'it.']} at={[4, 7, 12, 20]} color={PAPER} size={64} style={{ position: 'absolute', left: 140, top: 510 }} />
+            <Words words={['straight', 'on', 'the', 'GPU.']} at={[24, 33, 39, 42]} color="#9a9590" size={40} style={{ position: 'absolute', left: 142, top: 600 }} />
           </AbsoluteFill>
         </>
       )}

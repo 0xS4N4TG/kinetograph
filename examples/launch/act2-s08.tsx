@@ -6,7 +6,7 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
 import { Layer, blur } from '@kinetograph/core';
-import { CLAMP, H, MONO, OUT, SANS, W } from './common.js';
+import { CLAMP, H, LEN, MONO, OUT, SANS, W } from './common.js';
 
 const BG = '#0d1117';
 const SYN: Record<string, string> = { k: '#ff7b72', f: '#d2a8ff', s: '#a5d6ff', p: '#c9d1d9' };
@@ -94,11 +94,16 @@ const Tick: React.FC<{ t: number }> = ({ t }) => (
   </svg>
 );
 
+/** Frames the camera holds tight on `from 'remotion'` (the VO's "Already using Remotion? Kinetograph runs your existing
+ *  projects as they are."); the pull-out and the count then run on, so "98%" lands on the VO's "ninety-eight". */
+export const S08_HOLD = 80;
+
 export const S08: React.FC = () => {
-  const frame = useCurrentFrame();
+  const real = useCurrentFrame();
+  const frame = real < S08_HOLD ? (real * 22) / S08_HOLD : real - (S08_HOLD - 22);
   const pull = interpolate(frame, [22, 84], [0, 1], { ...CLAMP, easing: Easing.inOut(Easing.cubic) });
   const creep = interpolate(frame, [0, 22], [0, 1], CLAMP); // the push before the pull, so the camera is never still
-  const settle = interpolate(frame, [84, 150], [0, 1], { ...CLAMP, easing: Easing.out(Easing.quad) });
+  const settle = interpolate(frame, [84, LEN.s08 - (S08_HOLD - 22)], [0, 1], { ...CLAMP, easing: Easing.out(Easing.quad) });
   const zoom = 3.3 + creep * 0.18 + pull * (0.46 - 3.48) + settle * 0.05;
   const pan = interpolate(pull, [0, 0.8], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) });
   const fx = FROM_CX + (960 - FROM_CX) * pan;
@@ -121,7 +126,7 @@ export const S08: React.FC = () => {
   const moving = frame >= 18 && frame <= 90;
   const blurFx = moving ? { samples: 10, shutter: 0.35 } : undefined;
 
-  const hl = interpolate(frame, [3, 17], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) });
+  const hl = interpolate(real, [16, 30], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) }); // on "Remotion"
   const count = Math.round(interpolate(frame, [80, 112], [0, 98], { ...CLAMP, easing: OUT }));
   const numIn = interpolate(frame, [78, 88], [0, 1], { ...CLAMP, easing: OUT });
   const subIn = interpolate(frame, [108, 118], [0, 1], { ...CLAMP, easing: OUT });
@@ -167,7 +172,7 @@ export const S08: React.FC = () => {
       <AbsoluteFill style={{ background: `radial-gradient(ellipse 75% 70% at 50% 50%, rgba(13,17,23,${0.5 * numIn}) 20%, rgba(13,17,23,${0.35 + 0.45 * numIn}) 100%)` }} />
       <div style={{ position: 'absolute', left: 0, right: 0, top: 310, textAlign: 'center', color: '#f0f6fc', fontFamily: SANS }}>
         <div style={{ fontWeight: 700, fontSize: 330, lineHeight: 1, letterSpacing: '-0.04em', paddingRight: 40, opacity: numIn, transform: `scale(${pop})`, filter: `blur(${(1 - numIn) * 10}px)` }}>{count}%</div>
-        <div style={{ fontSize: 50, marginTop: 18, color: '#c9d1d9', opacity: subIn, transform: `translateY(${(1 - subIn) * 14}px)` }}>of the remotion api. <span style={{ color: '#fff', fontWeight: 500 }}>drop-in.</span></div>
+        <div style={{ fontSize: 50, marginTop: 18, color: '#c9d1d9', opacity: subIn, transform: `translateY(${(1 - subIn) * 14}px)` }}>of the remotion api. <span style={{ color: '#fff', fontWeight: 500 }}>a drop-in replacement.</span></div>
         <div style={{ fontFamily: MONO, fontSize: 24, marginTop: 30, color: '#8b949e', opacity: noteIn }}>168 of 170 public exports · remotion 4.0.536 + 12 packages</div>
       </div>
     </AbsoluteFill>

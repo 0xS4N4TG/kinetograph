@@ -14,15 +14,15 @@ const pool = (n: string) => staticFile(`pool/${n}`);
 
 type Card = { x: number; y: number; w: number; h: number; src: string; video?: boolean; r: number; at: number; hue: 'g' | 'o' };
 /** Where each card sits (x, y, w, h; several run off the frame), what it shows and the frame it pops in. */
-const CARDS: Card[] = [
+export const CARDS: Card[] = [
   { x: -10, y: 566, w: 572, h: 444, src: pool('clip-pig.mp4'), video: true, r: 0, at: 2, hue: 'g' },
   { x: 1380, y: -50, w: 430, h: 500, src: pool('clip-ep13.mp4'), video: true, r: 30, at: 5, hue: 'g' },
   { x: 330, y: 840, w: 520, h: 292, src: pool('clip-clouds.mp4'), video: true, r: 0, at: 20, hue: 'o' },
-  { x: 1230, y: 706, w: 720, h: 405, src: pool('clip-code.mp4'), video: true, r: 0, at: 32, hue: 'g' },
+  { x: 1230, y: 706, w: 720, h: 405, src: pool('10-showcase-v1.jpg'), r: 0, at: 32, hue: 'g' },
   { x: -30, y: 70, w: 480, h: 300, src: pool('clip-imagine.mp4'), video: true, r: 0, at: 44, hue: 'o' },
-  { x: 1640, y: 500, w: 360, h: 203, src: pool('16-ep13-5s.jpg'), r: 0, at: 56, hue: 'g' },
+  { x: 1640, y: 500, w: 360, h: 203, src: pool('08-showcase-v1.jpg'), r: 0, at: 56, hue: 'g' },
   { x: 700, y: -36, w: 440, h: 248, src: pool('07-showcase-v1.jpg'), r: 0, at: 68, hue: 'o' },
-  { x: 560, y: 600, w: 330, h: 186, src: pool('12-showcase-3d.jpg'), r: 0, at: 80, hue: 'g' },
+  { x: 560, y: 600, w: 330, h: 186, src: pool('06-showcase-v1.jpg'), r: 0, at: 80, hue: 'g' },
 ];
 
 const stops = (a: string, b: string, c: string) => [{ offset: 0, color: a }, { offset: 0.5, color: b }, { offset: 1, color: c }];
@@ -35,11 +35,11 @@ const DOTS: [number, number, string, number][] = [
   [300, 184, '#c97a5f', 0], [1712, 160, '#c97a5f', 0], [1552, 628, '#55603f', 0], [984, 784, '#c97a5f', 0], [300, 1264 - 220, '#c97a5f', 0],
   [848, 248, '#55603f', 10], [1170, 960, '#55603f', 14], [1500, 940, '#c97a5f', 22], [560, 700, '#55603f', 30],
 ];
-const WORDS = [{ w: 'demo', at: 3 }, { w: 'launch', at: 36 }, { w: 'changelog', at: 69 }];
-const COLLAPSE = [94, 118] as const;
+export const WORDS = [{ w: 'demo', at: 4 }, { w: 'launch', at: 22 }, { w: 'changelog', at: 33 }]; // on the VO (07a at frame 4)
+export const COLLAPSE = [94, 118] as const;
 const DARK_AT = [104, 112] as const;
-const TYPE_AT = 118;
-const TEXT = 'that render for you';
+export const TYPE_AT = 118;
+export const TEXT = 'that render for you';
 
 const roundRect = (w: number, h: number, r: number) =>
   `M${r} 0H${w - r}Q${w} 0 ${w} ${r}V${h - r}Q${w} ${h} ${w - r} ${h}H${r}Q0 ${h} 0 ${h - r}V${r}Q0 0 ${r} 0Z`;
