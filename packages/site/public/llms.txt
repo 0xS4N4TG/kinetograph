@@ -1,0 +1,32 @@
+# Kinetograph Documentation for LLMs
+
+> Kinetograph is a programmatic video engine with no browser in it. Written in Rust and TypeScript.
+
+## Quick Reference
+
+- **CLI Studio:** `npx kinetograph studio <entry.tsx>` (Starts local live preview server on port 3000)
+- **CLI Render:** `npx kinetograph render <entry.tsx> <output.mp4>`
+- **MCP Server:** `@kinetograph/mcp` provides tools for Claude and agent environments.
+
+## Architecture
+
+- **Authoring Layer:** 100% Remotion-compatible TSX (`remotion`, `@remotion/*` resolve to `@kinetograph/core`).
+- **Clock Shim:** Pinned deterministic frames where `Date.now()`, `Math.random()`, `rAF`, and timers advance purely with the frame counter.
+- **Native DOM Engine:** Stylo (Firefox CSS engine), Taffy (flexbox/grid layout), Parley (text shaping), usvg (SVG vector paths).
+- **Compositor:** Rust `wgpu` + Vello vector rasterizer + Naga shader compiler + FFmpeg native encoder.
+
+## Example Composition
+
+```tsx
+import { AbsoluteFill, interpolate, useCurrentFrame } from 'remotion';
+
+export const MyComposition = () => {
+  const frame = useCurrentFrame();
+  const opacity = interpolate(frame, [0, 30], [0, 1]);
+  return (
+    <AbsoluteFill style={{ background: '#2238c4', justifyContent: 'center', alignItems: 'center' }}>
+      <h1 style={{ color: '#f7f4ec', fontSize: 80, opacity }}>Kinetograph</h1>
+    </AbsoluteFill>
+  );
+};
+```
