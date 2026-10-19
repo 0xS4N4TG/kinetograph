@@ -1,4 +1,4 @@
-# Open issues (logged 2026-10-16)
+# Open issues (logged 2026-10-16, added to 2026-10-19)
 
 What is known to be wrong or missing, with the cause where it is known, for a later run to fix. Each item says how
 it was found. Strike an item out of this file in the commit that fixes it.
@@ -15,7 +15,8 @@ used.
 1. **WebP is not decoded** (about 12 components; small). The `image` crate is built with only its png, jpeg and gif
    features in `crates/core`, `crates/dom` and `crates/node`, so `<Img>`, CSS `url()` and SVG `<image>` of a `.webp`
    are refused (reported in `compat.leftOut`). snapcn's default images and posters are all WebP. Animated WebP and
-   APNG (for `AnimatedImage`, which draws them as a still today) are a second, medium step.
+   APNG (for `AnimatedImage`, which draws them as a still today) are a second, medium step. Still open on 2026-10-19:
+   only `crates/rive` builds `image` with `webp` (for pictures inside `.riv` files).
 2. **`<Video>` / `<OffthreadVideo>` drop most of their style** (screen-recording, phone-frame, laptop-frame with a
    video, hero-launch; medium). They become native video layers, and `boxOf()` in `packages/react/src/elements.ts`
    reads only a numeric or px `width`/`height` and `objectFit`; percentage sizes, `position: absolute; inset: 0`,
@@ -98,7 +99,7 @@ filled on 2026-10-16. What is left:
   texture, `readPixels`, `blitFramebuffer` (not defined, so it is a TypeError rather than an `unsupported:` message),
   points and lines, instancing, cube/3D/float textures, multisampled edges. Framebuffer textures start every frame
   blank; a frame that only draws to framebuffers still clears the canvas, where a browser keeps the last picture.
-- **3D (`scene3d`)**: spot lights, point-light shadows, the texture maps beyond base colour, bevels, GPU skinning (the
+- **3D (`scene3d`)**: spot lights, point-light shadows, the texture maps beyond base colour, bevels, fog, GPU skinning (the
   CPU deforms morphs and skins once per pose), a `doctor` report for `three` imports. Shadows, image-based lighting
   and glTF animation, morph targets and skins are done (2026-10-16).
 - **CSS**: `@starting-style`, container `style()` queries, cancelling a running transition, `preserve-3d` (above).
@@ -126,3 +127,25 @@ filled on 2026-10-16. What is left:
 Shots 3 to 10 of `examples/showcase`, the VO line 09 with the measured speed-up (S04 7.0x), and the full render are
 deferred. `examples/showcase-3d` nits: the tagline is small; Clawd's legs sit slightly in front of the slab; Clawd is
 cut off at the left in the first frames; Clawd is 22 to 27% of the frame height (30 to 35% was asked).
+
+## 6. Found making the launch film (2026-10-17)
+
+Each was worked around in `examples/launch` (the workaround is named), not fixed in the engine.
+
+- **A native element beside DOM ones lands in the flow.** `<Layer>`, `<Rect>`, `<Scene3D>`, `<GlslShader>`,
+  `<Canvas>` or `<Video>` next to a DOM sibling is placed in the wrapper's flow, offset from the corner, instead of
+  over its siblings; a whole shot can come out blank (`act2-mg.tsx` m1 and m2 in render v5). Workaround: wrap each in
+  an `AbsoluteFill` (`Over` in `act1-kit.tsx`).
+- **`<Video from>` is ignored.** The clip starts at the parent's frame 0. Workaround: a `<Sequence from>` around it.
+- **A default `<Sequence>` isolates blending.** A child's `mixBlendMode` blends only with what is inside the sequence,
+  not with what is behind it. Workaround: `layout="none"`, or the blend on an `AbsoluteFill` outside.
+- **Negative `letter-spacing` clips the last glyph.** The text box ends short of the last glyph by the spacing.
+  Workaround: the last glyph in a span of its own with no spacing (`How` in `act1-kit.tsx`).
+- **A layer clip `inset()` needs a box.** On an element with no explicit width and height the inset clips to nothing.
+  Workaround: give it a size.
+- **`onFrame` rejects fractional frames.** A cue at a non-integer frame throws. Workaround: round cue frames.
+- **`audio analyze --scenes` mixes units.** It takes scene starts in frames and reports them in seconds.
+- **`measureText` at module load fails** with "Text was measured while a font is still downloading", where Remotion
+  would wait for the font. Workaround: measure inside the component.
+- **glTF normal and metallic-roughness textures are not drawn** (known, section 3; warns on every frame of the act 1
+  camera model, 80 frames per render).
