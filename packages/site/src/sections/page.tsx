@@ -77,9 +77,9 @@ export function Proof() {
       <Rule className="mb-14" />
       <div className="grid gap-12 md:grid-cols-3 md:gap-8">
         {[
-          ['7.0×', 'faster than Remotion on the same scene: 1.28 s against 8.96 s, median of runs on an Apple M4.'],
-          ['988 / 988', 'frames of papercut, the first real Remotion project we tried, render natively with nothing skipped.'],
-          ['0', 'browsers. Chrome only shows up in the test suite, as the reference our pixels are compared against.'],
+          ['7.0×', 'faster than Remotion on the same scene. 1.28 s against 8.96 s, the median on an Apple M4.'],
+          ['988 / 988', 'frames of papercut, the first real Remotion project we tried, render natively. None are skipped.'],
+          ['0', 'browsers. Chrome only runs in the test suite, where we compare our frames against it.'],
         ].map(([n, t]) => (
           <div key={n} className="text-center md:px-6">
             <div className="font-serif text-[clamp(52px,6vw,84px)] leading-none font-light whitespace-nowrap text-cobalt tabular-nums">{n}</div>
@@ -153,9 +153,8 @@ export function Film() {
             </h2>
           </div>
           <p className="max-w-[46ch] text-[15px] leading-relaxed text-paper/80 md:justify-self-end">
-            1,521 frames in 297 seconds on a laptop. The type, the 3D, the shaders, the glass and the sound effects all
-            come from one TypeScript project, <code className="font-mono text-[13px]">examples/launch</code>, and none
-            of it went near a browser.
+            1,521 frames, rendered in 297 seconds on a laptop. Everything in it, sound effects included, comes from one
+            TypeScript project in the repo: <code className="font-mono text-[13px]">examples/launch</code>.
           </p>
         </div>
 
@@ -213,7 +212,7 @@ export function Film() {
 const SURFACES = [
   {
     n: 'I', api: '<Scene3D>', title: '3D, in the same pass', still: 'm1-85',
-    text: 'Meshes, extruded type and glTF models with PBR materials, image lighting and shadows, composited with the 2D layers around them.',
+    text: 'Meshes, extruded type and glTF models, lit by an HDR image and casting shadows. They composite with the 2D layers around them.',
     code: `<Scene3D width={W} height={H} environment={{ src: HDRI }}>
   <Camera3D fov={fov} position={pos} target={[0, 0.6, 0]} />
   <DirectionalLight direction={[0.5, -0.9, -0.55]} castShadow />
@@ -255,7 +254,7 @@ const SURFACES = [
   },
   {
     n: 'V', api: '<GlslShader textures>', title: 'Glass that bends light', still: 'm5-60',
-    text: 'Three spheres ray-traced per pixel, refracting a plate of the wordmark with dispersion. One shader, sampled four times a pixel.',
+    text: 'Three spheres, ray-traced per pixel, refract a plate of the wordmark and split it into colour. It is one shader, sampled four times a pixel.',
     code: `<GlslShader
   fragment={GLASS}
   textures={{ u_plate: { src: staticFile('mg/glass-plate.png') } }}
@@ -273,11 +272,11 @@ export function Surfaces() {
         <div>
           <Eyebrow className="text-[#8fa0ff]">The engine</Eyebrow>
           <h2 className="mt-4 font-serif text-[clamp(38px,4.6vw,62px)] leading-[1.02] font-normal">
-            Every surface. <em className="text-[#aab6ff]">One GPU.</em>
+            It all draws on <em className="text-[#aab6ff]">one GPU.</em>
           </h2>
           <p className="mt-5 max-w-[44ch] text-[15px] leading-relaxed text-paper/70">
-            HTML and CSS go through Stylo, Firefox's style engine, and are laid out by taffy and Parley. SVG goes through
-            usvg. All of it lands in one layer tree that wgpu composites, next to the native elements listed here.
+            HTML and CSS go through Stylo, Firefox's style engine, and taffy and Parley lay them out. SVG goes through
+            usvg. It all ends up in one layer tree, and wgpu composites that together with the native elements below.
           </p>
           <ul className="mt-8 divide-y divide-paper/12 border-y border-paper/12">
             {SURFACES.map((x, i) => (
@@ -493,7 +492,7 @@ const FAQ: [string, ReactNode][] = [
   ['Is a render repeatable?', 'Yes. Date, Math.random, timers and requestAnimationFrame follow the frame number, so the same project and frame give the same pixels. Nothing reads the wall clock.'],
   ['What does it run on?', 'Node 22 or later and a GPU wgpu supports: Metal on macOS, Vulkan or DX12 elsewhere. It needs no window or display. The render command links FFmpeg, using VideoToolbox on macOS.'],
   ['How is it licensed?', 'PolyForm Small Business 1.0.0: free for individuals and for companies with fewer than 100 people and under a million dollars of revenue a year. Larger companies need a commercial licence.'],
-  ['Can an agent drive it?', 'That is what it was built for. Every command takes --json, kinetograph mcp exposes them as MCP tools, and lint and inspect let an agent check a layout without looking at pixels.'],
+  ['Can an agent drive it?', 'It was built for that. Every command takes --json and kinetograph mcp serves them as MCP tools. lint and inspect let an agent check a layout without looking at pixels.'],
 ];
 
 export function Questions() {
@@ -502,7 +501,7 @@ export function Questions() {
       <div>
         <Eyebrow>Questions</Eyebrow>
         <h2 className="mt-4 font-serif text-[clamp(38px,4.6vw,62px)] leading-[1.02] font-normal text-night">
-          Asked <em className="text-cobalt">and answered.</em>
+          Things people <em className="text-cobalt">ask.</em>
         </h2>
       </div>
       <Accordion className="border-t border-cobalt/20">

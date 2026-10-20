@@ -206,6 +206,11 @@
 .kg-spin-rev { animation: kg-spin-rev 14s linear infinite; }
 .kg-sprocket { animation: kg-run 2.4s linear infinite; }
 .kg-twinkle { animation: kg-twinkle 4s ease-in-out infinite; }
+/* the projector's flicker: 18 steps a second, never quite even */
+@keyframes kg-flicker { 0%, 100% { opacity: 1; } 20% { opacity: 0.86; } 40% { opacity: 0.97; } 60% { opacity: 0.9; } 80% { opacity: 1; } }
+@keyframes kg-dust { 0%, 100% { transform: translate(0, 0); opacity: 0.2; } 50% { transform: translate(6px, -9px); opacity: 0.9; } }
+.kg-flicker { animation: kg-flicker 0.28s steps(1) infinite; }
+.kg-dust { animation: kg-dust 6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .kg-spin, .kg-spin-rev, .kg-sprocket, .kg-twinkle, .animate-marquee { animation: none !important; }
+  .kg-spin, .kg-spin-rev, .kg-sprocket, .kg-twinkle, .kg-flicker, .kg-dust, .animate-marquee { animation: none !important; }
 }

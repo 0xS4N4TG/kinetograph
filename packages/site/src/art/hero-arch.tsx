@@ -63,6 +63,67 @@ function Urn() {
   );
 }
 
+/** Where the screen hangs in the arch, in plate units. The page lays the title over this box. */
+export const SCREEN = { x: CX - 230, y: 330, w: 460, h: 214 };
+/** Where the command bar and buttons go: on the floor under the screen. */
+export const CONTROLS = { x: CX - 250, y: 576, w: 500, h: 120 };
+/** The front of the camera's lens (the camera is drawn at translate(415 340) scale(-0.72 0.72)). */
+const LENS: [number, number] = [415 - 84 * 0.72, 340 + 331 * 0.72];
+
+/** The projection screen: a framed sheet on a rod, hung from the arch by two cords. */
+function Screen() {
+  const { x, y, w, h } = SCREEN;
+  const cordTop = (dx: number) => SPRING - Math.sqrt(RI * RI - dx * dx);
+  return (
+    <g stroke={COBALT} strokeLinejoin="round">
+      {[-200, 200].map((dx) => <line key={dx} x1={CX + dx} y1={f(cordTop(dx))} x2={CX + dx} y2={y - 8} strokeWidth={1.2} />)}
+      <rect x={x - 14} y={y - 10} width={w + 28} height={7} rx={3} fill={PAPER} strokeWidth={1.3} />
+      <circle cx={x - 18} cy={y - 6.5} r={5} fill={PAPER} strokeWidth={1.2} />
+      <circle cx={x + w + 18} cy={y - 6.5} r={5} fill={PAPER} strokeWidth={1.2} />
+      <rect x={x - 6} y={y - 3} width={w + 12} height={h + 6} fill={COBALT} strokeWidth={1} />
+      <rect x={x} y={y} width={w} height={h} fill="#fffdf7" stroke="none" />
+      <rect x={x + 6} y={y + 6} width={w - 12} height={h - 12} fill="none" strokeWidth={0.7} opacity={0.35} />
+    </g>
+  );
+}
+
+/**
+ * The beam from the lens to the screen, engraved as rays: each ray is a wide soft cream line under a thin cobalt one,
+ * so it reads on the cobalt ground and on the paper of the arch. Dust turns in it.
+ */
+function Beam() {
+  const { x, y, w, h } = SCREEN;
+  const [lx, ly] = LENS;
+  const targets: [number, number][] = [];
+  for (let k = 0; k <= 16; k++) targets.push([x + (k / 16) * w, y]);
+  for (let k = 1; k <= 8; k++) targets.push([x + w, y + (k / 8) * h]);
+  const rays = targets.map(([tx, ty]) => `M${f(lx)} ${f(ly)} L${f(tx)} ${f(ty)}`).join(' ');
+  const hull = `M${f(lx)} ${f(ly)} L${x} ${y} L${x + w} ${y} L${x + w} ${y + h}Z`;
+  const r = rng(77);
+  const dust = Array.from({ length: 34 }, (_, i) => {
+    const u = r();
+    const v = r();
+    const tx = x + v * w;
+    const ty = y + r() * h;
+    return <circle key={i} className="kg-dust" style={{ animationDelay: `${f(r() * 6)}s` }} cx={f(lx + (tx - lx) * u)} cy={f(ly + (ty - ly) * u)} r={f(0.8 + r() * 1.4)} fill={PAPER} />;
+  });
+  return (
+    <g className="kg-flicker" pointerEvents="none">
+      <defs>
+        <linearGradient id="beam-fill" gradientUnits="userSpaceOnUse" x1={lx} y1={ly} x2={x + w} y2={y}>
+          <stop offset="0" stopColor={PAPER} stopOpacity="0.8" />
+          <stop offset="1" stopColor={PAPER} stopOpacity="0.04" />
+        </linearGradient>
+      </defs>
+      <path d={hull} fill="url(#beam-fill)" />
+      <path d={rays} stroke={PAPER} strokeWidth={3} opacity={0.45} fill="none" />
+      <path d={rays} stroke={COBALT} strokeWidth={0.7} opacity={0.4} fill="none" />
+      <g>{dust}</g>
+      <circle cx={lx} cy={ly} r={10} fill={PAPER} opacity={0.9} />
+    </g>
+  );
+}
+
 function Column({ x }: { x: number }) {
   const w = 58;
   const top = SPRING + 34;
@@ -95,11 +156,6 @@ function Column({ x }: { x: number }) {
 /** The inside of the arch: open paper, faint rays from a vanishing point, a floor in perspective and a small studio. */
 function Interior() {
   const clip = `M${CX - RI} ${FLOOR} L${CX - RI} ${SPRING} A${RI} ${RI} 0 0 1 ${CX + RI} ${SPRING} L${CX + RI} ${FLOOR}Z`;
-  const vy = 600;
-  const rays = Array.from({ length: 44 }, (_, k) => {
-    const a = Math.PI + (k / 43) * Math.PI;
-    return `M${CX} ${vy} L${f(CX + Math.cos(a) * 600)} ${f(vy + Math.sin(a) * 600)}`;
-  }).join(' ');
   const floorTop = 690;
   const lanes = Array.from({ length: 17 }, (_, k) => {
     const bx = CX - RI + (k / 16) * RI * 2;
@@ -114,7 +170,6 @@ function Interior() {
       <clipPath id="arch-in"><path d={clip} /></clipPath>
       <path d={clip} fill={PAPER} />
       <g clipPath="url(#arch-in)" fill="none" stroke={COBALT}>
-        <path d={rays} strokeWidth={0.6} opacity={0.16} />
         <path d={`M${CX - RI} ${floorTop} L${CX + RI} ${floorTop}`} strokeWidth={1} opacity={0.6} />
         <path d={lanes} strokeWidth={0.7} opacity={0.4} />
         <path d={rows} strokeWidth={0.7} opacity={0.4} />
@@ -213,6 +268,8 @@ function HeroArch({ className }: { className?: string }) {
       <Vine x={CX + RO - 4} y={SPRING + 150} angle={-1.19} length={240} seed={24} size={16} ink={CUT} />
 
       {/* the Kinetograph on its tripod, its lens turned toward the arch */}
+      <Beam />
+      <Screen />
       <FilmStrip p0={[134, 440]} c1={[60, 380]} c2={[190, 240]} p1={[70, 96]} width={30} frames={9} ink={CUT} />
       <g transform="translate(415 340) scale(-0.72 0.72)">
         <Camera idp="hero" />
