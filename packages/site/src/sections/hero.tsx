@@ -77,13 +77,6 @@ export function Hero() {
       <div ref={ref} className="relative mx-auto aspect-[1440/800] w-full max-w-[1440px] overflow-hidden bg-cobalt text-paper sm:max-h-[860px] sm:min-h-[680px]">
         <HeroArch className="absolute inset-0 size-full" />
         <div className="pointer-events-none absolute inset-3 border border-paper/40 sm:inset-4" />
-        <span className="absolute top-6 left-7 hidden bg-cobalt px-2 font-mono text-[11px] tracking-[0.3em] text-paper/90 uppercase sm:block">
-          Est. MDCCCXCI
-        </span>
-        <span className="absolute top-6 right-7 hidden bg-cobalt px-2 font-mono text-[11px] tracking-[0.3em] text-paper/90 tabular-nums uppercase sm:block">
-          Frame {String(frame % 10000).padStart(4, '0')} · 30 fps
-        </span>
-
         {/* What the camera is projecting. Sized in plate units and scaled with the plate. */}
         <div style={place(SCREEN)} className="kg-flicker flex flex-col items-center justify-center text-center text-night">
           <div className="font-mono text-[9px] tracking-[0.4em] text-cobalt/80 tabular-nums uppercase">

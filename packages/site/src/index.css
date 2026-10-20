@@ -4,9 +4,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
-  --font-serif: 'Newsreader', 'Iowan Old Style', Baskerville, Georgia, serif;
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  --font-serif: 'Newsreader Variable', 'Iowan Old Style', Baskerville, Georgia, serif;
   --font-heading: var(--font-sans);
   --color-cobalt: var(--cobalt);
   --color-paper: var(--paper);
@@ -152,7 +152,7 @@
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
   --night: color-mix(in oklab, var(--cobalt) 15%, #05060b);
-  --font-serif: 'Newsreader', 'Iowan Old Style', Baskerville, Georgia, serif;
+  --font-serif: 'Newsreader Variable', 'Iowan Old Style', Baskerville, Georgia, serif;
 }
 
 @layer base {

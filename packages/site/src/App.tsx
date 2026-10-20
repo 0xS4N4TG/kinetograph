@@ -38,6 +38,8 @@ export function App() {
         radius={85}
         crop={0.15}
         height="520px"
+        fontFamily="'Geist Variable', system-ui, sans-serif"
+        monoFamily="'Geist Mono Variable', ui-monospace, monospace"
       />
     </div>
   );
