@@ -13,41 +13,99 @@ const GROUND = 312;
 const PRINT: Ink = { line: COBALT, ground: PAPER };
 const f = (n: number) => Math.round(n * 10) / 10;
 
-function hill(y: number, amp: number, seed: number) {
+/** A ridge line across the whole frieze. */
+function ridge(y: number, amp: number, seed: number) {
   const r = rng(seed);
   let d = `M0 ${y}`;
-  const n = 8;
+  const n = 6;
   for (let k = 1; k <= n; k++) {
     const x = (k / n) * W;
-    d += ` S${f(x - W / n / 2)} ${f(y - amp * (0.3 + r()))} ${f(x)} ${f(y - amp * r() * 0.5)}`;
+    d += ` S${f(x - W / n / 2)} ${f(y - amp * (0.4 + r() * 0.6))} ${f(x)} ${f(y - amp * r() * 0.4)}`;
   }
   return d;
 }
 
-/** Edison's Black Maria: a tar-papered shed on a turntable, its roof hinged open to let the sun in. */
-function BlackMaria({ x, y, s }: { x: number; y: number; s: number }) {
+/** A hill: its ridge, then the same line repeated below it as engraved contours that fade out. */
+function Hill({ id, y, amp, seed, contours, gap }: { id: string; y: number; amp: number; seed: number; contours: number; gap: number }) {
+  const line = ridge(y, amp, seed);
+  const shape = `${line} L${W} ${H} L0 ${H}Z`;
+  return (
+    <g>
+      <clipPath id={id}><path d={shape} /></clipPath>
+      <path d={shape} fill={PAPER} />
+      <g clipPath={`url(#${id})`} fill="none" stroke={COBALT} strokeWidth={0.7}>
+        {Array.from({ length: contours }, (_, k) => (
+          <path key={k} d={line} transform={`translate(0 ${(k + 1) * gap})`} opacity={0.55 - k * (0.45 / contours)} />
+        ))}
+      </g>
+      <path d={line} fill="none" stroke={COBALT} strokeWidth={1.2} />
+    </g>
+  );
+}
+
+/** A broadleaf tree: a tapered trunk that forks into the crown. */
+function Tree({ x, top, rx, ry, seed }: { x: number; top: number; rx: number; ry: number; seed: number }) {
+  const cy = top + ry;
+  const fork = cy + ry * 0.35;
+  const trunk = `M${x - 5} ${GROUND} C${x - 3} ${f(GROUND - 20)} ${x - 3} ${f(fork + 10)} ${x - 2} ${f(fork)} L${x + 2} ${f(fork)} C${x + 3} ${f(fork + 10)} ${x + 3} ${f(GROUND - 20)} ${x + 5} ${GROUND}Z`;
+  const limbs = `M${x} ${f(fork)} Q${f(x - rx * 0.3)} ${f(cy + 4)} ${f(x - rx * 0.55)} ${f(cy - ry * 0.2)} M${x} ${f(fork)} Q${f(x + rx * 0.25)} ${f(cy)} ${f(x + rx * 0.5)} ${f(cy - ry * 0.35)} M${x} ${f(fork)} L${x} ${f(cy - ry * 0.5)}`;
+  return (
+    <g strokeLinecap="round" strokeLinejoin="round">
+      <path d={limbs} fill="none" stroke={COBALT} strokeWidth={2.2} />
+      <path d={trunk} fill={PAPER} stroke={COBALT} strokeWidth={1.2} />
+      <path d={`M${x - 1.5} ${GROUND - 4} L${x - 1} ${f(fork + 6)}`} stroke={COBALT} strokeWidth={0.7} />
+      <Canopy cx={x} cy={cy} rx={rx} ry={ry} count={Math.round((rx * ry) / 34)} seed={seed} size={19} ink={PRINT} roses={0.04} berries={0.03} trunk={false} />
+    </g>
+  );
+}
+
+/** A poplar: a tall, narrow crown on a short trunk. */
+function Poplar({ x, top, h, seed }: { x: number; top: number; h: number; seed: number }) {
+  return (
+    <g>
+      <path d={`M${x} ${GROUND} L${x} ${top + h * 0.6}`} stroke={COBALT} strokeWidth={2.4} />
+      <Canopy cx={x} cy={top + h / 2} rx={17} ry={h / 2} count={Math.round(h * 0.55)} seed={seed} size={14} ink={PRINT} roses={0} berries={0} trunk={false} />
+    </g>
+  );
+}
+
+/**
+ * Edison's Black Maria: a long tar-papered shed with a taller room at one end, set on a turntable so it could follow
+ * the sun, with a roof panel hinged open to let the light in.
+ */
+function BlackMaria({ x, s }: { x: number; s: number }) {
   const X = (u: number) => f(x + u * s);
-  const Y = (v: number) => f(y + v * s);
-  const body = `M${X(-60)} ${Y(0)} L${X(-60)} ${Y(-40)} L${X(40)} ${Y(-40)} L${X(40)} ${Y(0)}Z`;
-  const tower = `M${X(40)} ${Y(0)} L${X(40)} ${Y(-56)} L${X(64)} ${Y(-50)} L${X(64)} ${Y(0)}Z`;
-  const flap = `M${X(-52)} ${Y(-40)} L${X(-38)} ${Y(-76)} L${X(30)} ${Y(-76)} L${X(32)} ${Y(-40)}Z`;
+  const Y = (v: number) => f(GROUND - 8 * s + v * s);
+  const P = (pts: [number, number][]) => `M${pts.map(([u, v]) => `${X(u)} ${Y(v)}`).join(' L')}Z`;
+  const wall = P([[-72, 0], [-72, -30], [48, -30], [48, 0]]);
+  const roof = P([[-77, -30], [-68, -42], [44, -42], [52, -30]]);
+  const opening = P([[-54, -42], [16, -42], [20, -36], [-50, -36]]);
+  const lid = P([[-54, -42], [-66, -84], [4, -84], [16, -42]]);
+  const room = P([[48, 0], [48, -54], [78, -54], [78, 0]]);
+  const gable = P([[44, -54], [63, -70], [82, -54]]);
+  const box = (u0: number, v0: number, u1: number, v1: number) => ({ x0: x + u0 * s, y0: GROUND - 8 * s + v0 * s, x1: x + u1 * s, y1: GROUND - 8 * s + v1 * s });
   return (
     <g stroke={COBALT} strokeLinejoin="round">
-      {Array.from({ length: 11 }, (_, k) => {
-        const a = -Math.PI / 2 + (k - 5) * 0.17;
-        return <line key={k} x1={X(-10)} y1={Y(-112)} x2={f(x + (-10 + Math.cos(a) * 70) * s)} y2={f(y + (-112 + Math.sin(a) * 70) * s)} strokeWidth={0.8} opacity={0.5} />;
-      })}
-      <circle cx={X(-10)} cy={Y(-112)} r={11 * s} fill={PAPER} strokeWidth={1.1} />
-      <path d={body} fill={PAPER} strokeWidth={1.4} />
-      <Hatch id="bm-body" clip={body} x0={x - 60 * s} y0={y - 40 * s} x1={x + 40 * s} y1={y} gap={2.2} angle={0} ink={PRINT} width={1} />
-      <path d={tower} fill={PAPER} strokeWidth={1.4} />
-      <Hatch id="bm-tower" clip={tower} x0={x + 40 * s} y0={y - 56 * s} x1={x + 64 * s} y1={y} gap={2.4} angle={0.9} ink={PRINT} width={0.9} />
-      <path d={flap} fill={PAPER} strokeWidth={1.4} />
-      <Hatch id="bm-flap" clip={flap} x0={x - 52 * s} y0={y - 76 * s} x1={x + 32 * s} y1={y - 40 * s} gap={3.4} angle={1.2} ink={PRINT} width={0.7} opacity={0.7} />
-      <line x1={X(-38)} y1={Y(-76)} x2={X(-58)} y2={Y(-40)} strokeWidth={0.9} />
-      <rect x={X(-14)} y={Y(-22)} width={12 * s} height={22 * s} fill={PAPER} strokeWidth={1} />
-      <ellipse cx={X(0)} cy={Y(4)} rx={96 * s} ry={7 * s} fill="none" strokeWidth={1} />
-      <ellipse cx={X(0)} cy={Y(4)} rx={84 * s} ry={5 * s} fill="none" strokeWidth={0.6} strokeDasharray="2 3" />
+      {/* the turntable: a ring of track around a centre pivot */}
+      <ellipse cx={X(0)} cy={Y(2)} rx={f(104 * s)} ry={f(8 * s)} fill={PAPER} strokeWidth={1.1} />
+      <ellipse cx={X(0)} cy={Y(2)} rx={f(96 * s)} ry={f(6 * s)} fill="none" strokeWidth={0.6} strokeDasharray="1.5 3.5" />
+      <path d={wall} fill={PAPER} strokeWidth={1.4} />
+      <Hatch id="bm-wall" clip={wall} {...box(-72, -30, 48, 0)} gap={2.6} angle={0} ink={PRINT} width={0.9} />
+      <path d={room} fill={PAPER} strokeWidth={1.4} />
+      <Hatch id="bm-room" clip={room} {...box(48, -54, 78, 0)} gap={2.2} angle={0} ink={PRINT} width={1.1} />
+      <path d={gable} fill={PAPER} strokeWidth={1.3} />
+      <path d={roof} fill={PAPER} strokeWidth={1.3} />
+      <Hatch id="bm-roof" clip={roof} {...box(-77, -42, 52, -30)} gap={3} angle={0.5} ink={PRINT} width={0.7} opacity={0.8} />
+      <path d={opening} fill={COBALT} strokeWidth={1} />
+      {/* the hinged roof panel, propped open */}
+      <path d={`M${X(-30)} ${Y(-40)} L${X(-44)} ${Y(-70)}`} strokeWidth={1.1} />
+      <path d={lid} fill={PAPER} strokeWidth={1.4} />
+      <Hatch id="bm-lid" clip={lid} {...box(-66, -84, 16, -42)} gap={3.4} angle={-0.28} ink={PRINT} width={0.7} opacity={0.65} />
+      <path d={`M${X(-54)} ${Y(-42)} L${X(16)} ${Y(-42)}`} strokeWidth={1.8} />
+      {/* door and windows */}
+      <rect x={X(-16)} y={Y(-21)} width={f(11 * s)} height={f(21 * s)} fill={PAPER} strokeWidth={1.1} />
+      <rect x={X(56)} y={Y(-44)} width={f(14 * s)} height={f(10 * s)} fill={PAPER} strokeWidth={1.1} />
+      <path d={`M${X(63)} ${Y(-44)} L${X(63)} ${Y(-34)}`} strokeWidth={0.8} />
     </g>
   );
 }
@@ -75,56 +133,76 @@ function Balloon({ x, y }: { x: number; y: number }) {
   );
 }
 
-function Birds({ seed, x0, x1, y0, y1, n }: { seed: number; x0: number; x1: number; y0: number; y1: number; n: number }) {
-  const r = rng(seed);
-  const out: ReactNode[] = [];
-  for (let i = 0; i < n; i++) {
-    const x = x0 + r() * (x1 - x0);
-    const y = y0 + r() * (y1 - y0);
-    const s = 4 + r() * 4;
-    out.push(<path key={i} d={`M${f(x - s)} ${f(y)} Q${f(x - s / 2)} ${f(y - s * 0.6)} ${f(x)} ${f(y)} Q${f(x + s / 2)} ${f(y - s * 0.6)} ${f(x + s)} ${f(y)}`} fill="none" stroke={COBALT} strokeWidth={1.1} strokeLinecap="round" />);
-  }
-  return <g>{out}</g>;
+/** The sun, engraved like the hero's moons: a disc, short rays, a dotted ring. */
+function Sun({ x, y, r }: { x: number; y: number; r: number }) {
+  const rays = Array.from({ length: 24 }, (_, k) => {
+    const a = (k / 24) * Math.PI * 2;
+    const r0 = r * 1.35;
+    const r1 = r * (k % 2 ? 1.65 : 1.95);
+    return `M${f(x + Math.cos(a) * r0)} ${f(y + Math.sin(a) * r0)} L${f(x + Math.cos(a) * r1)} ${f(y + Math.sin(a) * r1)}`;
+  }).join(' ');
+  return (
+    <g stroke={COBALT} fill="none">
+      <path d={rays} strokeWidth={1} strokeLinecap="round" />
+      <circle cx={x} cy={y} r={r * 2.3} strokeWidth={0.8} strokeDasharray="1.5 5" opacity={0.6} />
+      <circle cx={x} cy={y} r={r} fill={PAPER} strokeWidth={1.3} />
+      <circle cx={x} cy={y} r={r * 0.7} strokeWidth={0.6} opacity={0.6} />
+    </g>
+  );
+}
+
+const BIRDS: [number, number, number][] = [
+  [330, 78, 7], [356, 92, 5], [384, 72, 6], [880, 64, 6], [904, 80, 5], [930, 58, 7], [1010, 96, 5],
+];
+
+function Birds() {
+  return (
+    <g fill="none" stroke={COBALT} strokeWidth={1.1} strokeLinecap="round">
+      {BIRDS.map(([x, y, s]) => <path key={x} d={`M${x - s} ${y} Q${x - s / 2} ${f(y - s * 0.6)} ${x} ${y} Q${x + s / 2} ${f(y - s * 0.6)} ${x + s} ${y}`} />)}
+    </g>
+  );
 }
 
 function Landscape({ className }: { className?: string }) {
-  const trees = [
-    [70, 250, 60, 46, 150], [190, 262, 44, 36, 90], [520, 262, 50, 40, 110], [600, 250, 34, 44, 80],
-    [890, 258, 56, 42, 120], [985, 268, 36, 30, 70], [1300, 252, 54, 46, 130], [1400, 262, 40, 34, 80],
-  ] as const;
-  const poles = [1080, 1170, 1260];
+  const river = `M0 ${GROUND - 30} C150 ${GROUND - 36} 300 ${GROUND - 16} 470 ${GROUND} L0 ${GROUND}Z`;
+  const ripples: ReactNode[] = [];
+  const r = rng(12);
+  for (let k = 0; k < 22; k++) {
+    const x = 14 + r() * 420;
+    const y = GROUND - 3 - r() * 22;
+    ripples.push(<path key={k} d={`M${f(x)} ${f(y)} l${f(8 + r() * 14)} 0`} />);
+  }
+  const poles = [1070, 1160, 1250];
   const wires = poles.slice(0, -1).map((x, i) => {
     const nx = poles[i + 1]!;
-    return [0, 10].map((dy) => `M${x} ${GROUND - 112 + 8 + dy} Q${(x + nx) / 2} ${GROUND - 112 + 28 + dy} ${nx} ${GROUND - 112 + 8 + dy}`).join(' ');
+    return [-14, 14].map((dx) => `M${x + dx} ${GROUND - 104} Q${(x + nx) / 2} ${GROUND - 88} ${nx + dx} ${GROUND - 104}`).join(' ');
   }).join(' ');
   return (
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" className={className} aria-hidden>
       <rect width={W} height={H} fill={PAPER} />
-      <Birds seed={4} x0={300} x1={700} y0={70} y1={150} n={9} />
-      <Birds seed={9} x0={900} x1={1200} y0={60} y1={130} n={6} />
-      <Balloon x={1210} y={92} />
-      {/* far skyline */}
-      <g stroke={COBALT} fill={PAPER} strokeWidth={0.9} opacity={0.7}>
-        {[[1310, 60], [1330, 90], [1356, 70], [1376, 110], [1404, 80]].map(([x, h]) => <rect key={x} x={x} y={GROUND - 60 - h!} width={20} height={h} />)}
-      </g>
-      <path d={`${hill(244, 40, 2)} L${W} ${H} L0 ${H}Z`} fill={PAPER} stroke={COBALT} strokeWidth={1} />
-      <Hatch id="hill-back" clip={`${hill(244, 40, 2)} L${W} ${H} L0 ${H}Z`} x0={0} y0={180} x1={W} y1={H} gap={6} angle={0} ink={PRINT} width={0.5} opacity={0.45} />
-      <path d={`${hill(276, 26, 6)} L${W} ${H} L0 ${H}Z`} fill={PAPER} stroke={COBALT} strokeWidth={1.2} />
+      <Sun x={230} y={92} r={18} />
+      <Birds />
+      <Balloon x={1190} y={84} />
+      <Hill id="hill-back" y={238} amp={46} seed={2} contours={5} gap={7} />
+      <Hill id="hill-front" y={280} amp={22} seed={6} contours={2} gap={6} />
       {/* river and boat */}
-      <path d={`M0 ${GROUND - 14} C120 ${GROUND - 30} 260 ${GROUND - 4} 420 ${GROUND - 22} L420 ${GROUND} L0 ${GROUND}Z`} fill={PAPER} stroke={COBALT} strokeWidth={1} />
-      <path d={Array.from({ length: 14 }, (_, k) => `M${30 + k * 26} ${GROUND - 8 - (k % 3) * 3} l12 0`).join(' ')} stroke={COBALT} strokeWidth={0.9} />
-      <path d={`M250 ${GROUND - 20} L292 ${GROUND - 20} L284 ${GROUND - 12} L258 ${GROUND - 12}Z M271 ${GROUND - 20} L271 ${GROUND - 46} L288 ${GROUND - 24}Z`} fill={PAPER} stroke={COBALT} strokeWidth={1.1} strokeLinejoin="round" />
-      {trees.map(([x, y, rx, ry, n], i) => (
-        <g key={i}>
-          <path d={`M${x} ${GROUND} L${x} ${y}`} stroke={COBALT} strokeWidth={2} />
-          <Canopy cx={x} cy={y - ry * 0.4} rx={rx} ry={ry} count={n} seed={100 + i} size={13} ink={PRINT} roses={0.03} />
-        </g>
-      ))}
+      <clipPath id="river"><path d={river} /></clipPath>
+      <path d={river} fill={PAPER} />
+      <g clipPath="url(#river)" stroke={COBALT} strokeWidth={0.9} strokeLinecap="round" opacity={0.75}>{ripples}</g>
+      <path d={`M0 ${GROUND - 30} C150 ${GROUND - 36} 300 ${GROUND - 16} 470 ${GROUND}`} fill="none" stroke={COBALT} strokeWidth={1.1} />
+      <path d={`M250 ${GROUND - 22} L294 ${GROUND - 22} L285 ${GROUND - 13} L259 ${GROUND - 13}Z M272 ${GROUND - 22} L272 ${GROUND - 50} L290 ${GROUND - 26}Z`} fill={PAPER} stroke={COBALT} strokeWidth={1.1} strokeLinejoin="round" />
+      <Tree x={70} top={176} rx={62} ry={48} seed={101} />
+      <Tree x={182} top={214} rx={42} ry={34} seed={102} />
+      <Poplar x={492} top={196} h={104} seed={103} />
+      <Tree x={548} top={196} rx={46} ry={40} seed={104} />
+      <Poplar x={892} top={190} h={110} seed={105} />
+      <Tree x={966} top={198} rx={50} ry={40} seed={106} />
       {poles.map((x, i) => <Pole key={x} x={x} h={112 - i * 4} />)}
       <path d={wires} fill="none" stroke={COBALT} strokeWidth={0.8} />
-      <BlackMaria x={730} y={GROUND - 6} s={1.25} />
+      <Tree x={1330} top={180} rx={56} ry={46} seed={107} />
+      <Tree x={1418} top={218} rx={38} ry={32} seed={108} />
+      <BlackMaria x={724} s={1.3} />
       <rect x={0} y={GROUND} width={W} height={H - GROUND} fill={COBALT} />
-      <line x1={0} y1={GROUND - 5} x2={W} y2={GROUND - 5} stroke={COBALT} strokeWidth={0.8} />
     </svg>
   );
 }

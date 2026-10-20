@@ -59,13 +59,24 @@ This document captures all the references, links, themes, visual inspirations, a
 ### The First Kinetograph (1891)
 - **Historical Subject:** Thomas Edison & William Kennedy Dickson's 1891 prototype motion-picture camera.
 - **Implementation (`src/art/`):** procedural SVG engravings, no image assets. `engrave.tsx` holds the
-  primitives (seeded leaves, canopies, vines, rosettes, moons, reels, film strips, hatching); `hero-arch.tsx` is the
-  hero plate (arch, the Kinetograph camera on its tripod, the Kinetoscope cabinet); `camera.tsx` is the camera;
+  primitives (seeded leaves, canopies, vines, rosettes, moons, hatching); `hero-plate.tsx` is the hero plate (a film
+  strip across a cobalt engraving, with a muted loop of the launch film, `public/film/loop.mp4`, in the gate);
   `landscape.tsx` is the footer frieze with the Black Maria studio.
 
 ---
 
 ## 4. Studio UI Inspirations
+
+### EffectCraft & FilmCraft (ArtCraft / Storytold)
+- **EffectCraft (After Effects in Rust):** [https://github.com/storytold/effectcraft](https://github.com/storytold/effectcraft)
+- **FilmCraft (Premiere Pro NLE in Rust):** [https://github.com/storytold/filmcraft](https://github.com/storytold/filmcraft)
+- **Design Elements Adopted in Kinetograph Studio (`packages/studio/ui`):**
+  - Docked NLE/Compositor panel architecture separated by `#0d0d0f` dark gutters and `#2680eb` active panel borders
+  - Top Application Menu + Tool Bar (Selection, Hand, Zoom, Rotation, Anchor Point, Shape, Pen, Text, Snapping) + Workspace Switcher (`Default`, `Animation`, `Color & Inspect`, `Export`)
+  - **Project Bin (`Project ≡`):** Top selected composition preview card, search filter, color swatches, and read-only bin status bar
+  - **Composition Viewer / Program Monitor:** Active composition pill bar, Layer Transform bounding box & anchor reticle overlay, Title/Action Safe zones toggle, and NLE transport deck with blue digital timecode (`#4da3ff`)
+  - **Properties & Effect Controls (`Scene` tab):** Collapsible property sections (`Layer Transform`, `Compositing & Effects`, `Text & Typography`, `Geometry & Bounds`) with AE stopwatch icons (`⏱`) and sky-blue numeric readouts
+  - **Multi-Track Timeline:** AE switches column (`👁`, `🔒`, `#`, color swatch, layer name, type), work-area bracket bar with emerald cache line, color-coded layer/sequence bars (`text` crimson, `shape` indigo, `group` rose, `sequence` sandstone), and pentagon blue playhead
 
 ### snapcn Video Editor
 - **Reference Image:** Uploaded snapcn studio screenshot
