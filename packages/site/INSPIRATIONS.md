@@ -58,14 +58,10 @@ This document captures all the references, links, themes, visual inspirations, a
 
 ### The First Kinetograph (1891)
 - **Historical Subject:** Thomas Edison & William Kennedy Dickson's 1891 prototype motion-picture camera.
-- **Canvas Implementation (`src/components/illustrations.tsx`):**
-  - Fully procedural, asset-free HTML5 `<canvas>` rendering in cobalt and cream
-  - Wooden box camera chassis with hatched grain texture and brass maker's plate
-  - Rotating dual celluloid film magazines with spinning spoked reels
-  - Animated hand crank driven by continuous time parameter
-  - Projector / camera lens with flickering volumetric light beam
-  - Running 35mm film strip with sprocket holes and frame-by-frame animated sun-over-hills motion cycle
-  - Procedural swaying toile foliage and twinkling stars
+- **Implementation (`src/art/`):** procedural SVG engravings, no image assets. `engrave.tsx` holds the
+  primitives (seeded leaves, canopies, vines, rosettes, moons, reels, film strips, hatching); `hero-arch.tsx` is the
+  hero plate (arch, the Kinetograph camera on its tripod, the Kinetoscope cabinet); `camera.tsx` is the camera;
+  `landscape.tsx` is the footer frieze with the Black Maria studio.
 
 ---
 

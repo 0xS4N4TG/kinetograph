@@ -1,32 +1,39 @@
-# Kinetograph Documentation for LLMs
+# Kinetograph
 
-> Kinetograph is a programmatic video engine with no browser in it. Written in Rust and TypeScript.
+> A programmatic video engine with no browser in it. Write a video in TypeScript with Remotion's API, CSS, SVG,
+> Canvas 2D, WebGL fragment shaders and Web Audio; Node runs the code; a Rust GPU compositor (an N-API addon on wgpu)
+> draws every frame. `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation.
 
-## Quick Reference
+## CLI
 
-- **CLI Studio:** `npx kinetograph studio <entry.tsx>` (Starts local live preview server on port 3000)
-- **CLI Render:** `npx kinetograph render <entry.tsx> <output.mp4>`
-- **MCP Server:** `@kinetograph/mcp` provides tools for Claude and agent environments.
+Every command takes `--json`. `npx kinetograph mcp` serves the same commands as an MCP server on stdio, one tool each.
 
-## Architecture
+- `npx kinetograph still <entry> <frame> -o frame.png`: one frame to a PNG
+- `npx kinetograph strip <entry> -n 12 -o strip.png`: contact sheet of evenly spaced frames
+- `npx kinetograph inspect <entry> --frame 60`: the scene graph at a frame (layers, bounds, resolved styles)
+- `npx kinetograph lint <entry>`: overflowing text, off-canvas layers, missing fonts and assets, what cannot be drawn
+- `npx kinetograph doctor <entry>`: what the engine cannot draw, and in which frames
+- `npx kinetograph render <entry> -o out.mp4`: frames to a video with audio
+- `npx kinetograph studio <entry>`: local preview, timeline, scene tree, props and render queue
+- Also: `compositions`, `onion`, `check`, `bench`, `audio analyze`, `snapshot`, `effects`
 
-- **Authoring Layer:** 100% Remotion-compatible TSX (`remotion`, `@remotion/*` resolve to `@kinetograph/core`).
-- **Clock Shim:** Pinned deterministic frames where `Date.now()`, `Math.random()`, `rAF`, and timers advance purely with the frame counter.
-- **Native DOM Engine:** Stylo (Firefox CSS engine), Taffy (flexbox/grid layout), Parley (text shaping), usvg (SVG vector paths).
-- **Compositor:** Rust `wgpu` + Vello vector rasterizer + Naga shader compiler + FFmpeg native encoder.
+## Native elements (from `@kinetograph/core`)
 
-## Example Composition
+`<Scene3D>`, `<Camera3D>` (perspective or `type="orthographic"`), `<Mesh>`, `<Text3D>`, `<DirectionalLight>`,
+`<GlslShader>` (GLSL ES fragment shaders with uniforms and textures), `<Canvas>` (a `draw(ctx)` Canvas 2D callback),
+`<Layer>` (transforms, `motionBlur`), plus the effects listed by `kinetograph effects`.
 
-```tsx
-import { AbsoluteFill, interpolate, useCurrentFrame } from 'remotion';
+## Determinism
 
-export const MyComposition = () => {
-  const frame = useCurrentFrame();
-  const opacity = interpolate(frame, [0, 30], [0, 1]);
-  return (
-    <AbsoluteFill style={{ background: '#2238c4', justifyContent: 'center', alignItems: 'center' }}>
-      <h1 style={{ color: '#f7f4ec', fontSize: 80, opacity }}>Kinetograph</h1>
-    </AbsoluteFill>
-  );
-};
-```
+`Date`, `Math.random`, timers and `requestAnimationFrame` follow the frame number. A frame is a pure function of
+(project, frame); nothing reads the wall clock.
+
+## Requirements
+
+Node 22 or later, a GPU that wgpu supports (Metal on macOS), FFmpeg for `render`. No display needed.
+
+## Docs
+
+- README: https://github.com/0xS4N4TG/kinetograph#readme
+- Remotion compatibility: https://github.com/0xS4N4TG/kinetograph/blob/main/docs/COMPAT.md
+- Known gaps: https://github.com/0xS4N4TG/kinetograph/blob/main/docs/OPEN_ISSUES.md
