@@ -1019,6 +1019,15 @@ furthest back to stop its chunk early, and draws the rest of it. Each worker is 
 main thread. `KINETOGRAPH_CHUNK`, `KINETOGRAPH_WINDOW` and `KINETOGRAPH_MINSPLIT` (frames) override the chunk size, the
 window and the smallest chunk that is split, for tuning and tests.
 
+A frame that is the same as the frame before it (a hold, a still end card) is not drawn: the renderer compares the
+frame's resolved scene with the previous frame's, exactly, and when they are equal, and no file it draws from changed
+in between, it skips the GPU work, the readback and the colour conversion, and the encoder gets the previous picture
+again (README, "Frame reuse"). Anything that moves with time is in the resolved scene (shader time, grain, a video's
+picture, a GIF's or Lottie's time, canvas commands, WebGL uniforms, motion blur samples), so such a frame is drawn. With
+`--concurrency N` a worker compares a frame only with the one before it in its chunk and always draws a chunk's first
+frame, so the output is the same however the chunks were shared out. The summary says how many frames were repeats
+(`repeated`); `KINETOGRAPH_NO_REUSE=1` draws every frame.
+
 Bundling: esbuild bundles the entry with a synthetic entry that imports `@kinetograph/core/determinism/install` first,
 then the project, and re-exports `@kinetograph/core`, so the CLI drives frames through the same core and React instance the
 project uses. Aliases: `remotion` → `@kinetograph/core`, `@remotion/<pkg>[/sub]` → `@kinetograph/core/<pkg>[/sub]`,
