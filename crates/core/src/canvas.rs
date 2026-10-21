@@ -384,6 +384,10 @@ pub struct TextOp {
     pub paint: CanvasPaint,
     /// `maxWidth` of `fillText`: wider text is squeezed to it.
     pub max_width: Option<f64>,
+    #[serde(default)]
+    pub letter_spacing: f64,
+    #[serde(default)]
+    pub word_spacing: f64,
     #[serde(flatten)]
     pub state: DrawState,
 }
@@ -465,6 +469,8 @@ pub enum CanvasPaint {
         repeat_x: bool,
         #[serde(default = "yes")]
         repeat_y: bool,
+        #[serde(default)]
+        m: Option<[f64; 6]>,
     },
 }
 
@@ -1018,6 +1024,7 @@ fn brush(
             source,
             repeat_x,
             repeat_y,
+            m,
         } => {
             let Some(image) = picture(source, images)? else {
                 return Ok((peniko::Brush::Solid(peniko::Color::TRANSPARENT), None));
@@ -1037,7 +1044,7 @@ fn brush(
                     ..Default::default()
                 },
             });
-            (brush.multiply_alpha(alpha), None)
+            (brush.multiply_alpha(alpha), m.map(Affine::new))
         }
     })
 }
@@ -1187,7 +1194,23 @@ fn text(
     let Some(line) = laid.lines.first() else {
         return Ok(Rect::ZERO);
     };
-    let width = f64::from(laid.width);
+    let spaced = op.letter_spacing != 0.0 || op.word_spacing != 0.0;
+    let mut spaces_before = Vec::new();
+    let width = if spaced {
+        let mut spaces = 0_u32;
+        for c in op.text.chars() {
+            spaces_before.push(spaces);
+            if c == ' ' {
+                spaces += 1;
+            }
+        }
+        spaces_before.push(spaces);
+        let chars = (spaces_before.len() - 1) as f64;
+        (f64::from(laid.width) + op.letter_spacing * chars + op.word_spacing * f64::from(spaces))
+            .max(0.0)
+    } else {
+        f64::from(laid.width)
+    };
     // `maxWidth` squeezes wider text to fit, as the canvas does.
     let squeeze = match op.max_width {
         Some(max) if max > 0.0 && width > max => max / width,
@@ -1218,7 +1241,24 @@ fn text(
     let (brush, brush_transform) = brush(&op.paint, state.a, drawing.images)?;
     let stroke = op.line.as_ref().map(LineStyle::stroke);
     let reach = op.line.as_ref().map_or(0.0, LineStyle::reach);
-    let touched = Rect::new(0.0, 0.0, width, f64::from(laid.height)).inflate(reach, reach);
+    let mut touched = Rect::new(
+        0.0,
+        0.0,
+        width.max(f64::from(laid.width)),
+        f64::from(laid.height),
+    );
+    if spaced {
+        for g in laid.runs.iter().flat_map(|r| &r.glyphs) {
+            let k = g.char_index as usize;
+            let w = spaces_before.get(k).copied().unwrap_or(0);
+            let gx =
+                f64::from(g.x) + op.letter_spacing * (k as f64) + op.word_spacing * f64::from(w);
+            touched = touched
+                .union_pt((gx, f64::from(g.y)))
+                .union_pt((gx + f64::from(g.advance), f64::from(g.y)));
+        }
+    }
+    let touched = touched.inflate(reach, reach);
     let mode = state.blend.mode();
     match mode {
         Some(mode) if state.blend.reaches_whole_canvas() => {
@@ -1228,10 +1268,20 @@ fn text(
         None => {}
     }
     for run in &laid.runs {
-        let glyphs = run.glyphs.iter().map(|g| vello::Glyph {
-            id: g.id,
-            x: g.x,
-            y: g.y,
+        let glyphs = run.glyphs.iter().map(|g| {
+            let x = if spaced {
+                let k = g.char_index as usize;
+                let w = spaces_before.get(k).copied().unwrap_or(0);
+                (f64::from(g.x) + op.letter_spacing * (k as f64) + op.word_spacing * f64::from(w))
+                    as f32
+            } else {
+                g.x
+            };
+            vello::Glyph {
+                id: g.id,
+                x,
+                y: g.y,
+            }
         });
         let draw = scene
             .draw_glyphs(&run.font)
@@ -1295,6 +1345,37 @@ mod tests {
         assert_eq!(s.line.width, 1.0);
         assert_eq!(s.line.miter_limit, 10.0);
         assert_eq!(s.line.cap, CanvasCap::Butt);
+    }
+
+    #[test]
+    fn text_spacing_and_pattern_matrix_deserialize_with_defaults() {
+        let parsed = ops(
+            r##"[{"op": "text", "text": "a b", "font": "DM Sans", "size": 12, "x": 0, "y": 0,
+                  "letterSpacing": 2.5, "wordSpacing": -1.0,
+                  "paint": {"type": "pattern",
+                            "source": {"kind": "src", "src": "a.png"},
+                            "m": [2, 0, 0, 2, 1, 3]}},
+                {"op": "text", "text": "a b", "font": "DM Sans", "size": 12, "x": 0, "y": 0,
+                  "paint": {"type": "pattern", "source": {"kind": "src", "src": "a.png"}}}]"##,
+        );
+        let CanvasOp::Text(t0) = &parsed[0] else {
+            panic!("not text");
+        };
+        assert_eq!(t0.letter_spacing, 2.5);
+        assert_eq!(t0.word_spacing, -1.0);
+        assert!(matches!(
+            t0.paint,
+            CanvasPaint::Pattern {
+                m: Some([2.0, 0.0, 0.0, 2.0, 1.0, 3.0]),
+                ..
+            }
+        ));
+        let CanvasOp::Text(t1) = &parsed[1] else {
+            panic!("not text");
+        };
+        assert_eq!(t1.letter_spacing, 0.0);
+        assert_eq!(t1.word_spacing, 0.0);
+        assert!(matches!(t1.paint, CanvasPaint::Pattern { m: None, .. }));
     }
 
     #[test]

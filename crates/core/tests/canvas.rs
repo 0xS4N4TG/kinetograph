@@ -108,6 +108,75 @@ fn text_draws_with_the_scenes_font() {
     );
 }
 
+fn rightmost_lit(frame: &Frame) -> usize {
+    (0..frame.width as usize)
+        .filter(|&x| (0..frame.height as usize).any(|y| px(frame, x, y)[0] > 32))
+        .max()
+        .expect("some pixel is lit")
+}
+
+#[test]
+fn text_letter_and_word_spacing_move_glyphs_right() {
+    let default_letter = render(
+        r##"[{"op": "text", "text": "II", "font": "DM Sans", "size": 10, "x": 1, "y": 12,
+              "paint": {"type": "color", "color": "#ffffff"}}]"##,
+    );
+    let zero_letter = render(
+        r##"[{"op": "text", "text": "II", "font": "DM Sans", "size": 10, "x": 1, "y": 12,
+              "letterSpacing": 0, "paint": {"type": "color", "color": "#ffffff"}}]"##,
+    );
+    let spaced_letter = render(
+        r##"[{"op": "text", "text": "II", "font": "DM Sans", "size": 10, "x": 1, "y": 12,
+              "letterSpacing": 10, "paint": {"type": "color", "color": "#ffffff"}}]"##,
+    );
+    assert_eq!(default_letter.rgba, zero_letter.rgba);
+    assert_ne!(zero_letter.rgba, spaced_letter.rgba);
+    assert!(rightmost_lit(&spaced_letter) > rightmost_lit(&zero_letter));
+
+    let default_word = render(
+        r##"[{"op": "text", "text": "I I", "font": "DM Sans", "size": 8, "x": 1, "y": 12,
+              "paint": {"type": "color", "color": "#ffffff"}}]"##,
+    );
+    let zero_word = render(
+        r##"[{"op": "text", "text": "I I", "font": "DM Sans", "size": 8, "x": 1, "y": 12,
+              "wordSpacing": 0, "paint": {"type": "color", "color": "#ffffff"}}]"##,
+    );
+    let spaced_word = render(
+        r##"[{"op": "text", "text": "I I", "font": "DM Sans", "size": 8, "x": 1, "y": 12,
+              "wordSpacing": 6, "paint": {"type": "color", "color": "#ffffff"}}]"##,
+    );
+    assert_eq!(default_word.rgba, zero_word.rgba);
+    assert_ne!(zero_word.rgba, spaced_word.rgba);
+    assert!(rightmost_lit(&spaced_word) > rightmost_lit(&zero_word));
+}
+
+#[test]
+fn a_pattern_transforms_its_tile_space_by_m() {
+    // 2x2 RGBA: left column red, right column blue.
+    let data = "/wAA/wAA//8/AAD/AAD//w==";
+    let plain = render(&format!(
+        r##"[{{"op": "fill", "path": "M0 0H16V16H0Z",
+              "paint": {{"type": "pattern",
+                        "source": {{"kind": "pixels", "width": 2, "height": 2, "data": "{data}"}}}}}}]"##
+    ));
+    let scaled = render(&format!(
+        r##"[{{"op": "fill", "path": "M0 0H16V16H0Z",
+              "paint": {{"type": "pattern",
+                        "source": {{"kind": "pixels", "width": 2, "height": 2, "data": "{data}"}},
+                        "m": [2, 0, 0, 2, 0, 0]}}}}]"##
+    ));
+    // Without `m`, each pattern pixel is 1 canvas pixel wide: x=0 is red, x=1 is blue.
+    assert!(px(&plain, 0, 0)[0] > 200 && px(&plain, 0, 0)[2] < 50);
+    assert!(px(&plain, 1, 0)[2] > 200 && px(&plain, 1, 0)[0] < 50);
+    // With `m = [2, 0, 0, 2, 0, 0]`, each pattern pixel is 2x2 canvas pixels wide: x=0..2 are
+    // red and x=2..4 blue (the sampling is smooth, so the middle two are mixes).
+    assert_ne!(plain.rgba, scaled.rgba);
+    assert!(px(&scaled, 0, 0)[0] > 200 && px(&scaled, 0, 0)[2] < 50);
+    assert!(px(&scaled, 1, 0)[0] > px(&scaled, 1, 0)[2]);
+    assert!(px(&scaled, 2, 0)[2] > px(&scaled, 2, 0)[0]);
+    assert!(px(&scaled, 3, 0)[2] > 200 && px(&scaled, 3, 0)[0] < 50);
+}
+
 #[test]
 fn pixels_are_drawn_without_smoothing_when_asked() {
     // 2 x 1: red, then blue, stretched to 16 wide: a hard edge at 8.
