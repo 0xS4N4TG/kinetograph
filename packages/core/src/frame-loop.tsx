@@ -103,26 +103,32 @@ class Renderer implements FrameRenderer {
     }
 
     const sequential = this.scene !== null && frame === this.lastFrame + 1 && this.trailTo === this.lastFrame;
+    // Once a transition has been seen, a frame that does not follow the one before is drawn by the replay below,
+    // which brings a new scene up to it; drawing it here first would be thrown away.
+    const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0;
     // React state and virtual timers only move forward. Going back means starting the composition over.
-    if (frame < this.lastFrame || this.scene === null) this.startScene(config);
+    if (!replays && (frame < this.lastFrame || this.scene === null)) this.startScene(config);
     if (!sequential) {
       clearHistory();
       this.trailFrom = this.trailTo = -1;
     }
-    const scene = this.scene!;
     const fresh = this.lastFrame < 0;
     this.lastFrame = frame;
 
     await waitForFonts();
-    if (fresh && frame > 0) {
-      // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
-      // frame looks the same whether the render began there or somewhere later.
-      setVirtualFrame(0, config.fps);
-      await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
+    let main!: RenderedTree;
+    if (!replays) {
+      const scene = this.scene!;
+      if (fresh && frame > 0) {
+        // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
+        // frame looks the same whether the render began there or somewhere later.
+        setVirtualFrame(0, config.fps);
+        await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
+      }
+      setVirtualFrame(frame, config.fps);
+      setHistoryMode({ record: true });
+      main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
     }
-    setVirtualFrame(frame, config.fps);
-    setHistoryMode({ record: true });
-    let main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
     // CSS transitions need the states of the islands before this frame (docs/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
     // else renders the frames of the window again, with the addon off, to see them.
