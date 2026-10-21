@@ -49,6 +49,9 @@ pub struct IslandDocument {
     pub container: NodeId,
     /// The node of `request.root`.
     pub root: Option<NodeId>,
+    /// The text node of the `<style>` holding `@starting-style` rules, cleared
+    /// once the initial style has been computed.
+    starting: Option<NodeId>,
     /// Sub-resources that could not be read (a missing image, a network URL),
     /// each with the reason.
     pub missing: Vec<String>,
@@ -100,13 +103,66 @@ pub fn enable_css_features() {
 
 /// Builds the DOM of `request` (no style or layout yet).
 pub fn build(request: &IslandRequest) -> Result<(IslandDocument, Arc<LocalFiles>), BuildError> {
-    build_root(request, &request.root)
+    build_root(request, &request.root, false)
+}
+
+/// The final (`@media not all`) and starting (`@media all`) copies of a
+/// stylesheet that has `@starting-style` rules; `None` if it has none.
+fn starting_variants(css: &str) -> Option<(String, String)> {
+    css.contains("@starting-style").then(|| {
+        (
+            css.replace("@starting-style", "@media not all"),
+            css.replace("@starting-style", "@media all"),
+        )
+    })
+}
+
+/// Puts the request's imported stylesheets in `head`; the text node of the
+/// `<style>` holding the `@starting-style` rules, when `with_starting`.
+/// (Not inlined: it would grow the frame of `build_root`, which sits under
+/// the recursion over deep trees.)
+#[inline(never)]
+fn add_stylesheets(
+    m: &mut DocumentMutator<'_>,
+    head: NodeId,
+    request: &IslandRequest,
+    with_starting: bool,
+) -> Option<NodeId> {
+    let mut starting_sheets = Vec::new();
+    for css in &request.stylesheets {
+        let final_css;
+        let sheet = match starting_variants(css) {
+            Some((f, s)) => {
+                if with_starting {
+                    starting_sheets.push(s);
+                }
+                final_css = f;
+                &final_css
+            }
+            None => css.as_str(),
+        };
+        let style = element(m, "style", false, vec![]);
+        // CSS this Stylo does not parse is mirrored into custom properties for
+        // the painter (`paint::shim_css`).
+        let text = m.create_text_node(&escape_style_text(&crate::paint::shim_css(sheet)));
+        m.append_children(style, &[text]);
+        m.append_children(head, &[style]);
+    }
+    (!starting_sheets.is_empty()).then(|| {
+        let style = element(m, "style", false, vec![]);
+        let css = starting_sheets.join("\n");
+        let text = m.create_text_node(&escape_style_text(&crate::paint::shim_css(&css)));
+        m.append_children(style, &[text]);
+        m.append_children(head, &[style]);
+        text
+    })
 }
 
 /// Builds a document for `request`'s page with `root` as the island's tree.
 fn build_root(
     request: &IslandRequest,
     root: &DomNode,
+    with_starting: bool,
 ) -> Result<(IslandDocument, Arc<LocalFiles>), BuildError> {
     let base_dir = PathBuf::from(&request.base_dir);
     let public_dir = request.public_dir.as_deref().map(Path::new);
@@ -128,20 +184,13 @@ fn build_root(
     // The painter's mirror properties do not inherit.
     crate::paint::register_properties(&mut doc);
     let mut paths = BTreeMap::new();
-    let (container, root) = {
+    let (container, root, starting) = {
         let mut m = doc.mutate();
         let html = element(&mut m, "html", false, vec![]);
         let head = element(&mut m, "head", false, vec![]);
         let body = element(&mut m, "body", false, vec![]);
         // Imported stylesheets come before the `<style>` elements of the tree.
-        for css in &request.stylesheets {
-            let style = element(&mut m, "style", false, vec![]);
-            // CSS this Stylo does not parse is mirrored into custom properties for
-            // the painter (`paint::shim_css`).
-            let text = m.create_text_node(&escape_style_text(&crate::paint::shim_css(css)));
-            m.append_children(style, &[text]);
-            m.append_children(head, &[style]);
-        }
+        let starting = add_stylesheets(&mut m, head, request, with_starting);
         let container = element(
             &mut m,
             "div",
@@ -165,7 +214,7 @@ fn build_root(
         m.append_children(html, &[head, body]);
         let document = m.doc.root_node().id;
         m.append_children(document, &[html]);
-        (container, root)
+        (container, root, starting)
     };
 
     let node_paths = paths.iter().map(|(p, id)| (*id, p.clone())).collect();
@@ -176,6 +225,7 @@ fn build_root(
             node_paths,
             container,
             root,
+            starting,
             missing: Vec::new(),
         },
         files,
@@ -192,8 +242,11 @@ fn build_root(
 /// transition at the time of the first state that shows the new value, and
 /// its progress at `request.time` follows from the clock alone. A state that
 /// adds, removes or retags elements starts the replay over from it (a new
-/// element does not transition, as in a browser). With no history, nothing
-/// transitions and every value is its final one.
+/// element does not transition, as in a browser). When a document is built
+/// before the last state, `@starting-style` rules give elements their first
+/// values and are cleared at that state's time so entry transitions start
+/// from them. With no history, nothing transitions and every value is its
+/// final one.
 pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     let mut states: Vec<(f64, &DomNode)> = request
         .history
@@ -204,9 +257,11 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     states.sort_by(|a, b| a.0.total_cmp(&b.0));
     states.push((request.time, &request.root));
 
-    let (mut island, mut files) = build_root(request, states[0].1)?;
+    let last = states.len() - 1;
+    let (mut island, mut files) = build_root(request, states[0].1, last > 0)?;
     start(&mut island, &files, states[0].0);
-    for &(time, root) in &states[1..] {
+    clear_starting(&mut island, &files, states[0].0);
+    for (i, &(time, root)) in states.iter().enumerate().skip(1) {
         match changes(&island, root) {
             Some(edits) => {
                 if !edits.is_empty() {
@@ -216,8 +271,9 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
                 advance(&mut island.doc, time);
             }
             None => {
-                (island, files) = build_root(request, root)?;
+                (island, files) = build_root(request, root, i < last)?;
                 start(&mut island, &files, time);
+                clear_starting(&mut island, &files, time);
             }
         }
     }
@@ -238,6 +294,17 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     }
     island.missing = files.missing();
     Ok(island)
+}
+
+/// Once a document built with `@starting-style` rules has its first style,
+/// drops them and restyles at `time`: the transitions start from the starting
+/// values then. (Written in place, not as a function returning the document:
+/// a copy of it on the stack matters under the recursion over deep trees.)
+fn clear_starting(island: &mut IslandDocument, files: &LocalFiles, time: f64) {
+    if let Some(id) = island.starting.take() {
+        island.doc.mutate().set_node_text(id, "");
+        load(island, files, time);
+    }
 }
 
 /// Styles a freshly built document and brings it to `time`.

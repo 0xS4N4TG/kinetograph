@@ -720,3 +720,70 @@ fn a_caption_wider_than_the_grid_widens_the_table() {
     assert_eq!(bounds(&island, "$0.0").2, 120.0);
     assert_eq!(bounds(&island, "$0.0.0").2, 120.0);
 }
+
+#[test]
+fn a_running_transition_is_reversed_cancelled_or_retargeted() {
+    let off = format!("{FADE}opacity: 0");
+    let on = format!("{FADE}opacity: 1");
+    let check = |states: &[(f64, &str)], want: f64| {
+        let got = opacity_of(&transition_request(states));
+        assert!((got - want).abs() < 1e-6, "{states:?}: {got}, want {want}");
+    };
+    // Back to the start half way up (0.5 at 1.5 s): it runs down from there.
+    check(&[(0.0, &off), (1.0, &on), (1.5, &off), (1.5, &off)], 0.5);
+    check(&[(0.0, &off), (1.0, &on), (1.5, &off), (1.75, &off)], 0.25);
+    check(&[(0.0, &off), (1.0, &on), (1.5, &off), (2.0, &off)], 0.0);
+    // `transition: none` cancels it: the final value at once.
+    let none = "transition: none; opacity: 1";
+    check(&[(0.0, &off), (1.0, &on), (1.4, none), (1.4, none)], 1.0);
+    check(&[(0.0, &off), (1.0, &on), (1.4, none), (2.0, none)], 1.0);
+    // A new target takes over from where the value is.
+    let hold = "transition: opacity 1s linear; opacity: 0.5";
+    check(&[(0.0, &off), (1.0, &on), (1.5, hold), (1.7, hold)], 0.5);
+}
+
+/// One `div.a` styled by `css`, seen at each of `times` (the last is the request's own).
+fn starting_request(css: &str, times: &[f64]) -> serde_json::Value {
+    let tree = || {
+        el_attrs(
+            "div",
+            "$0",
+            serde_json::json!({ "class": "a" }),
+            "",
+            vec![text("x")],
+        )
+    };
+    let mut req = request(tree());
+    req["stylesheets"] = serde_json::json!([css]);
+    req["time"] = serde_json::json!(times[times.len() - 1]);
+    req["history"] = times[..times.len() - 1]
+        .iter()
+        .map(|t| serde_json::json!({ "time": t, "root": tree() }))
+        .collect();
+    req
+}
+
+#[test]
+fn starting_style_gives_a_transition_its_first_values() {
+    let nested = ".a{opacity:1;transition:opacity 1s linear;@starting-style{opacity:0}}";
+    let top = ".a{opacity:1;transition:opacity 1s linear}@starting-style{.a{opacity:0}}";
+    for css in [nested, top] {
+        // The element is there from 0 s: it fades in from 0 over a second.
+        for (times, want) in [
+            (vec![0.0, 0.5], 0.5),
+            (vec![0.0, 0.25, 0.75], 0.75),
+            (vec![0.0, 0.25, 2.0], 1.0),
+            // With no earlier state there is nothing to fade from: the final value.
+            (vec![0.5], 1.0),
+        ] {
+            let got = opacity_of(&starting_request(css, &times));
+            assert!(
+                (got - want).abs() < 1e-6,
+                "{css} {times:?}: {got}, want {want}"
+            );
+        }
+    }
+    // Without a transition the starting values are never seen.
+    let css = ".a{opacity:1;@starting-style{opacity:0}}";
+    assert_eq!(opacity_of(&starting_request(css, &[0.0, 0.5])), 1.0);
+}
