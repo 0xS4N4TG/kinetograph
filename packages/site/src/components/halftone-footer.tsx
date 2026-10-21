@@ -5,6 +5,8 @@
 
 import * as React from "react";
 
+import { scrollToTop } from "@/lib/smooth-scroll";
+
 export interface HalftonePalette {
   /** The footer background. */
   background: string;
@@ -435,7 +437,7 @@ export default function HalftoneWordmarkFooter({
   }, [key]);
 
   const toTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
 
   return (

@@ -13,10 +13,10 @@ export function Mark({ className }: { className?: string }) {
 }
 
 const LINKS = [
-  ['Film', '#film'],
+  ['Why', '#why'],
   ['Engine', '#engine'],
-  ['Remotion', '#remotion'],
   ['Agents', '#agents'],
+  ['Proof', '#proof'],
   ['FAQ', '#faq'],
 ] as const;
 

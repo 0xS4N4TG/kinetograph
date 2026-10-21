@@ -162,6 +162,17 @@
   html {
     scroll-behavior: smooth;
   }
+  /* Lenis takes over smoothing; native smooth scrolling would fight it. */
+  html.lenis,
+  html.lenis body {
+    height: auto;
+  }
+  .lenis.lenis-smooth {
+    scroll-behavior: auto !important;
+  }
+  .lenis.lenis-stopped {
+    overflow: clip;
+  }
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }

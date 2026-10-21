@@ -22,7 +22,7 @@ function useSeen<T extends Element>() {
 }
 
 /** Section headline. Leading 1.1 and a bottom reserve keep italic descenders (g, p, y) from clipping. */
-function H2({ children, className }: { children: ReactNode; className?: string }) {
+export function H2({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <h2 className={cn('pb-1 font-serif text-[clamp(36px,4.4vw,60px)] leading-[1.1] font-normal tracking-[-0.01em] text-balance', className)}>
       {children}
@@ -30,8 +30,8 @@ function H2({ children, className }: { children: ReactNode; className?: string }
   );
 }
 
-const shell = 'mx-auto max-w-[1320px] px-[clamp(16px,4vw,44px)]';
-const body = 'text-[15px] leading-relaxed';
+export const shell = 'mx-auto max-w-[1320px] px-[clamp(16px,4vw,44px)]';
+export const body = 'text-[15px] leading-relaxed';
 
 // ---- what it draws ----
 
@@ -442,15 +442,16 @@ export function Start() {
       <Reveal>
         <H2 className="text-night">Three commands to a film</H2>
         <p className={cn(body, 'mt-5 max-w-[42ch] text-night/75')}>
-          You need Node 22 or later and a GPU that wgpu supports, such as Metal on a Mac. It needs no display, so it runs
-          on a server too. Rendering video needs FFmpeg.
+          Point it at the entry file of any Remotion project, or start one from scratch. You need Node 22 or later and a
+          GPU that wgpu supports, such as Metal on a Mac. It needs no display, so it runs on a server too. Rendering video
+          needs FFmpeg.
         </p>
       </Reveal>
       <ol className="space-y-6">
         {[
-          ['Build it', 'git clone https://github.com/0xS4N4TG/kinetograph && cd kinetograph && npm ci && npm run build'],
-          ['Open the studio', 'npx kinetograph studio examples/launch/index.tsx'],
-          ['Render', 'npx kinetograph render examples/launch/index.tsx -o out/launch.mp4'],
+          ['Install it', 'npm install kinetograph'],
+          ['Open the studio', 'npx kinetograph studio src/index.tsx'],
+          ['Render', 'npx kinetograph render src/index.tsx -o out.mp4'],
         ].map(([t, cmd], i) => (
           <li key={t}>
             <Reveal delay={0.08 * i} className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-3">
@@ -475,6 +476,7 @@ const FAQ: [string, ReactNode][] = [
   ['Is a render repeatable?', 'Yes. Date, Math.random, timers and requestAnimationFrame follow the frame number, so the same project and frame give the same pixels. Nothing reads the wall clock.'],
   ['What does it run on?', 'Node 22 or later and a GPU wgpu supports: Metal on macOS, Vulkan or DX12 elsewhere. It needs no window or display. The render command links FFmpeg, using VideoToolbox on macOS.'],
   ['How is it licensed?', 'PolyForm Small Business 1.0.0. It is free for individuals and for companies with fewer than 100 people and under a million dollars of revenue a year. Larger companies need a commercial licence.'],
+  ['What if it can’t draw something I use?', 'Run kinetograph doctor first: it lists what the engine cannot draw and in which frames, before you spend a render on it. Unsupported content warns, and --strict turns the warning into an error, so nothing is silently dropped.'],
   ['Can an agent drive it?', 'It was built for that. Every command takes --json and kinetograph mcp serves them as MCP tools. lint and inspect let an agent check a layout without looking at pixels.'],
 ];
 
