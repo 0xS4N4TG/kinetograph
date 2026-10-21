@@ -1,9 +1,9 @@
 //! `layoutText`: the renderer's own text shaping (Parley), for measuring
 //! text in JavaScript. CPU only.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
 
 use kinetograph_core::scene::TextAlign;
 use kinetograph_core::text::{LaidOutText, TextEngine};
@@ -15,11 +15,11 @@ use crate::{TextGlyph, TextLayout, TextLayoutRequest, TextLine};
 /// cache starts again, which only costs reading the fonts once more.
 const MAX_ENGINES: usize = 8;
 
-/// Engines by the fonts they were built from: shaping needs a mutable engine
-/// and building one reads every font file.
-fn engines() -> &'static Mutex<HashMap<String, TextEngine>> {
-    static ENGINES: OnceLock<Mutex<HashMap<String, TextEngine>>> = OnceLock::new();
-    ENGINES.get_or_init(|| Mutex::new(HashMap::new()))
+thread_local! {
+    /// Engines by the fonts they were built from: shaping needs a mutable engine and building one reads every font
+    /// file. One set for each thread, so the workers of `render --concurrency` shape text side by side instead of
+    /// queueing on a lock.
+    static ENGINES: RefCell<HashMap<String, TextEngine>> = RefCell::new(HashMap::new());
 }
 
 /// A key for a set of fonts: each family with the file it names, by absolute
@@ -63,20 +63,22 @@ pub(crate) fn with_engine<R>(
         .collect();
     let key = fonts_key(&fonts);
 
-    let mut engines = engines().lock().unwrap_or_else(|e| e.into_inner());
-    if !engines.contains_key(&key) {
-        let files: BTreeMap<String, String> = fonts
-            .iter()
-            .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
-            .collect();
-        let engine = TextEngine::new(&files, Path::new("")).map_err(from_core)?;
-        if engines.len() >= MAX_ENGINES {
-            engines.clear();
+    ENGINES.with(|engines| {
+        let mut engines = engines.borrow_mut();
+        if !engines.contains_key(&key) {
+            let files: BTreeMap<String, String> = fonts
+                .iter()
+                .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
+                .collect();
+            let engine = TextEngine::new(&files, Path::new("")).map_err(from_core)?;
+            if engines.len() >= MAX_ENGINES {
+                engines.clear();
+            }
+            engines.insert(key.clone(), engine);
         }
-        engines.insert(key.clone(), engine);
-    }
-    let engine = engines.get_mut(&key).expect("inserted above");
-    Ok(f(engine))
+        let engine = engines.get_mut(&key).expect("inserted above");
+        Ok(f(engine))
+    })
 }
 
 pub fn layout_text(request: &TextLayoutRequest) -> Result<TextLayout> {

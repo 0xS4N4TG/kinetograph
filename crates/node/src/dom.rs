@@ -7,7 +7,6 @@
 //! paint it or read it back.
 
 use std::sync::mpsc::{Sender, channel};
-use std::sync::{Mutex, OnceLock};
 
 use kinetograph_core::dom_layout::{
     DomLayoutBox, DomLayoutError, DomLayoutRequest, TextSize, has_text, layout_dom as lay_out,
@@ -69,31 +68,35 @@ type Job = Box<dyn FnOnce() + Send>;
 /// reserved, and used as deep as the tree goes.
 const ISLAND_STACK: usize = 512 * 1024 * 1024;
 
+thread_local! {
+    /// The island thread of the calling thread. A render worker (`render --concurrency`) is a thread of its own,
+    /// and gets its own island thread, so that the workers' DOM work does not queue behind one another.
+    static WORKER: std::cell::RefCell<Option<Sender<Job>>> = const { std::cell::RefCell::new(None) };
+}
+
 fn island_thread() -> Sender<Job> {
-    static WORKER: OnceLock<Mutex<Option<Sender<Job>>>> = OnceLock::new();
-    let mut slot = WORKER
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(sender) = slot.as_ref() {
-        return sender.clone();
-    }
-    let (sender, jobs) = channel::<Job>();
-    std::thread::Builder::new()
-        .name("kinetograph-dom".to_string())
-        .stack_size(ISLAND_STACK)
-        .spawn(move || {
-            for job in jobs {
-                job();
-            }
-        })
-        .expect("cannot start the DOM thread");
-    *slot = Some(sender.clone());
-    sender
+    WORKER.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Some(sender) = slot.as_ref() {
+            return sender.clone();
+        }
+        let (sender, jobs) = channel::<Job>();
+        std::thread::Builder::new()
+            .name("kinetograph-dom".to_string())
+            .stack_size(ISLAND_STACK)
+            .spawn(move || {
+                for job in jobs {
+                    job();
+                }
+            })
+            .expect("cannot start the DOM thread");
+        *slot = Some(sender.clone());
+        sender
+    })
 }
 
 /// Runs `job` on the island thread and waits for it. One thread serves every
-/// call, so Blitz's per-thread caches stay warm. A panic inside Stylo or
+/// call of a calling thread, so Blitz's per-thread caches stay warm. A panic inside Stylo or
 /// Blitz becomes a `RENDER` error instead of taking the process down.
 fn on_island_thread<T: Send + 'static>(
     job: impl FnOnce() -> std::result::Result<T, Failure> + Send + 'static,
