@@ -525,11 +525,18 @@ impl Renderer {
         below: Option<&Tex>,
         pending: &mut Vec<Pending<'a>>,
     ) -> Result<Tex> {
+        // Plain leaves met under motion blur, drawn together in one Vello scene.
+        let mut run: Vec<FlatOp<'a>> = Vec::new();
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
             if is_hidden(layer) || is_matte_source(layers, layer) {
                 continue;
             }
+            if self.cache_paused > 0 && is_flat(layer) {
+                self.collect_flat(layer, parent, &mut run)?;
+                continue;
+            }
+            self.flush_flat(&mut run, pending)?;
             // No buffer of its own: the children go straight onto the canvas.
             if let ResolvedKind::Group {
                 children,
@@ -573,7 +580,96 @@ impl Renderer {
             }
             self.compositor.submit_if_large();
         }
+        self.flush_flat(&mut run, pending)?;
         Ok(canvas)
+    }
+
+    /// Adds the leaves of the flat `layer` (`is_flat`) to `run`, each with
+    /// the matrix and the box `layer_texture` would rasterise it with.
+    fn collect_flat<'a>(
+        &mut self,
+        layer: &'a ResolvedLayer,
+        parent: Affine,
+        run: &mut Vec<FlatOp<'a>>,
+    ) -> Result<()> {
+        let matrix = parent * layer.transform.matrix();
+        if let ResolvedKind::Group { children, .. } = &layer.kind {
+            let clip = match &layer.clip {
+                Some(clip) => {
+                    let path = self.clip_path(clip, layer)?;
+                    // A clip that keeps nothing leaves nothing of the group.
+                    if self.path_bounds(&path, matrix).is_empty() {
+                        return Ok(());
+                    }
+                    run.push(FlatOp::Clip(path, matrix));
+                    true
+                }
+                None => false,
+            };
+            for child in children.iter().filter(|c| !is_hidden(c)) {
+                self.collect_flat(child, matrix, run)?;
+            }
+            if clip {
+                run.push(FlatOp::Pop);
+            }
+            return Ok(());
+        }
+        let region = self.raster_bounds(layer, matrix)?;
+        if !region.is_empty() {
+            run.push(FlatOp::Leaf(Leaf {
+                layer,
+                matrix,
+                region,
+                clip: None,
+            }));
+        }
+        Ok(())
+    }
+
+    /// Draws the leaves in `run` bottom first into one Vello scene, one
+    /// texture, and leaves it in `pending`. Many plain leaves of a
+    /// motion-blurred layer's sample cost one draw instead of one each.
+    /// Overlapping edges blend in Vello's sRGB, not in linear light.
+    fn flush_flat(
+        &mut self,
+        run: &mut Vec<FlatOp<'_>>,
+        pending: &mut Vec<Pending<'_>>,
+    ) -> Result<()> {
+        if run.is_empty() {
+            return Ok(());
+        }
+        let region = run.iter().fold(PixelRect::EMPTY, |r, op| match op {
+            FlatOp::Leaf(l) => r.union(l.region),
+            _ => r,
+        });
+        if region.is_empty() {
+            run.clear();
+            return Ok(());
+        }
+        let area = self.vello_area(region);
+        self.vello_scene.reset();
+        for op in run.drain(..) {
+            match op {
+                FlatOp::Leaf(leaf) => {
+                    self.encode_leaf(leaf.layer, in_area(area, leaf.matrix), None)?;
+                }
+                FlatOp::Clip(path, matrix) => {
+                    self.vello_scene
+                        .push_clip_layer(Fill::NonZero, in_area(area, matrix), &path);
+                }
+                FlatOp::Pop => self.vello_scene.pop_layer(),
+            }
+        }
+        self.timed(Stage::Raster, |s| s.render_vello_scene(false, area))?;
+        let tex = self.timed(Stage::Composite, |s| {
+            s.compositor.from_srgb8(&s.vello_view, area, region)
+        });
+        pending.push(Pending {
+            what: Waiting::Loose(tex),
+            opacity: 1.0,
+            mode: BlendMode::Normal,
+        });
+        Ok(())
     }
 
     /// Blends the layers in `pending`, oldest first, onto `canvas`, and does
@@ -2529,6 +2625,14 @@ struct Leaf<'a> {
     clip: Option<BezPath>,
 }
 
+/// What `flush_flat` draws, in order: a leaf, the start of a group's clip, or
+/// the end of the innermost clip.
+enum FlatOp<'a> {
+    Leaf(Leaf<'a>),
+    Clip(BezPath, Affine),
+    Pop,
+}
+
 /// Where the clip shape of a layer is: its key with the address one past
 /// the layer's, which no layer is at.
 fn clip_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
@@ -2709,6 +2813,39 @@ fn is_hidden(layer: &ResolvedLayer) -> bool {
         layer.opacity <= 0.0
     } else {
         layer.motion.iter().all(|sub| sub.opacity <= 0.0)
+    }
+}
+
+/// Whether `layer` is a plain leaf (a shape or text with a colour or gradient)
+/// or a group of them that blends straight onto its canvas: nothing in it
+/// needs a texture of its own, so `flush_flat` can draw it with its
+/// neighbours.
+fn is_flat(layer: &ResolvedLayer) -> bool {
+    let is_group = matches!(layer.kind, ResolvedKind::Group { .. });
+    // A group's clip is drawn as a clip layer in the scene.
+    let plain = layer.blend_mode == BlendMode::Normal
+        && layer.opacity == 1.0
+        && layer.effects.is_empty()
+        && (is_group || layer.clip.is_none())
+        && layer.mask.is_none()
+        && layer.matte.is_none()
+        && layer.motion.is_empty()
+        && warp::layer_world(&layer.transform).is_none();
+    if !plain {
+        return false;
+    }
+    match &layer.kind {
+        ResolvedKind::Group {
+            children,
+            preserve3d: false,
+            glsl: None,
+            ..
+        } => children
+            .iter()
+            .filter(|c| !is_hidden(c))
+            .all(|c| !is_matte_source(children, c) && is_flat(c)),
+        ResolvedKind::Shape { .. } | ResolvedKind::Text { .. } => !draws_image(&layer.kind),
+        _ => false,
     }
 }
 
