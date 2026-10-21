@@ -22,10 +22,10 @@ function registry(): Registry {
   return (holder[KEY] ??= { entries: [] });
 }
 
-/** Registers synthesis to start at `frame` (absolute). Call at module level. */
+/** Registers synthesis to start at `frame` (absolute; may be fractional, for a cue between two frames). Call at module level. */
 export function onFrame(frame: number, callback: OnFrameCallback): void {
-  if (!Number.isInteger(frame) || frame < 0) {
-    throw new RangeError(`onFrame: frame must be a whole number from 0, got ${frame}`);
+  if (typeof frame !== 'number' || !Number.isFinite(frame) || frame < 0) {
+    throw new RangeError(`onFrame: frame must be a number from 0, got ${frame}`);
   }
   if (typeof callback !== 'function') {
     throw new TypeError('onFrame: the second argument must be a function (ctx, time) => void');

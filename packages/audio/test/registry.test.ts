@@ -32,9 +32,16 @@ describe('onFrame registry', () => {
     expect(hasOnFrame(0, 100)).toBe(false);
   });
 
-  it('rejects a frame that is not a whole number from 0, and a callback that is not a function', () => {
+  it('takes a fractional frame, for a cue between two frames', () => {
+    onFrame(1.5, () => {});
+    expect(registeredCallbacks(0, 3).map((p) => p.frame)).toEqual([1.5]);
+    expect(registeredCallbacks(2, 3)).toEqual([]);
+  });
+
+  it('rejects a frame that is not a finite number from 0, and a callback that is not a function', () => {
     expect(() => onFrame(-1, () => {})).toThrow(RangeError);
-    expect(() => onFrame(1.5, () => {})).toThrow(RangeError);
+    expect(() => onFrame(Number.NaN, () => {})).toThrow(RangeError);
+    expect(() => onFrame(Infinity, () => {})).toThrow(RangeError);
     expect(() => onFrame(0, 'x' as never)).toThrow(TypeError);
   });
 });

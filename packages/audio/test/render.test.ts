@@ -60,6 +60,15 @@ describe('renderAudio with onFrame', () => {
     expect(lufs).toBeLessThan(-19.9);
   });
 
+  it('starts a callback at a fractional frame between two frames', async () => {
+    let seen = -1;
+    onFrame(10.5, (_ctx, t) => {
+      seen = t;
+    });
+    await renderAudio({ fps: FPS, first: 10, last: 20, clips: [] });
+    expect(seen).toBeCloseTo(0.5 / FPS, 9);
+  });
+
   it('measures time from the first frame of the range and skips callbacks outside it', async () => {
     const seen: number[] = [];
     onFrame(10, () => seen.push(10));
