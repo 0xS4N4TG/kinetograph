@@ -181,7 +181,7 @@ Gecko. The change is small enough to offer upstream.
   `5890fab3afb087d8c0c5b0652b8b635f161f3a13` per `.cargo_vcs_info.json`). Licence: MIT OR Apache-2.0. Wired in by
   `[patch.crates-io]` in the root `Cargo.toml`. The unchanged copy was committed first.
 - Changed files: `src/stylo.rs`, `src/resolve.rs`, `src/node/node.rs` (container queries), `src/layout/inline.rs`
-  (floats), `src/layout/table.rs` and `src/layout/mod.rs` (tables).
+  (floats), `src/layout/table.rs` and `src/layout/mod.rs` (tables), `src/mutator.rs` (style attribute edits).
 
 ### Why
 
@@ -232,10 +232,21 @@ box's and fixed the cell's size, so a rowspan cell did not fill its rows.
 - Not done: `contain: inline-size` does not make a container's own width ignore its content (an `inline-block` container
   without a width is as wide as its text, where Chrome has it 0 wide).
 
+### The change (style attribute edits)
+
+- `DocumentMutator::set_attribute` gave every attribute change `RestyleHint::restyle_subtree()` on the element and on
+  its parent ("TODO: make this fine grained"), so a new `style` on the root of an island restyled every element in it,
+  selector matching included. For `style` it now leaves those two hints out: the element is restyled by the
+  `RESTYLE_STYLE_ATTRIBUTE` it already got (Stylo puts the new declarations in its rule node and cascades again), its
+  children when what they inherit changes (Stylo's own rule), and the snapshot taken before the change still
+  invalidates the selectors that read the attribute (`[style*=...]`, and the siblings and descendants they reach). The
+  element still gets `ALL_DAMAGE`. Other attributes are as before. `IslandCache` (motion-blur samples, the renders of one
+  frame) edits styles this way; `crates/dom/tests/samples.rs` checks an edited document against a fresh one.
+
 ### Dropping the patch
 
-Remove `vendor/blitz-dom`, its `[patch.crates-io]` entry and this section once Blitz answers container queries. The change
-is small enough to offer upstream.
+Remove `vendor/blitz-dom`, its `[patch.crates-io]` entry and this section once Blitz answers container queries and
+restyles a `style` change on its own element. The changes are small enough to offer upstream.
 
 ## rive (rive-rs and the C++ it builds)
 

@@ -270,15 +270,23 @@ impl DocumentMutator<'_> {
         if node_is_in_document {
             self.doc.snapshot_node(node_id);
 
+            // A `style` attribute changes the element's own declarations: it is
+            // restyled by RESTYLE_STYLE_ATTRIBUTE (below), its children when what
+            // they inherit changes, and the snapshot invalidates the selectors that
+            // read the attribute. Restyling the whole subtree and the parent's would
+            // match every selector of every element there again.
+            let style = name.local == local_name!("style");
             let node = &mut self.doc.nodes[node_id];
             if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
-                data.hint |= RestyleHint::restyle_subtree();
+                if !style {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
                 data.damage.insert(ALL_DAMAGE);
             }
             node.mark_damaged();
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
-            let parent = node.parent;
+            let parent = node.parent.filter(|_| !style);
             if let Some(parent_id) = parent {
                 let parent = &mut self.doc.nodes[parent_id];
                 if let Some(mut data) = parent

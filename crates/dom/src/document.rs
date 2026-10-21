@@ -371,11 +371,13 @@ fn moves(request: &IslandRequest) -> bool {
     fn mentions(css: &str) -> bool {
         css.contains("transition") || css.contains("animation") || css.contains("starting-style")
     }
-    fn node(n: &DomNode) -> bool {
+    // Only a `<style>` element's text is CSS: a word in the page's text starts nothing.
+    fn node(n: &DomNode, sheet: bool) -> bool {
         match n {
-            DomNode::Text { text } => mentions(text),
+            DomNode::Text { text } => sheet && mentions(text),
             DomNode::Native { .. } => false,
             DomNode::Element {
+                tag,
                 attrs,
                 style,
                 children,
@@ -383,11 +385,11 @@ fn moves(request: &IslandRequest) -> bool {
             } => {
                 mentions(style)
                     || attrs.get("style").is_some_and(|s| mentions(s))
-                    || children.iter().any(node)
+                    || children.iter().any(|c| node(c, tag == "style"))
             }
         }
     }
-    request.stylesheets.iter().any(|s| mentions(s)) || node(&request.root)
+    request.stylesheets.iter().any(|s| mentions(s)) || node(&request.root, false)
 }
 
 impl IslandCache {
@@ -847,5 +849,38 @@ fn build_node(
             m.append_children(id, &ids);
             Some(id)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(root: serde_json::Value) -> IslandRequest {
+        parse_request(
+            &serde_json::json!({ "root": root, "viewport": { "width": 10, "height": 10 }, "path": "$0", "baseDir": "" })
+                .to_string(),
+        )
+        .unwrap()
+    }
+
+    fn el(tag: &str, style: &str, children: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({ "kind": "element", "tag": tag, "path": "$0", "style": style, "children": children })
+    }
+
+    #[test]
+    fn only_css_can_start_a_transition() {
+        let words = serde_json::json!([{ "kind": "text", "text": "TransitionSeries, @remotion/transitions" }]);
+        assert!(!moves(&request(el("div", "", words.clone()))));
+        assert!(moves(&request(el(
+            "div",
+            "",
+            serde_json::json!([el("style", "", words)])
+        ))));
+        assert!(moves(&request(el(
+            "div",
+            "transition: opacity 1s",
+            serde_json::json!([])
+        ))));
     }
 }
