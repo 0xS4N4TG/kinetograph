@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { App } from '../src/App';
+import { App } from '../src/app';
 import { ApiError } from '../src/api';
 import { decode, draws } from './canvas';
 import { intro, job, outro } from './fixtures';

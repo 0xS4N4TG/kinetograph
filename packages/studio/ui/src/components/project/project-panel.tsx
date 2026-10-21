@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { FilmIcon, FolderIcon, LockIcon, MenuIcon, SearchIcon } from 'lucide-react';
 
 import type { CompositionInfo } from '@/api';
+import { PanelHeader } from '@/components/shell/panel-header';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatTimecode } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-interface CompositionListProps {
+interface ProjectPanelProps {
   compositions: CompositionInfo[];
   selected: string | null;
   onSelect(id: string): void;
@@ -14,7 +15,7 @@ interface CompositionListProps {
 
 const SWATCHES = ['bg-amber-400', 'bg-sky-400', 'bg-rose-400', 'bg-emerald-400', 'bg-violet-400'];
 
-export function CompositionList({ compositions, selected, onSelect }: CompositionListProps) {
+export function ProjectPanel({ compositions, selected, onSelect }: ProjectPanelProps) {
   const [query, setQuery] = useState('');
   const activeComp = compositions.find((c) => c.id === selected) ?? null;
   const filtered = query.trim()
@@ -23,16 +24,18 @@ export function CompositionList({ compositions, selected, onSelect }: Compositio
 
   return (
     <div className="bg-card flex h-full flex-col select-none" data-testid="composition-list">
-      {/* EffectCraft / AE Panel Tab Header */}
-      <div className="bg-secondary/60 flex h-7 shrink-0 items-center justify-between border-b px-2.5 text-[11px]">
-        <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 font-medium">
-          <span>Project</span>
-          <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
-        </div>
+      <PanelHeader
+        title={
+          <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 font-medium">
+            <span>Project</span>
+            <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
+          </div>
+        }
+      >
         <span className="text-muted-foreground font-mono text-[10px]">{compositions.length} items</span>
-      </div>
+      </PanelHeader>
 
-      {/* Selected Item Preview Summary (AE Project top area) */}
+      {/* Selected item summary */}
       <div className="bg-background/40 flex items-center gap-3 border-b p-2.5">
         <div
           className="bg-background border-border relative flex h-11 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xs border shadow-inner"
@@ -94,7 +97,7 @@ export function CompositionList({ compositions, selected, onSelect }: Compositio
                     onClick={() => onSelect(comp.id)}
                     className={cn(
                       'hover:bg-white/[0.04] focus-visible:ring-ring/50 flex w-full flex-col items-start gap-0.5 border-b border-white/[0.04] px-2.5 py-1.5 text-left text-xs outline-none transition-colors focus-visible:ring-2',
-                      isSelected && 'bg-[#2680eb]/25 hover:bg-[#2680eb]/30 text-foreground shadow-[inset_2px_0_0_#2680eb]',
+                      isSelected && 'bg-nle-blue/25 hover:bg-nle-blue/30 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
                     )}
                   >
                     <div className="flex w-full items-center gap-1.5">
@@ -113,7 +116,7 @@ export function CompositionList({ compositions, selected, onSelect }: Compositio
         )}
       </ScrollArea>
 
-      {/* Bottom Project Bin Footer */}
+      {/* Footer */}
       <div className="bg-secondary/40 text-muted-foreground flex h-6 shrink-0 items-center justify-between border-t px-2.5 font-mono text-[10px]">
         <div className="flex items-center gap-2">
           <FolderIcon className="size-3 opacity-70" aria-hidden="true" />

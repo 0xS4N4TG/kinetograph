@@ -1,50 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { EyeIcon, LockIcon, MenuIcon, MountainIcon, SearchIcon, SlidersHorizontalIcon } from 'lucide-react';
 
 import type { CompositionInfo, TimelineData } from '@/api';
-import { Badge } from '@/components/ui/badge';
+import { PanelHeader } from '@/components/shell/panel-header';
+import { Bar, EmptyRow, LABEL_WIDTH, Row, SectionLabel } from '@/components/timeline/timeline-row';
 import { Slider } from '@/components/ui/slider';
 import { formatTimecode } from '@/lib/format';
+import { layerColors } from '@/lib/layer-colors';
 import { useElementSize } from '@/lib/use-element-size';
 import type { Player, PlayerState } from '@/lib/player';
 import { cn } from '@/lib/utils';
-import { indent, layerRows, sequenceRows } from '@/lib/tree';
+import { layerRows, sequenceRows } from '@/lib/tree';
 
-/** Width of the sticky label column, px. */
-const LABEL_WIDTH = 264;
 const MIN_TICK_SPACING = 64;
 const STEPS = [1, 2, 5, 10, 15, 30, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
-
-const TRACK_COLORS: Record<string, { bar: string; swatch: string }> = {
-  sequence: {
-    bar: 'bg-[#6b5d43]/90 border-[#9c8863] text-amber-50',
-    swatch: 'bg-[#b59d72]',
-  },
-  text: {
-    bar: 'bg-[#8c3539]/90 border-[#c95156] text-rose-50',
-    swatch: 'bg-[#d95359]',
-  },
-  shape: {
-    bar: 'bg-[#435282]/90 border-[#687fc7] text-indigo-50',
-    swatch: 'bg-[#687fc7]',
-  },
-  group: {
-    bar: 'bg-[#6e3b47]/90 border-[#a65b6c] text-pink-50',
-    swatch: 'bg-[#b86577]',
-  },
-  image: {
-    bar: 'bg-[#2f6955]/90 border-[#4ba385] text-emerald-50',
-    swatch: 'bg-[#4ba385]',
-  },
-  video: {
-    bar: 'bg-[#295f78]/90 border-[#4597bd] text-sky-50',
-    swatch: 'bg-[#4597bd]',
-  },
-};
-
-function styleFor(type?: string) {
-  return TRACK_COLORS[type ?? 'sequence'] ?? TRACK_COLORS.sequence!;
-}
 
 interface TimelineProps {
   comp: CompositionInfo | null;
@@ -124,16 +93,18 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
 
   return (
     <div data-testid="timeline" className="bg-card flex h-full flex-col select-none">
-      {/* EffectCraft / FilmCraft Timeline Panel Tab & Tool Header */}
-      <div className="bg-secondary/60 flex h-8 shrink-0 items-center gap-3 border-b px-3 text-xs">
-        <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 text-[11px] font-medium">
-          <span>{comp ? comp.id : 'Timeline'}</span>
-          <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
-        </div>
-
-        {/* AE Blue Timecode + Frame readout */}
+      <PanelHeader
+        className="h-8 justify-normal gap-3 px-3 text-xs"
+        title={
+          <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 text-[11px] font-medium">
+            <span>{comp ? comp.id : 'Timeline'}</span>
+            <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
+          </div>
+        }
+      >
+        {/* Timecode and frame readout */}
         <div className="flex items-baseline gap-2 border-l border-white/10 pl-3 font-mono">
-          <span className="text-sm font-bold tracking-wider text-[#4da3ff] tabular-nums">
+          <span className="text-sm font-bold tracking-wider text-nle-value tabular-nums">
             {formatTimecode(state.frame, fps)}
           </span>
           <span className="text-muted-foreground text-[10px] tabular-nums">
@@ -171,14 +142,14 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
           />
           <MountainIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
         </div>
-      </div>
+      </PanelHeader>
 
       <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto bg-[#141417]">
         {comp === null ? (
           <p className="text-muted-foreground p-6 text-center text-xs">No composition selected.</p>
         ) : (
           <div className="relative min-w-max" style={{ width: LABEL_WIDTH + laneWidth + 16 }}>
-            {/* Sticky AE Switches Header + Work Area + Frame Ruler */}
+            {/* Sticky column header and frame ruler */}
             <div className="bg-card/95 sticky top-0 z-20 flex h-9 border-b backdrop-blur">
               <div
                 className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r px-2.5 text-[10px] font-medium tracking-wider"
@@ -200,9 +171,9 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
-                {/* AE Work Area bar + Green Cache Line */}
+                {/* Work area bar and cache line */}
                 <div className="absolute inset-x-0 top-0 h-2.5 border-b border-white/10 bg-white/[0.04]" aria-hidden="true">
-                  <div className="h-full w-full border-x-2 border-[#2680eb] bg-white/[0.05]" />
+                  <div className="h-full w-full border-x-2 border-nle-blue bg-white/[0.05]" />
                   <div className="absolute inset-x-0 bottom-0 h-[2px] bg-emerald-500/60" />
                 </div>
 
@@ -219,7 +190,7 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
             <SectionLabel>Sequences</SectionLabel>
             {sequences.length === 0 && <EmptyRow>No Sequences</EmptyRow>}
             {sequences.map((row, index) => {
-              const colors = styleFor('sequence');
+              const colors = layerColors('sequence');
               return (
                 <Row
                   key={row.key}
@@ -243,7 +214,7 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
             <SectionLabel>Layers</SectionLabel>
             {layers.length === 0 && <EmptyRow>No layers</EmptyRow>}
             {layers.map((row, index) => {
-              const colors = styleFor(row.type);
+              const colors = layerColors(row.type);
               return (
                 <Row
                   key={row.id}
@@ -267,19 +238,19 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
               );
             })}
 
-            {/* AE / FilmCraft Blue Playhead */}
+            {/* Playhead */}
             <div
               data-testid="playhead"
-              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-[#2680eb] shadow-[0_0_8px_rgba(38,128,235,0.8)]"
+              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-nle-blue shadow-[0_0_8px_rgba(38,128,235,0.8)]"
               style={{ left: LABEL_WIDTH + state.frame * pxPerFrame }}
             >
-              <div className="absolute top-0 -left-[6px] h-[13px] w-[13px] bg-[#2680eb] [clip-path:polygon(0_0,100%_0,100%_58%,50%_100%,0_58%)]" />
+              <div className="absolute top-0 -left-[6px] h-[13px] w-[13px] bg-nle-blue [clip-path:polygon(0_0,100%_0,100%_58%,50%_100%,0_58%)]" />
             </div>
           </div>
         )}
       </div>
 
-      {/* Bottom AE Timeline Status Bar */}
+      {/* Status bar */}
       <div className="bg-secondary/50 text-muted-foreground flex h-6 shrink-0 items-center justify-between border-t px-3 font-mono text-[10px]">
         <div className="flex items-center gap-2">
           <SlidersHorizontalIcon className="size-3 opacity-70" aria-hidden="true" />
@@ -291,104 +262,6 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
         </div>
         <span>Zoom {zoom.toFixed(1)}x</span>
       </div>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <div className="bg-secondary/50 text-muted-foreground sticky left-0 z-10 flex h-5 items-center border-b border-white/[0.06] px-2.5 text-[9px] font-semibold tracking-widest uppercase">
-      {children}
-    </div>
-  );
-}
-
-function EmptyRow({ children }: { children: string }) {
-  return <div className="text-muted-foreground sticky left-0 h-7 px-2.5 py-1.5 text-xs">{children}</div>;
-}
-
-interface RowProps {
-  index: number;
-  swatch: string;
-  label: string;
-  badge?: string;
-  title: string;
-  depth: number;
-  selected: boolean;
-  onSelect: (() => void) | undefined;
-  laneWidth: number;
-  children: ReactNode;
-  'data-testid': string;
-}
-
-function Row({ index, swatch, label, badge, title, depth, selected, onSelect, laneWidth, children, ...rest }: RowProps) {
-  return (
-    <div
-      {...rest}
-      role={onSelect ? 'button' : undefined}
-      tabIndex={onSelect ? 0 : undefined}
-      aria-pressed={onSelect ? selected : undefined}
-      title={title}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (onSelect && event.key === 'Enter') onSelect();
-      }}
-      className={cn(
-        'group flex h-7 border-b border-white/[0.05] text-xs transition-colors odd:bg-[#17171b] even:bg-[#141418]',
-        onSelect && 'hover:bg-white/[0.04] cursor-pointer',
-        selected && 'bg-[#2680eb]/20 hover:bg-[#2680eb]/25',
-      )}
-    >
-      <div
-        className={cn(
-          'sticky left-0 z-40 flex shrink-0 items-center gap-1.5 border-r border-white/10 pr-2',
-          selected ? 'bg-[#1f3047] text-white shadow-[inset_2px_0_0_#2680eb]' : 'bg-[#1b1b20]',
-          indent(depth),
-        )}
-        style={{ width: LABEL_WIDTH }}
-      >
-        <EyeIcon className="text-muted-foreground/70 size-3 shrink-0" aria-hidden="true" />
-        <LockIcon className="text-muted-foreground/40 size-2.5 shrink-0" aria-hidden="true" />
-        <span className="text-muted-foreground w-4 shrink-0 text-right font-mono text-[10px] tabular-nums" aria-hidden="true">
-          {index}
-        </span>
-        <span className={cn('size-2.5 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
-        <span className="truncate text-[11px] font-medium">{label}</span>
-        {badge && (
-          <Badge variant="outline" className="text-muted-foreground ml-auto rounded-xs px-1 py-0 font-mono text-[9px]">
-            {badge}
-          </Badge>
-        )}
-      </div>
-      <div className="relative h-full" style={{ width: laneWidth }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Bar({
-  from,
-  to,
-  pxPerFrame,
-  className,
-  children,
-}: {
-  from: number;
-  to: number;
-  pxPerFrame: number;
-  className: string;
-  children?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'absolute inset-y-1 overflow-hidden rounded-[3px] px-1.5 font-mono text-[10px] leading-[18px] font-medium whitespace-nowrap',
-        className,
-      )}
-      style={{ left: from * pxPerFrame, width: Math.max(2, (to - from) * pxPerFrame) }}
-    >
-      {children}
     </div>
   );
 }

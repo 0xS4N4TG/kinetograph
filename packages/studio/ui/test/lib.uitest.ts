@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { fitSize, formatDuration, formatTimecode, jobEta, jobPercent } from '../src/lib/format';
+import { findLayer } from '../src/lib/inspect';
 import { layerRows, sequenceRows } from '../src/lib/tree';
-import { introTimeline, job } from './fixtures';
+import { inspectFor, intro, introTimeline, job } from './fixtures';
 
 describe('format', () => {
   it('writes timecode as MM:SS:FF at the nominal rate', () => {
@@ -57,5 +58,21 @@ describe('timeline rows', () => {
     const rows = layerRows([{ id: 'x', type: 'shape', parent: 'gone', ranges: [[0, 1]] }]);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.depth).toBe(0);
+  });
+});
+
+describe('findLayer', () => {
+  const { layers } = inspectFor(intro, 0);
+
+  it('finds a layer nested inside a group', () => {
+    expect(findLayer(layers, 'title')).toMatchObject({ id: 'title', type: 'text' });
+  });
+
+  it('finds a top-level layer', () => {
+    expect(findLayer(layers, 'bg')).toMatchObject({ id: 'bg', type: 'shape' });
+  });
+
+  it('returns null for an id that is not in the tree', () => {
+    expect(findLayer(layers, 'missing')).toBeNull();
   });
 });

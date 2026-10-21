@@ -38,11 +38,11 @@ export function Transport({ comp, player, state }: TransportProps) {
 
   return (
     <div className="bg-card flex h-9 shrink-0 items-center gap-2 border-t px-3 select-none">
-      {/* Left: AE/Premiere Blue Digital Timecode & Frame Counter */}
+      {/* Left: timecode and frame counter */}
       <div className="flex items-center gap-2.5 font-mono text-xs tabular-nums">
         <span
           data-testid="timecode"
-          className="rounded-xs bg-black/40 px-2 py-0.5 font-semibold tracking-wider text-[#4da3ff] ring-1 ring-white/10"
+          className="rounded-xs bg-black/40 px-2 py-0.5 font-semibold tracking-wider text-nle-value ring-1 ring-white/10"
         >
           {formatTimecode(state.frame, comp?.fps ?? 30)}
         </span>
@@ -121,7 +121,7 @@ export function Transport({ comp, player, state }: TransportProps) {
             pressed={state.loop}
             disabled={disabled}
             onPressedChange={(pressed) => player.setLoop(pressed)}
-            className="size-7 p-0 data-[state=on]:bg-[#2680eb]/25 data-[state=on]:text-sky-300"
+            className="size-7 p-0 data-[state=on]:bg-nle-blue/25 data-[state=on]:text-sky-300"
           >
             <RepeatIcon className="size-3.5" />
           </Toggle>

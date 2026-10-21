@@ -2,23 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CrosshairIcon, GridIcon, LockIcon, Maximize2Icon, MenuIcon, TriangleAlertIcon } from 'lucide-react';
 
 import type { CompositionInfo, InspectResult, ReceivedFrame, StudioError } from '@/api';
+import { PanelHeader } from '@/components/shell/panel-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { fitSize } from '@/lib/format';
+import { findLayer } from '@/lib/inspect';
 import { useElementSize } from '@/lib/use-element-size';
 import { cn } from '@/lib/utils';
 
-type InspectLayer = InspectResult['layers'][number];
-
-function findInspectLayer(layers: InspectLayer[], id: string): InspectLayer | null {
-  for (const layer of layers) {
-    if (layer.id === id) return layer;
-    const child = layer.children ? findInspectLayer(layer.children, id) : null;
-    if (child) return child;
-  }
-  return null;
-}
-
-interface PreviewProps {
+interface ViewerProps {
   comp: CompositionInfo | null;
   onImage(listener: (frame: ReceivedFrame) => void): () => void;
   lastImage(): ReceivedFrame | null;
@@ -33,7 +24,7 @@ interface PreviewProps {
 }
 
 /** The frames the server renders, drawn on a canvas that scales to fit, over a checkerboard for transparency. */
-export function Preview({
+export function Viewer({
   comp,
   onImage,
   lastImage,
@@ -43,7 +34,7 @@ export function Preview({
   selectedLayer = null,
   compositions = [],
   onSelectComp,
-}: PreviewProps) {
+}: ViewerProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const box = useElementSize(boxRef);
@@ -74,20 +65,22 @@ export function Preview({
   const scalePct = comp && shown && comp.width > 0 ? Math.round((shown.width / comp.width) * 100) : 100;
   const scaleRatio = comp && shown && comp.width > 0 ? shown.width / comp.width : 1;
 
-  const activeLayer = inspect && selectedLayer ? findInspectLayer(inspect.layers, selectedLayer) : null;
+  const activeLayer = inspect && selectedLayer ? findLayer(inspect.layers, selectedLayer) : null;
   const layerBounds = activeLayer?.bounds ?? activeLayer?.box ?? null;
 
   return (
     <div className="bg-card flex min-h-0 flex-1 flex-col select-none">
-      {/* EffectCraft / FilmCraft Composition Monitor Tab Bar */}
-      <div className="bg-secondary/60 flex h-7 shrink-0 items-center justify-between border-b px-2.5 text-[11px]">
-        <div className="flex h-full items-center gap-4">
-          <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 font-medium">
-            <span>Composition {comp ? comp.id : ''}</span>
-            <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
+      <PanelHeader
+        title={
+          <div className="flex h-full items-center gap-4">
+            <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 font-medium">
+              <span>Composition {comp ? comp.id : ''}</span>
+              <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
+            </div>
+            <span className="text-muted-foreground text-[11px]">Program Monitor</span>
           </div>
-          <span className="text-muted-foreground text-[11px]">Program Monitor</span>
-        </div>
+        }
+      >
         <div className="flex items-center gap-2 font-mono text-[10px]">
           <span className="text-muted-foreground flex items-center gap-1 rounded-xs bg-white/[0.04] px-1.5 py-0.5">
             <LockIcon className="size-2.5 text-amber-400/80" aria-hidden="true" />
@@ -95,9 +88,9 @@ export function Preview({
           </span>
           {frameMs !== null && <span className="text-muted-foreground">{frameMs.toFixed(0)} ms</span>}
         </div>
-      </div>
+      </PanelHeader>
 
-      {/* Sub-header Composition Pill Bar (like EffectCraft Intro pill tab) */}
+      {/* Composition pills and overlay toggles */}
       {compositions.length > 0 && (
         <div className="bg-background/60 flex h-7 shrink-0 items-center gap-1.5 border-b px-3 text-[11px]">
           {compositions.map((c) => {
@@ -110,7 +103,7 @@ export function Preview({
                 className={cn(
                   'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors',
                   active
-                    ? 'bg-[#2680eb]/25 text-sky-300 ring-1 ring-[#2680eb]/50'
+                    ? 'bg-nle-blue/25 text-sky-300 ring-1 ring-nle-blue/50'
                     : 'text-muted-foreground hover:bg-white/[0.05] hover:text-foreground',
                 )}
               >
@@ -125,7 +118,7 @@ export function Preview({
               title="Toggle Layer Transform Box Overlay"
               className={cn(
                 'flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-[10px] transition-colors',
-                showGuides ? 'bg-[#2680eb]/25 text-sky-300' : 'text-muted-foreground hover:text-foreground',
+                showGuides ? 'bg-nle-blue/25 text-sky-300' : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <CrosshairIcon className="size-3" aria-hidden="true" />
@@ -137,7 +130,7 @@ export function Preview({
               title="Toggle Title/Action Safe Guides"
               className={cn(
                 'flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-[10px] transition-colors',
-                showSafeZones ? 'bg-[#2680eb]/25 text-sky-300' : 'text-muted-foreground hover:text-foreground',
+                showSafeZones ? 'bg-nle-blue/25 text-sky-300' : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <GridIcon className="size-3" aria-hidden="true" />
@@ -176,7 +169,7 @@ export function Preview({
               </div>
             )}
 
-            {/* After Effects / EffectCraft Selected Layer Transform Bounding Box Overlay (Read-Only) */}
+            {/* Selected layer bounds overlay (read-only) */}
             {showGuides && activeLayer && layerBounds && (
               <div
                 className="pointer-events-none absolute border border-rose-500/90 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]"
@@ -188,7 +181,7 @@ export function Preview({
                   height: Math.max(2, layerBounds.height * scaleRatio),
                 }}
               >
-                {/* 8 AE Transform Handles */}
+                {/* 8 transform handles */}
                 <span className="absolute -top-1 -left-1 size-2 border border-white bg-rose-500" />
                 <span className="absolute -top-1 left-1/2 size-2 -translate-x-1/2 border border-white bg-rose-500" />
                 <span className="absolute -top-1 -right-1 size-2 border border-white bg-rose-500" />

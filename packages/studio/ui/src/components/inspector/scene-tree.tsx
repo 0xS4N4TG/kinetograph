@@ -6,26 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { formatNumber } from '@/lib/format';
+import { findLayer, type InspectLayer } from '@/lib/inspect';
+import { layerColors } from '@/lib/layer-colors';
 import { cn } from '@/lib/utils';
-
-type InspectLayer = InspectResult['layers'][number];
-
-function findLayer(layers: InspectLayer[], id: string): InspectLayer | null {
-  for (const layer of layers) {
-    if (layer.id === id) return layer;
-    const inside = layer.children ? findLayer(layer.children, id) : null;
-    if (inside) return inside;
-  }
-  return null;
-}
-
-const TYPE_SWATCH: Record<string, string> = {
-  text: 'bg-rose-500',
-  shape: 'bg-indigo-400',
-  group: 'bg-amber-400',
-  image: 'bg-emerald-400',
-  video: 'bg-sky-400',
-};
 
 interface SceneTreeProps {
   inspect: InspectResult | null;
@@ -48,7 +31,7 @@ export function SceneTree({ inspect, frame, selected, onSelect }: SceneTreeProps
         <span>·</span>
         <span>{inspect.fps} fps</span>
         <span>·</span>
-        <span className="text-[#4da3ff]">frame {inspect.frame}</span>
+        <span className="text-nle-value">frame {inspect.frame}</span>
         <span>·</span>
         <span>margin {inspect.margin}</span>
         {inspect.camera && (
@@ -74,7 +57,7 @@ export function SceneTree({ inspect, frame, selected, onSelect }: SceneTreeProps
 
       <Separator />
 
-      {/* EffectCraft / After Effects Properties Header */}
+      {/* Properties header */}
       <div className="bg-secondary/50 flex h-7 shrink-0 items-center justify-between border-b px-2.5 text-[11px]">
         <span className="truncate font-medium">
           {layer ? `Properties: ${layer.id}` : 'Effect Controls & Transform'}
@@ -117,7 +100,7 @@ function Layers({
     <ul className="flex flex-col p-1 text-xs" role="tree">
       {[...layers].reverse().map((layer) => {
         const isSelected = layer.id === selected;
-        const swatch = TYPE_SWATCH[layer.type] ?? 'bg-sky-400';
+        const { swatch } = layerColors(layer.type);
         return (
           <li key={layer.id} role="treeitem" aria-selected={isSelected}>
             <button
@@ -125,7 +108,7 @@ function Layers({
               onClick={() => onSelect(layer.id)}
               className={cn(
                 'hover:bg-white/[0.05] focus-visible:ring-ring/50 flex w-full items-center gap-2 rounded-xs px-2 py-1 text-left outline-none transition-colors focus-visible:ring-2',
-                isSelected && 'bg-[#2680eb]/25 text-foreground shadow-[inset_2px_0_0_#2680eb]',
+                isSelected && 'bg-nle-blue/25 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
               )}
             >
               <span className="truncate font-medium">{layer.id}</span>
@@ -176,26 +159,26 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
 
       <SectionTitle title="Layer Transform" />
       <Field name="anchor" stopwatch>
-        <span className="text-[#4da3ff]">
+        <span className="text-nle-value">
           {formatNumber(t.anchorX, 2)}, {formatNumber(t.anchorY, 2)}
         </span>
       </Field>
       <Field name="position" stopwatch>
-        <span className="text-[#4da3ff]">
+        <span className="text-nle-value">
           {formatNumber(t.x, 2)}, {formatNumber(t.y, 2)}
         </span>
       </Field>
       <Field name="scale" stopwatch>
-        <span className="text-[#4da3ff]">{formatNumber(t.scale)}</span>
+        <span className="text-nle-value">{formatNumber(t.scale)}</span>
       </Field>
       <Field name="rotation" stopwatch>
-        <span className="text-[#4da3ff]">{formatNumber(t.rotation)}</span>
+        <span className="text-nle-value">{formatNumber(t.rotation)}</span>
       </Field>
       <Field name="opacity" stopwatch>
-        <span className="text-[#4da3ff]">{formatNumber(layer.opacity)}</span>
+        <span className="text-nle-value">{formatNumber(layer.opacity)}</span>
       </Field>
       <Field name="rotateX / Y / z" stopwatch>
-        <span className="text-[#4da3ff]">
+        <span className="text-nle-value">
           {formatNumber(t.rotateX)} / {formatNumber(t.rotateY)} / {formatNumber(t.z)}
         </span>
       </Field>
@@ -230,7 +213,7 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
           <SectionTitle title="Text & Typography" />
           <Field name="text">{layer.text.text}</Field>
           <Field name="font">
-            <span className="text-[#4da3ff]">
+            <span className="text-nle-value">
               {layer.text.font} {formatNumber(layer.text.size)}
             </span>
           </Field>

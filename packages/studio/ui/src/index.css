@@ -26,6 +26,12 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-nle-gutter: var(--nle-gutter);
+  --color-nle-panel: var(--nle-panel);
+  --color-nle-panel-header: var(--nle-panel-header);
+  --color-nle-panel-sunken: var(--nle-panel-sunken);
+  --color-nle-blue: var(--nle-blue);
+  --color-nle-value: var(--nle-value);
 }
 
 :root {
@@ -71,7 +77,7 @@
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.62 0.19 250);
 
-  /* EffectCraft / FilmCraft NLE tokens */
+  /* Editor panel tokens */
   --nle-gutter: #0d0d0f;
   --nle-panel: #1b1b1f;
   --nle-panel-header: #222227;
