@@ -1,7 +1,7 @@
 //! The JSON scene graph. See docs/SCENE.md for the format.
 
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -137,6 +137,26 @@ pub struct MotionBlur {
     /// (an authoring layer that renders its tree at each sub-frame's time
     /// fills it). A copy's own `motionBlur` is ignored.
     pub frames: Option<Vec<Layer>>,
+    /// `frames` written as what each sub-frame changes: exactly `samples`
+    /// lists, one per sub-frame in time order. Sub-frame `i` is this layer
+    /// with each change of list `i` standing in for the layer of the same id
+    /// in its tree, resolved at that sub-frame's time. Not with `frames`.
+    pub changes: Option<Vec<Vec<SampleChange>>>,
+}
+
+/// One layer of a motion blur sub-frame that differs from the frame's own
+/// (`MotionBlur::changes`).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SampleChange {
+    /// Stands in for the layer with its id: the blurred layer itself or a
+    /// layer below it, and of the same type. Its own `motionBlur` is ignored.
+    pub layer: Layer,
+    /// For a group whose own fields change but whose children do not: the
+    /// group keeps the children it has at the frame (each still replaced
+    /// when a change of the same list names it), and `layer` has none.
+    #[serde(default)]
+    pub keep_children: bool,
 }
 
 fn default_motion_samples() -> i64 {
@@ -1835,6 +1855,15 @@ impl Scene {
                 if let Some(frames) = &blur.frames {
                     self.validate_frames(layer, blur.samples, frames, layers)?;
                 }
+                if let Some(changes) = &blur.changes {
+                    if blur.frames.is_some() {
+                        return Err(Error::Scene(format!(
+                            "layer {:?}: motionBlur takes frames or changes, not both",
+                            layer.id
+                        )));
+                    }
+                    self.validate_changes(layer, blur.samples, changes, layers)?;
+                }
             }
             if let Some(mask) = &layer.mask {
                 validate_gradient(&layer.id, "mask gradient", &mask.gradient)?;
@@ -2074,6 +2103,87 @@ impl Scene {
         }
         Ok(())
     }
+
+    /// Checks a layer's motion blur `changes`: `samples` lists, each changing
+    /// a layer of the blurred tree at most once, with a layer of its type that
+    /// is valid in the place of the one it changes (among that one's
+    /// siblings, with an id set of its own, as a `frames` copy is).
+    fn validate_changes(
+        &self,
+        layer: &Layer,
+        samples: i64,
+        changes: &[Vec<SampleChange>],
+        siblings: &[Layer],
+    ) -> Result<()> {
+        if changes.len() as i64 != samples {
+            return Err(Error::Scene(format!(
+                "layer {:?}: motionBlur changes needs exactly {samples} lists (one per sample), \
+                 got {}",
+                layer.id,
+                changes.len()
+            )));
+        }
+        let mut tree: HashMap<&str, (&Layer, &[Layer])> = HashMap::new();
+        tree.insert(&layer.id, (layer, siblings));
+        index_tree(layer, &mut tree);
+        for (i, list) in changes.iter().enumerate() {
+            let mut seen = HashSet::new();
+            for change in list {
+                let id = change.layer.id.as_str();
+                let Some(&(original, around)) = tree.get(id) else {
+                    return Err(Error::Scene(format!(
+                        "layer {:?}: motionBlur changes[{i}] changes {id:?}, which is not the layer \
+                         or a layer in it",
+                        layer.id
+                    )));
+                };
+                if !seen.insert(id) {
+                    return Err(Error::Scene(format!(
+                        "layer {:?}: motionBlur changes[{i}] changes {id:?} twice",
+                        layer.id
+                    )));
+                }
+                if std::mem::discriminant(&change.layer.kind)
+                    != std::mem::discriminant(&original.kind)
+                {
+                    return Err(Error::Scene(format!(
+                        "layer {:?}: motionBlur changes[{i}] makes {id:?} a {} layer, but it is a {}",
+                        layer.id,
+                        change.layer.kind.name(),
+                        original.kind.name()
+                    )));
+                }
+                if change.keep_children
+                    && let LayerKind::Group(g) = &change.layer.kind
+                    && !g.children.is_empty()
+                {
+                    return Err(Error::Scene(format!(
+                        "layer {:?}: motionBlur changes[{i}] keeps the children of {id:?}, so it \
+                         gives none",
+                        layer.id
+                    )));
+                }
+                self.validate_layer(&change.layer, around, &mut HashSet::new(), true)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Every layer below `layer` by id, with the list it is in.
+fn index_tree<'a>(layer: &'a Layer, into: &mut HashMap<&'a str, (&'a Layer, &'a [Layer])>) {
+    if let LayerKind::Group(g) = &layer.kind {
+        for child in &g.children {
+            into.insert(&child.id, (child, &g.children));
+            index_tree(child, into);
+        }
+    }
+}
+
+/// The changes of one motion blur sub-frame by the id of the layer each
+/// stands in for.
+pub(crate) fn changes_by_id(list: &[SampleChange]) -> HashMap<&str, &SampleChange> {
+    list.iter().map(|c| (c.layer.id.as_str(), c)).collect()
 }
 
 /// Calls `f` on every layer of `layers`, depth first: a layer, then the
@@ -2085,6 +2195,11 @@ pub fn walk_layers(layers: &[Layer], f: &mut impl FnMut(&Layer)) {
         f(layer);
         if let Some(frames) = layer.motion_blur.as_ref().and_then(|m| m.frames.as_ref()) {
             walk_layers(frames, f);
+        }
+        if let Some(changes) = layer.motion_blur.as_ref().and_then(|m| m.changes.as_ref()) {
+            for change in changes.iter().flatten() {
+                walk_layers(std::slice::from_ref(&change.layer), f);
+            }
         }
         if let LayerKind::Group(g) = &layer.kind {
             walk_layers(&g.children, f);
@@ -2110,22 +2225,51 @@ fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
 /// and a group's effects on what its children painted. `scale` is the
 /// largest product of the enclosing groups' `scale` (1 for the scene's own
 /// layers), which turns an effect's layer units into pixels. A layer's motion
-/// blur `frames` count as alternatives to the layer itself.
+/// blur `frames`, and its sub-frames as `changes` make them, count as
+/// alternatives to the layer itself.
 fn max_reach(layers: &[Layer], scale: f64) -> f64 {
-    layers.iter().fold(0.0, |most, layer| {
+    max_reach_with(layers, scale, None)
+}
+
+/// `max_reach` of `layers` with the changes of one sub-frame put in place.
+fn max_reach_with(
+    layers: &[Layer],
+    scale: f64,
+    changes: Option<&HashMap<&str, &SampleChange>>,
+) -> f64 {
+    layers.iter().fold(0.0, |most, original| {
+        let change = changes.and_then(|c| c.get(original.id.as_str()));
+        let layer = change.map_or(original, |c| &c.layer);
         let t = &layer.transform.scale;
         let scale = scale * t.max().abs().max(t.min().abs());
-        let children = match &layer.kind {
-            LayerKind::Group(g) => max_reach(&g.children, scale),
+        let children = match (&layer.kind, &original.kind) {
+            (LayerKind::Group(_), LayerKind::Group(kept))
+                if change.is_some_and(|c| c.keep_children) =>
+            {
+                max_reach_with(&kept.children, scale, changes)
+            }
+            (LayerKind::Group(g), _) => max_reach_with(&g.children, scale, changes),
             _ => 0.0,
         };
         let own: f64 = layer.effects.iter().map(|e| e.reach(scale)).sum();
-        let copies = layer
-            .motion_blur
-            .as_ref()
+        let blur = layer.motion_blur.as_ref();
+        let copies = blur
             .and_then(|m| m.frames.as_ref())
             .map_or(0.0, |frames| max_reach(frames, scale));
-        most.max(children + own).max(copies)
+        // Inside a sub-frame (its changes put in place), the layer's own are the ones being counted.
+        let own_changes = blur
+            .and_then(|m| m.changes.as_ref())
+            .filter(|_| changes.is_none());
+        let sub_frames = own_changes.map_or(0.0, |lists| {
+            lists.iter().fold(0.0_f64, |most, list| {
+                most.max(max_reach_with(
+                    std::slice::from_ref(layer),
+                    scale,
+                    Some(&changes_by_id(list)),
+                ))
+            })
+        });
+        most.max(children + own).max(copies).max(sub_frames)
     })
 }
 
@@ -5085,6 +5229,112 @@ mod tests {
             ),
         );
         assert_eq!(scene_of(&big).unwrap().margin(), 50);
+    }
+
+    // --- Motion blur changes. -------------------------------------------------
+
+    /// A group `g` holding `kid` and `other`, blurred with `changes`.
+    fn changed(samples: usize, lists: &[&str]) -> Result<Scene> {
+        let lists: Vec<String> = lists.iter().map(|l| format!("[{l}]")).collect();
+        scene_of(&format!(
+            r#"{{"id": "g", "type": "group",
+                 "motionBlur": {{"samples": {samples}, "changes": [{}]}},
+                 "children": [{}, {}]}}"#,
+            lists.join(","),
+            rect("kid", ""),
+            rect("other", "")
+        ))
+    }
+
+    fn change(layer: &str) -> String {
+        format!(r#"{{"layer": {layer}}}"#)
+    }
+
+    #[test]
+    fn motion_blur_changes_name_layers_of_the_blurred_tree_once_each() {
+        let scene = changed(2, &["", &change(&rect("kid", r#""opacity": 0.5,"#))]).unwrap();
+        let blur = scene.layers[0].motion_blur.as_ref().unwrap();
+        assert_eq!(blur.changes.as_ref().map(Vec::len), Some(2));
+        // The group itself, keeping its children.
+        let own = r#"{"layer": {"id": "g", "type": "group", "opacity": 0.5, "children": []}, "keepChildren": true}"#;
+        changed(2, &[own, own]).unwrap();
+
+        let msg = changed(3, &["", ""]).unwrap_err().to_string();
+        assert!(
+            msg.contains("\"g\"") && msg.contains("exactly 3") && msg.contains("got 2"),
+            "{msg}"
+        );
+        let msg = changed(2, &["", &change(&rect("nope", ""))])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("changes[1]") && msg.contains("\"nope\""),
+            "{msg}"
+        );
+        let twice = format!("{0},{0}", change(&rect("kid", "")));
+        let msg = changed(2, &[&twice, ""]).unwrap_err().to_string();
+        assert!(msg.contains("changes[0]") && msg.contains("twice"), "{msg}");
+        let retyped = change(r#"{"id": "kid", "type": "group", "children": []}"#);
+        let msg = changed(2, &["", &retyped]).unwrap_err().to_string();
+        assert!(msg.contains("group") && msg.contains("shape"), "{msg}");
+        let kept_and_given = format!(
+            r#"{{"layer": {{"id": "g", "type": "group", "children": [{}]}}, "keepChildren": true}}"#,
+            rect("kid", "")
+        );
+        let msg = changed(2, &["", &kept_and_given]).unwrap_err().to_string();
+        assert!(msg.contains("keeps the children"), "{msg}");
+        let bad = change(&rect(
+            "kid",
+            r#""clip": {"kind": "polygon", "points": []},"#,
+        ));
+        let msg = changed(2, &["", &bad]).unwrap_err().to_string();
+        assert!(msg.contains("at least 3 points"), "{msg}");
+        // A change's matte source is among the siblings of the layer it changes.
+        changed(
+            2,
+            &["", &change(&rect("kid", r#""matte": {"layer": "other"},"#))],
+        )
+        .unwrap();
+        // Not with frames.
+        let msg = scene_of(&rect(
+            "a",
+            &format!(
+                r#""motionBlur": {{"samples": 2, "frames": [{0}, {0}], "changes": [[], []]}},"#,
+                rect("a", "")
+            ),
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(msg.contains("not both"), "{msg}");
+    }
+
+    #[test]
+    fn motion_blur_changes_count_in_the_margin_and_the_shaders() {
+        let shadowed = rect(
+            "kid",
+            r#""effects": [{"type": "dropShadow", "y": 20, "blur": 5}],"#,
+        );
+        let scene = changed(2, &["", &change(&shadowed)]).unwrap();
+        assert_eq!(scene.margin(), 35);
+        // A change of the group's own effects counts over the children it keeps.
+        let own = r#"{"layer": {"id": "g", "type": "group", "effects": [{"type": "dropShadow", "y": 10}],
+                 "children": []}, "keepChildren": true}"#;
+        let scene = changed(2, &[own, &change(&shadowed)]).unwrap();
+        assert_eq!(scene.margin(), 35);
+        let both = format!("{own},{}", change(&shadowed));
+        assert_eq!(changed(2, &[&both, ""]).unwrap().margin(), 45);
+        let shader = rect(
+            "kid",
+            r#""effects": [{"type": "shader",
+                "code": "fn effect(px: vec2<f32>) -> vec4<f32> { return layer(px); }"}],"#,
+        );
+        assert_eq!(
+            changed(2, &["", &change(&shader)])
+                .unwrap()
+                .shader_sources()
+                .len(),
+            1
+        );
     }
 }
 

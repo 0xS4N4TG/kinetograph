@@ -1827,6 +1827,7 @@ subtree, children included, and what the children do relative to one another blu
 | `samples` | `8` | Whole number, 2 to 64 (checked when the scene loads, naming the layer). Not animated. More is smoother and slower: the layer is drawn, run through its effects and warped once per sample. |
 | `shutter` | `0.5` | Animatable, in frames, clamped to 0..2. How long the shutter is open: `0.5` is a 180 degree shutter, `1` a 360 degree one. `0` is exactly the layer without motion blur. |
 | `frames` | none | An array of exactly `samples` complete layers of the same `type` as this one, one per sample in time order. See [Sub-frame layers](#sub-frame-layers). |
+| `changes` | none | The same, written as what each sample changes in the layer's tree: exactly `samples` lists of changes. See [Sub-frame changes](#sub-frame-changes). Not with `frames`. |
 
 The sub-frame times are `t_i = frame + shutter * ((i + 0.5) / samples - 0.5)` for `i` in `0..samples`: the shutter is
 cut into equal slots centred on the frame and each sample sits in the middle of its slot. Every sample is resolved by
@@ -1889,6 +1890,36 @@ constants) gives the sub-frames itself with `frames`:
   the layer.
 - Everything else about sub-frames holds: opacity is applied per sample, mattes pair sample `i` with sample `i`, and the
   layer's enclosing groups and the camera are taken at the frame itself.
+
+### Sub-frame changes
+
+`changes` says what `frames` says without a whole copy of the layer for each sample: most of a blurred tree is
+usually the same at every sub-frame (a wall of cards that only moves as one), and only what differs is written.
+
+```json
+{ "id": "wall", "type": "group",
+  "motionBlur": { "samples": 2, "shutter": 0.5, "changes": [
+    [ { "layer": { "id": "wall", "type": "group", "opacity": 0.9, "transform": { "x": 98 }, "children": [] },
+        "keepChildren": true } ],
+    [ { "layer": { "id": "wall", "type": "group", "opacity": 0.9, "transform": { "x": 102 }, "children": [] },
+        "keepChildren": true },
+      { "layer": { "id": "tick-3", "type": "shape", "shape": { "kind": "ellipse", "width": 38, "height": 38 },
+                   "fill": "#3fb950" } } ] ] },
+  "transform": { "x": 100 }, "opacity": 0.9,
+  "children": [ ... ] }
+```
+
+- `changes` has exactly `samples` lists, one per sample in time order. Sub-frame `i` is the layer with each change of
+  list `i` put in place, resolved at `t_i`: as if `frames[i]` were that tree.
+- A change is `{ "layer": ..., "keepChildren": false }`. Its `layer` is a complete layer that stands in for the layer
+  with its `id`: the blurred layer itself or any layer below it, of the same `type`. With `keepChildren` (a group only)
+  the change gives the group's own fields and no children, and the group keeps the children it has at the frame,
+  each still replaced when a change of the same list names it.
+- A list changes a layer at most once. An id that is not the layer or a layer in it, another `type`, or children
+  given with `keepChildren` is a load error naming the layer.
+- A change is checked like a `frames` copy: among the siblings of the layer it changes (a `matte` names one of them),
+  with ids of its own, and its own `motionBlur` ignored. Its effects count in the margin, and what it uses is loaded.
+- The authoring layer writes `changes`; a scene with `frames` still loads and renders the same.
 
 ## Boxes from the DOM painter
 

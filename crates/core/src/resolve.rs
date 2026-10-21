@@ -1,5 +1,6 @@
 //! A scene evaluated at one frame: every animated number is a plain value.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use vello::kurbo::{Affine, BezPath, Rect, Shape};
@@ -13,8 +14,8 @@ use crate::scene::{
     Effect, Extend, FillRule, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun,
     Gradient, GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind,
     Layout, LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
-    NoiseChannels, Paint, Position, Scene, Shadow, ShapeLayer, Spacing, Stop, StrokeCap,
-    StrokeJoin, TextAlign, Transform, Turbulence, TurbulenceKind, Units,
+    NoiseChannels, Paint, Position, SampleChange, Scene, Shadow, ShapeLayer, Spacing, Stop,
+    StrokeCap, StrokeJoin, TextAlign, Transform, Turbulence, TurbulenceKind, Units, changes_by_id,
 };
 use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
@@ -745,7 +746,11 @@ impl Scene {
             frame,
             fps: self.fps,
         };
-        let mut resolver = Resolver { scene: self, text };
+        let mut resolver = Resolver {
+            scene: self,
+            text,
+            changes: None,
+        };
         let mut layers = Vec::with_capacity(self.layers.len());
         for layer in &self.layers {
             layers.push(resolver.layer(layer, clock, true)?);
@@ -781,9 +786,12 @@ enum TextHandle<'a> {
 pub(crate) struct Resolver<'a> {
     pub(crate) scene: &'a Scene,
     text: TextHandle<'a>,
+    /// The changes of the motion blur sub-frame being resolved, by the id of
+    /// the layer each stands in for (`MotionBlur::changes`).
+    changes: Option<HashMap<&'a str, &'a SampleChange>>,
 }
 
-impl Resolver<'_> {
+impl<'a> Resolver<'a> {
     pub(crate) fn engine(&mut self) -> Result<&mut TextEngine> {
         match &mut self.text {
             TextHandle::Given(engine) => Ok(engine),
@@ -865,7 +873,13 @@ impl Resolver<'_> {
 
     /// `blur` is whether a motion blur on `layer` or below counts; a
     /// sub-frame's copy is resolved without it.
-    fn layer(&mut self, layer: &Layer, clock: Clock, blur: bool) -> Result<ResolvedLayer> {
+    fn layer(&mut self, layer: &'a Layer, clock: Clock, blur: bool) -> Result<ResolvedLayer> {
+        // In a sub-frame given as `changes`, a changed layer stands in for the
+        // frame's own; one that keeps its children keeps the frame's.
+        let (layer, kept) = match self.changes.as_ref().and_then(|c| c.get(layer.id.as_str())) {
+            Some(change) => (&change.layer, change.keep_children.then_some(layer)),
+            None => (layer, None),
+        };
         let f = clock.t;
         let motion = match &layer.motion_blur {
             Some(mb) if blur => {
@@ -885,7 +899,16 @@ impl Resolver<'_> {
                             .as_ref()
                             .and_then(|frames| frames.get(i))
                             .unwrap_or(layer);
-                        let mut sub = self.layer(source, Clock { t, ..clock }, false)?;
+                        // Or the layer with the sub-frame's changes put in place.
+                        let changes = mb
+                            .changes
+                            .as_ref()
+                            .and_then(|lists| lists.get(i))
+                            .map(|list| changes_by_id(list));
+                        let outer = std::mem::replace(&mut self.changes, changes);
+                        let sub = self.layer(source, Clock { t, ..clock }, false);
+                        self.changes = outer;
+                        let mut sub = sub?;
                         sub.id.clone_from(&layer.id);
                         subs.push(sub);
                     }
@@ -898,7 +921,7 @@ impl Resolver<'_> {
         };
         // The frame's own children are not drawn when the layer has sub-frames.
         let blur = blur && motion.is_empty();
-        let kind = self.kind(layer, clock, blur)?;
+        let kind = self.kind(layer, kept, clock, blur)?;
         let transform = self.transform(&layer.transform, f, &kind)?;
         Ok(ResolvedLayer {
             id: layer.id.clone(),
@@ -943,7 +966,15 @@ impl Resolver<'_> {
         Ok(resolved)
     }
 
-    fn kind(&mut self, layer: &Layer, clock: Clock, blur: bool) -> Result<ResolvedKind> {
+    /// `kept` is the frame's own layer when `layer` is a change that keeps
+    /// its children.
+    fn kind(
+        &mut self,
+        layer: &'a Layer,
+        kept: Option<&'a Layer>,
+        clock: Clock,
+        blur: bool,
+    ) -> Result<ResolvedKind> {
         let f = clock.t;
         Ok(match &layer.kind {
             LayerKind::Shape(s) => ResolvedKind::Shape {
@@ -1015,8 +1046,12 @@ impl Resolver<'_> {
                     .map(|l| resolve_layout(l, &layer.transform, f)),
                 size: None,
                 children: {
-                    let mut children = Vec::with_capacity(g.children.len());
-                    for child in &g.children {
+                    let list = match kept.map(|k| &k.kind) {
+                        Some(LayerKind::Group(k)) => &k.children,
+                        _ => &g.children,
+                    };
+                    let mut children = Vec::with_capacity(list.len());
+                    for child in list {
                         children.push(self.layer(child, clock, blur)?);
                     }
                     children
@@ -1542,6 +1577,7 @@ mod tests {
         Resolver {
             scene,
             text: TextHandle::Lazy(None),
+            changes: None,
         }
         .layer(&scene.layers[0], clock, true)
         .unwrap()
@@ -2508,6 +2544,68 @@ mod tests {
         let layer = &scene.resolve(5).unwrap().layers[0];
         let xs: Vec<f64> = layer.motion.iter().map(|m| m.transform.x).collect();
         assert_eq!(xs, [47.5, 52.5]);
+    }
+
+    #[test]
+    fn motion_blur_changes_resolve_as_the_frames_they_stand_for() {
+        // A group whose own x and one child's opacity change at the second
+        // sub-frame: written as changes, and as the whole copies `frames` takes.
+        let kid = |id: &str, opacity: f64| {
+            format!(
+                r##"{{"id": "{id}", "type": "shape", "shape": {{"kind": "rect", "width": 4, "height": 4}},
+                     "fill": "#fff", "opacity": {opacity},
+                     "transform": {{"y": [{{"frame": 0, "value": 0}}, {{"frame": 10, "value": 10}}]}}}}"##
+            )
+        };
+        let group = |x: &str, children: &str, extra: &str| {
+            format!(
+                r#"{{"id": "g", "type": "group", "transform": {{"x": {x}}}, {extra} "children": [{children}]}}"#
+            )
+        };
+        let moving = r#"[{"frame": 0, "value": 0}, {"frame": 10, "value": 100}]"#;
+        let frame_kids = format!("{},{}", kid("a", 1.0), kid("b", 1.0));
+        let scene_of = |blur: &str| {
+            let json = format!(
+                r#"{{"width": 100, "height": 50, "fps": 30, "durationInFrames": 20, "layers": [{}]}}"#,
+                group(
+                    moving,
+                    &frame_kids,
+                    &format!(r#""motionBlur": {{"samples": 3, "shutter": 1, {blur}}},"#)
+                )
+            );
+            Scene::from_json(&json, PathBuf::new()).unwrap()
+        };
+        let frames = format!(
+            r#""frames": [{}, {}, {}]"#,
+            group(moving, &frame_kids, ""),
+            group("7", &format!("{},{}", kid("a", 0.25), kid("b", 1.0)), ""),
+            group(moving, &frame_kids, ""),
+        );
+        let changes = format!(
+            r#""changes": [[], [{{"layer": {}, "keepChildren": true}}, {{"layer": {}}}], []]"#,
+            group("7", "", ""),
+            kid("a", 0.25)
+        );
+        let by_frames = scene_of(&frames).resolve(5).unwrap();
+        let by_changes = scene_of(&changes).resolve(5).unwrap();
+        let sub = |s: &ResolvedScene, i: usize| format!("{:?}", s.layers[0].motion[i]);
+        for i in 0..3 {
+            assert_eq!(sub(&by_frames, i), sub(&by_changes, i), "sub-frame {i}");
+        }
+        let second = &by_changes.layers[0].motion[1];
+        assert_eq!(second.transform.x, 7.0);
+        let ResolvedKind::Group { children, .. } = &second.kind else {
+            panic!("a group");
+        };
+        assert_eq!(
+            children.iter().map(|c| c.opacity).collect::<Vec<_>>(),
+            [0.25, 1.0]
+        );
+        // The frame itself is the layer's own.
+        assert_eq!(
+            format!("{:?}", by_frames.layers[0].kind),
+            format!("{:?}", by_changes.layers[0].kind)
+        );
     }
 
     fn examples() -> PathBuf {
