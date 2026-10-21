@@ -30,15 +30,22 @@ const MIN_SPLIT = Number(process.env.KINETOGRAPH_MINSPLIT) || 8;
 
 export interface ParallelOptions {
   spec: WorkerSpec;
-  draft: boolean;
+  /** `render --scale`: the factor the scenes are drawn at (1 for full size). */
+  scale: number;
+  /** The pixel format the workers convert to, which the writer's encoder takes (`resolveExport`'s `convertFormat`). */
+  convertFormat: string;
+  /** Run React's development build in the workers. */
+  devReact: boolean;
   workers: number;
-  first: number;
-  last: number;
+  /** The frames drawn are numbered `0..count-1` here; index `i` is frame `origin + i * step` of the composition. */
+  origin: number;
+  step: number;
+  count: number;
   writer: VideoWriter;
-  /** Called for each frame in order, before it is pushed to the encoder; throwing stops the render. */
-  onFrame(frame: number, audio: AudioClipJson[], unsupported: Unsupported[]): void;
-  /** Called for each frame after it is pushed. */
-  onPushed?(frame: number): void;
+  /** Called for each frame (by its index) in order, before it is pushed to the encoder; throwing stops the render. */
+  onFrame(index: number, audio: AudioClipJson[], unsupported: Unsupported[]): void;
+  /** Called for each frame (by its index) after it is pushed. */
+  onPushed?(index: number): void;
   shouldCancel?(): boolean;
 }
 
@@ -66,7 +73,9 @@ interface Lane {
  * goes to the idle worker. So the heavy stretches of a film are shared and the render does not wait on one chunk.
  */
 export async function renderInParallel(options: ParallelOptions): Promise<ArtifactRecord[]> {
-  const { first, last, writer, workers: count } = options;
+  const { writer, workers: count } = options;
+  const first = 0;
+  const last = options.count - 1;
   const window = windowFrames(count);
 
   const pool: Worker[] = [];
@@ -187,7 +196,14 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
     };
 
     for (let i = 0; i < count; i++) {
-      const init: WorkerInit = { spec: options.spec, draft: options.draft };
+      const init: WorkerInit = {
+        spec: options.spec,
+        scale: options.scale,
+        convertFormat: options.convertFormat,
+        devReact: options.devReact,
+        origin: options.origin,
+        step: options.step,
+      };
       const worker = new Worker(new URL('./render-worker.js', import.meta.url), { workerData: init });
       lanes.set(worker, { worker, lastEnd: -2, progress: -1 });
       worker.on('message', (message: FromWorker) => onMessage(worker, message));

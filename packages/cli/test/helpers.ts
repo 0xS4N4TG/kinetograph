@@ -60,7 +60,7 @@ export interface Calls {
 export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { native: Native; calls: Calls } {
   const calls: Calls = { still: [], render: [], bench: [], pushed: [], begun: [], finished: [], aborted: 0 };
   const summary = (output: string, over: object = {}) => ({
-    output, encoder: 'libx264', width: 64, height: 36, fps: 30, frames: 3, first: 0, last: 2, ms: 10, msPerFrame: 3.3, audio: false,
+    output, encoder: 'libx264', codec: 'h264', pixelFormat: 'yuv420p', width: 64, height: 36, fps: 30, frames: 3, first: 0, last: 2, ms: 10, msPerFrame: 3.3, audio: false,
     ...over,
   });
   class Writer {
@@ -108,6 +108,9 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
       throw new Error('inspect not stubbed');
     },
     parseRange: fakeParseRange,
+    resolveExport: () => ({
+      codec: 'h264', encoder: 'libx264', container: 'mp4', pixelFormat: 'yuv420p', convertFormat: 'yuv420p', audioCodec: 'aac',
+    }),
     Renderer,
     ...overrides,
   } as unknown as Native;

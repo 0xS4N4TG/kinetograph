@@ -2,13 +2,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { clampPcm, hasOnFrame, joinClips, renderAudio } from '@kinetograph/audio';
 import { resolveSoundSource } from '@kinetograph/core/sound-source';
-import type { Renderer, RenderSummary } from '@kinetograph/native';
+import type { ExportOptions, Renderer, RenderSummary } from '@kinetograph/native';
 import type { ArtifactRecord } from '@kinetograph/core';
 import type { AudioClipJson, SceneJson, Unsupported } from '@kinetograph/scene';
 import { CHUNK_FRAMES, renderInParallel } from './parallel-render.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
 import { CliError } from './errors.js';
-import { draftScene, halfSize } from './scenes.js';
+import { native } from './native.js';
+import { scaleScene, scaledSize } from './scenes.js';
 import { frameRange, type Source } from './source.js';
 
 export interface RenderJobOptions {
@@ -16,8 +17,16 @@ export interface RenderJobOptions {
   /** `10..40` (10 to 39) or `10..=40`; default all frames. */
   range?: string;
   encoder?: string;
-  /** Half size. */
+  /** Output size multiplier (default 1): the compositor draws at the scaled size, sides rounded down to even. */
+  scale?: number;
+  /** Half size: `scale: 0.5`. */
   draft?: boolean;
+  /** Codec, quality, pixel format and audio (docs/AUTHORING.md §9). */
+  export?: ExportOptions;
+  /** GIF: draw every nth frame of the range (a project only). */
+  everyNthFrame?: number;
+  /** Run React's development build in the worker threads (the main thread is set by the caller). */
+  devReact?: boolean;
   /**
    * Fail with `UNSUPPORTED_CONTENT` on the first frame that holds something the engine cannot draw (docs/COMPAT.md
    * §6.1), instead of drawing it without. Default off: the report says what was left out.
@@ -54,7 +63,7 @@ async function writeArtifacts(
   output: string,
   first: number,
   last: number,
-  draft: boolean,
+  scale: number,
   records: ArtifactRecord[],
 ): Promise<string[]> {
   const written: string[] = [];
@@ -65,7 +74,7 @@ async function writeArtifacts(
     let data: string | Uint8Array;
     if (artifact.content === 'thumbnail') {
       const out = await source.frame(artifact.frame);
-      const sceneJson = draft ? JSON.stringify(draftScene(JSON.parse(out.sceneJson) as SceneJson)) : out.sceneJson;
+      const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
       data = renderer.still(sceneJson, artifact.frame, source.baseDir);
     } else {
       data = artifact.content;
@@ -89,8 +98,13 @@ export async function renderSource(
   renderer: Renderer,
   options: RenderJobOptions,
 ): Promise<RenderResult> {
-  const { range, encoder, draft = false } = options;
+  const { range, encoder } = options;
+  const scale = options.scale ?? (options.draft ? 0.5 : 1);
   const { durationInFrames, fps, width, height } = source.composition;
+  const exported: ExportOptions = { ...options.export, encoder: options.export?.encoder ?? encoder };
+  // Checked before anything is drawn: the codec against the path, the options against one another and this ffmpeg.
+  const plan = native().resolveExport(options.output, exported);
+  const step = options.everyNthFrame ?? 1;
 
   // A JSON scene goes to the addon whole: it has keyframes and no audio. What it holds that the engine cannot draw
   // (the glTF features a model uses that are not read) is the same on every frame.
@@ -102,60 +116,69 @@ export async function renderSource(
       if (options.strict) throw strictError(first, unsupported);
       for (let frame = first; frame <= last; frame++) leftOut.add(frame, unsupported);
     }
-    if (draft) sceneJson = JSON.stringify(draftScene(JSON.parse(sceneJson) as SceneJson));
-    const summary = renderer.render(sceneJson, options.output, { range, encoder, baseDir: source.baseDir });
+    if (step !== 1) throw new CliError('INVALID_ARG', '--every-nth-frame needs a project; a .json scene is drawn whole');
+    if (scale !== 1) sceneJson = JSON.stringify(scaleScene(JSON.parse(sceneJson) as SceneJson, scale));
+    const summary = renderer.render(sceneJson, options.output, { range, encoder, export: exported, baseDir: source.baseDir });
     return { ...summary, compat: leftOut.report(), artifacts: [] };
   }
 
   source.clearArtifacts?.();
   const [first, last] = frameRange(range, durationInFrames);
-  const size = draft ? { width: halfSize(width), height: halfSize(height) } : { width, height };
-  const writer = renderer.beginVideo(options.output, { width: size.width, height: size.height, fps, encoder });
+  const size = scale !== 1 ? { width: scaledSize(width, scale), height: scaledSize(height, scale) } : { width, height };
+  const writer = renderer.beginVideo(options.output, { width: size.width, height: size.height, fps, encoder, export: exported });
   const clipFrames: { frame: number; audio: AudioClipJson[] }[] = [];
   const leftOut = new LeftOutCollector();
   let artifactRecords: ArtifactRecord[] = [];
   try {
-    const total = last - first + 1;
+    // The frames drawn: first, first + step, ... (step is 1 unless a GIF asks for fewer).
+    const total = Math.floor((last - first) / step) + 1;
+    const frameAt = (index: number): number => first + index * step;
     const workers = Math.min(options.concurrency ?? 1, Math.ceil(total / CHUNK_FRAMES));
     const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[]): void => {
       clipFrames.push({ frame, audio });
       if (options.strict && unsupported.length > 0) throw strictError(frame, unsupported);
       leftOut.add(frame, unsupported);
     };
-    const pushed = (frame: number): void => options.onFrame?.(frame - first + 1, total);
+    const pushed = (index: number): void => options.onFrame?.(index + 1, total);
     if (workers > 1 && source.worker) {
+      // The workers number the frames drawn 0..total-1; `frameAt` says which frame of the composition each is.
       artifactRecords = await renderInParallel({
         spec: source.worker,
-        draft,
+        scale,
+        convertFormat: plan.convertFormat,
+        devReact: options.devReact ?? false,
+        origin: first,
+        step,
         workers,
-        first,
-        last,
+        count: total,
         writer,
-        onFrame,
+        onFrame: (index, audio, unsupported) => onFrame(frameAt(index), audio, unsupported),
         onPushed: pushed,
         shouldCancel: options.shouldCancel,
       });
     } else {
-      for (let frame = first; frame <= last; frame++) {
+      for (let index = 0; index < total; index++) {
         if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
+        const frame = frameAt(index);
         const out = await source.frame(frame);
         onFrame(frame, out.audio, out.unsupported ?? []);
-        const sceneJson = draft ? JSON.stringify(draftScene(JSON.parse(out.sceneJson) as SceneJson)) : out.sceneJson;
+        const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
         writer.pushFrame(sceneJson, frame, source.baseDir);
-        pushed(frame);
+        pushed(index);
       }
       artifactRecords = source.artifacts?.() ?? [];
     }
     const clips = joinClips(clipFrames);
     let summary: RenderSummary;
-    if (clips.length > 0 || hasOnFrame(first, last)) {
+    // A GIF has no sound.
+    if (plan.audioCodec !== undefined && (clips.length > 0 || hasOnFrame(first, last))) {
       options.progress?.('mixing audio');
       const pcm = clampPcm(await renderAudio({ fps, first, last, clips, baseDir: source.baseDir, resolveSource: resolveSoundSource }));
       summary = writer.finish(pcm);
     } else {
       summary = writer.finish();
     }
-    const artifacts = await writeArtifacts(source, renderer, options.output, first, last, draft, artifactRecords);
+    const artifacts = await writeArtifacts(source, renderer, options.output, first, last, scale, artifactRecords);
     return { ...summary, compat: leftOut.report(), artifacts };
   } catch (error) {
     try {

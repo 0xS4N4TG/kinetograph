@@ -5,12 +5,18 @@ import { parentPort, workerData } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetograph/core';
 import type { SceneJson, Unsupported, AudioClipJson } from '@kinetograph/scene';
 import { native } from './native.js';
-import { draftScene } from './scenes.js';
+import { scaleScene } from './scenes.js';
 import { openSource, type FrameOutput, type WorkerSpec } from './source.js';
 
 export interface WorkerInit {
   spec: WorkerSpec;
-  draft: boolean;
+  scale: number;
+  /** The pixel format to convert drawn frames to (`resolveExport`'s `convertFormat`). */
+  convertFormat: string;
+  devReact: boolean;
+  /** Index `i` of a chunk is frame `origin + i * step` of the composition (`step` is above 1 for a GIF's `--every-nth-frame`). */
+  origin: number;
+  step: number;
 }
 
 /** Main to worker. */
@@ -33,7 +39,9 @@ export type FromWorker =
 const port = parentPort!;
 const post = (message: FromWorker, transfer: ArrayBuffer[] = []): void => port.postMessage(message, transfer);
 
-const { spec, draft } = workerData as WorkerInit;
+const { spec, scale, convertFormat, devReact, origin, step } = workerData as WorkerInit;
+// React reads this when the bundle imports it, which `openSource` below does.
+process.env.NODE_ENV = devReact ? 'development' : 'production';
 
 try {
   const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile });
@@ -65,26 +73,27 @@ try {
     }
     // The GPU draws a frame while this thread runs the JS of the next: a frame is started, and the one before it is
     // collected, converted and posted.
-    let started: { frame: number; out: FrameOutput } | undefined;
+    let started: { index: number; out: FrameOutput } | undefined;
     const collect = (): void => {
-      const { frame, out } = started!;
+      const { index, out } = started!;
       const drawn = renderer.finishFrame();
       // The colour conversion the encoder does is done here, in parallel, so the encoder thread only has to send.
-      const pixels = native().rgbaToYuv(drawn.data, drawn.width, drawn.height);
+      const pixels = native().rgbaToYuv(drawn.data, drawn.width, drawn.height, convertFormat);
       // A copy, because it is moved to the main thread: the addon's buffer cannot be transferred.
       const yuv = new ArrayBuffer(pixels.byteLength);
       new Uint8Array(yuv).set(pixels);
-      post({ type: 'frame', frame, yuv, audio: out.audio, unsupported: out.unsupported ?? [] }, [yuv]);
+      post({ type: 'frame', frame: index, yuv, audio: out.audio, unsupported: out.unsupported ?? [] }, [yuv]);
     };
     const run = { next: message.first, end: message.last };
     active = run;
     while (run.next <= run.end) {
-      const frame = run.next++;
+      const index = run.next++;
+      const frame = origin + index * step;
       const out = await source.frame(frame);
-      const sceneJson = draft ? JSON.stringify(draftScene(JSON.parse(out.sceneJson) as SceneJson)) : out.sceneJson;
+      const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
       renderer.startFrame(sceneJson, frame, source.baseDir);
       if (started) collect();
-      started = { frame, out };
+      started = { index, out };
     }
     if (started) collect();
     active = undefined;

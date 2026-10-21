@@ -1,31 +1,39 @@
 import { fileURLToPath } from 'node:url';
 import type { LayerJson, Num, SceneJson } from '@kinetograph/scene';
 
-const halve = (n: Num): Num =>
-  typeof n === 'number' ? n / 2 : n.map((k) => ({ ...k, value: k.value / 2 }));
+/** The largest even number not above `n * scale`, at least 2: YUV 4:2:0 video needs even sizes. */
+export const scaledSize = (n: number, scale: number): number => Math.max(2, Math.floor((n * scale + 1e-9) / 2) * 2);
 
-/** The largest even number not above half of `n`, at least 2: H.264 in 4:2:0 needs even sizes. */
-export const halfSize = (n: number): number => Math.max(2, Math.floor(n / 4) * 2);
+/** `scaledSize` at half: H.264 in 4:2:0 needs even sizes. */
+export const halfSize = (n: number): number => scaledSize(n, 0.5);
+
+const times = (n: Num, k: number): Num =>
+  typeof n === 'number' ? n * k : n.map((key) => ({ ...key, value: key.value * k }));
 
 /**
- * The scene at half size for `render --draft`: the layers wrapped in a group at scale 0.5 on a canvas of half the
- * size. An explicit camera centre is in canvas pixels, so it is halved too; the perspective distance is not, because
- * `z` is not scaled by the group's matrix. (3D scenes may therefore differ a little from the full-size render.)
+ * The scene at `scale` times the size, for `render --scale` (and `--draft`, which is 0.5): the layers wrapped in a group
+ * at that scale on a canvas of the scaled size (each side rounded down to an even number), so the compositor draws
+ * everything at the output size and nothing is resampled afterwards. An explicit camera centre is in canvas pixels, so
+ * it is scaled too; the perspective distance is not, because `z` is not scaled by the group's matrix. (3D scenes may
+ * therefore differ a little from the full-size render.)
  */
-export function draftScene(scene: SceneJson): SceneJson {
-  const draft: SceneJson = {
+export function scaleScene(scene: SceneJson, scale: number): SceneJson {
+  const scaled: SceneJson = {
     ...scene,
-    width: halfSize(scene.width),
-    height: halfSize(scene.height),
-    layers: [{ id: 'kinetograph-draft', type: 'group', transform: { scale: 0.5 }, children: scene.layers }],
+    width: scaledSize(scene.width, scale),
+    height: scaledSize(scene.height, scale),
+    layers: [{ id: 'kinetograph-draft', type: 'group', transform: { scale }, children: scene.layers }],
   };
   if (scene.camera) {
-    draft.camera = { ...scene.camera };
-    if (scene.camera.x !== undefined) draft.camera.x = halve(scene.camera.x);
-    if (scene.camera.y !== undefined) draft.camera.y = halve(scene.camera.y);
+    scaled.camera = { ...scene.camera };
+    if (scene.camera.x !== undefined) scaled.camera.x = times(scene.camera.x, scale);
+    if (scene.camera.y !== undefined) scaled.camera.y = times(scene.camera.y, scale);
   }
-  return draft;
+  return scaled;
 }
+
+/** The scene at half size for `render --draft`. */
+export const draftScene = (scene: SceneJson): SceneJson => scaleScene(scene, 0.5);
 
 export const LABEL_FONT_KEY = 'DM Sans';
 export const LABEL_FONT_PATH = fileURLToPath(new URL('../assets/fonts/DMSans-Medium.ttf', import.meta.url));

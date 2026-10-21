@@ -2,8 +2,10 @@ import { writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { whole } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
+import { EXPORT_FLAGS, parseExportFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
+import { native } from '../native.js';
 import { checkFrame, type Source } from '../source.js';
 import { nowMs } from '../time.js';
 import {
@@ -67,8 +69,9 @@ export const render: Command = {
   options: [
     OUTPUT_OPTION,
     { name: 'range', type: 'string', description: 'Frames to render: 10..40 (10 to 39) or 10..=40 (10 to 40); default all' },
-    { name: 'encoder', type: 'string', description: 'ffmpeg H.264 encoder (default h264_videotoolbox on macOS, else libx264)' },
-    { name: 'draft', type: 'boolean', description: 'Half size, for a fast look' },
+    { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: h264_videotoolbox / hevc_videotoolbox / prores_videotoolbox on macOS when ffmpeg has them and they can do what is asked, else libx264, libx265, prores_ks, libvpx-vp9)' },
+    { name: 'draft', type: 'boolean', description: 'Half size, for a fast look (the same as --scale 0.5)' },
+    ...EXPORT_FLAGS,
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
     STRICT_OPTION,
     DEV_REACT_OPTION,
@@ -76,8 +79,13 @@ export const render: Command = {
   async run(args, context) {
     const output = requireOutput(args);
     const concurrency = whole('--concurrency', args.options.concurrency as number | undefined, 1, defaultConcurrency());
-    // The worker threads copy the environment when they start, so they run the same React build.
-    const restoreReact = setReactMode(args.options['dev-react'] === true);
+    const flags = parseExportFlags(args.options);
+    const devReact = args.options['dev-react'] === true;
+    // Refused now, before the project is bundled and run, if the options do not fit the output path or this ffmpeg.
+    native().resolveExport(output, flags.export);
+    // React's production build unless asked otherwise: the development one is several times slower per frame. The
+    // worker threads are told too (`devReact`).
+    const restoreReact = setReactMode(devReact);
     let source: Source | undefined;
     try {
       source = await openFromArgs(args);
@@ -88,7 +96,10 @@ export const render: Command = {
         output,
         range: args.options.range as string | undefined,
         encoder: args.options.encoder as string | undefined,
-        draft: args.options.draft === true,
+        scale: flags.scale,
+        export: flags.export,
+        everyNthFrame: flags.everyNthFrame,
+        devReact,
         strict: args.options.strict === true,
         concurrency,
         progress: context.progress,
@@ -114,7 +125,7 @@ function result(summary: RenderResult, wallMs: number) {
     data: { ...summary, wallMs },
     text:
       `wrote ${summary.output} (${summary.width}x${summary.height}, ${summary.frames} frames ` +
-      `${summary.first}..=${summary.last} at ${summary.fps} fps, ${summary.encoder}, ` +
+      `${summary.first}..=${summary.last} at ${summary.fps} fps, ${summary.codec} by ${summary.encoder}, ${summary.pixelFormat}, ` +
       `${summary.audio ? 'with audio' : 'no audio'}, ${summary.msPerFrame.toFixed(2)} ms/frame in the encoder${unsupported}, ` +
       `${wallMs.toFixed(0)} ms in all)` +
       (summary.artifacts.length > 0 ? `; also wrote ${summary.artifacts.join(', ')}` : ''),
