@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { encodePng } from './helpers.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 30_000 });
 
@@ -66,6 +67,45 @@ const Fade = () => {
 registerRoot(() => <Composition id="Fade" component={Fade} width={64} height={36} fps={30} durationInFrames={200} />);
 `;
 
+// A picture drawn after a canvas with a shadow. The canvas is drawn in runs through the image renderer, one of them of
+// solid paths only, and that run once emptied the renderer's image atlas while the pictures drawn before it still
+// counted as uploaded: the picture came out blank on a renderer that had drawn the canvas before it, and not on a new
+// one. So a frame depended on the frames its worker had drawn, and `--concurrency N` (and the tail of a split chunk)
+// differed from a sequential render on the frames after a canvas.
+const CARDS = `
+import { AbsoluteFill, Composition, registerRoot, staticFile, useCurrentFrame } from 'remotion';
+import { Canvas, Image, Layer } from '@kinetograph/core';
+
+const draw = (ctx: any) => {
+  ctx.fillStyle = '#203040';
+  ctx.fillRect(0, 0, 64, 36);
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 2;
+  ctx.fillStyle = '#e8d8c0';
+  ctx.fillRect(14, 8, 30, 16);
+  ctx.restore();
+};
+
+const Cards = () => {
+  const frame = useCurrentFrame();
+  const canvas = Math.floor(frame / 4) % 2 === 1;
+  return (
+    <AbsoluteFill style={{ background: '#102030' }}>
+      {canvas ? (
+        <Canvas id="shadow" width={64} height={36} draw={draw} />
+      ) : (
+        <Layer id="pic" x={frame % 4}>
+          <Image src={staticFile('pic.png')} width={64} height={36} />
+        </Layer>
+      )}
+    </AbsoluteFill>
+  );
+};
+registerRoot(() => <Composition id="Cards" component={Cards} width={64} height={36} fps={30} durationInFrames={24} />);
+`;
+
 /** A mono 16-bit WAV of a sine wave. */
 function wav(seconds: number, rate = 44100): Buffer {
   const samples = Math.round(seconds * rate);
@@ -93,8 +133,13 @@ beforeAll(() => {
   writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
   writeFileSync(join(dir, 'index.tsx'), PROJECT);
   writeFileSync(join(dir, 'fades.tsx'), FADES);
+  writeFileSync(join(dir, 'cards.tsx'), CARDS);
   mkdirSync(join(dir, 'public'));
   writeFileSync(join(dir, 'public', 'tone.wav'), wav(3));
+  // A picture that is nowhere flat, so a blank one differs from it.
+  const pic = new Uint8Array(64 * 36 * 4);
+  for (let y = 0; y < 36; y++) for (let x = 0; x < 64; x++) pic.set([x * 4, y * 7, 255 - x * 3, 255], (y * 64 + x) * 4);
+  writeFileSync(join(dir, 'public', 'pic.png'), encodePng(64, 36, pic));
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -138,6 +183,27 @@ describe.skipIf(!ready)('render --concurrency', () => {
     for (const env of [{}, { KINETOGRAPH_CHUNK: '24', KINETOGRAPH_MINSPLIT: '2' }]) {
       render('fade-par.mp4', ['--concurrency', '3'], 'fades.tsx', env);
       expect(decoded('fade-par.mp4').video).toEqual(seq.video);
+    }
+  });
+
+  it('draws a picture after a canvas with a shadow as a new renderer does, at any concurrency and for a frame alone', () => {
+    // Lossless H.264, so that the decoded frames are a function of the pixels drawn and nothing else.
+    const lossless = ['--encoder', 'libx264', '--crf', '0', '--pixel-format', 'yuv444p'];
+    render('cards-seq.mp4', ['--concurrency', '1', ...lossless], 'cards.tsx');
+    const seq = decoded('cards-seq.mp4').video;
+    expect(seq).toHaveLength(24);
+    // The pictures of frames 8 and 16 are those of frame 0 (one step on, `x` moving a pixel with the frame).
+    expect(seq[8]).toBe(seq[0]);
+    expect(seq[16]).toBe(seq[0]);
+    expect(seq[4]).not.toBe(seq[0]);
+    for (const env of [{}, { KINETOGRAPH_CHUNK: '4', KINETOGRAPH_MINSPLIT: '2' }, { KINETOGRAPH_CHUNK: '6', KINETOGRAPH_MINSPLIT: '2' }]) {
+      render('cards-par.mp4', ['--concurrency', '3', ...lossless], 'cards.tsx', env);
+      expect(decoded('cards-par.mp4').video).toEqual(seq);
+    }
+    // Each of these frames alone, in a process of its own, is the frame of the whole render.
+    for (const frame of [0, 3, 4, 7, 8, 11, 12, 16, 20]) {
+      render('cards-one.mp4', ['--range', `${frame}..=${frame}`, ...lossless], 'cards.tsx');
+      expect(decoded('cards-one.mp4').video).toEqual([seq[frame]]);
     }
   });
 
