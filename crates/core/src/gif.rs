@@ -7,11 +7,13 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Seek};
 use std::path::Path;
 
 use image::codecs::gif::GifDecoder;
-use image::{AnimationDecoder, ImageDecoder};
+use image::codecs::png::PngDecoder;
+use image::codecs::webp::WebPDecoder;
+use image::{AnimationDecoder, DynamicImage, Frames, ImageDecoder};
 use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
 use crate::error::{Error, Result};
@@ -52,13 +54,29 @@ pub fn picture_index(ends_ms: &[f64], seconds: f64, looped: bool) -> usize {
         .unwrap_or(ends_ms.len() - 1)
 }
 
-/// Whether `path` starts with the signature of a GIF.
+/// Whether `path` starts with the signature of a GIF, an APNG or an animated
+/// WebP.
 pub fn is_gif(path: &Path) -> bool {
-    let mut signature = [0_u8; 6];
-    File::open(path)
-        .and_then(|mut f| f.read_exact(&mut signature))
-        .is_ok()
-        && (&signature == b"GIF87a" || &signature == b"GIF89a")
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut signature = [0_u8; 12];
+    let n = file.read(&mut signature).unwrap_or(0);
+    if n >= 6 && (&signature[..6] == b"GIF87a" || &signature[..6] == b"GIF89a") {
+        return true;
+    }
+    if file.rewind().is_err() {
+        return false;
+    }
+    if n >= 4 && signature[..4] == [0x89, 0x50, 0x4E, 0x47] {
+        return PngDecoder::new(BufReader::new(file))
+            .and_then(|d| d.is_apng())
+            .unwrap_or(false);
+    }
+    if n == 12 && &signature[..4] == b"RIFF" && &signature[8..12] == b"WEBP" {
+        return WebPDecoder::new(BufReader::new(file)).is_ok_and(|d| d.has_animation());
+    }
+    false
 }
 
 /// What a GIF file holds.
@@ -76,18 +94,62 @@ pub struct GifInfo {
 /// shows for, in milliseconds (`delay_ms`).
 type Pictures = Box<dyn Iterator<Item = std::result::Result<(Vec<u8>, u32), String>>>;
 
-/// Opens a GIF: its logical screen and its pictures.
-fn decode(path: &Path) -> std::result::Result<(u32, u32, Pictures), String> {
-    let file = File::open(path).map_err(|e| format!("cannot read: {e}"))?;
-    let decoder = GifDecoder::new(BufReader::new(file)).map_err(|e| format!("not a GIF ({e})"))?;
-    let (width, height) = decoder.dimensions();
-    let frames = decoder.into_frames().map(|frame| {
+fn map_frames(frames: Frames<'static>) -> Pictures {
+    Box::new(frames.map(|frame| {
         let frame = frame.map_err(|e| format!("cannot decode ({e})"))?;
         let (numerator, denominator) = frame.delay().numer_denom_ms();
         let raw = (f64::from(numerator) / f64::from(denominator.max(1))).round() as u32;
         Ok((frame.into_buffer().into_raw(), delay_ms(raw)))
-    });
-    Ok((width, height, Box::new(frames)))
+    }))
+}
+
+fn still_picture<D: ImageDecoder>(decoder: D) -> std::result::Result<Pictures, String> {
+    let rgba = DynamicImage::from_decoder(decoder)
+        .map_err(|e| format!("cannot decode ({e})"))?
+        .into_rgba8()
+        .into_raw();
+    Ok(Box::new(std::iter::once(Ok((rgba, delay_ms(0))))))
+}
+
+/// Opens a GIF, PNG/APNG or WebP: its logical screen and its pictures.
+fn decode(path: &Path) -> std::result::Result<(u32, u32, Pictures), String> {
+    let mut file = File::open(path).map_err(|e| format!("cannot read: {e}"))?;
+    let mut signature = [0_u8; 12];
+    let n = file
+        .read(&mut signature)
+        .map_err(|e| format!("cannot read: {e}"))?;
+    file.rewind().map_err(|e| format!("cannot read: {e}"))?;
+    let reader = BufReader::new(file);
+
+    if n >= 4 && signature[..4] == [0x89, 0x50, 0x4E, 0x47] {
+        let decoder = PngDecoder::new(reader).map_err(|e| format!("not a PNG ({e})"))?;
+        let (width, height) = decoder.dimensions();
+        let is_apng = decoder
+            .is_apng()
+            .map_err(|e| format!("cannot decode ({e})"))?;
+        let frames = if is_apng {
+            let apng = decoder.apng().map_err(|e| format!("cannot decode ({e})"))?;
+            map_frames(apng.into_frames())
+        } else {
+            still_picture(decoder)?
+        };
+        return Ok((width, height, frames));
+    }
+
+    if n == 12 && &signature[..4] == b"RIFF" && &signature[8..12] == b"WEBP" {
+        let decoder = WebPDecoder::new(reader).map_err(|e| format!("not a WebP ({e})"))?;
+        let (width, height) = decoder.dimensions();
+        let frames = if decoder.has_animation() {
+            map_frames(decoder.into_frames())
+        } else {
+            still_picture(decoder)?
+        };
+        return Ok((width, height, frames));
+    }
+
+    let decoder = GifDecoder::new(reader).map_err(|e| format!("not a GIF ({e})"))?;
+    let (width, height) = decoder.dimensions();
+    Ok((width, height, map_frames(decoder.into_frames())))
 }
 
 /// Reads how many pictures a GIF has and how long they last. (This decodes
@@ -317,7 +379,13 @@ mod tests {
         assert!(missing.contains("cannot read"), "{missing}");
         let png = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/card-art.png");
         assert!(!is_gif(&png));
-        assert!(probe(&png).unwrap_err().contains("not a GIF"));
+        // A plain still PNG works as a one-picture animation (100 ms).
+        let still = probe(&png).unwrap();
+        assert_eq!((still.pictures, still.duration_ms), (1, 100.0));
+        // A non-image file is rejected as not a GIF.
+        let wav = spinner().with_file_name("tone-mono.wav");
+        assert!(!is_gif(&wav));
+        assert!(probe(&wav).unwrap_err().contains("not a GIF"));
         let err = open_gif(Path::new("."), "spin", "nope.gif")
             .err()
             .unwrap()
@@ -326,5 +394,239 @@ mod tests {
             err.contains("\"spin\"") && err.contains("nope.gif"),
             "{err}"
         );
+    }
+
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = 0xFFFF_FFFF_u32;
+        for &b in bytes {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+
+    fn push_png_chunk(out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]) {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let start = out.len();
+        out.extend_from_slice(tag);
+        out.extend_from_slice(data);
+        let crc = crc32(&out[start..]);
+        out.extend_from_slice(&crc.to_be_bytes());
+    }
+
+    fn encode_single_png_idat(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
+        use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
+        let mut png = Vec::new();
+        let pixels = rgba.repeat((width * height) as usize);
+        PngEncoder::new(&mut png)
+            .write_image(&pixels, width, height, ExtendedColorType::Rgba8)
+            .unwrap();
+        // Extract concatenated IDAT payload bytes from the encoded PNG.
+        let mut idat = Vec::new();
+        let mut pos = 8;
+        while pos + 8 <= png.len() {
+            let len = u32::from_be_bytes(png[pos..pos + 4].try_into().unwrap()) as usize;
+            let tag = &png[pos + 4..pos + 8];
+            let data = &png[pos + 8..pos + 8 + len];
+            if tag == b"IDAT" {
+                idat.extend_from_slice(data);
+            }
+            pos += 12 + len;
+        }
+        idat
+    }
+
+    fn fctl_data(seq: u32, width: u32, height: u32, delay_num: u16, delay_den: u16) -> Vec<u8> {
+        let mut d = Vec::with_capacity(26);
+        d.extend_from_slice(&seq.to_be_bytes());
+        d.extend_from_slice(&width.to_be_bytes());
+        d.extend_from_slice(&height.to_be_bytes());
+        d.extend_from_slice(&0_u32.to_be_bytes()); // x_offset
+        d.extend_from_slice(&0_u32.to_be_bytes()); // y_offset
+        d.extend_from_slice(&delay_num.to_be_bytes());
+        d.extend_from_slice(&delay_den.to_be_bytes());
+        d.push(0); // dispose_op: APNG_DISPOSE_OP_NONE
+        d.push(0); // blend_op: APNG_BLEND_OP_SOURCE
+        d
+    }
+
+    fn build_two_frame_apng(
+        width: u32,
+        height: u32,
+        c0: [u8; 4],
+        c1: [u8; 4],
+        delay_ms: u16,
+    ) -> Vec<u8> {
+        let mut out = Vec::from(&b"\x89PNG\r\n\x1a\n"[..]);
+        let mut ihdr = Vec::with_capacity(13);
+        ihdr.extend_from_slice(&width.to_be_bytes());
+        ihdr.extend_from_slice(&height.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit RGBA
+        push_png_chunk(&mut out, b"IHDR", &ihdr);
+
+        let mut actl = Vec::with_capacity(8);
+        actl.extend_from_slice(&2_u32.to_be_bytes()); // num_frames = 2
+        actl.extend_from_slice(&0_u32.to_be_bytes()); // num_plays = 0
+        push_png_chunk(&mut out, b"acTL", &actl);
+
+        // Frame 0: fcTL (seq=0) + IDAT
+        push_png_chunk(
+            &mut out,
+            b"fcTL",
+            &fctl_data(0, width, height, delay_ms, 1000),
+        );
+        let idat0 = encode_single_png_idat(width, height, c0);
+        push_png_chunk(&mut out, b"IDAT", &idat0);
+
+        // Frame 1: fcTL (seq=1) + fdAT (seq=2)
+        push_png_chunk(
+            &mut out,
+            b"fcTL",
+            &fctl_data(1, width, height, delay_ms, 1000),
+        );
+        let idat1 = encode_single_png_idat(width, height, c1);
+        let mut fdat = Vec::with_capacity(4 + idat1.len());
+        fdat.extend_from_slice(&2_u32.to_be_bytes());
+        fdat.extend_from_slice(&idat1);
+        push_png_chunk(&mut out, b"fdAT", &fdat);
+
+        push_png_chunk(&mut out, b"IEND", &[]);
+        out
+    }
+
+    fn encode_vp8l_chunk(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
+        use image::{ExtendedColorType, codecs::webp::WebPEncoder};
+        let mut webp = Vec::new();
+        let pixels = rgba.repeat((width * height) as usize);
+        WebPEncoder::new_lossless(&mut webp)
+            .encode(&pixels, width, height, ExtendedColorType::Rgba8)
+            .unwrap();
+        // Strip the 12-byte "RIFF....WEBP" header to keep the "VP8L..." chunk.
+        webp.split_off(12)
+    }
+
+    fn push_riff_chunk(out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]) {
+        out.extend_from_slice(tag);
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(data);
+        if data.len() % 2 == 1 {
+            out.push(0);
+        }
+    }
+
+    fn build_anmf_payload(width: u32, height: u32, duration_ms: u32, vp8l_chunk: &[u8]) -> Vec<u8> {
+        let mut anmf = Vec::with_capacity(16 + vp8l_chunk.len());
+        anmf.extend_from_slice(&[0, 0, 0]); // frame X = 0
+        anmf.extend_from_slice(&[0, 0, 0]); // frame Y = 0
+        let w = width - 1;
+        let h = height - 1;
+        anmf.extend_from_slice(&[w as u8, (w >> 8) as u8, (w >> 16) as u8]);
+        anmf.extend_from_slice(&[h as u8, (h >> 8) as u8, (h >> 16) as u8]);
+        anmf.extend_from_slice(&[
+            duration_ms as u8,
+            (duration_ms >> 8) as u8,
+            (duration_ms >> 16) as u8,
+        ]);
+        // Reserved (6 bits) | blending method = 1 (do not blend, bit 1 = 0x02) | disposal = 0
+        anmf.push(0x02);
+        anmf.extend_from_slice(vp8l_chunk);
+        anmf
+    }
+
+    fn build_two_frame_webp(
+        width: u32,
+        height: u32,
+        c0: [u8; 4],
+        c1: [u8; 4],
+        delay_ms: u32,
+    ) -> Vec<u8> {
+        let mut chunks = Vec::new();
+        // VP8X: flags (0x02 = animation, 0x10 = alpha) + 3 reserved + (w-1) u24 + (h-1) u24
+        let mut vp8x = Vec::with_capacity(10);
+        vp8x.extend_from_slice(&[0x12, 0, 0, 0]);
+        let w = width - 1;
+        let h = height - 1;
+        vp8x.extend_from_slice(&[w as u8, (w >> 8) as u8, (w >> 16) as u8]);
+        vp8x.extend_from_slice(&[h as u8, (h >> 8) as u8, (h >> 16) as u8]);
+        push_riff_chunk(&mut chunks, b"VP8X", &vp8x);
+
+        // ANIM: background color (BGRA = 0) + loop count (0 = infinite)
+        push_riff_chunk(&mut chunks, b"ANIM", &[0, 0, 0, 0, 0, 0]);
+
+        let vp8l0 = encode_vp8l_chunk(width, height, c0);
+        let anmf0 = build_anmf_payload(width, height, delay_ms, &vp8l0);
+        push_riff_chunk(&mut chunks, b"ANMF", &anmf0);
+
+        let vp8l1 = encode_vp8l_chunk(width, height, c1);
+        let anmf1 = build_anmf_payload(width, height, delay_ms, &vp8l1);
+        push_riff_chunk(&mut chunks, b"ANMF", &anmf1);
+
+        let mut riff = Vec::with_capacity(12 + chunks.len());
+        riff.extend_from_slice(b"RIFF");
+        riff.extend_from_slice(&((4 + chunks.len()) as u32).to_le_bytes());
+        riff.extend_from_slice(b"WEBP");
+        riff.extend_from_slice(&chunks);
+        riff
+    }
+
+    #[test]
+    fn apng_and_animated_webp_are_decoded_with_frame_delays() {
+        let dir = std::env::temp_dir().join(format!("kinetograph-anim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let red = [230, 20, 40, 255];
+        let blue = [20, 80, 240, 255];
+
+        // APNG (and with a non-matching extension to verify signature detection).
+        let apng_path = dir.join("anim.apng");
+        std::fs::write(&apng_path, build_two_frame_apng(4, 3, red, blue, 100)).unwrap();
+        assert!(is_gif(&apng_path));
+        let info = probe(&apng_path).unwrap();
+        assert_eq!((info.width, info.height, info.pictures), (4, 3, 2));
+        assert_eq!(info.duration_ms, 200.0);
+        let apng = Gif::open(&apng_path).unwrap();
+        assert_eq!(px(apng.picture(0.05, false), 1, 1), red);
+        assert_eq!(px(apng.picture(0.15, false), 1, 1), blue);
+        assert_eq!(px(apng.picture(0.25, true), 1, 1), red);
+
+        // Animated WebP.
+        let webp_path = dir.join("anim.webp");
+        std::fs::write(&webp_path, build_two_frame_webp(4, 3, red, blue, 100)).unwrap();
+        assert!(is_gif(&webp_path));
+        let info = probe(&webp_path).unwrap();
+        assert_eq!((info.width, info.height, info.pictures), (4, 3, 2));
+        assert_eq!(info.duration_ms, 200.0);
+        let webp = Gif::open(&webp_path).unwrap();
+        assert_eq!(px(webp.picture(0.05, false), 1, 1), red);
+        assert_eq!(px(webp.picture(0.15, false), 1, 1), blue);
+        assert_eq!(px(webp.picture(0.25, true), 1, 1), red);
+
+        // Still WebP works as a 1-picture animation and is not flagged as animated by is_gif.
+        let still_webp_path = dir.join("still.webp");
+        {
+            use image::{ExtendedColorType, codecs::webp::WebPEncoder};
+            let mut buf = Vec::new();
+            WebPEncoder::new_lossless(&mut buf)
+                .encode(&red.repeat(12), 4, 3, ExtendedColorType::Rgba8)
+                .unwrap();
+            std::fs::write(&still_webp_path, buf).unwrap();
+        }
+        assert!(!is_gif(&still_webp_path));
+        let still_info = probe(&still_webp_path).unwrap();
+        assert_eq!(
+            (still_info.width, still_info.height, still_info.pictures),
+            (4, 3, 1)
+        );
+        assert_eq!(still_info.duration_ms, 100.0);
+        let still_webp = Gif::open(&still_webp_path).unwrap();
+        assert_eq!(px(still_webp.picture(0.05, false), 1, 1), red);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
