@@ -171,3 +171,46 @@ describe('the HTML fragment parser', () => {
     expect((nodes[3] as any).children[0].text).toBe('open');
   });
 });
+
+describe('remote files', () => {
+  const opts = { path: '$0', viewport: { width: 100, height: 100 }, fonts: {}, baseDir: '/p', time: 0, stylesheets: [] };
+
+  it('are the local files they were downloaded to, in src, href, poster and CSS url(), looked up once each', async () => {
+    const { setRemoteAssetResolver } = await import('../src/environment.js');
+    const asked: string[] = [];
+    setRemoteAssetResolver((url) => {
+      asked.push(url);
+      return url.includes('gone') ? null : `/cache/${url.split('/').pop()}`;
+    });
+    try {
+      const { request } = buildIslandRequest(
+        el('div', { style: { backgroundImage: 'url(https://x.test/bg.png), url("https://x.test/gone.png")' } }, [
+          el('img', { src: 'https://x.test/a.png', style: { maskImage: "url('https://x.test/a.png')" } }),
+          el('video', { src: 'https://x.test/v.mp4', poster: 'https://x.test/p.jpg' }),
+          el('img', { src: 'local.png' }),
+          el('a', { href: 'https://x.test/page' }),
+          el('svg', {}, [el('image', { href: 'https://x.test/s.png' })]),
+        ]),
+        opts,
+      );
+      const root = request.root as any;
+      expect(root.style).toBe('background-image: url("/cache/bg.png"), url("https://x.test/gone.png")');
+      const [img, video, local, anchor, svg] = root.children;
+      expect(img.attrs.src).toBe('/cache/a.png');
+      expect(img.style).toBe('mask-image: url("/cache/a.png")');
+      expect(video.attrs).toMatchObject({ src: '/cache/v.mp4', poster: '/cache/p.jpg' });
+      expect(local.attrs.src).toBe('local.png');
+      // A link is not a file the engine reads.
+      expect(anchor.attrs.href).toBe('https://x.test/page');
+      expect(svg.children[0].attrs.href).toBe('/cache/s.png');
+      expect(asked.filter((u) => u.endsWith('a.png'))).toHaveLength(1);
+    } finally {
+      setRemoteAssetResolver(null);
+    }
+  });
+
+  it('are left as they are with no resolver', () => {
+    const { request } = buildIslandRequest(el('img', { src: 'https://x.test/a.png' }), opts);
+    expect((request.root as any).attrs.src).toBe('https://x.test/a.png');
+  });
+});

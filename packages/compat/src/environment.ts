@@ -27,6 +27,22 @@ export function getDomEnvironment(): DomEnvironment {
   return { baseDir: process.env.KINETOGRAPH_BASE_DIR ?? process.cwd(), ...(publicDir ? { publicDir } : {}) };
 }
 
+// ---- remote files ----
+
+type RemoteResolver = (url: string) => string | null;
+let remoteResolver: RemoteResolver | null = null;
+
+/** The host (core) says where an http(s) image or video is kept after it was downloaded once; null when it cannot be had. */
+export function setRemoteAssetResolver(resolver: RemoteResolver | null): void {
+  remoteResolver = resolver;
+}
+
+/** The local file for an http(s) URL, or null (not a remote URL, no resolver, or the download failed). */
+export function resolveRemoteAsset(url: string): string | null {
+  if (remoteResolver === null || !/^https?:\/\//i.test(url)) return null;
+  return remoteResolver(url);
+}
+
 // ---- stylesheets ----
 
 interface Sheet {

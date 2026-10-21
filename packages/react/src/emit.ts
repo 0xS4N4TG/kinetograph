@@ -4,7 +4,7 @@
 // concatenation) is worked out here, in one pass, each time a tree is asked
 // for. Nothing here reads time: `<Lottie>` and `<Audio>` already resolved it.
 
-import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
+import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland, resolveRemoteAsset } from '@kinetograph/compat/dom';
 import { canvasEnvironment, headHost, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
 import { gatherShaderInputs } from './shader-groups.js';
 import {
@@ -99,6 +99,12 @@ export const ELEMENT_NAMES: Record<string, string> = {
 };
 
 type Props = Record<string, any>;
+
+/** A remote `src` is the file it was downloaded to once (`setRemoteAssetResolver`); any other is as it is. */
+function localSrc(props: Props): Record<string, unknown> {
+  const src = props.src;
+  return typeof src === 'string' ? { src: resolveRemoteAsset(src) ?? src } : {};
+}
 
 /** Only the keys of `source` listed in `keys` that are set. */
 function pick(source: Props, keys: readonly string[]): Record<string, unknown> {
@@ -517,7 +523,7 @@ class Emitter {
         return { ...layer, ...commonOf(props, name) } as unknown as LayerJson;
       }
       case 'kg-image':
-        return { id, type: 'image', ...pick(props, ['src', 'width', 'height', 'fit']), ...commonOf(props, name) } as LayerJson;
+        return { id, type: 'image', ...pick(props, ['width', 'height', 'fit']), ...localSrc(props), ...commonOf(props, name) } as LayerJson;
       case 'kg-noise':
         return {
           id,
@@ -597,14 +603,16 @@ class Emitter {
         return {
           id,
           type: 'video',
-          ...pick(props, ['src', 'width', 'height', 'fit', 'frame', 'from', 'trimBefore', 'trimAfter', 'playbackRate', 'loop']),
+          ...pick(props, ['width', 'height', 'fit', 'frame', 'from', 'trimBefore', 'trimAfter', 'playbackRate', 'loop']),
+          ...localSrc(props),
           ...commonOf(props, name),
         } as LayerJson;
       case 'kg-gif':
         return {
           id,
           type: 'gif',
-          ...pick(props, ['src', 'width', 'height', 'fit', 'time', 'loop']),
+          ...pick(props, ['width', 'height', 'fit', 'time', 'loop']),
+          ...localSrc(props),
           ...commonOf(props, name),
         } as LayerJson;
       default:

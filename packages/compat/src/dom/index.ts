@@ -24,6 +24,8 @@ export {
   stylesheetNotes,
   resetStylesheets,
   setCssFontFaceHandler,
+  setRemoteAssetResolver,
+  resolveRemoteAsset,
   parseFontFaces,
   resolveProjectFile,
 } from '../environment.js';

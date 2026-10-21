@@ -784,8 +784,16 @@ Once installed:
 `@kinetograph/core/web/install` (imported by the Node bundle right after it) adds the
 browser globals a project commonly touches: `window` and its sizes (the composition's), `matchMedia`, `new Image()` for
 project files, `fetch` of project files (remote URLs fail saying Kinetograph renders offline), `document` queries over
-the host tree, `getComputedStyle`, `ResizeObserver` and `IntersectionObserver`, and `<canvas>`, `OffscreenCanvas`,
-`Path2D` and `ImageData` (§6.5). Refs to DOM elements answer `getBoundingClientRect`, `offsetWidth`, … from the CSS
+the host tree, `getComputedStyle`, `ResizeObserver`, `IntersectionObserver` and `MutationObserver`, and `<canvas>`, `OffscreenCanvas`,
+`Path2D` and `ImageData` (§6.5). Remote files the engine reads (an `img`/`video` `src`, CSS `url(https://…)`, an SVG
+`image`, `<Img>`, `<Image>`, `<Video>`) and a remote `new FontFace(…, 'url(https://…)')` or `@font-face` are downloaded once into
+`~/.cache/kinetograph/assets` (fonts: `~/.cache/kinetograph/fonts`) and read from there, so a render after the first is
+offline; a download that fails is a note in `doctor` and `lint`. `fetch()` and `new Image().src` of a remote URL stay
+refused. The tree is mutable from a script (`appendChild`, `prepend`, `insertBefore`, `replaceChildren`, `textContent`,
+`innerHTML`, `cloneNode`, `document.createElement`, `document.head` (a `<style>` there is a stylesheet) and `document.body` (the
+top level of the root), `MutationObserver`, `document.createRange()` with `getBoundingClientRect()`, `getNumberOfChars()` and
+`getStartPositionOfChar()` on SVG text), on the reconciler's own host tree, so React's insertions and a library's nodes share a parent
+as in a browser. Refs to DOM elements answer `getBoundingClientRect`, `offsetWidth`, … from the CSS
 engine (ENGINE.md §10.3).
 
 ### 7.5 Remotion packages (subpath exports)

@@ -2,11 +2,12 @@
 // project commonly touches (`window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, observers,
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 
-import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, type CssFontFace } from '@kinetograph/compat/dom';
+import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, type CssFontFace } from '@kinetograph/compat/dom';
 import { installDomGlobals, setCanvasFonts, setPathMeasure } from '@kinetograph/compat/shim';
 import { addFace, NodeFontFace } from './font-face.js';
 import { getFonts, setFontProblemHandler } from './font-registry.js';
 import { setDomTextMeasure } from './layout-utils.js';
+import { makeRemoteAssetResolver } from './remote-assets.js';
 import { getBoundingBox, getLength, getPointAtLength } from './paths.js';
 
 /** An `@font-face` rule of a stylesheet (a `.css` import, a `<style>` element): its file is registered like a `FontFace`. */
@@ -30,6 +31,8 @@ installDomGlobals();
 setCssFontFaceHandler(registerCssFontFace);
 // A font that could not be had is a note in `doctor` and `lint`, like a stylesheet that could not be built.
 setFontProblemHandler(noteStylesheetProblem);
+// A remote image or video is downloaded once into the asset cache.
+setRemoteAssetResolver(makeRemoteAssetResolver(noteStylesheetProblem));
 setPathMeasure({ getLength, getPointAtLength, getBoundingBox });
 // A canvas's `font` is matched against the registered fonts.
 setCanvasFonts(getFonts);

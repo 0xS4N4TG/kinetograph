@@ -2,6 +2,7 @@
 // tags, attributes, `style` as CSS text, text, and native `kg-*` elements as boxes. Pure: no addon, no clock.
 
 import type { DomNode } from '../types.js';
+import { resolveRemoteAsset } from '../environment.js';
 import { attributesOf, styleOf } from './attrs.js';
 import { parseHtmlFragment } from './html.js';
 import { isDomElement } from './tags.js';
@@ -36,6 +37,18 @@ export interface IslandRequestJson {
 }
 
 type ElementNode = Extract<DomNode, { kind: 'element' }>;
+
+/** Attributes that name a file the engine reads: a remote one is read from where it was downloaded to. */
+const FILE_ATTRIBUTES = new Set(['src', 'href', 'xlink:href', 'poster']);
+const FILE_ELEMENTS = new Set(['img', 'video', 'source', 'image', 'input', 'use']);
+
+/** `url(https://…)` in CSS text, each remote one replaced by its local file (a quoted path when it has a space or quote). */
+export function localizeCssUrls(css: string, resolve: (url: string) => string | null = resolveRemoteAsset): string {
+  return css.replace(/url\(\s*(['"]?)(https?:\/\/[^'")]+)\1\s*\)/gi, (whole, _quote: string, url: string) => {
+    const local = resolve(url);
+    return local === null ? whole : `url("${local.replace(/"/g, '%22')}")`;
+  });
+}
 
 export interface BuildOptions {
   /** The island root's host-tree path (`$0.2`). */
@@ -94,6 +107,12 @@ export function collectStyleElements(nodes: readonly DomNode[]): string[] {
 export function buildIslandRequest(root: ElementNode, options: BuildOptions): BuiltRequest {
   const natives = new Map<string, ElementNode>();
   const extra: string[] = [];
+  // Each remote URL is looked up once per request.
+  const remote = new Map<string, string | null>();
+  const local = (url: string): string | null => {
+    if (!remote.has(url)) remote.set(url, resolveRemoteAsset(url));
+    return remote.get(url) ?? null;
+  };
 
   const element = (node: ElementNode, path: string, insideSvg: boolean): RequestNode => {
     const svg = insideSvg || node.type === 'svg';
@@ -107,7 +126,14 @@ export function buildIslandRequest(root: ElementNode, options: BuildOptions): Bu
         if (css !== null) extra.push(css);
       }
     }
-    const out: RequestNode = { kind: 'element', tag: node.type, path, attrs, style: styleOf(props), children: [] };
+    if (FILE_ELEMENTS.has(node.type)) {
+      for (const name of FILE_ATTRIBUTES) {
+        const value = attrs[name];
+        const found = value === undefined ? null : local(value);
+        if (found !== null) attrs[name] = found;
+      }
+    }
+    const out: RequestNode = { kind: 'element', tag: node.type, path, attrs, style: localizeCssUrls(styleOf(props), local), children: [] };
     if (node.type === 'style' || node.type === 'script') return out;
     const html = props.dangerouslySetInnerHTML?.__html;
     const source: DomNode[] = typeof html === 'string' ? parseHtmlFragment(html, svg) : node.children;

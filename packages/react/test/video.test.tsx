@@ -106,10 +106,12 @@ describe('<Video>', () => {
       });
     });
 
-    it('read scale-down as contain and ignore what has no meaning here', () => {
+    it('read scale-down as contain, and leave a style the layer cannot take to the DOM engine (dom.test.tsx)', () => {
       expect(renderAt(<Video id="v" src="a.mp4" style={{ objectFit: 'scale-down' }} />).layers[0]).toMatchObject({ fit: 'contain' });
-      const layer = renderAt(<Video id="v" src="a.mp4" style={{ width: '100%', objectFit: 'none', position: 'absolute', filter: 'blur(2px)' }} />).layers[0]!;
-      for (const key of ['width', 'fit', 'position', 'filter', 'style']) expect(layer).not.toHaveProperty(key);
+      // A percentage, `none`, position or filter is CSS: the video is a `<video>` of the DOM engine, which needs the composition's box.
+      for (const style of [{ width: '100%' }, { objectFit: 'none' }, { position: 'absolute' }, { filter: 'blur(2px)' }]) {
+        expect(() => renderAt(<Video id="v" src="a.mp4" style={style} />)).toThrow(/<video> is a DOM element/);
+      }
     });
   });
 
