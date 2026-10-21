@@ -47,6 +47,25 @@ const Main = () => (
 registerRoot(() => <Composition id="Main" component={Main} width={64} height={36} fps={30} durationInFrames={200} />);
 `;
 
+// CSS transitions (docs/ENGINE.md §7.12): a frame's look depends on the frames before it, which a worker that starts a
+// chunk on its own has to reach by replaying them. The levels change at frames 55, 100 and 150 and each fade takes a
+// second (30 frames), so chunk starts land before, inside and after a fade.
+const FADES = `
+import { AbsoluteFill, Composition, registerRoot, useCurrentFrame } from 'remotion';
+
+const Fade = () => {
+  const frame = useCurrentFrame();
+  const level = frame >= 150 ? 3 : frame >= 100 ? 2 : frame >= 55 ? 1 : 0;
+  return (
+    <AbsoluteFill style={{ background: '#102030' }}>
+      <div style={{ position: 'absolute', left: 4, top: 4, width: 40, height: 12, background: '#f84', opacity: [0.1, 0.9, 0.3, 1][level], transition: 'opacity 1s linear' }} />
+      <div style={{ position: 'absolute', left: 4, top: 20, width: 12 + level * 12, height: 10, background: '#6cf', transition: 'width 0.5s ease-out' }} />
+    </AbsoluteFill>
+  );
+};
+registerRoot(() => <Composition id="Fade" component={Fade} width={64} height={36} fps={30} durationInFrames={200} />);
+`;
+
 /** A mono 16-bit WAV of a sine wave. */
 function wav(seconds: number, rate = 44100): Buffer {
   const samples = Math.round(seconds * rate);
@@ -73,13 +92,17 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'kinetograph-parallel-'));
   writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
   writeFileSync(join(dir, 'index.tsx'), PROJECT);
+  writeFileSync(join(dir, 'fades.tsx'), FADES);
   mkdirSync(join(dir, 'public'));
   writeFileSync(join(dir, 'public', 'tone.wav'), wav(3));
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function render(output: string, extra: string[]): void {
-  const run = spawnSync('node', [cli, 'render', join(dir, 'index.tsx'), '-o', join(dir, output), ...extra], { encoding: 'utf8' });
+function render(output: string, extra: string[], entry = 'index.tsx', env: Record<string, string> = {}): void {
+  const run = spawnSync('node', [cli, 'render', join(dir, entry), '-o', join(dir, output), ...extra], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
   expect(run.stderr + run.stdout).not.toMatch(/error/i);
   expect(run.status).toBe(0);
 }
@@ -103,6 +126,18 @@ describe.skipIf(!ready)('render --concurrency', () => {
       expect(par.video).toEqual(seq.video);
       expect(par.audio).toBe(seq.audio);
       expect(seq.audio).not.toBe('');
+    }
+  });
+
+  it('gives CSS transitions the same history in every chunk, whether a chunk starts before, inside or after a fade', () => {
+    render('fade-seq.mp4', ['--concurrency', '1'], 'fades.tsx');
+    const seq = decoded('fade-seq.mp4');
+    // The fades are in the frames at all: each frame of the first one differs from the last.
+    expect(new Set(seq.video.slice(55, 86)).size).toBeGreaterThan(20);
+    // Chunks of 60, then of 24 frames with every running chunk open to splitting, so starts fall in many places.
+    for (const env of [{}, { KINETOGRAPH_CHUNK: '24', KINETOGRAPH_MINSPLIT: '2' }]) {
+      render('fade-par.mp4', ['--concurrency', '3'], 'fades.tsx', env);
+      expect(decoded('fade-par.mp4').video).toEqual(seq.video);
     }
   });
 
