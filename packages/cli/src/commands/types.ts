@@ -49,6 +49,27 @@ export const STRICT_OPTION: OptionSpec = {
   description: 'Fail on a frame holding content the engine cannot draw (Remotion compat), instead of drawing it without and warning',
 };
 
+/** `--dev-react`, on the commands that run a project to render it (docs/AUTHORING.md §9). */
+export const DEV_REACT_OPTION: OptionSpec = {
+  name: 'dev-react',
+  type: 'boolean',
+  description: "Run React's development build (warnings, slower: about 5x on a heavy film) instead of the production one",
+};
+
+/**
+ * Selects the React build the project's bundle loads: React reads `process.env.NODE_ENV` when it is first imported,
+ * which is when the bundle is, so this is set before the project is opened. Returns a function that puts the old value
+ * back (the render worker threads copy the environment when they start, so they see this one).
+ */
+export function setReactMode(dev: boolean): () => void {
+  const before = process.env.NODE_ENV;
+  process.env.NODE_ENV = dev ? 'development' : 'production';
+  return () => {
+    if (before === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = before;
+  };
+}
+
 export function allOptions(command: Command): OptionSpec[] {
   return command.project ? [...command.options, ...PROJECT_OPTIONS] : command.options;
 }

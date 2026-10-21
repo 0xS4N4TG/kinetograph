@@ -4,9 +4,10 @@ import { whole } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
-import { checkFrame } from '../source.js';
+import { checkFrame, type Source } from '../source.js';
 import { nowMs } from '../time.js';
 import {
+  DEV_REACT_OPTION,
   ENTRY,
   OUTPUT_OPTION,
   STRICT_OPTION,
@@ -14,6 +15,7 @@ import {
   newRenderer,
   openFromArgs,
   requireOutput,
+  setReactMode,
   type Command,
 } from './types.js';
 
@@ -22,10 +24,16 @@ export const still: Command = {
   summary: 'Render one frame to a PNG',
   project: true,
   positionals: [ENTRY, { name: 'frame', type: 'number', description: 'Frame number, from 0' }],
-  options: [OUTPUT_OPTION, STRICT_OPTION],
+  options: [OUTPUT_OPTION, STRICT_OPTION, DEV_REACT_OPTION],
   async run(args, context) {
     const output = requireOutput(args);
-    const source = await openFromArgs(args);
+    const restoreReact = setReactMode(args.options['dev-react'] === true);
+    let source;
+    try {
+      source = await openFromArgs(args);
+    } finally {
+      restoreReact();
+    }
     const drawer = new FrameDrawer(source, { renderer: newRenderer, progress: context.progress, strict: args.options.strict === true });
     try {
       const frame = checkFrame(args.positionals.frame as number, source.composition.durationInFrames);
@@ -63,14 +71,18 @@ export const render: Command = {
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look' },
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
     STRICT_OPTION,
+    DEV_REACT_OPTION,
   ],
   async run(args, context) {
     const output = requireOutput(args);
     const concurrency = whole('--concurrency', args.options.concurrency as number | undefined, 1, defaultConcurrency());
-    const source = await openFromArgs(args);
-    const started = nowMs();
-    const renderer = newRenderer();
+    // The worker threads copy the environment when they start, so they run the same React build.
+    const restoreReact = setReactMode(args.options['dev-react'] === true);
+    let source: Source | undefined;
     try {
+      source = await openFromArgs(args);
+      const started = nowMs();
+      const renderer = newRenderer();
       ensureParentDir(output);
       const summary = await renderSource(source, renderer, {
         output,
@@ -89,7 +101,8 @@ export const render: Command = {
       for (const line of describeLeftOut(summary.compat)) context.progress(line);
       return result(summary, nowMs() - started);
     } finally {
-      source.dispose();
+      source?.dispose();
+      restoreReact();
     }
   },
 };
