@@ -22,6 +22,14 @@ export declare class Renderer {
   preview(sceneJson: string, frame: number, options?: PreviewOptions | undefined | null, baseDir?: string | undefined | null): PreviewImage
   /** One frame as straight-alpha sRGB RGBA8. */
   rgba(sceneJson: string, frame: number, baseDir?: string | undefined | null): RgbaFrame
+  /**
+   * Starts drawing a frame without waiting for it: the GPU works on it
+   * while the caller does other things (and starts the next), and
+   * `finishFrame` collects the frames in the order they were started.
+   */
+  startFrame(sceneJson: string, frame: number, baseDir?: string | undefined | null): void
+  /** The oldest frame `startFrame` began, as straight-alpha sRGB RGBA8. */
+  finishFrame(): RgbaFrame
   /** Times one frame or successive frames, as the Rust `bench`. */
   bench(sceneJson: string, options: BenchOptions, baseDir?: string | undefined | null): BenchResult
   /** A whole JSON scene to a video, as the Rust `render`. */

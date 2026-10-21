@@ -493,6 +493,8 @@ impl Shared {
 pub struct Renderer {
     shared: Arc<Shared>,
     layer_cache: bool,
+    /// Frames `startFrame` began that `finishFrame` has not collected, oldest first.
+    started: std::collections::VecDeque<kinetograph_core::PendingFrame>,
 }
 
 #[napi]
@@ -510,6 +512,7 @@ impl Renderer {
                 video_open: AtomicBool::new(false),
             }),
             layer_cache,
+            started: std::collections::VecDeque::new(),
         })
     }
 
@@ -564,6 +567,41 @@ impl Renderer {
         let mut gpu = self.shared.idle()?;
         gpu.set_scene(scene).map_err(from_core)?;
         let rendered = gpu.render_frame(frame).map_err(from_core)?;
+        Ok(RgbaFrame {
+            width: rendered.width,
+            height: rendered.height,
+            data: Buffer::from(rendered.rgba),
+        })
+    }
+
+    /// Starts drawing a frame without waiting for it: the GPU works on it
+    /// while the caller does other things (and starts the next), and
+    /// `finishFrame` collects the frames in the order they were started.
+    #[napi]
+    pub fn start_frame(
+        &mut self,
+        scene_json: String,
+        frame: f64,
+        base_dir: Option<String>,
+    ) -> Result<()> {
+        let frame = count("frame", frame)?;
+        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let mut gpu = self.shared.idle()?;
+        gpu.set_scene(scene).map_err(from_core)?;
+        let pending = gpu.start_frame(frame).map_err(from_core)?;
+        self.started.push_back(pending);
+        Ok(())
+    }
+
+    /// The oldest frame `startFrame` began, as straight-alpha sRGB RGBA8.
+    #[napi]
+    pub fn finish_frame(&mut self) -> Result<RgbaFrame> {
+        let pending = self
+            .started
+            .pop_front()
+            .ok_or_else(|| invalid("no frame was started (startFrame)"))?;
+        let mut gpu = self.shared.idle()?;
+        let rendered = gpu.finish_frame(pending).map_err(from_core)?;
         Ok(RgbaFrame {
             width: rendered.width,
             height: rendered.height,
