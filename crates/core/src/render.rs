@@ -2605,28 +2605,38 @@ fn pack_pages(regions: &[PixelRect]) -> Vec<Vec<usize>> {
     let neighbours: Vec<Vec<usize>> = (0..n)
         .map(|i| (0..n).filter(|&j| j != i && overlaps(i, j)).collect())
         .collect();
-    let mut colour: Vec<Option<usize>> = vec![None; n];
+    // Per leaf: a bitset of the colours its neighbours have, and how many
+    // that is (its saturation), kept up to date as leaves are coloured.
+    let mut seen: Vec<Vec<u64>> = vec![Vec::new(); n];
+    let mut saturation = vec![0usize; n];
+    let mut coloured = vec![false; n];
     for _ in 0..n {
-        // The saturation of a leaf is how many colours its neighbours have.
-        let saturation = |i: usize| {
-            let mut seen: Vec<usize> = neighbours[i].iter().filter_map(|&j| colour[j]).collect();
-            seen.sort_unstable();
-            seen.dedup();
-            seen.len()
-        };
         let next = (0..n)
-            .filter(|&i| colour[i].is_none())
-            .max_by_key(|&i| (saturation(i), neighbours[i].len(), std::cmp::Reverse(i)))
+            .filter(|&i| !coloured[i])
+            .max_by_key(|&i| (saturation[i], neighbours[i].len(), std::cmp::Reverse(i)))
             .expect("a leaf without a colour is left");
-        let taken: Vec<usize> = neighbours[next].iter().filter_map(|&j| colour[j]).collect();
-        let free = (0..)
-            .find(|c| !taken.contains(c))
-            .expect("a colour is free");
-        colour[next] = Some(free);
+        // The first colour none of its neighbours has.
+        let free = seen[next]
+            .iter()
+            .position(|&word| word != u64::MAX)
+            .map_or(seen[next].len() * 64, |w| {
+                w * 64 + seen[next][w].trailing_ones() as usize
+            });
+        coloured[next] = true;
         if free == pages.len() {
             pages.push(Vec::new());
         }
         pages[free].push(next);
+        let (word, bit) = (free / 64, 1u64 << (free % 64));
+        for &j in &neighbours[next] {
+            if seen[j].len() <= word {
+                seen[j].resize(word + 1, 0);
+            }
+            if seen[j][word] & bit == 0 {
+                seen[j][word] |= bit;
+                saturation[j] += 1;
+            }
+        }
     }
     for page in &mut pages {
         page.sort_unstable();
@@ -3590,6 +3600,75 @@ mod tests {
     use super::*;
     use crate::scene::TextAlign;
     use vello::peniko::GradientKind;
+
+    /// `pack_pages` as it was before its saturation was kept incrementally:
+    /// every pick collects and sorts the colours around each candidate.
+    fn pack_pages_reference(regions: &[PixelRect]) -> Vec<Vec<usize>> {
+        let n = regions.len();
+        let overlaps = |i: usize, j: usize| !regions[i].intersect(regions[j]).is_empty();
+        let mut pages: Vec<Vec<usize>> = Vec::new();
+        let neighbours: Vec<Vec<usize>> = (0..n)
+            .map(|i| (0..n).filter(|&j| j != i && overlaps(i, j)).collect())
+            .collect();
+        let mut colour: Vec<Option<usize>> = vec![None; n];
+        for _ in 0..n {
+            let saturation = |i: usize| {
+                let mut seen: Vec<usize> =
+                    neighbours[i].iter().filter_map(|&j| colour[j]).collect();
+                seen.sort_unstable();
+                seen.dedup();
+                seen.len()
+            };
+            let next = (0..n)
+                .filter(|&i| colour[i].is_none())
+                .max_by_key(|&i| (saturation(i), neighbours[i].len(), std::cmp::Reverse(i)))
+                .unwrap();
+            let taken: Vec<usize> = neighbours[next].iter().filter_map(|&j| colour[j]).collect();
+            let free = (0..).find(|c| !taken.contains(c)).unwrap();
+            colour[next] = Some(free);
+            if free == pages.len() {
+                pages.push(Vec::new());
+            }
+            pages[free].push(next);
+        }
+        for page in &mut pages {
+            page.sort_unstable();
+        }
+        pages
+    }
+
+    #[test]
+    fn pack_pages_matches_the_quadratic_dsatur_on_random_overlap_graphs() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move |m: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % m
+        };
+        let mut most_pages = 0;
+        for case in 0..300 {
+            // Small boxes in a big field are sparse; big boxes in a small one
+            // are dense, and the densest pass 64 pages.
+            let n = 1 + next(if case % 10 == 0 { 220 } else { 80 }) as usize;
+            let field = [40, 200, 1000][case % 3];
+            let size = [5, 30, 120][(case / 3) % 3];
+            let regions: Vec<PixelRect> = (0..n)
+                .map(|_| {
+                    let (x, y) = (next(field as u64) as i32, next(field as u64) as i32);
+                    let (w, h) = (next(size as u64) as i32, next(size as u64) as i32);
+                    PixelRect::new(x, y, x + w, y + h)
+                })
+                .collect();
+            let pages = pack_pages(&regions);
+            assert_eq!(pages, pack_pages_reference(&regions), "case {case}");
+            most_pages = most_pages.max(pages.len());
+        }
+        let stack = vec![PixelRect::new(0, 0, 10, 10); 150];
+        assert_eq!(pack_pages(&stack), pack_pages_reference(&stack));
+        assert_eq!(pack_pages(&stack).len(), 150);
+        assert!(most_pages > 5, "the cases should need several pages");
+    }
 
     #[test]
     fn only_a_sweep_and_a_corner_pin_need_the_layer_box() {
