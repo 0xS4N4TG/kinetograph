@@ -44,6 +44,10 @@ describe('<Layer>', () => {
     ]);
   });
 
+  it('takes passThrough, so the children blend with what is behind the layer', () => {
+    expect(layersOf(<Layer id="g" passThrough />)).toEqual([{ id: 'g', type: 'group', passThrough: true, children: [] }]);
+  });
+
   it('renders several roots in order', () => {
     expect(layersOf([<Layer key="a" id="a" />, <Layer key="b" id="b" />]).map((l) => l.id)).toEqual(['a', 'b']);
   });

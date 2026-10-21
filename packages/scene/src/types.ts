@@ -463,6 +463,12 @@ export interface GroupLayer extends LayerBase {
   type: 'group';
   children: LayerJson[];
   preserve3d?: boolean;
+  /**
+   * Does not isolate the children: one that blends with a mode other than `normal` blends with what is behind the
+   * group, as if it were not there (CSS `isolation: auto` on an element that is not a stacking context). Takes effect
+   * on a group that is otherwise plain (docs/SCENE.md, "group").
+   */
+  passThrough?: boolean;
   layout?: Layout;
   /** A GLSL pass that makes the group's picture out of its children, which its `layer` textures name (docs/SCENE.md, "Shader groups"). */
   glsl?: GlslPass;

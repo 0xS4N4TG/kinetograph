@@ -42,7 +42,14 @@ function Scoped({ state, layout, children }: { state: TimelineState; layout?: La
   // `layout="none"` is Remotion's "no wrapper": the children go straight into the parent. The wrapper is Remotion's
   // AbsoluteFill: with DOM elements inside it is that `div` (docs/ENGINE.md §10), else a plain layer.
   const inner =
-    layout === 'none' ? <>{children}</> : <Layer domFill={{ style: {}, background: false }}>{children}</Layer>;
+    layout === 'none' ? (
+      <>{children}</>
+    ) : (
+      // Not a stacking context, as the AbsoluteFill it stands for is not: a child's `mixBlendMode` blends with what is behind.
+      <Layer passThrough domFill={{ style: {}, background: false }}>
+        {children}
+      </Layer>
+    );
   return <TimelineContext.Provider value={state}>{inner}</TimelineContext.Provider>;
 }
 

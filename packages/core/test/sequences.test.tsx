@@ -293,3 +293,33 @@ describe('automatic ids do not move', () => {
     expect(s!.layer).toBe('$0');
   });
 });
+
+describe('Sequence and blending', () => {
+  it('is not a stacking context: its group lets a child blend with what is behind it', () => {
+    const [layer] = renderAt(
+      <Sequence from={0}>
+        <R id="a" />
+      </Sequence>,
+      1,
+    ).layers;
+    expect(layer).toMatchObject({ type: 'group', passThrough: true });
+    // Without a wrapper there is no group to isolate anything.
+    const [bare] = renderAt(
+      <Sequence layout="none">
+        <R id="a" />
+      </Sequence>,
+      1,
+    ).layers;
+    expect(bare).toMatchObject({ id: 'a', type: 'shape' });
+  });
+
+  it('is the same for a Loop', () => {
+    const [layer] = renderAt(
+      <Loop durationInFrames={10}>
+        <R id="a" />
+      </Loop>,
+      1,
+    ).layers;
+    expect(layer).toMatchObject({ type: 'group', passThrough: true });
+  });
+});

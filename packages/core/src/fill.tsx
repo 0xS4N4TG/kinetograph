@@ -141,6 +141,8 @@ export function AbsoluteFill({ style = {}, id, className, children }: AbsoluteFi
   return (
     <Layer
       id={id}
+      // Not a stacking context in CSS: a child's `mixBlendMode` blends with what is behind the fill.
+      passThrough
       layout={layout}
       layoutItem={{ position: 'absolute' }}
       opacity={opacity}

@@ -63,6 +63,12 @@ export interface CommonProps {
 
 export interface LayerProps extends CommonProps {
   preserve3d?: boolean;
+  /**
+   * The children blend with what is behind the layer, not only with each other (a `<Sequence>` or `<AbsoluteFill>` is
+   * not a stacking context in Remotion). Takes effect when the layer is otherwise plain: opacity 1, no blend mode,
+   * effects, clip, mask or matte.
+   */
+  passThrough?: boolean;
   layout?: Layout;
   children?: ReactNode;
   /**

@@ -464,7 +464,7 @@ class Emitter {
         return {
           id,
           type: 'group',
-          ...pick(props, ['preserve3d', 'layout', 'glsl']),
+          ...pick(props, ['preserve3d', 'passThrough', 'layout', 'glsl']),
           ...commonOf(props, name),
           children: this.children(element.children, path, name),
         } as LayerJson;
