@@ -489,7 +489,10 @@ impl Renderer {
         self.cache.begin_frame();
         self.compositor.begin_frame();
         self.clear_pages();
+        let timer = crate::profile::start();
         self.plan_pages(&scene.layers)?;
+        crate::profile::add_since("plan_pages", timer);
+        crate::profile::add_value("pages", self.pages.pages.len() as f64);
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas =

@@ -44,6 +44,13 @@ pub fn add_since(stage: &'static str, start: Option<Instant>) {
     }
 }
 
+/// Adds `value` to this thread's `stage` (a count, not a time).
+pub fn add_value(stage: &'static str, value: f64) {
+    if enabled() {
+        LOCAL.with(|t| *t.borrow_mut().entry(stage).or_insert(0.0) += value);
+    }
+}
+
 /// Adds the time since `start` to the table shared by all threads (the encoder thread's).
 pub fn add_shared_since(stage: &'static str, start: Option<Instant>) {
     if let Some(ms) = since(start) {
