@@ -465,6 +465,73 @@ fn a_spot_light_casts_shadows_within_its_cone() {
 }
 
 #[test]
+fn a_point_light_casts_shadows_across_cube_faces() {
+    // Top-down orthographic view (10 x 10 units on 100 x 100 canvas, +x right, -z up).
+    // Point light at (-1, 5, 0) above a 1x1x1 box at (0, 0.5, 0) over a ground plane at y = 0:
+    // the box casts a shadow onto the ground at x = 0.5..0.875 (pixel 57, 50), while open
+    // ground at (-0.8, 0, 0) (pixel 42, 50) is lit as with castShadow off (-Y face).
+    let top_down = |cast: bool| {
+        let cast_field = if cast { r#", "castShadow": true"# } else { "" };
+        render(&format!(
+            r##""camera": {{"type": "orthographic", "height": 10, "position": [0, 10, 0], "up": [0, 0, -1]}},
+               "lights": [{{"type": "ambient", "intensity": 0.2}},
+                          {{"type": "point", "position": [-1, 5, 0], "intensity": 20 {cast_field}}}],
+               "objects": [
+                 {{"type": "mesh", "geometry": {{"kind": "plane", "width": 12, "height": 12}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "rotation": [-90, 0, 0], "receiveShadow": true}},
+                 {{"type": "mesh", "geometry": {{"kind": "box", "width": 1, "height": 1, "depth": 1}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "position": [0, 0.5, 0], "castShadow": true}}]"##
+        ))
+    };
+    let on = top_down(true);
+    let off = top_down(false);
+    let shaded = px(&on, 57, 50);
+    assert!((i32::from(shaded[0]) - 124).abs() <= 3, "{shaded:?}");
+    assert!(
+        px(&off, 57, 50)[0] > 160,
+        "lit when castShadow is off: {:?}",
+        px(&off, 57, 50)
+    );
+    let open = px(&on, 42, 50);
+    assert!(open[0] > 180, "{open:?}");
+    assert_eq!(open, px(&off, 42, 50));
+
+    // A point light at (-2, 1, 0) beside a box at (0, 1, 0) casts a shadow sideways
+    // along +x (+X face) onto a vertical wall at x = 3 facing -x.
+    let sideways = |cast: bool| {
+        let cast_field = if cast { r#", "castShadow": true"# } else { "" };
+        render(&format!(
+            r##""camera": {{"type": "orthographic", "height": 10, "position": [-5, 1, 0], "target": [3, 1, 0]}},
+               "lights": [{{"type": "ambient", "intensity": 0.2}},
+                          {{"type": "point", "position": [-2, 1, 0], "intensity": 30 {cast_field}}}],
+               "objects": [
+                 {{"type": "mesh", "geometry": {{"kind": "plane", "width": 10, "height": 10}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "position": [3, 1, 0], "rotation": [0, -90, 0], "receiveShadow": true}},
+                 {{"type": "mesh", "geometry": {{"kind": "box", "width": 1, "height": 1, "depth": 1}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "position": [0, 1, 0], "castShadow": true}}]"##
+        ))
+    };
+    let wall_on = sideways(true);
+    let wall_off = sideways(false);
+    // At y = 2.0 (z = 0), pixel (50, 40) is on the wall inside the box's shadow (y in -0.25..2.25),
+    // but above the box itself (y in 0.5..1.5).
+    let wall_shaded = px(&wall_on, 50, 40);
+    assert!(
+        (i32::from(wall_shaded[0]) - 124).abs() <= 3,
+        "{wall_shaded:?}"
+    );
+    assert!(
+        px(&wall_off, 50, 40)[0] > 160,
+        "wall lit when castShadow is off: {:?}",
+        px(&wall_off, 50, 40)
+    );
+    // At y = 4.0 (z = 0), pixel (50, 20) is on the wall outside the box's shadow: lit as with castShadow off.
+    let wall_open = px(&wall_on, 50, 20);
+    assert!(wall_open[0] > 150, "{wall_open:?}");
+    assert_eq!(wall_open, px(&wall_off, 50, 20));
+}
+
+#[test]
 fn bad_shadow_settings_name_the_problem() {
     let err = |light: &str| {
         let json = format!(
@@ -488,6 +555,16 @@ fn bad_shadow_settings_name_the_problem() {
         .collect::<Vec<_>>()
         .join(",");
     assert!(err(&five).contains("5 lights that cast shadows"));
+    let point_cast = r#"{"type": "point", "position": [0, 5, 0], "castShadow": true}"#;
+    let two_points = format!("{point_cast}, {point_cast}");
+    let msg = err(&two_points);
+    assert!(
+        msg.contains("layer \"s\"") && msg.contains("needs 12 shadow maps"),
+        "{msg}"
+    );
+    // One point (6 maps) plus two directional (2 maps) = 8 maps: allowed.
+    let eight_maps = format!("{point_cast}, {cast}}}, {cast}}}");
+    scene(&format!(r#""lights": [{eight_maps}]"#));
 }
 
 // ---- environment maps ----

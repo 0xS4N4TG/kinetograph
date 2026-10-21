@@ -25,8 +25,8 @@ struct Light {
     vector: vec4<f32>,
     // rgb: colour times intensity. a: a point/spot light's range, 0 for none.
     color: vec4<f32>,
-    // x: the light's shadow map, 0 to 3, or -1 for none.
-    // y: cos_outer (spot). z: cos_inner (spot).
+    // x: the light's first shadow map, 0 to 7, or -1 for none.
+    // y: cos_outer (spot). z: cos_inner (spot). w: shadow map count (1 or 6).
     shadow: vec4<f32>,
     // xyz: a spot light's direction.
     spot: vec4<f32>,
@@ -48,7 +48,7 @@ struct Frame {
     // rgb: ambient light. a: how many of `lights` are lit.
     ambient: vec4<f32>,
     lights: array<Light, 8>,
-    shadows: array<Shadow, 4>,
+    shadows: array<Shadow, 8>,
     // Clip space to world space, for the background's view rays.
     inverse_view_proj: mat4x4<f32>,
     // World directions to the environment's: the turn of the picture, undone.
@@ -82,10 +82,14 @@ struct Draw {
 @group(0) @binding(2) var shadow_map_1: texture_depth_2d;
 @group(0) @binding(3) var shadow_map_2: texture_depth_2d;
 @group(0) @binding(4) var shadow_map_3: texture_depth_2d;
-@group(0) @binding(5) var shadow_sampler: sampler_comparison;
-@group(0) @binding(6) var env_specular: texture_cube<f32>;
-@group(0) @binding(7) var env_diffuse: texture_cube<f32>;
-@group(0) @binding(8) var env_sampler: sampler;
+@group(0) @binding(5) var shadow_map_4: texture_depth_2d;
+@group(0) @binding(6) var shadow_map_5: texture_depth_2d;
+@group(0) @binding(7) var shadow_map_6: texture_depth_2d;
+@group(0) @binding(8) var shadow_map_7: texture_depth_2d;
+@group(0) @binding(9) var shadow_sampler: sampler_comparison;
+@group(0) @binding(10) var env_specular: texture_cube<f32>;
+@group(0) @binding(11) var env_diffuse: texture_cube<f32>;
+@group(0) @binding(12) var env_sampler: sampler;
 @group(1) @binding(0) var<uniform> draw: Draw;
 @group(2) @binding(0) var base_texture: texture_2d<f32>;
 @group(2) @binding(1) var base_sampler: sampler;
@@ -209,8 +213,20 @@ fn shadow_visibility(slot: i32, world: vec3<f32>, n: vec3<f32>, n_dot_l: f32) ->
         case 2: {
             return filter_shadow(shadow_map_2, uv, depth, s.params.w, s.params.z);
         }
-        default: {
+        case 3: {
             return filter_shadow(shadow_map_3, uv, depth, s.params.w, s.params.z);
+        }
+        case 4: {
+            return filter_shadow(shadow_map_4, uv, depth, s.params.w, s.params.z);
+        }
+        case 5: {
+            return filter_shadow(shadow_map_5, uv, depth, s.params.w, s.params.z);
+        }
+        case 6: {
+            return filter_shadow(shadow_map_6, uv, depth, s.params.w, s.params.z);
+        }
+        default: {
+            return filter_shadow(shadow_map_7, uv, depth, s.params.w, s.params.z);
         }
     }
 }
@@ -345,8 +361,21 @@ fn fs_main(
                 * fresnel(f0, v_dot_h);
             // The diffuse term loses what the specular reflects.
             let kd = (vec3<f32>(1.0) - fresnel(f0, v_dot_h));
-            let slot = i32(light.shadow.x);
+            var slot = i32(light.shadow.x);
             if receives_shadow && slot >= 0 {
+                if light.vector.w > 0.5 && light.vector.w < 1.5 {
+                    let d = in.world - light.vector.xyz;
+                    let ad = abs(d);
+                    var face = 0;
+                    if ad.x >= ad.y && ad.x >= ad.z {
+                        face = select(1, 0, d.x >= 0.0);
+                    } else if ad.y >= ad.z {
+                        face = select(3, 2, d.y >= 0.0);
+                    } else {
+                        face = select(5, 4, d.z >= 0.0);
+                    }
+                    slot += face;
+                }
                 radiance *= shadow_visibility(slot, in.world, n, n_dot_l);
             }
             rgb += (kd * diffuse_colour + spec * PI) * radiance * n_dot_l;

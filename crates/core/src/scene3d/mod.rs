@@ -35,6 +35,8 @@ use model::ClipRef;
 pub const MAX_LIGHTS: usize = 8;
 /// The most lights that cast shadows.
 pub const MAX_SHADOW_LIGHTS: usize = 4;
+/// The most shadow maps across all lights (a point light uses 6).
+pub const MAX_SHADOW_MAPS: usize = 8;
 /// The largest side of a shadow map, in texels.
 pub const MAX_SHADOW_MAP: u32 = 4096;
 /// The most segments a round primitive is cut into.
@@ -192,6 +194,10 @@ pub enum Light3d {
         intensity: Num,
         #[serde(default = "zero")]
         range: Num,
+        #[serde(default)]
+        cast_shadow: bool,
+        #[serde(default)]
+        shadow: Shadow3d,
     },
     /// Light in a cone from `position` along `direction`, with half-angle
     /// `angle` degrees (0..=90) and soft edge fraction `penumbra` (0..=1).
@@ -637,6 +643,8 @@ pub enum ResolvedLight3d {
         position: DVec3,
         color: [f64; 3],
         range: f64,
+        /// `None`: it casts no shadows.
+        shadow: Option<Shadow3d>,
     },
     Spot {
         position: DVec3,
@@ -783,6 +791,7 @@ impl Scene3dLayer {
             ));
         }
         let mut casters = 0;
+        let mut shadow_maps = 0;
         for light in &self.lights {
             let shadow = match light {
                 Light3d::Directional {
@@ -794,11 +803,17 @@ impl Scene3dLayer {
                     cast_shadow: true,
                     shadow,
                     ..
-                } => Some(shadow),
+                } => Some((shadow, 1)),
+                Light3d::Point {
+                    cast_shadow: true,
+                    shadow,
+                    ..
+                } => Some((shadow, 6)),
                 _ => None,
             };
-            if let Some(shadow) = shadow {
+            if let Some((shadow, maps)) = shadow {
                 casters += 1;
+                shadow_maps += maps;
                 if !(64..=MAX_SHADOW_MAP).contains(&shadow.map_size) {
                     return bad(format!(
                         "shadow mapSize must be 64 to {MAX_SHADOW_MAP}, got {}",
@@ -846,6 +861,11 @@ impl Scene3dLayer {
         if casters > MAX_SHADOW_LIGHTS {
             return bad(format!(
                 "has {casters} lights that cast shadows; at most {MAX_SHADOW_LIGHTS} do"
+            ));
+        }
+        if shadow_maps > MAX_SHADOW_MAPS {
+            return bad(format!(
+                "needs {shadow_maps} shadow maps (a point light needs 6); at most {MAX_SHADOW_MAPS}"
             ));
         }
         let cam = &self.camera;
@@ -946,10 +966,13 @@ impl Scene3dLayer {
                     color,
                     intensity,
                     range,
+                    cast_shadow,
+                    shadow,
                 } => ResolvedLight3d::Point {
                     position: position.at(f),
                     color: scaled(*color, intensity.at(f).max(0.0)),
                     range: range.at(f).max(0.0),
+                    shadow: cast_shadow.then_some(*shadow),
                 },
                 Light3d::Spot {
                     position,

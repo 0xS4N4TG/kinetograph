@@ -15,7 +15,7 @@ use vello::wgpu::util::TextureDataOrder;
 
 use super::environment::{Baked, Baker, empty_cube};
 use super::*;
-use crate::scene3d::MAX_SHADOW_LIGHTS;
+use crate::scene3d::MAX_SHADOW_MAPS;
 use crate::scene3d::draw::{DrawItem, DrawScene, Texture};
 use crate::scene3d::environment::Environment;
 use crate::scene3d::mesh::{MeshData, VERTEX_BYTES, Vertex3};
@@ -36,7 +36,7 @@ pub(super) struct State {
     /// Its group 0: the light's matrix.
     shadow_layout: wgpu::BindGroupLayout,
     /// The shadow maps of the lights that cast shadows, by slot.
-    shadow_maps: [Option<ShadowMap>; MAX_SHADOW_LIGHTS],
+    shadow_maps: [Option<ShadowMap>; MAX_SHADOW_MAPS],
     /// Bound for the slots that hold no map: one texel, never read.
     empty_shadow: wgpu::TextureView,
     shadow_sampler: wgpu::Sampler,
@@ -170,16 +170,20 @@ impl State {
                 shadow_map_entry(2),
                 shadow_map_entry(3),
                 shadow_map_entry(4),
+                shadow_map_entry(5),
+                shadow_map_entry(6),
+                shadow_map_entry(7),
+                shadow_map_entry(8),
                 wgpu::BindGroupLayoutEntry {
-                    binding: 5,
+                    binding: 9,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
-                cube_entry(6),
-                cube_entry(7),
+                cube_entry(10),
+                cube_entry(11),
                 wgpu::BindGroupLayoutEntry {
-                    binding: 8,
+                    binding: 12,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -489,7 +493,7 @@ impl State {
 
     /// Makes the shadow maps `scene` needs, one a slot, and frees the others.
     fn shadow_maps(&mut self, device: &wgpu::Device, scene: &DrawScene) {
-        let mut wanted = [None; MAX_SHADOW_LIGHTS];
+        let mut wanted = [None; MAX_SHADOW_MAPS];
         for (slot, shadow) in scene.shadows() {
             wanted[slot] = Some(shadow.map_size);
         }
@@ -602,12 +606,12 @@ impl State {
 }
 
 /// Bytes of the per-frame block: two matrices, the eye, the ambient light,
-/// `MAX_LIGHTS` lights of four vectors, `MAX_SHADOW_LIGHTS` shadows of a
+/// `MAX_LIGHTS` lights of four vectors, `MAX_SHADOW_MAPS` shadows of a
 /// matrix and a vector, a matrix, a 3 x 3 matrix, a vector, and two fog vectors.
 const FRAME_BYTES: u64 = 64 * 2
     + 16 * 2
     + (crate::scene3d::MAX_LIGHTS as u64) * 64
-    + (MAX_SHADOW_LIGHTS as u64) * 80
+    + (MAX_SHADOW_MAPS as u64) * 80
     + 64
     + 48
     + 16
@@ -769,12 +773,16 @@ fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool, max_lod: f
                     &[l.vector[0], l.vector[1], l.vector[2], f32::from(l.kind)],
                 );
                 push(&mut out, &[l.color[0], l.color[1], l.color[2], l.range]);
-                // The slot of its shadow map, as `DrawScene::shadows` counts.
-                let slot = l.shadow.map_or(-1.0, |_| {
-                    next_slot += 1;
-                    (next_slot - 1) as f32
-                });
-                push(&mut out, &[slot, l.cos_outer, l.cos_inner, 0.0]);
+                // The first slot of its shadow maps, as `DrawScene::shadows` counts.
+                let count = l.shadows.len();
+                let slot = if count == 0 {
+                    -1.0
+                } else {
+                    let first = next_slot;
+                    next_slot += count;
+                    first as f32
+                };
+                push(&mut out, &[slot, l.cos_outer, l.cos_inner, count as f32]);
                 push(
                     &mut out,
                     &[l.spot_dir[0], l.spot_dir[1], l.spot_dir[2], 0.0],
@@ -788,7 +796,7 @@ fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool, max_lod: f
             ),
         }
     }
-    for slot in 0..MAX_SHADOW_LIGHTS {
+    for slot in 0..MAX_SHADOW_MAPS {
         match scene.shadows().find(|(s, _)| *s == slot) {
             Some((_, shadow)) => {
                 push_mat4(&mut out, &shadow.view_proj);
@@ -924,18 +932,34 @@ impl Compositor {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::Sampler(&state.shadow_sampler),
+                    resource: wgpu::BindingResource::TextureView(shadow_view(4)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(specular),
+                    resource: wgpu::BindingResource::TextureView(shadow_view(5)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::TextureView(diffuse),
+                    resource: wgpu::BindingResource::TextureView(shadow_view(6)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 8,
+                    resource: wgpu::BindingResource::TextureView(shadow_view(7)),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::Sampler(&state.shadow_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(specular),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(diffuse),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
                     resource: wgpu::BindingResource::Sampler(&state.environment_sampler),
                 },
             ],

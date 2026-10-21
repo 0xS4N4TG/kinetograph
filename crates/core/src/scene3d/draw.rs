@@ -176,7 +176,7 @@ impl DrawItem {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Light {
     /// A direction (toward the light) or a position.
     pub vector: [f32; 3],
@@ -188,9 +188,10 @@ pub struct Light {
     pub spot_dir: [f32; 3],
     pub cos_outer: f32,
     pub cos_inner: f32,
-    /// A directional light's shadow map; `None` when it casts none, or when
-    /// no object does.
-    pub shadow: Option<Shadow>,
+    /// The light's shadow maps: empty when it casts none or no object does,
+    /// one for a directional or spot light, six (+X, -X, +Y, -Y, +Z, -Z) for
+    /// a point light.
+    pub shadows: Vec<Shadow>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -315,6 +316,61 @@ impl Shadow {
             radius: config.radius as f32,
         })
     }
+
+    /// The six perspective shadow maps of a point light at `position`, one per
+    /// cube face in the order +X, -X, +Y, -Y, +Z, -Z (empty when there are no
+    /// caster `corners`).
+    fn fit_point(position: DVec3, config: &Shadow3d, corners: &[DVec3]) -> Vec<Shadow> {
+        if corners.is_empty() {
+            return Vec::new();
+        }
+        let max_dist = corners
+            .iter()
+            .map(|p| (*p - position).length())
+            .fold(0.0_f64, f64::max)
+            .max(1e-3);
+        let map = f64::from(config.map_size);
+        let fov = std::f64::consts::FRAC_PI_2;
+        let half_tan = 1.0_f64;
+        let fov_extra = 2.0 * ((config.radius.ceil() + 2.0) * 2.0 * half_tan / map).atan();
+        let full_fov = (fov + fov_extra).min(170.0_f64.to_radians());
+        let mid_depth = max_dist / 2.0;
+        let texel = 2.0 * (full_fov / 2.0).tan() * mid_depth / map;
+        let pad = (config.bias + config.normal_bias + 2.0) * texel;
+        let far = (max_dist + pad).max(1e-3);
+        let near = (0.01 * far).max(0.01).min(far * 0.5);
+        let f = 1.0 / (full_fov / 2.0).tan();
+        let depth = near - far;
+        let proj = DMat4::from_cols(
+            DVec4::new(f, 0.0, 0.0, 0.0),
+            DVec4::new(0.0, f, 0.0, 0.0),
+            DVec4::new(0.0, 0.0, far / depth, -1.0),
+            DVec4::new(0.0, 0.0, near * far / depth, 0.0),
+        );
+        // Up is +Y for the horizontal faces (+X, -X, +Z, -Z) and +Z for +Y/-Y,
+        // so `forward` is never parallel to `up` in `look()`.
+        let faces = [
+            (DVec3::X, DVec3::Y),
+            (DVec3::NEG_X, DVec3::Y),
+            (DVec3::Y, DVec3::Z),
+            (DVec3::NEG_Y, DVec3::Z),
+            (DVec3::Z, DVec3::Y),
+            (DVec3::NEG_Z, DVec3::Y),
+        ];
+        faces
+            .into_iter()
+            .map(|(forward, up)| {
+                let view = look(position, forward, up);
+                Shadow {
+                    view_proj: (proj * view).as_mat4(),
+                    map_size: config.map_size,
+                    bias: (config.bias * 1e-3) as f32,
+                    normal_bias: (config.normal_bias * texel) as f32,
+                    radius: config.radius as f32,
+                }
+            })
+            .collect()
+    }
 }
 
 pub struct DrawScene {
@@ -354,12 +410,12 @@ pub struct Background {
 }
 
 impl DrawScene {
-    /// The shadow maps of the lights, with their slots: the n-th light that
-    /// has a map gets slot n.
+    /// The shadow maps of the lights, with their consecutive slots in order of
+    /// lights then faces.
     pub fn shadows(&self) -> impl Iterator<Item = (usize, &Shadow)> {
         self.lights
             .iter()
-            .filter_map(|l| l.shadow.as_ref())
+            .flat_map(|l| l.shadows.iter())
             .enumerate()
     }
 }
@@ -480,6 +536,10 @@ impl Assets3d {
                 direction: DVec3,
                 config: Shadow3d,
             },
+            Point {
+                position: DVec3,
+                config: Shadow3d,
+            },
             Spot {
                 position: DVec3,
                 direction: DVec3,
@@ -519,23 +579,35 @@ impl Assets3d {
                         spot_dir: [0.0; 3],
                         cos_outer: 0.0,
                         cos_inner: 0.0,
-                        shadow: None,
+                        shadows: Vec::new(),
                     });
                 }
                 ResolvedLight3d::Point {
                     position,
                     color,
                     range,
-                } => lights.push(Light {
-                    vector: position.as_vec3().to_array(),
-                    kind: 1,
-                    color: color.map(|c| c as f32),
-                    range: *range as f32,
-                    spot_dir: [0.0; 3],
-                    cos_outer: 0.0,
-                    cos_inner: 0.0,
-                    shadow: None,
-                }),
+                    shadow,
+                } => {
+                    if let Some(config) = shadow {
+                        shadow_lights.push((
+                            lights.len(),
+                            ShadowKind::Point {
+                                position: *position,
+                                config: *config,
+                            },
+                        ));
+                    }
+                    lights.push(Light {
+                        vector: position.as_vec3().to_array(),
+                        kind: 1,
+                        color: color.map(|c| c as f32),
+                        range: *range as f32,
+                        spot_dir: [0.0; 3],
+                        cos_outer: 0.0,
+                        cos_inner: 0.0,
+                        shadows: Vec::new(),
+                    });
+                }
                 ResolvedLight3d::Spot {
                     position,
                     direction,
@@ -564,7 +636,7 @@ impl Assets3d {
                         spot_dir: direction.as_vec3().to_array(),
                         cos_outer: *cos_outer as f32,
                         cos_inner: *cos_inner as f32,
-                        shadow: None,
+                        shadows: Vec::new(),
                     });
                 }
             }
@@ -675,16 +747,23 @@ impl Assets3d {
         }
         for (index, kind) in shadow_lights {
             if let Some(light) = lights.get_mut(index) {
-                light.shadow = match kind {
+                light.shadows = match kind {
                     ShadowKind::Directional { direction, config } => {
                         Shadow::fit(direction, &config, &casters)
+                            .into_iter()
+                            .collect()
+                    }
+                    ShadowKind::Point { position, config } => {
+                        Shadow::fit_point(position, &config, &casters)
                     }
                     ShadowKind::Spot {
                         position,
                         direction,
                         cos_outer,
                         config,
-                    } => Shadow::fit_spot(position, direction, cos_outer, &config, &casters),
+                    } => Shadow::fit_spot(position, direction, cos_outer, &config, &casters)
+                        .into_iter()
+                        .collect(),
                 };
             }
         }
@@ -897,6 +976,32 @@ mod tests {
         let behind = corners(DVec3::new(-1.0, 6.0, -1.0), DVec3::new(1.0, 8.0, 1.0));
         assert!(Shadow::fit_spot(position, forward, cos_outer, &config, &behind).is_none());
         assert!(Shadow::fit_spot(position, forward, cos_outer, &config, &[]).is_none());
+    }
+
+    #[test]
+    fn a_point_light_fits_six_cube_face_shadow_maps() {
+        let casters = corners(DVec3::splat(-2.0), DVec3::splat(2.0));
+        let config = Shadow3d::default();
+        let position = DVec3::new(1.0, 2.0, -3.0);
+        let shadows = Shadow::fit_point(position, &config, &casters);
+        assert_eq!(shadows.len(), 6);
+        let dirs = [
+            DVec3::X,
+            DVec3::NEG_X,
+            DVec3::Y,
+            DVec3::NEG_Y,
+            DVec3::Z,
+            DVec3::NEG_Z,
+        ];
+        for (shadow, dir) in shadows.iter().zip(dirs) {
+            let p = (position + dir * 1.5).as_vec3();
+            let clip = shadow.view_proj * p.extend(1.0);
+            assert!(clip.w > 0.0, "{dir}: {clip}");
+            let ndc = clip.truncate() / clip.w;
+            assert!(ndc.x.abs() < 1e-5 && ndc.y.abs() < 1e-5, "{dir}: {ndc}");
+            assert!(ndc.z > 0.0 && ndc.z < 1.0, "{dir}: {ndc}");
+        }
+        assert!(Shadow::fit_point(position, &config, &[]).is_empty());
     }
 
     #[test]
