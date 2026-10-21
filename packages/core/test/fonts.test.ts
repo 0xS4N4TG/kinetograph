@@ -130,7 +130,7 @@ describe('google fonts', () => {
   it('accepts the family name with spaces, as the CLI passes it', () => {
     const font = makeGoogleFont('DM Sans');
     expect(font.fontFamily).toBe('DM Sans');
-    expect(font.getInfo()).toEqual({ fontFamily: 'DM Sans', importName: 'DMSans' });
+    expect(font.getInfo()).toMatchObject({ fontFamily: 'DM Sans', importName: 'DMSans' });
     expect(makeGoogleFont('Exo 2').fontFamily).toBe('Exo 2');
   });
 

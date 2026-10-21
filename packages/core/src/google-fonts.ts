@@ -8,8 +8,10 @@
 // once into `~/.cache/kinetograph/fonts`, and registers it. The registration
 // is tracked, so the frame loop waits for it before it measures any text.
 
+import { pathToFileURL } from 'node:url';
 import { registerFont, trackFontLoad } from './font-registry.js';
 import {
+  BROWSER_USER_AGENT,
   fetchFileCached,
   fetchFileCachedSync,
   fetchTextCached,
@@ -78,9 +80,27 @@ export interface GoogleFontLoadResult {
   waitUntilDone: () => Promise<void>;
 }
 
+/**
+ * What `getInfo()` returns (`@remotion/google-fonts`). `fontFamily` and `importName` are plain; the rest is read from
+ * Google when first asked for (the CSS API, answered as it answers a browser, cached after that), and each
+ * `fonts[style][weight][subset]` is the `file://` URL of the font file, downloaded into the font cache when it is read.
+ */
+export interface GoogleFontInfo {
+  fontFamily: string;
+  importName: string;
+  /** The version Google serves the files under, `v20`. */
+  version: string;
+  /** The CSS API URL of the normal style with every weight the family has. */
+  url: string;
+  /** `unicode-range` of each subset. */
+  unicodeRanges: Record<string, string>;
+  fonts: Record<GoogleFontStyle, Record<string, Record<string, string>>>;
+  subsets: string[];
+}
+
 export interface GoogleFontModule {
   fontFamily: string;
-  getInfo: () => { fontFamily: string; importName: string };
+  getInfo: () => GoogleFontInfo;
   loadFont: (style?: GoogleFontStyle, options?: GoogleFontLoadOptions) => GoogleFontLoadResult;
 }
 
@@ -102,18 +122,30 @@ export interface FontFace {
   style: GoogleFontStyle;
   weight: string;
   url: string;
+  /** The name in the comment before the block (`latin`), when the answer has one. */
+  subset?: string;
+  unicodeRange?: string;
 }
 
 /** The `@font-face` blocks of a CSS answer. */
 export function parseFontFaces(css: string): FontFace[] {
   const faces: FontFace[] = [];
-  for (const block of css.match(/@font-face\s*\{[^}]*\}/g) ?? []) {
+  for (const match of css.matchAll(/(?:\/\*\s*([\w-]+)\s*\*\/\s*)?(@font-face\s*\{[^}]*\})/g)) {
+    const block = match[2]!;
     const family = /font-family:\s*['"]?([^;'"]+)['"]?\s*;/.exec(block)?.[1];
     const style = /font-style:\s*(\w+)/.exec(block)?.[1];
     const weight = /font-weight:\s*(\d+)/.exec(block)?.[1];
     const url = /src:[^;]*?url\(\s*['"]?([^)'"\s]+)['"]?\s*\)/.exec(block)?.[1];
+    const unicodeRange = /unicode-range:\s*([^;]+);/.exec(block)?.[1]?.trim();
     if (family && weight && url) {
-      faces.push({ family, style: style === 'italic' ? 'italic' : 'normal', weight, url });
+      faces.push({
+        family,
+        style: style === 'italic' ? 'italic' : 'normal',
+        weight,
+        url,
+        ...(match[1] ? { subset: match[1] } : {}),
+        ...(unicodeRange ? { unicodeRange } : {}),
+      });
     }
   }
   return faces;
@@ -149,15 +181,16 @@ async function faceList(
   return faces;
 }
 
-/** `faceList`, blocking. */
+/** `faceList`, blocking, for the answer a browser would get when `userAgent` is a browser's. */
 function faceListSync(
   family: string,
   style: GoogleFontStyle,
   weights: readonly string[] | undefined,
   options: FontDownloadOptions,
+  userAgent?: string,
 ): FontFace[] {
   const css = (list: readonly string[]): FontFace[] =>
-    parseFontFaces(fetchTextCachedSync(googleFontsCssUrl(family, style, list), options));
+    parseFontFaces(fetchTextCachedSync(googleFontsCssUrl(family, style, list), options, userAgent));
   if (weights !== undefined) return css(weights);
   try {
     return css(ALL_WEIGHTS);
@@ -176,6 +209,39 @@ function faceListSync(
     throw new Error(`Google Fonts has no "${family}" in the ${style} style (or the family name is wrong)`);
   }
   return faces;
+}
+
+/** The part of `getInfo()` that needs Google's answer. */
+function fontDetails(family: string, options: FontDownloadOptions): Omit<GoogleFontInfo, 'fontFamily' | 'importName'> {
+  const fonts: GoogleFontInfo['fonts'] = { normal: {}, italic: {} };
+  const unicodeRanges: Record<string, string> = {};
+  const subsets: string[] = [];
+  let version = '';
+  const weightsOfNormal = new Set<string>();
+  for (const style of ['normal', 'italic'] as const) {
+    let faces: FontFace[];
+    try {
+      faces = faceListSync(family, style, undefined, options, BROWSER_USER_AGENT);
+    } catch (error) {
+      // A family without italics: the API refuses every weight of it.
+      if (style === 'italic' && error instanceof Error && !(error instanceof FontDownloadError && error.status !== 400)) continue;
+      throw error;
+    }
+    for (const face of faces) {
+      const subset = face.subset ?? 'latin';
+      if (!subsets.includes(subset)) subsets.push(subset);
+      if (face.unicodeRange !== undefined) unicodeRanges[subset] ??= face.unicodeRange;
+      version ||= /\/(v\d+)\//.exec(face.url)?.[1] ?? '';
+      if (style === 'normal') weightsOfNormal.add(face.weight);
+      const bySubset = ((fonts[style][face.weight] ??= {}) as Record<string, string>);
+      // The file is downloaded when the URL is read, not for every subset of every weight at once.
+      Object.defineProperty(bySubset, subset, {
+        enumerable: true,
+        get: () => pathToFileURL(fetchFileCachedSync(face.url, options)).href,
+      });
+    }
+  }
+  return { version, url: googleFontsCssUrl(family, 'normal', [...weightsOfNormal]), unicodeRanges, fonts, subsets };
 }
 
 /**
@@ -214,7 +280,16 @@ export function makeGoogleFont(familyName: string, options: FontDownloadOptions 
 
   return {
     fontFamily: family,
-    getInfo: () => ({ fontFamily: family, importName: familyName.replace(/\s+/g, '') }),
+    getInfo: () => {
+      let details: ReturnType<typeof fontDetails> | undefined;
+      const detail = <K extends keyof ReturnType<typeof fontDetails>>(key: K): ReturnType<typeof fontDetails>[K] =>
+        (details ??= fontDetails(family, options))[key];
+      const info = { fontFamily: family, importName: familyName.replace(/\s+/g, '') } as GoogleFontInfo;
+      for (const key of ['version', 'url', 'unicodeRanges', 'fonts', 'subsets'] as const) {
+        Object.defineProperty(info, key, { enumerable: true, get: () => detail(key) });
+      }
+      return info;
+    },
     loadFont,
   };
 }

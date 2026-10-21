@@ -143,3 +143,46 @@ describe('measureText while a font is downloading', () => {
     expect(() => measureText({ text: 'x', fontFamily: 'Stuck', fontSize: 10 })).toThrow(/synchronously/);
   });
 });
+
+describe('Google font getInfo().fonts', () => {
+  const css = (subset: string, weight: number, range: string, file: string) => `/* ${subset} */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: ${weight};
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v20/${file}.woff2) format('woff2');
+  unicode-range: ${range};
+}`;
+
+  it('maps weight and subset to the file URL of the cached download, fetched when read', async () => {
+    const cacheDir = await tmp();
+    const requested: string[] = [];
+    const fetchSync = (url: string, userAgent: string): Uint8Array => {
+      requested.push(url);
+      if (url.includes('googleapis')) {
+        if (url.includes('ital,wght')) throw new FontDownloadError(url, 400);
+        expect(userAgent).toMatch(/Mozilla/);
+        return new TextEncoder().encode(
+          [css('cyrillic', 500, 'U+0400-045F', 'cyr500'), css('latin', 500, 'U+0000-00FF', 'lat500'), css('latin', 700, 'U+0000-00FF', 'lat700')].join('\n'),
+        );
+      }
+      return BYTES;
+    };
+    const info = makeGoogleFont('Inter', { fetch: () => Promise.reject(new Error('offline')), fetchSync, cacheDir }).getInfo();
+    expect(info.fontFamily).toBe('Inter');
+    expect(requested).toEqual([]);
+    expect(info.subsets).toEqual(['cyrillic', 'latin']);
+    expect(info.version).toBe('v20');
+    expect(info.unicodeRanges.latin).toBe('U+0000-00FF');
+    expect(info.url).toContain('family=Inter:wght@500;700');
+    expect(Object.keys(info.fonts.normal)).toEqual(['500', '700']);
+    expect(info.fonts.italic).toEqual({});
+    // No font file was fetched until one is read.
+    expect(requested.filter((u) => u.includes('gstatic'))).toEqual([]);
+    const url = info.fonts.normal['500']!.latin!;
+    expect(url.startsWith('file://')).toBe(true);
+    expect([...(await readFile(fileURLToPath(url)))]).toEqual([...BYTES]);
+    expect(requested.filter((u) => u.includes('gstatic'))).toEqual(['https://fonts.gstatic.com/s/inter/v20/lat500.woff2']);
+  });
+});
