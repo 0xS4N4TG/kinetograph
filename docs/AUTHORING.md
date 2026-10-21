@@ -688,7 +688,9 @@ Mapping onto the engine:
     nothing paints over it; `onPaint` and `onInit` are not run. `isHtmlInCanvasSupported()` is false, so a project can
     take another path; `getHtmlInCanvasUnsupportedMessage()` and `HTML_IN_CANVAS_UNSUPPORTED_MESSAGE` say why.
   - `<IFrame>` is the `iframe` element, which the CSS engine reports as unsupported (`--strict` fails on it).
-  - `<Artifact>` draws nothing and says that its file is not written: a render produces the video only.
+  - `<Artifact>` draws nothing and records its file (`getArtifacts()`); `kinetograph render` writes the ones recorded
+    in the frames it rendered into the folder of the video (text and bytes as they are, `Artifact.Thumbnail` as the PNG
+    of its frame) and lists them in `artifacts` of the result. A filename must stay inside that folder.
   They take `from`, `durationInFrames`, `name`, `hidden`, `freeze` and the crop props as `Interactive` does.
 - `<AnimatedImage src width height fit loopBehavior playbackRate>` (`loopBehavior`: `loop`, `pause-after-finish`,
   `clear-after-finish`). A GIF is a native `gif` layer (§11.3) shown at the picture Remotion's `ImageDecoder` path picks

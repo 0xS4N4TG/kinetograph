@@ -54,7 +54,7 @@ function sceneFile(scene: SceneJson = sceneObject()): string {
 }
 
 /** A project stand-in: each frame's scene carries the frame number in a layer id. */
-function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; failAt?: number; dir?: string; notes?: string[] } = {}): Source {
+function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; failAt?: number; dir?: string; notes?: string[]; artifacts?: { filename: string; content: string | Uint8Array; frame: number }[] } = {}): Source {
   const dir = options.dir ?? scratch();
   return {
     kind: 'project',
@@ -67,6 +67,8 @@ function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; fail
       return { sceneJson: JSON.stringify(scene), audio: options.audio?.(frame) ?? [], jsMs: 2, stringifyMs: 0.5 };
     },
     notes: () => options.notes ?? [],
+    artifacts: () => (options.artifacts ?? []) as never,
+    clearArtifacts() {},
     dispose() {},
   };
 }
@@ -316,6 +318,27 @@ describe('render', () => {
     expect(JSON.stringify(calls.pushed[2]!.scene)).toContain('frame-12');
     expect(calls.finished).toEqual([undefined]);
     expect(r.json).toMatchObject({ frames: 3, audio: false });
+  });
+
+  it('writes the <Artifact> files of the rendered frames next to the video: text, bytes and a thumbnail', async () => {
+    seam.override = () =>
+      fakeProject({
+        artifacts: [
+          { filename: 'notes.txt', content: 'hello', frame: 11 },
+          { filename: 'sub/data.bin', content: new Uint8Array([1, 2, 3]), frame: 12 },
+          { filename: 'thumb.png', content: 'thumbnail' as never, frame: 12 },
+          { filename: 'later.txt', content: 'outside the range', frame: 40 },
+        ],
+      });
+    const dir = scratch();
+    const r = await cli('render', 'index.tsx', '-o', join(dir, 'p.mp4'), '--range', '10..14', '--json');
+    expect(r.code).toBe(0);
+    expect(r.json.artifacts).toEqual(['notes.txt', 'sub/data.bin', 'thumb.png']);
+    expect(readFileSync(join(dir, 'notes.txt'), 'utf8')).toBe('hello');
+    expect([...readFileSync(join(dir, 'sub', 'data.bin'))]).toEqual([1, 2, 3]);
+    expect(existsSync(join(dir, 'later.txt'))).toBe(false);
+    expect(calls.still.map((s) => s.frame)).toEqual([12]);
+    expect(existsSync(join(dir, 'thumb.png'))).toBe(true);
   });
 
   it('mixes onFrame synthesis and joined <Audio> clips and passes the PCM to finish', async () => {

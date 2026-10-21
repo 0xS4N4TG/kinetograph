@@ -116,6 +116,8 @@ export { IFrame } from './iframe.js';
 export type { IFrameProps } from './iframe.js';
 export { Artifact } from './artifact.js';
 export type { ArtifactProps, DownloadBehavior } from './artifact.js';
+export { clearArtifacts, getArtifacts, recordArtifact } from './artifacts.js';
+export type { ArtifactContent, ArtifactRecord } from './artifacts.js';
 export {
   HtmlInCanvas,
   HTML_IN_CANVAS_UNSUPPORTED_MESSAGE,

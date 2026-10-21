@@ -1,9 +1,10 @@
 // `<Artifact>`: a file a Remotion render writes next to the video (a frame's thumbnail, a text or binary file made by
-// the composition). Kinetograph's render produces the video and nothing else, so the component is accepted, draws
-// nothing and says once that the file is not written.
+// the composition). It records itself when it is rendered (`artifacts.ts`) and `kinetograph render` writes the files that
+// were recorded in the frames it rendered into the folder of the video. It draws nothing.
 
+import { useTimeline } from '@kinetograph/react';
 import type { ReactNode } from 'react';
-import { warnOnce } from './warn.js';
+import { assertValidArtifactFilename, recordArtifact } from './artifacts.js';
 
 const Thumbnail = Symbol('Thumbnail');
 
@@ -17,8 +18,13 @@ export interface ArtifactProps {
   downloadBehavior?: DownloadBehavior | null;
 }
 
-function ArtifactComponent(_props: ArtifactProps): ReactNode {
-  warnOnce('Artifact', "<Artifact> files are not written: Kinetograph's render produces the video and no other files.");
+function ArtifactComponent({ filename, content }: ArtifactProps): ReactNode {
+  const { absoluteFrame } = useTimeline();
+  assertValidArtifactFilename(filename);
+  if (typeof content !== 'string' && !(content instanceof Uint8Array) && content !== Thumbnail) {
+    throw new Error(`<Artifact filename=${JSON.stringify(filename)}> content must be a string, a Uint8Array or Artifact.Thumbnail.`);
+  }
+  recordArtifact({ filename, content: content === Thumbnail ? 'thumbnail' : content, frame: Math.round(absoluteFrame) });
   return null;
 }
 

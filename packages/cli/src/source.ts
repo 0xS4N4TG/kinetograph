@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { CompositionInfo, FrameRenderer } from '@kinetograph/core';
+import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetograph/core';
 import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetograph/scene';
 import { bundleProject } from './bundle.js';
 import { CliError } from './errors.js';
@@ -22,6 +22,9 @@ interface ProjectModule {
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
   stylesheetNotes(): string[];
+  /** The files `<Artifact>`s asked the render to write (docs/AUTHORING.md §9). */
+  getArtifacts(): ArtifactRecord[];
+  clearArtifacts(): void;
 }
 
 export interface FrameOutput {
@@ -48,6 +51,9 @@ export interface Source {
   frame(frame: number): Promise<FrameOutput>;
   /** Problems with the project's stylesheets, for `doctor`. */
   notes?(): string[];
+  /** The `<Artifact>` files rendered frames asked for, and forgetting the ones asked for before (a render starts clean). */
+  artifacts?(): ArtifactRecord[];
+  clearArtifacts?(): void;
   dispose(): void;
 }
 
@@ -205,6 +211,8 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
     notes: () => mod.stylesheetNotes(),
+    artifacts: () => mod.getArtifacts(),
+    clearArtifacts: () => mod.clearArtifacts(),
     dispose: () => renderer.dispose(),
   };
 }

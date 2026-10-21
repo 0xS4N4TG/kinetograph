@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   Artifact,
   CanvasImage,
+  clearArtifacts,
   createEffect,
+  getArtifacts,
   getHtmlInCanvasUnsupportedMessage,
   HTML_IN_CANVAS_UNSUPPORTED_MESSAGE,
   HtmlInCanvas,
@@ -116,12 +118,34 @@ describe('IFrame', () => {
 });
 
 describe('Artifact', () => {
-  it('draws nothing and says once that the file is not written', () => {
-    expect(renderAt(<Artifact filename="a.txt" content="hi" />).layers).toEqual([]);
-    renderAt(<Artifact filename="b.png" content={Artifact.Thumbnail} />);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]![0]).toMatch(/not written/);
+  beforeEach(() => clearArtifacts());
+
+  it('draws nothing and records its file for the render to write, by the frame it was rendered in', () => {
+    expect(renderAt(<Artifact filename="a.txt" content="hi" />, 7).layers).toEqual([]);
+    renderAt(<Artifact filename="b.png" content={Artifact.Thumbnail} />, 12);
+    const bytes = new Uint8Array([1, 2, 3]);
+    renderAt(<Artifact filename="sub/c.bin" content={bytes} />, 3);
+    expect(getArtifacts()).toEqual([
+      { filename: 'a.txt', content: 'hi', frame: 7 },
+      { filename: 'b.png', content: 'thumbnail', frame: 12 },
+      { filename: 'sub/c.bin', content: bytes, frame: 3 },
+    ]);
     expect(typeof Artifact.Thumbnail).toBe('symbol');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps the last record of a file', () => {
+    renderAt(<Artifact filename="a.txt" content="one" />, 1);
+    renderAt(<Artifact filename="a.txt" content="two" />, 2);
+    expect(getArtifacts()).toEqual([{ filename: 'a.txt', content: 'two', frame: 2 }]);
+  });
+
+  it('refuses a name outside the output folder, and content it cannot write', () => {
+    for (const bad of ['', '../x.txt', '/abs.txt', 'a/../b.txt', 'C:\\x.txt', 'a//b']) {
+      expect(() => renderAt(<Artifact filename={bad} content="x" />), bad).toThrow(/Artifact/);
+    }
+    expect(() => renderAt(<Artifact filename="a.txt" content={5 as never} />)).toThrow(/content must be a string/);
+    expect(getArtifacts()).toEqual([]);
   });
 });
 

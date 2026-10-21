@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { clampPcm, hasOnFrame, joinClips, renderAudio } from '@kinetograph/audio';
 import { resolveSoundSource } from '@kinetograph/core/sound-source';
 import type { Renderer, RenderSummary } from '@kinetograph/native';
@@ -28,7 +30,36 @@ export interface RenderJobOptions {
 }
 
 /** What a render did, beside the encoder's `RenderSummary`. */
-export type RenderResult = RenderSummary & { compat: CompatReport };
+export type RenderResult = RenderSummary & {
+  compat: CompatReport;
+  /** The `<Artifact>` files written beside the video, as the names they have in its folder. */
+  artifacts: string[];
+};
+
+/**
+ * Writes the `<Artifact>` files that frames `first..=last` asked for into the folder of `output`: text and bytes as they
+ * are, a thumbnail as the PNG of the frame it was rendered in.
+ */
+async function writeArtifacts(source: Source, renderer: Renderer, output: string, first: number, last: number, draft: boolean): Promise<string[]> {
+  const written: string[] = [];
+  const folder = dirname(output);
+  for (const artifact of source.artifacts?.() ?? []) {
+    if (artifact.frame < first || artifact.frame > last) continue;
+    const file = join(folder, artifact.filename);
+    let data: string | Uint8Array;
+    if (artifact.content === 'thumbnail') {
+      const out = await source.frame(artifact.frame);
+      const sceneJson = draft ? JSON.stringify(draftScene(JSON.parse(out.sceneJson) as SceneJson)) : out.sceneJson;
+      data = renderer.still(sceneJson, artifact.frame, source.baseDir);
+    } else {
+      data = artifact.content;
+    }
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, data);
+    written.push(artifact.filename);
+  }
+  return written;
+}
 
 /**
  * Renders `source` to `options.output` with `renderer` (the `render` command, docs/AUTHORING.md §9): a `.json` scene
@@ -57,9 +88,10 @@ export async function renderSource(
     }
     if (draft) sceneJson = JSON.stringify(draftScene(JSON.parse(sceneJson) as SceneJson));
     const summary = renderer.render(sceneJson, options.output, { range, encoder, baseDir: source.baseDir });
-    return { ...summary, compat: leftOut.report() };
+    return { ...summary, compat: leftOut.report(), artifacts: [] };
   }
 
+  source.clearArtifacts?.();
   const [first, last] = frameRange(range, durationInFrames);
   const size = draft ? { width: halfSize(width), height: halfSize(height) } : { width, height };
   const writer = renderer.beginVideo(options.output, { width: size.width, height: size.height, fps, encoder });
@@ -87,7 +119,8 @@ export async function renderSource(
     } else {
       summary = writer.finish();
     }
-    return { ...summary, compat: leftOut.report() };
+    const artifacts = await writeArtifacts(source, renderer, options.output, first, last, draft);
+    return { ...summary, compat: leftOut.report(), artifacts };
   } catch (error) {
     try {
       writer.abort();

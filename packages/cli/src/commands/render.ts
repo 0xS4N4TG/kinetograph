@@ -93,6 +93,7 @@ function result(summary: RenderResult, wallMs: number) {
       `wrote ${summary.output} (${summary.width}x${summary.height}, ${summary.frames} frames ` +
       `${summary.first}..=${summary.last} at ${summary.fps} fps, ${summary.encoder}, ` +
       `${summary.audio ? 'with audio' : 'no audio'}, ${summary.msPerFrame.toFixed(2)} ms/frame in the encoder${unsupported}, ` +
-      `${wallMs.toFixed(0)} ms in all)`,
+      `${wallMs.toFixed(0)} ms in all)` +
+      (summary.artifacts.length > 0 ? `; also wrote ${summary.artifacts.join(', ')}` : ''),
   };
 }
