@@ -98,6 +98,20 @@ impl ImageCache {
         }
     }
 
+    /// The atlas as it stands, for a pass that draws no image: no uploads, and the size of the atlas the
+    /// resident images were uploaded to, or an empty `Images` when there are none (nothing to keep).
+    pub(crate) fn resident_atlas(&self) -> Images<'_> {
+        if self.map.is_empty() {
+            return Images::default();
+        }
+        Images {
+            width: self.atlas.size().width as u32,
+            height: self.atlas.size().height as u32,
+            evicted: 0,
+            images: &[],
+        }
+    }
+
     pub(crate) fn bump_size(&mut self) -> bool {
         let mut new_size = self.atlas.size().width * 2;
         while new_size <= self.max_size {
@@ -275,6 +289,22 @@ mod tests {
         // Evicting what is not there changes nothing.
         cache.evict(&first);
         assert_eq!(cache.map.len(), 1);
+    }
+
+    #[test]
+    fn a_pass_without_images_keeps_the_atlas_size_of_the_resident_ones() {
+        let mut cache = ImageCache::new_with_sizes(32, 64);
+        // Nothing is resident: there is no atlas to keep.
+        let none = cache.resident_atlas();
+        assert_eq!((none.width, none.height, none.images.len()), (0, 0, 0));
+
+        let image = image(7, 8, 8);
+        cache.begin_resolve();
+        cache.get_or_insert(&image).unwrap();
+        cache.finish_resolve();
+        // The size the renderer holds the uploaded image in, and nothing to upload again.
+        let kept = cache.resident_atlas();
+        assert_eq!((kept.width, kept.height, kept.images.len(), kept.evicted), (32, 32, 0, 0));
     }
 
     #[test]

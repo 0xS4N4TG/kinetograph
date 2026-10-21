@@ -196,7 +196,10 @@ impl Resolver {
         let resources = &encoding.resources;
         if resources.patches.is_empty() {
             let layout = resolve_solid_paths_only(encoding, packed);
-            return (layout, Ramps::default(), Images::default());
+            // A scene of solid paths still gets the atlas the images drawn before it are in: the renderer
+            // replaces its atlas when the size here differs, and a replaced atlas is empty while the cache
+            // goes on counting those images as uploaded.
+            return (layout, Ramps::default(), self.image_cache.resident_atlas());
         }
         let patch_sizes = self.resolve_patches(encoding);
         self.resolve_pending_images();

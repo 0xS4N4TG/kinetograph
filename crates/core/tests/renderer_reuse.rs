@@ -158,6 +158,34 @@ fn a_name_that_means_another_file_is_read_again() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+/// A canvas with shadows is drawn in runs through the image renderer, and a run of solid paths holds no image. Vello
+/// replaced its image atlas for such a run while the cache went on counting the pictures drawn before it as uploaded,
+/// so a picture drawn after it came out blank, and a video drawn in chunks on several renderers differed from one drawn
+/// on a single renderer.
+#[test]
+fn a_picture_is_drawn_after_a_canvas_run_of_solid_paths_as_a_new_renderer_draws_it() {
+    let base = std::env::temp_dir().join(format!("kinetograph-atlas-{}", std::process::id()));
+    write_picture(&base, [200, 40, 40, 255]);
+    let picture = picture_scene(&base);
+    let canvas = load("tests/scenes/canvas-effects.json");
+    let want = fresh(&picture, 0);
+    assert_eq!(&want.rgba[..4], &[200, 40, 40, 255], "the picture is drawn");
+
+    for cache in [false, true] {
+        let mut renderer = Renderer::new(picture.clone()).unwrap();
+        renderer.set_layer_cache(cache);
+        assert!(renderer.render_frame(0).unwrap().rgba == want.rgba, "cache {cache}: the first picture");
+        for round in 0..2 {
+            renderer.set_scene(canvas.clone()).unwrap();
+            renderer.render_frame(0).unwrap();
+            renderer.set_scene(picture.clone()).unwrap();
+            let got = renderer.render_frame(0).unwrap();
+            assert!(got.rgba == want.rgba, "cache {cache}, round {round}: the picture after a canvas run is not what a new renderer draws");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 #[test]
 fn a_scene_that_cannot_load_leaves_the_renderer_as_it_was() {
     let scene = load("../../examples/basic.json");

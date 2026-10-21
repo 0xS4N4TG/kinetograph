@@ -125,8 +125,9 @@ The same file's `render.rs` also keeps the MSAA mask tables: `make_mask_lut_16` 
 - Upstream: crates.io `vello_encoding` 0.11.0 (same commit as `vello_shaders`, `research/vello_encoding`). Licence:
   Apache-2.0 OR MIT, both kept. Wired in by `[patch.crates-io]` in the root `Cargo.toml`, so `vello` builds against it.
   The copy was committed unchanged first, so the commit on top of it is the whole change.
-- Changed files: `src/image_cache.rs` (`ImageCache::evict`, with a test) and `src/resolve.rs` (`Resolver::evict_image`);
-  `vendor/vello/src/lib.rs` calls it from `Renderer::unregister_texture`.
+- Changed files: `src/image_cache.rs` (`ImageCache::evict` and `ImageCache::resident_atlas`, with tests) and `src/resolve.rs`
+  (`Resolver::evict_image`, and the solid-paths-only return of `Resolver::resolve`); `vendor/vello/src/lib.rs` calls
+  `evict_image` from `Renderer::unregister_texture`.
 
 ### Why
 
@@ -143,10 +144,21 @@ frame lost some of its shadows from the third frame on (Vello leaves out an imag
 `Scene::draw_image` are not touched, and an image that was never registered is not found. A frame's pictures now have
 the whole atlas, and the same pixels come out whichever frames came before.
 
+A second change, in the same two files: a scene with no late-bound resource (solid paths only) got an empty `Images`
+back from `Resolver::resolve`, so `vello::render` swapped its persistent atlas for a 1 x 1 one, while the image cache
+went on counting every resident image as uploaded. The next scene that drew one of those images found it resident and
+did not upload it again, and drew it blank (Vello leaves out nothing it can place, and this one was placed, in an atlas
+that was no longer there). `resident_atlas` gives the size of the atlas the resident images are in (and no uploads)
+when there are any, so the atlas is kept; with none resident the result is the empty `Images` as before. It showed as
+frames that depended on the frames drawn before them: a canvas with shadows draws runs of solid paths through the image
+renderer, and an Image card drawn after it was missing from a launch-film frame at `render --concurrency 4` and not at
+`--concurrency 1` (or the other way about, at other frames), since the worker threads' histories differ
+(`renderer_reuse.rs`, `a_picture_is_drawn_after_a_canvas_run_of_solid_paths_as_a_new_renderer_draws_it`).
+
 ### Dropping the patch
 
 Remove `vendor/vello_encoding`, its `[patch.crates-io]` entry and this section once `unregister_texture` frees the
-atlas place itself. The change is small enough to offer upstream.
+atlas place itself and a solid-paths-only resolve keeps the atlas. The changes are small enough to offer upstream.
 
 ## stylo 0.22.0
 
