@@ -474,6 +474,8 @@ still hold, plus:
   helper maps to `docs/SCENE.md` JSON. Then it pushes and starts the five subagents.
 - Each subagent works in its own git worktree, on its own branch cut from that commit, and opens a draft PR against
   `feat/node-authoring`. Streams that need another stream's API stub it from the contract rather than wait.
+  A fresh worktree has no `node_modules`: run `node scripts/worktree-setup.mjs` in it (no network; it links the main
+  checkout's third-party packages and this worktree's own `@kinetograph/*`), then `npm run build`.
   1. `feat/napi-addon`: `crates/node`. A `Renderer` with one GPU setup; `still(scene, frame)` returning a PNG
      `Buffer`; `render(scene, range, output)` through the existing encoder; `bench`; `inspect` (the resolved scene as
      JSON). Scenes go in as JSON strings; pixels stay in Rust. A `bench` stage for the handoff cost (spike 1, run on
