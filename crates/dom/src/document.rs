@@ -248,6 +248,18 @@ fn build_root(
 /// from them. With no history, nothing transitions and every value is its
 /// final one.
 pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
+    resolve_keeping(request, &mut None, &mut false)
+}
+
+/// [`resolve`], handing out what [`IslandCache`] needs to update the document
+/// to another state. (The results go through references, not a struct: the
+/// deep recursion in Stylo and Blitz runs below this frame, and in a debug
+/// build every copy of the document it holds is stack.)
+fn resolve_keeping(
+    request: &IslandRequest,
+    files_out: &mut Option<Arc<LocalFiles>>,
+    plain_out: &mut bool,
+) -> Result<IslandDocument, BuildError> {
     let mut states: Vec<(f64, &DomNode)> = request
         .history
         .iter()
@@ -262,7 +274,7 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
     start(&mut island, &files, states[0].0);
     clear_starting(&mut island, &files, states[0].0);
     for (i, &(time, root)) in states.iter().enumerate().skip(1) {
-        match changes(&island, root) {
+        match changes(&island, None, root) {
             Some(edits) => {
                 if !edits.is_empty() {
                     apply(&mut island, &edits);
@@ -277,23 +289,160 @@ pub fn resolve(request: &IslandRequest) -> Result<IslandDocument, BuildError> {
             }
         }
     }
+    // A state that has history is a replay, and is built afresh each time.
+    *plain_out = settle(&mut island, request) && request.history.is_empty();
+    island.missing = files.missing();
+    *files_out = Some(files);
+    Ok(island)
+}
+
+/// The passes after styling that mend what Blitz leaves out. True when none
+/// of them changed the document's tree or styles, so the document is still
+/// what building the request's tree gives and [`changes`] can edit it.
+#[inline(never)]
+fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
+    let mut plain = true;
     // Inline elements with horizontal margin, border or padding: Blitz leaves
     // those widths out of the text, so give the text the widths (inline.rs).
     if inline::add_edge_spacers(&mut island.doc) > 0 {
         island.doc.resolve(request.time);
+        plain = false;
     }
     // A collapsed table's cells give up their borders for half of each in their
     // padding, as Chrome lays it out (collapse.rs).
     if collapse::requested(request) {
         collapse::settle(&mut island.doc, request.time);
+        plain = false;
     }
     // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
     // only known once the text is laid out.
     if clamp::requested(request) {
         clamp::settle(&mut island.doc, request.time);
+        plain = false;
     }
-    island.missing = files.missing();
-    Ok(island)
+    plain
+}
+
+/// A resolved island with the files it reads.
+pub struct Resolved {
+    pub island: IslandDocument,
+    files: Arc<LocalFiles>,
+    /// Whether [`IslandCache`] may keep it.
+    plain: bool,
+}
+
+/// The islands of one motion-blurred frame's samples (docs/SCENE.md, "Motion
+/// blur"). A layer is drawn at several moments of the same frame, and its
+/// islands differ in a few styles (a transform, an opacity) while their
+/// structure, text and sheets stay. The document of an earlier sample is
+/// edited to the next one instead of building, styling and shaping all of it
+/// again; the edits restyle and lay out only what they touch. The result is
+/// the same as building the sample afresh. It is not used when a transition
+/// or animation could start from an edit, nor for a tree whose structure
+/// changed.
+///
+/// A pass is the samples of one frame; a request of another pass (or none)
+/// empties the cache, so no frame sees what an earlier one left.
+#[derive(Default)]
+pub struct IslandCache {
+    pass: Option<u64>,
+    kept: HashMap<String, Kept>,
+}
+
+struct Kept {
+    resolved: Resolved,
+    /// The request the document shows.
+    request: IslandRequest,
+}
+
+/// Whether two requests build a document from the same sheets, fonts and box.
+fn same_page(a: &IslandRequest, b: &IslandRequest) -> bool {
+    a.stylesheets == b.stylesheets
+        && a.viewport.width.to_bits() == b.viewport.width.to_bits()
+        && a.viewport.height.to_bits() == b.viewport.height.to_bits()
+        && a.fonts == b.fonts
+        && a.base_dir == b.base_dir
+        && a.public_dir == b.public_dir
+}
+
+/// Whether any CSS of `request` mentions a transition or an animation: an edit
+/// to such an element would start one that a fresh build does not have.
+fn moves(request: &IslandRequest) -> bool {
+    fn mentions(css: &str) -> bool {
+        css.contains("transition") || css.contains("animation") || css.contains("starting-style")
+    }
+    fn node(n: &DomNode) -> bool {
+        match n {
+            DomNode::Text { text } => mentions(text),
+            DomNode::Native { .. } => false,
+            DomNode::Element {
+                attrs,
+                style,
+                children,
+                ..
+            } => {
+                mentions(style)
+                    || attrs.get("style").is_some_and(|s| mentions(s))
+                    || children.iter().any(node)
+            }
+        }
+    }
+    request.stylesheets.iter().any(|s| mentions(s)) || node(&request.root)
+}
+
+impl IslandCache {
+    /// The island of `request`: the kept one of the same path edited to the
+    /// request's tree, or a new one. Hand it back to [`keep`](Self::keep) to
+    /// let the next sample of the pass use it.
+    pub fn resolve(
+        &mut self,
+        request: &IslandRequest,
+        pass: Option<u64>,
+    ) -> Result<Resolved, BuildError> {
+        if self.pass != pass {
+            self.kept.clear();
+            self.pass = pass;
+        }
+        if pass.is_some()
+            && !moves(request)
+            && let Some(mut kept) = self.kept.remove(&request.path)
+            && same_page(&kept.request, request)
+            && let Some(edits) = changes(
+                &kept.resolved.island,
+                Some(&kept.request.root),
+                &request.root,
+            )
+        {
+            let Resolved {
+                island,
+                files,
+                plain,
+            } = &mut kept.resolved;
+            if !edits.is_empty() {
+                apply(island, &edits);
+                load(island, files, request.time);
+            }
+            advance(&mut island.doc, request.time);
+            *plain = settle(island, request);
+            island.missing = files.missing();
+            return Ok(kept.resolved);
+        }
+        let (mut files, mut plain) = (None, false);
+        let island = resolve_keeping(request, &mut files, &mut plain)?;
+        Ok(Resolved {
+            island,
+            files: files.expect("a resolved island has its files"),
+            plain,
+        })
+    }
+
+    /// Keeps `resolved` for the next sample of the same pass.
+    pub fn keep(&mut self, request: IslandRequest, resolved: Resolved) {
+        if self.pass.is_some() && resolved.plain {
+            self.kept
+                .insert(request.path.clone(), Kept { resolved, request });
+        }
+    }
 }
 
 /// Once a document built with `@starting-style` rules has its first style,
@@ -356,10 +505,13 @@ enum Edit {
 
 /// The edits that turn the document into the state `root`, or `None` when the
 /// states differ in structure (another element, another number of children).
-fn changes(island: &IslandDocument, root: &DomNode) -> Option<Vec<Edit>> {
+///
+/// `built` is the tree the document was last made to show, when that is known:
+/// what is the same in both is not looked at again.
+fn changes(island: &IslandDocument, built: Option<&DomNode>, root: &DomNode) -> Option<Vec<Edit>> {
     let mut edits = Vec::new();
     let id = island.root?;
-    diff(&island.doc, id, root, false, &mut edits).then_some(edits)
+    diff(&island.doc, id, built, root, false, &mut edits).then_some(edits)
 }
 
 /// Compares the node `id` with `want`, pushing what has to change; false if
@@ -367,6 +519,7 @@ fn changes(island: &IslandDocument, root: &DomNode) -> Option<Vec<Edit>> {
 fn diff(
     doc: &BaseDocument,
     id: NodeId,
+    built: Option<&DomNode>,
     want: &DomNode,
     in_svg: bool,
     edits: &mut Vec<Edit>,
@@ -377,7 +530,8 @@ fn diff(
     match want {
         DomNode::Text { text } => match node.text_data() {
             Some(data) => {
-                if data.content != *text {
+                let same = matches!(built, Some(DomNode::Text { text: t }) if t == text);
+                if !same && data.content != *text {
                     edits.push(Edit::Text(id, text.clone()));
                 }
                 true
@@ -392,11 +546,15 @@ fn diff(
         } => {
             node.data
                 .is_element_with_tag_name(&LocalName::from("kg-native"))
-                && diff_attrs(
+                && (matches!(
+                    built,
+                    Some(DomNode::Native { path: p, width: w, height: h, overlay: o })
+                        if p == path && w == width && h == height && o == overlay
+                ) || diff_attrs(
                     node,
                     native_attributes(path, *width, *height, *overlay),
                     edits,
-                )
+                ))
         }
         DomNode::Element {
             tag,
@@ -405,47 +563,73 @@ fn diff(
             style,
             children,
         } => {
+            let raw = tag;
             let svg = in_svg || tag == "svg";
             let tag = if svg {
                 tag.clone()
             } else {
                 tag.to_ascii_lowercase()
             };
-            if tag == "script"
-                || !node
-                    .data
-                    .is_element_with_tag_name(&LocalName::from(tag.as_str()))
-            {
-                return false;
-            }
-            if !diff_attrs(node, element_attributes(path, attrs, style, svg), edits) {
-                return false;
+            // The same tag, attributes and style as the tree the document shows.
+            let (same, old_children) = match built {
+                Some(DomNode::Element {
+                    tag: t,
+                    path: p,
+                    attrs: a,
+                    style: st,
+                    children: c,
+                }) => (t == raw && p == path && a == attrs && st == style, Some(c)),
+                _ => (false, None),
+            };
+            if !same {
+                if tag == "script"
+                    || !node
+                        .data
+                        .is_element_with_tag_name(&LocalName::from(tag.as_str()))
+                {
+                    return false;
+                }
+                if !diff_attrs(node, element_attributes(path, attrs, style, svg), edits) {
+                    return false;
+                }
             }
             let child_svg = svg && tag != "foreignObject";
-            let wanted: Vec<&DomNode> = children
-                .iter()
-                .filter(|c| !matches!(c, DomNode::Element { tag, .. } if tag == "script"))
-                .collect();
+            let not_script =
+                |c: &&DomNode| !matches!(c, DomNode::Element { tag, .. } if tag == "script");
+            let wanted: Vec<&DomNode> = children.iter().filter(not_script).collect();
             if node.children.len() != wanted.len() {
                 return false;
             }
+            let old: Vec<&DomNode> = old_children
+                .map(|c| c.iter().filter(not_script).collect())
+                .unwrap_or_default();
+            let old = if old.len() == wanted.len() {
+                old
+            } else {
+                Vec::new()
+            };
             let is_style = tag == "style";
             node.children
                 .iter()
+                .enumerate()
                 .zip(wanted)
-                .all(|(&child, want)| match (is_style, want) {
+                .all(|((i, &child), want)| match (is_style, want) {
                     (true, DomNode::Text { text }) => {
-                        let text = escape_style_text(&crate::paint::shim_css(text));
-                        let same = doc
-                            .get_node(child)
-                            .and_then(|n| n.text_data())
-                            .is_some_and(|d| d.content == text);
-                        if !same {
-                            edits.push(Edit::Text(child, text));
+                        let unchanged =
+                            matches!(old.get(i), Some(DomNode::Text { text: t }) if t == text);
+                        if !unchanged {
+                            let text = escape_style_text(&crate::paint::shim_css(text));
+                            let same = doc
+                                .get_node(child)
+                                .and_then(|n| n.text_data())
+                                .is_some_and(|d| d.content == text);
+                            if !same {
+                                edits.push(Edit::Text(child, text));
+                            }
                         }
                         true
                     }
-                    _ => diff(doc, child, want, child_svg, edits),
+                    _ => diff(doc, child, old.get(i).copied(), want, child_svg, edits),
                 })
         }
     }
