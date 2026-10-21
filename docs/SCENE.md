@@ -1911,12 +1911,15 @@ usually the same at every sub-frame (a wall of cards that only moves as one), an
 
 - `changes` has exactly `samples` lists, one per sample in time order. Sub-frame `i` is the layer with each change of
   list `i` put in place, resolved at `t_i`: as if `frames[i]` were that tree.
-- A change is `{ "layer": ..., "keepChildren": false }`. Its `layer` is a complete layer that stands in for the layer
-  with its `id`: the blurred layer itself or any layer below it, of the same `type`. With `keepChildren` (a group only)
-  the change gives the group's own fields and no children, and the group keeps the children it has at the frame,
-  each still replaced when a change of the same list names it.
-- A list changes a layer at most once. An id that is not the layer or a layer in it, another `type`, or children
-  given with `keepChildren` is a load error naming the layer.
+- A change is `{ "layer": ..., "replaces": "id", "keepChildren": false }`. Its `layer` stands in for the layer with
+  the id `replaces` (left out: the `layer`'s own id), the blurred layer itself or any layer below it. Without
+  `keepChildren` it is a complete layer that replaces that one whole: it can have another `type` and `id` (a layer
+  below the blurred one only), and the list's other changes do not reach into it. With `keepChildren` (a group of the
+  same id and `type` only) the change gives the group's own fields and no children, and the group keeps the children
+  it has at the frame, each still replaced when a change of the same list names it.
+- A list changes a layer at most once. An id that is not the layer or a layer in it, a blurred layer or a group that
+  keeps its children given another `type` or `id`, or children given with `keepChildren` is a load error naming the
+  layer.
 - A change is checked like a `frames` copy: among the siblings of the layer it changes (a `matte` names one of them),
   with ids of its own, and its own `motionBlur` ignored. Its effects count in the margin, and what it uses is loaded.
 - The authoring layer writes `changes`; a scene with `frames` still loads and renders the same.

@@ -267,14 +267,15 @@ describe('attachMotionFrames', () => {
 
 /** A sub-frame as the renderer makes it from `changes` (SCENE.md, "Sub-frame changes"): each changed layer stands in for
  *  the layer of its id, and one that keeps its children keeps the frame's (each still replaced when changed). */
-function applyChanges(layer: LayerJson, list: { layer: LayerJson; keepChildren?: boolean }[]): LayerJson {
-  const byId = new Map(list.map((c) => [c.layer.id, c]));
+function applyChanges(layer: LayerJson, list: { layer: LayerJson; replaces?: string; keepChildren?: boolean }[]): LayerJson {
+  const byId = new Map(list.map((c) => [c.replaces ?? c.layer.id, c]));
+  expect(byId.size).toBe(list.length);
   const put = (original: LayerJson): LayerJson => {
     const change = byId.get(original.id);
+    if (change !== undefined && !change.keepChildren) return change.layer;
     const own = change?.layer ?? original;
-    if (own.type !== 'group') return own;
-    const children = change?.keepChildren && original.type === 'group' ? original.children : own.children;
-    return { ...own, children: children.map(put) };
+    if (own.type !== 'group' || original.type !== 'group') return own;
+    return { ...own, children: original.children.map(put) };
   };
   return put(layer);
 }
@@ -322,18 +323,29 @@ describe('attachMotionChanges', () => {
     expect(changes[2]).toEqual([{ layer: group('g', [], { transform: { x: 5 }, opacity: 0.5 }), keepChildren: true }]);
   });
 
-  it('replaces a group whole when its children are other layers, or a child changes type', () => {
-    const main = group('g', [rect('a'), rect('b')], { motionBlur: blur });
+  it('replaces a child that became another layer, and a group whose children are more or fewer', () => {
+    const main = group('g', [rect('a'), group('b', [rect('c')])], { motionBlur: blur });
     const changes = equivalent(main, [
       [group('g', [rect('a')])],
-      [group('g', [rect('b'), rect('a')])],
-      [group('g', [rect('a'), group('b', [])])],
+      [group('g', [rect('b2'), group('b', [rect('c')])])],
+      [group('g', [rect('a'), rect('b')])],
     ]);
-    for (const list of changes) {
-      expect(list).toHaveLength(1);
-      expect(list[0]!.keepChildren).toBeUndefined();
-      expect(list[0]!.layer.id).toBe('g');
-    }
+    expect(changes[0]).toEqual([{ layer: group('g', [rect('a')]) }]);
+    expect(changes[1]).toEqual([{ layer: rect('b2'), replaces: 'a' }]);
+    expect(changes[2]).toEqual([{ layer: rect('b') }]);
+    // Children that swap places swap their changes.
+    const swapped = equivalent(main, [[group('g', [group('b', [rect('c')]), rect('a')])], [main], [main]]);
+    expect(swapped[0]).toEqual([
+      { layer: group('b', [rect('c')]), replaces: 'a' },
+      { layer: rect('a'), replaces: 'b' },
+    ]);
+  });
+
+  it('does not reach into a layer it replaces whole', () => {
+    // The sample's `c` changed and its group `b` became a shape: the change of `b` is the whole of it.
+    const main = group('g', [group('b', [rect('c')]), rect('d')], { motionBlur: blur });
+    const changes = equivalent(main, [[group('g', [rect('b', { opacity: 0.5 }), rect('d')])], [main], [main]]);
+    expect(changes[0]).toEqual([{ layer: rect('b', { opacity: 0.5 }) }]);
   });
 
   it('makes a missing layer or one of another type transparent at that sub-frame', () => {

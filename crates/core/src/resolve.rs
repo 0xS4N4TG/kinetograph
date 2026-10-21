@@ -875,11 +875,34 @@ impl<'a> Resolver<'a> {
     /// sub-frame's copy is resolved without it.
     fn layer(&mut self, layer: &'a Layer, clock: Clock, blur: bool) -> Result<ResolvedLayer> {
         // In a sub-frame given as `changes`, a changed layer stands in for the
-        // frame's own; one that keeps its children keeps the frame's.
-        let (layer, kept) = match self.changes.as_ref().and_then(|c| c.get(layer.id.as_str())) {
-            Some(change) => (&change.layer, change.keep_children.then_some(layer)),
-            None => (layer, None),
-        };
+        // frame's own: whole, so the sub-frame's other changes do not reach
+        // into it, or keeping the frame's children.
+        match self
+            .changes
+            .as_ref()
+            .and_then(|c| c.get(layer.id.as_str()))
+            .copied()
+        {
+            Some(change) if !change.keep_children => {
+                let changes = self.changes.take();
+                let resolved = self.layer_of(&change.layer, None, clock, blur);
+                self.changes = changes;
+                resolved
+            }
+            Some(change) => self.layer_of(&change.layer, Some(layer), clock, blur),
+            None => self.layer_of(layer, None, clock, blur),
+        }
+    }
+
+    /// `layer` at `clock`; `kept` is the frame's own layer when `layer` is a
+    /// change that keeps its children.
+    fn layer_of(
+        &mut self,
+        layer: &'a Layer,
+        kept: Option<&'a Layer>,
+        clock: Clock,
+        blur: bool,
+    ) -> Result<ResolvedLayer> {
         let f = clock.t;
         let motion = match &layer.motion_blur {
             Some(mb) if blur => {
@@ -2606,6 +2629,41 @@ mod tests {
             format!("{:?}", by_frames.layers[0].kind),
             format!("{:?}", by_changes.layers[0].kind)
         );
+    }
+
+    #[test]
+    fn a_whole_change_is_the_layer_it_replaces_and_is_not_reached_into() {
+        // `b` (a group) becomes the shape `b2` at the second sub-frame; the
+        // change of `c` there does not reach into it, as `c` is not in `b2`.
+        let shape = |id: &str, x: f64| {
+            format!(
+                r##"{{"id": "{id}", "type": "shape", "shape": {{"kind": "rect", "width": 4, "height": 4}},
+                     "fill": "#fff", "transform": {{"x": {x}}}}}"##
+            )
+        };
+        let json = format!(
+            r#"{{"width": 100, "height": 50, "fps": 30, "durationInFrames": 20, "layers": [
+              {{"id": "g", "type": "group", "motionBlur": {{"samples": 2, "shutter": 1, "changes": [[],
+                 [{{"layer": {}, "replaces": "b"}}, {{"layer": {}}}]]}},
+                "children": [{{"id": "b", "type": "group", "children": [{}]}}]}}]}}"#,
+            shape("b2", 9.0),
+            shape("c", 5.0),
+            shape("c", 1.0),
+        );
+        let scene = Scene::from_json(&json, PathBuf::new()).unwrap();
+        let resolved = scene.resolve(5).unwrap();
+        let kids = |i: usize| match &resolved.layers[0].motion[i].kind {
+            ResolvedKind::Group { children, .. } => children
+                .iter()
+                .map(|c| (c.id.clone(), c.transform.x))
+                .collect::<Vec<_>>(),
+            _ => panic!("a group"),
+        };
+        assert_eq!(kids(1), [("b2".to_string(), 9.0)]);
+        let ResolvedKind::Group { children, .. } = &resolved.layers[0].motion[0].kind else {
+            panic!("a group");
+        };
+        assert_eq!(children[0].id, "b");
     }
 
     fn examples() -> PathBuf {

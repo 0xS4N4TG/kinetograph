@@ -166,7 +166,7 @@ export interface MotionBlurJson {
   /** AUTHORING.md §4.5: exactly `samples` complete layers of the same type, one per sub-frame in time order. */
   frames?: LayerJson[];
   /** SCENE.md, "Sub-frame changes": `frames` as what each sub-frame changes in the layer's tree. Not with `frames`. */
-  changes?: { layer: LayerJson; keepChildren?: boolean }[][];
+  changes?: { layer: LayerJson; replaces?: string; keepChildren?: boolean }[][];
 }
 
 // ---- layout (AUTHORING.md §4.1) ----

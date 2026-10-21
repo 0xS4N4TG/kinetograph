@@ -149,14 +149,24 @@ pub struct MotionBlur {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SampleChange {
-    /// Stands in for the layer with its id: the blurred layer itself or a
-    /// layer below it, and of the same type. Its own `motionBlur` is ignored.
+    /// Stands in for the layer it `replaces`, whole: the sub-frame's other
+    /// changes do not reach into it. Its own `motionBlur` is ignored.
     pub layer: Layer,
+    /// The id of the layer of the blurred tree the change stands in for: the
+    /// blurred layer itself or a layer below it. Left out, `layer`'s id.
+    pub replaces: Option<String>,
     /// For a group whose own fields change but whose children do not: the
     /// group keeps the children it has at the frame (each still replaced
     /// when a change of the same list names it), and `layer` has none.
     #[serde(default)]
     pub keep_children: bool,
+}
+
+impl SampleChange {
+    /// The id of the layer it stands in for.
+    pub fn replaces(&self) -> &str {
+        self.replaces.as_deref().unwrap_or(&self.layer.id)
+    }
 }
 
 fn default_motion_samples() -> i64 {
@@ -2129,7 +2139,7 @@ impl Scene {
         for (i, list) in changes.iter().enumerate() {
             let mut seen = HashSet::new();
             for change in list {
-                let id = change.layer.id.as_str();
+                let id = change.replaces();
                 let Some(&(original, around)) = tree.get(id) else {
                     return Err(Error::Scene(format!(
                         "layer {:?}: motionBlur changes[{i}] changes {id:?}, which is not the layer \
@@ -2143,8 +2153,19 @@ impl Scene {
                         layer.id
                     )));
                 }
-                if std::mem::discriminant(&change.layer.kind)
-                    != std::mem::discriminant(&original.kind)
+                // A layer below the blurred one can become another layer; a
+                // change that keeps the children, or of the blurred layer, cannot.
+                let whole = !change.keep_children && id != layer.id;
+                if !whole && change.layer.id != id {
+                    return Err(Error::Scene(format!(
+                        "layer {:?}: motionBlur changes[{i}] replaces {id:?} with {:?}, which it can only do \
+                         for a layer below it, whole",
+                        layer.id, change.layer.id
+                    )));
+                }
+                if !whole
+                    && std::mem::discriminant(&change.layer.kind)
+                        != std::mem::discriminant(&original.kind)
                 {
                     return Err(Error::Scene(format!(
                         "layer {:?}: motionBlur changes[{i}] makes {id:?} a {} layer, but it is a {}",
@@ -2183,7 +2204,7 @@ fn index_tree<'a>(layer: &'a Layer, into: &mut HashMap<&'a str, (&'a Layer, &'a 
 /// The changes of one motion blur sub-frame by the id of the layer each
 /// stands in for.
 pub(crate) fn changes_by_id(list: &[SampleChange]) -> HashMap<&str, &SampleChange> {
-    list.iter().map(|c| (c.layer.id.as_str(), c)).collect()
+    list.iter().map(|c| (c.replaces(), c)).collect()
 }
 
 /// Calls `f` on every layer of `layers`, depth first: a layer, then the
@@ -2240,6 +2261,8 @@ fn max_reach_with(
     layers.iter().fold(0.0, |most, original| {
         let change = changes.and_then(|c| c.get(original.id.as_str()));
         let layer = change.map_or(original, |c| &c.layer);
+        // A whole change is not reached into by the others.
+        let changes = changes.filter(|_| change.is_none_or(|c| c.keep_children));
         let t = &layer.transform.scale;
         let scale = scale * t.max().abs().max(t.min().abs());
         let children = match (&layer.kind, &original.kind) {
@@ -5274,9 +5297,26 @@ mod tests {
         let twice = format!("{0},{0}", change(&rect("kid", "")));
         let msg = changed(2, &[&twice, ""]).unwrap_err().to_string();
         assert!(msg.contains("changes[0]") && msg.contains("twice"), "{msg}");
+        // A layer below the blurred one can become another layer, whole, and
+        // another id; the blurred layer, or a group keeping its children, cannot.
         let retyped = change(r#"{"id": "kid", "type": "group", "children": []}"#);
-        let msg = changed(2, &["", &retyped]).unwrap_err().to_string();
+        changed(2, &["", &retyped]).unwrap();
+        let renamed =
+            r#"{"layer": {"id": "new", "type": "group", "children": []}, "replaces": "kid"}"#;
+        changed(2, &["", renamed]).unwrap();
+        let root = change(&rect("g", ""));
+        let msg = changed(2, &["", &root]).unwrap_err().to_string();
         assert!(msg.contains("group") && msg.contains("shape"), "{msg}");
+        let kept = r#"{"layer": {"id": "new", "type": "group", "children": []}, "replaces": "g", "keepChildren": true}"#;
+        let msg = changed(2, &["", kept]).unwrap_err().to_string();
+        assert!(msg.contains("replaces \"g\" with \"new\""), "{msg}");
+        let twice_over = format!(
+            r#"{},{{"layer": {}, "replaces": "kid"}}"#,
+            change(&rect("kid", "")),
+            rect("x", "")
+        );
+        let msg = changed(2, &[&twice_over, ""]).unwrap_err().to_string();
+        assert!(msg.contains("twice"), "{msg}");
         let kept_and_given = format!(
             r#"{{"layer": {{"id": "g", "type": "group", "children": [{}]}}, "keepChildren": true}}"#,
             rect("kid", "")

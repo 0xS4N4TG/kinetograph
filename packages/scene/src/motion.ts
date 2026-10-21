@@ -156,32 +156,33 @@ function sameFields(a: Record<string, unknown>, b: Record<string, unknown>, skip
 /** One entry of `motionBlur.changes` (SCENE.md, "Sub-frame changes"). */
 export interface SampleChangeJson {
   layer: LayerJson;
+  /** The id of the layer it stands in for, when it is not `layer`'s own. */
+  replaces?: string;
   keepChildren?: boolean;
 }
 
 /**
- * Pushes onto `out` the changes that make `main` (a layer of the frame's own tree) into `sample` (the same layer in a
- * sub-frame's tree). False when they are layers of different types, which no change can stand for: the caller replaces
- * the group they are in whole.
+ * Pushes onto `out` the changes that make `main` (a layer of the frame's own tree) into `sample` (the layer in its place
+ * in a sub-frame's tree). False when they are layers of different ids or types: the caller replaces `main` whole.
  */
 function changesOf(main: LayerJson, sample: LayerJson, out: SampleChangeJson[]): boolean {
   if (main === sample) return true;
   if (main.type !== sample.type || main.id !== sample.id) return false;
   if (main.type === 'group' && sample.type === 'group' && main.children.length === sample.children.length) {
-    const kids = main.children;
-    const theirs = sample.children;
-    const mark = out.length;
-    let kept = kids.every((kid, i) => kid.id === theirs[i]!.id);
-    for (let i = 0; kept && i < kids.length; i += 1) kept = changesOf(kids[i]!, theirs[i]!, out);
-    if (kept) {
-      if (!sameFields(main as unknown as Record<string, unknown>, sample as unknown as Record<string, unknown>, NOT_OWN)) {
-        const { motionBlur: _dropped, ...own } = sample;
-        out.push({ layer: { ...own, children: [] } as LayerJson, keepChildren: true });
-      }
-      return true;
+    sample.children.forEach((theirs, i) => {
+      const kid = main.children[i]!;
+      if (changesOf(kid, theirs, out)) return;
+      const whole: SampleChangeJson = { layer: withoutMotionBlur(theirs) };
+      if (theirs.id !== kid.id) whole.replaces = kid.id;
+      out.push(whole);
+    });
+    if (!sameFields(main as unknown as Record<string, unknown>, sample as unknown as Record<string, unknown>, NOT_OWN)) {
+      const { motionBlur: _dropped, ...own } = sample;
+      out.push({ layer: { ...own, children: [] } as LayerJson, keepChildren: true });
     }
-    out.length = mark;
-  } else if (sameFields(main as unknown as Record<string, unknown>, sample as unknown as Record<string, unknown>, NOT_BLUR)) {
+    return true;
+  }
+  if (sameFields(main as unknown as Record<string, unknown>, sample as unknown as Record<string, unknown>, NOT_BLUR)) {
     return true;
   }
   out.push({ layer: withoutMotionBlur(sample) });
@@ -197,13 +198,14 @@ export function motionSubFrames(layer: LayerJson): LayerJson[] | null {
   if (blur?.frames !== undefined) return blur.frames;
   if (blur?.changes === undefined) return null;
   return blur.changes.map((list) => {
-    const byId = new Map(list.map((change) => [change.layer.id, change]));
+    const byId = new Map(list.map((change) => [change.replaces ?? change.layer.id, change]));
     const put = (original: LayerJson): LayerJson => {
       const change = byId.get(original.id);
+      // A whole change is not reached into by the others.
+      if (change !== undefined && !change.keepChildren) return change.layer;
       const own = change?.layer ?? original;
-      if (own.type !== 'group') return own;
-      const kids = change?.keepChildren && original.type === 'group' ? original.children : own.children;
-      return { ...own, children: kids.map(put) };
+      if (own.type !== 'group' || original.type !== 'group') return own;
+      return { ...own, children: original.children.map(put) };
     };
     const { motionBlur: _dropped, ...sub } = put(layer);
     return sub as LayerJson;
