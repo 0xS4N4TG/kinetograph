@@ -35,6 +35,8 @@ export interface Studio {
   compositions: CompositionInfo[];
   comp: CompositionInfo | null;
   selectComp(id: string): void;
+  /** Fetches the project, compositions, timeline, scene and frame again. */
+  reload(): void;
   buildId: number;
   buildError: StudioError | null;
 
@@ -124,19 +126,21 @@ export function useStudio(api: StudioApi): Studio {
     setCompId((current) => (list.some((c) => c.id === current) ? current : (list[0]?.id ?? null)));
   }, [api]);
 
+  /** Fetches everything again from the server; the selection and the props stay. */
+  const refresh = useCallback(() => {
+    setReloads((n) => n + 1);
+    void loadCompositions();
+    api.project().then(setProject, () => {});
+    player.reload();
+  }, [api, loadCompositions, player]);
+
   useEffect(() => {
     let cancelled = false;
     // A new build: everything fetched from the old one is stale.
     const rebuilt = (id: number) => {
       buildIdRef.current = id;
       setBuildId(id);
-      setReloads((n) => n + 1);
-      void loadCompositions();
-      api.project().then(
-        (p) => !cancelled && setProject(p),
-        () => {},
-      );
-      player.reload();
+      refresh();
     };
     const handle = (message: ServerMessage) => {
       switch (message.type) {
@@ -191,7 +195,7 @@ export function useStudio(api: StudioApi): Studio {
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [api, player, loadCompositions]);
+  }, [api, player, loadCompositions, refresh]);
 
   // ---- the selected composition and its props ----
 
@@ -298,6 +302,7 @@ export function useStudio(api: StudioApi): Studio {
     compositions,
     comp,
     selectComp,
+    reload: refresh,
     buildId,
     buildError,
     player,

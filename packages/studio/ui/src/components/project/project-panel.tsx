@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FilmIcon, FolderIcon, LockIcon, MenuIcon, SearchIcon } from 'lucide-react';
+import { FilmIcon, SearchIcon } from 'lucide-react';
 
 import type { CompositionInfo } from '@/api';
 import { PanelHeader } from '@/components/shell/panel-header';
@@ -15,25 +15,25 @@ interface ProjectPanelProps {
 
 const SWATCHES = ['bg-amber-400', 'bg-sky-400', 'bg-rose-400', 'bg-emerald-400', 'bg-violet-400'];
 
+const countOf = (n: number) => `${n} ${n === 1 ? 'composition' : 'compositions'}`;
+
 export function ProjectPanel({ compositions, selected, onSelect }: ProjectPanelProps) {
   const [query, setQuery] = useState('');
   const activeComp = compositions.find((c) => c.id === selected) ?? null;
   const filtered = query.trim()
     ? compositions.filter((c) => c.id.toLowerCase().includes(query.trim().toLowerCase()))
     : compositions;
+  const footer = query.trim() ? `${filtered.length} of ${countOf(compositions.length)}` : countOf(compositions.length);
 
   return (
     <div className="bg-card flex h-full flex-col select-none" data-testid="composition-list">
       <PanelHeader
         title={
-          <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 font-medium">
+          <div className="border-primary text-foreground flex h-full items-center border-b-2 px-1 font-medium">
             <span>Project</span>
-            <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
           </div>
         }
-      >
-        <span className="text-muted-foreground font-mono text-[10px]">{compositions.length} items</span>
-      </PanelHeader>
+      />
 
       {/* Selected item summary */}
       <div className="bg-background/40 flex items-center gap-3 border-b p-2.5">
@@ -52,7 +52,7 @@ export function ProjectPanel({ compositions, selected, onSelect }: ProjectPanelP
               {activeComp.width} × {activeComp.height} ({(activeComp.width / Math.max(1, activeComp.height)).toFixed(2)})
             </div>
             <div className="text-muted-foreground font-mono text-[10px]">
-              {formatTimecode(activeComp.durationInFrames, activeComp.fps)} · {activeComp.fps} fps · 8 bpc
+              {formatTimecode(activeComp.durationInFrames, activeComp.fps)} · {activeComp.fps} fps
             </div>
           </div>
         ) : (
@@ -84,6 +84,8 @@ export function ProjectPanel({ compositions, selected, onSelect }: ProjectPanelP
       <ScrollArea className="min-h-0 flex-1">
         {compositions.length === 0 ? (
           <p className="text-muted-foreground p-3 text-xs">No compositions.</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-muted-foreground p-3 text-xs">No matches.</p>
         ) : (
           <ul className="flex flex-col py-0.5">
             {filtered.map((comp, idx) => {
@@ -117,15 +119,8 @@ export function ProjectPanel({ compositions, selected, onSelect }: ProjectPanelP
       </ScrollArea>
 
       {/* Footer */}
-      <div className="bg-secondary/40 text-muted-foreground flex h-6 shrink-0 items-center justify-between border-t px-2.5 font-mono text-[10px]">
-        <div className="flex items-center gap-2">
-          <FolderIcon className="size-3 opacity-70" aria-hidden="true" />
-          <span>8 bpc</span>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] opacity-80" title="Compositions are defined in code">
-          <LockIcon className="size-2.5" aria-hidden="true" />
-          <span>Read-only bin</span>
-        </div>
+      <div className="bg-secondary/40 text-muted-foreground flex h-6 shrink-0 items-center border-t px-2.5 font-mono text-[10px]">
+        <span>{footer}</span>
       </div>
     </div>
   );

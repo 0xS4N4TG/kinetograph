@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { EyeIcon, LockIcon } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { indent } from '@/lib/tree';
@@ -60,8 +59,6 @@ export function Row({ index, swatch, label, badge, title, depth, selected, onSel
         )}
         style={{ width: LABEL_WIDTH }}
       >
-        <EyeIcon className="text-muted-foreground/70 size-3 shrink-0" aria-hidden="true" />
-        <LockIcon className="text-muted-foreground/40 size-2.5 shrink-0" aria-hidden="true" />
         <span className="text-muted-foreground w-4 shrink-0 text-right font-mono text-[10px] tabular-nums" aria-hidden="true">
           {index}
         </span>
@@ -73,7 +70,7 @@ export function Row({ index, swatch, label, badge, title, depth, selected, onSel
           </Badge>
         )}
       </div>
-      <div className="relative h-full" style={{ width: laneWidth }}>
+      <div data-lane className="relative h-full" style={{ width: laneWidth }}>
         {children}
       </div>
     </div>

@@ -1,19 +1,25 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { EyeIcon, LockIcon, MenuIcon, MountainIcon, SearchIcon, SlidersHorizontalIcon } from 'lucide-react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 
 import type { CompositionInfo, TimelineData } from '@/api';
 import { PanelHeader } from '@/components/shell/panel-header';
 import { Bar, EmptyRow, LABEL_WIDTH, Row, SectionLabel } from '@/components/timeline/timeline-row';
+import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { formatTimecode } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
-import { useElementSize } from '@/lib/use-element-size';
 import type { Player, PlayerState } from '@/lib/player';
 import { cn } from '@/lib/utils';
 import { layerRows, sequenceRows } from '@/lib/tree';
+import { useElementSize } from '@/lib/use-element-size';
 
 const MIN_TICK_SPACING = 64;
 const STEPS = [1, 2, 5, 10, 15, 30, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 24;
+const ZOOM_FACTOR = 1.25;
+
+const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 
 interface TimelineProps {
   comp: CompositionInfo | null;
@@ -25,15 +31,17 @@ interface TimelineProps {
 }
 
 /**
- * The timeline: a ruler in frames you drag to scrub, one row per Sequence nested under its parent, then a row per
- * layer, and the playhead across them. A row's click selects its layer.
+ * The timeline: a ruler in frames, one row per Sequence nested under its parent, then a row per layer, and the playhead
+ * across them. Pressing and dragging in the ruler or a lane scrubs; a row's click selects its layer.
  */
 export function Timeline({ comp, data, state, player, selectedLayer, onSelectLayer }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  /** A Ctrl or Cmd wheel zoom keeps the frame under the pointer where it was: `x` px from the scroller's left edge. */
+  const anchor = useRef<{ frame: number; x: number } | null>(null);
   const size = useElementSize(scrollerRef);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(MIN_ZOOM);
   const [filter, setFilter] = useState('');
 
   const duration = comp?.durationInFrames ?? 0;
@@ -45,13 +53,20 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
   const allSequences = useMemo(() => sequenceRows(data?.sequences ?? []), [data]);
   const allLayers = useMemo(() => layerRows(data?.layers ?? []), [data]);
 
+  // Row numbers count the whole list, so a row keeps its number while the filter narrows it.
   const q = filter.trim().toLowerCase();
   const sequences = useMemo(
-    () => (q ? allSequences.filter((r) => r.label.toLowerCase().includes(q)) : allSequences),
+    () =>
+      allSequences
+        .map((row, index) => ({ row, number: index + 1 }))
+        .filter(({ row }) => !q || row.label.toLowerCase().includes(q)),
     [allSequences, q],
   );
   const layers = useMemo(
-    () => (q ? allLayers.filter((r) => r.id.toLowerCase().includes(q) || r.type.toLowerCase().includes(q)) : allLayers),
+    () =>
+      allLayers
+        .map((row, index) => ({ row, number: index + 1 }))
+        .filter(({ row }) => !q || row.id.toLowerCase().includes(q) || row.type.toLowerCase().includes(q)),
     [allLayers, q],
   );
 
@@ -69,21 +84,48 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
     }
   }, [state.frame, pxPerFrame, zoom]);
 
-  const seekTo = (event: PointerEvent<HTMLDivElement>) => {
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    const kept = anchor.current;
+    if (!scroller || !kept) return;
+    anchor.current = null;
+    scroller.scrollLeft = Math.max(0, LABEL_WIDTH + kept.frame * pxPerFrame - kept.x);
+  }, [pxPerFrame]);
+
+  // A native listener, because React's wheel listeners are passive and cannot cancel the page's own zoom.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const next = clampZoom(event.deltaY < 0 ? zoom * ZOOM_FACTOR : zoom / ZOOM_FACTOR);
+      if (next === zoom) return;
+      const x = event.clientX - scroller.getBoundingClientRect().left;
+      anchor.current = { frame: (scroller.scrollLeft + x - LABEL_WIDTH) / pxPerFrame, x };
+      setZoom(next);
+    };
+    scroller.addEventListener('wheel', onWheel, { passive: false });
+    return () => scroller.removeEventListener('wheel', onWheel);
+  }, [zoom, pxPerFrame]);
+
+  const seekTo = (clientX: number) => {
     const rect = rulerRef.current?.getBoundingClientRect();
     if (!rect || duration === 0) return;
     const span = rect.width || laneWidth;
-    player.seek(((event.clientX - rect.left) / span) * duration);
+    player.seek(((clientX - rect.left) / span) * duration);
   };
+  // The ruler and every lane share one horizontal scale, so a press in any lane seeks the same way.
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (duration === 0) return;
+    const lane = (event.target as Element).closest<HTMLElement>('[data-lane]');
+    if (!lane || event.button > 0 || duration === 0) return;
     dragging.current = true;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    lane.setPointerCapture?.(event.pointerId);
     player.beginScrub();
-    seekTo(event);
+    seekTo(event.clientX);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (dragging.current) seekTo(event);
+    if (dragging.current) seekTo(event.clientX);
   };
   const onPointerUp = () => {
     if (!dragging.current) return;
@@ -96,9 +138,8 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
       <PanelHeader
         className="h-8 justify-normal gap-3 px-3 text-xs"
         title={
-          <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 text-[11px] font-medium">
+          <div className="border-primary text-foreground flex h-full items-center border-b-2 px-1 text-[11px] font-medium">
             <span>{comp ? comp.id : 'Timeline'}</span>
-            <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
           </div>
         }
       >
@@ -129,18 +170,35 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
           />
         </div>
 
-        <div className="ml-auto flex w-56 items-center gap-2">
-          <MountainIcon className="text-muted-foreground size-3 shrink-0" aria-hidden="true" />
-          <span className="text-muted-foreground sr-only text-xs">Zoom</span>
+        <div className="ml-auto flex w-64 items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Zoom out timeline"
+            disabled={zoom <= MIN_ZOOM}
+            onClick={() => setZoom((z) => clampZoom(z / ZOOM_FACTOR))}
+            className="size-6 shrink-0"
+          >
+            <ZoomOutIcon className="size-3.5" />
+          </Button>
           <Slider
             aria-label="Zoom"
-            min={1}
-            max={24}
+            min={MIN_ZOOM}
+            max={MAX_ZOOM}
             step={0.5}
             value={[zoom]}
-            onValueChange={([value]) => setZoom(value ?? 1)}
+            onValueChange={([value]) => setZoom(clampZoom(value ?? MIN_ZOOM))}
           />
-          <MountainIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Zoom in timeline"
+            disabled={zoom >= MAX_ZOOM}
+            onClick={() => setZoom((z) => clampZoom(z * ZOOM_FACTOR))}
+            className="size-6 shrink-0"
+          >
+            <ZoomInIcon className="size-3.5" />
+          </Button>
         </div>
       </PanelHeader>
 
@@ -148,35 +206,31 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
         {comp === null ? (
           <p className="text-muted-foreground p-6 text-center text-xs">No composition selected.</p>
         ) : (
-          <div className="relative min-w-max" style={{ width: LABEL_WIDTH + laneWidth + 16 }}>
+          <div
+            className="relative min-w-max"
+            style={{ width: LABEL_WIDTH + laneWidth + 16 }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+          >
             {/* Sticky column header and frame ruler */}
             <div className="bg-card/95 sticky top-0 z-20 flex h-9 border-b backdrop-blur">
               <div
                 className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r px-2.5 text-[10px] font-medium tracking-wider"
                 style={{ width: LABEL_WIDTH }}
               >
-                <EyeIcon className="size-3 opacity-60" aria-hidden="true" />
-                <LockIcon className="size-3 opacity-60" aria-hidden="true" />
                 <span className="w-4 text-center opacity-60">#</span>
                 <span>Layer Name</span>
                 <span className="ml-auto opacity-60">Type</span>
               </div>
               <div
                 ref={rulerRef}
+                data-lane
                 data-testid="timeline-ruler"
-                className="relative h-full cursor-col-resize touch-none select-none bg-[#18181c]"
+                className="relative h-full cursor-pointer touch-none select-none bg-[#18181c]"
                 style={{ width: laneWidth }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
               >
-                {/* Work area bar and cache line */}
-                <div className="absolute inset-x-0 top-0 h-2.5 border-b border-white/10 bg-white/[0.04]" aria-hidden="true">
-                  <div className="h-full w-full border-x-2 border-nle-blue bg-white/[0.05]" />
-                  <div className="absolute inset-x-0 bottom-0 h-[2px] bg-emerald-500/60" />
-                </div>
-
                 {ticks.map((f) => (
                   <div key={f} className="absolute bottom-0 h-2.5 border-l border-white/25" style={{ left: f * pxPerFrame }}>
                     <span className="text-muted-foreground absolute -top-3.5 left-1 font-mono text-[9px] tabular-nums">
@@ -189,13 +243,13 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
 
             <SectionLabel>Sequences</SectionLabel>
             {sequences.length === 0 && <EmptyRow>No Sequences</EmptyRow>}
-            {sequences.map((row, index) => {
+            {sequences.map(({ row, number }) => {
               const colors = layerColors('sequence');
               return (
                 <Row
                   key={row.key}
                   data-testid="sequence-row"
-                  index={index + 1}
+                  index={number}
                   swatch={colors.swatch}
                   label={row.label}
                   title={`${row.label}: frames ${row.from}..${row.end - 1}`}
@@ -213,13 +267,13 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
 
             <SectionLabel>Layers</SectionLabel>
             {layers.length === 0 && <EmptyRow>No layers</EmptyRow>}
-            {layers.map((row, index) => {
+            {layers.map(({ row, number }) => {
               const colors = layerColors(row.type);
               return (
                 <Row
                   key={row.id}
                   data-testid="layer-row"
-                  index={index + 1}
+                  index={number}
                   swatch={colors.swatch}
                   label={row.id}
                   badge={row.type}
@@ -248,19 +302,6 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
             </div>
           </div>
         )}
-      </div>
-
-      {/* Status bar */}
-      <div className="bg-secondary/50 text-muted-foreground flex h-6 shrink-0 items-center justify-between border-t px-3 font-mono text-[10px]">
-        <div className="flex items-center gap-2">
-          <SlidersHorizontalIcon className="size-3 opacity-70" aria-hidden="true" />
-          <span>Toggle Switches / Modes</span>
-        </div>
-        <div className="flex items-center gap-1.5 opacity-80">
-          <LockIcon className="size-2.5 text-amber-400/80" aria-hidden="true" />
-          <span>Read-Only Timeline · Code-Driven</span>
-        </div>
-        <span>Zoom {zoom.toFixed(1)}x</span>
       </div>
     </div>
   );

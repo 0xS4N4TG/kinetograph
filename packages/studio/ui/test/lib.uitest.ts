@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { fitSize, formatDuration, formatTimecode, jobEta, jobPercent } from '../src/lib/format';
-import { findLayer } from '../src/lib/inspect';
+import { fitSize, formatDuration, formatTimecode, jobEta, jobPercent, parseTimecode, stepZoom } from '../src/lib/format';
+import { findLayer, hitTest, type InspectLayer } from '../src/lib/inspect';
 import { layerRows, sequenceRows } from '../src/lib/tree';
-import { inspectFor, intro, introTimeline, job } from './fixtures';
+import { inspectFor, intro, introTimeline, job, layer } from './fixtures';
 
 describe('format', () => {
   it('writes timecode as MM:SS:FF at the nominal rate', () => {
@@ -74,5 +74,68 @@ describe('findLayer', () => {
 
   it('returns null for an id that is not in the tree', () => {
     expect(findLayer(layers, 'missing')).toBeNull();
+  });
+});
+
+describe('parseTimecode', () => {
+  it('reads a frame number, or MM:SS:FF and HH:MM:SS:FF as formatTimecode writes them', () => {
+    expect(parseTimecode('45', 30)).toBe(45);
+    expect(parseTimecode('00:02:00', 30)).toBe(60);
+    expect(parseTimecode(' 00:00:01:15 ', 30)).toBe(45);
+    expect(parseTimecode('01:00:00:05', 24)).toBe(24 * 3600 + 5);
+  });
+
+  it('is null for anything else', () => {
+    for (const text of ['', 'x', '1:2', '00:60:00', '00:00:00:30', '1:2:3:4:5', '-1', '1.5']) {
+      expect(parseTimecode(text, 30), text).toBeNull();
+    }
+  });
+});
+
+describe('stepZoom', () => {
+  it('steps through the zoom levels and stops at the ends', () => {
+    expect(stepZoom(1, 1)).toBe(1.5);
+    expect(stepZoom(1, -1)).toBe(0.75);
+    expect(stepZoom(0.42, 1)).toBe(0.5);
+    expect(stepZoom(0.42, -1)).toBe(0.25);
+    expect(stepZoom(4, 1)).toBe(4);
+    expect(stepZoom(0.125, -1)).toBe(0.125);
+  });
+});
+
+describe('hitTest', () => {
+  const rect = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+  const shape = (id: string, bounds: ReturnType<typeof rect> | null, extra: Partial<InspectLayer> = {}) =>
+    layer(id, 'shape', { bounds, box: bounds, ...extra });
+
+  it('returns the topmost layer under the point: later layers draw on top', () => {
+    const layers = [shape('below', rect(0, 0, 100, 100)), shape('above', rect(50, 0, 100, 100))];
+    expect(hitTest(layers, 60, 10)?.id).toBe('above');
+    expect(hitTest(layers, 10, 10)?.id).toBe('below');
+    expect(hitTest(layers, 200, 10)).toBeNull();
+  });
+
+  it("puts a group's children on top of the group and of the layers below it", () => {
+    const group = layer('group', 'group', {
+      bounds: rect(0, 0, 100, 100),
+      box: rect(0, 0, 100, 100),
+      children: [shape('child', rect(0, 0, 40, 40))],
+    });
+    const layers = [shape('below', rect(0, 0, 200, 200)), group];
+    expect(hitTest(layers, 10, 10)?.id).toBe('child');
+    expect(hitTest(layers, 80, 80)?.id).toBe('group');
+    expect(hitTest(layers, 150, 150)?.id).toBe('below');
+  });
+
+  it('treats the right and bottom edges as outside', () => {
+    const layers = [shape('a', rect(0, 0, 100, 50))];
+    expect(hitTest(layers, 99.5, 49.5)?.id).toBe('a');
+    expect(hitTest(layers, 100, 10)).toBeNull();
+    expect(hitTest(layers, 10, 50)).toBeNull();
+  });
+
+  it('falls back to the box without bounds, and skips a layer with neither', () => {
+    expect(hitTest([shape('boxed', null, { box: rect(0, 0, 10, 10) })], 5, 5)?.id).toBe('boxed');
+    expect(hitTest([shape('nowhere', null)], 5, 5)).toBeNull();
   });
 });

@@ -7,13 +7,13 @@ import {
   SkipBackIcon,
   SkipForwardIcon,
 } from 'lucide-react';
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 
 import type { CompositionInfo } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatTimecode } from '@/lib/format';
+import { formatTimecode, parseTimecode } from '@/lib/format';
 import type { Player, PlayerState } from '@/lib/player';
 
 function Hint({ label, children }: { label: string; children: ReactElement }) {
@@ -22,6 +22,56 @@ function Hint({ label, children }: { label: string; children: ReactElement }) {
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/** The timecode; a click turns it into a field for a frame number or HH:MM:SS:FF. Enter seeks, Escape cancels. */
+function Timecode({ comp, frame, player }: { comp: CompositionInfo | null; frame: number; player: Player }) {
+  const fps = comp?.fps ?? 30;
+  const [draft, setDraft] = useState<string | null>(null);
+  const [invalid, setInvalid] = useState(false);
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        data-testid="timecode"
+        title="Go to a frame or timecode"
+        disabled={comp === null}
+        onClick={() => setDraft(formatTimecode(frame, fps))}
+        className="hover:ring-nle-blue/60 rounded-xs bg-black/40 px-2 py-0.5 font-semibold tracking-wider text-nle-value ring-1 ring-white/10 disabled:opacity-50"
+      >
+        {formatTimecode(frame, fps)}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      aria-label="Go to frame or timecode"
+      aria-invalid={invalid}
+      value={draft}
+      onFocus={(event) => event.target.select()}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setInvalid(false);
+      }}
+      onBlur={() => setDraft(null)}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          setDraft(null);
+        } else if (event.key === 'Enter') {
+          const target = parseTimecode(draft, fps);
+          if (target === null) setInvalid(true);
+          else {
+            player.seek(target);
+            setDraft(null);
+          }
+        }
+      }}
+      className="ring-nle-blue aria-[invalid=true]:ring-destructive w-24 rounded-xs bg-black/40 px-2 py-0.5 font-mono font-semibold tracking-wider text-nle-value outline-none ring-1"
+    />
   );
 }
 
@@ -40,12 +90,7 @@ export function Transport({ comp, player, state }: TransportProps) {
     <div className="bg-card flex h-9 shrink-0 items-center gap-2 border-t px-3 select-none">
       {/* Left: timecode and frame counter */}
       <div className="flex items-center gap-2.5 font-mono text-xs tabular-nums">
-        <span
-          data-testid="timecode"
-          className="rounded-xs bg-black/40 px-2 py-0.5 font-semibold tracking-wider text-nle-value ring-1 ring-white/10"
-        >
-          {formatTimecode(state.frame, comp?.fps ?? 30)}
-        </span>
+        <Timecode comp={comp} frame={state.frame} player={player} />
         <span data-testid="frame-counter" className="text-muted-foreground text-[11px]">
           {state.frame} / {comp?.durationInFrames ?? 0}
         </span>
@@ -114,7 +159,7 @@ export function Transport({ comp, player, state }: TransportProps) {
           </Button>
         </Hint>
         <div className="bg-border mx-1 h-4 w-px" />
-        <Hint label="Loop">
+        <Hint label="Loop (L)">
           <Toggle
             size="sm"
             aria-label="Loop"

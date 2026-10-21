@@ -27,9 +27,6 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-nle-gutter: var(--nle-gutter);
-  --color-nle-panel: var(--nle-panel);
-  --color-nle-panel-header: var(--nle-panel-header);
-  --color-nle-panel-sunken: var(--nle-panel-sunken);
   --color-nle-blue: var(--nle-blue);
   --color-nle-value: var(--nle-value);
 }
@@ -79,9 +76,6 @@
 
   /* Editor panel tokens */
   --nle-gutter: #0d0d0f;
-  --nle-panel: #1b1b1f;
-  --nle-panel-header: #222227;
-  --nle-panel-sunken: #131316;
   --nle-blue: #2680eb;
   --nle-value: #4da3ff;
 }

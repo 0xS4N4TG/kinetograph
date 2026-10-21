@@ -4,36 +4,78 @@ import type { StudioApi } from '@/api';
 import { InspectorPanel } from '@/components/inspector/inspector-panel';
 import { ProjectPanel } from '@/components/project/project-panel';
 import { MenuBar } from '@/components/shell/menu-bar';
-import { ToolBar, type Workspace } from '@/components/shell/tool-bar';
+import { ShortcutsDialog } from '@/components/shell/shortcuts-dialog';
+import { ToolBar, type Tool, type Workspace } from '@/components/shell/tool-bar';
 import { Timeline } from '@/components/timeline/timeline';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Transport } from '@/components/viewer/transport';
-import { Viewer } from '@/components/viewer/viewer';
+import { Viewer, type View, type Zoom } from '@/components/viewer/viewer';
 import { useTransportKeys } from '@/lib/use-transport-keys';
 import { useStudio } from '@/studio';
+
+/** The inspector tab each workspace opens. */
+const WORKSPACE_TABS: Record<Workspace, string> = {
+  Default: 'scene',
+  Animation: 'props',
+  'Color & Inspect': 'scene',
+  Export: 'renders',
+};
 
 export function App({ api }: { api: StudioApi }) {
   const studio = useStudio(api);
   const { player, playerState, comp } = studio;
   const [tab, setTab] = useState('scene');
   const [workspace, setWorkspace] = useState<Workspace>('Default');
-  useTransportKeys(player);
+  const [tool, setTool] = useState<Tool>('select');
+  const [view, setView] = useState<View>({ zoom: 'fit', pan: { x: 0, y: 0 } });
+  const [safeZones, setSafeZones] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const selectWorkspace = (next: Workspace) => {
     setWorkspace(next);
-    if (next === 'Export') setTab('renders');
-    else if (next === 'Color & Inspect') setTab('scene');
-    else if (next === 'Animation') setTab('props');
+    setTab(WORKSPACE_TABS[next]);
   };
+  const zoomTo = (zoom: Zoom) => setView({ zoom, pan: { x: 0, y: 0 } });
+  /** A layer picked on the canvas or the timeline: selected, and shown in the scene tree. */
+  const pickLayer = (id: string | null) => {
+    studio.selectLayer(id);
+    if (id !== null) setTab('scene');
+  };
+
+  useTransportKeys(player, {
+    v: () => setTool('select'),
+    h: () => setTool('hand'),
+    z: () => setTool('zoom'),
+    '0': () => zoomTo('fit'),
+    '1': () => zoomTo(1),
+    '?': () => setShortcutsOpen(true),
+  });
 
   return (
     <TooltipProvider>
       <div className="bg-background text-foreground flex h-screen flex-col overflow-hidden">
         {/* Menu bar and tool bar */}
         <header className="bg-card flex flex-col border-b select-none">
-          <MenuBar project={studio.project} buildId={studio.buildId} connected={studio.connected} />
-          <ToolBar workspace={workspace} onSelectWorkspace={selectWorkspace} />
+          <MenuBar
+            project={studio.project}
+            buildId={studio.buildId}
+            connected={studio.connected}
+            compositions={studio.compositions}
+            comp={comp}
+            onSelectComp={studio.selectComp}
+            player={player}
+            playback={playerState}
+            onZoom={zoomTo}
+            safeZones={safeZones}
+            onSafeZonesChange={setSafeZones}
+            workspace={workspace}
+            onSelectWorkspace={selectWorkspace}
+            onRender={() => setTab('renders')}
+            onReload={studio.reload}
+            onShowShortcuts={() => setShortcutsOpen(true)}
+          />
+          <ToolBar tool={tool} onSelectTool={setTool} workspace={workspace} onSelectWorkspace={selectWorkspace} />
         </header>
 
         {/* Docked NLE Panels with Dark Gutters */}
@@ -64,6 +106,12 @@ export function App({ api }: { api: StudioApi }) {
                     selectedLayer={studio.selectedLayer}
                     compositions={studio.compositions}
                     onSelectComp={studio.selectComp}
+                    tool={tool}
+                    view={view}
+                    onViewChange={setView}
+                    safeZones={safeZones}
+                    onSafeZonesChange={setSafeZones}
+                    onSelectLayer={pickLayer}
                   />
                   <Transport comp={comp} player={player} state={playerState} />
                 </div>
@@ -97,13 +145,12 @@ export function App({ api }: { api: StudioApi }) {
               state={playerState}
               player={player}
               selectedLayer={studio.selectedLayer}
-              onSelectLayer={(id) => {
-                studio.selectLayer(id);
-                setTab('scene');
-              }}
+              onSelectLayer={pickLayer}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
+
+        <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       </div>
     </TooltipProvider>
   );

@@ -27,7 +27,7 @@ describe('composition list', () => {
     expect(server.frameRequests[0]).toMatchObject({ comp: 'Intro', frame: 0, scale: 1, format: 'png' });
     expect(server.frameRequests[0]!.props).toBeUndefined();
     expect(counter()).toHaveTextContent('0 / 150');
-    expect(await screen.findByText('connected')).toBeInTheDocument();
+    expect(screen.queryByText(/connected|offline/)).not.toBeInTheDocument();
   });
 
   it('selects another composition on click and renders it', async () => {
@@ -265,7 +265,7 @@ describe('timeline', () => {
   it('shows the scene tree of the current frame with the topmost layer first, children nested', async () => {
     const { server, user } = await start();
     const tree = await screen.findByTestId('scene-tree');
-    const ids = within(tree).getAllByRole('treeitem').map((i) => i.firstElementChild!.firstElementChild!.textContent);
+    const ids = within(tree).getAllByRole('treeitem').map((i) => i.querySelector('.truncate')!.textContent);
     expect(ids).toEqual(['title-group', 'title', 'bg']);
     expect(tree).toHaveTextContent('1920x1080');
     await user.keyboard('{ArrowRight}');
@@ -430,5 +430,259 @@ describe('render queue', () => {
       props: { title: 'Hello', size: 64, visible: false, color: '#ff0000', style: { bold: true } },
     });
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});
+
+describe('transport controls', () => {
+  it('goes to the first and last frame on Home and End, and toggles loop on L', async () => {
+    const { user } = await start();
+    await user.keyboard('{End}');
+    expect(counter()).toHaveTextContent('149 / 150');
+    await user.keyboard('{Home}');
+    expect(counter()).toHaveTextContent('0 / 150');
+    const loop = screen.getByRole('button', { name: 'Loop' });
+    await user.keyboard('l');
+    expect(loop).toHaveAttribute('aria-pressed', 'true');
+    await user.keyboard('L');
+    expect(loop).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('takes a frame number or a timecode: Enter seeks, Escape cancels, a bad one stays open', async () => {
+    const { user } = await start();
+    const field = () => screen.getByRole('textbox', { name: 'Go to frame or timecode' });
+    await user.click(screen.getByTestId('timecode'));
+    await user.clear(field());
+    await user.type(field(), '00:02:00{Enter}');
+    expect(counter()).toHaveTextContent('60 / 150');
+    expect(screen.getByTestId('timecode')).toHaveTextContent('00:02:00');
+
+    await user.click(screen.getByTestId('timecode'));
+    await user.clear(field());
+    await user.type(field(), '7{Escape}');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(counter()).toHaveTextContent('60 / 150');
+
+    await user.click(screen.getByTestId('timecode'));
+    await user.clear(field());
+    await user.type(field(), 'nope{Enter}');
+    expect(field()).toHaveAttribute('aria-invalid', 'true');
+    expect(counter()).toHaveTextContent('60 / 150');
+  });
+});
+
+describe('keys and tools', () => {
+  it('switches tools with V, H and Z, and sets the zoom with 1 and 0', async () => {
+    const { user } = await start();
+    const selection = screen.getByRole('button', { name: 'Selection' });
+    expect(selection).toHaveAttribute('aria-pressed', 'true');
+    await user.keyboard('h');
+    expect(screen.getByRole('button', { name: 'Hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(selection).toHaveAttribute('aria-pressed', 'false');
+    await user.keyboard('z');
+    expect(screen.getByRole('button', { name: 'Zoom' })).toHaveAttribute('aria-pressed', 'true');
+    await user.keyboard('V');
+    expect(selection).toHaveAttribute('aria-pressed', 'true');
+
+    await user.keyboard('1');
+    expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
+    await user.keyboard('0');
+    expect(screen.getByRole('button', { name: 'Fit (100%)' })).toBeInTheDocument();
+  });
+
+  it('opens the keyboard shortcuts with ?, and the playback keys wait while they are open', async () => {
+    const { user } = await start();
+    await user.keyboard('?');
+    const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+    expect(dialog).toHaveTextContent('Show the frame at 100%');
+    await user.keyboard('{ArrowRight}');
+    expect(counter()).toHaveTextContent('0 / 150');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+});
+
+describe('viewer', () => {
+  it('zooms in with the zoom tool, out with Alt, and the readout toggles fit and 100%', async () => {
+    const { user } = await start();
+    await user.keyboard('z');
+    const frame = screen.getByTestId('frame');
+    fireEvent.click(frame);
+    expect(screen.getByRole('button', { name: '150%' })).toBeInTheDocument();
+    fireEvent.click(frame, { altKey: true });
+    expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '100%' }));
+    expect(screen.getByRole('button', { name: 'Fit (100%)' })).toBeInTheDocument();
+  });
+
+  it('selects the topmost layer under the pointer, and none off the frame', async () => {
+    await start();
+    await screen.findByTestId('scene-tree');
+    const frame = screen.getByTestId('frame');
+    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
+      left: 100, top: 50, right: 2020, bottom: 1130, width: 1920, height: 1080, x: 100, y: 50, toJSON: () => ({}),
+    });
+    // Composition pixel (50, 25): on the title, which is inside its group and so on top of it.
+    fireEvent.click(frame, { clientX: 150, clientY: 75 });
+    expect(await screen.findByText('Properties: title')).toBeInTheDocument();
+    fireEvent.click(frame, { clientX: 1500, clientY: 75 });
+    expect(await screen.findByText('Select a layer to see its resolved fields.')).toBeInTheDocument();
+  });
+
+  it('pans with the hand tool while the button is down', async () => {
+    const { user } = await start();
+    await user.keyboard('h');
+    const preview = screen.getByTestId('preview');
+    fireEvent.pointerDown(preview, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(preview, { clientX: 40, clientY: 25, pointerId: 1 });
+    fireEvent.pointerUp(preview, { pointerId: 1 });
+    expect(screen.getByTestId('frame')).toHaveStyle({ transform: 'translate(30px, 15px)' });
+    fireEvent.pointerMove(preview, { clientX: 500, clientY: 500, pointerId: 1 });
+    expect(screen.getByTestId('frame')).toHaveStyle({ transform: 'translate(30px, 15px)' });
+  });
+});
+
+describe('menus', () => {
+  it('runs the playback items and the loop toggle', async () => {
+    const { user } = await start();
+    await user.click(screen.getByRole('button', { name: 'Playback' }));
+    await user.click(await screen.findByRole('menuitem', { name: /Go to end/ }));
+    expect(counter()).toHaveTextContent('149 / 150');
+
+    await user.click(screen.getByRole('button', { name: 'Playback' }));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: /Loop/ }));
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('selects a composition from the Composition menu', async () => {
+    const { user } = await start();
+    await user.click(screen.getByRole('button', { name: 'Composition' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: /Outro/ }));
+    expect(compButton('Outro')).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(counter()).toHaveTextContent('0 / 48'));
+  });
+
+  it('toggles the safe zones and fits the view from the View menu', async () => {
+    const { user } = await start();
+    await user.click(screen.getByRole('button', { name: 'View' }));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: /Safe zones/ }));
+    expect(screen.getByRole('button', { name: /Safe Zones/ })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'View' }));
+    await user.click(await screen.findByRole('menuitem', { name: /^100%/ }));
+    expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
+  });
+
+  it('opens the renders tab from File, reloads the frame, and switches the workspace from Window', async () => {
+    const { server, user } = await start();
+    await user.click(screen.getByRole('button', { name: 'File' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Render…' }));
+    expect(screen.getByRole('tab', { name: /Renders/ })).toHaveAttribute('aria-selected', 'true');
+
+    const requests = server.frameRequests.length;
+    await user.click(screen.getByRole('button', { name: 'File' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Reload' }));
+    await waitFor(() => expect(server.frameRequests.length).toBeGreaterThan(requests));
+
+    await user.click(screen.getByRole('button', { name: 'Window' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Animation' }));
+    expect(screen.getByRole('tab', { name: 'Props' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('opens the keyboard shortcuts from Help', async () => {
+    const { user } = await start();
+    await user.click(screen.getByRole('button', { name: 'Help' }));
+    await user.click(await screen.findByRole('menuitem', { name: /Keyboard shortcuts/ }));
+    expect(await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+  });
+});
+
+describe('tool bar workspaces', () => {
+  it('switches the workspace and opens its inspector tab', async () => {
+    const { user } = await start();
+    await user.click(screen.getByRole('button', { name: 'Animation' }));
+    expect(screen.getByRole('button', { name: 'Animation' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('tab', { name: 'Props' })).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
+describe('connection', () => {
+  it('shows offline only while the socket is closed', async () => {
+    const { server } = await start();
+    expect(screen.queryByText('offline')).not.toBeInTheDocument();
+    server.setConnected(false);
+    expect(await screen.findByText('offline')).toBeInTheDocument();
+    server.setConnected(true);
+    await waitFor(() => expect(screen.queryByText('offline')).not.toBeInTheDocument());
+  });
+});
+
+describe('project panel', () => {
+  it('counts the compositions in its footer, and says when the search matches none', async () => {
+    const { user } = await start();
+    const list = screen.getByTestId('composition-list');
+    expect(within(list).getByText('2 compositions')).toBeInTheDocument();
+    await user.type(within(list).getByRole('searchbox', { name: 'Search project' }), 'zzz');
+    expect(within(list).getByText('No matches.')).toBeInTheDocument();
+    expect(within(list).getByText('0 of 2 compositions')).toBeInTheDocument();
+  });
+});
+
+describe('timeline controls', () => {
+  it('scrubs from any lane, not only the ruler', async () => {
+    const { server } = await start();
+    await screen.findAllByTestId('layer-row');
+    const ruler = screen.getByTestId('timeline-ruler');
+    vi.spyOn(ruler, 'getBoundingClientRect').mockReturnValue({
+      left: 100, top: 0, right: 1600, bottom: 28, width: 1500, height: 28, x: 100, y: 0, toJSON: () => ({}),
+    });
+    const lane = screen.getAllByTestId('layer-row')[1]!.querySelector('[data-lane]')!;
+    fireEvent.pointerDown(lane, { clientX: 400, pointerId: 1 });
+    expect(counter()).toHaveTextContent('30 / 150');
+    fireEvent.pointerUp(lane, { pointerId: 1 });
+    expect(server.lastFrameRequest).toMatchObject({ frame: 30, scale: 1, format: 'png' });
+  });
+
+  it('zooms the time axis with the wheel while Ctrl or Cmd is held', async () => {
+    await start();
+    await screen.findAllByTestId('layer-row');
+    fireEvent.wheel(screen.getByTestId('timeline-ruler'), { deltaY: -100 });
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1');
+    fireEvent.wheel(screen.getByTestId('timeline-ruler'), { ctrlKey: true, deltaY: -100 });
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1.25');
+    fireEvent.wheel(screen.getByTestId('timeline-ruler'), { metaKey: true, deltaY: -100 });
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1.5625');
+  });
+
+  it('keeps row numbers while the search narrows the rows', async () => {
+    const { user } = await start();
+    await screen.findAllByTestId('layer-row');
+    await user.type(screen.getByRole('searchbox', { name: 'Search timeline' }), 'bg');
+    const rows = screen.getAllByTestId('layer-row');
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]!).getByText('3')).toBeInTheDocument();
+  });
+});
+
+describe('scene tree', () => {
+  it('collapses a layer with children and expands it again', async () => {
+    const { user } = await start();
+    const tree = await screen.findByTestId('scene-tree');
+    expect(within(tree).getAllByRole('treeitem')).toHaveLength(3);
+    await user.click(within(tree).getByRole('button', { name: 'Collapse title-group' }));
+    expect(within(tree).getAllByRole('treeitem')).toHaveLength(2);
+    await user.click(within(tree).getByRole('button', { name: 'Expand title-group' }));
+    expect(within(tree).getAllByRole('treeitem')).toHaveLength(3);
+  });
+
+  it('collapses a property section', async () => {
+    const { user } = await start();
+    const tree = await screen.findByTestId('scene-tree');
+    await screen.findAllByTestId('layer-row');
+    await user.click(screen.getAllByTestId('layer-row').find((r) => r.getAttribute('title') === 'bg (shape)')!);
+    const details = await within(tree).findByTestId('layer-details');
+    expect(within(details).getByText('anchor')).toBeInTheDocument();
+    await user.click(within(details).getByRole('button', { name: 'Layer Transform' }));
+    expect(within(details).queryByText('anchor')).not.toBeInTheDocument();
+    await user.click(within(details).getByRole('button', { name: 'Layer Transform' }));
+    expect(within(details).getByText('anchor')).toBeInTheDocument();
   });
 });

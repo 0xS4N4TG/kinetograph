@@ -1,5 +1,3 @@
-import { MenuIcon } from 'lucide-react';
-
 import type { CompositionInfo, InspectResult, RenderJob, RenderRequest } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
@@ -66,9 +64,7 @@ export function InspectorPanel({
             </TabsTrigger>
           </TabsList>
         }
-      >
-        <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
-      </PanelHeader>
+      />
       <TabsContent value="scene" className="min-h-0">
         <SceneTree inspect={inspect} frame={frame} selected={selectedLayer} onSelect={onSelectLayer} />
       </TabsContent>

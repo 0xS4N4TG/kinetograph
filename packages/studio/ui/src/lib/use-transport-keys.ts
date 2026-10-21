@@ -1,28 +1,45 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import type { Player } from '@/lib/player';
 
-/** Where typing, a slider, tabs or a dialog already use the key. */
+/** Where typing, a slider, tabs, a menu or a dialog already use the key. */
 function ownsKeys(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return (
     target.isContentEditable ||
-    target.closest('input, textarea, select, [role=slider], [role=tab], [role=dialog], [role=separator]') !== null
+    target.closest('input, textarea, select, [role=slider], [role=tab], [role=menu], [role=dialog], [role=separator]') !== null
   );
 }
 
-/** Space plays and pauses; Left and Right step a frame, ten with Shift. */
-export function useTransportKeys(player: Player): void {
+/**
+ * Space plays and pauses; Left and Right step a frame, ten with Shift; Home and End go to the first and last frame; L
+ * toggles loop. Any other key is looked up in `shortcuts` by `event.key` (letters lowercased).
+ */
+export function useTransportKeys(player: Player, shortcuts: Record<string, () => void> = {}): void {
+  const latest = useRef(shortcuts);
+  useEffect(() => {
+    latest.current = shortcuts;
+  });
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || ownsKeys(event.target)) return;
-      if (event.key === ' ') {
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      if (key === ' ') {
         event.preventDefault();
         if (!event.repeat) player.toggle();
-      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      } else if (key === 'ArrowLeft' || key === 'ArrowRight') {
         event.preventDefault();
         const step = event.shiftKey ? 10 : 1;
-        player.step(event.key === 'ArrowLeft' ? -step : step);
+        player.step(key === 'ArrowLeft' ? -step : step);
+      } else if (key === 'Home' || key === 'End') {
+        event.preventDefault();
+        const comp = player.getState().comp;
+        if (comp) player.seek(key === 'Home' ? 0 : comp.durationInFrames - 1);
+      } else if (key === 'l') {
+        if (!event.repeat) player.setLoop(!player.getState().loop);
+      } else {
+        latest.current[key]?.();
       }
     };
     // A focused button would also click on the Space key's release.

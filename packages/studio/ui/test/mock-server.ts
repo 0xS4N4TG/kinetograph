@@ -167,6 +167,11 @@ export class MockServer implements StudioApi {
     this.handlers?.onMessage(message);
   }
 
+  /** The socket opens or closes, as the studio sees it. */
+  setConnected(open: boolean): void {
+    this.handlers?.onConnection(open);
+  }
+
   /** A successful rebuild: `comps` changes, the build id moves on, and `reload` goes out. */
   reload(comps?: CompositionInfo[]): void {
     if (comps) this.comps = comps;
