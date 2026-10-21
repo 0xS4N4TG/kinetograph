@@ -784,7 +784,8 @@ Which picture is shown, for scene frame `f` (`frame`, or the frame being rendere
 { "id": "spinner", "type": "gif", "src": "spinner.gif", "width": 120, "height": 120, "fit": "contain", "time": 0.4 }
 ```
 
-An animated GIF, decoded by the `image` crate. The picture goes in like an [image](#image) (same box, `fit` and
+An animated GIF, APNG or animated WebP (found by the file's signature, not its name; a still PNG or WebP is a
+one-picture animation), decoded by the `image` crate. The picture goes in like an [image](#image) (same box, `fit` and
 sampling) and takes every layer field.
 
 | Field | Default | Meaning |
