@@ -606,7 +606,7 @@ its up vector, is an error at that frame.
 |---|---|---|
 | `ambient` | `color`, `intensity` | The same on every surface from every direction: diffuse, plus a little specular so that metals are not black. |
 | `directional` | `direction` (the way it travels, default `[-1, -1, -1]`), `castShadow` (false), `shadow` | Parallel light. A surface facing it head on, with base colour `c`, reflects `c * intensity`. With `castShadow` it is shaded by a [shadow map](#3d-shadows). |
-| `point` | `position`, `range` (default 0) | Falls off as `1 / d^2`, so `intensity` is what a directional light of that intensity would give at distance 1. With a `range` above 0 it fades smoothly to nothing at that distance. |
+| `point` | `position`, `range` (default 0), `castShadow` (false), `shadow` | Falls off as `1 / d^2`, so `intensity` is what a directional light of that intensity would give at distance 1. With a `range` above 0 it fades smoothly to nothing at that distance. |
 
 **objects**. Every object takes `position` (`[0, 0, 0]`), `rotation` (XYZ Euler degrees, `[0, 0, 0]`: the matrix is
 `T * Rx * Ry * Rz * S`, as three.js), `scale` (a number or `[x, y, z]`, 1), `visible` (true) and an `id` (for people;
