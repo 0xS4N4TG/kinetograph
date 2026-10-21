@@ -30,6 +30,7 @@ use crate::resolve::{
     ResolvedGradientGeometry, ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint,
     ResolvedScene, ResolvedShadow, ShapeStyle,
 };
+use crate::reuse;
 use crate::scene::{
     BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Paint, Scene, ShapeLayer, TextLayer,
     Units, walk_layers,
@@ -71,11 +72,29 @@ impl Frame {
     }
 }
 
-/// A frame the GPU is still drawing (`Renderer::start_frame`).
+/// A frame the GPU is still drawing (`Renderer::start_frame`), or one that
+/// is the same as the frame drawn before it and is not drawn (`reuse.rs`).
 pub struct PendingFrame {
-    readback: Readback,
+    work: Work,
     width: u32,
     height: u32,
+}
+
+enum Work {
+    /// Drawn: the readback of frame number `seq` of the renderer's starts.
+    Drawn { readback: Readback, seq: u64 },
+    /// The same as the drawn frame `of`: its pixels again.
+    Repeat { of: u64 },
+}
+
+impl PendingFrame {
+    /// Whether this frame is the same as the frame started before it, which
+    /// it was not drawn for: its pixels are that frame's (`reuse.rs`). A
+    /// caller that kept the earlier frame's pixels, or what it made of them,
+    /// may use those and drop this without `finish_frame`.
+    pub fn is_repeat(&self) -> bool {
+        matches!(self.work, Work::Repeat { .. })
+    }
 }
 
 /// Where one frame's time went, in milliseconds. Collected by
@@ -166,6 +185,19 @@ pub struct Renderer {
     /// Their leaves are also rasterised into the box they cover, not the
     /// whole target (`vello_area`).
     cache_paused: u32,
+    /// Identical-frame reuse (`reuse.rs`), off in a new renderer.
+    reuse: bool,
+    /// The frames started so far, which numbers them.
+    starts: u64,
+    /// The last frame drawn by `start_frame` and its number, while frames
+    /// may be compared with it.
+    drawn: Option<(u64, ResolvedScene)>,
+    /// The latest drawn frame a repeat was started for.
+    repeat_of: Option<u64>,
+    /// The pixels of a drawn frame that a repeat may need, by its number.
+    pixels: Option<(u64, Vec<u8>)>,
+    /// Frames that were repeats of the one before.
+    repeats: u64,
 }
 
 impl Renderer {
@@ -226,6 +258,12 @@ impl Renderer {
             pages: Pages::default(),
             page_targets: HashMap::new(),
             cache_paused: 0,
+            reuse: false,
+            starts: 0,
+            drawn: None,
+            repeat_of: None,
+            pixels: None,
+            repeats: 0,
         };
         renderer.ensure_image_renderer(fresh.has_pictures())?;
         renderer.install_assets(fresh);
@@ -262,6 +300,17 @@ impl Renderer {
         let respaced = scene.blend_space != self.scene.blend_space;
         if resized || respaced || fresh.rebound {
             self.clear_layer_cache();
+        }
+        // A frame is only compared with one drawn from the same files and
+        // settings (`reuse.rs`).
+        if resized
+            || respaced
+            || !fresh.is_empty()
+            || scene.fps != self.scene.fps
+            || scene.fonts != self.scene.fonts
+            || scene.base_dir != self.scene.base_dir
+        {
+            self.drawn = None;
         }
         self.compositor
             .set_srgb_blend(scene.blend_space == crate::scene::BlendSpace::Srgb);
@@ -366,6 +415,7 @@ impl Renderer {
     /// would only time the cache. Turning it off empties it; turning it on
     /// starts from an empty one.
     pub fn set_layer_cache(&mut self, on: bool) {
+        self.drawn = None;
         for tex in self.cache.set_enabled(on) {
             self.compositor.release(tex);
         }
@@ -387,6 +437,7 @@ impl Renderer {
     /// (`false`) or back on (they are on in a new renderer). Either way the
     /// pixels are the same, byte for byte; the switch exists for tests.
     pub fn set_pass_fusion(&mut self, on: bool) {
+        self.drawn = None;
         self.compositor.set_fusion(on);
     }
 
@@ -397,6 +448,37 @@ impl Renderer {
         self.compositor.take_pass_times()
     }
 
+    /// Turns identical-frame reuse on or off (`reuse.rs`); a new renderer
+    /// has it off. With it on, `start_frame` does not draw a frame whose
+    /// resolved scene is equal to that of the frame started just before it,
+    /// and `finish_frame` gives that frame's pixels again: the frames are the
+    /// same either way. It is for rendering frames one after the other;
+    /// timing one frame over and over, as `bench` does, would only time the
+    /// comparison.
+    pub fn set_frame_reuse(&mut self, on: bool) {
+        self.reuse = on;
+        self.forget_frame();
+    }
+
+    /// Whether identical-frame reuse is on.
+    pub fn frame_reuse(&self) -> bool {
+        self.reuse
+    }
+
+    /// Makes the next frame be drawn whatever the last one was: frames from
+    /// here on are only compared with frames started after this. A render
+    /// worker calls it at the start of each run of frames, so that no frame
+    /// is taken from one that is not the frame before it in the film.
+    pub fn forget_frame(&mut self) {
+        self.drawn = None;
+    }
+
+    /// How many frames `start_frame` has not drawn because they were the
+    /// same as the frame before.
+    pub fn repeated_frames(&self) -> u64 {
+        self.repeats
+    }
+
     pub fn render_frame(&mut self, frame: u32) -> Result<Frame> {
         let pending = self.start_frame(frame)?;
         self.finish_frame(pending)
@@ -405,14 +487,62 @@ impl Renderer {
     /// `render_frame` up to the readback: the GPU works on the frame while
     /// the caller starts the next one, and `finish_frame` collects it.
     /// Frames are finished in the order they were started.
+    ///
+    /// With frame reuse on, a frame equal to the one started just before it
+    /// is not drawn (`set_frame_reuse`, `PendingFrame::is_repeat`).
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
-        self.start_resolved(&resolved)
+        self.starts += 1;
+        let seq = self.starts;
+        if self.reuse
+            && let Some((of, drawn)) = &self.drawn
+            && reuse::same_frame(drawn, &resolved)
+        {
+            let of = *of;
+            self.repeat_of = Some(of);
+            self.repeats += 1;
+            return Ok(PendingFrame {
+                work: Work::Repeat { of },
+                width: resolved.width,
+                height: resolved.height,
+            });
+        }
+        self.drawn = None;
+        let (readback, width, height) = self.start_resolved(&resolved)?;
+        if self.reuse {
+            self.drawn = Some((seq, resolved));
+        }
+        Ok(PendingFrame {
+            work: Work::Drawn { readback, seq },
+            width,
+            height,
+        })
     }
 
     /// The pixels of a frame from `start_frame`.
     pub fn finish_frame(&mut self, pending: PendingFrame) -> Result<Frame> {
-        let rgba = self.compositor.finish_readback(pending.readback)?;
+        let rgba = match pending.work {
+            Work::Drawn { readback, seq } => {
+                let rgba = self.compositor.finish_readback(readback)?;
+                // Kept when a repeat of it has started, or may still start
+                // (nothing was started after it).
+                let wanted = self.repeat_of == Some(seq)
+                    || (self.starts == seq
+                        && self.drawn.as_ref().is_some_and(|(of, _)| *of == seq));
+                // Older pixels are needed by no repeat once a later frame is
+                // finished: repeats are finished in order too.
+                self.pixels = wanted.then(|| (seq, rgba.clone()));
+                rgba
+            }
+            Work::Repeat { of } => match &self.pixels {
+                Some((seq, rgba)) if *seq == of => rgba.clone(),
+                _ => {
+                    return Err(Error::Render(
+                        "a repeated frame's pixels are gone: frames must be finished in the order they were started".into(),
+                    ));
+                }
+            },
+        };
         Ok(Frame {
             width: pending.width,
             height: pending.height,
@@ -425,6 +555,7 @@ impl Renderer {
     /// this waits for the GPU after every step, so it is slower than
     /// `render_frame`; use `render_frame` to time the whole frame.
     pub fn render_timed(&mut self, frame: u32) -> Result<(Frame, Timings)> {
+        self.drawn = None;
         let start = Instant::now();
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
         self.timings = Some(Timings {
@@ -459,18 +590,18 @@ impl Renderer {
     }
 
     pub fn render_resolved(&mut self, scene: &ResolvedScene) -> Result<Frame> {
-        let pending = self.start_resolved(scene)?;
-        let rgba = self.timed(Stage::Readback, |s| {
-            s.compositor.finish_readback(pending.readback)
-        })?;
+        self.drawn = None;
+        let (readback, width, height) = self.start_resolved(scene)?;
+        let rgba = self.timed(Stage::Readback, |s| s.compositor.finish_readback(readback))?;
         Ok(Frame {
-            width: pending.width,
-            height: pending.height,
+            width,
+            height,
             rgba,
         })
     }
 
-    fn start_resolved(&mut self, scene: &ResolvedScene) -> Result<PendingFrame> {
+    /// Draws `scene` and starts reading it back: the readback and the size.
+    fn start_resolved(&mut self, scene: &ResolvedScene) -> Result<(Readback, u32, u32)> {
         self.projection = warp::projection(scene.camera.as_ref(), self.margin);
         // A frame that failed may have left these half way.
         self.cache_path.clear();
@@ -490,11 +621,7 @@ impl Renderer {
         self.clear_pages();
         let readback = self.timed(Stage::Readback, |s| s.compositor.start_readback(&canvas));
         self.compositor.release(canvas);
-        Ok(PendingFrame {
-            readback,
-            width: scene.width,
-            height: scene.height,
-        })
+        Ok((readback, scene.width, scene.height))
     }
 
     /// Blends `layers` (bottom first) onto `canvas`. `parent` is the product
@@ -3531,6 +3658,21 @@ struct NewAssets {
 }
 
 impl NewAssets {
+    /// Whether nothing was read: no font, file or table the renderer did not
+    /// hold, and none that changed.
+    fn is_empty(&self) -> bool {
+        self.text.is_none()
+            && self.images.is_empty()
+            && self.lotties.is_empty()
+            && self.videos.is_empty()
+            && self.gifs.is_empty()
+            && self.luts.is_empty()
+            && self.models.is_empty()
+            && self.textures3d.is_empty()
+            && self.environments.is_empty()
+            && !self.rebound
+    }
+
     /// Whether any of it is drawn with Vello's image renderer.
     fn has_pictures(&self) -> bool {
         self.canvas_pictures

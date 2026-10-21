@@ -24,6 +24,7 @@ pub mod pass_timer;
 pub mod pool;
 pub mod render;
 pub mod resolve;
+pub mod reuse;
 pub mod scene;
 pub mod scene3d;
 pub mod shader;
