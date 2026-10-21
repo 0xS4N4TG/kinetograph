@@ -41,6 +41,31 @@ export function nativeSize(node: ElementNode): { width?: number; height?: number
   }
 }
 
+/**
+ * The native elements that are drawn rather than laid out lie over the DOM around them, at the top left corner of the
+ * nearest positioned element (what an `<AbsoluteFill>` around each did by hand), and take no room in the flow: a
+ * `<Layer>`, a shape, a canvas, a shader, a 3D scene, a video. An image, a GIF, a Lottie and a text box are content of
+ * the flow, as the replaced elements and text they stand for are in CSS.
+ */
+export function overlaysSiblings(node: ElementNode): boolean {
+  switch (node.type) {
+    case 'kg-layer':
+    case 'kg-shape':
+    case 'kg-rect':
+    case 'kg-ellipse':
+    case 'kg-path':
+    case 'kg-noise':
+    case 'kg-mesh-gradient':
+    case 'kg-canvas':
+    case 'kg-glsl':
+    case 'kg-scene3d':
+    case 'kg-video':
+      return true;
+    default:
+      return false;
+  }
+}
+
 function textSize(node: ElementNode): { width: number; height: number } {
   const props = node.props;
   const text = node.children.map((c) => (c.kind === 'text' ? c.text : '')).join('');

@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDomAddon } from '@kinetograph/compat/dom';
 import type { LayerJson } from '@kinetograph/scene';
-import { Camera, createSceneRoot, Layer, Rect, SequenceHost, Text, TimelineContext } from '../src/index.js';
+import { Camera, createSceneRoot, Image, Layer, Rect, SequenceHost, Text, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 
 interface Node {
@@ -139,7 +139,27 @@ describe('islands', () => {
     expect(island).toMatchObject({ id: '$0.0', layoutItem: { position: 'absolute' } });
     // The stand-in put the Rect's box at y = 0.
     expect(island.children[0]).toMatchObject({ id: 'chip', type: 'shape' });
-    expect(requests[0]!.root.children![0]).toEqual({ kind: 'native', path: '$0.0.0', width: 20, height: 20 });
+    expect(requests[0]!.root.children![0]).toEqual({ kind: 'native', path: '$0.0.0', width: 20, height: 20, overlay: true });
+  });
+
+  it('send the native elements that are drawn, not laid out, as overlays, and the ones that are content as flow', () => {
+    render(
+      <div style={sq}>
+        <Rect width={20} height={20} fill="#fff" />
+        <Layer />
+        <Image src="a.png" width={20} height={20} />
+        <Text font="Inter" size={10}>
+          hi
+        </Text>
+      </div>,
+    );
+    const natives = requests[0]!.root.children!.filter((n) => n.kind === 'native') as (Node & { overlay?: boolean })[];
+    expect(natives.map((n) => [n.path, n.overlay])).toEqual([
+      ['$0.0', true],
+      ['$0.1', true],
+      ['$0.2', undefined],
+      ['$0.3', undefined],
+    ]);
   });
 
   it('draw islands inside native elements inside them', () => {

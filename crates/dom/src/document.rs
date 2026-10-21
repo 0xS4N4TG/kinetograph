@@ -320,10 +320,15 @@ fn diff(
             path,
             width,
             height,
+            overlay,
         } => {
             node.data
                 .is_element_with_tag_name(&LocalName::from("kg-native"))
-                && diff_attrs(node, native_attributes(path, *width, *height), edits)
+                && diff_attrs(
+                    node,
+                    native_attributes(path, *width, *height, *overlay),
+                    edits,
+                )
         }
         DomNode::Element {
             tag,
@@ -516,12 +521,20 @@ fn element_attributes(
 }
 
 /// The attributes of a native element's placeholder box.
-fn native_attributes(path: &str, width: Option<f64>, height: Option<f64>) -> Vec<Attribute> {
-    let style = format!(
+fn native_attributes(
+    path: &str,
+    width: Option<f64>,
+    height: Option<f64>,
+    overlay: bool,
+) -> Vec<Attribute> {
+    let mut style = format!(
         "width: {}px; height: {}px",
         width.unwrap_or(0.0),
         height.unwrap_or(0.0)
     );
+    if overlay {
+        style.push_str("; position: absolute; left: 0; top: 0");
+    }
     vec![attr(PATH_ATTR, path), attr("style", &style)]
 }
 
@@ -537,12 +550,13 @@ fn build_node(
             path,
             width,
             height,
+            overlay,
         } => {
             let id = element(
                 m,
                 "kg-native",
                 false,
-                native_attributes(path, *width, *height),
+                native_attributes(path, *width, *height, *overlay),
             );
             paths.insert(path.clone(), id);
             Some(id)

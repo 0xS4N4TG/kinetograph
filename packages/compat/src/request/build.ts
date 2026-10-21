@@ -10,7 +10,7 @@ import { isDomElement } from './tags.js';
 export type RequestNode =
   | { kind: 'element'; tag: string; path: string; attrs: Record<string, string>; style: string; children: RequestNode[] }
   | { kind: 'text'; text: string }
-  | { kind: 'native'; path: string; width?: number; height?: number };
+  | { kind: 'native'; path: string; width?: number; height?: number; overlay?: true };
 
 /** `Snapshot` of `crates/dom/src/request.rs`: the island's tree as it was at `time` seconds. */
 export interface IslandSnapshotJson {
@@ -50,6 +50,8 @@ export interface BuildOptions {
   stylesheets: readonly string[];
   /** The box a native element takes inside the island (its layer's width and height). */
   nativeSize?(node: ElementNode): { width?: number; height?: number };
+  /** Whether a native element lies over its siblings, at the corner of its containing block, instead of taking its box in the flow. */
+  nativeOverlay?(node: ElementNode): boolean;
   /** The text of a local `<link rel="stylesheet" href>`; null when it is not a local file. */
   readStylesheet?(href: string): string | null;
 }
@@ -130,6 +132,7 @@ export function buildIslandRequest(root: ElementNode, options: BuildOptions): Bu
         const native: RequestNode = { kind: 'native', path };
         if (size.width !== undefined) native.width = size.width;
         if (size.height !== undefined) native.height = size.height;
+        if (options.nativeOverlay?.(child)) native.overlay = true;
         out.push(native);
       }
     }

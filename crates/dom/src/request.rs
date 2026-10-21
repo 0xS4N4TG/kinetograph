@@ -80,6 +80,11 @@ pub enum DomNode {
         width: Option<f64>,
         #[serde(default)]
         height: Option<f64>,
+        /// The box does not take part in the flow: it is placed at the top left of its containing block, over its
+        /// siblings, as `position: absolute; left: 0; top: 0` does (a layer, a shape, a canvas: things that are
+        /// drawn rather than laid out; an image or a text box stays in the flow).
+        #[serde(default)]
+        overlay: bool,
     },
 }
 

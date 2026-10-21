@@ -151,6 +151,26 @@ fn native_nodes_are_boxes_of_their_given_size() {
 }
 
 #[test]
+fn overlay_natives_leave_the_flow_for_the_corner_of_their_containing_block() {
+    // A flow box first, then an overlay: the overlay takes no room and sits at the corner of the positioned root,
+    // over the flow box, where an ordinary native would have been placed below it.
+    let root = el(
+        "div",
+        "$0",
+        "position: relative; padding: 5px",
+        vec![
+            el("div", "$0.0", "height: 30px", vec![]),
+            json!({ "kind": "native", "path": "$0.1", "width": 120.0, "height": 40.0, "overlay": true }),
+            json!({ "kind": "native", "path": "$0.2", "width": 10.0, "height": 10.0 }),
+        ],
+    );
+    let island = resolve(&request(root));
+    assert_eq!(bounds(&island, "$0.1"), (0.0, 0.0, 120.0, 40.0));
+    // The overlay takes no part in the flow: the next flow box follows the 30 px div directly.
+    assert_eq!(bounds(&island, "$0.2"), (5.0, 35.0, 10.0, 10.0));
+}
+
+#[test]
 fn stylesheets_and_style_elements_apply_in_document_order() {
     let mut req = request(el_attrs(
         "div",

@@ -8,7 +8,7 @@ import { getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStyles
 import { buildIslandRequest, type IslandRequestJson } from '../request/build.js';
 import { isDomElement } from '../request/tags.js';
 import type { DomNode, IslandContext, IslandResult } from '../types.js';
-import { fillNatives, nativeSize } from './native.js';
+import { fillNatives, nativeSize, overlaysSiblings } from './native.js';
 import { historyFor, isWarming, noteTransitions, recordIsland } from './history.js';
 
 export { isDomElement };
@@ -32,7 +32,7 @@ export { buildIslandRequest, collectStyleElements, styleText } from '../request/
 export type { IslandRequestJson, RequestNode, BuildOptions, BuiltRequest } from '../request/build.js';
 export { styleToCss } from '../request/style.js';
 export { attributesOf } from '../request/attrs.js';
-export { nativeSize } from './native.js';
+export { nativeSize, overlaysSiblings } from './native.js';
 export {
   clearHistory,
   resetTransitionWindow,
@@ -67,6 +67,7 @@ export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context:
     time: context.time ?? 0,
     stylesheets,
     nativeSize,
+    nativeOverlay: overlaysSiblings,
     readStylesheet: (href) => {
       const css = readLocalStylesheet(href);
       if (css !== null) noteStylesheet(css);
