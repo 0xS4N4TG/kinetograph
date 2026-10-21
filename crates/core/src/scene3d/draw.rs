@@ -60,18 +60,23 @@ impl Texture {
     }
 
     /// The mip chain, level 0 first, each level the box-filtered average of
-    /// 2x2 texels of the one before, averaged in linear light.
-    pub fn mips(&self) -> Vec<(u32, u32, Vec<u8>)> {
+    /// 2x2 texels of the one before. `srgb` colours are averaged in linear
+    /// light; data (a normal map, metallic and roughness) is averaged as it is.
+    pub fn mips(&self, srgb: bool) -> Vec<(u32, u32, Vec<u8>)> {
         let to_linear = |v: u8| {
             let v = f32::from(v) / 255.0;
-            if v <= 0.04045 {
+            if !srgb {
+                v
+            } else if v <= 0.04045 {
                 v / 12.92
             } else {
                 ((v + 0.055) / 1.055).powf(2.4)
             }
         };
         let to_srgb = |v: f32| {
-            let v = if v <= 0.003_130_8 {
+            let v = if !srgb {
+                v
+            } else if v <= 0.003_130_8 {
                 v * 12.92
             } else {
                 1.055 * v.powf(1.0 / 2.4) - 0.055
@@ -122,6 +127,18 @@ pub struct Material {
     pub roughness: f32,
     pub unlit: bool,
     pub double_sided: bool,
+    /// How far a normal map tilts the normal (glTF's `scale`); 1 when there is none.
+    pub normal_scale: f32,
+}
+
+/// The textures of a material that are data, not colour: read as they are,
+/// not as sRGB.
+#[derive(Clone, Debug, Default)]
+pub struct DataMaps {
+    /// Tangent-space normals (OpenGL convention: green up), 0..1 for -1..1.
+    pub normal: Option<Arc<Texture>>,
+    /// Roughness in green and metallic in blue, which multiply the factors.
+    pub metallic_roughness: Option<Arc<Texture>>,
 }
 
 impl From<&ResolvedMaterial3d> for Material {
@@ -133,6 +150,7 @@ impl From<&ResolvedMaterial3d> for Material {
             roughness: m.roughness as f32,
             unlit: m.unlit,
             double_sided: m.double_sided,
+            normal_scale: 1.0,
         }
     }
 }
@@ -147,6 +165,7 @@ pub struct DrawItem {
     pub normal: Mat3,
     pub material: Material,
     pub texture: Option<Arc<Texture>>,
+    pub maps: DataMaps,
     pub cast_shadow: bool,
     pub receive_shadow: bool,
 }
@@ -436,7 +455,8 @@ impl Assets3d {
             let mut add = |mesh: Arc<MeshData>,
                            local: &DMat4,
                            material: Material,
-                           texture: Option<Arc<Texture>>| {
+                           texture: Option<Arc<Texture>>,
+                           maps: DataMaps| {
                 let world = object.world * *local;
                 let model = world.as_mat4();
                 let linear = Mat3::from_mat4(model);
@@ -465,6 +485,7 @@ impl Assets3d {
                     normal: linear.inverse().transpose(),
                     material,
                     texture,
+                    maps,
                     cast_shadow: object.shadowing.cast_shadow,
                     receive_shadow: object.shadowing.receive_shadow,
                 };
@@ -495,14 +516,19 @@ impl Assets3d {
                     for placed in model.placed(&pose, at.is_none()) {
                         let part = placed.part;
                         match own {
-                            Some(m) => {
-                                add(placed.mesh, &placed.local, m.into(), own_texture.clone())
-                            }
+                            Some(m) => add(
+                                placed.mesh,
+                                &placed.local,
+                                m.into(),
+                                own_texture.clone(),
+                                DataMaps::default(),
+                            ),
                             None => add(
                                 placed.mesh,
                                 &placed.local,
                                 part.material.clone(),
                                 part.texture.clone(),
+                                part.maps.clone(),
                             ),
                         }
                     }
@@ -512,7 +538,13 @@ impl Assets3d {
                     let material = own
                         .map(Material::from)
                         .unwrap_or_else(|| unreachable!("every object but a model has a material"));
-                    add(mesh, &DMat4::IDENTITY, material, own_texture);
+                    add(
+                        mesh,
+                        &DMat4::IDENTITY,
+                        material,
+                        own_texture,
+                        DataMaps::default(),
+                    );
                 }
             }
         }

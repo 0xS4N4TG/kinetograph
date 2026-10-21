@@ -53,8 +53,15 @@ pub(super) struct State {
     /// padded canvas's size.
     targets: HashMap<u32, Target>,
     meshes: HashMap<u64, GpuMesh>,
-    textures: HashMap<u64, GpuTexture>,
-    /// The bind group of items with no texture: one white texel.
+    /// The GPU copies of textures, by texture and whether it is read as sRGB.
+    views: HashMap<(u64, bool), GpuView>,
+    /// The bind groups of the textures an item has (base colour, normal map,
+    /// metallic-roughness: the textures' ids, 0 for none).
+    textures: HashMap<[u64; 3], GpuTexture>,
+    /// The texel that stands in for each slot of an item without it: white,
+    /// a flat normal, white.
+    defaults: [wgpu::TextureView; 3],
+    /// The bind group of items with no texture.
     white: wgpu::BindGroup,
 }
 
@@ -71,8 +78,13 @@ struct GpuMesh {
     count: u32,
 }
 
-struct GpuTexture {
+struct GpuView {
     owner: Weak<Texture>,
+    view: wgpu::TextureView,
+}
+
+struct GpuTexture {
+    owners: Vec<Weak<Texture>>,
     group: wgpu::BindGroup,
 }
 
@@ -201,6 +213,26 @@ impl State {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -281,12 +313,21 @@ impl State {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let white = upload_texture(
+        let defaults = [
+            upload_texture(device, queue, &Texture::new(1, 1, vec![255; 4]), true),
+            upload_texture(
+                device,
+                queue,
+                &Texture::new(1, 1, vec![128, 128, 255, 255]),
+                false,
+            ),
+            upload_texture(device, queue, &Texture::new(1, 1, vec![255; 4]), false),
+        ];
+        let white = texture_group(
             device,
-            queue,
             &texture_layout,
             &sampler,
-            &Texture::new(1, 1, vec![255; 4]),
+            [&defaults[0], &defaults[1], &defaults[2]],
         );
         State {
             shader,
@@ -307,7 +348,9 @@ impl State {
             pipelines: HashMap::new(),
             targets: HashMap::new(),
             meshes: HashMap::new(),
+            views: HashMap::new(),
             textures: HashMap::new(),
+            defaults,
             white,
         }
     }
@@ -491,7 +534,9 @@ impl State {
     /// what the CPU side has let go of.
     fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: &DrawScene) {
         self.meshes.retain(|_, m| m.owner.strong_count() > 0);
-        self.textures.retain(|_, t| t.owner.strong_count() > 0);
+        self.views.retain(|_, v| v.owner.strong_count() > 0);
+        self.textures
+            .retain(|_, t| t.owners.iter().all(|o| o.strong_count() > 0));
         for item in &scene.items {
             let mesh = &item.mesh;
             self.meshes.entry(mesh.id).or_insert_with(|| GpuMesh {
@@ -512,19 +557,45 @@ impl State {
                 }),
                 count: mesh.indices.len() as u32,
             });
-            if let Some(texture) = &item.texture {
-                self.textures
-                    .entry(texture.id)
-                    .or_insert_with(|| GpuTexture {
-                        owner: Arc::downgrade(texture),
-                        group: upload_texture(
-                            device,
-                            queue,
-                            &self.texture_layout,
-                            &self.sampler,
-                            texture,
-                        ),
-                    });
+            let slots = [
+                (&item.texture, true),
+                (&item.maps.normal, false),
+                (&item.maps.metallic_roughness, false),
+            ];
+            if slots.iter().any(|(t, _)| t.is_some()) {
+                let key = texture_key(item);
+                if !self.textures.contains_key(&key) {
+                    for (texture, srgb) in slots {
+                        if let Some(texture) = texture {
+                            self.views
+                                .entry((texture.id, srgb))
+                                .or_insert_with(|| GpuView {
+                                    owner: Arc::downgrade(texture),
+                                    view: upload_texture(device, queue, texture, srgb),
+                                });
+                        }
+                    }
+                    let view = |i: usize| match slots[i] {
+                        (Some(t), srgb) => &self.views[&(t.id, srgb)].view,
+                        _ => &self.defaults[i],
+                    };
+                    let group = texture_group(
+                        device,
+                        &self.texture_layout,
+                        &self.sampler,
+                        [view(0), view(1), view(2)],
+                    );
+                    self.textures.insert(
+                        key,
+                        GpuTexture {
+                            owners: slots
+                                .iter()
+                                .filter_map(|(t, _)| t.as_ref().map(Arc::downgrade))
+                                .collect(),
+                            group,
+                        },
+                    );
+                }
             }
         }
     }
@@ -541,14 +612,24 @@ const FRAME_BYTES: u64 = 64 * 2
     + 48
     + 16;
 
+/// What an item's bind group of textures is cached by: the ids of its textures.
+fn texture_key(item: &DrawItem) -> [u64; 3] {
+    let id = |t: &Option<Arc<Texture>>| t.as_ref().map_or(0, |t| t.id);
+    [
+        id(&item.texture),
+        id(&item.maps.normal),
+        id(&item.maps.metallic_roughness),
+    ]
+}
+
+/// A texture on the GPU, with its mips, read as sRGB colour or as data.
 fn upload_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
-    sampler: &wgpu::Sampler,
     texture: &Texture,
-) -> wgpu::BindGroup {
-    let mips = texture.mips();
+    srgb: bool,
+) -> wgpu::TextureView {
+    let mips = texture.mips(srgb);
     let data: Vec<u8> = mips
         .iter()
         .flat_map(|(_, _, level)| level.iter().copied())
@@ -565,25 +646,46 @@ fn upload_texture(
             mip_level_count: mips.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: if srgb {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            } else {
+                wgpu::TextureFormat::Rgba8Unorm
+            },
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         },
         TextureDataOrder::LayerMajor,
         &data,
     );
-    let view = gpu.create_view(&wgpu::TextureViewDescriptor::default());
+    gpu.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// The textures of one draw: base colour, normal map, metallic-roughness.
+fn texture_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    views: [&wgpu::TextureView; 3],
+) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scene3d texture"),
         layout,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&view),
+                resource: wgpu::BindingResource::TextureView(views[0]),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(views[1]),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(views[2]),
             },
         ],
     })
@@ -736,8 +838,12 @@ fn draw_bytes(item: &DrawItem) -> Vec<u8> {
     let flags = u8::from(m.unlit)
         | (u8::from(m.double_sided) << 1)
         | (u8::from(item.mirrored) << 2)
-        | (u8::from(item.receive_shadow) << 3);
-    push(&mut out, &[m.metallic, m.roughness, f32::from(flags), 0.0]);
+        | (u8::from(item.receive_shadow) << 3)
+        | (u8::from(item.maps.normal.is_some()) << 4);
+    push(
+        &mut out,
+        &[m.metallic, m.roughness, f32::from(flags), m.normal_scale],
+    );
     debug_assert_eq!(out.len() as u64, DRAW_BYTES);
     out
 }
@@ -967,10 +1073,10 @@ impl Compositor {
                     &pipelines.blended
                 });
                 let mesh = &state.meshes[&item.mesh.id];
-                let texture = item
-                    .texture
-                    .as_ref()
-                    .map_or(&state.white, |t| &state.textures[&t.id].group);
+                let texture = state
+                    .textures
+                    .get(&texture_key(item))
+                    .map_or(&state.white, |t| &t.group);
                 pass.set_bind_group(1, &draw_group, &[(i as u64 * stride) as u32]);
                 pass.set_bind_group(2, texture, &[]);
                 pass.set_vertex_buffer(0, mesh.vertices.slice(..));

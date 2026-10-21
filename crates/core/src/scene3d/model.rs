@@ -3,15 +3,14 @@
 //! What is read: the node tree with each node's transform; the triangle meshes
 //! on the nodes of the default scene, with each primitive's positions, normals
 //! (flat ones when the file has none), first texture coordinates and indices;
-//! materials' base colour factor and texture, metallic and roughness factors,
-//! emissive factor, `doubleSided`, and `alphaMode` (`BLEND` is blended; `OPAQUE`
+//! materials' base colour factor and texture, normal and metallic-roughness
+//! textures, metallic and roughness factors, emissive factor, `doubleSided`, and `alphaMode` (`BLEND` is blended; `OPAQUE`
 //! and `MASK` are drawn opaque); animations of node translation, rotation,
 //! scale and morph weights (`LINEAR`, `STEP` and `CUBICSPLINE`); morph targets'
 //! position and normal displacements; skins with up to four joints a vertex.
 //!
 //! What is not is listed in `Model::unsupported`, one entry for each kind of
-//! thing: other texture slots (normal, occlusion, metallic-roughness,
-//! emissive), texture coordinate sets above 0, primitives that are not lists
+//! thing: other texture slots (occlusion, emissive), texture coordinate sets above 0, primitives that are not lists
 //! of triangles, more than four joints a vertex, scenes other than the
 //! default, and every glTF extension.
 //!
@@ -29,7 +28,7 @@ use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::material::AlphaMode;
 
-use super::draw::{Material, Texture};
+use super::draw::{DataMaps, Material, Texture};
 use super::mesh::{MeshData, Vertex3};
 use crate::error::{Error, Result};
 
@@ -60,6 +59,7 @@ pub struct ModelPart {
     pub node: usize,
     pub material: Material,
     pub texture: Option<Arc<Texture>>,
+    pub maps: DataMaps,
     deform: Option<Deform>,
 }
 
@@ -588,7 +588,7 @@ impl Loader<'_> {
                     }
                 };
                 let Some(built) = built else { continue };
-                let (material, texture) = self.material(&primitive.material());
+                let (material, texture, maps) = self.material(&primitive.material());
                 let skin =
                     match (node.skin(), built.influences.clone()) {
                         (Some(skin), Some(influences)) => {
@@ -620,6 +620,7 @@ impl Loader<'_> {
                     node: node.index(),
                     material,
                     texture,
+                    maps,
                     deform,
                 });
             }
@@ -745,18 +746,13 @@ impl Loader<'_> {
         }))
     }
 
-    fn material(&mut self, m: &gltf::Material) -> (Material, Option<Arc<Texture>>) {
+    fn material(&mut self, m: &gltf::Material) -> (Material, Option<Arc<Texture>>, DataMaps) {
         let pbr = m.pbr_metallic_roughness();
         let blend = m.alpha_mode() == AlphaMode::Blend;
         if self.materials.insert(m.index()) {
             for (used, feature) in [
-                (m.normal_texture().is_some(), "normal textures"),
                 (m.occlusion_texture().is_some(), "occlusion textures"),
                 (m.emissive_texture().is_some(), "emissive textures"),
-                (
-                    pbr.metallic_roughness_texture().is_some(),
-                    "metallic-roughness textures",
-                ),
             ] {
                 if used {
                     self.note(feature, "the material is drawn without them");
@@ -768,10 +764,14 @@ impl Loader<'_> {
             if pbr
                 .base_color_texture()
                 .is_some_and(|info| info.tex_coord() != 0)
+                || m.normal_texture().is_some_and(|info| info.tex_coord() != 0)
+                || pbr
+                    .metallic_roughness_texture()
+                    .is_some_and(|info| info.tex_coord() != 0)
             {
                 self.note(
                     "texture coordinate sets above 0",
-                    "the base colour texture is not drawn",
+                    "the textures that use them are not drawn",
                 );
             }
         }
@@ -783,6 +783,7 @@ impl Loader<'_> {
             .base_color_texture()
             .filter(|info| info.tex_coord() == 0)
             .and_then(|info| self.texture(info.texture().source().index(), blend));
+        let normal = m.normal_texture().filter(|info| info.tex_coord() == 0);
         let material = Material {
             color,
             emissive: m.emissive_factor(),
@@ -790,8 +791,16 @@ impl Loader<'_> {
             roughness: pbr.roughness_factor(),
             unlit: false,
             double_sided: m.double_sided(),
+            normal_scale: normal.as_ref().map_or(1.0, |n| n.scale()),
         };
-        (material, texture)
+        let maps = DataMaps {
+            normal: normal.and_then(|n| self.texture(n.texture().source().index(), false)),
+            metallic_roughness: pbr
+                .metallic_roughness_texture()
+                .filter(|info| info.tex_coord() == 0)
+                .and_then(|info| self.texture(info.texture().source().index(), false)),
+        };
+        (material, texture, maps)
     }
 
     fn texture(&mut self, index: usize, keep_alpha: bool) -> Option<Arc<Texture>> {
@@ -1208,7 +1217,7 @@ mod tests {
             .collect();
         for feature in [
             "KHR_materials_clearcoat",
-            "normal textures",
+            "occlusion textures",
             "alphaMode MASK",
             "Points primitives",
         ] {

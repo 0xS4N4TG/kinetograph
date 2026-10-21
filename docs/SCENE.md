@@ -682,6 +682,9 @@ plus GGX specular per light, and the environment if there is one.
     skin.
   - Morphs and skins are done on the CPU, once for each frame a deformed model's pose changes (a model with no clip is
     deformed once and kept); the result is drawn like any mesh, so it takes lights, shadows and the environment.
+  - **Normal and metallic-roughness maps** (texture coordinate set 0) are drawn: the normal map's tangent frame comes
+    from screen-space derivatives, so the mesh needs no tangents; its `scale` is kept; the metallic-roughness texture's
+    blue and green multiply the metallic and roughness factors. All textures repeat (glTF samplers are not read).
   - **Not read**, and reported: textures other than the base colour (normal, occlusion, metallic-roughness, emissive), a
     base colour texture on a texture coordinate set above 0, `alphaMode: MASK` (drawn opaque), primitives that are not
     lists of triangles (points, lines, strips and fans are left out), more than 4 joints a vertex (`JOINTS_1` is
@@ -707,7 +710,7 @@ plus GGX specular per light, and the environment if there is one.
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Point-light shadows, spot lights, normal and other texture maps, bevels, fog, post effects
+- **Not drawn (v1).** Point-light shadows, spot lights, occlusion and emissive maps, bevels, fog, post effects
   beyond the layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).
 

@@ -65,7 +65,8 @@ struct Draw {
     color: vec4<f32>,
     emissive: vec4<f32>,
     // x: metallic. y: roughness. z: flags (bit 0 unlit, bit 1 double sided,
-    // bit 2 mirrored by the model matrix, bit 3 receives shadows).
+    // bit 2 mirrored by the model matrix, bit 3 receives shadows, bit 4 has a
+    // normal map). w: the normal map's scale.
     params: vec4<f32>,
 }
 
@@ -81,6 +82,8 @@ struct Draw {
 @group(1) @binding(0) var<uniform> draw: Draw;
 @group(2) @binding(0) var base_texture: texture_2d<f32>;
 @group(2) @binding(1) var base_sampler: sampler;
+@group(2) @binding(2) var normal_texture: texture_2d<f32>;
+@group(2) @binding(3) var metal_rough_texture: texture_2d<f32>;
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -201,6 +204,28 @@ fn shadow_visibility(slot: i32, world: vec3<f32>, n: vec3<f32>, n_dot_l: f32) ->
     }
 }
 
+// `n` turned by the tangent-space normal `tn` of a normal map (green up, the
+// texture's v running down). The tangent frame comes from the derivatives of
+// the position and the uv, so the mesh needs no tangents; they are passed in
+// because they can only be taken in uniform control flow.
+fn perturb_normal(
+    n: vec3<f32>,
+    dp1: vec3<f32>,
+    dp2: vec3<f32>,
+    duv1: vec2<f32>,
+    duv2: vec2<f32>,
+    tn: vec3<f32>,
+) -> vec3<f32> {
+    let dp2perp = cross(dp2, n);
+    let dp1perp = cross(n, dp1);
+    // The screen's y runs down here, where the formula's runs up: both flip.
+    let t = -(dp2perp * duv1.x + dp1perp * duv2.x);
+    // v runs down the image, and green is up: flipped again.
+    let b = dp2perp * duv1.y + dp1perp * duv2.y;
+    let scale = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
+    return normalize(t * scale * tn.x + b * scale * tn.y + n * tn.z);
+}
+
 @fragment
 fn fs_main(
     in: Varying,
@@ -208,6 +233,21 @@ fn fs_main(
 ) -> @location(0) vec4<f32> {
     // Sampled before anything can discard, so the derivatives are uniform.
     let texel = textureSample(base_texture, base_sampler, in.uv);
+    let normal_texel = textureSample(normal_texture, base_sampler, in.uv).rgb;
+    let metal_rough = textureSample(metal_rough_texture, base_sampler, in.uv);
+    // The normal map's normal, in world space for the front of the face:
+    // made here because it needs derivatives. The back's is its opposite.
+    let has_normal_map = (u32(draw.params.z) & 16u) != 0u;
+    var mapped = normalize(in.normal);
+    if has_normal_map {
+        let tangent_normal = vec3<f32>(
+            (normal_texel.xy * 2.0 - vec2<f32>(1.0)) * draw.params.w,
+            normal_texel.z * 2.0 - 1.0,
+        );
+        mapped = perturb_normal(
+            mapped, dpdx(in.world), dpdy(in.world), dpdx(in.uv), dpdy(in.uv), tangent_normal,
+        );
+    }
     let flags = u32(draw.params.z);
     let unlit = (flags & 1u) != 0u;
     let double_sided = (flags & 2u) != 0u;
@@ -228,14 +268,14 @@ fn fs_main(
     let base = draw.color * texel;
     var rgb = draw.emissive.rgb;
     if !unlit {
-        var n = normalize(in.normal);
+        var n = mapped;
         if !front {
             n = -n;
         }
         let v = normalize(frame.eye.xyz - in.world);
         let n_dot_v = max(dot(n, v), 1e-4);
-        let metallic = draw.params.x;
-        let roughness = clamp(draw.params.y, 0.045, 1.0);
+        let metallic = clamp(draw.params.x * metal_rough.b, 0.0, 1.0);
+        let roughness = clamp(draw.params.y * metal_rough.g, 0.045, 1.0);
         let alpha = roughness * roughness;
         let albedo = base.rgb;
         let diffuse_colour = albedo * (1.0 - metallic);

@@ -11,8 +11,13 @@
     skin.glb         a bar of two segments skinned to two joints, and the clip
                      "bend" (the upper joint turns 90 degrees about z in 1 s).
     unsupported.glb  what the loader reports and does not read: a points
-                     primitive, a normal texture, alphaMode MASK and the
+                     primitive, an occlusion texture, alphaMode MASK and the
                      extension KHR_materials_clearcoat.
+
+    maps.glb         four 4 x 4 quads in a 2 x 2 grid, for the normal and metallic-roughness
+                     textures: top left has a normal map (1x1, tilted toward +x and +y) and
+                     top right has none; bottom left is metallic 1 with a texture whose blue
+                     (metallic) is 0, bottom right is metallic 1 with no texture.
 
     python3 make_anim.py
 """
@@ -294,8 +299,65 @@ g.write(
             ]
         }
     ],
-    materials=[{"alphaMode": "MASK", "alphaCutoff": 0.5, "normalTexture": {"index": 0}}],
+    materials=[{"alphaMode": "MASK", "alphaCutoff": 0.5, "occlusionTexture": {"index": 0}}],
     textures=[{"source": 0}],
     images=[{"bufferView": image, "mimeType": "image/png"}],
     extensionsUsed=["KHR_materials_clearcoat"],
+)
+
+# --- maps.glb ------------------------------------------------------------------
+g = Glb()
+
+
+def png1(rgb):
+    """A 1 x 1 PNG."""
+
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"\x00" + bytes(rgb), 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+quad_pos = [(-2.0, -2.0, 0.0), (2.0, -2.0, 0.0), (2.0, 2.0, 0.0), (-2.0, 2.0, 0.0)]
+quad_uv = [(0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)]
+pos = g.accessor(quad_pos, "VEC3", target=34962, bounds=True)
+nrm = g.accessor([(0.0, 0.0, 1.0)] * 4, "VEC3", target=34962)
+uv = g.accessor(quad_uv, "VEC2", target=34962)
+idx = g.accessor([0, 1, 2, 0, 2, 3], "SCALAR", component=USHORT, target=34963)
+normal_image = g.view(png1([230, 230, 160]))
+rough_image = g.view(png1([0, 255, 0]))
+spot = {"POSITION": pos, "NORMAL": nrm, "TEXCOORD_0": uv}
+g.write(
+    "maps.glb",
+    scene=0,
+    scenes=[{"nodes": [0, 1, 2, 3]}],
+    nodes=[
+        {"mesh": 0, "translation": [-3, 3, 0]},
+        {"mesh": 1, "translation": [3, 3, 0]},
+        {"mesh": 2, "translation": [-3, -3, 0]},
+        {"mesh": 3, "translation": [3, -3, 0]},
+    ],
+    meshes=[
+        {"primitives": [{"attributes": spot, "indices": idx, "material": m}]}
+        for m in (0, 1, 2, 3)
+    ],
+    materials=[
+        {"pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1},
+         "normalTexture": {"index": 0}},
+        {"pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1}},
+        {"pbrMetallicRoughness": {"metallicFactor": 1, "roughnessFactor": 1,
+                                  "metallicRoughnessTexture": {"index": 1}}},
+        {"pbrMetallicRoughness": {"metallicFactor": 1, "roughnessFactor": 1}},
+    ],
+    textures=[{"source": 0}, {"source": 1}],
+    images=[
+        {"bufferView": normal_image, "mimeType": "image/png"},
+        {"bufferView": rough_image, "mimeType": "image/png"},
+    ],
 )

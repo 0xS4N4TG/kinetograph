@@ -795,3 +795,51 @@ fn animated_models_are_a_pure_function_of_the_frame() {
     assert_ne!(first, other);
     assert_eq!(first, render_still(scene(body), 9).unwrap().rgba);
 }
+
+/// `maps.glb` (four quads in a grid, see `make_anim.py`) under one directional
+/// light travelling along `direction`.
+fn maps_frame(direction: &str) -> Frame {
+    render(&format!(
+        r##"{ORTHO}, "lights": [{{"type": "directional", "direction": {direction}, "intensity": 1}}],
+            "objects": [{{"type": "model", "src": "media/maps.glb"}}]"##
+    ))
+}
+
+fn luma(p: [u8; 4]) -> i32 {
+    i32::from(p[0]) + i32::from(p[1]) + i32::from(p[2])
+}
+
+#[test]
+fn a_normal_map_tilts_the_surface_the_light_meets() {
+    // The map leans toward +x and +y, so a light that comes from there meets a
+    // surface turned toward it, and one from the other side a surface turned away.
+    let (map, flat) = ((20, 20), (80, 20));
+    // Travelling along -z a little off to -x: the light comes from +x.
+    for (direction, brighter) in [
+        ("[-1, 0, -0.3]", true),
+        ("[0, -1, -0.3]", true),
+        ("[1, 0, -0.3]", false),
+        ("[0, 1, -0.3]", false),
+    ] {
+        let frame = maps_frame(direction);
+        let (m, f) = (
+            luma(px(&frame, map.0, map.1)),
+            luma(px(&frame, flat.0, flat.1)),
+        );
+        assert_eq!(m > f, brighter, "{direction}: mapped {m}, flat {f}");
+        assert_ne!(m, f, "{direction}");
+    }
+    // Head on, the flat quad is the brightest it can be and the mapped one is not.
+    let frame = maps_frame("[0, 0, -1]");
+    assert!(luma(px(&frame, 20, 20)) < luma(px(&frame, 80, 20)));
+}
+
+#[test]
+fn a_metallic_roughness_texture_scales_the_factors() {
+    let frame = maps_frame("[0, 0, -1]");
+    let (dielectric, scaled, metal) = (px(&frame, 80, 20), px(&frame, 20, 80), px(&frame, 80, 80));
+    // Metallic 1 times a texture that holds 0 is a dielectric.
+    assert_eq!(scaled, dielectric);
+    // Metallic 1 with no texture is not: it has no diffuse light.
+    assert_ne!(metal, dielectric);
+}
