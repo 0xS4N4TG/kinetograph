@@ -111,6 +111,42 @@ export declare function domComputedStyle(requestJson: string, path: string, prop
  */
 export declare function domLayoutBoxes(requestJson: string): string
 
+/** `render`'s export options (docs/AUTHORING.md §9); everything left out takes its default. */
+export interface ExportOptions {
+  /** `h264` (default; `vp9` for `.webm` and `gif` for `.gif` paths), `h265`, `prores`, `vp9` or `gif`. */
+  codec?: string
+  /** An ffmpeg encoder name. */
+  encoder?: string
+  /** Constant quality, lower is better. Not with `videoBitrate`. */
+  crf?: number
+  /** Bits per second. */
+  videoBitrate?: number
+  /** `yuv420p`, `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`. */
+  pixelFormat?: string
+  /** `proxy`, `light`, `standard`, `hq`, `4444` or `4444-xq`. */
+  proresProfile?: string
+  /** `aac`, `opus` or `pcm`. */
+  audioCodec?: string
+  /** Bits per second. */
+  audioBitrate?: number
+  /** GIF only: the frames given are every nth of the composition's, and play at the frame rate over n. */
+  everyNthFrame?: number
+}
+
+/** What `resolveExport` decided. */
+export interface ExportPlan {
+  codec: string
+  encoder: string
+  /** The container: `mp4`, `mov`, `webm` or `gif`. */
+  container: string
+  /** The pixel format of the file. */
+  pixelFormat: string
+  /** The format `rgbaToYuv` has to convert to for this encoder (it differs from `pixelFormat` for hardware ProRes). */
+  convertFormat: string
+  /** `aac`, `opus` or `pcm`; absent for a GIF. */
+  audioCodec?: string
+}
+
 /**
  * The output of a render `startDomIsland` queued, waiting for it if it is not
  * done yet.
@@ -237,6 +273,7 @@ export interface RendererOptions {
 export interface RenderOptions {
   range?: string
   encoder?: string
+  export?: ExportOptions
   audio?: AudioPcm
   baseDir?: string
 }
@@ -244,6 +281,8 @@ export interface RenderOptions {
 export interface RenderSummary {
   output: string
   encoder: string
+  codec: string
+  pixelFormat: string
   width: number
   height: number
   fps: number
@@ -255,6 +294,12 @@ export interface RenderSummary {
   audio: boolean
 }
 
+/**
+ * Checks the export options against the output path and this machine's ffmpeg, and says what will be written:
+ * the codec, the encoder, the container and the pixel format. Throws `INVALID_ARG` with what to change.
+ */
+export declare function resolveExport(output: string, options?: ExportOptions | undefined | null): ExportPlan
+
 export interface RgbaFrame {
   width: number
   height: number
@@ -263,12 +308,13 @@ export interface RgbaFrame {
 }
 
 /**
- * The `yuv420p` planes (Y, U, V, rows packed) the encoder would make of a
- * straight-alpha RGBA8 frame, converted on the calling thread. A render
- * worker converts its own frames so that one encoder thread only sends them
- * (`VideoWriter.pushYuv`).
+ * The planes (Y, U, V for `yuv420p`, the default; rows packed) the encoder
+ * would make of a straight-alpha RGBA8 frame, converted on the calling
+ * thread. A render worker converts its own frames so that one encoder thread
+ * only sends them (`VideoWriter.pushYuv`). `pixelFormat` is the plan's
+ * `convertFormat` (`resolveExport`).
  */
-export declare function rgbaToYuv(rgba: Buffer, width: number, height: number): Buffer
+export declare function rgbaToYuv(rgba: Buffer, width: number, height: number, pixelFormat?: string | undefined | null): Buffer
 
 /**
  * A Rive file (`.riv`) played to a time, as the commands of a canvas layer
@@ -420,4 +466,5 @@ export interface VideoOptions {
   height: number
   fps: number
   encoder?: string
+  export?: ExportOptions
 }

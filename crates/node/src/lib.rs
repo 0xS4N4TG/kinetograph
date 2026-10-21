@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use kinetograph_cli::encode::AudioPcm as Pcm;
+use kinetograph_cli::encode::{AudioPcm as Pcm, Codec, Pix, Settings};
 use kinetograph_cli::render::{
     SceneRequest, VideoWriter as Writer, parse_range as parse_frame_range, render_scene,
 };
@@ -380,18 +380,58 @@ pub struct AudioPcm {
     pub channels: Vec<Float32Array>,
 }
 
+/// `render`'s export options (docs/AUTHORING.md §9); everything left out takes its default.
+#[napi(object)]
+pub struct ExportOptions {
+    /// `h264` (default; `vp9` for `.webm` and `gif` for `.gif` paths), `h265`, `prores`, `vp9` or `gif`.
+    pub codec: Option<String>,
+    /// An ffmpeg encoder name.
+    pub encoder: Option<String>,
+    /// Constant quality, lower is better. Not with `videoBitrate`.
+    pub crf: Option<f64>,
+    /// Bits per second.
+    pub video_bitrate: Option<f64>,
+    /// `yuv420p`, `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`.
+    pub pixel_format: Option<String>,
+    /// `proxy`, `light`, `standard`, `hq`, `4444` or `4444-xq`.
+    pub prores_profile: Option<String>,
+    /// `aac`, `opus` or `pcm`.
+    pub audio_codec: Option<String>,
+    /// Bits per second.
+    pub audio_bitrate: Option<f64>,
+    /// GIF only: the frames given are every nth of the composition's, and play at the frame rate over n.
+    pub every_nth_frame: Option<f64>,
+}
+
+/// What `resolveExport` decided.
+#[napi(object)]
+pub struct ExportPlan {
+    pub codec: String,
+    pub encoder: String,
+    /// The container: `mp4`, `mov`, `webm` or `gif`.
+    pub container: String,
+    /// The pixel format of the file.
+    pub pixel_format: String,
+    /// The format `rgbaToYuv` has to convert to for this encoder (it differs from `pixelFormat` for hardware ProRes).
+    pub convert_format: String,
+    /// `aac`, `opus` or `pcm`; absent for a GIF.
+    pub audio_codec: Option<String>,
+}
+
 #[napi(object)]
 pub struct VideoOptions {
     pub width: f64,
     pub height: f64,
     pub fps: f64,
     pub encoder: Option<String>,
+    pub export: Option<ExportOptions>,
 }
 
 #[napi(object)]
 pub struct RenderOptions {
     pub range: Option<String>,
     pub encoder: Option<String>,
+    pub export: Option<ExportOptions>,
     pub audio: Option<AudioPcm>,
     pub base_dir: Option<String>,
 }
@@ -400,6 +440,8 @@ pub struct RenderOptions {
 pub struct RenderSummary {
     pub output: String,
     pub encoder: String,
+    pub codec: String,
+    pub pixel_format: String,
     pub width: u32,
     pub height: u32,
     pub fps: f64,
@@ -444,6 +486,8 @@ impl From<kinetograph_cli::render::RenderSummary> for RenderSummary {
         RenderSummary {
             output: s.output.to_string_lossy().into_owned(),
             encoder: s.encoder,
+            codec: s.codec.to_string(),
+            pixel_format: s.pixel_format.to_string(),
             width: s.width,
             height: s.height,
             fps: s.fps,
@@ -462,16 +506,84 @@ fn channels(audio: &AudioPcm) -> Vec<&[f32]> {
     audio.channels.iter().map(|c| &**c).collect()
 }
 
-/// The `yuv420p` planes (Y, U, V, rows packed) the encoder would make of a
-/// straight-alpha RGBA8 frame, converted on the calling thread. A render
-/// worker converts its own frames so that one encoder thread only sends them
-/// (`VideoWriter.pushYuv`).
+/// The planes (Y, U, V for `yuv420p`, the default; rows packed) the encoder
+/// would make of a straight-alpha RGBA8 frame, converted on the calling
+/// thread. A render worker converts its own frames so that one encoder thread
+/// only sends them (`VideoWriter.pushYuv`). `pixelFormat` is the plan's
+/// `convertFormat` (`resolveExport`).
 #[napi]
-pub fn rgba_to_yuv(rgba: Buffer, width: f64, height: f64) -> Result<Buffer> {
+pub fn rgba_to_yuv(
+    rgba: Buffer,
+    width: f64,
+    height: f64,
+    pixel_format: Option<String>,
+) -> Result<Buffer> {
     let (width, height) = (count("width", width)?, count("height", height)?);
-    kinetograph_cli::encode::rgba_to_yuv420(&rgba, width, height)
+    let pix = match pixel_format {
+        Some(name) => Pix::parse(&name).map_err(invalid)?,
+        None => Pix::Yuv420p,
+    };
+    kinetograph_cli::encode::rgba_to_planes(&rgba, width, height, pix)
         .map(Buffer::from)
         .map_err(invalid)
+}
+
+/// The settings of `options` (and the older `encoder`) as the encoder takes them.
+fn settings_of(encoder: Option<String>, export: Option<ExportOptions>) -> Result<Settings> {
+    let mut settings = Settings {
+        encoder,
+        ..Settings::default()
+    };
+    if let Some(e) = export {
+        settings.codec = e
+            .codec
+            .as_deref()
+            .map(Codec::parse)
+            .transpose()
+            .map_err(invalid)?;
+        if e.encoder.is_some() {
+            settings.encoder = e.encoder;
+        }
+        settings.crf = e.crf;
+        settings.video_bitrate = e
+            .video_bitrate
+            .map(|b| count("videoBitrate", b).map(|b| b as usize))
+            .transpose()?;
+        settings.pixel_format = e.pixel_format;
+        settings.prores_profile = e.prores_profile;
+        settings.audio_codec = e.audio_codec;
+        settings.audio_bitrate = e
+            .audio_bitrate
+            .map(|b| count("audioBitrate", b).map(|b| b as usize))
+            .transpose()?;
+        settings.every_nth_frame = e
+            .every_nth_frame
+            .map(|n| count("everyNthFrame", n))
+            .transpose()?;
+    }
+    Ok(settings)
+}
+
+/// Checks the export options against the output path and this machine's ffmpeg, and says what will be written:
+/// the codec, the encoder, the container and the pixel format. Throws `INVALID_ARG` with what to change.
+#[napi]
+pub fn resolve_export(output: String, options: Option<ExportOptions>) -> Result<ExportPlan> {
+    let settings = settings_of(None, options)?;
+    let plan = kinetograph_cli::encode::resolve(
+        &settings,
+        Path::new(&output),
+        cfg!(target_os = "macos"),
+        kinetograph_cli::encode::has_encoder,
+    )
+    .map_err(invalid)?;
+    Ok(ExportPlan {
+        codec: plan.codec.name().to_string(),
+        encoder: plan.encoder,
+        container: plan.container.to_string(),
+        pixel_format: plan.pix.file_name().to_string(),
+        convert_format: plan.pix.name().to_string(),
+        audio_codec: plan.audio_codec.map(|a| a.name().to_string()),
+    })
 }
 
 /// A scene that opens the GPU and nothing else: `new Renderer()` has no scene
@@ -645,16 +757,21 @@ impl Renderer {
         output: String,
         options: Option<RenderOptions>,
     ) -> Result<RenderSummary> {
-        let (range, encoder, audio, base) = match options {
-            Some(o) => (o.range, o.encoder, o.audio, resolve_base(o.base_dir)),
-            None => (None, None, None, resolve_base(None)),
+        let (range, settings, audio, base) = match options {
+            Some(o) => (
+                o.range,
+                settings_of(o.encoder, o.export)?,
+                o.audio,
+                resolve_base(o.base_dir),
+            ),
+            None => (None, Settings::default(), None, resolve_base(None)),
         };
         let scene = parse_scene(&scene_json, &base)?;
         let chans = audio.as_ref().map(channels);
         let request = SceneRequest {
             output: Path::new(&output),
             range: range.as_deref(),
-            encoder: encoder.as_deref(),
+            settings: &settings,
             audio: audio.as_ref().zip(chans.as_deref()).map(|(a, c)| Pcm {
                 sample_rate: a.sample_rate,
                 channels: c,
@@ -670,6 +787,7 @@ impl Renderer {
     pub fn begin_video(&mut self, output: String, options: VideoOptions) -> Result<VideoWriter> {
         let width = count("width", options.width)?;
         let height = count("height", options.height)?;
+        let settings = settings_of(options.encoder, options.export)?;
         if self
             .shared
             .video_open
@@ -680,13 +798,7 @@ impl Renderer {
                 "a video is already being written: finish or abort it first",
             ));
         }
-        match Writer::open(
-            Path::new(&output),
-            width,
-            height,
-            options.fps,
-            options.encoder.as_deref(),
-        ) {
+        match Writer::open(Path::new(&output), width, height, options.fps, &settings) {
             Ok(writer) => Ok(VideoWriter {
                 shared: self.shared.clone(),
                 writer: Some(writer),

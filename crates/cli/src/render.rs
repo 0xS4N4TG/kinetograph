@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use kinetograph_core::{Frame, PendingFrame, Renderer, Scene};
 
-use crate::encode::{self, AudioPcm, VideoEncoder};
+use crate::encode::{self, AudioPcm, Resolved, Settings, VideoEncoder};
 
 /// How many finished frames may wait for the encoder. With two, the GPU
 /// renders and reads back frame N+1 while frame N is being encoded, and
@@ -27,7 +27,7 @@ pub struct RenderRequest<'a> {
     pub output: &'a Path,
     /// `a..b` or `a..=b`; the whole scene when `None`.
     pub range: Option<&'a str>,
-    /// An ffmpeg encoder name; see `encode::select_encoder`.
+    /// An ffmpeg encoder name; see `encode::resolve`.
     pub encoder: Option<&'a str>,
 }
 
@@ -35,14 +35,19 @@ pub struct RenderRequest<'a> {
 pub struct SceneRequest<'a> {
     pub output: &'a Path,
     pub range: Option<&'a str>,
-    pub encoder: Option<&'a str>,
-    /// Muxed as AAC, starting with the first frame.
+    /// The codec, encoder, quality and so on (`encode::resolve`).
+    pub settings: &'a Settings,
+    /// Muxed in with the audio codec the settings name (AAC by default), starting with the first frame.
     pub audio: Option<AudioPcm<'a>>,
 }
 
 pub struct RenderSummary {
     pub output: PathBuf,
     pub encoder: String,
+    /// `h264`, `h265`, `prores`, `vp9` or `gif`.
+    pub codec: &'static str,
+    /// The pixel format of the file (`yuv420p`, `yuv422p10le` ...).
+    pub pixel_format: &'static str,
     pub width: u32,
     pub height: u32,
     pub fps: f64,
@@ -106,7 +111,7 @@ struct Plan {
     first: u32,
     last: u32,
     frames: u32,
-    encoder: String,
+    resolved: Resolved,
     width: u32,
     height: u32,
     fps: f64,
@@ -116,7 +121,7 @@ fn plan(
     scene: &Scene,
     output: &Path,
     range: Option<&str>,
-    encoder: Option<&str>,
+    settings: &Settings,
 ) -> Result<Plan, RenderError> {
     let (first, last) = match range {
         Some(range) => {
@@ -124,30 +129,45 @@ fn plan(
         }
         None => (0, scene.duration_in_frames - 1),
     };
-    let encoder = encode::select_encoder(encoder, cfg!(target_os = "macos"), encode::has_encoder)
-        .map_err(RenderError::Invalid)?;
-    check_video(scene.width, scene.height, scene.fps, output)?;
+    let resolved = encode::resolve(
+        settings,
+        output,
+        cfg!(target_os = "macos"),
+        encode::has_encoder,
+    )
+    .map_err(RenderError::Invalid)?;
+    check_video(scene.width, scene.height, scene.fps)?;
     Ok(Plan {
         first,
         last,
         frames: last - first + 1,
-        encoder,
+        resolved,
         width: scene.width,
         height: scene.height,
         fps: scene.fps,
     })
 }
 
-/// A size, rate or path the encoder cannot take.
-fn check_video(width: u32, height: u32, fps: f64, output: &Path) -> Result<(), RenderError> {
+/// A size or rate the encoder cannot take.
+fn check_video(width: u32, height: u32, fps: f64) -> Result<(), RenderError> {
     if !width.is_multiple_of(2) || !height.is_multiple_of(2) {
         return Err(RenderError::Invalid(format!(
-            "the scene is {width}x{height}: yuv420p video needs an even width and height"
+            "the scene is {width}x{height}: video needs an even width and height"
         )));
     }
-    encode::container_for(output).map_err(RenderError::Invalid)?;
     encode::fps_rational(fps).map_err(RenderError::Invalid)?;
     Ok(())
+}
+
+/// Audio the output's audio codec can take.
+fn check_audio(audio: &AudioPcm, settings: &Resolved) -> Result<(), RenderError> {
+    let Some(codec) = settings.audio_codec else {
+        return Err(RenderError::Invalid(format!(
+            "a {} file has no audio",
+            settings.codec.name()
+        )));
+    };
+    audio.validate_for(codec).map_err(RenderError::Invalid)
 }
 
 /// Renders the requested frames of a scene into `output`, calling `progress`
@@ -159,7 +179,11 @@ pub fn render(
 ) -> Result<RenderSummary, String> {
     let run = || -> Result<RenderSummary, RenderError> {
         let scene = Scene::load(request.scene)?;
-        let plan = plan(&scene, request.output, request.range, request.encoder)?;
+        let settings = Settings {
+            encoder: request.encoder.map(str::to_string),
+            ..Settings::default()
+        };
+        let plan = plan(&scene, request.output, request.range, &settings)?;
         let mut renderer = Renderer::new(scene)?;
         // The frames come one after the other: a layer that did not change
         // since the last is not drawn again.
@@ -178,9 +202,9 @@ pub fn render_scene(
     request: &SceneRequest,
     progress: impl FnMut(u32, u32),
 ) -> Result<RenderSummary, RenderError> {
-    let plan = plan(&scene, request.output, request.range, request.encoder)?;
+    let plan = plan(&scene, request.output, request.range, request.settings)?;
     if let Some(audio) = &request.audio {
-        audio.validate().map_err(RenderError::Invalid)?;
+        check_audio(audio, &plan.resolved)?;
     }
     renderer.set_scene(scene)?;
     drive(
@@ -200,7 +224,7 @@ fn drive(
     mut progress: impl FnMut(u32, u32),
 ) -> Result<RenderSummary, RenderError> {
     let started = Instant::now();
-    let mut sink = FrameSink::open(output, plan.width, plan.height, plan.fps, &plan.encoder)?;
+    let mut sink = FrameSink::open(output, plan.width, plan.height, plan.fps, &plan.resolved)?;
 
     // Each frame is started before the last one is collected, so the GPU
     // draws one while the next is recorded. A failure returns, and dropping
@@ -238,7 +262,9 @@ fn drive(
     let ms = started.elapsed().as_secs_f64() * 1000.0;
     Ok(RenderSummary {
         output: output.to_path_buf(),
-        encoder: plan.encoder.clone(),
+        encoder: plan.resolved.encoder.clone(),
+        codec: plan.resolved.codec.name(),
+        pixel_format: plan.resolved.pix.file_name(),
         width: plan.width,
         height: plan.height,
         fps: plan.fps,
@@ -270,6 +296,7 @@ pub struct FrameSink {
     thread: Option<thread::JoinHandle<Result<u32, String>>>,
     partial: PathBuf,
     output: PathBuf,
+    settings: Resolved,
 }
 
 impl FrameSink {
@@ -281,16 +308,16 @@ impl FrameSink {
         width: u32,
         height: u32,
         fps: f64,
-        encoder_name: &str,
+        settings: &Resolved,
     ) -> Result<FrameSink, RenderError> {
         let partial = encode::partial_path(output);
         // The encoder lives on its own thread (ffmpeg's contexts cannot cross
         // threads) and says whether the file opened before any frame is made.
         let (frame_tx, frame_rx) = mpsc::sync_channel::<Queued>(FRAMES_IN_FLIGHT);
         let (open_tx, open_rx) = mpsc::sync_channel::<Result<(), String>>(1);
-        let (path, name) = (partial.clone(), encoder_name.to_string());
+        let (path, resolved) = (partial.clone(), settings.clone());
         let thread = thread::spawn(move || -> Result<u32, String> {
-            let mut encoder = match VideoEncoder::create(&path, width, height, fps, &name) {
+            let mut encoder = match VideoEncoder::create(&path, width, height, fps, &resolved) {
                 Ok(encoder) => {
                     let _ = open_tx.send(Ok(()));
                     encoder
@@ -313,6 +340,7 @@ impl FrameSink {
             thread: Some(thread),
             partial,
             output: output.to_path_buf(),
+            settings: settings.clone(),
         };
         if let Err(e) = open_rx
             .recv()
@@ -350,7 +378,7 @@ impl FrameSink {
         let written = self.close().map_err(RenderError::Encode)?;
         match audio {
             Some(audio) => {
-                let muxed = encode::mux_audio(&self.partial, &self.output, audio);
+                let muxed = encode::mux_audio(&self.partial, &self.output, audio, &self.settings);
                 let _ = std::fs::remove_file(&self.partial);
                 if let Err(e) = muxed {
                     let _ = std::fs::remove_file(&self.output);
@@ -396,7 +424,7 @@ impl Drop for FrameSink {
 /// to frame. The scene's size and rate must be the writer's.
 pub struct VideoWriter {
     sink: FrameSink,
-    encoder: String,
+    settings: Resolved,
     output: PathBuf,
     size: (u32, u32),
     fps: f64,
@@ -412,23 +440,34 @@ pub struct VideoWriter {
 
 impl VideoWriter {
     /// Opens `output` (the extension picks the container) for frames of
-    /// `width` x `height` at `fps`.
+    /// `width` x `height` at `fps`, written as `settings` says.
     pub fn open(
         output: &Path,
         width: u32,
         height: u32,
         fps: f64,
-        encoder: Option<&str>,
+        settings: &Settings,
     ) -> Result<VideoWriter, RenderError> {
-        let encoder =
-            encode::select_encoder(encoder, cfg!(target_os = "macos"), encode::has_encoder)
-                .map_err(RenderError::Invalid)?;
-        check_video(width, height, fps, output)?;
+        let resolved = encode::resolve(
+            settings,
+            output,
+            cfg!(target_os = "macos"),
+            encode::has_encoder,
+        )
+        .map_err(RenderError::Invalid)?;
+        check_video(width, height, fps)?;
         let started = Instant::now();
-        let sink = FrameSink::open(output, width, height, fps, &encoder)?;
+        // Every nth frame only: the file plays them at the rate over n, the scenes keep the composition's.
+        let sink = FrameSink::open(
+            output,
+            width,
+            height,
+            fps / f64::from(resolved.every_nth_frame),
+            &resolved,
+        )?;
         Ok(VideoWriter {
             sink,
-            encoder,
+            settings: resolved,
             output: output.to_path_buf(),
             size: (width, height),
             fps,
@@ -510,7 +549,7 @@ impl VideoWriter {
         audio: Option<&AudioPcm>,
     ) -> Result<RenderSummary, RenderError> {
         if let Some(audio) = audio {
-            audio.validate().map_err(RenderError::Invalid)?;
+            check_audio(audio, &self.settings)?;
         }
         if let Some((frame, pending)) = self.in_flight.take() {
             self.send(renderer, frame, pending)?;
@@ -529,10 +568,12 @@ impl VideoWriter {
         let ms = self.started.elapsed().as_secs_f64() * 1000.0;
         Ok(RenderSummary {
             output: self.output.clone(),
-            encoder: self.encoder.clone(),
+            encoder: self.settings.encoder.clone(),
+            codec: self.settings.codec.name(),
+            pixel_format: self.settings.pix.file_name(),
             width: self.size.0,
             height: self.size.1,
-            fps: self.fps,
+            fps: self.fps / f64::from(self.settings.every_nth_frame),
             frames: self.pushed,
             first,
             last,
@@ -593,6 +634,17 @@ pub fn parse_range(range: &str, duration: u32) -> Result<(u32, u32), String> {
 mod tests {
     use super::*;
 
+    fn x264(path: &Path) -> Resolved {
+        encode::resolve(&with_encoder("libx264"), path, false, encode::has_encoder).unwrap()
+    }
+
+    fn with_encoder(name: &str) -> Settings {
+        Settings {
+            encoder: Some(name.to_string()),
+            ..Settings::default()
+        }
+    }
+
     fn scratch(name: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("kinetograph-sink-{}-{name}", std::process::id()));
@@ -613,7 +665,7 @@ mod tests {
     fn a_sink_gives_the_file_its_name_only_when_it_is_finished() {
         let dir = scratch("finish");
         let out = dir.join("out.mp4");
-        let mut sink = FrameSink::open(&out, 64, 48, 30.0, "libx264").unwrap();
+        let mut sink = FrameSink::open(&out, 64, 48, 30.0, &x264(&out)).unwrap();
         for i in 0..5 {
             sink.push(grey(100 + i * 10)).unwrap();
         }
@@ -627,14 +679,14 @@ mod tests {
     fn a_sink_that_is_dropped_or_fails_leaves_no_file() {
         let dir = scratch("drop");
         let out = dir.join("out.mp4");
-        let mut sink = FrameSink::open(&out, 64, 48, 30.0, "libx264").unwrap();
+        let mut sink = FrameSink::open(&out, 64, 48, 30.0, &x264(&out)).unwrap();
         sink.push(grey(10)).unwrap();
         drop(sink);
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
 
         // A frame of the wrong size stops the encoder; the error says so and
         // the file goes.
-        let mut sink = FrameSink::open(&out, 64, 48, 30.0, "libx264").unwrap();
+        let mut sink = FrameSink::open(&out, 64, 48, 30.0, &x264(&out)).unwrap();
         let wrong = Frame {
             width: 2,
             height: 2,
@@ -655,7 +707,7 @@ mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
 
         // A file that cannot be created fails at open.
-        let err = FrameSink::open(&dir.join("no/such/dir/out.mp4"), 64, 48, 30.0, "libx264")
+        let err = FrameSink::open(&dir.join("no/such/dir/out.mp4"), 64, 48, 30.0, &x264(&out))
             .err()
             .expect("opened a file in a missing directory");
         assert!(matches!(err, RenderError::Encode(_)), "{err}");
@@ -666,7 +718,7 @@ mod tests {
     fn a_sink_finishes_with_audio() {
         let dir = scratch("audio");
         let out = dir.join("out.mov");
-        let mut sink = FrameSink::open(&out, 64, 48, 30.0, "libx264").unwrap();
+        let mut sink = FrameSink::open(&out, 64, 48, 30.0, &x264(&out)).unwrap();
         for i in 0..6 {
             sink.push(grey(50 + i * 20)).unwrap();
         }
@@ -684,17 +736,17 @@ mod tests {
     fn requests_are_checked_before_anything_is_opened() {
         let out = Path::new("/nonexistent/dir/out.mp4");
         for (w, h, fps, want) in [(65, 48, 30.0, "even"), (64, 48, 0.0, "fps")] {
-            let err = VideoWriter::open(out, w, h, fps, Some("libx264"))
+            let err = VideoWriter::open(out, w, h, fps, &with_encoder("libx264"))
                 .err()
                 .expect("accepted a bad video");
             assert!(matches!(err, RenderError::Invalid(_)), "{err}");
             assert!(err.to_string().contains(want), "{err}");
         }
-        let err = VideoWriter::open(Path::new("out.mkv"), 64, 48, 30.0, Some("libx264"))
+        let err = VideoWriter::open(Path::new("out.mkv"), 64, 48, 30.0, &with_encoder("libx264"))
             .err()
             .unwrap();
         assert!(matches!(err, RenderError::Invalid(_)) && err.to_string().contains(".mp4 or .mov"));
-        let err = VideoWriter::open(out, 64, 48, 30.0, Some("no-such-encoder"))
+        let err = VideoWriter::open(out, 64, 48, 30.0, &with_encoder("no-such-encoder"))
             .err()
             .unwrap();
         assert!(matches!(err, RenderError::Invalid(_)), "{err}");
