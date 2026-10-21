@@ -406,8 +406,19 @@ impl Renderer {
     /// the caller starts the next one, and `finish_frame` collects it.
     /// Frames are finished in the order they were started.
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
+        let timer = crate::profile::start();
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
-        self.start_resolved(&resolved)
+        crate::profile::add_since("resolve", timer);
+        let timer = crate::profile::start();
+        let pending = self.start_resolved(&resolved)?;
+        crate::profile::add_since("start", timer);
+        if crate::profile::sync() {
+            let timer = crate::profile::start();
+            // A lost device makes the readback fail anyway.
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+            crate::profile::add_since("gpu_sync", timer);
+        }
+        Ok(pending)
     }
 
     /// The pixels of a frame from `start_frame`.

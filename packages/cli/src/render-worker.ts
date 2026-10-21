@@ -5,6 +5,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetograph/core';
 import type { SceneJson, Unsupported, AudioClipJson } from '@kinetograph/scene';
 import { native } from './native.js';
+import { ProfileLog, now, profiling, takeAddon, takeJs } from './profile.js';
 import { scaleScene } from './scenes.js';
 import { openSource, type FrameOutput, type WorkerSpec } from './source.js';
 
@@ -47,6 +48,9 @@ try {
   const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile });
   source.clearArtifacts?.();
   const renderer = new (native().Renderer)();
+  const log = profiling ? new ProfileLog(false) : undefined;
+  /** When the worker last finished a chunk (or became ready), to say how long it waited for the next. */
+  let freeSince = log ? now() : 0;
   /** The chunk being drawn: the next frame to start and the last one. */
   let active: { next: number; end: number } | undefined;
   port.on('message', (message: ToWorker) => {
@@ -67,36 +71,60 @@ try {
 
   const handle = async (message: Exclude<ToWorker, { type: 'split' }>): Promise<void> => {
     if (message.type === 'finish') {
+      log?.flush();
       post({ type: 'done', artifacts: source.artifacts?.() ?? [] });
       source.dispose();
       return;
     }
     // The GPU draws a frame while this thread runs the JS of the next: a frame is started, and the one before it is
     // collected, converted and posted.
-    let started: { index: number; out: FrameOutput } | undefined;
+    let started: { index: number; out: FrameOutput; row?: Record<string, number> } | undefined;
     const collect = (): void => {
-      const { index, out } = started!;
+      const { index, out, row } = started!;
+      const t0 = log ? now() : 0;
       const drawn = renderer.finishFrame();
+      const t1 = log ? now() : 0;
       // The colour conversion the encoder does is done here, in parallel, so the encoder thread only has to send.
       const pixels = native().rgbaToYuv(drawn.data, drawn.width, drawn.height, convertFormat);
+      const t2 = log ? now() : 0;
       // A copy, because it is moved to the main thread: the addon's buffer cannot be transferred.
       const yuv = new ArrayBuffer(pixels.byteLength);
       new Uint8Array(yuv).set(pixels);
       post({ type: 'frame', frame: index, yuv, audio: out.audio, unsupported: out.unsupported ?? [] }, [yuv]);
+      if (log && row) {
+        const t3 = now();
+        log.add({ ...row, finish: t1 - t0, yuv: t2 - t1, post: t3 - t2, t3, ...takeAddon() });
+      }
     };
     const run = { next: message.first, end: message.last };
     active = run;
+    const chunkStart = log ? now() : 0;
+    if (log) log.add({ kind: 'chunk', first: message.first, last: message.last, t0: chunkStart, waited: chunkStart - freeSince });
     while (run.next <= run.end) {
       const index = run.next++;
       const frame = origin + index * step;
+      const t0 = log ? now() : 0;
       const out = await source.frame(frame);
+      const t1 = log ? now() : 0;
       const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
       renderer.startFrame(sceneJson, frame, source.baseDir);
+      let row: Record<string, number> | undefined;
+      if (log) {
+        const t2 = now();
+        // The addon's start stages and the JS ones are read now; `collect` adds the finish ones to the same row.
+        row = { f: frame, t0, t1, t2, js: out.jsMs, stringify: out.stringifyMs, startFrame: t2 - t1, ...takeJs(), ...takeAddon() };
+      }
       if (started) collect();
-      started = { index, out };
+      started = { index, out, row };
     }
     if (started) collect();
+    started = undefined;
     active = undefined;
+    if (log) {
+      freeSince = now();
+      log.add({ kind: 'chunk-end', first: message.first, last: run.end, t1: freeSince });
+      log.flush();
+    }
     post({ type: 'chunk', first: message.first, last: run.end });
   };
 

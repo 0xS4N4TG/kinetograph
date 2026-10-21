@@ -7,6 +7,7 @@ import type { VideoWriter } from '@kinetograph/native';
 import type { ArtifactRecord } from '@kinetograph/core';
 import type { AudioClipJson, Unsupported } from '@kinetograph/scene';
 import { CliError } from './errors.js';
+import { ProfileLog, now, profiling } from './profile.js';
 import type { FromWorker, ToWorker, WorkerInit } from './render-worker.js';
 import type { WorkerSpec } from './source.js';
 
@@ -79,6 +80,9 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
   const window = windowFrames(count);
 
   const pool: Worker[] = [];
+  const log = profiling ? new ProfileLog(true) : undefined;
+  let pushMs = 0;
+  const started = log ? now() : 0;
   return new Promise<ArtifactRecord[]>((resolve, reject) => {
     let settled = false;
     let nextStart = first; // first frame of the next new chunk
@@ -95,6 +99,10 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
     const stop = (error?: unknown): void => {
       if (settled) return;
       settled = true;
+      if (log) {
+        log.add({ kind: 'main', pushYuv: pushMs, wall: now() - started });
+        log.flush();
+      }
       for (const worker of pool) void worker.terminate();
       if (error === undefined) resolve([...artifacts.values()]);
       else reject(error);
@@ -142,7 +150,9 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
           if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
           arrived.delete(nextFrame);
           options.onFrame(nextFrame, message.audio, message.unsupported);
+          const t = log ? now() : 0;
           writer.pushYuv(Buffer.from(message.yuv), nextFrame);
+          if (log) pushMs += now() - t;
           options.onPushed?.(nextFrame);
           nextFrame += 1;
         }

@@ -118,17 +118,39 @@ export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context:
   });
 }
 
+/**
+ * Stage timers for profiling a render, off unless `KINETOGRAPH_PROFILE` is set: the milliseconds spent in an island's
+ * JS-side request building (`dom_prep`), in the addon call that styles, lays out and paints it (`dom_native`, the wait
+ * for it) and in reading its output back (`dom_asm`) go to `globalThis.__kprof`, which the render loop reads and empties
+ * after each frame.
+ */
+const PROFILING = typeof process !== 'undefined' && process.env?.KINETOGRAPH_PROFILE !== undefined;
+const clock = (): number => Number(process.hrtime.bigint()) / 1e6; // `performance.now` is held still while frames render
+const stamp = (): number => (PROFILING ? clock() : 0);
+function lap(stage: string, since: number): number {
+  if (!PROFILING) return 0;
+  const now = clock();
+  const table = ((globalThis as { __kprof?: Record<string, number> }).__kprof ??= {});
+  table[stage] = (table[stage] ?? 0) + (now - since);
+  table[`${stage}_n`] = (table[`${stage}_n`] ?? 0) + 1;
+  return now;
+}
+
 export function mapDomIsland(root: DomNode, context: IslandContext): IslandResult {
+  let t = stamp();
   const prepared = prepare(root, context);
+  t = lap('dom_prep', t);
   if (prepared === null) return { layers: [], unsupported: [], camera: null };
   const { request, natives, json } = prepared;
-  const output = JSON.parse(
-    samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass),
-  ) as IslandOutputJson;
-  return assemble(output, request.path, (path) => {
+  const text = samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass);
+  t = lap('dom_native', t);
+  const output = JSON.parse(text) as IslandOutputJson;
+  const result = assemble(output, request.path, (path) => {
     const node = natives.get(path);
     return node === undefined ? null : context.emitNative(node, path);
   });
+  lap('dom_asm', t);
+  return result;
 }
 
 /** The request for an island, or null when it draws nothing (an invisible root) or the addon is off (a warm-up). */
@@ -196,13 +218,16 @@ export function canStartDomIslands(): boolean {
  * the island are emitted now, as the tree stands; the result comes from `finish()`.
  */
 export function startDomIsland(root: DomNode, context: IslandContext): StartedIsland {
+  let t = stamp();
   const prepared = prepare(root, context);
+  t = lap('dom_prep', t);
   if (prepared === null) {
     const nothing: IslandResult = { layers: [], unsupported: [], camera: null };
     return { finish: () => nothing };
   }
   const { request, natives, json } = prepared;
   const ticket = addonFunction('startDomIsland')(json, samplePass ?? undefined);
+  lap('dom_start', t);
   // In the queue before the islands its native elements start: finished in the order the addon draws them.
   const queued: Queued = { ticket, path: request.path, natives: new Map(), result: null };
   queue.push(queued);
@@ -212,8 +237,12 @@ export function startDomIsland(root: DomNode, context: IslandContext): StartedIs
       while (queued.result === null) {
         const next = queue.shift();
         if (next === undefined) throw new Error(`island ${queued.path} was started in a pass that has ended`);
-        const output = JSON.parse(addonFunction('finishDomIsland')(next.ticket)) as IslandOutputJson;
+        let t = stamp();
+        const text = addonFunction('finishDomIsland')(next.ticket);
+        t = lap('dom_native', t);
+        const output = JSON.parse(text) as IslandOutputJson;
         next.result = assemble(output, next.path, (path) => next.natives.get(path) ?? null);
+        lap('dom_asm', t);
       }
       return queued.result;
     },

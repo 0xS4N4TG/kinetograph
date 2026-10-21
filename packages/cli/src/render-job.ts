@@ -6,6 +6,7 @@ import type { ExportOptions, Renderer, RenderSummary } from '@kinetograph/native
 import type { ArtifactRecord } from '@kinetograph/core';
 import type { AudioClipJson, SceneJson, Unsupported } from '@kinetograph/scene';
 import { CHUNK_FRAMES, renderInParallel } from './parallel-render.js';
+import { ProfileLog, now, profiling, takeAddon, takeJs, writeShared } from './profile.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
 import { CliError } from './errors.js';
 import { native } from './native.js';
@@ -157,15 +158,23 @@ export async function renderSource(
         shouldCancel: options.shouldCancel,
       });
     } else {
+      const log = profiling ? new ProfileLog(true) : undefined;
       for (let index = 0; index < total; index++) {
         if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
         const frame = frameAt(index);
+        const t0 = log ? now() : 0;
         const out = await source.frame(frame);
+        const t1 = log ? now() : 0;
         onFrame(frame, out.audio, out.unsupported ?? []);
         const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
         writer.pushFrame(sceneJson, frame, source.baseDir);
+        if (log) {
+          const t2 = now();
+          log.add({ f: frame, t0, t1, t2, js: out.jsMs, stringify: out.stringifyMs, push: t2 - t1, ...takeJs(), ...takeAddon() });
+        }
         pushed(index);
       }
+      log?.flush();
       artifactRecords = source.artifacts?.() ?? [];
     }
     const clips = joinClips(clipFrames);
@@ -178,6 +187,7 @@ export async function renderSource(
     } else {
       summary = writer.finish();
     }
+    writeShared();
     const artifacts = await writeArtifacts(source, renderer, options.output, first, last, scale, artifactRecords);
     return { ...summary, compat: leftOut.report(), artifacts };
   } catch (error) {
