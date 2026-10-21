@@ -4,7 +4,7 @@
 // registered under the key a `<Text font weight fontStyle>` resolves to.
 
 import { fileURLToPath } from 'node:url';
-import { fetchFileCached, type FontDownloadOptions } from './font-files.js';
+import { fetchFileCached, fetchFileCachedSync, type FontDownloadOptions } from './font-files.js';
 import { registerFont, trackFontLoad } from './font-registry.js';
 
 export interface LoadFontOptions {
@@ -26,6 +26,7 @@ export function loadFont(options: LoadFontOptions, download: FontDownloadOptions
       fetchFileCached(url, download).then((path) => {
         registerFont({ family, path, weight: firstWeight(weight), style });
       }),
+      () => registerFont({ family, path: fetchFileCachedSync(url, download), weight: firstWeight(weight), style }),
     );
   }
   const path = url.startsWith('file://') ? fileURLToPath(url) : url;

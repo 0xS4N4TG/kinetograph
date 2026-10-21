@@ -2,10 +2,16 @@
 // (docs/COMPAT.md §2): `new FontFace(family, "url(...)", { weight, style })`, `await face.load()` and
 // `document.fonts.add(face)` register the file with `registerFont`. Installed in Node only where the globals are missing.
 //
+// A remote `url(https://…)` is downloaded once into the font cache (`~/.cache/kinetograph/fonts`) and read from there
+// after that, as `@remotion/google-fonts` does: `face.load()` downloads it, and `document.fonts.add(face)` blocks until
+// it is there. A download that fails does not stop the project from loading: it is noted (`doctor` and `lint` print
+// it) and the face is not registered, so the text that uses it is reported as a missing font.
+//
 // One file is kept per family, weight and style. A face split by `unicodeRange` into several files (Google Fonts'
 // `latin` and `latin-ext`) keeps the one that covers basic Latin.
 
-import { registerFont } from './font-registry.js';
+import { fetchFileCached, fetchFileCachedSync, FontDownloadError, type FontDownloadOptions } from './font-files.js';
+import { noteFontProblem, registerFont } from './font-registry.js';
 
 interface FaceDescriptors {
   weight?: string;
@@ -44,30 +50,62 @@ export class NodeFontFace {
   readonly unicodeRange: string;
   readonly display: string;
   status: 'unloaded' | 'loading' | 'loaded' | 'error' = 'unloaded';
-  /** The file the source names. */
-  readonly path: string;
+  /** The file the source names; for a remote one, empty until it is downloaded. */
+  path: string;
+  /** The URL of a remote source. */
+  readonly remote: string | null;
+  private readonly download: FontDownloadOptions;
 
-  constructor(family: string, source: string | ArrayBuffer | ArrayBufferView, descriptors: FaceDescriptors = {}) {
+  constructor(
+    family: string,
+    source: string | ArrayBuffer | ArrayBufferView,
+    descriptors: FaceDescriptors = {},
+    /** Replaces the network and the cache (tests). */
+    download: FontDownloadOptions = {},
+  ) {
     if (typeof source !== 'string') {
       throw new TypeError(`new FontFace("${family}", <binary data>): only a url(...) source is supported in Node`);
     }
     const url = firstUrl(source);
     if (url === null) throw new TypeError(`new FontFace("${family}", ${JSON.stringify(source)}): no url(...) in the source`);
-    if (/^https?:\/\//i.test(url)) {
-      throw new TypeError(`new FontFace("${family}"): ${url} is remote; download it and use staticFile() instead`);
-    }
+    this.download = download;
+    this.remote = /^https?:\/\//i.test(url) ? url : null;
     this.family = family.replace(/^['"]|['"]$/g, '');
-    this.path = url;
+    this.path = this.remote === null ? url : '';
     this.weight = descriptors.weight ?? 'normal';
     this.style = descriptors.style ?? 'normal';
     this.unicodeRange = descriptors.unicodeRange ?? 'U+0-10FFFF';
     this.display = descriptors.display ?? 'auto';
   }
 
-  /** Nothing to fetch: the file is read when a frame is drawn. */
+  /** A local file is read when a frame is drawn; a remote one is downloaded now (rejects with a `FontDownloadError`). */
   async load(): Promise<this> {
+    if (this.remote !== null && this.path === '') {
+      this.status = 'loading';
+      try {
+        this.path = await fetchFileCached(this.remote, this.download);
+      } catch (error) {
+        this.status = 'error';
+        throw error;
+      }
+    }
     this.status = 'loaded';
     return this;
+  }
+
+  /** Blocks until the file is here; false (with a note for `doctor` and `lint`) when it cannot be had. */
+  resolveSync(): boolean {
+    if (this.remote === null || this.path !== '') return true;
+    try {
+      this.path = fetchFileCachedSync(this.remote, this.download);
+      this.status = 'loaded';
+      return true;
+    } catch (error) {
+      this.status = 'error';
+      if (!(error instanceof FontDownloadError)) throw error;
+      noteFontProblem(`FontFace "${this.family}": ${error.message}; the font is not registered`);
+      return false;
+    }
   }
 
   get loaded(): Promise<this> {
@@ -76,6 +114,7 @@ export class NodeFontFace {
 }
 
 export function addFace(face: NodeFontFace): void {
+  if (!face.resolveSync()) return;
   const weight = WEIGHTS[face.weight] ?? (Number.isFinite(Number(face.weight)) ? Number(face.weight) : 400);
   const style = face.style === 'italic' || face.style === 'oblique' ? 'italic' : 'normal';
   const key = `${face.family}:${weight}:${style}`;

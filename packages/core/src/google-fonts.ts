@@ -11,11 +11,14 @@
 import { registerFont, trackFontLoad } from './font-registry.js';
 import {
   fetchFileCached,
+  fetchFileCachedSync,
   fetchTextCached,
+  fetchTextCachedSync,
   FontDownloadError,
   type FontDownloadOptions,
 } from './font-files.js';
 
+export { FontDownloadError } from './font-files.js';
 export type { FetchLike, FetchResponse, FontDownloadOptions } from './font-files.js';
 
 /**
@@ -146,6 +149,35 @@ async function faceList(
   return faces;
 }
 
+/** `faceList`, blocking. */
+function faceListSync(
+  family: string,
+  style: GoogleFontStyle,
+  weights: readonly string[] | undefined,
+  options: FontDownloadOptions,
+): FontFace[] {
+  const css = (list: readonly string[]): FontFace[] =>
+    parseFontFaces(fetchTextCachedSync(googleFontsCssUrl(family, style, list), options));
+  if (weights !== undefined) return css(weights);
+  try {
+    return css(ALL_WEIGHTS);
+  } catch (error) {
+    if (!(error instanceof FontDownloadError) || error.status !== 400) throw error;
+  }
+  const faces: FontFace[] = [];
+  for (const weight of ALL_WEIGHTS) {
+    try {
+      faces.push(...css([weight]));
+    } catch (error) {
+      if (!(error instanceof FontDownloadError) || error.status !== 400) throw error;
+    }
+  }
+  if (faces.length === 0) {
+    throw new Error(`Google Fonts has no "${family}" in the ${style} style (or the family name is wrong)`);
+  }
+  return faces;
+}
+
 /**
  * The module `@remotion/google-fonts/<Family>` exports. `familyName` is the
  * module name (`PlayfairDisplay`) or the family itself (`Playfair Display`).
@@ -168,6 +200,12 @@ export function makeGoogleFont(familyName: string, options: FontDownloadOptions 
             registerFont({ family, path, weight: Number(face.weight), style: face.style });
           }
         })(),
+        // `measureText` at module load cannot wait for the download above, so it does the same with the thread blocked.
+        () => {
+          for (const face of faceListSync(family, style, weights, options)) {
+            registerFont({ family, path: fetchFileCachedSync(face.url, options), weight: Number(face.weight), style: face.style });
+          }
+        },
       );
       loaded.set(key, done);
     }

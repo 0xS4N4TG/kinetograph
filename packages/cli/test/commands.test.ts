@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearOnFrame, onFrame } from '@kinetograph/audio';
 import type { AudioClipJson, SceneJson } from '@kinetograph/scene';
+import { FontDownloadError } from '@kinetograph/core/google-fonts';
+import { toErrorObject } from '../src/errors.js';
 import { run } from '../src/index.js';
 import { setNativeForTests } from '../src/native.js';
 import type { Source } from '../src/source.js';
@@ -52,7 +54,7 @@ function sceneFile(scene: SceneJson = sceneObject()): string {
 }
 
 /** A project stand-in: each frame's scene carries the frame number in a layer id. */
-function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; failAt?: number; dir?: string } = {}): Source {
+function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; failAt?: number; dir?: string; notes?: string[] } = {}): Source {
   const dir = options.dir ?? scratch();
   return {
     kind: 'project',
@@ -64,6 +66,7 @@ function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; fail
       const scene = sceneObject({ layers: [{ id: `frame-${frame}`, type: 'shape', shape: { kind: 'rect', width: 8, height: 8 }, fill: '#fff' }] });
       return { sceneJson: JSON.stringify(scene), audio: options.audio?.(frame) ?? [], jsMs: 2, stringifyMs: 0.5 };
     },
+    notes: () => options.notes ?? [],
     dispose() {},
   };
 }
@@ -85,6 +88,10 @@ afterEach(() => {
 });
 
 describe('errors', () => {
+  it('reports a failed font download as FONT_DOWNLOAD', () => {
+    expect(toErrorObject(new FontDownloadError('https://example.com/f.ttf', 404)).code).toBe('FONT_DOWNLOAD');
+  });
+
   it('prints { error: { code, message } } and exits 1 with --json', async () => {
     const r = await cli('compositions', '/no/such/file.tsx', '--json');
     expect(r.code).toBe(1);
@@ -261,6 +268,17 @@ describe('inspect and lint', () => {
     ]);
     expect(r.json.issues[0].message).toContain('TS2322');
     expect((await cli('lint', entry, '--frames', '0')).text).toContain('error type-error: ');
+  });
+
+  it('reports what the project noted (a font that did not download) as a warning instead of aborting', async () => {
+    const dir = scratch();
+    const entry = join(dir, 'index.ts');
+    writeFileSync(entry, 'export const x: number = 1;\n');
+    const note = 'FontFace "Gone": Downloading the font from https://example.com/gone.ttf failed with HTTP status 404; the font is not registered';
+    seam.override = () => fakeProject({ notes: [note] });
+    const r = await cli('lint', entry, '--frames', '0', '--json');
+    expect(r.code).toBe(0);
+    expect(r.json.issues).toEqual([expect.objectContaining({ rule: 'project-note', severity: 'warning', message: note, frames: [] })]);
   });
 
   it('is ok with no issues, spreading 8 frames by default', async () => {

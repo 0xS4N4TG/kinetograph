@@ -4,13 +4,14 @@
 // does it (`layoutText` in `@kinetograph/native`), so a measurement is what the
 // renderer will draw. The fonts are the ones registered (`getFonts()`), and text
 // is never measured before they are: a font that is not registered, or one still
-// downloading, is an error rather than a measurement with a stand-in font.
+// downloading, is an error rather than a measurement with a stand-in font. A download in flight is finished first
+// with the thread blocked (`finishFontLoadsSync`), which is how a `measureText` at module load gets its font.
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import type { TextLayout, TextLayoutRequest } from '@kinetograph/native';
 import { fontKey } from '@kinetograph/scene';
-import { getFonts, pendingFontLoads } from './font-registry.js';
+import { finishFontLoadsSync, getFonts, pendingFontLoads } from './font-registry.js';
 
 type LayoutText = (request: TextLayoutRequest) => TextLayout;
 
@@ -89,6 +90,8 @@ function checkedFont(options: MeasureTextOptions, text: string): string {
     throw new TypeError(`fontSize must be a positive number, but got ${JSON.stringify(fontSize)}`);
   }
   const key = fontKey(fontFamily, fontWeight, fontStyle);
+  // Measuring cannot wait (at a module's top level nothing is awaited), so the downloads that can be finished here are.
+  if (pendingFontLoads() > 0) finishFontLoadsSync();
   if (pendingFontLoads() > 0) {
     throw new Error(
       `Text was measured while a font is still downloading. Wait for it (loadFont(...).waitUntilDone()) before measuring "${text}" in ${key}.`,

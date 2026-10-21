@@ -113,6 +113,7 @@ describe('FontFace in Node', () => {
 
   it('refuses sources it cannot read', () => {
     expect(() => new NodeFontFace('Inter', new ArrayBuffer(4))).toThrow(/url/);
-    expect(() => new NodeFontFace('Inter', 'url(https://fonts.example/inter.woff2)')).toThrow(/remote/);
+    // A remote source is read, not refused: it is downloaded into the font cache (remote-fonts.test.ts).
+    expect(new NodeFontFace('Inter', 'url(https://fonts.example/inter.woff2)').remote).toBe('https://fonts.example/inter.woff2');
   });
 });

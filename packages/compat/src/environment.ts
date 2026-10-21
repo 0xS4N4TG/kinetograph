@@ -101,7 +101,6 @@ export function parseFontFaces(css: string): CssFontFace[] {
 
 const registeredFaces = new Set<string>();
 const seenSheets = new Set<string>();
-const warnedRemote = new Set<string>();
 
 /** Registers the `@font-face` files of `css` through the handler (once per rule). */
 function registerFontFaces(css: string): void {
@@ -110,13 +109,6 @@ function registerFontFaces(css: string): void {
     const key = JSON.stringify(face);
     if (registeredFaces.has(key)) continue;
     registeredFaces.add(key);
-    if (/^https?:/i.test(face.url)) {
-      if (!warnedRemote.has(face.url)) {
-        warnedRemote.add(face.url);
-        notes.push(`@font-face ${face.family}: ${face.url} is remote; download it and use a local file`);
-      }
-      continue;
-    }
     fontFaceHandler(face);
   }
 }
@@ -153,7 +145,7 @@ export function importedStylesheets(): string[] {
   return sheets.map((sheet) => sheet.css);
 }
 
-/** Problems with the project's stylesheets that `doctor` reports (an unprocessed Tailwind file, a remote font). */
+/** Problems with the project's stylesheets that `doctor` reports (an unprocessed Tailwind file, a font that did not download). */
 export function stylesheetNotes(): string[] {
   return [...notes];
 }
@@ -177,5 +169,4 @@ export function resetStylesheets(): void {
   notes.length = 0;
   registeredFaces.clear();
   seenSheets.clear();
-  warnedRemote.clear();
 }

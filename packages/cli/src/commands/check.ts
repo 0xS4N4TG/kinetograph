@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import type { SceneJson, Unsupported } from '@kinetograph/scene';
 import { parseFrameList } from '../args.js';
 import { toErrorObject } from '../errors.js';
-import { lintAudio, lintCompat, lintInspect, lintScene, mergeFindings, sortIssues, type Finding } from '../lint.js';
+import { lintAudio, lintCompat, lintInspect, lintNotes, lintScene, mergeFindings, sortIssues, type Finding } from '../lint.js';
 import { native, type InspectLayer, type InspectResult } from '../native.js';
 import { checkFrame, evenFrames } from '../source.js';
 import { typeCheck, type TypeDiagnostic } from '../typecheck.js';
@@ -117,7 +117,7 @@ export const lint: Command = {
         message: describeDiagnostic(d),
         frames: [],
       }));
-      const issues = sortIssues([...mergeFindings(perFrame), ...lintCompat(unsupportedFrames), ...typeIssues]);
+      const issues = sortIssues([...mergeFindings(perFrame), ...lintCompat(unsupportedFrames), ...lintNotes(source.notes?.() ?? []), ...typeIssues]);
       const errors = issues.filter((i) => i.severity === 'error').length;
       const warnings = issues.length - errors;
       const text = issues.length

@@ -255,3 +255,12 @@ export function lintCompat(perFrame: { frame: number; unsupported: readonly Unsu
     };
   });
 }
+
+/**
+ * What the project says went wrong outside any frame: a stylesheet that could not be built, a font that did not
+ * download. They are what `doctor` prints under "stylesheets"; a warning here, since the text that needed a missing
+ * font is already an error (`missing-font`).
+ */
+export function lintNotes(notes: readonly string[]): LintIssue[] {
+  return notes.map((message) => ({ rule: 'project-note', severity: 'warning' as const, layer: null, message, frames: [] }));
+}
