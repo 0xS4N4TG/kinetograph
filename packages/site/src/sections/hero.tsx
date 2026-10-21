@@ -6,7 +6,7 @@ import HeroPlate, { EDGE, GATE, PLATE } from '@/art/hero-plate';
 import { CommandBar } from '@/components/code';
 import { Button } from '@/components/ui/button';
 
-const TAGLINE = 'Kinetograph runs your Remotion code on the GPU with no browser in the way, so renders are fast, repeatable and easy for an agent to check.';
+const TAGLINE = 'The fastest programmatic video engine on earth, made for agents.';
 const PROOF = [['7.0×', 'faster than Remotion'], ['988 / 988', 'frames of a real project'], ['0', 'browsers']] as const;
 const COMMAND = 'npx kinetograph render index.tsx -o out.mp4';
 /** The loop is cut from the launch film starting at 19.5 s, so its frames are numbered from there. */
@@ -72,10 +72,10 @@ export function Hero() {
   return (
     <section className="mx-auto grid max-w-[1440px] grid-cols-[minmax(0,1fr)] items-center gap-10 px-[clamp(16px,3vw,44px)] pt-10 pb-16 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-14 lg:py-12">
       <div className="max-w-[560px]">
-        <motion.h1 {...enter(0)} className="pb-1 font-serif text-[clamp(42px,4.8vw,76px)] leading-[1.04] text-balance font-normal tracking-[-0.03em] text-night">
-          Programmatic video, rendered 7× faster.
+        <motion.h1 {...enter(0)} className="pb-1 font-serif text-[clamp(52px,6.4vw,100px)] leading-[1.02] font-normal tracking-[-0.03em] text-night">
+          Kinetograph
         </motion.h1>
-        <motion.p {...enter(0.08)} className="mt-5 max-w-[40ch] text-[clamp(17px,1.4vw,20px)] leading-snug text-night/75">
+        <motion.p {...enter(0.08)} className="mt-5 max-w-[30ch] text-[clamp(19px,1.6vw,23px)] leading-snug text-night/75">
           {TAGLINE}
         </motion.p>
         <motion.div {...enter(0.16)} className="mt-9 flex flex-col gap-4">
