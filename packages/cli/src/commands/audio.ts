@@ -33,15 +33,21 @@ export const audioAnalyze: Command = {
       }
       const pcm = await renderAudio({ fps, first, last, clips, baseDir: source.baseDir, resolveSource: resolveSoundSource });
 
-      // Scene ranges are frames; the analysis takes seconds from the start of the mix.
+      // Scene ranges are frames (`a..b` ends before `b`, as `--range` does); the analysis takes seconds from the start of the mix.
+      // The result keeps both, so a scene reads back in the unit it was given in.
       let scenes: [number, number][] | undefined;
+      const sceneFrames: [number, number][] = [];
       if (typeof args.options.scenes === 'string') {
         scenes = args.options.scenes.split(',').map((piece) => {
           const [a, b] = native().parseRange(piece.trim(), durationInFrames);
+          sceneFrames.push([a!, b! + 1]);
           return [(a! - first) / fps, (b! + 1 - first) / fps];
         });
       }
-      const analysis = analyzeAudio(pcm, { scenes });
+      const measured = analyzeAudio(pcm, { scenes });
+      const analysis = measured.scenes
+        ? { ...measured, scenes: measured.scenes.map((s, i) => ({ ...s, fromFrame: sceneFrames[i]![0], toFrame: sceneFrames[i]![1] })) }
+        : measured;
       const durationSeconds = (last - first + 1) / fps;
       const lines = [
         `${source.composition.id}: frames ${first}..=${last} (${durationSeconds.toFixed(2)} s), ${clips.length} clip(s)`,
@@ -52,7 +58,8 @@ export const audioAnalyze: Command = {
           ? `silences: ${analysis.silences.map((s) => `${s.start.toFixed(2)}-${s.end.toFixed(2)} s`).join(', ')}`
           : 'no silences of 0.5 s or more below -60 dBFS',
         ...(analysis.scenes ?? []).map(
-          (s) => `  ${s.from.toFixed(2)}-${s.to.toFixed(2)} s: ${fmt(s.integratedLufs, 'LUFS')}, ${fmt(s.truePeakDb, 'dBTP')}`,
+          (s) =>
+            `  frames ${s.fromFrame}..${s.toFrame} (${s.from.toFixed(2)}-${s.to.toFixed(2)} s): ${fmt(s.integratedLufs, 'LUFS')}, ${fmt(s.truePeakDb, 'dBTP')}`,
         ),
       ];
       return {

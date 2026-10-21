@@ -455,7 +455,8 @@ describe('audio analyze', () => {
     expect(r.json.truePeakDb).toBeCloseTo(-20, 0);
     expect(r.json.clippedSamples).toBe(0);
     expect(r.json.scenes).toHaveLength(2);
-    expect(r.json.scenes[1]).toMatchObject({ from: 1, to: 3 });
+    expect(r.json.scenes[1]).toMatchObject({ from: 1, to: 3, fromFrame: 30, toFrame: 90 });
+    expect(r.json.scenes[0]).toMatchObject({ fromFrame: 0, toFrame: 30 });
     expect(r.json.durationSeconds).toBe(3);
   });
 

@@ -932,7 +932,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `lint <entry>` | text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts or assets, type errors (`type-error`, no frame), with frame and layer id |
 | `check <entry>` | `tsc --noEmit` on the project (the nearest `tsconfig.json`, else the entry alone): `{ ok, checked, tsconfig, errors, diagnostics: [{ file, line, column, code, message }] }`, exit 1 on errors. Rendering never type-checks (esbuild strips types), so this is how an agent sees a misspelled prop that §6.3 would otherwise ignore |
 | `bench <entry> [--frame N --runs K \| --range a..b]` | stages: `js` (renderFrame), `stringify`, then the addon's (`handoff`, `resolve`, `raster`, `composite`, `readback`), `total`. Spike 1 |
-| `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` |
+| `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` (frame ranges `a..b`, as `--range`; each scene is reported in both units: `fromFrame`/`toFrame` and `from`/`to` in seconds) |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
 | `doctor [entry] [--range]` | without an entry, the install report; with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
