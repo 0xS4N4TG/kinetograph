@@ -51,7 +51,7 @@ enum Command {
         #[arg(long)]
         encoder: Option<String>,
         /// Print the result as JSON: {output, encoder, width, height, fps,
-        /// frames, first, last, ms, ms_per_frame}
+        /// frames, first, last, ms, ms_per_frame, repeated}
         #[arg(long)]
         json: bool,
     },
@@ -215,11 +215,19 @@ fn render_video(
     let s = summary?;
     Ok(Output {
         text: format!(
-            "wrote {} ({}x{}, {} frames {}..={} at {} fps, {}, {:.1} ms, {:.2} ms/frame)",
+            "wrote {} ({}x{}, {} frames{} {}..={} at {} fps, {}, {:.1} ms, {:.2} ms/frame)",
             s.output.display(),
             s.width,
             s.height,
             s.frames,
+            if s.repeated > 0 {
+                format!(
+                    " ({} the same as the frame before, not drawn again)",
+                    s.repeated
+                )
+            } else {
+                String::new()
+            },
             s.first,
             s.last,
             s.fps,
@@ -238,6 +246,7 @@ fn render_video(
             "last": s.last,
             "ms": s.ms,
             "ms_per_frame": s.ms_per_frame,
+            "repeated": s.repeated,
         }),
     })
 }

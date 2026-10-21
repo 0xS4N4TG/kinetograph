@@ -60,6 +60,10 @@ pub struct RenderSummary {
     pub ms: f64,
     pub ms_per_frame: f64,
     pub audio: bool,
+    /// Frames that were not drawn because they were the same as the frame
+    /// before (`kinetograph_core::reuse`); the encoder was given that frame's
+    /// picture again.
+    pub repeated: u32,
 }
 
 /// Why a render stopped. The kinds are what the Node addon reports as
@@ -188,6 +192,9 @@ pub fn render(
         // The frames come one after the other: a layer that did not change
         // since the last is not drawn again.
         renderer.set_layer_cache(true);
+        // And a frame that is the same as the last is not drawn at all
+        // (`kinetograph_core::reuse`).
+        renderer.set_frame_reuse(kinetograph_core::reuse::allowed_by_env());
         drive(&mut renderer, &plan, request.output, None, progress)
     };
     run().map_err(|e| e.to_string())
@@ -230,6 +237,7 @@ fn drive(
     // draws one while the next is recorded. A failure returns, and dropping
     // the sink removes the unfinished file.
     let mut done = 0;
+    let mut repeated = 0;
     let mut in_flight = None;
     for frame in (plan.first..=plan.last).map(Some).chain([None]) {
         let started = match frame {
@@ -242,10 +250,15 @@ fn drive(
             None => None,
         };
         if let Some((frame, pending)) = std::mem::replace(&mut in_flight, started) {
-            let rendered = renderer
-                .finish_frame(pending)
-                .map_err(|e| RenderError::Frame(frame, e))?;
-            sink.push(rendered)?;
+            if pending.is_repeat() {
+                sink.push_repeat()?;
+                repeated += 1;
+            } else {
+                let rendered = renderer
+                    .finish_frame(pending)
+                    .map_err(|e| RenderError::Frame(frame, e))?;
+                sink.push(rendered)?;
+            }
             done += 1;
             progress(done, plan.frames);
         }
@@ -274,6 +287,7 @@ fn drive(
         ms,
         ms_per_frame: ms / f64::from(plan.frames),
         audio: audio.is_some(),
+        repeated,
     })
 }
 
@@ -282,6 +296,8 @@ fn drive(
 enum Queued {
     Rgba(Frame),
     Yuv(Vec<u8>),
+    /// The same picture as the frame before (`PendingFrame::is_repeat`).
+    Repeat,
 }
 
 /// A video file being written by an encoder thread.
@@ -331,6 +347,7 @@ impl FrameSink {
                 match queued {
                     Queued::Rgba(frame) => encoder.push(&frame.rgba)?,
                     Queued::Yuv(planes) => encoder.push_yuv(&planes)?,
+                    Queued::Repeat => encoder.push_repeat()?,
                 }
             }
             encoder.finish()
@@ -355,6 +372,13 @@ impl FrameSink {
     /// Queues a finished frame, waiting if the encoder is two frames behind.
     pub fn push(&mut self, frame: Frame) -> Result<(), RenderError> {
         self.push_queued(Queued::Rgba(frame))
+    }
+
+    /// Queues the frame before again: what a frame that was not drawn
+    /// because it is the same as the last (`PendingFrame::is_repeat`) sends,
+    /// which skips its readback and colour conversion.
+    pub fn push_repeat(&mut self) -> Result<(), RenderError> {
+        self.push_queued(Queued::Repeat)
     }
 
     fn push_queued(&mut self, queued: Queued) -> Result<(), RenderError> {
@@ -436,6 +460,8 @@ pub struct VideoWriter {
     first: Option<u32>,
     last: Option<u32>,
     pushed: u32,
+    /// Of those, frames sent as a repeat of the one before.
+    repeated: u32,
 }
 
 impl VideoWriter {
@@ -476,6 +502,7 @@ impl VideoWriter {
             first: None,
             last: None,
             pushed: 0,
+            repeated: 0,
         })
     }
 
@@ -535,6 +562,10 @@ impl VideoWriter {
         frame: u32,
         pending: PendingFrame,
     ) -> Result<(), RenderError> {
+        if pending.is_repeat() {
+            self.repeated += 1;
+            return self.sink.push_repeat();
+        }
         let rendered = renderer
             .finish_frame(pending)
             .map_err(|e| RenderError::Frame(frame, e))?;
@@ -580,6 +611,7 @@ impl VideoWriter {
             ms,
             ms_per_frame: ms / f64::from(self.pushed),
             audio: audio.is_some(),
+            repeated: self.repeated,
         })
     }
 }
