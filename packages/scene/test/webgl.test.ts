@@ -127,6 +127,7 @@ describe('the recording WebGL context', () => {
     expect(refused(() => gl.drawArrays(GL.POINTS, 0, 3))).toMatch(/^unsupported:.*points/);
     expect(refused(() => gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/^unsupported:.*renderbuffers/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
+    expect(refused(() => (gl as any).blitFramebuffer(0, 0, 1, 1, 0, 0, 1, 1, 0x4000, 0x2600))).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(GL.TEXTURE_CUBE_MAP, gl.createTexture()))).toMatch(/cube/);
     expect(refused(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 4))).toMatch(/instanced/);
   });

@@ -831,6 +831,10 @@ export class WebGLContext {
     throw new WebGLUnsupportedError('readPixels; the picture is drawn by the renderer, and the context cannot be read back');
   }
 
+  blitFramebuffer(): never {
+    throw new WebGLUnsupportedError('blitFramebuffer; a framebuffer cannot be copied or resolved');
+  }
+
   // ---- state ----
 
   private viewportNow(): [number, number, number, number] {
