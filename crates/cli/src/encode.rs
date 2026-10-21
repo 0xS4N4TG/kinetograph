@@ -885,6 +885,48 @@ mod tests {
     }
 
     #[test]
+    fn frames_converted_elsewhere_encode_to_the_same_video() {
+        if !has_encoder("libx264") {
+            panic!("this test needs an ffmpeg with libx264");
+        }
+        let dir = std::env::temp_dir().join(format!("kinetograph-yuv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (w, h) = (64_u32, 48_u32);
+        // Not flat, so rows, columns and the halved chroma all matter.
+        let direct = dir.join("direct.mp4");
+        let mut encoder = VideoEncoder::create(&direct, w, h, 30.0, "libx264").unwrap();
+        for i in 0..6 {
+            encoder.push(&picture_for(w, h, i)).unwrap();
+        }
+        encoder.finish().unwrap();
+        // The converter runs on another thread, as a render worker's does.
+        let converted = dir.join("converted.mp4");
+        let mut encoder = VideoEncoder::create(&converted, w, h, 30.0, "libx264").unwrap();
+        for i in 0..6 {
+            let yuv = std::thread::spawn(move || rgba_to_yuv420(&picture_for(w, h, i), w, h))
+                .join()
+                .unwrap()
+                .unwrap();
+            assert_eq!(yuv.len(), (w * h * 3 / 2) as usize);
+            encoder.push_yuv(&yuv).unwrap();
+        }
+        encoder.finish().unwrap();
+        let (a, b) = (decode(&direct).3, decode(&converted).3);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(a.len(), 6);
+        assert!(a == b, "the decoded frames differ");
+
+        fn picture_for(w: u32, h: u32, i: u32) -> Vec<u8> {
+            (0..w * h)
+                .flat_map(|p| {
+                    let (x, y) = (p % w, p / w);
+                    [(x * 4 + i * 9) as u8, (y * 5) as u8, ((x ^ y) * 3) as u8, 255]
+                })
+                .collect()
+        }
+    }
+
+    #[test]
     fn audio_must_be_something_aac_can_take() {
         let one = [0.0_f32; 10];
         let two = [0.0_f32; 9];
