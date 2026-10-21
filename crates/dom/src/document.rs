@@ -24,13 +24,16 @@ use blitz_dom::{
     Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, NodeId, QualName, ns,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
+use style::properties::{ComputedValues, LonghandId};
+use style::servo_arc::Arc as ServoArc;
 
 use crate::clamp;
 use crate::collapse;
 use crate::fonts;
 use crate::inline;
 use crate::net::{self, LocalFiles};
-use crate::request::{DomNode, IslandRequest};
+use crate::paint::{self, Painted};
+use crate::request::{DomNode, IslandOutput, IslandRequest};
 use crate::ua;
 
 /// The attribute every element of the island carries: its host-tree path.
@@ -329,6 +332,118 @@ pub struct Resolved {
     files: Arc<LocalFiles>,
     /// Whether [`IslandCache`] may keep it.
     plain: bool,
+    /// The last paint of the document, and the style and box of each node then.
+    painted: Option<(Painted, Vec<Stamp>)>,
+    /// The elements whose transforms alone changed since that paint, when
+    /// nothing else did (`Resolved::paint`).
+    moved: Option<Vec<NodeId>>,
+}
+
+/// A node's computed style and box as a paint saw them. The style is held,
+/// so another one cannot take its place in memory.
+struct Stamp {
+    node: NodeId,
+    style: Option<ServoArc<ComputedValues>>,
+    layout: Option<taffy::Layout>,
+}
+
+/// A node's box; text and comments have none.
+fn layout_of(node: &blitz_dom::Node) -> Option<taffy::Layout> {
+    use blitz_dom::node::NodeData;
+    matches!(
+        node.data,
+        NodeData::Element(_) | NodeData::AnonymousBlock(_) | NodeData::Document(_)
+    )
+    .then(|| *node.final_layout())
+}
+
+fn stamps(doc: &BaseDocument) -> Vec<Stamp> {
+    doc.tree()
+        .iter()
+        .map(|(_, node)| Stamp {
+            node: node.id,
+            style: node.primary_styles().map(|s| (*s).clone()),
+            layout: layout_of(node),
+        })
+        .collect()
+}
+
+impl Resolved {
+    /// Paints the island. After an edit that only changed transforms, the
+    /// last paint's layers with those groups' transforms worked out again
+    /// (`paint::repaint_transforms`); otherwise a whole paint.
+    pub fn paint(&mut self, request: &IslandRequest) -> IslandOutput {
+        let doc = &self.island.doc;
+        let again = match (self.moved.take(), self.painted.take()) {
+            (Some(moved), Some((painted, _))) => {
+                paint::repaint_transforms(doc, request, painted, &moved)
+            }
+            _ => None,
+        };
+        let (output, painted) = again.unwrap_or_else(|| paint::paint_keeping(doc, request));
+        self.painted = Some((painted, stamps(doc)));
+        output
+    }
+}
+
+/// The properties that only make an element's matrix.
+const TRANSFORM_PROPERTIES: [LonghandId; 4] = [
+    LonghandId::Transform,
+    LonghandId::Translate,
+    LonghandId::Rotate,
+    LonghandId::Scale,
+];
+
+/// The nodes whose `style` `edits` set: None when an edit is anything else
+/// (a text, another attribute).
+fn style_edits(edits: &[Edit]) -> Option<Vec<NodeId>> {
+    edits
+        .iter()
+        .map(|edit| match edit {
+            Edit::Attr(id, name, Some(_)) if name.local == *"style" => Some(*id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The nodes whose transforms alone changed between `stamps` (the last
+/// paint) and now, if that is all that changed: every box is where it was,
+/// every node has the values it had, and of the nodes in `edited` only the
+/// transform properties differ.
+fn transform_changes(
+    island: &IslandDocument,
+    edited: &[NodeId],
+    stamps: &[Stamp],
+) -> Option<Vec<NodeId>> {
+    let doc = &island.doc;
+    if stamps.len() != doc.tree().len() {
+        return None;
+    }
+    let mut moved = Vec::new();
+    for stamp in stamps {
+        let node = doc.get_node(stamp.node)?;
+        if layout_of(node) != stamp.layout {
+            return None;
+        }
+        let style = node.primary_styles();
+        match (&stamp.style, &style) {
+            (None, None) => {}
+            (Some(was), Some(now)) => {
+                let now: &ServoArc<ComputedValues> = now;
+                if ServoArc::ptr_eq(was, now) || was.same_values_except(now, &[]) {
+                    continue;
+                }
+                if !edited.contains(&stamp.node)
+                    || !was.same_values_except(now, &TRANSFORM_PROPERTIES)
+                {
+                    return None;
+                }
+                moved.push(stamp.node);
+            }
+            _ => return None,
+        }
+    }
+    Some(moved)
 }
 
 /// The islands of one motion-blurred frame's samples (docs/SCENE.md, "Motion
@@ -336,13 +451,17 @@ pub struct Resolved {
 /// islands differ in a few styles (a transform, an opacity) while their
 /// structure, text and sheets stay. The document of an earlier sample is
 /// edited to the next one instead of building, styling and shaping all of it
-/// again; the edits restyle and lay out only what they touch. The result is
-/// the same as building the sample afresh. It is not used when a transition
+/// again; the edits restyle and lay out only what they touch. When they
+/// changed nothing but transforms (every box where it was, every other value
+/// the same), the island is painted from its last paint with those groups'
+/// transforms worked out again (`Resolved::paint`). The result is the same as
+/// building and painting the sample afresh. It is not used when a transition
 /// or animation could start from an edit, nor for a tree whose structure
 /// changed.
 ///
-/// A pass is the samples of one frame; a request of another pass (or none)
-/// empties the cache, so no frame sees what an earlier one left.
+/// A pass is the renders of one frame, its samples included; a request of
+/// another pass (or none) empties the cache, so no frame sees what an earlier
+/// one left.
 #[derive(Default)]
 pub struct IslandCache {
     pass: Option<u64>,
@@ -419,7 +538,11 @@ impl IslandCache {
                 island,
                 files,
                 plain,
+                painted,
+                moved,
             } = &mut kept.resolved;
+            // A change to transforms alone can be painted from the last paint.
+            let edited = style_edits(&edits);
             if !edits.is_empty() {
                 apply(island, &edits);
                 load(island, files, request.time);
@@ -427,6 +550,12 @@ impl IslandCache {
             advance(&mut island.doc, request.time);
             *plain = settle(island, request);
             island.missing = files.missing();
+            *moved = match (edited, painted.as_ref()) {
+                (Some(edited), Some((_, stamps))) if *plain => {
+                    transform_changes(island, &edited, stamps)
+                }
+                _ => None,
+            };
             return Ok(kept.resolved);
         }
         let (mut files, mut plain) = (None, false);
@@ -435,6 +564,8 @@ impl IslandCache {
             island,
             files: files.expect("a resolved island has its files"),
             plain,
+            painted: None,
+            moved: None,
         })
     }
 

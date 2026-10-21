@@ -154,7 +154,7 @@ atlas place itself. The change is small enough to offer upstream.
   `.cargo_vcs_info.json`). Licence: MPL-2.0. Wired in by `[patch.crates-io]` in the root `Cargo.toml`, so `blitz-dom` and
   `kinetograph-dom` build against it. The unchanged copy was committed first.
 - Changed files: `stylesheets/rule_parser.rs`, `values/specified/length.rs`, `properties/shorthands.rs`,
-  `properties/shorthands.toml`.
+  `properties/shorthands.toml` (container queries), `properties/properties.mako.rs` (`same_values_except`).
 
 ### Why
 
@@ -170,10 +170,20 @@ The three gates take the same pref the properties use: `@container` in `AtRuleTy
 `LengthUnit::from_name`, and the `container` shorthand (its `engine = "gecko"` line becomes `servo_pref`, and its
 `pub mod container` loses the `cfg`). `kinetograph-dom` switches the pref on (`document::enable_css_features`).
 
+### The change (`same_values_except`)
+
+`ComputedValues::same_values_except(other, except)` is new: whether two styles have the same value for every longhand
+but the ones in `except` (each style struct the two share is skipped), the same custom properties, flags, writing mode,
+zoom, pseudo-element and visited style. It is generated over the longhands, so it cannot miss one. A restyle can make
+a new `ComputedValues` with the same values as the old one (a sibling restyled by invalidation), and pointers cannot
+tell those apart: `kinetograph-dom`'s `IslandCache` uses it to check that an edit to an island changed nothing but
+transforms before it paints the island from its last paint (`paint::repaint_transforms`).
+
 ### Dropping the patch
 
 Remove `vendor/stylo`, its `[patch.crates-io]` entry and this section once a stylo release parses `@container` without
-Gecko. The change is small enough to offer upstream.
+Gecko, and `same_values_except` has a stand-in (it can move to `kinetograph-dom` over the style structs' `PartialEq`).
+The changes are small enough to offer upstream.
 
 ## blitz-dom 0.3.0-beta.3
 

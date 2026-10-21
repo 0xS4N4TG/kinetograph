@@ -36,16 +36,11 @@ impl<'a> Painter<'a> {
         let mut children = children;
 
         // ---- transform ----
-        let transform = self.transform_of(node, &style, &geom, at);
-        let mut transform_obj = transform.transform;
-        if transform.backface_hidden {
-            let t = transform_obj.get_or_insert_with(|| json!({}));
-            t["backfaceHidden"] = json!(true);
-        }
-        if let Some(t) = transform_obj {
+        let (transform, preserve3d) = self.group_transform(node, &style, &geom, at);
+        if let Some(t) = transform {
             group = group.set("transform", t);
         }
-        if transform.preserve3d {
+        if preserve3d {
             group = group.set("preserve3d", json!(true));
         }
 
@@ -122,6 +117,24 @@ impl<'a> Painter<'a> {
             wrapper = wrapper.set("blendMode", b);
         }
         Some(wrapper.build())
+    }
+
+    /// The `transform` of an element's group (with `backfaceHidden`), and
+    /// whether it is `preserve3d`.
+    pub fn group_transform(
+        &mut self,
+        node: &'a Node,
+        style: &style::properties::ComputedValues,
+        geom: &BoxGeom,
+        at: Origin,
+    ) -> (Option<Value>, bool) {
+        let transform = self.transform_of(node, style, geom, at);
+        let mut obj = transform.transform;
+        if transform.backface_hidden {
+            let t = obj.get_or_insert_with(|| json!({}));
+            t["backfaceHidden"] = json!(true);
+        }
+        (obj, transform.preserve3d)
     }
 
     /// The clip of `overflow: hidden` (and `clip`, `scroll`, `auto`): the

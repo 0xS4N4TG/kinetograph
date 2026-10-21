@@ -41,7 +41,7 @@ pub use fonts::register_font_path;
 pub use shim::{kg_properties, register_properties, shim_css};
 pub(crate) use util::{current_color, rgba};
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use blitz_dom::{BaseDocument, Node, local_name};
 use blitz_traits::node_id::NodeId;
@@ -55,16 +55,104 @@ use crate::request::{IslandOutput, IslandRequest, Unsupported};
 
 /// Paints a document that `resolve` has styled and laid out.
 pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
+    paint_keeping(doc, request).0
+}
+
+/// What a paint of a document leaves for [`repaint_transforms`]: its layers
+/// before `opt::optimize`, where each stacking context's group is in them,
+/// and the rest of its output.
+pub struct Painted {
+    raw: Vec<Value>,
+    /// The id and the place in its parent's frame of the group of each
+    /// element that was painted as a group of its own.
+    groups: HashMap<NodeId, (String, Origin)>,
+    output: IslandOutput,
+}
+
+/// [`paint`], and what [`repaint_transforms`] needs to paint the document
+/// again after a change to transforms only.
+pub fn paint_keeping(doc: &BaseDocument, request: &IslandRequest) -> (IslandOutput, Painted) {
     let mut painter = Painter::new(doc, request);
-    let layers = painter.paint_root();
-    let layers = opt::optimize(layers);
-    IslandOutput {
+    let raw = painter.paint_root();
+    let layers = opt::optimize(raw.clone());
+    let output = IslandOutput {
         layers,
         unsupported: painter.unsupported,
         camera: painter.camera,
         margin: (painter.margin_reach > 0.0).then(|| painter.margin_reach.ceil() as u32),
         blend_space: "srgb",
+    };
+    let groups = painter
+        .groups
+        .into_iter()
+        .map(|(node, id, at)| (node, (id, at)))
+        .collect();
+    let rest = IslandOutput {
+        layers: Vec::new(),
+        ..output.clone()
+    };
+    (
+        output,
+        Painted {
+            raw,
+            groups,
+            output: rest,
+        },
+    )
+}
+
+/// The paint of `doc` when it differs from the one `painted` was made of in
+/// the transforms of the elements `moved` alone: the same layers, each of
+/// those elements' groups with its new `transform`, and what `painted`
+/// becomes. The caller makes sure nothing else changed (styles, boxes, text,
+/// files): only what the transforms make is worked out again here. None when
+/// an element was not painted as a group whose transform is a matrix, or no
+/// longer would be.
+pub fn repaint_transforms(
+    doc: &BaseDocument,
+    request: &IslandRequest,
+    mut painted: Painted,
+    moved: &[NodeId],
+) -> Option<(IslandOutput, Painted)> {
+    let mut painter = Painter::new(doc, request);
+    for id in moved {
+        let (group_id, at) = painted.groups.get(id)?;
+        let node = doc.get_node(*id)?;
+        let style = node.primary_styles()?;
+        let geom = deco::box_geom(node, &style);
+        let (transform, _) = painter.group_transform(node, &style, &geom, *at);
+        drop(style);
+        // A transform that is only a move (or none) is folded into the layers
+        // around it, and one that cannot be a matrix is reported: either
+        // changes more than the group.
+        let transform = transform.filter(|t| t.get("matrix").is_some())?;
+        if !painter.unsupported.is_empty() {
+            return None;
+        }
+        let group = find_layer(&mut painted.raw, group_id)?;
+        group.get("transform").and_then(|t| t.get("matrix"))?;
+        group["transform"] = transform;
     }
+    let output = IslandOutput {
+        layers: opt::optimize(painted.raw.clone()),
+        ..painted.output.clone()
+    };
+    Some((output, painted))
+}
+
+/// The layer with `id` in `layers`, at any depth.
+fn find_layer<'v>(layers: &'v mut [Value], id: &str) -> Option<&'v mut Value> {
+    for layer in layers {
+        if layer.get("id").and_then(Value::as_str) == Some(id) {
+            return Some(layer);
+        }
+        if let Some(Value::Array(children)) = layer.get_mut("children")
+            && let Some(found) = find_layer(children, id)
+        {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// The lists a stacking context (or an element painted as one) collects before
@@ -111,6 +199,9 @@ pub(crate) struct Painter<'a> {
     audited: HashSet<u64>,
     /// The mode (`alpha` or `luminance`) of each mask source group, by id.
     pub mask_modes: std::collections::HashMap<String, &'static str>,
+    /// Each element painted as a group of its own: its node, the group's id
+    /// and where its border box is in its parent's frame (`Painted`).
+    groups: Vec<(NodeId, String, Origin)>,
 }
 
 /// Where a box's border-box top-left corner is in the current frame.
@@ -129,6 +220,7 @@ impl<'a> Painter<'a> {
             margin_reach: 0.0,
             audited: HashSet::new(),
             mask_modes: Default::default(),
+            groups: Vec::new(),
         }
     }
 
@@ -350,7 +442,15 @@ impl<'a> Painter<'a> {
         let id = self.layer_id(node, "");
         let children = self.sc_content(node);
         match self.context_group(node, &id, at, children) {
-            Some(group) => flatten_plain_group(group),
+            Some(group) => {
+                let layers = flatten_plain_group(group);
+                if let [layer] = layers.as_slice()
+                    && layer.get("id").and_then(Value::as_str) == Some(&id)
+                {
+                    self.groups.push((node.id, id, at));
+                }
+                layers
+            }
             None => Vec::new(),
         }
     }

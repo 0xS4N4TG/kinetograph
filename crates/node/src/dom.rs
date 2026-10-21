@@ -14,8 +14,8 @@ use kinetograph_core::dom_layout::{
     measure_text,
 };
 use kinetograph_dom::document::{self, IslandCache, IslandDocument};
+use kinetograph_dom::readback;
 use kinetograph_dom::request::{self, IslandRequest, Unsupported};
-use kinetograph_dom::{paint, readback};
 use serde_json::Value;
 
 use crate::error::{Code, Result, error, invalid};
@@ -156,11 +156,11 @@ pub fn render_dom_island(request_json: &str, pass: Option<u64>) -> Result<String
     let json = request_json.to_string();
     on_island_thread(move || {
         let request = parse_island(&json, "renderDomIsland")?;
-        let resolved = SAMPLES
+        let mut resolved = SAMPLES
             .with(|cache| cache.borrow_mut().resolve(&request, pass))
             .map_err(|e| (Code::Render, e.to_string()))?;
+        let mut output = resolved.paint(&request);
         let island = &resolved.island;
-        let mut output = paint::paint(&island.doc, &request);
         // A file the island named that could not be read is not drawn as the
         // author meant: say so rather than draw a blank.
         for missing in &island.missing {

@@ -1693,6 +1693,36 @@ impl ComputedValues {
 % endif
 % endfor
 
+    /// Whether `other` has the same value as this for every longhand but the
+    /// ones in `except`, the same custom properties, flags, writing mode and
+    /// zoom, and the same visited style, whatever rules they came from
+    /// (Kinetograph, vendor/README.md: an edited document checks that a
+    /// restyle changed nothing else).
+    #[cfg(feature = "servo")]
+    pub fn same_values_except(&self, other: &Self, except: &[LonghandId]) -> bool {
+        % for style_struct in data.active_style_structs():
+        if !std::ptr::eq(self.get_${style_struct.name_lower}(), other.get_${style_struct.name_lower}()) {
+            % for prop in style_struct.longhands:
+            % if not prop.logical:
+            if !except.contains(&LonghandId::${prop.camel_case}) && !self.${prop.ident}_equals(other) {
+                return false;
+            }
+            % endif
+            % endfor
+        }
+        % endfor
+        self.pseudo == other.pseudo
+            && self.custom_properties == other.custom_properties
+            && self.flags == other.flags
+            && self.writing_mode == other.writing_mode
+            && self.effective_zoom == other.effective_zoom
+            && match (self.visited_style(), other.visited_style()) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.same_values_except(b, except),
+                _ => false,
+            }
+    }
+
     /// Writes the (resolved or computed) value of the given longhand as a string in `dest`.
     ///
     /// TODO(emilio): We should move all the special resolution from
