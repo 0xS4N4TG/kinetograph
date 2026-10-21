@@ -120,14 +120,34 @@ impl Model {
         let path = base_dir.join(src);
         let (document, buffers, images) = gltf::import(&path)
             .map_err(|e| Error::Render(format!("cannot read model {}: {e}", path.display())))?;
+        Model::build(&path, &document, &buffers, &images)
+    }
+
+    /// What `open` would list in `unsupported`, without decoding the
+    /// pictures: the notes come from the glTF's JSON and buffers alone.
+    pub fn unsupported_features(base_dir: &Path, src: &str) -> Result<Vec<Unsupported>> {
+        let path = base_dir.join(src);
+        let unreadable =
+            |e: gltf::Error| Error::Render(format!("cannot read model {}: {e}", path.display()));
+        let gltf::Gltf { document, blob } = gltf::Gltf::open(&path).map_err(unreadable)?;
+        let buffers = gltf::import_buffers(&document, path.parent(), blob).map_err(unreadable)?;
+        Ok(Model::build(&path, &document, &buffers, &[])?.unsupported)
+    }
+
+    fn build(
+        path: &Path,
+        document: &gltf::Document,
+        buffers: &[gltf::buffer::Data],
+        images: &[gltf::image::Data],
+    ) -> Result<Model> {
         let fail = |msg: String| Error::Render(format!("model {}: {msg}", path.display()));
         let scene = document
             .default_scene()
             .or_else(|| document.scenes().next())
             .ok_or_else(|| fail("it has no scene".into()))?;
         let mut loader = Loader {
-            buffers: &buffers,
-            images: &images,
+            buffers,
+            images,
             meshes: HashMap::new(),
             textures: HashMap::new(),
             materials: HashSet::new(),
@@ -140,12 +160,12 @@ impl Model {
         for extension in document.extensions_used() {
             loader.note(extension, "this glTF extension is not read");
         }
-        let nodes = loader.nodes(&document);
-        let skins = loader.skins(&document).map_err(fail)?;
+        let nodes = loader.nodes(document);
+        let skins = loader.skins(document).map_err(fail)?;
         for node in scene.nodes() {
             loader.node(&node).map_err(fail)?;
         }
-        let animations = loader.animations(&document, nodes.len()).map_err(fail)?;
+        let animations = loader.animations(document, nodes.len()).map_err(fail)?;
         let order = order(&nodes);
         Ok(Model {
             parts: loader.parts,
@@ -808,14 +828,12 @@ impl Loader<'_> {
             return t.clone();
         }
         let built = self.images.get(index).and_then(|image| {
-            let rgba = to_rgba8(image)?;
-            let rgba = if keep_alpha {
-                rgba
-            } else {
-                rgba.chunks(4)
-                    .flat_map(|p| [p[0], p[1], p[2], 255])
-                    .collect()
-            };
+            let mut rgba = to_rgba8(image)?;
+            if !keep_alpha {
+                for pixel in rgba.as_chunks_mut::<4>().0 {
+                    pixel[3] = 255;
+                }
+            }
             Some(Arc::new(Texture::new(image.width, image.height, rgba)))
         });
         self.textures.insert((index, keep_alpha), built.clone());
@@ -912,28 +930,106 @@ impl Loader<'_> {
     }
 }
 
+/// One pixel of a format as straight-alpha RGBA8.
+type Convert = fn(&[u8]) -> [u8; 4];
+
 /// The picture as straight-alpha RGBA8, `None` for a format with no colour.
 fn to_rgba8(image: &gltf::image::Data) -> Option<Vec<u8>> {
     let p = &image.pixels;
-    let eight =
-        |step: usize, f: &dyn Fn(&[u8]) -> [u8; 4]| p.chunks_exact(step).flat_map(f).collect();
+    if image.format == Format::R8G8B8A8 {
+        return Some(p.clone());
+    }
     // A 16-bit channel's high byte is its second: the data is little-endian.
-    Some(match image.format {
-        Format::R8G8B8A8 => p.clone(),
-        Format::R8G8B8 => eight(3, &|c| [c[0], c[1], c[2], 255]),
-        Format::R8G8 => eight(2, &|c| [c[0], c[0], c[0], c[1]]),
-        Format::R8 => eight(1, &|c| [c[0], c[0], c[0], 255]),
-        Format::R16G16B16A16 => eight(8, &|c| [c[1], c[3], c[5], c[7]]),
-        Format::R16G16B16 => eight(6, &|c| [c[1], c[3], c[5], 255]),
-        Format::R16G16 => eight(4, &|c| [c[1], c[1], c[1], c[3]]),
-        Format::R16 => eight(2, &|c| [c[1], c[1], c[1], 255]),
+    let (step, to_rgba): (usize, Convert) = match image.format {
+        Format::R8G8B8 => (3, |c| [c[0], c[1], c[2], 255]),
+        Format::R8G8 => (2, |c| [c[0], c[0], c[0], c[1]]),
+        Format::R8 => (1, |c| [c[0], c[0], c[0], 255]),
+        Format::R16G16B16A16 => (8, |c| [c[1], c[3], c[5], c[7]]),
+        Format::R16G16B16 => (6, |c| [c[1], c[3], c[5], 255]),
+        Format::R16G16 => (4, |c| [c[1], c[1], c[1], c[3]]),
+        Format::R16 => (2, |c| [c[1], c[1], c[1], 255]),
         _ => return None,
-    })
+    };
+    let mut out = vec![0u8; p.len() / step * 4];
+    for (src, dst) in p.chunks_exact(step).zip(out.as_chunks_mut::<4>().0) {
+        *dst = to_rgba(src);
+    }
+    Some(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn picture(format: Format, pixels: &[u8]) -> gltf::image::Data {
+        gltf::image::Data {
+            pixels: pixels.to_vec(),
+            format,
+            width: 2,
+            height: 1,
+        }
+    }
+
+    #[test]
+    fn pictures_convert_to_rgba8_by_format() {
+        let cases: [(Format, &[u8], [u8; 8]); 8] = [
+            (
+                Format::R8G8B8A8,
+                &[1, 2, 3, 4, 5, 6, 7, 8],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+            ),
+            (
+                Format::R8G8B8,
+                &[1, 2, 3, 4, 5, 6],
+                [1, 2, 3, 255, 4, 5, 6, 255],
+            ),
+            (Format::R8G8, &[1, 2, 3, 4], [1, 1, 1, 2, 3, 3, 3, 4]),
+            (Format::R8, &[1, 2], [1, 1, 1, 255, 2, 2, 2, 255]),
+            (
+                Format::R16G16B16A16,
+                &[0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8],
+                [1, 2, 3, 4, 5, 6, 7, 8],
+            ),
+            (
+                Format::R16G16B16,
+                &[0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6],
+                [1, 2, 3, 255, 4, 5, 6, 255],
+            ),
+            (
+                Format::R16G16,
+                &[0, 1, 0, 2, 0, 3, 0, 4],
+                [1, 1, 1, 2, 3, 3, 3, 4],
+            ),
+            (Format::R16, &[0, 1, 0, 2], [1, 1, 1, 255, 2, 2, 2, 255]),
+        ];
+        for (format, pixels, want) in cases {
+            assert_eq!(
+                to_rgba8(&picture(format, pixels)).unwrap(),
+                want,
+                "{format:?}"
+            );
+        }
+        assert!(to_rgba8(&picture(Format::R32G32B32FLOAT, &[0; 24])).is_none());
+    }
+
+    #[test]
+    fn the_notes_need_no_pictures() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+        for name in ["gem.glb", "unsupported.glb"] {
+            let full: Vec<_> = Model::open(&dir, name)
+                .unwrap()
+                .unsupported
+                .into_iter()
+                .map(|u| (u.feature, u.reason))
+                .collect();
+            let light: Vec<_> = Model::unsupported_features(&dir, name)
+                .unwrap()
+                .into_iter()
+                .map(|u| (u.feature, u.reason))
+                .collect();
+            assert_eq!(light, full, "{name}");
+        }
+    }
 
     fn gem() -> Model {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");

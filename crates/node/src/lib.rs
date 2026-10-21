@@ -242,9 +242,10 @@ pub struct ModelUnsupported {
 /// read (docs/SCENE.md, "scene3d"); a file that cannot be read is an error.
 #[napi]
 pub fn model_unsupported(src: String, base_dir: Option<String>) -> Result<Vec<ModelUnsupported>> {
-    let model = Model::open(&resolve_base(base_dir), &src).map_err(from_core)?;
-    Ok(model
-        .unsupported
+    // Only the glTF's JSON and buffers are read: the pictures are not decoded.
+    let unsupported =
+        Model::unsupported_features(&resolve_base(base_dir), &src).map_err(from_core)?;
+    Ok(unsupported
         .into_iter()
         .map(|u| ModelUnsupported {
             feature: u.feature,
