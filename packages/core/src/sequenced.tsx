@@ -3,11 +3,10 @@
 // `<Sequence layout="none">` around the element, so it shows from `from` for `durationInFrames` and moves time by `from`.
 //
 // A render never premounts (Remotion's `premountFor` and its styles only act in the preview) and shows no timeline, so
-// those props are accepted and left alone. `trimBefore`, `playbackRate` and `loop` change the clock of what is inside,
-// which `<Sequence>` here does not do yet; they are accepted and a warning says they are not applied.
+// those props are accepted and left alone. `trimBefore`, `playbackRate` and `loop` change the clock of what is inside
+// and are the `<Sequence>`'s own.
 
 import type { CSSProperties, ReactNode } from 'react';
-import { warnOnce } from './warn.js';
 import { Freeze, Sequence } from './timeline.js';
 
 export interface SequenceTimingProps {
@@ -92,13 +91,10 @@ export function Sequenced({
   children: ReactNode;
 }): ReactNode {
   const { from, durationInFrames, name, freeze, hidden, trimBefore, playbackRate, loop } = timing;
-  if (trimBefore !== undefined && trimBefore !== 0) warnOnce(`${component}.trimBefore`, `${component} ignores trimBefore: <Sequence> does not trim yet.`);
-  if (playbackRate !== undefined && playbackRate !== 1) warnOnce(`${component}.playbackRate`, `${component} ignores playbackRate: <Sequence> does not change speed yet.`);
-  if (loop) warnOnce(`${component}.loop`, `${component} ignores loop: <Sequence> does not loop yet (use <Loop>).`);
   if (hidden) return null;
   const content = freeze === undefined || freeze === null ? children : <Freeze frame={freeze}>{children}</Freeze>;
   return (
-    <Sequence layout="none" from={from} durationInFrames={durationInFrames} name={name ?? defaultName}>
+    <Sequence layout="none" from={from} durationInFrames={durationInFrames} trimBefore={trimBefore} playbackRate={playbackRate} loop={loop} name={name ?? defaultName}>
       {content}
     </Sequence>
   );

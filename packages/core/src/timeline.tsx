@@ -87,32 +87,83 @@ function recorded(parent: TimelineState, name: string | undefined, label: 'Seque
 
 export interface SequenceProps {
   from?: number;
+  /** In the children's own frames (what `useVideoConfig` gives them); the Sequence is on screen for this over `playbackRate`. */
   durationInFrames?: number;
+  /** Frames of the children's clock skipped: their frame 0 is this. Default 0. */
+  trimBefore?: number;
+  /** How much faster the children's clock runs than the Sequence's. Default 1. */
+  playbackRate?: number;
+  /** Plays the children over and over for as long as the enclosing Sequence lasts; needs a finite `durationInFrames`. */
+  loop?: boolean;
   name?: string;
   layout?: LayoutProp;
   children?: ReactNode;
 }
 
 /**
- * Shows its children from frame `from` for `durationInFrames`, with time
- * shifted so their frame 0 is `from`. The children sit in a plain `<Layer>`.
+ * Shows its children from frame `from` for `durationInFrames`, with time shifted so their frame 0 is `from`. The
+ * children sit in a plain `<Layer>`. `trimBefore` starts their clock later, `playbackRate` runs it faster or slower, and
+ * `loop` repeats it. Only the frame clock changes: an `<Audio>` or `<Video>` inside takes the Sequence's start but not its
+ * rate or trim (put those on the media).
  */
-export function Sequence({ from = 0, durationInFrames = Infinity, name, layout, children }: SequenceProps): ReactNode {
+export function Sequence({
+  from = 0,
+  durationInFrames = Infinity,
+  trimBefore = 0,
+  playbackRate = 1,
+  loop = false,
+  name,
+  layout,
+  children,
+}: SequenceProps): ReactNode {
   const parent = useTimeline();
   checkNumber('Sequence', 'from', from);
   checkNumber('Sequence', 'durationInFrames', durationInFrames, { allowInfinity: true });
   if (durationInFrames < 0) {
     throw new TypeError(`The "durationInFrames" prop of <Sequence> must not be negative, but got ${durationInFrames}`);
   }
-  // A Sequence cannot outlast what is left of the one around it.
-  const actualDuration = Math.min(durationInFrames, parent.durationInFrames - from);
+  if (typeof trimBefore !== 'number' || Number.isNaN(trimBefore)) {
+    throw new TypeError(`The "trimBefore" prop of <Sequence /> must be a number, but got ${JSON.stringify(trimBefore)}.`);
+  }
+  if (!Number.isFinite(trimBefore)) throw new TypeError(`The "trimBefore" prop of <Sequence /> must be finite, but it is ${trimBefore}.`);
+  if (trimBefore < 0) {
+    throw new TypeError(`The "trimBefore" prop of <Sequence /> must be greater than or equal to 0, but got ${trimBefore}.`);
+  }
+  if (typeof playbackRate !== 'number' || !Number.isFinite(playbackRate) || playbackRate <= 0) {
+    throw new TypeError(`The "playbackRate" prop of <Sequence /> must be a positive finite number, but got ${playbackRate}.`);
+  }
+  if (typeof loop !== 'boolean') {
+    throw new TypeError(`The "loop" prop of <Sequence /> must be a boolean, but is of type ${typeof loop}.`);
+  }
+  if (loop && !Number.isFinite(durationInFrames)) {
+    throw new Error('The "loop" prop of <Sequence /> requires a finite "durationInFrames" prop, because a <Sequence /> has no intrinsic duration.');
+  }
+  // On screen for `durationInFrames` of the children's clock, which runs `playbackRate` times as fast; a loop lasts as
+  // long as the enclosing Sequence does. A Sequence cannot outlast what is left of the one around it.
+  const window = loop ? Infinity : durationInFrames / playbackRate;
+  const actualDuration = Math.min(window, parent.durationInFrames - from);
   const relative = parent.frame - from;
   const showing = relative >= 0 && relative < actualDuration;
+  // A loop's iterations: each lasts `period` parent frames and starts the children again at `trimBefore`.
+  let local = relative;
+  let clockEnd = actualDuration * playbackRate + trimBefore;
+  if (loop) {
+    const period = durationInFrames / playbackRate;
+    const elapsed = relative / period;
+    const nearest = Math.round(elapsed);
+    // An iteration boundary a few floating point units short of the next iteration is that iteration.
+    const atBoundary = Math.abs(elapsed - nearest) <= Number.EPSILON * Math.max(1, Math.abs(elapsed)) * 4;
+    const last = Math.max(0, Math.ceil(actualDuration / period) - 1);
+    const iteration = Math.max(0, Math.min(last, atBoundary ? nearest : Math.floor(elapsed)));
+    local = relative - iteration * period;
+    clockEnd = Math.min(period, actualDuration - iteration * period) * playbackRate + trimBefore;
+  }
+  const frame = local * playbackRate + trimBefore;
   const { key, sequence } = recorded(parent, name, 'Sequence', from, Math.max(0, actualDuration));
   return (
     <SequenceHost sequence={sequence} wrapped={layout !== 'none'}>
       {showing ? (
-        <Scoped state={{ ...parent, frame: relative, durationInFrames: actualDuration, sequence: key }} layout={layout}>
+        <Scoped state={{ ...parent, frame, durationInFrames: clockEnd, sequence: key }} layout={layout}>
           {children}
         </Scoped>
       ) : undefined}

@@ -109,22 +109,13 @@ describe('Interactive elements', () => {
     expect(summary(sent[0].root)).toMatchObject({ children: [{ tag: 'p', children: ['4'] }] });
   });
 
-  it('say once that trimBefore, playbackRate and loop are not applied, and nothing for the premount and timeline props', () => {
+  it('apply trimBefore, playbackRate and loop through their Sequence, and say nothing for the premount and timeline props', () => {
     renderDom(
       <Interactive.Div trimBefore={5} playbackRate={2} loop durationInFrames={10} premountFor={30} showInTimeline={false}>
         x
       </Interactive.Div>,
     );
-    renderDom(
-      <Interactive.Div trimBefore={5} durationInFrames={10}>
-        x
-      </Interactive.Div>,
-    );
-    expect(warn.mock.calls.map((c: unknown[]) => c[0])).toEqual([
-      expect.stringContaining('trimBefore'),
-      expect.stringContaining('playbackRate'),
-      expect.stringContaining('loop'),
-    ]);
+    expect(warn.mock.calls).toEqual([]);
   });
 
   it('refuse a crop that is not a finite fraction', () => {

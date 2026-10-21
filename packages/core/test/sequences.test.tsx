@@ -5,7 +5,7 @@ import { Fragment, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { Layer, Rect } from '@kinetograph/react';
 import type { SequenceJson } from '@kinetograph/scene';
-import { Freeze, Loop, Sequence, Series } from '../src/timeline.js';
+import { Freeze, Loop, Sequence, Series, useCurrentFrame, useVideoConfig } from '../src/timeline.js';
 import { TransitionSeries, linearTiming } from '../src/transitions/index.js';
 import { fade } from '../src/transitions/fade.js';
 import { ids, renderAt } from './scene-harness.js';
@@ -321,5 +321,74 @@ describe('Sequence and blending', () => {
       1,
     ).layers;
     expect(layer).toMatchObject({ type: 'group', passThrough: true });
+  });
+});
+
+describe('Sequence trimBefore, playbackRate and loop', () => {
+  function clock(props: Record<string, unknown>, frame: number): { frame: number; duration: number } | null {
+    const seen: { frame: number; duration: number }[] = [];
+    const Probe = () => {
+      seen.push({ frame: useCurrentFrame(), duration: useVideoConfig().durationInFrames });
+      return null;
+    };
+    renderAt(
+      <Sequence layout="none" {...props}>
+        <Probe />
+      </Sequence>,
+      frame,
+    );
+    return seen.at(-1) ?? null;
+  }
+
+  it('starts the children at trimBefore', () => {
+    expect(clock({ from: 10, durationInFrames: 20, trimBefore: 5 }, 10)).toEqual({ frame: 5, duration: 25 });
+    expect(clock({ from: 10, durationInFrames: 20, trimBefore: 5 }, 14)).toEqual({ frame: 9, duration: 25 });
+    expect(clock({ from: 10, durationInFrames: 20, trimBefore: 5 }, 30)).toBeNull();
+  });
+
+  it('runs the children faster or slower, and is on screen for the duration over the rate', () => {
+    expect(clock({ from: 10, durationInFrames: 20, playbackRate: 2 }, 14)).toEqual({ frame: 8, duration: 20 });
+    // 20 child frames at double speed take 10 frames of the parent.
+    expect(clock({ from: 10, durationInFrames: 20, playbackRate: 2 }, 19)).toEqual({ frame: 18, duration: 20 });
+    expect(clock({ from: 10, durationInFrames: 20, playbackRate: 2 }, 20)).toBeNull();
+    expect(clock({ from: 0, durationInFrames: 10, playbackRate: 0.5, trimBefore: 3 }, 6)).toEqual({ frame: 6, duration: 13 });
+    expect(clock({ from: 0, durationInFrames: 10, playbackRate: 0.5 }, 19)).toEqual({ frame: 9.5, duration: 10 });
+    expect(clock({ from: 0, durationInFrames: 10, playbackRate: 0.5 }, 20)).toBeNull();
+  });
+
+  it('records the window in the parent’s frames', () => {
+    const [sequence] = renderAt(
+      <Sequence from={10} durationInFrames={20} playbackRate={2} layout="none">
+        <R />
+      </Sequence>,
+      12,
+    ).sequences;
+    expect(sequence).toMatchObject({ from: 10, durationInFrames: 10 });
+  });
+
+  it('repeats the children for as long as the parent lasts', () => {
+    // Four frame loops from frame 10; each iteration starts again at trimBefore.
+    expect(clock({ from: 10, durationInFrames: 4, loop: true }, 10)).toEqual({ frame: 0, duration: 4 });
+    expect(clock({ from: 10, durationInFrames: 4, loop: true }, 13)).toEqual({ frame: 3, duration: 4 });
+    expect(clock({ from: 10, durationInFrames: 4, loop: true }, 14)).toEqual({ frame: 0, duration: 4 });
+    expect(clock({ from: 10, durationInFrames: 4, loop: true, trimBefore: 2 }, 15)).toEqual({ frame: 3, duration: 6 });
+    // The last iteration is cut short by the parent (90 frames).
+    expect(clock({ from: 86, durationInFrames: 3, loop: true }, 89)).toEqual({ frame: 0, duration: 1 });
+    expect(clock({ from: 5, durationInFrames: 4, loop: true }, 4)).toBeNull();
+  });
+
+  it('loops with a fractional period and a rate', () => {
+    expect(clock({ from: 0, durationInFrames: 5, loop: true, playbackRate: 2 }, 2)).toEqual({ frame: 4, duration: 5 });
+    expect(clock({ from: 0, durationInFrames: 5, loop: true, playbackRate: 2 }, 3)).toEqual({ frame: 1, duration: 5 });
+    expect(clock({ from: 0, durationInFrames: 7, loop: true, playbackRate: 3 }, 7)).toEqual({ frame: expect.closeTo(0, 9), duration: 7 });
+  });
+
+  it('refuses values it cannot honour', () => {
+    expect(() => clock({ playbackRate: 0 }, 0)).toThrow('The "playbackRate" prop of <Sequence /> must be a positive finite number, but got 0.');
+    expect(() => clock({ playbackRate: Infinity }, 0)).toThrow(/positive finite/);
+    expect(() => clock({ trimBefore: -1 }, 0)).toThrow('The "trimBefore" prop of <Sequence /> must be greater than or equal to 0, but got -1.');
+    expect(() => clock({ trimBefore: NaN }, 0)).toThrow(/must be a number/);
+    expect(() => clock({ loop: 1 }, 0)).toThrow('The "loop" prop of <Sequence /> must be a boolean, but is of type number.');
+    expect(() => clock({ loop: true }, 0)).toThrow('requires a finite "durationInFrames" prop');
   });
 });

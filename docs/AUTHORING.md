@@ -670,8 +670,10 @@ Mapping onto the engine:
   and `Interactive.create()`, `withSchema()`): each is a `<Sequence layout="none">` around the element, so it shows from
   `from` for `durationInFrames` under the name `<Interactive.Div>` (or `name`), is drawn from its props, and takes
   `hidden`, `freeze` and the four `crop*` props (a `clip-path: inset(…)`, rounded to the element's `border-radius`;
-  recorded from the published package). `trimBefore`, `playbackRate` and `loop` are accepted with a warning that
-  `<Sequence>` does not apply them yet; `premountFor` and the like are the preview's and a render ignores them as
+  recorded from the published package). `trimBefore`, `playbackRate` and `loop` are the `<Sequence>`'s own: the
+  children's frame is `(frame - from) * playbackRate + trimBefore`, they are on screen for `durationInFrames /
+  playbackRate`, and `loop` (which needs a finite `durationInFrames`) starts them again at `trimBefore` each time it
+  ends. Only the frame clock changes: an `<Audio>` or `<Video>` inside does not take the rate or trim. `premountFor` and the like are the preview's and a render ignores them as
   Remotion does. `Interactive.create({ Component, layout: 'absolute-fill' })` puts the component in a clipped `div` of
   the `width` and `height` props. The field tables (`Interactive.baseSchema`, …, and `absoluteFillSchema`) are
   Remotion's data, unused in a render.
