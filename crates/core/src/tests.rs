@@ -127,7 +127,9 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
             (0, 8),
             (1, 0),
             (2, 0),
-            (2, 1)
+            (2, 1),
+            (2, 2),
+            (2, 3)
         ]
     );
     assert_eq!(

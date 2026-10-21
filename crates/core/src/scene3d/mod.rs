@@ -59,6 +59,8 @@ pub struct Scene3dLayer {
     /// The surroundings, as light for every lit surface and, if asked, as
     /// the picture behind the objects.
     pub environment: Option<Environment3d>,
+    /// Depth fog over the objects (not the background).
+    pub fog: Option<Fog3d>,
     /// Drawn in this order when opaque; see `docs/SCENE.md` for transparency.
     #[serde(default)]
     pub objects: Vec<Object3d>,
@@ -141,6 +143,18 @@ fn zero() -> Num {
     Num::Const(0.0)
 }
 
+fn default_spot_direction() -> Vec3N {
+    Vec3N::new(0.0, 0.0, -1.0)
+}
+
+fn default_spot_angle() -> Num {
+    Num::Const(30.0)
+}
+
+fn default_spot_penumbra() -> Num {
+    Num::Const(0.2)
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Light3d {
@@ -179,6 +193,36 @@ pub enum Light3d {
         #[serde(default = "zero")]
         range: Num,
     },
+    /// Light in a cone from `position` along `direction`, with half-angle
+    /// `angle` degrees (0..=90) and soft edge fraction `penumbra` (0..=1).
+    #[serde(rename_all = "camelCase")]
+    Spot {
+        position: Vec3N,
+        #[serde(default = "default_spot_direction")]
+        direction: Vec3N,
+        #[serde(default = "default_spot_angle")]
+        angle: Num,
+        #[serde(default = "default_spot_penumbra")]
+        penumbra: Num,
+        #[serde(default = "white")]
+        color: Color,
+        #[serde(default = "one")]
+        intensity: Num,
+        #[serde(default = "zero")]
+        range: Num,
+    },
+}
+
+/// Depth fog over objects, either linear between `near` and `far` or
+/// exponential-squared with `density`.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Fog3d {
+    #[serde(default = "white")]
+    pub color: Color,
+    pub near: Option<f64>,
+    pub far: Option<f64>,
+    pub density: Option<f64>,
 }
 
 /// Image-based lighting: an equirectangular picture of the surroundings, read
@@ -543,8 +587,21 @@ pub struct Resolved3d {
     pub camera: ResolvedCamera3d,
     pub lights: Vec<ResolvedLight3d>,
     pub environment: Option<ResolvedEnvironment3d>,
+    pub fog: Option<ResolvedFog3d>,
     /// Every drawable object, flattened, in document order.
     pub objects: Vec<ResolvedObject3d>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedFog3d {
+    pub color: [f64; 3],
+    pub kind: FogKind3d,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FogKind3d {
+    Linear { near: f64, far: f64 },
+    Exp2 { density: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -574,6 +631,15 @@ pub enum ResolvedLight3d {
     },
     Point {
         position: DVec3,
+        color: [f64; 3],
+        range: f64,
+    },
+    Spot {
+        position: DVec3,
+        /// Unit length: the way the light points.
+        direction: DVec3,
+        cos_outer: f64,
+        cos_inner: f64,
         color: [f64; 3],
         range: f64,
     },
@@ -712,28 +778,56 @@ impl Scene3dLayer {
         }
         let mut casters = 0;
         for light in &self.lights {
-            if let Light3d::Directional {
-                cast_shadow: true,
-                shadow,
-                ..
-            } = light
-            {
-                casters += 1;
-                if !(64..=MAX_SHADOW_MAP).contains(&shadow.map_size) {
-                    return bad(format!(
-                        "shadow mapSize must be 64 to {MAX_SHADOW_MAP}, got {}",
-                        shadow.map_size
-                    ));
-                }
-                for (what, v) in [
-                    ("bias", shadow.bias),
-                    ("normalBias", shadow.normal_bias),
-                    ("radius", shadow.radius),
-                ] {
-                    if !(v.is_finite() && v >= 0.0) {
-                        return bad(format!("shadow {what} must be 0 or more, got {v}"));
+            match light {
+                Light3d::Directional {
+                    cast_shadow: true,
+                    shadow,
+                    ..
+                } => {
+                    casters += 1;
+                    if !(64..=MAX_SHADOW_MAP).contains(&shadow.map_size) {
+                        return bad(format!(
+                            "shadow mapSize must be 64 to {MAX_SHADOW_MAP}, got {}",
+                            shadow.map_size
+                        ));
+                    }
+                    for (what, v) in [
+                        ("bias", shadow.bias),
+                        ("normalBias", shadow.normal_bias),
+                        ("radius", shadow.radius),
+                    ] {
+                        if !(v.is_finite() && v >= 0.0) {
+                            return bad(format!("shadow {what} must be 0 or more, got {v}"));
+                        }
                     }
                 }
+                Light3d::Spot {
+                    angle, penumbra, ..
+                } => {
+                    if !(angle.min().is_finite()
+                        && angle.max().is_finite()
+                        && angle.min() >= 0.0
+                        && angle.max() <= 90.0)
+                    {
+                        return bad(format!(
+                            "spot light angle must be 0 to 90 degrees, got {}..{}",
+                            angle.min(),
+                            angle.max()
+                        ));
+                    }
+                    if !(penumbra.min().is_finite()
+                        && penumbra.max().is_finite()
+                        && penumbra.min() >= 0.0
+                        && penumbra.max() <= 1.0)
+                    {
+                        return bad(format!(
+                            "spot light penumbra must be 0 to 1, got {}..{}",
+                            penumbra.min(),
+                            penumbra.max()
+                        ));
+                    }
+                }
+                _ => {}
             }
         }
         if casters > MAX_SHADOW_LIGHTS {
@@ -764,6 +858,26 @@ impl Scene3dLayer {
             && environment.src.trim().is_empty()
         {
             return bad("environment needs a src, the path of a .hdr, .png or .jpg picture".into());
+        }
+        if let Some(fog) = &self.fog {
+            match (fog.near, fog.far, fog.density) {
+                (Some(near), Some(far), None) => {
+                    if !(near.is_finite() && near >= 0.0) {
+                        return bad(format!("fog near must be 0 or more, got {near}"));
+                    }
+                    if !(far.is_finite() && near < far) {
+                        return bad(format!("fog far must be above near ({near}), got {far}"));
+                    }
+                }
+                (None, None, Some(density)) => {
+                    if !(density.is_finite() && density >= 0.0) {
+                        return bad(format!("fog density must be 0 or more, got {density}"));
+                    }
+                }
+                _ => {
+                    return bad("fog must specify either near and far or density".into());
+                }
+            }
         }
         validate_objects(layer, &self.objects, fonts)
     }
@@ -824,6 +938,26 @@ impl Scene3dLayer {
                     color: scaled(*color, intensity.at(f).max(0.0)),
                     range: range.at(f).max(0.0),
                 },
+                Light3d::Spot {
+                    position,
+                    direction,
+                    angle,
+                    penumbra,
+                    color,
+                    intensity,
+                    range,
+                } => {
+                    let angle_rad = angle.at(f).clamp(0.0, 90.0).to_radians();
+                    let pen = penumbra.at(f).clamp(0.0, 1.0);
+                    ResolvedLight3d::Spot {
+                        position: position.at(f),
+                        direction: direction.at(f).try_normalize().unwrap_or(DVec3::NEG_Z),
+                        cos_outer: angle_rad.cos(),
+                        cos_inner: (angle_rad * (1.0 - pen)).cos(),
+                        color: scaled(*color, intensity.at(f).max(0.0)),
+                        range: range.at(f).max(0.0),
+                    }
+                }
             })
             .collect();
         let environment = self.environment.as_ref().map(|e| ResolvedEnvironment3d {
@@ -835,6 +969,20 @@ impl Scene3dLayer {
                 blur: e.background_blur.at(f).clamp(0.0, 1.0),
             }),
         });
+        let fog = self.fog.as_ref().map(|fog| {
+            let [r, g, b, _] = linear(fog.color);
+            let kind = match (fog.near, fog.far, fog.density) {
+                (Some(near), Some(far), _) => FogKind3d::Linear { near, far },
+                (_, _, Some(density)) => FogKind3d::Exp2 {
+                    density: density.max(0.0),
+                },
+                _ => FogKind3d::Exp2 { density: 0.0 },
+            };
+            ResolvedFog3d {
+                color: [r, g, b],
+                kind,
+            }
+        });
         let mut objects = Vec::new();
         flatten(&self.objects, DMat4::IDENTITY, f, seconds, &mut objects);
         Ok(Resolved3d {
@@ -842,6 +990,7 @@ impl Scene3dLayer {
             camera,
             lights,
             environment,
+            fog,
             objects,
         })
     }
@@ -1199,6 +1348,53 @@ mod tests {
             panic!("not a point light");
         };
         assert_eq!((color, range), ([10.0; 3], 8.0));
+    }
+
+    #[test]
+    fn spot_light_and_fog_resolve_and_validate() {
+        let l = layer(
+            r##"{"width": 10, "height": 10,
+                "lights": [{"type": "spot", "position": [0, 0, 5], "direction": [0, 0, -2], "angle": 60, "penumbra": 0.5}],
+                "fog": {"color": "#808080", "near": 2, "far": 10}}"##,
+        );
+        l.validate("s", &has_font).unwrap();
+        let r = l.resolve("s", 0.0, 0.0).unwrap();
+        let ResolvedLight3d::Spot {
+            direction,
+            cos_outer,
+            cos_inner,
+            ..
+        } = r.lights[0]
+        else {
+            panic!("not spot");
+        };
+        assert_eq!(direction, DVec3::NEG_Z);
+        assert!((cos_outer - 60.0_f64.to_radians().cos()).abs() < 1e-12);
+        assert!((cos_inner - 30.0_f64.to_radians().cos()).abs() < 1e-12);
+        let fog = r.fog.expect("has fog");
+        assert_eq!(
+            fog.kind,
+            FogKind3d::Linear {
+                near: 2.0,
+                far: 10.0
+            }
+        );
+        assert!((fog.color[0] - 0.2158605).abs() < 1e-6);
+
+        let err = |json: &str| {
+            layer(json)
+                .validate("hero", &has_font)
+                .expect_err("invalid")
+                .to_string()
+        };
+        assert!(err(r#"{"width": 1, "height": 1, "lights": [{"type": "spot", "position": [0,0,0], "angle": 95}]}"#).contains("hero"));
+        assert!(err(r#"{"width": 1, "height": 1, "lights": [{"type": "spot", "position": [0,0,0], "angle": -5}]}"#).contains("angle"));
+        assert!(err(r#"{"width": 1, "height": 1, "lights": [{"type": "spot", "position": [0,0,0], "penumbra": 1.5}]}"#).contains("penumbra"));
+        assert!(err(r#"{"width": 1, "height": 1, "fog": {"near": 5, "far": 2}}"#).contains("hero"));
+        assert!(
+            err(r#"{"width": 1, "height": 1, "fog": {"near": -1, "far": 2}}"#).contains("near")
+        );
+        assert!(err(r#"{"width": 1, "height": 1, "fog": {"density": -0.1}}"#).contains("density"));
     }
 
     #[test]

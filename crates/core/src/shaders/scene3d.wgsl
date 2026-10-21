@@ -20,13 +20,16 @@
 // drawn as the background, before the meshes.
 
 struct Light {
-    // xyz: the direction toward a directional light, or a point light's
-    // position. w: 0 for directional, 1 for point.
+    // xyz: the direction toward a directional light, or a point/spot light's
+    // position. w: 0 for directional, 1 for point, 2 for spot.
     vector: vec4<f32>,
-    // rgb: colour times intensity. a: a point light's range, 0 for none.
+    // rgb: colour times intensity. a: a point/spot light's range, 0 for none.
     color: vec4<f32>,
     // x: the light's shadow map, 0 to 3, or -1 for none.
+    // y: cos_outer (spot). z: cos_inner (spot).
     shadow: vec4<f32>,
+    // xyz: a spot light's direction.
+    spot: vec4<f32>,
 }
 
 struct Shadow {
@@ -54,6 +57,10 @@ struct Frame {
     // y: the last level of the specular map. z: the intensity of the
     // background. w: the level of the specular map the background reads.
     env: vec4<f32>,
+    // rgb: fog colour in linear light. a: 0 for none, 1 for linear, 2 for exp2.
+    fog_color: vec4<f32>,
+    // x: near (or density for exp2). y: far.
+    fog_params: vec4<f32>,
 }
 
 struct Draw {
@@ -316,6 +323,12 @@ fn fs_main(
                     let fade = clamp(1.0 - ratio * ratio * ratio * ratio, 0.0, 1.0);
                     radiance *= fade * fade;
                 }
+                if light.vector.w > 1.5 {
+                    let cos_angle = dot(-l, light.spot.xyz);
+                    let cos_outer = light.shadow.y;
+                    let cos_inner = max(light.shadow.z, cos_outer + 1e-5);
+                    radiance *= smoothstep(cos_outer, cos_inner, cos_angle);
+                }
             }
             let n_dot_l = dot(n, l);
             if n_dot_l <= 0.0 {
@@ -336,6 +349,21 @@ fn fs_main(
         }
     } else {
         rgb += base.rgb;
+    }
+    if frame.fog_color.w > 0.5 {
+        let dist = length(in.world - frame.eye.xyz);
+        var factor = 0.0;
+        if frame.fog_color.w < 1.5 {
+            factor = clamp(
+                (dist - frame.fog_params.x) / (frame.fog_params.y - frame.fog_params.x),
+                0.0,
+                1.0,
+            );
+        } else {
+            let d = frame.fog_params.x * dist;
+            factor = 1.0 - exp(-(d * d));
+        }
+        rgb = mix(rgb, frame.fog_color.rgb, factor);
     }
     let a = base.a;
     return vec4<f32>(rgb * a, a);

@@ -602,15 +602,16 @@ impl State {
 }
 
 /// Bytes of the per-frame block: two matrices, the eye, the ambient light,
-/// `MAX_LIGHTS` lights of three vectors, `MAX_SHADOW_LIGHTS` shadows of a
-/// matrix and a vector, a matrix, a 3 x 3 matrix and a vector.
+/// `MAX_LIGHTS` lights of four vectors, `MAX_SHADOW_LIGHTS` shadows of a
+/// matrix and a vector, a matrix, a 3 x 3 matrix, a vector, and two fog vectors.
 const FRAME_BYTES: u64 = 64 * 2
     + 16 * 2
-    + (crate::scene3d::MAX_LIGHTS as u64) * 48
+    + (crate::scene3d::MAX_LIGHTS as u64) * 64
     + (MAX_SHADOW_LIGHTS as u64) * 80
     + 64
     + 48
-    + 16;
+    + 16
+    + 16 * 2;
 
 /// What an item's bind group of textures is cached by: the ids of its textures.
 fn texture_key(item: &DrawItem) -> [u64; 3] {
@@ -765,12 +766,7 @@ fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool, max_lod: f
             Some(l) => {
                 push(
                     &mut out,
-                    &[
-                        l.vector[0],
-                        l.vector[1],
-                        l.vector[2],
-                        f32::from(u8::from(l.point)),
-                    ],
+                    &[l.vector[0], l.vector[1], l.vector[2], f32::from(l.kind)],
                 );
                 push(&mut out, &[l.color[0], l.color[1], l.color[2], l.range]);
                 // The slot of its shadow map, as `DrawScene::shadows` counts.
@@ -778,11 +774,17 @@ fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool, max_lod: f
                     next_slot += 1;
                     (next_slot - 1) as f32
                 });
-                push(&mut out, &[slot, 0.0, 0.0, 0.0]);
+                push(&mut out, &[slot, l.cos_outer, l.cos_inner, 0.0]);
+                push(
+                    &mut out,
+                    &[l.spot_dir[0], l.spot_dir[1], l.spot_dir[2], 0.0],
+                );
             }
             None => push(
                 &mut out,
-                &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0],
+                &[
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                ],
             ),
         }
     }
@@ -816,6 +818,16 @@ fn frame_bytes(scene: &DrawScene, place: &glam::Mat4, mirrored: bool, max_lod: f
             );
         }
         None => push(&mut out, &[0.0; 16]),
+    }
+    match &scene.fog {
+        Some(f) => {
+            push(
+                &mut out,
+                &[f.color[0], f.color[1], f.color[2], f32::from(f.mode)],
+            );
+            push(&mut out, &[f.near, f.far, 0.0, 0.0]);
+        }
+        None => push(&mut out, &[0.0; 8]),
     }
     debug_assert_eq!(out.len() as u64, FRAME_BYTES);
     out
@@ -1147,6 +1159,7 @@ mod tests {
             items: Vec::new(),
             opaque: 0,
             environment: None,
+            fog: None,
         };
         assert_eq!(
             frame_bytes(&scene, &glam::Mat4::IDENTITY, false, 0.0).len() as u64,

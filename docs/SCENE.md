@@ -572,6 +572,12 @@ GLSL fragment shader that mixes the scene going out with the scene coming in) ar
   ] }
 ```
 
+A **spot light** is `{ "type": "spot", "position", "direction" (default [0, 0, -1]), "angle" (half-angle in degrees, 0 to 90,
+default 30), "penumbra" (0 to 1, default 0.2: the share of the cone, from its edge in, over which the light fades),
+"color", "intensity", "range" }`: a point light inside a cone (a smoothstep between the outer and the inner angle). It
+casts no shadow. **Fog** is `"fog": { "color", "near", "far" }` (linear, by distance from the camera) or `{ "color",
+"density" }` (`1 - exp(-(density * distance)^2)`); it covers the objects, not the environment background.
+
 A 3D scene, drawn by the engine's own renderer into the box `(0, 0, width, height)` and then a layer like any other: it
 takes `effects`, `clip`, `mask`, `matte`, `blendMode`, `opacity`, `motionBlur` and the 2D and 3D layer `transform`
 (which turn and place the finished picture, as for every layer). Around the objects it is transparent, so 2D layers
@@ -710,7 +716,7 @@ plus GGX specular per light, and the environment if there is one.
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Point-light shadows, spot lights, occlusion and emissive maps, bevels, fog, post effects
+- **Not drawn (v1).** Point-light shadows, spot-light shadows, occlusion and emissive maps, bevels, post effects
   beyond the layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).
 

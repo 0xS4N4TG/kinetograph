@@ -17,8 +17,8 @@ use super::environment::Environment;
 use super::mesh::{MeshData, primitive};
 use super::model::Model;
 use super::{
-    Content3d, MAX_LIGHTS, Resolved3d, ResolvedCamera3d, ResolvedLight3d, ResolvedMaterial3d,
-    Shadow3d,
+    Content3d, FogKind3d, MAX_LIGHTS, Resolved3d, ResolvedCamera3d, ResolvedLight3d,
+    ResolvedMaterial3d, Shadow3d,
 };
 use crate::error::{Error, Result};
 use crate::text::TextEngine;
@@ -180,12 +180,26 @@ impl DrawItem {
 pub struct Light {
     /// A direction (toward the light) or a position.
     pub vector: [f32; 3],
-    pub point: bool,
+    /// 0 for directional, 1 for point, 2 for spot.
+    pub kind: u8,
     pub color: [f32; 3],
     pub range: f32,
+    /// For a spot light: unit direction the light points.
+    pub spot_dir: [f32; 3],
+    pub cos_outer: f32,
+    pub cos_inner: f32,
     /// A directional light's shadow map; `None` when it casts none, or when
     /// no object does.
     pub shadow: Option<Shadow>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fog {
+    pub color: [f32; 3],
+    /// 1 for linear (`near`, `far`), 2 for exp2 (`density` in `near`).
+    pub mode: u8,
+    pub near: f32,
+    pub far: f32,
 }
 
 /// A directional light's shadow map: an orthographic view along the light
@@ -256,13 +270,14 @@ pub struct DrawScene {
     pub view_proj: Mat4,
     pub eye: Vec3,
     pub ambient: [f32; 3],
-    /// Directional and point lights, at most `MAX_LIGHTS`.
+    /// Directional, point and spot lights, at most `MAX_LIGHTS`.
     pub lights: Vec<Light>,
     /// Opaque items, then translucent ones farthest first; the first
     /// `opaque` are the opaque ones.
     pub items: Vec<DrawItem>,
     pub opaque: usize,
     pub environment: Option<EnvironmentDraw>,
+    pub fog: Option<Fog>,
 }
 
 /// The environment map as the pass reads it.
@@ -425,9 +440,12 @@ impl Assets3d {
                     }
                     lights.push(Light {
                         vector: (-*direction).as_vec3().to_array(),
-                        point: false,
+                        kind: 0,
                         color: color.map(|c| c as f32),
                         range: 0.0,
+                        spot_dir: [0.0; 3],
+                        cos_outer: 0.0,
+                        cos_inner: 0.0,
                         shadow: None,
                     });
                 }
@@ -437,9 +455,29 @@ impl Assets3d {
                     range,
                 } => lights.push(Light {
                     vector: position.as_vec3().to_array(),
-                    point: true,
+                    kind: 1,
                     color: color.map(|c| c as f32),
                     range: *range as f32,
+                    spot_dir: [0.0; 3],
+                    cos_outer: 0.0,
+                    cos_inner: 0.0,
+                    shadow: None,
+                }),
+                ResolvedLight3d::Spot {
+                    position,
+                    direction,
+                    cos_outer,
+                    cos_inner,
+                    color,
+                    range,
+                } => lights.push(Light {
+                    vector: position.as_vec3().to_array(),
+                    kind: 2,
+                    color: color.map(|c| c as f32),
+                    range: *range as f32,
+                    spot_dir: direction.as_vec3().to_array(),
+                    cos_outer: *cos_outer as f32,
+                    cos_inner: *cos_inner as f32,
                     shadow: None,
                 }),
             }
@@ -582,6 +620,18 @@ impl Assets3d {
                 })
             })
             .transpose()?;
+        let fog = scene.fog.map(|f| {
+            let (mode, near, far) = match f.kind {
+                FogKind3d::Linear { near, far } => (1, near as f32, far as f32),
+                FogKind3d::Exp2 { density } => (2, density as f32, 0.0),
+            };
+            Fog {
+                color: f.color.map(|c| c as f32),
+                mode,
+                near,
+                far,
+            }
+        });
         Ok(DrawScene {
             size,
             msaa: scene.msaa,
@@ -592,6 +642,7 @@ impl Assets3d {
             items,
             opaque: opaque_count,
             environment,
+            fog,
         })
     }
 }
@@ -663,7 +714,7 @@ mod tests {
                 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 255,
             ],
         );
-        let mips = t.mips();
+        let mips = t.mips(true);
         assert_eq!(mips.len(), 2);
         assert_eq!((mips[1].0, mips[1].1), (1, 1));
         assert!(
@@ -673,7 +724,7 @@ mod tests {
         );
         assert_eq!(mips[1].2[3], 255);
         let wide = Texture::new(4, 1, vec![255; 16]);
-        let sizes: Vec<_> = wide.mips().iter().map(|m| (m.0, m.1)).collect();
+        let sizes: Vec<_> = wide.mips(true).iter().map(|m| (m.0, m.1)).collect();
         assert_eq!(sizes, [(4, 1), (2, 1), (1, 1)]);
     }
 

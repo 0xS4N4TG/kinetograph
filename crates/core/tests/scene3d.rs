@@ -843,3 +843,95 @@ fn a_metallic_roughness_texture_scales_the_factors() {
     // Metallic 1 with no texture is not: it has no diffuse light.
     assert_ne!(metal, dielectric);
 }
+
+#[test]
+fn a_spot_light_lights_inside_its_cone_and_matches_a_point_light_at_the_axis() {
+    let spot = render(&format!(
+        r##"{ORTHO}, "lights": [{{"type": "spot", "position": [0, 0, 2], "direction": [0, 0, -1],
+            "angle": 15, "penumbra": 0.2, "color": "#ff8040", "intensity": 4}}],
+            "objects": [{{"type": "mesh", "geometry": {{"kind": "plane", "width": 10, "height": 10}},
+                "material": {{"color": "#ffffff", "roughness": 1}}}}]"##
+    ));
+    let point = render(&format!(
+        r##"{ORTHO}, "lights": [{{"type": "point", "position": [0, 0, 2],
+            "color": "#ff8040", "intensity": 4}}],
+            "objects": [{{"type": "mesh", "geometry": {{"kind": "plane", "width": 10, "height": 10}},
+                "material": {{"color": "#ffffff", "roughness": 1}}}}]"##
+    ));
+    let (spot_centre, point_centre) = (px(&spot, 50, 50), px(&point, 50, 50));
+    assert!(spot_centre[0] > 100, "{spot_centre:?}");
+    for c in 0..3 {
+        assert!(
+            (i32::from(spot_centre[c]) - i32::from(point_centre[c])).abs() <= 2,
+            "spot {spot_centre:?} vs point {point_centre:?}"
+        );
+    }
+    // Outside the 15-degree cone (at z = 0 from z = 2, radius is 2 * tan(15°) ≈ 0.54 units;
+    // pixel (10, 50) is at x = -4 units): dark.
+    assert_eq!(px(&spot, 10, 50), [0, 0, 0, 255]);
+}
+
+#[test]
+fn fog_blends_by_distance_and_zero_density_changes_nothing() {
+    // Orthographic camera at (0, 0, 5): a plane at z has distance 5 - z at (0, 0, z).
+    let linear_at = |z: f64| {
+        let frame = render(&format!(
+            r##"{ORTHO}, "fog": {{"color": "#00ff00", "near": 2, "far": 8}},
+                "objects": [{}]"##,
+            quad("#ff0000", 10.0, z, "")
+        ));
+        px(&frame, 50, 50)
+    };
+    // dist = 1 <= near (2): object's own colour.
+    assert_eq!(linear_at(4.0), [255, 0, 0, 255]);
+    // dist = 9 >= far (8): fog colour.
+    assert_eq!(linear_at(-4.0), [0, 255, 0, 255]);
+    // dist = 5 (midway between 2 and 8): strictly between.
+    let mid = linear_at(0.0);
+    assert!(
+        mid[0] > 0 && mid[0] < 255 && mid[1] > 0 && mid[1] < 255 && mid[2] == 0,
+        "{mid:?}"
+    );
+
+    // Exp2 fog with density 0 changes nothing; positive density fades toward fog colour.
+    let plain = render(&format!(
+        r##"{ORTHO}, "objects": [{}]"##,
+        quad("#ff0000", 10.0, 0.0, "")
+    ));
+    let zero_exp2 = render(&format!(
+        r##"{ORTHO}, "fog": {{"color": "#00ff00", "density": 0}}, "objects": [{}]"##,
+        quad("#ff0000", 10.0, 0.0, "")
+    ));
+    assert_eq!(plain.rgba, zero_exp2.rgba);
+    let dense_exp2 = render(&format!(
+        r##"{ORTHO}, "fog": {{"color": "#00ff00", "density": 0.2}}, "objects": [{}]"##,
+        quad("#ff0000", 10.0, 0.0, "")
+    ));
+    let p = px(&dense_exp2, 50, 50);
+    assert!(p[0] > 0 && p[0] < 255 && p[1] > 0 && p[1] < 255, "{p:?}");
+}
+
+#[test]
+fn bad_spot_light_and_fog_parameters_are_rejected_at_load() {
+    let err = |extra: &str| {
+        let json = format!(
+            r##"{{"width": 10, "height": 10, "fps": 30, "durationInFrames": 1,
+                "layers": [{{"id": "my_layer", "type": "scene3d", "width": 10, "height": 10, {extra}}}]}}"##
+        );
+        match Scene::from_json(&json, ".".into()) {
+            Err(Error::Scene(msg)) => msg,
+            other => panic!("expected a scene error, got {:?}", other.err()),
+        }
+    };
+    for bad in [
+        r#""lights": [{"type": "spot", "position": [0, 0, 0], "angle": 95}]"#,
+        r#""lights": [{"type": "spot", "position": [0, 0, 0], "angle": -1}]"#,
+        r#""lights": [{"type": "spot", "position": [0, 0, 0], "penumbra": 1.2}]"#,
+        r##""fog": {"color": "#ffffff", "near": 10, "far": 5}"##,
+        r##""fog": {"color": "#ffffff", "near": -1, "far": 5}"##,
+        r##""fog": {"color": "#ffffff", "density": -0.5}"##,
+    ] {
+        let msg = err(bad);
+        assert!(msg.contains("my_layer"), "{bad} -> {msg}");
+    }
+}
