@@ -13,7 +13,7 @@ use kinetograph_core::dom_layout::{
     DomLayoutBox, DomLayoutError, DomLayoutRequest, TextSize, has_text, layout_dom as lay_out,
     measure_text,
 };
-use kinetograph_dom::document::{self, IslandDocument};
+use kinetograph_dom::document::{self, IslandCache, IslandDocument};
 use kinetograph_dom::request::{IslandRequest, Unsupported};
 use kinetograph_dom::{paint, readback};
 
@@ -130,13 +130,23 @@ fn resolve_island(request: &IslandRequest) -> std::result::Result<IslandDocument
     document::resolve(request).map_err(|e| (Code::Render, e.to_string()))
 }
 
+thread_local! {
+    /// The islands of the motion-blur sample pass in progress (`IslandCache`).
+    static SAMPLES: std::cell::RefCell<IslandCache> = std::cell::RefCell::new(IslandCache::default());
+}
+
 /// One DOM island at one frame: an `IslandRequest` as JSON in, an
-/// `IslandOutput` as JSON out.
-pub fn render_dom_island(request_json: &str) -> Result<String> {
+/// `IslandOutput` as JSON out. `pass` numbers the sub-frame renders of one
+/// motion-blurred frame; the samples of a pass update one document per island
+/// instead of building it again.
+pub fn render_dom_island(request_json: &str, pass: Option<u64>) -> Result<String> {
     let json = request_json.to_string();
     on_island_thread(move || {
         let request = parse_island(&json, "renderDomIsland")?;
-        let island = resolve_island(&request)?;
+        let resolved = SAMPLES
+            .with(|cache| cache.borrow_mut().resolve(&request, pass))
+            .map_err(|e| (Code::Render, e.to_string()))?;
+        let island = &resolved.island;
         let mut output = paint::paint(&island.doc, &request);
         // A file the island named that could not be read is not drawn as the
         // author meant: say so rather than draw a blank.
@@ -149,6 +159,7 @@ pub fn render_dom_island(request_json: &str) -> Result<String> {
                 reason: format!("cannot load a resource: {missing}"),
             });
         }
+        SAMPLES.with(|cache| cache.borrow_mut().keep(request, resolved));
         serde_json::to_string(&output)
             .map_err(|e| (Code::Render, format!("cannot write the island: {e}")))
     })

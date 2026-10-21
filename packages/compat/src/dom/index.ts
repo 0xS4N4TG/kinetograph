@@ -51,6 +51,24 @@ interface IslandOutputJson {
   blendSpace?: 'linear' | 'srgb';
 }
 
+/** The motion-blur sample pass in progress, or null (docs/SCENE.md, "Motion blur"). */
+let samplePass: number | null = null;
+let passes = 0;
+
+/**
+ * Marks the islands rendered from now to `endSamplePass()` as the samples of one motion-blurred frame. The addon keeps
+ * an island's document between them and edits it from one sample to the next instead of building it again; each
+ * sample is drawn as if it were built afresh.
+ */
+export function beginSamplePass(): void {
+  passes = (passes % 0x7fffffff) + 1;
+  samplePass = passes;
+}
+
+export function endSamplePass(): void {
+  samplePass = null;
+}
+
 /** `style`, `script` and friends draw nothing: an island that is only one of them needs no trip to Rust. */
 const INVISIBLE = new Set(['style', 'script', 'link', 'meta', 'title', 'base', 'head', 'noscript', 'template']);
 
@@ -91,7 +109,10 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
   recordIsland(request.path, request.time, request.root);
   if (history.length > 0) request.history = history;
   if (isWarming()) return { layers: [], unsupported: [], camera: null };
-  const output = JSON.parse(addonFunction('renderDomIsland')(JSON.stringify(request))) as IslandOutputJson;
+  const json = JSON.stringify(request);
+  const output = JSON.parse(
+    samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass),
+  ) as IslandOutputJson;
 
   const placed = fillNatives(output.layers, (path) => {
     const node = natives.get(path);

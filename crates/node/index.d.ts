@@ -213,7 +213,7 @@ export declare function renderCanvas(requestJson: string): Buffer
  * Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
  * painted as scene layers. CPU only.
  */
-export declare function renderDomIsland(requestJson: string): string
+export declare function renderDomIsland(requestJson: string, pass?: number | undefined | null): string
 
 export interface RendererOptions {
   /** Default true. */

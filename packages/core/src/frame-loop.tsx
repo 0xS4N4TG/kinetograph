@@ -20,7 +20,14 @@ import {
   type SequenceJson,
   type Unsupported,
 } from '@kinetograph/scene';
-import { clearHistory, resetTransitionWindow, setHistoryMode, transitionWindowSeconds } from '@kinetograph/compat/dom';
+import {
+  beginSamplePass,
+  clearHistory,
+  endSamplePass,
+  resetTransitionWindow,
+  setHistoryMode,
+  transitionWindowSeconds,
+} from '@kinetograph/compat/dom';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, setVirtualFrame, virtualNow } from './determinism.js';
@@ -153,6 +160,8 @@ class Renderer implements FrameRenderer {
     let layers = main.layers;
     if (times.length > 0) {
       const treesAt = new Map<number, LayerJson[]>();
+      // The samples share the islands' documents (compat/dom).
+      beginSamplePass();
       for (const time of times) {
         if (time === frame) {
           treesAt.set(time, main.layers);
@@ -164,6 +173,7 @@ class Renderer implements FrameRenderer {
         const tree = await this.settle(live, () => this.update(live, this.element(component, config, time)));
         treesAt.set(time, tree.layers);
       }
+      endSamplePass();
       setVirtualFrame(frame, config.fps, { fireTimers: false });
       layers = attachMotionFrames(main.layers, frame, treesAt);
     }

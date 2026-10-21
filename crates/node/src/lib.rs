@@ -266,8 +266,8 @@ pub fn layout_dom(request_json: String) -> Result<String> {
 /// Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
 /// painted as scene layers. CPU only.
 #[napi]
-pub fn render_dom_island(request_json: String) -> Result<String> {
-    dom::render_dom_island(&request_json)
+pub fn render_dom_island(request_json: String, pass: Option<u32>) -> Result<String> {
+    dom::render_dom_island(&request_json, pass.map(u64::from))
 }
 
 /// The boxes of every element of a DOM island (docs/ENGINE.md §2): an
