@@ -1,4 +1,6 @@
 import { writeFileSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
+import { whole } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
@@ -44,6 +46,11 @@ export const still: Command = {
   },
 };
 
+/** Half the cores, at most 4: past that the GPU, the encoder and memory (0.5 to 1 GB a worker) are the limit, not the JS. */
+export function defaultConcurrency(): number {
+  return Math.min(4, Math.max(1, Math.floor(availableParallelism() / 2)));
+}
+
 export const render: Command = {
   name: 'render',
   summary: 'Render frames to a video with audio',
@@ -54,10 +61,12 @@ export const render: Command = {
     { name: 'range', type: 'string', description: 'Frames to render: 10..40 (10 to 39) or 10..=40 (10 to 40); default all' },
     { name: 'encoder', type: 'string', description: 'ffmpeg H.264 encoder (default h264_videotoolbox on macOS, else libx264)' },
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look' },
+    { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
     STRICT_OPTION,
   ],
   async run(args, context) {
     const output = requireOutput(args);
+    const concurrency = whole('--concurrency', args.options.concurrency as number | undefined, 1, defaultConcurrency());
     const source = await openFromArgs(args);
     const started = nowMs();
     const renderer = newRenderer();
@@ -69,6 +78,7 @@ export const render: Command = {
         encoder: args.options.encoder as string | undefined,
         draft: args.options.draft === true,
         strict: args.options.strict === true,
+        concurrency,
         progress: context.progress,
         onFrame(done, total) {
           if (done === total || done % Math.max(1, Math.floor(total / 10)) === 0) {

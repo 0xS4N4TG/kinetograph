@@ -28,7 +28,8 @@ command (except `studio`) with the same arguments; `still`, `strip` and `onion` 
    the same errors as `type-error`.
 4. **Fix** and repeat from 2. A still takes well under a second.
 5. **Render.** `kinetograph render src/index.tsx -o out/video.mp4`. Use `--draft` for a half-size quick look,
-   `--range 0..90` for a part (`a..b` is a to b-1, `a..=b` includes b).
+   `--range 0..90` for a part (`a..b` is a to b-1, `a..=b` includes b), `--concurrency 4` to draw several frames at once
+   on a long film (the file is the same).
 
 Also: `compositions <entry>` lists compositions (pick one with `--comp <id>`; pass props with `--props '{"title":"Hi"}'`),
 `audio analyze <entry>` measures the sound, `snapshot <entry> --update` approves frames and `snapshot <entry>` later

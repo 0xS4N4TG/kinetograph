@@ -3,7 +3,9 @@ import { dirname, join } from 'node:path';
 import { clampPcm, hasOnFrame, joinClips, renderAudio } from '@kinetograph/audio';
 import { resolveSoundSource } from '@kinetograph/core/sound-source';
 import type { Renderer, RenderSummary } from '@kinetograph/native';
-import type { AudioClipJson, SceneJson } from '@kinetograph/scene';
+import type { ArtifactRecord } from '@kinetograph/core';
+import type { AudioClipJson, SceneJson, Unsupported } from '@kinetograph/scene';
+import { CHUNK_FRAMES, renderInParallel } from './parallel-render.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
 import { CliError } from './errors.js';
 import { draftScene, halfSize } from './scenes.js';
@@ -21,6 +23,12 @@ export interface RenderJobOptions {
    * §6.1), instead of drawing it without. Default off: the report says what was left out.
    */
   strict?: boolean;
+  /**
+   * Frames drawn at once (docs/AUTHORING.md §9): the composition's JS runs in this many worker threads, each with a
+   * renderer of its own, and the frames are encoded in order. Default 1, which draws every frame in this thread. Only a
+   * project (not a `.json` scene, which the addon draws whole) uses more.
+   */
+  concurrency?: number;
   /** Called after each frame of a project is pushed to the encoder. */
   onFrame?(done: number, total: number): void;
   /** Progress for people, e.g. "mixing audio". */
@@ -40,10 +48,18 @@ export type RenderResult = RenderSummary & {
  * Writes the `<Artifact>` files that frames `first..=last` asked for into the folder of `output`: text and bytes as they
  * are, a thumbnail as the PNG of the frame it was rendered in.
  */
-async function writeArtifacts(source: Source, renderer: Renderer, output: string, first: number, last: number, draft: boolean): Promise<string[]> {
+async function writeArtifacts(
+  source: Source,
+  renderer: Renderer,
+  output: string,
+  first: number,
+  last: number,
+  draft: boolean,
+  records: ArtifactRecord[],
+): Promise<string[]> {
   const written: string[] = [];
   const folder = dirname(output);
-  for (const artifact of source.artifacts?.() ?? []) {
+  for (const artifact of records) {
     if (artifact.frame < first || artifact.frame > last) continue;
     const file = join(folder, artifact.filename);
     let data: string | Uint8Array;
@@ -97,18 +113,38 @@ export async function renderSource(
   const writer = renderer.beginVideo(options.output, { width: size.width, height: size.height, fps, encoder });
   const clipFrames: { frame: number; audio: AudioClipJson[] }[] = [];
   const leftOut = new LeftOutCollector();
+  let artifactRecords: ArtifactRecord[] = [];
   try {
     const total = last - first + 1;
-    for (let frame = first; frame <= last; frame++) {
-      if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
-      const out = await source.frame(frame);
-      clipFrames.push({ frame, audio: out.audio });
-      const unsupported = out.unsupported ?? [];
+    const workers = Math.min(options.concurrency ?? 1, Math.ceil(total / CHUNK_FRAMES));
+    const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[]): void => {
+      clipFrames.push({ frame, audio });
       if (options.strict && unsupported.length > 0) throw strictError(frame, unsupported);
       leftOut.add(frame, unsupported);
-      const sceneJson = draft ? JSON.stringify(draftScene(JSON.parse(out.sceneJson) as SceneJson)) : out.sceneJson;
-      writer.pushFrame(sceneJson, frame, source.baseDir);
-      options.onFrame?.(frame - first + 1, total);
+    };
+    const pushed = (frame: number): void => options.onFrame?.(frame - first + 1, total);
+    if (workers > 1 && source.worker) {
+      artifactRecords = await renderInParallel({
+        spec: source.worker,
+        draft,
+        workers,
+        first,
+        last,
+        writer,
+        onFrame,
+        onPushed: pushed,
+        shouldCancel: options.shouldCancel,
+      });
+    } else {
+      for (let frame = first; frame <= last; frame++) {
+        if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
+        const out = await source.frame(frame);
+        onFrame(frame, out.audio, out.unsupported ?? []);
+        const sceneJson = draft ? JSON.stringify(draftScene(JSON.parse(out.sceneJson) as SceneJson)) : out.sceneJson;
+        writer.pushFrame(sceneJson, frame, source.baseDir);
+        pushed(frame);
+      }
+      artifactRecords = source.artifacts?.() ?? [];
     }
     const clips = joinClips(clipFrames);
     let summary: RenderSummary;
@@ -119,7 +155,7 @@ export async function renderSource(
     } else {
       summary = writer.finish();
     }
-    const artifacts = await writeArtifacts(source, renderer, options.output, first, last, draft);
+    const artifacts = await writeArtifacts(source, renderer, options.output, first, last, draft, artifactRecords);
     return { ...summary, compat: leftOut.report(), artifacts };
   } catch (error) {
     try {

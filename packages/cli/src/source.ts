@@ -54,7 +54,17 @@ export interface Source {
   /** The `<Artifact>` files rendered frames asked for, and forgetting the ones asked for before (a render starts clean). */
   artifacts?(): ArtifactRecord[];
   clearArtifacts?(): void;
+  /** A project: what a render worker needs to open the same composition again (`render --concurrency`). */
+  worker?: WorkerSpec;
   dispose(): void;
+}
+
+/** `openSource`'s arguments for a project, with the bundle it built, so a worker thread loads it without bundling. */
+export interface WorkerSpec {
+  entry: string;
+  comp: string;
+  props?: string;
+  bundleFile: string;
 }
 
 export interface OpenOptions {
@@ -104,7 +114,7 @@ export function publicDirOf(entry: string): string {
   }
 }
 
-async function loadProject(entry: string, bundleFile?: string): Promise<ProjectModule> {
+async function loadProject(entry: string, bundleFile?: string): Promise<{ mod: ProjectModule; file: string }> {
   const file = bundleFile ?? (await bundleProject(entry)).file;
   process.setSourceMapsEnabled(true);
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
@@ -135,14 +145,14 @@ async function loadProject(entry: string, bundleFile?: string): Promise<ProjectM
     scanStreams: (path, baseDir) => native().scanStreams(path, baseDir ?? dirname(entry)),
     decodeAudio: (path, sampleRate, baseDir) => native().decodeAudio(path, sampleRate, baseDir ?? dirname(entry)),
   });
-  return mod;
+  return { mod, file };
 }
 
 /** The compositions a project (or a scene file, which is one) offers. */
 export async function listCompositions(entry: string, options: { bundleFile?: string } = {}): Promise<CompositionInfo[]> {
   const absolute = requireEntry(entry);
   if (isSceneFile(absolute)) return [sceneComposition(absolute, readFileSync(absolute, 'utf8'))];
-  return (await loadProject(absolute, options.bundleFile)).getCompositions();
+  return (await loadProject(absolute, options.bundleFile)).mod.getCompositions();
 }
 
 function sceneComposition(file: string, text: string): CompositionInfo {
@@ -176,7 +186,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
   }
 
   const inputProps = parseProps(options.props);
-  const mod = await loadProject(absolute, options.bundleFile);
+  const { mod, file: bundleFile } = await loadProject(absolute, options.bundleFile);
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);
@@ -210,6 +220,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const unsupported = [...result.unsupported, ...notes(sceneJson)];
       return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
+    worker: { entry: absolute, comp: composition.id, props: options.props, bundleFile },
     notes: () => mod.stylesheetNotes(),
     artifacts: () => mod.getArtifacts(),
     clearArtifacts: () => mod.clearArtifacts(),

@@ -942,7 +942,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 |---|---|
 | `compositions <entry>` | lists compositions |
 | `still <entry> <frame> -o out.png [--strict]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (COMPAT.md §6) |
-| `render <entry> -o out.mp4 [--range a..b] [--encoder] [--draft] [--strict]` | video with audio; `--draft` renders at half size; unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (COMPAT.md §6) |
+| `render <entry> -o out.mp4 [--range a..b] [--encoder] [--draft] [--concurrency N] [--strict]` | video with audio; `--draft` renders at half size; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (COMPAT.md §6) |
 | `strip <entry> -n 12 -o sheet.png [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
 | `onion <entry> <range> -n 6 -o onion.png` | frames of the range blended over one another |
 | `inspect <entry> [--frame N]` | `InspectResult` |
@@ -955,6 +955,16 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `doctor [entry] [--range]` | without an entry, the install report; with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
+
+`render --concurrency N` (a project; a `.json` scene is drawn whole by the addon) starts N worker threads. Each opens the
+composition itself (the bundle is built once), runs its JS for a chunk of 60 frames at a time, draws them with a renderer
+of its own (its own GPU device, layer cache and video decoders) and converts them to `yuv420p`; the main thread puts
+the frames in order and feeds the one encoder, and mixes the audio at the end from the clips each frame reported. Rendering
+is a pure function of (project, frame), so the file decodes to the same frames and audio as `--concurrency 1`, which
+draws every frame in the main thread as before. Chunks are handed out in order and a worker waits when it is more than
+N+1 chunks ahead of the encoder, which bounds the frames held in memory. Each worker is a full renderer, so memory
+grows with N (0.5 to 1 GB a worker on the launch film). `<Artifact>` files are collected from the workers; thumbnails
+are drawn by the main thread.
 
 Bundling: esbuild bundles the entry with a synthetic entry that imports `@kinetograph/core/determinism/install` first,
 then the project, and re-exports `@kinetograph/core`, so the CLI drives frames through the same core and React instance the
