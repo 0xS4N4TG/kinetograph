@@ -308,13 +308,28 @@ impl<'a> Painter<'a> {
         match img {
             Img::Gradient(g) => {
                 if count > MAX_TILES {
-                    self.report(
-                        node,
-                        spec.property,
-                        "repeating gradient tile",
-                        &format!("{count} tiles of a gradient are more than are drawn one by one"),
+                    if spec.repeat.0 == Tile::Space || spec.repeat.1 == Tile::Space {
+                        self.report(
+                            node,
+                            spec.property,
+                            "background-repeat: space",
+                            "too many tiles of a gradient to space out",
+                        );
+                        return None;
+                    }
+                    // One tile, repeated by a feTile filter over the area.
+                    let reps = (
+                        matches!(spec.repeat.0, Tile::Repeat | Tile::Round),
+                        matches!(spec.repeat.1, Tile::Repeat | Tile::Round),
                     );
-                    return None;
+                    let cell = Rect::new(xs[0], ys[0], tw, th);
+                    return match gradient_paint(&g, Rect::new(0.0, 0.0, tw, th), current) {
+                        Ok(fill) => Some(self.tiled_cell(id, cell, fill, reps, paint, paint_radii)),
+                        Err(reason) => {
+                            self.report(node, spec.property, "gradient", &reason);
+                            None
+                        }
+                    };
                 }
                 let mut shapes: Vec<Value> = Vec::new();
                 let single = count == 1;
@@ -464,6 +479,54 @@ impl<'a> Painter<'a> {
                 Some(shape)
             }
         }
+    }
+
+    /// `fill` painted in one `cell` and repeated over the painting area `paint`
+    /// by a `feTile` filter, along the axes `reps` says repeat: for the
+    /// thousands of tiles that cannot be drawn one by one.
+    fn tiled_cell(
+        &mut self,
+        id: &str,
+        cell: Rect,
+        fill: Value,
+        reps: (bool, bool),
+        paint: Rect,
+        paint_radii: Radii,
+    ) -> Value {
+        // Where the tiling shows: the painting area, cut to the cell's own
+        // band along an axis that does not repeat.
+        let mut region = paint;
+        if !reps.0 {
+            region = Rect::new(cell.x, region.y, cell.w, region.h).intersect(&region);
+        }
+        if !reps.1 {
+            region = Rect::new(region.x, cell.y, region.w, cell.h).intersect(&region);
+        }
+        let tile = rect_shape(&format!("{id}.cell"), cell.w, cell.h, 0.0, fill)
+            .at(cell.x, cell.y)
+            .build();
+        if region.is_empty() {
+            return tile;
+        }
+        let (x0, y0) = (region.x.floor() - 1.0, region.y.floor() - 1.0);
+        let (x1, y1) = (region.right().ceil() + 1.0, region.bottom().ceil() + 1.0);
+        let clip = self.region_clip(paint.intersect(&region), paint_radii, 0.0, 0.0);
+        super::util::group(id, vec![tile])
+            .set(
+                "effects",
+                json!([{
+                    "type": "filterGraph", "filterUnits": "userSpaceOnUse",
+                    "x": num(x0), "y": num(y0), "width": num(x1 - x0), "height": num(y1 - y0),
+                    "primitives": [
+                        {"primitive": "feOffset", "dx": 0, "dy": 0,
+                         "x": num(cell.x), "y": num(cell.y),
+                         "width": num(cell.w), "height": num(cell.h)},
+                        {"primitive": "feTile"},
+                    ],
+                }]),
+            )
+            .set("clip", clip)
+            .build()
     }
 
     /// A clip path (scene `clip`) of a region, in the coordinates of a layer
