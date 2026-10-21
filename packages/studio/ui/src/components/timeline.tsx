@@ -1,17 +1,50 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { EyeIcon, LockIcon, MenuIcon, MountainIcon, SearchIcon, SlidersHorizontalIcon } from 'lucide-react';
 
 import type { CompositionInfo, TimelineData } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
+import { formatTimecode } from '@/lib/format';
 import { useElementSize } from '@/lib/use-element-size';
 import type { Player, PlayerState } from '@/lib/player';
 import { cn } from '@/lib/utils';
 import { indent, layerRows, sequenceRows } from '@/lib/tree';
 
 /** Width of the sticky label column, px. */
-const LABEL_WIDTH = 208;
-const MIN_TICK_SPACING = 56;
+const LABEL_WIDTH = 264;
+const MIN_TICK_SPACING = 64;
 const STEPS = [1, 2, 5, 10, 15, 30, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
+const TRACK_COLORS: Record<string, { bar: string; swatch: string }> = {
+  sequence: {
+    bar: 'bg-[#6b5d43]/90 border-[#9c8863] text-amber-50',
+    swatch: 'bg-[#b59d72]',
+  },
+  text: {
+    bar: 'bg-[#8c3539]/90 border-[#c95156] text-rose-50',
+    swatch: 'bg-[#d95359]',
+  },
+  shape: {
+    bar: 'bg-[#435282]/90 border-[#687fc7] text-indigo-50',
+    swatch: 'bg-[#687fc7]',
+  },
+  group: {
+    bar: 'bg-[#6e3b47]/90 border-[#a65b6c] text-pink-50',
+    swatch: 'bg-[#b86577]',
+  },
+  image: {
+    bar: 'bg-[#2f6955]/90 border-[#4ba385] text-emerald-50',
+    swatch: 'bg-[#4ba385]',
+  },
+  video: {
+    bar: 'bg-[#295f78]/90 border-[#4597bd] text-sky-50',
+    swatch: 'bg-[#4597bd]',
+  },
+};
+
+function styleFor(type?: string) {
+  return TRACK_COLORS[type ?? 'sequence'] ?? TRACK_COLORS.sequence!;
+}
 
 interface TimelineProps {
   comp: CompositionInfo | null;
@@ -32,14 +65,26 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
   const dragging = useRef(false);
   const size = useElementSize(scrollerRef);
   const [zoom, setZoom] = useState(1);
+  const [filter, setFilter] = useState('');
 
   const duration = comp?.durationInFrames ?? 0;
+  const fps = comp?.fps ?? 30;
   const fit = Math.max(0.1, ((size.width || 900) - LABEL_WIDTH - 16) / Math.max(1, duration));
   const pxPerFrame = fit * zoom;
   const laneWidth = duration * pxPerFrame;
 
-  const sequences = useMemo(() => sequenceRows(data?.sequences ?? []), [data]);
-  const layers = useMemo(() => layerRows(data?.layers ?? []), [data]);
+  const allSequences = useMemo(() => sequenceRows(data?.sequences ?? []), [data]);
+  const allLayers = useMemo(() => layerRows(data?.layers ?? []), [data]);
+
+  const q = filter.trim().toLowerCase();
+  const sequences = useMemo(
+    () => (q ? allSequences.filter((r) => r.label.toLowerCase().includes(q)) : allSequences),
+    [allSequences, q],
+  );
+  const layers = useMemo(
+    () => (q ? allLayers.filter((r) => r.id.toLowerCase().includes(q) || r.type.toLowerCase().includes(q)) : allLayers),
+    [allLayers, q],
+  );
 
   const tickStep = STEPS.find((step) => step * pxPerFrame >= MIN_TICK_SPACING) ?? STEPS[STEPS.length - 1]!;
   const ticks: number[] = [];
@@ -78,14 +123,44 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
   };
 
   return (
-    <div data-testid="timeline" className="bg-card/40 flex h-full flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b px-4">
-        <span className="text-sm font-semibold tracking-tight">Timeline</span>
-        <span className="text-muted-foreground bg-secondary rounded-full px-2 py-0.5 font-mono text-[10px]">
+    <div data-testid="timeline" className="bg-card flex h-full flex-col select-none">
+      {/* EffectCraft / FilmCraft Timeline Panel Tab & Tool Header */}
+      <div className="bg-secondary/60 flex h-8 shrink-0 items-center gap-3 border-b px-3 text-xs">
+        <div className="border-primary text-foreground flex h-full items-center gap-1.5 border-b-2 px-1 text-[11px] font-medium">
+          <span>{comp ? comp.id : 'Timeline'}</span>
+          <MenuIcon className="text-muted-foreground size-3" aria-hidden="true" />
+        </div>
+
+        {/* AE Blue Timecode + Frame readout */}
+        <div className="flex items-baseline gap-2 border-l border-white/10 pl-3 font-mono">
+          <span className="text-sm font-bold tracking-wider text-[#4da3ff] tabular-nums">
+            {formatTimecode(state.frame, fps)}
+          </span>
+          <span className="text-muted-foreground text-[10px] tabular-nums">
+            {String(state.frame).padStart(5, '0')} ({fps} fps)
+          </span>
+        </div>
+
+        <span className="text-muted-foreground bg-background/60 rounded-xs border border-white/10 px-1.5 py-0.5 font-mono text-[10px]">
           {duration} f
         </span>
+
+        {/* Search layers input */}
+        <div className="bg-background/70 border-border ml-2 hidden h-5 w-44 items-center gap-1.5 rounded-xs border px-2 md:flex">
+          <SearchIcon className="text-muted-foreground size-3 shrink-0" aria-hidden="true" />
+          <input
+            type="search"
+            placeholder="Search timeline"
+            aria-label="Search timeline"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="placeholder:text-muted-foreground/70 w-full bg-transparent text-[11px] outline-none"
+          />
+        </div>
+
         <div className="ml-auto flex w-56 items-center gap-2">
-          <span className="text-muted-foreground text-xs">Zoom</span>
+          <MountainIcon className="text-muted-foreground size-3 shrink-0" aria-hidden="true" />
+          <span className="text-muted-foreground sr-only text-xs">Zoom</span>
           <Slider
             aria-label="Zoom"
             min={1}
@@ -94,31 +169,48 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
             value={[zoom]}
             onValueChange={([value]) => setZoom(value ?? 1)}
           />
+          <MountainIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
         </div>
       </div>
-      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto">
+
+      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto bg-[#141417]">
         {comp === null ? (
-          <p className="text-muted-foreground p-6 text-center text-sm">No composition selected.</p>
+          <p className="text-muted-foreground p-6 text-center text-xs">No composition selected.</p>
         ) : (
           <div className="relative min-w-max" style={{ width: LABEL_WIDTH + laneWidth + 16 }}>
-            {/* ruler */}
-            <div className="bg-background/95 sticky top-0 z-20 flex h-8 border-b backdrop-blur">
-              <div className="bg-background text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center border-r px-3 text-[10px] font-medium tracking-wider uppercase" style={{ width: LABEL_WIDTH }}>
-                Frames
+            {/* Sticky AE Switches Header + Work Area + Frame Ruler */}
+            <div className="bg-card/95 sticky top-0 z-20 flex h-9 border-b backdrop-blur">
+              <div
+                className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r px-2.5 text-[10px] font-medium tracking-wider"
+                style={{ width: LABEL_WIDTH }}
+              >
+                <EyeIcon className="size-3 opacity-60" aria-hidden="true" />
+                <LockIcon className="size-3 opacity-60" aria-hidden="true" />
+                <span className="w-4 text-center opacity-60">#</span>
+                <span>Layer Name</span>
+                <span className="ml-auto opacity-60">Type</span>
               </div>
               <div
                 ref={rulerRef}
                 data-testid="timeline-ruler"
-                className="relative h-full cursor-col-resize touch-none select-none"
+                className="relative h-full cursor-col-resize touch-none select-none bg-[#18181c]"
                 style={{ width: laneWidth }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
+                {/* AE Work Area bar + Green Cache Line */}
+                <div className="absolute inset-x-0 top-0 h-2.5 border-b border-white/10 bg-white/[0.04]" aria-hidden="true">
+                  <div className="h-full w-full border-x-2 border-[#2680eb] bg-white/[0.05]" />
+                  <div className="absolute inset-x-0 bottom-0 h-[2px] bg-emerald-500/60" />
+                </div>
+
                 {ticks.map((f) => (
-                  <div key={f} className="absolute bottom-0 h-3 border-l border-white/20" style={{ left: f * pxPerFrame }}>
-                    <span className="text-muted-foreground absolute -top-5 left-1.5 font-mono text-[10px] tabular-nums">{f}</span>
+                  <div key={f} className="absolute bottom-0 h-2.5 border-l border-white/25" style={{ left: f * pxPerFrame }}>
+                    <span className="text-muted-foreground absolute -top-3.5 left-1 font-mono text-[9px] tabular-nums">
+                      {f}f
+                    </span>
                   </div>
                 ))}
               </div>
@@ -126,54 +218,78 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
 
             <SectionLabel>Sequences</SectionLabel>
             {sequences.length === 0 && <EmptyRow>No Sequences</EmptyRow>}
-            {sequences.map((row) => (
-              <Row
-                key={row.key}
-                data-testid="sequence-row"
-                label={row.label}
-                title={`${row.label}: frames ${row.from}..${row.end - 1}`}
-                depth={row.depth}
-                selected={row.layer !== null && row.layer === selectedLayer}
-                onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
-                laneWidth={laneWidth}
-              >
-                <Bar from={row.from} to={row.end} pxPerFrame={pxPerFrame} className="bg-accent border-primary/30 text-accent-foreground border">
-                  {row.label}
-                </Bar>
-              </Row>
-            ))}
+            {sequences.map((row, index) => {
+              const colors = styleFor('sequence');
+              return (
+                <Row
+                  key={row.key}
+                  data-testid="sequence-row"
+                  index={index + 1}
+                  swatch={colors.swatch}
+                  label={row.label}
+                  title={`${row.label}: frames ${row.from}..${row.end - 1}`}
+                  depth={row.depth}
+                  selected={row.layer !== null && row.layer === selectedLayer}
+                  onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
+                  laneWidth={laneWidth}
+                >
+                  <Bar from={row.from} to={row.end} pxPerFrame={pxPerFrame} className={cn('border', colors.bar)}>
+                    {row.label}
+                  </Bar>
+                </Row>
+              );
+            })}
 
             <SectionLabel>Layers</SectionLabel>
             {layers.length === 0 && <EmptyRow>No layers</EmptyRow>}
-            {layers.map((row) => (
-              <Row
-                key={row.id}
-                data-testid="layer-row"
-                label={row.id}
-                badge={row.type}
-                title={`${row.id} (${row.type})`}
-                depth={row.depth}
-                selected={row.id === selectedLayer}
-                onSelect={() => onSelectLayer(row.id)}
-                laneWidth={laneWidth}
-              >
-                {row.ranges.map(([first, last]) => (
-                  <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className="from-primary/80 to-primary/50 border-primary/60 border bg-gradient-to-b shadow-sm" />
-                ))}
-              </Row>
-            ))}
+            {layers.map((row, index) => {
+              const colors = styleFor(row.type);
+              return (
+                <Row
+                  key={row.id}
+                  data-testid="layer-row"
+                  index={index + 1}
+                  swatch={colors.swatch}
+                  label={row.id}
+                  badge={row.type}
+                  title={`${row.id} (${row.type})`}
+                  depth={row.depth}
+                  selected={row.id === selectedLayer}
+                  onSelect={() => onSelectLayer(row.id)}
+                  laneWidth={laneWidth}
+                >
+                  {row.ranges.map(([first, last]) => (
+                    <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className={cn('border shadow-xs', colors.bar)}>
+                      {row.id}
+                    </Bar>
+                  ))}
+                </Row>
+              );
+            })}
 
-            {/* playhead */}
+            {/* AE / FilmCraft Blue Playhead */}
             <div
               data-testid="playhead"
-              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.7)]"
+              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-[#2680eb] shadow-[0_0_8px_rgba(38,128,235,0.8)]"
               style={{ left: LABEL_WIDTH + state.frame * pxPerFrame }}
             >
-              <div className="absolute top-0 -left-[5px] size-[11px] rounded-b-sm bg-sky-400 [clip-path:polygon(0_0,100%_0,100%_55%,50%_100%,0_55%)]" />
+              <div className="absolute top-0 -left-[6px] h-[13px] w-[13px] bg-[#2680eb] [clip-path:polygon(0_0,100%_0,100%_58%,50%_100%,0_58%)]" />
             </div>
-
           </div>
         )}
+      </div>
+
+      {/* Bottom AE Timeline Status Bar */}
+      <div className="bg-secondary/50 text-muted-foreground flex h-6 shrink-0 items-center justify-between border-t px-3 font-mono text-[10px]">
+        <div className="flex items-center gap-2">
+          <SlidersHorizontalIcon className="size-3 opacity-70" aria-hidden="true" />
+          <span>Toggle Switches / Modes</span>
+        </div>
+        <div className="flex items-center gap-1.5 opacity-80">
+          <LockIcon className="size-2.5 text-amber-400/80" aria-hidden="true" />
+          <span>Read-Only Timeline · Code-Driven</span>
+        </div>
+        <span>Zoom {zoom.toFixed(1)}x</span>
       </div>
     </div>
   );
@@ -181,17 +297,19 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="bg-muted/30 text-muted-foreground sticky left-0 flex h-6 items-center border-b px-3 text-[10px] font-semibold tracking-widest uppercase">
+    <div className="bg-secondary/50 text-muted-foreground sticky left-0 z-10 flex h-5 items-center border-b border-white/[0.06] px-2.5 text-[9px] font-semibold tracking-widest uppercase">
       {children}
     </div>
   );
 }
 
 function EmptyRow({ children }: { children: string }) {
-  return <div className="text-muted-foreground sticky left-0 h-7 px-2 py-1.5 text-xs">{children}</div>;
+  return <div className="text-muted-foreground sticky left-0 h-7 px-2.5 py-1.5 text-xs">{children}</div>;
 }
 
 interface RowProps {
+  index: number;
+  swatch: string;
   label: string;
   badge?: string;
   title: string;
@@ -203,7 +321,7 @@ interface RowProps {
   'data-testid': string;
 }
 
-function Row({ label, badge, title, depth, selected, onSelect, laneWidth, children, ...rest }: RowProps) {
+function Row({ index, swatch, label, badge, title, depth, selected, onSelect, laneWidth, children, ...rest }: RowProps) {
   return (
     <div
       {...rest}
@@ -216,22 +334,28 @@ function Row({ label, badge, title, depth, selected, onSelect, laneWidth, childr
         if (onSelect && event.key === 'Enter') onSelect();
       }}
       className={cn(
-        'group flex h-9 border-b border-white/5 text-xs transition-colors',
-        onSelect && 'hover:bg-white/[0.03] cursor-pointer',
-        selected && 'bg-primary/10 hover:bg-primary/10',
+        'group flex h-7 border-b border-white/[0.05] text-xs transition-colors odd:bg-[#17171b] even:bg-[#141418]',
+        onSelect && 'hover:bg-white/[0.04] cursor-pointer',
+        selected && 'bg-[#2680eb]/20 hover:bg-[#2680eb]/25',
       )}
     >
       <div
         className={cn(
-          'sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r pr-2',
-          selected ? 'bg-accent shadow-[inset_2px_0_0_var(--primary)]' : 'bg-background',
+          'sticky left-0 z-40 flex shrink-0 items-center gap-1.5 border-r border-white/10 pr-2',
+          selected ? 'bg-[#1f3047] text-white shadow-[inset_2px_0_0_#2680eb]' : 'bg-[#1b1b20]',
           indent(depth),
         )}
         style={{ width: LABEL_WIDTH }}
       >
-        <span className="truncate font-medium">{label}</span>
+        <EyeIcon className="text-muted-foreground/70 size-3 shrink-0" aria-hidden="true" />
+        <LockIcon className="text-muted-foreground/40 size-2.5 shrink-0" aria-hidden="true" />
+        <span className="text-muted-foreground w-4 shrink-0 text-right font-mono text-[10px] tabular-nums" aria-hidden="true">
+          {index}
+        </span>
+        <span className={cn('size-2.5 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
+        <span className="truncate text-[11px] font-medium">{label}</span>
         {badge && (
-          <Badge variant="outline" className="text-muted-foreground ml-auto rounded-full px-1.5 py-0 text-[10px]">
+          <Badge variant="outline" className="text-muted-foreground ml-auto rounded-xs px-1 py-0 font-mono text-[9px]">
             {badge}
           </Badge>
         )}
@@ -258,7 +382,10 @@ function Bar({
 }) {
   return (
     <div
-      className={cn('absolute inset-y-1.5 overflow-hidden rounded-md px-2 text-[10px] leading-5 font-medium whitespace-nowrap', className)}
+      className={cn(
+        'absolute inset-y-1 overflow-hidden rounded-[3px] px-1.5 font-mono text-[10px] leading-[18px] font-medium whitespace-nowrap',
+        className,
+      )}
       style={{ left: from * pxPerFrame, width: Math.max(2, (to - from) * pxPerFrame) }}
     >
       {children}
