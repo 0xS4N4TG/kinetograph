@@ -8,7 +8,7 @@ use parley::PositionedLayoutItem;
 use serde_json::{Value, json};
 use style::computed_values::position::T as Position;
 use style::properties::ComputedValues;
-use style::values::computed::Float;
+use style::values::computed::{Float, Length};
 use style::values::specified::TextDecorationLine;
 use style::values::specified::box_::DisplayOutside;
 
@@ -95,8 +95,27 @@ impl<'a> Painter<'a> {
         let content_width = f64::from(
             l.size.width - l.border.left - l.border.right - l.padding.left - l.padding.right,
         );
+        // A negative letter-spacing is added after the last glyph too, so the
+        // layout ends short of its ink by that much.
+        let mut tight = 0.0f64;
+        for line in layout.lines() {
+            for item in line.items() {
+                if let PositionedLayoutItem::GlyphRun(gr) = item {
+                    let brush = self.node(NodeId::from_u64(gr.style().brush.id.as_u64()));
+                    if let Some(style) = brush.primary_styles() {
+                        let spacing = style
+                            .get_inherited_text()
+                            .letter_spacing
+                            .0
+                            .resolve(Length::new(style.get_font().font_size.computed_size().px()))
+                            .px();
+                        tight = tight.max(-f64::from(spacing));
+                    }
+                }
+            }
+        }
         let size = (
-            (f64::from(layout.width()) / scale).max(content_width),
+            (f64::from(layout.width()) / scale + tight).max(content_width),
             f64::from(layout.height()) / scale,
         );
         let mut batch: Option<Batch> = None;

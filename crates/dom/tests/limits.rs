@@ -51,3 +51,42 @@ fn a_tiled_gradient_repeating_one_way_stays_in_its_band() {
     assert_eq!(px(&frame, 300, 5), [255, 255, 255, 255]);
     assert_eq!(px(&frame, 300, 50), [255, 255, 255, 255]);
 }
+
+#[test]
+fn an_inset_clip_path_on_a_box_with_no_size_of_its_own_measures_the_laid_out_box() {
+    // Sized by its content, and by `inset: 0`.
+    for body in [
+        r#"<div style="position:absolute;left:10px;top:10px;clip-path:inset(0 0 0 50px);background:#f00"><div style="width:100px;height:50px"></div></div>"#,
+        r#"<div style="position:absolute;inset:0;clip-path:inset(0 0 0 50px);background:#f00"></div>"#,
+    ] {
+        let (out, frame) = paintkit::render_body(body, 200, 100);
+        assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+        assert_eq!(px(&frame, 20, 20), [255, 255, 255, 255], "{body}");
+        assert_eq!(px(&frame, 70, 20), [255, 0, 0, 255], "{body}");
+    }
+}
+
+/// The `boxWidth` of the first text layer under `layers`.
+fn box_width(layers: &[serde_json::Value]) -> Option<f64> {
+    layers.iter().find_map(|l| {
+        if l["type"] == "text" {
+            return l["boxWidth"].as_f64();
+        }
+        l["children"].as_array().and_then(|c| box_width(c))
+    })
+}
+
+#[test]
+fn a_negative_letter_spacing_does_not_shorten_the_text_box_past_its_ink() {
+    let text = |ls: &str| {
+        let body = format!(
+            r#"<div style="position:absolute;left:0;top:0;font-size:40px;letter-spacing:{ls}">HHHH</div>"#
+        );
+        let out = paintkit::paint_html(&paintkit::page(&body), 300, 100);
+        box_width(&out.layers).expect("a text layer")
+    };
+    let plain = text("0");
+    let tight = text("-10px");
+    // Four glyphs lose 10px each, but the last one's spacing falls after its ink.
+    assert!((plain - tight - 30.0).abs() < 0.5, "{plain} vs {tight}");
+}
