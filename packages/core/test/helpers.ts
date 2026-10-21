@@ -15,6 +15,7 @@ export function easingFromSpec(spec: string): EasingFunction {
   const make = (Easing as any)[name!];
   if (argText === undefined) return make;
   if (argText === '') return make();
+  if (argText.trim().startsWith('{')) return make(JSON.parse(argText));
   const args: string[] = [];
   let depth = 0;
   let current = '';

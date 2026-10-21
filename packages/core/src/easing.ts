@@ -2,7 +2,19 @@
 // documented definitions; test/fixtures/easing.json holds values recorded
 // from the published package.
 
-export type EasingFunction = (t: number) => number;
+import { measureSpring, spring, type SpringConfig } from './spring.js';
+
+/** `remotionShouldExtendRight` marks a curve that goes on past 1 (a spring with a tail): `interpolate` lets it run on. */
+export type EasingFunction = ((t: number) => number) & { readonly remotionShouldExtendRight?: boolean };
+
+export type EasingSpringConfig = Partial<Pick<SpringConfig, 'damping' | 'mass' | 'stiffness' | 'overshootClamping'>> & {
+  /** Let the spring run on past its end instead of ending at 1 (for `interpolate`, which then keeps the tail going). */
+  readonly allowTail?: boolean;
+  readonly durationRestThreshold?: number;
+};
+
+/** The spring easing runs on a 30 frame clock; `t` of 0 to 1 is those frames. */
+const SPRING_FPS = 30;
 
 // A cubic Bezier through (0,0), (x1,y1), (x2,y2), (1,1) solved for y at a
 // given x: a sampled table picks a start, Newton's method refines it while the
@@ -80,6 +92,8 @@ function bezier(x1: number, y1: number, x2: number, y2: number): EasingFunction 
 }
 
 export const Easing: {
+  step0: EasingFunction;
+  step1: EasingFunction;
   linear: EasingFunction;
   ease: EasingFunction;
   quad: EasingFunction;
@@ -90,12 +104,16 @@ export const Easing: {
   exp: EasingFunction;
   elastic: (bounciness?: number) => EasingFunction;
   back: (s?: number) => EasingFunction;
+  spring: (config?: EasingSpringConfig) => EasingFunction;
   bounce: EasingFunction;
   bezier: (x1: number, y1: number, x2: number, y2: number) => EasingFunction;
   in: (easing: EasingFunction) => EasingFunction;
   out: (easing: EasingFunction) => EasingFunction;
   inOut: (easing: EasingFunction) => EasingFunction;
 } = {
+  // Steps: 0 until the input passes 0 (`step0`) or reaches 1 (`step1`), then 1.
+  step0: (t) => (t > 0 ? 1 : 0),
+  step1: (t) => (t >= 1 ? 1 : 0),
   linear: (t) => t,
   ease: bezier(0.42, 0, 1, 1),
   quad: (t) => t * t,
@@ -117,6 +135,18 @@ export const Easing: {
     (s = 1.70158) =>
     (t) =>
       t * t * ((s + 1) * t - s),
+  spring: ({ allowTail = false, durationRestThreshold, ...config } = {}) => {
+    const curve = (t: number): number => {
+      if (t <= 0) return 0;
+      if (!allowTail && t >= 1) return 1;
+      if (allowTail) {
+        // `t` of 1 is where the spring comes to rest; it is not cut off there.
+        return spring({ fps: SPRING_FPS, frame: t * measureSpring({ fps: SPRING_FPS, config, threshold: durationRestThreshold }), config });
+      }
+      return spring({ fps: SPRING_FPS, frame: t * SPRING_FPS, config, durationInFrames: SPRING_FPS, durationRestThreshold });
+    };
+    return Object.assign(curve, { remotionShouldExtendRight: allowTail });
+  },
   bounce: (input) => {
     const t = Math.min(Math.max(input, 0), 1);
     if (t < 1 / 2.75) return 7.5625 * t * t;

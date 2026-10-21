@@ -660,7 +660,12 @@ Mapping onto the engine:
 - `interpolate` takes `easing` as one function or an array with one per segment, and `posterize` (the input is held
   at the last multiple of it, so the output steps); `assertValidInterpolateEasingOption` and
   `assertValidInterpolatePosterizeOption` are the checks it runs. Its values are recorded from the published package.
-  Not yet: string, tuple and boolean output ranges, `output: 'perceptual-scale'` and `outputType`.
+  The output range can also be numeric tuples (one number per component), CSS strings (scale `'1 2'`, translate
+  `'0px 10%'`, rotate `'45deg'` or `'x 45deg'`, transform-origin `'left top'`; units are kept and must agree per axis),
+  font weights (`outputType: 'font-weight'`: `'normal'`, `'bold'`, a number), and words or booleans, which step with
+  `easing: Easing.step1`. `output: 'perceptual-scale'` blends the area of a scale, so a zoom looks even; `outputType`
+  names what the strings are and rejects other kinds. `Easing.step0`, `Easing.step1` and `Easing.spring({ allowTail })`
+  exist for these. Recorded from `remotion@4.0.530` (`test/fixtures/interpolate-values.json`).
 - The components Remotion's Studio edits, `Track` and `Interactive` (`Interactive.Div`, `.Span`, `.Svg`, `.Circle`, …
   and `Interactive.create()`, `withSchema()`): each is a `<Sequence layout="none">` around the element, so it shows from
   `from` for `durationInFrames` under the name `<Interactive.Div>` (or `name`), is drawn from its props, and takes

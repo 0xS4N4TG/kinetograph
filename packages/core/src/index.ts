@@ -82,13 +82,18 @@ export { useCurrentFrame, useVideoConfig, useIsInsideNonPremountFreeze, Sequence
 export type { SequenceProps, SeriesSequenceProps, LoopProps, FreezeProps } from './timeline.js';
 
 export { interpolate, assertValidInterpolateEasingOption, assertValidInterpolatePosterizeOption } from './interpolate.js';
-export type { ExtrapolateType, InterpolateOptions } from './interpolate.js';
+export type {
+  ExtrapolateType,
+  InterpolateOptions,
+  InterpolateOutputOption,
+  InterpolateOutputType,
+} from './interpolate.js';
 export { interpolateColors } from './interpolate-colors.js';
 export type { InterpolateColorsOptions } from './interpolate-colors.js';
 export { spring, measureSpring } from './spring.js';
 export type { SpringConfig } from './spring.js';
 export { Easing } from './easing.js';
-export type { EasingFunction } from './easing.js';
+export type { EasingFunction, EasingSpringConfig } from './easing.js';
 export { random } from './random.js';
 
 // ---- CSS-shaped components ----
