@@ -146,6 +146,30 @@ impl<'a> Painter<'a> {
             .set("src", json!(path))
             .set("width", num(pic.w))
             .set("height", num(pic.h));
+        if is_video {
+            match fit {
+                ObjectFit::Contain | ObjectFit::ScaleDown => {
+                    layer = layer.set("fit", json!("contain"));
+                }
+                ObjectFit::Cover => {
+                    layer = layer.set("fit", json!("cover"));
+                }
+                ObjectFit::Fill | ObjectFit::None => {}
+            }
+            if let Some(meta) = super::attr(node, "data-kg-video")
+                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                .and_then(|v| v.as_object().cloned())
+            {
+                for key in ["from", "trimBefore", "trimAfter", "playbackRate", "frame"] {
+                    if let Some(val) = meta.get(key).filter(|v| v.is_number()) {
+                        layer = layer.set(key, val.clone());
+                    }
+                }
+                if let Some(val) = meta.get("loop").filter(|v| v.is_boolean()) {
+                    layer = layer.set("loop", val.clone());
+                }
+            }
+        }
         let lx = origin.0 + content.x + pic.x;
         let ly = origin.1 + content.y + pic.y;
         layer = layer.at(lx, ly);

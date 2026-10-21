@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createElement, type ReactNode } from 'react';
+import { createElement, Fragment, type ReactNode } from 'react';
 import type {
   AudioClipJson,
   BlendMode,
@@ -508,8 +508,13 @@ export interface VideoProps extends CommonProps {
   width?: Num;
   height?: Num;
   fit?: 'fill' | 'contain' | 'cover';
-  /** Remotion's: `width`, `height` and `objectFit` are read; other keys are ignored. */
+  /**
+   * Remotion's. A pixel `width`/`height` and `objectFit` make the native video layer; any other style (a percentage,
+   * `position`, `inset`, `opacity`, `filter`, `borderRadius`, ...) or a `className` makes it a CSS `<video>` that the
+   * DOM engine lays out and paints with the decoded frame.
+   */
   style?: Record<string, unknown>;
+  className?: string;
   trimBefore?: number;
   trimAfter?: number;
   /** Older names of `trimBefore` and `trimAfter`. */
@@ -571,6 +576,23 @@ function boxOf(props: {
   return box;
 }
 
+/** Whether the video's style is more than the layer takes (`boxOf`): then it is laid out by the DOM engine like an `<img>`. */
+function videoNeedsCss(props: VideoProps): boolean {
+  if (props.className !== undefined) return true;
+  const style = props.style ?? {};
+  for (const [key, value] of Object.entries(style)) {
+    if (value === undefined || value === null) continue;
+    if (key === 'width' || key === 'height') {
+      if (px(value) === null) return true;
+    } else if (key === 'objectFit') {
+      if (!['fill', 'contain', 'cover', 'scale-down'].includes(String(value))) return true;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function Video(props: VideoProps): ReactNode {
   const timeline = useTimeline();
   const { src, playbackRate } = props;
@@ -613,6 +635,22 @@ export function Video(props: VideoProps): ReactNode {
     video: true,
     ...toneOf(label, props.toneFrequency),
   };
+  if (videoNeedsCss(props)) {
+    // A replaced element of the DOM engine, whose pixels are the decoded frame: its style is CSS. The clock is on the
+    // element (`data-kg-video`); the sound is a clip of its own.
+    const clock: Record<string, number | boolean> = { from };
+    if (trimBefore !== undefined) clock.trimBefore = trimBefore;
+    if (trimAfter !== undefined) clock.trimAfter = trimAfter;
+    if (playbackRate !== undefined) clock.playbackRate = playbackRate;
+    if (props.loop) clock.loop = true;
+    if (timeline.frozen) clock.frame = timeline.absoluteFrame;
+    return createElement(
+      Fragment,
+      null,
+      createElement('kg-audio', { id: props.id, clip: sound }),
+      createElement('video', { id: props.id, className: props.className, src, style: props.style, 'data-kg-video': JSON.stringify(clock) }),
+    );
+  }
   // `emit` reads the common props and the layer's fields from here; `volume`, `muted` and the ignored props stay behind.
   return createElement('kg-video', {
     ...props,

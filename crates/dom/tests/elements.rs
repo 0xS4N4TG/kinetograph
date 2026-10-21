@@ -170,3 +170,62 @@ fn zero_and_odd_viewports() {
         assert!((bw - w / 2.0).abs() < 0.02, "{w}: {bw}");
     }
 }
+
+#[test]
+fn video_timing_and_object_fit() {
+    let root = el(
+        "div",
+        "$0",
+        "",
+        vec![
+            el_attrs(
+                "video",
+                "$0.0",
+                json!({
+                    "src": "Cargo.toml",
+                    "data-kg-video": r#"{"from":30,"trimBefore":5,"playbackRate":1.5,"loop":true,"extra":"ignored","frame":"bad"}"#,
+                }),
+                "width: 200px; height: 100px; object-fit: cover",
+                vec![],
+            ),
+            el_attrs(
+                "video",
+                "$0.1",
+                json!({
+                    "src": "Cargo.toml",
+                    "data-kg-video": "{not valid json",
+                }),
+                "width: 120px; height: 80px; object-fit: scale-down",
+                vec![],
+            ),
+        ],
+    );
+    let req = request(root);
+    let island = resolve(&req);
+    let out = kinetograph_dom::paint::paint(&island.doc, &parse(&req));
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+    assert_eq!(out.layers.len(), 2);
+
+    let v0 = &out.layers[0];
+    assert_eq!(v0["type"], "video");
+    assert_eq!(v0["width"], 200);
+    assert_eq!(v0["height"], 100);
+    assert_eq!(v0["fit"], "cover");
+    assert_eq!(v0["from"], 30);
+    assert_eq!(v0["trimBefore"], 5);
+    assert_eq!(v0["playbackRate"], 1.5);
+    assert_eq!(v0["loop"], true);
+    assert!(v0.get("extra").is_none());
+    assert!(v0.get("frame").is_none());
+    assert!(v0.get("trimAfter").is_none());
+
+    let v1 = &out.layers[1];
+    assert_eq!(v1["type"], "video");
+    assert_eq!(v1["width"], 120);
+    assert_eq!(v1["height"], 80);
+    assert_eq!(v1["fit"], "contain");
+    assert!(v1.get("from").is_none());
+    assert!(v1.get("trimBefore").is_none());
+    assert!(v1.get("playbackRate").is_none());
+    assert!(v1.get("loop").is_none());
+}

@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDomAddon } from '@kinetograph/compat/dom';
 import type { LayerJson } from '@kinetograph/scene';
-import { Camera, createSceneRoot, Image, Layer, Rect, SequenceHost, Text, TimelineContext } from '../src/index.js';
+import { Camera, createSceneRoot, Image, Layer, Rect, SequenceHost, Text, TimelineContext, Video } from '../src/index.js';
 import { timeline } from './harness.js';
 
 interface Node {
@@ -102,6 +102,29 @@ describe('DOM elements in the reconciler', () => {
     expect(root.render(<div />).layers).toEqual([]);
     root.unmount();
     expect(requests).toHaveLength(0);
+  });
+});
+
+describe('<Video> with CSS', () => {
+  it('stays a native video layer for a pixel box and objectFit', () => {
+    const tree = render(<Video id="v" src="a.mp4" style={{ width: 100, height: 50, objectFit: 'cover' }} />);
+    expect(tree.layers[0]).toMatchObject({ type: 'video', width: 100, height: 50, fit: 'cover' });
+    expect(requests).toHaveLength(0);
+  });
+
+  it('becomes a CSS <video> of the DOM engine for a percentage, position, opacity or className, keeping its clock and its sound', () => {
+    const tree = render(
+      <div style={{ position: 'relative', width: 100, height: 100 }}>
+        <Video src="a.mp4" trimBefore={15} playbackRate={2} loop style={{ position: 'absolute', inset: 0, width: '100%', opacity: 0.5, borderRadius: 8 }} />
+      </div>,
+    );
+    const video = requests[0]!.root.children!.find((n) => n.tag === 'video')!;
+    expect(video.attrs!.src).toBe('a.mp4');
+    expect(JSON.parse(video.attrs!['data-kg-video']!)).toEqual({ from: 0, trimBefore: 15, playbackRate: 2, loop: true });
+    expect(video.style).toContain('opacity: 0.5');
+    expect(tree.audio).toHaveLength(1);
+    expect(tree.audio[0]).toMatchObject({ src: 'a.mp4', video: true, trimBefore: 15, playbackRate: 2, loop: true });
+    expect(render(<Video src="a.mp4" className="clip" />).audio).toHaveLength(1);
   });
 });
 
