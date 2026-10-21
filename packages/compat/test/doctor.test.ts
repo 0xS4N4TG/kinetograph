@@ -165,6 +165,16 @@ describe('summarize', () => {
     expect(input).toEqual(copy);
   });
 
+  it('lists a file that cannot be read once: the element that named it says more than the resource entry', () => {
+    const img = item({ path: '$0.1 <img>', element: 'img', property: 'src', value: 'avatars/ada.png', reason: 'file not found' });
+    const resource = item({ path: '$0', element: 'resource', property: null, value: '/proj/public/avatars/ada.png', reason: 'cannot load a resource' });
+    const other = item({ path: '$0', element: 'resource', property: null, value: '/proj/public/logo.png', reason: 'cannot load a resource' });
+    const report = summarize('Main', [{ frame: 0, unsupported: [img, resource, other] }]);
+    expect(report.issues.map((i) => `${i.element} ${i.values.join(',')}`)).toEqual(['img avatars/ada.png', 'resource /proj/public/logo.png']);
+    // Alone, the resource entry stays.
+    expect(summarize('Main', [{ frame: 0, unsupported: [resource] }]).issues).toHaveLength(1);
+  });
+
   it('reports no clean frame when every frame has an item', () => {
     expect(summarize('Main', frames('xxx'))).toMatchObject({ cleanFrames: 0, unsupportedFrames: 3, cleanShare: 0 });
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SceneJson, Unsupported } from '@kinetograph/scene';
-import { lintAudio, lintCompat, lintInspect, lintScene, mergeFindings, sortIssues } from '../src/lint.js';
+import { lintAudio, lintCompat, lintInspect, lintNotes, lintScene, mergeFindings, sortIssues, textInsideCanvas } from '../src/lint.js';
 import type { InspectLayer, InspectResult } from '../src/native.js';
 
 function layer(over: Partial<InspectLayer> & { id: string }): InspectLayer {
@@ -31,8 +31,8 @@ function text(id: string, at: { x: number; y: number }, w: number, over: Partial
     box: { x: 0, y: 0, width: w, height: 40 },
     bounds: { x: at.x, y: at.y, width: w, height: 40 },
     text: {
-      text: 'hello', font: 'DM Sans', size: 32, width: w, height: 40, maxWidth: null,
-      lines: [{ text: 'hello', top: 0, bottom: 40, baseline: 30 }], ...over,
+      text: id, font: 'DM Sans', size: 32, width: w, height: 40, maxWidth: null,
+      lines: [{ text: id, top: 0, bottom: 40, baseline: 30 }], ...over,
     },
   });
 }
@@ -151,10 +151,79 @@ describe('lintInspect', () => {
     it('still reports a layer that a clip only partly cuts, or that sits inside the clip', () => {
       const clipped = (clipBounds: InspectLayer['clipBounds']) =>
         inGroup({ clip: 'inset', clipBounds }, past({ bounds: rectOf(900, 100, 300, 40) }));
-      expect(lintInspect(frame([clipped(rectOf(0, 0, 1000, 600))]))).toHaveLength(1);
-      expect(lintInspect(frame([clipped(rectOf(1100, 100, 100, 40))]))).toHaveLength(1);
+      // Cut at the canvas edge, nothing of the text is drawn past it; cut to a box beyond the edge, none of it is on the canvas.
+      expect(lintInspect(frame([clipped(rectOf(0, 0, 1000, 600))]))).toEqual([]);
+      expect(lintInspect(frame([clipped(rectOf(1100, 100, 100, 40))]))).toEqual([expect.objectContaining({ rule: 'off-canvas' })]);
+      expect(lintInspect(frame([clipped(rectOf(0, 0, 1200, 600))]))).toEqual([expect.objectContaining({ rule: 'text-overflow-canvas' })]);
       expect(lintInspect(frame([clipped(rectOf(0, 0, 800, 600))]))).toEqual([]);
     });
+  });
+});
+
+describe('lint false positives', () => {
+  const rectOf = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+  const inGroup = (group: Partial<InspectLayer>, ...children: InspectLayer[]) =>
+    layer({ id: 'g', type: 'group', box: null, bounds: null, children, ...group });
+
+  it('does not report text that a box around it clips to the canvas (a ticker, a scroller)', () => {
+    const wide = text('ticker', { x: 100, y: 100 }, 3000);
+    expect(lintInspect(frame([inGroup({ clip: 'inset', clipBounds: rectOf(0, 0, 1000, 600) }, wide)]))).toEqual([]);
+    // Clipped to a box that itself runs past the canvas: what is drawn still does.
+    expect(lintInspect(frame([inGroup({ clip: 'inset', clipBounds: rectOf(0, 0, 1200, 600) }, wide)]))).toEqual([
+      expect.objectContaining({ rule: 'text-overflow-canvas', layer: 'ticker' }),
+    ]);
+  });
+
+  it('does not report text that fades in or out over other text, blended, or the same words twice', () => {
+    const a = text('a', { x: 100, y: 100 }, 200);
+    const b = text('b', { x: 150, y: 110 }, 200);
+    expect(lintInspect(frame([a, b]))).toHaveLength(1);
+    expect(lintInspect(frame([a, { ...b, opacity: 0.5 }]))).toEqual([]);
+    expect(lintInspect(frame([inGroup({ id: 'g2', opacity: 0.4 }, a), b]))).toEqual([]);
+    expect(lintInspect(frame([a, { ...b, blendMode: 'screen' }]))).toEqual([]);
+    const shadow = text('shadow', { x: 104, y: 104 }, 200, { text: 'a' });
+    expect(lintInspect(frame([a, shadow]))).toEqual([]);
+  });
+
+  it('does not count the text of two layers that are clipped apart as overlapping', () => {
+    const a = text('a', { x: 100, y: 100 }, 200);
+    const b = text('b', { x: 150, y: 110 }, 200);
+    const left = inGroup({ id: 'l', clip: 'inset', clipBounds: rectOf(0, 0, 200, 600) }, a);
+    const right = inGroup({ id: 'r', clip: 'inset', clipBounds: rectOf(300, 0, 700, 600) }, b);
+    expect(lintInspect(frame([left, right]))).toEqual([]);
+  });
+
+  it('lists the text layers that are wholly inside the canvas', () => {
+    const inside = text('in', { x: 100, y: 100 }, 200);
+    const out = text('out', { x: 900, y: 100 }, 300);
+    expect(textInsideCanvas(frame([inside, out]))).toEqual(['in']);
+  });
+
+  it('makes text that runs past the edge as it moves one warning, not an error per frame', () => {
+    const slide = (x: number) => frame([text('title', { x, y: 100 }, 300)]);
+    const perFrame = [-250, -120, 40, 300].map((x, i) => {
+      const result = slide(x);
+      return { frame: i * 10, findings: lintInspect(result), inside: textInsideCanvas(result) };
+    });
+    const issues = mergeFindings(perFrame);
+    expect(issues).toEqual([
+      expect.objectContaining({ rule: 'text-overflow-canvas', layer: 'title', severity: 'warning', frames: [0, 10] }),
+    ]);
+    expect(issues[0]!.message).toContain('moving in or out');
+  });
+
+  it('keeps it an error when the text is past the edge in every frame it is drawn', () => {
+    const result = frame([text('title', { x: 900, y: 100 }, 300)]);
+    const issues = mergeFindings([0, 30].map((f) => ({ frame: f, findings: lintInspect(result), inside: textInsideCanvas(result) })));
+    expect(issues).toEqual([expect.objectContaining({ rule: 'text-overflow-canvas', severity: 'error', frames: [0, 30] })]);
+  });
+});
+
+describe('lintNotes', () => {
+  it('turns what the project noted into warnings without a frame', () => {
+    expect(lintNotes(['a font did not download'])).toEqual([
+      { rule: 'project-note', severity: 'warning', layer: null, message: 'a font did not download', frames: [] },
+    ]);
   });
 });
 

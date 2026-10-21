@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import type { SceneJson, Unsupported } from '@kinetograph/scene';
 import { parseFrameList } from '../args.js';
 import { toErrorObject } from '../errors.js';
-import { lintAudio, lintCompat, lintInspect, lintNotes, lintScene, mergeFindings, sortIssues, type Finding } from '../lint.js';
+import { lintAudio, lintCompat, lintInspect, lintNotes, lintScene, mergeFindings, sortIssues, textInsideCanvas, type Finding } from '../lint.js';
 import { native, type InspectLayer, type InspectResult } from '../native.js';
 import { checkFrame, evenFrames } from '../source.js';
 import { typeCheck, type TypeDiagnostic } from '../typecheck.js';
@@ -90,7 +90,7 @@ export const lint: Command = {
         .map((f) => checkFrame(f, durationInFrames))
         .sort((a, b) => a - b);
 
-      const perFrame: { frame: number; findings: Finding[] }[] = [];
+      const perFrame: { frame: number; findings: Finding[]; inside: string[] }[] = [];
       const unsupportedFrames: { frame: number; unsupported: Unsupported[] }[] = [];
       for (const frame of frames) {
         const { sceneJson, audio, unsupported } = await source.frame(frame);
@@ -99,13 +99,16 @@ export const lint: Command = {
           ...lintScene(JSON.parse(sceneJson) as SceneJson, source.baseDir),
           ...lintAudio(audio, source.baseDir),
         ];
+        let inside: string[] = [];
         try {
-          findings.push(...lintInspect(JSON.parse(native().inspect(sceneJson, frame, source.baseDir)) as InspectResult));
+          const inspected = JSON.parse(native().inspect(sceneJson, frame, source.baseDir)) as InspectResult;
+          findings.push(...lintInspect(inspected));
+          inside = textInsideCanvas(inspected);
         } catch (error) {
           // Usually the missing font or file already found above; the addon's text says where it stopped.
           findings.push({ rule: 'inspect-failed', severity: 'error', layer: null, message: toErrorObject(error).message });
         }
-        perFrame.push({ frame, findings });
+        perFrame.push({ frame, findings, inside });
       }
       // The entry can be a stand-in (tests); a file that is not there has no types to check.
       const entry = String(args.positionals.entry);

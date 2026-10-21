@@ -66,12 +66,19 @@ const intersect = (a: Rect | null, b: Rect | null): Rect | null =>
     bottom: Math.min(a.bottom, b.bottom),
   };
 
+/** A layer a frame can show, with what bounds it: its opacity through its ancestors and the clips of all of them. */
+interface Seen {
+  layer: InspectLayer;
+  opacity: number;
+  clip: Rect | null;
+}
+
 /**
  * The layers a frame can show, in tree order. A layer at opacity 0 is skipped with its subtree, which is the same as
  * its opacity times its ancestors' being 0. A layer whose pixels all fall outside its own clip and its ancestors' is
  * skipped too: nothing of it is drawn. Matte sources are not drawn, so they are left out as well.
  */
-function visibleLayers(layers: InspectLayer[], clip: Rect | null = null, into: InspectLayer[] = []): InspectLayer[] {
+function visibleLayers(layers: InspectLayer[], clip: Rect | null = null, opacity = 1, into: Seen[] = []): Seen[] {
   for (const layer of layers) {
     if (layer.opacity <= 0) continue;
     const c = layer.clipBounds;
@@ -81,20 +88,46 @@ function visibleLayers(layers: InspectLayer[], clip: Rect | null = null, into: I
       const seen = b ? { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height } : canvasRect(layer);
       if (within && seen && overlapArea(seen, within) === 0) continue;
     }
-    if (!layer.matteSource) into.push(layer);
-    if (layer.children) visibleLayers(layer.children, within, into);
+    const effective = opacity * layer.opacity;
+    if (!layer.matteSource) into.push({ layer, opacity: effective, clip: within });
+    if (layer.children) visibleLayers(layer.children, within, effective, into);
   }
   return into;
 }
+
+/** How far text may run past the canvas, per side, before it is reported (anti-aliasing and rounding). */
+function beyondCanvas(rect: Rect, canvas: Rect): string[] {
+  const beyond: string[] = [];
+  if (rect.left < canvas.left - TOLERANCE) beyond.push(`${Math.round(canvas.left - rect.left)} px past the left edge`);
+  if (rect.right > canvas.right + TOLERANCE) beyond.push(`${Math.round(rect.right - canvas.right)} px past the right edge`);
+  if (rect.top < canvas.top - TOLERANCE) beyond.push(`${Math.round(canvas.top - rect.top)} px past the top edge`);
+  if (rect.bottom > canvas.bottom + TOLERANCE) beyond.push(`${Math.round(rect.bottom - canvas.bottom)} px past the bottom edge`);
+  return beyond;
+}
+
+/** The part of a text's box that is drawn: its own box through its matrix, cut by the clips around it. Null: none of it. */
+function shownRect(entry: Seen): Rect | null {
+  const rect = canvasRect(entry.layer);
+  if (!rect) return null;
+  const shown = intersect(rect, entry.clip);
+  return shown && area(shown) > 0 ? shown : null;
+}
+
+/** Text under this opacity (through its ancestors) is fading in or out: layered with other text on purpose. */
+const SETTLED = 0.99;
+
+const sameText = (a: InspectLayer, b: InspectLayer): boolean =>
+  a.text !== undefined && b.text !== undefined && a.text.text.trim() === b.text.text.trim();
 
 /** The findings that one frame's `InspectResult` shows: text that overflows, layers off the canvas, overlapping text. */
 export function lintInspect(result: InspectResult): Finding[] {
   const findings: Finding[] = [];
   const canvas: Rect = { left: 0, top: 0, right: result.width, bottom: result.height };
-  const layers = visibleLayers(result.layers);
-  const texts: { layer: InspectLayer; rect: Rect }[] = [];
+  const seen = visibleLayers(result.layers);
+  const texts: { entry: Seen; rect: Rect }[] = [];
 
-  for (const layer of layers) {
+  for (const entry of seen) {
+    const { layer } = entry;
     if (layer.type === 'group') continue;
     const rect = canvasRect(layer);
 
@@ -108,13 +141,11 @@ export function lintInspect(result: InspectResult): Finding[] {
           message: `text is ${Math.round(width)} px wide but its maxWidth is ${maxWidth} (a word is too long to wrap)`,
         });
       }
-      if (rect && lines.length > 0) {
-        const beyond: string[] = [];
-        if (rect.left < canvas.left - TOLERANCE) beyond.push(`${Math.round(canvas.left - rect.left)} px past the left edge`);
-        if (rect.right > canvas.right + TOLERANCE) beyond.push(`${Math.round(rect.right - canvas.right)} px past the right edge`);
-        if (rect.top < canvas.top - TOLERANCE) beyond.push(`${Math.round(canvas.top - rect.top)} px past the top edge`);
-        if (rect.bottom > canvas.bottom + TOLERANCE) beyond.push(`${Math.round(rect.bottom - canvas.bottom)} px past the bottom edge`);
-        if (beyond.length > 0 && overlapArea(rect, canvas) > 0) {
+      // Only what is drawn counts: text clipped by a box around it (a ticker, a scroller) does not run past anything.
+      const shown = lines.length > 0 ? shownRect(entry) : null;
+      if (shown) {
+        const beyond = beyondCanvas(shown, canvas);
+        if (beyond.length > 0 && overlapArea(shown, canvas) > 0) {
           findings.push({
             rule: 'text-overflow-canvas',
             severity: 'error',
@@ -123,15 +154,17 @@ export function lintInspect(result: InspectResult): Finding[] {
           });
         }
       }
-      if (rect) texts.push({ layer, rect });
+      const drawn = shownRect(entry);
+      if (drawn) texts.push({ entry, rect: drawn });
     }
 
     // Where its pixels can be, as the renderer places them (3D turns, the turn of a group it is inside, effects),
     // which the flat box through the 2D matrix does not know.
-    const seen = layer.bounds
+    const placed = layer.bounds
       ? { left: layer.bounds.x, top: layer.bounds.y, right: layer.bounds.x + layer.bounds.width, bottom: layer.bounds.y + layer.bounds.height }
       : rect;
-    if (seen && overlapArea(seen, canvas) === 0) {
+    const where = intersect(placed, entry.clip);
+    if (where && overlapArea(where, canvas) === 0) {
       findings.push({
         rule: 'off-canvas',
         severity: 'warning',
@@ -145,18 +178,35 @@ export function lintInspect(result: InspectResult): Finding[] {
     for (let j = i + 1; j < texts.length; j++) {
       const a = texts[i]!;
       const b = texts[j]!;
+      // Text layered on purpose: fading in or out (a cross-fade, a swap), blended, or the same words twice (an outline,
+      // a shadow, a glitch). Only settled, plain, different text on top of each other is a mistake.
+      if (a.entry.opacity < SETTLED || b.entry.opacity < SETTLED) continue;
+      if (a.entry.layer.blendMode !== 'normal' || b.entry.layer.blendMode !== 'normal') continue;
+      if (sameText(a.entry.layer, b.entry.layer)) continue;
       const smaller = Math.min(area(a.rect), area(b.rect));
       if (smaller > 0 && overlapArea(a.rect, b.rect) > 0.25 * smaller) {
         findings.push({
           rule: 'text-overlap',
           severity: 'warning',
-          layer: a.layer.id,
-          message: `text overlaps the text of "${b.layer.id}"`,
+          layer: a.entry.layer.id,
+          message: `text overlaps the text of "${b.entry.layer.id}"`,
         });
       }
     }
   }
   return findings;
+}
+
+/** The ids of the text layers drawn in this frame that are entirely inside the canvas. */
+export function textInsideCanvas(result: InspectResult): string[] {
+  const canvas: Rect = { left: 0, top: 0, right: result.width, bottom: result.height };
+  const ids: string[] = [];
+  for (const entry of visibleLayers(result.layers)) {
+    if (entry.layer.type !== 'text' || !entry.layer.text || entry.layer.text.lines.length === 0) continue;
+    const shown = shownRect(entry);
+    if (shown && beyondCanvas(shown, canvas).length === 0) ids.push(entry.layer.id);
+  }
+  return ids;
 }
 
 function walk(layers: LayerJson[], visit: (layer: LayerJson) => void): void {
@@ -223,15 +273,29 @@ export function sortIssues(issues: LintIssue[]): LintIssue[] {
   return issues.sort((a, b) => Number(b.severity === 'error') - Number(a.severity === 'error') || (a.frames[0]! - b.frames[0]!));
 }
 
-/** One issue per distinct finding, with every frame it was seen at; errors first. */
-export function mergeFindings(perFrame: { frame: number; findings: Finding[] }[]): LintIssue[] {
+/**
+ * One issue per distinct finding, with every frame it was seen at; errors first. How far text runs past the canvas
+ * changes from frame to frame as it moves, so those are one issue per layer. `inside` lists the text layers a frame
+ * draws entirely inside the canvas: a layer that overflows in some frames and is inside in others is moving in or out
+ * (a slide, a pan), which is a warning and not an error.
+ */
+export function mergeFindings(perFrame: { frame: number; findings: Finding[]; inside?: readonly string[] }[]): LintIssue[] {
   const issues = new Map<string, LintIssue>();
   for (const { frame, findings } of perFrame) {
     for (const f of findings) {
-      const key = JSON.stringify([f.rule, f.layer, f.message]);
+      const shape = f.rule === 'text-overflow-canvas' ? f.message.replace(/\d+/g, '#') : f.message;
+      const key = JSON.stringify([f.rule, f.layer, shape]);
       const issue = issues.get(key) ?? { ...f, frames: [] };
       if (!issue.frames.includes(frame)) issue.frames.push(frame);
       issues.set(key, issue);
+    }
+  }
+  for (const issue of issues.values()) {
+    if (issue.rule !== 'text-overflow-canvas') continue;
+    const inside = perFrame.filter((f) => f.inside?.includes(issue.layer ?? '') && !issue.frames.includes(f.frame)).map((f) => f.frame);
+    if (inside.length > 0) {
+      issue.severity = 'warning';
+      issue.message += ` (inside the canvas at frame${inside.length > 1 ? 's' : ''} ${inside.join(', ')}, so it is moving in or out)`;
     }
   }
   return sortIssues([...issues.values()]);

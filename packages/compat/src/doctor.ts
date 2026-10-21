@@ -53,6 +53,20 @@ function toRanges(frames: readonly number[]): [number, number][] {
 }
 
 /**
+ * A file the island could not read is reported twice: by the element that named it (`img src`, with the attribute) and
+ * as a `resource` (with the path it looked for). The element's report says more, so the `resource` entry that the
+ * other one's value appears in is dropped.
+ */
+function withoutDuplicateResources(items: readonly Unsupported[]): Unsupported[] {
+  return items.filter(
+    (item) =>
+      item.element !== 'resource' ||
+      item.value === null ||
+      !items.some((other) => other !== item && other.element !== 'resource' && other.value !== null && other.value !== '' && item.value!.includes(other.value)),
+  );
+}
+
+/**
  * What the engine cannot draw in the frames of composition `comp` (docs/COMPAT.md §7): the share of frames with
  * nothing unsupported and the unsupported items grouped by (element, property, reason), the group on the most frames
  * first. A frame listed twice is one frame with both lists' items.
@@ -67,6 +81,7 @@ export function summarize(
     if (items) items.push(...unsupported);
     else byFrame.set(frame, [...unsupported]);
   }
+  for (const [frame, items] of byFrame) byFrame.set(frame, withoutDuplicateResources(items));
   const merged = [...byFrame].map(([frame, unsupported]) => ({ frame, unsupported })).sort((a, b) => a.frame - b.frame);
 
   // Frames are ascending, so each group's frame list is too; a frame counts once however many items it has.
