@@ -65,6 +65,12 @@ export interface EmitOptions {
   ignoreDom?: boolean;
   /** The clock CSS animations and transitions read, in seconds (frame / fps), asked for when an island is drawn. */
   time?: () => number;
+  /**
+   * While the frame loop renders motion-blur sub-frames: the ids of the blurred layers, the only layers a sub-frame's
+   * tree is read for (docs/AUTHORING.md §7.3). What cannot hold one is left out of the tree then: a DOM island with no
+   * native element in it, a native element other than a `<Layer>`. Null for a whole tree.
+   */
+  subFrameLayers?: () => ReadonlySet<string> | null;
 }
 
 /** The name of an element as a user writes it, for error messages. */
@@ -190,6 +196,13 @@ function charsOf(chars: unknown, text: string): (CharStyle | null)[] {
   return all.map((char, index) => chars(char, index, all.length) ?? null);
 }
 
+/** Whether any native element (other than a `<Sequence>`) is in `nodes` or below them. */
+function holdsNative(nodes: HostNode[]): boolean {
+  return nodes.some(
+    (n) => n.kind === 'element' && ((n.type !== 'kg-sequence' && !isDomElement(n.type)) || holdsNative(n.children)),
+  );
+}
+
 /** Whether any DOM element is in `nodes` or below them (through native elements and `<Sequence>`s too). */
 function holdsDom(nodes: HostNode[]): boolean {
   return nodes.some((n) => n.kind === 'element' && (isDomElement(n.type) || holdsDom(n.children)));
@@ -268,11 +281,27 @@ class Emitter {
   private readonly ids = new Set<string>();
 
   private sheets: string[] | null = null;
+  /** `EmitOptions.subFrameLayers`, and how many of those layers the element being emitted is inside. */
+  private readonly keep: ReadonlySet<string> | null;
+  private inside = 0;
 
   constructor(
     private readonly options: EmitOptions = {},
     private readonly roots: HostNode[] = [],
-  ) {}
+  ) {
+    this.keep = options.subFrameLayers?.() ?? null;
+  }
+
+  /** In a sub-frame, outside the blurred layers: whether `node` (at `path`) can be left out, holding none of them. */
+  private unread(node: HostElement, path: string): boolean {
+    if (this.keep === null || this.inside > 0) return false;
+    if (isDomElement(node.type)) return !holdsNative(node.children);
+    if (node.type === 'kg-sequence') return false;
+    const id = node.props.id;
+    if (this.keep.has(typeof id === 'string' ? id : path)) return false;
+    // A `<Layer>` can hold blurred layers, unless it is an `<AbsoluteFill>` drawn as a DOM island without them.
+    return node.type !== 'kg-layer' || (domFillOf(node) !== null && !holdsNative(node.children));
+  }
 
   /** Document-wide CSS: the project's imported files, then every `<style>` element in the tree, in order. */
   private stylesheets(): string[] {
@@ -354,6 +383,7 @@ class Emitter {
         continue;
       }
       const path = `${parentPath}${parentPath === '' ? '$' : '.'}${place.next++}`;
+      if (this.unread(node, path)) continue;
       if (isDomElement(node.type)) {
         out.push(...this.island(node, path));
         continue;
@@ -449,6 +479,8 @@ class Emitter {
 
   /** A layer, or null for `<Camera>` and `<Audio>`, which land in `cameras` and `audio` instead. */
   private element(element: HostElement, path: string): LayerJson | null {
+    // A native element inside an island is emitted from here.
+    if (this.unread(element, path)) return null;
     const { type, props } = element;
     const name = ELEMENT_NAMES[type] ?? type;
     const id = this.idOf(element, path);
@@ -467,13 +499,19 @@ class Emitter {
           const layers = this.island(fill, path);
           return layers.length === 1 ? layers[0]! : ({ id, type: 'group', children: layers } as LayerJson);
         }
-        return {
-          id,
-          type: 'group',
-          ...pick(props, ['preserve3d', 'passThrough', 'layout', 'glsl']),
-          ...commonOf(props, name),
-          children: this.children(element.children, path, name),
-        } as LayerJson;
+        const kept = this.keep?.has(id) ?? false;
+        if (kept) this.inside += 1;
+        try {
+          return {
+            id,
+            type: 'group',
+            ...pick(props, ['preserve3d', 'passThrough', 'layout', 'glsl']),
+            ...commonOf(props, name),
+            children: this.children(element.children, path, name),
+          } as LayerJson;
+        } finally {
+          if (kept) this.inside -= 1;
+        }
       }
       case 'kg-shape': {
         const kind = props.kind;

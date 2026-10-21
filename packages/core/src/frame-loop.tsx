@@ -6,13 +6,15 @@
 //   3. wait for open `delayRender` handles and font downloads, then read the
 //      tree again (state set by the data that arrived is in it),
 //   4. if any layer has motion blur, render the whole composition at each
-//      sub-frame time it needs and attach those trees to it.
+//      sub-frame time it needs, read the blurred layers out of those trees and
+//      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
 import { resetCanvasStates } from '@kinetograph/compat/shim';
 import { createSceneRoot, TimelineContext, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetograph/react';
 import {
-  attachMotionFrames,
+  attachMotionChanges,
+  collectMotionLayers,
   collectMotionTimes,
   type AudioClipJson,
   type LayerJson,
@@ -62,6 +64,14 @@ class Renderer implements FrameRenderer {
   private trailFrom = -1;
   private trailTo = -1;
   private disposed = false;
+  /** The `renderFrame` call in progress, the one whose renders the open island pass holds (-1: none), and the frame
+   *  being rendered: the frame's own renders and its sub-frames are one pass of the islands' documents (compat/dom). */
+  private calls = 0;
+  private passOf = -1;
+  private target = -1;
+  private rendering = -1;
+  /** While sub-frames are rendered: the blurred layers' ids, all a sub-frame's tree is read for. */
+  private subFrameLayers: ReadonlySet<string> | null = null;
 
   constructor(compositionId: string, inputProps: Record<string, unknown> | undefined) {
     // Components that call getInputProps() see the props this render was given.
@@ -94,6 +104,17 @@ class Renderer implements FrameRenderer {
   }
 
   async renderFrame(frame: number): Promise<FrameResult> {
+    this.calls += 1;
+    this.target = frame;
+    try {
+      return await this.drawFrame(frame);
+    } finally {
+      this.closePass();
+      this.subFrameLayers = null;
+    }
+  }
+
+  private async drawFrame(frame: number): Promise<FrameResult> {
     if (this.disposed) throw new Error('This FrameRenderer was disposed');
     const { config, component, margin, background } = await this.readyPromise;
     if (!Number.isInteger(frame) || frame < 0 || frame >= config.durationInFrames) {
@@ -166,8 +187,10 @@ class Renderer implements FrameRenderer {
     let layers = main.layers;
     if (times.length > 0) {
       const treesAt = new Map<number, LayerJson[]>();
-      // The samples share the islands' documents (compat/dom).
-      beginSamplePass();
+      // The samples share the islands' documents with the frame's own render (compat/dom), and only their blurred
+      // layers are read: the rest of each sub-frame's tree is left out.
+      this.openPass();
+      this.subFrameLayers = collectMotionLayers(main.layers, frame);
       for (const time of times) {
         if (time === frame) {
           treesAt.set(time, main.layers);
@@ -179,9 +202,9 @@ class Renderer implements FrameRenderer {
         const tree = await this.settle(live, () => this.update(live, this.element(component, config, time)));
         treesAt.set(time, tree.layers);
       }
-      endSamplePass();
+      this.subFrameLayers = null;
       setVirtualFrame(frame, config.fps, { fireTimers: false });
-      layers = attachMotionFrames(main.layers, frame, treesAt);
+      layers = attachMotionChanges(main.layers, frame, treesAt);
     }
 
     const sceneJson: SceneJson = {
@@ -204,6 +227,8 @@ class Renderer implements FrameRenderer {
 
   /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */
   private update(scene: SceneRoot, element: ReactNode): void {
+    // The pass starts with the frame's own render (not the renders of earlier frames a fresh start or a replay makes).
+    if (this.rendering === this.target) this.openPass();
     resetCanvasStates();
     clearReportedUnsupported();
     scene.update(element);
@@ -216,12 +241,26 @@ class Renderer implements FrameRenderer {
       viewport: { width: config.width, height: config.height },
       fonts: getFonts,
       time: () => virtualNow() / 1000,
+      subFrameLayers: () => this.subFrameLayers,
     });
     this.lastFrame = -1;
     resetVirtualClock();
   }
 
+  private openPass(): void {
+    if (this.passOf === this.calls) return;
+    beginSamplePass();
+    this.passOf = this.calls;
+  }
+
+  private closePass(): void {
+    if (this.passOf === -1) return;
+    endSamplePass();
+    this.passOf = -1;
+  }
+
   private element(component: ResolvedComposition['component'], config: VideoConfig, frame: number): ReactNode {
+    this.rendering = frame;
     const Component = component;
     return (
       <TimelineContext.Provider

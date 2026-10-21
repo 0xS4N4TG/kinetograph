@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { MediaInfo } from '@kinetograph/native';
 import { Layer, Video } from '@kinetograph/react';
-import type { GifLayer, GroupLayer, VideoLayer } from '@kinetograph/scene';
+import { motionSubFrames, type GifLayer, type GroupLayer, type VideoLayer } from '@kinetograph/scene';
 import { resetRenderState } from '../src/assets.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { resetVirtualClock } from '../src/determinism.js';
@@ -215,14 +215,14 @@ describe('motion blur sub-frames', () => {
     const [video, gif] = scene.layers as [VideoLayer, GifLayer, GroupLayer];
     // t_i = 10 + ((i + 0.5) / 3 - 0.5) for a shutter of 1.
     const times = [10 - 1 / 3, 10, 10 + 1 / 3];
-    const videoCopies = video.motionBlur!.frames as VideoLayer[];
+    const videoCopies = motionSubFrames(video) as VideoLayer[];
     expect(videoCopies).toHaveLength(3);
     for (const copy of videoCopies) {
       expect(copy).toMatchObject({ id: 'v', type: 'video', src: 'a.mp4', from: 0, trimBefore: 10 });
       // The renderer reads the sub-frame's own time, so a copy must not pin `frame`.
       expect(copy).not.toHaveProperty('frame');
     }
-    const gifCopies = gif.motionBlur!.frames as GifLayer[];
+    const gifCopies = motionSubFrames(gif) as GifLayer[];
     expect(gifCopies.map((copy) => copy.time as number)).toEqual(times.map((t) => t / 30));
     expect(gifCopies.every((copy) => copy.loop === true)).toBe(true);
     // The layer itself is the frame's own state.
@@ -232,7 +232,7 @@ describe('motion blur sub-frames', () => {
   it('keeps `from` whole in a Sequence even though the sub-frame times are fractional', async () => {
     const { scene } = await compose().renderFrame(10);
     const group = scene.layers[2] as GroupLayer;
-    const copies = group.motionBlur!.frames as GroupLayer[];
+    const copies = motionSubFrames(group) as GroupLayer[];
     expect(copies).toHaveLength(2);
     for (const copy of copies) {
       const inner = copy.children[0] as GroupLayer;
@@ -259,7 +259,7 @@ describe('motion blur sub-frames', () => {
     registerRoot(() => <Composition id="H" component={Held} width={64} height={64} fps={30} durationInFrames={30} />);
     const { scene } = await createFrameRenderer('H').renderFrame(10);
     const group = scene.layers[0] as GroupLayer;
-    for (const copy of group.motionBlur!.frames as GroupLayer[]) {
+    for (const copy of motionSubFrames(group) as GroupLayer[]) {
       const video = copy.children[0] as VideoLayer;
       expect((video.frame as number) - (video.from as number)).toBeCloseTo(3, 9);
     }

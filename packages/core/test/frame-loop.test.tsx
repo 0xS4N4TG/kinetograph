@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Audio, Layer, Rect, Text } from '@kinetograph/react';
-import type { GroupLayer, ShapeLayer, TextLayer } from '@kinetograph/scene';
+import { motionSubFrames, type GroupLayer, type ShapeLayer, type TextLayer } from '@kinetograph/scene';
 import { cancelRender, continueRender, delayRender, resetRenderState } from '../src/assets.js';
 import {
   Composition,
@@ -494,7 +494,7 @@ describe('motion blur', () => {
     const { scene } = await renderer.renderFrame(5);
     const layer = scene.layers[0] as GroupLayer;
     expect(layer.motionBlur?.samples).toBe(4);
-    const frames = layer.motionBlur!.frames as GroupLayer[];
+    const frames = motionSubFrames(layer) as GroupLayer[];
     expect(frames).toHaveLength(4);
     // t_i = 5 + 1 * ((i + 0.5) / 4 - 0.5)  ->  4.625, 4.875, 5.125, 5.375; x = 10 * t
     const xs = frames.map((f) => (f.children[0] as ShapeLayer).transform!.x as number);

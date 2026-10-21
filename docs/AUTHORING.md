@@ -299,8 +299,12 @@ function of `time`: expressions that use randomness must be seeded. Counts nothi
 - **Motion-blur frames**: `motionBlur.frames`, an optional array of exactly `samples` complete layer objects of the
   same `type`, one per sub-frame in time order. When present the renderer uses `frames[i]` as sub-frame `i` (resolved
   at that sub-frame's time) instead of resolving the layer itself there. Each copy is validated like a layer, its own
-  `motionBlur` is ignored, its effects count in the margin, and it is what the authoring layer emits for motion blur
-  (§5.3). A wrong count or a type mismatch is a load error naming the layer.
+  `motionBlur` is ignored, its effects count in the margin. A wrong count or a type mismatch is a load error naming
+  the layer.
+- **Motion-blur changes**: `motionBlur.changes`, the same sub-frames as `frames` written as what each changes in the
+  layer's tree (SCENE.md, "Sub-frame changes"): `samples` lists of layers, each standing in for the layer of its id at
+  that sub-frame, a group optionally keeping its children. It is what the authoring layer emits for motion blur
+  (§5.3); a scene with `frames` still loads.
 
 ### 4.6 Renderer reuse and inspect (stream 1)
 
@@ -362,9 +366,13 @@ Used by the frame loop (§7.3):
 ```ts
 motionTimes(frame: number, samples: number, shutter: number): number[]   // SCENE.md's t_i formula
 collectMotionTimes(layers: LayerJson[], frame: number): number[]          // distinct times any outermost motionBlur needs, sorted
+collectMotionLayers(layers: LayerJson[], frame: number): Set<string>        // the ids of those outermost blurred layers
+attachMotionChanges(layers: LayerJson[], frame: number, treesAt: ReadonlyMap<number, LayerJson[]>): LayerJson[]
+//   new layers with motionBlur.changes filled from the trees rendered at those times, matched by id and type:
+//   for each sub-frame, the layers of the blurred tree whose values differ from the frame's own;
+//   a layer missing (or of another type) at a time becomes itself with opacity 0 there
 attachMotionFrames(layers: LayerJson[], frame: number, treesAt: ReadonlyMap<number, LayerJson[]>): LayerJson[]
-//   new layers with motionBlur.frames filled from the trees rendered at those times, matched by id and type;
-//   a layer missing (or of another type) at a time becomes a copy of itself with opacity 0 there
+//   the same as whole copies in motionBlur.frames
 ```
 
 ## 6. `@kinetograph/react` (stream 3)
@@ -760,7 +768,12 @@ export function createFrameRenderer(compositionId: string, options?: { inputProp
 `renderFrame(f)`: sets the virtual clock to `f` (§7.4) and runs due timers, renders the composition at `f` through
 one `SceneRoot`, waits for open `delayRender` handles and font downloads (rendering again from `snapshot()` after
 they close), then, if `collectMotionTimes(layers, f)` is not empty, renders the whole composition at each of those
-times and calls `attachMotionFrames`, so a layer's own animated props blur too. The result's `scene` has the
+times and calls `attachMotionChanges`, so a layer's own animated props blur too. A sub-frame's tree is only read for
+the blurred layers, so its emit leaves out what cannot hold one: a DOM island with no native element in it and a
+native element other than a `<Layer>`, outside the blurred layers (`EmitOptions.subFrameLayers`). The frame's own
+render and its sub-frames are one pass of the DOM islands (compat/dom `beginSamplePass`): an island's document is
+edited from one render to the next, and a later render's layers that are the same as the island's first are the same
+objects. The result's `scene` has the
 composition's `width`, `height`, `fps`, `durationInFrames`, its `background` (`"transparent"` without one),
 `fonts: getFonts()`, the composition's `margin` when it has one, the tree's `camera` and `layers`.
 
