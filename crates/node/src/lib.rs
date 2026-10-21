@@ -456,7 +456,7 @@ pub fn rgba_to_yuv(rgba: Buffer, width: f64, height: f64) -> Result<Buffer> {
     let (width, height) = (count("width", width)?, count("height", height)?);
     kinetograph_cli::encode::rgba_to_yuv420(&rgba, width, height)
         .map(Buffer::from)
-        .map_err(|e| invalid(e))
+        .map_err(invalid)
 }
 
 /// A scene that opens the GPU and nothing else: `new Renderer()` has no scene
