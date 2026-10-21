@@ -14,13 +14,19 @@ export interface WorkerInit {
 }
 
 /** Main to worker. */
-export type ToWorker = { type: 'chunk'; first: number; last: number } | { type: 'finish' };
+export type ToWorker =
+  | { type: 'chunk'; first: number; last: number }
+  /** Stop the running chunk before frame `at` if it has not got that far; answered with a `split`. */
+  | { type: 'split'; at: number }
+  | { type: 'finish' };
 
 /** Worker to main. */
 export type FromWorker =
   | { type: 'ready' }
   | { type: 'frame'; frame: number; yuv: ArrayBuffer; audio: AudioClipJson[]; unsupported: Unsupported[] }
   | { type: 'chunk'; first: number; last: number }
+  /** The frames of the chunk it gave up, `first..=last` (empty when `first > last`). */
+  | { type: 'split'; first: number; last: number }
   | { type: 'done'; artifacts: ArtifactRecord[] }
   | { type: 'error'; code: string | undefined; message: string };
 
@@ -33,13 +39,25 @@ try {
   const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile });
   source.clearArtifacts?.();
   const renderer = new (native().Renderer)();
+  /** The chunk being drawn: the next frame to start and the last one. */
+  let active: { next: number; end: number } | undefined;
   port.on('message', (message: ToWorker) => {
+    if (message.type === 'split') {
+      // Answered at once, between two frames of the running chunk: what it has begun it finishes.
+      const had = active;
+      const end = had ? Math.max(message.at - 1, had.next - 1) : -1;
+      if (had && end < had.end) {
+        post({ type: 'split', first: end + 1, last: had.end });
+        had.end = end;
+      } else post({ type: 'split', first: 1, last: 0 });
+      return;
+    }
     // Chunks queue behind each other: the handler returns at once and the work runs on a chain.
     chain = chain.then(() => handle(message)).catch(fail);
   });
   let chain: Promise<void> = Promise.resolve();
 
-  const handle = async (message: ToWorker): Promise<void> => {
+  const handle = async (message: Exclude<ToWorker, { type: 'split' }>): Promise<void> => {
     if (message.type === 'finish') {
       post({ type: 'done', artifacts: source.artifacts?.() ?? [] });
       source.dispose();
@@ -58,7 +76,10 @@ try {
       new Uint8Array(yuv).set(pixels);
       post({ type: 'frame', frame, yuv, audio: out.audio, unsupported: out.unsupported ?? [] }, [yuv]);
     };
-    for (let frame = message.first; frame <= message.last; frame++) {
+    const run = { next: message.first, end: message.last };
+    active = run;
+    while (run.next <= run.end) {
+      const frame = run.next++;
       const out = await source.frame(frame);
       const sceneJson = draft ? JSON.stringify(draftScene(JSON.parse(out.sceneJson) as SceneJson)) : out.sceneJson;
       renderer.startFrame(sceneJson, frame, source.baseDir);
@@ -66,7 +87,8 @@ try {
       started = { frame, out };
     }
     if (started) collect();
-    post({ type: 'chunk', first: message.first, last: message.last });
+    active = undefined;
+    post({ type: 'chunk', first: message.first, last: run.end });
   };
 
   const fail = (error: unknown): void => {

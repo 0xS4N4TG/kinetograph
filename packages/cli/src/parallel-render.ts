@@ -12,12 +12,21 @@ import type { WorkerSpec } from './source.js';
 
 /**
  * Frames in a chunk: the unit a worker takes. A worker keeps the composition's state, its video decoders and its layer
- * cache from one frame to the next, and a chunk is a run of frames it plays forward; a small chunk bounds the frames
- * waiting for the encoder (workers x chunk x 3 MB of YUV at 1080p), a large one saves the seeking and catching up a
- * worker does when its next chunk starts further on. Measured on the launch film: 8 frames cost about 15% more CPU
- * than 64, because every chunk start seeks each video back to a keyframe.
+ * cache from one frame to the next, and a chunk is a run of frames it plays forward; a chunk start costs a worker the
+ * frames of CSS-transition history and a seek of each video it shows, so small chunks cost CPU. Frames are not equally
+ * dear (a motion-blur stretch costs several times a plain one), so a chunk that turns out heavy is split while it runs
+ * (below) and the size is only where a chunk starts.
  */
-export const CHUNK_FRAMES = 60;
+export const CHUNK_FRAMES = Number(process.env.KINETOGRAPH_CHUNK) || 60;
+
+/**
+ * Frames the encoder may be behind the frontmost frame being drawn. A frame waiting for the encoder holds its YUV
+ * (3 MB at 1080p), so this bounds the memory: a worker takes no chunk that starts further on.
+ */
+const windowFrames = (workers: number): number => Number(process.env.KINETOGRAPH_WINDOW) || (workers + 1) * CHUNK_FRAMES;
+
+/** A running chunk with fewer than twice this many frames left is not split: the new chunk's start would cost more than it saves. */
+const MIN_SPLIT = Number(process.env.KINETOGRAPH_MINSPLIT) || 8;
 
 export interface ParallelOptions {
   spec: WorkerSpec;
@@ -33,24 +42,44 @@ export interface ParallelOptions {
   shouldCancel?(): boolean;
 }
 
+interface Job {
+  first: number;
+  last: number;
+}
+
+interface Lane {
+  worker: Worker;
+  /** The chunk it is drawing, `last` lowered when part of it is given to another worker. */
+  job?: Job;
+  /** The last frame of the chunk before, so a chunk that follows it can go to the worker that has the state for it. */
+  lastEnd: number;
+  /** The highest frame of its chunk that has reached this thread. */
+  progress: number;
+}
+
 /**
  * Draws frames `first..=last` with `workers` workers and pushes them to `writer` in order. Returns the `<Artifact>`
  * files the frames asked for (the one a later frame recorded wins, as it does in one run).
+ *
+ * Chunks are handed out in frame order, none starting further than a window of frames past the next frame the encoder
+ * needs. A worker with nothing it may take splits the chunk of a busy one: the tail of that chunk, not yet started,
+ * goes to the idle worker. So the heavy stretches of a film are shared and the render does not wait on one chunk.
  */
 export async function renderInParallel(options: ParallelOptions): Promise<ArtifactRecord[]> {
   const { first, last, writer, workers: count } = options;
-  const chunks = Math.ceil((last - first + 1) / CHUNK_FRAMES);
-  // Chunks handed out but not yet written. Past this the workers wait, which bounds the frames held in memory.
-  const window = count + 1;
+  const window = windowFrames(count);
 
   const pool: Worker[] = [];
   return new Promise<ArtifactRecord[]>((resolve, reject) => {
     let settled = false;
-    let nextChunk = 0; // next chunk to hand out
-    let writtenChunks = 0; // chunks whose frames are all pushed
+    let nextStart = first; // first frame of the next new chunk
     let nextFrame = first; // next frame to push
     const arrived = new Map<number, Extract<FromWorker, { type: 'frame' }>>();
-    const idle: Worker[] = [];
+    const lanes = new Map<Worker, Lane>();
+    const idle: Lane[] = [];
+    /** Tails given up by a split, not yet taken, by first frame. */
+    const returned: Job[] = [];
+    let splitting = false; // a split has been asked for and not answered
     const artifacts = new Map<string, ArtifactRecord>();
     let finished = 0;
 
@@ -62,14 +91,40 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       else reject(error);
     };
 
-    const give = (): void => {
-      while (idle.length > 0 && nextChunk < chunks && nextChunk < writtenChunks + window) {
-        const worker = idle.shift()!;
-        const from = first + nextChunk * CHUNK_FRAMES;
-        const to = Math.min(last, from + CHUNK_FRAMES - 1);
-        nextChunk += 1;
-        worker.postMessage({ type: 'chunk', first: from, last: to } satisfies ToWorker);
+    /** The chunk to hand out next, if one may start yet: a returned tail, else a new chunk. */
+    const peek = (): { job: Job; fresh: boolean } | undefined => {
+      const tail = returned[0];
+      if (tail) return tail.first < nextFrame + window ? { job: tail, fresh: false } : undefined;
+      if (nextStart > last || nextStart >= nextFrame + window) return undefined;
+      return { job: { first: nextStart, last: Math.min(last, nextStart + CHUNK_FRAMES - 1) }, fresh: true };
+    };
+
+    /** Asks the busy worker furthest back with enough left to give up the second half of its chunk. */
+    const split = (): void => {
+      if (splitting) return;
+      let victim: Lane | undefined;
+      for (const lane of lanes.values()) {
+        if (!lane.job || lane.job.last - lane.progress < 2 * MIN_SPLIT) continue;
+        if (!victim || lane.job.first < victim.job!.first) victim = lane;
       }
+      if (!victim) return;
+      splitting = true;
+      const at = Math.floor((victim.progress + victim.job!.last) / 2) + 1;
+      victim.worker.postMessage({ type: 'split', at } satisfies ToWorker);
+    };
+
+    const give = (): void => {
+      for (let next = peek(); next && idle.length > 0; next = peek()) {
+        // The worker that drew the frame before the chunk has its state in place.
+        const at = idle.findIndex((lane) => lane.lastEnd + 1 === next.job.first);
+        const lane = idle.splice(at === -1 ? 0 : at, 1)[0]!;
+        if (next.fresh) nextStart = next.job.last + 1;
+        else returned.shift();
+        lane.job = next.job;
+        lane.progress = next.job.first - 1;
+        lane.worker.postMessage({ type: 'chunk', first: next.job.first, last: next.job.last } satisfies ToWorker);
+      }
+      if (idle.length > 0) split();
     };
 
     const drain = (): void => {
@@ -81,7 +136,6 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
           writer.pushYuv(Buffer.from(message.yuv), nextFrame);
           options.onPushed?.(nextFrame);
           nextFrame += 1;
-          writtenChunks = Math.floor((nextFrame - first) / CHUNK_FRAMES);
         }
         give();
         if (nextFrame > last) for (const worker of pool) worker.postMessage({ type: 'finish' } satisfies ToWorker);
@@ -92,17 +146,30 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
 
     const onMessage = (worker: Worker, message: FromWorker): void => {
       if (settled) return;
+      const lane = lanes.get(worker)!;
       switch (message.type) {
         case 'ready':
-          idle.push(worker);
+          idle.push(lane);
           give();
           break;
         case 'frame':
+          lane.progress = Math.max(lane.progress, message.frame);
           arrived.set(message.frame, message);
           drain();
           break;
+        case 'split':
+          splitting = false;
+          if (lane.job && message.first <= message.last) {
+            lane.job.last = message.first - 1;
+            returned.push({ first: message.first, last: message.last });
+            returned.sort((a, b) => a.first - b.first);
+          }
+          give();
+          break;
         case 'chunk':
-          idle.push(worker);
+          lane.lastEnd = lane.job?.last ?? lane.lastEnd;
+          lane.job = undefined;
+          idle.push(lane);
           give();
           break;
         case 'done':
@@ -122,6 +189,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
     for (let i = 0; i < count; i++) {
       const init: WorkerInit = { spec: options.spec, draft: options.draft };
       const worker = new Worker(new URL('./render-worker.js', import.meta.url), { workerData: init });
+      lanes.set(worker, { worker, lastEnd: -2, progress: -1 });
       worker.on('message', (message: FromWorker) => onMessage(worker, message));
       worker.on('error', (error) => stop(error));
       worker.on('exit', (code) => {
