@@ -95,11 +95,22 @@ pub fn paint_svg(
                 .collect(),
         ),
     };
-    let options = options(request);
+    let misses = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let options = options(request, misses.clone());
     let tree = match usvg::Tree::from_str(&serialized.xml, &options) {
         Ok(tree) => tree,
         Err(e) => return fail(notes, format!("the SVG could not be read: {e}")),
     };
+    for href in misses.lock().map(|m| m.clone()).unwrap_or_default() {
+        notes.push(Note {
+            element: "image".into(),
+            property: Some("href".into()),
+            value: Some(href),
+            reason: "the picture is not a readable file under the project or its public \
+                     directory, so it is not drawn"
+                .into(),
+        });
+    }
     let mut emitter = emit::Emitter {
         doc,
         id: id.to_string(),
@@ -202,9 +213,13 @@ pub fn filter_graph(
 /// usvg's options for a request: its fonts and its asset directories.
 ///
 /// An `<image href>` is read only from inside `base_dir` or `public_dir`
-/// (`assets::resolve_under`): usvg's own resolver would read any path, an
-/// absolute one or one with `..` included.
-fn options(request: &IslandRequest) -> usvg::Options<'static> {
+/// (`assets::resolve_under`): usvg's own resolver would read any path, one
+/// with `..` or an absolute one outside them included. An href that cannot be
+/// read is pushed onto `misses` (usvg drops such an image without a word).
+fn options(
+    request: &IslandRequest,
+    misses: Arc<std::sync::Mutex<Vec<String>>>,
+) -> usvg::Options<'static> {
     let roots: Vec<std::path::PathBuf> = [
         Some(request.base_dir.as_str()),
         request.public_dir.as_deref(),
@@ -226,7 +241,13 @@ fn options(request: &IslandRequest) -> usvg::Options<'static> {
         Box::new(move |href: &str, opts: &usvg::Options| {
             let roots: Vec<&std::path::Path> =
                 roots.iter().map(std::path::PathBuf::as_path).collect();
-            let bytes = std::fs::read(assets::resolve_under(&roots, href)?).ok()?;
+            let bytes = assets::resolve_under(&roots, href).and_then(|p| std::fs::read(p).ok());
+            let Some(bytes) = bytes else {
+                if let Ok(mut misses) = misses.lock() {
+                    misses.push(href.to_string());
+                }
+                return None;
+            };
             let data = Arc::new(bytes);
             match data.as_slice() {
                 [0x89, b'P', b'N', b'G', ..] => Some(usvg::ImageKind::PNG(data)),
@@ -247,9 +268,15 @@ fn options(request: &IslandRequest) -> usvg::Options<'static> {
                     b'P',
                     ..,
                 ] => Some(usvg::ImageKind::WEBP(data)),
-                _ => usvg::Tree::from_data_nested(&data, opts)
-                    .ok()
-                    .map(usvg::ImageKind::SVG),
+                _ => {
+                    let svg = usvg::Tree::from_data_nested(&data, opts).ok();
+                    if svg.is_none()
+                        && let Ok(mut misses) = misses.lock()
+                    {
+                        misses.push(href.to_string());
+                    }
+                    svg.map(usvg::ImageKind::SVG)
+                }
             }
         });
     options
@@ -292,7 +319,7 @@ mod tests {
     }
 
     fn resolve(request: &IslandRequest, href: &str) -> Option<usvg::ImageKind> {
-        let options = options(request);
+        let options = options(request, Arc::default());
         (options.image_href_resolver.resolve_string)(href, &options)
     }
 
@@ -320,6 +347,11 @@ mod tests {
         assert!(resolve(&r, "../other/secret.png").is_none());
         assert!(resolve(&r, "sub/../../other/secret.png").is_none());
         assert!(resolve(&r, other.join("secret.png").to_str().unwrap()).is_none());
+        // An absolute path under a project directory is read (`staticFile()`).
+        assert!(matches!(
+            resolve(&r, public.join("b.png").to_str().unwrap()),
+            Some(usvg::ImageKind::PNG(_))
+        ));
         std::os::unix::fs::symlink(other.join("secret.png"), public.join("l.png")).unwrap();
         assert!(resolve(&r, "l.png").is_none());
         assert!(resolve(&r, "missing.png").is_none());
@@ -358,6 +390,76 @@ mod tests {
             r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [{layer}]}}"##
         );
         kinetograph_core::Scene::from_json(&scene, PathBuf::from("/nowhere")).unwrap();
+    }
+
+    /// A WebP of 4x4 opaque red, lossless.
+    fn webp() -> Vec<u8> {
+        let mut out = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut out)
+            .encode(
+                &[255, 0, 0, 255].repeat(16),
+                4,
+                4,
+                image::ExtendedColorType::Rgba8,
+            )
+            .unwrap();
+        out
+    }
+
+    fn paint(html: &str, request: &IslandRequest) -> SvgPaint {
+        use blitz_dom::DocumentConfig;
+        use blitz_html::HtmlDocument;
+        use blitz_traits::shell::{ColorScheme, Viewport};
+        let mut doc = HtmlDocument::from_html(
+            html,
+            DocumentConfig {
+                viewport: Some(Viewport::new(50, 50, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            },
+        )
+        .into_inner();
+        doc.resolve(0.0);
+        let id = doc.get_element_by_id("s").unwrap();
+        paint_svg(&doc, request, id, [20.0, 20.0], "s", "$0")
+    }
+
+    #[test]
+    fn a_webp_and_an_absolute_public_path_are_drawn_and_a_failed_read_is_reported() {
+        let root = scratch("webp");
+        let public = root.join("public");
+        std::fs::create_dir_all(&public).unwrap();
+        std::fs::write(public.join("p.webp"), webp()).unwrap();
+        let r = request(&root.join("base"), Some(&public));
+        // `staticFile()` gives an absolute path.
+        let html = format!(
+            r##"<svg id="s" width="20" height="20"><image href="{}" width="20" height="20"/></svg>"##,
+            public.join("p.webp").display()
+        );
+        let painted = paint(&html, &r);
+        let layer = painted.layer.expect("drawn").to_string();
+        assert!(
+            layer.contains(r#""src":"data:image/webp;base64,"#),
+            "{layer}"
+        );
+        assert!(painted.unsupported.is_empty(), "{:?}", painted.unsupported);
+        let scene = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [{layer}]}}"##
+        );
+        let scene = kinetograph_core::Scene::from_json(&scene, PathBuf::from("/nowhere")).unwrap();
+        let _ = scene;
+
+        // A file that is not there is said so, not dropped.
+        let html = r##"<svg id="s" width="20" height="20"><image href="/nope/missing.png" width="20" height="20"/></svg>"##;
+        let painted = paint(html, &r);
+        assert!(painted.layer.is_none());
+        assert!(
+            painted
+                .unsupported
+                .iter()
+                .any(|u| u.element == "image" && u.value.as_deref() == Some("/nope/missing.png")),
+            "{:?}",
+            painted.unsupported
+        );
     }
 
     #[test]

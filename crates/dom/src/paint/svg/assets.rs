@@ -5,15 +5,20 @@
 //! as one (`data_url`) and no file is written anywhere.
 //!
 //! What an `<image href>` reads (`resolve_under`) must stay inside the
-//! project's directories: no absolute path, no `..`, and the file as the
-//! system resolves it (symbolic links included) under one of them.
+//! project's directories: no `..`, and the file as the system resolves it
+//! (symbolic links included) under one of them. An absolute path is taken
+//! when it lands there (`staticFile()` gives one).
 
 use std::path::{Component, Path, PathBuf};
 
-/// `bytes` as a `data:` URL of `ext` (`png` or `jpg`).
+/// `bytes` as a `data:` URL of `ext` (`png`, `jpg` or `webp`).
 pub fn data_url(ext: &str, bytes: &[u8]) -> String {
     use base64::Engine as _;
-    let mime = if ext == "jpg" { "jpeg" } else { "png" };
+    let mime = match ext {
+        "jpg" => "jpeg",
+        "webp" => "webp",
+        _ => "png",
+    };
     format!(
         "data:image/{mime};base64,{}",
         base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -21,22 +26,30 @@ pub fn data_url(ext: &str, bytes: &[u8]) -> String {
 }
 
 /// The file `href` names under one of `roots`, canonicalized, or `None`: the
-/// path must be relative, have no `..`, exist, and resolve (through links)
-/// to somewhere under the canonical form of that root.
+/// path must have no `..`, exist, and resolve (through links) to somewhere
+/// under the canonical form of that root. An absolute path is accepted only
+/// by that last test.
 pub fn resolve_under(roots: &[&Path], href: &str) -> Option<PathBuf> {
     let rel = Path::new(href);
     if href.is_empty()
-        || rel.is_absolute()
-        || rel
-            .components()
-            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
+        || rel.components().any(|c| {
+            !matches!(
+                c,
+                Component::Normal(_) | Component::CurDir | Component::RootDir
+            )
+        })
     {
         return None;
     }
     roots.iter().find_map(|root| {
         let base = root.canonicalize().ok()?;
-        let file = base.join(rel).canonicalize().ok()?;
-        (file.starts_with(&base) && file.is_file()).then_some(file)
+        // An absolute path is taken as it is; failing that, as a path from the
+        // root (`/logo.png`, the form of a URL).
+        let stripped = rel.strip_prefix("/").unwrap_or(rel);
+        [rel, stripped].into_iter().find_map(|r| {
+            let file = base.join(r).canonicalize().ok()?;
+            (file.starts_with(&base) && file.is_file()).then_some(file)
+        })
     })
 }
 
@@ -62,6 +75,7 @@ mod tests {
         let url = data_url("png", b"\x89PNG bytes");
         assert!(url.starts_with("data:image/png;base64,"));
         assert!(data_url("jpg", b"x").starts_with("data:image/jpeg;base64,"));
+        assert!(data_url("webp", b"x").starts_with("data:image/webp;base64,"));
     }
 
     #[test]
@@ -86,6 +100,15 @@ mod tests {
         assert_eq!(resolve_under(&roots, "sub/../../outside/secret.txt"), None);
         let absolute = outside.join("secret.txt");
         assert_eq!(resolve_under(&roots, absolute.to_str().unwrap()), None);
+        // An absolute path inside a root is read (`staticFile()` gives one).
+        let inside = public.join("a.png");
+        assert_eq!(
+            resolve_under(&roots, inside.to_str().unwrap()),
+            Some(public.join("a.png"))
+        );
+        let dotted = format!("{}/sub/../a.png", public.display());
+        assert_eq!(resolve_under(&roots, &dotted), None);
+        assert_eq!(resolve_under(&roots, "/a.png"), Some(public.join("a.png")));
         assert_eq!(resolve_under(&roots, "link.png"), None);
         assert_eq!(resolve_under(&roots, "nope.png"), None);
         assert_eq!(resolve_under(&roots, ""), None);

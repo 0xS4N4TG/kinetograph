@@ -660,10 +660,7 @@ impl Emitter<'_> {
                 self.unsupported("image", "href", "", "a GIF in an SVG <image> is not drawn");
                 return Vec::new();
             }
-            usvg::ImageKind::WEBP(_) => {
-                self.unsupported("image", "href", "", "a WebP in an SVG <image> is not drawn");
-                return Vec::new();
-            }
+            usvg::ImageKind::WEBP(b) => ("webp", b.clone()),
         };
         let Some(t) = transform_json(base) else {
             self.unsupported(
