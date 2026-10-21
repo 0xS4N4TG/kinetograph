@@ -4,7 +4,16 @@
 // concatenation) is worked out here, in one pass, each time a tree is asked
 // for. Nothing here reads time: `<Lottie>` and `<Audio>` already resolved it.
 
-import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland, resolveRemoteAsset } from '@kinetograph/compat/dom';
+import {
+  canStartDomIslands,
+  collectStyleElements,
+  importedStylesheets,
+  isDomElement,
+  mapDomIsland,
+  resolveRemoteAsset,
+  startDomIsland,
+  type StartedIsland,
+} from '@kinetograph/compat/dom';
 import { canvasEnvironment, headHost, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
 import { gatherShaderInputs } from './shader-groups.js';
 import {
@@ -284,12 +293,15 @@ class Emitter {
   /** `EmitOptions.subFrameLayers`, and how many of those layers the element being emitted is inside. */
   private readonly keep: ReadonlySet<string> | null;
   private inside = 0;
+  /** In a sub-frame, islands are started and their layers left for `finishIslands`. */
+  readonly deferred: boolean;
 
   constructor(
     private readonly options: EmitOptions = {},
     private readonly roots: HostNode[] = [],
   ) {
     this.keep = options.subFrameLayers?.() ?? null;
+    this.deferred = this.keep !== null && canStartDomIslands();
   }
 
   /** In a sub-frame, outside the blurred layers: whether `node` (at `path`) can be left out, holding none of them. */
@@ -320,14 +332,20 @@ class Emitter {
         `<${root.type}> is a DOM element, which is laid out in the composition's box: create the root with createSceneRoot({ viewport: { width, height } })`,
       );
     }
-    const result = mapDomIsland(flattenDomElement(root, path, this.sequences), {
+    const context = {
       path,
       viewport,
       fonts: this.options.fonts?.() ?? {},
-      emitNative: (node, at) => this.element(node as HostElement, at),
+      emitNative: (node: unknown, at: string) => this.element(node as HostElement, at),
       time: this.options.time?.() ?? 0,
       stylesheets: this.stylesheets(),
-    });
+    };
+    if (this.deferred) {
+      // Read for its blurred layers only (`keep`), a sub-frame's island is drawn while the next sub-frame renders.
+      const started = startDomIsland(flattenDomElement(root, path, this.sequences), context);
+      return [{ type: STARTED, id: path, started } as unknown as LayerJson];
+    }
+    const result = mapDomIsland(flattenDomElement(root, path, this.sequences), context);
     this.unsupported.push(...result.unsupported);
     if (result.margin !== undefined) this.margin = Math.max(this.margin, result.margin);
     if (result.blendSpace === 'srgb') this.blendSpace = 'srgb';
@@ -497,6 +515,7 @@ class Emitter {
         const fill = domFillOf(element);
         if (fill !== null) {
           const layers = this.island(fill, path);
+          if (this.deferred) return { ...layers[0]!, wrap: id } as unknown as LayerJson;
           return layers.length === 1 ? layers[0]! : ({ id, type: 'group', children: layers } as LayerJson);
         }
         const kept = this.keep?.has(id) ?? false;
@@ -659,11 +678,55 @@ class Emitter {
   }
 }
 
+/** What a started island stands as in a sub-frame's tree until `finishIslands`. */
+const STARTED = '$started';
+
+type Started = { type: typeof STARTED; id: string; started: StartedIsland; wrap?: string };
+
+function isStarted(layer: LayerJson): boolean {
+  return (layer as { type: string }).type === STARTED;
+}
+
+/**
+ * A sub-frame's layers with each island that was started (`EmitOptions.subFrameLayers`) put in, as `emit` would have
+ * put it there itself. Layers without one are the same objects.
+ */
+export function finishIslands(layers: LayerJson[]): LayerJson[] {
+  const put = (list: LayerJson[]): LayerJson[] => {
+    let changed = false;
+    const out: LayerJson[] = [];
+    for (const layer of list) {
+      if (isStarted(layer)) {
+        changed = true;
+        const { started, wrap } = layer as unknown as Started;
+        const inner = put(started.finish().layers);
+        if (wrap !== undefined && inner.length !== 1) out.push({ id: wrap, type: 'group', children: inner } as LayerJson);
+        else out.push(...inner);
+        continue;
+      }
+      if (layer.type === 'group') {
+        const children = put(layer.children);
+        if (children !== layer.children) {
+          changed = true;
+          out.push({ ...layer, children });
+          continue;
+        }
+      }
+      out.push(layer);
+    }
+    return changed ? out : list;
+  };
+  const finished = put(layers);
+  gatherShaderInputs(finished);
+  return finished;
+}
+
 /** The scene JSON of a host tree (the children of the root). */
 export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
   const emitter = new Emitter(options, roots);
   const layers = emitter.children(roots, '', 'the root of the tree');
-  gatherShaderInputs(layers);
+  // Shader inputs are gathered once the started islands' layers are in (`finishIslands`).
+  if (!emitter.deferred) gatherShaderInputs(layers);
   if (emitter.cameras.length > 1) {
     throw new Error(`Only one <Camera> is allowed per tree, found ${emitter.cameras.length}`);
   }

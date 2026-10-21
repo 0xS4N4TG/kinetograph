@@ -31,19 +31,40 @@ function drawn(node: any): unknown[] {
   ];
 }
 
+function renderDomIsland(json: string, pass?: number): string {
+  const request = JSON.parse(json);
+  calls.push({ path: request.path, pass });
+  return JSON.stringify({ layers: drawn(request.root), unsupported: [], camera: null });
+}
+
+/** An addon that also queues renders: each is drawn when started, and handed out when finished, in order. */
+function queuing() {
+  const outputs = new Map<number, string>();
+  let next = 0;
+  const finished: number[] = [];
+  setDomAddon({
+    renderDomIsland,
+    startDomIsland(json: string, pass?: number) {
+      outputs.set(++next, renderDomIsland(json, pass));
+      return next;
+    },
+    finishDomIsland(ticket: number) {
+      finished.push(ticket);
+      const out = outputs.get(ticket)!;
+      outputs.delete(ticket);
+      return out;
+    },
+  });
+  return { finished, outputs };
+}
+
 beforeEach(() => {
   resetCompositions();
   resetRenderState();
   clearFonts();
   resetVirtualClock();
   calls = [];
-  setDomAddon({
-    renderDomIsland(json: string, pass?: number) {
-      const request = JSON.parse(json);
-      calls.push({ path: request.path, pass });
-      return JSON.stringify({ layers: drawn(request.root), unsupported: [], camera: null });
-    },
-  });
+  setDomAddon({ renderDomIsland });
 });
 afterEach(() => {
   setDomAddon(null);
@@ -117,6 +138,22 @@ describe('motion-blur sub-frames', () => {
       // The scene says what changes, not a copy of the layer per sub-frame.
       expect(wall.motionBlur?.frames).toBeUndefined();
     }
+  });
+
+  it('draw the same when their islands are queued, finished in the order they were started', async () => {
+    const renderer = compose();
+    const plain = [];
+    for (const frame of [5, 10]) plain.push((await renderer.renderFrame(frame)).scene);
+    resetVirtualClock();
+    const { finished, outputs } = queuing();
+    const again = compose();
+    for (const [i, frame] of [5, 10].entries()) {
+      expect((await again.renderFrame(frame)).scene).toEqual(plain[i]);
+    }
+    expect(finished.length).toBeGreaterThan(0);
+    expect(finished).toEqual([...finished].sort((a, b) => a - b));
+    // Nothing is left in the addon.
+    expect(outputs.size).toBe(0);
   });
 
   it('are one pass of island renders with the frame itself, a new one for each frame', async () => {

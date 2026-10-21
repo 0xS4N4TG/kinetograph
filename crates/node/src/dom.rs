@@ -7,7 +7,7 @@
 //! paint it or read it back.
 
 use std::collections::HashMap;
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use kinetograph_core::dom_layout::{
     DomLayoutBox, DomLayoutError, DomLayoutRequest, TextSize, has_text, layout_dom as lay_out,
@@ -103,6 +103,17 @@ fn island_thread() -> Sender<Job> {
 fn on_island_thread<T: Send + 'static>(
     job: impl FnOnce() -> std::result::Result<T, Failure> + Send + 'static,
 ) -> Result<T> {
+    wait_for(start_on_island_thread(job)?)
+}
+
+/// What a job started on the island thread will send.
+type Outcome<T> = Receiver<std::result::Result<T, Failure>>;
+
+/// Queues `job` on the island thread, after the jobs queued before it, and
+/// returns where its result will come.
+fn start_on_island_thread<T: Send + 'static>(
+    job: impl FnOnce() -> std::result::Result<T, Failure> + Send + 'static,
+) -> Result<Outcome<T>> {
     let (done, result) = channel();
     let wrapped: Job = Box::new(move || {
         let outcome =
@@ -119,6 +130,10 @@ fn on_island_thread<T: Send + 'static>(
     if island_thread().send(wrapped).is_err() {
         return Err(error(Code::Render, "the DOM thread has stopped"));
     }
+    Ok(result)
+}
+
+fn wait_for<T>(result: Outcome<T>) -> Result<T> {
     match result.recv() {
         Ok(Ok(value)) => Ok(value),
         Ok(Err((code, message))) => Err(error(code, message)),
@@ -153,8 +168,40 @@ type Bases = HashMap<String, Vec<Value>>;
 /// instead of building it again, and each render after an island's first
 /// gives its layers as changes from that first's (`delta`).
 pub fn render_dom_island(request_json: &str, pass: Option<u64>) -> Result<String> {
+    wait_for(start_dom_island(request_json, pass)?)
+}
+
+thread_local! {
+    /// The island renders started on the calling thread and not yet finished, by ticket.
+    static STARTED: std::cell::RefCell<(u32, HashMap<u32, Outcome<String>>)> =
+        std::cell::RefCell::new((0, HashMap::new()));
+}
+
+/// `render_dom_island` without waiting: the render is queued on the island
+/// thread after the ones before it, and the ticket returned finishes it
+/// (`finish_dom_island`). The caller can build what comes next meanwhile.
+pub fn start_island(request_json: &str, pass: Option<u64>) -> Result<u32> {
+    let outcome = start_dom_island(request_json, pass)?;
+    Ok(STARTED.with(|started| {
+        let (next, pending) = &mut *started.borrow_mut();
+        *next = next.wrapping_add(1);
+        pending.insert(*next, outcome);
+        *next
+    }))
+}
+
+/// The `IslandOutput` of a render `start_island` queued, once it is done.
+pub fn finish_island(ticket: u32) -> Result<String> {
+    let outcome = STARTED.with(|started| started.borrow_mut().1.remove(&ticket));
+    match outcome {
+        Some(outcome) => wait_for(outcome),
+        None => Err(invalid(format!("no island render was started as {ticket}"))),
+    }
+}
+
+fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<String>> {
     let json = request_json.to_string();
-    on_island_thread(move || {
+    start_on_island_thread(move || {
         let request = parse_island(&json, "renderDomIsland")?;
         let mut resolved = SAMPLES
             .with(|cache| cache.borrow_mut().resolve(&request, pass))

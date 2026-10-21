@@ -773,7 +773,8 @@ the blurred layers, so its emit leaves out what cannot hold one: a DOM island wi
 native element other than a `<Layer>`, outside the blurred layers (`EmitOptions.subFrameLayers`). The frame's own
 render and its sub-frames are one pass of the DOM islands (compat/dom `beginSamplePass`): an island's document is
 edited from one render to the next, and a later render's layers that are the same as the island's first are the same
-objects. The result's `scene` has the
+objects. A sub-frame's islands are queued (`startDomIsland`) and drawn on the island thread while the next sub-frame
+renders; `finishIslands` puts their layers in, in the order they were drawn. The result's `scene` has the
 composition's `width`, `height`, `fps`, `durationInFrames`, its `background` (`"transparent"` without one),
 `fonts: getFonts()`, the composition's `margin` when it has one, the tree's `camera` and `layers`.
 

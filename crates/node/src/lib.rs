@@ -270,6 +270,21 @@ pub fn render_dom_island(request_json: String, pass: Option<u32>) -> Result<Stri
     dom::render_dom_island(&request_json, pass.map(u64::from))
 }
 
+/// `renderDomIsland` without waiting: queues the render on the calling
+/// thread's island thread, after the renders queued before it, and returns a
+/// ticket for `finishDomIsland`, which gives its output once it is done.
+#[napi]
+pub fn start_dom_island(request_json: String, pass: Option<u32>) -> Result<u32> {
+    dom::start_island(&request_json, pass.map(u64::from))
+}
+
+/// The output of a render `startDomIsland` queued, waiting for it if it is not
+/// done yet.
+#[napi]
+pub fn finish_dom_island(ticket: u32) -> Result<String> {
+    dom::finish_island(ticket)
+}
+
 /// The boxes of every element of a DOM island (docs/ENGINE.md §2): an
 /// `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
 /// scroll } }` as JSON out. `x`..`height` are the border box where layout put

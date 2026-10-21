@@ -11,7 +11,7 @@
 
 import type { ReactNode } from 'react';
 import { resetCanvasStates } from '@kinetograph/compat/shim';
-import { createSceneRoot, TimelineContext, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetograph/react';
+import { createSceneRoot, finishIslands, TimelineContext, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetograph/react';
 import {
   attachMotionChanges,
   collectMotionLayers,
@@ -203,6 +203,8 @@ class Renderer implements FrameRenderer {
         treesAt.set(time, tree.layers);
       }
       this.subFrameLayers = null;
+      // The sub-frames' islands were drawn while the next sub-frames rendered.
+      for (const [time, tree] of treesAt) if (tree !== main.layers) treesAt.set(time, finishIslands(tree));
       setVirtualFrame(frame, config.fps, { fireTimers: false });
       layers = attachMotionChanges(main.layers, frame, treesAt);
     }

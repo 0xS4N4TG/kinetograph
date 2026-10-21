@@ -8,6 +8,9 @@ import { pathToFileURL } from 'node:url';
 export interface DomAddon {
   /** `IslandRequest` JSON in, `IslandOutput` JSON out. `pass` numbers the samples of one motion-blurred frame (an older addon ignores it). */
   renderDomIsland(requestJson: string, pass?: number): string;
+  /** `renderDomIsland` queued behind the renders before it: a ticket for `finishDomIsland`, which waits for the output. */
+  startDomIsland?(requestJson: string, pass?: number): number;
+  finishDomIsland?(ticket: number): string;
   /** `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. */
   domLayoutBoxes(requestJson: string): string;
   /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. */

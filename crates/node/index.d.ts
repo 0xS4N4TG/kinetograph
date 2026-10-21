@@ -111,6 +111,12 @@ export declare function domComputedStyle(requestJson: string, path: string, prop
  */
 export declare function domLayoutBoxes(requestJson: string): string
 
+/**
+ * The output of a render `startDomIsland` queued, waiting for it if it is not
+ * done yet.
+ */
+export declare function finishDomIsland(ticket: number): string
+
 /** The scene resolved at `frame`, as an `InspectResult` JSON string. */
 export declare function inspect(sceneJson: string, frame: number, baseDir?: string | undefined | null): string
 
@@ -282,6 +288,13 @@ export interface SceneInfo {
   durationInFrames: number
   margin: number
 }
+
+/**
+ * `renderDomIsland` without waiting: queues the render on the calling
+ * thread's island thread, after the renders queued before it, and returns a
+ * ticket for `finishDomIsland`, which gives its output once it is done.
+ */
+export declare function startDomIsland(requestJson: string, pass?: number | undefined | null): number
 
 export interface Stats {
   mean: number
