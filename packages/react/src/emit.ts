@@ -5,7 +5,7 @@
 // for. Nothing here reads time: `<Lottie>` and `<Audio>` already resolved it.
 
 import { collectStyleElements, importedStylesheets, isDomElement, mapDomIsland } from '@kinetograph/compat/dom';
-import { canvasEnvironment, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
+import { canvasEnvironment, headHost, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
 import { gatherShaderInputs } from './shader-groups.js';
 import {
   createCanvasContext,
@@ -270,7 +270,7 @@ class Emitter {
 
   /** Document-wide CSS: the project's imported files, then every `<style>` element in the tree, in order. */
   private stylesheets(): string[] {
-    return (this.sheets ??= [...importedStylesheets(), ...collectStyleElements(this.roots)]);
+    return (this.sheets ??= [...importedStylesheets(), ...collectStyleElements([headHost, ...this.roots])]);
   }
 
   /**

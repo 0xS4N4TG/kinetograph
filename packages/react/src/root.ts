@@ -13,8 +13,11 @@ import {
   deliverObservations,
   domElementFor,
   hasObservers,
+  isRecordingMutations,
   MAX_OBSERVER_DEPTH,
+  recordMutation,
   registerReadbackRoot,
+  setRawParent,
   setWebViewport,
   unregisterReadbackRoot,
 } from '@kinetograph/compat/shim';
@@ -87,7 +90,7 @@ const hostConfig = {
       throw new Error(`Unknown element <${type}>: only the Kinetograph elements (Layer, Rect, Text, ...) and DOM elements (div, span, svg, ...) can be rendered`);
     }
     const element: HostElement = { kind: 'element', type, props, children: [] };
-    hostMeta.set(element, { parent: null, container: _root });
+    hostMeta.set(element, { container: _root });
     if (type === 'img' || type === 'video' || type === 'audio') _root.media.add(element);
     // A <Text> child that is an element is caught here, before it is attached, so the error names the element.
     checkChild(hostContext, element);
@@ -95,7 +98,7 @@ const hostConfig = {
   },
   createTextInstance(text: string, _root: Container, hostContext: HostContext): HostText {
     const node: HostText = { kind: 'text', text };
-    hostMeta.set(node, { parent: null, container: _root });
+    hostMeta.set(node, { container: _root });
     checkChild(hostContext, node);
     return node;
   },
@@ -126,6 +129,7 @@ const hostConfig = {
     removeFrom(parent.children, child);
     adopt(parent, child);
     parent.children.push(child);
+    changed(parent, [child], []);
   },
   appendChildToContainer(container: Container, child: HostNode) {
     removeFrom(container.children, child);
@@ -135,6 +139,7 @@ const hostConfig = {
   insertBefore(parent: HostElement, child: HostNode, before: HostNode) {
     adopt(parent, child);
     insertInto(parent.children, child, before);
+    changed(parent, [child], []);
   },
   insertInContainerBefore(container: Container, child: HostNode, before: HostNode) {
     adopt(null, child);
@@ -143,12 +148,15 @@ const hostConfig = {
   removeChild(parent: HostElement, child: HostNode) {
     removeFrom(parent.children, child);
     adopt(null, child);
+    changed(parent, [], [child]);
   },
   removeChildFromContainer(container: Container, child: HostNode) {
     removeFrom(container.children, child);
+    adopt(null, child);
   },
+  // Only what React made: a node a script put on `document.body` is not React's to clear.
   clearContainer(container: Container) {
-    container.children = [];
+    container.children = container.children.filter((n) => !hostMeta.has(n));
   },
   commitUpdate(instance: HostElement, _type: string, _prev: unknown, next: Record<string, any>) {
     instance.props = next;
@@ -203,8 +211,13 @@ const hostConfig = {
 
 /** Records where a node hangs (for readback: parents, paths, connectedness). */
 function adopt(parent: HostElement | null, child: HostNode): void {
-  const meta = hostMeta.get(child);
-  if (meta) meta.parent = parent;
+  setRawParent(child, parent);
+}
+
+/** Tells the mutation observers (when there are any) which children the reconciler placed or removed. */
+function changed(parent: HostElement, added: HostNode[], removed: HostNode[]): void {
+  if (!isRecordingMutations() || !isDomElement(parent.type)) return;
+  recordMutation({ type: 'childList', target: parent, added, removed, previous: null, next: null });
 }
 
 function insertInto(list: HostNode[], child: HostNode, before: HostNode): void {
@@ -237,7 +250,7 @@ const MAX_SETTLE_PASSES = 100;
 export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
   const container: Container = { children: [], generation: 0, readback: null, measuredGenerations: new Set(), media: new Set() };
   container.readback = createReadback(container, options);
-  registerReadbackRoot(container.readback);
+  registerReadbackRoot(container.readback, { adoptPending: !options.ignoreDom });
   // `window.innerWidth`, `matchMedia` and `document.documentElement` report the composition's size.
   if (options.viewport) setWebViewport(options.viewport);
   let error: { value: unknown } | undefined;

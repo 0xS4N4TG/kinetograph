@@ -28,6 +28,11 @@ export function setCanvasFonts(fonts: () => Record<string, string>): void {
   fontsOf = fonts;
 }
 
+/** The registered fonts: font key → file. */
+export function registeredFonts(): Record<string, string> {
+  return fontsOf();
+}
+
 /** The text engine and the pixels, from the addon when it has them. */
 export function canvasEnvironment(fonts: () => Record<string, string> = () => fontsOf()): Pick<CanvasContextOptions, 'fonts' | 'measure' | 'readPixels'> {
   return {
@@ -181,6 +186,11 @@ export function canvasPictureOf(host: object, size: { width: number; height: num
   if (glContexts.has(host)) throw new WebGLUnsupportedError('drawing or sampling a WebGL canvas as a picture; draw into the shader\'s own canvas');
   if (!(size.width > 0 && size.height > 0)) return null;
   return { source: { kind: 'canvas', width: size.width, height: size.height, commands: [...(contexts.get(host)?.commands ?? [])] }, width: size.width, height: size.height };
+}
+
+/** Throws when the canvas on `host` has a WebGL context: its pixels are the GPU's, so it cannot be read back or drawn as a picture. */
+export function refuseGlPicture(host: object): void {
+  if (glContexts.has(host)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
 }
 
 /** Resets the context of the canvas on `host` (its `width` or `height` was set), which empties it. */

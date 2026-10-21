@@ -8,7 +8,7 @@ import { cssPropertyName, styleToCss } from '../request/style.js';
 import { isDomElement } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
-import { CANVAS_SOURCE, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetograph/scene';
+import { CANVAS_SOURCE, fontKey, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetograph/scene';
 import {
   bitmapSide,
   canvasCommandsOf,
@@ -18,11 +18,29 @@ import {
   contextOfHost,
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
+  refuseGlPicture,
+  registeredFonts,
   resetCanvasOf,
 } from './canvas.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
-import { overlayOf, propsWithOverlay, type BoxInfo, type HostElement, type Readback } from './host.js';
+import { parseHtmlFragment } from '../request/html.js';
+import { bodyHost, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
 import { matches, queryAll, type SelectorContext } from './selector.js';
+import {
+  clearChildren,
+  cloneHost,
+  createHostElement,
+  createHostText,
+  insertChild,
+  isConnectedHost,
+  isShellHost,
+  oldAttribute,
+  readbackOfHost,
+  recordAttribute,
+  removeChild,
+  setText,
+  type HostText,
+} from './tree.js';
 
 export class DOMRectShim {
   constructor(
@@ -54,7 +72,7 @@ export class DOMRectShim {
 const kebab = (name: string): string => cssPropertyName(name);
 
 /** `element.style`: the inline style as React gave it, with what a script wrote on top. Properties read as camelCase. */
-function inlineStyle(host: HostElement, readback: Readback): CSSStyleDeclarationShim {
+function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDeclarationShim {
   const read = (property: string): string => {
     const overlay = overlayOf(host, false)?.style.get(property);
     if (overlay !== undefined) return overlay;
@@ -68,25 +86,31 @@ function inlineStyle(host: HostElement, readback: Readback): CSSStyleDeclaration
   const target = {
     getPropertyValue: read,
     setProperty(property: string, value: string | null): void {
+      const old = oldAttribute(host, 'style');
       overlayOf(host, true)!.style.set(kebab(property), value === null ? '' : String(value));
-      readback.touch();
+      readbackOf().touch();
+      recordAttribute(host, 'style', old);
     },
     removeProperty(property: string): string {
       const old = read(kebab(property));
+      const was = oldAttribute(host, 'style');
       overlayOf(host, true)!.style.set(kebab(property), '');
-      readback.touch();
+      readbackOf().touch();
+      recordAttribute(host, 'style', was);
       return old;
     },
     get cssText(): string {
       return styleToCss({ ...(typeof host.props.style === 'object' ? host.props.style : {}), ...Object.fromEntries(overlayOf(host, false)?.style ?? []) });
     },
     set cssText(text: string) {
+      const was = oldAttribute(host, 'style');
       const overlay = overlayOf(host, true)!;
       for (const part of text.split(';')) {
         const colon = part.indexOf(':');
         if (colon > 0) overlay.style.set(part.slice(0, colon).trim().toLowerCase(), part.slice(colon + 1).trim());
       }
-      readback.touch();
+      readbackOf().touch();
+      recordAttribute(host, 'style', was);
     },
     item: () => '',
     length: 0,
@@ -139,6 +163,27 @@ export function computedStyleOf(host: HostElement, readback: Readback): CSSStyle
 type Listener = ((event: any) => void) | { handleEvent(event: any): void };
 
 const elements = new WeakMap<HostElement, DomElement>();
+const texts = new WeakMap<HostText, DomText>();
+
+/** The DOM-like object for a text node of the host tree (one per node). */
+export function domTextFor(host: HostText): DomText {
+  let text = texts.get(host);
+  if (text === undefined) {
+    text = new DomText(host);
+    texts.set(host, text);
+  }
+  return text;
+}
+
+/** The object for a host node, whichever kind it is. */
+export function domNodeFor(host: DomNode): DomElement | DomText {
+  return host.kind === 'element' ? domElementFor(host) : domTextFor(host);
+}
+
+/** The host node behind a shim node. */
+export function hostNodeOf(value: unknown): DomNode | null {
+  return value instanceof DomElement ? value.host : value instanceof DomText ? value.host : null;
+}
 
 /** How selectors read the host tree of a root. */
 export function selectorContextOf(readback: Readback, scope?: HostElement): SelectorContext {
@@ -151,10 +196,10 @@ export function selectorContextOf(readback: Readback, scope?: HostElement): Sele
 }
 
 /** The DOM-like object for a host element (one per host element). */
-export function domElementFor(host: HostElement, readback: Readback): DomElement {
+export function domElementFor(host: HostElement, _readback?: Readback): DomElement {
   let element = elements.get(host);
   if (element === undefined) {
-    element = new DomElement(host, readback);
+    element = new DomElement(host);
     elements.set(host, element);
   }
   return element;
@@ -177,10 +222,12 @@ export class DomElement {
   private listeners = new Map<string, Set<Listener>>();
   private styleObject: CSSStyleDeclarationShim | null = null;
 
-  constructor(
-    readonly host: HostElement,
-    private readonly readback: Readback,
-  ) {}
+  constructor(readonly host: HostElement) {}
+
+  /** The root whose tree holds this element (it can change: a script moves nodes), else the detached one. */
+  private get readback(): Readback {
+    return readbackOfHost(this.host);
+  }
 
   // ---- identity ----
 
@@ -251,12 +298,17 @@ export class DomElement {
     return Object.keys(this.attrs());
   }
   setAttribute(name: string, value: unknown): void {
+    const old = oldAttribute(this.host, name);
     overlayOf(this.host, true)!.attrs.set(name, String(value));
     this.readback.touch();
+    recordAttribute(this.host, name, old);
   }
   removeAttribute(name: string): void {
+    const old = oldAttribute(this.host, name);
+    if (old === null) return;
     overlayOf(this.host, true)!.attrs.set(name, null);
     this.readback.touch();
+    recordAttribute(this.host, name, old);
   }
   toggleAttribute(name: string, force?: boolean): boolean {
     const want = force ?? !this.hasAttribute(name);
@@ -272,32 +324,42 @@ export class DomElement {
     return out;
   }
   get style(): CSSStyleDeclarationShim {
-    return (this.styleObject ??= inlineStyle(this.host, this.readback));
+    return (this.styleObject ??= inlineStyle(this.host, () => this.readback));
   }
 
   // ---- the tree ----
 
   private wrap(node: HostElement | null): DomElement | null {
-    return node === null ? null : domElementFor(node, this.readback);
+    return node === null ? null : domElementFor(node);
+  }
+  /** The element this one hangs from: a DOM element, `body` at the top of a root, `html` above `body` and `head`. */
+  private domParent(): HostElement | null {
+    if (this.host === htmlHost) return null;
+    if (this.host === bodyHost || this.host === headHost) return htmlHost;
+    const parent = effectiveParentOf(this.host);
+    if (parent !== null) return isDomElement(parent.type) ? parent : null;
+    // At the top of a root's tree (or of a script's detached one).
+    return isConnectedHost(this.host) ? bodyHost : null;
   }
   get parentElement(): DomElement | null {
-    return this.wrap(this.readback.parent(this.host));
+    return this.wrap(this.domParent());
   }
-  get parentNode(): DomElement | null {
+  get parentNode(): DomElement | Document | null {
+    if (this.host === htmlHost) return (globalThis as { document?: Document }).document ?? null;
     return this.parentElement;
   }
   get ownerDocument(): unknown {
     return (globalThis as { document?: unknown }).document;
   }
   get isConnected(): boolean {
-    return this.readback.isConnected(this.host);
+    return isConnectedHost(this.host);
   }
-  get childNodes(): (DomElement | { nodeType: 3; nodeName: '#text'; textContent: string; data: string; nodeValue: string })[] {
-    return this.readback.childNodes(this.host).map((n) =>
-      n.kind === 'element'
-        ? domElementFor(n, this.readback)
-        : { nodeType: 3 as const, nodeName: '#text' as const, textContent: n.text, data: n.text, nodeValue: n.text },
-    );
+  /** The nodes in this element's own list, `<Sequence>`s replaced by what is inside them. */
+  private childHosts(): DomNode[] {
+    return this.readback.childNodes(this.host);
+  }
+  get childNodes(): (DomElement | DomText)[] {
+    return this.childHosts().map(domNodeFor);
   }
   get children(): DomElement[] {
     return this.childNodes.filter((n): n is DomElement => n instanceof DomElement);
@@ -305,10 +367,10 @@ export class DomElement {
   get childElementCount(): number {
     return this.children.length;
   }
-  get firstChild() {
+  get firstChild(): DomElement | DomText | null {
     return this.childNodes[0] ?? null;
   }
-  get lastChild() {
+  get lastChild(): DomElement | DomText | null {
     return this.childNodes.at(-1) ?? null;
   }
   get firstElementChild(): DomElement | null {
@@ -317,37 +379,204 @@ export class DomElement {
   get lastElementChild(): DomElement | null {
     return this.children.at(-1) ?? null;
   }
-  private siblingElements(): HostElement[] {
-    const parent = this.readback.parent(this.host);
-    const list = parent === null ? this.readback.roots() : this.readback.childNodes(parent);
-    return list.filter((n): n is HostElement => n.kind === 'element' && isDomElement(n.type));
+  hasChildNodes(): boolean {
+    return this.childHosts().length > 0;
+  }
+  /** The nodes next to this one (its parent's children), text included. */
+  private siblingHosts(): DomNode[] {
+    const parent = effectiveParentOf(this.host);
+    if (parent !== null) return this.readback.childNodes(parent);
+    if (this.host === headHost || this.host === bodyHost) return [headHost, bodyHost];
+    return this.readback.roots().filter((n) => n.kind === 'text' || isDomElement(n.type));
+  }
+  get nextSibling(): DomElement | DomText | null {
+    const list = this.siblingHosts();
+    const next = list[list.indexOf(this.host) + 1];
+    return next === undefined ? null : domNodeFor(next);
+  }
+  get previousSibling(): DomElement | DomText | null {
+    const list = this.siblingHosts();
+    const at = list.indexOf(this.host);
+    return at <= 0 ? null : domNodeFor(list[at - 1]!);
   }
   get nextElementSibling(): DomElement | null {
-    const sibs = this.siblingElements();
-    return this.wrap(sibs[sibs.indexOf(this.host) + 1] ?? null);
+    const list = this.siblingHosts();
+    for (let i = list.indexOf(this.host) + 1; i > 0 && i < list.length; i++) {
+      const node = list[i]!;
+      if (node.kind === 'element') return domElementFor(node);
+    }
+    return null;
   }
   get previousElementSibling(): DomElement | null {
-    const sibs = this.siblingElements();
-    return this.wrap(sibs[sibs.indexOf(this.host) - 1] ?? null);
-  }
-  get nextSibling(): DomElement | null {
-    return this.nextElementSibling;
-  }
-  get previousSibling(): DomElement | null {
-    return this.previousElementSibling;
+    const list = this.siblingHosts();
+    for (let i = list.indexOf(this.host) - 1; i >= 0; i--) {
+      const node = list[i]!;
+      if (node.kind === 'element') return domElementFor(node);
+    }
+    return null;
   }
   get textContent(): string {
     const text = (nodes: DomNode[]): string =>
       nodes.map((n) => (n.kind === 'text' ? n.text : n.type === 'style' || n.type === 'script' ? '' : text(this.readback.childNodes(n)))).join('');
-    return text(this.readback.childNodes(this.host));
+    return text(this.childHosts());
+  }
+  set textContent(value: string | null) {
+    clearChildren(this.host);
+    const text = value === null || value === undefined ? '' : String(value);
+    if (text !== '') insertChild(this.host, createHostText(text), null);
   }
   get innerText(): string {
     return this.textContent;
   }
+  set innerText(value: string) {
+    this.textContent = value;
+  }
   contains(other: unknown): boolean {
-    if (!(other instanceof DomElement)) return false;
-    for (let h: HostElement | null = other.host; h !== null; h = this.readback.parent(h)) if (h === this.host) return true;
+    const node = hostNodeOf(other);
+    if (node === null) return false;
+    for (let h: DomNode | null = node; h !== null; h = effectiveParentOf(h)) if (h === this.host) return true;
     return false;
+  }
+  getRootNode(): DomElement | Document | null {
+    let node: DomElement = this;
+    for (let parent = node.parentElement; parent !== null; parent = node.parentElement) node = parent;
+    return node.host === htmlHost ? ((globalThis as { document?: Document }).document ?? node) : node;
+  }
+  isSameNode(other: unknown): boolean {
+    return other === this;
+  }
+
+  // ---- changing the tree (tree.ts) ----
+
+  /** The nodes a script passes (nodes or strings) as host nodes; a string is a text node. A node already in a tree is moved. */
+  private static hostsOf(nodes: unknown[]): DomNode[] {
+    return nodes.map((n) => {
+      const host = hostNodeOf(n);
+      return host ?? createHostText(String(n));
+    });
+  }
+  private static required(node: unknown, method: string): DomNode {
+    const host = hostNodeOf(node);
+    if (host === null) throw new TypeError(`Failed to execute '${method}' on 'Node': parameter 1 is not of type 'Node'.`);
+    return host;
+  }
+  appendChild<T>(child: T): T {
+    insertChild(this.host, DomElement.required(child, 'appendChild'), null);
+    return child;
+  }
+  insertBefore<T>(child: T, before: unknown): T {
+    const host = DomElement.required(child, 'insertBefore');
+    insertChild(this.host, host, before === null || before === undefined ? null : DomElement.required(before, 'insertBefore'));
+    return child;
+  }
+  removeChild<T>(child: T): T {
+    const host = DomElement.required(child, 'removeChild');
+    if (effectiveParentOf(host) !== this.host && !(this.host === bodyHost && effectiveParentOf(host) === null && isConnectedHost(host))) {
+      throw new DOMExceptionShim("Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.", 'NotFoundError', 8);
+    }
+    removeChild(host);
+    return child;
+  }
+  replaceChild<T>(child: unknown, old: T): T {
+    const host = DomElement.required(child, 'replaceChild');
+    const oldHost = DomElement.required(old, 'replaceChild');
+    if (effectiveParentOf(oldHost) !== this.host && !(this.host === bodyHost && effectiveParentOf(oldHost) === null)) {
+      throw new DOMExceptionShim("Failed to execute 'replaceChild' on 'Node': The node to be replaced is not a child of this node.", 'NotFoundError', 8);
+    }
+    const after = this.nextHostAfter(oldHost);
+    removeChild(oldHost);
+    insertChild(this.host, host, after);
+    return old;
+  }
+  /** The node after `host` among this element's children, null at the end. */
+  private nextHostAfter(host: DomNode): DomNode | null {
+    const list = this.childHosts();
+    return list[list.indexOf(host) + 1] ?? null;
+  }
+  append(...nodes: unknown[]): void {
+    for (const host of DomElement.hostsOf(nodes)) insertChild(this.host, host, null);
+  }
+  prepend(...nodes: unknown[]): void {
+    const first = this.childHosts()[0] ?? null;
+    for (const host of DomElement.hostsOf(nodes)) insertChild(this.host, host, first);
+  }
+  replaceChildren(...nodes: unknown[]): void {
+    const hosts = DomElement.hostsOf(nodes);
+    clearChildren(this.host);
+    for (const host of hosts) insertChild(this.host, host, null);
+  }
+  /** Puts `nodes` in this node's parent, before it. */
+  before(...nodes: unknown[]): void {
+    const parent = this.domParent();
+    if (parent === null) return;
+    for (const host of DomElement.hostsOf(nodes)) insertChild(parent, host, this.host);
+  }
+  after(...nodes: unknown[]): void {
+    const parent = this.domParent();
+    if (parent === null) return;
+    const next = this.nextSibling === null ? null : hostNodeOf(this.nextSibling);
+    for (const host of DomElement.hostsOf(nodes)) insertChild(parent, host, next);
+  }
+  replaceWith(...nodes: unknown[]): void {
+    const parent = this.domParent();
+    if (parent === null) return;
+    const next = this.nextSibling === null ? null : hostNodeOf(this.nextSibling);
+    const hosts = DomElement.hostsOf(nodes).filter((h) => h !== this.host);
+    removeChild(this.host);
+    for (const host of hosts) insertChild(parent, host, next);
+  }
+  remove(): void {
+    removeChild(this.host);
+  }
+  cloneNode(deep = false): DomElement {
+    return domElementFor(cloneHost(this.host, Boolean(deep)) as HostElement);
+  }
+  insertAdjacentElement(where: string, element: unknown): unknown {
+    const host = DomElement.required(element, 'insertAdjacentElement');
+    this.insertAdjacent(where, [host]);
+    return element;
+  }
+  insertAdjacentText(where: string, text: string): void {
+    this.insertAdjacent(where, [createHostText(text)]);
+  }
+  insertAdjacentHTML(where: string, html: string): void {
+    this.insertAdjacent(where, parseHtmlFragment(String(html), this.inSvg));
+  }
+  private insertAdjacent(where: string, hosts: DomNode[]): void {
+    switch (String(where).toLowerCase()) {
+      case 'beforebegin': {
+        const parent = this.domParent();
+        if (parent !== null) for (const h of hosts) insertChild(parent, h, this.host);
+        return;
+      }
+      case 'afterbegin': {
+        const first = this.childHosts()[0] ?? null;
+        for (const h of hosts) insertChild(this.host, h, first);
+        return;
+      }
+      case 'beforeend':
+        for (const h of hosts) insertChild(this.host, h, null);
+        return;
+      case 'afterend': {
+        const parent = this.domParent();
+        const next = this.nextSibling === null ? null : hostNodeOf(this.nextSibling);
+        if (parent !== null) for (const h of hosts) insertChild(parent, h, next);
+        return;
+      }
+      default:
+        throw new DOMExceptionShim(`Failed to execute 'insertAdjacentElement' on 'Element': The value provided ('${where}') is not one of 'beforeBegin', 'afterBegin', 'beforeEnd', or 'afterEnd'.`, 'SyntaxError', 12);
+    }
+  }
+  /** The markup of this element's children (what the DOM calls `innerHTML`). */
+  get innerHTML(): string {
+    return this.childHosts().map((n) => serializeHost(n)).join('');
+  }
+  set innerHTML(html: string) {
+    clearChildren(this.host);
+    for (const node of parseHtmlFragment(String(html), this.inSvg)) insertChild(this.host, node, null);
+  }
+  get outerHTML(): string {
+    return serializeHost(this.host);
   }
 
   /** Selector matching over the host tree. */
@@ -403,6 +632,13 @@ export class DomElement {
   // ---- layout ----
 
   private box(): BoxInfo | null {
+    // The page: `html` and `body` are as big as the composition.
+    if (this.host === htmlHost || this.host === bodyHost) {
+      const { width, height } = pageViewport();
+      const rect = { x: 0, y: 0, width, height };
+      return { ...rect, rect, client: { width, height }, scroll: { width, height } };
+    }
+    if (this.host === headHost) return null;
     return this.readback.box(this.host);
   }
   getBoundingClientRect(): DOMRectShim {
@@ -534,9 +770,11 @@ export class DomElement {
     return contextOfHost(this.host, String(type), () => ({ width: this.width, height: this.height }), this, attributes);
   }
   toDataURL(): string {
+    refuseGlPicture(this.host);
     return canvasToDataUrl(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height });
   }
   toBlob(callback: (blob: Blob | null) => void): void {
+    refuseGlPicture(this.host);
     callback(canvasToBlob(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height }));
   }
   /** What `drawImage` reads of this element: a canvas's commands, an image's file. */
@@ -604,6 +842,97 @@ export class DomElement {
     return this.box()?.width ?? 0;
   }
 
+  // The characters of an SVG `<text>`: what it says with white space collapsed (SVG's default), and where each starts.
+  private svgText(): string {
+    return this.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** The width of `text` in this element's font, as the text engine lays it out. */
+  private advanceOf(text: string): number {
+    if (text === '') return 0;
+    const computed = (property: string): string => this.readback.computed(this.host, property) ?? '';
+    const size = parseFloat(computed('font-size')) || 16;
+    const spacing = parseFloat(computed('letter-spacing')) || 0;
+    const family = computed('font-family').split(',')[0]!.trim().replace(/^['"]|['"]$/g, '');
+    const weight = computed('font-weight');
+    const style = computed('font-style');
+    const key = fontKey(family, weight === '' ? undefined : weight, style === 'italic' || style === 'oblique' ? 'italic' : undefined);
+    let width: number | null = null;
+    if (hasAddonFunction('layoutText')) {
+      try {
+        // Spaces at the ends count: measure between two bars and take their width off.
+        const padded = /^\s|\s$/.test(text);
+        const layout = (t: string): number => addonFunction('layoutText')({ text: t, font: key, size, fonts: registeredFonts() }).width;
+        width = padded ? layout(`|${text}|`) - layout('||') : layout(text);
+      } catch {
+        width = null;
+      }
+    }
+    if (width === null) {
+      // No text engine: the laid-out width shared out by characters.
+      const whole = this.svgText().length;
+      width = whole === 0 ? 0 : ((this.box()?.width ?? 0) * text.length) / whole;
+    }
+    return width + spacing * Array.from(text).length;
+  }
+  /** The numbers of an attribute such as `x="10 20 30"`. */
+  private numberList(name: string): number[] {
+    return (this.getAttribute(name) ?? '').split(/[\s,]+/).filter(Boolean).map((v) => parseFloat(v)).filter(Number.isFinite);
+  }
+  getNumberOfChars(): number {
+    if (this.host.type !== 'text' && this.host.type !== 'tspan' && this.host.type !== 'textPath') {
+      throw new TypeError(`getNumberOfChars is not a function: <${this.host.type}> is not an SVG text content element`);
+    }
+    return this.svgText().length;
+  }
+  /** Where character `index` starts, in the text element's user space (its `x`, `y`, `dx` and `dy` and `text-anchor` apply). */
+  getStartPositionOfChar(index: number): { x: number; y: number } {
+    const count = this.getNumberOfChars();
+    const at = Math.floor(Number(index));
+    if (!(at >= 0 && at < count)) {
+      throw new DOMExceptionShim(`Failed to execute 'getStartPositionOfChar' on 'SVGTextContentElement': The index provided (${index}) is greater than or equal to the maximum index (${count - 1}).`, 'IndexSizeError', 1);
+    }
+    const text = this.svgText();
+    const xs = this.numberList('x');
+    const ys = this.numberList('y');
+    const dxs = this.numberList('dx');
+    const dys = this.numberList('dy');
+    // Walk the characters: an `x` or `y` for a character restarts the run there; the others follow the previous advance.
+    let runStart = 0;
+    let runX = xs[0] ?? 0;
+    let y = ys[0] ?? 0;
+    let shiftX = 0;
+    for (let i = 0; i <= at; i++) {
+      if (i > 0 && xs[i] !== undefined) {
+        runStart = i;
+        runX = xs[i]!;
+        shiftX = 0;
+      }
+      if (ys[i] !== undefined) y = ys[i]!;
+      shiftX += dxs[i] ?? 0;
+      y += dys[i] ?? 0;
+    }
+    const anchor = this.readback.computed(this.host, 'text-anchor') ?? this.getAttribute('text-anchor') ?? 'start';
+    // The anchor moves the whole run: by its width, all of it up to the next absolute `x`.
+    let runEnd = text.length;
+    for (let i = runStart + 1; i < text.length; i++) {
+      if (xs[i] !== undefined) {
+        runEnd = i;
+        break;
+      }
+    }
+    const whole = this.advanceOf(text.slice(runStart, runEnd));
+    const anchorShift = anchor === 'middle' ? -whole / 2 : anchor === 'end' ? -whole : 0;
+    return { x: runX + anchorShift + shiftX + this.advanceOf(text.slice(runStart, at)), y };
+  }
+  getEndPositionOfChar(index: number): { x: number; y: number } {
+    const start = this.getStartPositionOfChar(index);
+    const at = Math.floor(Number(index));
+    return { x: start.x + this.advanceOf(this.svgText().slice(at, at + 1)), y: start.y };
+  }
+  getSubStringLength(start: number, length: number): number {
+    return this.advanceOf(this.svgText().slice(Math.max(0, start), Math.max(0, start) + Math.max(0, length)));
+  }
+
   // ---- events and actions that mean nothing offline ----
 
   addEventListener(type: string, listener: Listener | null): void {
@@ -630,6 +959,102 @@ export class DomElement {
   }
   getAnimations(): [] {
     return [];
+  }
+}
+
+/** The error a DOM method throws for a node that cannot go there (`name` and the legacy `code`). */
+export class DOMExceptionShim extends Error {
+  constructor(message: string, override readonly name: string, readonly code: number) {
+    super(message);
+  }
+}
+
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+const escapeText = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escapeAttribute = (text: string): string => text.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+/** A host node as markup. */
+export function serializeHost(node: DomNode): string {
+  if (node.kind === 'text') return escapeText(node.text);
+  if (node.type === 'kg-sequence') return node.children.map(serializeHost).join('');
+  if (!isDomElement(node.type)) return '';
+  const props = propsWithOverlay(node);
+  const attributes = attributesOf(props, node.type === 'svg');
+  const style = styleToCss(typeof props.style === 'object' && props.style !== null ? props.style : {});
+  const written = Object.entries(attributes).map(([name, value]) => ` ${name}="${escapeAttribute(value)}"`).join('');
+  const styleText = style === '' ? '' : ` style="${escapeAttribute(style)}"`;
+  const open = `<${node.type}${written}${attributes.style === undefined ? styleText : ''}`;
+  if (VOID_TAGS.has(node.type)) return `${open}>`;
+  const inner = node.type === 'style' || node.type === 'script' ? node.children.map((c) => (c.kind === 'text' ? c.text : '')).join('') : node.children.map(serializeHost).join('');
+  return `${open}>${inner}</${node.type}>`;
+}
+
+/** A text node of the host tree, as a script sees it. */
+export class DomText {
+  readonly nodeType = 3;
+  readonly nodeName = '#text';
+  constructor(readonly host: HostText) {}
+  get data(): string {
+    return this.host.text;
+  }
+  set data(value: string) {
+    setText(this.host, String(value));
+  }
+  get nodeValue(): string {
+    return this.host.text;
+  }
+  set nodeValue(value: string) {
+    setText(this.host, String(value));
+  }
+  get textContent(): string {
+    return this.host.text;
+  }
+  set textContent(value: string) {
+    setText(this.host, String(value));
+  }
+  get length(): number {
+    return this.host.text.length;
+  }
+  get ownerDocument(): unknown {
+    return (globalThis as { document?: unknown }).document;
+  }
+  private parentHost(): HostElement | null {
+    const parent = effectiveParentOf(this.host);
+    if (parent !== null) return parent;
+    return isConnectedHost(this.host) ? bodyHost : null;
+  }
+  get parentElement(): DomElement | null {
+    const parent = this.parentHost();
+    return parent !== null && isDomElement(parent.type) ? domElementFor(parent) : null;
+  }
+  get parentNode(): DomElement | null {
+    return this.parentElement;
+  }
+  get isConnected(): boolean {
+    return isConnectedHost(this.host);
+  }
+  private siblings(): DomNode[] {
+    const parent = this.parentHost();
+    return parent === null ? [] : readbackOfHost(parent).childNodes(parent);
+  }
+  get nextSibling(): DomElement | DomText | null {
+    const list = this.siblings();
+    const next = list[list.indexOf(this.host) + 1];
+    return next === undefined ? null : domNodeFor(next);
+  }
+  get previousSibling(): DomElement | DomText | null {
+    const list = this.siblings();
+    const at = list.indexOf(this.host);
+    return at <= 0 ? null : domNodeFor(list[at - 1]!);
+  }
+  remove(): void {
+    removeChild(this.host);
+  }
+  cloneNode(): DomText {
+    return domTextFor(createHostText(this.host.text));
+  }
+  contains(other: unknown): boolean {
+    return other === this;
   }
 }
 

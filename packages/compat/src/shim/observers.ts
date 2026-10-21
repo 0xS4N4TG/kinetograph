@@ -3,21 +3,12 @@
 // root after each pass of React's work on the frame, `deliverObservations()`, and a callback that sets state makes
 // the root render again before the frame is emitted. Everything is "visible"; nothing scrolls.
 
-import { DOMRectShim, domElementFor, hostOf, type DomElement } from './element.js';
-import type { Readback } from './host.js';
+import { DOMRectShim, domElementFor, domNodeFor, hostNodeOf, hostOf, type DomElement } from './element.js';
+import { bodyHost, effectiveParentOf, headHost, htmlHost, readbackRoots, registerReadbackRoot, unregisterReadbackRoot, type Readback } from './host.js';
+import { isConnectedHost, setMutationSink, type HostMutation } from './tree.js';
+import type { DomNode } from '../types.js';
 
-/** A root that observers can be delivered for: its readback and the elements it can find. */
-const roots = new Set<Readback>();
-
-export function registerReadbackRoot(readback: Readback): void {
-  roots.add(readback);
-}
-export function unregisterReadbackRoot(readback: Readback): void {
-  roots.delete(readback);
-}
-export function readbackRoots(): ReadonlySet<Readback> {
-  return roots;
-}
+export { readbackRoots, registerReadbackRoot, unregisterReadbackRoot };
 
 const resizeObservers = new Set<ResizeObserverShim>();
 const intersectionObservers = new Set<IntersectionObserverShim>();
@@ -145,21 +136,120 @@ export class IntersectionObserverShim {
   }
 }
 
-/** Observers never fire here: the host tree changes between frames, and nothing outside the frame can observe it. */
+// ---- MutationObserver ----
+
+interface MutationOptions {
+  childList?: boolean;
+  attributes?: boolean;
+  characterData?: boolean;
+  subtree?: boolean;
+  attributeOldValue?: boolean;
+  characterDataOldValue?: boolean;
+  attributeFilter?: string[];
+}
+
+interface MutationRecordShim {
+  type: 'childList' | 'attributes' | 'characterData';
+  target: unknown;
+  addedNodes: unknown[];
+  removedNodes: unknown[];
+  previousSibling: unknown;
+  nextSibling: unknown;
+  attributeName: string | null;
+  attributeNamespace: null;
+  oldValue: string | null;
+}
+
+const mutationObservers = new Set<MutationObserverShim>();
+
+/** What a script (or the reconciler, for a child it placed) changed in the tree, reported to the observers that watch it. */
+function onMutation(mutation: HostMutation): void {
+  for (const observer of mutationObservers) observer.record(mutation);
+}
+
+/** A `MutationObserver` over the host tree: a script's `appendChild`, `setAttribute` and the rest, and the children React places. Delivered after layout, like the others. */
 export class MutationObserverShim {
-  constructor(callback: unknown) {
+  private readonly targets = new Map<unknown, MutationOptions>();
+  private queue: MutationRecordShim[] = [];
+  constructor(private readonly callback: (records: MutationRecordShim[], observer: MutationObserverShim) => void) {
     if (typeof callback !== 'function') throw new TypeError("Failed to construct 'MutationObserver': The callback provided as parameter 1 is not a function.");
   }
-  observe(): void {}
-  disconnect(): void {}
-  takeRecords(): [] {
-    return [];
+  observe(target: unknown, options: MutationOptions = {}): void {
+    const host = hostNodeOf(target);
+    if (host === null) throw new TypeError("Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.");
+    const attributes = options.attributes ?? (options.attributeOldValue !== undefined || options.attributeFilter !== undefined ? true : undefined);
+    const characterData = options.characterData ?? (options.characterDataOldValue !== undefined ? true : undefined);
+    if (!options.childList && !attributes && !characterData) {
+      throw new TypeError("Failed to execute 'observe' on 'MutationObserver': The options object must set at least one of 'attributes', 'characterData', or 'childList' to true.");
+    }
+    this.targets.set(host, { ...options, attributes, characterData });
+    mutationObservers.add(this);
+    setMutationSink(onMutation);
+  }
+  disconnect(): void {
+    this.targets.clear();
+    this.queue = [];
+    mutationObservers.delete(this);
+    if (mutationObservers.size === 0) setMutationSink(null);
+  }
+  takeRecords(): MutationRecordShim[] {
+    const records = this.queue;
+    this.queue = [];
+    return records;
+  }
+  /** The observed target a change in `node` is seen through: `node` itself, or an ancestor watched with `subtree`. */
+  private watching(node: DomNode): MutationOptions | null {
+    for (let n: DomNode | null = node, first = true; n !== null; n = effectiveParentOf(n) ?? (isConnectedHost(n) && n !== bodyHost && n !== htmlHost && n !== headHost ? bodyHost : null), first = false) {
+      const options = this.targets.get(n);
+      if (options !== undefined && (first || options.subtree)) return options;
+    }
+    return null;
+  }
+  record(mutation: HostMutation): void {
+    const options = this.watching(mutation.target);
+    if (options === null) return;
+    let record: MutationRecordShim;
+    if (mutation.type === 'childList') {
+      if (!options.childList) return;
+      record = {
+        type: 'childList',
+        target: domNodeFor(mutation.target),
+        addedNodes: mutation.added.map(domNodeFor),
+        removedNodes: mutation.removed.map(domNodeFor),
+        previousSibling: mutation.previous === null ? null : domNodeFor(mutation.previous),
+        nextSibling: mutation.next === null ? null : domNodeFor(mutation.next),
+        attributeName: null,
+        attributeNamespace: null,
+        oldValue: null,
+      };
+    } else if (mutation.type === 'attributes') {
+      if (!options.attributes) return;
+      if (options.attributeFilter && !options.attributeFilter.includes(mutation.name)) return;
+      record = {
+        type: 'attributes', target: domNodeFor(mutation.target), addedNodes: [], removedNodes: [], previousSibling: null, nextSibling: null,
+        attributeName: mutation.name, attributeNamespace: null, oldValue: options.attributeOldValue ? mutation.old : null,
+      };
+    } else {
+      if (!options.characterData) return;
+      record = {
+        type: 'characterData', target: domNodeFor(mutation.target), addedNodes: [], removedNodes: [], previousSibling: null, nextSibling: null,
+        attributeName: null, attributeNamespace: null, oldValue: options.characterDataOldValue ? mutation.old : null,
+      };
+    }
+    this.queue.push(record);
+  }
+  /** Delivers what was recorded since the last delivery; true when the callback ran. */
+  deliver(): boolean {
+    const records = this.takeRecords();
+    if (records.length === 0) return false;
+    this.callback(records, this);
+    return true;
   }
 }
 
 /** The root an element belongs to: the one whose tree holds it. */
 function readbackOf(element: DomElement): Readback | null {
-  for (const readback of roots) if (readback.isConnected(element.host)) return readback;
+  for (const readback of readbackRoots()) if (readback.isConnected(element.host)) return readback;
   return null;
 }
 
@@ -172,18 +262,21 @@ export function deliverObservations(): boolean {
   let any = false;
   for (const observer of [...resizeObservers]) any = observer.deliver(readbackOf) || any;
   for (const observer of [...intersectionObservers]) any = observer.deliver(readbackOf) || any;
+  for (const observer of [...mutationObservers]) any = observer.deliver() || any;
   return any;
 }
 
 /** Whether any observer is waiting on something (so a root can skip the delivery when none exists). */
 export function hasObservers(): boolean {
-  return resizeObservers.size > 0 || intersectionObservers.size > 0;
+  return resizeObservers.size > 0 || intersectionObservers.size > 0 || mutationObservers.size > 0;
 }
 
 /** Drops every observer (tests; a new composition). */
 export function resetObservers(): void {
   resizeObservers.clear();
   intersectionObservers.clear();
+  mutationObservers.clear();
+  setMutationSink(null);
 }
 
 export { domElementFor };

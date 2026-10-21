@@ -12,7 +12,7 @@ import {
   requestFor,
 } from '@kinetograph/compat/dom';
 import type { BoxInfo, Readback } from '@kinetograph/compat/shim';
-import { propsWithOverlay } from '@kinetograph/compat/shim';
+import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetograph/compat/shim';
 import { domFillOf, flattenDomElement, type EmitOptions, type HostElement, type HostNode } from './emit.js';
 
 /** The root of the host tree, as `root.ts` keeps it. */
@@ -29,7 +29,6 @@ export interface Container {
 
 /** What the reconciler learns about a host node as it is placed: where it hangs, and in which root. */
 export interface HostMeta {
-  parent: HostElement | null;
   container: Container;
 }
 export const hostMeta = new WeakMap<HostNode, HostMeta>();
@@ -44,12 +43,8 @@ interface Island {
   computed: Map<string, string | null>;
 }
 
-/** The nearest ancestor that is not a `<Sequence>` (which is transparent). */
-function effectiveParent(node: HostNode): HostElement | null {
-  let parent = hostMeta.get(node)?.parent ?? null;
-  while (parent !== null && parent.type === 'kg-sequence') parent = hostMeta.get(parent)?.parent ?? null;
-  return parent;
-}
+/** The nearest ancestor that is not a `<Sequence>` (which is transparent); the links are the shim's, which scripts change too. */
+const effectiveParent = effectiveParentOf;
 
 /** The elements among `nodes`, with each `<Sequence>` replaced by what is inside it; text counted too when asked. */
 function flatten(nodes: HostNode[], out: HostNode[] = []): HostNode[] {
@@ -96,6 +91,14 @@ export function createReadback(container: Container, options: EmitOptions): Read
     return path;
   };
 
+  /** The path of an element computed from the tree as it is now, not from the cache. */
+  const pathOfFresh = (host: HostElement): string => {
+    const parent = effectiveParent(host);
+    const siblings = flatten(parent === null ? container.children : parent.children).filter((n) => n.kind === 'element');
+    const index = siblings.indexOf(host);
+    return parent === null ? `$${index}` : `${pathOfFresh(parent)}.${index}`;
+  };
+
   const isDom = (node: HostElement | null): node is HostElement => node !== null && isDomElement(node.type);
 
   /**
@@ -122,7 +125,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
     let island = islands.get(root);
     if (island === undefined) {
       const path = pathOf(root);
-      const stylesheets = [...importedStylesheets(), ...collectStyleElements(container.children)];
+      const stylesheets = [...importedStylesheets(), ...collectStyleElements([headHost, ...container.children])];
       for (const css of stylesheets) noteStylesheet(css);
       const { request } = requestFor(flattenDomElement(domFillOf(root) ?? root, path, null), {
         path,
@@ -171,6 +174,50 @@ export function createReadback(container: Container, options: EmitOptions): Read
       island.computed.set(key, value);
       return value;
     },
+    textRangeBox(node, start, end) {
+      measuring();
+      if (!hasAddonFunction('domLayoutBoxes')) return null;
+      const parent = effectiveParent(node);
+      if (!isDom(parent)) return null;
+      const holder = rawParentOf(node) ?? null;
+      const list = holder === null ? container.children : holder.children;
+      const at = list.indexOf(node);
+      if (at === -1) return null;
+      // The text split into before, the characters asked for in a `span`, and after: an inline `span` does not change how
+      // a line breaks, and its box is the union of the line boxes of what is in it.
+      const marker: HostElement = { kind: 'element', type: 'span', props: { 'data-kg-range': '' }, children: [{ kind: 'text', text: node.text.slice(start, end) }] };
+      const pieces: HostNode[] = [];
+      if (start > 0) pieces.push({ kind: 'text', text: node.text.slice(0, start) });
+      pieces.push(marker);
+      if (end < node.text.length) pieces.push({ kind: 'text', text: node.text.slice(end) });
+      for (const piece of pieces) setRawParent(piece, holder);
+      list.splice(at, 1, ...pieces);
+      try {
+        // Not cached: the tree is as it is only for this call, and the generation must not move (it counts passes).
+        const root = islandRootOf(marker);
+        const path = pathOfFresh(root);
+        const stylesheets = [...importedStylesheets(), ...collectStyleElements([headHost, ...container.children])];
+        const { request } = requestFor(flattenDomElement(domFillOf(root) ?? root, path, null), {
+          path,
+          viewport: options.viewport ?? { width: 1920, height: 1080 },
+          fonts: options.fonts?.() ?? {},
+          emitNative: () => null,
+          time: options.time?.() ?? 0,
+          stylesheets,
+        });
+        const markerPath = ((): string => {
+          const p = effectiveParent(marker)!;
+          const siblings = flatten(p.children).filter((n) => n.kind === 'element');
+          return `${pathOfFresh(p)}.${siblings.indexOf(marker)}`;
+        })();
+        const boxes = JSON.parse(addonFunction('domLayoutBoxes')(JSON.stringify(request))) as Boxes;
+        return boxes[markerPath]?.rect ?? null;
+      } finally {
+        list.splice(at, pieces.length, node);
+        for (const piece of pieces) setRawParent(piece, null);
+        setRawParent(node, holder);
+      }
+    },
     parent: (host) => {
       const parent = effectiveParent(host);
       return isDom(parent) ? parent : null;
@@ -178,7 +225,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
     childNodes: (host) => flatten(host.children).filter((n) => n.kind === 'text' || isDomElement(n.type)),
     isConnected(host) {
       let top: HostElement = host;
-      for (let p = hostMeta.get(top)?.parent ?? null; p !== null; p = hostMeta.get(top)?.parent ?? null) top = p;
+      for (let p = rawParentOf(top); p !== null; p = rawParentOf(top)) top = p;
       return container.children.includes(top);
     },
     viewport: () => options.viewport ?? { width: 1920, height: 1080 },
@@ -186,6 +233,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
       container.generation++;
     },
     roots: () => flatten(container.children),
+    rootChildren: () => container.children,
     descendants() {
       const out: HostElement[] = [];
       const visit = (nodes: HostNode[]): void => {

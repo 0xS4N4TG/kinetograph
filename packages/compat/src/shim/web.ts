@@ -10,8 +10,11 @@ import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, type CanvasPicture } from '@kinetograph/scene';
 import { resolveProjectFile } from '../environment.js';
-import { CanvasSurface, OffscreenCanvasShim } from './canvas.js';
-import { DomElement, domElementFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
+import { OffscreenCanvasShim } from './canvas.js';
+import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
+import { bodyHost, headHost, htmlHost, setPageViewport } from './host.js';
+import { RangeShim } from './range.js';
+import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
 import { matches, queryAll } from './selector.js';
@@ -23,6 +26,7 @@ let viewport = { width: 1920, height: 1080 };
 /** The composition's size, which `window.innerWidth`, `matchMedia` and `document.documentElement` report. */
 export function setWebViewport(size: { width: number; height: number }): void {
   viewport = { width: size.width, height: size.height };
+  setPageViewport(size);
 }
 
 const REMOTE = /^(https?|wss?|ftp):\/\//i;
@@ -293,6 +297,12 @@ function makeFetch(real: typeof fetch): typeof fetch {
 
 function documentQuery(selector: string, first: boolean): DomElement[] {
   const out: DomElement[] = [];
+  // `head` first (a script's `<style>` and `<link>` go there), then each root's tree.
+  const head = domElementFor(headHost);
+  for (const found of first ? [head.querySelector(selector)].filter((e) => e !== null) : head.querySelectorAll(selector)) {
+    out.push(found as DomElement);
+    if (first) return out;
+  }
   for (const readback of readbackRoots()) {
     const cx = selectorContextOf(readback);
     for (const host of queryAll(readback.descendants(), selector, cx, first)) {
@@ -301,89 +311,6 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
     }
   }
   return out;
-}
-
-/** A detached element, for `document.createElement` (feature tests and scratch nodes); it is never drawn. */
-class DetachedElement extends EventTarget {
-  readonly nodeType = 1;
-  private readonly attrs = new Map<string, string>();
-  readonly children: DetachedElement[] = [];
-  readonly style: Record<string, any> & { setProperty(n: string, v: string): void; getPropertyValue(n: string): string; removeProperty(n: string): string } = new Proxy(
-    {} as Record<string, any>,
-    {
-      get: (t, p) => {
-        if (p === 'setProperty') return (n: string, v: string) => (t[n] = v);
-        if (p === 'getPropertyValue') return (n: string) => t[n] ?? '';
-        if (p === 'removeProperty') return (n: string) => { const old = t[n] ?? ''; delete t[n]; return old; };
-        return typeof p === 'string' ? t[p] ?? '' : undefined;
-      },
-      set: (t, p, v) => { t[p as string] = v; return true; },
-    },
-  ) as never;
-  textContent = '';
-  innerHTML = '';
-  parentNode: DetachedElement | null = null;
-  constructor(readonly tagName: string) {
-    super();
-  }
-  get nodeName(): string { return this.tagName; }
-  setAttribute(name: string, value: unknown): void { this.attrs.set(name, String(value)); }
-  getAttribute(name: string): string | null { return this.attrs.get(name) ?? null; }
-  hasAttribute(name: string): boolean { return this.attrs.has(name); }
-  removeAttribute(name: string): void { this.attrs.delete(name); }
-  appendChild<T extends DetachedElement>(child: T): T { this.children.push(child); child.parentNode = this; return child; }
-  append(...nodes: DetachedElement[]): void { for (const n of nodes) this.appendChild(n); }
-  removeChild<T extends DetachedElement>(child: T): T { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); return child; }
-  remove(): void { this.parentNode?.removeChild(this); }
-  getBoundingClientRect() { return { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }; }
-  get offsetWidth(): number { return 0; }
-  get offsetHeight(): number { return 0; }
-  get clientWidth(): number { return 0; }
-  get clientHeight(): number { return 0; }
-  querySelector(): null { return null; }
-  querySelectorAll(): [] { return []; }
-}
-
-/** `document.createElement('canvas')`: a canvas outside the tree, drawn into and then drawn onto another with `drawImage`. */
-class DetachedCanvas extends DetachedElement {
-  private readonly surface = new CanvasSurface();
-  constructor() {
-    super('CANVAS');
-  }
-  get width(): number {
-    return this.surface.width;
-  }
-  set width(value: number) {
-    this.surface.width = value;
-  }
-  get height(): number {
-    return this.surface.height;
-  }
-  set height(value: number) {
-    this.surface.height = value;
-  }
-  override setAttribute(name: string, value: unknown): void {
-    if (name === 'width') this.surface.width = Number(value);
-    else if (name === 'height') this.surface.height = Number(value);
-    super.setAttribute(name, value);
-  }
-  getContext(type: string, attributes?: unknown): CanvasContext2D | WebGLContext | null {
-    return this.surface.getContext(type, attributes);
-  }
-  toDataURL(): string {
-    return this.surface.toDataURL();
-  }
-  toBlob(callback: (blob: Blob | null) => void): void {
-    this.surface.toBlob(callback);
-  }
-  [CANVAS_SOURCE](): CanvasPicture | null {
-    return this.surface[CANVAS_SOURCE]();
-  }
-}
-
-/** The width and height of the page, as `body` and `documentElement` report them. */
-function pageBox() {
-  return { clientWidth: viewport.width, clientHeight: viewport.height, offsetWidth: viewport.width, offsetHeight: viewport.height, scrollWidth: viewport.width, scrollHeight: viewport.height };
 }
 
 // ---- installing ----
@@ -496,26 +423,20 @@ export function installDomGlobals(): void {
   define(doc, 'cookie', '');
   define(doc, 'compatMode', 'CSS1Compat');
   define(doc, 'characterSet', 'UTF-8');
-  const html = Object.assign(new DetachedElement('HTML'), {});
-  const body = new DetachedElement('BODY');
-  const head = new DetachedElement('HEAD');
-  for (const el of [html, body]) {
-    for (const key of ['clientWidth', 'clientHeight', 'offsetWidth', 'offsetHeight', 'scrollWidth', 'scrollHeight'] as const) {
-      Object.defineProperty(el, key, { get: () => pageBox()[key], configurable: true });
-    }
-    Object.defineProperty(el, 'getBoundingClientRect', {
-      value: () => ({ x: 0, y: 0, width: viewport.width, height: viewport.height, top: 0, left: 0, right: viewport.width, bottom: viewport.height }),
-    });
-  }
+  // The document's own elements are real ones: a script's `document.head.prepend(style)` and `document.body.append(canvas)`
+  // put nodes into the tree that is drawn (`head`'s `<style>`s are stylesheets; `body` is the top level of the root).
+  const html = domElementFor(htmlHost);
   define(doc, 'documentElement', html);
-  define(doc, 'body', body);
-  define(doc, 'head', head);
+  define(doc, 'body', domElementFor(bodyHost));
+  define(doc, 'head', domElementFor(headHost));
   define(doc, 'scrollingElement', html);
-  define(doc, 'createElement', (tag: string) =>
-    String(tag).toLowerCase() === 'canvas' ? new DetachedCanvas() : new DetachedElement(String(tag).toUpperCase()),
-  );
-  define(doc, 'createElementNS', (_ns: string, tag: string) => (String(tag).toLowerCase() === 'canvas' ? new DetachedCanvas() : new DetachedElement(String(tag))));
-  define(doc, 'createTextNode', (text: string) => ({ nodeType: 3, nodeName: '#text', textContent: String(text), data: String(text) }));
+  // A node a script makes belongs to no tree until it is put in one (a canvas drawn on before then keeps what it drew).
+  define(doc, 'createElement', (tag: string) => domElementFor(createHostElement(String(tag))));
+  define(doc, 'createElementNS', (ns: string, tag: string) => domElementFor(createHostElement(String(tag), String(ns) === 'http://www.w3.org/2000/svg')));
+  define(doc, 'createTextNode', (text: string) => domTextFor(createHostText(String(text))));
+  define(doc, 'createRange', () => new RangeShim());
+  define(g, 'Range', RangeShim);
+  define(g, 'Text', DomText);
   define(doc, 'getElementById', (id: string) => documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
   define(doc, 'querySelector', (selector: string) => documentQuery(selector, true)[0] ?? null);
   define(doc, 'querySelectorAll', (selector: string) => documentQuery(selector, false));
