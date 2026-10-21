@@ -35,7 +35,7 @@ bytes = "1.12.1"
 base64 = "0.23"
 percent-encoding = "2.3"
 # Decoding images the way Blitz does, and SVG images without system fonts.
-image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 usvg = "0.48.1"
 # CSS colour and number syntax (the SVG painter).
 svgtypes = "0.16.1"

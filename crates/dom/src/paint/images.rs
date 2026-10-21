@@ -94,7 +94,7 @@ impl<'a> Painter<'a> {
         let is_base64 = meta.ends_with(";base64");
         let mime = meta.split(';').next().unwrap_or("");
         match mime {
-            "image/png" | "image/jpeg" | "image/jpg" | "image/gif" => {}
+            "image/png" | "image/jpeg" | "image/jpg" | "image/gif" | "image/webp" => {}
             "image/svg+xml" => {
                 return Source::Unsupported("an SVG picture is not drawn yet".to_string());
             }

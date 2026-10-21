@@ -5161,4 +5161,28 @@ mod data_uri_tests {
         assert!(data_uri_bytes("tile.png").is_none());
         assert_eq!(data_uri_bytes("data:text/plain,a%20b").unwrap(), b"a b");
     }
+
+    #[test]
+    fn a_webp_is_read_and_decoded() {
+        use base64::Engine as _;
+        let mut webp = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
+            .encode(
+                &[10, 200, 30, 255].repeat(6),
+                3,
+                2,
+                image::ExtendedColorType::Rgba8,
+            )
+            .unwrap();
+        let url = format!(
+            "data:image/webp;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&webp)
+        );
+        assert_eq!(
+            image_dimensions(Path::new("/nowhere"), &url).unwrap(),
+            (3, 2)
+        );
+        let decoded = image::load_from_memory(&data_uri_bytes(&url).unwrap()).unwrap();
+        assert_eq!(decoded.to_rgba8().get_pixel(2, 1).0, [10, 200, 30, 255]);
+    }
 }
