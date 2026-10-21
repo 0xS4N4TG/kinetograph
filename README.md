@@ -155,7 +155,8 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
   left out. The default is the whole scene. A range that is empty or runs past `durationInFrames` is an error.
 - **Encoder.** `--encoder` names any ffmpeg H.264 encoder. Without it, `h264_videotoolbox` is used on macOS when ffmpeg
   has it, and `libx264` everywhere else. `libx264` runs at `crf 18`, `preset medium`; the other encoders get a bit rate
-  of 0.2 bits per pixel per frame (about 12.4 Mbit/s for 1080p30).
+  of 0.2 bits per pixel per frame (about 12.4 Mbit/s for 1080p30). The Node `kinetograph render` also writes H.265,
+  ProRes, VP9 and GIF, with `--scale`, `--crf` and the rest (docs/AUTHORING.md §9).
 - **Container.** From the output's extension, `.mp4` or `.mov`; both are written with `+faststart` (the index first, so
   they play while downloading).
 - **Format.** RGBA is converted to `yuv420p` by swscale with BT.709 coefficients, limited range, and the stream is tagged

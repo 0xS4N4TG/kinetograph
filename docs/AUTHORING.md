@@ -955,8 +955,8 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | Command | Does |
 |---|---|
 | `compositions <entry>` | lists compositions |
-| `still <entry> <frame> -o out.png [--strict]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (COMPAT.md §6) |
-| `render <entry> -o out.mp4 [--range a..b] [--encoder] [--draft] [--concurrency N] [--strict]` | video with audio; `--draft` renders at half size; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (COMPAT.md §6) |
+| `still <entry> <frame> -o out.png [--strict] [--dev-react]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (COMPAT.md §6) |
+| `render <entry> -o out.mp4 [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (COMPAT.md §6); React runs in production mode unless `--dev-react` (below) |
 | `strip <entry> -n 12 -o sheet.png [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
 | `onion <entry> <range> -n 6 -o onion.png` | frames of the range blended over one another |
 | `inspect <entry> [--frame N]` | `InspectResult` |
@@ -969,6 +969,42 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `doctor [entry] [--range]` | without an entry, the install report; with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
+
+**React mode.** `render` and `still` run React's production build: they set `NODE_ENV=production` before the project's
+bundle first imports React (in the main thread, and in each render worker, which sets it itself before it opens the
+bundle). The development build checks prop types and keeps extra bookkeeping, and costs more per frame on a heavy
+composition; the frames are identical. `--dev-react` keeps the development build, for the warnings React prints
+(a missing `key`, a hook called in the wrong order). The studio and `bench` are not changed and run the development build
+unless `NODE_ENV` is set in the environment (`NODE_ENV=production kinetograph bench …` times production mode).
+
+**Export options** (`render`; the names are Remotion's). The flags are checked before the project is bundled, and each
+refusal says what to change.
+
+| Flag | Does |
+|---|---|
+| `--scale N` | Output size multiplier, above 0 and at most 8: `0.5` renders 1080p as 540p, `2` renders it as 4K. The compositor draws at the scaled size (the layers sit in a group scaled by N on a smaller or larger canvas), so nothing is resampled afterwards. Each side is `floor(side x N)` rounded down to an even number, at least 2, because 4:2:0 video needs even sizes: `--scale 0.3` of 64x36 is 18x10. `--draft` is `--scale 0.5` (both together is an error). Not given: `--width` and `--height`, which in Remotion re-lay the composition out at another size and would need the project to be opened at it |
+| `--codec h264\|h265\|prores\|vp9\|gif` | Default `h264`, except that a `.webm` path means `vp9` and a `.gif` path means `gif`. The extension must fit the codec: `.mp4` or `.mov` for h264 and h265, `.mov` for prores, `.webm` for vp9, `.gif` for gif |
+| `--crf N` or `--video-bitrate R` | Constant quality or a bit rate such as `8M` or `2500k`; giving both is an error. CRF is 0 to 51 for h264 and h265 and 0 to 63 for vp9, lower is better. Not for prores (its quality is the profile) or gif. Without either, the quality is as it always was: libx264 `crf 18`, VP9 `crf 30`, x265 `crf 28`, and 0.2 bits per pixel per frame for the VideoToolbox encoders |
+| `--prores-profile` | `proxy`, `light`, `standard`, `hq` (default), `4444`, `4444-xq`. The 4444 profiles are 4:4:4 10-bit; the others 4:2:2 10-bit. The alpha channel is dropped, as for every codec |
+| `--pixel-format` | `yuv420p` (default), `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le`, `yuv444p10le`. ProRes takes the one its profile needs. Players handle 4:2:2, 4:4:4 and 10-bit H.264 and H.265 unevenly; 4:2:0 8-bit plays everywhere |
+| `--audio-codec aac\|opus\|pcm` | The container decides: `.mp4` takes `aac`; `.mov` takes `aac` or `pcm` (16-bit; the default for prores); `.webm` takes `opus` (the default there). A GIF has no sound |
+| `--audio-bitrate R` | Total audio bit rate, e.g. `320k`; default 96 kbit/s a channel. Not for `pcm` |
+| `--every-nth-frame N` | gif only: draws every Nth frame of the range and plays them at the frame rate over N, so the GIF keeps its length with fewer frames. A project only (a `.json` scene is drawn whole) |
+| `--encoder NAME` | An ffmpeg encoder for the codec, in place of the choice below |
+
+Encoder choice, when `--encoder` is not given. On macOS, ffmpeg's hardware encoders are used when it has them and they
+can do what was asked: `h264_videotoolbox`, `hevc_videotoolbox` (8-bit 4:2:0 only, so another `--pixel-format` selects
+the software encoder) and `prores_videotoolbox`. Otherwise `libx264`, `libx265`, `prores_ks` and `libvpx-vp9`; `gif` has
+one. VideoToolbox has no CRF, so `--crf` is mapped to its 0 to 100 quality (`-q:v`): `quality = round(100 x (51 - crf) / 51)`,
+at least 1, which makes CRF 18 quality 65, CRF 23 quality 55 and CRF 0 quality 100. That is a straight line through the
+ends of the CRF scale, not a measured match; for a quality that is the same on every machine pass `--encoder libx264`.
+H.265 in `.mp4` and `.mov` is tagged `hvc1`, which QuickTime and Safari need. GIF frames are reduced to the fixed 3-3-2
+colour cube with ordered dithering, one global palette, no per-frame palette search. The summary names the codec, the
+encoder and the pixel format it used.
+
+With `--concurrency N` every option applies: each worker draws at the scaled size and converts to the pixel format the
+encoder takes (`rgbaToYuv(…, pixelFormat)`), the main thread feeds the one encoder, and `--every-nth-frame` numbers the
+frames drawn so the chunks stay contiguous. The file decodes to the same frames as `--concurrency 1` for every codec.
 
 `render --concurrency N` (a project; a `.json` scene is drawn whole by the addon) starts N worker threads. Each opens the
 composition itself (the bundle is built once), runs its JS for a chunk of 60 frames at a time, draws them with a renderer

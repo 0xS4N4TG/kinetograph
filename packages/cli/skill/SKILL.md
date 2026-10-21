@@ -29,7 +29,12 @@ command (except `studio`) with the same arguments; `still`, `strip` and `onion` 
 4. **Fix** and repeat from 2. A still takes well under a second.
 5. **Render.** `kinetograph render src/index.tsx -o out/video.mp4`. Use `--draft` for a half-size quick look,
    `--range 0..90` for a part (`a..b` is a to b-1, `a..=b` includes b), `--concurrency 4` to draw several frames at once
-   on a long film (the file is the same).
+   on a long film (the file is the same). Export options are Remotion's: `--scale 2` for 4K from 1080p (drawn at that
+   size, not upscaled), `--codec h265|prores|vp9|gif` (the output extension must fit: `.mov` for prores, `.webm` for vp9,
+   `.gif` for gif), `--crf 20` or `--video-bitrate 8M` (not both), `--prores-profile 4444`, `--pixel-format yuv444p`,
+   `--audio-codec opus`, `--audio-bitrate 320k`, and for a gif `--every-nth-frame 2`. Bad combinations are refused with
+   what to change. React runs in production mode (faster); `--dev-react` keeps the development build when you want
+   React's warnings.
 
 Also: `compositions <entry>` lists compositions (pick one with `--comp <id>`; pass props with `--props '{"title":"Hi"}'`),
 `audio analyze <entry>` measures the sound, `snapshot <entry> --update` approves frames and `snapshot <entry>` later
