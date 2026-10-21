@@ -32,6 +32,26 @@ beforeEach(() => {
 afterEach(() => setLayoutText(null));
 
 describe('measureText', () => {
+  it('keeps an answer, and drops it when a font is registered', () => {
+    const wide = (request: TextLayoutRequest) => ({ ...fakeLayout(request), width: request.fonts['Inter']!.includes('Wide') ? 999 : 100 });
+    setLayoutText(wide);
+    const options = { text: 'Hello', fontFamily: 'Inter', fontSize: 40 };
+    expect(measureText(options).width).toBe(100);
+    expect(measureText({ ...options }).width).toBe(100);
+    expect(requests).toHaveLength(1);
+    // Another size or style is another measurement.
+    measureText({ ...options, fontSize: 41 });
+    measureText({ ...options, additionalStyles: { wordSpacing: 3 } });
+    expect(requests).toHaveLength(3);
+    // A font registered after a measurement changes the next one.
+    registerFont({ family: 'Inter', path: '/f/Inter-Wide.ttf' });
+    expect(measureText(options).width).toBe(999);
+    expect(requests).toHaveLength(4);
+    // Mutating an answer does not change the next.
+    measureText(options).width = 1;
+    expect(measureText(options).width).toBe(999);
+  });
+
   it('measures with the registered font and its key', () => {
     expect(measureText({ text: 'Hello', fontFamily: 'Inter', fontSize: 40 })).toEqual({ width: 100, height: 48 });
     const request = requests[0]!;

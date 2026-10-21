@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import type { TextLayout, TextLayoutRequest } from '@kinetograph/native';
 import { fontKey } from '@kinetograph/scene';
-import { finishFontLoadsSync, getFonts, pendingFontLoads } from './font-registry.js';
+import { finishFontLoadsSync, fontGeneration, getFonts, pendingFontLoads } from './font-registry.js';
 
 type LayoutText = (request: TextLayoutRequest) => TextLayout;
 
@@ -126,10 +126,40 @@ let domMeasure: DomTextMeasure | null = null;
 
 export function setDomTextMeasure(fn: DomTextMeasure | null): void {
   domMeasure = fn;
+  measured.clear();
 }
+
+// `measureText` is a pure function of its options and the registered fonts, and the DOM engine builds a whole
+// document per call, so the answers are kept: keyed on every option and the font generation, oldest out first.
+const MEASURE_CACHE_SIZE = 2048;
+const measured = new Map<string, TextMetrics>();
+let measuredGeneration = -1;
 
 /** The size of `text` in one font, as the renderer lays it out. A newline starts another line. */
 export function measureText(options: MeasureTextOptions): TextMetrics {
+  let key: string | undefined;
+  try {
+    key = JSON.stringify(options);
+  } catch {
+    key = undefined; // not serialisable (a cycle): measure it every time
+  }
+  if (key === undefined) return measureTextUncached(options);
+  if (measuredGeneration !== fontGeneration()) {
+    measured.clear();
+    measuredGeneration = fontGeneration();
+  }
+  const hit = measured.get(key);
+  if (hit !== undefined) return { ...hit };
+  const metrics = measureTextUncached(options);
+  // A measurement that registered a font (a download finishing) is stale already.
+  if (measuredGeneration === fontGeneration()) {
+    if (measured.size >= MEASURE_CACHE_SIZE) measured.delete(measured.keys().next().value as string);
+    measured.set(key, { ...metrics });
+  }
+  return metrics;
+}
+
+function measureTextUncached(options: MeasureTextOptions): TextMetrics {
   const { text, fontSize, letterSpacing, textTransform } = options;
   if (domMeasure !== null) {
     checkedFont(options, text);

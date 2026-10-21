@@ -14,6 +14,12 @@ export interface FontRegistration {
 }
 
 const fonts = new Map<string, string>();
+let generation = 0;
+
+/** Changes whenever the registered fonts do, so a cache of anything measured with them knows to drop it. */
+export function fontGeneration(): number {
+  return generation;
+}
 
 /** Registers a font file under the key `<Text font weight fontStyle>` resolves to (`fontKey`). */
 export function registerFont(font: FontRegistration): void {
@@ -24,6 +30,7 @@ export function registerFont(font: FontRegistration): void {
     throw new TypeError(`registerFont() needs the path of the font file for "${font.family}"`);
   }
   fonts.set(fontKey(font.family, font.weight, font.style), resolve(font.path));
+  generation++;
 }
 
 /** fontKey → absolute path, every font registered. */
@@ -34,6 +41,7 @@ export function getFonts(): Record<string, string> {
 /** Forgets every registered font (tests). */
 export function clearFonts(): void {
   fonts.clear();
+  generation++;
 }
 
 // ---- fonts still loading ----
