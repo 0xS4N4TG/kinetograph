@@ -40,6 +40,15 @@ describe('<Video>', () => {
     expect((renderAt(<Video id="v" src="a.mp4" />, noisy).layers[0] as { from: number }).from).toBe(10);
   });
 
+  it('starts at its own `from`, within the Sequence, and shows nothing before it', () => {
+    expect(renderAt(<Video id="v" src="a.mp4" from={10} />, 14).layers[0]).toMatchObject({ from: 10 });
+    expect(renderAt(<Video id="v" src="a.mp4" from={10} />, inSequence(14)).layers[0]).toMatchObject({ from: 40 });
+    const before = renderAt(<Video id="v" src="a.mp4" from={10} />, 9);
+    expect(before.layers).toEqual([]);
+    expect(before.audio).toEqual([]);
+    expect(renderAt(<Video id="v" src="a.mp4" from={10} />, 10).audio[0]).toMatchObject({ from: 10, video: true });
+  });
+
   it('has no `frame` outside a <Freeze>', () => {
     expect(renderAt(<Video id="v" src="a.mp4" />, inSequence()).layers[0]).not.toHaveProperty('frame');
   });

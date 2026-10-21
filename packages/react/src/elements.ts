@@ -511,6 +511,11 @@ export interface VideoProps extends CommonProps {
   endAt?: number;
   playbackRate?: number;
   loop?: boolean;
+  /**
+   * The frame, within the enclosing Sequence, at which the clip starts: nothing shows before it and its own frame 0
+   * falls on it (as for `<Sequence from>` around the video).
+   */
+  from?: number;
   /** A number, or a function of the frame within the video's Sequence. */
   volume?: number | ((frame: number) => number);
   muted?: boolean;
@@ -582,8 +587,14 @@ export function Video(props: VideoProps): ReactNode {
   if (typeof volume !== 'number' || !Number.isFinite(volume)) {
     throw new Error(`${label} volume must be a finite number, got ${String(volume)}`);
   }
+  const offset = props.from ?? 0;
+  if (typeof offset !== 'number' || !Number.isFinite(offset)) {
+    throw new Error(`${label} from must be a finite number of frames, got ${String(props.from)}`);
+  }
+  // As <Sequence from>: the video is not there before it starts.
+  if (timeline.frame < offset) return null;
   // As <Audio>: the absolute frame at which the clip's own frame 0 falls.
-  const from = snapToFrame(timeline.absoluteFrame - timeline.frame);
+  const from = snapToFrame(timeline.absoluteFrame - timeline.frame + offset);
   const sound: Omit<AudioClipJson, 'id'> = {
     src,
     from,
