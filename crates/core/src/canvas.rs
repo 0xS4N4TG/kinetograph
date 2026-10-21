@@ -463,11 +463,12 @@ pub enum CanvasPaint {
         angle: f64,
         stops: Vec<(f64, Color)>,
     },
+    #[serde(rename_all = "camelCase")]
     Pattern {
         source: CanvasSource,
-        #[serde(default = "yes")]
+        #[serde(default = "yes", alias = "repeat_x")]
         repeat_x: bool,
-        #[serde(default = "yes")]
+        #[serde(default = "yes", alias = "repeat_y")]
         repeat_y: bool,
         #[serde(default)]
         m: Option<[f64; 6]>,
@@ -826,11 +827,40 @@ fn draw(
         CanvasOp::Fill(f) => {
             let path = parse(&f.path)?;
             let m = matrix * state.matrix();
+            let touched = m.transform_rect_bbox(path.bounding_box().inflate(1.0, 1.0));
+            if let CanvasPaint::Pattern {
+                source:
+                    CanvasSource::Canvas {
+                        width,
+                        height,
+                        commands,
+                    },
+                repeat_x,
+                repeat_y,
+                m: pattern_m,
+            } = &f.paint
+            {
+                fill_canvas_pattern(
+                    scene,
+                    drawing,
+                    f.rule.fill(),
+                    &path,
+                    state,
+                    matrix,
+                    canvas,
+                    m,
+                    (*width, *height),
+                    commands,
+                    (*repeat_x, *repeat_y),
+                    pattern_m.map_or(Affine::IDENTITY, Affine::new),
+                )?;
+                return Ok(touched);
+            }
             let (brush, brush_transform) = brush(&f.paint, state.a, drawing.images)?;
             blended(scene, state.blend, matrix, canvas, m, &path, 1.0, |s| {
                 s.fill(f.rule.fill(), m, &brush, brush_transform, &path);
             });
-            Ok(m.transform_rect_bbox(path.bounding_box().inflate(1.0, 1.0)))
+            Ok(touched)
         }
         CanvasOp::Stroke(st) => {
             let path = parse(&st.path)?;
@@ -1127,6 +1157,102 @@ fn image(
     Ok(touched)
 }
 
+/// Draws a fill whose paint is a pattern of another canvas: clips to `path`
+/// and draws one tile per `(i, j)` covering the path's box in tile space.
+#[allow(clippy::too_many_arguments)]
+fn fill_canvas_pattern(
+    scene: &mut vello::Scene,
+    drawing: &mut Drawing,
+    rule: Fill,
+    path: &BezPath,
+    state: &DrawState,
+    canvas_matrix: Affine,
+    canvas: Rect,
+    m: Affine,
+    (width, height): (f64, f64),
+    commands: &[CanvasOp],
+    (repeat_x, repeat_y): (bool, bool),
+    pattern_m: Affine,
+) -> Result<()> {
+    if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
+        return Ok(());
+    }
+    let base = m * pattern_m;
+    let det = base.determinant();
+    if det == 0.0 || !det.is_finite() {
+        return Ok(());
+    }
+    let path_bbox = m.transform_rect_bbox(path.bounding_box());
+    let tile_bbox = base.inverse().transform_rect_bbox(path_bbox);
+    let xs = if repeat_x {
+        (tile_bbox.x0 / width).floor() as i64..(tile_bbox.x1 / width).ceil() as i64
+    } else {
+        0..1
+    };
+    let ys = if repeat_y {
+        (tile_bbox.y0 / height).floor() as i64..(tile_bbox.y1 / height).ceil() as i64
+    } else {
+        0..1
+    };
+    let nx = i128::from((xs.end - xs.start).max(0));
+    let ny = i128::from((ys.end - ys.start).max(0));
+    let tiles = nx * ny;
+    if tiles > 10_000 {
+        return Err(Error::Render(format!(
+            "canvas: a pattern of a canvas would need {tiles} tiles; at most 10000"
+        )));
+    }
+    let mut err = Ok(());
+    blended(
+        scene,
+        state.blend,
+        canvas_matrix,
+        canvas,
+        m,
+        path,
+        1.0,
+        |s| {
+            s.push_clip_layer(rule, m, path);
+            'tiles: for j in ys {
+                for i in xs.clone() {
+                    let tile = base * Affine::translate((i as f64 * width, j as f64 * height));
+                    if let Err(e) =
+                        draw_canvas(s, drawing, (width, height), commands, tile, state.a)
+                    {
+                        err = Err(e);
+                        break 'tiles;
+                    }
+                }
+            }
+            s.pop_layer();
+        },
+    );
+    err
+}
+
+fn draw_canvas(
+    scene: &mut vello::Scene,
+    drawing: &mut Drawing,
+    (width, height): (f64, f64),
+    commands: &[CanvasOp],
+    matrix: Affine,
+    alpha: f32,
+) -> Result<()> {
+    // A canvas drawn into another is composited as a whole, so its own
+    // commands are drawn in a layer that takes the alpha.
+    let bounds = Rect::new(0.0, 0.0, width, height);
+    scene.push_layer(
+        Fill::NonZero,
+        peniko::BlendMode::new(peniko::Mix::Normal, peniko::Compose::SrcOver),
+        alpha,
+        matrix,
+        &bounds,
+    );
+    encode(scene, drawing, (width, height), commands, matrix)?;
+    scene.pop_layer();
+    Ok(())
+}
+
 /// Draws a whole source at its natural size under `matrix`.
 fn draw_source(
     scene: &mut vello::Scene,
@@ -1142,19 +1268,7 @@ fn draw_source(
         commands,
     } = source
     {
-        // A canvas drawn into another is composited as a whole, so its own
-        // commands are drawn in a layer that takes the alpha.
-        let bounds = Rect::new(0.0, 0.0, *width, *height);
-        scene.push_layer(
-            Fill::NonZero,
-            peniko::BlendMode::new(peniko::Mix::Normal, peniko::Compose::SrcOver),
-            alpha,
-            matrix,
-            &bounds,
-        );
-        encode(scene, drawing, (*width, *height), commands, matrix)?;
-        scene.pop_layer();
-        return Ok(());
+        return draw_canvas(scene, drawing, (*width, *height), commands, matrix, alpha);
     }
     let Some(image) = picture(source, drawing.images)? else {
         return Ok(());

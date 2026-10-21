@@ -191,6 +191,62 @@ fn pixels_are_drawn_without_smoothing_when_asked() {
 }
 
 #[test]
+fn a_fill_with_a_canvas_pattern_tiles_and_clips() {
+    let draw = |commands: &str| {
+        let json = format!(
+            r##"{{"width": 24, "height": 24, "fps": 30, "durationInFrames": 1, "background": "#000000",
+                "layers": [{{"id": "c", "type": "canvas", "width": 24, "height": 24, "commands": {commands}}}]}}"##
+        );
+        render_still(Scene::from_json(&json, Default::default()).unwrap(), 0).unwrap()
+    };
+    let source = format!(
+        r##"{{"kind": "canvas", "width": 10, "height": 10,
+            "commands": [{{"op": "fill", "path": "M0 0H5V5H0Z", "paint": {RED}}}]}}"##
+    );
+
+    let repeating = draw(&format!(
+        r##"[{{"op": "fill", "path": "M0 0H20V20H0Z",
+              "paint": {{"type": "pattern", "source": {source}}}}}]"##
+    ));
+    assert_eq!(px(&repeating, 2, 2), [255, 0, 0, 255]);
+    assert_eq!(px(&repeating, 7, 2), [0, 0, 0, 255]);
+    assert_eq!(px(&repeating, 12, 2), [255, 0, 0, 255]);
+    assert_eq!(px(&repeating, 2, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&repeating, 12, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&repeating, 17, 17), [0, 0, 0, 255]);
+    assert_eq!(px(&repeating, 22, 2), [0, 0, 0, 255]);
+
+    // Clipped to the fill path even inside a drawn tile's red square (10..15).
+    let clipped = draw(&format!(
+        r##"[{{"op": "fill", "path": "M0 0H12V12H0Z",
+              "paint": {{"type": "pattern", "source": {source}}}}}]"##
+    ));
+    assert_eq!(px(&clipped, 11, 2), [255, 0, 0, 255]);
+    assert_eq!(px(&clipped, 13, 2), [0, 0, 0, 255]);
+    assert_eq!(px(&clipped, 2, 13), [0, 0, 0, 255]);
+
+    let repeat_x_only = draw(&format!(
+        r##"[{{"op": "fill", "path": "M0 0H20V20H0Z",
+              "paint": {{"type": "pattern", "source": {source}, "repeatX": true, "repeatY": false}}}}]"##
+    ));
+    assert_eq!(px(&repeat_x_only, 2, 2), [255, 0, 0, 255]);
+    assert_eq!(px(&repeat_x_only, 12, 2), [255, 0, 0, 255]);
+    assert_eq!(px(&repeat_x_only, 2, 12), [0, 0, 0, 255]);
+    assert_eq!(px(&repeat_x_only, 12, 12), [0, 0, 0, 255]);
+
+    let scaled = draw(&format!(
+        r##"[{{"op": "fill", "path": "M0 0H20V20H0Z",
+              "paint": {{"type": "pattern", "source": {source}, "m": [2, 0, 0, 2, 0, 0]}}}}]"##
+    ));
+    assert_eq!(px(&scaled, 2, 2), [255, 0, 0, 255]);
+    assert_eq!(px(&scaled, 7, 2), [255, 0, 0, 255]);
+    assert_eq!(px(&scaled, 7, 7), [255, 0, 0, 255]);
+    assert_eq!(px(&scaled, 12, 2), [0, 0, 0, 255]);
+    assert_eq!(px(&scaled, 2, 12), [0, 0, 0, 255]);
+    assert_eq!(px(&scaled, 17, 17), [0, 0, 0, 255]);
+}
+
+#[test]
 fn a_command_with_bad_path_data_is_refused_with_the_layer() {
     let json = r##"{"width": 4, "height": 4, "fps": 30, "durationInFrames": 1, "layers": [
         {"id": "c", "type": "canvas", "width": 4, "height": 4, "commands":
