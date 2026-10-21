@@ -90,18 +90,18 @@ function BlackMaria({ x, s }: { x: number; s: number }) {
       <ellipse cx={X(0)} cy={Y(2)} rx={f(104 * s)} ry={f(8 * s)} fill={PAPER} strokeWidth={1.1} />
       <ellipse cx={X(0)} cy={Y(2)} rx={f(96 * s)} ry={f(6 * s)} fill="none" strokeWidth={0.6} strokeDasharray="1.5 3.5" />
       <path d={wall} fill={PAPER} strokeWidth={1.4} />
-      <Hatch id="bm-wall" clip={wall} {...box(-72, -30, 48, 0)} gap={2.6} angle={0} ink={PRINT} width={0.9} />
+      <Hatch id="bm-wall" clip={wall} {...box(-72, -30, 48, 0)} gap={f(4.2 * s)} angle={0} ink={PRINT} width={0.8} opacity={0.85} />
       <path d={room} fill={PAPER} strokeWidth={1.4} />
-      <Hatch id="bm-room" clip={room} {...box(48, -54, 78, 0)} gap={2.2} angle={0} ink={PRINT} width={1.1} />
+      <Hatch id="bm-room" clip={room} {...box(48, -54, 78, 0)} gap={f(3.6 * s)} angle={0} ink={PRINT} width={0.9} opacity={0.85} />
       <path d={gable} fill={PAPER} strokeWidth={1.3} />
       <path d={roof} fill={PAPER} strokeWidth={1.3} />
-      <Hatch id="bm-roof" clip={roof} {...box(-77, -42, 52, -30)} gap={3} angle={0.5} ink={PRINT} width={0.7} opacity={0.8} />
+      <Hatch id="bm-roof" clip={roof} {...box(-77, -42, 52, -30)} gap={f(4.5 * s)} angle={0.5} ink={PRINT} width={0.7} opacity={0.7} />
       <path d={opening} fill={COBALT} strokeWidth={1} />
-      {/* the hinged roof panel, propped open */}
-      <path d={`M${X(-30)} ${Y(-40)} L${X(-44)} ${Y(-70)}`} strokeWidth={1.1} />
+      {/* the hinged roof panel, propped open on two struts */}
       <path d={lid} fill={PAPER} strokeWidth={1.4} />
-      <Hatch id="bm-lid" clip={lid} {...box(-66, -84, 16, -42)} gap={3.4} angle={-0.28} ink={PRINT} width={0.7} opacity={0.65} />
+      <Hatch id="bm-lid" clip={lid} {...box(-66, -84, 16, -42)} gap={f(5 * s)} angle={-0.28} ink={PRINT} width={0.7} opacity={0.6} />
       <path d={`M${X(-54)} ${Y(-42)} L${X(16)} ${Y(-42)}`} strokeWidth={1.8} />
+      <path d={`M${X(-46)} ${Y(-40)} L${X(-58)} ${Y(-66)} M${X(8)} ${Y(-40)} L${X(-2)} ${Y(-66)}`} strokeWidth={1.1} />
       {/* door and windows */}
       <rect x={X(-16)} y={Y(-21)} width={f(11 * s)} height={f(21 * s)} fill={PAPER} strokeWidth={1.1} />
       <rect x={X(56)} y={Y(-44)} width={f(14 * s)} height={f(10 * s)} fill={PAPER} strokeWidth={1.1} />
@@ -120,15 +120,49 @@ function Pole({ x, h }: { x: number; h: number }) {
   );
 }
 
+/** A hot-air balloon: a round-crowned envelope in striped gores, ropes to a wicker basket, a small flame at the throat. */
 function Balloon({ x, y }: { x: number; y: number }) {
-  const gores = [-0.75, -0.4, 0, 0.4, 0.75].map((k) => `M${x} ${y - 30} Q${f(x + k * 34)} ${y} ${x} ${y + 30}`).join(' ');
+  const top = y - 34;
+  const base = y + 34;
+  /** A gore seam at fraction `k` of the full width: leaves the crown flat, then closes on the throat. */
+  const seam = (k: number) => ({
+    c1: [x + k * 50, top] as const,
+    c2: [x + k * 40, y + 10] as const,
+    end: [x + k * 7, base] as const,
+  });
+  const curve = (k: number) => {
+    const { c1, c2, end } = seam(k);
+    return `C${f(c1[0])} ${f(c1[1])} ${f(c2[0])} ${f(c2[1])} ${f(end[0])} ${f(end[1])}`;
+  };
+  const back = (k: number) => {
+    const { c1, c2 } = seam(k);
+    return `C${f(c2[0])} ${f(c2[1])} ${f(c1[0])} ${f(c1[1])} ${x} ${top}`;
+  };
+  const ks = [-1, -0.6, -0.2, 0.2, 0.6, 1];
+  const stripes = [0, 2, 4].map((i) => {
+    const k0 = ks[i]!;
+    const k1 = ks[i + 1]!;
+    return `M${x} ${top} ${curve(k0)} L${f(x + k1 * 7)} ${base} ${back(k1)}Z`;
+  }).join(' ');
+  const seams = ks.slice(1, -1).map((k) => `M${x} ${top} ${curve(k)}`).join(' ');
+  const outline = `M${x} ${top} ${curve(-1)} L${x + 7} ${base} ${back(1)}Z`;
+  // where a rope leaves the envelope: the right edge at t = 0.8
+  const t = 0.8;
+  const e = seam(1);
+  const bz = (p0: number, p1: number, p2: number, p3: number) => (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t * t * p2 + t ** 3 * p3;
+  const rx = bz(x, e.c1[0], e.c2[0], e.end[0]) - x;
+  const ry = bz(top, e.c1[1], e.c2[1], e.end[1]);
+  const bt = base + 16;
   return (
-    <g stroke={COBALT} fill={PAPER} strokeWidth={1.2}>
-      <ellipse cx={x} cy={y} rx={26} ry={30} />
-      <path d={gores} fill="none" strokeWidth={0.8} />
-      <path d={`M${x - 26} ${y} L${x + 26} ${y}`} fill="none" strokeWidth={0.8} />
-      <path d={`M${x - 14} ${y + 25} L${x - 6} ${y + 44} M${x + 14} ${y + 25} L${x + 6} ${y + 44}`} fill="none" strokeWidth={0.8} />
-      <rect x={x - 7} y={y + 44} width={14} height={9} />
+    <g stroke={COBALT} strokeLinejoin="round" strokeLinecap="round">
+      <path d={outline} fill={PAPER} strokeWidth={1.3} />
+      <path d={stripes} fill={COBALT} stroke="none" />
+      <path d={seams} fill="none" strokeWidth={0.7} />
+      <path d={outline} fill="none" strokeWidth={1.3} />
+      <path d={`M${f(x - rx)} ${f(ry)} L${x - 8} ${bt} M${f(x + rx)} ${f(ry)} L${x + 8} ${bt} M${x - 7} ${base} L${x - 3} ${bt - 6} M${x + 7} ${base} L${x + 3} ${bt - 6}`} fill="none" strokeWidth={0.8} />
+      <path d={`M${x} ${base + 3} Q${x + 3} ${base + 8} ${x} ${base + 11} Q${x - 3} ${base + 8} ${x} ${base + 3}Z`} fill={COBALT} strokeWidth={0.6} />
+      <rect x={x - 10} y={bt} width={20} height={12} fill={PAPER} strokeWidth={1.2} />
+      <path d={`M${x - 10} ${bt + 4} L${x + 10} ${bt + 4} M${x - 5} ${bt + 4} L${x - 5} ${bt + 12} M${x} ${bt + 4} L${x} ${bt + 12} M${x + 5} ${bt + 4} L${x + 5} ${bt + 12}`} fill="none" strokeWidth={0.6} />
     </g>
   );
 }
