@@ -1,7 +1,7 @@
-// When each picture of an animated GIF shows. `<AnimatedImage>` picks a picture by Remotion's rule (the one whose start
-// is nearest the time, not the one showing at it), which needs the starts; the native `gif` layer takes a time and finds
-// the picture itself. The delays are read straight from the file's graphic control extensions, with the rule browsers
-// and the `gif` layer share: a delay of 10 ms or less shows for 100 ms.
+// When each picture of an animated GIF, APNG or WebP shows. `<AnimatedImage>` picks a picture by Remotion's rule (the
+// one whose start is nearest the time, not the one showing at it), which needs the starts; the native `gif` layer takes
+// a time and finds the picture itself. The delays are read straight from the file, with the rule browsers and the `gif`
+// layer share: a delay of 10 ms or less shows for 100 ms.
 
 export interface GifTimeline {
   /** The logical screen. */
@@ -52,6 +52,77 @@ export function readGifTimeline(bytes: Uint8Array): GifTimeline {
     } else {
       throw new Error(`unexpected block 0x${block.toString(16)} at byte ${pos}`);
     }
+  }
+  if (startsUs.length === 0) throw new Error('it has no pictures');
+  return { width, height, startsUs, durationUs: endUs };
+}
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+function ascii(bytes: Uint8Array, from: number, length: number): string {
+  return String.fromCharCode(...bytes.subarray(from, from + length));
+}
+
+function u24le(bytes: Uint8Array, at: number): number {
+  return bytes[at]! | (bytes[at + 1]! << 8) | (bytes[at + 2]! << 16);
+}
+
+/** The pictures' timing in the animated PNG `bytes`, or an error naming what is wrong with the file. */
+export function readApngTimeline(bytes: Uint8Array): GifTimeline {
+  if (bytes.length < 8 || PNG_SIGNATURE.some((b, i) => bytes[i] !== b)) throw new Error('not a PNG');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let width = 0;
+  let height = 0;
+  let animated = false;
+  const startsUs: number[] = [];
+  let endUs = 0;
+  for (let pos = 8; pos + 8 <= bytes.length; ) {
+    const length = view.getUint32(pos);
+    const type = ascii(bytes, pos + 4, 4);
+    const data = pos + 8;
+    if (data + length > bytes.length) break;
+    if (type === 'IHDR') {
+      width = view.getUint32(data);
+      height = view.getUint32(data + 4);
+    } else if (type === 'acTL') {
+      animated = true;
+    } else if (type === 'IDAT') {
+      if (!animated) throw new Error('it is not animated');
+    } else if (type === 'fcTL') {
+      const num = view.getUint16(data + 20);
+      const den = view.getUint16(data + 22) || 100;
+      const delayMs = Math.round((num / den) * 1000);
+      startsUs.push(endUs);
+      endUs += (delayMs <= 10 ? 100 : delayMs) * 1000;
+    } else if (type === 'IEND') {
+      break;
+    }
+    pos = data + length + 4;
+  }
+  if (!animated) throw new Error('it is not animated');
+  if (startsUs.length === 0) throw new Error('it has no pictures');
+  return { width, height, startsUs, durationUs: endUs };
+}
+
+/** The pictures' timing in the animated WebP `bytes`, or an error naming what is wrong with the file. */
+export function readWebpTimeline(bytes: Uint8Array): GifTimeline {
+  if (bytes.length < 12 || ascii(bytes, 0, 4) !== 'RIFF' || ascii(bytes, 8, 4) !== 'WEBP') throw new Error('not a WebP');
+  if (bytes.length < 30 || ascii(bytes, 12, 4) !== 'VP8X' || (bytes[20]! & 0x02) === 0) throw new Error('it is not animated');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const width = u24le(bytes, 24) + 1;
+  const height = u24le(bytes, 27) + 1;
+  const startsUs: number[] = [];
+  let endUs = 0;
+  for (let pos = 12; pos + 8 <= bytes.length; ) {
+    const type = ascii(bytes, pos, 4);
+    const size = view.getUint32(pos + 4, true);
+    const data = pos + 8;
+    if (type === 'ANMF' && data + 15 <= bytes.length) {
+      const delayMs = u24le(bytes, data + 12);
+      startsUs.push(endUs);
+      endUs += (delayMs <= 10 ? 100 : delayMs) * 1000;
+    }
+    pos = data + size + (size & 1);
   }
   if (startsUs.length === 0) throw new Error('it has no pictures');
   return { width, height, startsUs, durationUs: endUs };

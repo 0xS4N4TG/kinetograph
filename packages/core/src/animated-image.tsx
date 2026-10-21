@@ -1,8 +1,7 @@
 // `<AnimatedImage>`: Remotion's animated GIF, APNG and WebP on a `<canvas>`, decoded with the browser's `ImageDecoder`.
-// A GIF is drawn by the native `gif` layer, at the picture Remotion's decoder hands the canvas at that time: of the
-// picture that has started and the next, the one whose start is nearer (gif-timeline.ts). A file that is not an
-// animated GIF is drawn as a still picture (its first), and a warning says so for an animated PNG or WebP, which the
-// engine does not decode yet.
+// An animated GIF, APNG or WebP is drawn by the native `gif` layer, at the picture Remotion's decoder hands the canvas
+// at that time: of the picture that has started and the next, the one whose start is nearer (gif-timeline.ts). A file
+// that is not animated is drawn as a still picture.
 
 import { closeSync, openSync, readFileSync, readSync } from 'node:fs';
 import type { CSSProperties, ReactNode } from 'react';
@@ -10,10 +9,9 @@ import { Gif } from '@kinetograph/react';
 import { remoteMessage } from '@kinetograph/compat/shim';
 import { warnEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
 import { Img, type FillStyle } from './fill.js';
-import { isGif, nearestPicture, readGifTimeline, type GifTimeline } from './gif-timeline.js';
+import { isGif, nearestPicture, readApngTimeline, readGifTimeline, readWebpTimeline, type GifTimeline } from './gif-timeline.js';
 import { croppedStyle, Sequenced, splitCrop, splitTiming, type CropProps, type SequenceTimingProps } from './sequenced.js';
 import { useCurrentFrame, useVideoConfig } from './timeline.js';
-import { warnOnce } from './warn.js';
 
 export type AnimatedImageLoopBehavior = 'loop' | 'pause-after-finish' | 'clear-after-finish';
 
@@ -82,13 +80,13 @@ function readSource(src: string): Source {
       source = { kind: 'gif', timeline: readGifTimeline(readFileSync(src)) };
     } else {
       const format = animatedFormat(head);
-      if (format !== null) {
-        warnOnce(
-          `<AnimatedImage>.${format}`,
-          `<AnimatedImage> draws an animated ${format === 'png' ? 'PNG' : 'WebP'} as its first picture: only GIF animation is decoded.`,
-        );
+      if (format === 'png') {
+        source = { kind: 'gif', timeline: readApngTimeline(readFileSync(src)) };
+      } else if (format === 'webp') {
+        source = { kind: 'gif', timeline: readWebpTimeline(readFileSync(src)) };
+      } else {
+        source = { kind: 'still' };
       }
-      source = { kind: 'still' };
     }
   } catch (error) {
     throw new Error(`Could not read <AnimatedImage src=${JSON.stringify(src)}>: ${error instanceof Error ? error.message : String(error)}`);

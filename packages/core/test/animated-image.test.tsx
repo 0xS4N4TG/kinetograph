@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnimatedImage } from '../src/index.js';
 import { clearAnimatedImages, pictureStart } from '../src/animated-image.js';
-import { isGif, nearestPicture, readGifTimeline } from '../src/gif-timeline.js';
+import { isGif, nearestPicture, readApngTimeline, readGifTimeline, readWebpTimeline } from '../src/gif-timeline.js';
 import { resetWarnings } from '../src/warn.js';
-import { makeGif } from './gif-fixture.js';
+import { makeApng, makeGif, makeWebp, pngChunk } from './gif-fixture.js';
 import { renderDom, sent, useFakeDom } from './dom-harness.js';
 import { renderAt } from './scene-harness.js';
 
@@ -42,6 +42,46 @@ describe('readGifTimeline', () => {
       expect(timeline.durationUs / 1e6, path).toBeCloseTo(info.durationInSeconds, 9);
       expect([timeline.width, timeline.height], path).toEqual([info.width, info.height]);
     }
+  });
+});
+
+describe('readApngTimeline and readWebpTimeline', () => {
+  it('reads an APNG\'s size and picture starts, skipping a default IDAT and turning <= 10 ms into 100 ms', () => {
+    expect(readApngTimeline(makeApng([[1, 10], [5, 100]], 40, 30))).toEqual({
+      width: 40,
+      height: 30,
+      startsUs: [0, 100000],
+      durationUs: 150000,
+    });
+    expect(readApngTimeline(makeApng([[0, 0]], 16, 12, true))).toEqual({
+      width: 16,
+      height: 12,
+      startsUs: [0],
+      durationUs: 100000,
+    });
+  });
+
+  it('refuses a non-PNG, a still PNG, or an APNG without pictures', () => {
+    expect(() => readApngTimeline(Uint8Array.from([1, 2, 3]))).toThrow(/not a PNG/);
+    const still = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, ...pngChunk('IHDR', new Array(13).fill(0)), ...pngChunk('IDAT', [0])]);
+    expect(() => readApngTimeline(still)).toThrow(/it is not animated/);
+    expect(() => readApngTimeline(makeApng([]))).toThrow(/it has no pictures/);
+  });
+
+  it('reads an animated WebP\'s size and picture starts, turning <= 10 ms into 100 ms', () => {
+    expect(readWebpTimeline(makeWebp([40, 5], 50, 20))).toEqual({
+      width: 50,
+      height: 20,
+      startsUs: [0, 40000],
+      durationUs: 140000,
+    });
+  });
+
+  it('refuses a non-WebP, a still WebP, or an animated WebP without pictures', () => {
+    expect(() => readWebpTimeline(Uint8Array.from([1, 2, 3]))).toThrow(/not a WebP/);
+    const still = Uint8Array.from([...Buffer.from('RIFF'), 22, 0, 0, 0, ...Buffer.from('WEBP'), ...Buffer.from('VP8X'), 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(() => readWebpTimeline(still)).toThrow(/it is not animated/);
+    expect(() => readWebpTimeline(makeWebp([]))).toThrow(/it has no pictures/);
   });
 });
 
@@ -168,21 +208,19 @@ describe('<AnimatedImage>', () => {
     expect(div.children[0]).toMatchObject({ kind: 'native' });
   });
 
-  it('reads a still image as one picture, and says an animated PNG or WebP is drawn as its first', () => {
+  it('reads a still image as one picture, and plays an animated PNG or WebP with the gif layer without warning', () => {
     const still = join(dir, 'still.png');
     writeFileSync(still, Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, ...new Array(13 + 4).fill(0), 0, 0, 0, 0, 73, 68, 65, 84]));
     expect(layerAt(<AnimatedImage src={still} />, 0)).toMatchObject({ type: 'image', src: still });
-    expect(warn).not.toHaveBeenCalled();
     const apng = join(dir, 'anim.png');
-    const chunk = (type: string, length: number) => [0, 0, 0, length, ...Buffer.from(type), ...new Array(length + 4).fill(0)];
-    writeFileSync(apng, Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, ...chunk('IHDR', 13), ...chunk('gAMA', 4), ...chunk('acTL', 8), ...chunk('IDAT', 1)]));
-    expect(layerAt(<AnimatedImage src={apng} />, 0)).toMatchObject({ type: 'image' });
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]![0]).toMatch(/animated PNG as its first picture/);
+    writeFileSync(apng, makeApng([[1, 10], [1, 10]], 40, 30));
+    expect(layerAt(<AnimatedImage src={apng} />, 0)).toMatchObject({ type: 'gif', src: apng, loop: false });
+    expect(layerAt(<AnimatedImage src={apng} />, 3).time).toBeCloseTo(0.1005, 9);
     const webp = join(dir, 'anim.webp');
-    writeFileSync(webp, Uint8Array.from([...Buffer.from('RIFF'), 30, 0, 0, 0, ...Buffer.from('WEBP'), ...Buffer.from('VP8X'), 10, 0, 0, 0, 0x02, 0, 0, 0]));
-    renderAt(<AnimatedImage src={webp} />, 0);
-    expect(warn).toHaveBeenCalledTimes(2);
+    writeFileSync(webp, makeWebp([100, 100], 40, 30));
+    expect(layerAt(<AnimatedImage src={webp} />, 0)).toMatchObject({ type: 'gif', src: webp, loop: false });
+    expect(layerAt(<AnimatedImage src={webp} />, 3).time).toBeCloseTo(0.1005, 9);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('fails for a missing file or a remote URL, or hands the error to onError and draws nothing', () => {
