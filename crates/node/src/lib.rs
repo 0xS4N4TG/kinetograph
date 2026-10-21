@@ -451,6 +451,9 @@ pub struct RenderSummary {
     pub ms: f64,
     pub ms_per_frame: f64,
     pub audio: bool,
+    /// Frames not drawn because they were the same as the frame before
+    /// (`KINETOGRAPH_NO_REUSE=1` turns that off).
+    pub repeated: u32,
 }
 
 #[napi(object)]
@@ -459,6 +462,9 @@ pub struct RgbaFrame {
     pub height: u32,
     /// Straight-alpha sRGB RGBA8, `width * height * 4` bytes.
     pub data: Buffer,
+    /// `finishFrame`: the frame was not drawn because it is the same as the
+    /// frame started before it, so `data` is that frame's.
+    pub repeated: bool,
 }
 
 #[napi(object)]
@@ -497,6 +503,7 @@ impl From<kinetograph_cli::render::RenderSummary> for RenderSummary {
             ms: s.ms,
             ms_per_frame: s.ms_per_frame,
             audio: s.audio,
+            repeated: s.repeated,
         }
     }
 }
@@ -633,6 +640,10 @@ impl Renderer {
         let scene = Scene::from_json(EMPTY_SCENE, PathBuf::new()).map_err(from_core)?;
         let mut gpu = kinetograph_core::Renderer::new(scene).map_err(from_core)?;
         gpu.set_layer_cache(layer_cache);
+        // Frames one after the other, as the layer cache is for: one that is
+        // the same as the last is not drawn again (`KINETOGRAPH_NO_REUSE=1`
+        // turns that off).
+        gpu.set_frame_reuse(layer_cache && kinetograph_core::reuse::allowed_by_env());
         Ok(Renderer {
             shared: Arc::new(Shared {
                 gpu: Mutex::new(gpu),
@@ -698,6 +709,7 @@ impl Renderer {
             width: rendered.width,
             height: rendered.height,
             data: Buffer::from(rendered.rgba),
+            repeated: false,
         })
     }
 
@@ -728,12 +740,23 @@ impl Renderer {
             .pop_front()
             .ok_or_else(|| invalid("no frame was started (startFrame)"))?;
         let mut gpu = self.shared.idle()?;
+        let repeated = pending.is_repeat();
         let rendered = gpu.finish_frame(pending).map_err(from_core)?;
         Ok(RgbaFrame {
             width: rendered.width,
             height: rendered.height,
             data: Buffer::from(rendered.rgba),
+            repeated,
         })
+    }
+
+    /// Makes the next frame `startFrame` begins be drawn, whatever the frame
+    /// before it was: a frame is only taken from a frame started after this.
+    /// A render worker calls it at the start of each run of frames.
+    #[napi]
+    pub fn forget_frame(&mut self) -> Result<()> {
+        self.shared.idle()?.forget_frame();
+        Ok(())
     }
 
     /// Times one frame or successive frames, as the Rust `bench`.

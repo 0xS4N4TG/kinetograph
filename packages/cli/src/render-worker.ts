@@ -29,7 +29,8 @@ export type ToWorker =
 /** Worker to main. */
 export type FromWorker =
   | { type: 'ready' }
-  | { type: 'frame'; frame: number; yuv: ArrayBuffer; audio: AudioClipJson[]; unsupported: Unsupported[] }
+  /** `repeated`: the frame was not drawn, being the same as the one before it in its chunk (docs/AUTHORING.md §9). */
+  | { type: 'frame'; frame: number; yuv: ArrayBuffer; audio: AudioClipJson[]; unsupported: Unsupported[]; repeated: boolean }
   | { type: 'chunk'; first: number; last: number }
   /** The frames of the chunk it gave up, `first..=last` (empty when `first > last`). */
   | { type: 'split'; first: number; last: number }
@@ -74,18 +75,25 @@ try {
     // The GPU draws a frame while this thread runs the JS of the next: a frame is started, and the one before it is
     // collected, converted and posted.
     let started: { index: number; out: FrameOutput } | undefined;
+    // The converted pixels of the frame before in this chunk, for a frame that repeats it.
+    let last: Buffer | undefined;
     const collect = (): void => {
       const { index, out } = started!;
       const drawn = renderer.finishFrame();
       // The colour conversion the encoder does is done here, in parallel, so the encoder thread only has to send.
-      const pixels = native().rgbaToYuv(drawn.data, drawn.width, drawn.height, convertFormat);
+      // A frame the same as the one before (`repeated`) has that frame's pixels, so it has its conversion too.
+      const pixels = drawn.repeated && last ? last : native().rgbaToYuv(drawn.data, drawn.width, drawn.height, convertFormat);
+      last = pixels;
       // A copy, because it is moved to the main thread: the addon's buffer cannot be transferred.
       const yuv = new ArrayBuffer(pixels.byteLength);
       new Uint8Array(yuv).set(pixels);
-      post({ type: 'frame', frame: index, yuv, audio: out.audio, unsupported: out.unsupported ?? [] }, [yuv]);
+      post({ type: 'frame', frame: index, yuv, audio: out.audio, unsupported: out.unsupported ?? [], repeated: drawn.repeated }, [yuv]);
     };
     const run = { next: message.first, end: message.last };
     active = run;
+    // A chunk's first frame is drawn, whatever this worker drew before: a frame is only ever taken from the frame
+    // before it in the film, so the output does not depend on which worker drew what.
+    renderer.forgetFrame();
     while (run.next <= run.end) {
       const index = run.next++;
       const frame = origin + index * step;

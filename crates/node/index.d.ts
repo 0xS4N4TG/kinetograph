@@ -30,6 +30,12 @@ export declare class Renderer {
   startFrame(sceneJson: string, frame: number, baseDir?: string | undefined | null): void
   /** The oldest frame `startFrame` began, as straight-alpha sRGB RGBA8. */
   finishFrame(): RgbaFrame
+  /**
+   * Makes the next frame `startFrame` begins be drawn, whatever the frame
+   * before it was: a frame is only taken from a frame started after this.
+   * A render worker calls it at the start of each run of frames.
+   */
+  forgetFrame(): void
   /** Times one frame or successive frames, as the Rust `bench`. */
   bench(sceneJson: string, options: BenchOptions, baseDir?: string | undefined | null): BenchResult
   /** A whole JSON scene to a video, as the Rust `render`. */
@@ -292,6 +298,11 @@ export interface RenderSummary {
   ms: number
   msPerFrame: number
   audio: boolean
+  /**
+   * Frames not drawn because they were the same as the frame before
+   * (`KINETOGRAPH_NO_REUSE=1` turns that off).
+   */
+  repeated: number
 }
 
 /**
@@ -305,6 +316,11 @@ export interface RgbaFrame {
   height: number
   /** Straight-alpha sRGB RGBA8, `width * height * 4` bytes. */
   data: Buffer
+  /**
+   * `finishFrame`: the frame was not drawn because it is the same as the
+   * frame started before it, so `data` is that frame's.
+   */
+  repeated: boolean
 }
 
 /**
