@@ -8,6 +8,8 @@ import { NO_FILTER, parseFilter, type ParsedFilter } from './canvas-filter.js';
 import {
   apply,
   domError,
+  flattenSegments,
+  flattenSubpaths,
   IDENTITY,
   invert,
   isIdentity,
@@ -20,7 +22,7 @@ import {
 import { fontKey } from './paint.js';
 import type { CanvasBlend, CanvasCommand, CanvasLayer, CanvasLine, CanvasPaint, CanvasShadow, CanvasSource, CanvasState } from './types.js';
 
-export { Path2D } from './canvas-path.js';
+export { flattenSegments, Path2D } from './canvas-path.js';
 export { parseCssColor, toSceneColor } from './canvas-color.js';
 export { parseFilter, type ParsedFilter } from './canvas-filter.js';
 
@@ -128,13 +130,28 @@ export class CanvasGradient extends Painted {
 
 /** `createPattern`. */
 export class CanvasPattern extends Painted {
+  private m: Matrix = IDENTITY;
   constructor(private readonly picture: CanvasPicture, private readonly repeatX: boolean, private readonly repeatY: boolean) {
     super();
   }
-  /** Accepted; a pattern is drawn untransformed. */
-  setTransform(_transform?: unknown): void {}
+  setTransform(transform?: unknown): void {
+    if (transform === undefined) {
+      this.m = IDENTITY;
+      return;
+    }
+    if (typeof transform !== 'object' || transform === null) throw new TypeError("Failed to execute 'setTransform' on 'CanvasPattern': parameter 1 is not of type 'DOMMatrix2DInit'.");
+    const m = matrixFrom([transform]);
+    if (m === null) throw new TypeError("Failed to execute 'setTransform' on 'CanvasPattern': matrix contains non-finite values.");
+    this.m = m;
+  }
   paint(): CanvasPaint {
-    return { type: 'pattern', source: this.picture.source, repeatX: this.repeatX, repeatY: this.repeatY };
+    return {
+      type: 'pattern',
+      source: this.picture.source,
+      repeatX: this.repeatX,
+      repeatY: this.repeatY,
+      ...(isIdentity(this.m) ? {} : { m: [...this.m] as Matrix }),
+    };
   }
 }
 
@@ -508,10 +525,10 @@ export class CanvasContext2D {
   }
   get direction(): string { return this.plainProperty('direction', oneOf(['ltr', 'rtl', 'inherit'] as const)).get(); }
   set direction(value: string) { this.plainProperty('direction', oneOf(['ltr', 'rtl', 'inherit'] as const)).set(value); }
-  get letterSpacing(): string { return this.plainProperty('letterSpacing', text).get(); }
-  set letterSpacing(value: string) { this.plainProperty('letterSpacing', text).set(value); }
-  get wordSpacing(): string { return this.plainProperty('wordSpacing', text).get(); }
-  set wordSpacing(value: string) { this.plainProperty('wordSpacing', text).set(value); }
+  get letterSpacing(): string { return this.plainProperty('letterSpacing', lengthText).get(); }
+  set letterSpacing(value: string) { this.plainProperty('letterSpacing', lengthText).set(value); }
+  get wordSpacing(): string { return this.plainProperty('wordSpacing', lengthText).get(); }
+  set wordSpacing(value: string) { this.plainProperty('wordSpacing', lengthText).set(value); }
   get fontKerning(): string { return this.plainProperty('fontKerning', text).get(); }
   set fontKerning(value: string) { this.plainProperty('fontKerning', text).set(value); }
   get fontStretch(): string { return this.plainProperty('fontStretch', text).get(); }
@@ -759,9 +776,14 @@ export class CanvasContext2D {
     const shown = String(text).replace(/[\t\n\r\f\v]/g, ' ');
     if (shown === '') return;
     const command: CanvasCommand = { op: 'text', text: shown, font: this.fontKeyNow(), size: s.font.size, x, y, paint: this.paintOf(stroke ? s.stroke : s.fill), ...this.drawn() };
-    if (s.textAlign !== 'start') command.align = s.textAlign;
+    const align = s.plain.direction === 'rtl' && (s.textAlign === 'start' || s.textAlign === 'end') ? (s.textAlign === 'start' ? 'right' : 'left') : s.textAlign;
+    if (align !== 'start') command.align = align;
     if (s.textBaseline !== 'alphabetic') command.baseline = s.textBaseline;
     if (maxWidth !== undefined) command.maxWidth = maxWidth;
+    const letterSpacing = parseSpacing(s.plain.letterSpacing as string, s.font.size);
+    if (letterSpacing !== 0) command.letterSpacing = letterSpacing;
+    const wordSpacing = parseSpacing(s.plain.wordSpacing as string, s.font.size);
+    if (wordSpacing !== 0) command.wordSpacing = wordSpacing;
     if (stroke) command.line = this.lineOf();
     this.log.push(command);
   }
@@ -877,14 +899,102 @@ export class CanvasContext2D {
 
   // ---- hit testing, focus ----
 
-  isPointInPath(..._args: unknown[]): boolean {
-    return false;
+  isPointInPath(x: number, y: number, fillRule?: 'nonzero' | 'evenodd'): boolean;
+  isPointInPath(path: Path2D, x: number, y: number, fillRule?: 'nonzero' | 'evenodd'): boolean;
+  isPointInPath(...args: unknown[]): boolean {
+    const path = args[0] instanceof Path2D ? args[0] : undefined;
+    const offset = path ? 1 : 0;
+    const x = Number(args[offset]);
+    const y = Number(args[offset + 1]);
+    const rawRule = args[offset + 2];
+    let rule: 'nonzero' | 'evenodd' = 'nonzero';
+    if (rawRule !== undefined) {
+      const str = String(rawRule);
+      if (str !== 'nonzero' && str !== 'evenodd') {
+        throw new TypeError(`The provided value '${str}' is not a valid enum value of type CanvasFillRule.`);
+      }
+      rule = str;
+    }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    const rings = path ? flattenSegments(path.segments, this.state.ctm) : flattenSegments(this.path.segments);
+    let winding = 0;
+    for (const pts of rings) {
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        const [x0, y0, x1, y1] = [pts[i]!, pts[i + 1]!, pts[i + 2]!, pts[i + 3]!];
+        if (y0 <= y) {
+          if (y1 > y && (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0) > 0) winding += 1;
+        } else if (y1 <= y && (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0) < 0) {
+          winding -= 1;
+        }
+      }
+    }
+    return rule === 'evenodd' ? (winding & 1) !== 0 : winding !== 0;
   }
-  isPointInStroke(..._args: unknown[]): boolean {
+
+  /** Hit-tests the stroke by distance to the flattened segments; caps, joins and dashes are not modelled. */
+  isPointInStroke(x: number, y: number): boolean;
+  isPointInStroke(path: Path2D, x: number, y: number): boolean;
+  isPointInStroke(...args: unknown[]): boolean {
+    const path = args[0] instanceof Path2D ? args[0] : undefined;
+    const offset = path ? 1 : 0;
+    const x = Number(args[offset]);
+    const y = Number(args[offset + 1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    const [a, b, c, d] = this.state.ctm;
+    const det = Math.abs(a * d - b * c);
+    if (!Number.isFinite(det) || det === 0) return false;
+    const half = (this.state.lineWidth / 2) * Math.sqrt(det);
+    const r2 = half * half;
+    const subpaths = path ? flattenSubpaths(path.segments, this.state.ctm) : flattenSubpaths(this.path.segments);
+    for (const sub of subpaths) {
+      const pts = sub.points;
+      const count = pts.length;
+      if (count < 2) continue;
+      for (let i = 0; i + 3 < count; i += 2) {
+        if (distToSegmentSq(x, y, pts[i]!, pts[i + 1]!, pts[i + 2]!, pts[i + 3]!) <= r2) return true;
+      }
+      if (sub.closed && count >= 2) {
+        if (distToSegmentSq(x, y, pts[count - 2]!, pts[count - 1]!, pts[0]!, pts[1]!) <= r2) return true;
+      }
+    }
     return false;
   }
   drawFocusIfNeeded(): void {}
   scrollPathIntoView(): void {}
+}
+
+function distToSegmentSq(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return (px - x0) ** 2 + (py - y0) ** 2;
+  const t = Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
+  const qx = x0 + t * dx;
+  const qy = y0 + t * dy;
+  return (px - qx) ** 2 + (py - qy) ** 2;
+}
+
+const SPACING_LENGTH = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(px|em|rem|pt)?$/i;
+
+function parseSpacing(value: string, fontSize: number): number {
+  const match = SPACING_LENGTH.exec(value.trim());
+  if (!match) return 0;
+  const num = Number(match[1]);
+  if (!Number.isFinite(num)) return 0;
+  const unit = match[2]?.toLowerCase();
+  if (unit === undefined) return num === 0 ? 0 : NaN;
+  if (num === 0) return 0;
+  return unit === 'px' ? num : unit === 'em' ? num * fontSize : unit === 'rem' ? num * 16 : (num * 4) / 3;
+}
+
+function lengthText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  const match = SPACING_LENGTH.exec(trimmed);
+  if (!match) return undefined;
+  const num = Number(match[1]);
+  if (!Number.isFinite(num) || (match[2] === undefined && num !== 0)) return undefined;
+  return trimmed;
 }
 
 function finite(value: unknown): number | undefined {

@@ -82,6 +82,112 @@ export function pathData(segments: readonly Segment[], m?: Matrix): string {
   return out;
 }
 
+export interface FlattenedSubpath {
+  points: number[];
+  closed: boolean;
+}
+
+function flattenCubic(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  x3: number,
+  y3: number,
+  tol2: number,
+  out: number[],
+  depth = 0,
+): void {
+  const dx = x3 - x0;
+  const dy = y3 - y0;
+  const len2 = dx * dx + dy * dy;
+  let d2: number;
+  if (len2 > 1e-12) {
+    const c1 = (x1 - x0) * dy - (y1 - y0) * dx;
+    const c2 = (x2 - x0) * dy - (y2 - y0) * dx;
+    d2 = Math.max(c1 * c1, c2 * c2) / len2;
+  } else {
+    d2 = Math.max((x1 - x0) ** 2 + (y1 - y0) ** 2, (x2 - x0) ** 2 + (y2 - y0) ** 2);
+  }
+  if (d2 <= tol2 || depth >= 16) {
+    out.push(x3, y3);
+    return;
+  }
+  const [x01, y01] = [(x0 + x1) / 2, (y0 + y1) / 2];
+  const [x12, y12] = [(x1 + x2) / 2, (y1 + y2) / 2];
+  const [x23, y23] = [(x2 + x3) / 2, (y2 + y3) / 2];
+  const [x012, y012] = [(x01 + x12) / 2, (y01 + y12) / 2];
+  const [x123, y123] = [(x12 + x23) / 2, (y12 + y23) / 2];
+  const [xm, ym] = [(x012 + x123) / 2, (y012 + y123) / 2];
+  flattenCubic(x0, y0, x01, y01, x012, y012, xm, ym, tol2, out, depth + 1);
+  flattenCubic(xm, ym, x123, y123, x23, y23, x3, y3, tol2, out, depth + 1);
+}
+
+/** Flattens `segments` (taken through `m` when given) into subpaths with whether each was explicitly closed. */
+export function flattenSubpaths(segments: readonly Segment[], m?: Matrix, tolerance = 0.1): FlattenedSubpath[] {
+  const tol2 = tolerance * tolerance;
+  const out: FlattenedSubpath[] = [];
+  let current: FlattenedSubpath | null = null;
+  let [x, y, sx, sy] = [0, 0, 0, 0];
+  for (const raw of segments) {
+    const s = m === undefined ? raw : mapSegment(raw, m);
+    if (s[0] === 'M') {
+      [x, y, sx, sy] = [s[1], s[2], s[1], s[2]];
+      current = { points: [x, y], closed: false };
+      out.push(current);
+    } else if (s[0] === 'L') {
+      if (current === null) {
+        [x, y, sx, sy] = [s[1], s[2], s[1], s[2]];
+        current = { points: [x, y], closed: false };
+        out.push(current);
+      } else {
+        [x, y] = [s[1], s[2]];
+        current.points.push(x, y);
+      }
+    } else if (s[0] === 'Q') {
+      if (current === null) {
+        [x, y, sx, sy] = [s[1], s[2], s[1], s[2]];
+        current = { points: [x, y], closed: false };
+        out.push(current);
+      }
+      const [qx, qy, ex, ey] = [s[1], s[2], s[3], s[4]];
+      const [c1x, c1y] = [x + (2 / 3) * (qx - x), y + (2 / 3) * (qy - y)];
+      const [c2x, c2y] = [ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey)];
+      flattenCubic(x, y, c1x, c1y, c2x, c2y, ex, ey, tol2, current.points);
+      [x, y] = [ex, ey];
+    } else if (s[0] === 'C') {
+      if (current === null) {
+        [x, y, sx, sy] = [s[1], s[2], s[1], s[2]];
+        current = { points: [x, y], closed: false };
+        out.push(current);
+      }
+      flattenCubic(x, y, s[1], s[2], s[3], s[4], s[5], s[6], tol2, current.points);
+      [x, y] = [s[5], s[6]];
+    } else if (s[0] === 'Z') {
+      if (current !== null) {
+        current.closed = true;
+        [x, y] = [sx, sy];
+        current = { points: [sx, sy], closed: false };
+        out.push(current);
+      }
+    }
+  }
+  return out.filter((sub) => sub.points.length >= 4 || sub.closed);
+}
+
+/** One `[x0, y0, x1, y1, ...]` polyline per subpath of `segments` (taken through `m` when given), closed for filling. */
+export function flattenSegments(segments: readonly Segment[], m?: Matrix, tolerance = 0.1): number[][] {
+  return flattenSubpaths(segments, m, tolerance).map((sub) => {
+    const pts = [...sub.points];
+    if (pts.length >= 4 && (pts[pts.length - 2] !== pts[0] || pts[pts.length - 1] !== pts[1])) {
+      pts.push(pts[0]!, pts[1]!);
+    }
+    return pts;
+  });
+}
+
 const isFinite2 = (...values: number[]): boolean => values.every(Number.isFinite);
 
 /**

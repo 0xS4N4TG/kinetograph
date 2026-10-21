@@ -522,7 +522,7 @@ export type CanvasPaint =
   | { type: 'radial'; x0: number; y0: number; r0: number; x1: number; y1: number; r1: number; stops: CanvasStops }
   /** `angle` in radians, clockwise from 3 o'clock. */
   | { type: 'conic'; x: number; y: number; angle: number; stops: CanvasStops }
-  | { type: 'pattern'; source: CanvasSource; repeatX?: boolean; repeatY?: boolean };
+  | { type: 'pattern'; source: CanvasSource; repeatX?: boolean; repeatY?: boolean; m?: [number, number, number, number, number, number] };
 
 export type CanvasSource =
   /** An image file of the scene, by its `src`. */
@@ -625,6 +625,8 @@ export type CanvasCommand =
       line?: CanvasLine;
       paint: CanvasPaint;
       maxWidth?: number;
+      letterSpacing?: number;
+      wordSpacing?: number;
     } & CanvasState)
   | ({
       op: 'image';

@@ -511,6 +511,16 @@ describe('gradients and patterns', () => {
     ctx.fillStyle = pattern;
     ctx.fillRect(0, 0, 5, 5);
     expect(only(ctx)).toMatchObject({ paint: { type: 'pattern', source: { kind: 'src', src: 'a.png' }, repeatX: true, repeatY: false } });
+    expect((only(ctx) as { paint: { m?: unknown } }).paint.m).toBeUndefined();
+    pattern.setTransform({ a: 2, b: 0, c: 0, d: 2, e: 4, f: 6 });
+    ctx.reset();
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, 5, 5);
+    expect(only(ctx)).toMatchObject({ paint: { type: 'pattern', m: [2, 0, 0, 2, 4, 6] } });
+    pattern.setTransform();
+    expect(pattern.paint()).not.toHaveProperty('m');
+    expect(() => pattern.setTransform('not a matrix')).toThrow(TypeError);
+    expect(() => pattern.setTransform({ a: NaN })).toThrow(TypeError);
     expect(() => ctx.createPattern(image, 'sideways')).toThrow(/not valid/);
     expect(() => ctx.createPattern({}, 'repeat')).toThrow(/picture/);
   });
@@ -568,6 +578,41 @@ describe('text', () => {
     expect(m.actualBoundingBoxLeft).toBe(42);
     expect(m.actualBoundingBoxRight).toBe(0);
     expect(m.fontBoundingBoxAscent).toBe(8);
+  });
+
+  it('parses letterSpacing and wordSpacing in px, omits when 0, and ignores invalid lengths', () => {
+    const ctx = make();
+    ctx.font = '20px Inter';
+    ctx.fillText('hi', 0, 0);
+    expect(ctx.commands.at(-1)).not.toHaveProperty('letterSpacing');
+    expect(ctx.commands.at(-1)).not.toHaveProperty('wordSpacing');
+
+    ctx.letterSpacing = '2px';
+    ctx.wordSpacing = '0.5em';
+    ctx.fillText('hi', 0, 0);
+    expect(ctx.commands.at(-1)).toMatchObject({ letterSpacing: 2, wordSpacing: 10 });
+
+    ctx.letterSpacing = 'bad';
+    ctx.wordSpacing = '5';
+    expect(ctx.letterSpacing).toBe('2px');
+    expect(ctx.wordSpacing).toBe('0.5em');
+
+    ctx.letterSpacing = '0';
+    ctx.wordSpacing = '0px';
+    ctx.fillText('hi', 0, 0);
+    expect(ctx.commands.at(-1)).not.toHaveProperty('letterSpacing');
+    expect(ctx.commands.at(-1)).not.toHaveProperty('wordSpacing');
+  });
+
+  it('swaps start and end alignment when direction is rtl', () => {
+    const ctx = make();
+    ctx.direction = 'rtl';
+    ctx.fillText('a', 0, 0);
+    ctx.textAlign = 'end';
+    ctx.fillText('b', 0, 0);
+    ctx.textAlign = 'left';
+    ctx.fillText('c', 0, 0);
+    expect(ctx.commands.map((c) => (c as { align?: string }).align)).toEqual(['right', 'left', 'left']);
   });
 });
 
@@ -676,5 +721,48 @@ describe('a canvas layer', () => {
     ctx.reset();
     expect(ctx.commands).toEqual([]);
     expect(ctx.fillStyle).toBe('#000000');
+  });
+});
+
+describe('hit testing', () => {
+  it('checks whether a device-space point is inside the current path or a Path2D', () => {
+    const ctx = make();
+    ctx.beginPath();
+    ctx.rect(10, 10, 20, 20);
+    expect(ctx.isPointInPath(15, 15)).toBe(true);
+    expect(ctx.isPointInPath(5, 5)).toBe(false);
+    expect(ctx.isPointInPath(NaN, 15)).toBe(false);
+
+    ctx.reset();
+    ctx.translate(30, 40);
+    ctx.beginPath();
+    ctx.rect(0, 0, 10, 10);
+    expect(ctx.isPointInPath(35, 45)).toBe(true);
+    expect(ctx.isPointInPath(5, 5)).toBe(false);
+
+    ctx.reset();
+    ctx.beginPath();
+    ctx.rect(0, 0, 20, 20);
+    ctx.rect(5, 5, 10, 10);
+    expect(ctx.isPointInPath(10, 10, 'nonzero')).toBe(true);
+    expect(ctx.isPointInPath(10, 10, 'evenodd')).toBe(false);
+
+    ctx.reset();
+    ctx.scale(2, 2);
+    const path = new Path2D();
+    path.rect(0, 0, 10, 10);
+    expect(ctx.isPointInPath(path, 15, 15)).toBe(true);
+    expect(ctx.isPointInPath(path, 25, 25)).toBe(false);
+    expect(() => ctx.isPointInPath(0, 0, 'bad' as 'nonzero')).toThrow(TypeError);
+  });
+
+  it('checks whether a device-space point is within the stroke width of a path', () => {
+    const ctx = make();
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(10, 10);
+    ctx.lineTo(30, 10);
+    expect(ctx.isPointInStroke(20, 11.5)).toBe(true);
+    expect(ctx.isPointInStroke(20, 13)).toBe(false);
   });
 });
