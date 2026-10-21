@@ -19,6 +19,7 @@
 //!   have) is copied into a `<defs>`;
 //! - a shape's dashes are scaled by its `pathLength`.
 
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 
 use blitz_dom::util::ToColorColor;
@@ -151,14 +152,13 @@ pub fn canonical_tag(tag: &str) -> String {
         "radialGradient",
         "textPath",
     ];
-    let lower = tag.to_ascii_lowercase();
     NAMES
         .iter()
-        .find(|n| n.to_ascii_lowercase() == lower)
+        .find(|n| n.eq_ignore_ascii_case(tag))
         .map_or_else(|| tag.to_string(), |n| (*n).to_string())
 }
 
-pub fn canonical_attr(name: &str) -> String {
+pub fn canonical_attr(name: &str) -> Cow<'_, str> {
     const NAMES: [&str; 43] = [
         "viewBox",
         "preserveAspectRatio",
@@ -204,14 +204,13 @@ pub fn canonical_attr(name: &str) -> String {
         "startOffset",
         "pathLength",
     ];
-    let lower = name.to_ascii_lowercase();
-    if lower == "xlinkhref" || lower == "xlink:href" {
-        return "xlink:href".to_string();
+    if name.eq_ignore_ascii_case("xlinkhref") || name.eq_ignore_ascii_case("xlink:href") {
+        return Cow::Borrowed("xlink:href");
     }
     NAMES
         .iter()
-        .find(|n| n.to_ascii_lowercase() == lower)
-        .map_or_else(|| name.to_string(), |n| (*n).to_string())
+        .find(|n| n.eq_ignore_ascii_case(name))
+        .map_or(Cow::Borrowed(name), |n| Cow::Borrowed(*n))
 }
 
 /// The subtree of `node` as SVG source with the root `size` big.
@@ -388,11 +387,11 @@ impl Writer<'_> {
         for a in el.attrs() {
             let name = canonical_attr(&a.name.local);
             let value = a.value.to_string();
-            match name.as_str() {
+            match &*name {
                 "style" => decls = css::declarations(&value),
                 "xmlns" => {}
                 n if n.starts_with("xmlns:") || n.starts_with("data-") => {}
-                _ => attrs.push((name, value)),
+                _ => attrs.push((name.into_owned(), value)),
             }
         }
         let color = self.current_color(id);

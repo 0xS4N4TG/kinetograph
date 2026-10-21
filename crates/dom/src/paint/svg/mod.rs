@@ -79,6 +79,62 @@ pub fn paint_svg(
     path: &str,
 ) -> SvgPaint {
     let serialized = serialize::serialize(doc, node_id, size);
+    // The same SVG text is painted again by the next frame, and by each
+    // sample of a motion-blurred layer. What it paints is a function of the
+    // text, the sizes and the ids when it needs no file, font or filter.
+    let key = (serialized.filters.is_empty()
+        && !serialized.xml.contains("<image")
+        && !serialized.xml.contains("<text")
+        && !serialized.xml.contains("<use"))
+    .then(|| {
+        (
+            serialized.xml.clone(),
+            id.to_string(),
+            path.to_string(),
+            [size[0].to_bits(), size[1].to_bits()],
+            [
+                request.viewport.width.to_bits(),
+                request.viewport.height.to_bits(),
+            ],
+            serialized.overflow_visible,
+        )
+    });
+    if let Some(key) = &key
+        && let Some(hit) = SVG_PAINTS.with(|c| c.borrow().get(key).cloned())
+    {
+        return hit;
+    }
+    let painted = paint_serialized(doc, request, size, id, path, serialized);
+    if let Some(key) = key {
+        SVG_PAINTS.with(|c| {
+            let mut c = c.borrow_mut();
+            if c.len() >= SVG_PAINTS_MAX {
+                c.clear();
+            }
+            c.insert(key, painted.clone());
+        });
+    }
+    painted
+}
+
+type SvgKey = (String, String, String, [u64; 2], [u64; 2], bool);
+
+/// How many painted SVGs are kept before the lot is dropped.
+const SVG_PAINTS_MAX: usize = 4096;
+
+thread_local! {
+    static SVG_PAINTS: std::cell::RefCell<std::collections::HashMap<SvgKey, SvgPaint>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn paint_serialized(
+    doc: &BaseDocument,
+    request: &IslandRequest,
+    size: [f64; 2],
+    id: &str,
+    path: &str,
+    serialized: serialize::Serialized,
+) -> SvgPaint {
     let mut notes = serialized.notes.clone();
     let fail = |notes: Vec<Note>, reason: String| SvgPaint {
         layer: None,
