@@ -171,6 +171,20 @@ fn container_island(width: &str, css: &str) -> kinetograph_dom::document::Island
 }
 
 #[test]
+fn a_container_style_query_reads_the_containers_custom_properties() {
+    let css = ".c{--theme:dark}.i{height:10px}\
+               @container style(--theme: dark){.i{height:50px}}\
+               @container style(--theme: light){.i{height:70px}}";
+    assert_eq!(bounds(&container_island("100px", css), "$0.0.0").3, 50.0);
+    // Another value, or none, does not match.
+    let css = ".c{--theme:light}.i{height:10px}\
+               @container style(--theme: dark){.i{height:50px}}";
+    assert_eq!(bounds(&container_island("100px", css), "$0.0.0").3, 10.0);
+    let css = ".i{height:10px}@container style(--theme: dark){.i{height:50px}}";
+    assert_eq!(bounds(&container_island("100px", css), "$0.0.0").3, 10.0);
+}
+
+#[test]
 fn container_query_matches_the_containers_content_box_after_layout() {
     let css = ".c{container-type:inline-size}.i{height:10px}\
                @container (min-width:200px){.i{height:50px}}";

@@ -95,6 +95,7 @@ pub fn enable_css_features() {
     style_config::set_pref!("layout.css.at-scope.enabled", true);
     style_config::set_pref!("layout.css.light-dark.images.enabled", true);
     style_config::set_pref!("layout.css.starting-style-at-rules.enabled", true);
+    style_config::set_pref!("layout.css.style-queries.enabled", true);
 }
 
 /// Builds the DOM of `request` (no style or layout yet).
