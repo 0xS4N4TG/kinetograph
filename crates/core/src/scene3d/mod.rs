@@ -33,7 +33,7 @@ use model::ClipRef;
 
 /// The most lights a scene has, ambient ones included.
 pub const MAX_LIGHTS: usize = 8;
-/// The most directional lights that cast shadows.
+/// The most lights that cast shadows.
 pub const MAX_SHADOW_LIGHTS: usize = 4;
 /// The largest side of a shadow map, in texels.
 pub const MAX_SHADOW_MAP: u32 = 4096;
@@ -210,6 +210,10 @@ pub enum Light3d {
         intensity: Num,
         #[serde(default = "zero")]
         range: Num,
+        #[serde(default)]
+        cast_shadow: bool,
+        #[serde(default)]
+        shadow: Shadow3d,
     },
 }
 
@@ -642,6 +646,8 @@ pub enum ResolvedLight3d {
         cos_inner: f64,
         color: [f64; 3],
         range: f64,
+        /// `None`: it casts no shadows.
+        shadow: Option<Shadow3d>,
     },
 }
 
@@ -778,56 +784,63 @@ impl Scene3dLayer {
         }
         let mut casters = 0;
         for light in &self.lights {
-            match light {
+            let shadow = match light {
                 Light3d::Directional {
                     cast_shadow: true,
                     shadow,
                     ..
-                } => {
-                    casters += 1;
-                    if !(64..=MAX_SHADOW_MAP).contains(&shadow.map_size) {
-                        return bad(format!(
-                            "shadow mapSize must be 64 to {MAX_SHADOW_MAP}, got {}",
-                            shadow.map_size
-                        ));
-                    }
-                    for (what, v) in [
-                        ("bias", shadow.bias),
-                        ("normalBias", shadow.normal_bias),
-                        ("radius", shadow.radius),
-                    ] {
-                        if !(v.is_finite() && v >= 0.0) {
-                            return bad(format!("shadow {what} must be 0 or more, got {v}"));
-                        }
+                }
+                | Light3d::Spot {
+                    cast_shadow: true,
+                    shadow,
+                    ..
+                } => Some(shadow),
+                _ => None,
+            };
+            if let Some(shadow) = shadow {
+                casters += 1;
+                if !(64..=MAX_SHADOW_MAP).contains(&shadow.map_size) {
+                    return bad(format!(
+                        "shadow mapSize must be 64 to {MAX_SHADOW_MAP}, got {}",
+                        shadow.map_size
+                    ));
+                }
+                for (what, v) in [
+                    ("bias", shadow.bias),
+                    ("normalBias", shadow.normal_bias),
+                    ("radius", shadow.radius),
+                ] {
+                    if !(v.is_finite() && v >= 0.0) {
+                        return bad(format!("shadow {what} must be 0 or more, got {v}"));
                     }
                 }
-                Light3d::Spot {
-                    angle, penumbra, ..
-                } => {
-                    if !(angle.min().is_finite()
-                        && angle.max().is_finite()
-                        && angle.min() >= 0.0
-                        && angle.max() <= 90.0)
-                    {
-                        return bad(format!(
-                            "spot light angle must be 0 to 90 degrees, got {}..{}",
-                            angle.min(),
-                            angle.max()
-                        ));
-                    }
-                    if !(penumbra.min().is_finite()
-                        && penumbra.max().is_finite()
-                        && penumbra.min() >= 0.0
-                        && penumbra.max() <= 1.0)
-                    {
-                        return bad(format!(
-                            "spot light penumbra must be 0 to 1, got {}..{}",
-                            penumbra.min(),
-                            penumbra.max()
-                        ));
-                    }
+            }
+            if let Light3d::Spot {
+                angle, penumbra, ..
+            } = light
+            {
+                if !(angle.min().is_finite()
+                    && angle.max().is_finite()
+                    && angle.min() >= 0.0
+                    && angle.max() <= 90.0)
+                {
+                    return bad(format!(
+                        "spot light angle must be 0 to 90 degrees, got {}..{}",
+                        angle.min(),
+                        angle.max()
+                    ));
                 }
-                _ => {}
+                if !(penumbra.min().is_finite()
+                    && penumbra.max().is_finite()
+                    && penumbra.min() >= 0.0
+                    && penumbra.max() <= 1.0)
+                {
+                    return bad(format!(
+                        "spot light penumbra must be 0 to 1, got {}..{}",
+                        penumbra.min(),
+                        penumbra.max()
+                    ));
+                }
             }
         }
         if casters > MAX_SHADOW_LIGHTS {
@@ -946,6 +959,8 @@ impl Scene3dLayer {
                     color,
                     intensity,
                     range,
+                    cast_shadow,
+                    shadow,
                 } => {
                     let angle_rad = angle.at(f).clamp(0.0, 90.0).to_radians();
                     let pen = penumbra.at(f).clamp(0.0, 1.0);
@@ -956,6 +971,7 @@ impl Scene3dLayer {
                         cos_inner: (angle_rad * (1.0 - pen)).cos(),
                         color: scaled(*color, intensity.at(f).max(0.0)),
                         range: range.at(f).max(0.0),
+                        shadow: cast_shadow.then_some(*shadow),
                     }
                 }
             })

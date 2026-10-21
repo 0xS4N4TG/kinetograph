@@ -424,6 +424,47 @@ fn shadow_maps_are_deterministic_and_follow_the_frame() {
 }
 
 #[test]
+fn a_spot_light_casts_shadows_within_its_cone() {
+    // Top-down orthographic view (10 x 10 units on 100 x 100 canvas, +x right, -z up).
+    // Spot light at (-1, 5, 0) pointing toward (1, -2.5, 0), angle 35 deg:
+    // the 1x1x1 box at (0, 0.5, 0) throws a shadow on the ground at x = 0.5..0.875 (pixel 55..58, y = 50),
+    // while ground at (-0.8, 0, 0) (pixel 42, 50) is inside the cone in the open,
+    // and ground at (-4.5, 0, 0) (pixel 5, 50) is outside the cone.
+    let spot_shadow_scene = |cast: bool| {
+        let cast_field = if cast { r#", "castShadow": true"# } else { "" };
+        render(&format!(
+            r##""camera": {{"type": "orthographic", "height": 10, "position": [0, 10, 0], "up": [0, 0, -1]}},
+               "lights": [{{"type": "ambient", "intensity": 0.2}},
+                          {{"type": "spot", "position": [-1, 5, 0], "direction": [1, -2.5, 0],
+                            "angle": 35, "penumbra": 0.1, "intensity": 20 {cast_field}}}],
+               "objects": [
+                 {{"type": "mesh", "geometry": {{"kind": "plane", "width": 12, "height": 12}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "rotation": [-90, 0, 0], "receiveShadow": true}},
+                 {{"type": "mesh", "geometry": {{"kind": "box", "width": 1, "height": 1, "depth": 1}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "position": [0, 0.5, 0], "castShadow": true}}]"##
+        ))
+    };
+    let on = spot_shadow_scene(true);
+    let off = spot_shadow_scene(false);
+    // In the box's shadow (x = 0.7, pixel 57): only ambient (0.2 -> sRGB ~124).
+    let shaded = px(&on, 57, 50);
+    assert!((i32::from(shaded[0]) - 124).abs() <= 3, "{shaded:?}");
+    assert!(
+        px(&off, 57, 50)[0] > 160,
+        "lit when castShadow is off: {:?}",
+        px(&off, 57, 50)
+    );
+    // Open ground inside the cone (x = -0.8, pixel 42): lit and identical to castShadow off.
+    let open = px(&on, 42, 50);
+    assert!(open[0] > 180, "{open:?}");
+    assert_eq!(open, px(&off, 42, 50));
+    // Outside the cone (x = -4.5, pixel 5): unaffected (only ambient).
+    let outside = px(&on, 5, 50);
+    assert!((i32::from(outside[0]) - 124).abs() <= 3, "{outside:?}");
+    assert_eq!(outside, px(&off, 5, 50));
+}
+
+#[test]
 fn bad_shadow_settings_name_the_problem() {
     let err = |light: &str| {
         let json = format!(
@@ -439,7 +480,13 @@ fn bad_shadow_settings_name_the_problem() {
     let cast = r#"{"type": "directional", "castShadow": true"#;
     assert!(err(&format!(r#"{cast}, "shadow": {{"mapSize": 8192}}}}"#)).contains("mapSize"));
     assert!(err(&format!(r#"{cast}, "shadow": {{"bias": -1}}}}"#)).contains("bias"));
-    let five = vec![format!("{cast}}}"); 5].join(",");
+    let spot_cast = r#"{"type": "spot", "position": [0, 5, 0], "castShadow": true"#;
+    assert!(err(&format!(r#"{spot_cast}, "shadow": {{"mapSize": 8192}}}}"#)).contains("mapSize"));
+    let five = vec![format!("{cast}}}"); 4]
+        .into_iter()
+        .chain([format!("{spot_cast}}}")])
+        .collect::<Vec<_>>()
+        .join(",");
     assert!(err(&five).contains("5 lights that cast shadows"));
 }
 

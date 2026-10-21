@@ -186,12 +186,16 @@ fn filter_shadow(
 fn shadow_visibility(slot: i32, world: vec3<f32>, n: vec3<f32>, n_dot_l: f32) -> f32 {
     let s = frame.shadows[slot];
     let sin_theta = sqrt(max(1.0 - n_dot_l * n_dot_l, 0.0));
-    let clip = s.view_proj * vec4<f32>(world + n * (s.params.y * sin_theta), 1.0);
-    let uv = vec2<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
+    let c = s.view_proj * vec4<f32>(world + n * (s.params.y * sin_theta), 1.0);
+    if c.w <= 0.0 {
+        return 1.0;
+    }
+    let ndc = c.xyz / c.w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
     // A point beyond the map's far plane (the casters end there, the ground
     // may not) is compared at depth 1, where an empty texel also is: lit,
     // unless something nearer is in the way.
-    let depth = min(clip.z - s.params.x, 1.0);
+    let depth = min(ndc.z - s.params.x, 1.0);
     if any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) {
         return 1.0;
     }

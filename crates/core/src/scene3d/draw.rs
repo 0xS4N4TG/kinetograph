@@ -260,6 +260,61 @@ impl Shadow {
             radius: config.radius as f32,
         })
     }
+
+    /// The perspective shadow map of a spot light at `position` pointing along
+    /// unit `forward` with outer cone cosine `cos_outer`, fitted in depth to
+    /// the casters' world-space `corners`.
+    fn fit_spot(
+        position: DVec3,
+        forward: DVec3,
+        cos_outer: f64,
+        config: &Shadow3d,
+        corners: &[DVec3],
+    ) -> Option<Shadow> {
+        let up = if forward.y.abs() < 0.99 {
+            DVec3::Y
+        } else {
+            DVec3::Z
+        };
+        let view = look(position, forward, up);
+        let mut min_depth = f64::INFINITY;
+        let mut max_depth = f64::NEG_INFINITY;
+        for p in corners {
+            let depth = -view.transform_point3(*p).z;
+            if depth > 0.0 {
+                min_depth = min_depth.min(depth);
+                max_depth = max_depth.max(depth);
+            }
+        }
+        if !min_depth.is_finite() {
+            return None;
+        }
+        let map = f64::from(config.map_size);
+        let fov = 2.0 * cos_outer.clamp(-1.0, 1.0).acos();
+        let half_tan = (fov / 2.0).tan().max(1e-4);
+        let fov_extra = 2.0 * ((config.radius.ceil() + 2.0) * 2.0 * half_tan / map).atan();
+        let full_fov = (fov + fov_extra).min(170.0_f64.to_radians());
+        let mid_depth = (min_depth + max_depth) / 2.0;
+        let texel = 2.0 * (full_fov / 2.0).tan() * mid_depth / map;
+        let pad = (config.bias + config.normal_bias + 2.0) * texel;
+        let far = (max_depth + pad).max(1e-3);
+        let near = (min_depth - pad).max(0.05 * far);
+        let f = 1.0 / (full_fov / 2.0).tan();
+        let depth = near - far;
+        let proj = DMat4::from_cols(
+            DVec4::new(f, 0.0, 0.0, 0.0),
+            DVec4::new(0.0, f, 0.0, 0.0),
+            DVec4::new(0.0, 0.0, far / depth, -1.0),
+            DVec4::new(0.0, 0.0, near * far / depth, 0.0),
+        );
+        Some(Shadow {
+            view_proj: (proj * view).as_mat4(),
+            map_size: config.map_size,
+            bias: (config.bias * 1e-3) as f32,
+            normal_bias: (config.normal_bias * texel) as f32,
+            radius: config.radius as f32,
+        })
+    }
 }
 
 pub struct DrawScene {
@@ -420,8 +475,20 @@ impl Assets3d {
         let (view, projection) = view_projection(&scene.camera, size.0 / size.1);
         let mut ambient = [0.0_f32; 3];
         let mut lights = Vec::new();
-        // The lights that cast shadows: their index in `lights`, the way
-        // they travel and their settings.
+        enum ShadowKind {
+            Directional {
+                direction: DVec3,
+                config: Shadow3d,
+            },
+            Spot {
+                position: DVec3,
+                direction: DVec3,
+                cos_outer: f64,
+                config: Shadow3d,
+            },
+        }
+        // The lights that cast shadows: their index in `lights` and their
+        // parameters.
         let mut shadow_lights = Vec::new();
         for light in &scene.lights {
             match light {
@@ -436,7 +503,13 @@ impl Assets3d {
                     shadow,
                 } => {
                     if let Some(config) = shadow {
-                        shadow_lights.push((lights.len(), *direction, *config));
+                        shadow_lights.push((
+                            lights.len(),
+                            ShadowKind::Directional {
+                                direction: *direction,
+                                config: *config,
+                            },
+                        ));
                     }
                     lights.push(Light {
                         vector: (-*direction).as_vec3().to_array(),
@@ -470,16 +543,30 @@ impl Assets3d {
                     cos_inner,
                     color,
                     range,
-                } => lights.push(Light {
-                    vector: position.as_vec3().to_array(),
-                    kind: 2,
-                    color: color.map(|c| c as f32),
-                    range: *range as f32,
-                    spot_dir: direction.as_vec3().to_array(),
-                    cos_outer: *cos_outer as f32,
-                    cos_inner: *cos_inner as f32,
-                    shadow: None,
-                }),
+                    shadow,
+                } => {
+                    if let Some(config) = shadow {
+                        shadow_lights.push((
+                            lights.len(),
+                            ShadowKind::Spot {
+                                position: *position,
+                                direction: *direction,
+                                cos_outer: *cos_outer,
+                                config: *config,
+                            },
+                        ));
+                    }
+                    lights.push(Light {
+                        vector: position.as_vec3().to_array(),
+                        kind: 2,
+                        color: color.map(|c| c as f32),
+                        range: *range as f32,
+                        spot_dir: direction.as_vec3().to_array(),
+                        cos_outer: *cos_outer as f32,
+                        cos_inner: *cos_inner as f32,
+                        shadow: None,
+                    });
+                }
             }
         }
         lights.truncate(MAX_LIGHTS);
@@ -586,9 +673,19 @@ impl Assets3d {
                 }
             }
         }
-        for (index, direction, config) in shadow_lights {
+        for (index, kind) in shadow_lights {
             if let Some(light) = lights.get_mut(index) {
-                light.shadow = Shadow::fit(direction, &config, &casters);
+                light.shadow = match kind {
+                    ShadowKind::Directional { direction, config } => {
+                        Shadow::fit(direction, &config, &casters)
+                    }
+                    ShadowKind::Spot {
+                        position,
+                        direction,
+                        cos_outer,
+                        config,
+                    } => Shadow::fit_spot(position, direction, cos_outer, &config, &casters),
+                };
             }
         }
         // Farthest first: the most negative view-space z.
@@ -777,6 +874,29 @@ mod tests {
         let at = DVec3::new(0.0, 1.0, 0.0);
         assert!(toward_light(at - forward) < toward_light(at));
         assert!(Shadow::fit(forward, &config, &[]).is_none());
+    }
+
+    #[test]
+    fn a_spot_shadow_map_fits_casters_in_its_perspective_cone() {
+        let casters = corners(DVec3::new(-0.5, 0.5, -0.5), DVec3::new(0.5, 1.5, 0.5));
+        let config = Shadow3d::default();
+        let position = DVec3::new(0.0, 5.0, 0.0);
+        let forward = DVec3::NEG_Y;
+        let cos_outer = 30.0_f64.to_radians().cos();
+        let shadow = Shadow::fit_spot(position, forward, cos_outer, &config, &casters).unwrap();
+        for p in &casters {
+            let clip = shadow.view_proj * p.as_vec3().extend(1.0);
+            assert!(clip.w > 0.0, "{clip}");
+            let ndc = clip.truncate() / clip.w;
+            assert!(
+                ndc.x > -1.0 && ndc.x < 1.0 && ndc.y > -1.0 && ndc.y < 1.0,
+                "{ndc}"
+            );
+            assert!(ndc.z > 0.0 && ndc.z < 1.0, "{ndc}");
+        }
+        let behind = corners(DVec3::new(-1.0, 6.0, -1.0), DVec3::new(1.0, 8.0, 1.0));
+        assert!(Shadow::fit_spot(position, forward, cos_outer, &config, &behind).is_none());
+        assert!(Shadow::fit_spot(position, forward, cos_outer, &config, &[]).is_none());
     }
 
     #[test]

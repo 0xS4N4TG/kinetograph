@@ -575,7 +575,7 @@ GLSL fragment shader that mixes the scene going out with the scene coming in) ar
 A **spot light** is `{ "type": "spot", "position", "direction" (default [0, 0, -1]), "angle" (half-angle in degrees, 0 to 90,
 default 30), "penumbra" (0 to 1, default 0.2: the share of the cone, from its edge in, over which the light fades),
 "color", "intensity", "range" }`: a point light inside a cone (a smoothstep between the outer and the inner angle). It
-casts no shadow. **Fog** is `"fog": { "color", "near", "far" }` (linear, by distance from the camera) or `{ "color",
+casts a shadow with `castShadow` (see [shadows](#3d-shadows)). **Fog** is `"fog": { "color", "near", "far" }` (linear, by distance from the camera) or `{ "color",
 "density" }` (`1 - exp(-(density * distance)^2)`); it covers the objects, not the environment background.
 
 A 3D scene, drawn by the engine's own renderer into the box `(0, 0, width, height)` and then a layer like any other: it
@@ -699,7 +699,7 @@ plus GGX specular per light, and the environment if there is one.
     kind of thing is listed once for a file as unsupported content on every frame that draws the model (element
     `Model`, property the feature, value the file), so `render`, `still` and `strip` warn and `--strict` fails (COMPAT.md
     §6.1); the addon's `modelUnsupported(src, baseDir)` is what lists them.
-- <a id="3d-shadows"></a>**Shadows.** A directional light with `castShadow: true` draws a shadow map: a depth image of the
+- <a id="3d-shadows"></a>**Shadows.** A directional or spot light with `castShadow: true` draws a shadow map (a spot light's is a perspective view along its cone, with the same `shadow` settings): a depth image of the
   objects with `castShadow` seen along the light, fitted automatically to their boxes (so the map's resolution follows
   the scene's size, and a ground plane that only receives does not stretch it). The objects with `receiveShadow` are
   dimmed in the light by what the map says is in the way, with a 3 x 3 percentage-closer filter; the light's own
@@ -716,7 +716,7 @@ plus GGX specular per light, and the environment if there is one.
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Point-light shadows, spot-light shadows, occlusion and emissive maps, bevels, post effects
+- **Not drawn (v1).** Point-light shadows, occlusion and emissive maps, bevels, post effects
   beyond the layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).
 

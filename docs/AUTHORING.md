@@ -699,8 +699,8 @@ Mapping onto the engine:
   extensions (a delay of 10 ms or less shows for 100 ms, as in the `gif` layer; checked against the engine's
   `probeMedia` on the repository's GIFs). `playbackRate` scales the time and shortens `durationInFrames`; a `loop`
   without a `durationInFrames` is `loopBehavior="loop"`. With `className`, `style` or a crop the layer sits in a `div`.
-  A file that is not an animated GIF is drawn as a still (`Img`); an animated PNG or WebP is that too, with a warning,
-  because the engine decodes GIF animation only.
+  A file that is not animated (a PNG or WebP without animation) is drawn as a still (`Img`); an animated GIF, APNG or WebP
+  plays through the `gif` layer.
 - Names that exist so a project bundles: `Html5Audio` and `Html5Video` are `Audio` and `Video`; `MediaPlaybackError`
   is Remotion's error class; `Experimental.Clipper` and `Experimental.Null` throw when rendered (Remotion removed them
   in 4.0.228) and `Experimental.useIsPlayer()` is false; `Config.*` calls do nothing and say once that there is no
