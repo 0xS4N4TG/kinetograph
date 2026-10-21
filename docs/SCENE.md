@@ -928,11 +928,11 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 
 | Field | Meaning |
 |---|---|
-| `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..128. |
+| `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..512. |
 
 The blur is a Gaussian, run in linear light on premultiplied colour. Large radii are blurred at reduced resolution, but
 never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. In tests (`tests/blur.rs`) the
-measured standard deviation is within 5% of `radius` for radii from 2 to 128, and a small layer's blur follows its
+measured standard deviation is within 5% of `radius` for radii from 2 to 512, and a small layer's blur follows its
 position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to know:
 
 - It does not scale with the layer's `scale` or a parent group's `scale`; the radius is always in canvas pixels.

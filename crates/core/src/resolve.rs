@@ -567,8 +567,13 @@ pub enum ResolvedGradientGeometry {
     },
 }
 
-/// Largest blur radius; bigger values are clamped.
+/// Largest radius of the backdrop blur and the glow; bigger values are clamped.
 pub const MAX_BLUR_RADIUS: f64 = 128.0;
+
+/// Largest radius of the `blur` effect; bigger values are clamped. The blur works on
+/// a copy of the layer `3 * radius` larger on every side (shrunk by levels), so this
+/// bounds its memory too.
+pub const MAX_LAYER_BLUR_RADIUS: f64 = 512.0;
 
 /// Largest glow intensity; bigger values are clamped.
 pub const MAX_GLOW_INTENSITY: f64 = 4.0;
@@ -1339,7 +1344,7 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
     let f = clock.t;
     match effect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
-            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            radius: radius.at(f).clamp(0.0, MAX_LAYER_BLUR_RADIUS) as f32,
         },
         Effect::BackdropBlur { radius } => ResolvedEffect::BackdropBlur {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,

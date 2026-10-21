@@ -127,13 +127,13 @@ impl<'a> Painter<'a> {
         }
         // Blurs past the limit of the blur effect are clamped.
         if style.get_effects().filter.0.iter().any(
-            |f| matches!(f, style::values::generics::effects::Filter::Blur(r) if r.0.px() > 128.0),
+            |f| matches!(f, style::values::generics::effects::Filter::Blur(r) if r.0.px() > 512.0),
         ) {
             self.report(
                 node,
                 "filter",
                 "blur",
-                "a blur above 128px is limited to 128px",
+                "a blur above 512px is limited to 512px",
             );
         }
     }

@@ -80,6 +80,56 @@ fn blur_radius_is_the_standard_deviation() {
     }
 }
 
+/// The error function, to 1.5e-7 (Abramowitz and Stegun 7.1.26).
+fn erf(x: f64) -> f64 {
+    let t = 1.0 / (1.0 + 0.3275911 * x.abs());
+    let poly = t
+        * (0.254829592
+            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    (1.0 - poly * (-x * x).exp()).copysign(x)
+}
+
+#[test]
+fn large_radii_are_blurred_too() {
+    // A big white square blurred up to the limit of 512: its centre and the
+    // middle of one edge follow the Gaussian's integral over the square.
+    for (size, side, radius) in [
+        (2048, 600.0, 200.0),
+        (2048, 600.0, 256.0),
+        (4096, 1200.0, 512.0),
+    ] {
+        let json = format!(
+            r##"{{"width": {size}, "height": {size}, "fps": 30, "durationInFrames": 1,
+                "layers": [{{"id": "sq", "type": "shape", "fill": "#ffffff",
+                    "shape": {{"kind": "rect", "width": {side}, "height": {side}}},
+                    "transform": {{"x": {o}, "y": {o}}},
+                    "effects": [{{"type": "blur", "radius": {radius}}}]}}]}}"##,
+            o = (size as f64 - side) / 2.0
+        );
+        let rows = red(&render(&json));
+        let mid = size / 2;
+        let half = side / 2.0;
+        // Fraction of the square's mass inside a half-width `a` of the centre line,
+        // seen from `d` away.
+        let cover = |d: f64| {
+            0.5 * (erf((half - d) / (radius * 2f64.sqrt()))
+                + erf((half + d) / (radius * 2f64.sqrt())))
+        };
+        let centre = cover(0.0) * cover(0.0);
+        let edge = cover(half) * cover(0.0);
+        let got_centre = rows[mid][mid];
+        let got_edge = rows[mid][(size as f64 / 2.0 - half) as usize];
+        assert!(
+            (got_centre / centre - 1.0).abs() < 0.03,
+            "radius {radius}: centre {got_centre}, want {centre}"
+        );
+        assert!(
+            (got_edge / edge - 1.0).abs() < 0.03,
+            "radius {radius}: edge {got_edge}, want {edge}"
+        );
+    }
+}
+
 #[test]
 fn blurred_layer_follows_its_position() {
     // Moving a small layer one pixel at a time must move its blur by the same
