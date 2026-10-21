@@ -447,6 +447,18 @@ fn channels(audio: &AudioPcm) -> Vec<&[f32]> {
     audio.channels.iter().map(|c| &**c).collect()
 }
 
+/// The `yuv420p` planes (Y, U, V, rows packed) the encoder would make of a
+/// straight-alpha RGBA8 frame, converted on the calling thread. A render
+/// worker converts its own frames so that one encoder thread only sends them
+/// (`VideoWriter.pushYuv`).
+#[napi]
+pub fn rgba_to_yuv(rgba: Buffer, width: f64, height: f64) -> Result<Buffer> {
+    let (width, height) = (count("width", width)?, count("height", height)?);
+    kinetograph_cli::encode::rgba_to_yuv420(&rgba, width, height)
+        .map(Buffer::from)
+        .map_err(|e| invalid(e))
+}
+
 /// A scene that opens the GPU and nothing else: `new Renderer()` has no scene
 /// yet, and the renderer is made with one.
 const EMPTY_SCENE: &str =
@@ -681,6 +693,21 @@ impl VideoWriter {
             let mut gpu = shared.lock();
             self.writer()?
                 .push_frame(&mut gpu, scene, frame)
+                .map_err(from_render)
+        })();
+        if pushed.is_err() {
+            self.close();
+        }
+        pushed
+    }
+
+    /// Queues a frame that `rgbaToYuv` converted (in a render worker).
+    #[napi]
+    pub fn push_yuv(&mut self, yuv: Buffer, frame: f64) -> Result<()> {
+        let pushed = (|| {
+            let frame = count("frame", frame)?;
+            self.writer()?
+                .push_converted(frame, yuv.to_vec())
                 .map_err(from_render)
         })();
         if pushed.is_err() {

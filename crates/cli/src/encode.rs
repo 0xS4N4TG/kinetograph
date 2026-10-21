@@ -155,6 +155,74 @@ pub fn set_bt709(
     Ok(())
 }
 
+/// swscale's RGBA to `yuv420p` conversion, BT.709 with full-range RGB in and limited-range YUV out.
+fn rgba_scaler(width: u32, height: u32) -> Result<scaling::Context, String> {
+    let mut scaler = scaling::Context::get(
+        Pixel::RGBA,
+        width,
+        height,
+        Pixel::YUV420P,
+        width,
+        height,
+        ScaleFlags::BICUBIC | ScaleFlags::ACCURATE_RND,
+    )
+    .map_err(|e| format!("cannot set up the RGBA to YUV conversion: {e}"))?;
+    set_bt709(&mut scaler, true, false)?;
+    Ok(scaler)
+}
+
+/// What `rgba_to_yuv420` keeps per thread: the converter for the last size, and its source picture.
+struct Converter {
+    scaler: scaling::Context,
+    rgba: frame::Video,
+    size: (u32, u32),
+}
+
+thread_local! {
+    static CONVERTER: std::cell::RefCell<Option<Converter>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Copies the visible part of each plane of `yuv` into one buffer: Y, then U, then V, rows tightly packed.
+fn pack_planes(yuv: &frame::Video) -> Vec<u8> {
+    let mut out = Vec::new();
+    for plane in 0..3 {
+        let (w, h, stride) = (yuv.plane_width(plane) as usize, yuv.plane_height(plane) as usize, yuv.stride(plane));
+        let data = yuv.data(plane);
+        for y in 0..h {
+            out.extend_from_slice(&data[y * stride..y * stride + w]);
+        }
+    }
+    out
+}
+
+/// Converts a tightly packed RGBA8 picture to `yuv420p` the way the encoder does (`VideoEncoder::push`), on the calling
+/// thread, so several threads can convert while one encoder only has to send: the planes Y, U, V, rows packed.
+pub fn rgba_to_yuv420(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    if rgba.len() != width as usize * height as usize * 4 {
+        return Err(format!("frame has {} bytes, expected {} for {width}x{height} RGBA", rgba.len(), width as usize * height as usize * 4));
+    }
+    CONVERTER.with(|cell| {
+        let mut held = cell.borrow_mut();
+        if held.as_ref().is_none_or(|c| c.size != (width, height)) {
+            *held = Some(Converter {
+                scaler: rgba_scaler(width, height)?,
+                rgba: frame::Video::new(Pixel::RGBA, width, height),
+                size: (width, height),
+            });
+        }
+        let c = held.as_mut().expect("set above");
+        let row = width as usize * 4;
+        let stride = c.rgba.stride(0);
+        let dst = c.rgba.data_mut(0);
+        for (y, line) in rgba.chunks_exact(row).enumerate() {
+            dst[y * stride..y * stride + row].copy_from_slice(line);
+        }
+        let mut yuv = frame::Video::empty();
+        c.scaler.run(&c.rgba, &mut yuv).map_err(|e| format!("cannot convert a frame to YUV: {e}"))?;
+        Ok(pack_planes(&yuv))
+    })
+}
+
 /// An open output file taking RGBA frames, one after another.
 pub struct VideoEncoder {
     output: format::context::Output,
@@ -250,17 +318,7 @@ impl VideoEncoder {
             .map(|s| s.time_base())
             .unwrap_or(time_base);
 
-        let mut scaler = scaling::Context::get(
-            Pixel::RGBA,
-            width,
-            height,
-            Pixel::YUV420P,
-            width,
-            height,
-            ScaleFlags::BICUBIC | ScaleFlags::ACCURATE_RND,
-        )
-        .map_err(err("cannot set up the RGBA to YUV conversion"))?;
-        set_bt709(&mut scaler, true, false)?;
+        let scaler = rgba_scaler(width, height)?;
 
         Ok(VideoEncoder {
             output,
@@ -297,6 +355,31 @@ impl VideoEncoder {
         self.scaler
             .run(&self.rgba, &mut yuv)
             .map_err(|e| format!("cannot convert a frame to YUV: {e}"))?;
+        self.send(yuv)
+    }
+
+    /// Encodes the next frame from planes converted elsewhere (`rgba_to_yuv420`).
+    pub fn push_yuv(&mut self, planes: &[u8]) -> Result<(), String> {
+        let mut yuv = frame::Video::new(Pixel::YUV420P, self.width, self.height);
+        let mut at = 0;
+        for plane in 0..3 {
+            let (w, h, stride) = (yuv.plane_width(plane) as usize, yuv.plane_height(plane) as usize, yuv.stride(plane));
+            if planes.len() < at + w * h {
+                return Err(format!("a YUV frame has {} bytes, too few for {}x{}", planes.len(), self.width, self.height));
+            }
+            let dst = yuv.data_mut(plane);
+            for y in 0..h {
+                dst[y * stride..y * stride + w].copy_from_slice(&planes[at + y * w..at + (y + 1) * w]);
+            }
+            at += w * h;
+        }
+        if at != planes.len() {
+            return Err(format!("a YUV frame has {} bytes, expected {at} for {}x{}", planes.len(), self.width, self.height));
+        }
+        self.send(yuv)
+    }
+
+    fn send(&mut self, mut yuv: frame::Video) -> Result<(), String> {
         yuv.set_pts(Some(self.next_pts));
         self.next_pts += 1;
         self.encoder

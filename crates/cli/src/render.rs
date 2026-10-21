@@ -251,6 +251,13 @@ fn drive(
     })
 }
 
+/// What waits for the encoder thread: a drawn frame to convert, or one that
+/// was converted already (`encode::rgba_to_yuv420`).
+enum Queued {
+    Rgba(Frame),
+    Yuv(Vec<u8>),
+}
+
 /// A video file being written by an encoder thread.
 ///
 /// The video goes to a file beside the output (`encode::partial_path`) and
@@ -259,7 +266,7 @@ fn drive(
 /// streams are fixed by then). Dropping a sink that was not finished removes
 /// that file.
 pub struct FrameSink {
-    frames: Option<mpsc::SyncSender<Frame>>,
+    frames: Option<mpsc::SyncSender<Queued>>,
     thread: Option<thread::JoinHandle<Result<u32, String>>>,
     partial: PathBuf,
     output: PathBuf,
@@ -279,7 +286,7 @@ impl FrameSink {
         let partial = encode::partial_path(output);
         // The encoder lives on its own thread (ffmpeg's contexts cannot cross
         // threads) and says whether the file opened before any frame is made.
-        let (frame_tx, frame_rx) = mpsc::sync_channel::<Frame>(FRAMES_IN_FLIGHT);
+        let (frame_tx, frame_rx) = mpsc::sync_channel::<Queued>(FRAMES_IN_FLIGHT);
         let (open_tx, open_rx) = mpsc::sync_channel::<Result<(), String>>(1);
         let (path, name) = (partial.clone(), encoder_name.to_string());
         let thread = thread::spawn(move || -> Result<u32, String> {
@@ -293,8 +300,11 @@ impl FrameSink {
                     return Err(e);
                 }
             };
-            for frame in frame_rx {
-                encoder.push(&frame.rgba)?;
+            for queued in frame_rx {
+                match queued {
+                    Queued::Rgba(frame) => encoder.push(&frame.rgba)?,
+                    Queued::Yuv(planes) => encoder.push_yuv(&planes)?,
+                }
             }
             encoder.finish()
         });
@@ -316,10 +326,14 @@ impl FrameSink {
 
     /// Queues a finished frame, waiting if the encoder is two frames behind.
     pub fn push(&mut self, frame: Frame) -> Result<(), RenderError> {
+        self.push_queued(Queued::Rgba(frame))
+    }
+
+    fn push_queued(&mut self, queued: Queued) -> Result<(), RenderError> {
         let sent = self
             .frames
             .as_ref()
-            .is_some_and(|tx| tx.send(frame).is_ok());
+            .is_some_and(|tx| tx.send(queued).is_ok());
         if sent {
             return Ok(());
         }
@@ -456,6 +470,23 @@ impl VideoWriter {
         if let Some((previous, pending)) = self.in_flight.replace((frame, pending)) {
             self.send(renderer, previous, pending)?;
         }
+        Ok(())
+    }
+
+    /// Queues a frame that was drawn and converted elsewhere (by another
+    /// renderer, as the parallel `render` does): `yuv` is
+    /// `encode::rgba_to_yuv420` of its pixels. Frames come in increasing
+    /// order, and not together with `push_frame`.
+    pub fn push_converted(&mut self, frame: u32, yuv: Vec<u8>) -> Result<(), RenderError> {
+        if let Some(last) = self.last.filter(|&last| frame <= last) {
+            return Err(RenderError::Invalid(format!(
+                "frames must come in increasing order: {frame} after {last}"
+            )));
+        }
+        self.sink.push_queued(Queued::Yuv(yuv))?;
+        self.first.get_or_insert(frame);
+        self.last = Some(frame);
+        self.pushed += 1;
         Ok(())
     }
 

@@ -792,6 +792,7 @@ module.exports.probeMedia = nativeBinding.probeMedia
 module.exports.probeStreams = nativeBinding.probeStreams
 module.exports.renderCanvas = nativeBinding.renderCanvas
 module.exports.renderDomIsland = nativeBinding.renderDomIsland
+module.exports.rgbaToYuv = nativeBinding.rgbaToYuv
 module.exports.riveFrame = nativeBinding.riveFrame
 module.exports.scanStreams = nativeBinding.scanStreams
 module.exports.validateScene = nativeBinding.validateScene

@@ -39,6 +39,8 @@ export declare class Renderer {
 export declare class VideoWriter {
   /** Renders `frame` of this scene and queues it for encoding. */
   pushFrame(sceneJson: string, frame: number, baseDir?: string | undefined | null): void
+  /** Queues a frame that `rgbaToYuv` converted (in a render worker). */
+  pushYuv(yuv: Buffer, frame: number): void
   /** Flushes, muxes `audio` if given, closes the file. */
   finish(audio?: AudioPcm | undefined | null): RenderSummary
   /** Stops and deletes the partial file. */
@@ -245,6 +247,14 @@ export interface RgbaFrame {
   /** Straight-alpha sRGB RGBA8, `width * height * 4` bytes. */
   data: Buffer
 }
+
+/**
+ * The `yuv420p` planes (Y, U, V, rows packed) the encoder would make of a
+ * straight-alpha RGBA8 frame, converted on the calling thread. A render
+ * worker converts its own frames so that one encoder thread only sends them
+ * (`VideoWriter.pushYuv`).
+ */
+export declare function rgbaToYuv(rgba: Buffer, width: number, height: number): Buffer
 
 /**
  * A Rive file (`.riv`) played to a time, as the commands of a canvas layer
