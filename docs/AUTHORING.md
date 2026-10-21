@@ -961,10 +961,13 @@ composition itself (the bundle is built once), runs its JS for a chunk of 60 fra
 of its own (its own GPU device, layer cache and video decoders) and converts them to `yuv420p`; the main thread puts
 the frames in order and feeds the one encoder, and mixes the audio at the end from the clips each frame reported. Rendering
 is a pure function of (project, frame), so the file decodes to the same frames and audio as `--concurrency 1`, which
-draws every frame in the main thread as before. Chunks are handed out in order and a worker waits when it is more than
-N+1 chunks ahead of the encoder, which bounds the frames held in memory. Each worker is a full renderer, so memory
-grows with N (0.5 to 1 GB a worker on the launch film). `<Artifact>` files are collected from the workers; thumbnails
-are drawn by the main thread.
+draws every frame in the main thread as before. Chunks are handed out in order and none starts more than (N+1) x 60
+frames past the next frame the encoder needs, which bounds the frames held in memory. Frames are not equally dear (a
+motion-blur stretch costs several times a plain one), so a worker that has no chunk it may take asks the busy worker
+furthest back to stop its chunk early, and draws the rest of it. Each worker is a full renderer, so memory grows with N
+(0.5 to 1 GB a worker on the launch film). `<Artifact>` files are collected from the workers; thumbnails are drawn by the
+main thread. `KINETOGRAPH_CHUNK`, `KINETOGRAPH_WINDOW` and `KINETOGRAPH_MINSPLIT` (frames) override the chunk size, the
+window and the smallest chunk that is split, for tuning and tests.
 
 Bundling: esbuild bundles the entry with a synthetic entry that imports `@kinetograph/core/determinism/install` first,
 then the project, and re-exports `@kinetograph/core`, so the CLI drives frames through the same core and React instance the
