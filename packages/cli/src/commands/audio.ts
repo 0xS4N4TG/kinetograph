@@ -45,9 +45,8 @@ export const audioAnalyze: Command = {
         });
       }
       const measured = analyzeAudio(pcm, { scenes });
-      const analysis = measured.scenes
-        ? { ...measured, scenes: measured.scenes.map((s, i) => ({ ...s, fromFrame: sceneFrames[i]![0], toFrame: sceneFrames[i]![1] })) }
-        : measured;
+      const sceneResults = (measured.scenes ?? []).map((s, i) => ({ ...s, fromFrame: sceneFrames[i]![0], toFrame: sceneFrames[i]![1] }));
+      const analysis = { ...measured, ...(measured.scenes ? { scenes: sceneResults } : {}) };
       const durationSeconds = (last - first + 1) / fps;
       const lines = [
         `${source.composition.id}: frames ${first}..=${last} (${durationSeconds.toFixed(2)} s), ${clips.length} clip(s)`,
@@ -57,7 +56,7 @@ export const audioAnalyze: Command = {
         analysis.silences.length
           ? `silences: ${analysis.silences.map((s) => `${s.start.toFixed(2)}-${s.end.toFixed(2)} s`).join(', ')}`
           : 'no silences of 0.5 s or more below -60 dBFS',
-        ...(analysis.scenes ?? []).map(
+        ...sceneResults.map(
           (s) =>
             `  frames ${s.fromFrame}..${s.toFrame} (${s.from.toFixed(2)}-${s.to.toFixed(2)} s): ${fmt(s.integratedLufs, 'LUFS')}, ${fmt(s.truePeakDb, 'dBTP')}`,
         ),
