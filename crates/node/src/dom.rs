@@ -6,6 +6,7 @@
 //! an `IslandRequest`, style and lay it out with Stylo, taffy and Parley, and
 //! paint it or read it back.
 
+use std::collections::HashMap;
 use std::sync::mpsc::{Sender, channel};
 
 use kinetograph_core::dom_layout::{
@@ -13,8 +14,9 @@ use kinetograph_core::dom_layout::{
     measure_text,
 };
 use kinetograph_dom::document::{self, IslandCache, IslandDocument};
-use kinetograph_dom::request::{IslandRequest, Unsupported};
+use kinetograph_dom::request::{self, IslandRequest, Unsupported};
 use kinetograph_dom::{paint, readback};
+use serde_json::Value;
 
 use crate::error::{Code, Result, error, invalid};
 use crate::layout::with_engine;
@@ -136,12 +138,20 @@ fn resolve_island(request: &IslandRequest) -> std::result::Result<IslandDocument
 thread_local! {
     /// The islands of the motion-blur sample pass in progress (`IslandCache`).
     static SAMPLES: std::cell::RefCell<IslandCache> = std::cell::RefCell::new(IslandCache::default());
+    /// The first layers each island drew in the pass in progress, which the
+    /// later renders of the pass are written against (`request::delta`).
+    static BASES: std::cell::RefCell<(Option<u64>, Bases)> =
+        std::cell::RefCell::new((None, HashMap::new()));
 }
 
+/// Layers by island path.
+type Bases = HashMap<String, Vec<Value>>;
+
 /// One DOM island at one frame: an `IslandRequest` as JSON in, an
-/// `IslandOutput` as JSON out. `pass` numbers the sub-frame renders of one
-/// motion-blurred frame; the samples of a pass update one document per island
-/// instead of building it again.
+/// `IslandOutput` as JSON out. `pass` numbers the renders of one frame, its
+/// motion-blur sub-frames included: they update one document per island
+/// instead of building it again, and each render after an island's first
+/// gives its layers as changes from that first's (`delta`).
 pub fn render_dom_island(request_json: &str, pass: Option<u64>) -> Result<String> {
     let json = request_json.to_string();
     on_island_thread(move || {
@@ -162,9 +172,38 @@ pub fn render_dom_island(request_json: &str, pass: Option<u64>) -> Result<String
                 reason: format!("cannot load a resource: {missing}"),
             });
         }
+        let path = request.path.clone();
         SAMPLES.with(|cache| cache.borrow_mut().keep(request, resolved));
-        serde_json::to_string(&output)
-            .map_err(|e| (Code::Render, format!("cannot write the island: {e}")))
+        // The first render of an island in the pass is kept, once written,
+        // for the later ones to be written against.
+        let (mut delta, mut first) = (false, None);
+        if pass.is_some() {
+            BASES.with(|bases| {
+                let (at, bases) = &mut *bases.borrow_mut();
+                if *at != pass {
+                    bases.clear();
+                    *at = pass;
+                }
+                match bases.get(&path) {
+                    Some(base) => {
+                        output.layers = request::delta(std::mem::take(&mut output.layers), base);
+                        delta = true;
+                    }
+                    None => first = Some(path),
+                }
+            });
+        }
+        let mut json = serde_json::to_string(&output)
+            .map_err(|e| (Code::Render, format!("cannot write the island: {e}")))?;
+        if delta {
+            // The output is an object: say that its layers are changes.
+            json.pop();
+            json.push_str(r#","delta":true}"#);
+        }
+        if let Some(path) = first {
+            BASES.with(|bases| bases.borrow_mut().1.insert(path, output.layers));
+        }
+        Ok(json)
     })
 }
 

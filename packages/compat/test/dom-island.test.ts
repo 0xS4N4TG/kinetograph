@@ -3,7 +3,15 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { LayerJson } from '@kinetograph/scene';
-import { mapDomIsland, registerStylesheet, resetStylesheets, setDomAddon, setDomEnvironment } from '../src/dom/index.js';
+import {
+  beginSamplePass,
+  endSamplePass,
+  mapDomIsland,
+  registerStylesheet,
+  resetStylesheets,
+  setDomAddon,
+  setDomEnvironment,
+} from '../src/dom/index.js';
 import type { DomNode } from '../src/types.js';
 
 const node = (type: string, props: Record<string, any> = {}, children: DomNode[] = []): DomNode => ({ kind: 'element', type, props, children });
@@ -138,5 +146,50 @@ describe('mapDomIsland', () => {
   it('says what is missing when the addon has no renderDomIsland', () => {
     setDomAddon({});
     expect(() => mapDomIsland(node('div'), context())).toThrow('no renderDomIsland()');
+  });
+});
+
+describe('a pass of island renders', () => {
+  const leaf = (id: string, x: number) => ({ id, type: 'shape', shape: { kind: 'rect', width: 1, height: 1 }, transform: { x } });
+  const first = { id: '$1', type: 'group', transform: { x: 1 }, children: [leaf('a', 0), leaf('b', 0), leaf('c', 0)] };
+  afterEach(() => endSamplePass());
+
+  it('builds a later render from what it shares with the first, sharing those layers', () => {
+    const pass: unknown[] = [];
+    setDomAddon({
+      renderDomIsland(json: string, id?: number) {
+        pass.push(id);
+        return JSON.stringify(answer);
+      },
+    });
+    beginSamplePass();
+    answer = { layers: [first, leaf('d', 0)], unsupported: [], camera: null };
+    const a = mapDomIsland(node('div'), context()).layers as any[];
+    // The group moved and its second child changed; the rest is as it was.
+    answer = {
+      layers: [{ id: '$1', type: 'group', transform: { x: 2 }, $base: 0, children: [{ $same: 0 }, leaf('b', 5), { $same: 2 }] }, { $same: 1 }],
+      unsupported: [],
+      camera: null,
+      delta: true,
+    };
+    const b = mapDomIsland(node('div'), context()).layers as any[];
+    expect(b[0]).toMatchObject({ id: '$1', type: 'group', transform: { x: 2 }, children: [leaf('a', 0), leaf('b', 5), leaf('c', 0)] });
+    expect(b[0]).not.toHaveProperty('$base');
+    expect(b[0].children[0]).toBe(a[0].children[0]);
+    expect(b[0].children[2]).toBe(a[0].children[2]);
+    expect(b[1]).toEqual(a[1]);
+    // Both renders are of one pass.
+    expect(pass).toHaveLength(2);
+    expect(pass[0]).toBeTypeOf('number');
+    expect(pass[1]).toBe(pass[0]);
+  });
+
+  it('starts again with each pass, and refuses changes from a render it did not make', () => {
+    beginSamplePass();
+    answer = { layers: [first], unsupported: [], camera: null };
+    mapDomIsland(node('div'), context());
+    beginSamplePass();
+    answer = { layers: [{ $same: 0 }], unsupported: [], camera: null, delta: true };
+    expect(() => mapDomIsland(node('div'), context())).toThrow(/did not make/);
   });
 });

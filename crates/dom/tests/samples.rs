@@ -58,3 +58,30 @@ fn an_edited_document_draws_what_a_fresh_one_does() {
         assert_eq!(drawn(&mut cache, s, Some(7)), drawn(&mut fresh, s, None));
     }
 }
+
+#[test]
+fn a_later_render_is_written_as_changes_from_the_first() {
+    use kinetograph_dom::request::{delta, undelta};
+    let mut cache = IslandCache::default();
+    let layers = |s: &Value, cache: &mut IslandCache| -> Vec<Value> {
+        serde_json::from_str(&drawn(cache, s, Some(3))).unwrap()
+    };
+    let base = layers(&sample(0.0, "a", ""), &mut cache);
+    for s in [
+        sample(0.0, "a", ""),
+        sample(2.5, "a", ""),
+        sample(5.0, "b", ""),
+        sample(7.5, "b", "left: 40px; width: 300px"),
+    ] {
+        let later = layers(&s, &mut cache);
+        let written = delta(later.clone(), &base);
+        assert_eq!(undelta(&written, &base), later);
+    }
+    // The same render is the first's, layer by layer.
+    let same = delta(base.clone(), &base);
+    assert!(
+        same.iter()
+            .enumerate()
+            .all(|(i, l)| *l == json!({ "$same": i }))
+    );
+}

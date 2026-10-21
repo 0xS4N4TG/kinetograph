@@ -112,6 +112,67 @@ pub struct IslandOutput {
     pub blend_space: &'static str,
 }
 
+/// `layers` written as changes from `base`, an earlier output of the same
+/// island, matched by place: a layer that is the same as the one at index `i`
+/// of `base` is `{"$same": i}`, and a group with the id of the one there
+/// whose children differ is its own fields with `"$base": i` and its children
+/// written as changes from that one's. Anything else is the layer itself.
+pub fn delta(layers: Vec<Value>, base: &[Value]) -> Vec<Value> {
+    layers
+        .into_iter()
+        .enumerate()
+        .map(|(i, layer)| {
+            let Some(was) = base.get(i) else {
+                return layer;
+            };
+            if layer == *was {
+                return serde_json::json!({ "$same": i });
+            }
+            let Some(Value::Array(theirs)) = was.get("children") else {
+                return layer;
+            };
+            match layer {
+                Value::Object(mut fields)
+                    if fields.get("id") == was.get("id")
+                        && matches!(fields.get("children"), Some(Value::Array(_))) =>
+                {
+                    if let Some(Value::Array(kids)) = fields.remove("children") {
+                        fields.insert("children".into(), Value::Array(delta(kids, theirs)));
+                    }
+                    fields.insert("$base".into(), Value::from(i));
+                    Value::Object(fields)
+                }
+                other => other,
+            }
+        })
+        .collect()
+}
+
+/// `delta` undone: the layers it was given, from what it wrote and the same
+/// `base`.
+pub fn undelta(layers: &[Value], base: &[Value]) -> Vec<Value> {
+    layers
+        .iter()
+        .map(|layer| {
+            if let Some(i) = layer.get("$same").and_then(Value::as_u64) {
+                return base[i as usize].clone();
+            }
+            let Some(i) = layer.get("$base").and_then(Value::as_u64) else {
+                return layer.clone();
+            };
+            let mut fields = layer.as_object().cloned().unwrap_or_default();
+            fields.remove("$base");
+            let theirs = base[i as usize]["children"]
+                .as_array()
+                .map_or(&[][..], Vec::as_slice);
+            let kids = fields["children"].as_array().map_or(&[][..], Vec::as_slice);
+            let kids = undelta(kids, theirs);
+            fields.insert("children".into(), Value::Array(kids));
+            Value::Object(fields)
+        })
+        .collect()
+}
+
 /// `Unsupported` of `@kinetograph/scene`.
 #[derive(Clone, Debug, Serialize)]
 pub struct Unsupported {

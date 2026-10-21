@@ -49,24 +49,44 @@ interface IslandOutputJson {
   camera?: CameraJson | null;
   margin?: number | null;
   blendSpace?: 'linear' | 'srgb';
+  /** In a pass: `layers` are written as changes from the island's first layers in the pass (`expand`). */
+  delta?: boolean;
 }
 
-/** The motion-blur sample pass in progress, or null (docs/SCENE.md, "Motion blur"). */
+/** The pass in progress, or null (docs/SCENE.md, "Motion blur"). */
 let samplePass: number | null = null;
 let passes = 0;
+/** The first layers each island drew in the pass, by path: the addon writes the later ones against them. */
+const bases = new Map<string, unknown[]>();
 
 /**
- * Marks the islands rendered from now to `endSamplePass()` as the samples of one motion-blurred frame. The addon keeps
- * an island's document between them and edits it from one sample to the next instead of building it again; each
- * sample is drawn as if it were built afresh.
+ * Marks the islands rendered from now to `endSamplePass()` as the renders of one frame: the frame itself and the
+ * samples of its motion blur. The addon keeps an island's document between them and edits it from one render to the
+ * next instead of building it again; each is drawn as if it were built afresh. A later render of an island gives back
+ * what changed from its first, and shares the layers that did not with that first's.
  */
 export function beginSamplePass(): void {
   passes = (passes % 0x7fffffff) + 1;
   samplePass = passes;
+  bases.clear();
 }
 
 export function endSamplePass(): void {
   samplePass = null;
+  bases.clear();
+}
+
+type Written = Record<string, unknown> & { $same?: number; $base?: number; children?: Written[] };
+
+/** The layers the addon wrote as changes from `base` (`delta` of crates/dom/src/request.rs), sharing what is the same. */
+function expand(layers: Written[], base: unknown[]): unknown[] {
+  return layers.map((layer) => {
+    if (typeof layer.$same === 'number') return base[layer.$same];
+    if (typeof layer.$base !== 'number') return layer;
+    const { $base: at, children, ...own } = layer;
+    const theirs = (base[at] as { children: unknown[] }).children;
+    return { ...own, children: expand(children ?? [], theirs) };
+  });
 }
 
 /** `style`, `script` and friends draw nothing: an island that is only one of them needs no trip to Rust. */
@@ -113,8 +133,16 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
   const output = JSON.parse(
     samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass),
   ) as IslandOutputJson;
+  let drawn = output.layers;
+  if (output.delta) {
+    const base = bases.get(request.path);
+    if (base === undefined) throw new Error(`renderDomIsland wrote island ${request.path} as changes from a render it did not make`);
+    drawn = expand(drawn as Written[], base);
+  } else if (samplePass !== null) {
+    bases.set(request.path, drawn);
+  }
 
-  const placed = fillNatives(output.layers, (path) => {
+  const placed = fillNatives(drawn, (path) => {
     const node = natives.get(path);
     return node === undefined ? null : context.emitNative(node, path);
   });
