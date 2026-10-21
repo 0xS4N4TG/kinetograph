@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  attachMotionChanges,
   attachMotionFrames,
   collectMotionTimes,
   evalNum,
@@ -261,5 +262,100 @@ describe('attachMotionFrames', () => {
     expect(out[0]?.motionBlur?.frames).toHaveLength(3);
     expect(out[1]?.motionBlur?.frames).toHaveLength(5);
     expect(out[0]?.motionBlur?.frames?.map((f) => (f as ShapeLayer).opacity)).toEqual(motionTimes(12, 3, 0.75));
+  });
+});
+
+/** A sub-frame as the renderer makes it from `changes` (SCENE.md, "Sub-frame changes"): each changed layer stands in for
+ *  the layer of its id, and one that keeps its children keeps the frame's (each still replaced when changed). */
+function applyChanges(layer: LayerJson, list: { layer: LayerJson; keepChildren?: boolean }[]): LayerJson {
+  const byId = new Map(list.map((c) => [c.layer.id, c]));
+  const put = (original: LayerJson): LayerJson => {
+    const change = byId.get(original.id);
+    const own = change?.layer ?? original;
+    if (own.type !== 'group') return own;
+    const children = change?.keepChildren && original.type === 'group' ? original.children : own.children;
+    return { ...own, children: children.map(put) };
+  };
+  return put(layer);
+}
+
+/** A tree without any motionBlur: the renderer ignores one inside a blurred layer, and a copy has none of its own. */
+function unblurred(layer: LayerJson): LayerJson {
+  const { motionBlur: _dropped, ...rest } = layer;
+  return rest.type === 'group' ? { ...rest, children: rest.children.map(unblurred) } : rest;
+}
+
+describe('attachMotionChanges', () => {
+  const blur = { samples: 3, shutter: 1 };
+  const times = motionTimes(10, 3, 1);
+  const trees = (...samples: LayerJson[][]) => new Map(times.map((t, i) => [t, samples[i]!] as [number, LayerJson[]]));
+
+  /** Checks that the changes say what `attachMotionFrames` says, sub-frame by sub-frame, and returns them. */
+  function equivalent(main: LayerJson, samples: LayerJson[][]) {
+    const [byChanges] = attachMotionChanges([main], 10, trees(...samples));
+    const [byFrames] = attachMotionFrames([main], 10, trees(...samples));
+    const changes = byChanges!.motionBlur!.changes!;
+    expect(changes).toHaveLength(3);
+    expect(byChanges!.motionBlur!.frames).toBeUndefined();
+    changes.forEach((list, i) => {
+      expect(unblurred(applyChanges(byChanges!, list))).toEqual(unblurred(byFrames!.motionBlur!.frames![i]!));
+    });
+    return changes;
+  }
+
+  it('says nothing for a sub-frame that is the frame itself', () => {
+    const main = group('g', [rect('a'), rect('b')], { motionBlur: blur });
+    const copy = () => [group('g', [rect('a'), rect('b')])];
+    expect(equivalent(main, [copy(), copy(), copy()])).toEqual([[], [], []]);
+  });
+
+  it('changes only the layers that differ, and a group of its own fields keeps its children', () => {
+    const kids = (x: number) => [rect('a', { transform: { x } }), rect('b'), group('inner', [rect('c')])];
+    const main = group('g', kids(0), { motionBlur: blur, transform: { x: 5 } });
+    const changes = equivalent(main, [
+      [group('g', kids(0), { transform: { x: 4 } })],
+      [group('g', kids(1), { transform: { x: 5 } })],
+      [group('g', kids(0), { transform: { x: 5 }, opacity: 0.5 })],
+    ]);
+    expect(changes[0]).toEqual([{ layer: group('g', [], { transform: { x: 4 } }), keepChildren: true }]);
+    expect(changes[1]).toEqual([{ layer: rect('a', { transform: { x: 1 } }) }]);
+    expect(changes[2]).toEqual([{ layer: group('g', [], { transform: { x: 5 }, opacity: 0.5 }), keepChildren: true }]);
+  });
+
+  it('replaces a group whole when its children are other layers, or a child changes type', () => {
+    const main = group('g', [rect('a'), rect('b')], { motionBlur: blur });
+    const changes = equivalent(main, [
+      [group('g', [rect('a')])],
+      [group('g', [rect('b'), rect('a')])],
+      [group('g', [rect('a'), group('b', [])])],
+    ]);
+    for (const list of changes) {
+      expect(list).toHaveLength(1);
+      expect(list[0]!.keepChildren).toBeUndefined();
+      expect(list[0]!.layer.id).toBe('g');
+    }
+  });
+
+  it('makes a missing layer or one of another type transparent at that sub-frame', () => {
+    const main = group('g', [rect('a')], { motionBlur: blur, opacity: 0.8 });
+    const changes = equivalent(main, [[rect('other')], [rect('g')], [group('g', [rect('a')])]]);
+    expect(changes[0]).toEqual([{ layer: group('g', [], { opacity: 0 }), keepChildren: true }]);
+    const leaf = rect('a', { motionBlur: blur, opacity: 0.8 });
+    const [out] = attachMotionChanges([leaf], 10, trees([], [rect('a')], [rect('a')]));
+    expect(out!.motionBlur!.changes![0]).toEqual([{ layer: rect('a', { opacity: 0 }) }]);
+    expect(out!.motionBlur!.changes![1]).toEqual([{ layer: rect('a') }]);
+  });
+
+  it('compares values, not objects, and ignores motionBlur inside the blurred tree', () => {
+    const main = group('g', [rect('a', { transform: { x: 1 }, motionBlur: { samples: 4 } })], { motionBlur: blur });
+    const fresh = () => [group('g', [rect('a', { transform: { x: 1 } })], { motionBlur: { samples: 3, shutter: 1 } })];
+    expect(equivalent(main, [fresh(), fresh(), fresh()])).toEqual([[], [], []]);
+  });
+
+  it('leaves the frame itself as it is', () => {
+    const main = group('g', [rect('a')], { motionBlur: blur });
+    const [out] = attachMotionChanges([main], 10, trees([group('g', [rect('a', { opacity: 0 })])], [main], [main])) as [GroupLayer];
+    expect(out.children).toBe(main.children);
+    expect(out.motionBlur).toEqual({ ...blur, changes: [[{ layer: rect('a', { opacity: 0 }) }], [], []] });
   });
 });

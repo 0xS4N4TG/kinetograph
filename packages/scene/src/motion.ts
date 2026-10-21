@@ -93,6 +93,19 @@ export function collectMotionTimes(layers: LayerJson[], frame: number): number[]
   return [...times].sort((a, b) => a - b);
 }
 
+/** The ids of the layers `collectMotionTimes` asks for times for: the outermost ones whose shutter is open at `frame`. */
+export function collectMotionLayers(layers: LayerJson[], frame: number): Set<string> {
+  const ids = new Set<string>();
+  const visit = (list: LayerJson[]): void => {
+    for (const layer of list) {
+      if (timesOf(layer, frame) !== null) ids.add(layer.id);
+      else if (layer.type === 'group') visit(layer.children);
+    }
+  };
+  visit(layers);
+  return ids;
+}
+
 /** `layer` and its subtree without any `motionBlur`: a sub-frame copy is already one sample, and the renderer ignores
  *  its own `motionBlur`, so dropping it keeps the JSON small. */
 function withoutMotionBlur(layer: LayerJson): LayerJson {
@@ -112,6 +125,117 @@ function indexById(layers: LayerJson[], into = new Map<string, LayerJson>()): Ma
   return into;
 }
 
+/** Whether two JSON values are the same: a key whose value is undefined counts as left out, as in JSON. */
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) if (!same(a[i], b[i])) return false;
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  return sameFields(a as Record<string, unknown>, b as Record<string, unknown>, NONE);
+}
+
+const NONE: ReadonlySet<string> = new Set();
+/** A layer's fields that `sameFields` leaves out of a layer's own: a sub-frame copy has no motion blur of its own. */
+const NOT_OWN: ReadonlySet<string> = new Set(['children', 'motionBlur']);
+const NOT_BLUR: ReadonlySet<string> = new Set(['motionBlur']);
+
+function sameFields(a: Record<string, unknown>, b: Record<string, unknown>, skip: ReadonlySet<string>): boolean {
+  for (const key in a) {
+    if (!skip.has(key) && a[key] !== undefined && !same(a[key], b[key])) return false;
+  }
+  for (const key in b) {
+    if (!skip.has(key) && b[key] !== undefined && a[key] === undefined) return false;
+  }
+  return true;
+}
+
+/** One entry of `motionBlur.changes` (SCENE.md, "Sub-frame changes"). */
+export interface SampleChangeJson {
+  layer: LayerJson;
+  keepChildren?: boolean;
+}
+
+/**
+ * Pushes onto `out` the changes that make `main` (a layer of the frame's own tree) into `sample` (the same layer in a
+ * sub-frame's tree). False when they are layers of different types, which no change can stand for: the caller replaces
+ * the group they are in whole.
+ */
+function changesOf(main: LayerJson, sample: LayerJson, out: SampleChangeJson[]): boolean {
+  if (main === sample) return true;
+  if (main.type !== sample.type || main.id !== sample.id) return false;
+  if (main.type === 'group' && sample.type === 'group' && main.children.length === sample.children.length) {
+    const kids = main.children;
+    const theirs = sample.children;
+    const mark = out.length;
+    let kept = kids.every((kid, i) => kid.id === theirs[i]!.id);
+    for (let i = 0; kept && i < kids.length; i += 1) kept = changesOf(kids[i]!, theirs[i]!, out);
+    if (kept) {
+      if (!sameFields(main as unknown as Record<string, unknown>, sample as unknown as Record<string, unknown>, NOT_OWN)) {
+        const { motionBlur: _dropped, ...own } = sample;
+        out.push({ layer: { ...own, children: [] } as LayerJson, keepChildren: true });
+      }
+      return true;
+    }
+    out.length = mark;
+  } else if (sameFields(main as unknown as Record<string, unknown>, sample as unknown as Record<string, unknown>, NOT_BLUR)) {
+    return true;
+  }
+  out.push({ layer: withoutMotionBlur(sample) });
+  return true;
+}
+
+/**
+ * The layers a renderer draws as the sub-frames of `layer`'s motion blur, in time order: its `frames`, or the layer
+ * with each list of its `changes` put in place (SCENE.md, "Sub-frame changes"). Null when it gives neither.
+ */
+export function motionSubFrames(layer: LayerJson): LayerJson[] | null {
+  const blur = layer.motionBlur;
+  if (blur?.frames !== undefined) return blur.frames;
+  if (blur?.changes === undefined) return null;
+  return blur.changes.map((list) => {
+    const byId = new Map(list.map((change) => [change.layer.id, change]));
+    const put = (original: LayerJson): LayerJson => {
+      const change = byId.get(original.id);
+      const own = change?.layer ?? original;
+      if (own.type !== 'group') return own;
+      const kids = change?.keepChildren && original.type === 'group' ? original.children : own.children;
+      return { ...own, children: kids.map(put) };
+    };
+    const { motionBlur: _dropped, ...sub } = put(layer);
+    return sub as LayerJson;
+  });
+}
+
+/**
+ * New layers with `motionBlur.changes` filled for every outermost blurred layer: what the layer's tree, as the tree
+ * rendered at `motionTimes(...)[i]` has it (matched by id and type), changes from the frame's own. A layer missing from
+ * that tree (or of another type there) becomes itself with opacity 0, so it contributes nothing at that sub-frame. The
+ * scene says the same as with `attachMotionFrames`, without a whole copy of the tree for each sub-frame. Layers off the
+ * path to a blurred layer are shared with the input, not copied; the input is not changed.
+ */
+export function attachMotionChanges(
+  layers: LayerJson[],
+  frame: number,
+  treesAt: ReadonlyMap<number, LayerJson[]>,
+): LayerJson[] {
+  return attachWith(layers, frame, treesAt, (layer, theirs) => {
+    const changes = theirs.map((there): SampleChangeJson[] => {
+      const out: SampleChangeJson[] = [];
+      if (there !== undefined && there.type === layer.type && changesOf(layer, there, out)) return out;
+      if (layer.type === 'group') {
+        const { motionBlur: _dropped, ...own } = layer;
+        return [{ layer: { ...own, opacity: 0, children: [] } as LayerJson, keepChildren: true }];
+      }
+      return [{ layer: { ...withoutMotionBlur(layer), opacity: 0 } }];
+    });
+    return { ...layer.motionBlur, changes };
+  });
+}
+
 /**
  * New layers with `motionBlur.frames` filled for every outermost blurred layer: `frames[i]` is the layer as the tree
  * rendered at `motionTimes(...)[i]` has it, matched by id and type. A layer missing from that tree (or of another
@@ -122,6 +246,23 @@ export function attachMotionFrames(
   layers: LayerJson[],
   frame: number,
   treesAt: ReadonlyMap<number, LayerJson[]>,
+): LayerJson[] {
+  return attachWith(layers, frame, treesAt, (layer, theirs) => {
+    const frames = theirs.map((there) => {
+      if (there !== undefined && there.type === layer.type) return withoutMotionBlur(there);
+      return { ...withoutMotionBlur(layer), opacity: 0 };
+    });
+    return { ...layer.motionBlur, frames };
+  });
+}
+
+/** `layers` with `blurred(layer, theirs)` as the `motionBlur` of every outermost blurred layer, where `theirs[i]` is the
+ *  layer of the same id in the tree rendered at its `i`th sub-frame time (undefined where there is none). */
+function attachWith(
+  layers: LayerJson[],
+  frame: number,
+  treesAt: ReadonlyMap<number, LayerJson[]>,
+  blurred: (layer: LayerJson, theirs: (LayerJson | undefined)[]) => MotionBlurJson,
 ): LayerJson[] {
   const indexes = new Map<number, Map<string, LayerJson>>();
   const lookup = (time: number): Map<string, LayerJson> => {
@@ -142,13 +283,8 @@ export function attachMotionFrames(
     const out = list.map((layer) => {
       const times = timesOf(layer, frame);
       if (times !== null) {
-        const frames = times.map((time) => {
-          const there = lookup(time).get(layer.id);
-          if (there !== undefined && there.type === layer.type) return withoutMotionBlur(there);
-          return { ...withoutMotionBlur(layer), opacity: 0 };
-        });
         changed = true;
-        const motionBlur: MotionBlurJson = { ...layer.motionBlur, frames };
+        const motionBlur = blurred(layer, times.map((time) => lookup(time).get(layer.id)));
         return { ...layer, motionBlur };
       }
       if (layer.type === 'group') {
