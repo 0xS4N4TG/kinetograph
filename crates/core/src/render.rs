@@ -1538,11 +1538,16 @@ impl Renderer {
     /// children of preserve3d groups are left out, and are drawn the way
     /// they always were.
     fn plan_pages(&mut self, layers: &[ResolvedLayer]) -> Result<()> {
+        let timer = crate::profile::start();
         let mut leaves = Vec::new();
         self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
+        crate::profile::add_since("pp_collect", timer);
+        let timer = crate::profile::start();
         let regions: Vec<PixelRect> = leaves.iter().map(|leaf| leaf.region).collect();
         let packed = pack_pages(&regions);
+        crate::profile::add_since("pp_pack", timer);
         crate::profile::add_value("leaves", leaves.len() as f64);
+        let timer = crate::profile::start();
         for page in packed {
             self.vello_scene.reset();
             let mut has_images = false;
@@ -1563,7 +1568,15 @@ impl Renderer {
                         );
                     }
                     None => {
+                        let timer = crate::profile::start();
                         self.encode_leaf(leaf.layer, leaf.matrix, None)?;
+                        if timer.is_some() {
+                            let kind = format!("{:?}", leaf.layer.kind);
+                            let kind = kind.split([' ', '(', '{']).next().unwrap_or("");
+                            let ms = crate::profile::since(timer).unwrap_or(0.0);
+                            crate::profile::add_dyn(&format!("enc_{kind}"), ms);
+                            crate::profile::add_dyn(&format!("encn_{kind}"), 1.0);
+                        }
                         has_images |= draws_image(&leaf.layer.kind);
                     }
                 }
@@ -1588,6 +1601,7 @@ impl Renderer {
                 target: None,
             });
         }
+        crate::profile::add_since("pp_encode", timer);
         Ok(())
     }
 
