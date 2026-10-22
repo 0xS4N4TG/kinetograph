@@ -21,6 +21,7 @@ use crate::scene::{
     BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Scene, StrokeCap, StrokeJoin, Units,
 };
 use crate::text::TextEngine;
+
 use vello::kurbo::{Affine, BezPath, PathEl};
 use skia_safe::{
     BlendMode as SkBlend, Canvas, ClipOp, Color, Color4f, Data, Font, FontMgr, Image, ImageFilter,
@@ -28,6 +29,8 @@ use skia_safe::{
     Shader, TextBlobBuilder, TileMode, Typeface, canvas::SaveLayerRec, color_filters, gradient_shader, image_filters,
     images, path_effect::PathEffect,
 };
+
+mod canvas2d;
 
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -569,7 +572,9 @@ impl Translator {
                 let (w, h) = laid.box_size(*max_width);
                 Some(Rect::new(0.0, 0.0, w as f32, h as f32))
             }
-            ResolvedKind::Image { width, height, .. } | ResolvedKind::Video { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
+            ResolvedKind::Image { width, height, .. }
+            | ResolvedKind::Video { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
+            ResolvedKind::Canvas { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
             ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w as f32, h as f32)),
             _ => None,
         }
@@ -635,7 +640,7 @@ impl Translator {
                 let g = *size * 1.0;
                 Some(Rect::new(b.left - g, b.top - g, b.right + g, b.bottom + g))
             }
-            ResolvedKind::Image { .. } | ResolvedKind::Video { .. } => self.layer_box(layer),
+            ResolvedKind::Image { .. } | ResolvedKind::Video { .. } | ResolvedKind::Canvas { .. } => self.layer_box(layer),
             ResolvedKind::Group { children, .. } => {
                 let mut acc: Option<Rect> = None;
                 for c in children {
@@ -951,10 +956,10 @@ impl Translator {
                 Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
                 None => self.stats.no("video layer (decode failed)"),
             },
+            ResolvedKind::Canvas { width, height, ops } => self.draw_canvas_layer(canvas, (*width, *height), ops),
             // Handed to the wgpu path before this (`gaps`).
             ResolvedKind::Lottie { .. }
             | ResolvedKind::Gif { .. }
-            | ResolvedKind::Canvas { .. }
             | ResolvedKind::Glsl { .. }
             | ResolvedKind::Scene3d { .. }
             | ResolvedKind::MeshGradient { .. }
@@ -1424,7 +1429,6 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
         ResolvedKind::Group { glsl: Some(_), .. } => return Some("glsl group"),
         ResolvedKind::Lottie { .. } => return Some("lottie layer"),
         ResolvedKind::Gif { .. } => return Some("gif layer"),
-        ResolvedKind::Canvas { .. } => return Some("canvas layer"),
         ResolvedKind::Glsl { .. } => return Some("glsl layer"),
         ResolvedKind::Scene3d { .. } => return Some("scene3d layer"),
         ResolvedKind::MeshGradient { .. } => return Some("meshGradient layer"),
