@@ -155,7 +155,7 @@ impl Renderer {
                 .ok_or_else(|| Error::Render("the Skia target is not a Metal texture".into()))?;
             let bt = unsafe { graphite::mtl::backend_textures::make_metal((size.0 as i32, size.1 as i32), ptr) };
             let surface =
-                graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, ColorType::RGBA8888, None, None)
+                graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, ColorType::RGBA8888, Some(ColorSpace::new_srgb()), None)
                     .ok_or_else(|| Error::Render("Skia could not wrap its target texture".into()))?;
             sk.targets.push(Target { size, view, surface, _texture: texture });
             }
