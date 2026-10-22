@@ -43,6 +43,8 @@ use crate::text::{LaidOutText, TextEngine};
 use crate::video::{VideoDecoder, Videos, open_video, video_sources};
 use crate::warp;
 
+mod skia;
+
 /// Curve flattening tolerance when converting shapes to paths.
 const SHAPE_TOLERANCE: f64 = 0.1;
 
@@ -210,6 +212,8 @@ pub struct Renderer {
     /// Above 0 while the children of a fused group are drawn
     /// (`draw_fused_group`): what they wait to be blended stays together.
     group_depth: u32,
+    /// The Skia backend when `KINETOGRAPH_BACKEND=skia` and it could start (`skia.rs`).
+    skia: Option<skia::SkiaBackend>,
 }
 
 impl Renderer {
@@ -219,7 +223,7 @@ impl Renderer {
         // cheaply.
         let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
 
-        let context = RenderContext::new();
+        let context = render_context();
         let (device, queue) = pollster::block_on(new_device(&context.instance))
             .ok_or_else(|| Error::Render("no compatible GPU adapter found".into()))?;
 
@@ -278,7 +282,9 @@ impl Renderer {
             pixels: None,
             repeats: 0,
             group_depth: 0,
+            skia: None,
         };
+        renderer.skia = skia::init(&renderer.device, &renderer.queue, &renderer.scene);
         renderer.ensure_image_renderer(fresh.has_pictures())?;
         renderer.install_assets(fresh);
         renderer.add_shaders();
@@ -539,6 +545,7 @@ impl Renderer {
             });
         }
         self.drawn = None;
+        self.skia_started(frame);
         let (hits, misses) = self.cache.counts();
         let (readback, width, height) = self.start_resolved(&resolved)?;
         if crate::profile::enabled() {
@@ -627,6 +634,7 @@ impl Renderer {
         let rgba = match pending.work {
             Work::Drawn { readback, seq } => {
                 let rgba = self.compositor.finish_readback(readback)?;
+                self.skia_finished(&rgba);
                 // Kept when a repeat of it has started, or may still start
                 // (nothing was started after it).
                 let wanted = self.repeat_of == Some(seq)
@@ -713,14 +721,17 @@ impl Renderer {
         self.cache.begin_frame();
         self.compositor.begin_frame();
         self.clear_pages();
-        let timer = crate::profile::start();
-        self.plan_pages(&scene.layers)?;
-        crate::profile::add_since("plan_pages", timer);
-        crate::profile::add_value("pages", self.pages.pages.len() as f64);
-        let color = scene.background.linear_premultiplied();
-        let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
-        let canvas =
-            self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?;
+        let canvas = if self.skia.is_some() {
+            self.skia_canvas(scene)?
+        } else {
+            let timer = crate::profile::start();
+            self.plan_pages(&scene.layers)?;
+            crate::profile::add_since("plan_pages", timer);
+            crate::profile::add_value("pages", self.pages.pages.len() as f64);
+            let color = scene.background.linear_premultiplied();
+            let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
+            self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?
+        };
         // What this frame did not draw, the next probably will not either.
         for tex in self.cache.end_frame() {
             self.compositor.release(tex);
@@ -728,6 +739,7 @@ impl Renderer {
         self.clear_pages();
         let readback = self.timed(Stage::Readback, |s| s.compositor.start_readback(&canvas));
         self.compositor.release(canvas);
+        self.skia_submitted(&readback);
         Ok((readback, scene.width, scene.height))
     }
 
@@ -3032,13 +3044,13 @@ fn text_bounds(
 }
 
 /// The style of the character at code point `index`, if it has one.
-fn char_style(chars: &[Option<ResolvedChar>], index: u32) -> Option<&ResolvedChar> {
+pub(crate) fn char_style(chars: &[Option<ResolvedChar>], index: u32) -> Option<&ResolvedChar> {
     chars.get(index as usize).and_then(Option::as_ref)
 }
 
 /// Where a styled character goes, in text-box space: moved by its offset,
 /// then scaled and turned about its centre.
-fn char_matrix(style: &ResolvedChar, centre: (f64, f64)) -> Affine {
+pub(crate) fn char_matrix(style: &ResolvedChar, centre: (f64, f64)) -> Affine {
     Affine::translate((style.x, style.y))
         * Affine::translate(centre)
         * Affine::rotate(style.rotation.to_radians())
@@ -3782,7 +3794,7 @@ const MAX_LOTTIE_SIDE: f64 = 4096.0;
 /// The size in pixels to paint a Lottie layer whose box is `size`, drawn under
 /// `matrix`: the box through the matrix's largest stretch, rounded up, and cut
 /// down to `MAX_LOTTIE_SIDE` a side. `None` for a box with no area.
-fn lottie_pixels(size: (f64, f64), matrix: Affine) -> Option<(u32, u32)> {
+pub(crate) fn lottie_pixels(size: (f64, f64), matrix: Affine) -> Option<(u32, u32)> {
     let stretch = bounds::max_stretch(matrix);
     let (width, height) = (size.0 * stretch, size.1 * stretch);
     if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
@@ -3848,6 +3860,27 @@ fn new_vello_target(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureVie
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// `RenderContext::new()`, except that on Linux and Windows a run with `KINETOGRAPH_BACKEND=skia` gets a Vulkan-only
+/// instance (Windows would otherwise default to D3D12, and Skia's Graphite shares wgpu's VkDevice;
+/// `render/skia/vulkan.rs`). An explicit `WGPU_BACKEND` still decides.
+fn render_context() -> RenderContext {
+    #[cfg(all(feature = "skia", not(target_os = "macos")))]
+    if std::env::var("KINETOGRAPH_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("skia"))
+        && wgpu::Backends::from_env().is_none()
+    {
+        // The rest is `RenderContext::new()`'s.
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            display: None,
+            backends: wgpu::Backends::VULKAN,
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            backend_options: wgpu::BackendOptions::from_env_or_default(),
+        });
+        return RenderContext { instance, devices: Vec::new() };
+    }
+    RenderContext::new()
 }
 
 /// The GPU device, made as `vello::util::RenderContext::device` makes it

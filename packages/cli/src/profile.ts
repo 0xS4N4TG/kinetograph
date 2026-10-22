@@ -60,3 +60,9 @@ export function writeShared(): void {
   if (!profiling) return;
   appendFileSync(`${PREFIX}.shared.json`, JSON.stringify(native().takeProfile(true)) + '\n');
 }
+
+/** Marks a stage of the whole render (bundle, workers up, first frame, audio, finish...) in `<prefix>.stages.jsonl`: `t` on the shared clock, `up` ms since the process started. */
+export function stage(name: string): void {
+  if (!profiling) return;
+  appendFileSync(`${PREFIX}.stages.jsonl`, JSON.stringify({ stage: name, t: now(), up: process.uptime() * 1000 }) + '\n');
+}

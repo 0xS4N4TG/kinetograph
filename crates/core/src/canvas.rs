@@ -111,7 +111,7 @@ impl DrawState {
     }
 
     /// Whether the command is drawn alone first and run through GPU passes.
-    fn has_effects(&self) -> bool {
+    pub(crate) fn has_effects(&self) -> bool {
         self.shadow.is_some() || !self.filter.is_empty()
     }
 
@@ -256,7 +256,7 @@ impl FilterFn {
 
 /// The passes a `filter` list runs: the ones a layer's `blur`, colour filters
 /// and `dropShadow` effects run, colour filters in a row merged into one.
-fn filter_effects(filter: &[FilterFn], to_device: Affine) -> Vec<ResolvedEffect> {
+pub(crate) fn filter_effects(filter: &[FilterFn], to_device: Affine) -> Vec<ResolvedEffect> {
     let effects: Vec<Effect> = filter.iter().map(|f| f.effect(to_device)).collect();
     // The numbers are constants, so any moment gives the same passes.
     let clock = Clock {
@@ -269,7 +269,7 @@ fn filter_effects(filter: &[FilterFn], to_device: Affine) -> Vec<ResolvedEffect>
 
 impl CanvasOp {
     /// The state of a command that draws; `None` for a clip.
-    fn state(&self) -> Option<&DrawState> {
+    pub(crate) fn state(&self) -> Option<&DrawState> {
         match self {
             CanvasOp::Fill(FillOp { state, .. })
             | CanvasOp::Stroke(StrokeOp { state, .. })
@@ -605,7 +605,7 @@ impl CanvasBlend {
 
     /// Whether the operation also changes pixels the shape does not cover
     /// (`source-in` clears them), so it is applied over the whole canvas.
-    fn reaches_whole_canvas(self) -> bool {
+    pub(crate) fn reaches_whole_canvas(self) -> bool {
         matches!(
             self,
             CanvasBlend::SourceIn
@@ -709,7 +709,7 @@ pub fn has_effects(ops: &[CanvasOp]) -> bool {
 }
 
 /// An `ImageData` of straight-alpha RGBA8 pixels from base64.
-fn pixels(width: u32, height: u32, data: &str) -> std::result::Result<ImageData, String> {
+pub(crate) fn pixels(width: u32, height: u32, data: &str) -> std::result::Result<ImageData, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|e| format!("canvas pixels are not base64: {e}"))?;

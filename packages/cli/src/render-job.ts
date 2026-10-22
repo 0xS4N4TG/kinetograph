@@ -6,7 +6,7 @@ import type { ExportOptions, Renderer, RenderSummary } from '@kinetograph/native
 import type { ArtifactRecord } from '@kinetograph/core';
 import type { AudioClipJson, SceneJson, Unsupported } from '@kinetograph/scene';
 import { CHUNK_FRAMES, renderInParallel } from './parallel-render.js';
-import { ProfileLog, now, profiling, takeAddon, takeJs, writeShared } from './profile.js';
+import { ProfileLog, now, profiling, stage, takeAddon, takeJs, writeShared } from './profile.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
 import { CliError } from './errors.js';
 import { native } from './native.js';
@@ -126,6 +126,7 @@ export async function renderSource(
   source.clearArtifacts?.();
   const [first, last] = frameRange(range, durationInFrames);
   const size = scale !== 1 ? { width: scaledSize(width, scale), height: scaledSize(height, scale) } : { width, height };
+  stage('beginVideo');
   const writer = renderer.beginVideo(options.output, { width: size.width, height: size.height, fps, encoder, export: exported });
   const clipFrames: { frame: number; audio: AudioClipJson[] }[] = [];
   const leftOut = new LeftOutCollector();
@@ -182,16 +183,20 @@ export async function renderSource(
       log?.flush();
       artifactRecords = source.artifacts?.() ?? [];
     }
+    stage('frames pushed (loop end)');
     const clips = joinClips(clipFrames);
     let summary: RenderSummary;
     // A GIF has no sound.
     if (plan.audioCodec !== undefined && (clips.length > 0 || hasOnFrame(first, last))) {
       options.progress?.('mixing audio');
+      stage('audio mix start');
       const pcm = clampPcm(await renderAudio({ fps, first, last, clips, baseDir: source.baseDir, resolveSource: resolveSoundSource }));
+      stage('audio mix done');
       summary = writer.finish(pcm);
     } else {
       summary = writer.finish();
     }
+    stage('writer.finish done');
     writeShared();
     const artifacts = await writeArtifacts(source, renderer, options.output, first, last, scale, artifactRecords);
     return { ...summary, repeated: summary.repeated + parallelRepeats, compat: leftOut.report(), artifacts };

@@ -281,6 +281,14 @@ pub struct Readback {
     height: u32,
 }
 
+impl Readback {
+    /// The submit the readback's copy went in.
+    #[cfg(feature = "skia")]
+    pub(crate) fn submission(&self) -> Option<wgpu::SubmissionIndex> {
+        self.submission.clone()
+    }
+}
+
 pub struct Compositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -294,6 +302,9 @@ pub struct Compositor {
     srgb_blend: bool,
     layout: wgpu::BindGroupLayout,
     to_linear: wgpu::RenderPipeline,
+    /// `to_linear` for premultiplied input (Skia's).
+    to_linear_premul: wgpu::RenderPipeline,
+    copy: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     /// Up to `BLEND_SLOTS` blends in one pass (`shaders/blend_many.wgsl`),
     /// on its own bind group layout: the canvas, the layers, the uniforms.
@@ -589,6 +600,8 @@ impl Compositor {
             margin,
             srgb_blend: false,
             to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
+            to_linear_premul: pipeline(&shader, "fs_to_linear_premul", LINEAR_FORMAT),
+            copy: pipeline(&shader, "fs_copy", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
             blend_many,
             blend_many_layout,
@@ -655,6 +668,8 @@ impl Compositor {
         let c = &compositor;
         compositor.names = [
             (&c.to_linear, "to linear"),
+            (&c.to_linear_premul, "to linear premul"),
+            (&c.copy, "copy"),
             (&c.blend, "blend"),
             (&c.blend_many, "blend many"),
             (&c.mask, "mask"),
@@ -942,6 +957,21 @@ impl Compositor {
             size: [area.width(), area.height()],
         };
         self.pass(&self.to_linear, input, input, 0.0, 0, &target);
+        target
+    }
+
+    /// The whole canvas texture from `skia_output`, a texture of its size that Skia drew (`render/skia.rs`): premultiplied,
+    /// and either Rgba8 holding sRGB-encoded values or, if `linear`, Rgba16Float in linear light.
+    #[cfg(feature = "skia")]
+    pub(crate) fn from_skia(&mut self, skia_output: &wgpu::TextureView, linear: bool) -> Tex {
+        let target = self.target_full(self.whole());
+        let input = Input {
+            view: skia_output,
+            origin: [0, 0],
+            size: [self.width, self.height],
+        };
+        let pipeline = if linear { &self.copy } else { &self.to_linear_premul };
+        self.pass(pipeline, input, input, 0.0, 0, &target);
         target
     }
 

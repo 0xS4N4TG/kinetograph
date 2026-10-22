@@ -6,6 +6,7 @@ import { EXPORT_FLAGS, parseExportFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
 import { native } from '../native.js';
+import { stage } from '../profile.js';
 import { checkFrame, type Source } from '../source.js';
 import { nowMs } from '../time.js';
 import {
@@ -88,9 +89,12 @@ export const render: Command = {
     const restoreReact = setReactMode(devReact);
     let source: Source | undefined;
     try {
+      stage('render:start');
       source = await openFromArgs(args);
+      stage('source opened (bundle, load, ready)');
       const started = nowMs();
       const renderer = newRenderer();
+      stage('renderer made (GPU init)');
       ensureParentDir(output);
       const summary = await renderSource(source, renderer, {
         output,
@@ -109,6 +113,7 @@ export const render: Command = {
           }
         },
       });
+      stage('renderSource returned');
       for (const line of describeLeftOut(summary.compat)) context.progress(line);
       return result(summary, nowMs() - started);
     } finally {

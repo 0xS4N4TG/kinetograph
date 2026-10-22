@@ -51,6 +51,17 @@ fn check(name: &str, frame: &Frame) {
         (frame.width, frame.height),
         "{name}: size changed"
     );
+    // `GOLDEN_REPORT=1`: print how far the frame is from the golden (mean and max level of any channel) instead of failing,
+    // for judging another backend (`KINETOGRAPH_BACKEND=skia`).
+    if std::env::var_os("GOLDEN_REPORT").is_some() {
+        let diffs = golden.as_raw().iter().zip(&frame.rgba).map(|(a, b)| a.abs_diff(*b) as u64);
+        let (sum, max, over2) = diffs.fold((0u64, 0u64, 0u64), |(s, m, o), d| (s + d, m.max(d), o + (d > 2) as u64));
+        if let Some(dir) = std::env::var_os("GOLDEN_REPORT").filter(|d| d.len() > 1) {
+            let _ = image::save_buffer(Path::new(&dir).join(format!("{name}.png")), &frame.rgba, frame.width, frame.height, image::ColorType::Rgba8);
+        }
+        println!("GOLDEN {name}: mean {:.4} levels, max {max}, channels over 2 levels {over2}", sum as f64 / golden.as_raw().len() as f64);
+        return;
+    }
     let differing: Vec<_> = golden
         .as_raw()
         .chunks(4)
