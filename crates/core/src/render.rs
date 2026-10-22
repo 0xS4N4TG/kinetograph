@@ -1542,6 +1542,7 @@ impl Renderer {
         self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
         let regions: Vec<PixelRect> = leaves.iter().map(|leaf| leaf.region).collect();
         let packed = pack_pages(&regions);
+        crate::profile::add_value("leaves", leaves.len() as f64);
         for page in packed {
             self.vello_scene.reset();
             let mut has_images = false;

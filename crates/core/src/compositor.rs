@@ -641,7 +641,7 @@ impl Compositor {
         compositor.names = [
             (&c.to_linear, "to linear"),
             (&c.blend, "blend"),
-            (&c.blend_many, "blend"),
+            (&c.blend_many, "blend many"),
             (&c.mask, "mask"),
             (&c.matte, "matte"),
             (&c.accumulate, "accumulate"),
@@ -1011,6 +1011,8 @@ impl Compositor {
                         .fold(dst.bounds, |r, l| r.union(l.source.bounds()));
                 }
             }
+            crate::profile::add_value("bm_groups", 1.0);
+            crate::profile::add_value("bm_layers", (end - i) as f64);
             i = end;
         }
         dst
