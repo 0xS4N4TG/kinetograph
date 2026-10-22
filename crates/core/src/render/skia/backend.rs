@@ -1,9 +1,8 @@
-//! The Metal side of the Skia backend: one Graphite context on wgpu's device and queue, the texture it draws to, and
-//! the frame loop (`Renderer::skia_canvas`).
+//! The Skia backend's frame loop (`Renderer::skia_canvas`): one Graphite context on wgpu's device and queue (made by
+//! `metal.rs` or `vulkan.rs`) and the textures it draws to.
 
 use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
-use std::ffi::c_void;
 use std::io::Write;
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -12,10 +11,11 @@ use skia_safe::gpu::graphite;
 use skia_safe::{AlphaType, ColorSpace, ColorType, Image, Surface};
 use vello::kurbo::Affine;
 use vello::wgpu;
-use wgpu::hal::api::Metal;
 
 use super::super::{Renderer, warp};
 use super::draw::Translator;
+use super::native::Native;
+use super::Role;
 use crate::compositor::{Readback, Tex};
 use crate::error::{Error, Result};
 use crate::resolve::{ResolvedKind, ResolvedLayer, ResolvedScene};
@@ -26,6 +26,7 @@ use crate::scene::Scene;
 const FRAMES_IN_FLIGHT: usize = 2;
 
 pub(in super::super) struct SkiaBackend {
+    native: Native,
     ctx: graphite::Context,
     rec: Rc<RefCell<graphite::Recorder>>,
     tr: Translator,
@@ -55,23 +56,12 @@ struct Target {
     _texture: wgpu::Texture,
 }
 
-fn mtl_ptr<T: ?Sized>(r: &T) -> *mut c_void {
-    r as *const T as *const c_void as *mut c_void
-}
-
-/// A Skia backend on `device`'s Metal device and `queue`'s command queue, if `KINETOGRAPH_BACKEND=skia`.
+/// A Skia backend on `device`'s GPU device and `queue`'s command queue, if `KINETOGRAPH_BACKEND=skia`.
 pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: &Scene) -> Option<SkiaBackend> {
     if !std::env::var("KINETOGRAPH_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("skia")) {
         return None;
     }
-    // SAFETY: the raw device and queue stay alive as long as the wgpu ones, which the renderer holds.
-    let (dev, q) = unsafe {
-        let d = device.as_hal::<Metal>()?;
-        let q = queue.as_hal::<Metal>()?;
-        (mtl_ptr(&**d.raw_device()), mtl_ptr(q.as_raw()))
-    };
-    let backend = unsafe { graphite::mtl::BackendContext::new(dev, q) };
-    let mut ctx = graphite::mtl::context_factory::make_metal(&backend, None)?;
+    let (native, mut ctx) = Native::new(device, queue)?;
     let rec = Rc::new(RefCell::new(ctx.make_recorder(None)?));
     let mut tr = Translator::new(scene);
     tr.set_recorder(rec.clone());
@@ -92,7 +82,7 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
         std::fs::create_dir_all(&dir).ok()?;
         std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
     });
-    Some(SkiaBackend { ctx, rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
+    Some(SkiaBackend { native, ctx, rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
 }
 
 fn warn_once(what: &str) {
@@ -136,7 +126,7 @@ impl Renderer {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: if linear { wgpu::TextureFormat::Rgba16Float } else { wgpu::TextureFormat::Rgba8Unorm },
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: Native::target_usage(),
                 view_formats: &[],
             });
             // wgpu zeroes a texture it has not seen written before its first read, which would wipe what Skia drew: one
@@ -154,9 +144,8 @@ impl Renderer {
                 ..Default::default()
             }));
             self.queue.submit([encoder.finish()]);
-            let ptr = unsafe { texture.as_hal::<Metal>().map(|h| mtl_ptr(h.raw_handle())) }
-                .ok_or_else(|| Error::Render("the Skia target is not a Metal texture".into()))?;
-            let bt = unsafe { graphite::mtl::backend_textures::make_metal((size.0 as i32, size.1 as i32), ptr) };
+            let bt = Native::backend_texture(&self.device, &texture, size, Role::Target)
+                .ok_or_else(|| Error::Render("the Skia target is not a texture of the GPU API Skia runs on".into()))?;
             let (color_type, space) =
                 if linear { (ColorType::RGBAF16, ColorSpace::new_srgb_linear()) } else { (ColorType::RGBA8888, ColorSpace::new_srgb()) };
             let surface = graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, color_type, Some(space), None)
@@ -169,7 +158,7 @@ impl Renderer {
 
 
         sk.tr.begin_frame(&self.scene);
-        let SkiaBackend { ctx, rec, tr, targets, .. } = sk;
+        let SkiaBackend { native, ctx, rec, tr, targets, .. } = sk;
         let target = &mut targets[current];
         let margin = self.margin;
         tr.draw_scene(target.surface.canvas(), scene, scene.background, self, margin);
@@ -183,6 +172,9 @@ impl Renderer {
         }
         // What the fallbacks drew goes first; Skia reads it.
         self.compositor.submit();
+        let held = tr.take_held();
+        // Whatever wgpu has to do to the textures first (image layouts on Vulkan; nothing on Metal).
+        native.before_skia(&self.device, &self.queue, &targets[current].view, &held);
         let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
         let info = graphite::InsertRecordingInfo::new(&mut recording);
         if ctx.insert_recording(&info) != graphite::InsertStatus::Success {
@@ -191,7 +183,7 @@ impl Renderer {
         ctx.submit(None);
         ctx.check_async_work_completion();
         // The fallback textures are free to be drawn into again: what follows on the queue comes after Skia's reads.
-        for tex in tr.take_held() {
+        for tex in held {
             self.compositor.release(tex);
         }
 
@@ -281,8 +273,7 @@ impl Renderer {
 
     /// `tex`, a linear premultiplied Rgba16Float texture of the compositor's, as a Skia image.
     pub(in super::super) fn skia_wrap(&self, rec: &mut graphite::Recorder, tex: &Tex) -> Option<Image> {
-        let ptr = unsafe { tex.texture.as_hal::<Metal>().map(|h| mtl_ptr(h.raw_handle())) }?;
-        let bt = unsafe { graphite::mtl::backend_textures::make_metal((tex.size[0] as i32, tex.size[1] as i32), ptr) };
+        let bt = Native::backend_texture(&self.device, &tex.texture, (tex.size[0], tex.size[1]), Role::Sampled)?;
         graphite::images::wrap_texture(rec, &bt, ColorType::RGBAF16, AlphaType::Premul, ColorSpace::new_srgb_linear())
     }
 }

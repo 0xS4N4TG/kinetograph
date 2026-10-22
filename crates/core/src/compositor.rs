@@ -283,7 +283,7 @@ pub struct Readback {
 
 impl Readback {
     /// The submit the readback's copy went in.
-    #[cfg(all(feature = "skia", target_os = "macos"))]
+    #[cfg(feature = "skia")]
     pub(crate) fn submission(&self) -> Option<wgpu::SubmissionIndex> {
         self.submission.clone()
     }
@@ -962,7 +962,7 @@ impl Compositor {
 
     /// The whole canvas texture from `skia_output`, a texture of its size that Skia drew (`render/skia.rs`): premultiplied,
     /// and either Rgba8 holding sRGB-encoded values or, if `linear`, Rgba16Float in linear light.
-    #[cfg(all(feature = "skia", target_os = "macos"))]
+    #[cfg(feature = "skia")]
     pub(crate) fn from_skia(&mut self, skia_output: &wgpu::TextureView, linear: bool) -> Tex {
         let target = self.target_full(self.whole());
         let input = Input {
