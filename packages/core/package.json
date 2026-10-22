@@ -3,44 +3,166 @@
   "version": "0.1.0",
   "description": "Remotion-shaped authoring API for Kinetograph: frame clock, Remotion core and packages, determinism",
   "license": "PolyForm-Small-Business-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/0xS4N4TG/kinetograph#readme",
+  "bugs": {
+    "url": "https://github.com/0xS4N4TG/kinetograph/issues"
+  },
+  "keywords": [
+    "video",
+    "remotion",
+    "motion-graphics",
+    "renderer",
+    "gpu",
+    "headless"
+  ],
   "type": "module",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./transitions": { "types": "./dist/transitions/index.d.ts", "default": "./dist/transitions/index.js" },
-    "./transitions/*": { "types": "./dist/transitions/*.d.ts", "default": "./dist/transitions/*.js" },
-    "./motion-blur": { "types": "./dist/motion-blur.d.ts", "default": "./dist/motion-blur.js" },
-    "./noise": { "types": "./dist/noise.d.ts", "default": "./dist/noise.js" },
-    "./paths": { "types": "./dist/paths.d.ts", "default": "./dist/paths.js" },
-    "./shapes": { "types": "./dist/shapes.d.ts", "default": "./dist/shapes.js" },
-    "./layout-utils": { "types": "./dist/layout-utils.d.ts", "default": "./dist/layout-utils.js" },
-    "./animation-utils": { "types": "./dist/animation-utils.d.ts", "default": "./dist/animation-utils.js" },
-    "./captions": { "types": "./dist/captions.d.ts", "default": "./dist/captions.js" },
-    "./google-fonts": { "types": "./dist/google-fonts.d.ts", "default": "./dist/google-fonts.js" },
-    "./fonts": { "types": "./dist/fonts.d.ts", "default": "./dist/fonts.js" },
-    "./lottie": { "types": "./dist/lottie.d.ts", "default": "./dist/lottie.js" },
-    "./gif": { "types": "./dist/gif.d.ts", "default": "./dist/gif.js" },
-    "./media-utils": { "types": "./dist/media-utils.d.ts", "default": "./dist/media-utils.js" },
-    "./light-leaks": { "types": "./dist/light-leaks.d.ts", "default": "./dist/light-leaks.js" },
-    "./starburst": { "types": "./dist/starburst.d.ts", "default": "./dist/starburst.js" },
-    "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
-    "./sfx": { "types": "./dist/sfx.d.ts", "default": "./dist/sfx.js" },
-    "./sound-source": { "types": "./dist/sound-source.d.ts", "default": "./dist/sound-source.js" },
-    "./zod-types": { "types": "./dist/zod-types.d.ts", "default": "./dist/zod-types.js" },
-    "./timeline-utils": { "types": "./dist/timeline-utils/index.d.ts", "default": "./dist/timeline-utils/index.js" },
-    "./timeline-utils/audio-waveform-worker": { "types": "./dist/timeline-utils/audio-waveform-worker.d.ts", "default": "./dist/timeline-utils/audio-waveform-worker.js" },
-    "./media-parser": { "types": "./dist/media-parser/index.d.ts", "default": "./dist/media-parser/index.js" },
-    "./media-parser/*": { "types": "./dist/media-parser/*.d.ts", "default": "./dist/media-parser/*.js" },
-    "./webcodecs": { "types": "./dist/webcodecs/index.d.ts", "default": "./dist/webcodecs/index.js" },
-    "./webcodecs/*": { "types": "./dist/webcodecs/*.d.ts", "default": "./dist/webcodecs/*.js" },
-    "./canvas": { "types": "./dist/canvas.d.ts", "default": "./dist/canvas.js" },
-    "./rive": { "types": "./dist/rive.d.ts", "default": "./dist/rive.js" },
-    "./skia": { "types": "./dist/skia/index.d.ts", "default": "./dist/skia/index.js" },
-    "./skia/*": { "types": "./dist/skia/*.d.ts", "default": "./dist/skia/*.js" },
-    "./determinism": { "types": "./dist/determinism.d.ts", "default": "./dist/determinism.js" },
-    "./determinism/install": { "types": "./dist/determinism-install.d.ts", "default": "./dist/determinism-install.js" },
-    "./web/install": { "types": "./dist/web-install.d.ts", "default": "./dist/web-install.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./transitions": {
+      "types": "./dist/transitions/index.d.ts",
+      "default": "./dist/transitions/index.js"
+    },
+    "./transitions/*": {
+      "types": "./dist/transitions/*.d.ts",
+      "default": "./dist/transitions/*.js"
+    },
+    "./motion-blur": {
+      "types": "./dist/motion-blur.d.ts",
+      "default": "./dist/motion-blur.js"
+    },
+    "./noise": {
+      "types": "./dist/noise.d.ts",
+      "default": "./dist/noise.js"
+    },
+    "./paths": {
+      "types": "./dist/paths.d.ts",
+      "default": "./dist/paths.js"
+    },
+    "./shapes": {
+      "types": "./dist/shapes.d.ts",
+      "default": "./dist/shapes.js"
+    },
+    "./layout-utils": {
+      "types": "./dist/layout-utils.d.ts",
+      "default": "./dist/layout-utils.js"
+    },
+    "./animation-utils": {
+      "types": "./dist/animation-utils.d.ts",
+      "default": "./dist/animation-utils.js"
+    },
+    "./captions": {
+      "types": "./dist/captions.d.ts",
+      "default": "./dist/captions.js"
+    },
+    "./google-fonts": {
+      "types": "./dist/google-fonts.d.ts",
+      "default": "./dist/google-fonts.js"
+    },
+    "./fonts": {
+      "types": "./dist/fonts.d.ts",
+      "default": "./dist/fonts.js"
+    },
+    "./lottie": {
+      "types": "./dist/lottie.d.ts",
+      "default": "./dist/lottie.js"
+    },
+    "./gif": {
+      "types": "./dist/gif.d.ts",
+      "default": "./dist/gif.js"
+    },
+    "./media-utils": {
+      "types": "./dist/media-utils.d.ts",
+      "default": "./dist/media-utils.js"
+    },
+    "./light-leaks": {
+      "types": "./dist/light-leaks.d.ts",
+      "default": "./dist/light-leaks.js"
+    },
+    "./starburst": {
+      "types": "./dist/starburst.d.ts",
+      "default": "./dist/starburst.js"
+    },
+    "./media": {
+      "types": "./dist/media.d.ts",
+      "default": "./dist/media.js"
+    },
+    "./sfx": {
+      "types": "./dist/sfx.d.ts",
+      "default": "./dist/sfx.js"
+    },
+    "./sound-source": {
+      "types": "./dist/sound-source.d.ts",
+      "default": "./dist/sound-source.js"
+    },
+    "./zod-types": {
+      "types": "./dist/zod-types.d.ts",
+      "default": "./dist/zod-types.js"
+    },
+    "./timeline-utils": {
+      "types": "./dist/timeline-utils/index.d.ts",
+      "default": "./dist/timeline-utils/index.js"
+    },
+    "./timeline-utils/audio-waveform-worker": {
+      "types": "./dist/timeline-utils/audio-waveform-worker.d.ts",
+      "default": "./dist/timeline-utils/audio-waveform-worker.js"
+    },
+    "./media-parser": {
+      "types": "./dist/media-parser/index.d.ts",
+      "default": "./dist/media-parser/index.js"
+    },
+    "./media-parser/*": {
+      "types": "./dist/media-parser/*.d.ts",
+      "default": "./dist/media-parser/*.js"
+    },
+    "./webcodecs": {
+      "types": "./dist/webcodecs/index.d.ts",
+      "default": "./dist/webcodecs/index.js"
+    },
+    "./webcodecs/*": {
+      "types": "./dist/webcodecs/*.d.ts",
+      "default": "./dist/webcodecs/*.js"
+    },
+    "./canvas": {
+      "types": "./dist/canvas.d.ts",
+      "default": "./dist/canvas.js"
+    },
+    "./rive": {
+      "types": "./dist/rive.d.ts",
+      "default": "./dist/rive.js"
+    },
+    "./skia": {
+      "types": "./dist/skia/index.d.ts",
+      "default": "./dist/skia/index.js"
+    },
+    "./skia/*": {
+      "types": "./dist/skia/*.d.ts",
+      "default": "./dist/skia/*.js"
+    },
+    "./determinism": {
+      "types": "./dist/determinism.d.ts",
+      "default": "./dist/determinism.js"
+    },
+    "./determinism/install": {
+      "types": "./dist/determinism-install.d.ts",
+      "default": "./dist/determinism-install.js"
+    },
+    "./web/install": {
+      "types": "./dist/web-install.d.ts",
+      "default": "./dist/web-install.js"
+    }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "!dist/**/*.map"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
@@ -57,10 +179,18 @@
     "zod": "^4.6.7"
   },
   "peerDependenciesMeta": {
-    "zod": { "optional": true }
+    "zod": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "react": "19.3.1",
     "zod": "4.6.7"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
