@@ -997,7 +997,9 @@ refusal says what to change.
 
 Encoder choice, when `--encoder` is not given. On macOS, ffmpeg's hardware encoders are used when it has them and they
 can do what was asked: `h264_videotoolbox`, `hevc_videotoolbox` (8-bit 4:2:0 only, so another `--pixel-format` selects
-the software encoder) and `prores_videotoolbox`. Otherwise `libx264`, `libx265`, `prores_ks` and `libvpx-vp9`; `gif` has
+the software encoder) and `prores_videotoolbox`. Otherwise, for H.264, the first of `libx264`, `libopenh264`, `h264_mf`,
+`h264_nvenc` and `h264_amf` that the ffmpeg has (and, for the last three, that opens on this machine; the ffmpeg in the
+npm packages is LGPL-only and has no `libx264`); then `libx265`, `prores_ks` and `libvpx-vp9`; `gif` has
 one. VideoToolbox has no CRF, so `--crf` is mapped to its 0 to 100 quality (`-q:v`): `quality = round(100 x (51 - crf) / 51)`,
 at least 1, which makes CRF 18 quality 65, CRF 23 quality 55 and CRF 0 quality 100. That is a straight line through the
 ends of the CRF scale, not a measured match; for a quality that is the same on every machine pass `--encoder libx264`.

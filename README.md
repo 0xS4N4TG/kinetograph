@@ -157,7 +157,9 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
 - **Range.** `10..40` is frames 10 to 39 and `10..=40` is 10 to 40, as in Rust; either start or the end of `..` may be
   left out. The default is the whole scene. A range that is empty or runs past `durationInFrames` is an error.
 - **Encoder.** `--encoder` names any ffmpeg H.264 encoder. Without it, `h264_videotoolbox` is used on macOS when ffmpeg
-  has it, and `libx264` everywhere else. `libx264` runs at `crf 18`, `preset medium`; the other encoders get a bit rate
+  has it, then the first of `libx264`, `libopenh264`, `h264_mf`, `h264_nvenc`, `h264_amf` the linked ffmpeg has and can open (the
+  ffmpeg inside the npm packages is LGPL-only, so it has no `libx264`: `libopenh264` on macOS and Linux, `h264_mf` on
+  Windows). `libx264` runs at `crf 18`, `preset medium`; the other encoders get a bit rate
   of 0.2 bits per pixel per frame (about 12.4 Mbit/s for 1080p30). The Node `kinetograph render` also writes H.265,
   ProRes, VP9 and GIF, with `--scale`, `--crf` and the rest (docs/AUTHORING.md §9).
 - **Container.** From the output's extension, `.mp4` or `.mov`; both are written with `+faststart` (the index first, so

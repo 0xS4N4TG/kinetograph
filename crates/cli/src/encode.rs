@@ -10,7 +10,7 @@
 
 use std::ffi::c_int;
 use std::path::Path;
-use std::sync::Once;
+use std::sync::{Mutex, Once, OnceLock};
 
 use ffmpeg::codec::{self, Flags as CodecFlags};
 use ffmpeg::format::{self, Pixel};
@@ -39,15 +39,65 @@ pub fn init() {
     });
 }
 
-/// Whether the linked ffmpeg has an encoder called `name`.
+/// The H.264 encoders tried, in this order, when none is asked for and VideoToolbox is not there. `libx264` is GPL: the
+/// ffmpeg that ships with Kinetograph is LGPL-only and has none, so there it is the first of the rest that exists:
+/// `libopenh264` (BSD, software, macOS and Linux), `h264_mf` (Windows Media Foundation), `h264_nvenc` and `h264_amf`
+/// (the GPU's, loaded at run time). All take yuv420p.
+const H264_FALLBACKS: [&str; 5] = [
+    DEFAULT_ENCODER,
+    "libopenh264",
+    "h264_mf",
+    "h264_nvenc",
+    "h264_amf",
+];
+
+/// The encoders of `H264_FALLBACKS` that depend on hardware or an OS service the machine may not have.
+const PROBED: [&str; 3] = ["h264_mf", "h264_nvenc", "h264_amf"];
+
+/// Whether the linked ffmpeg has an encoder called `name`. The hardware ones of `PROBED` also have to open (ffmpeg
+/// lists h264_nvenc on a machine with no NVIDIA GPU), so they count only if a small test encoder opens.
 pub fn has_encoder(name: &str) -> bool {
     init();
-    encoder::find_by_name(name).is_some()
+    if encoder::find_by_name(name).is_none() {
+        return false;
+    }
+    !PROBED.contains(&name) || opens(name)
+}
+
+/// Whether encoder `name` opens for a small yuv420p picture; asked once for each name.
+fn opens(name: &str) -> bool {
+    static CACHE: OnceLock<Mutex<Vec<(String, bool)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    if let Some((_, ok)) = cache.lock().unwrap().iter().find(|(n, _)| n == name) {
+        return *ok;
+    }
+    let ok = (|| {
+        let codec = encoder::find_by_name(name)?;
+        let mut video = codec::context::Context::new_with_codec(codec)
+            .encoder()
+            .video()
+            .ok()?;
+        video.set_width(256);
+        video.set_height(144);
+        video.set_format(Pixel::YUV420P);
+        video.set_time_base(Rational(1, 30));
+        video.set_frame_rate(Some(Rational(30, 1)));
+        video.set_bit_rate(1_000_000);
+        video.open().ok().map(|_| ())
+    })()
+    .is_some();
+    cache.lock().unwrap().push((name.to_string(), ok));
+    ok
+}
+
+/// The H.264 encoder to use when none is asked for: `H264_FALLBACKS` in order.
+fn default_h264(has: &impl Fn(&str) -> bool) -> Option<&'static str> {
+    H264_FALLBACKS.into_iter().find(|name| has(name))
 }
 
 /// Picks the encoder: `requested` if given (and present), else VideoToolbox
-/// on macOS when `has` it, else libx264. `has` says whether ffmpeg has an
-/// encoder by that name.
+/// on macOS when `has` it, else the first of `H264_FALLBACKS` that `has`
+/// says exists.
 pub fn select_encoder(
     requested: Option<&str>,
     macos: bool,
@@ -58,18 +108,19 @@ pub fn select_encoder(
             Ok(name.to_string())
         } else {
             Err(format!(
-                "this ffmpeg has no encoder called {name:?} (see `ffmpeg -encoders`)"
+                "this ffmpeg has no encoder called {name:?} that opens here (see `ffmpeg -encoders`)"
             ))
         };
     }
     if macos && has(VIDEOTOOLBOX) {
         return Ok(VIDEOTOOLBOX.to_string());
     }
-    if has(DEFAULT_ENCODER) {
-        return Ok(DEFAULT_ENCODER.to_string());
+    if let Some(name) = default_h264(&has) {
+        return Ok(name.to_string());
     }
     Err(format!(
-        "this ffmpeg has no {DEFAULT_ENCODER} encoder; pass --encoder with one it has"
+        "this ffmpeg has no H.264 encoder ({}); pass --encoder with one it has",
+        H264_FALLBACKS.join(", ")
     ))
 }
 
@@ -569,7 +620,7 @@ pub fn resolve(
         Some(name) => {
             if !has(name) {
                 return Err(format!(
-                    "this ffmpeg has no encoder called {name:?} (see `ffmpeg -encoders`)"
+                    "this ffmpeg has no encoder called {name:?} that opens here (see `ffmpeg -encoders`)"
                 ));
             }
             if Codec::of_encoder(name) != Some(codec) {
@@ -590,7 +641,16 @@ pub fn resolve(
             let hardware =
                 |name: &'static str| (macos && has(name) && wanted == Pix::Yuv420p).then_some(name);
             let pick = match codec {
-                Codec::H264 => hardware(VIDEOTOOLBOX).unwrap_or(DEFAULT_ENCODER),
+                Codec::H264 => hardware(VIDEOTOOLBOX)
+                    .or_else(|| {
+                        // The software ones and the GPU ones take 4:2:0 only; libx264 alone takes the others.
+                        if wanted == Pix::Yuv420p {
+                            default_h264(&has)
+                        } else {
+                            Some(DEFAULT_ENCODER)
+                        }
+                    })
+                    .unwrap_or(DEFAULT_ENCODER),
                 Codec::H265 => hardware("hevc_videotoolbox").unwrap_or("libx265"),
                 Codec::ProRes => {
                     if macos && has("prores_videotoolbox") {
@@ -603,8 +663,13 @@ pub fn resolve(
                 Codec::Gif => "gif",
             };
             if !has(pick) {
+                let wanted_list = if codec == Codec::H264 && wanted == Pix::Yuv420p {
+                    H264_FALLBACKS.join(", ")
+                } else {
+                    pick.to_string()
+                };
                 return Err(format!(
-                    "this ffmpeg has no {pick} encoder, which {} needs; pass --encoder with one it has",
+                    "this ffmpeg has no {wanted_list} encoder, which {} needs; pass --encoder with one it has",
                     codec.name()
                 ));
             }
@@ -874,6 +939,8 @@ fn encoder_options(
         _ => match settings.quality {
             Quality::Default => video.set_bit_rate(default_bits),
             Quality::Bitrate(bits) => video.set_bit_rate(bits),
+            // Only VideoToolbox maps a CRF to a quality; the others (openh264, Media Foundation, NVENC) take a bit rate.
+            Quality::Crf(_) if !is_videotoolbox(&settings.encoder) => video.set_bit_rate(default_bits),
             Quality::Crf(crf) => {
                 // SAFETY: `video` is a live, not yet opened context; these two fields are what ffmpeg's `-q:v` sets.
                 unsafe {
@@ -1527,6 +1594,33 @@ mod tests {
         assert!(
             msg.contains("libx264") && msg.contains("--encoder"),
             "{msg}"
+        );
+    }
+
+    #[test]
+    fn the_lgpl_safe_encoders_follow_libx264_in_order() {
+        let only = |names: &'static [&'static str]| move |name: &str| names.contains(&name);
+        // The LGPL-only ffmpeg: no libx264.
+        assert_eq!(
+            select_encoder(None, false, only(&["libopenh264", "h264_nvenc"])).unwrap(),
+            "libopenh264"
+        );
+        assert_eq!(
+            select_encoder(None, false, only(&["h264_mf", "h264_nvenc"])).unwrap(),
+            "h264_mf"
+        );
+        assert_eq!(
+            select_encoder(None, false, only(&["h264_nvenc", "h264_amf"])).unwrap(),
+            "h264_nvenc"
+        );
+        // libx264 still wins where the ffmpeg has it (a developer's own build), VideoToolbox on macOS wins over both.
+        assert_eq!(
+            select_encoder(None, false, only(&["libopenh264", "libx264"])).unwrap(),
+            "libx264"
+        );
+        assert_eq!(
+            select_encoder(None, true, only(&["libopenh264", "h264_videotoolbox"])).unwrap(),
+            "h264_videotoolbox"
         );
     }
 
