@@ -292,13 +292,30 @@ impl Translator {
 
     fn draw_flat(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64) {
         let m = layer.transform.matrix();
+        let outer = scale;
         let scale = scale * m.determinant().abs().sqrt();
         canvas.save();
         canvas.concat(&mat(m));
 
         // Motion blur: the sub-frames are summed with equal weights into one buffer.
         if !layer.motion.is_empty() {
-            let bounds = self.layer_bounds(layer, scale);
+            // The sub-frames are where the layer was during the shutter, not where it is: the union of theirs, in this layer's space.
+            let inv = mat(m.inverse());
+            let mut bounds: Option<Rect> = None;
+            let mut all = true;
+            for sub in layer.motion.iter().filter(|sub| sub.opacity > 0.0) {
+                match self.layer_bounds(sub, outer * sub.transform.matrix().determinant().abs().sqrt()) {
+                    Some(b) => {
+                        let r = Matrix::concat(&inv, &mat(sub.transform.matrix())).map_rect(b).0;
+                        bounds = Some(match bounds {
+                            None => r,
+                            Some(a) => Rect::new(a.left.min(r.left), a.top.min(r.top), a.right.max(r.right), a.bottom.max(r.bottom)),
+                        });
+                    }
+                    None => all = false,
+                }
+            }
+            let bounds = if all { bounds } else { None };
             let mut p = Paint::default();
             p.set_blend_mode(comp.blend);
             self.save_layer_with(canvas, bounds, &p, None, true);
@@ -310,7 +327,7 @@ impl Translator {
                 // The sub-frame carries its own matrix (it is a full copy of the layer): undo ours.
                 canvas.save();
                 canvas.concat(&mat(m.inverse()));
-                self.draw_layer_with(canvas, sub, siblings, Comp { alpha: sub.opacity / n, blend: SkBlend::Plus }, scale);
+                self.draw_layer_with(canvas, sub, siblings, Comp { alpha: sub.opacity / n, blend: SkBlend::Plus }, outer);
                 canvas.restore();
             }
             canvas.restore();
