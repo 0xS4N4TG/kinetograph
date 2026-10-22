@@ -107,6 +107,17 @@ pub fn take_local() -> BTreeMap<&'static str, f64> {
     mine
 }
 
+/// Hands this thread's stages to the thread `caller` (from `caller()`), whose `take_local` returns them: for a thread
+/// that works for another and times what it does.
+pub fn forward(caller: &str) {
+    if !enabled() {
+        return;
+    }
+    for (stage, value) in LOCAL.with(|t| std::mem::take(&mut *t.borrow_mut())) {
+        add_for(caller, stage, value);
+    }
+}
+
 /// The shared stages, as they stand.
 pub fn shared() -> BTreeMap<&'static str, f64> {
     SHARED.lock().unwrap().clone()

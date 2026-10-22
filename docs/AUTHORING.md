@@ -138,7 +138,10 @@ export class Renderer {
 }
 export class VideoWriter {
   /** Renders `frame` of this scene and queues it for encoding. Frames must come in increasing order; the first one
-   * pushed is time 0. The scene's size and fps must match the writer's. The GPU renders frame N+1 while N is encoded. */
+   * pushed is time 0. The scene's size and fps must match the writer's. The call returns once the frame is queued: a
+   * thread of the writer parses and draws it while the caller goes on to the next frame, and the GPU renders frame N+1
+   * while N is encoded. An order error is thrown by the call; a frame that cannot be drawn (a wrong size, a missing
+   * file) ends the video and is thrown by the next `pushFrame` or by `finish`. */
   pushFrame(sceneJson: string, frame: number, baseDir?: string): void;
   /** Flushes, muxes `audio` (AAC) if given, closes the file. */
   finish(audio?: AudioPcm): RenderSummary;

@@ -101,6 +101,8 @@ try {
         log.add({ ...row, finish: t1 - t0, yuv: t2 - t1, post: t3 - t2, t3, ...takeAddon() });
       }
     };
+    // The order before the start had a thread of its own: start this frame, then collect the one before.
+    const syncStart = process.env.KINETOGRAPH_SYNC_START !== undefined;
     const run = { next: message.first, end: message.last };
     active = run;
     const chunkStart = log ? now() : 0;
@@ -115,14 +117,18 @@ try {
       const out = await source.frame(frame);
       const t1 = log ? now() : 0;
       const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
+      // The frame before is collected first: its start ran on the addon's own thread while this frame's JS did, and
+      // the next start would take the GPU renderer from the collection.
+      if (started && !syncStart) collect();
+      const tStart = log ? now() : 0;
       renderer.startFrame(sceneJson, frame, source.baseDir);
       let row: Record<string, number> | undefined;
       if (log) {
         const t2 = now();
         // The addon's start stages and the JS ones are read now; `collect` adds the finish ones to the same row.
-        row = { f: frame, t0, t1, t2, js: out.jsMs, stringify: out.stringifyMs, startFrame: t2 - t1, ...takeJs(), ...takeAddon() };
+        row = { f: frame, t0, t1, t2, js: out.jsMs, stringify: out.stringifyMs, startFrame: t2 - tStart, ...takeJs(), ...takeAddon() };
       }
-      if (started) collect();
+      if (started && syncStart) collect();
       started = { index, out, row };
     }
     if (started) collect();
