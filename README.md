@@ -71,6 +71,9 @@ flowchart TB
    WGSL passes for blends, masks, blurs, shadows, filters and the rest of the effects; WebGL shaders translated from
    GLSL by naga; the `scene3d` renderer for meshes and glTF models; ThorVG for Lottie. Layers that did not change since
    the last frame are reused.
+   Skia (Graphite on Metal, or on Vulkan elsewhere) draws the 2D layers by default; layers it cannot draw fall back to
+   Vello and wgpu. `KINETOGRAPH_BACKEND=vello` selects Vello for the whole run, and a build with
+   `--no-default-features` has Vello only. If Skia cannot start on the GPU, one warning is printed and Vello draws.
 6. **Encode.** Frames go to FFmpeg (VideoToolbox on macOS) on another thread while the GPU draws the next one; the
    project's audio, rendered offline with the Web Audio API, is mixed and muxed at the end.
 

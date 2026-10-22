@@ -21,6 +21,22 @@ enum Role {
     Sampled,
 }
 
+/// Whether `KINETOGRAPH_BACKEND` leaves Skia as the backend: unset, empty or `skia` do, `vello` does not, anything
+/// else warns once and keeps the default (Skia). Whether Skia is compiled in is a separate question.
+pub(super) fn wants_skia() -> bool {
+    match std::env::var("KINETOGRAPH_BACKEND") {
+        Ok(v) if v.eq_ignore_ascii_case("vello") => false,
+        Ok(v) if !v.is_empty() && !v.eq_ignore_ascii_case("skia") => {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| {
+                eprintln!("kinetograph: unknown KINETOGRAPH_BACKEND={v:?} (expected `skia` or `vello`); using the default, Skia")
+            });
+            true
+        }
+        _ => true,
+    }
+}
+
 #[cfg(all(feature = "skia", target_os = "macos"))]
 mod metal;
 #[cfg(all(feature = "skia", target_os = "macos"))]
@@ -55,6 +71,7 @@ mod stub {
 
     pub(in super::super) fn init(_: &wgpu::Device, _: &wgpu::Queue, _: &Scene) -> Option<SkiaBackend> {
         if std::env::var("KINETOGRAPH_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("skia")) {
+            // Only an explicit request warns: an unset variable in a Vello-only build is the build's own default.
             static ONCE: std::sync::Once = std::sync::Once::new();
             ONCE.call_once(|| {
                 eprintln!(

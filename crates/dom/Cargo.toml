@@ -9,7 +9,7 @@ license.workspace = true
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 [dependencies]
-kinetograph-core = { path = "../core" }
+kinetograph-core = { path = "../core", default-features = false }
 # Blitz's DOM: Stylo for CSS, taffy for layout, Parley for text. No system fonts:
 # a frame only sees the fonts the project registered (determinism).
 blitz-dom = { version = "=0.3.0-beta.3", default-features = false, features = ["svg", "woff", "floats", "text-transform-icu"] }

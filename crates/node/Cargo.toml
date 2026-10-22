@@ -10,11 +10,12 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-skia = ["kinetograph-core/skia"]
+default = ["skia"]
+skia = ["kinetograph-core/skia", "kinetograph-cli/skia"]
 
 [dependencies]
-kinetograph-core = { path = "../core" }
-kinetograph-cli = { path = "../cli" }
+kinetograph-core = { path = "../core", default-features = false }
+kinetograph-cli = { path = "../cli", default-features = false }
 kinetograph-dom = { path = "../dom" }
 kinetograph-rive = { path = "../rive" }
 ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }

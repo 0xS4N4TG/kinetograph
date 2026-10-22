@@ -223,9 +223,14 @@ impl Renderer {
         // cheaply.
         let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
 
-        let context = render_context();
-        let (device, queue) = pollster::block_on(new_device(&context.instance))
-            .ok_or_else(|| Error::Render("no compatible GPU adapter found".into()))?;
+        let mut context = render_context();
+        let mut gpu = pollster::block_on(new_device(&context.instance));
+        if gpu.is_none() && cfg!(all(feature = "skia", not(target_os = "macos"))) && skia::wants_skia() {
+            // The Vulkan-only instance (for Skia) found no adapter: let wgpu pick any, and Vello draws.
+            context = RenderContext::new();
+            gpu = pollster::block_on(new_device(&context.instance));
+        }
+        let (device, queue) = gpu.ok_or_else(|| Error::Render("no compatible GPU adapter found".into()))?;
 
         let vello = new_vello(&device)?;
         let margin = scene.margin();
@@ -285,6 +290,10 @@ impl Renderer {
             skia: None,
         };
         renderer.skia = skia::init(&renderer.device, &renderer.queue, &renderer.scene);
+        static SAY: std::sync::Once = std::sync::Once::new();
+        SAY.call_once(|| {
+            eprintln!("kinetograph: drawing with {}", if renderer.skia.is_some() { "Skia" } else { "Vello" })
+        });
         renderer.ensure_image_renderer(fresh.has_pictures())?;
         renderer.install_assets(fresh);
         renderer.add_shaders();
@@ -3862,13 +3871,12 @@ fn new_vello_target(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureVie
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-/// `RenderContext::new()`, except that on Linux and Windows a run with `KINETOGRAPH_BACKEND=skia` gets a Vulkan-only
-/// instance (Windows would otherwise default to D3D12, and Skia's Graphite shares wgpu's VkDevice;
+/// `RenderContext::new()`, except that on Linux and Windows a Skia run (the default; not `KINETOGRAPH_BACKEND=vello`)
+/// gets a Vulkan-only instance (Windows would otherwise default to D3D12, and Skia's Graphite shares wgpu's VkDevice;
 /// `render/skia/vulkan.rs`). An explicit `WGPU_BACKEND` still decides.
 fn render_context() -> RenderContext {
     #[cfg(all(feature = "skia", not(target_os = "macos")))]
-    if std::env::var("KINETOGRAPH_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("skia"))
-        && wgpu::Backends::from_env().is_none()
+    if skia::wants_skia() && wgpu::Backends::from_env().is_none()
     {
         // The rest is `RenderContext::new()`'s.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {

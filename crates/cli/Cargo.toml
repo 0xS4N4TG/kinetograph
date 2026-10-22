@@ -12,8 +12,12 @@ path = "src/lib.rs"
 name = "kinetograph"
 path = "src/main.rs"
 
+[features]
+default = ["skia"]
+skia = ["kinetograph-core/skia"]
+
 [dependencies]
-kinetograph-core = { path = "../core" }
+kinetograph-core = { path = "../core", default-features = false }
 clap = { version = "4.6.7", features = ["derive"] }
 ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
 serde_json = "1.0.154"

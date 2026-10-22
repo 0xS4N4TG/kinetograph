@@ -18,4 +18,4 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 sha2 = "0.11.1"
 
 [dev-dependencies]
-kinetograph-core = { path = "../core" }
+kinetograph-core = { path = "../core", default-features = false }

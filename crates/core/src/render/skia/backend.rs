@@ -56,13 +56,25 @@ struct Target {
     _texture: wgpu::Texture,
 }
 
-/// A Skia backend on `device`'s GPU device and `queue`'s command queue, if `KINETOGRAPH_BACKEND=skia`.
+/// A Skia backend on `device`'s GPU device and `queue`'s command queue, unless `KINETOGRAPH_BACKEND=vello`. If Skia
+/// cannot start on this device (no Metal device, or a Vulkan driver without what Graphite needs), warns once and
+/// returns `None`: Vello draws the run.
 pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: &Scene) -> Option<SkiaBackend> {
-    if !std::env::var("KINETOGRAPH_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("skia")) {
+    if !super::wants_skia() {
         return None;
     }
-    let (native, mut ctx) = Native::new(device, queue)?;
-    let rec = Rc::new(RefCell::new(ctx.make_recorder(None)?));
+    let started = Native::new(device, queue).and_then(|(native, mut ctx)| {
+        let rec = ctx.make_recorder(None)?;
+        Some((native, ctx, rec))
+    });
+    let Some((native, ctx, rec)) = started else {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            eprintln!("kinetograph: the Skia backend could not start on this GPU; drawing with Vello (set KINETOGRAPH_BACKEND=vello to silence this)")
+        });
+        return None;
+    };
+    let rec = Rc::new(RefCell::new(rec));
     let mut tr = Translator::new(scene);
     tr.set_recorder(rec.clone());
     let upload_rec = rec.clone();

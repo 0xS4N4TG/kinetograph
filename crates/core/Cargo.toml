@@ -6,9 +6,10 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-# The Skia Graphite backend for 2D pages and compositing (`render/skia.rs`), chosen at run time with
-# KINETOGRAPH_BACKEND=skia. Metal on macOS, Vulkan on Linux and Windows (the `[target]` tables below); without the
-# feature the variable warns once and Vello draws.
+# The Skia Graphite backend for 2D pages and compositing (`render/skia.rs`), the default at run time (Metal on macOS,
+# Vulkan on Linux and Windows: the `[target]` tables below). KINETOGRAPH_BACKEND=vello selects Vello; a build with
+# `--no-default-features` has Vello only.
+default = ["skia"]
 skia = ["dep:skia-safe", "dep:objc2", "dep:objc2-metal", "dep:ash", "dep:cc", "wgpu/metal", "wgpu/vulkan"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
