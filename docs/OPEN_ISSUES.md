@@ -125,3 +125,12 @@ time per frame with the current build. Keep the result either way.
 - **Bun as the runtime.** Run the CLI under Bun (JavaScriptCore) instead of Node (V8). Unknowns: whether the N-API
   addon loads, and whether it loads in each worker thread. If it is faster, it can only be an option used when Bun is
   installed, since `npx kinetograph` starts Node. Bun as the bundler is not worth testing: bundling runs once a render.
+
+## 8. More workers do not make a render faster (logged 2026-10-22)
+
+Past 1 to 4 workers the render barely speeds up. Earlier Vello runs showed `--concurrency 4` only a little faster than
+`--concurrency 1`. On the Skia backend (branch `exp/skia-backend`), papercut took about 22 s at 4 workers and 28 s and
+39 s at 5 (load average 8 to 10 during the 5-worker runs, so noisy). Remotion on the same film took 131 s at 5 workers.
+The cause is not known: candidates are the per-frame JS, the shared GPU queue, the encoder, and the chunking in
+`packages/cli/src/render-job.ts`. Profile a render at 1, 2, 4 and 5 workers on a quiet machine, see which stage stops
+scaling, then fix it. This is the main lever left for the launch film, which is about 3x Remotion against a 5x goal.
