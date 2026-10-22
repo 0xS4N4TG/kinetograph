@@ -579,7 +579,8 @@ impl Translator {
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Video { width, height, .. }
             | ResolvedKind::Gif { width, height, .. }
-            | ResolvedKind::Lottie { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
+            | ResolvedKind::Lottie { width, height, .. }
+            | ResolvedKind::Noise { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
             ResolvedKind::Canvas { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
             ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w as f32, h as f32)),
             _ => None,
@@ -646,7 +647,7 @@ impl Translator {
                 let g = *size * 1.0;
                 Some(Rect::new(b.left - g, b.top - g, b.right + g, b.bottom + g))
             }
-            ResolvedKind::Image { .. } | ResolvedKind::Video { .. } | ResolvedKind::Canvas { .. } | ResolvedKind::Gif { .. } | ResolvedKind::Lottie { .. } => {
+            ResolvedKind::Image { .. } | ResolvedKind::Video { .. } | ResolvedKind::Canvas { .. } | ResolvedKind::Gif { .. } | ResolvedKind::Lottie { .. } | ResolvedKind::Noise { .. } => {
                 self.layer_box(layer)
             }
             ResolvedKind::Group { children, .. } => {
@@ -970,11 +971,11 @@ impl Translator {
                 None => self.stats.no("gif layer (not loaded)"),
             },
             ResolvedKind::Lottie { src, width, height, time, looped } => self.draw_lottie(canvas, src, (*width, *height), *time, *looped, comp),
+            ResolvedKind::Noise { width, height, turbulence, channels } => self.draw_noise(canvas, (*width, *height), turbulence, *channels, comp),
             // Handed to the wgpu path before this (`gaps`).
             ResolvedKind::Glsl { .. }
             | ResolvedKind::Scene3d { .. }
-            | ResolvedKind::MeshGradient { .. }
-            | ResolvedKind::Noise { .. } => self.stats.no("layer kind that should have fallen back"),
+            | ResolvedKind::MeshGradient { .. } => self.stats.no("layer kind that should have fallen back"),
         }
     }
 
@@ -1135,6 +1136,37 @@ impl Translator {
         };
         self.video_last.insert(src.to_string(), (ts, img.clone()));
         Some(img)
+    }
+
+    /// The noise layer: SVG's turbulence over the box, in layer space (Skia's Perlin shader is the reference algorithm;
+    /// the compositor's `noise.wgsl` is the same). Its channels are linear RGB, as the compositor stores colour, so they are
+    /// encoded to sRGB here; `gray` is the red channel, opaque.
+    fn draw_noise(&mut self, canvas: &Canvas, size: (f64, f64), t: &crate::resolve::ResolvedTurbulence, channels: crate::scene::NoiseChannels, comp: Comp) {
+        let noise = if t.fractal {
+            skia_safe::shaders::fractal_noise((t.frequency[0], t.frequency[1]), t.octaves as usize, t.seed as f32, None)
+        } else {
+            skia_safe::shaders::turbulence((t.frequency[0], t.frequency[1]), t.octaves as usize, t.seed as f32, None)
+        };
+        let fx = self.runtime("noiseLayer", "uniform shader n; uniform float gray;
+            float enc(float v) { v = clamp(v, 0.0, 1.0); return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055; }
+            half4 main(float2 xy) { half4 c = n.eval(xy);
+              float3 u = c.a > 0.0 ? float3(c.rgb) / c.a : float3(0.0);
+              if (gray > 0.5) { float g = enc(u.r); return half4(half3(g), 1); }
+              float3 e = float3(enc(u.r), enc(u.g), enc(u.b));
+              return half4(half3(e * c.a), c.a); }");
+        let (Some(noise), Some(fx)) = (noise, fx) else {
+            self.stats.no("noise layer (shader)");
+            return;
+        };
+        let gray: f32 = if channels == crate::scene::NoiseChannels::Gray { 1.0 } else { 0.0 };
+        let Some(sh) = fx.make_shader(Data::new_copy(&gray.to_le_bytes()), &[skia_safe::runtime_effect::ChildPtr::Shader(noise)], None) else {
+            self.stats.no("noise layer (shader)");
+            return;
+        };
+        let mut p = Self::base_paint(comp);
+        p.set_shader(sh);
+        canvas.draw_rect(Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32), &p);
+        self.stats.draws += 1;
     }
 
     fn rgba_image(&mut self, rgba: &[u8], w: u32, h: u32) -> Option<Image> {
@@ -1496,7 +1528,6 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
         ResolvedKind::Glsl { .. } => return Some("glsl layer"),
         ResolvedKind::Scene3d { .. } => return Some("scene3d layer"),
         ResolvedKind::MeshGradient { .. } => return Some("meshGradient layer"),
-        ResolvedKind::Noise { .. } => return Some("noise layer"),
         ResolvedKind::Text { chars, .. } if chars.iter().any(Option::is_some) => return Some("per-character text styles"),
         _ => {}
     }
