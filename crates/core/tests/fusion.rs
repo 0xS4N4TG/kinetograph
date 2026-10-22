@@ -2,6 +2,8 @@
 //! (`Renderer::set_pass_fusion`) draw exactly what the passes they replace
 //! draw, byte for byte: same scene, same frames, fusion on and off.
 
+mod common;
+
 use std::path::Path;
 
 use kinetograph_core::{Renderer, Scene};
@@ -61,6 +63,7 @@ fn pass_names(path: &str, frame: u32, fusion: bool) -> Option<Vec<&'static str>>
 
 #[test]
 fn an_inset_shadow_with_no_blur_or_spread_is_one_pass() {
+    common::pin_vello();
     let path = "tests/scenes/passes.json";
     let (Some(fused), Some(plain)) = (pass_names(path, 15, true), pass_names(path, 15, false))
     else {
@@ -237,6 +240,7 @@ fn random_scenes_draw_the_same_pixels() {
 
 #[test]
 fn a_leaf_that_stays_the_same_is_cached_from_its_third_frame() {
+    common::pin_vello();
     // blend-runs.json has plain layers that never change. With fusion a plain
     // leaf goes to the blend from its page without a texture, so the cache
     // learns that it was the same in the second frame and keeps a texture
@@ -263,6 +267,7 @@ fn a_leaf_that_stays_the_same_is_cached_from_its_third_frame() {
 
 #[test]
 fn a_run_of_blends_is_a_few_passes() {
+    common::pin_vello();
     let path = "tests/scenes/blend-runs.json";
     let (Some(fused), Some(plain)) = (pass_names(path, 15, true), pass_names(path, 15, false))
     else {
@@ -335,6 +340,7 @@ fn cards_json(srgb: bool) -> String {
 
 #[test]
 fn groups_of_leaves_draw_the_same_pixels_in_fewer_passes() {
+    common::pin_vello();
     for srgb in [false, true] {
         let json = cards_json(srgb);
         let run = |on: bool| {

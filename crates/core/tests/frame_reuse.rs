@@ -6,6 +6,8 @@
 //!
 //! Needs a GPU; the M4 runs it with the rest of `crates/core/tests/`.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use image::{ImageBuffer, Rgba};
@@ -166,6 +168,7 @@ fn a_canvas_is_reused_only_while_its_commands_are_the_same() {
 
 #[test]
 fn a_picture_file_that_changed_is_drawn_again() {
+    common::pin_vello();
     let dir = std::env::temp_dir().join(format!("kinetograph-frame-reuse-{}", std::process::id()));
     let write = |colour: [u8; 4]| {
         std::fs::create_dir_all(&dir).unwrap();

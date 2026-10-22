@@ -1,5 +1,7 @@
 //! `filterGraph`: what its primitives do to pixels, on the GPU.
 
+mod common;
+
 use std::path::PathBuf;
 
 use kinetograph_core::{Frame, Scene, render_still};
@@ -162,6 +164,7 @@ fn a_tile_repeats_the_inputs_subregion() {
 
 #[test]
 fn a_blur_has_the_standard_deviation_it_is_given_along_each_axis() {
+    common::pin_vello();
     // A one pixel wide column, blurred along x only.
     let f = render(&boxed(
         50,
@@ -195,6 +198,7 @@ fn a_blur_has_the_standard_deviation_it_is_given_along_each_axis() {
 
 #[test]
 fn a_wide_round_blur_keeps_its_standard_deviation_too() {
+    common::pin_vello();
     let f = render(&boxed(
         50,
         0,

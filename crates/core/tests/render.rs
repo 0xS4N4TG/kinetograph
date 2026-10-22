@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use kinetograph_core::{Error, Renderer, Scene, render_still};
@@ -105,6 +107,7 @@ fn opaque_colours_survive_the_linear_round_trip() {
 
 #[test]
 fn timing_a_frame_does_not_change_its_pixels() {
+    common::pin_vello();
     let mut renderer = Renderer::new(example()).unwrap();
     let plain = renderer.render_frame(20).unwrap();
     let (timed, t) = renderer.render_timed(20).unwrap();
@@ -185,6 +188,7 @@ fn a_margin_does_not_move_or_change_the_canvas() {
 
 #[test]
 fn frames_drawn_from_the_layer_cache_are_the_frames_drawn_without_it() {
+    common::pin_vello();
     let load = |name: &str| {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/scenes")
@@ -234,6 +238,7 @@ fn frames_drawn_from_the_layer_cache_are_the_frames_drawn_without_it() {
 
 #[test]
 fn turning_the_layer_cache_off_gives_back_what_it_kept() {
+    common::pin_vello();
     let mut renderer = Renderer::new(example()).unwrap();
     // Off, a new renderer finds and keeps nothing.
     let plain = renderer.render_frame(20).unwrap();

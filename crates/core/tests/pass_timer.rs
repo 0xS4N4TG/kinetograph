@@ -1,6 +1,8 @@
 //! The pass timer (`Renderer::set_pass_timing`) records the compositing
 //! passes and never changes what is drawn.
 
+mod common;
+
 use std::path::Path;
 
 use kinetograph_core::{Renderer, Scene};
@@ -11,6 +13,7 @@ fn load(path: &str) -> Scene {
 
 #[test]
 fn timing_passes_draws_the_same_pixels_and_names_them() {
+    common::pin_vello();
     // Blur, shadows and blends, so most kinds of pass run.
     let scene = load("tests/scenes/shadows.json");
     let mut renderer = Renderer::new(scene).unwrap();

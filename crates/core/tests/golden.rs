@@ -10,7 +10,21 @@ use std::path::{Path, PathBuf};
 use image::{ExtendedColorType, ImageEncoder, codecs::png};
 use kinetograph_core::{Frame, Renderer, Scene, render_still};
 
+/// The goldens were made with Vello, and the default backend is Skia: pin Vello (`GOLDEN_REPORT=1` with
+/// `KINETOGRAPH_BACKEND=skia` set judges Skia against them instead). Every test loads its scene through `scene()`,
+/// which calls this before any renderer exists.
+fn pin_backend() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if std::env::var_os("KINETOGRAPH_BACKEND").is_none() {
+            // SAFETY: runs once, before any renderer reads the variable; nothing else here writes the environment.
+            unsafe { std::env::set_var("KINETOGRAPH_BACKEND", "vello") };
+        }
+    });
+}
+
 fn scene(relative: &str) -> Scene {
+    pin_backend();
     Scene::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)).unwrap()
 }
 

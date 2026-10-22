@@ -1,6 +1,8 @@
 //! Canvas layers: what a few commands leave in the pixels (docs/SCENE.md,
 //! "canvas"). The whole feature set is in the `canvas` golden.
 
+mod common;
+
 use std::path::Path;
 
 use kinetograph_core::{Error, Frame, Scene, render_still};
@@ -152,6 +154,7 @@ fn text_letter_and_word_spacing_move_glyphs_right() {
 
 #[test]
 fn a_pattern_transforms_its_tile_space_by_m() {
+    common::pin_vello();
     // 2x2 RGBA: left column red, right column blue.
     let data = "/wAA/wAA//8/AAD/AAD//w==";
     let plain = render(&format!(

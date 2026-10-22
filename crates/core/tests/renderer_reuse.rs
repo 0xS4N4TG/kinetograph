@@ -1,6 +1,8 @@
 //! One `Renderer` taking one scene after another (`Renderer::set_scene`) must
 //! draw every frame exactly as a renderer made for that scene does.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use image::{ImageBuffer, Rgba};
@@ -100,6 +102,7 @@ fn lottie_frames_in_order_match_fresh_renderers() {
 
 #[test]
 fn the_same_scene_again_keeps_its_layer_cache() {
+    common::pin_vello();
     let scene = load("tests/scenes/clip-paths.json");
     let mut renderer = Renderer::new(scene.clone()).unwrap();
     renderer.set_layer_cache(true);
@@ -139,6 +142,7 @@ fn picture_scene(dir: &Path) -> Scene {
 
 #[test]
 fn a_name_that_means_another_file_is_read_again() {
+    common::pin_vello();
     let base = std::env::temp_dir().join(format!("kinetograph-reuse-{}", std::process::id()));
     let (red, blue) = (base.join("red"), base.join("blue"));
     write_picture(&red, [255, 0, 0, 255]);

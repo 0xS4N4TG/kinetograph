@@ -3,6 +3,8 @@
 //! (docs/SCENE.md, "canvas"). The look of both is in the `canvas-effects`
 //! golden.
 
+mod common;
+
 use std::path::Path;
 
 use kinetograph_core::{Frame, Renderer, Scene, render_still};
@@ -431,6 +433,7 @@ fn has_shadow(frame: &Frame, i: usize) -> bool {
 
 #[test]
 fn pictures_past_what_vellos_atlas_holds_are_an_error_not_a_hole() {
+    common::pin_vello();
     // Vello's atlas is 8192 x 8192; 11 of these are over three quarters of it.
     let message = render_still(whole_canvas_pictures(11, 1), 0)
         .err()

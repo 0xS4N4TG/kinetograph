@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 
 use kinetograph_core::{Frame, Scene, render_still};
@@ -57,6 +59,7 @@ fn blurred_square(size: usize, x: f64, radius: f64) -> (f64, f64, f64) {
 
 #[test]
 fn blur_radius_is_the_standard_deviation() {
+    common::pin_vello();
     // A 24x24 white square has a variance of (24^2 - 1) / 12 per axis; blurring
     // adds sigma^2.
     let square_variance = (24.0 * 24.0 - 1.0) / 12.0;
