@@ -9,6 +9,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+skia = ["kinetograph-core/skia"]
+
 [dependencies]
 kinetograph-core = { path = "../core" }
 kinetograph-cli = { path = "../cli" }

@@ -43,6 +43,8 @@ use crate::text::{LaidOutText, TextEngine};
 use crate::video::{VideoDecoder, Videos, open_video, video_sources};
 use crate::warp;
 
+mod skia;
+
 /// Curve flattening tolerance when converting shapes to paths.
 const SHAPE_TOLERANCE: f64 = 0.1;
 
@@ -210,6 +212,8 @@ pub struct Renderer {
     /// Above 0 while the children of a fused group are drawn
     /// (`draw_fused_group`): what they wait to be blended stays together.
     group_depth: u32,
+    /// The Skia backend when `KINETOGRAPH_BACKEND=skia` and it could start (`skia.rs`).
+    skia: Option<skia::SkiaBackend>,
 }
 
 impl Renderer {
@@ -278,7 +282,9 @@ impl Renderer {
             pixels: None,
             repeats: 0,
             group_depth: 0,
+            skia: None,
         };
+        renderer.skia = skia::init(&renderer.device, &renderer.queue, &renderer.scene);
         renderer.ensure_image_renderer(fresh.has_pictures())?;
         renderer.install_assets(fresh);
         renderer.add_shaders();
@@ -713,14 +719,17 @@ impl Renderer {
         self.cache.begin_frame();
         self.compositor.begin_frame();
         self.clear_pages();
-        let timer = crate::profile::start();
-        self.plan_pages(&scene.layers)?;
-        crate::profile::add_since("plan_pages", timer);
-        crate::profile::add_value("pages", self.pages.pages.len() as f64);
-        let color = scene.background.linear_premultiplied();
-        let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
-        let canvas =
-            self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?;
+        let canvas = if self.skia.is_some() {
+            self.skia_canvas(scene)?
+        } else {
+            let timer = crate::profile::start();
+            self.plan_pages(&scene.layers)?;
+            crate::profile::add_since("plan_pages", timer);
+            crate::profile::add_value("pages", self.pages.pages.len() as f64);
+            let color = scene.background.linear_premultiplied();
+            let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
+            self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?
+        };
         // What this frame did not draw, the next probably will not either.
         for tex in self.cache.end_frame() {
             self.compositor.release(tex);
@@ -728,6 +737,7 @@ impl Renderer {
         self.clear_pages();
         let readback = self.timed(Stage::Readback, |s| s.compositor.start_readback(&canvas));
         self.compositor.release(canvas);
+        self.skia_submitted(&readback);
         Ok((readback, scene.width, scene.height))
     }
 

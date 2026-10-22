@@ -50,6 +50,16 @@ fn fs_to_linear(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     return vec4<f32>(srgb_to_linear(c.rgb) * c.a, c.a);
 }
 
+// Skia's output (`render/skia.rs`): premultiplied, sRGB-encoded. Where alpha is 1 it is `fs_to_linear`.
+@fragment
+fn fs_to_linear_premul(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let c = load_a(canvas_xy(p));
+    if c.a <= 0.0 {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>(srgb_to_linear(c.rgb / c.a) * c.a, c.a);
+}
+
 // W3C compositing and blending with premultiplied inputs:
 //   co = cs*(1 - ab) + cb*(1 - as) + as*ab*B(Cb, Cs)
 // `opacity` scales the source before compositing.

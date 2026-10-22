@@ -5,7 +5,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# The Skia Graphite backend for 2D pages and compositing (`render/skia.rs`), chosen at run time with
+# KINETOGRAPH_BACKEND=skia. Metal only; without the feature, or off macOS, the variable warns once and Vello draws.
+skia = ["dep:skia-safe", "dep:objc2", "dep:objc2-metal", "wgpu/metal"]
+
 [dependencies]
+skia-safe = { version = "0.153.3", optional = true, features = ["metal", "graphite"] }
+objc2 = { version = "0.6", optional = true }
+objc2-metal = { version = "0.3", optional = true }
 vello = "0.11.0"
 parley = "0.12.0"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "hdr", "webp"] }
