@@ -504,6 +504,7 @@ impl Renderer {
             let of = *of;
             self.repeat_of = Some(of);
             self.repeats += 1;
+            crate::profile::add_value("repeat", 1.0);
             crate::profile::add_since("start", timer);
             return Ok(PendingFrame {
                 work: Work::Repeat { of },
@@ -512,7 +513,13 @@ impl Renderer {
             });
         }
         self.drawn = None;
+        let (hits, misses) = self.cache.counts();
         let (readback, width, height) = self.start_resolved(&resolved)?;
+        if crate::profile::enabled() {
+            let (now_hits, now_misses) = self.cache.counts();
+            crate::profile::add_value("cache_hits", (now_hits - hits) as f64);
+            crate::profile::add_value("cache_misses", (now_misses - misses) as f64);
+        }
         if self.reuse {
             self.drawn = Some((seq, resolved));
         }
