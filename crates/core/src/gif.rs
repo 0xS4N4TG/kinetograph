@@ -228,6 +228,12 @@ impl Gifs {
         self.gifs.insert(src, gif);
     }
 
+    /// Which picture of `src` is shown `seconds` in.
+    pub(crate) fn index(&self, src: &str, seconds: f64, looped: bool) -> Option<usize> {
+        let gif = self.gifs.get(src)?;
+        Some(picture_index(&gif.ends_ms, seconds, looped))
+    }
+
     /// The picture `src` shows `seconds` in, as an image to draw.
     pub fn image(&self, src: &str, seconds: f64, looped: bool) -> Result<ImageData> {
         let gif = self

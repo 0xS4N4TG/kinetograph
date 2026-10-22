@@ -73,6 +73,8 @@ pub struct Translator {
     fx: HashMap<String, Option<skia_safe::RuntimeEffect>>,
     videos: HashMap<String, crate::video::VideoDecoder>,
     video_last: HashMap<String, (i64, Image)>,
+    gif_pics: HashMap<(String, usize), Option<Image>>,
+    lottie_last: HashMap<(String, u32, u32), ((u64, bool), Image)>,
     /// Effect classes to leave out (SKIA_SKIP=blur,shadow,inset,color,filtergraph,mask,matte,backdrop), to see where the GPU time goes.
     skip: Vec<String>,
     /// The renderer that draws the fallback layers: set by `draw_scene` for the length of the call only.
@@ -170,6 +172,8 @@ impl Translator {
             fx: HashMap::new(),
             videos: HashMap::new(),
             video_last: HashMap::new(),
+            gif_pics: HashMap::new(),
+            lottie_last: HashMap::new(),
             skip: std::env::var("SKIA_SKIP").unwrap_or_default().split(',').map(str::to_string).collect(),
             host: std::ptr::null_mut(),
             rec: None,
@@ -573,7 +577,9 @@ impl Translator {
                 Some(Rect::new(0.0, 0.0, w as f32, h as f32))
             }
             ResolvedKind::Image { width, height, .. }
-            | ResolvedKind::Video { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
+            | ResolvedKind::Video { width, height, .. }
+            | ResolvedKind::Gif { width, height, .. }
+            | ResolvedKind::Lottie { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
             ResolvedKind::Canvas { width, height, .. } => Some(Rect::new(0.0, 0.0, *width as f32, *height as f32)),
             ResolvedKind::Group { size, .. } => size.map(|(w, h)| Rect::new(0.0, 0.0, w as f32, h as f32)),
             _ => None,
@@ -640,7 +646,9 @@ impl Translator {
                 let g = *size * 1.0;
                 Some(Rect::new(b.left - g, b.top - g, b.right + g, b.bottom + g))
             }
-            ResolvedKind::Image { .. } | ResolvedKind::Video { .. } | ResolvedKind::Canvas { .. } => self.layer_box(layer),
+            ResolvedKind::Image { .. } | ResolvedKind::Video { .. } | ResolvedKind::Canvas { .. } | ResolvedKind::Gif { .. } | ResolvedKind::Lottie { .. } => {
+                self.layer_box(layer)
+            }
             ResolvedKind::Group { children, .. } => {
                 let mut acc: Option<Rect> = None;
                 for c in children {
@@ -957,10 +965,13 @@ impl Translator {
                 None => self.stats.no("video layer (decode failed)"),
             },
             ResolvedKind::Canvas { width, height, ops } => self.draw_canvas_layer(canvas, (*width, *height), ops),
+            ResolvedKind::Gif { src, width, height, fit, time, looped } => match self.gif_image(src, *time, *looped) {
+                Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
+                None => self.stats.no("gif layer (not loaded)"),
+            },
+            ResolvedKind::Lottie { src, width, height, time, looped } => self.draw_lottie(canvas, src, (*width, *height), *time, *looped, comp),
             // Handed to the wgpu path before this (`gaps`).
-            ResolvedKind::Lottie { .. }
-            | ResolvedKind::Gif { .. }
-            | ResolvedKind::Glsl { .. }
+            ResolvedKind::Glsl { .. }
             | ResolvedKind::Scene3d { .. }
             | ResolvedKind::MeshGradient { .. }
             | ResolvedKind::Noise { .. } => self.stats.no("layer kind that should have fallen back"),
@@ -1124,6 +1135,61 @@ impl Translator {
         };
         self.video_last.insert(src.to_string(), (ts, img.clone()));
         Some(img)
+    }
+
+    fn rgba_image(&mut self, rgba: &[u8], w: u32, h: u32) -> Option<Image> {
+        let info = skia_safe::ImageInfo::new((w as i32, h as i32), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Unpremul, None);
+        let img = images::raster_from_data(&info, Data::new_copy(rgba), (w * 4) as usize)?;
+        match &self.upload {
+            Some(up) => up(&img),
+            None => Some(img),
+        }
+    }
+
+    /// The picture a GIF shows `time` seconds in; each picture is uploaded once.
+    fn gif_image(&mut self, src: &str, time: f64, looped: bool) -> Option<Image> {
+        // SAFETY: `host` is the renderer `draw_scene` was given; this translator is not part of it.
+        let host = unsafe { self.host.as_ref()? };
+        let i = host.gifs.index(src, time, looped)?;
+        let key = (src.to_string(), i);
+        if let Some(img) = self.gif_pics.get(&key) {
+            return img.clone();
+        }
+        let pic = host.gifs.image(src, time, looped).ok()?;
+        let img = self.rgba_image(pic.data.data(), pic.width, pic.height);
+        self.gif_pics.insert(key, img.clone());
+        img
+    }
+
+    /// A Lottie frame: ThorVG paints it (straight-alpha RGBA) at the pixel size the layer is drawn at, and it is drawn
+    /// as an image of the layer's box.
+    fn draw_lottie(&mut self, canvas: &Canvas, src: &str, size: (f64, f64), time: f64, looped: bool, comp: Comp) {
+        let m = canvas.local_to_device_as_3x3();
+        let dev = Affine::new([m.scale_x() as f64, m.skew_y() as f64, m.skew_x() as f64, m.scale_y() as f64, m.translate_x() as f64, m.translate_y() as f64]);
+        let Some((pw, ph)) = crate::render::lottie_pixels(size, dev) else { return };
+        // SAFETY: as in `gif_image`.
+        let Some(host) = (unsafe { self.host.as_mut() }) else { return };
+        let key = (src.to_string(), pw, ph);
+        let stamp = (time.to_bits(), looped);
+        let img = match self.lottie_last.get(&key) {
+            Some((s, img)) if *s == stamp => Some(img.clone()),
+            _ => match host.lotties.image(src, time, looped, pw, ph) {
+                Ok(pic) => self.rgba_image(pic.data.data(), pw, ph),
+                Err(_) => None,
+            },
+        };
+        let Some(img) = img else {
+            self.stats.no("lottie layer (render failed)");
+            return;
+        };
+        self.lottie_last.insert(key, (stamp, img.clone()));
+        let (iw, ih) = (img.width() as f64, img.height() as f64);
+        canvas.save();
+        canvas.scale(((size.0 / iw) as f32, (size.1 / ih) as f32));
+        let p = Self::base_paint(comp);
+        canvas.draw_image_with_sampling_options(&img, (0.0, 0.0), SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), Some(&p));
+        self.stats.draws += 1;
+        canvas.restore();
     }
 
     fn draw_picture(&mut self, canvas: &Canvas, img: &Image, size: (f64, f64), fit: Fit, comp: Comp) {
@@ -1427,8 +1493,6 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
     match &layer.kind {
         ResolvedKind::Group { preserve3d: true, .. } => return Some("preserve3d group"),
         ResolvedKind::Group { glsl: Some(_), .. } => return Some("glsl group"),
-        ResolvedKind::Lottie { .. } => return Some("lottie layer"),
-        ResolvedKind::Gif { .. } => return Some("gif layer"),
         ResolvedKind::Glsl { .. } => return Some("glsl layer"),
         ResolvedKind::Scene3d { .. } => return Some("scene3d layer"),
         ResolvedKind::MeshGradient { .. } => return Some("meshGradient layer"),
