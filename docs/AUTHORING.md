@@ -138,7 +138,10 @@ export class Renderer {
 }
 export class VideoWriter {
   /** Renders `frame` of this scene and queues it for encoding. Frames must come in increasing order; the first one
-   * pushed is time 0. The scene's size and fps must match the writer's. The GPU renders frame N+1 while N is encoded. */
+   * pushed is time 0. The scene's size and fps must match the writer's. The call returns once the frame is queued: a
+   * thread of the writer parses and draws it while the caller goes on to the next frame, and the GPU renders frame N+1
+   * while N is encoded. An order error is thrown by the call; a frame that cannot be drawn (a wrong size, a missing
+   * file) ends the video and is thrown by the next `pushFrame` or by `finish`. */
   pushFrame(sceneJson: string, frame: number, baseDir?: string): void;
   /** Flushes, muxes `audio` (AAC) if given, closes the file. */
   finish(audio?: AudioPcm): RenderSummary;
@@ -1018,6 +1021,15 @@ furthest back to stop its chunk early, and draws the rest of it. Each worker is 
 (0.5 to 1 GB a worker on the launch film). `<Artifact>` files are collected from the workers; thumbnails are drawn by the
 main thread. `KINETOGRAPH_CHUNK`, `KINETOGRAPH_WINDOW` and `KINETOGRAPH_MINSPLIT` (frames) override the chunk size, the
 window and the smallest chunk that is split, for tuning and tests.
+
+A frame that is the same as the frame before it (a hold, a still end card) is not drawn: the renderer compares the
+frame's resolved scene with the previous frame's, exactly, and when they are equal, and no file it draws from changed
+in between, it skips the GPU work, the readback and the colour conversion, and the encoder gets the previous picture
+again (README, "Frame reuse"). Anything that moves with time is in the resolved scene (shader time, grain, a video's
+picture, a GIF's or Lottie's time, canvas commands, WebGL uniforms, motion blur samples), so such a frame is drawn. With
+`--concurrency N` a worker compares a frame only with the one before it in its chunk and always draws a chunk's first
+frame, so the output is the same however the chunks were shared out. The summary says how many frames were repeats
+(`repeated`); `KINETOGRAPH_NO_REUSE=1` draws every frame.
 
 Bundling: esbuild bundles the entry with a synthetic entry that imports `@kinetograph/core/determinism/install` first,
 then the project, and re-exports `@kinetograph/core`, so the CLI drives frames through the same core and React instance the

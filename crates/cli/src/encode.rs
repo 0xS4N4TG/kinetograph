@@ -813,6 +813,9 @@ pub struct VideoEncoder {
     time_base: Rational,
     stream_time_base: Rational,
     next_pts: i64,
+    /// The last picture sent, for `push_repeat`. Nothing writes to a picture
+    /// once it is sent.
+    last: Option<frame::Video>,
 }
 
 /// Sets the options of the encoder `settings.encoder` for `quality` etc. `video` is the not yet opened context.
@@ -983,6 +986,7 @@ impl VideoEncoder {
             time_base,
             stream_time_base,
             next_pts: 0,
+            last: None,
         })
     }
 
@@ -1043,12 +1047,24 @@ impl VideoEncoder {
         self.send(picture)
     }
 
+    /// Encodes the next frame as the same picture as the last one: what
+    /// `push` or `push_yuv` would make of the same pixels, without converting
+    /// them again.
+    pub fn push_repeat(&mut self) -> Result<(), String> {
+        let last = self
+            .last
+            .take()
+            .ok_or("a frame was repeated before any frame was sent")?;
+        self.send(last)
+    }
+
     fn send(&mut self, mut yuv: frame::Video) -> Result<(), String> {
         yuv.set_pts(Some(self.next_pts));
         self.next_pts += 1;
         self.encoder
             .send_frame(&yuv)
             .map_err(|e| format!("encoder rejected a frame: {e}"))?;
+        self.last = Some(yuv);
         self.write_packets()
     }
 
@@ -1642,6 +1658,57 @@ mod tests {
                 assert!((got - want).abs() < 6.0, "frame {i}: {got} vs {want}");
             }
         }
+    }
+
+    #[test]
+    fn a_repeated_frame_encodes_as_the_same_pixels_pushed_again() {
+        if !has_encoder("libx264") {
+            panic!("this test needs an ffmpeg with libx264");
+        }
+        let dir = std::env::temp_dir().join(format!("kinetograph-repeat-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (w, h) = (64_u32, 48_u32);
+        let picture = |i: u32| -> Vec<u8> {
+            (0..w * h)
+                .flat_map(|p| {
+                    [
+                        (p % w * 4 + i * 30) as u8,
+                        (p / w * 5) as u8,
+                        (i * 40) as u8,
+                        255,
+                    ]
+                })
+                .collect()
+        };
+        // 0, 1, 1, 1, 2, 2: once pushed again, once repeated (from RGBA and
+        // from converted planes).
+        let order = [0, 1, 1, 1, 2, 2];
+        let pushed = dir.join("pushed.mp4");
+        let mut encoder = VideoEncoder::create(&pushed, w, h, 30.0, &x264(&pushed)).unwrap();
+        for &i in &order {
+            encoder.push(&picture(i)).unwrap();
+        }
+        encoder.finish().unwrap();
+        let repeated = dir.join("repeated.mp4");
+        let mut encoder = VideoEncoder::create(&repeated, w, h, 30.0, &x264(&repeated)).unwrap();
+        assert!(encoder.push_repeat().is_err(), "nothing to repeat yet");
+        encoder.push(&picture(0)).unwrap();
+        encoder.push(&picture(1)).unwrap();
+        encoder.push_repeat().unwrap();
+        encoder.push_repeat().unwrap();
+        encoder
+            .push_yuv(&rgba_to_yuv420(&picture(2), w, h).unwrap())
+            .unwrap();
+        encoder.push_repeat().unwrap();
+        assert_eq!(encoder.finish().unwrap(), 6);
+        let (a, b) = (decode(&pushed).3, decode(&repeated).3);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(a.len(), 6);
+        assert!(
+            a[1] != a[4],
+            "the pictures differ, so the comparison means something"
+        );
+        assert!(a == b, "the decoded frames differ");
     }
 
     #[test]

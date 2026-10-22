@@ -451,6 +451,9 @@ pub struct RenderSummary {
     pub ms: f64,
     pub ms_per_frame: f64,
     pub audio: bool,
+    /// Frames not drawn because they were the same as the frame before
+    /// (`KINETOGRAPH_NO_REUSE=1` turns that off).
+    pub repeated: u32,
 }
 
 #[napi(object)]
@@ -459,6 +462,9 @@ pub struct RgbaFrame {
     pub height: u32,
     /// Straight-alpha sRGB RGBA8, `width * height * 4` bytes.
     pub data: Buffer,
+    /// `finishFrame`: the frame was not drawn because it is the same as the
+    /// frame started before it, so `data` is that frame's.
+    pub repeated: bool,
 }
 
 #[napi(object)]
@@ -497,6 +503,7 @@ impl From<kinetograph_cli::render::RenderSummary> for RenderSummary {
             ms: s.ms,
             ms_per_frame: s.ms_per_frame,
             audio: s.audio,
+            repeated: s.repeated,
         }
     }
 }
@@ -638,8 +645,66 @@ impl Shared {
 pub struct Renderer {
     shared: Arc<Shared>,
     layer_cache: bool,
-    /// Frames `startFrame` began that `finishFrame` has not collected, oldest first.
-    started: std::collections::VecDeque<kinetograph_core::PendingFrame>,
+    /// Frames `startFrame` queued that `finishFrame` has not collected, oldest first: what each will send when the
+    /// frame is started.
+    started: std::collections::VecDeque<std::sync::mpsc::Receiver<Result<kinetograph_core::PendingFrame>>>,
+    /// The thread that starts frames (parses their scene, builds and submits their GPU work) while the caller
+    /// goes on to the JS of the next one; started with the first frame.
+    starter: Option<std::sync::mpsc::Sender<StartJob>>,
+}
+
+/// Whether `startFrame` waits for the frame to be started (`KINETOGRAPH_SYNC_START=1`).
+fn sync_start() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("KINETOGRAPH_SYNC_START").is_some())
+}
+
+/// What the starter thread does, in the order it is given.
+enum StartJob {
+    Start {
+        scene_json: String,
+        frame: u32,
+        base_dir: PathBuf,
+        done: std::sync::mpsc::Sender<Result<kinetograph_core::PendingFrame>>,
+        caller: String,
+    },
+    Forget,
+}
+
+/// The starter thread of a renderer: it ends when the renderer's sender is dropped.
+fn spawn_starter(shared: Arc<Shared>) -> std::sync::mpsc::Sender<StartJob> {
+    let (jobs, queue) = std::sync::mpsc::channel::<StartJob>();
+    std::thread::Builder::new()
+        .name("kinetograph-start".to_string())
+        .spawn(move || {
+            for job in queue {
+                match job {
+                    StartJob::Start {
+                        scene_json,
+                        frame,
+                        base_dir,
+                        done,
+                        caller,
+                    } => {
+                        let started = (|| {
+                            let timer = kinetograph_core::profile::start();
+                            let scene = parse_scene(&scene_json, &base_dir)?;
+                            kinetograph_core::profile::add_since("parse", timer);
+                            let mut gpu = shared.idle()?;
+                            let timer = kinetograph_core::profile::start();
+                            gpu.set_scene(scene).map_err(from_core)?;
+                            kinetograph_core::profile::add_since("set_scene", timer);
+                            gpu.start_frame(frame).map_err(from_core)
+                        })();
+                        kinetograph_core::profile::forward(&caller);
+                        let _ = done.send(started);
+                    }
+                    StartJob::Forget => shared.lock().forget_frame(),
+                }
+            }
+        })
+        .expect("cannot start the frame starter thread");
+    jobs
 }
 
 #[napi]
@@ -651,6 +716,10 @@ impl Renderer {
         let scene = Scene::from_json(EMPTY_SCENE, PathBuf::new()).map_err(from_core)?;
         let mut gpu = kinetograph_core::Renderer::new(scene).map_err(from_core)?;
         gpu.set_layer_cache(layer_cache);
+        // Frames one after the other, as the layer cache is for: one that is
+        // the same as the last is not drawn again (`KINETOGRAPH_NO_REUSE=1`
+        // turns that off).
+        gpu.set_frame_reuse(layer_cache && kinetograph_core::reuse::allowed_by_env());
         Ok(Renderer {
             shared: Arc::new(Shared {
                 gpu: Mutex::new(gpu),
@@ -658,6 +727,7 @@ impl Renderer {
             }),
             layer_cache,
             started: std::collections::VecDeque::new(),
+            starter: None,
         })
     }
 
@@ -716,12 +786,15 @@ impl Renderer {
             width: rendered.width,
             height: rendered.height,
             data: Buffer::from(rendered.rgba),
+            repeated: false,
         })
     }
 
-    /// Starts drawing a frame without waiting for it: the GPU works on it
-    /// while the caller does other things (and starts the next), and
-    /// `finishFrame` collects the frames in the order they were started.
+    /// Starts drawing a frame without waiting for it: a thread of its own parses the scene and starts the GPU
+    /// on it while the caller does other things (the JS of the next frame), and `finishFrame` collects the
+    /// frames in the order they were started. A scene that cannot be drawn is reported by the `finishFrame` of
+    /// its frame. Call `finishFrame` for the frame before starting the next, or the two wait for each other's
+    /// use of the GPU renderer.
     #[napi]
     pub fn start_frame(
         &mut self,
@@ -730,32 +803,71 @@ impl Renderer {
         base_dir: Option<String>,
     ) -> Result<()> {
         let frame = count("frame", frame)?;
-        let timer = kinetograph_core::profile::start();
-        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
-        kinetograph_core::profile::add_since("parse", timer);
-        let mut gpu = self.shared.idle()?;
-        let timer = kinetograph_core::profile::start();
-        gpu.set_scene(scene).map_err(from_core)?;
-        kinetograph_core::profile::add_since("set_scene", timer);
-        let pending = gpu.start_frame(frame).map_err(from_core)?;
-        self.started.push_back(pending);
+        let base_dir = resolve_base(base_dir);
+        let shared = self.shared.clone();
+        let starter = self
+            .starter
+            .get_or_insert_with(|| spawn_starter(shared));
+        let (done, result) = std::sync::mpsc::channel();
+        starter
+            .send(StartJob::Start {
+                scene_json,
+                frame,
+                base_dir,
+                done,
+                caller: kinetograph_core::profile::caller(),
+            })
+            .map_err(|_| error(Code::Render, "the frame starter thread has stopped"))?;
+        if sync_start() {
+            // The frame is started before this call returns (`KINETOGRAPH_SYNC_START=1`, for comparing).
+            let started = result
+                .recv()
+                .map_err(|_| error(Code::Render, "the frame starter thread has stopped"))?;
+            let (done, ready) = std::sync::mpsc::channel();
+            let _ = done.send(started);
+            self.started.push_back(ready);
+        } else {
+            self.started.push_back(result);
+        }
         Ok(())
     }
 
     /// The oldest frame `startFrame` began, as straight-alpha sRGB RGBA8.
     #[napi]
     pub fn finish_frame(&mut self) -> Result<RgbaFrame> {
-        let pending = self
+        let result = self
             .started
             .pop_front()
             .ok_or_else(|| invalid("no frame was started (startFrame)"))?;
+        let pending = result
+            .recv()
+            .map_err(|_| error(Code::Render, "the frame starter thread has stopped"))??;
         let mut gpu = self.shared.idle()?;
+        let repeated = pending.is_repeat();
         let rendered = gpu.finish_frame(pending).map_err(from_core)?;
         Ok(RgbaFrame {
             width: rendered.width,
             height: rendered.height,
             data: Buffer::from(rendered.rgba),
+            repeated,
         })
+    }
+
+    /// Makes the next frame `startFrame` begins be drawn, whatever the frame
+    /// before it was: a frame is only taken from a frame started after this.
+    /// A render worker calls it at the start of each run of frames.
+    #[napi]
+    pub fn forget_frame(&mut self) -> Result<()> {
+        match &self.starter {
+            // After the frames already queued, which it must not forget the other way round.
+            Some(starter) => starter
+                .send(StartJob::Forget)
+                .map_err(|_| error(Code::Render, "the frame starter thread has stopped")),
+            None => {
+                self.shared.idle()?.forget_frame();
+                Ok(())
+            }
+        }
     }
 
     /// Times one frame or successive frames, as the Rust `bench`.
@@ -823,7 +935,10 @@ impl Renderer {
         match Writer::open(Path::new(&output), width, height, options.fps, &settings) {
             Ok(writer) => Ok(VideoWriter {
                 shared: self.shared.clone(),
-                writer: Some(writer),
+                writer: Arc::new(Mutex::new(Some(writer))),
+                pusher: None,
+                failed: Arc::new(Mutex::new(None)),
+                last_pushed: None,
             }),
             Err(e) => {
                 self.shared.video_open.store(false, Ordering::SeqCst);
@@ -836,24 +951,112 @@ impl Renderer {
 /// A video being written frame by frame (`Renderer.beginVideo`).
 ///
 /// A failed `pushFrame` ends the video: the partial file is deleted, as
-/// `abort` does, and later calls fail.
+/// `abort` does, and later calls fail. `pushFrame` returns once the frame is queued: a thread of the writer's own
+/// parses the scene, draws the frame and hands the one before it to the encoder while the caller goes on to the
+/// JS of the next frame, so a frame that fails is reported by a later call (`pushFrame`, `finish`).
 #[napi]
 pub struct VideoWriter {
     shared: Arc<Shared>,
-    writer: Option<Writer>,
+    writer: Arc<Mutex<Option<Writer>>>,
+    /// The queue of the thread that draws the frames (started by the first `pushFrame`), and what the first
+    /// frame that failed said.
+    pusher: Option<std::sync::mpsc::SyncSender<PushJob>>,
+    failed: Arc<Mutex<Option<(Code, String)>>>,
+    /// The last frame number pushed: frames must come in increasing order, which is checked as they are pushed.
+    last_pushed: Option<u32>,
+}
+
+/// What a writer's thread does, in order.
+enum PushJob {
+    Push {
+        scene_json: String,
+        frame: u32,
+        base_dir: PathBuf,
+        caller: String,
+    },
+    /// Answers once the jobs before it are done.
+    Sync(std::sync::mpsc::Sender<()>),
+}
+
+/// The thread of a `VideoWriter`: it ends when the writer's sender is dropped.
+fn spawn_pusher(
+    shared: Arc<Shared>,
+    writer: Arc<Mutex<Option<Writer>>>,
+    failed: Arc<Mutex<Option<(Code, String)>>>,
+) -> std::sync::mpsc::SyncSender<PushJob> {
+    // A frame or two ahead of the thread, no more: the caller waits when the thread is behind.
+    let (jobs, queue) = std::sync::mpsc::sync_channel::<PushJob>(2);
+    std::thread::Builder::new()
+        .name("kinetograph-write".to_string())
+        .spawn(move || {
+            for job in queue {
+                match job {
+                    PushJob::Push {
+                        scene_json,
+                        frame,
+                        base_dir,
+                        caller,
+                    } => {
+                        if failed.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+                            continue;
+                        }
+                        let pushed = (|| {
+                            let timer = kinetograph_core::profile::start();
+                            let scene = parse_scene(&scene_json, &base_dir)?;
+                            kinetograph_core::profile::add_since("parse", timer);
+                            let mut writer = writer.lock().unwrap_or_else(|e| e.into_inner());
+                            let writer = writer.as_mut().ok_or_else(|| {
+                                invalid("the video was already finished or aborted")
+                            })?;
+                            let mut gpu = shared.lock();
+                            writer
+                                .push_frame(&mut gpu, scene, frame)
+                                .map_err(from_render)
+                        })();
+                        kinetograph_core::profile::forward(&caller);
+                        if let Err(e) = pushed {
+                            failed
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .get_or_insert((e.status, e.reason.clone()));
+                        }
+                    }
+                    PushJob::Sync(done) => {
+                        let _ = done.send(());
+                    }
+                }
+            }
+        })
+        .expect("cannot start the video writer thread");
+    jobs
 }
 
 impl VideoWriter {
-    /// Ends the video, deleting the partial file, and frees the renderer.
-    fn close(&mut self) {
-        self.writer = None;
-        self.shared.video_open.store(false, Ordering::SeqCst);
+    /// Waits for the frames queued so far to be drawn.
+    fn sync(&self) {
+        if let Some(pusher) = &self.pusher {
+            let (done, wait) = std::sync::mpsc::channel();
+            if pusher.send(PushJob::Sync(done)).is_ok() {
+                let _ = wait.recv();
+            }
+        }
     }
 
-    fn writer(&mut self) -> Result<&mut Writer> {
-        self.writer
-            .as_mut()
-            .ok_or_else(|| invalid("the video was already finished or aborted"))
+    /// The first failure of a queued frame, if there was one.
+    fn failure(&self) -> Option<crate::error::Error> {
+        self.failed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            .map(|(code, message)| error(code, message))
+    }
+
+    /// Ends the video, deleting the partial file, and frees the renderer.
+    fn close(&mut self) {
+        // Frames still queued fail on finding no writer.
+        self.pusher = None;
+        *self.writer.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.shared.video_open.store(false, Ordering::SeqCst);
     }
 }
 
@@ -865,7 +1068,7 @@ impl Drop for VideoWriter {
 
 #[napi]
 impl VideoWriter {
-    /// Renders `frame` of this scene and queues it for encoding.
+    /// Queues `frame` of this scene to be rendered and encoded.
     #[napi]
     pub fn push_frame(
         &mut self,
@@ -873,29 +1076,67 @@ impl VideoWriter {
         frame: f64,
         base_dir: Option<String>,
     ) -> Result<()> {
-        let pushed = (|| {
+        let queued = (|| {
+            if let Some(e) = self.failure() {
+                return Err(e);
+            }
+            if self
+                .writer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none()
+            {
+                return Err(invalid("the video was already finished or aborted"));
+            }
             let frame = count("frame", frame)?;
-            let timer = kinetograph_core::profile::start();
-            let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
-            kinetograph_core::profile::add_since("parse", timer);
-            let shared = self.shared.clone();
-            let mut gpu = shared.lock();
-            self.writer()?
-                .push_frame(&mut gpu, scene, frame)
-                .map_err(from_render)
+            if let Some(last) = self.last_pushed.filter(|&last| frame <= last) {
+                return Err(invalid(format!(
+                    "frames must come in increasing order: {frame} after {last}"
+                )));
+            }
+            let (shared, writer, failed) =
+                (self.shared.clone(), self.writer.clone(), self.failed.clone());
+            let pusher = self
+                .pusher
+                .get_or_insert_with(|| spawn_pusher(shared, writer, failed));
+            pusher
+                .send(PushJob::Push {
+                    scene_json,
+                    frame,
+                    base_dir: resolve_base(base_dir),
+                    caller: kinetograph_core::profile::caller(),
+                })
+                .map_err(|_| error(Code::Render, "the video writer thread has stopped"))?;
+            self.last_pushed = Some(frame);
+            if sync_start() {
+                // The frame is drawn before this call returns (`KINETOGRAPH_SYNC_START=1`, for comparing).
+                self.sync();
+                if let Some(e) = self.failure() {
+                    return Err(e);
+                }
+            }
+            Ok(())
         })();
-        if pushed.is_err() {
+        if queued.is_err() {
             self.close();
         }
-        pushed
+        queued
     }
 
     /// Queues a frame that `rgbaToYuv` converted (in a render worker).
     #[napi]
     pub fn push_yuv(&mut self, yuv: Buffer, frame: f64) -> Result<()> {
+        self.sync();
         let pushed = (|| {
+            if let Some(e) = self.failure() {
+                return Err(e);
+            }
             let frame = count("frame", frame)?;
-            self.writer()?
+            self.writer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_mut()
+                .ok_or_else(|| invalid("the video was already finished or aborted"))?
                 .push_converted(frame, yuv.to_vec())
                 .map_err(from_render)
         })();
@@ -908,8 +1149,15 @@ impl VideoWriter {
     /// Flushes, muxes `audio` if given, closes the file.
     #[napi]
     pub fn finish(&mut self, audio: Option<AudioPcm>) -> Result<RenderSummary> {
+        self.sync();
+        if let Some(e) = self.failure() {
+            self.close();
+            return Err(e);
+        }
         let writer = self
             .writer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .take()
             .ok_or_else(|| invalid("the video was already finished or aborted"))?;
         let chans = audio.as_ref().map(channels);

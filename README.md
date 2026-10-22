@@ -167,10 +167,11 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
   `24000/1001`, `30000/1001` and `60000/1001`. Frame `first` of the range is time 0 in the file.
 - **Speed.** One renderer (one GPU setup) renders the whole range, and finished frames go through a channel that holds
   two to an encoder thread, so the GPU work for frame N+1 overlaps the encoding of frame N. Layers that did not change
-  since the previous frame are not drawn again (see [Layer cache](#layer-cache)). No sound yet: the file has a video
+  since the previous frame are not drawn again (see [Layer cache](#layer-cache)), and a frame that is the same as the
+  previous one is not drawn at all (see [Frame reuse](#frame-reuse)). No sound yet: the file has a video
   stream only.
 - **Output.** Text mode prints a progress line to stderr and a one-line summary. `--json` prints
-  `{output, encoder, width, height, fps, frames, first, last, ms, ms_per_frame}` (`last` inclusive; `ms` covers
+  `{output, encoder, width, height, fps, frames, first, last, ms, ms_per_frame, repeated}` (`last` inclusive; `ms` covers
   rendering and encoding the range, not GPU setup). On failure the partial file is deleted.
 
 ### Layer cache
@@ -199,6 +200,27 @@ and no more than 1 GiB of textures is kept.
   and groups the passes by kind (`blend`, `to linear`, each blur step and shadow, `displace`, `clear`, …): passes per
   frame, their GPU time, time per pass and the texels drawn into. Passes can overlap on the GPU, so their sum is not
   the frame's time. Vello's rasterising and copies between textures cannot be timed this way and are not in it.
+
+### Frame reuse
+
+A frame that is provably the same as the frame before it is not drawn: no rasterising, compositing, readback or colour
+conversion. The encoder is given the previous frame's converted picture again, so the file is the same as one with every
+frame drawn. The proof is the layer cache's, for the whole frame: the frame's resolved scene (every keyframed value at
+the frame, the motion blur samples, and each input that moves with time without a keyframe: a custom shader's `frame`
+and `time`, grain and dither frames, a video's picked picture, a GIF's or Lottie's time, Canvas 2D commands, WebGL
+recordings with their uniforms, 3D scenes) must equal the previous frame's, compared exactly (`PartialEq`, no hash), and
+the renderer must have read no new or changed file (fonts, images, videos, tables, by path, size and modification time)
+and kept the same size, margin, blend space, frame rate, fonts and asset directory since. Only the frame number is not
+compared, since no pass reads it. Anything else is drawn; a NaN never equals itself, so a frame holding one is drawn.
+
+- `render` (and the addon's `Renderer`, so a project's `render` at any `--concurrency`) turns it on; the summary says
+  how many frames were repeats (`repeated` in `--json`). With `--concurrency N` a frame is only compared with the one
+  before it in the same worker's chunk, and a chunk's first frame is always drawn, so the output does not depend on how
+  the frames were shared out.
+- `KINETOGRAPH_NO_REUSE=1` turns it off, to compare or debug. `bench` always draws every frame.
+- In the library a new `Renderer` has it off: `Renderer::set_frame_reuse(true)`; `start_frame` then returns a
+  `PendingFrame` with `is_repeat()` true for a frame it did not draw, `finish_frame` gives that frame the earlier pixels,
+  `forget_frame()` makes the next frame be drawn, and `repeated_frames()` counts the repeats (`crates/core/src/reuse.rs`).
 
 Checks: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. The golden-image tests compare
 against PNGs in `crates/core/tests/golden/` made on an Apple M4; regenerate them with

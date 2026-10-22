@@ -25,6 +25,7 @@ pub mod pool;
 pub mod profile;
 pub mod render;
 pub mod resolve;
+pub mod reuse;
 pub mod scene;
 pub mod scene3d;
 pub mod shader;

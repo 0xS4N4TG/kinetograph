@@ -201,18 +201,27 @@ pub fn finish_island(ticket: u32) -> Result<String> {
 
 fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<String>> {
     let json = request_json.to_string();
+    let caller = kinetograph_core::profile::caller();
     start_on_island_thread(move || {
+        use kinetograph_core::profile::{add_for_since, add_shared_since};
         let timer = kinetograph_core::profile::start();
         let request = parse_island(&json, "renderDomIsland")?;
-        kinetograph_core::profile::add_shared_since("dom_parse", timer);
+        add_shared_since("dom_parse", timer);
+        add_for_since(&caller, "n_parse", timer);
         let timer = kinetograph_core::profile::start();
+        let (was_edited, was_built) = SAMPLES.with(|cache| cache.borrow().counts());
         let mut resolved = SAMPLES
             .with(|cache| cache.borrow_mut().resolve(&request, pass))
             .map_err(|e| (Code::Render, e.to_string()))?;
-        kinetograph_core::profile::add_shared_since("dom_resolve", timer);
+        add_shared_since("dom_resolve", timer);
+        add_for_since(&caller, "n_resolve", timer);
+        let (edited, built) = SAMPLES.with(|cache| cache.borrow().counts());
+        kinetograph_core::profile::add_for(&caller, "n_edited", (edited - was_edited) as f64);
+        kinetograph_core::profile::add_for(&caller, "n_built", (built - was_built) as f64);
         let timer = kinetograph_core::profile::start();
         let mut output = resolved.paint(&request);
-        kinetograph_core::profile::add_shared_since("dom_paint", timer);
+        add_shared_since("dom_paint", timer);
+        add_for_since(&caller, "n_paint", timer);
         let write_timer = kinetograph_core::profile::start();
         let island = &resolved.island;
         // A file the island named that could not be read is not drawn as the
@@ -258,6 +267,7 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
             BASES.with(|bases| bases.borrow_mut().1.insert(path, output.layers));
         }
         kinetograph_core::profile::add_shared_since("dom_write", write_timer);
+        kinetograph_core::profile::add_for_since(&caller, "n_write", write_timer);
         Ok(json)
     })
 }

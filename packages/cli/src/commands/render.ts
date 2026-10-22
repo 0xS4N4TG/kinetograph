@@ -125,6 +125,7 @@ function result(summary: RenderResult, wallMs: number) {
     data: { ...summary, wallMs },
     text:
       `wrote ${summary.output} (${summary.width}x${summary.height}, ${summary.frames} frames ` +
+      (summary.repeated > 0 ? `(${summary.repeated} the same as the frame before, not drawn again) ` : '') +
       `${summary.first}..=${summary.last} at ${summary.fps} fps, ${summary.codec} by ${summary.encoder}, ${summary.pixelFormat}, ` +
       `${summary.audio ? 'with audio' : 'no audio'}, ${summary.msPerFrame.toFixed(2)} ms/frame in the encoder${unsupported}, ` +
       `${wallMs.toFixed(0)} ms in all)` +

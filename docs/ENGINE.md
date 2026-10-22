@@ -800,3 +800,45 @@ over six frames, min of interleaved runs, two series run at different loads):**
   leaf count (a stack of 404 leaf boxes at one pixel, about 450 Vello pages) is not what the 680 ms is made of: cutting
   800 leaves did not cut the time. The next measurement should be a profile of `start_frame`, not another painter
   change.
+
+## 12. Incremental frames (`perf/incremental`, 2026-10-22)
+
+Goal: stop redoing what did not change between frames. What was found, measured on the M4 with `KINETOGRAPH_PROFILE`
+(per-frame stage rows; `n_*` are the DOM island thread's stages, `cache_hits`/`cache_misses` the layer cache's):
+
+- **The launch film is GPU-bound, not CPU-bound.** At one worker the process uses about 1.1 cores (user 30 s over a
+  28 s wall); frames 100-300 and 800-1000 (27% of the frames) are most of the GPU time. At four workers the wall stays
+  at 30-36 s while user CPU triples (95-130 s, 500k involuntary context switches): the workers share one GPU and four
+  performance cores. So CPU savings show as 3-12% of wall, not more.
+- **The island documents** were thrown away every frame (`IslandCache` was emptied at each pass). Passes in sequence
+  now carry them over (`IslandCache::resolve`: pass `n+1` after `n` keeps the islands `n` rendered, any other number
+  empties the cache; `compat/dom`'s `breakSamplePasses` skips a number when a frame does not follow the one before).
+  97% of island renders edit a kept document (`n_built` 1.63 -> 0.12 a frame); the island thread's work falls from
+  5.8 to 2.9 ms a frame. `KINETOGRAPH_NO_INCREMENTAL=1` turns it off. This exposed two bugs in the edit path that
+  a fresh build never hits: `repaint_transforms` updated one group of an element painted as two (see below), and
+  layer ids made from Blitz's node id (`n4294967481`) change when a restyle makes a node again; nodes with no
+  `data-kg-path` are now named by their place under the nearest ancestor that has one (`$0.0!a0.text`).
+- **Video decode** moved off the render thread: after a frame takes a picture, a thread decodes and converts the next
+  one (`VideoDecoder::prefetch`), so frames 300-400's `plan_pages` falls from 1.4 to 1.0 ms a frame on average (the
+  11 ms spikes were video leaves). `KINETOGRAPH_NO_PREFETCH=1` turns it off.
+- **Overlap.** `Renderer.startFrame` and `VideoWriter.pushFrame` queue the scene parse and the GPU start on a thread of
+  their own, so the JS of frame N+1 runs while N is started (`KINETOGRAPH_SYNC_START=1` gives the old order). Worth
+  0.5-1.6 s of wall at one worker, nothing measurable at four. Errors of a queued frame come from `finishFrame`, or
+  from the next `pushFrame` or `finish` (docs/AUTHORING.md).
+- **The layer cache cannot do more here.** In frames 140-150, 158 of 167 layers are byte-identical to the frame before,
+  yet 1-3 of 140-200 lookups a frame hit: the groups around them animate a scale (`matrix`) every frame, and a group's
+  children are rasterised at the final matrix, so the parent matrix is in every key. No group changed by a
+  translation alone in either shot, so a whole-pixel-translate reuse would find nothing; and a Vello draw moved by a
+  translation rounds differently in f32 (section 11, "Translating a page's draw"). In the blur shot (frames 800-1000)
+  the `wall` group (321 children) zooms with 10 motion-blur samples: every sample is a new draw, and 22 islands a frame
+  are rendered for the samples (JS 40 ms, `start_frame` 20 ms). Samples of an island often differ only in a transform;
+  `request::delta` (comparing every layer with the first sample's) is about as costly as the island's resolve there.
+
+**An element painted twice** (not fixed): an inline-block with a stacking context (a `transform`, say) in a line of text
+is painted twice, as `$0.0.1` and `$0.0.1~2`, identical layers, so its antialiased edge is drawn at double alpha and it
+costs double. Cause: `Painter::walk` (`paint/mod.rs`, the children loop) paints a child with `is_sc` (or `positioned`)
+through `paint_context` (`paint_atomic`) into `pos` before it looks at `inline_level`, and `paint_inline_root`
+(`paint/text.rs`, the `InlineBox` arm) paints the same box again into `pos` while walking the lines. A line-level box
+without a context is painted only from the lines. Reproduce: a `div` with text `ab` and a `span` with
+`display: inline-block; transform: scale(0.5)` gives `["$0.0.text","$0.0.1","$0.0.1~2"]`. The end card of the launch film
+(`kinetograph.` with a scaled full stop, frames 1386-1520) has it.

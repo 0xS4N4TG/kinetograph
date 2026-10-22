@@ -209,7 +209,9 @@ test('a video of the wrong size, or aborted, leaves no file', { skip }, () => {
   const renderer = new native.Renderer();
   const writer = renderer.beginVideo(path.join(dir, 'a.mp4'), { width: 320, height: 180, fps: 30 });
   writer.pushFrame(sceneA(), 0, repo);
-  rejects(() => writer.pushFrame(sceneB(), 1, repo), 'INVALID_ARG'); // 200x120
+  // 200x120: a frame is drawn on the writer's own thread, so its failure is reported by the next call.
+  writer.pushFrame(sceneB(), 1, repo);
+  rejects(() => writer.finish(), 'INVALID_ARG');
   assert.deepEqual(fs.readdirSync(dir), []);
 
   const aborted = renderer.beginVideo(path.join(dir, 'b.mp4'), { width: 320, height: 180, fps: 30 });

@@ -75,6 +75,9 @@ pub fn bench(
     base_dir: &Path,
     layer_cache: bool,
 ) -> Result<BenchResult> {
+    // Every frame is drawn: reuse would time the comparison, not the frame.
+    let reuse = gpu.frame_reuse();
+    gpu.set_frame_reuse(false);
     let result = match &options.range {
         Some(range) => {
             if options.frame.is_some() || options.runs.is_some() {
@@ -96,6 +99,7 @@ pub fn bench(
         }
     };
     gpu.set_layer_cache(layer_cache);
+    gpu.set_frame_reuse(reuse);
     result
 }
 

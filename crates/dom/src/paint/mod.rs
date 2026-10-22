@@ -63,9 +63,10 @@ pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
 /// and the rest of its output.
 pub struct Painted {
     raw: Vec<Value>,
-    /// The id and the place in its parent's frame of the group of each
-    /// element that was painted as a group of its own.
-    groups: HashMap<NodeId, (String, Origin)>,
+    /// The id and the place in its parent's frame of each group an element
+    /// was painted as (an element can be painted as more than one: an inline
+    /// box that a line break split, or one painted again).
+    groups: HashMap<NodeId, Vec<(String, Origin)>>,
     output: IslandOutput,
 }
 
@@ -82,11 +83,10 @@ pub fn paint_keeping(doc: &BaseDocument, request: &IslandRequest) -> (IslandOutp
         margin: (painter.margin_reach > 0.0).then(|| painter.margin_reach.ceil() as u32),
         blend_space: "srgb",
     };
-    let groups = painter
-        .groups
-        .into_iter()
-        .map(|(node, id, at)| (node, (id, at)))
-        .collect();
+    let mut groups: HashMap<NodeId, Vec<(String, Origin)>> = HashMap::new();
+    for (node, id, at) in painter.groups {
+        groups.entry(node).or_default().push((id, at));
+    }
     let rest = IslandOutput {
         layers: Vec::new(),
         ..output.clone()
@@ -116,22 +116,23 @@ pub fn repaint_transforms(
 ) -> Option<(IslandOutput, Painted)> {
     let mut painter = Painter::new(doc, request);
     for id in moved {
-        let (group_id, at) = painted.groups.get(id)?;
         let node = doc.get_node(*id)?;
-        let style = node.primary_styles()?;
-        let geom = deco::box_geom(node, &style);
-        let (transform, _) = painter.group_transform(node, &style, &geom, *at);
-        drop(style);
-        // A transform that is only a move (or none) is folded into the layers
-        // around it, and one that cannot be a matrix is reported: either
-        // changes more than the group.
-        let transform = transform.filter(|t| t.get("matrix").is_some())?;
-        if !painter.unsupported.is_empty() {
-            return None;
+        for (group_id, at) in painted.groups.get(id)? {
+            let style = node.primary_styles()?;
+            let geom = deco::box_geom(node, &style);
+            let (transform, _) = painter.group_transform(node, &style, &geom, *at);
+            drop(style);
+            // A transform that is only a move (or none) is folded into the layers
+            // around it, and one that cannot be a matrix is reported: either
+            // changes more than the group.
+            let transform = transform.filter(|t| t.get("matrix").is_some())?;
+            if !painter.unsupported.is_empty() {
+                return None;
+            }
+            let group = find_layer(&mut painted.raw, group_id)?;
+            group.get("transform").and_then(|t| t.get("matrix"))?;
+            group["transform"] = transform;
         }
-        let group = find_layer(&mut painted.raw, group_id)?;
-        group.get("transform").and_then(|t| t.get("matrix"))?;
-        group["transform"] = transform;
     }
     let output = IslandOutput {
         layers: opt::optimize(painted.raw.clone()),
@@ -239,11 +240,40 @@ impl<'a> Painter<'a> {
     }
 
     /// The element's host-tree path (`$0.2`): the `data-kg-path` attribute the
-    /// front half sets, or a stand-in made from the node's id.
+    /// front half sets. A node without one (an anonymous block, a pseudo-element,
+    /// text) is named by where it sits under the nearest ancestor that has one,
+    /// not by its id: Blitz gives a node made again by a restyle a new id, and
+    /// the layers of a document edited from the frame before would not be the
+    /// layers of one built afresh (the layer cache finds layers by id).
     pub fn path_of(&self, node: &Node) -> String {
-        attr(node, "data-kg-path")
-            .map(str::to_string)
+        if let Some(path) = attr(node, "data-kg-path") {
+            return path.to_string();
+        }
+        self.path_below_a_path(node)
             .unwrap_or_else(|| format!("n{}", node.id.as_u64()))
+    }
+
+    fn path_below_a_path(&self, node: &Node) -> Option<String> {
+        let mut slots = Vec::new();
+        let mut cur = node;
+        loop {
+            let parent = self.doc.get_node(cur.parent.or(cur.layout_parent.get())?)?;
+            let at = if let Some(i) = parent.children.iter().position(|c| *c == cur.id) {
+                format!("c{i}")
+            } else if let Some(i) = parent.anonymous_blocks.iter().position(|c| *c == cur.id) {
+                format!("a{i}")
+            } else {
+                let layout = parent.layout_children.borrow();
+                let i = layout.as_ref()?.iter().position(|c| *c == cur.id)?;
+                format!("l{i}")
+            };
+            slots.push(at);
+            if let Some(path) = attr(parent, "data-kg-path") {
+                slots.reverse();
+                return Some(format!("{path}!{}", slots.join(".")));
+            }
+            cur = parent;
+        }
     }
 
     pub fn tag_of(&self, node: &Node) -> String {

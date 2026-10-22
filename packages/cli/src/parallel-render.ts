@@ -43,8 +43,11 @@ export interface ParallelOptions {
   step: number;
   count: number;
   writer: VideoWriter;
-  /** Called for each frame (by its index) in order, before it is pushed to the encoder; throwing stops the render. */
-  onFrame(index: number, audio: AudioClipJson[], unsupported: Unsupported[]): void;
+  /**
+   * Called for each frame (by its index) in order, before it is pushed to the encoder; throwing stops the render.
+   * `repeated`: the frame was not drawn, being the same as the one before it.
+   */
+  onFrame(index: number, audio: AudioClipJson[], unsupported: Unsupported[], repeated: boolean): void;
   /** Called for each frame (by its index) after it is pushed. */
   onPushed?(index: number): void;
   shouldCancel?(): boolean;
@@ -149,7 +152,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         for (let message = arrived.get(nextFrame); message; message = arrived.get(nextFrame)) {
           if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
           arrived.delete(nextFrame);
-          options.onFrame(nextFrame, message.audio, message.unsupported);
+          options.onFrame(nextFrame, message.audio, message.unsupported, message.repeated);
           const t = log ? now() : 0;
           writer.pushYuv(Buffer.from(message.yuv), nextFrame);
           if (log) pushMs += now() - t;

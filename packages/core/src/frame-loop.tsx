@@ -24,6 +24,7 @@ import {
 } from '@kinetograph/scene';
 import {
   beginSamplePass,
+  breakSamplePasses,
   clearHistory,
   endSamplePass,
   resetTransitionWindow,
@@ -124,6 +125,8 @@ class Renderer implements FrameRenderer {
     }
 
     const sequential = this.scene !== null && frame === this.lastFrame + 1 && this.trailTo === this.lastFrame;
+    // The addon keeps the islands' documents from a frame to the one after it; any other frame starts from none.
+    if (this.scene === null || frame !== this.lastFrame + 1) breakSamplePasses();
     // Once a transition has been seen, a frame that does not follow the one before is drawn by the replay below,
     // which brings a new scene up to it; drawing it here first would be thrown away.
     const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0;
@@ -237,6 +240,7 @@ class Renderer implements FrameRenderer {
   }
 
   private startScene(config: VideoConfig): void {
+    breakSamplePasses();
     this.scene?.unmount();
     // `time` is the virtual clock in seconds (frame / fps, also on a motion-blur sub-frame): the clock CSS animations read.
     this.scene = createSceneRoot({

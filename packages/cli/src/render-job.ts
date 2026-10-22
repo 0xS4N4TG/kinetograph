@@ -130,6 +130,8 @@ export async function renderSource(
   const clipFrames: { frame: number; audio: AudioClipJson[] }[] = [];
   const leftOut = new LeftOutCollector();
   let artifactRecords: ArtifactRecord[] = [];
+  // Frames the workers did not draw because each was the same as the one before (the writer counts its own).
+  let parallelRepeats = 0;
   try {
     // The frames drawn: first, first + step, ... (step is 1 unless a GIF asks for fewer).
     const total = Math.floor((last - first) / step) + 1;
@@ -153,7 +155,10 @@ export async function renderSource(
         workers,
         count: total,
         writer,
-        onFrame: (index, audio, unsupported) => onFrame(frameAt(index), audio, unsupported),
+        onFrame: (index, audio, unsupported, repeated) => {
+          if (repeated) parallelRepeats += 1;
+          onFrame(frameAt(index), audio, unsupported);
+        },
         onPushed: pushed,
         shouldCancel: options.shouldCancel,
       });
@@ -189,7 +194,7 @@ export async function renderSource(
     }
     writeShared();
     const artifacts = await writeArtifacts(source, renderer, options.output, first, last, scale, artifactRecords);
-    return { ...summary, compat: leftOut.report(), artifacts };
+    return { ...summary, repeated: summary.repeated + parallelRepeats, compat: leftOut.report(), artifacts };
   } catch (error) {
     try {
       writer.abort();
