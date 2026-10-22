@@ -875,7 +875,90 @@ impl Translator {
                     let all: Vec<Option<ImageFilter>> = (0..node.inputs.len()).map(|i| input(i, &results)).collect();
                     image_filters::merge(all, None)
                 }
-                FeOp::Composite { operator, .. } if *operator != CompositeOp::Arithmetic => {
+                FeOp::Composite { operator: CompositeOp::Arithmetic, k } => {
+                    // in is the foreground, in2 the background: k1 in in2 + k2 in + k3 in2 + k4, clamped to a valid colour.
+                    image_filters::arithmetic(k[0], k[1], k[2], k[3], true, input(1, &results), input(0, &results), None)
+                }
+                FeOp::Flood { color } => {
+                    let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    image_filters::shader(skia_safe::shaders::color(Color::from_argb(c(color[3]), c(color[0]), c(color[1]), c(color[2]))), None)
+                }
+                FeOp::Blend { mode } => image_filters::blend(sk_blend(*mode), input(1, &results), input(0, &results), None),
+                FeOp::ComponentTransfer { funcs } => {
+                    let table = |f: &crate::filter::ResolvedTransfer| -> Option<[u8; 256]> {
+                        if f.kind == 0 {
+                            return None;
+                        }
+                        let mut t = [0u8; 256];
+                        for (i, v) in t.iter_mut().enumerate() {
+                            *v = (transfer(f, i as f32 / 255.0).clamp(0.0, 1.0) * 255.0).round() as u8;
+                        }
+                        Some(t)
+                    };
+                    let [r, g, b, a] = [table(&funcs[0]), table(&funcs[1]), table(&funcs[2]), table(&funcs[3])];
+                    color_filters::table_argb(a.as_ref(), r.as_ref(), g.as_ref(), b.as_ref()).and_then(|f| image_filters::color_filter(f, input(0, &results), None))
+                }
+                FeOp::Morphology { dilate, radius } => {
+                    let r = (radius[0] / s, radius[1] / s);
+                    if *dilate { image_filters::dilate(r, input(0, &results), None) } else { image_filters::erode(r, input(0, &results), None) }
+                }
+                FeOp::Tile => {
+                    // The input's subregion is repeated over the plane; it must be given in user units.
+                    let sub = match node.inputs.first() {
+                        Some(FeInput::Node(i)) if !g.prim_bbox => g.nodes.get(*i).map(|n| n.sub),
+                        _ => None,
+                    };
+                    match sub {
+                        Some([Some(x), Some(y), Some(w), Some(h)]) if w > 0.0 && h > 0.0 => {
+                            let src = Rect::new(x as f32, y as f32, (x + w) as f32, (y + h) as f32);
+                            image_filters::tile(src, Rect::new(-1e5, -1e5, 1e5, 1e5), input(0, &results))
+                        }
+                        _ => {
+                            self.stats.no("filter primitive feTile (input subregion not in user units)");
+                            input(0, &results)
+                        }
+                    }
+                }
+                FeOp::ConvolveMatrix { order, kernel, divisor, bias, target, edge, preserve_alpha } => {
+                    let tile = match edge {
+                        crate::filter::EdgeMode::Duplicate => TileMode::Clamp,
+                        crate::filter::EdgeMode::Wrap => TileMode::Repeat,
+                        crate::filter::EdgeMode::None => TileMode::Decal,
+                    };
+                    let (ow, oh) = (order[0] as i32, order[1] as i32);
+                    if ow <= 0 || oh <= 0 || kernel.len() != (ow * oh) as usize {
+                        input(0, &results)
+                    } else {
+                        let gain = if *divisor != 0.0 { 1.0 / divisor } else { 1.0 };
+                        image_filters::matrix_convolution((ow, oh), kernel, gain, *bias, skia_safe::IPoint::new(target[0], target[1]), tile, !*preserve_alpha, input(0, &results), None)
+                    }
+                }
+                FeOp::Lighting { specular, surface_scale, constant, exponent, color, light } => {
+                    let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    let col = Color::from_rgb(c(color[0]), c(color[1]), c(color[2]));
+                    let p3 = |p: &[f32; 3]| skia_safe::Point3::new(p[0], p[1], p[2]);
+                    let inp = input(0, &results);
+                    let (ss, k, e) = (*surface_scale, *constant, *exponent);
+                    match (light, *specular) {
+                        (crate::filter::ResolvedLight::Distant { azimuth, elevation }, spec) => {
+                            let (az, el) = (azimuth.to_radians(), elevation.to_radians());
+                            let d = skia_safe::Point3::new(az.cos() * el.cos(), az.sin() * el.cos(), el.sin());
+                            if spec { image_filters::distant_lit_specular(d, col, ss, k, e, inp, None) } else { image_filters::distant_lit_diffuse(d, col, ss, k, inp, None) }
+                        }
+                        (crate::filter::ResolvedLight::Point { position }, spec) => {
+                            if spec { image_filters::point_lit_specular(p3(position), col, ss, k, e, inp, None) } else { image_filters::point_lit_diffuse(p3(position), col, ss, k, inp, None) }
+                        }
+                        (crate::filter::ResolvedLight::Spot { position, points_at, exponent: fo, cone }, spec) => {
+                            let cone = cone.unwrap_or(180.0);
+                            if spec {
+                                image_filters::spot_lit_specular(p3(position), p3(points_at), *fo, cone, col, ss, k, e, inp, None)
+                            } else {
+                                image_filters::spot_lit_diffuse(p3(position), p3(points_at), *fo, cone, col, ss, k, inp, None)
+                            }
+                        }
+                    }
+                }
+                FeOp::Composite { operator, .. } => {
                     let mode = match operator {
                         CompositeOp::Over => SkBlend::SrcOver,
                         CompositeOp::In => SkBlend::SrcIn,
@@ -884,11 +967,6 @@ impl Translator {
                         _ => SkBlend::Xor,
                     };
                     image_filters::blend(mode, input(1, &results), input(0, &results), None)
-                }
-                other => {
-                    let name = format!("filter primitive {}", fe_name(other));
-                    self.stats.no(&name);
-                    input(0, &results)
                 }
             };
             results.push(out);
@@ -1394,6 +1472,23 @@ impl Translator {
     }
 }
 
+/// One `feFunc*` at `c` in 0..1 (`transfer` in `filter.wgsl`).
+fn transfer(f: &crate::filter::ResolvedTransfer, c: f32) -> f32 {
+    let n = f.table.len();
+    match f.kind {
+        1 if n == 1 => f.table[0],
+        1 if n > 1 => {
+            let pos = c.clamp(0.0, 1.0) * (n - 1) as f32;
+            let k = (pos.floor() as usize).min(n - 2);
+            f.table[k] + (pos - k as f32) * (f.table[k + 1] - f.table[k])
+        }
+        2 if n > 0 => f.table[((c.clamp(0.0, 1.0) * n as f32).floor() as usize).min(n - 1)],
+        3 => f.p[0] * c + f.p[1],
+        4 => f.p[0] * c.max(0.0).powf(f.p[1]) + f.p[2],
+        _ => c,
+    }
+}
+
 fn data_uri_bytes(src: &str) -> Option<Vec<u8>> {
     let rest = src.strip_prefix("data:")?;
     let (head, body) = rest.split_once(',')?;
@@ -1402,26 +1497,6 @@ fn data_uri_bytes(src: &str) -> Option<Vec<u8>> {
         base64::engine::general_purpose::STANDARD.decode(body.trim()).ok()
     } else {
         None
-    }
-}
-
-fn fe_name(op: &crate::filter::FeOp) -> &'static str {
-    use crate::filter::FeOp::*;
-    match op {
-        Turbulence { .. } => "feTurbulence",
-        DisplacementMap { .. } => "feDisplacementMap",
-        GaussianBlur { .. } => "feGaussianBlur",
-        ColorMatrix { .. } => "feColorMatrix",
-        Offset { .. } => "feOffset",
-        Flood { .. } => "feFlood",
-        Composite { .. } => "feComposite(arithmetic)",
-        Blend { .. } => "feBlend",
-        Merge => "feMerge",
-        ComponentTransfer { .. } => "feComponentTransfer",
-        Morphology { .. } => "feMorphology",
-        Tile => "feTile",
-        ConvolveMatrix { .. } => "feConvolveMatrix",
-        Lighting { .. } => "feLighting",
     }
 }
 
@@ -1552,7 +1627,6 @@ fn gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'static st
 }
 
 fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'static str> {
-    use crate::filter::FeOp;
     match &layer.kind {
         ResolvedKind::Group { preserve3d: true, .. } => return Some("preserve3d group"),
         ResolvedKind::Group { glsl: Some(_), .. } => return Some("glsl group"),
@@ -1570,21 +1644,8 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
             | ResolvedEffect::InsetShadow(_)
             | ResolvedEffect::ColorMatrix(_)
             | ResolvedEffect::GradientMap(_)
-            | ResolvedEffect::Grain(_) => {}
-            ResolvedEffect::FilterGraph(g) => {
-                for n in &g.nodes {
-                    match &n.op {
-                        FeOp::Turbulence { .. }
-                        | FeOp::DisplacementMap { .. }
-                        | FeOp::GaussianBlur { .. }
-                        | FeOp::ColorMatrix { .. }
-                        | FeOp::Offset { .. }
-                        | FeOp::Merge => {}
-                        FeOp::Composite { operator, .. } if *operator != crate::filter::CompositeOp::Arithmetic => {}
-                        other => return Some(fe_name_static(other)),
-                    }
-                }
-            }
+            | ResolvedEffect::Grain(_)
+            | ResolvedEffect::FilterGraph(_) => {}
             other => return Some(effect_name(other)),
         }
     }
@@ -1599,21 +1660,6 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
         }
     }
     None
-}
-
-fn fe_name_static(op: &crate::filter::FeOp) -> &'static str {
-    use crate::filter::FeOp::*;
-    match op {
-        Flood { .. } => "filter primitive feFlood",
-        Composite { .. } => "filter primitive feComposite(arithmetic)",
-        Blend { .. } => "filter primitive feBlend",
-        ComponentTransfer { .. } => "filter primitive feComponentTransfer",
-        Morphology { .. } => "filter primitive feMorphology",
-        Tile => "filter primitive feTile",
-        ConvolveMatrix { .. } => "filter primitive feConvolveMatrix",
-        Lighting { .. } => "filter primitive feLighting",
-        _ => "filter primitive",
-    }
 }
 
 impl Translator {
