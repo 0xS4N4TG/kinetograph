@@ -102,6 +102,16 @@ All fixed on 2026-10-21 except one, which was not reproduced:
 The workarounds in `examples/launch` (`Over`, the split `How` span, the `<Sequence from>` around a video, rounded cue
 frames) can now be removed.
 
+Found on 2026-10-22, not fixed:
+
+- **An inline-block with a stacking context is painted twice.** A `display: inline-block` element with a `transform`
+  (or anything else that makes it a stacking context, or positioned) comes out as two identical layers, `$0.0.1` and
+  `$0.0.1~2`, so its antialiased edges get double alpha and it costs two draws. `Painter::walk`
+  (`crates/dom/src/paint/mod.rs`) paints it through `paint_context`/`paint_atomic` before checking `inline_level`, and
+  `paint_inline_root` (`paint/text.rs`, the `InlineBox` arm) paints the same box again from the lines. Repro: a div with
+  the text "ab" and a `span` with `display: inline-block; transform: scale(0.5)`. The launch film's end card (frames
+  1386 to 1520) has it. Fixing it changes pixels there.
+
 ## 7. Speed experiments not run (logged 2026-10-22)
 
 Two cheap tests of the JS that runs every frame (about 10 ms of a launch-film frame at concurrency 1). Neither has been
