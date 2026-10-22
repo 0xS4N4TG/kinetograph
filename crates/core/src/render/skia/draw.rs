@@ -642,10 +642,23 @@ impl Translator {
                 let _ = geometry;
                 Some(b)
             }
-            ResolvedKind::Text { size, .. } => {
+            ResolvedKind::Text { size, chars, text, font, line_height, max_width, align, runs, box_size, .. } => {
                 let b = self.layer_box(layer)?;
                 let g = *size * 1.0;
-                Some(Rect::new(b.left - g, b.top - g, b.right + g, b.bottom + g))
+                let mut b = Rect::new(b.left - g, b.top - g, b.right + g, b.bottom + g);
+                if chars.iter().any(Option::is_some) {
+                    // A styled character moves, scales and turns about its centre: its glyph box goes through that.
+                    let laid = self.text.layout_layer(text, font, *size, *line_height, *max_width, *align, runs, *box_size);
+                    let centres = laid.char_centres();
+                    for glyph in laid.runs.iter().flat_map(|run| &run.glyphs) {
+                        let Some(style) = crate::render::char_style(chars, glyph.char_index) else { continue };
+                        let centre = centres.get(&glyph.char_index).copied().unwrap_or_default();
+                        let ink = Rect::new(glyph.x - g, glyph.y - g, glyph.x + glyph.advance + g, glyph.y + g);
+                        let r = mat(crate::render::char_matrix(style, centre)).map_rect(ink).0;
+                        b = Rect::new(b.left.min(r.left), b.top.min(r.top), b.right.max(r.right), b.bottom.max(r.bottom));
+                    }
+                }
+                Some(b)
             }
             ResolvedKind::Image { .. } | ResolvedKind::Video { .. } | ResolvedKind::Canvas { .. } | ResolvedKind::Gif { .. } | ResolvedKind::Lottie { .. } | ResolvedKind::Noise { .. } => {
                 self.layer_box(layer)
@@ -1303,9 +1316,8 @@ impl Translator {
         let laid = self.text.layout_layer(text, font, *size, *line_height, *max_width, *align, runs, *box_size);
         let (bw, bh) = laid.box_size(*max_width);
         let text_box = Some(Rect::new(0.0, 0.0, bw as f32, bh as f32));
-        if chars.iter().any(Option::is_some) {
-            self.stats.no("per-character text styles");
-        }
+        let styled = chars.iter().any(Option::is_some);
+        let centres = if styled { laid.char_centres() } else { BTreeMap::new() };
         let mut paint = Self::base_paint(comp);
         self.set_paint(&mut paint, color, text_box);
         for run in &laid.runs {
@@ -1341,9 +1353,28 @@ impl Translator {
                 for g in &run.glyphs {
                     let key = (face, run.font_size.to_bits(), run.skew.to_bits(), run.embolden > 0.0, g.id as u16);
                     let outline = self.glyph_paths.entry(key).or_insert_with(|| f.get_path(g.id as u16)).clone();
-                    if let Some(outline) = outline {
-                        pb.add_path_with_offset(&outline, (g.x, g.y), None);
+                    let Some(style) = crate::render::char_style(chars, g.char_index) else {
+                        if let Some(outline) = outline {
+                            pb.add_path_with_offset(&outline, (g.x, g.y), None);
+                        }
+                        continue;
+                    };
+                    // A character with its own style is drawn about its centre, after the ones before it.
+                    canvas.draw_path(&std::mem::replace(&mut pb, PathBuilder::new()).detach(), &paint);
+                    self.stats.draws += 1;
+                    let (Some(outline), true) = (outline, style.opacity > 0.0) else { continue };
+                    let centre = centres.get(&g.char_index).copied().unwrap_or_default();
+                    let mut own = Self::base_paint(comp);
+                    own.set_alpha_f(own.alpha_f() * style.opacity);
+                    match style.color {
+                        Some(c) => self.set_paint(&mut own, &ResolvedPaint::Solid(c), text_box),
+                        None => self.set_paint(&mut own, color, text_box),
                     }
+                    canvas.save();
+                    canvas.concat(&mat(crate::render::char_matrix(style, centre)));
+                    canvas.draw_path(&Path::from(outline).make_offset((g.x, g.y)), &own);
+                    canvas.restore();
+                    self.stats.draws += 1;
                 }
                 canvas.draw_path(&pb.detach(), &paint);
                 self.stats.draws += 1;
@@ -1528,7 +1559,6 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
         ResolvedKind::Glsl { .. } => return Some("glsl layer"),
         ResolvedKind::Scene3d { .. } => return Some("scene3d layer"),
         ResolvedKind::MeshGradient { .. } => return Some("meshGradient layer"),
-        ResolvedKind::Text { chars, .. } if chars.iter().any(Option::is_some) => return Some("per-character text styles"),
         _ => {}
     }
     for e in &layer.effects {

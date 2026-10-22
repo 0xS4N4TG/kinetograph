@@ -3044,13 +3044,13 @@ fn text_bounds(
 }
 
 /// The style of the character at code point `index`, if it has one.
-fn char_style(chars: &[Option<ResolvedChar>], index: u32) -> Option<&ResolvedChar> {
+pub(crate) fn char_style(chars: &[Option<ResolvedChar>], index: u32) -> Option<&ResolvedChar> {
     chars.get(index as usize).and_then(Option::as_ref)
 }
 
 /// Where a styled character goes, in text-box space: moved by its offset,
 /// then scaled and turned about its centre.
-fn char_matrix(style: &ResolvedChar, centre: (f64, f64)) -> Affine {
+pub(crate) fn char_matrix(style: &ResolvedChar, centre: (f64, f64)) -> Affine {
     Affine::translate((style.x, style.y))
         * Affine::translate(centre)
         * Affine::rotate(style.rotation.to_radians())
