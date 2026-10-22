@@ -126,17 +126,28 @@ time per frame with the current build. Keep the result either way.
   addon loads, and whether it loads in each worker thread. If it is faster, it can only be an option used when Bun is
   installed, since `npx kinetograph` starts Node. Bun as the bundler is not worth testing: bundling runs once a render.
 
-## 8. More workers do not make a render faster (logged 2026-10-22)
+## 8. More workers do not make the launch film faster (logged 2026-10-22, corrected the same day)
 
-Past 1 to 4 workers the render barely speeds up. Earlier Vello runs showed `--concurrency 4` only a little faster than
-`--concurrency 1`. On the Skia backend (branch `exp/skia-backend`), papercut took about 22 s at 4 workers and 28 s and
-39 s at 5 (load average 8 to 10 during the 5-worker runs, so noisy). Remotion on the same film took 131 s at 5 workers.
-Cause (profiled 2026-10-22 on the launch film, Skia backend): the workers only run the JS in parallel. Every frame
-then goes through one writer thread and one `Renderer` behind one `Mutex` (`crates/node/src/lib.rs`, `Shared.gpu`), so
-parse, resolve, Skia recording, submit and readback are serial. At 4 workers that serial part is about 6.4 ms a frame,
-89% of the frame loop (10.8 s of 14.6 s), and the JS per frame doubles (3.7 to 7.6 ms) while it waits. Other costs:
-the encode and to-linear-premul GPU passes take 4.5 ms a frame, the hand-off to the encoder 3.4 ms a frame on the main
-thread, and about 3.7 s of each render is outside the frame loop and not yet broken down. Full numbers in the stage 5
-profile (scratchpad `prof/launch.md`). Fix: parse and resolve outside the lock, and a Skia Graphite `Recorder` per
-worker so recording runs in parallel, with only `insert_recording` and submit serial. This is the main lever left for
-the launch film, which is about 3x Remotion against a 5x goal.
+Measured on the Skia backend (branch `exp/skia-backend`), load average 1.5 to 3.3:
+
+| Film | c1 | c2 | c3 | c4 | c6 |
+|---|---|---|---|---|---|
+| launch | 15.1 s, 2.8 GB | 17.0 s, 4.6 GB | 14.6 s, 5.7 GB | 14.3 s, 6.6 GB | 14.3 s, 10.1 GB |
+| papercut | 36.3 s, 1.3 GB | | | 21.7 s, 3.7 GB | |
+
+Papercut scales; launch does not. Each worker already has its own `Renderer` (its own wgpu device, Skia context and
+recorder; `packages/cli/src/render-worker.ts`), so the `Shared.gpu` mutex in `crates/node/src/lib.rs` only serves the
+c1 in-process path and is not the cause (an earlier note here said it was; that was wrong). At c4 on launch, node
+runs at about 700% CPU, the GPU at 70 to 85%, and CPU time per frame doubles from c1 (user+sys 22.5 s to 45.6 s). What
+the doubled CPU is doing is not known: candidates are work each worker repeats (shader and pipeline compiles in its own
+Skia and wgpu contexts, video decode and seeking per chunk, font and image loads) and the S08 to S09 JS. Next step: a
+CPU sample of a c4 launch render. Out of the loop, launch spends 2.0 s in the audio mix
+(`OfflineAudioContext.startRendering`) and 1.0 s flushing the encoder and muxing audio. A fused readback pass (one pass
+for to-linear-premul plus encode) gave no speedup and was reverted. Launch is about 3x Remotion against a 5x goal.
+
+## 9. Launch output differs at `--concurrency 2` (logged 2026-10-22)
+
+On unmodified `exp/skia-backend` (5c998c4), launch at `--concurrency 2` decoded to md5 `c6f627ba...` instead of
+`06c47d3e...`; c1, c3, c4 and c6 matched. One run, so not yet known to be repeatable. Rendering must be a pure
+function of (project, frame), so this is a bug: find the differing frames, then the cause (chunk boundaries are the
+first suspect: state carried across frames, video seeks, motion-blur sub-frames or the previous-frame reuse).
