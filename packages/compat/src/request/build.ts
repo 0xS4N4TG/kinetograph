@@ -44,6 +44,7 @@ const FILE_ELEMENTS = new Set(['img', 'video', 'source', 'image', 'input', 'use'
 
 /** `url(https://…)` in CSS text, each remote one replaced by its local file (a quoted path when it has a space or quote). */
 export function localizeCssUrls(css: string, resolve: (url: string) => string | null = resolveRemoteAsset): string {
+  if (!/https?:/i.test(css)) return css;
   return css.replace(/url\(\s*(['"]?)(https?:\/\/[^'")]+)\1\s*\)/gi, (whole, _quote: string, url: string) => {
     const local = resolve(url);
     return local === null ? whole : `url("${local.replace(/"/g, '%22')}")`;
