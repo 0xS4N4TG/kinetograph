@@ -387,6 +387,40 @@ impl Translator {
 
     /// Effects, mask and matte: the layer is drawn into a buffer, filtered, cut, and composited.
     fn draw_with_extras(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64) {
+        // Graphite filters the whole device behind a layer with a backdrop filter, whatever the layer's bounds: a clip keeps it
+        // to the bounds.
+        let backdrop_box = layer.effects.iter().any(|e| matches!(e, ResolvedEffect::BackdropBlur { .. })).then(|| self.layer_bounds(layer, scale)).flatten();
+        if let Some(b) = backdrop_box {
+            canvas.save();
+            canvas.clip_rect(b, ClipOp::Intersect, false);
+            self.draw_extras(canvas, layer, siblings, comp, scale);
+            canvas.restore();
+        } else {
+            self.draw_extras(canvas, layer, siblings, comp, scale);
+        }
+    }
+
+    /// The layer's content, into a layer that starts as the blurred backdrop if `backdrop`: the backdrop then shows only
+    /// where the content draws (a shape frosts its whole geometry, however see-through its fill is), and the content goes
+    /// over it.
+    fn draw_body(&mut self, canvas: &Canvas, layer: &ResolvedLayer, bounds: Option<Rect>, backdrop: bool, scale: f64) {
+        let plain = Comp { alpha: 1.0, blend: SkBlend::SrcOver };
+        if backdrop {
+            let mut keep = Paint::default();
+            keep.set_blend_mode(SkBlend::DstIn);
+            self.save_layer(canvas, bounds, &keep, None);
+            match &layer.kind {
+                ResolvedKind::Shape { geometry, style, .. } => {
+                    self.draw_shape(canvas, layer, geometry, Some(&ResolvedPaint::Solid(crate::color::Color::BLACK)), None, style, plain)
+                }
+                _ => self.draw_content(canvas, layer, plain, scale),
+            }
+            canvas.restore();
+        }
+        self.draw_content(canvas, layer, plain, scale);
+    }
+
+    fn draw_extras(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64) {
         let bounds = self.layer_bounds(layer, scale);
         let (filter, backdrop) = self.effect_filter(canvas, layer, scale);
         let deferred = layer.clip.is_some() || layer.mask.is_some() || layer.matte.is_some();
@@ -397,7 +431,7 @@ impl Translator {
         if !deferred {
             outer.set_image_filter(filter.clone());
             self.save_layer(canvas, bounds, &outer, backdrop.as_ref());
-            self.draw_content(canvas, layer, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, scale);
+            self.draw_body(canvas, layer, bounds, backdrop.is_some(), scale);
             canvas.restore();
             return;
         }
@@ -409,7 +443,7 @@ impl Translator {
             self.draw_content(canvas, layer, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, scale);
             canvas.restore();
         } else {
-            self.draw_content(canvas, layer, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, scale);
+            self.draw_body(canvas, layer, bounds, backdrop.is_some(), scale);
         }
         if let Some(clip) = &layer.clip
             && let Some(path) = self.clip_path(clip, layer)
@@ -631,7 +665,7 @@ impl Translator {
                     let g = grow / s;
                     r = Rect::new(r.left - g, r.top - g, r.right + g, r.bottom + g);
                 }
-                ResolvedEffect::InsetShadow(_) | ResolvedEffect::ColorMatrix(_) | ResolvedEffect::GradientMap(_) | ResolvedEffect::Grain(_) => {}
+                ResolvedEffect::InsetShadow(_) | ResolvedEffect::ColorMatrix(_) | ResolvedEffect::GradientMap(_) | ResolvedEffect::Grain(_) | ResolvedEffect::BackdropBlur { .. } => {}
                 _ => return None,
             }
         }
