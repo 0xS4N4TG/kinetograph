@@ -545,6 +545,7 @@ impl Renderer {
             });
         }
         self.drawn = None;
+        self.skia_started(frame);
         let (hits, misses) = self.cache.counts();
         let (readback, width, height) = self.start_resolved(&resolved)?;
         if crate::profile::enabled() {
@@ -633,6 +634,7 @@ impl Renderer {
         let rgba = match pending.work {
             Work::Drawn { readback, seq } => {
                 let rgba = self.compositor.finish_readback(readback)?;
+                self.skia_finished(&rgba);
                 // Kept when a repeat of it has started, or may still start
                 // (nothing was started after it).
                 let wanted = self.repeat_of == Some(seq)

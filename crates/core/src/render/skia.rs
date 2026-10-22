@@ -51,5 +51,9 @@ mod stub {
         }
 
         pub(in super::super) fn skia_submitted(&mut self, _: &Readback) {}
+
+        pub(in super::super) fn skia_started(&mut self, _: u32) {}
+
+        pub(in super::super) fn skia_finished(&mut self, _: &[u8]) {}
     }
 }

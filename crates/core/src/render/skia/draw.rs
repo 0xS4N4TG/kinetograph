@@ -63,6 +63,8 @@ pub struct Translator {
     fonts_key: std::collections::BTreeMap<String, String>,
     images: HashMap<String, Option<Image>>,
     typefaces: HashMap<(u64, u32, Vec<i16>), Option<Typeface>>,
+    glyph_paths: HashMap<(skia_safe::typeface::TypefaceId, u32, u32, bool, u16), Option<Path>>,
+    text_atlas: bool,
     svg_paths: HashMap<String, Path>,
     srgb: bool,
     fx: HashMap<String, Option<skia_safe::RuntimeEffect>>,
@@ -158,6 +160,8 @@ impl Translator {
             fonts_key: scene.fonts.clone(),
             images: HashMap::new(),
             typefaces: HashMap::new(),
+            glyph_paths: HashMap::new(),
+            text_atlas: std::env::var("KINETOGRAPH_SKIA_TEXT").is_ok_and(|v| v == "atlas"),
             svg_paths: HashMap::new(),
             srgb: false,
             fx: HashMap::new(),
@@ -1187,6 +1191,7 @@ impl Translator {
             if run.coords.iter().any(|c| *c != 0) {
                 self.stats.approx("variable-font coordinates (normalised back to design values, avar ignored)");
             }
+            let tf_id = tf.unique_id();
             let mut f = Font::from_typeface(tf, run.font_size);
             f.set_subpixel(true);
             f.set_hinting(skia_safe::FontHinting::None);
@@ -1198,6 +1203,23 @@ impl Translator {
             if run.embolden > 0.0 {
                 f.set_embolden(true);
                 self.stats.approx("synthetic bold (Skia's own amount)");
+            }
+            // Glyphs go in as outlines, one path a run. Graphite's glyph atlas gives a glyph the sampling coordinates of
+            // wherever it happens to sit, which moves a few pixels by one level depending on what was drawn before: a
+            // frame would not be a pure function of (project, frame). KINETOGRAPH_SKIA_TEXT=atlas draws them as a blob.
+            if !self.text_atlas {
+                let face = tf_id;
+                let mut pb = PathBuilder::new();
+                for g in &run.glyphs {
+                    let key = (face, run.font_size.to_bits(), run.skew.to_bits(), run.embolden > 0.0, g.id as u16);
+                    let outline = self.glyph_paths.entry(key).or_insert_with(|| f.get_path(g.id as u16)).clone();
+                    if let Some(outline) = outline {
+                        pb.add_path_with_offset(&outline, (g.x, g.y), None);
+                    }
+                }
+                canvas.draw_path(&pb.detach(), &paint);
+                self.stats.draws += 1;
+                continue;
             }
             let mut b = TextBlobBuilder::new();
             let (ids, pos) = b.alloc_run_pos(&f, run.glyphs.len(), None);

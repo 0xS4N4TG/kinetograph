@@ -29,10 +29,17 @@ pub(in super::super) struct SkiaBackend {
     ctx: graphite::Context,
     rec: Rc<RefCell<graphite::Recorder>>,
     tr: Translator,
-    target: Option<Target>,
+    /// Frames take the targets in turn, so that a frame is not drawn into the texture the one before is still being
+    /// read from.
+    targets: Vec<Target>,
+    next_target: usize,
     in_flight: VecDeque<wgpu::SubmissionIndex>,
     stats_file: Option<std::fs::File>,
     frame: u64,
+    /// `KINETOGRAPH_SKIA_HASH=<dir>`: a hash of every frame's pixels, by frame number, for finding frames that differ
+    /// between runs.
+    hash_file: Option<std::fs::File>,
+    started: VecDeque<u32>,
 }
 
 // SAFETY: a `Renderer` is used by one thread at a time (the napi addon locks it). Nothing here is tied to a thread.
@@ -78,7 +85,12 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
             .open(format!("{dir}/skia-{}-{n}.jsonl", std::process::id()))
             .ok()
     });
-    Some(SkiaBackend { ctx, rec, tr, target: None, in_flight: VecDeque::new(), stats_file, frame: 0 })
+    let hash_file = std::env::var("KINETOGRAPH_SKIA_HASH").ok().and_then(|dir| {
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::fs::create_dir_all(&dir).ok()?;
+        std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
+    });
+    Some(SkiaBackend { ctx, rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
 }
 
 fn warn_once(what: &str) {
@@ -105,13 +117,15 @@ impl Renderer {
 
     fn skia_draw(&mut self, sk: &mut SkiaBackend, scene: &ResolvedScene) -> Result<Tex> {
         // Bound the frames in flight.
-        while sk.in_flight.len() >= FRAMES_IN_FLIGHT {
+        let bound = std::env::var("KINETOGRAPH_SKIA_INFLIGHT").ok().and_then(|v| v.parse().ok()).unwrap_or(FRAMES_IN_FLIGHT);
+        while sk.in_flight.len() >= bound.max(1) {
             let index = sk.in_flight.pop_front().expect("a frame in flight");
             let _ = self.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: None });
         }
         let size = self.target_size;
-        if sk.target.as_ref().is_none_or(|t| t.size != size) {
-            sk.target = None;
+        if sk.targets.first().is_none_or(|t| t.size != size) {
+            sk.targets.clear();
+            for _ in 0..=FRAMES_IN_FLIGHT {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("skia target"),
                 size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
@@ -143,12 +157,16 @@ impl Renderer {
             let surface =
                 graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, ColorType::RGBA8888, None, None)
                     .ok_or_else(|| Error::Render("Skia could not wrap its target texture".into()))?;
-            sk.target = Some(Target { size, view, surface, _texture: texture });
+            sk.targets.push(Target { size, view, surface, _texture: texture });
+            }
         }
+        let current = sk.next_target % sk.targets.len();
+        sk.next_target = current + 1;
+
 
         sk.tr.begin_frame(&self.scene);
-        let SkiaBackend { ctx, rec, tr, target, .. } = sk;
-        let target = target.as_mut().expect("the Skia target");
+        let SkiaBackend { ctx, rec, tr, targets, .. } = sk;
+        let target = &mut targets[current];
         let margin = self.margin;
         tr.draw_scene(target.surface.canvas(), scene, scene.background, self, margin);
         if let Some(e) = tr.error.take() {
@@ -192,8 +210,35 @@ impl Renderer {
                 json_map(&s.approximated)
             );
         }
-        let target = sk.target.as_ref().expect("the Skia target");
-        Ok(self.compositor.from_skia(&target.view))
+        Ok(self.compositor.from_skia(&sk.targets[current].view))
+    }
+
+    /// Notes the number of the frame `start_frame` is drawing, for `skia_finished`.
+    pub(in super::super) fn skia_started(&mut self, frame: u32) {
+        if let Some(sk) = &mut self.skia {
+            sk.started.push_back(frame);
+        }
+    }
+
+    pub(in super::super) fn skia_finished(&mut self, rgba: &[u8]) {
+        if let Some(sk) = &mut self.skia
+            && let Some(file) = &mut sk.hash_file
+            && let Some(frame) = sk.started.pop_front()
+        {
+            let mut h: u64 = 0xcbf29ce484222325;
+            for b in rgba {
+                h = (h ^ u64::from(*b)).wrapping_mul(0x100000001b3);
+            }
+            let _ = writeln!(file, "{frame} {h:016x}");
+            // KINETOGRAPH_SKIA_PNG=<dir>:<frame>: that frame's pixels as `<dir>/<hash>.png`.
+            if let Ok(spec) = std::env::var("KINETOGRAPH_SKIA_PNG")
+                && let Some((dir, f)) = spec.rsplit_once(':')
+                && f.parse::<u32>() == Ok(frame)
+            {
+                let _ = std::fs::create_dir_all(dir);
+                let _ = image::save_buffer(format!("{dir}/{h:016x}.png"), rgba, self.scene.width, self.scene.height, image::ColorType::Rgba8);
+            }
+        }
     }
 
     pub(in super::super) fn skia_submitted(&mut self, readback: &Readback) {
