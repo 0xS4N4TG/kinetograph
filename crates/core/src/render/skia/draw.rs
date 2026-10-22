@@ -838,8 +838,11 @@ impl Translator {
         let sk = |r: &vello::kurbo::Rect| Rect::new(r.x0 as f32, r.y0 as f32, r.x1 as f32, r.y1 as f32);
         for (idx, node) in g.nodes.iter().enumerate() {
             let op = plan.as_ref().map_or(&node.op, |p| &p.nodes[idx].op);
+            // A primitive that works in linearRGB reads its inputs decoded and its result is encoded again (flood
+            // colours are given in sRGB and stay there).
+            let lin = node.linear;
             let input = |i: usize, results: &Vec<Option<ImageFilter>>| -> Option<ImageFilter> {
-                match node.inputs.get(i).copied().unwrap_or(FeInput::Source) {
+                let f = match node.inputs.get(i).copied().unwrap_or(FeInput::Source) {
                     FeInput::Source => source.clone(),
                     FeInput::SourceAlpha => {
                         let f = color_filters::matrix_row_major(
@@ -850,6 +853,11 @@ impl Translator {
                     }
                     FeInput::Node(n) => results.get(n).cloned().flatten(),
                     FeInput::Empty => Some(image_filters::empty()),
+                };
+                match (lin, f) {
+                    // `None` is the layer itself.
+                    (true, f) => image_filters::color_filter(color_filters::srgb_to_linear_gamma(), f, None),
+                    (false, f) => f,
                 }
             };
             let out = match op {
@@ -943,7 +951,8 @@ impl Translator {
                 }
                 FeOp::Lighting { specular, surface_scale, constant, exponent, color, light } => {
                     let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-                    let col = Color::from_rgb(c(color[0]), c(color[1]), c(color[2]));
+                    let dec = |v: f32| if !lin { v } else if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+                    let col = Color::from_rgb(c(dec(color[0])), c(dec(color[1])), c(dec(color[2])));
                     let p3 = |p: &[f32; 3]| skia_safe::Point3::new(p[0], p[1], p[2]);
                     let inp = input(0, &results);
                     let (ss, k, e) = (*surface_scale, *constant, *exponent);
@@ -976,6 +985,10 @@ impl Translator {
                     };
                     image_filters::blend(mode, input(1, &results), input(0, &results), None)
                 }
+            };
+            let out = match out {
+                Some(f) if lin && !matches!(op, FeOp::Flood { .. }) => image_filters::color_filter(color_filters::linear_to_srgb_gamma(), f, None),
+                f => f,
             };
             let out = match (&plan, out) {
                 (Some(p), Some(f)) => image_filters::crop(sk(&p.nodes[idx].sub), TileMode::Decal, f),
