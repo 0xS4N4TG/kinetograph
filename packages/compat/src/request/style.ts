@@ -22,12 +22,20 @@ for (const name of UNITLESS_BASE) {
   for (const prefix of PREFIXES) UNITLESS.add(prefix + capital);
 }
 
+/** The names `cssPropertyName` has worked out: a style key is the same few hundred names on every frame. */
+const NAMES = new Map<string, string>();
+
 /** The CSS name of a style key: `backgroundColor` → `background-color`. Custom properties are kept as they are. */
 export function cssPropertyName(key: string): string {
-  if (key.startsWith('--')) return key;
-  if (key === 'cssFloat') return 'float';
+  const known = NAMES.get(key);
+  if (known !== undefined) return known;
+  let name: string;
+  if (key.startsWith('--')) name = key;
+  else if (key === 'cssFloat') name = 'float';
   // React's hyphenateStyleName: every capital becomes `-` + lower case; `ms` is the one prefix without a capital.
-  return key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`).replace(/^ms-/, '-ms-');
+  else name = key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`).replace(/^ms-/, '-ms-');
+  if (NAMES.size < 4096) NAMES.set(key, name);
+  return name;
 }
 
 /** The CSS text of one value, or null when React leaves the declaration out. */
