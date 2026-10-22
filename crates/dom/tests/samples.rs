@@ -59,6 +59,30 @@ fn an_edited_document_draws_what_a_fresh_one_does() {
 }
 
 #[test]
+fn a_document_carries_over_to_the_next_frame_and_only_to_it() {
+    let mut cache = IslandCache::default();
+    let mut fresh = IslandCache::default();
+    // Frames 1, 2, 3 in sequence, then a jump to pass 9, with two samples in each frame.
+    let frames = [(1, 0.0, "a"), (2, 4.0, "a"), (3, 8.0, "b"), (9, 12.0, "b")];
+    for (pass, x, label) in frames {
+        for dx in [0.0, 1.0] {
+            let s = sample(x + dx, label, "");
+            assert_eq!(drawn(&mut cache, &s, Some(pass)), drawn(&mut fresh, &s, None));
+        }
+    }
+    // Built once at pass 1 and once after the jump; every other render edited.
+    assert_eq!(cache.counts(), (6, 2));
+    // An island a frame did not render is gone from the one after next.
+    let mut other = request(el("div", "$1", "position: absolute; inset: 0", vec![]));
+    other["path"] = json!("$1");
+    drawn(&mut cache, &other, Some(10));
+    drawn(&mut cache, &other, Some(11));
+    let (_, built) = cache.counts();
+    drawn(&mut cache, &sample(0.0, "a", ""), Some(12));
+    assert_eq!(cache.counts().1, built + 1);
+}
+
+#[test]
 fn a_later_render_is_written_as_changes_from_the_first() {
     use kinetograph_dom::request::{delta, undelta};
     let mut cache = IslandCache::default();
@@ -243,6 +267,61 @@ fn a_change_of_transforms_alone_draws_what_a_fresh_build_does() {
             drawn(&mut cache, &flat(t), Some(12)),
             drawn(&mut fresh, &flat(t), None),
             "{t}"
+        );
+    }
+}
+
+/// The end card of the launch film: a word with an inline-block full stop whose scale is animated, in a block
+/// whose own scale, opacity and blur finish first. One frame after another, a document edited from the frame
+/// before draws what a fresh one does.
+#[test]
+fn an_inline_block_scaled_frame_after_frame_draws_what_a_fresh_build_does() {
+    let back = |t: f64| {
+        let t = 1.0 - t;
+        1.0 - t * t * (3.2 * t - 2.2)
+    };
+    let card = |frame: u32| {
+        let land = ((frame as f64 - 6.0) / 8.0).clamp(0.0, 1.0);
+        let dot = back(((frame as f64 - 12.0) / 10.0).clamp(0.0, 1.0));
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0",
+            vec![el(
+                "div",
+                "$0.0",
+                "position: absolute; left: 0; right: 0; top: 100px; text-align: center; color: #111",
+                vec![el(
+                    "div",
+                    "$0.0.0",
+                    &format!(
+                        "font-size: 100px; line-height: 1; opacity: {land}; transform: scale({}); filter: blur({}px)",
+                        1.05 - 0.05 * land,
+                        (1.0 - land) * 10.0
+                    ),
+                    vec![
+                        text("kinetograph"),
+                        el(
+                            "span",
+                            "$0.0.0.1",
+                            &format!(
+                                "color: red; display: inline-block; transform: scale({dot}); transform-origin: 50% 85%"
+                            ),
+                            vec![text(".")],
+                        ),
+                    ],
+                )],
+            )],
+        ))
+    };
+    let mut cache = IslandCache::default();
+    let mut fresh = IslandCache::default();
+    for frame in 0..40u32 {
+        let s = card(frame);
+        assert_eq!(
+            drawn(&mut cache, &s, Some(u64::from(frame) + 1)),
+            drawn(&mut fresh, &s, None),
+            "frame {frame}"
         );
     }
 }

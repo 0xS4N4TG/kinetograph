@@ -61,15 +61,25 @@ const bases = new Map<string, unknown[]>();
 
 /**
  * Marks the islands rendered from now to `endSamplePass()` as the renders of one frame: the frame itself and the
- * samples of its motion blur. The addon keeps an island's document between them and edits it from one render to the
- * next instead of building it again; each is drawn as if it were built afresh. A later render of an island gives back
+ * samples of its motion blur. The addon keeps an island's document between them, and from one frame to the next
+ * (`breakSamplePasses`), and edits it from one render to the next instead of building it again; each is drawn as if it
+ * were built afresh. A later render of an island gives back
  * what changed from its first, and shares the layers that did not with that first's.
  */
 export function beginSamplePass(): void {
   dropQueue();
+  if (typeof process !== 'undefined' && process.env?.KINETOGRAPH_NO_INCREMENTAL) breakSamplePasses();
   passes = (passes % 0x7fffffff) + 1;
   samplePass = passes;
   bases.clear();
+}
+
+/**
+ * Says that the next pass does not follow the one before (a frame that is not the next one, a new scene): the addon
+ * keeps an island's document from one pass to the next pass only when the numbers are in sequence, so this skips one.
+ */
+export function breakSamplePasses(): void {
+  passes = (passes % 0x7fffffff) + 1;
 }
 
 export function endSamplePass(): void {

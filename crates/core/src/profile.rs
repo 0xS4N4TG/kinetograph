@@ -27,6 +27,35 @@ thread_local! {
 
 static SHARED: Mutex<BTreeMap<&'static str, f64>> = Mutex::new(BTreeMap::new());
 
+/// Stages other threads measured for a calling thread (the DOM island thread's, for the thread that asked for the
+/// island), which that thread's `take_local` picks up.
+static FOR_THREAD: Mutex<BTreeMap<String, BTreeMap<&'static str, f64>>> = Mutex::new(BTreeMap::new());
+
+/// The calling thread's identity, to hand to a thread that works for it (`add_for`).
+pub fn caller() -> String {
+    format!("{:?}", std::thread::current().id())
+}
+
+/// Adds `value` to `stage` of the thread `caller` (from `caller()`), whichever thread this is.
+pub fn add_for(caller: &str, stage: &'static str, value: f64) {
+    if enabled() {
+        *FOR_THREAD
+            .lock()
+            .unwrap()
+            .entry(caller.to_string())
+            .or_default()
+            .entry(stage)
+            .or_insert(0.0) += value;
+    }
+}
+
+/// Adds the time since `start` to `stage` of the thread `caller`.
+pub fn add_for_since(caller: &str, stage: &'static str, start: Option<Instant>) {
+    if let Some(ms) = since(start) {
+        add_for(caller, stage, ms);
+    }
+}
+
 /// The time since `start`, in ms, or None when profiling is off.
 pub fn since(start: Option<Instant>) -> Option<f64> {
     start.map(|s| s.elapsed().as_secs_f64() * 1000.0)
@@ -67,7 +96,15 @@ pub fn count_shared(stage: &'static str) {
 
 /// This thread's stages since the last call, emptied.
 pub fn take_local() -> BTreeMap<&'static str, f64> {
-    LOCAL.with(|t| std::mem::take(&mut *t.borrow_mut()))
+    let mut mine = LOCAL.with(|t| std::mem::take(&mut *t.borrow_mut()));
+    if enabled()
+        && let Some(theirs) = FOR_THREAD.lock().unwrap().remove(&caller())
+    {
+        for (stage, value) in theirs {
+            *mine.entry(stage).or_insert(0.0) += value;
+        }
+    }
+    mine
 }
 
 /// The shared stages, as they stand.

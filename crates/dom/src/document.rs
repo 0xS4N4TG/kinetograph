@@ -459,19 +459,27 @@ fn transform_changes(
 /// or animation could start from an edit, nor for a tree whose structure
 /// changed.
 ///
-/// A pass is the renders of one frame, its samples included; a request of
-/// another pass (or none) empties the cache, so no frame sees what an earlier
-/// one left.
+/// A pass is the renders of one frame, its samples included. The pass that
+/// follows it (its number one more) edits the documents the pass left, from
+/// the state of one frame to the next, and drops the islands the pass did not
+/// render. Any other pass number (or none) empties the cache, so a frame that
+/// does not follow the one before sees nothing an earlier one left: the
+/// caller skips a number where the frames are not in sequence.
 #[derive(Default)]
 pub struct IslandCache {
     pass: Option<u64>,
     kept: HashMap<String, Kept>,
+    /// How many documents the passes edited and how many they built.
+    edited: u64,
+    built: u64,
 }
 
 struct Kept {
     resolved: Resolved,
     /// The request the document shows.
     request: IslandRequest,
+    /// The pass that last rendered it.
+    pass: u64,
 }
 
 /// Whether two requests build a document from the same sheets, fonts and box.
@@ -521,7 +529,13 @@ impl IslandCache {
         pass: Option<u64>,
     ) -> Result<Resolved, BuildError> {
         if self.pass != pass {
-            self.kept.clear();
+            match (self.pass, pass) {
+                // The next frame: the islands the last one rendered stay.
+                (Some(was), Some(now)) if now == was.wrapping_add(1) => {
+                    self.kept.retain(|_, kept| kept.pass == was);
+                }
+                _ => self.kept.clear(),
+            }
             self.pass = pass;
         }
         if pass.is_some()
@@ -556,10 +570,12 @@ impl IslandCache {
                 }
                 _ => None,
             };
+            self.edited += 1;
             return Ok(kept.resolved);
         }
         let (mut files, mut plain) = (None, false);
         let island = resolve_keeping(request, &mut files, &mut plain)?;
+        self.built += 1;
         Ok(Resolved {
             island,
             files: files.expect("a resolved island has its files"),
@@ -571,10 +587,23 @@ impl IslandCache {
 
     /// Keeps `resolved` for the next sample of the same pass.
     pub fn keep(&mut self, request: IslandRequest, resolved: Resolved) {
-        if self.pass.is_some() && resolved.plain {
-            self.kept
-                .insert(request.path.clone(), Kept { resolved, request });
+        if let Some(pass) = self.pass
+            && resolved.plain
+        {
+            self.kept.insert(
+                request.path.clone(),
+                Kept {
+                    resolved,
+                    request,
+                    pass,
+                },
+            );
         }
+    }
+
+    /// How many renders edited a kept document, and how many built one.
+    pub fn counts(&self) -> (u64, u64) {
+        (self.edited, self.built)
     }
 }
 
