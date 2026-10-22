@@ -15,16 +15,16 @@ use crate::render::Renderer;
 
 use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry, ResolvedKind,
-    ResolvedLayer, ResolvedPaint, ResolvedScene, ResolvedTransform, ShapeStyle,
+    ResolvedLayer, ResolvedPaint, ResolvedScene, ShapeStyle,
 };
 use crate::scene::{
     BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Scene, StrokeCap, StrokeJoin, Units,
 };
 use crate::text::TextEngine;
-use vello::kurbo::{Affine, BezPath, PathEl, Shape};
+use vello::kurbo::{Affine, BezPath, PathEl};
 use skia_safe::{
-    BlendMode as SkBlend, Canvas, ClipOp, Color, Color4f, ColorFilter, Data, Font, FontMgr, Image, ImageFilter,
-    Matrix, M44, Paint, PaintCap, PaintJoin, PaintStyle, Path, PathBuilder, PathFillType, Point, RRect, Rect, SamplingOptions,
+    BlendMode as SkBlend, Canvas, ClipOp, Color, Color4f, Data, Font, FontMgr, Image, ImageFilter,
+    Matrix, Paint, PaintCap, PaintJoin, PaintStyle, Path, PathBuilder, PathFillType, Point, RRect, Rect, SamplingOptions,
     Shader, TextBlobBuilder, TileMode, Typeface, canvas::SaveLayerRec, color_filters, gradient_shader, image_filters,
     images, path_effect::PathEffect,
 };
@@ -44,28 +44,6 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn add(&mut self, o: &Stats) {
-        self.layers += o.layers;
-        self.save_layers += o.save_layers;
-        self.draws += o.draws;
-        self.layer_px += o.layer_px;
-        self.unbounded_layers += o.unbounded_layers;
-        for (k, v) in &o.unsupported {
-            *self.unsupported.entry(k.clone()).or_default() += v;
-        }
-        for (k, v) in &o.approximated {
-            *self.approximated.entry(k.clone()).or_default() += v;
-        }
-        for (k, v) in &o.fallbacks {
-            *self.fallbacks.entry(k.clone()).or_default() += v;
-        }
-    }
-    pub fn summary(&self) -> String {
-        format!(
-            "layers {} save_layers {} draws {} | NOT TRANSLATED {:?} | APPROXIMATED {:?}",
-            self.layers, self.save_layers, self.draws, self.unsupported, self.approximated
-        )
-    }
     fn no(&mut self, what: &str) {
         *self.unsupported.entry(what.to_string()).or_default() += 1;
     }
@@ -106,29 +84,6 @@ pub struct Translator {
 fn mat(a: Affine) -> Matrix {
     let [a, b, c, d, e, f] = a.as_coeffs();
     Matrix::new_all(a as f32, c as f32, e as f32, b as f32, d as f32, f as f32, 0.0, 0.0, 1.0)
-}
-
-fn aff44(a: Affine) -> M44 {
-    let [a, b, c, d, e, f] = a.as_coeffs();
-    M44::new(a as f32, c as f32, 0.0, e as f32, b as f32, d as f32, 0.0, f as f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
-}
-
-/// The layer's matrix as a 4x4, with a CSS `matrix3d` (column-major) in it as `ResolvedTransform::matrix` puts it.
-fn layer_m44(t: &ResolvedTransform) -> M44 {
-    let m = t.matrix.unwrap_or([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
-    let css = M44::new(
-        m[0] as f32, m[4] as f32, m[8] as f32, m[12] as f32, m[1] as f32, m[5] as f32, m[9] as f32, m[13] as f32, m[2] as f32,
-        m[6] as f32, m[10] as f32, m[14] as f32, m[3] as f32, m[7] as f32, m[11] as f32, m[15] as f32,
-    );
-    let (ox, oy) = (t.origin_x, t.origin_y);
-    let m = M44::concat(&aff44(Affine::translate((t.x + ox, t.y + oy))), &aff44(Affine::rotate(t.rotation.to_radians())));
-    let m = M44::concat(&m, &aff44(Affine::scale(t.scale)));
-    let m = M44::concat(&m, &css);
-    M44::concat(&m, &aff44(Affine::translate((-(t.anchor_x + ox), -(t.anchor_y + oy)))))
-}
-
-fn has_3d(t: &ResolvedTransform) -> bool {
-    t.matrix.is_some_and(|m| !crate::scene::matrix_is_affine_2d(&m))
 }
 
 fn color4(c: crate::color::Color) -> Color4f {
@@ -274,15 +229,68 @@ impl Translator {
             self.draw_fallback(canvas, layer, siblings, comp, why);
             return;
         }
-        let t = &layer.transform;
+        // A blurred layer's own 3D placement is not used: each sub-frame has its own (`Renderer::layer_final_texture`).
+        if layer.motion.is_empty()
+            && let Some(world) = crate::warp::layer_world(&layer.transform)
+        {
+            self.draw_warped(canvas, layer, siblings, comp, scale, world);
+            return;
+        }
+        self.draw_flat(canvas, layer, siblings, comp, scale);
+    }
+
+    /// A layer turned in 3D: drawn flat into a layer of its own, which is then warped by the homography the wgpu path
+    /// warps its texture with (`warp::plane_homography`), as an image filter on that layer.
+    fn draw_warped(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64, world: glam::DMat4) {
+        use glam::{DMat3, DVec3};
+        let m = canvas.local_to_device_as_3x3();
+        let parent = Affine::new([
+            m.scale_x() as f64,
+            m.skew_y() as f64,
+            m.skew_x() as f64,
+            m.scale_y() as f64,
+            m.translate_x() as f64,
+            m.translate_y() as f64,
+        ]);
+        // SAFETY: `host` is the renderer `draw_scene` was given; this translator is not part of it.
+        let projection = unsafe { &*self.host }.skia_projection();
+        let Some(h) = crate::warp::plane_homography(projection, parent, world) else {
+            return;
+        };
+        // Seen from behind.
+        if layer.transform.backface_hidden && h.determinant() < 0.0 {
+            return;
+        }
+        if crate::warp::is_identity(&h) {
+            self.draw_flat(canvas, layer, siblings, comp, scale);
+            return;
+        }
+        let [a, b, c, d, e, f] = parent.as_coeffs();
+        let p = DMat3::from_cols(DVec3::new(a, b, 0.0), DVec3::new(c, d, 0.0), DVec3::new(e, f, 1.0));
+        // The filter works in the local space of the layer, the device-space warp `h` in that: P^-1 H P.
+        let l = p.inverse() * h * p;
+        let l = l * (1.0 / l.z_axis.z);
+        let local = Matrix::new_all(
+            l.x_axis.x as f32, l.y_axis.x as f32, l.z_axis.x as f32,
+            l.x_axis.y as f32, l.y_axis.y as f32, l.z_axis.y as f32,
+            l.x_axis.z as f32, l.y_axis.z as f32, 1.0,
+        );
+        let filter = image_filters::matrix_transform(&local, SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), None);
+        let bounds = self.layer_bounds(layer, scale).map(|r| mat(layer.transform.matrix()).map_rect(r).0);
+        let mut paint = Paint::default();
+        paint.set_alpha_f(comp.alpha);
+        paint.set_blend_mode(comp.blend);
+        paint.set_image_filter(filter);
+        self.save_layer(canvas, bounds, &paint, None);
+        self.draw_flat(canvas, layer, siblings, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, scale);
+        canvas.restore();
+    }
+
+    fn draw_flat(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64) {
         let m = layer.transform.matrix();
         let scale = scale * m.determinant().abs().sqrt();
         canvas.save();
-        if has_3d(t) {
-            canvas.concat_44(&layer_m44(t));
-        } else {
-            canvas.concat(&mat(m));
-        }
+        canvas.concat(&mat(m));
 
         // Motion blur: the sub-frames are summed with equal weights into one buffer.
         if !layer.motion.is_empty() {
@@ -297,13 +305,7 @@ impl Translator {
                 }
                 // The sub-frame carries its own matrix (it is a full copy of the layer): undo ours.
                 canvas.save();
-                if has_3d(t) {
-                    if let Some(inv) = layer_m44(t).invert() {
-                        canvas.concat_44(&inv);
-                    }
-                } else {
-                    canvas.concat(&mat(m.inverse()));
-                }
+                canvas.concat(&mat(m.inverse()));
                 self.draw_layer_with(canvas, sub, siblings, Comp { alpha: sub.opacity / n, blend: SkBlend::Plus }, scale);
                 canvas.restore();
             }
@@ -417,13 +419,7 @@ impl Translator {
             self.save_layer(canvas, bounds, &p, None);
             // The source sits in the parent's space, not in the matted layer's own.
             canvas.save();
-            if has_3d(&layer.transform) {
-                if let Some(inv) = layer_m44(&layer.transform).invert() {
-                    canvas.concat_44(&inv);
-                }
-            } else {
-                canvas.concat(&mat(layer.transform.matrix().inverse()));
-            }
+            canvas.concat(&mat(layer.transform.matrix().inverse()));
             self.draw_layer(canvas, src, siblings, scale);
             canvas.restore();
             canvas.restore();
@@ -616,7 +612,7 @@ impl Translator {
                     if is_hidden(c) || is_matte_source(children, c) {
                         continue;
                     }
-                    if has_3d(&c.transform) {
+                    if crate::warp::layer_world(&c.transform).is_some() {
                         return None;
                     }
                     let cb = self.layer_bounds(c, scale)?;
@@ -1365,9 +1361,6 @@ fn gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'static st
 
 fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'static str> {
     use crate::filter::FeOp;
-    if crate::warp::layer_world(&layer.transform).is_some() {
-        return Some("3D transform");
-    }
     match &layer.kind {
         ResolvedKind::Group { preserve3d: true, .. } => return Some("preserve3d group"),
         ResolvedKind::Group { glsl: Some(_), .. } => return Some("glsl group"),

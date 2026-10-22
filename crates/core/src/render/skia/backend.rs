@@ -122,13 +122,27 @@ impl Renderer {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
+            // wgpu zeroes a texture it has not seen written before its first read, which would wipe what Skia drew: one
+            // clear marks it as written.
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let mut encoder = self.device.create_command_encoder(&Default::default());
+            drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("skia target init"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                })],
+                ..Default::default()
+            }));
+            self.queue.submit([encoder.finish()]);
             let ptr = unsafe { texture.as_hal::<Metal>().map(|h| mtl_ptr(h.raw_handle())) }
                 .ok_or_else(|| Error::Render("the Skia target is not a Metal texture".into()))?;
             let bt = unsafe { graphite::mtl::backend_textures::make_metal((size.0 as i32, size.1 as i32), ptr) };
             let surface =
                 graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, ColorType::RGBA8888, None, None)
                     .ok_or_else(|| Error::Render("Skia could not wrap its target texture".into()))?;
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             sk.target = Some(Target { size, view, surface, _texture: texture });
         }
 
@@ -209,6 +223,11 @@ impl Renderer {
             backface_hidden: layer.transform.backface_hidden,
         });
         self.layer_final_texture(layer, siblings, parent, placement, 1.0, None)
+    }
+
+    /// The camera's projection of the frame being drawn (`warp::projection`).
+    pub(in super::super) fn skia_projection(&self) -> glam::DMat4 {
+        self.projection
     }
 
     /// `tex`, a linear premultiplied Rgba16Float texture of the compositor's, as a Skia image.

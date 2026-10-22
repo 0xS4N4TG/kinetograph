@@ -12,7 +12,9 @@
 
 #[cfg(all(feature = "skia", target_os = "macos"))]
 mod backend;
+// skia-safe deprecates the gradient_shader module for `gradient`; the calls here are the ones that were measured.
 #[cfg(all(feature = "skia", target_os = "macos"))]
+#[allow(deprecated)]
 mod draw;
 #[cfg(all(feature = "skia", target_os = "macos"))]
 pub(super) use backend::{SkiaBackend, init};
