@@ -24,7 +24,8 @@ M4 (see "Building a phase in a Claude Code cloud session" in §8).
 Use the rustup toolchain (`~/.cargo/bin`, `/opt/homebrew/opt/rustup/bin`); Homebrew's `/opt/homebrew/bin/rustc` is
 broken.
 
-Related code elsewhere on this machine:
+Related code elsewhere on this machine (`$KINETOGRAPH_CORPUS` is a private corpus repo; its local path is in the
+untracked `CLAUDE.local.md`):
 
 - Papercut Remotion pipeline (first real test corpus):
   `$KINETOGRAPH_CORPUS/lib/papercut/` (kit, `CATALOG.md`, `tools/render.sh`)

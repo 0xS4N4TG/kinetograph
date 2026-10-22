@@ -2,7 +2,6 @@
 // modules scoped; and what the bundle does with them.
 
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -86,9 +85,10 @@ describe('buildTailwind', () => {
 });
 
 // Tailwind 4 without its CLI: the project's tailwindcss compile() with the sources scanned in JS. Uses the copy in the
-// papercut corpus project when this machine has it.
-const corpusTailwind = join(homedir(), '$KINETOGRAPH_CORPUS/tiny-agent/episodes/13-mods/papercut/node_modules/tailwindcss');
-describe.skipIf(!existsSync(corpusTailwind))('buildTailwind with Tailwind 4', () => {
+// papercut corpus project when KINETOGRAPH_CORPUS points at it.
+const corpus = process.env.KINETOGRAPH_CORPUS;
+const corpusTailwind = corpus ? join(corpus, 'tiny-agent/episodes/13-mods/papercut/node_modules/tailwindcss') : '';
+describe.skipIf(!corpusTailwind || !existsSync(corpusTailwind))('buildTailwind with Tailwind 4', () => {
   it('builds @import "tailwindcss" with the classes the sources use', async () => {
     const dir = project({
       'src/index.css': '@import "tailwindcss";',

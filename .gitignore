@@ -37,3 +37,6 @@ examples/launch/public/fx/
 examples/launch/tools/narration/voice/takes/
 examples/launch/tools/narration/voice/final_narrator/
 examples/launch/tools/narration/*.log
+
+# Machine-specific paths (private corpus location): local only
+CLAUDE.local.md

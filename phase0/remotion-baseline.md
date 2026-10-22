@@ -16,7 +16,7 @@ Measured 2026-10-14. This is the speed a new engine has to beat by 5x (HANDOFF.m
 
 ## What was rendered
 
-- Project: `the corpus repo/tiny-agent/episodes/13-mods/papercut/` (composition id `ModsPapercut`, from `episode.json`).
+- Project: `$KINETOGRAPH_CORPUS/tiny-agent/episodes/13-mods/papercut/` (composition id `ModsPapercut`, from `episode.json`).
 - Scene S04 is `S04Meter` ("A BAND DRAWN ABOVE THE PROMPT"). The episode is one composition; scenes are not separate compositions. `src/plan.json` puts S04Meter at **frame 317, 89 frames long**. The render therefore uses `--frames=317-405`.
 - The frame range renders the whole composition for those frames, not just the scene component: the scene, the taped banner, word-tag captions, the grain overlay and the hook/cut layers, all through `CutSeries`.
 - Composition: 1080x1920 (vertical), 30 fps. Episode total 988 frames (32.93 s).

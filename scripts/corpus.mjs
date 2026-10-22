@@ -15,7 +15,6 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -32,8 +31,9 @@ const option = (name, fallback) => {
 };
 const entry = option(
   'entry',
-  join(homedir(), '$KINETOGRAPH_CORPUS/tiny-agent/episodes/13-mods/papercut/src/index.ts'),
+  process.env.KINETOGRAPH_CORPUS && join(process.env.KINETOGRAPH_CORPUS, 'tiny-agent/episodes/13-mods/papercut/src/index.ts'),
 );
+if (!entry) throw new Error('corpus.mjs: pass --entry <file>, or set KINETOGRAPH_CORPUS to the corpus repo');
 const comp = option('comp', 'ModsPapercut');
 const range = option('range');
 const every = Number(option('every', '30'));

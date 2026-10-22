@@ -8,7 +8,6 @@ This document captures all the references, links, themes, visual inspirations, a
 
 ### Cobalt Toile Aesthetic
 - **Reference URL / Source:**
-  - Local Archive: `file://~/Desktop/Cobalt%20Toile%20Landing%20%E2%80%94%2021ST.DEV%20workshop.html`
   - Demo: [21st.dev Workshop — Cobalt Toile Landing](https://21stdev-my-components-one.vercel.app/#cobalt-toile-landing) by [@kedhareswer](https://21st.dev/@kedhareswer)
 - **Palette & Tokens:**
   - Ink: Cobalt Blue (`#2238c4` / `oklab(...)`)
