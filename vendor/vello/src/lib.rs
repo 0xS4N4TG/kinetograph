@@ -158,6 +158,7 @@ use debug::DebugLayers;
 use vello_encoding::{BumpAllocators, Resolver};
 #[cfg(feature = "wgpu")]
 use wgpu_engine::{ExternalResource, WgpuEngine};
+pub use wgpu_engine::PassTime;
 
 #[cfg(feature = "wgpu")]
 use std::{num::NonZeroUsize, sync::atomic::AtomicBool};
@@ -514,6 +515,22 @@ impl Renderer {
         }
 
         Ok(())
+    }
+
+    /// Times each compute pass of the renders that follow on the GPU (`take_pass_times`); with `stages`, each dispatch gets
+    /// a pass of its own so that each shader has a time. Needs `TIMESTAMP_QUERY`. For profiling; see vendor/README.md.
+    pub fn set_pass_timing(&mut self, device: &Device, on: bool, stages: bool) {
+        self.engine.set_pass_timing(device, on, stages);
+    }
+
+    /// A number the next renders' pass times carry back (`PassTime::tag`).
+    pub fn set_timing_tag(&mut self, tag: u64) {
+        self.engine.set_timing_tag(tag);
+    }
+
+    /// The compute passes timed since the last call. Waits for the GPU.
+    pub fn take_pass_times(&mut self, device: &Device, queue: &Queue) -> Vec<PassTime> {
+        self.engine.take_pass_times(device, queue)
     }
 
     /// Overwrite `image` with `texture`.

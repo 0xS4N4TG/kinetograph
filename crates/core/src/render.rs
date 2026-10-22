@@ -408,8 +408,15 @@ impl Renderer {
     /// the caller starts the next one, and `finish_frame` collects it.
     /// Frames are finished in the order they were started.
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
-        if crate::profile::passes() && !self.compositor.is_timing_passes() {
-            self.compositor.set_pass_timing(true);
+        if crate::profile::passes() {
+            if !self.compositor.is_timing_passes() {
+                self.compositor.set_pass_timing(true);
+            }
+            let stages = crate::profile::stages();
+            self.vello.set_pass_timing(&self.device, true, stages);
+            if let Some(images) = &mut self.vello_images {
+                images.set_pass_timing(&self.device, true, stages);
+            }
         }
         let timer = crate::profile::start();
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
@@ -423,17 +430,57 @@ impl Renderer {
             let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
             crate::profile::add_since("gpu_sync", timer);
         }
+        if crate::profile::passes() {
+            self.record_pass_profile();
+        }
         Ok(pending)
+    }
+
+    /// Adds the GPU time of the passes of the frame `start_frame` just encoded to the profile: each compositor pass kind
+    /// (`gpu_<name>` ms, `gpun_<name>` count, `gput_<name>` texels), each Vello compute pass (`gpu_v_<label>`), and
+    /// each Vello page (one `render_to_texture`) in time order as `pgpx_<i>` (pixels), `pgspan_<i>` (ms from its first
+    /// compute pass's start to its last one's end), `pgbusy_<i>` (ms in its compute passes) and `pgn_<i>` (passes).
+    fn record_pass_profile(&mut self) {
+        use crate::profile::{add_dyn, add_gpu};
+        for pass in self.compositor.take_pass_times() {
+            add_gpu(pass.name, pass.ms);
+            add_dyn(&format!("gput_{}", pass.name), pass.texels as f64);
+        }
+        let mut times = self.vello.take_pass_times(&self.device, &self.queue);
+        let images = self
+            .vello_images
+            .as_mut()
+            .map(|v| v.take_pass_times(&self.device, &self.queue));
+        let main = times.len();
+        times.extend(images.into_iter().flatten());
+        // (renderer, render) -> (first start, last end, busy, passes, tag)
+        let mut pages: std::collections::BTreeMap<(bool, u64), (f64, f64, f64, u32, u64)> =
+            Default::default();
+        for (i, t) in times.iter().enumerate() {
+            add_gpu(&format!("v_{}", t.label), t.ms);
+            let page = pages
+                .entry((i >= main, t.render))
+                .or_insert((f64::MAX, 0.0, 0.0, 0, t.tag));
+            page.0 = page.0.min(t.begin_ms);
+            page.1 = page.1.max(t.begin_ms + t.ms);
+            page.2 += t.ms;
+            page.3 += 1;
+        }
+        let mut pages: Vec<_> = pages.into_values().collect();
+        pages.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (i, (start, end, busy, n, tag)) in pages.iter().enumerate() {
+            add_dyn(&format!("pgpx_{i:02}"), (tag & !(1 << 63)) as f64);
+            add_dyn(&format!("pgcv_{i:02}"), (tag >> 63) as f64);
+            add_dyn(&format!("pgspan_{i:02}"), end - start);
+            add_dyn(&format!("pgbusy_{i:02}"), *busy);
+            add_dyn(&format!("pgn_{i:02}"), f64::from(*n));
+        }
+        add_dyn("vpages", pages.len() as f64);
     }
 
     /// The pixels of a frame from `start_frame`.
     pub fn finish_frame(&mut self, pending: PendingFrame) -> Result<Frame> {
         let rgba = self.compositor.finish_readback(pending.readback)?;
-        if crate::profile::passes() {
-            for pass in self.compositor.take_pass_times() {
-                crate::profile::add_gpu(pass.name, pass.ms);
-            }
-        }
         Ok(Frame {
             width: pending.width,
             height: pending.height,
@@ -2220,6 +2267,7 @@ impl Renderer {
             Some(&mut self.vello)
         }
         .expect("scenes with image layers get an image renderer");
+        renderer.set_timing_tag(u64::from(area.width()) * u64::from(area.height()));
         renderer
             .render_to_texture(
                 &self.device,
@@ -2294,6 +2342,8 @@ impl canvas::Effects for CanvasPasses<'_> {
             Some(&mut *self.vello)
         }
         .expect("scenes with a shadow or a filter get an image renderer");
+        // The top bit marks a canvas command's own render.
+        renderer.set_timing_tag((1 << 63) | u64::from(region.width()) * u64::from(region.height()));
         renderer
             .render_to_texture(
                 self.device,
