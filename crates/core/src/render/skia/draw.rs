@@ -381,8 +381,9 @@ impl Translator {
         {
             let mut p = Paint::default();
             p.set_anti_alias(true);
-            p.set_blend_mode(SkBlend::DstIn);
-            canvas.draw_path(&path, &p);
+            // DstIn only touches what the shape covers: the outside is cleared with the inverse fill.
+            p.set_blend_mode(SkBlend::Clear);
+            canvas.draw_path(&path.with_toggle_inverse_fill_type(), &p);
             self.stats.draws += 1;
         }
         if let Some(mask) = &layer.mask {
@@ -843,35 +844,45 @@ impl Translator {
         if let Some(e) = self.fx.get(key) {
             return e.clone();
         }
-        let e = skia_safe::RuntimeEffect::make_for_shader(sksl, None).ok();
+        let e = match skia_safe::RuntimeEffect::make_for_shader(sksl, None) {
+            Ok(e) => Some(e),
+            Err(err) => {
+                eprintln!("kinetograph: skia runtime effect {key} did not compile: {err}");
+                None
+            }
+        };
         self.fx.insert(key.to_string(), e.clone());
         e
     }
 
     fn gradient_map(&mut self, gm: &crate::resolve::ResolvedGradientMap, input: Option<ImageFilter>) -> Option<ImageFilter> {
-        let fx = self.runtime("gmap", "uniform shader src; uniform float count; uniform float amount; uniform float offs[16]; uniform float4 cols[16];
+        let fx = self.runtime("gmap", "uniform shader src; uniform float count; uniform float amount; uniform float offs[16]; uniform float cr[16]; uniform float cg[16]; uniform float cb[16]; uniform float ca[16];
             half4 main(float2 xy) { half4 c = src.eval(xy); if (c.a <= 0.0) { return half4(0); }
               half3 s = clamp(c.rgb / c.a, 0, 1); float l = dot(float3(s), float3(0.2126, 0.7152, 0.0722));
-              float4 g = cols[0];
-              if (l > offs[0]) { g = cols[int(count) - 1];
-                for (int i = 1; i < 16; i++) { if (float(i) >= count) { break; }
-                  if (l <= offs[i]) { g = mix(cols[i - 1], cols[i], (l - offs[i - 1]) / (offs[i] - offs[i - 1])); break; } } }
+              float4 g = float4(cr[15], cg[15], cb[15], ca[15]);
+              if (l <= offs[0]) { g = float4(cr[0], cg[0], cb[0], ca[0]); } else {
+                for (int i = 1; i < 16; i++) {
+                  if (l <= offs[i]) { float d = offs[i] - offs[i - 1]; g = mix(float4(cr[i - 1], cg[i - 1], cb[i - 1], ca[i - 1]), float4(cr[i], cg[i], cb[i], ca[i]), d > 0.0 ? (l - offs[i - 1]) / d : 1.0); break; } } }
               float4 o = float4(s, c.a); float4 gr = float4(g.rgb, c.a * g.a); float4 r = mix(o, gr, amount);
               return half4(half3(r.rgb * r.a), half(r.a)); }")?;
         let mut b = skia_safe::runtime_effect::RuntimeShaderBuilder::new(fx);
         let n = gm.stops.len().min(16);
         let mut offs = [0.0f32; 16];
-        let mut cols = [0.0f32; 64];
+        let mut cols = [[0.0f32; 16]; 4];
         for i in 0..16 {
             let (o, c) = gm.stops[i.min(n - 1)];
             offs[i] = o as f32;
             let c = color4(c);
-            cols[i * 4..i * 4 + 4].copy_from_slice(&[c.r, c.g, c.b, c.a]);
+            for (k, v) in [c.r, c.g, c.b, c.a].into_iter().enumerate() {
+                cols[k][i] = v;
+            }
         }
-        b.set_uniform_float("count", &[n as f32]).ok()?;
+        b.set_uniform_float("count", &[n as f32]).map_err(|e| eprintln!("kinetograph: gradientMap uniform count: {e}")).ok()?;
         b.set_uniform_float("amount", &[gm.amount]).ok()?;
-        b.set_uniform_float("offs", &offs).ok()?;
-        b.set_uniform_float("cols", &cols).ok()?;
+        b.set_uniform_float("offs", &offs).map_err(|e| eprintln!("kinetograph: gradientMap uniform offs: {e}")).ok()?;
+        for (name, v) in ["cr", "cg", "cb", "ca"].into_iter().zip(&cols) {
+            b.set_uniform_float(name, v).map_err(|e| eprintln!("kinetograph: gradientMap uniform {name}: {e}")).ok()?;
+        }
         image_filters::runtime_shader(&b, "src", input)
     }
 
