@@ -1405,9 +1405,9 @@ fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>) -> Option<
     let lm = mat(local);
     let lm = if local == Affine::IDENTITY { None } else { Some(&lm) };
     match kind {
-        0 => gradient_shader::linear((a, b), gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, None, lm),
-        1 => gradient_shader::two_point_conical(a, r0, b, r1, gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, None, lm),
-        _ => gradient_shader::sweep(a, gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, Some((r0, r1)), None, lm),
+        0 => gradient_shader::linear((a, b), gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, Some(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL), lm),
+        1 => gradient_shader::two_point_conical(a, r0, b, r1, gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, Some(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL), lm),
+        _ => gradient_shader::sweep(a, gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, Some((r0, r1)), Some(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL), lm),
     }
 }
 
