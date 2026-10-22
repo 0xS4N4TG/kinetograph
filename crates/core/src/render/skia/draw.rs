@@ -779,7 +779,8 @@ impl Translator {
                 }
                 ResolvedEffect::FilterGraph(g) => {
                     let input = filter.take();
-                    filter = self.filter_graph(g, input, s);
+                    let lb = self.layer_box(layer);
+                    filter = self.filter_graph(g, input, s, lb);
                 }
                 ResolvedEffect::Glow(g) => {
                     if g.radius >= 1.0 && g.intensity > 0.0 {
@@ -825,11 +826,18 @@ impl Translator {
 
     /// The SVG filter graph as a DAG of Skia image filters: turbulence, displacement, blur, offset, colour matrix,
     /// flood, merge, composite; other primitives are counted. Filter regions and subregions are not applied.
-    fn filter_graph(&mut self, g: &crate::filter::ResolvedFilterGraph, source: Option<ImageFilter>, s: f32) -> Option<ImageFilter> {
+    fn filter_graph(&mut self, g: &crate::filter::ResolvedFilterGraph, source: Option<ImageFilter>, s: f32, layer_box: Option<Rect>) -> Option<ImageFilter> {
         use crate::filter::{CompositeOp, FeInput, FeOp};
         let mut results: Vec<Option<ImageFilter>> = Vec::new();
-        self.stats.approx("filter region/subregion not applied");
-        for node in &g.nodes {
+        // The region and subregions in layer units, and the lengths scaled by `primitiveUnits`; each result is cut to its
+        // subregion, as the wgpu path does.
+        let plan = g.plan(layer_box.map(|b| vello::kurbo::Rect::new(b.left as f64, b.top as f64, b.right as f64, b.bottom as f64)));
+        if plan.is_none() {
+            self.stats.approx("filter region/subregion not applied (no layer box)");
+        }
+        let sk = |r: &vello::kurbo::Rect| Rect::new(r.x0 as f32, r.y0 as f32, r.x1 as f32, r.y1 as f32);
+        for (idx, node) in g.nodes.iter().enumerate() {
+            let op = plan.as_ref().map_or(&node.op, |p| &p.nodes[idx].op);
             let input = |i: usize, results: &Vec<Option<ImageFilter>>| -> Option<ImageFilter> {
                 match node.inputs.get(i).copied().unwrap_or(FeInput::Source) {
                     FeInput::Source => source.clone(),
@@ -844,7 +852,7 @@ impl Translator {
                     FeInput::Empty => Some(image_filters::empty()),
                 }
             };
-            let out = match &node.op {
+            let out = match op {
                 FeOp::Turbulence { fractal, frequency, octaves, seed, .. } => {
                     let sh = if *fractal {
                         skia_safe::shaders::fractal_noise((frequency[0], frequency[1]), *octaves as usize, *seed as f32, None)
@@ -904,17 +912,17 @@ impl Translator {
                 }
                 FeOp::Tile => {
                     // The input's subregion is repeated over the plane; it must be given in user units.
-                    let sub = match node.inputs.first() {
-                        Some(FeInput::Node(i)) if !g.prim_bbox => g.nodes.get(*i).map(|n| n.sub),
+                    let sub = match (node.inputs.first(), &plan) {
+                        (Some(FeInput::Node(i)), Some(p)) => p.nodes.get(*i).map(|n| n.sub),
                         _ => None,
                     };
                     match sub {
-                        Some([Some(x), Some(y), Some(w), Some(h)]) if w > 0.0 && h > 0.0 => {
-                            let src = Rect::new(x as f32, y as f32, (x + w) as f32, (y + h) as f32);
+                        Some(r) if r.width() > 0.0 && r.height() > 0.0 => {
+                            let src = sk(&r);
                             image_filters::tile(src, Rect::new(-1e5, -1e5, 1e5, 1e5), input(0, &results))
                         }
                         _ => {
-                            self.stats.no("filter primitive feTile (input subregion not in user units)");
+                            self.stats.no("filter primitive feTile (input subregion unknown)");
                             input(0, &results)
                         }
                     }
@@ -968,6 +976,10 @@ impl Translator {
                     };
                     image_filters::blend(mode, input(1, &results), input(0, &results), None)
                 }
+            };
+            let out = match (&plan, out) {
+                (Some(p), Some(f)) => image_filters::crop(sk(&p.nodes[idx].sub), TileMode::Decal, f),
+                (_, f) => f,
             };
             results.push(out);
         }
