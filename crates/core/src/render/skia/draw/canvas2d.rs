@@ -79,10 +79,18 @@ fn stroke_style(p: &mut Paint, l: &LineStyle) {
 impl Translator {
     /// Draws a canvas layer's commands in the box `(0, 0, width, height)` of the current space.
     pub(super) fn draw_canvas_layer(&mut self, canvas: &Canvas, size: (f64, f64), ops: &[CanvasOp]) {
-        let isolate = uses_composite(ops);
+        // The commands blend in sRGB-encoded values, as the Vello path blends them, even on a surface of linear light.
+        let srgb_layer = self.linear();
+        let isolate = srgb_layer || uses_composite(ops);
         if isolate {
             let b = Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32);
-            self.save_layer(canvas, Some(b), &Paint::default(), None);
+            if srgb_layer {
+                self.stats.save_layers += 1;
+                let cs = skia_safe::ColorSpace::new_srgb();
+                canvas.save_layer(&skia_safe::canvas::SaveLayerRec::default().bounds(&b).color_space(&cs));
+            } else {
+                self.save_layer(canvas, Some(b), &Paint::default(), None);
+            }
         }
         self.canvas_ops(canvas, size, ops);
         if isolate {
@@ -215,7 +223,7 @@ impl Translator {
                         ],
                         None,
                     );
-                    out = image_filters::color_filter(f, out.take(), None);
+                    out = image_filters::color_filter(self.in_srgb(f), out.take(), None);
                 }
                 ResolvedEffect::DropShadow(sh) => {
                     let input = out.take();
@@ -270,12 +278,13 @@ impl Translator {
 
     /// Sets the colour or shader of `p` for `paint`; false when nothing is to be drawn.
     fn canvas_ink(&mut self, p: &mut Paint, paint: &CanvasPaint) -> bool {
+        let linear = self.linear();
         let gradient = |geometry: ResolvedGradientGeometry, stops: &[(f64, crate::color::Color)]| -> Option<Shader> {
             if stops.is_empty() {
                 return None;
             }
             let g = ResolvedGradient { geometry, stops: stops.to_vec(), extend: Extend::Pad, units: Units::User, transform: Affine::IDENTITY };
-            gradient_shader_for(&g, None)
+            gradient_shader_for(&g, None, linear)
         };
         let shader = match paint {
             CanvasPaint::Color { color } => {

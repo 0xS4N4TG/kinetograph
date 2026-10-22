@@ -60,6 +60,12 @@ fn fs_to_linear_premul(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32
     return vec4<f32>(srgb_to_linear(c.rgb / c.a) * c.a, c.a);
 }
 
+// Skia's output when it drew in linear light (`render/skia.rs`): already what the canvas holds.
+@fragment
+fn fs_copy(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    return load_a(canvas_xy(p));
+}
+
 // W3C compositing and blending with premultiplied inputs:
 //   co = cs*(1 - ab) + cb*(1 - as) + as*ab*B(Cb, Cs)
 // `opacity` scales the source before compositing.

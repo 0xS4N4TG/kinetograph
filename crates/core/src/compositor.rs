@@ -304,6 +304,7 @@ pub struct Compositor {
     to_linear: wgpu::RenderPipeline,
     /// `to_linear` for premultiplied input (Skia's).
     to_linear_premul: wgpu::RenderPipeline,
+    copy: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     /// Up to `BLEND_SLOTS` blends in one pass (`shaders/blend_many.wgsl`),
     /// on its own bind group layout: the canvas, the layers, the uniforms.
@@ -600,6 +601,7 @@ impl Compositor {
             srgb_blend: false,
             to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
             to_linear_premul: pipeline(&shader, "fs_to_linear_premul", LINEAR_FORMAT),
+            copy: pipeline(&shader, "fs_copy", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
             blend_many,
             blend_many_layout,
@@ -667,6 +669,7 @@ impl Compositor {
         compositor.names = [
             (&c.to_linear, "to linear"),
             (&c.to_linear_premul, "to linear premul"),
+            (&c.copy, "copy"),
             (&c.blend, "blend"),
             (&c.blend_many, "blend many"),
             (&c.mask, "mask"),
@@ -957,17 +960,18 @@ impl Compositor {
         target
     }
 
-    /// The whole canvas texture from `skia_output`, an Rgba8 texture of its size that Skia drew
-    /// (`render/skia.rs`): premultiplied and sRGB-encoded.
+    /// The whole canvas texture from `skia_output`, a texture of its size that Skia drew (`render/skia.rs`): premultiplied,
+    /// and either Rgba8 holding sRGB-encoded values or, if `linear`, Rgba16Float in linear light.
     #[cfg(all(feature = "skia", target_os = "macos"))]
-    pub(crate) fn from_skia(&mut self, skia_output: &wgpu::TextureView) -> Tex {
+    pub(crate) fn from_skia(&mut self, skia_output: &wgpu::TextureView, linear: bool) -> Tex {
         let target = self.target_full(self.whole());
         let input = Input {
             view: skia_output,
             origin: [0, 0],
             size: [self.width, self.height],
         };
-        self.pass(&self.to_linear_premul, input, input, 0.0, 0, &target);
+        let pipeline = if linear { &self.copy } else { &self.to_linear_premul };
+        self.pass(pipeline, input, input, 0.0, 0, &target);
         target
     }
 

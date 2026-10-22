@@ -2,8 +2,9 @@
 //! `KINETOGRAPH_BACKEND=skia` (Vello is the default). Built with the `skia` cargo feature, on macOS only; otherwise
 //! the variable warns once and Vello draws.
 //!
-//! Skia draws the frame's layers into one Rgba8 texture that wgpu owns (premultiplied, sRGB-encoded, as Vello's
-//! output is), on the Metal device and command queue wgpu uses. The compositor then converts that texture to the
+//! Skia draws the frame's layers into one texture that wgpu owns, on the Metal device and command queue wgpu uses: for
+//! a scene that blends in linear light (`blendSpace`) Rgba16Float in linear light, else Rgba8 holding sRGB-encoded
+//! values (premultiplied, as Vello's output is). The compositor then copies or converts that texture to the
 //! linear canvas and the readback runs as it always does. A layer Skia cannot draw (`draw::gaps`) is drawn by the
 //! wgpu path into a texture, which Skia draws as an image.
 //!

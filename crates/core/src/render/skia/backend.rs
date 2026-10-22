@@ -47,6 +47,8 @@ unsafe impl Send for SkiaBackend {}
 
 struct Target {
     size: (u32, u32),
+    /// Linear light in Rgba16Float, for a scene that blends in linear light; else sRGB-encoded Rgba8.
+    linear: bool,
     view: wgpu::TextureView,
     surface: Surface,
     // Keeps the texture alive for the surface.
@@ -123,7 +125,8 @@ impl Renderer {
             let _ = self.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: None });
         }
         let size = self.target_size;
-        if sk.targets.first().is_none_or(|t| t.size != size) {
+        let linear = self.scene.blend_space == crate::scene::BlendSpace::Linear;
+        if sk.targets.first().is_none_or(|t| t.size != size || t.linear != linear) {
             sk.targets.clear();
             for _ in 0..=FRAMES_IN_FLIGHT {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -132,7 +135,7 @@ impl Renderer {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format: if linear { wgpu::TextureFormat::Rgba16Float } else { wgpu::TextureFormat::Rgba8Unorm },
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -154,10 +157,11 @@ impl Renderer {
             let ptr = unsafe { texture.as_hal::<Metal>().map(|h| mtl_ptr(h.raw_handle())) }
                 .ok_or_else(|| Error::Render("the Skia target is not a Metal texture".into()))?;
             let bt = unsafe { graphite::mtl::backend_textures::make_metal((size.0 as i32, size.1 as i32), ptr) };
-            let surface =
-                graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, ColorType::RGBA8888, Some(ColorSpace::new_srgb()), None)
+            let (color_type, space) =
+                if linear { (ColorType::RGBAF16, ColorSpace::new_srgb_linear()) } else { (ColorType::RGBA8888, ColorSpace::new_srgb()) };
+            let surface = graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, color_type, Some(space), None)
                     .ok_or_else(|| Error::Render("Skia could not wrap its target texture".into()))?;
-            sk.targets.push(Target { size, view, surface, _texture: texture });
+            sk.targets.push(Target { size, linear, view, surface, _texture: texture });
             }
         }
         let current = sk.next_target % sk.targets.len();
@@ -210,7 +214,7 @@ impl Renderer {
                 json_map(&s.approximated)
             );
         }
-        Ok(self.compositor.from_skia(&sk.targets[current].view))
+        Ok(self.compositor.from_skia(&sk.targets[current].view, linear))
     }
 
     /// Notes the number of the frame `start_frame` is drawing, for `skia_finished`.

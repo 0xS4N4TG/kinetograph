@@ -24,7 +24,7 @@ use crate::text::TextEngine;
 
 use vello::kurbo::{Affine, BezPath, PathEl};
 use skia_safe::{
-    BlendMode as SkBlend, Canvas, ClipOp, Color, Color4f, Data, Font, FontMgr, Image, ImageFilter,
+    BlendMode as SkBlend, Canvas, ClipOp, Color, Color4f, ColorFilter, ColorSpace, Data, Font, FontMgr, Image, ImageFilter,
     Matrix, Paint, PaintCap, PaintJoin, PaintStyle, Path, PathBuilder, PathFillType, Point, RRect, Rect, SamplingOptions,
     Shader, TextBlobBuilder, TileMode, Typeface, canvas::SaveLayerRec, color_filters, gradient_shader, image_filters,
     images, path_effect::PathEffect,
@@ -182,6 +182,16 @@ impl Translator {
         }
     }
 
+    /// Whether the surface holds linear light (the scene blends in linear light) and not sRGB-encoded values.
+    fn linear(&self) -> bool {
+        !self.srgb
+    }
+
+    /// `f` with its maths done on sRGB-encoded values, as CSS colour filters are, even if the surface holds linear light.
+    fn in_srgb(&self, f: ColorFilter) -> ColorFilter {
+        if self.linear() { f.with_working_color_space(ColorSpace::new_srgb()).unwrap_or(f) } else { f }
+    }
+
     pub fn set_recorder(&mut self, rec: Rc<RefCell<graphite::Recorder>>) {
         self.rec = Some(rec);
     }
@@ -199,9 +209,6 @@ impl Translator {
             self.fonts_key = scene.fonts.clone();
         }
         self.srgb = matches!(scene.blend_space, crate::scene::BlendSpace::Srgb);
-        if !self.srgb {
-            self.stats.approx("blendSpace linear drawn in sRGB");
-        }
     }
 
     /// Draws the scene on `canvas`, whose origin is the margin's corner (`margin` pixels in). `host` draws the fallback
@@ -418,7 +425,7 @@ impl Translator {
             let mut p = Paint::default();
             p.set_blend_mode(SkBlend::DstIn);
             let layer_box = self.layer_box(layer);
-            p.set_shader(gradient_shader_for(&mask.gradient, layer_box));
+            p.set_shader(gradient_shader_for(&mask.gradient, layer_box, self.linear()));
             if mask.mode == MaskMode::Luminance {
                 p.set_color_filter(skia_safe::luma_color_filter::new());
                 self.stats.approx("luminance mask via sRGB luma");
@@ -437,7 +444,8 @@ impl Translator {
             match matte.mode {
                 MatteMode::Alpha | MatteMode::AlphaInverted => {}
                 MatteMode::Luminance | MatteMode::SrgbLuminance => {
-                    p.set_color_filter(skia_safe::luma_color_filter::new());
+                    let luma = skia_safe::luma_color_filter::new();
+                    p.set_color_filter(if matte.mode == MatteMode::SrgbLuminance { self.in_srgb(luma) } else { luma });
                     self.stats.approx("luminance matte via sRGB luma");
                 }
                 MatteMode::LuminanceInverted => {
@@ -775,7 +783,7 @@ impl Translator {
                         m[2][0] as f32, m[2][1] as f32, m[2][2] as f32, m[2][3] as f32, m[2][4] as f32,
                         m[3][0] as f32, m[3][1] as f32, m[3][2] as f32, m[3][3] as f32, m[3][4] as f32,
                     ], None);
-                    filter = image_filters::color_filter(f, filter.take(), None);
+                    filter = image_filters::color_filter(self.in_srgb(f), filter.take(), None);
                 }
                 ResolvedEffect::FilterGraph(g) => {
                     let input = filter.take();
@@ -787,6 +795,22 @@ impl Translator {
                         let input = filter.take();
                         let sg = g.radius / s;
                         let mut halo = image_filters::blur((sg, sg), TileMode::Decal, input.clone(), None);
+                        if self.linear() {
+                            // The compositor's halo: the blurred layer, or the colour times its alpha; times the intensity; one
+                            // brighter than opaque is scaled back to alpha 1, which keeps its colour.
+                            let fx = self.runtime("glowHalo", "uniform shader src; uniform float k; uniform float tinted; uniform float4 tint;
+                                half4 main(float2 xy) { half4 b = src.eval(xy); float4 h = tinted > 0.5 ? tint * b.a : float4(b); h *= k;
+                                  if (h.a > 1.0) { h /= h.a; } return half4(h); }");
+                            let tint = g.color.map(|c| c.linear_premultiplied().map(|v| v as f32));
+                            filter = fx.and_then(|fx| {
+                                let mut b = skia_safe::runtime_effect::RuntimeShaderBuilder::new(fx);
+                                b.set_uniform_float("k", &[g.intensity]).ok()?;
+                                b.set_uniform_float("tinted", &[if tint.is_some() { 1.0 }  else { 0.0 }]).ok()?;
+                                b.set_uniform_float("tint", &tint.unwrap_or([0.0; 4])).ok()?;
+                                image_filters::blend(SkBlend::DstOver, input, image_filters::runtime_shader(&b, "src", halo), None)
+                            });
+                            continue;
+                        }
                         if let Some(c) = g.color {
                             let c = color4(c);
                             let tint = color_filters::matrix_row_major(
@@ -839,8 +863,10 @@ impl Translator {
         for (idx, node) in g.nodes.iter().enumerate() {
             let op = plan.as_ref().map_or(&node.op, |p| &p.nodes[idx].op);
             // A primitive that works in linearRGB reads its inputs decoded and its result is encoded again (flood
-            // colours are given in sRGB and stay there).
+            // colours are given in sRGB and stay there). On a surface that holds linear light the conversions go the
+            // other way: a primitive that works in sRGB gets its inputs encoded and its result decoded.
             let lin = node.linear;
+            let surface_lin = self.linear();
             let input = |i: usize, results: &Vec<Option<ImageFilter>>| -> Option<ImageFilter> {
                 let f = match node.inputs.get(i).copied().unwrap_or(FeInput::Source) {
                     FeInput::Source => source.clone(),
@@ -854,10 +880,11 @@ impl Translator {
                     FeInput::Node(n) => results.get(n).cloned().flatten(),
                     FeInput::Empty => Some(image_filters::empty()),
                 };
-                match (lin, f) {
-                    // `None` is the layer itself.
-                    (true, f) => image_filters::color_filter(color_filters::srgb_to_linear_gamma(), f, None),
-                    (false, f) => f,
+                // `None` is the layer itself.
+                match (lin, surface_lin) {
+                    (true, false) => image_filters::color_filter(color_filters::srgb_to_linear_gamma(), f, None),
+                    (false, true) => image_filters::color_filter(color_filters::linear_to_srgb_gamma(), f, None),
+                    _ => f,
                 }
             };
             let out = match op {
@@ -951,7 +978,7 @@ impl Translator {
                 }
                 FeOp::Lighting { specular, surface_scale, constant, exponent, color, light } => {
                     let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-                    let dec = |v: f32| if !lin { v } else if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+                    let dec = |v: f32| if !lin || surface_lin { v } else if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
                     let col = Color::from_rgb(c(dec(color[0])), c(dec(color[1])), c(dec(color[2])));
                     let p3 = |p: &[f32; 3]| skia_safe::Point3::new(p[0], p[1], p[2]);
                     let inp = input(0, &results);
@@ -987,7 +1014,10 @@ impl Translator {
                 }
             };
             let out = match out {
-                Some(f) if lin && !matches!(op, FeOp::Flood { .. }) => image_filters::color_filter(color_filters::linear_to_srgb_gamma(), f, None),
+                Some(f) if lin != surface_lin && !matches!(op, FeOp::Flood { .. }) => {
+                    let back = if lin { color_filters::linear_to_srgb_gamma() } else { color_filters::srgb_to_linear_gamma() };
+                    image_filters::color_filter(back, f, None)
+                }
                 f => f,
             };
             let out = match (&plan, out) {
@@ -1015,15 +1045,17 @@ impl Translator {
     }
 
     fn gradient_map(&mut self, gm: &crate::resolve::ResolvedGradientMap, input: Option<ImageFilter>) -> Option<ImageFilter> {
-        let fx = self.runtime("gmap", "uniform shader src; uniform float count; uniform float amount; uniform float offs[16]; uniform float cr[16]; uniform float cg[16]; uniform float cb[16]; uniform float ca[16];
+        let lin = if self.linear() { 1.0 } else { 0.0 };
+        let fx = self.runtime("gmap", &[SKSL_SRGB, "uniform shader src; uniform float count; uniform float amount; uniform float offs[16]; uniform float cr[16]; uniform float cg[16]; uniform float cb[16]; uniform float ca[16];
             half4 main(float2 xy) { half4 c = src.eval(xy); if (c.a <= 0.0) { return half4(0); }
-              half3 s = clamp(c.rgb / c.a, 0, 1); float l = dot(float3(s), float3(0.2126, 0.7152, 0.0722));
+              half3 s = clamp(c.rgb / c.a, 0, 1); if (lin > 0.5) { s = half3(toS(float3(s))); } float l = dot(float3(s), float3(0.2126, 0.7152, 0.0722));
               float4 g = float4(cr[15], cg[15], cb[15], ca[15]);
               if (l <= offs[0]) { g = float4(cr[0], cg[0], cb[0], ca[0]); } else {
                 for (int i = 1; i < 16; i++) {
                   if (l <= offs[i]) { float d = offs[i] - offs[i - 1]; g = mix(float4(cr[i - 1], cg[i - 1], cb[i - 1], ca[i - 1]), float4(cr[i], cg[i], cb[i], ca[i]), d > 0.0 ? (l - offs[i - 1]) / d : 1.0); break; } } }
               float4 o = float4(s, c.a); float4 gr = float4(g.rgb, c.a * g.a); float4 r = mix(o, gr, amount);
-              return half4(half3(r.rgb * r.a), half(r.a)); }")?;
+              if (lin > 0.5) { r.rgb = toL(r.rgb); }
+              return half4(half3(r.rgb * r.a), half(r.a)); }"].concat())?;
         let mut b = skia_safe::runtime_effect::RuntimeShaderBuilder::new(fx);
         let n = gm.stops.len().min(16);
         let mut offs = [0.0f32; 16];
@@ -1036,6 +1068,7 @@ impl Translator {
                 cols[k][i] = v;
             }
         }
+        b.set_uniform_float("lin", &[lin]).ok()?;
         b.set_uniform_float("count", &[n as f32]).map_err(|e| eprintln!("kinetograph: gradientMap uniform count: {e}")).ok()?;
         b.set_uniform_float("amount", &[gm.amount]).ok()?;
         b.set_uniform_float("offs", &offs).map_err(|e| eprintln!("kinetograph: gradientMap uniform offs: {e}")).ok()?;
@@ -1047,18 +1080,20 @@ impl Translator {
 
     fn grain(&mut self, gr: &crate::resolve::ResolvedGrain, input: Option<ImageFilter>) -> Option<ImageFilter> {
         // A float hash in place of the integer PCG hash of the compositor: same kind of noise, not the same pattern.
-        let fx = self.runtime("grain", "uniform shader src; uniform float amount; uniform float size; uniform float mono; uniform float seed;
+        let lin = if self.linear() { 1.0 } else { 0.0 };
+        let fx = self.runtime("grain", &[SKSL_SRGB, "uniform shader src; uniform float amount; uniform float size; uniform float mono; uniform float seed;
             float h(float2 p) { return fract(sin(dot(p, float2(127.1, 311.7)) + seed) * 43758.5453); }
             float3 lat(float2 i) { float a = h(i); float b = h(i + 17.0);
               if (mono > 0.5) { return float3(a + b - 1.0); }
               return float3(a + h(i + 3.0) - 1.0, h(i + 7.0) + h(i + 11.0) - 1.0, b + h(i + 13.0) - 1.0); }
             half4 main(float2 xy) { half4 c = src.eval(xy); if (c.a <= 0.0) { return half4(0); }
-              half3 s = clamp(c.rgb / c.a, 0, 1);
+              half3 s = clamp(c.rgb / c.a, 0, 1); if (lin > 0.5) { s = half3(toS(float3(s))); }
               float2 p = floor(xy) / max(size, 1.0); float2 i = floor(p); float2 f = p - i; float2 w = f * f * (3.0 - 2.0 * f);
               float3 n = mix(mix(lat(i), lat(i + float2(1, 0)), w.x), mix(lat(i + float2(0, 1)), lat(i + float2(1, 1)), w.x), w.y);
-              half3 rgb = clamp(s + half3(amount * n), 0, 1);
-              return half4(rgb * c.a, c.a); }")?;
+              half3 rgb = clamp(s + half3(amount * n), 0, 1); if (lin > 0.5) { rgb = half3(toL(float3(rgb))); }
+              return half4(rgb * c.a, c.a); }"].concat())?;
         let mut b = skia_safe::runtime_effect::RuntimeShaderBuilder::new(fx);
+        b.set_uniform_float("lin", &[lin]).ok()?;
         b.set_uniform_float("amount", &[gr.amount]).ok()?;
         b.set_uniform_float("size", &[gr.size]).ok()?;
         b.set_uniform_float("mono", &[if gr.monochrome { 1.0 } else { 0.0 }]).ok()?;
@@ -1184,7 +1219,7 @@ impl Translator {
                 p.set_color4f(Color4f::new(c.r, c.g, c.b, c.a * a), None);
             }
             ResolvedPaint::Gradient(g) => {
-                p.set_shader(gradient_shader_for(g, layer_box));
+                p.set_shader(gradient_shader_for(g, layer_box, self.linear()));
             }
             ResolvedPaint::Image(i) => {
                 let Some(img) = self.image(&i.src) else {
@@ -1263,8 +1298,8 @@ impl Translator {
         } else {
             skia_safe::shaders::turbulence((t.frequency[0], t.frequency[1]), t.octaves as usize, t.seed as f32, None)
         };
-        let fx = self.runtime("noiseLayer", "uniform shader n; uniform float gray;
-            float enc(float v) { v = clamp(v, 0.0, 1.0); return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055; }
+        let fx = self.runtime("noiseLayer", "uniform shader n; uniform float gray; uniform float lin;
+            float enc(float v) { v = clamp(v, 0.0, 1.0); if (lin > 0.5) { return v; } return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055; }
             half4 main(float2 xy) { half4 c = n.eval(xy);
               float3 u = c.a > 0.0 ? float3(c.rgb) / c.a : float3(0.0);
               if (gray > 0.5) { float g = enc(u.r); return half4(half3(g), 1); }
@@ -1275,7 +1310,8 @@ impl Translator {
             return;
         };
         let gray: f32 = if channels == crate::scene::NoiseChannels::Gray { 1.0 } else { 0.0 };
-        let Some(sh) = fx.make_shader(Data::new_copy(&gray.to_le_bytes()), &[skia_safe::runtime_effect::ChildPtr::Shader(noise)], None) else {
+        let uniforms = [gray, if self.linear() { 1.0f32 } else { 0.0 }].map(f32::to_le_bytes).concat();
+        let Some(sh) = fx.make_shader(Data::new_copy(&uniforms), &[skia_safe::runtime_effect::ChildPtr::Shader(noise)], None) else {
             self.stats.no("noise layer (shader)");
             return;
         };
@@ -1498,6 +1534,12 @@ impl Translator {
 }
 
 /// One `feFunc*` at `c` in 0..1 (`transfer` in `filter.wgsl`).
+/// SkSL for the effects that work on sRGB-encoded values: `lin` is 1 where the surface holds linear light.
+const SKSL_SRGB: &str = "uniform float lin;
+    float3 toS(float3 v) { v = clamp(v, 0.0, 1.0); return mix(1.055 * pow(v, float3(1.0 / 2.4)) - 0.055, v * 12.92, step(v, float3(0.0031308))); }
+    float3 toL(float3 v) { v = clamp(v, 0.0, 1.0); return mix(pow((v + 0.055) / 1.055, float3(2.4)), v / 12.92, step(v, float3(0.04045))); }
+";
+
 fn transfer(f: &crate::filter::ResolvedTransfer, c: f32) -> f32 {
     let n = f.table.len();
     match f.kind {
@@ -1566,7 +1608,8 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 
 /// A gradient as a Skia shader, following `render::gradient_brush_in`: the span between the first and last stop is
 /// what repeats, and a gradient with no extent is its last stop's colour.
-fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>) -> Option<Shader> {
+/// `linear`: the surface holds linear light, but stops blend in sRGB-encoded values (as CSS and the Vello path do).
+fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bool) -> Option<Shader> {
     let last = g.stops[g.stops.len() - 1];
     let solid = || Some(skia_safe::shaders::color(Color::from_argb(last.1.a, last.1.r, last.1.g, last.1.b)));
     let (lo, hi) = match g.extend {
@@ -1638,10 +1681,14 @@ fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>) -> Option<
     }
     let lm = mat(local);
     let lm = if local == Affine::IDENTITY { None } else { Some(&lm) };
+    let mut interp = gradient_shader::Interpolation::from(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL);
+    if linear {
+        interp.color_space = gradient_shader::interpolation::ColorSpace::SRGB;
+    }
     match kind {
-        0 => gradient_shader::linear((a, b), gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, Some(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL), lm),
-        1 => gradient_shader::two_point_conical(a, r0, b, r1, gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, Some(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL), lm),
-        _ => gradient_shader::sweep(a, gradient_shader::GradientShaderColors::ColorsInSpace(&colors, None), Some(&pos[..]), tile, Some((r0, r1)), Some(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL), lm),
+        0 => gradient_shader::linear_with_interpolation((a, b), (&colors[..], None), Some(&pos[..]), tile, interp, lm),
+        1 => gradient_shader::two_point_conical_with_interpolation((a, r0), (b, r1), (&colors[..], None), Some(&pos[..]), tile, interp, lm),
+        _ => gradient_shader::sweep_with_interpolation(a, (&colors[..], None), Some(&pos[..]), tile, Some((r0, r1)), interp, lm),
     }
 }
 
