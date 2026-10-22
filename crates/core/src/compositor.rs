@@ -775,10 +775,17 @@ impl Compositor {
     /// textures they read (Vello drawing into its target) must come after,
     /// and whatever waits for their results (a readback) too.
     pub fn submit(&self) -> Option<wgpu::SubmissionIndex> {
+        let timer = crate::profile::start();
         self.uniforms.borrow_mut().upload();
         let encoder = self.pending.borrow_mut().take()?;
         self.recorded.set(0);
-        Some(self.queue.submit([encoder.finish()]))
+        let finished = encoder.finish();
+        crate::profile::add_since("finish_cpu", timer);
+        let timer = crate::profile::start();
+        let index = self.queue.submit([finished]);
+        crate::profile::add_since("submit_cpu", timer);
+        crate::profile::add_value("submit_n", 1.0);
+        Some(index)
     }
 
     /// Submits what is recorded if there is a great deal of it. One command

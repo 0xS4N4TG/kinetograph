@@ -2484,7 +2484,8 @@ impl Renderer {
         }
         .expect("scenes with image layers get an image renderer");
         renderer.set_timing_tag(u64::from(area.width()) * u64::from(area.height()));
-        renderer
+        let timer = crate::profile::start();
+        let rendered = renderer
             .render_to_texture(
                 &self.device,
                 &self.queue,
@@ -2496,8 +2497,10 @@ impl Renderer {
                     height: area.height(),
                     antialiasing_method: AaConfig::Msaa16,
                 },
-            )
-            .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
+            );
+        crate::profile::add_since("vello_cpu", timer);
+        crate::profile::add_value("vello_n", 1.0);
+        rendered.map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
 }
 
