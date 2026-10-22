@@ -1,0 +1,42 @@
+{
+  "name": "@kinetograph/native-darwin-arm64",
+  "version": "0.1.0",
+  "cpu": [
+    "arm64"
+  ],
+  "main": "kinetograph.darwin-arm64.node",
+  "files": [
+    "kinetograph.darwin-arm64.node",
+    "COPYING.LGPLv2.1",
+    "OPENH264-LICENSE",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "description": "Node-API addon exposing the Kinetograph renderer",
+  "keywords": [
+    "video",
+    "remotion",
+    "motion-graphics",
+    "renderer",
+    "gpu",
+    "headless"
+  ],
+  "homepage": "https://github.com/0xS4N4TG/kinetograph#readme",
+  "license": "PolyForm-Small-Business-1.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
+    "directory": "crates/node"
+  },
+  "bugs": {
+    "url": "https://github.com/0xS4N4TG/kinetograph/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "darwin"
+  ]
+}
