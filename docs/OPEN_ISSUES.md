@@ -131,6 +131,12 @@ time per frame with the current build. Keep the result either way.
 Past 1 to 4 workers the render barely speeds up. Earlier Vello runs showed `--concurrency 4` only a little faster than
 `--concurrency 1`. On the Skia backend (branch `exp/skia-backend`), papercut took about 22 s at 4 workers and 28 s and
 39 s at 5 (load average 8 to 10 during the 5-worker runs, so noisy). Remotion on the same film took 131 s at 5 workers.
-The cause is not known: candidates are the per-frame JS, the shared GPU queue, the encoder, and the chunking in
-`packages/cli/src/render-job.ts`. Profile a render at 1, 2, 4 and 5 workers on a quiet machine, see which stage stops
-scaling, then fix it. This is the main lever left for the launch film, which is about 3x Remotion against a 5x goal.
+Cause (profiled 2026-10-22 on the launch film, Skia backend): the workers only run the JS in parallel. Every frame
+then goes through one writer thread and one `Renderer` behind one `Mutex` (`crates/node/src/lib.rs`, `Shared.gpu`), so
+parse, resolve, Skia recording, submit and readback are serial. At 4 workers that serial part is about 6.4 ms a frame,
+89% of the frame loop (10.8 s of 14.6 s), and the JS per frame doubles (3.7 to 7.6 ms) while it waits. Other costs:
+the encode and to-linear-premul GPU passes take 4.5 ms a frame, the hand-off to the encoder 3.4 ms a frame on the main
+thread, and about 3.7 s of each render is outside the frame loop and not yet broken down. Full numbers in the stage 5
+profile (scratchpad `prof/launch.md`). Fix: parse and resolve outside the lock, and a Skia Graphite `Recorder` per
+worker so recording runs in parallel, with only `insert_recording` and submit serial. This is the main lever left for
+the launch film, which is about 3x Remotion against a 5x goal.
