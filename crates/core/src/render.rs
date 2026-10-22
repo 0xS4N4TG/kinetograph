@@ -442,9 +442,14 @@ impl Renderer {
     /// compute pass's start to its last one's end), `pgbusy_<i>` (ms in its compute passes) and `pgn_<i>` (passes).
     fn record_pass_profile(&mut self) {
         use crate::profile::{add_dyn, add_gpu};
+        // The frame's first start, last end and the sum of its passes' times, on the GPU's clock.
+        let (mut first, mut last, mut busy) = (f64::MAX, 0.0f64, 0.0);
         for pass in self.compositor.take_pass_times() {
             add_gpu(pass.name, pass.ms);
             add_dyn(&format!("gput_{}", pass.name), pass.texels as f64);
+            first = first.min(pass.begin_ms);
+            last = last.max(pass.begin_ms + pass.ms);
+            busy += pass.ms;
         }
         let mut times = self.vello.take_pass_times(&self.device, &self.queue);
         let images = self
@@ -458,6 +463,9 @@ impl Renderer {
             Default::default();
         for (i, t) in times.iter().enumerate() {
             add_gpu(&format!("v_{}", t.label), t.ms);
+            first = first.min(t.begin_ms);
+            last = last.max(t.begin_ms + t.ms);
+            busy += t.ms;
             let page = pages
                 .entry((i >= main, t.render))
                 .or_insert((f64::MAX, 0.0, 0.0, 0, t.tag));
@@ -476,6 +484,12 @@ impl Renderer {
             add_dyn(&format!("pgn_{i:02}"), f64::from(*n));
         }
         add_dyn("vpages", pages.len() as f64);
+        if last > first {
+            // `gspan` is the time from the frame's first timed pass to its last; what `gbusy` leaves out of it is
+            // the copies, buffer clears and uploads, and the gaps between passes.
+            add_dyn("gspan", last - first);
+            add_dyn("gbusy", busy);
+        }
     }
 
     /// The pixels of a frame from `start_frame`.
