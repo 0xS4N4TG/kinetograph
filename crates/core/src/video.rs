@@ -410,16 +410,16 @@ fn image_bytes(image: &ImageData) -> usize {
 }
 
 impl PictureCache {
-    /// The picture for `ts`, moved to the front.
-    fn find(&mut self, ts: i64) -> Option<ImageData> {
+    /// The picture for `ts` and the timestamp it lasts until, moved to the front.
+    fn find(&mut self, ts: i64) -> Option<(ImageData, i64)> {
         let at = self
             .entries
             .iter()
             .position(|e| e.from <= ts && ts < e.until)?;
         let entry = self.entries.remove(at)?;
-        let image = entry.image.clone();
+        let found = (entry.image.clone(), entry.until);
         self.entries.push_front(entry);
-        Some(image)
+        Some(found)
     }
 
     fn insert(&mut self, entry: CachedPicture) {
@@ -466,6 +466,9 @@ pub struct VideoDecoder {
     /// that do not come after it are dropped.
     last_pts: Option<i64>,
     cache: PictureCache,
+    /// Where the last picture returned lasts until: the timestamp of the
+    /// picture after it. `prefetch` works one picture past this and no more.
+    served_until: Option<i64>,
 }
 
 // SAFETY: a `VideoDecoder` owns its FFmpeg contexts and frames and is used
@@ -489,13 +492,15 @@ impl VideoDecoder {
             draining: false,
             last_pts: None,
             cache: PictureCache::default(),
+            served_until: None,
         })
     }
 
     /// The picture for the timestamp `ts` (`VideoInfo::media_time`): the last
     /// one at or before it, or the first if `ts` is before all of them.
     pub fn picture(&mut self, ts: i64) -> std::result::Result<ImageData, String> {
-        if let Some(image) = self.cache.find(ts) {
+        if let Some((image, until)) = self.cache.find(ts) {
+            self.served_until = Some(until);
             return Ok(image);
         }
         // Decode on from where the decoder is if the picture is not far
@@ -546,7 +551,56 @@ impl VideoDecoder {
             until,
             image: image.clone(),
         });
+        self.served_until = Some(until);
         Ok(image)
+    }
+
+    /// Makes the picture that follows the one last returned: converts the
+    /// decoded one waiting (`lookahead`), decodes the one after it, and caches
+    /// the first for its timestamps, as `advance` would when a frame asked
+    /// for it. The pictures and the cache hold what they would anyway; only
+    /// the time at which they are made moves (to a thread that is idle while
+    /// the frame is drawn). Nothing happens unless the picture waiting is the
+    /// one right after the last one returned, so a decoder works one picture
+    /// ahead and no more.
+    fn prefetch(&mut self) {
+        let Some(waiting) = self.lookahead.as_ref().map(|d| d.pts) else {
+            return;
+        };
+        if self.served_until != Some(waiting) {
+            return;
+        }
+        let Some(first) = self.lookahead.take() else {
+            return;
+        };
+        let image = match self.convert(&first.frame) {
+            Ok(image) => image,
+            Err(_) => {
+                self.lookahead = Some(first);
+                return;
+            }
+        };
+        let until = match self.next_picture() {
+            Ok(Some(next)) => {
+                let until = next.pts;
+                self.lookahead = Some(next);
+                until
+            }
+            Ok(None) => {
+                self.finished = true;
+                i64::MAX
+            }
+            Err(_) => {
+                // The error comes again when a frame asks for the next picture.
+                self.lookahead = Some(first);
+                return;
+            }
+        };
+        self.cache.insert(CachedPicture {
+            from: first.pts,
+            until,
+            image,
+        });
     }
 
     /// Moves the stream to the keyframe at or before `ts` and starts decoding
@@ -787,7 +841,17 @@ fn set_colour(
 /// Every video file of a scene, opened, by `src`.
 #[derive(Default)]
 pub struct Videos {
-    decoders: HashMap<String, VideoDecoder>,
+    decoders: HashMap<String, Arc<Mutex<VideoDecoder>>>,
+    /// The thread that makes the next picture of a decoder while the frame
+    /// that used the last one is drawn (`VideoDecoder::prefetch`).
+    ahead: Option<std::sync::mpsc::Sender<Arc<Mutex<VideoDecoder>>>>,
+}
+
+/// Whether pictures are made ahead of the frame that asks for them
+/// (`KINETOGRAPH_NO_PREFETCH=1` turns it off).
+fn prefetching() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("KINETOGRAPH_NO_PREFETCH").is_none())
 }
 
 impl Videos {
@@ -797,7 +861,7 @@ impl Videos {
 
     /// Keeps `decoder` as the one `src` names, replacing one of the same name.
     pub(crate) fn insert(&mut self, src: String, decoder: VideoDecoder) {
-        self.decoders.insert(src, decoder);
+        self.decoders.insert(src, Arc::new(Mutex::new(decoder)));
     }
 
     /// The picture file `src` shows at `time`, as an image to draw. The same
@@ -806,11 +870,36 @@ impl Videos {
     pub fn image(&mut self, src: &str, time: MediaTime) -> Result<ImageData> {
         let decoder = self
             .decoders
-            .get_mut(src)
-            .ok_or_else(|| Error::Render(format!("video {src:?} was not loaded")))?;
-        decoder
+            .get(src)
+            .ok_or_else(|| Error::Render(format!("video {src:?} was not loaded")))?
+            .clone();
+        let image = decoder
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .picture(time.ts)
-            .map_err(|e| Error::Render(format!("video {src:?} at {:.3} s: {e}", time.seconds)))
+            .map_err(|e| Error::Render(format!("video {src:?} at {:.3} s: {e}", time.seconds)))?;
+        if prefetching() {
+            self.prefetch(decoder);
+        }
+        Ok(image)
+    }
+
+    /// Asks the prefetch thread (started on the first call) for the picture
+    /// after the one `decoder` just returned.
+    fn prefetch(&mut self, decoder: Arc<Mutex<VideoDecoder>>) {
+        let ahead = self.ahead.get_or_insert_with(|| {
+            let (sender, jobs) = std::sync::mpsc::channel::<Arc<Mutex<VideoDecoder>>>();
+            std::thread::Builder::new()
+                .name("kinetograph-video".to_string())
+                .spawn(move || {
+                    for decoder in jobs {
+                        decoder.lock().unwrap_or_else(|e| e.into_inner()).prefetch();
+                    }
+                })
+                .expect("cannot start the video thread");
+            sender
+        });
+        let _ = ahead.send(decoder);
     }
 }
 
