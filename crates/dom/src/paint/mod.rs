@@ -63,9 +63,10 @@ pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
 /// and the rest of its output.
 pub struct Painted {
     raw: Vec<Value>,
-    /// The id and the place in its parent's frame of the group of each
-    /// element that was painted as a group of its own.
-    groups: HashMap<NodeId, (String, Origin)>,
+    /// The id and the place in its parent's frame of each group an element
+    /// was painted as (an element can be painted as more than one: an inline
+    /// box that a line break split, or one painted again).
+    groups: HashMap<NodeId, Vec<(String, Origin)>>,
     output: IslandOutput,
 }
 
@@ -82,11 +83,10 @@ pub fn paint_keeping(doc: &BaseDocument, request: &IslandRequest) -> (IslandOutp
         margin: (painter.margin_reach > 0.0).then(|| painter.margin_reach.ceil() as u32),
         blend_space: "srgb",
     };
-    let groups = painter
-        .groups
-        .into_iter()
-        .map(|(node, id, at)| (node, (id, at)))
-        .collect();
+    let mut groups: HashMap<NodeId, Vec<(String, Origin)>> = HashMap::new();
+    for (node, id, at) in painter.groups {
+        groups.entry(node).or_default().push((id, at));
+    }
     let rest = IslandOutput {
         layers: Vec::new(),
         ..output.clone()
@@ -116,22 +116,23 @@ pub fn repaint_transforms(
 ) -> Option<(IslandOutput, Painted)> {
     let mut painter = Painter::new(doc, request);
     for id in moved {
-        let (group_id, at) = painted.groups.get(id)?;
         let node = doc.get_node(*id)?;
-        let style = node.primary_styles()?;
-        let geom = deco::box_geom(node, &style);
-        let (transform, _) = painter.group_transform(node, &style, &geom, *at);
-        drop(style);
-        // A transform that is only a move (or none) is folded into the layers
-        // around it, and one that cannot be a matrix is reported: either
-        // changes more than the group.
-        let transform = transform.filter(|t| t.get("matrix").is_some())?;
-        if !painter.unsupported.is_empty() {
-            return None;
+        for (group_id, at) in painted.groups.get(id)? {
+            let style = node.primary_styles()?;
+            let geom = deco::box_geom(node, &style);
+            let (transform, _) = painter.group_transform(node, &style, &geom, *at);
+            drop(style);
+            // A transform that is only a move (or none) is folded into the layers
+            // around it, and one that cannot be a matrix is reported: either
+            // changes more than the group.
+            let transform = transform.filter(|t| t.get("matrix").is_some())?;
+            if !painter.unsupported.is_empty() {
+                return None;
+            }
+            let group = find_layer(&mut painted.raw, group_id)?;
+            group.get("transform").and_then(|t| t.get("matrix"))?;
+            group["transform"] = transform;
         }
-        let group = find_layer(&mut painted.raw, group_id)?;
-        group.get("transform").and_then(|t| t.get("matrix"))?;
-        group["transform"] = transform;
     }
     let output = IslandOutput {
         layers: opt::optimize(painted.raw.clone()),
