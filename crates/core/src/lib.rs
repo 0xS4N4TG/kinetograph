@@ -22,6 +22,7 @@ pub mod lut;
 pub mod mesh;
 pub mod pass_timer;
 pub mod pool;
+pub mod profile;
 pub mod render;
 pub mod resolve;
 pub mod reuse;

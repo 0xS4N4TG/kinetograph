@@ -491,7 +491,10 @@ impl Renderer {
     /// With frame reuse on, a frame equal to the one started just before it
     /// is not drawn (`set_frame_reuse`, `PendingFrame::is_repeat`).
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
+        let timer = crate::profile::start();
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
+        crate::profile::add_since("resolve", timer);
+        let timer = crate::profile::start();
         self.starts += 1;
         let seq = self.starts;
         if self.reuse
@@ -501,6 +504,7 @@ impl Renderer {
             let of = *of;
             self.repeat_of = Some(of);
             self.repeats += 1;
+            crate::profile::add_since("start", timer);
             return Ok(PendingFrame {
                 work: Work::Repeat { of },
                 width: resolved.width,
@@ -511,6 +515,13 @@ impl Renderer {
         let (readback, width, height) = self.start_resolved(&resolved)?;
         if self.reuse {
             self.drawn = Some((seq, resolved));
+        }
+        crate::profile::add_since("start", timer);
+        if crate::profile::sync() {
+            let timer = crate::profile::start();
+            // A lost device makes the readback fail anyway.
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+            crate::profile::add_since("gpu_sync", timer);
         }
         Ok(PendingFrame {
             work: Work::Drawn { readback, seq },
@@ -609,7 +620,10 @@ impl Renderer {
         self.cache.begin_frame();
         self.compositor.begin_frame();
         self.clear_pages();
+        let timer = crate::profile::start();
         self.plan_pages(&scene.layers)?;
+        crate::profile::add_since("plan_pages", timer);
+        crate::profile::add_value("pages", self.pages.pages.len() as f64);
         let color = scene.background.linear_premultiplied();
         let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
         let canvas =

@@ -426,6 +426,12 @@ export interface StreamScan {
   keyframes: Array<Keyframe>
 }
 
+/**
+ * Stage times in ms since the last call, for profiling (off unless `KINETOGRAPH_PROFILE` is set, then empty): this
+ * thread's stages, emptied by the call, and with `shared` also the encoder thread's totals so far.
+ */
+export declare function takeProfile(shared?: boolean | undefined | null): Record<string, number>
+
 export interface TextGlyph {
   /** Index of the glyph's first code point in the text (`chars` index). */
   charIndex: number

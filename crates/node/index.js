@@ -798,5 +798,6 @@ module.exports.rgbaToYuv = nativeBinding.rgbaToYuv
 module.exports.riveFrame = nativeBinding.riveFrame
 module.exports.scanStreams = nativeBinding.scanStreams
 module.exports.startDomIsland = nativeBinding.startDomIsland
+module.exports.takeProfile = nativeBinding.takeProfile
 module.exports.validateScene = nativeBinding.validateScene
 module.exports.version = nativeBinding.version

@@ -2284,6 +2284,7 @@ impl Compositor {
             padded_row,
             height: canvas_height,
         } = readback;
+        let timer = crate::profile::start();
         self.device
             .poll(wgpu::PollType::Wait {
                 submission_index: submission,
@@ -2293,7 +2294,9 @@ impl Compositor {
         rx.recv()
             .map_err(|e| Error::Render(format!("readback channel closed: {e}")))?
             .map_err(|e| Error::Render(format!("readback map failed: {e}")))?;
+        crate::profile::add_since("rb_wait", timer);
 
+        let timer = crate::profile::start();
         let mapped = buffer
             .slice(..)
             .get_mapped_range()
@@ -2304,6 +2307,7 @@ impl Compositor {
         }
         drop(mapped);
         buffer.unmap();
+        crate::profile::add_since("rb_copy", timer);
         Ok(pixels)
     }
 

@@ -202,11 +202,18 @@ pub fn finish_island(ticket: u32) -> Result<String> {
 fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<String>> {
     let json = request_json.to_string();
     start_on_island_thread(move || {
+        let timer = kinetograph_core::profile::start();
         let request = parse_island(&json, "renderDomIsland")?;
+        kinetograph_core::profile::add_shared_since("dom_parse", timer);
+        let timer = kinetograph_core::profile::start();
         let mut resolved = SAMPLES
             .with(|cache| cache.borrow_mut().resolve(&request, pass))
             .map_err(|e| (Code::Render, e.to_string()))?;
+        kinetograph_core::profile::add_shared_since("dom_resolve", timer);
+        let timer = kinetograph_core::profile::start();
         let mut output = resolved.paint(&request);
+        kinetograph_core::profile::add_shared_since("dom_paint", timer);
+        let write_timer = kinetograph_core::profile::start();
         let island = &resolved.island;
         // A file the island named that could not be read is not drawn as the
         // author meant: say so rather than draw a blank.
@@ -250,6 +257,7 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
         if let Some(path) = first {
             BASES.with(|bases| bases.borrow_mut().1.insert(path, output.layers));
         }
+        kinetograph_core::profile::add_shared_since("dom_write", write_timer);
         Ok(json)
     })
 }

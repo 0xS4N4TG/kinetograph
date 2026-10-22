@@ -1012,9 +1012,11 @@ impl VideoEncoder {
         }
         // A fresh picture each time: the encoder may still hold the last.
         let mut converted = frame::Video::empty();
+        let timer = kinetograph_core::profile::start();
         self.scaler
             .run(&self.rgba, &mut converted)
             .map_err(|e| format!("cannot convert a frame to {}: {e}", self.pix.name()))?;
+        kinetograph_core::profile::add_shared_since("encoder_convert", timer);
         self.send(converted)
     }
 

@@ -174,13 +174,19 @@ fn a_picture_is_drawn_after_a_canvas_run_of_solid_paths_as_a_new_renderer_draws_
     for cache in [false, true] {
         let mut renderer = Renderer::new(picture.clone()).unwrap();
         renderer.set_layer_cache(cache);
-        assert!(renderer.render_frame(0).unwrap().rgba == want.rgba, "cache {cache}: the first picture");
+        assert!(
+            renderer.render_frame(0).unwrap().rgba == want.rgba,
+            "cache {cache}: the first picture"
+        );
         for round in 0..2 {
             renderer.set_scene(canvas.clone()).unwrap();
             renderer.render_frame(0).unwrap();
             renderer.set_scene(picture.clone()).unwrap();
             let got = renderer.render_frame(0).unwrap();
-            assert!(got.rgba == want.rgba, "cache {cache}, round {round}: the picture after a canvas run is not what a new renderer draws");
+            assert!(
+                got.rgba == want.rgba,
+                "cache {cache}, round {round}: the picture after a canvas run is not what a new renderer draws"
+            );
         }
     }
     let _ = std::fs::remove_dir_all(&base);

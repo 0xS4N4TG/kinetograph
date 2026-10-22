@@ -535,6 +535,24 @@ pub fn rgba_to_yuv(
         .map_err(invalid)
 }
 
+/// Stage times in ms since the last call, for profiling (off unless `KINETOGRAPH_PROFILE` is set, then empty): this
+/// thread's stages, emptied by the call, and with `shared` also the encoder thread's totals so far.
+#[napi]
+pub fn take_profile(shared: Option<bool>) -> std::collections::HashMap<String, f64> {
+    let mut out: std::collections::HashMap<String, f64> = kinetograph_core::profile::take_local()
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    if shared == Some(true) {
+        out.extend(
+            kinetograph_core::profile::shared()
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v)),
+        );
+    }
+    out
+}
+
 /// The settings of `options` (and the older `encoder`) as the encoder takes them.
 fn settings_of(encoder: Option<String>, export: Option<ExportOptions>) -> Result<Settings> {
     let mut settings = Settings {
@@ -724,9 +742,13 @@ impl Renderer {
         base_dir: Option<String>,
     ) -> Result<()> {
         let frame = count("frame", frame)?;
+        let timer = kinetograph_core::profile::start();
         let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        kinetograph_core::profile::add_since("parse", timer);
         let mut gpu = self.shared.idle()?;
+        let timer = kinetograph_core::profile::start();
         gpu.set_scene(scene).map_err(from_core)?;
+        kinetograph_core::profile::add_since("set_scene", timer);
         let pending = gpu.start_frame(frame).map_err(from_core)?;
         self.started.push_back(pending);
         Ok(())
@@ -876,7 +898,9 @@ impl VideoWriter {
     ) -> Result<()> {
         let pushed = (|| {
             let frame = count("frame", frame)?;
+            let timer = kinetograph_core::profile::start();
             let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+            kinetograph_core::profile::add_since("parse", timer);
             let shared = self.shared.clone();
             let mut gpu = shared.lock();
             self.writer()?

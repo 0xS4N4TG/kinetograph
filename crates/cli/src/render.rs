@@ -344,11 +344,14 @@ impl FrameSink {
                 }
             };
             for queued in frame_rx {
+                let timer = kinetograph_core::profile::start();
                 match queued {
                     Queued::Rgba(frame) => encoder.push(&frame.rgba)?,
                     Queued::Yuv(planes) => encoder.push_yuv(&planes)?,
                     Queued::Repeat => encoder.push_repeat()?,
                 }
+                kinetograph_core::profile::add_shared_since("encoder_thread", timer);
+                kinetograph_core::profile::count_shared("encoder_frames");
             }
             encoder.finish()
         });
@@ -526,7 +529,9 @@ impl VideoWriter {
                 "frames must come in increasing order: {frame} after {last}"
             )));
         }
+        let timer = kinetograph_core::profile::start();
         renderer.set_scene(scene)?;
+        kinetograph_core::profile::add_since("set_scene", timer);
         let pending = renderer
             .start_frame(frame)
             .map_err(|e| RenderError::Frame(frame, e))?;
@@ -566,10 +571,15 @@ impl VideoWriter {
             self.repeated += 1;
             return self.sink.push_repeat();
         }
+        let timer = kinetograph_core::profile::start();
         let rendered = renderer
             .finish_frame(pending)
             .map_err(|e| RenderError::Frame(frame, e))?;
-        self.sink.push(rendered)
+        kinetograph_core::profile::add_since("finish", timer);
+        let timer = kinetograph_core::profile::start();
+        let sent = self.sink.push(rendered);
+        kinetograph_core::profile::add_since("send", timer);
+        sent
     }
 
     /// Reads back the last frame, flushes the encoder and gives the file its
