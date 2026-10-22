@@ -41,6 +41,50 @@ pub(crate) struct WgpuEngine {
     /// The `Texture` should have the same size as the `Image`.
     pub(crate) image_overrides: HashMap<u64, wgpu::TexelCopyTextureInfoBase<Texture>>,
     pipeline_cache: Option<PipelineCache>,
+    /// GPU timestamps on the compute passes, when profiling (vendor/README.md).
+    stamps: Option<PassStamps>,
+}
+
+/// The GPU time of one compute pass of a render.
+#[derive(Clone, Debug)]
+pub struct PassTime {
+    /// The shader's label with `stages`, else `"compute"` (the passes of dispatches are shared).
+    pub label: &'static str,
+    /// Which `run_recording` call of the renderer, counting from the timer being turned on.
+    pub render: u64,
+    /// What the caller set with `set_timing_tag` before the render.
+    pub tag: u64,
+    /// The pass's start, in ms on the GPU's clock.
+    pub begin_ms: f64,
+    pub ms: f64,
+}
+
+struct PassStamps {
+    set: wgpu::QuerySet,
+    used: u32,
+    meta: Vec<(&'static str, u64, u64)>,
+    render: u64,
+    tag: u64,
+    /// One pass for each dispatch instead of sharing, so each shader has its own time.
+    stages: bool,
+}
+
+const STAMP_QUERIES: u32 = 4096;
+
+impl PassStamps {
+    fn writes(&mut self, label: &'static str) -> Option<wgpu::ComputePassTimestampWrites<'_>> {
+        if self.used + 2 > STAMP_QUERIES {
+            return None;
+        }
+        let at = self.used;
+        self.used += 2;
+        self.meta.push((label, self.render, self.tag));
+        Some(wgpu::ComputePassTimestampWrites {
+            query_set: &self.set,
+            beginning_of_pass_write_index: Some(at),
+            end_of_pass_write_index: Some(at + 1),
+        })
+    }
 }
 
 enum PipelineState {
@@ -141,6 +185,81 @@ enum TransientBuf<'a> {
 }
 
 impl WgpuEngine {
+    pub fn set_pass_timing(&mut self, device: &Device, on: bool, stages: bool) {
+        if on && self.stamps.is_some() {
+            return;
+        }
+        self.stamps = on.then(|| PassStamps {
+            set: device.create_query_set(&wgpu::QuerySetDescriptor {
+                label: Some("vello pass timer"),
+                ty: wgpu::QueryType::Timestamp,
+                count: STAMP_QUERIES,
+            }),
+            used: 0,
+            meta: Vec::new(),
+            render: 0,
+            tag: 0,
+            stages,
+        });
+    }
+
+    pub fn set_timing_tag(&mut self, tag: u64) {
+        if let Some(s) = &mut self.stamps {
+            s.tag = tag;
+        }
+    }
+
+    /// The times of the compute passes since the last call. Waits for the GPU.
+    pub fn take_pass_times(&mut self, device: &Device, queue: &Queue) -> Vec<PassTime> {
+        let Some(s) = &mut self.stamps else {
+            return Vec::new();
+        };
+        if s.used == 0 {
+            return Vec::new();
+        }
+        let bytes = s.used as u64 * 8;
+        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: bytes,
+            usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let read = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: bytes,
+            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.resolve_query_set(&s.set, 0..s.used, &resolve, 0);
+        encoder.copy_buffer_to_buffer(&resolve, 0, &read, 0, bytes);
+        queue.submit([encoder.finish()]);
+        read.slice(..).map_async(wgpu::MapMode::Read, |_| ());
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let meta = std::mem::take(&mut s.meta);
+        s.used = 0;
+        let Ok(mapped) = read.slice(..).get_mapped_range() else {
+            return Vec::new();
+        };
+        let ticks: Vec<u64> = mapped
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|b| u64::from_le_bytes(*b))
+            .collect();
+        let ns = queue.get_timestamp_period() as f64;
+        meta.into_iter()
+            .enumerate()
+            .map(|(i, (label, render, tag))| PassTime {
+                label,
+                render,
+                tag,
+                begin_ms: ticks[2 * i] as f64 * ns / 1e6,
+                ms: ticks[2 * i + 1].saturating_sub(ticks[2 * i]) as f64 * ns / 1e6,
+            })
+            .collect()
+    }
+
     pub fn new(use_cpu: bool, pipeline_cache: Option<PipelineCache>) -> Self {
         Self {
             use_cpu,
@@ -389,6 +508,9 @@ impl WgpuEngine {
         let mut free_bufs: HashSet<ResourceId> = HashSet::default();
         let mut free_images: HashSet<ResourceId> = HashSet::default();
         let mut transient_map = TransientBindMap::new(external_resources);
+        if let Some(s) = &mut self.stamps {
+            s.render += 1;
+        }
 
         let mut encoder =
             device.create_command_encoder(&CommandEncoderDescriptor { label: Some(label) });
@@ -586,8 +708,17 @@ impl WgpuEngine {
                                 bindings,
                             );
                             let cpass = open_pass.get_or_insert_with(|| {
+                                let label = match &self.stamps {
+                                    Some(s) if s.stages => shader.label,
+                                    _ => "compute",
+                                };
+                                let timestamp_writes =
+                                    self.stamps.as_mut().and_then(|s| s.writes(label));
                                 encoder
-                                    .begin_compute_pass(&ComputePassDescriptor::default())
+                                    .begin_compute_pass(&ComputePassDescriptor {
+                                        label: None,
+                                        timestamp_writes,
+                                    })
                                     .forget_lifetime()
                             });
                             #[cfg(feature = "wgpu-profiler")]
@@ -609,6 +740,9 @@ impl WgpuEngine {
                             cpass.dispatch_workgroups(x, y, z);
                             #[cfg(feature = "wgpu-profiler")]
                             profiler.end_query(&mut *cpass, query);
+                            if self.stamps.as_ref().is_some_and(|s| s.stages) {
+                                open_pass = None;
+                            }
                         }
                     }
                 }
@@ -650,8 +784,17 @@ impl WgpuEngine {
                                 proxy,
                             );
                             let cpass = open_pass.get_or_insert_with(|| {
+                                let label = match &self.stamps {
+                                    Some(s) if s.stages => shader.label,
+                                    _ => "compute",
+                                };
+                                let timestamp_writes =
+                                    self.stamps.as_mut().and_then(|s| s.writes(label));
                                 encoder
-                                    .begin_compute_pass(&ComputePassDescriptor::default())
+                                    .begin_compute_pass(&ComputePassDescriptor {
+                                        label: None,
+                                        timestamp_writes,
+                                    })
                                     .forget_lifetime()
                             });
                             #[cfg(feature = "wgpu-profiler")]
@@ -676,6 +819,9 @@ impl WgpuEngine {
                             cpass.dispatch_workgroups_indirect(buf, *offset);
                             #[cfg(feature = "wgpu-profiler")]
                             profiler.end_query(&mut *cpass, query);
+                            if self.stamps.as_ref().is_some_and(|s| s.stages) {
+                                open_pass = None;
+                            }
                         }
                     }
                 }

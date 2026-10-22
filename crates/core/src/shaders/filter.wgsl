@@ -340,6 +340,57 @@ fn fs_displace(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     return load_a(vec2<i32>(floor(canvas_pos(p) + moved)));
 }
 
+// `fs_copy`, `fs_turbulence` and `fs_displace` in one pass, for a graph of a
+// turbulence that is the displacement map of the layer and nothing else: the
+// layer is read where it is, as the copy cut to the subregion would be read, and
+// the map is the noise at the fragment, rounded to half floats as the texture
+// the turbulence pass wrote would be. v[0].x: the scale. v[1].xy: the channels.
+// v[4].xy: the base frequency; v[4].z: 1 for fractalNoise; v[4].w: the octaves.
+// v[5]: the stitch info. v[6].x: 1 for stitching.
+@fragment
+fn fs_displace_turbulence(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    if in_sub(layer_here(p)) == 0.0 {
+        return vec4<f32>(0.0);
+    }
+    var m = vec4<f32>(0.0);
+    let l = to_layer(canvas_centre(p) + vec2<f32>(0.5));
+    if in_sub(l) != 0.0 {
+        let frequency = params.v[4].xy;
+        let fractal = params.v[4].z > 0.5;
+        let octaves = u32(params.v[4].w);
+        var c: vec4<f32>;
+        if params.v[6].x > 0.5 {
+            let st = vec4<i32>(params.v[5]);
+            c = vec4<f32>(
+                turbulence_value_stitch(0u, l, frequency, octaves, fractal, st),
+                turbulence_value_stitch(1u, l, frequency, octaves, fractal, st),
+                turbulence_value_stitch(2u, l, frequency, octaves, fractal, st),
+                turbulence_value_stitch(3u, l, frequency, octaves, fractal, st),
+            );
+        } else {
+            c = vec4<f32>(
+                turbulence_value(0u, l, frequency, octaves, fractal),
+                turbulence_value(1u, l, frequency, octaves, fractal),
+                turbulence_value(2u, l, frequency, octaves, fractal),
+                turbulence_value(3u, l, frequency, octaves, fractal),
+            );
+        }
+        let n = vec4<f32>(c.rgb * c.a, c.a);
+        m = vec4<f32>(store_f16(n.x), store_f16(n.y), store_f16(n.z), store_f16(n.w));
+    }
+    let u = vec4<f32>(straight(m), m.a);
+    let shift = params.v[0].x * vec2<f32>(
+        u[u32(params.v[1].x)] - 0.5,
+        u[u32(params.v[1].y)] - 0.5,
+    );
+    let f = params.fwd;
+    let moved = vec2<f32>(f.x * shift.x + f.z * shift.y, f.y * shift.x + f.w * shift.y);
+    let q = vec2<i32>(floor(canvas_pos(p) + moved));
+    // The layer's pixel there, if it is in the subregion (`fs_copy`).
+    let at = vec2<f32>(q) + vec2<f32>(0.5) - vec2<f32>(params.inv_t.z);
+    return load_a(q) * in_sub(to_layer(at));
+}
+
 // v[0].xy: the base frequency; v[0].z: 1 for fractalNoise; v[0].w: the octaves.
 // v[1]: the stitch info (width, wrap x, height, wrap y), or w = 0 for no
 // stitching (v[1].w is then the flag, 1 for stitching).

@@ -27,7 +27,7 @@ use crate::filter::{
 };
 
 /// The entry points of `shaders/filter.wgsl`.
-const ENTRIES: [&str; 15] = [
+const ENTRIES: [&str; 16] = [
     "fs_convert",
     "fs_copy",
     "fs_source_alpha",
@@ -40,6 +40,7 @@ const ENTRIES: [&str; 15] = [
     "fs_blur",
     "fs_displace",
     "fs_turbulence",
+    "fs_displace_turbulence",
     "fs_tile",
     "fs_convolve",
     "fs_lighting",
@@ -185,7 +186,11 @@ impl Compositor {
             let passes = ENTRIES
                 .iter()
                 .map(|&entry| {
-                    let layout = if entry == "fs_turbulence" { &two } else { &one };
+                    let layout = if entry == "fs_turbulence" || entry == "fs_displace_turbulence" {
+                        &two
+                    } else {
+                        &one
+                    };
                     (
                         entry,
                         super::fullscreen_pipeline(
@@ -242,6 +247,12 @@ impl Compositor {
             self.release(src);
             return self.empty();
         }
+        if self.is_fused()
+            && let Some(done) = self.displace_by_turbulence(&src, &fe, &plan, region_px)
+        {
+            self.release(src);
+            return done;
+        }
         let n = plan.nodes.len();
         let mut g = Graph {
             slots: (0..n + 3).map(|_| None).collect(),
@@ -295,6 +306,92 @@ impl Compositor {
             self.release(tex);
         }
         result
+    }
+
+    /// A graph of a turbulence and a displacement of the layer by it, over the
+    /// whole filter region, in the same colour space, in one pass: the passes of
+    /// the copy of the layer, of the noise and of the displacement make the same
+    /// pixels (`fs_displace_turbulence`). `None` if the graph is anything else.
+    fn displace_by_turbulence(
+        &mut self,
+        src: &Tex,
+        fe: &Fe,
+        plan: &Plan,
+        region_px: PixelRect,
+    ) -> Option<Tex> {
+        let [noise, shift] = &plan.nodes[..] else {
+            return None;
+        };
+        let FeOp::Turbulence {
+            fractal,
+            frequency,
+            octaves,
+            seed,
+            stitch,
+        } = &noise.op
+        else {
+            return None;
+        };
+        let FeOp::DisplacementMap {
+            scale,
+            x_channel,
+            y_channel,
+        } = &shift.op
+        else {
+            return None;
+        };
+        if !matches!(shift.inputs[..], [FeInput::Source, FeInput::Node(0)])
+            || noise.sub != plan.region
+            || shift.sub != plan.region
+            || noise.linear != shift.linear
+        {
+            return None;
+        }
+        // What the copy of the layer holds, and what the displacement draws.
+        let copy = region_px.intersect(src.bounds);
+        if copy.is_empty() {
+            return None;
+        }
+        let reach = (fe.stretch * f64::from(scale.abs()) * 0.5).ceil() as i32 + 2;
+        let region = copy.grow(reach, reach).intersect(region_px);
+        let sub = plan.region;
+        let key = self.turbulence_tables(*seed);
+        let mut v = [0.0f32; 28];
+        let mut freq = [f64::from(frequency[0]), f64::from(frequency[1])];
+        if *stitch {
+            let (tx, ty, tw, th) = (sub.x0, sub.y0, sub.width(), sub.height());
+            let adjust = |f: f64, size: f64| -> f64 {
+                if f == 0.0 || size <= 0.0 {
+                    return f;
+                }
+                let lo = (size * f).floor() / size;
+                let hi = (size * f).ceil() / size;
+                if f / lo < hi / f { lo } else { hi }
+            };
+            freq = [adjust(freq[0], tw), adjust(freq[1], th)];
+            let width = (tw * freq[0] + 0.5) as i32;
+            let height = (th * freq[1] + 0.5) as i32;
+            let wrap_x = (tx * freq[0] + 4096.0 + f64::from(width)) as i32;
+            let wrap_y = (ty * freq[1] + 4096.0 + f64::from(height)) as i32;
+            v[20] = width as f32;
+            v[21] = wrap_x as f32;
+            v[22] = height as f32;
+            v[23] = wrap_y as f32;
+            v[24] = 1.0;
+        }
+        v[0] = *scale;
+        v[4] = *x_channel as f32;
+        v[5] = *y_channel as f32;
+        v[16] = freq[0] as f32;
+        v[17] = freq[1] as f32;
+        v[18] = f32::from(u8::from(*fractal));
+        v[19] = *octaves as f32;
+        let pipeline = self.filter_pipeline("fs_displace_turbulence");
+        let target = self.target(region);
+        let params = fe.params(sub, &v);
+        let extra = &self.turbulence_tables[&key];
+        self.run_pass_with(&pipeline, src.input(), src.input(), &params, Some(extra), &target);
+        Some(target)
     }
 
     /// The slot `input` reads, converted to `want` (sRGB if true, linear if

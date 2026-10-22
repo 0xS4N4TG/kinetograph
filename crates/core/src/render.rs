@@ -19,7 +19,7 @@ use crate::box_shadow::BoxShadow;
 use crate::cache::{self, Inputs, LayerCache};
 use crate::canvas;
 use crate::color::Color;
-use crate::compositor::{BlendLayer, BlendSource, Compositor, Readback, Tex};
+use crate::compositor::{BLEND_SLOTS, BlendLayer, BlendSource, Compositor, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::gif::{Gif, Gifs, gif_sources, open_gif};
 use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
@@ -207,6 +207,9 @@ pub struct Renderer {
     pixels: Option<(u64, Vec<u8>)>,
     /// Frames that were repeats of the one before.
     repeats: u64,
+    /// Above 0 while the children of a fused group are drawn
+    /// (`draw_fused_group`): what they wait to be blended stays together.
+    group_depth: u32,
 }
 
 impl Renderer {
@@ -274,6 +277,7 @@ impl Renderer {
             repeat_of: None,
             pixels: None,
             repeats: 0,
+            group_depth: 0,
         };
         renderer.ensure_image_renderer(fresh.has_pictures())?;
         renderer.install_assets(fresh);
@@ -308,6 +312,8 @@ impl Renderer {
             != (self.scene.width, self.scene.height, self.margin);
         // What a cached group drew depends on the space it was blended in.
         let respaced = scene.blend_space != self.scene.blend_space;
+        crate::profile::add_value("margin", f64::from(margin));
+        crate::profile::add_value("resized", f64::from(u8::from(resized)));
         if resized || respaced || fresh.rebound {
             self.clear_layer_cache();
         }
@@ -501,6 +507,16 @@ impl Renderer {
     /// With frame reuse on, a frame equal to the one started just before it
     /// is not drawn (`set_frame_reuse`, `PendingFrame::is_repeat`).
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
+        if crate::profile::passes() {
+            if !self.compositor.is_timing_passes() {
+                self.compositor.set_pass_timing(true);
+            }
+            let stages = crate::profile::stages();
+            self.vello.set_pass_timing(&self.device, true, stages);
+            if let Some(images) = &mut self.vello_images {
+                images.set_pass_timing(&self.device, true, stages);
+            }
+        }
         let timer = crate::profile::start();
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
         crate::profile::add_since("resolve", timer);
@@ -540,11 +556,70 @@ impl Renderer {
             let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
             crate::profile::add_since("gpu_sync", timer);
         }
+        if crate::profile::passes() {
+            self.record_pass_profile();
+        }
         Ok(PendingFrame {
             work: Work::Drawn { readback, seq },
             width,
             height,
         })
+    }
+
+    /// Adds the GPU time of the passes of the frame `start_frame` just encoded to the profile: each compositor pass kind
+    /// (`gpu_<name>` ms, `gpun_<name>` count, `gput_<name>` texels), each Vello compute pass (`gpu_v_<label>`), and
+    /// each Vello page (one `render_to_texture`) in time order as `pgpx_<i>` (pixels), `pgspan_<i>` (ms from its first
+    /// compute pass's start to its last one's end), `pgbusy_<i>` (ms in its compute passes) and `pgn_<i>` (passes).
+    fn record_pass_profile(&mut self) {
+        use crate::profile::{add_dyn, add_gpu};
+        // The frame's first start, last end and the sum of its passes' times, on the GPU's clock.
+        let (mut first, mut last, mut busy) = (f64::MAX, 0.0f64, 0.0);
+        for pass in self.compositor.take_pass_times() {
+            add_gpu(pass.name, pass.ms);
+            add_dyn(&format!("gput_{}", pass.name), pass.texels as f64);
+            first = first.min(pass.begin_ms);
+            last = last.max(pass.begin_ms + pass.ms);
+            busy += pass.ms;
+        }
+        let mut times = self.vello.take_pass_times(&self.device, &self.queue);
+        let images = self
+            .vello_images
+            .as_mut()
+            .map(|v| v.take_pass_times(&self.device, &self.queue));
+        let main = times.len();
+        times.extend(images.into_iter().flatten());
+        // (renderer, render) -> (first start, last end, busy, passes, tag)
+        let mut pages: std::collections::BTreeMap<(bool, u64), (f64, f64, f64, u32, u64)> =
+            Default::default();
+        for (i, t) in times.iter().enumerate() {
+            add_gpu(&format!("v_{}", t.label), t.ms);
+            first = first.min(t.begin_ms);
+            last = last.max(t.begin_ms + t.ms);
+            busy += t.ms;
+            let page = pages
+                .entry((i >= main, t.render))
+                .or_insert((f64::MAX, 0.0, 0.0, 0, t.tag));
+            page.0 = page.0.min(t.begin_ms);
+            page.1 = page.1.max(t.begin_ms + t.ms);
+            page.2 += t.ms;
+            page.3 += 1;
+        }
+        let mut pages: Vec<_> = pages.into_values().collect();
+        pages.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (i, (start, end, busy, n, tag)) in pages.iter().enumerate() {
+            add_dyn(&format!("pgpx_{i:02}"), (tag & !(1 << 63)) as f64);
+            add_dyn(&format!("pgcv_{i:02}"), (tag >> 63) as f64);
+            add_dyn(&format!("pgspan_{i:02}"), end - start);
+            add_dyn(&format!("pgbusy_{i:02}"), *busy);
+            add_dyn(&format!("pgn_{i:02}"), f64::from(*n));
+        }
+        add_dyn("vpages", pages.len() as f64);
+        if last > first {
+            // `gspan` is the time from the frame's first timed pass to its last; what `gbusy` leaves out of it is
+            // the copies, buffer clears and uploads, and the gaps between passes.
+            add_dyn("gspan", last - first);
+            add_dyn("gbusy", busy);
+        }
     }
 
     /// The pixels of a frame from `start_frame`.
@@ -634,6 +709,7 @@ impl Renderer {
         // A frame that failed may have left these half way.
         self.cache_path.clear();
         self.cache_paused = 0;
+        self.group_depth = 0;
         self.cache.begin_frame();
         self.compositor.begin_frame();
         self.clear_pages();
@@ -733,7 +809,8 @@ impl Renderer {
             canvas = self.draw_layer(
                 layer, layers, parent, placement, 1.0, canvas, below, pending,
             )?;
-            if pending.len() >= MAX_PENDING {
+            // (Not inside a fused group, whose layers go in one pass.)
+            if pending.len() >= MAX_PENDING && self.group_depth == 0 {
                 canvas = self.blend_pending(canvas, pending);
             }
             self.compositor.submit_if_large();
@@ -822,11 +899,11 @@ impl Renderer {
         let tex = self.timed(Stage::Composite, |s| {
             s.compositor.from_srgb8(&s.vello_view, area, region)
         });
-        pending.push(Pending {
-            what: Waiting::Loose(tex),
-            opacity: 1.0,
-            mode: BlendMode::Normal,
-        });
+        pending.push(Pending::new(
+            Waiting::Loose(tex),
+            1.0,
+            BlendMode::Normal,
+        ));
         Ok(())
     }
 
@@ -843,6 +920,8 @@ impl Renderer {
                 source: p.source(),
                 opacity: p.opacity,
                 mode: p.mode,
+                opens: p.opens,
+                closes: p.closes,
             })
             .collect();
         let canvas = self.timed(Stage::Composite, |s| {
@@ -850,6 +929,9 @@ impl Renderer {
         });
         drop(layers);
         for waiting in pending.drain(..) {
+            if let Some((id, inputs)) = &waiting.note {
+                self.cache.note(id.clone(), inputs);
+            }
             match waiting.what {
                 Waiting::Cached { id, hit } => self.cache.put_back(id, hit),
                 Waiting::Kept {
@@ -867,6 +949,7 @@ impl Renderer {
                         self.cache.note(id, &inputs);
                     }
                 }
+                Waiting::Mask { .. } => {}
             }
         }
         canvas
@@ -979,14 +1062,15 @@ impl Renderer {
         if let Some(id) = &id {
             match self.cache.take(id, &inputs) {
                 Ok(hit) => {
-                    pending.push(Pending {
-                        what: Waiting::Cached {
+                    census(layer, "cache", opacity);
+                    pending.push(Pending::new(
+                        Waiting::Cached {
                             id: id.clone(),
                             hit,
                         },
                         opacity,
-                        mode: layer.blend_mode,
-                    });
+                        layer.blend_mode,
+                    ));
                     return Ok(canvas);
                 }
                 Err(Some(stale)) => self.compositor.release(stale),
@@ -1001,8 +1085,9 @@ impl Renderer {
             && let Some((leaf, clip, bounds)) =
                 self.page_source(layer, siblings, parent, placement)?
         {
-            pending.push(Pending {
-                what: Waiting::Page {
+            census(layer, "page", opacity);
+            pending.push(Pending::new(
+                Waiting::Page {
                     id,
                     inputs,
                     leaf,
@@ -1010,11 +1095,18 @@ impl Renderer {
                     bounds,
                 },
                 opacity,
-                mode: layer.blend_mode,
-            });
+                layer.blend_mode,
+            ));
             return Ok(canvas);
         }
 
+        // A group of plain leaves goes to the blend as they are, in one pass.
+        if !unchanged && let Some(clip) = self.fusable_group(layer, siblings, parent, placement)? {
+            census(layer, "fused", opacity);
+            return self.draw_fused_group(layer, parent, opacity, id, inputs, clip, canvas, pending);
+        }
+
+        census(layer, "tex", opacity);
         // The backdrop is only built for a layer that blurs it: the canvas so
         // far, under anything the enclosing groups have behind them.
         let needs_backdrop = uses_backdrop(siblings, layer);
@@ -1037,8 +1129,8 @@ impl Renderer {
         let Some(texture) = drawn? else {
             return Ok(canvas);
         };
-        pending.push(Pending {
-            what: match id {
+        pending.push(Pending::new(
+            match id {
                 Some(id) => Waiting::Kept {
                     id,
                     inputs,
@@ -1047,8 +1139,174 @@ impl Renderer {
                 None => Waiting::Loose(texture),
             },
             opacity,
-            mode: layer.blend_mode,
-        });
+            layer.blend_mode,
+        ));
+        Ok(canvas)
+    }
+
+    /// Whether the group `layer` can be composited by `blend_many` from its
+    /// children, in one pass, instead of into a texture of its own that is
+    /// then blended (and masked, if it has a clip): it has no effects, mask,
+    /// matte, motion blur or 3D placement, blends per pixel, does not look at
+    /// the backdrop, and everything in it that is drawn blends per pixel and
+    /// is one layer of the pass (the pass has `BLEND_SLOTS` of them, a clip
+    /// uses one). `Some(clip)` if so: the page of its clip and the box the
+    /// clip keeps, if it has one.
+    #[allow(clippy::type_complexity)]
+    fn fusable_group(
+        &mut self,
+        layer: &ResolvedLayer,
+        siblings: &[ResolvedLayer],
+        parent: Affine,
+        placement: Option<Placement>,
+    ) -> Result<Option<Option<((wgpu::TextureView, PixelRect), PixelRect)>>> {
+        let ResolvedKind::Group {
+            children,
+            preserve3d: false,
+            glsl: None,
+            ..
+        } = &layer.kind
+        else {
+            return Ok(None);
+        };
+        let reason = if !self.compositor.is_fused() {
+            "unfused"
+        } else if self.cache_paused > 0 {
+            "paused"
+        } else if self.group_depth > 0 {
+            "nested"
+        } else if placement.is_some() {
+            "placed"
+        } else if !layer.motion.is_empty() {
+            "motion"
+        } else if !layer.effects.is_empty() {
+            "effects"
+        } else if layer.mask.is_some() || layer.matte.is_some() {
+            "mask"
+        } else if !self.compositor.blends_per_pixel(layer.blend_mode) {
+            "mode"
+        } else if uses_backdrop(siblings, layer) {
+            "backdrop"
+        } else {
+            ""
+        };
+        if !reason.is_empty() {
+            census_why(layer, reason);
+            return Ok(None);
+        }
+        let clipped = usize::from(layer.clip.is_some());
+        match self.fused_layers(children) {
+            Some(n) if n + clipped <= BLEND_SLOTS => {}
+            Some(n) => {
+                census_why(layer, &format!("big{n}"));
+                return Ok(None);
+            }
+            None => {
+                census_why(layer, "children");
+                return Ok(None);
+            }
+        }
+        let Some(clip) = &layer.clip else {
+            return Ok(Some(None));
+        };
+        let matrix = parent * layer.transform.matrix();
+        let path = self.clip_path(clip, layer)?;
+        let keep = self.path_bounds(&path, matrix);
+        if keep.is_empty() {
+            return Ok(None);
+        }
+        Ok(self
+            .clip_page_target(layer, matrix)?
+            .map(|(page, area)| Some(((page, area), keep))))
+    }
+
+    /// How many layers of a `blend_many` pass `layers` take when `draw_layers_into`
+    /// draws them for a fused group, or `None` if one of them is not
+    /// something that pass can composite in place: a 3D group, or a layer
+    /// that is blended whole-texture (a non-separable blend mode).
+    fn fused_layers(&self, layers: &[ResolvedLayer]) -> Option<usize> {
+        let mut n = 0;
+        for layer in layers {
+            if is_hidden(layer) || is_matte_source(layers, layer) {
+                continue;
+            }
+            if !self.compositor.blends_per_pixel(layer.blend_mode) {
+                return None;
+            }
+            match &layer.kind {
+                ResolvedKind::Group {
+                    preserve3d: true, ..
+                } => return None,
+                ResolvedKind::Group { children, .. } if needs_no_buffer(layer) => {
+                    n += self.fused_layers(children)?;
+                }
+                // A group of groups is left to be drawn one group at a time:
+                // fused as a whole it would keep the groups in it from being
+                // fused themselves.
+                ResolvedKind::Group { .. } => return None,
+                _ => n += 1,
+            }
+        }
+        Some(n)
+    }
+
+    /// Draws the children of the group `layer` for `blend_many` to composite
+    /// as a group (`fusable_group`), leaving them in `pending` marked as one.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_fused_group<'a>(
+        &mut self,
+        layer: &'a ResolvedLayer,
+        parent: Affine,
+        opacity: f32,
+        id: Option<Vec<String>>,
+        inputs: Inputs<'a>,
+        clip: Option<((wgpu::TextureView, PixelRect), PixelRect)>,
+        canvas: Tex,
+        pending: &mut Vec<Pending<'a>>,
+    ) -> Result<Tex> {
+        let ResolvedKind::Group { children, .. } = &layer.kind else {
+            unreachable!("only groups are fused");
+        };
+        let start = pending.len();
+        self.cache_path.push(layer.id.clone());
+        self.group_depth += 1;
+        let drawn = self.draw_layers_into(
+            children,
+            parent * layer.transform.matrix(),
+            canvas,
+            None,
+            pending,
+        );
+        self.group_depth -= 1;
+        self.cache_path.pop();
+        let canvas = drawn?;
+        if pending.len() == start {
+            return Ok(canvas);
+        }
+        debug_assert!(pending.len() - start + usize::from(clip.is_some()) <= BLEND_SLOTS);
+        pending[start].opens = true;
+        let closes = Some((opacity, layer.blend_mode));
+        let note = id.map(|id| (id, inputs));
+        match clip {
+            None => {
+                let last = pending.last_mut().expect("the group drew something");
+                last.closes = closes;
+                last.note = note;
+            }
+            Some(((view, area), keep)) => {
+                let mut mask = Pending::new(
+                    Waiting::Mask {
+                        clip: (view, area),
+                        bounds: keep,
+                    },
+                    1.0,
+                    BlendMode::Normal,
+                );
+                mask.closes = closes;
+                mask.note = note;
+                pending.push(mask);
+            }
+        }
         Ok(canvas)
     }
 
@@ -1611,10 +1869,16 @@ impl Renderer {
     /// children of preserve3d groups are left out, and are drawn the way
     /// they always were.
     fn plan_pages(&mut self, layers: &[ResolvedLayer]) -> Result<()> {
+        let timer = crate::profile::start();
         let mut leaves = Vec::new();
         self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
+        crate::profile::add_since("pp_collect", timer);
+        let timer = crate::profile::start();
         let regions: Vec<PixelRect> = leaves.iter().map(|leaf| leaf.region).collect();
         let packed = pack_pages(&regions);
+        crate::profile::add_since("pp_pack", timer);
+        crate::profile::add_value("leaves", leaves.len() as f64);
+        let timer = crate::profile::start();
         for page in packed {
             self.vello_scene.reset();
             let mut has_images = false;
@@ -1635,7 +1899,15 @@ impl Renderer {
                         );
                     }
                     None => {
+                        let timer = crate::profile::start();
                         self.encode_leaf(leaf.layer, leaf.matrix, None)?;
+                        if timer.is_some() {
+                            let kind = format!("{:?}", leaf.layer.kind);
+                            let kind = kind.split([' ', '(', '{']).next().unwrap_or("");
+                            let ms = crate::profile::since(timer).unwrap_or(0.0);
+                            crate::profile::add_dyn(&format!("enc_{kind}"), ms);
+                            crate::profile::add_dyn(&format!("encn_{kind}"), 1.0);
+                        }
                         has_images |= draws_image(&leaf.layer.kind);
                     }
                 }
@@ -1660,6 +1932,7 @@ impl Renderer {
                 target: None,
             });
         }
+        crate::profile::add_since("pp_encode", timer);
         Ok(())
     }
 
@@ -2381,7 +2654,9 @@ impl Renderer {
             Some(&mut self.vello)
         }
         .expect("scenes with image layers get an image renderer");
-        renderer
+        renderer.set_timing_tag(u64::from(area.width()) * u64::from(area.height()));
+        let timer = crate::profile::start();
+        let rendered = renderer
             .render_to_texture(
                 &self.device,
                 &self.queue,
@@ -2393,8 +2668,10 @@ impl Renderer {
                     height: area.height(),
                     antialiasing_method: AaConfig::Msaa16,
                 },
-            )
-            .map_err(|e| Error::Render(format!("Vello render failed: {e}")))
+            );
+        crate::profile::add_since("vello_cpu", timer);
+        crate::profile::add_value("vello_n", 1.0);
+        rendered.map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
 }
 
@@ -2455,6 +2732,8 @@ impl canvas::Effects for CanvasPasses<'_> {
             Some(&mut *self.vello)
         }
         .expect("scenes with a shadow or a filter get an image renderer");
+        // The top bit marks a canvas command's own render.
+        renderer.set_timing_tag((1 << 63) | u64::from(region.width()) * u64::from(region.height()));
         renderer
             .render_to_texture(
                 self.device,
@@ -2938,6 +3217,26 @@ struct Pending<'a> {
     what: Waiting<'a>,
     opacity: f32,
     mode: BlendMode,
+    /// A fused group opens before this layer, or closes after it with this
+    /// opacity and blend mode (`BlendLayer`).
+    opens: bool,
+    closes: Option<(f32, BlendMode)>,
+    /// What the layer cache is told when this is blended: the fused group
+    /// that closes here was made from `inputs` (`LayerCache::note`).
+    note: Option<(Vec<String>, Inputs<'a>)>,
+}
+
+impl<'a> Pending<'a> {
+    fn new(what: Waiting<'a>, opacity: f32, mode: BlendMode) -> Pending<'a> {
+        Pending {
+            what,
+            opacity,
+            mode,
+            opens: false,
+            closes: None,
+            note: None,
+        }
+    }
 }
 
 /// The texture of a `Pending` layer, and what is to be done with it once it
@@ -2968,6 +3267,12 @@ enum Waiting<'a> {
         clip: Option<(wgpu::TextureView, PixelRect)>,
         bounds: PixelRect,
     },
+    /// No layer: the clip of a fused group (`BlendSource::GroupMask`), its
+    /// page and the box the clip keeps.
+    Mask {
+        clip: (wgpu::TextureView, PixelRect),
+        bounds: PixelRect,
+    },
 }
 
 impl Pending<'_> {
@@ -2984,6 +3289,10 @@ impl Pending<'_> {
                 clip: clip.as_ref().map(|(view, area)| (view, *area)),
                 bounds: *bounds,
             },
+            Waiting::Mask { clip, bounds } => BlendSource::GroupMask {
+                clip: (&clip.0, clip.1),
+                bounds: *bounds,
+            },
         }
     }
 }
@@ -2992,6 +3301,41 @@ impl Pending<'_> {
 /// costs the passes that `blend_many` makes of them; more waiting layers
 /// would hold more textures than the pool is likely to have.
 const MAX_PENDING: usize = 16;
+
+/// Temporary: `KG_CENSUS=1` prints one line per drawn layer.
+fn census(layer: &ResolvedLayer, path: &str, opacity: f32) {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var_os("KG_CENSUS").is_some()) {
+        return;
+    }
+    let kind = format!("{:?}", layer.kind);
+    let kind = kind.split([' ', '(', '{']).next().unwrap_or("");
+    let effects: Vec<String> = layer
+        .effects
+        .iter()
+        .map(|e| {
+            let n = format!("{e:?}");
+            n.split([' ', '(', '{']).next().unwrap_or("").to_string()
+        })
+        .collect();
+    eprintln!(
+        "CENSUS {path} {kind} fx=[{}] clip={} mask={} matte={} blend={:?} op={opacity:.2} id={}",
+        effects.join(","),
+        layer.clip.is_some(),
+        layer.mask.is_some(),
+        layer.matte.is_some(),
+        layer.blend_mode,
+        layer.id
+    );
+}
+
+/// Temporary: why `KG_CENSUS=1` finds a group not fused.
+fn census_why(layer: &ResolvedLayer, why: &str) {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *ON.get_or_init(|| std::env::var_os("KG_CENSUS").is_some()) {
+        eprintln!("WHY {why} id={}", layer.id);
+    }
+}
 
 fn is_hidden(layer: &ResolvedLayer) -> bool {
     if layer.motion.is_empty() {

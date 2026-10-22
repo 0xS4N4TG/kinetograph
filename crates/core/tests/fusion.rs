@@ -42,7 +42,7 @@ fn fused_passes_draw_the_same_pixels() {
 fn fused_passes_leave_the_other_scenes_alone() {
     // Inset shadows with a blur and a spread, drop shadows, blurs, masks and
     // clips: scenes the fusions must not touch.
-    for scene in ["shadows", "mattes", "masks", "camera", "blend-blur"] {
+    for scene in ["shadows", "mattes", "masks", "camera", "blend-blur", "filter-graph"] {
         same_with_and_without_fusion(&format!("tests/scenes/{scene}.json"), &[0, 15]);
     }
 }
@@ -95,7 +95,7 @@ fn runs_of_blends_draw_the_same_pixels() {
 /// ellipses and triangles, at random colours, alphas and angles), some with a
 /// stroke, some with a sharp inset shadow, in groups and out of them, at
 /// opacities and in blend modes. All from `seed`.
-fn random_scene(seed: u64, count: usize) -> Scene {
+fn random_scene(seed: u64, count: usize, srgb: bool) -> Scene {
     let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
     let mut next = move |n: u64| {
         state = state
@@ -173,35 +173,51 @@ fn random_scene(seed: u64, count: usize) -> Scene {
             r = next(360)
         ));
     }
-    // Every third layer goes into a group, so there are groups without a
-    // buffer and groups with one.
+    // Layers go into groups of three to five, so there are groups without a
+    // buffer, groups with one, clipped groups, groups that blend, and groups
+    // too big for one pass.
     let mut grouped = Vec::new();
-    for (g, chunk) in layers.chunks(3).enumerate() {
+    let mut rest = &layers[..];
+    let mut g = 0;
+    while !rest.is_empty() {
+        let size = [3, 5, 2, 9, 4][g % 5].min(rest.len());
+        let (chunk, tail) = rest.split_at(size);
+        rest = tail;
         let effects = if g % 4 == 3 {
             r##", "effects": [{"type": "dropShadow", "x": 2, "y": 2, "blur": 3, "color": "#00000080"}]"##
         } else {
             ""
         };
         let opacity = if g % 5 == 4 { 0.8 } else { 1.0 };
+        let clip = if g % 3 == 1 {
+            r#", "clip": {"kind": "polygon", "points": [[0, 0], [320, 10], [300, 230], [20, 240]]}"#
+        } else {
+            ""
+        };
+        let mode = ["normal", "normal", "multiply", "normal", "screen", "normal", "normal"][g % 7];
         grouped.push(format!(
-            r#"{{"id": "g{g}", "type": "group", "opacity": {opacity}, "children": [{}]{effects}}}"#,
+            r#"{{"id": "g{g}", "type": "group", "opacity": {opacity}, "blendMode": "{mode}", "children": [{}]{effects}{clip}}}"#,
             chunk.join(",")
         ));
+        g += 1;
     }
     let json = format!(
-        r##"{{"width": 320, "height": 240, "fps": 30, "durationInFrames": 10, "background": "#303a52",
+        r##"{{{space}"width": 320, "height": 240, "fps": 30, "durationInFrames": 10, "background": "#303a52",
             "layers": [{}]}}"##,
-        grouped.join(",")
+        grouped.join(","),
+        space = if srgb { r#""blendSpace": "srgb","# } else { "" }
     );
     Scene::from_json(&json, std::path::PathBuf::new()).unwrap()
 }
 
 #[test]
 fn random_scenes_draw_the_same_pixels() {
-    for seed in 1..=6 {
+    for seed in 1..=12 {
+        // Half of them composite in sRGB, as every DOM island does.
+        let srgb = seed % 2 == 0;
         let frames = [0, 1, 2, 3];
         let run = |on: bool| {
-            let mut renderer = Renderer::new(random_scene(seed, 150)).unwrap();
+            let mut renderer = Renderer::new(random_scene(seed, 150, srgb)).unwrap();
             renderer.set_pass_fusion(on);
             renderer.set_layer_cache(true);
             frames
@@ -282,5 +298,68 @@ fn runs_of_blends_draw_the_same_pixels_in_srgb() {
     let (fused, plain) = (run(true), run(false));
     for (frame, (a, b)) in frames.iter().zip(fused.iter().zip(&plain)) {
         assert!(a == b, "frame {frame}: fusion changed the pixels in sRGB");
+    }
+}
+
+/// Cards the way the DOM painter makes them: a group of a colour and a
+/// grain multiplied over it, and a clipped group of text-like shapes.
+fn cards_json(srgb: bool) -> String {
+    let mut layers = Vec::new();
+    for i in 0..6 {
+        let x = 20 + (i % 3) * 100;
+        let y = 20 + (i / 3) * 110;
+        layers.push(format!(
+            r##"{{"id": "card{i}", "type": "group", "transform": {{"x": {x}, "y": {y}}}, "children": [
+                {{"id": "bg{i}", "type": "group", "children": [
+                    {{"id": "colour{i}", "type": "shape", "shape": {{"kind": "roundedRect", "width": 90, "height": 100, "radius": 8}}, "fill": "#c8a46e"}},
+                    {{"id": "grain{i}", "type": "shape", "shape": {{"kind": "roundedRect", "width": 90, "height": 100, "radius": 8}}, "fill": "#8899aa66", "blendMode": "multiply"}}
+                ]}},
+                {{"id": "content{i}", "type": "group", "clip": {{"kind": "polygon", "points": [[5, 5], [85, 12], [80, 95], [8, 90]]}}, "children": [
+                    {{"id": "a{i}", "type": "shape", "shape": {{"kind": "rect", "width": 60, "height": 20}}, "fill": "#224466", "transform": {{"x": 10, "y": 15}}}},
+                    {{"id": "b{i}", "type": "shape", "shape": {{"kind": "ellipse", "width": 70, "height": 40}}, "fill": "#aa3322cc", "transform": {{"x": 30, "y": 40, "rotation": 20}}}}
+                ]}},
+                {{"id": "veil{i}", "type": "group", "opacity": 0.5, "children": [
+                    {{"id": "v1{i}", "type": "shape", "shape": {{"kind": "rect", "width": 50, "height": 50}}, "fill": "#ffffff", "transform": {{"x": 5, "y": 5}}}},
+                    {{"id": "v2{i}", "type": "shape", "shape": {{"kind": "rect", "width": 50, "height": 50}}, "fill": "#000000", "transform": {{"x": 25, "y": 25}}}}
+                ]}}
+            ]}}"##
+        ));
+    }
+    format!(
+        r##"{{{space}"width": 320, "height": 240, "fps": 30, "durationInFrames": 8, "background": "#303a52",
+            "layers": [{}]}}"##,
+        layers.join(","),
+        space = if srgb { r#""blendSpace": "srgb","# } else { "" }
+    )
+}
+
+#[test]
+fn groups_of_leaves_draw_the_same_pixels_in_fewer_passes() {
+    for srgb in [false, true] {
+        let json = cards_json(srgb);
+        let run = |on: bool| {
+            let mut renderer =
+                Renderer::new(Scene::from_json(&json, std::path::PathBuf::new()).unwrap()).unwrap();
+            renderer.set_pass_fusion(on);
+            renderer.set_layer_cache(true);
+            let timed = renderer.set_pass_timing(true);
+            let mut frames = Vec::new();
+            let mut passes = 0;
+            for f in 0..6 {
+                frames.push(renderer.render_frame(f).unwrap().rgba);
+                let taken = renderer.take_pass_times().len();
+                if f == 0 {
+                    passes = taken;
+                }
+            }
+            (frames, timed.then_some(passes))
+        };
+        let ((fused, fused_passes), (plain, plain_passes)) = (run(true), run(false));
+        for (frame, (a, b)) in fused.iter().zip(&plain).enumerate() {
+            assert!(a == b, "srgb {srgb} frame {frame}: fusing groups changed the pixels");
+        }
+        if let (Some(f), Some(p)) = (fused_passes, plain_passes) {
+            assert!(f * 2 < p, "{f} passes fused, {p} not");
+        }
     }
 }

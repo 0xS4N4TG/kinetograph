@@ -18,10 +18,24 @@ pub fn enabled() -> bool {
 /// Whether the GPU is waited for after each frame is submitted (`KINETOGRAPH_PROFILE_SYNC`).
 pub fn sync() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| enabled() && std::env::var_os("KINETOGRAPH_PROFILE_SYNC").is_some())
+    *ON.get_or_init(|| {
+        enabled()
+            && (std::env::var_os("KINETOGRAPH_PROFILE_SYNC").is_some()
+                || std::env::var_os("KINETOGRAPH_PROFILE_PASSES").is_some())
+    })
+}
+
+/// Whether the GPU time of each kind of compositor pass and of each Vello page is recorded too
+/// (`KINETOGRAPH_PROFILE_PASSES`; with `KINETOGRAPH_PROFILE_PASSES=stages` each Vello dispatch gets its own compute
+/// pass, so each shader has a time). Implies `sync`: the frame loop waits for the GPU after each frame, so the numbers
+/// are for a render slowed by that.
+pub fn passes() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| enabled() && std::env::var_os("KINETOGRAPH_PROFILE_PASSES").is_some())
 }
 
 thread_local! {
+    static DYN_KEYS: RefCell<BTreeMap<String, &'static str>> = const { RefCell::new(BTreeMap::new()) };
     static LOCAL: RefCell<BTreeMap<&'static str, f64>> = const { RefCell::new(BTreeMap::new()) };
 }
 
@@ -121,4 +135,33 @@ pub fn forward(caller: &str) {
 /// The shared stages, as they stand.
 pub fn shared() -> BTreeMap<&'static str, f64> {
     SHARED.lock().unwrap().clone()
+}
+
+/// Adds `value` to this thread's stage called `name`, a name made at run time (one leaked string for each distinct name,
+/// a few hundred for the life of the process).
+pub fn add_dyn(name: &str, value: f64) {
+    if !enabled() {
+        return;
+    }
+    let key = DYN_KEYS.with(|keys| {
+        *keys
+            .borrow_mut()
+            .entry(name.to_string())
+            .or_insert_with(|| Box::leak(name.to_string().into_boxed_str()) as &'static str)
+    });
+    add_value(key, value);
+}
+
+/// Adds one pass of kind `name` that took `ms` on the GPU to this thread's `gpu_<name>` (ms) and `gpun_<name>` (count).
+pub fn add_gpu(name: &str, ms: f64) {
+    add_dyn(&format!("gpu_{name}"), ms);
+    add_dyn(&format!("gpun_{name}"), 1.0);
+}
+
+/// Whether each Vello shader is timed alone (`KINETOGRAPH_PROFILE_PASSES=stages`).
+pub fn stages() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        passes() && std::env::var("KINETOGRAPH_PROFILE_PASSES").is_ok_and(|v| v == "stages")
+    })
 }

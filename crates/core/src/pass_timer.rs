@@ -25,6 +25,8 @@ pub struct PassTime {
     pub name: &'static str,
     /// From the pass's start to its end on the GPU.
     pub ms: f64,
+    /// The pass's start, in ms on the GPU's clock (the same as Vello's passes').
+    pub begin_ms: f64,
     /// Width times height of the texture the pass draws into.
     pub texels: u64,
 }
@@ -125,6 +127,7 @@ impl PassTimer {
             .map(|(i, (name, texels))| PassTime {
                 name,
                 ms: ticks[2 * i + 1].saturating_sub(ticks[2 * i]) as f64 * ns_per_tick / 1e6,
+                begin_ms: ticks[2 * i] as f64 * ns_per_tick / 1e6,
                 texels,
             })
             .collect()
