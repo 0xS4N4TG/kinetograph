@@ -193,13 +193,20 @@ pub enum BlendSource<'a> {
         clip: Option<(&'a wgpu::TextureView, PixelRect)>,
         bounds: PixelRect,
     },
+    /// No layer: the group the layers before it make is multiplied by the
+    /// alpha of a clip's page, and this closes the group (`BlendLayer::closes`).
+    /// `bounds` is the box the clipped group can be non-zero in.
+    GroupMask {
+        clip: (&'a wgpu::TextureView, PixelRect),
+        bounds: PixelRect,
+    },
 }
 
 impl BlendSource<'_> {
     fn bounds(&self) -> PixelRect {
         match self {
             BlendSource::Texture(t) => t.bounds,
-            BlendSource::Page { bounds, .. } => *bounds,
+            BlendSource::Page { bounds, .. } | BlendSource::GroupMask { bounds, .. } => *bounds,
         }
     }
 }
@@ -211,6 +218,14 @@ pub struct BlendLayer<'a> {
     pub source: BlendSource<'a>,
     pub opacity: f32,
     pub mode: BlendMode,
+    /// A group opens before this layer: the layers up to the one that
+    /// `closes` it are composited, in order, into a buffer that starts
+    /// transparent, and that goes over the canvas with the opacity and blend
+    /// mode `closes` gives. The same pixels as drawing the group into a
+    /// texture of its own and blending that, in one pass. A group is at most
+    /// `BLEND_SLOTS` layers and does not nest.
+    pub opens: bool,
+    pub closes: Option<(f32, BlendMode)>,
 }
 
 /// How many recorded passes and copies `submit_if_large` lets wait.
@@ -218,7 +233,7 @@ const SUBMIT_OPS: u32 = 512;
 
 /// How many layers one `blend_many` pass composites (`SLOTS` in
 /// `shaders/blend_many.wgsl`).
-const BLEND_SLOTS: usize = 7;
+pub const BLEND_SLOTS: usize = 7;
 
 /// Texels that a `blend_many` pass may draw beyond twice what its layers
 /// cover, so that small layers still go together.
@@ -973,42 +988,56 @@ impl Compositor {
         // was. A page leaf is always separable and has something to draw.
         let alone = |l: &BlendLayer| {
             matches!(l.source, BlendSource::Texture(_))
+                && !l.opens
+                && l.closes.is_none()
                 && (mode_index(l.mode) >= FIRST_NON_SEPARABLE_MODE || l.source.bounds().is_empty())
         };
         let area = |r: PixelRect| i64::from(r.width()) * i64::from(r.height());
+        // The end of the run that starts at `i`: a group, or one layer.
+        let run_end = |i: usize| {
+            if !layers[i].opens {
+                return i + 1;
+            }
+            let close = layers[i..]
+                .iter()
+                .position(|l| l.closes.is_some())
+                .expect("a group that opens closes");
+            i + close + 1
+        };
         let mut i = 0;
         while i < layers.len() {
             let first = &layers[i];
-            let mut end = i + 1;
+            let mut end = run_end(i);
+            let mut region = group_region(&layers[i..end]);
             if self.fusion && !alone(first) {
-                let (mut region, mut covered) =
-                    (first.source.bounds(), area(first.source.bounds()));
-                while end < layers.len() && end - i < BLEND_SLOTS && !alone(&layers[end]) {
-                    let bounds = layers[end].source.bounds();
-                    let (joined, together) = (region.union(bounds), covered + area(bounds));
+                let mut covered: i64 = layers[i..end].iter().map(|l| area(l.source.bounds())).sum();
+                while end < layers.len() && !alone(&layers[end]) {
+                    let next = run_end(end);
+                    if next - i > BLEND_SLOTS {
+                        break;
+                    }
+                    let bounds = group_region(&layers[end..next]);
+                    let together: i64 =
+                        covered + layers[end..next].iter().map(|l| area(l.source.bounds())).sum::<i64>();
+                    let joined = region.union(bounds);
                     // Not so spread out that the pass draws mostly what none
                     // of the layers touches.
                     if area(joined) > 2 * together + BLEND_SLACK {
                         break;
                     }
-                    (region, covered, end) = (joined, together, end + 1);
+                    (region, covered, end) = (joined, together, next);
                 }
             }
             match (first.source, end - i) {
-                (BlendSource::Texture(texture), 1) => {
+                (BlendSource::Texture(texture), 1) if !first.opens => {
                     dst = self.blend(dst, texture, first.opacity, first.mode);
                 }
                 _ => {
                     let group = &layers[i..end];
-                    let region = group
-                        .iter()
-                        .fold(PixelRect::EMPTY, |r, l| r.union(l.source.bounds()));
                     self.update(&mut dst, region, |c, dst, temp| {
                         c.blend_many_pass(dst, group, temp);
                     });
-                    dst.bounds = group
-                        .iter()
-                        .fold(dst.bounds, |r, l| r.union(l.source.bounds()));
+                    dst.bounds = dst.bounds.union(region);
                 }
             }
             crate::profile::add_value("bm_groups", 1.0);
@@ -1023,7 +1052,7 @@ impl Compositor {
     fn blend_many_pass(&self, dst: &Tex, layers: &[BlendLayer], target: &Tex) {
         // Bit 16 of a slot's mode says to composite in sRGB, as in `blend`.
         let space_bit: u32 = if self.srgb_blend { 1 << 16 } else { 0 };
-        let mut bytes = Vec::with_capacity(48 + 64 * BLEND_SLOTS);
+        let mut bytes = Vec::with_capacity(48 + 96 * BLEND_SLOTS);
         let mut put = |values: &[[u8; 4]]| bytes.extend(values.iter().flatten());
         let int = |v: i32| v.to_le_bytes();
         let placed = |origin: [i32; 2], size: [u32; 2]| {
@@ -1043,9 +1072,13 @@ impl Compositor {
         // The two textures of each slot, `a` and `b`; a slot that does not use
         // one binds the canvas.
         let mut views: Vec<(&wgpu::TextureView, &wgpu::TextureView)> = Vec::new();
+        let mut opened = 0;
         for slot in 0..BLEND_SLOTS {
             match layers.get(slot) {
                 Some(l) => {
+                    if l.opens {
+                        opened = slot;
+                    }
                     let b = l.source.bounds();
                     let (kind, place, clip, a_view, b_view) = match l.source {
                         BlendSource::Texture(t) => (
@@ -1063,6 +1096,17 @@ impl Compositor {
                             clip: Some(clip),
                             ..
                         } => (2, paged(leaf), paged(clip), leaf.0, clip.0),
+                        BlendSource::GroupMask { clip, .. } => {
+                            (3, [[0; 4]; 4], paged(clip), &dst.view, clip.0)
+                        }
+                    };
+                    let flags = u32::from(l.opens) | (u32::from(l.closes.is_some()) << 1);
+                    let (gopacity, gmode) = l.closes.unwrap_or((0.0, BlendMode::Normal));
+                    // The box the group can be non-zero in, once it is closed.
+                    let g = if l.closes.is_some() {
+                        group_region(&layers[opened..=slot])
+                    } else {
+                        PixelRect::EMPTY
                     };
                     put(&place);
                     put(&clip);
@@ -1071,12 +1115,19 @@ impl Compositor {
                         l.opacity.to_le_bytes(),
                         (mode_index(l.mode) | space_bit).to_le_bytes(),
                         kind.to_le_bytes(),
+                        flags.to_le_bytes(),
+                    ]);
+                    put(&[
+                        gopacity.to_le_bytes(),
+                        (mode_index(gmode) | space_bit).to_le_bytes(),
+                        [0; 4],
                         [0; 4],
                     ]);
+                    put(&[int(g.x0), int(g.y0), int(g.x1), int(g.y1)]);
                     views.push((a_view, b_view));
                 }
                 None => {
-                    put(&[[0; 4]; 16]);
+                    put(&[[0; 4]; 24]);
                     views.push((&dst.view, &dst.view));
                 }
             }
@@ -3434,6 +3485,20 @@ fn mesh_bounds(vertices: &[mesh::Vertex]) -> PixelRect {
 }
 
 /// The number the shader's `blend_fn` switches on.
+/// The box a run of `blend_many` layers can change: for a group the box its
+/// layers can be non-zero in, cut to its clip's, for a single layer its own.
+fn group_region(run: &[BlendLayer]) -> PixelRect {
+    let mut region = PixelRect::EMPTY;
+    let mut clip = None;
+    for layer in run {
+        match layer.source {
+            BlendSource::GroupMask { bounds, .. } => clip = Some(bounds),
+            _ => region = region.union(layer.source.bounds()),
+        }
+    }
+    clip.map_or(region, |c| region.intersect(c))
+}
+
 fn mode_index(mode: BlendMode) -> u32 {
     match mode {
         BlendMode::Normal => 0,

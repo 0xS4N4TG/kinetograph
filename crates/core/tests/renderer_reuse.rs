@@ -103,6 +103,9 @@ fn the_same_scene_again_keeps_its_layer_cache() {
     let scene = load("tests/scenes/clip-paths.json");
     let mut renderer = Renderer::new(scene.clone()).unwrap();
     renderer.set_layer_cache(true);
+    // A layer that stays the same is cached from its third frame on (a plain
+    // leaf, or a group of them, is only noted in the first).
+    renderer.render_frame(10).unwrap();
     renderer.render_frame(10).unwrap();
     let (hits_before, _) = renderer.layer_cache_counts();
     // The scene arrives again, as a video built from per-frame scenes sends

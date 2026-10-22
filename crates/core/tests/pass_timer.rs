@@ -25,7 +25,7 @@ fn timing_passes_draws_the_same_pixels_and_names_them() {
 
     let times = renderer.take_pass_times();
     assert!(!times.is_empty());
-    assert!(times.iter().any(|t| t.name == "blend"));
+    assert!(times.iter().any(|t| t.name == "blend" || t.name == "blend many"));
     assert!(times.iter().all(|t| t.ms >= 0.0 && t.ms.is_finite()));
     // Taken: the next call has nothing until another frame is drawn.
     assert!(renderer.take_pass_times().is_empty());

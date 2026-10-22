@@ -17,6 +17,17 @@
 // `fs_to_linear` does, and, with a clip (`clipped`), multiplied by the alpha
 // of the clip's page (`b`, placed by `clip`) as `fs_mask` does, each rounded
 // to half floats as the textures of those passes would be.
+//
+// A run of layers can be a group, composited into a buffer of its own that starts
+// transparent, as the pass that blends the group's children into the group's
+// texture would, and then over the canvas with the group's opacity and blend
+// mode, as the pass that blends the group's texture would. `flags` bit 0 says
+// the group opens before the layer, bit 1 that it closes after it (the group's
+// opacity and mode are `gopacity` and `gmode`, the box it can be non-zero in
+// `gbounds`). A slot of kind 3 holds no layer: it multiplies the group so far
+// by the alpha of a clip's page (`b`), as `fs_mask` does, and closes the group.
+// The accumulator is rounded to half floats after every step, as the group's
+// texture would be.
 
 const SLOTS: u32 = 7u;
 
@@ -30,8 +41,16 @@ struct Slot {
     opacity: f32,
     mode: u32,
     // 0: a texture. 1: a leaf in a page. 2: a leaf in a page, with a clip.
+    // 3: the clip of a group (no layer).
     kind: u32,
-    pad: u32,
+    // Bit 0: a group opens before this slot's layer. Bit 1: it closes after it.
+    flags: u32,
+    gopacity: f32,
+    gmode: u32,
+    pad0: u32,
+    pad1: u32,
+    // The canvas pixels the group can be non-zero in.
+    gbounds: vec4<i32>,
 }
 
 struct Params {
@@ -124,6 +143,33 @@ fn inside(q: vec2<i32>, size: vec2<i32>) -> bool {
     return !(any(q < vec2<i32>(0)) || any(q >= size));
 }
 
+fn in_box(xy: vec2<i32>, box: vec4<i32>) -> bool {
+    return !(any(xy < box.xy) || any(xy >= box.zw));
+}
+
+// `s` composited over `b` in the mode of `mode_word` (the mode, and in bit 16
+// whether to composite in sRGB), the result rounded to half floats.
+fn composite(b: vec4<f32>, s: vec4<f32>, mode_word: u32) -> vec4<f32> {
+    let mode = mode_word & 0xffffu;
+    let a = s.a + b.a * (1.0 - s.a);
+    if (mode_word >> 16u) == 1u {
+        // As `fs_blend` in sRGB (`Scene::blend_space`): the formulas on
+        // the encoded colours, then back to linear light.
+        if a <= 0.0 {
+            return vec4<f32>(0.0);
+        }
+        let cb = linear_to_srgb(clamp(unpremultiply(b), vec3<f32>(0.0), vec3<f32>(1.0)));
+        let cs = linear_to_srgb(clamp(unpremultiply(s), vec3<f32>(0.0), vec3<f32>(1.0)));
+        let mixed_e = blend_fn(mode, cb, cs);
+        let rgb_e = cs * s.a * (1.0 - b.a) + cb * b.a * (1.0 - s.a) + s.a * b.a * mixed_e;
+        let rgb = srgb_to_linear(rgb_e / a) * a;
+        return vec4<f32>(store_f16(rgb.x), store_f16(rgb.y), store_f16(rgb.z), store_f16(a));
+    }
+    let mixed = blend_fn(mode, unpremultiply(b), unpremultiply(s));
+    let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
+    return vec4<f32>(store_f16(rgb.x), store_f16(rgb.y), store_f16(rgb.z), store_f16(a));
+}
+
 @fragment
 fn fs_blend_many(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let xy = vec2<i32>(p.xy) + params.target_origin.xy;
@@ -132,54 +178,62 @@ fn fs_blend_many(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     if inside(cq, params.canvas.zw) {
         b = textureLoad(canvas_tex, cq, 0);
     }
+    var acc = vec4<f32>(0.0);
+    var open = false;
     for (var i = 0u; i < params.count.x; i++) {
         let slot = params.slots[i];
-        if any(xy < slot.bounds.xy) || any(xy >= slot.bounds.zw) {
-            continue;
+        if (slot.flags & 1u) != 0u {
+            open = true;
+            acc = vec4<f32>(0.0);
         }
-        let q = xy - slot.place.xy;
-        var layer = vec4<f32>(0.0);
-        if inside(q, slot.place.zw) {
-            layer = load_a_slot(i, q);
-        }
-        if slot.kind != 0u {
-            // The page's pixel as `fs_to_linear` converts it.
-            let linear = vec4<f32>(srgb_to_linear(layer.rgb) * layer.a, layer.a);
-            layer = vec4<f32>(
-                store_f16(linear.x), store_f16(linear.y), store_f16(linear.z), store_f16(linear.w));
-            if slot.kind == 2u {
-                // And as `fs_mask` masks it by the clip's alpha.
+        if slot.kind == 3u {
+            var masked = vec4<f32>(0.0);
+            if in_box(xy, slot.bounds) {
                 var clip = vec4<f32>(0.0);
                 let cq2 = xy - slot.clip.xy;
                 if inside(cq2, slot.clip.zw) {
                     clip = load_b_slot(i, cq2);
                 }
-                let masked = layer * clamp(clip.a, 0.0, 1.0);
+                let m = acc * clamp(clip.a, 0.0, 1.0);
+                masked = vec4<f32>(store_f16(m.x), store_f16(m.y), store_f16(m.z), store_f16(m.w));
+            }
+            acc = masked;
+        } else if in_box(xy, slot.bounds) {
+            let q = xy - slot.place.xy;
+            var layer = vec4<f32>(0.0);
+            if inside(q, slot.place.zw) {
+                layer = load_a_slot(i, q);
+            }
+            if slot.kind != 0u {
+                // The page's pixel as `fs_to_linear` converts it.
+                let linear = vec4<f32>(srgb_to_linear(layer.rgb) * layer.a, layer.a);
                 layer = vec4<f32>(
-                    store_f16(masked.x), store_f16(masked.y), store_f16(masked.z), store_f16(masked.w));
+                    store_f16(linear.x), store_f16(linear.y), store_f16(linear.z), store_f16(linear.w));
+                if slot.kind == 2u {
+                    // And as `fs_mask` masks it by the clip's alpha.
+                    var clip = vec4<f32>(0.0);
+                    let cq2 = xy - slot.clip.xy;
+                    if inside(cq2, slot.clip.zw) {
+                        clip = load_b_slot(i, cq2);
+                    }
+                    let masked = layer * clamp(clip.a, 0.0, 1.0);
+                    layer = vec4<f32>(
+                        store_f16(masked.x), store_f16(masked.y), store_f16(masked.z), store_f16(masked.w));
+                }
+            }
+            let s = layer * slot.opacity;
+            if open {
+                acc = composite(acc, s, slot.mode);
+            } else {
+                b = composite(b, s, slot.mode);
             }
         }
-        let s = layer * slot.opacity;
-        let mode = slot.mode & 0xffffu;
-        let a = s.a + b.a * (1.0 - s.a);
-        if (slot.mode >> 16u) == 1u {
-            // As `fs_blend` in sRGB (`Scene::blend_space`): the formulas on
-            // the encoded colours, then back to linear light.
-            if a <= 0.0 {
-                b = vec4<f32>(0.0);
-                continue;
+        if (slot.flags & 2u) != 0u {
+            open = false;
+            if in_box(xy, slot.gbounds) {
+                b = composite(b, acc * slot.gopacity, slot.gmode);
             }
-            let cb = linear_to_srgb(clamp(unpremultiply(b), vec3<f32>(0.0), vec3<f32>(1.0)));
-            let cs = linear_to_srgb(clamp(unpremultiply(s), vec3<f32>(0.0), vec3<f32>(1.0)));
-            let mixed_e = blend_fn(mode, cb, cs);
-            let rgb_e = cs * s.a * (1.0 - b.a) + cb * b.a * (1.0 - s.a) + s.a * b.a * mixed_e;
-            let rgb = srgb_to_linear(rgb_e / a) * a;
-            b = vec4<f32>(store_f16(rgb.x), store_f16(rgb.y), store_f16(rgb.z), store_f16(a));
-            continue;
         }
-        let mixed = blend_fn(mode, unpremultiply(b), unpremultiply(s));
-        let rgb = s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed;
-        b = vec4<f32>(store_f16(rgb.x), store_f16(rgb.y), store_f16(rgb.z), store_f16(a));
     }
     return b;
 }
