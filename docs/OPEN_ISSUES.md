@@ -139,9 +139,12 @@ Papercut scales; launch does not. Each worker already has its own `Renderer` (it
 recorder; `packages/cli/src/render-worker.ts`), so the `Shared.gpu` mutex in `crates/node/src/lib.rs` only serves the
 c1 in-process path and is not the cause (an earlier note here said it was; that was wrong). At c4 on launch, node
 runs at about 700% CPU, the GPU at 70 to 85%, and CPU time per frame doubles from c1 (user+sys 22.5 s to 45.6 s). What
-the doubled CPU is doing is not known: candidates are work each worker repeats (shader and pipeline compiles in its own
-Skia and wgpu contexts, video decode and seeking per chunk, font and image loads) and the S08 to S09 JS. Next step: a
-CPU sample of a c4 launch render. Out of the loop, launch spends 2.0 s in the audio mix
+the doubled CPU is doing: a `sample` of c1 and c4 (2026-10-22, noisy machine) shows no repeated per-worker work. Every
+CPU stage slows about 2x at c4 (js 3.6 to 7.9 ms, dom_native 2.0 to 3.9, finish 1.6 to 8.3, yuv 0 to 2.8), V8 major GC
+appears, and memmove is as large as all of libnode (830 samples at c1, 1664 at c4): frame copies and memory bandwidth.
+So it is contention, and the levers are fewer bytes copied per frame (read back GPU-converted YUV planes, branch
+`perf/gpu-yuv`, instead of RGBA plus a CPU conversion; drop the hand-off copies) and less JS per frame. Larger
+semi-space, other chunk sizes and a wider window gave nothing. Out of the loop, launch spends 2.0 s in the audio mix
 (`OfflineAudioContext.startRendering`) and 1.0 s flushing the encoder and muxing audio. A fused readback pass (one pass
 for to-linear-premul plus encode) gave no speedup and was reverted. Launch is about 3x Remotion against a 5x goal.
 
@@ -151,3 +154,6 @@ On unmodified `exp/skia-backend` (5c998c4), launch at `--concurrency 2` decoded 
 `06c47d3e...`; c1, c3, c4 and c6 matched. One run, so not yet known to be repeatable. Rendering must be a pure
 function of (project, frame), so this is a bug: find the differing frames, then the cause (chunk boundaries are the
 first suspect: state carried across frames, video seeks, motion-blur sub-frames or the previous-frame reuse).
+Retried 2026-10-22: 4 plain c2 runs, 3 under heavy CPU load and runs with chunk sizes 1, 3, 7 and 13 all matched, so
+chunk boundaries are ruled out. Either a rare race or a fault in that one run. Next: a loop of c2 renders that keeps
+the mp4 of any mismatch.
