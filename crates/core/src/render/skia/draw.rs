@@ -301,7 +301,7 @@ impl Translator {
             let bounds = self.layer_bounds(layer, scale);
             let mut p = Paint::default();
             p.set_blend_mode(comp.blend);
-            self.save_layer(canvas, bounds, &p, None);
+            self.save_layer_with(canvas, bounds, &p, None, true);
             let n = layer.motion.len() as f32;
             for sub in &layer.motion {
                 if sub.opacity <= 0.0 {
@@ -433,6 +433,11 @@ impl Translator {
     }
 
     fn save_layer(&mut self, canvas: &Canvas, bounds: Option<Rect>, paint: &Paint, backdrop: Option<&ImageFilter>) {
+        self.save_layer_with(canvas, bounds, paint, backdrop, false);
+    }
+
+    /// `f16`: the layer keeps half-float colour (a sum of many faint terms loses its low bits in 8).
+    fn save_layer_with(&mut self, canvas: &Canvas, bounds: Option<Rect>, paint: &Paint, backdrop: Option<&ImageFilter>, f16: bool) {
         self.stats.save_layers += 1;
         let clip = canvas.device_clip_bounds().unwrap_or(skia_safe::IRect::new(0, 0, 0, 0));
         let area = match bounds {
@@ -448,6 +453,9 @@ impl Translator {
         };
         self.stats.layer_px += area;
         let mut rec = SaveLayerRec::default().paint(paint);
+        if f16 {
+            rec = rec.flags(skia_safe::canvas::SaveLayerFlags::F16_COLOR_TYPE);
+        }
         if let Some(b) = bounds.as_ref() {
             rec = rec.bounds(b);
         }
