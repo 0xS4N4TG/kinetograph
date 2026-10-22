@@ -101,3 +101,17 @@ All fixed on 2026-10-21 except one, which was not reproduced:
 
 The workarounds in `examples/launch` (`Over`, the split `How` span, the `<Sequence from>` around a video, rounded cue
 frames) can now be removed.
+
+## 7. Speed experiments not run (logged 2026-10-22)
+
+Two cheap tests of the JS that runs every frame (about 10 ms of a launch-film frame at concurrency 1). Neither has been
+measured. Run each on part of the launch film at `--concurrency 1` with `KINETOGRAPH_PROFILE` on, and compare the JS
+time per frame with the current build. Keep the result either way.
+
+- **React Compiler.** Compile the project with the React Compiler before esbuild bundles it (a test-only esbuild
+  `onLoad` plugin that runs `babel-plugin-react-compiler`; the Rust port emits the same code). Its memoisation can only
+  skip components that do not read the frame, so the gain is bounded by how much of the tree is static. If it saves
+  2 ms or more a frame, ship it through the Rust port so bundling does not slow down.
+- **Bun as the runtime.** Run the CLI under Bun (JavaScriptCore) instead of Node (V8). Unknowns: whether the N-API
+  addon loads, and whether it loads in each worker thread. If it is faster, it can only be an option used when Bun is
+  installed, since `npx kinetograph` starts Node. Bun as the bundler is not worth testing: bundling runs once a render.
