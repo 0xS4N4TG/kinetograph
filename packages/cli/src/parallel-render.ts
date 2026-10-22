@@ -10,6 +10,7 @@ import { CliError } from './errors.js';
 import { ProfileLog, now, profiling, stage } from './profile.js';
 import type { FromWorker, ToWorker, WorkerInit } from './render-worker.js';
 import type { WorkerSpec } from './source.js';
+import { nowMs } from './time.js';
 
 /**
  * Frames in a chunk: the unit a worker takes. A worker keeps the composition's state, its video decoders and its layer
@@ -25,6 +26,13 @@ export const CHUNK_FRAMES = Number(process.env.KINETOGRAPH_CHUNK) || 60;
  * (3 MB at 1080p), so this bounds the memory: a worker takes no chunk that starts further on.
  */
 const windowFrames = (workers: number): number => Number(process.env.KINETOGRAPH_WINDOW) || (workers + 1) * CHUNK_FRAMES;
+
+/**
+ * Milliseconds the main thread spends pushing buffered frames before it yields to the event loop (0: never, the old
+ * behaviour). A long run of in-order frames (a whole chunk arrives at once when the frame it waited on lands) used to
+ * block this thread for a second or more, and a worker that had finished its chunk sat idle until the run ended.
+ */
+const DRAIN_SLICE_MS = process.env.KINETOGRAPH_DRAIN_MS === undefined ? 2 : Number(process.env.KINETOGRAPH_DRAIN_MS);
 
 /** A running chunk with fewer than twice this many frames left is not split: the new chunk's start would cost more than it saves. */
 const MIN_SPLIT = Number(process.env.KINETOGRAPH_MINSPLIT) || 8;
@@ -147,8 +155,13 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       if (idle.length > 0) split();
     };
 
+    let drainScheduled = false;
+    /** Pushes the in-order frames that have arrived, in slices so the messages behind them (a worker's finished chunk) are handled between. */
     const drain = (): void => {
+      if (drainScheduled) return;
       try {
+        const sliceStart = nowMs();
+        let pushed = 0;
         for (let message = arrived.get(nextFrame); message; message = arrived.get(nextFrame)) {
           if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
           arrived.delete(nextFrame);
@@ -158,7 +171,20 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
           if (log) pushMs += now() - t;
           options.onPushed?.(nextFrame);
           nextFrame += 1;
+          pushed += 1;
+          if (DRAIN_SLICE_MS > 0 && nowMs() - sliceStart >= DRAIN_SLICE_MS && arrived.has(nextFrame)) {
+            // The window moved: hand out what it now allows, then let queued messages run before the next slice.
+            give();
+            drainScheduled = true;
+            setImmediate(() => {
+              drainScheduled = false;
+              drain();
+            });
+            if (log) log.add({ kind: 'drain', t0: sliceStart, t1: now(), pushed, more: 1 });
+            return;
+          }
         }
+        if (log && pushed > 0) log.add({ kind: 'drain', t0: sliceStart, t1: now(), pushed, more: 0 });
         give();
         if (nextFrame > last) for (const worker of pool) worker.postMessage({ type: 'finish' } satisfies ToWorker);
       } catch (error) {
@@ -191,6 +217,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
           give();
           break;
         case 'chunk':
+          if (log) log.add({ kind: 'chunk-msg', first: message.first, last: message.last, t: now() });
           lane.lastEnd = lane.job?.last ?? lane.lastEnd;
           lane.job = undefined;
           idle.push(lane);
