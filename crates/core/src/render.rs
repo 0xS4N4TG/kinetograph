@@ -49,6 +49,11 @@ const SHAPE_TOLERANCE: f64 = 0.1;
 /// frame to the next (`cache.rs`).
 const CACHE_BYTES: u64 = 1 << 30;
 
+/// How many bytes of Vello page targets are kept from one frame to the next.
+/// A frame with hundreds of pages makes them all, and without a limit they
+/// stay for the rest of the render, in every worker.
+const PAGE_TARGET_BYTES: u64 = 512 << 20;
+
 /// Tightly packed RGBA8, straight alpha, sRGB-encoded.
 pub struct Frame {
     pub width: u32,
@@ -160,7 +165,11 @@ pub struct Renderer {
     pages: Pages,
     /// The Vello targets of the frame's pages once it is over, to be drawn
     /// into again by the next frame's.
-    page_targets: HashMap<(u32, u32), Vec<wgpu::TextureView>>,
+    /// Each with the number of the release that put it back, oldest first in
+    /// its list; the oldest go when they take more than `PAGE_TARGET_BYTES`.
+    page_targets: HashMap<(u32, u32), Vec<(u64, wgpu::TextureView)>>,
+    /// Counts the targets given back to `page_targets`.
+    page_target_seq: u64,
     /// Above 0 while the samples of a motion-blurred layer are drawn: they are
     /// copies of one layer with the same ids, and only their average is kept.
     /// Their leaves are also rasterised into the box they cover, not the
@@ -225,6 +234,7 @@ impl Renderer {
             cache_path: Vec::new(),
             pages: Pages::default(),
             page_targets: HashMap::new(),
+            page_target_seq: 0,
             cache_paused: 0,
         };
         renderer.ensure_image_renderer(fresh.has_pictures())?;
@@ -1626,6 +1636,7 @@ impl Renderer {
             .entry(size)
             .or_default()
             .pop()
+            .map(|(_, target)| target)
             .unwrap_or_else(|| new_vello_target(&self.device, size));
         self.pages.pages[page].target_size = size;
         let previous = std::mem::replace(&mut self.vello_scene, scene);
@@ -1645,10 +1656,36 @@ impl Renderer {
                 self.page_targets
                     .entry(page.target_size)
                     .or_default()
-                    .push(target);
+                    .push((self.page_target_seq, target));
+                self.page_target_seq += 1;
             }
         }
         self.pages.page_of.clear();
+        self.trim_page_targets();
+    }
+
+    /// Drops the page targets released longest ago until the rest fit in
+    /// `PAGE_TARGET_BYTES`.
+    fn trim_page_targets(&mut self) {
+        let bytes = |k: &(u32, u32)| u64::from(k.0) * u64::from(k.1) * 4;
+        let mut held: u64 = self
+            .page_targets
+            .iter()
+            .map(|(k, v)| bytes(k) * v.len() as u64)
+            .sum();
+        while held > PAGE_TARGET_BYTES {
+            let oldest = self
+                .page_targets
+                .iter()
+                .filter_map(|(k, v)| v.first().map(|(seq, _)| (*seq, *k)))
+                .min();
+            let Some((_, key)) = oldest else { break };
+            if let Some(list) = self.page_targets.get_mut(&key) {
+                list.remove(0);
+                held -= bytes(&key);
+            }
+        }
+        self.page_targets.retain(|_, v| !v.is_empty());
     }
 
     /// The box of the padded canvas's pixels.
