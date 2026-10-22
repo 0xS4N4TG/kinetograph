@@ -42,7 +42,7 @@ fn fused_passes_draw_the_same_pixels() {
 fn fused_passes_leave_the_other_scenes_alone() {
     // Inset shadows with a blur and a spread, drop shadows, blurs, masks and
     // clips: scenes the fusions must not touch.
-    for scene in ["shadows", "mattes", "masks", "camera", "blend-blur"] {
+    for scene in ["shadows", "mattes", "masks", "camera", "blend-blur", "filter-graph"] {
         same_with_and_without_fusion(&format!("tests/scenes/{scene}.json"), &[0, 15]);
     }
 }
