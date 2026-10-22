@@ -260,6 +260,8 @@ impl Renderer {
             != (self.scene.width, self.scene.height, self.margin);
         // What a cached group drew depends on the space it was blended in.
         let respaced = scene.blend_space != self.scene.blend_space;
+        crate::profile::add_value("margin", f64::from(margin));
+        crate::profile::add_value("resized", f64::from(u8::from(resized)));
         if resized || respaced || fresh.rebound {
             self.clear_layer_cache();
         }
@@ -406,6 +408,9 @@ impl Renderer {
     /// the caller starts the next one, and `finish_frame` collects it.
     /// Frames are finished in the order they were started.
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
+        if crate::profile::passes() && !self.compositor.is_timing_passes() {
+            self.compositor.set_pass_timing(true);
+        }
         let timer = crate::profile::start();
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;
         crate::profile::add_since("resolve", timer);
@@ -424,6 +429,11 @@ impl Renderer {
     /// The pixels of a frame from `start_frame`.
     pub fn finish_frame(&mut self, pending: PendingFrame) -> Result<Frame> {
         let rgba = self.compositor.finish_readback(pending.readback)?;
+        if crate::profile::passes() {
+            for pass in self.compositor.take_pass_times() {
+                crate::profile::add_gpu(pass.name, pass.ms);
+            }
+        }
         Ok(Frame {
             width: pending.width,
             height: pending.height,

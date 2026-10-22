@@ -21,7 +21,15 @@ pub fn sync() -> bool {
     *ON.get_or_init(|| enabled() && std::env::var_os("KINETOGRAPH_PROFILE_SYNC").is_some())
 }
 
+/// Whether the GPU time of each kind of compositor pass is recorded too (`KINETOGRAPH_PROFILE_PASSES`): the frame loop
+/// waits for the GPU after each frame, like `KINETOGRAPH_PROFILE_SYNC`, so the numbers are for a render slowed by that.
+pub fn passes() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| enabled() && std::env::var_os("KINETOGRAPH_PROFILE_PASSES").is_some())
+}
+
 thread_local! {
+    static GPU_KEYS: RefCell<BTreeMap<String, (&'static str, &'static str)>> = const { RefCell::new(BTreeMap::new()) };
     static LOCAL: RefCell<BTreeMap<&'static str, f64>> = const { RefCell::new(BTreeMap::new()) };
 }
 
@@ -73,4 +81,19 @@ pub fn take_local() -> BTreeMap<&'static str, f64> {
 /// The shared stages, as they stand.
 pub fn shared() -> BTreeMap<&'static str, f64> {
     SHARED.lock().unwrap().clone()
+}
+
+/// Adds one pass of kind `name` that took `ms` on the GPU to this thread's `gpu_<name>` (ms) and `gpun_<name>` (count).
+pub fn add_gpu(name: &str, ms: f64) {
+    let (time, count) = GPU_KEYS.with(|keys| {
+        *keys.borrow_mut().entry(name.to_string()).or_insert_with(|| {
+            // One leaked pair per kind of pass: a handful of names for the life of the process.
+            (
+                Box::leak(format!("gpu_{name}").into_boxed_str()) as &'static str,
+                Box::leak(format!("gpun_{name}").into_boxed_str()) as &'static str,
+            )
+        })
+    });
+    add_value(time, ms);
+    add_value(count, 1.0);
 }

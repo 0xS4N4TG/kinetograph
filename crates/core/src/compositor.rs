@@ -682,6 +682,11 @@ impl Compositor {
         self.timer.is_some()
     }
 
+    /// Whether the pass timer is on.
+    pub fn is_timing_passes(&self) -> bool {
+        self.timer.is_some()
+    }
+
     /// Turns the passes that do the work of several off (`false`) or back on.
     /// They draw exactly what the passes they replace draw, bit for bit; the
     /// switch is for tests that check that.
