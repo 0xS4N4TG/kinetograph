@@ -25,6 +25,10 @@ enum Role {
 mod metal;
 #[cfg(all(feature = "skia", target_os = "macos"))]
 use metal as native;
+#[cfg(all(feature = "skia", not(target_os = "macos")))]
+mod vulkan;
+#[cfg(all(feature = "skia", not(target_os = "macos")))]
+use vulkan as native;
 
 #[cfg(feature = "skia")]
 mod backend;

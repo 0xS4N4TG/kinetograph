@@ -223,7 +223,7 @@ impl Renderer {
         // cheaply.
         let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
 
-        let context = RenderContext::new();
+        let context = render_context();
         let (device, queue) = pollster::block_on(new_device(&context.instance))
             .ok_or_else(|| Error::Render("no compatible GPU adapter found".into()))?;
 
@@ -3860,6 +3860,27 @@ fn new_vello_target(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureVie
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// `RenderContext::new()`, except that on Linux and Windows a run with `KINETOGRAPH_BACKEND=skia` gets a Vulkan-only
+/// instance (Windows would otherwise default to D3D12, and Skia's Graphite shares wgpu's VkDevice;
+/// `render/skia/vulkan.rs`). An explicit `WGPU_BACKEND` still decides.
+fn render_context() -> RenderContext {
+    #[cfg(all(feature = "skia", not(target_os = "macos")))]
+    if std::env::var("KINETOGRAPH_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("skia"))
+        && wgpu::Backends::from_env().is_none()
+    {
+        // The rest is `RenderContext::new()`'s.
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            display: None,
+            backends: wgpu::Backends::VULKAN,
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+            backend_options: wgpu::BackendOptions::from_env_or_default(),
+        });
+        return RenderContext { instance, devices: Vec::new() };
+    }
+    RenderContext::new()
 }
 
 /// The GPU device, made as `vello::util::RenderContext::device` makes it

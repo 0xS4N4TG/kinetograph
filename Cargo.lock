@@ -1922,7 +1922,9 @@ dependencies = [
 name = "kinetograph-core"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "base64 0.23.1",
+ "cc",
  "dotlottie-rs",
  "ffmpeg-next",
  "glam",
