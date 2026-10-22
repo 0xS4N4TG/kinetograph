@@ -1,5 +1,7 @@
 "use client";
 
+// From snapcn (https://github.com/shadcn-labs/snapcn), MIT licence: see LICENSE beside this file.
+
 import {
   Easing,
   getRemotionEnvironment,

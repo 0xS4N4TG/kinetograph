@@ -1,3 +1,4 @@
+// From snapcn (https://github.com/shadcn-labs/snapcn), MIT licence: see LICENSE in this directory.
 export {
   mixOklch,
   oklchToRgb,
