@@ -22,7 +22,7 @@ fn skia_source() -> std::path::PathBuf {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let out = std::process::Command::new(cargo)
         // `--all-features`: skia-bindings is an optional dependency that the default features leave out of the listing.
-        .args(["metadata", "--all-features", "--format-version", "1", "--manifest-path"])
+        .args(["metadata", "--offline", "--all-features", "--format-version", "1", "--manifest-path"])
         .arg(format!("{manifest}/Cargo.toml"))
         .output()
         .expect("cargo metadata");
