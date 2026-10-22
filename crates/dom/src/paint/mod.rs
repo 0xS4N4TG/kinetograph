@@ -240,11 +240,40 @@ impl<'a> Painter<'a> {
     }
 
     /// The element's host-tree path (`$0.2`): the `data-kg-path` attribute the
-    /// front half sets, or a stand-in made from the node's id.
+    /// front half sets. A node without one (an anonymous block, a pseudo-element,
+    /// text) is named by where it sits under the nearest ancestor that has one,
+    /// not by its id: Blitz gives a node made again by a restyle a new id, and
+    /// the layers of a document edited from the frame before would not be the
+    /// layers of one built afresh (the layer cache finds layers by id).
     pub fn path_of(&self, node: &Node) -> String {
-        attr(node, "data-kg-path")
-            .map(str::to_string)
+        if let Some(path) = attr(node, "data-kg-path") {
+            return path.to_string();
+        }
+        self.path_below_a_path(node)
             .unwrap_or_else(|| format!("n{}", node.id.as_u64()))
+    }
+
+    fn path_below_a_path(&self, node: &Node) -> Option<String> {
+        let mut slots = Vec::new();
+        let mut cur = node;
+        loop {
+            let parent = self.doc.get_node(cur.parent.or(cur.layout_parent.get())?)?;
+            let at = if let Some(i) = parent.children.iter().position(|c| *c == cur.id) {
+                format!("c{i}")
+            } else if let Some(i) = parent.anonymous_blocks.iter().position(|c| *c == cur.id) {
+                format!("a{i}")
+            } else {
+                let layout = parent.layout_children.borrow();
+                let i = layout.as_ref()?.iter().position(|c| *c == cur.id)?;
+                format!("l{i}")
+            };
+            slots.push(at);
+            if let Some(path) = attr(parent, "data-kg-path") {
+                slots.reverse();
+                return Some(format!("{path}!{}", slots.join(".")));
+            }
+            cur = parent;
+        }
     }
 
     pub fn tag_of(&self, node: &Node) -> String {

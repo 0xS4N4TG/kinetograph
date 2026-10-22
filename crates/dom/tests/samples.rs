@@ -325,3 +325,58 @@ fn an_inline_block_scaled_frame_after_frame_draws_what_a_fresh_build_does() {
         );
     }
 }
+
+/// Nodes Blitz makes by itself (the block round text beside blocks, a pseudo-element) are made again when their
+/// element is restyled, with new ids. Their layers are named by where they sit, so a document edited from the
+/// frame before gives the ids of one built afresh.
+#[test]
+fn made_nodes_keep_their_layer_ids_across_edits() {
+    let page = |x: f64, color: &str| {
+        let mut r = request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0",
+            vec![el(
+                "div",
+                "$0.0",
+                &format!("color: {color}; transform: translateX({x}px)"),
+                vec![
+                    text("loose text before"),
+                    el("div", "$0.0.0", "height: 10px; background: #345", vec![]),
+                    text("loose text after"),
+                    el_attrs(
+                        "p",
+                        "$0.0.1",
+                        json!({ "class": "tag" }),
+                        &format!("opacity: {}", 1.0 - x / 100.0),
+                        vec![text("p")],
+                    ),
+                ],
+            )],
+        ));
+        r["stylesheets"] = json!([".tag::before { content: 'x '; color: red }"]);
+        r
+    };
+    let mut cache = IslandCache::default();
+    let mut fresh = IslandCache::default();
+    let mut ids = Vec::new();
+    for (frame, (x, color)) in [(0.0, "#111"), (3.0, "#111"), (6.0, "#222"), (9.0, "#222")]
+        .into_iter()
+        .enumerate()
+    {
+        let s = page(x, color);
+        let edited = drawn(&mut cache, &s, Some(frame as u64 + 1));
+        assert_eq!(edited, drawn(&mut fresh, &s, None), "frame {frame}");
+        ids.push(
+            edited
+                .split("\"id\":\"")
+                .skip(1)
+                .map(|t| t.split('"').next().unwrap().to_string())
+                .collect::<Vec<_>>(),
+        );
+    }
+    // The same layers, named the same, from one frame to the next (the first has no transform and full opacity,
+    // so the groups of the second and third elements are not in it).
+    assert!(ids[1..].windows(2).all(|w| w[0] == w[1]), "{ids:?}");
+    assert!(ids[0].iter().any(|id| id.contains('!')), "{:?}", ids[0]);
+}
