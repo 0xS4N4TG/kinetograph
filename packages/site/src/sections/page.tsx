@@ -91,7 +91,7 @@ export function Proof() {
           </div>
           <p className="mt-4 text-xs text-night/50">
             The bars fill at a quarter of real time. Method in{' '}
-            <a className="underline decoration-cobalt/40 underline-offset-2 hover:text-cobalt" href={doc('docs/HANDOFF.md')} target="_blank" rel="noreferrer">HANDOFF.md</a>.
+            <a className="underline decoration-cobalt/40 underline-offset-2 hover:text-cobalt" href={doc('README.md#build-and-run')} target="_blank" rel="noreferrer">the README</a>.
           </p>
         </Reveal>
 
@@ -472,7 +472,7 @@ export function Start() {
 
 const FAQ: [string, ReactNode][] = [
   ['Is there really no browser?', 'None in the render path, canvas and WebGL included. Node runs your code and a Rust addon draws it. Chrome for Testing appears only in our tests, as the reference we compare frames against.'],
-  ['Will my Remotion project render?', 'Most should, without edits: remotion and @remotion/* imports resolve to Kinetograph. The papercut project renders all 988 of its frames natively. What the engine cannot draw yet is reported with a warning, and kinetograph doctor lists it by frame. Known gaps are tracked in docs/OPEN_ISSUES.md.'],
+  ['Will my Remotion project render?', <>Most should, without edits: remotion and @remotion/* imports resolve to Kinetograph. The papercut project renders all 988 of its frames natively. What the engine cannot draw yet is reported with a warning, and kinetograph doctor lists it by frame. Known gaps are in the <a className="underline decoration-cobalt/40 underline-offset-2 hover:text-cobalt" href="/docs/known-issues/">known issues</a>.</>],
   ['Is a render repeatable?', 'Yes. Date, Math.random, timers and requestAnimationFrame follow the frame number, so the same project and frame give the same pixels. Nothing reads the wall clock.'],
   ['What does it run on?', 'Node 22 or later and a GPU wgpu supports: Metal on macOS, Vulkan or DX12 elsewhere. It needs no window or display. The render command links FFmpeg, using VideoToolbox on macOS.'],
   ['How is it licensed?', 'PolyForm Small Business 1.0.0. It is free for individuals and for companies with fewer than 100 people and under a million dollars of revenue a year. Larger companies need a commercial licence.'],

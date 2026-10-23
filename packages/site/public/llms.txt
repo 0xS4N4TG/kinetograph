@@ -48,5 +48,5 @@ Node 22 or later, a GPU that wgpu supports (Metal on macOS), FFmpeg for `render`
 ## Docs
 
 - README: https://github.com/0xS4N4TG/kinetograph#readme
-- Remotion compatibility: https://github.com/0xS4N4TG/kinetograph/blob/main/docs/COMPAT.md
-- Known gaps: https://github.com/0xS4N4TG/kinetograph/blob/main/docs/OPEN_ISSUES.md
+- Remotion compatibility: /docs/compat/
+- Known issues: /docs/known-issues/
