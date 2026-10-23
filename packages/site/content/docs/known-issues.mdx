@@ -7,19 +7,22 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 ## Being fixed
 
-These are not built yet.
+Work on these has started.
 
 - **Effects on some elements.** `createEffect` on `Solid`, `CanvasImage`, `AnimatedImage` and `HtmlInCanvas` is exported, but the effect is left out, and a warning is printed once. The `onPaint` and `onInit` props of `HtmlInCanvas` are not supported. Both need an element drawn into a canvas, and a GPU effect pass, which are not built yet.
-- **`IFrame`.** Not drawn. It is reported as unsupported content.
-- **Video and audio encoding and decoding in your own code.** `@remotion/webcodecs` is Remotion's wrapper around the browser's WebCodecs API, which encodes and decodes video and audio frames. Its encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. They need a video decoder and encoder in the addon, which is not built. Normal `<Video>` and `<Audio>` are not affected.
 
 ## Not planned
 
+- **`IFrame`.** Not drawn, because a real webpage needs a browser. It is reported as unsupported content.
 - **Not exported.** `Internals`, `FolderContext`, `PathInternals` and `AudioForPreview` are internal to Remotion.
 - **Replaced by Kinetograph's own tools.** `@remotion/three` and `@remotion/player` are replaced by the engine's own 3D layer and studio. `renderer`, `bundler`, `cli` and `lambda` are replaced by the Kinetograph CLI.
 - **Tailwind packages.** `tailwind` and `tailwind-v4` are webpack configuration only, so they do nothing here. Tailwind itself works.
 
 ## Partly working
+
+### Video and audio encoding and decoding in your own code
+
+`@remotion/webcodecs` is Remotion's wrapper around the browser's WebCodecs API, which encodes and decodes video and audio frames. Its encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. They need a video decoder and encoder in the addon, which is not built. Normal `<Video>` and `<Audio>` are not affected.
 
 ### Canvas 2D
 
