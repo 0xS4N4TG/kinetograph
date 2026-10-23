@@ -30,6 +30,7 @@ use ffmpeg::util::color;
 use ffmpeg::{Error as AvError, Packet, codec, frame, media};
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
+use crate::datamosh::{Fetched, MotionField, Vector};
 use crate::error::{Error, Result};
 use crate::scene::{LayerKind, Scene, VideoLayer, walk_layers};
 
@@ -402,7 +403,11 @@ struct PictureCache {
 struct CachedPicture {
     from: i64,
     until: i64,
+    /// The picture's own timestamp (`from` for every picture but the first, which also lasts back to the start of time).
+    pts: i64,
     image: ImageData,
+    /// The motion vectors of the picture, when the decoder exports them (`VideoDecoder::open_with_motion`).
+    motion: Option<Arc<MotionField>>,
 }
 
 fn image_bytes(image: &ImageData) -> usize {
@@ -411,13 +416,13 @@ fn image_bytes(image: &ImageData) -> usize {
 
 impl PictureCache {
     /// The picture for `ts` and the timestamp it lasts until, moved to the front.
-    fn find(&mut self, ts: i64) -> Option<(ImageData, i64)> {
+    fn find(&mut self, ts: i64) -> Option<(ImageData, i64, Option<Arc<MotionField>>, i64)> {
         let at = self
             .entries
             .iter()
             .position(|e| e.from <= ts && ts < e.until)?;
         let entry = self.entries.remove(at)?;
-        let found = (entry.image.clone(), entry.until);
+        let found = (entry.image.clone(), entry.until, entry.motion.clone(), entry.pts);
         self.entries.push_front(entry);
         Some(found)
     }
@@ -437,6 +442,8 @@ impl PictureCache {
 struct Decoded {
     pts: i64,
     frame: frame::Video,
+    /// The picture's motion vectors, for a decoder opened with them.
+    motion: Option<Arc<MotionField>>,
 }
 
 /// swscale's converter for one kind of source picture.
@@ -466,6 +473,8 @@ pub struct VideoDecoder {
     /// that do not come after it are dropped.
     last_pts: Option<i64>,
     cache: PictureCache,
+    /// The decoder exports motion vectors and every picture carries them (`open_with_motion`).
+    motion: bool,
     /// Where the last picture returned lasts until: the timestamp of the
     /// picture after it. `prefetch` works one picture past this and no more.
     served_until: Option<i64>,
@@ -479,7 +488,18 @@ unsafe impl Send for VideoDecoder {}
 impl VideoDecoder {
     /// Opens `path`, whose `probe` is `info`.
     pub fn open(path: &Path, info: Arc<VideoInfo>) -> std::result::Result<VideoDecoder, String> {
-        let (input, stream, decoder) = open_streams(path)?;
+        VideoDecoder::open_as(path, info, false)
+    }
+
+    /// Opens `path` with the decoder's motion vectors switched on (datamosh):
+    /// `picture_motion` gives them with each picture. The pictures are the same
+    /// ones `open` gives.
+    pub fn open_with_motion(path: &Path, info: Arc<VideoInfo>) -> std::result::Result<VideoDecoder, String> {
+        VideoDecoder::open_as(path, info, true)
+    }
+
+    fn open_as(path: &Path, info: Arc<VideoInfo>, motion: bool) -> std::result::Result<VideoDecoder, String> {
+        let (input, stream, decoder) = open_streams(path, motion)?;
         Ok(VideoDecoder {
             path: path.to_path_buf(),
             info,
@@ -492,6 +512,7 @@ impl VideoDecoder {
             draining: false,
             last_pts: None,
             cache: PictureCache::default(),
+            motion,
             served_until: None,
         })
     }
@@ -499,9 +520,32 @@ impl VideoDecoder {
     /// The picture for the timestamp `ts` (`VideoInfo::media_time`): the last
     /// one at or before it, or the first if `ts` is before all of them.
     pub fn picture(&mut self, ts: i64) -> std::result::Result<ImageData, String> {
-        if let Some((image, until)) = self.cache.find(ts) {
+        self.fetch(ts).map(|(image, _, _)| image)
+    }
+
+    /// The picture for `ts` with its motion vectors and its own timestamp
+    /// (which says whether two timestamps are one picture). Only on a decoder
+    /// opened by `open_with_motion`; a picture without vectors (a keyframe) has
+    /// a field in which nothing moves.
+    pub fn picture_motion(&mut self, ts: i64) -> std::result::Result<Fetched, String> {
+        if !self.motion {
+            return Err("the decoder was not opened with motion vectors".into());
+        }
+        let (image, motion, pts) = self.fetch(ts)?;
+        let motion = motion.unwrap_or_else(|| {
+            Arc::new(MotionField::still(image.width as usize, image.height as usize))
+        });
+        Ok(Fetched { image, motion, pts })
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn fetch(
+        &mut self,
+        ts: i64,
+    ) -> std::result::Result<(ImageData, Option<Arc<MotionField>>, i64), String> {
+        if let Some((image, until, motion, pts)) = self.cache.find(ts) {
             self.served_until = Some(until);
-            return Ok(image);
+            return Ok((image, motion, pts));
         }
         // Decode on from where the decoder is if the picture is not far
         // ahead; otherwise (behind it, far ahead, or nowhere yet) seek.
@@ -517,7 +561,11 @@ impl VideoDecoder {
 
     /// Decodes forward to the picture for `ts`, keeping the next one, and
     /// converts and caches the one for `ts`.
-    fn advance(&mut self, ts: i64) -> std::result::Result<ImageData, String> {
+    #[allow(clippy::type_complexity)]
+    fn advance(
+        &mut self,
+        ts: i64,
+    ) -> std::result::Result<(ImageData, Option<Arc<MotionField>>, i64), String> {
         let mut candidate = self.lookahead.take();
         loop {
             let Some(next) = self.next_picture()? else {
@@ -549,10 +597,12 @@ impl VideoDecoder {
         self.cache.insert(CachedPicture {
             from,
             until,
+            pts: picture.pts,
             image: image.clone(),
+            motion: picture.motion.clone(),
         });
         self.served_until = Some(until);
-        Ok(image)
+        Ok((image, picture.motion, picture.pts))
     }
 
     /// Makes the picture that follows the one last returned: converts the
@@ -599,7 +649,9 @@ impl VideoDecoder {
         self.cache.insert(CachedPicture {
             from: first.pts,
             until,
+            pts: first.pts,
             image,
+            motion: first.motion,
         });
     }
 
@@ -642,7 +694,7 @@ impl VideoDecoder {
             )
         };
         if status < 0 {
-            let (input, stream, decoder) = open_streams(&self.path)?;
+            let (input, stream, decoder) = open_streams(&self.path, self.motion)?;
             self.input = input;
             self.stream = stream;
             self.decoder = decoder;
@@ -672,7 +724,8 @@ impl VideoDecoder {
                         continue;
                     }
                     self.last_pts = Some(pts);
-                    return Ok(Some(Decoded { pts, frame }));
+                    let motion = self.motion.then(|| Arc::new(motion_field(&frame)));
+                    return Ok(Some(Decoded { pts, frame, motion }));
                 }
                 Err(AvError::Eof) => return Ok(None),
                 Err(AvError::Other { errno }) if errno == ffmpeg::error::EAGAIN => {}
@@ -762,6 +815,7 @@ impl VideoDecoder {
 /// Opens the container, finds the first video stream and opens its decoder.
 fn open_streams(
     path: &Path,
+    motion: bool,
 ) -> std::result::Result<(format::context::Input, usize, ffmpeg::decoder::Video), String> {
     init();
     let input = format::input(path).map_err(|e| format!("cannot open: {e}"))?;
@@ -771,10 +825,47 @@ fn open_streams(
         .map_err(|e| format!("cannot set up the decoder: {e}"))?;
     let mut decoder = context.decoder();
     decoder.set_packet_time_base(stream.time_base());
+    if motion {
+        // SAFETY: the decoder is not open yet, so its flags are still ours to set.
+        unsafe {
+            (*decoder.as_mut_ptr()).flags2 |= ffmpeg::ffi::AV_CODEC_FLAG2_EXPORT_MVS as c_int;
+        }
+    }
     let decoder = decoder
         .video()
         .map_err(|e| format!("cannot open the decoder: {e}"))?;
     Ok((input, index, decoder))
+}
+
+/// The motion vectors FFmpeg attached to a decoded picture
+/// (`AV_FRAME_DATA_MOTION_VECTORS`, there when the decoder was opened with
+/// `export_mvs`), as a field. A picture without them (a keyframe) does not move.
+fn motion_field(picture: &frame::Video) -> MotionField {
+    let (width, height) = (picture.width() as usize, picture.height() as usize);
+    let Some(side) = picture.side_data(ffmpeg::frame::side_data::Type::MotionVectors) else {
+        return MotionField::still(width, height);
+    };
+    let data = side.data();
+    let size = std::mem::size_of::<ffmpeg::ffi::AVMotionVector>();
+    let vectors: Vec<Vector> = (0..data.len() / size)
+        .map(|i| {
+            // SAFETY: `data` holds `len / size` whole AVMotionVector structs; the read tolerates any alignment.
+            let v = unsafe {
+                std::ptr::read_unaligned(data.as_ptr().add(i * size).cast::<ffmpeg::ffi::AVMotionVector>())
+            };
+            Vector {
+                source: v.source,
+                w: v.w,
+                h: v.h,
+                dst_x: v.dst_x,
+                dst_y: v.dst_y,
+                motion_x: v.motion_x,
+                motion_y: v.motion_y,
+                motion_scale: v.motion_scale,
+            }
+        })
+        .collect();
+    MotionField::from_vectors(width, height, &vectors)
 }
 
 /// Sets swscale's matrix and ranges for a YUV source: the picture's own
@@ -1253,12 +1344,61 @@ mod tests {
         }
     }
 
+    // --- Motion vectors (datamosh). -------------------------------------------
+
+    /// Both codecs the engine moshes are exercised: H.264 (quarter-pixel vectors) and
+    /// MPEG-4 part 2 (half-pixel). Each file is 96 x 54, 24 pictures, one keyframe.
+    const MOTION_FILES: [&str; 2] = ["mosh-h264.mp4", "mosh-mpeg4.mp4"];
+
+    #[test]
+    fn a_decoder_with_motion_gives_vectors_and_the_same_pictures() {
+        for file in MOTION_FILES {
+            let path = media_path(file);
+            let info = probe(&path).unwrap();
+            assert!(crate::datamosh::exports_vectors(&info.video_codec), "{file}");
+            let tick = info.second() / 24;
+            let mut with = VideoDecoder::open_with_motion(&path, info.clone()).unwrap();
+            let mut plain = VideoDecoder::open(&path, info).unwrap();
+            let mut moving = 0;
+            for i in 0..24 {
+                let got = with.picture_motion(i * tick).unwrap();
+                let want = plain.picture(i * tick).unwrap();
+                // The vectors change no pixel.
+                assert_eq!(bytes(&got.image), bytes(&want), "{file} picture {i}");
+                assert_eq!((got.motion.width, got.motion.height), (96, 54));
+                if i == 0 {
+                    // A keyframe has no vectors: nothing moves.
+                    assert!(got.motion.is_still(), "{file}: the keyframe moved");
+                } else if !got.motion.is_still() {
+                    moving += 1;
+                }
+            }
+            assert!(moving >= 3, "{file}: only {moving} pictures had motion");
+            // A picture asked for again, or after a seek back, has the same vectors.
+            let again = with.picture_motion(5 * tick).unwrap();
+            let back = with.picture_motion(5 * tick).unwrap();
+            assert_eq!(again.motion, back.motion);
+            assert_eq!(again.pts, 5 * tick);
+            let mut fresh = VideoDecoder::open_with_motion(&path, probe(&path).unwrap()).unwrap();
+            assert_eq!(fresh.picture_motion(5 * tick).unwrap().motion, again.motion, "{file}");
+        }
+    }
+
+    #[test]
+    fn a_decoder_without_motion_says_so() {
+        let mut plain = decoder("mosh-h264.mp4");
+        let err = plain.picture_motion(0).err().unwrap();
+        assert!(err.contains("motion vectors"), "{err}");
+    }
+
     #[test]
     fn the_picture_cache_is_bounded() {
         let mut cache = PictureCache::default();
         let big = |from, until| CachedPicture {
             from,
             until,
+            pts: from,
+            motion: None,
             image: ImageData {
                 data: Blob::from(vec![0_u8; 32 << 20]),
                 format: ImageFormat::Rgba8,
