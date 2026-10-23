@@ -32,7 +32,7 @@ use crate::resolve::{
 };
 use crate::reuse;
 use crate::scene::{
-    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, Paint, Scene, ShapeLayer, TextLayer,
+    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer,
     Units, walk_layers,
 };
 use crate::scene3d::draw::{Assets3d, Texture};
@@ -214,6 +214,10 @@ pub struct Renderer {
     group_depth: u32,
     /// The Skia backend when `KINETOGRAPH_BACKEND=skia` and it could start (`skia.rs`).
     skia: Option<skia::SkiaBackend>,
+    /// Skia's GPU context and the translator that draws the 2D content of the layers it hands to this renderer, while
+    /// a Skia frame is being drawn (`skia/backend.rs`); `None` otherwise.
+    #[cfg_attr(not(feature = "skia"), allow(dead_code))]
+    skia_inner: Option<skia::Inner>,
 }
 
 impl Renderer {
@@ -288,6 +292,7 @@ impl Renderer {
             repeats: 0,
             group_depth: 0,
             skia: None,
+            skia_inner: None,
         };
         renderer.skia = skia::init(&renderer.device, &renderer.queue, &renderer.scene);
         static SAY: std::sync::Once = std::sync::Once::new();
@@ -900,6 +905,19 @@ impl Renderer {
         });
         if region.is_empty() {
             run.clear();
+            return Ok(());
+        }
+        if self.skia_rasters() {
+            let ops: Vec<skia::RasterOp<'_>> = run
+                .drain(..)
+                .map(|op| match op {
+                    FlatOp::Leaf(leaf) => skia::RasterOp::Leaf(leaf.layer, leaf.matrix),
+                    FlatOp::Clip(path, matrix) => skia::RasterOp::Clip(path, matrix),
+                    FlatOp::Pop => skia::RasterOp::Pop,
+                })
+                .collect();
+            let tex = self.timed(Stage::Raster, |s| s.skia_flat(&ops, region))?;
+            pending.push(Pending::new(Waiting::Loose(tex), 1.0, BlendMode::Normal));
             return Ok(());
         }
         let area = self.vello_area(region);
@@ -1739,6 +1757,9 @@ impl Renderer {
                             }),
                         },
                     },
+                    None if self.skia_rasters() => {
+                        self.timed(Stage::Raster, |s| s.skia_leaf(layer, matrix, region))?
+                    }
                     None => {
                         let area = self.vello_area(region);
                         self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
@@ -1766,6 +1787,8 @@ impl Renderer {
                 let region = raster.unwrap_or_else(|| self.whole());
                 if region.is_empty() {
                     Some(self.timed(Stage::Composite, |s| s.compositor.empty()))
+                } else if self.skia_rasters() {
+                    Some(self.timed(Stage::Raster, |s| s.skia_coverage(layer, matrix, region))?)
                 } else {
                     let area = self.vello_area(region);
                     self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent, area))?;
@@ -1811,6 +1834,12 @@ impl Renderer {
                         s.compositor
                             .mask_from(src, &page, area, MaskMode::Alpha, keep)
                     }),
+                    None if self.skia_rasters() => {
+                        let clip = self.timed(Stage::Raster, |s| s.skia_clip(&path, matrix, keep))?;
+                        self.timed(Stage::Composite, |s| {
+                            s.compositor.matte(src, clip, 1.0, MatteMode::Alpha)
+                        })
+                    }
                     None => {
                         self.timed(Stage::Raster, |s| s.rasterise_clip(&path, matrix))?;
                         self.timed(Stage::Composite, |s| {
@@ -1829,11 +1858,21 @@ impl Renderer {
             } else {
                 None
             };
-            self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix, mask_box))?;
-            let whole = self.whole();
-            src = self.timed(Stage::Composite, |s| {
-                s.compositor.mask(src, &s.vello_view, mask.mode, whole)
-            });
+            if self.skia_rasters() {
+                let whole = self.whole();
+                let gradient = self.timed(Stage::Raster, |s| s.skia_mask(layer, mask, matrix, whole))?;
+                let mode = match mask.mode {
+                    MaskMode::Alpha => MatteMode::Alpha,
+                    MaskMode::Luminance => MatteMode::Luminance,
+                };
+                src = self.timed(Stage::Composite, |s| s.compositor.matte(src, gradient, 1.0, mode));
+            } else {
+                self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix, mask_box))?;
+                let whole = self.whole();
+                src = self.timed(Stage::Composite, |s| {
+                    s.compositor.mask(src, &s.vello_view, mask.mode, whole)
+                });
+            }
         }
         if let Some(matte) = &layer.matte {
             let source = siblings
@@ -2676,6 +2715,7 @@ impl Renderer {
         }
         .expect("scenes with image layers get an image renderer");
         renderer.set_timing_tag(u64::from(area.width()) * u64::from(area.height()));
+        VELLO_RASTERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let timer = crate::profile::start();
         let rendered = renderer
             .render_to_texture(
@@ -2695,6 +2735,10 @@ impl Renderer {
         rendered.map_err(|e| Error::Render(format!("Vello render failed: {e}")))
     }
 }
+
+/// How many times Vello has rasterised a scene in this process. A Skia render adds none (`skia/backend.rs` reports it
+/// in `KINETOGRAPH_SKIA_STATS`).
+pub(crate) static VELLO_RASTERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// How many pixels of pictures the shadows and filters of one canvas layer may
 /// make: three quarters of Vello's largest image atlas (8192 x 8192), which a
@@ -2755,6 +2799,7 @@ impl canvas::Effects for CanvasPasses<'_> {
         .expect("scenes with a shadow or a filter get an image renderer");
         // The top bit marks a canvas command's own render.
         renderer.set_timing_tag((1 << 63) | u64::from(region.width()) * u64::from(region.height()));
+        VELLO_RASTERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         renderer
             .render_to_texture(
                 self.device,

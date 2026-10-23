@@ -53,10 +53,10 @@ mod backend;
 #[allow(deprecated)]
 mod draw;
 #[cfg(feature = "skia")]
-pub(super) use backend::{SkiaBackend, init};
+pub(super) use backend::{Inner, RasterOp, SkiaBackend, init};
 
 #[cfg(not(feature = "skia"))]
-pub(super) use stub::{SkiaBackend, init};
+pub(super) use stub::{Inner, RasterOp, SkiaBackend, init};
 
 #[cfg(not(feature = "skia"))]
 mod stub {
@@ -68,6 +68,15 @@ mod stub {
     use crate::scene::Scene;
 
     pub(in super::super) enum SkiaBackend {}
+
+    pub(in super::super) enum Inner {}
+
+    #[allow(dead_code)]
+    pub(in super::super) enum RasterOp<'a> {
+        Leaf(&'a crate::resolve::ResolvedLayer, vello::kurbo::Affine),
+        Clip(vello::kurbo::BezPath, vello::kurbo::Affine),
+        Pop,
+    }
 
     pub(in super::super) fn init(_: &wgpu::Device, _: &wgpu::Queue, _: &Scene) -> Option<SkiaBackend> {
         if std::env::var("KINETOGRAPH_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("skia")) {
@@ -83,7 +92,31 @@ mod stub {
     }
 
     impl Renderer {
+        pub(in super::super) fn skia_rasters(&self) -> bool {
+            false
+        }
+
         pub(in super::super) fn skia_canvas(&mut self, _: &ResolvedScene) -> Result<Tex> {
+            unreachable!("no Skia backend in this build")
+        }
+
+        pub(in super::super) fn skia_leaf(&mut self, _: &crate::resolve::ResolvedLayer, _: vello::kurbo::Affine, _: crate::bounds::PixelRect) -> Result<Tex> {
+            unreachable!("no Skia backend in this build")
+        }
+
+        pub(in super::super) fn skia_coverage(&mut self, _: &crate::resolve::ResolvedLayer, _: vello::kurbo::Affine, _: crate::bounds::PixelRect) -> Result<Tex> {
+            unreachable!("no Skia backend in this build")
+        }
+
+        pub(in super::super) fn skia_clip(&mut self, _: &vello::kurbo::BezPath, _: vello::kurbo::Affine, _: crate::bounds::PixelRect) -> Result<Tex> {
+            unreachable!("no Skia backend in this build")
+        }
+
+        pub(in super::super) fn skia_mask(&mut self, _: &crate::resolve::ResolvedLayer, _: &crate::resolve::ResolvedMask, _: vello::kurbo::Affine, _: crate::bounds::PixelRect) -> Result<Tex> {
+            unreachable!("no Skia backend in this build")
+        }
+
+        pub(in super::super) fn skia_flat(&mut self, _: &[RasterOp<'_>], _: crate::bounds::PixelRect) -> Result<Tex> {
             unreachable!("no Skia backend in this build")
         }
 

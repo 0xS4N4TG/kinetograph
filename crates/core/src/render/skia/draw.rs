@@ -1821,3 +1821,88 @@ impl Translator {
         self.held.push(tex);
     }
 }
+
+const WHITE: crate::color::Color = crate::color::Color { r: 255, g: 255, b: 255, a: 255 };
+
+/// What the wgpu path asks Skia to draw into a texture in place of Vello (`Renderer::skia_leaf` and its kin): the 2D
+/// content of one layer, with no effect, clip, mask or matte (the compositor applies those), under the matrix the Vello
+/// path rasterised it with.
+impl Translator {
+    /// The renderer whose Lottie and GIF pictures this draws, for the length of one call.
+    pub fn set_host(&mut self, host: *mut Renderer) {
+        self.host = host;
+    }
+
+    /// The leaf `layer` at full opacity, `Normal`, under `matrix` (layer space to canvas pixels). A noise layer is its
+    /// box in opaque white: the noise pass fills its coverage.
+    pub fn raster_leaf(&mut self, canvas: &Canvas, layer: &ResolvedLayer, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        match &layer.kind {
+            ResolvedKind::Noise { width, height, .. } => {
+                let mut p = Self::base_paint(Comp { alpha: 1.0, blend: SkBlend::SrcOver });
+                p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+                canvas.draw_rect(Rect::new(0.0, 0.0, *width as f32, *height as f32), &p);
+                self.stats.draws += 1;
+            }
+            _ => self.draw_content(canvas, layer, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, 1.0),
+        }
+        canvas.restore();
+    }
+
+    /// The fill and stroke of the shape `layer` in opaque white, whatever their colours and alphas.
+    pub fn raster_coverage(&mut self, canvas: &Canvas, layer: &ResolvedLayer, matrix: Affine) {
+        let ResolvedKind::Shape { geometry, fill, stroke, style } = &layer.kind else {
+            return;
+        };
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        let white = ResolvedPaint::Solid(WHITE);
+        let stroke = stroke.as_ref().map(|(_, width)| (WHITE, *width));
+        self.draw_shape(
+            canvas,
+            layer,
+            geometry,
+            fill.as_ref().map(|_| &white),
+            stroke.as_ref(),
+            style,
+            Comp { alpha: 1.0, blend: SkBlend::SrcOver },
+        );
+        canvas.restore();
+    }
+
+    /// `path` (layer space) in opaque white: its alpha is the clip's coverage.
+    pub fn raster_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        let mut p = Paint::default();
+        p.set_anti_alias(true);
+        p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+        canvas.draw_path(&bez_to_path(path, false), &p);
+        self.stats.draws += 1;
+        canvas.restore();
+    }
+
+    /// The mask's gradient over the whole clip, laid out in the layer's box (or in layer space) under `matrix`.
+    pub fn raster_mask(&mut self, canvas: &Canvas, layer: &ResolvedLayer, mask: &crate::resolve::ResolvedMask, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        let mut p = Paint::default();
+        let layer_box = self.layer_box(layer);
+        p.set_shader(gradient_shader_for(&mask.gradient, layer_box, self.linear()));
+        canvas.draw_paint(&p);
+        self.stats.draws += 1;
+        canvas.restore();
+    }
+
+    /// Starts a group's clip: what follows, up to the matching `raster_pop`, is cut by `path`.
+    pub fn raster_push_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        canvas.clip_path(&bez_to_path(path, false), ClipOp::Intersect, true);
+    }
+
+    pub fn raster_pop(&mut self, canvas: &Canvas) {
+        canvas.restore();
+    }
+}

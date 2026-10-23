@@ -960,6 +960,29 @@ impl Compositor {
         target
     }
 
+    /// A cleared texture for Skia to draw the box `region` of into (`Renderer::skia_leaf` and its kin): like `target`,
+    /// marked as written so that wgpu does not zero it after Skia has drawn.
+    #[cfg(feature = "skia")]
+    pub(crate) fn skia_target(&mut self, region: PixelRect) -> Tex {
+        let tex = self.target(region);
+        self.clear(&tex, wgpu::Color::TRANSPARENT);
+        tex
+    }
+
+    /// `from_srgb8` for Skia's output: premultiplied, sRGB-encoded Rgba8 that drew the box `area` of the canvas from the
+    /// texture's top left corner (a scene that blends in sRGB).
+    #[cfg(feature = "skia")]
+    pub(crate) fn from_skia_srgb(&mut self, skia_output: &wgpu::TextureView, area: PixelRect, region: PixelRect) -> Tex {
+        let target = self.target(region);
+        let input = Input {
+            view: skia_output,
+            origin: [area.x0, area.y0],
+            size: [area.width(), area.height()],
+        };
+        self.pass(&self.to_linear_premul, input, input, 0.0, 0, &target);
+        target
+    }
+
     /// The whole canvas texture from `skia_output`, a texture of its size that Skia drew (`render/skia.rs`): premultiplied,
     /// and either Rgba8 holding sRGB-encoded values or, if `linear`, Rgba16Float in linear light.
     #[cfg(feature = "skia")]
