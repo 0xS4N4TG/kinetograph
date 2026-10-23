@@ -23,8 +23,10 @@ Then add the MCP server so each CLI command is a tool: `npx kinetograph mcp` (st
 
 ## Install
 
-- Source and issues: https://github.com/0xS4N4TG/kinetograph (the npm package is not published yet; build from
-  source as in the README)
+- `npm install kinetograph`, then run `npx kinetograph <command>` against the entry file of a Remotion-shaped
+  project. The native addon comes as a prebuilt package for macOS (arm64), Linux (x64) and Windows (x64).
+- The native elements and effects: `import { ... } from '@kinetographdev/core'`
+- Source and issues: https://github.com/0xS4N4TG/kinetograph
 - Licence: PolyForm Small Business 1.0.0 (free for individuals and companies under 100 people and $1M revenue a year)
 
 ## Facts
