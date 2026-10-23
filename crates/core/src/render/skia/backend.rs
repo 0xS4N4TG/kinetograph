@@ -31,21 +31,22 @@ const FRAMES_IN_FLIGHT: usize = 2;
 /// `Renderer::skia_inner` while a frame is drawn, because the wgpu path calls it and the backend is out of the renderer
 /// then.
 pub(in super::super) struct Inner {
-    native: Native,
-    ctx: graphite::Context,
-    rec: Rc<RefCell<graphite::Recorder>>,
     /// Made when first needed.
     tr: Option<Translator>,
     /// The frame `tr` was last told about (`Translator::begin_frame`), and the one being drawn.
     tr_frame: u64,
     frame: u64,
+    // Dropped in this order: what Skia made (the translator's images), the recorder, the context they were made on,
+    // then what the context runs on.
+    rec: Rc<RefCell<graphite::Recorder>>,
+    ctx: graphite::Context,
+    native: Native,
 }
 
 // SAFETY: as for `SkiaBackend`: a `Renderer` is used by one thread at a time.
 unsafe impl Send for Inner {}
 
 pub(in super::super) struct SkiaBackend {
-    inner: Option<Inner>,
     rec: Rc<RefCell<graphite::Recorder>>,
     tr: Translator,
     /// Frames take the targets in turn, so that a frame is not drawn into the texture the one before is still being
@@ -59,6 +60,11 @@ pub(in super::super) struct SkiaBackend {
     /// between runs.
     hash_file: Option<std::fs::File>,
     started: VecDeque<u32>,
+    /// After everything above (fields drop in order): Skia's surfaces, images and recorders are gone before its context,
+    /// and the context before the wgpu device it runs on (on Vulkan Skia frees its memory through the VkDevice, which
+    /// lives until the last `wgpu::Device` handle does).
+    inner: Option<Inner>,
+    _device: wgpu::Device,
 }
 
 // SAFETY: a `Renderer` is used by one thread at a time (the napi addon locks it). Nothing here is tied to a thread.
@@ -110,7 +116,7 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
         std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
     });
     let inner = Inner { native, ctx, rec: Rc::new(RefCell::new(raster)), tr: None, tr_frame: u64::MAX, frame: 0 };
-    Ok(SkiaBackend { inner: Some(inner), rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
+    Ok(SkiaBackend { _device: device.clone(), inner: Some(inner), rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
 }
 
 fn warn_once(what: &str) {
