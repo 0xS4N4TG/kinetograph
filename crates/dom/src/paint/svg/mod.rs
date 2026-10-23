@@ -183,25 +183,37 @@ fn paint_serialized(
     let children = emitter.group(tree.root(), Affine::IDENTITY);
     notes.append(&mut emitter.notes);
     // Text with no font to set it in is dropped by usvg without a word.
-    if serialized.xml.contains("<text") && crate::fonts::is_fallback(&request.fonts) {
-        notes.push(Note {
-            element: "text".into(),
-            property: Some("font-family".into()),
-            value: serialized
-                .xml
-                .split("font-family=\"")
-                .nth(1)
-                .and_then(|rest| rest.split('"').next())
-                .map(str::to_string),
-            reason: crate::fonts::FALLBACK_REASON.into(),
-        });
-    } else if serialized.xml.contains("<text") && request.fonts.is_empty() {
-        notes.push(Note {
-            element: "text".into(),
-            property: Some("font-family".into()),
-            value: None,
-            reason: "no registered font matches, so the text is not drawn".into(),
-        });
+    if serialized.xml.contains("<text") {
+        if request.fonts.is_empty() {
+            notes.push(Note {
+                element: "text".into(),
+                property: Some("font-family".into()),
+                value: None,
+                reason: "no registered font matches, so the text is not drawn".into(),
+            });
+        } else {
+            // A text that names no family is set in the default one.
+            let mut stacks = crate::fonts::families_in_xml(&serialized.xml);
+            if stacks.is_empty() {
+                stacks.push(String::new());
+            }
+            // The root passes its own (often inherited) family on, so a loaded
+            // family anywhere in the source means the text is probably set in it.
+            let unloaded: Vec<_> = stacks
+                .into_iter()
+                .map(|stack| (crate::fonts::unloaded_reason(&stack, &request.fonts), stack))
+                .collect();
+            if unloaded.iter().all(|(reason, _)| reason.is_some()) {
+                for (reason, stack) in unloaded {
+                    notes.push(Note {
+                        element: "text".into(),
+                        property: Some("font-family".into()),
+                        value: (!stack.is_empty()).then_some(stack),
+                        reason: reason.unwrap_or_default().into(),
+                    });
+                }
+            }
+        }
     }
     if children.is_empty() {
         return SvgPaint {

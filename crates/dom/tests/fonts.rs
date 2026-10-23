@@ -311,3 +311,82 @@ fn svg_text_with_no_loaded_font_is_drawn_in_the_fallback_and_reported() {
     let out = painted(root, json!({ "DM Sans": dm_sans() }));
     assert!(fallback_notes(&out).is_empty(), "{:?}", out.unsupported);
 }
+
+fn family_notes(out: &kinetograph_dom::request::IslandOutput) -> Vec<(String, String)> {
+    out.unsupported
+        .iter()
+        .filter(|u| u.property.as_deref() == Some("font-family"))
+        .map(|u| (u.value.clone().unwrap_or_default(), u.reason.clone()))
+        .collect()
+}
+
+#[test]
+fn text_whose_families_are_all_unloaded_is_drawn_and_reported_when_another_font_is_loaded() {
+    let fonts = json!({ "DM Sans": dm_sans() });
+    let one = |style: &str| {
+        painted(
+            el(
+                "div",
+                "$0",
+                &format!("font-size: 40px; {style}"),
+                vec![text("Hello")],
+            ),
+            fonts.clone(),
+        )
+    };
+    let unloaded = kinetograph_dom::fonts::UNLOADED_REASON.to_string();
+
+    // Drawn in the registered font (what fontique picks), and reported.
+    let arial = one("font-family: Arial");
+    let json = arial
+        .layers
+        .iter()
+        .map(|l| l.to_string())
+        .collect::<String>();
+    assert!(json.contains("glyphs") && json.contains("DMSans"), "{json}");
+    assert_eq!(
+        family_notes(&arial),
+        vec![("Arial".to_string(), unloaded.clone())]
+    );
+
+    // No font-family at all: the default serif names nothing loaded.
+    let none = one("");
+    assert_eq!(family_notes(&none).len(), 1, "{:?}", none.unsupported);
+    assert_eq!(family_notes(&none)[0].1, unloaded);
+
+    // A loaded family anywhere in the stack is enough.
+    assert!(family_notes(&one("font-family: Arial, 'DM Sans', serif")).is_empty());
+    assert!(family_notes(&one("font-family: 'dm sans'")).is_empty());
+}
+
+#[test]
+fn svg_text_whose_families_are_all_unloaded_is_reported_when_another_font_is_loaded() {
+    let fonts = json!({ "DM Sans": dm_sans() });
+    let svg = |family: &str| {
+        let label = el_attrs(
+            "text",
+            "$0.0.0",
+            json!({ "x": "10", "y": "60", "font-size": "40", "font-family": family }),
+            "",
+            vec![text("Hello")],
+        );
+        let svg = el_attrs(
+            "svg",
+            "$0.0",
+            json!({ "width": "300", "height": "100", "viewBox": "0 0 300 100" }),
+            "",
+            vec![label],
+        );
+        painted(el("div", "$0", "", vec![svg]), fonts.clone())
+    };
+    let helvetica = svg("Helvetica");
+    assert_eq!(
+        family_notes(&helvetica),
+        vec![(
+            "Helvetica".to_string(),
+            kinetograph_dom::fonts::UNLOADED_REASON.to_string()
+        )]
+    );
+    assert!(!helvetica.layers.is_empty());
+    assert!(family_notes(&svg("DM Sans")).is_empty());
+}

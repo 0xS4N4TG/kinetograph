@@ -31,6 +31,52 @@ pub fn is_fallback(fonts: &BTreeMap<String, String>) -> bool {
 /// The reason text set in the built-in fallback is reported with.
 pub const FALLBACK_REASON: &str = "font not loaded; drawn with the built-in fallback";
 
+/// The reason text is reported with when none of its families is loaded but
+/// other fonts are: it is drawn in whichever registered font the engine picks.
+pub const UNLOADED_REASON: &str = "font not loaded; drawn with another loaded font";
+
+/// Why text asking for the font-family `stack` (as CSS writes it) is not set
+/// in a font of the project's, if it is not: none of its families is
+/// registered. Generic families alone (`serif`) name nothing loaded.
+pub fn unloaded_reason(stack: &str, fonts: &BTreeMap<String, String>) -> Option<&'static str> {
+    let loaded = |name: &str| {
+        fonts
+            .keys()
+            .filter(|k| k.as_str() != FALLBACK_KEY)
+            .any(|k| parse_key(k).0.eq_ignore_ascii_case(name))
+    };
+    let named = stack
+        .split(',')
+        .map(|f| f.trim().trim_matches(|c| c == '"' || c == '\'').trim())
+        .any(|f| !f.is_empty() && loaded(f));
+    if named {
+        None
+    } else if is_fallback(fonts) {
+        Some(FALLBACK_REASON)
+    } else {
+        Some(UNLOADED_REASON)
+    }
+}
+
+/// Every `font-family` an SVG source sets, as attribute or in a `style`.
+pub fn families_in_xml(xml: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (marker, ends) in [
+        ("font-family=\"", &['"'][..]),
+        ("font-family='", &['\''][..]),
+        ("font-family:", &[';', '"', '\''][..]),
+    ] {
+        for part in xml.split(marker).skip(1) {
+            let value = part.split(|c| ends.contains(&c)).next().unwrap_or("");
+            let value = value.trim().to_string();
+            if !value.is_empty() && !out.contains(&value) {
+                out.push(value);
+            }
+        }
+    }
+    out
+}
+
 /// A font key split into family, weight and style.
 pub fn parse_key(key: &str) -> (&str, f32, FontStyle) {
     if let Some((family, rest)) = key.rsplit_once(':') {

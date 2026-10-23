@@ -160,9 +160,11 @@ impl<'a> Painter<'a> {
                             );
                             continue;
                         };
-                        if crate::fonts::is_fallback(&self.req.fonts) {
-                            let family = style.get_font().font_family.to_css_string();
-                            self.report(node, "font-family", family, crate::fonts::FALLBACK_REASON);
+                        let family = style.get_font().font_family.to_css_string();
+                        if let Some(reason) =
+                            crate::fonts::unloaded_reason(&family, &self.req.fonts)
+                        {
+                            self.report(node, "font-family", family, reason);
                         }
                         let synth = run.synthesis();
                         let mut glyphs: Vec<Value> = Vec::new();
