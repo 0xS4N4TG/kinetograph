@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
+import '@fontsource-variable/dm-sans/wght.css';
+import '@fontsource-variable/jetbrains-mono/wght.css';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@fontsource-variable/newsreader/opsz.css';

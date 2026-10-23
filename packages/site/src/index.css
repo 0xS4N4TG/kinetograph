@@ -11,6 +11,12 @@
   --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace;
   --font-serif: 'Newsreader Variable', 'Iowan Old Style', Baskerville, Georgia, serif;
   --font-heading: var(--font-sans);
+  --font-dm: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-jb: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  --color-ink: #111111;
+  --color-mute: #6f6a62;
+  --color-flag: #e0261b;
+  --color-ground: #eceae6;
   --color-cobalt: var(--cobalt);
   --color-paper: var(--paper);
   --color-night: var(--night);

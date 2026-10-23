@@ -1,12 +1,10 @@
-import Landscape from '@/art/landscape';
 import HalftoneWordmarkFooter from '@/components/halftone-footer';
 import { SmoothScroll } from '@/components/smooth-scroll';
 import { Hero } from '@/sections/hero';
 import { GITHUB, doc } from '@/sections/links';
 import { Nav } from '@/sections/nav';
-import { Agents, Film, Proof, Surfaces } from '@/sections/page';
-import { Questions, Remotion, Start, Ticker } from '@/sections/static';
-import { FinalCta, Problem, Solution } from '@/sections/story';
+import { About, Facts, Film } from '@/sections/page';
+import { Start } from '@/sections/static';
 
 const FOOTER_COLUMNS = [
   { title: 'Site', links: [{ label: 'Why', href: '#why' }, { label: 'The engine', href: '#engine' }, { label: 'Agents', href: '#agents' }, { label: 'The film', href: '#film' }, { label: 'Get started', href: '#start' }] },
@@ -16,24 +14,16 @@ const FOOTER_COLUMNS = [
 
 export default function Page() {
   return (
-    <div className="min-h-screen bg-paper font-sans text-night selection:bg-cobalt selection:text-paper">
+    <div className="min-h-screen overflow-x-clip bg-ground font-dm text-ink selection:bg-flag selection:text-white">
       <SmoothScroll />
       <Nav />
       <main>
         <Hero />
-        <Problem />
-        <Solution />
-        <Remotion />
-        <Ticker />
-        <Surfaces />
-        <Agents />
-        <Proof />
+        <Facts />
         <Film />
+        <About />
         <Start />
-        <Questions />
-        <FinalCta />
       </main>
-      <Landscape className="block h-[clamp(180px,24vw,360px)] w-full" />
       <HalftoneWordmarkFooter
         wordmark="kinetograph"
         label="Kinetograph"
