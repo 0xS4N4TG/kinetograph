@@ -2,6 +2,8 @@
 
 import { describeIssue, summarize, type DoctorReport } from '@kinetograph/compat/doctor';
 import type { Unsupported } from '@kinetograph/scene';
+import { relative } from 'node:path';
+import type { UnsupportedImport } from '../bundle.js';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
 import { frameRange, type Source } from '../source.js';
@@ -58,6 +60,13 @@ export function formatReport(report: DoctorReport): string {
   return lines.join('\n');
 }
 
+/** The imports of packages Kinetograph does not support, one line each, with the file that imports them. */
+export function formatImports(imports: readonly UnsupportedImport[]): string {
+  const lines = [`${plural(imports.length, 'import')} of packages Kinetograph does not support (they draw nothing here):`];
+  for (const { specifier, file } of imports) lines.push(`  ${specifier}  imported by ${file === null ? 'the entry' : relative(process.cwd(), file) || file}`);
+  return lines.join('\n');
+}
+
 /** `doctor` with no entry: what this install can do. */
 function installReport(): { data: object; text: string } {
   let addon: { loaded: true; version: string } | { loaded: false; error: string };
@@ -89,13 +98,31 @@ export const doctor: Command = {
       return installReport();
     }
 
-    const source = await openFromArgs(args);
+    // An import of an unsupported package would fail the bundle: it is listed instead, and the rest is checked.
+    const imports: UnsupportedImport[] = [];
+    const withImports = <T extends object>(data: T, text: string): { data: T | (T & { unsupportedImports: UnsupportedImport[] }); text: string } =>
+      imports.length === 0 ? { data, text } : { data: { ...data, unsupportedImports: imports }, text: `${formatImports(imports)}\n\n${text}` };
+    const failed = (error: unknown): { data: object; text: string } => {
+      const reason = error instanceof Error ? error.message : String(error);
+      return withImports({ error: reason }, `the frames could not be checked: ${reason}`);
+    };
+
+    let source: Source;
+    try {
+      source = await openFromArgs(args, { unsupportedImports: imports });
+    } catch (error) {
+      if (imports.length === 0) throw error;
+      return failed(error);
+    }
     try {
       const [first, last] = frameRange(args.options.range as string | undefined, source.composition.durationInFrames);
       const report = summarize(source.composition.id, await scan(source, first, last, context.progress));
       const notes = source.notes?.() ?? [];
       if (notes.length > 0) report.notes = notes;
-      return { data: report, text: formatReport(report) };
+      return withImports(report, formatReport(report));
+    } catch (error) {
+      if (imports.length === 0) throw error;
+      return failed(error);
     } finally {
       source.dispose();
     }

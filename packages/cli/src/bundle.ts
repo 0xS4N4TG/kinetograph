@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
@@ -80,7 +80,37 @@ export function resolveSpecifier(specifier: string): Resolution | null {
   return null;
 }
 
-function aliasPlugin(): Plugin {
+/** An import of a package Kinetograph does not support, and the file that imports it. */
+export interface UnsupportedImport {
+  specifier: string;
+  file: string | null;
+}
+
+/** The names `importer` imports from `specifier` (`import { a, b as c } from '...'`), found with a pattern: a stub needs them as exports. */
+function importedNames(importer: string, specifier: string): string[] {
+  let text = '';
+  try {
+    text = readFileSync(importer, 'utf8');
+  } catch {
+    return [];
+  }
+  const escaped = specifier.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
+  const names = new Set<string>();
+  for (const m of text.matchAll(new RegExp(`import\\s+(?:([\\w$]+)\\s*,?\\s*)?(?:\\{([^}]*)\\})?\\s*from\\s*['"]${escaped}['"]`, 'g'))) {
+    for (const part of (m[2] ?? '').split(',')) {
+      const name = part.trim().split(/\s+as\s+/)[0]?.trim() ?? '';
+      if (/^[\w$]+$/.test(name) && !name.startsWith('type ') && name !== 'default') names.add(name);
+    }
+  }
+  return [...names];
+}
+
+/** What an unsupported package is replaced with when the caller wants to carry on without it (`doctor`): every import is a component that draws nothing. */
+function unsupportedStub(names: string[]): string {
+  return [...names.map((n) => `export const ${n} = () => null;`), 'export default () => null;'].join('\n');
+}
+
+function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
@@ -88,7 +118,12 @@ function aliasPlugin(): Plugin {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;
-        if (resolution.kind === 'unsupported') return { errors: [{ text: resolution.message }] };
+        if (resolution.kind === 'unsupported') {
+          if (!unsupported) return { errors: [{ text: resolution.message }] };
+          const file = args.importer || null;
+          if (!unsupported.some((u) => u.specifier === args.path && u.file === file)) unsupported.push({ specifier: args.path, file });
+          return { path: `${args.path}?${args.importer}`, namespace: 'kinetograph-unsupported', pluginData: { names: importedNames(args.importer, args.path) } };
+        }
         if (resolution.kind === 'font') return { path: resolution.family, namespace: 'kinetograph-google-font' };
         const fromCli = await b.resolve(resolution.target, {
           resolveDir: CLI_DIR,
@@ -104,6 +139,7 @@ function aliasPlugin(): Plugin {
           pluginData: { kinetograph: true },
         });
       });
+      b.onLoad({ filter: /.*/, namespace: 'kinetograph-unsupported' }, (args) => ({ contents: unsupportedStub(args.pluginData?.names ?? []), loader: 'js' }));
       b.onLoad({ filter: /.*/, namespace: 'kinetograph-google-font' }, (args) => ({
         contents: [
           `import { makeGoogleFont } from '@kinetograph/core/google-fonts';`,
@@ -170,7 +206,7 @@ export interface BundleResult {
 }
 
 /** The esbuild options that bundle the project at `absolute` (docs/AUTHORING.md §9). */
-function bundleOptions(absolute: string): BuildOptions {
+function bundleOptions(absolute: string, unsupported?: UnsupportedImport[]): BuildOptions {
   return {
     stdin: {
       contents: syntheticEntry(absolute),
@@ -191,7 +227,7 @@ function bundleOptions(absolute: string): BuildOptions {
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (docs/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [entryPlugin(absolute), aliasPlugin(), cssPlugin()],
+    plugins: [entryPlugin(absolute), aliasPlugin(unsupported), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };
@@ -206,13 +242,14 @@ function bundleFailure(errors: Message[], fallback: unknown): CliError {
 /**
  * Bundles the project at `entry` with esbuild into `node_modules/.cache/kinetograph/`. The file name carries a hash of
  * the entry's path and one of the output, so it only changes when the code does and a changed project is re-imported
- * even by a process that has already imported the old one.
+ * even by a process that has already imported the old one. With `options.unsupported`, an import of an unsupported
+ * package does not fail the bundle: it is listed there (package and importing file) and bundled as a stub.
  */
-export async function bundleProject(entry: string): Promise<BundleResult> {
+export async function bundleProject(entry: string, options: { unsupported?: UnsupportedImport[] } = {}): Promise<BundleResult> {
   const absolute = resolve(entry);
   let result;
   try {
-    result = await build(bundleOptions(absolute));
+    result = await build(bundleOptions(absolute, options.unsupported));
   } catch (error) {
     throw bundleFailure((error as { errors?: Message[] }).errors ?? [], error);
   }

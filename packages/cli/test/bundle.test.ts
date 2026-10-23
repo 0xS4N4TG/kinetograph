@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { bundleProject, cacheDir, familyFromModule, resolveSpecifier, syntheticEntry } from '../src/bundle.js';
+import { bundleProject, cacheDir, type UnsupportedImport, familyFromModule, resolveSpecifier, syntheticEntry } from '../src/bundle.js';
 import { CliError } from '../src/errors.js';
 import { publicDirOf } from '../src/source.js';
 
@@ -334,5 +334,20 @@ describe('bundleProject', () => {
     expect(error.code).toBe('BUNDLE_FAILED');
     expect(error.message).toContain('@remotion/three');
     expect(error.message).toContain('doctor');
+  });
+
+  it('lists every unsupported import with its file, and bundles a stub, when asked to', async () => {
+    const dir = project({
+      'index.ts': `import { ThreeCanvas } from '@remotion/three';\nimport './other';\nexport const x = ThreeCanvas;`,
+      'other.ts': `import '@remotion/three';\nimport { Player } from '@remotion/player';\nexport const y = Player;`,
+    });
+    const unsupported: UnsupportedImport[] = [];
+    const result = await bundleProject(join(dir, 'index.ts'), { unsupported });
+    expect(result.file).toMatch(/\.mjs$/);
+    expect(unsupported.map((u) => [u.specifier, basename(u.file ?? '')])).toEqual([
+      ['@remotion/three', 'index.ts'],
+      ['@remotion/three', 'other.ts'],
+      ['@remotion/player', 'other.ts'],
+    ]);
   });
 });

@@ -5,7 +5,7 @@ import type { OptionSpec, ParsedArgs, PositionalSpec } from '../args.js';
 import { PROJECT_OPTIONS } from '../args.js';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
-import { openSource, type Source } from '../source.js';
+import { openSource, type OpenOptions, type Source } from '../source.js';
 
 export interface Context {
   /** Progress for people (stderr). Silent for `--json`. */
@@ -74,10 +74,11 @@ export function allOptions(command: Command): OptionSpec[] {
   return command.project ? [...command.options, ...PROJECT_OPTIONS] : command.options;
 }
 
-export function openFromArgs(args: ParsedArgs): Promise<Source> {
+export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports'> = {}): Promise<Source> {
   return openSource(String(args.positionals.entry), {
     comp: args.options.comp as string | undefined,
     props: args.options.props as string | undefined,
+    ...extra,
   });
 }
 

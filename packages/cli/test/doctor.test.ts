@@ -12,11 +12,11 @@ import { fakeNative } from './helpers.js';
 
 // As in commands.test.ts: `openSource` is the seam to a project's bundle. The GPU is not touched here.
 const seam = vi.hoisted(() => ({
-  project: undefined as undefined | ((entry: string) => unknown),
+  project: undefined as undefined | ((entry: string, options: { unsupportedImports?: { specifier: string; file: string | null }[] }) => unknown),
 }));
 vi.mock('../src/source.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/source.js')>();
-  return { ...actual, openSource: (entry: string, options: object) => seam.project?.(entry) ?? actual.openSource(entry, options) };
+  return { ...actual, openSource: (entry: string, options: object) => seam.project?.(entry, options) ?? actual.openSource(entry, options) };
 });
 
 const scratch = (): string => mkdtempSync(join(tmpdir(), 'kinetograph-doctor-test-'));
@@ -83,6 +83,44 @@ describe('doctor <entry>', () => {
     // Every frame of the range, once, in order; and the source is released.
     expect(asked).toEqual(Array.from({ length: 20 }, (_, i) => i));
     expect(disposed()).toBe(1);
+  });
+
+  it('lists every unsupported import and checks what it can', async () => {
+    const { source } = stubProject(() => []);
+    seam.project = (_entry, options) => {
+      options.unsupportedImports?.push({ specifier: '@remotion/three', file: '/p/src/Scene.tsx' }, { specifier: '@remotion/player', file: '/p/src/App.tsx' });
+      return source;
+    };
+    const r = await cli('doctor', 'index.tsx', '--json');
+    expect(r.code).toBe(0);
+    expect(r.json.unsupportedImports).toEqual([
+      { specifier: '@remotion/three', file: '/p/src/Scene.tsx' },
+      { specifier: '@remotion/player', file: '/p/src/App.tsx' },
+    ]);
+    expect(r.json).toMatchObject({ comp: 'Main', frames: 20 });
+    const text = await cli('doctor', 'index.tsx');
+    expect(text.text).toContain('2 imports of packages Kinetograph does not support');
+    expect(text.text).toContain('@remotion/three  imported by');
+    expect(text.text).toContain('Main: frames 0..19');
+  });
+
+  it('lists the unsupported imports instead of the error when the project cannot be opened', async () => {
+    seam.project = (_entry, options) => {
+      options.unsupportedImports?.push({ specifier: '@remotion/three', file: '/p/src/Scene.tsx' });
+      throw new Error('ThreeCanvas is not a function');
+    };
+    const r = await cli('doctor', 'index.tsx');
+    expect(r.code).toBe(0);
+    expect(r.text).toContain('1 import of packages Kinetograph does not support');
+    expect(r.text).toContain('@remotion/three  imported by');
+    expect(r.text).toContain('the frames could not be checked: ThreeCanvas is not a function');
+  });
+
+  it('still fails on an error when no import is unsupported', async () => {
+    seam.project = () => {
+      throw new Error('boom');
+    };
+    expect((await cli('doctor', 'index.tsx')).code).not.toBe(0);
   });
 
   it('prints the report as text', async () => {
