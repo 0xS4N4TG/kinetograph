@@ -186,10 +186,11 @@ function writeHead(page: Page, frame: number): [number, number] {
 const Reticle: React.FC<{ at: Point; frame: number }> = ({ at, frame }) => {
   const jx = (random(`rx-${frame}`) - 0.5) * 3, jy = (random(`ry-${frame}`) - 0.5) * 3;
   return (
-    <div style={{ position: 'absolute', left: at.x - 46 + jx, top: at.y - 46 + jy, width: 92, height: 92, border: `1px solid rgba(255,244,226,0.75)` }}>
+    <div style={{ position: 'absolute', left: at.x - 46 + jx, top: at.y - 46 + jy, width: 92, height: 92, border: `1px solid rgba(255,244,226,0.75)`,
+      boxShadow: '0 0 0 1px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(0,0,0,0.45)' }}>
       {[[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => (
         <div key={`${x}${y}`} style={{ position: 'absolute', left: x ? undefined : -2, right: x ? -2 : undefined, top: y ? undefined : -2, bottom: y ? -2 : undefined, width: 12, height: 12,
-          [`border${y ? 'Bottom' : 'Top'}`]: `3px solid ${CREAM}`, [`border${x ? 'Right' : 'Left'}`]: `3px solid ${CREAM}` }} />
+          [`border${y ? 'Bottom' : 'Top'}`]: `3px solid ${CREAM}`, [`border${x ? 'Right' : 'Left'}`]: `3px solid ${CREAM}`, filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.8))' }} />
       ))}
       <div style={{ position: 'absolute', left: 0, top: '100%', marginTop: 6, fontFamily: MONO, fontSize: 13, color: CREAM, whiteSpace: 'pre', opacity: 0.85 }}>
         {`TRK 01  ${(0.91 + random(`c-${Math.floor(frame / 5)}`) * 0.08).toFixed(2)}`}
@@ -208,15 +209,18 @@ const BESIDE = 90;
 const ABOVE = 150;
 
 /** The captions of `lines` over the footage. `anchor(frame)` is the tracked subject in frame pixels, or null when the
- *  tracker has nothing. */
+ *  tracker has nothing. The text hangs off the subject, or off `place(frame)` when given (a subject that jumps about,
+ *  with the text kept still and the lines running to it). */
 export const Captions: React.FC<{
   lines: CaptionLine[]; anchor: (frame: number) => (Point & { side?: 'left' | 'right' }) | null; width: number; height: number; top?: number;
-}> = ({ lines, anchor, width, height, top = 160 }) => {
+  place?: (frame: number) => (Point & { side?: 'left' | 'right' }) | null;
+}> = ({ lines, anchor, width, height, top = 160, place }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const page = pages(lines, fps).find((p) => frame >= p.from && frame < p.to);
-  const at = anchor(frame);
-  if (!page || !at) return null;
+  const subject = anchor(frame);
+  const at = place ? place(frame) : subject;
+  if (!page || !at || !subject) return null;
   // the block goes on the side where the page fits on one line, or the roomier side; its near edge is BESIDE the
   // subject and it grows up from its bottom, never above `top`
   const need = guessWidth(page);
@@ -229,20 +233,23 @@ export const Captions: React.FC<{
   const [hw, hk] = writeHead(page, frame);
   // the lines: subject to the text's corner, and subject off the frame's edge, faint
   const cx = near + (side === 'right' ? 30 : -30), cy = height - bottom + 10;
-  const edge = { x: at.x < width / 2 ? width + 40 : -40, y: at.y + (at.y < height / 2 ? 260 : -260) };
+  const edge = { x: subject.x < width / 2 ? width + 40 : -40, y: subject.y + (subject.y < height / 2 ? 260 : -260) };
   return (
     <AbsoluteFill>
       <svg width={width} height={height} style={{ position: 'absolute', left: 0, top: 0 }}>
-        <line x1={at.x} y1={at.y} x2={cx} y2={cy} stroke={CREAM} strokeWidth={1.2} strokeOpacity={0.6} />
-        <line x1={at.x} y1={at.y} x2={edge.x} y2={edge.y} stroke={CREAM} strokeWidth={1} strokeOpacity={0.35} />
+        {/* a dark edge under the lines, so they read over white as well as dark */}
+        <line x1={subject.x} y1={subject.y} x2={cx} y2={cy} stroke="#000" strokeWidth={3.2} strokeOpacity={0.3} />
+        <line x1={subject.x} y1={subject.y} x2={edge.x} y2={edge.y} stroke="#000" strokeWidth={3} strokeOpacity={0.22} />
+        <line x1={subject.x} y1={subject.y} x2={cx} y2={cy} stroke={CREAM} strokeWidth={1.2} strokeOpacity={0.6} />
+        <line x1={subject.x} y1={subject.y} x2={edge.x} y2={edge.y} stroke={CREAM} strokeWidth={1} strokeOpacity={0.35} />
         <line x1={cx} y1={cy} x2={cx + (side === 'right' ? -260 : 260)} y2={cy - 40} stroke={CREAM} strokeWidth={1} strokeOpacity={0.3} />
       </svg>
-      <Reticle at={at} frame={frame} />
+      <Reticle at={subject} frame={frame} />
       <div style={{
         position: 'absolute', bottom, width: room, ...(side === 'right' ? { left: near } : { left: near - room }),
         display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: side === 'right' ? 'flex-start' : 'flex-end', rowGap: 4,
       }}>
-        {page.words.map((w, i) => <Word key={w.id} w={w} head={i === hw ? hk : null} anchor={at} />)}
+        {page.words.map((w, i) => <Word key={w.id} w={w} head={i === hw ? hk : null} anchor={subject} />)}
       </div>
     </AbsoluteFill>
   );

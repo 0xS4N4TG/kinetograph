@@ -1,11 +1,11 @@
-// Act 1, shots 1 to 6: the question, the problem, the melt, the camera, the burn.
+// Act 1, shots 1, 2 and 6: the question, and the burn; and shot 3's window pile, which act1-crt.tsx shows on a tube.
 // Moves follow STORYBOARD.md "Motion rules": entrances ease out over 6 to 10 frames, exits ease in over 4 to 6, overshoot
 // on objects only (never type), one move per beat. Shot 3's picture is a function of its own frame count, so shot 4
-// melts the live picture (it keeps running while it drains) rather than a still.
+// switches off the live picture (it keeps running as the tube folds it away) rather than a still.
 
 import React from 'react';
 import { AbsoluteFill, Video, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
-import { Layer, Rect } from '@kinetograph/core';
+import { Rect } from '@kinetograph/core';
 import { measureText } from '@remotion/layout-utils';
 import { CLAMP, H, HAND, INK, LEN, MONO, MUSTARD, OUT, PAPER, RED, SANS, W } from './common.js';
 import { S05 } from './act1-camera.js';
@@ -156,18 +156,24 @@ const BrowserWindow: React.FC<{ w: number; shot: number; style?: React.CSSProper
   );
 };
 
-/** "every frame. a screenshot." lands on the VO's "every single frame" (03-screenshot at frame 3). */
-export const S03_AT = [31, 45, 55, 63];
 export const WINDOWS = 15;
 export const WIN_EVERY = 4;
 
-/** The pile of screenshots, the flash, the slash, the counter and the line, at shot-3 frame `t` (it may run past the shot). */
-/** The window pile, the shutter glint, the counter and the line, at shot-3 frame `t` (it may run past the shot). Each
- *  window lands once on its WIN_EVERY beat and then stays put: the only per-frame change is the counter. */
-const Problem: React.FC<{ t: number }> = ({ t }) => {
-  const push = 1 + 0.06 * (t / LEN.s03);
+/** Window `i` of the pile: its size, place, tilt and the frame it lands on. */
+function windowOf(i: number) {
+  const r = (k: string) => random(`s3-${i}-${k}`);
+  const w = 900 + Math.round(r('w') * 160);
+  return { w, h: w * 0.62, left: 120 + r('x') * 760 + (i % 3) * 30, top: 70 + r('y') * 320, rot: (r('r') - 0.5) * 9, start: i * WIN_EVERY - 6 };
+}
+
+/** The push of the pile at shot-3 frame `t`. */
+const pushOf = (t: number) => 1 + 0.06 * (t / LEN.s03);
+
+/** The window pile, the shutter glint and the counter, at shot-3 frame `t` (it may run past the shot). Each window
+ *  lands once on its WIN_EVERY beat and then stays put: the only per-frame change is the counter. */
+export const Problem: React.FC<{ t: number }> = ({ t }) => {
+  const push = pushOf(t);
   const count = Math.min(1350, 1 + Math.floor(t * 15.2));
-  const at = S03_AT;
   // A four-point star glints on the window that just landed (the reel's accent), over 5 frames.
   const last = Math.min(WINDOWS - 1, Math.floor((t + 6) / WIN_EVERY));
   const since = t - (last * WIN_EVERY - 6);
@@ -178,16 +184,15 @@ const Problem: React.FC<{ t: number }> = ({ t }) => {
       <InkGround />
       <AbsoluteFill style={{ transform: `scale(${push})` }}>
         {Array.from({ length: WINDOWS }, (_, i) => {
-          const start = i * WIN_EVERY - 6;
-          if (t < start) return null;
-          const a = interpolate(t, [start, start + 6], [0, 1], { ...CLAMP, easing: BACK });
-          const r = (k: string) => random(`s3-${i}-${k}`);
+          const g = windowOf(i);
+          if (t < g.start) return null;
+          const a = interpolate(t, [g.start, g.start + 6], [0, 1], { ...CLAMP, easing: BACK });
           return (
             <BrowserWindow
               key={i}
               shot={i * 4}
-              w={900 + Math.round(r('w') * 160)}
-              style={{ left: 120 + r('x') * 760 + (i % 3) * 30, top: 70 + r('y') * 320, transform: `rotate(${(r('r') - 0.5) * 9}deg) scale(${0.86 + 0.14 * a})`, opacity: Math.min(1, a * 1.5) }}
+              w={g.w}
+              style={{ left: g.left, top: g.top, transform: `rotate(${g.rot}deg) scale(${0.86 + 0.14 * a})`, opacity: Math.min(1, a * 1.5) }}
             />
           );
         })}
@@ -199,99 +204,32 @@ const Problem: React.FC<{ t: number }> = ({ t }) => {
           </g>
         </svg>
       )}
-      <AbsoluteFill style={{ background: 'linear-gradient(0deg, rgba(10,10,10,0.97) 0%, rgba(10,10,10,0.9) 16%, rgba(10,10,10,0) 42%)' }} />
       <div style={{ position: 'absolute', right: 110, top: 80, fontFamily: MONO, fontSize: 34, color: '#e6e6e6', textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}>
         {`screenshot ${String(count).padStart(4, '0')} / 1350`}
       </div>
-      <Words words={['every', 'frame.', 'a', 'screenshot.']} at={at} color={PAPER} size={78} style={{ position: 'absolute', left: 130, top: 880 }} />
     </>
   );
 };
 
-export const S03: React.FC = () => {
-  const frame = useCurrentFrame();
-  return <Problem t={frame} />;
-};
-
-// ---- shot 4: the live shot-3 picture drains away in the showcase's pixel melt, onto paper; then ink rises for shot 5 ----
-// The melt (from examples/showcase, shot 1): the picture's top edge falls in columns of 40 px, in steps of 24 px,
-// leading on the left, with a rim of bright cells; what is behind is left.
-const COLS = 48;
-const CELL_W = W / COLS;
-const CELL_H = 24;
-const RIM = ['#ffe9b8', '#f5902a', '#E0261B', '#ECEAE6', '#ffd166'];
-const MELT_FRAMES = 34;
-export const RISE_AT = 47;
-
-function meltTops(frame: number): number[] | null {
-  const t = frame / MELT_FRAMES;
-  if (t <= 0) return null;
-  const base = -420 + (H + 600) * Math.pow(Math.min(1, t), 1.35);
-  return Array.from({ length: COLS }, (_, c) => {
-    const u = c / (COLS - 1);
-    const wave = 95 * Math.sin(u * 7.5 + t * 4.2) + 45 * Math.sin(u * 19 - t * 6.5 + 1.3) + (random(`melt-${c}`) - 0.5) * 40;
-    return Math.floor((base + (1 - u) * 380 + wave) / CELL_H) * CELL_H;
-  });
+/** The red ball of the newest window in the pile at shot-3 frame `t`, in the pile's frame pixels: the thing shot 3's
+ *  tracker follows from screenshot to screenshot. */
+export function ballAt(t: number): { x: number; y: number } | null {
+  const i = Math.min(WINDOWS - 1, Math.floor((t + 6) / WIN_EVERY));
+  if (i < 0) return null;
+  const g = windowOf(i);
+  const a = interpolate(t, [g.start, g.start + 6], [0, 1], { ...CLAMP, easing: BACK });
+  const s = 0.86 + 0.14 * a;
+  // the ball's centre in the window (BrowserWindow's drawing), about the window's centre
+  const bodyH = g.h - 44;
+  const u = ((i * 4) % 60) / 59;
+  const lx = 80 + u * (g.w - 220) + 30 - g.w / 2;
+  const ly = 44 + bodyH * 0.62 - Math.sin(u * Math.PI) * bodyH * 0.38 + 30 - g.h / 2;
+  const th = (g.rot * Math.PI) / 180;
+  const x = g.left + g.w / 2 + s * (lx * Math.cos(th) - ly * Math.sin(th));
+  const y = g.top + g.h / 2 + s * (lx * Math.sin(th) + ly * Math.cos(th));
+  const p = pushOf(t);
+  return { x: W / 2 + (x - W / 2) * p, y: H / 2 + (y - H / 2) * p };
 }
-
-/** Ink coming up from the bottom for the cut to shot 5: the melt's grid run backwards, leading on the right. */
-function riseTops(frame: number): number[] | null {
-  const t = interpolate(frame, [RISE_AT, RISE_AT + 8], [0, 1], { ...CLAMP, easing: IN });
-  if (t <= 0) return null;
-  const base = H + 500 - (H + 1000) * t;
-  return Array.from({ length: COLS }, (_, c) => {
-    const u = c / (COLS - 1);
-    const wave = 40 * Math.sin(u * 9 + t * 5) + (random(`rise-${c}`) - 0.5) * 50;
-    return Math.floor((base + u * 300 + wave) / CELL_H) * CELL_H;
-  });
-}
-
-function meltClip(tops: number[]) {
-  const points: [number, number][] = [];
-  tops.forEach((y, c) => points.push([c * CELL_W, y], [(c + 1) * CELL_W, y]));
-  points.push([W, H + 40], [0, H + 40]);
-  return { kind: 'polygon' as const, points };
-}
-
-const MeltRim: React.FC<{ tops: number[]; seed: string }> = ({ tops, seed }) => (
-  <>
-    {tops.flatMap((y, c) => {
-      if (y >= H || y < -CELL_H) return [];
-      const below = Math.max(tops[c - 1] ?? y, tops[c + 1] ?? y);
-      const rows = Math.min(3, Math.max(1, Math.round((below - y) / CELL_H)));
-      return Array.from({ length: rows }, (_, j) => {
-        const row = Math.round(y / CELL_H) + j;
-        if (random(`${seed}-${c}-${row}`) > 0.72) return null;
-        const color = RIM[Math.floor(random(`${seed}-c-${c}-${row}`) * RIM.length)]!;
-        return <Rect key={`${c}-${j}`} x={c * CELL_W} y={y + j * CELL_H} width={CELL_W} height={CELL_H} fill={color} />;
-      });
-    })}
-  </>
-);
-
-export const S04: React.FC = () => {
-  const frame = useCurrentFrame();
-  const tops = meltTops(frame - 3);
-  const rise = riseTops(frame);
-  // "you don't." lands as the picture clears, drifts forward, and leaves with the rising ink.
-  const grow = interpolate(frame, [24, LEN.s04], [1, 1.06], CLAMP);
-  return (
-    <>
-      <PaperGround />
-      <AbsoluteFill style={{ transform: `scale(${grow})` }}>
-        <Words words={['you', 'don’t.']} at={[22, 26]} color={INK} size={110} weight={700} style={{ position: 'absolute', left: 0, right: 0, top: 440, justifyContent: 'center' }} />
-      </AbsoluteFill>
-      <Over>
-        <Layer id="melt" clip={tops ? meltClip(tops) : undefined}>
-          <Problem t={LEN.s03 + frame} />
-        </Layer>
-      </Over>
-      {tops ? <Over><MeltRim tops={tops} seed="rim" /></Over> : null}
-      {rise ? <Over><Rect id="rise" width={W} height={H} fill={INK} clip={meltClip(rise)} /></Over> : null}
-      {rise ? <Over><MeltRim tops={rise} seed="rise-rim" /></Over> : null}
-    </>
-  );
-};
 
 // ---- shot 6: 16mm burn over the cut, screen-blended onto whatever is under it ----
 

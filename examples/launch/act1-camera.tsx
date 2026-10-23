@@ -1,10 +1,13 @@
-// Shot 5: the real camera (Poly Haven "Vintage Video Camera", CC0) in the reel's thermal duotone, turning slowly on black,
-// an orbit line drawn round it (back arc behind, front arc in front), the handwritten "FILM" screen-blended over it.
+// Shot 5: the real camera (Poly Haven "Vintage Video Camera", CC0) turning slowly on black. It arrives as a render pass,
+// grey and smooth like a depth map, on "You just", and the finished picture (the reel's thermal duotone) lands on
+// "render"; an orbit line is drawn round it (back arc behind, front arc in front), the handwritten "FILM" screen-blended
+// over it.
 
 import React from 'react';
 import { AbsoluteFill, Easing, Sequence, Video, interpolate, staticFile, useCurrentFrame } from 'remotion';
 import { Camera3D, DirectionalLight, Model, Rect, Scene3D, glow, gradientMap, grain } from '@kinetograph/core';
 import { CLAMP, H, INK, LEN, OUT, PAPER, W } from './common.js';
+import { depthLook } from './looks.js';
 import { IN, Over, Words } from './act1-kit.js';
 
 /** The thermal duotone of the reference reel: shadows to deep red, mids orange, highlights pale gold. */
@@ -27,6 +30,9 @@ const TILT = -14;
 const BACK_ARC = `M${CX - RX} ${CY} A${RX} ${RY} 0 0 1 ${CX + RX} ${CY}`;
 const FRONT_ARC = `M${CX + RX} ${CY} A${RX} ${RY} 0 0 1 ${CX - RX} ${CY}`;
 
+/** The frame the finished picture replaces the depth pass: the voiceover's "render" (05-render at frame 4). */
+export const S05_PASS = 13;
+
 /** The frame the handwritten FILM starts drawing: its ladder and scribble take 18 frames, then it boils on (we skip the ladder it starts with). */
 export const FILM_AT = 50;
 
@@ -40,7 +46,7 @@ export const S05: React.FC<{ graded?: boolean }> = ({ graded = true }) => {
   const backArc = interpolate(frame, [6, 24], [1, 0], { ...CLAMP, easing: OUT });
   const frontArc = interpolate(frame, [22, 42], [1, 0], { ...CLAMP, easing: OUT });
   // A flare at the cut, settling in 8 frames; another gathers over the last 10 frames into the burn.
-  const flare = interpolate(frame, [0, 8], [1.6, 0.5], { ...CLAMP, easing: OUT }) + interpolate(frame, [LEN.s05 - 10, LEN.s05], [0, 0.9], { ...CLAMP, easing: IN });
+  const flare = interpolate(frame, [S05_PASS, S05_PASS + 8], [1.6, 0.5], { ...CLAMP, easing: OUT }) + interpolate(frame, [LEN.s05 - 10, LEN.s05], [0, 0.9], { ...CLAMP, easing: IN });
   const rim = (r: number) => (
     <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0 }}>
       <g transform={`rotate(${TILT} ${CX} ${CY})`}>
@@ -64,7 +70,7 @@ export const S05: React.FC<{ graded?: boolean }> = ({ graded = true }) => {
       <Scene3D
         id="camera" width={W} height={H} opacity={arrive}
         environment={{ src: staticFile('hdri/studio_small_08_1k.hdr'), intensity: 0.35 }}
-        effects={graded ? [THERMAL, glow({ radius: 40, intensity: flare }), grain(0.05, { seed: 3 })] : []}
+        effects={!graded ? [] : frame < S05_PASS ? [...depthLook({ soft: 3, punch: 1.25 }), grain(0.05, { seed: 3 })] : [THERMAL, glow({ radius: 40, intensity: flare }), grain(0.05, { seed: 3 })]}
       >
         <Camera3D fov={24} position={[-0.08 + dist * 0.345, 0.07 + dist * 0.06, dist * 0.36]} target={[-0.065, 0.07, 0.0]} />
         <DirectionalLight direction={[0.55, -0.7, -0.45]} intensity={2.6} />

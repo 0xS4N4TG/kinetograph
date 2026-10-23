@@ -8,8 +8,9 @@
 import { VO_SECONDS } from './sound-vo.js';
 import { BURN, FPS, START, TOTAL, VO } from './sound-timing.js';
 import { LEN } from './common.js';
-import { LOOK, RISE_AT, S02_AT, S03_AT, WINDOWS, WIN_EVERY } from './act1.js';
-import { FILM_AT } from './act1-camera.js';
+import { LOOK, S02_AT, WINDOWS, WIN_EVERY } from './act1.js';
+import { S03_LINES, S04_AT, S04_OFF } from './act1-crt.js';
+import { FILM_AT, S05_PASS } from './act1-camera.js';
 import { CUTS, LINES, RECEIPTS_AT } from './act2-s07.js';
 import { wordSpans } from './print/captions.js';
 import { RECEIPT_SOUND } from './print/receipts.js';
@@ -56,21 +57,31 @@ cue(at('s02', 3), (q) => sweep(q, 0.45, 300, 3800, 0.22, 0.5, 'bar-whoosh'));
 cue(at('s02', S02_AT[S02_AT.length - 1]! + 4), (q) => pen(q, sec(16), 0.18, 'pen-s02'));
 cue(START.s03 - 18, (q) => riser(q, sec(18) - 0.03, 0.06, false));
 
-// ---- shot 3: a shutter on every window that lands; a low pulse under the pile ----
-cue(START.s03, (q) => rumble(q, sec(LEN.s03), 0.12, 0.6, 's03-rumble'));
+// ---- shot 3: the monitor's hum under the pile; a shutter on every window that lands; a pen as each word writes ----
+cue(START.s03, (q) => rumble(q, sec(LEN.s03 + S04_OFF.line[1]), 0.1, 0.5, 's03-hum'));
 for (let i = 0; i < WINDOWS; i++) {
   const f = i * WIN_EVERY - 6;
-  if (f >= 0 && f < LEN.s03) cue(at('s03', f + 1), (q) => shutter(q, 0.16));
+  if (f >= 0 && f < LEN.s03) cue(at('s03', f + 1), (q) => shutter(q, 0.14));
 }
-S03_AT.slice(0, 2).forEach((f) => cue(at('s03', f), (q) => tick(q, 0.05, 1200, 700)));
+wordSpans(S03_LINES, FPS).forEach((w, i) => {
+  if (w.hot) {
+    cue(at('s03', w.from), (q) => bass(q, 65.41, 0.5, 0.2));
+    cue(at('s03', w.from), (q) => tick(q, 0.04, 900, 500));
+  } else cue(at('s03', w.from), (q) => pen(q, sec(Math.max(3, w.to - w.from)), 0.06, `pen-s03-${i}`));
+});
 
-// ---- shot 4: the picture melts away; "you don't" lands; ink rises for the camera ----
-cue(at('s04', 3), (q) => sweep(q, 1.1, 5200, 160, 0.26, 0.25, 'melt', 0.9));
-cue(at('s04', 22), (q) => bass(q, 58.27, 1.2, 0.3));
-cue(at('s04', RISE_AT - 2), (q) => sweep(q, sec(LEN.s04 - RISE_AT + 4), 200, 2400, 0.2, 0.95, 'rise'));
+// ---- shot 4: the tape tears, the tube switches off (a thump, the flyback's whine falling away, the static crackling
+//      out); "you don't need one" lands in the quiet ----
+cue(at('s04', S04_OFF.tear[0]), (q) => sweep(q, sec(S04_OFF.tear[1]), 900, 4200, 0.12, 0.9, 'tear', 0.8));
+cue(at('s04', S04_OFF.line[0]), (q) => hit(q, 0.32, 0.15));
+cue(at('s04', S04_OFF.line[0]), (q) => sweep(q, sec(S04_OFF.die[1] - S04_OFF.line[0]), 15000, 300, 0.08, 0.05, 'flyback', 6));
+cue(at('s04', S04_OFF.dot[0]), (q) => sweep(q, sec(S04_OFF.die[1] - S04_OFF.dot[0]), 6000, 1500, 0.06, 0.1, 'static-out', 0.6));
+cue(at('s04', S04_AT[0]!), (q) => bass(q, 58.27, 1.2, 0.26));
 
-// ---- shot 5: the camera arrives with a flare; the orbit line draws; FILM scratches on; the projector starts ----
-cue(START.s05, (q) => hit(q, 0.5, 0.25));
+// ---- shot 5: the camera arrives as a grey pass, and the finished picture lands with a hit and a flare on "render";
+//      the orbit line draws; FILM scratches on; the projector starts ----
+cue(START.s05, (q) => tick(q, 0.05, 1600, 900));
+cue(at('s05', S05_PASS), (q) => hit(q, 0.5, 0.25));
 cue(at('s05', 6), (q) => sweep(q, sec(36), 600, 2600, 0.07, 0.6, 'orbit', 1.6));
 cue(at('s05', FILM_AT), (q) => pen(q, sec(14), 0.16, 'pen-film'));
 

@@ -2,17 +2,20 @@
 //
 //   m1  <Scene3D>: the wordmark as extruded 3D type, a dolly zoom out of a flat front view, props dropping in.
 //   m2  an orthographic camera: an isometric city of blocks rising in a ripple; the camera dives into the red block.
-//   m3  <GlslShader>: domain-warped marbling in the film's palette, a condensed version of its source typing on beside it.
-//   m4  <Canvas>: a flow field of 2,000 ink strokes and a spirograph drawn on, opened with an iris.
-//   m5  <GlslShader>: three glass spheres refracting (with dispersion) a plate of the wordmark, the camera pulling back.
+//   m3  <GlslShader>: domain-warped marbling seen through a thermal camera's palette, its source typing on beside it.
+//   m4  <Canvas>: a flow field of 2,000 strokes and a spirograph, drawn in phosphor on a vector tube (with the beam's
+//       afterglow), opened with an iris.
+//   m5  <GlslShader>: three glass spheres refracting (with dispersion) a frame of the 1927 parade film, the camera
+//       pulling back, graded with shot 7's film.
 //
 // m1 to m2 is a whip pan (both sides motion-blurred), m2 to m3 a dive into a red face, m3 to m4 an iris, m4 to m5 a cut.
 
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import {
-  AmbientLight, Camera3D, Canvas, DirectionalLight, GlslShader, Group3D, Layer, Mesh, Scene3D, Text3D, grain,
+  AmbientLight, Camera3D, Canvas, DirectionalLight, GlslShader, Group3D, Layer, Mesh, Scene3D, Text3D, glow, gradientMap, grain,
 } from '@kinetograph/core';
+import { crt, thermal } from './looks.js';
 import { CLAMP, H, INK, LEN, MONO, MUSTARD, OUT, PAPER, RED, SANS, W } from './common.js';
 import { IO } from './act1-kit.js';
 
@@ -249,7 +252,7 @@ export const M3: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: INK }}>
       <AbsoluteFill>
-        <GlslShader id="m3-gl" width={W} height={H} fragment={MARBLE} uniforms={{ u_res: [W, H], u_t: frame / 30, u_red: red }} />
+        <GlslShader id="m3-gl" width={W} height={H} fragment={MARBLE} uniforms={{ u_res: [W, H], u_t: frame / 30, u_red: red }} effects={thermal({ soft: 2 })} />
       </AbsoluteFill>
       <div style={{ position: 'absolute', left: 72, top: 96, padding: '28px 34px', background: 'rgba(10,10,10,0.72)', borderRadius: 14, fontFamily: MONO, fontSize: 27, lineHeight: 1.6, color: PAPER, opacity: panel, transform: `translateY(${(1 - panel) * 16}px)`, whiteSpace: 'pre', minWidth: 720 }}>
         {shown.map((l, i) => (
@@ -265,6 +268,11 @@ export const M3: React.FC = () => {
 
 // ---- m4: Canvas 2D ----
 
+/** The vector tube's dark glass, its green phosphor and the amber of the hot strokes. */
+const TUBE = '#020604';
+const PHOSPHOR = '#8dffbf';
+const AMBER = '#ffb54a';
+
 /** The flow field's angle at a point: three slow waves, turning over time. */
 const flow = (x: number, y: number, t: number) =>
   Math.sin(x * 0.0042 + t * 0.9) * 1.7 + Math.cos(y * 0.0051 - t * 0.6) * 1.7 + Math.sin((x + y) * 0.0021 + t * 0.4);
@@ -279,39 +287,45 @@ export const M4: React.FC = () => {
   const spiro = interpolate(frame, [...M4_SPIRO], [0, 1], { ...CLAMP, easing: Easing.inOut(Easing.quad) });
   const disc = interpolate(frame, [4, 14], [0, 1], { ...CLAMP, easing: Easing.out(Easing.back(1.5)) });
   const draw = (ctx: any) => {
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = TUBE;
     ctx.fillRect(0, 0, W, H);
     ctx.lineCap = 'round';
     const STEP = 30;
-    for (const colour of [INK, RED]) {
-      ctx.beginPath();
-      for (let gx = STEP / 2; gx < W; gx += STEP) {
-        for (let gy = STEP / 2; gy < H; gy += STEP) {
-          const isRed = random(`ff-${gx}-${gy}`) < 0.05;
-          if ((colour === RED) !== isRed) continue;
-          const a = flow(gx, gy, t);
-          const grow = interpolate(Math.hypot(gx - W / 2, gy - H / 2), [0, 1100], [0, 1]) < frame / 14 ? 1 : 0;
-          const len = grow * (12 + 18 * (0.5 + 0.5 * Math.sin(gx * 0.013 + gy * 0.011 + t * 2)));
-          ctx.moveTo(gx - (Math.cos(a) * len) / 2, gy - (Math.sin(a) * len) / 2);
-          ctx.lineTo(gx + (Math.cos(a) * len) / 2, gy + (Math.sin(a) * len) / 2);
+    // the field now and, fainter, a frame and two frames ago: the phosphor's afterglow behind the beam
+    for (const [lag, alpha] of [[2, 0.12], [1, 0.32], [0, 1]] as const) {
+      const tt = t - lag / 30;
+      ctx.globalAlpha = alpha;
+      for (const colour of [PHOSPHOR, AMBER]) {
+        ctx.beginPath();
+        for (let gx = STEP / 2; gx < W; gx += STEP) {
+          for (let gy = STEP / 2; gy < H; gy += STEP) {
+            const hot = random(`ff-${gx}-${gy}`) < 0.05;
+            if ((colour === AMBER) !== hot) continue;
+            const a = flow(gx, gy, tt);
+            const grow = interpolate(Math.hypot(gx - W / 2, gy - H / 2), [0, 1100], [0, 1]) < (frame - lag) / 14 ? 1 : 0;
+            const len = grow * (12 + 18 * (0.5 + 0.5 * Math.sin(gx * 0.013 + gy * 0.011 + tt * 2)));
+            ctx.moveTo(gx - (Math.cos(a) * len) / 2, gy - (Math.sin(a) * len) / 2);
+            ctx.lineTo(gx + (Math.cos(a) * len) / 2, gy + (Math.sin(a) * len) / 2);
+          }
         }
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = colour === AMBER ? 3.2 : 2.2;
+        ctx.stroke();
       }
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = colour === RED ? 3.4 : 2.6;
-      ctx.stroke();
     }
+    ctx.globalAlpha = 1;
     // the disc and the spirograph on it (a hypotrochoid, R 8, r 5, d 5: eight lobes, closes after five turns)
     const cx = W / 2 + 230;
     const cy = H / 2;
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.28)';
-    ctx.shadowBlur = 40;
-    ctx.shadowOffsetY = 14;
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = TUBE;
     ctx.beginPath();
     ctx.arc(cx, cy, 330 * disc, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
+    ctx.strokeStyle = PHOSPHOR;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
     const N = 1500;
     const upto = Math.floor(N * spiro);
     if (upto > 1) {
@@ -325,7 +339,7 @@ export const M4: React.FC = () => {
         if (k === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       }
-      ctx.strokeStyle = RED;
+      ctx.strokeStyle = AMBER;
       ctx.lineWidth = 3.5;
       ctx.lineJoin = 'round';
       ctx.stroke();
@@ -334,14 +348,19 @@ export const M4: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: INK }}>
       <AbsoluteFill style={{ clipPath: `circle(${iris}px at 50% 50%)` }}>
-        <AbsoluteFill><Canvas id="m4-canvas" width={W} height={H} draw={draw} /></AbsoluteFill>
-        <Plate n="04" api="<Canvas>" what="2,000 strokes and a spirograph, drawn every frame" at={10} />
+        <Layer id="m4-tube" effects={[glow({ radius: 16, intensity: 0.9, color: PHOSPHOR }), crt({ curve: 0.05, pitch: 3, scan: 0.5, mask: 0.22, conv: 0.8, glass: 0 })]}>
+          <Canvas id="m4-canvas" width={W} height={H} draw={draw} />
+        </Layer>
+        <Plate n="04" api="<Canvas>" what="2,000 strokes and a spirograph, drawn every frame" at={10} dark />
       </AbsoluteFill>
     </AbsoluteFill>
   );
 };
 
 // ---- m5: glass ----
+
+/** Shot 7's film grade (act2-s07.tsx), so the glass looks at the same 1927 film. */
+const FILM_TONE = [{ offset: 0, color: '#060708' }, { offset: 0.5, color: '#7d766b' }, { offset: 1, color: '#fff2dc' }];
 
 const GLASS = `precision highp float;
 uniform vec2 u_res;
@@ -439,16 +458,16 @@ export const M5: React.FC = () => {
   const s1 = [roll + 0.95 * Math.cos(t * 1.6 + 0.6), 0.32 * Math.sin(t * 1.6 + 0.6) + 0.28, 0.75, 0.2];
   const s2 = [-1.15 + 0.12 * Math.sin(t * 1.3), -0.45 + 0.1 * Math.cos(t * 1.7), 0.5, 0.3];
   return (
-    <AbsoluteFill style={{ background: PAPER }}>
+    <AbsoluteFill style={{ background: '#000' }}>
       <AbsoluteFill>
         <GlslShader
           id="m5-gl" width={W} height={H} fragment={GLASS}
           uniforms={{ u_res: [W, H], u_cz: cz, u_s0: s0, u_s1: s1, u_s2: s2 }}
-          textures={{ u_plate: { src: staticFile('mg/glass-plate.png'), filter: 'linear', wrap: 'mirror' } }}
-          effects={[grain(0.02, { seed: 5 })]}
+          textures={{ u_plate: { src: staticFile('receipts/crowd.png'), filter: 'linear', wrap: 'mirror' } }}
+          effects={[gradientMap({ stops: FILM_TONE }), glow({ radius: 40, intensity: 0.3 }), grain(0.08, { seed: 5, animate: true })]}
         />
       </AbsoluteFill>
-      <Plate n="05" api="<GlslShader>" what="refraction with dispersion, ray-traced per pixel" at={16} />
+      <Plate n="05" api="<GlslShader>" what="refraction with dispersion, ray-traced per pixel" at={16} dark />
     </AbsoluteFill>
   );
 };

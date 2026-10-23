@@ -6,7 +6,7 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
 import { Layer, blur } from '@kinetograph/core';
-import { CLAMP, H, LEN, MONO, OUT, SANS, W } from './common.js';
+import { CLAMP, H, LEN, MONO, OUT, SANS, TITLE, TITLE_GLOW, W } from './common.js';
 
 const BG = '#0d1117';
 const SYN: Record<string, string> = { k: '#ff7b72', f: '#d2a8ff', s: '#a5d6ff', p: '#c9d1d9' };
@@ -170,10 +170,11 @@ export const S08: React.FC = () => {
         </div>
       </Layer>
       <AbsoluteFill style={{ background: `radial-gradient(ellipse 75% 70% at 50% 50%, rgba(13,17,23,${0.5 * numIn}) 20%, rgba(13,17,23,${0.35 + 0.45 * numIn}) 100%)` }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, top: 310, textAlign: 'center', color: '#f0f6fc', fontFamily: SANS }}>
-        <div style={{ fontWeight: 700, fontSize: 330, lineHeight: 1, letterSpacing: '-0.04em', paddingRight: 40, opacity: numIn, transform: `scale(${pop})`, filter: `blur(${(1 - numIn) * 10}px)` }}>{count}%</div>
-        <div style={{ fontSize: 50, marginTop: 18, color: '#c9d1d9', opacity: subIn, transform: `translateY(${(1 - subIn) * 14}px)` }}>of the remotion api. <span style={{ color: '#fff', fontWeight: 500 }}>a drop-in replacement.</span></div>
-        <div style={{ fontFamily: MONO, fontSize: 24, marginTop: 30, color: '#8b949e', opacity: noteIn }}>168 of 170 public exports · remotion 4.0.536 + 12 packages</div>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 250, textAlign: 'center', color: '#f6efe4', fontFamily: SANS }}>
+        <div style={{ fontFamily: TITLE, fontWeight: 400, fontSize: 420, lineHeight: 1.1, letterSpacing: '-0.02em', paddingRight: 30, textShadow: TITLE_GLOW,
+          opacity: numIn, transform: `scale(${pop})`, filter: `blur(${(1 - numIn) * 10}px)` }}>{count}%</div>
+        <div style={{ fontSize: 30, fontWeight: 500, letterSpacing: '0.32em', textTransform: 'uppercase', marginTop: 10, color: '#b9b2a6', opacity: subIn, transform: `translateY(${(1 - subIn) * 14}px)` }}>of the remotion api <span style={{ color: '#f6efe4' }}>· a drop-in replacement</span></div>
+        <div style={{ fontFamily: MONO, fontSize: 20, letterSpacing: '0.08em', marginTop: 34, color: '#7d776d', opacity: noteIn }}>168 of 170 public exports · remotion 4.0.536 + 12 packages</div>
       </div>
     </AbsoluteFill>
   );

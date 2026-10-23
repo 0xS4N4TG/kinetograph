@@ -5,7 +5,7 @@
 import React from 'react';
 import { AbsoluteFill, Freeze, Sequence, interpolate, spring, staticFile, useCurrentFrame } from 'remotion';
 import { Video } from '@kinetograph/core';
-import { CLAMP, FPS, InkGround, MONO, OUT, PAPER, RED, SANS } from './common.js';
+import { CLAMP, FPS, InkGround, MONO, OUT, PAPER, RED, SANS, TITLE, TITLE_GLOW } from './common.js';
 
 export const REMOTION_S = 8.86;
 export const KINETOGRAPH_S = 1.25;
@@ -83,12 +83,12 @@ export const S09: React.FC = () => {
       })()}
 
       <div style={{
-        position: 'absolute', left: 130, top: 640, fontFamily: SANS, fontWeight: 700, fontSize: 340, lineHeight: 1, color: PAPER, letterSpacing: '-0.04em', paddingRight: 40,
-        opacity: multIn, filter: `blur(${(1 - multIn) * 12}px)`, transform: `scale(${pop})`, transformOrigin: '0 60%',
+        position: 'absolute', left: 120, top: 590, fontFamily: TITLE, fontWeight: 400, fontSize: 400, lineHeight: 1.1, color: '#f6efe4', letterSpacing: '-0.02em', paddingRight: 40,
+        textShadow: TITLE_GLOW, opacity: multIn, filter: `blur(${(1 - multIn) * 12}px)`, transform: `scale(${pop})`, transformOrigin: '0 60%',
       }}>
         {mult.toFixed(1)}x
       </div>
-      <div style={{ position: 'absolute', left: 150, top: 960, fontFamily: SANS, fontWeight: 500, fontSize: 44, color: '#c4c4c4', opacity: interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [0, 1], { ...CLAMP, easing: OUT }), transform: `translateY(${interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [14, 0], { ...CLAMP, easing: OUT })}px)` }}>
+      <div style={{ position: 'absolute', left: 150, top: 975, fontFamily: SANS, fontWeight: 500, fontSize: 28, letterSpacing: '0.32em', textTransform: 'uppercase', color: '#b9b2a6', opacity: interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [0, 1], { ...CLAMP, easing: OUT }), transform: `translateY(${interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [14, 0], { ...CLAMP, easing: OUT })}px)` }}>
         faster, same frames
       </div>
 

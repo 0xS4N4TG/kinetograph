@@ -4,7 +4,9 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import { measureText } from '@remotion/layout-utils';
 import { LogoFlicker } from '@/components/snap-cn/logo-flicker';
-import { CLAMP, H, INK, MONO, OUT, PaperGround, RED, SANS, W } from './common.js';
+import { Layer } from '@kinetograph/core';
+import { CLAMP, H, INK, MONO, OUT, PaperGround, RED, SANS, TITLE_GLOW, W } from './common.js';
+import { oneBit } from './looks.js';
 
 /** Seconds this video took to render, filled in by the final render (until then the end card prints "N"). */
 export const RENDER_SECONDS: number | null = 297;
@@ -89,7 +91,8 @@ function loop(cx: number, cy: number, rx: number, ry: number, seed: string): Pt[
   return pts;
 }
 
-// ---- shot 10: no chrome, no screenshots, just pixels ----
+// ---- shot 10: no chrome, no screenshots, just pixels: the page in one bit a pixel, the dither's cells growing on
+//      "pixels" until they read as pixels; only the red loop is in colour ----
 const S10_WORDS = ['no', 'chrome.', 'no', 'screenshots.', 'just', 'pixels.'];
 // Frames each word lands, matched to the voiceover (sound.tsx places it at VO_AT.s10, in the voice's own pauses).
 export const S10_LAND = [4, 10, 20, 24, 41, 47];
@@ -115,9 +118,13 @@ export const S10: React.FC = () => {
     interpolate(frame, [...S10_STRIKE[1]], [0, 1], { ...CLAMP, easing: pen }),
   ];
   const circle = interpolate(frame, [...S10_CIRCLE], [0, 1], { ...CLAMP, easing: Easing.bezier(0.3, 0, 0.2, 1) });
+  const cell = Math.round(interpolate(frame, [S10_LAND[5]!, S10_LAND[5]! + 14], [2, 5], { ...CLAMP, easing: OUT }));
   return (
     <AbsoluteFill>
+      <Layer id="s10-bits" effects={oneBit({ size: cell, punch: 1.3, ink: '#060606', paper: '#ece9e2' })}>
       <PaperGround />
+      {/* a deeper falloff than the paper's own, so the dither's dots spread in from the corners */}
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 62% 60% at 50% 48%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.55) 100%)' }} />
       {S10_WORDS.map((w, i) => {
         const t = interpolate(frame, [S10_LAND[i]!, S10_LAND[i]! + 4], [0, 1], CLAMP);
         const phrase = Math.floor(i / 2);
@@ -129,6 +136,9 @@ export const S10: React.FC = () => {
       <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0 }}>
         <Pen pts={scrawl(runs[0]![0], runs[0]![1], yc, S10_SIZE * 0.31, 'k1')} progress={strike[0]!} width={6.5} color={INK} seed="k1" />
         <Pen pts={scrawl(runs[1]![0], runs[1]![1], yc, S10_SIZE * 0.31, 'k2')} progress={strike[1]!} width={6.5} color={INK} seed="k2" />
+      </svg>
+      </Layer>
+      <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0 }}>
         <Pen pts={loop((runs[2]![0] + runs[2]![1]) / 2, yc, (runs[2]![1] - runs[2]![0]) / 2 + 56, S10_SIZE * 0.78, 'k3')} progress={circle} width={8} color={RED} seed="k3" />
       </svg>
     </AbsoluteFill>
@@ -156,20 +166,21 @@ export const S12: React.FC<{ renderSeconds?: number | null }> = ({ renderSeconds
   const words = ['write', 'remotion.', 'render', 'native.'];
   const urlT = interpolate(frame, [S12_URL, S12_URL + 8], [0, 1], { ...CLAMP, easing: OUT });
   return (
-    <AbsoluteFill>
-      <PaperGround />
-      <div style={{ position: 'absolute', left: 0, right: 0, top: 300, textAlign: 'center', fontFamily: SANS, color: INK }}>
-        <div style={{ fontWeight: 700, fontSize: 210, letterSpacing: '-0.05em', lineHeight: 1, opacity: land, transform: `scale(${1.05 - 0.05 * land})`, filter: `blur(${(1 - land) * 10}px)` }}>
+    <AbsoluteFill style={{ background: '#060606' }}>
+      {/* the projector's light on the screen: a warm pool, falling off to the dark */}
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 62% 58% at 50% 46%, rgba(255,236,205,0.11) 0%, rgba(255,226,190,0.04) 45%, rgba(0,0,0,0) 75%)', opacity: land }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 300, textAlign: 'center', fontFamily: SANS, color: '#f3efe8' }}>
+        <div style={{ fontWeight: 700, fontSize: 210, letterSpacing: '-0.05em', lineHeight: 1, textShadow: TITLE_GLOW, opacity: land, transform: `scale(${1.05 - 0.05 * land})`, filter: `blur(${(1 - land) * 10}px)` }}>
           kinetograph<span style={{ color: RED, display: 'inline-block', transform: `scale(${dot})`, transformOrigin: '50% 85%' }}>.</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 50 * 0.26, fontSize: 50, fontWeight: 500, marginTop: 34, letterSpacing: '-0.01em' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 28, fontSize: 30, fontWeight: 500, marginTop: 44, letterSpacing: '0.32em', textTransform: 'uppercase', color: '#c9c2b6' }}>
           {words.map((w, i) => {
             const t = fade(S12_TAG[i]!, S12_TAG[i]! + 4);
             return <span key={i} style={{ opacity: t, filter: `blur(${(1 - t) * 6}px)` }}>{w}</span>;
           })}
         </div>
-        <div style={{ fontFamily: MONO, fontSize: 36, marginTop: 110, opacity: urlT, transform: `translateY(${(1 - urlT) * 14}px)` }}>kinetograph.dev</div>
-        <div style={{ fontFamily: MONO, fontSize: 22, marginTop: 120, color: '#7a7670', opacity: fade(S12_URL + 16, S12_URL + 24) }}>
+        <div style={{ fontFamily: MONO, fontSize: 34, marginTop: 110, color: '#f3efe8', opacity: urlT, transform: `translateY(${(1 - urlT) * 14}px)` }}>kinetograph.dev</div>
+        <div style={{ fontFamily: MONO, fontSize: 20, marginTop: 120, color: '#6f6a62', opacity: fade(S12_URL + 16, S12_URL + 24) }}>
           this video was rendered by kinetograph in {renderSeconds ?? 'N'} s
         </div>
       </div>
