@@ -11,14 +11,14 @@ import { LEN } from './common.js';
 import { LOOK, RISE_AT, S02_AT, S03_AT, WINDOWS, WIN_EVERY } from './act1.js';
 import { FILM_AT } from './act1-camera.js';
 import { CUTS, LINES, RECEIPTS_AT } from './act2-s07.js';
-import { lockFrames } from './print/captions.js';
-import { PRINTS } from './print/receipts.js';
+import { wordSpans } from './print/captions.js';
+import { RECEIPT_SOUND } from './print/receipts.js';
 import { S08_HOLD } from './act2-s08.js';
 import { M1_DROPS, M2_DIVE, M3_TYPE, M4_SPIRO, WHIP } from './act2-mg.js';
 import { IMPACT_AT, KINETOGRAPH_S, MULT_AT, RACE, REMOTION_S } from './act2-s09.js';
 import { S10_CIRCLE, S10_LAND, S10_STRIKE, S12_TAG, S12_URL } from './act3.js';
 import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
-import { DUCK, bass, bell, cue, hat, hit, kick, pad, paper, pen, pop, printer, projector, riser, rumble, shutter, sweep, tick } from './sound-synth.js';
+import { DUCK, bass, bell, cue, cutter, hat, hit, kick, pad, paperDrop, pen, pop, projector, riser, room, rumble, shutter, sweep, thermal, tick } from './sound-synth.js';
 
 const BEAT = 15;
 const sec = (frames: number): number => frames / FPS;
@@ -79,26 +79,22 @@ cue(BURN - 16, (q) => projector(q, sec(LEN.s06 + 6), 0.32, 'burn-projector'));
 cue(BURN - 12, (q) => rumble(q, sec(LEN.s06), 0.22, 0.45, 'burn-swell'));
 cue(BURN - 10, (q) => sweep(q, sec(LEN.s06 - 4), 700, 5200, 0.1, 0.5, 'burn-air', 0.7));
 
-// ---- shot 7: the beat comes in on the cut and runs under the footage; a shutter on every cut; a data blip as the
-//      tracker locks on each word; on the cut to the receipts the beat stops and the printers take over: each printed
-//      receipt feeds with its stepper whine and a snap of the cutter, each dropped one lands with a slap ----
-const BASS_LINE = [73.42, 73.42, 87.31, 73.42];
-for (let f = 0, i = 0; f < RECEIPTS_AT; f += BEAT, i++) {
-  cue(at('s07', f), (q) => kick(q, 0.6));
-  cue(at('s07', f + BEAT / 2), (q) => hat(q, 0.04));
-  cue(at('s07', f + BEAT / 2), (q) => bass(q, BASS_LINE[i % 4]!, 0.2, 0.24));
-}
-CUTS.slice(1).forEach((c) => cue(at('s07', c.at), (q) => shutter(q, 0.12)));
-lockFrames(LINES, FPS).forEach((f, i) => cue(at('s07', f), (q) => tick(q, 0.035, 2900 + (i % 3) * 300, 2300)));
-cue(at('s07', RECEIPTS_AT), (q) => hit(q, 0.35, 0.25));
-PRINTS.forEach((p) => {
-  const from = at('s07', RECEIPTS_AT + p.at);
-  if (p.mode === 'print') cue(from, (q) => printer(q, sec(p.dur), p.lines, 0.11, `printer-${p.key}`));
-  else {
-    cue(from, (q) => sweep(q, sec(p.dur) * 0.8, 2600, 700, 0.06, 0.6, `air-${p.key}`, 0.8));
-    cue(from + p.dur, (q) => paper(q, 0.22, `paper-${p.key}`));
-  }
+// ---- shot 7: the archive film runs with a projector's clatter under it and a shutter on its cut; a pen scratches as
+//      each word writes itself, a soft low thump where one breaks out; on the cut to the receipts, a hit, then the
+//      printer's buzz and the cutter, a quiet room, and each receipt's fall onto the pile ----
+cue(at('s07', 0), (q) => projector(q, sec(RECEIPTS_AT), 0.12, 's07-projector'));
+CUTS.slice(1).forEach((c) => cue(at('s07', c.at), (q) => shutter(q, 0.1)));
+wordSpans(LINES, FPS).forEach((w, i) => {
+  if (w.hot) {
+    cue(at('s07', w.from), (q) => bass(q, 65.41, 0.5, 0.22));
+    cue(at('s07', w.from), (q) => tick(q, 0.04, 900, 500));
+  } else cue(at('s07', w.from), (q) => pen(q, sec(Math.max(3, w.to - w.from)), 0.07, `pen-s07-${i}`));
 });
+cue(at('s07', RECEIPTS_AT), (q) => hit(q, 0.3, 0.2));
+cue(at('s07', RECEIPTS_AT), (q) => room(q, sec(LEN.s07 - RECEIPTS_AT), 0.08, 's07-room'));
+cue(at('s07', RECEIPTS_AT + RECEIPT_SOUND.feed[0]), (q) => thermal(q, sec(RECEIPT_SOUND.feed[1] - RECEIPT_SOUND.feed[0]), 0.14, 's07-thermal'));
+cue(at('s07', RECEIPTS_AT + RECEIPT_SOUND.cut), (q) => cutter(q, 0.3, 's07-cutter'));
+RECEIPT_SOUND.drops.forEach((d) => cue(at('s07', RECEIPTS_AT + d.at), (q) => paperDrop(q, sec(d.land - d.at), 0.2, `drop-${d.key}`)));
 
 // ---- the motion-graphics run: a pulse from the 3D reveal to the cut into shot 8; each piece has its own sound ----
 for (let f = at('m1', 26); f < START.s08 - 4; f += BEAT) {

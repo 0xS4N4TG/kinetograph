@@ -352,58 +352,117 @@ export function projector(c: Cue, seconds: number, vel: number, seed: string): v
   n.connect(bp).connect(g).connect(c.sfx);
 }
 
-/** A thermal printer feeding `lines` lines over `seconds`, slowing as the paper does (an ease-out): the stepper's
- *  whine chopped once a line, the head's hiss, and a hard stop. */
-export function printer(c: Cue, seconds: number, lines: number, vel: number, seed: string): void {
-  const steps = Math.max(8, Math.round(seconds * 200));
-  const chop = new Float32Array(steps);
-  const hiss = new Float32Array(steps);
-  for (let i = 0; i < steps; i++) {
-    const p = i / (steps - 1);
-    // the paper's travel follows 1 - (1 - p)^2, so the line count does too
-    const line = (1 - (1 - p) ** 2) * lines;
-    const inLine = line - Math.floor(line);
-    const env = Math.min(1, p * 30) * (p > 0.985 ? 0 : 1);
-    chop[i] = vel * env * (inLine < 0.55 ? 1 : 0.2) * (0.85 + 0.15 * random(`${seed}-c${i}`));
-    hiss[i] = vel * 0.45 * env * (inLine < 0.55 ? 1 : 0.5);
-  }
-  const o = c.ctx.createOscillator();
-  o.type = 'square';
-  o.frequency.setValueAtTime(820, c.t);
-  o.frequency.linearRampToValueAtTime(560, c.t + seconds);
+/** A short burst of band-passed noise: the building block of the mechanical sounds below. */
+function burst(c: Cue, t: number, seconds: number, hz: number, q: number, vel: number, seed: string, to: AudioNode = c.sfx): void {
+  const n = noiseSource(c, t, seed, seconds + 0.01);
   const bp = c.ctx.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.frequency.value = 1500;
-  bp.Q.value = 2.2;
+  bp.frequency.value = hz;
+  bp.Q.value = q;
   const g = c.ctx.createGain();
-  g.gain.setValueCurveAtTime(chop, c.t, seconds);
-  o.connect(bp).connect(g).connect(c.sfx);
-  o.start(c.t);
-  o.stop(c.t + seconds + 0.02);
-  const n = noiseSource(c, c.t, seed, seconds);
-  const hp = c.ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 4200;
-  const ng = c.ctx.createGain();
-  ng.gain.setValueCurveAtTime(hiss, c.t, seconds);
-  n.connect(hp).connect(ng).connect(c.sfx);
-  // the cutter at the end: a dry snap
-  const end: Cue = { ...c, t: c.t + seconds };
-  shutter(end, vel * 1.6);
+  g.gain.setValueAtTime(vel, t);
+  g.gain.exponentialRampToValueAtTime(0.0005, t + seconds);
+  n.connect(bp).connect(g).connect(to);
 }
 
-/** Paper landing on a pile: a soft papery slap and a low thud. */
-export function paper(c: Cue, vel: number, seed: string): void {
-  const n = noiseSource(c, c.t, seed, 0.12);
+/** A thermal receipt printer running for `seconds`: its stepper's buzz (a narrow pulse train near 900 steps a second,
+ *  rung through the plastic housing's resonances), roughened by noise, spinning up and down at the ends, with the
+ *  paper's hiss over it. */
+export function thermal(c: Cue, seconds: number, vel: number, seed: string): void {
+  const end = c.t + seconds;
+  const step = c.ctx.createOscillator();
+  step.type = 'sawtooth';
+  step.frequency.setValueAtTime(320, c.t);
+  step.frequency.exponentialRampToValueAtTime(910, c.t + 0.06);
+  step.frequency.setValueAtTime(910, end - 0.07);
+  step.frequency.exponentialRampToValueAtTime(380, end);
+  // a sawtooth through a steep high-pass is a train of clicks, one per step; its level wobbles fast with noise (grit)
+  const hp = c.ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 1400;
+  hp.Q.value = 0.7;
+  const steps = Math.max(8, Math.round(seconds * 120));
+  const grit = new Float32Array(steps);
+  for (let i = 0; i < steps; i++) grit[i] = 0.75 + 0.5 * random(`${seed}-g${i}`);
+  const wob = c.ctx.createGain();
+  wob.gain.setValueCurveAtTime(grit, c.t, seconds);
+  const env = c.ctx.createGain();
+  env.gain.setValueAtTime(0.0001, c.t);
+  env.gain.exponentialRampToValueAtTime(vel, c.t + 0.04);
+  env.gain.setValueAtTime(vel, end - 0.05);
+  env.gain.exponentialRampToValueAtTime(0.0001, end);
+  step.connect(hp).connect(wob).connect(env);
+  // the housing: three resonances, the middle one strongest
+  for (const [hz, q, lvl] of [[2350, 6, 0.9], [4100, 8, 1.2], [6600, 5, 0.5]] as const) {
+    const bp = c.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = hz;
+    bp.Q.value = q;
+    const g = c.ctx.createGain();
+    g.gain.value = lvl;
+    env.connect(bp).connect(g).connect(c.sfx);
+  }
+  step.start(c.t);
+  step.stop(end + 0.02);
+  // the paper sliding out over the head
+  const n = noiseSource(c, c.t, `${seed}-paper`, seconds);
+  const php = c.ctx.createBiquadFilter();
+  php.type = 'highpass';
+  php.frequency.value = 5200;
+  const pg = c.ctx.createGain();
+  pg.gain.setValueAtTime(0.0001, c.t);
+  pg.gain.exponentialRampToValueAtTime(vel * 0.25, c.t + 0.08);
+  pg.gain.setValueAtTime(vel * 0.25, end - 0.05);
+  pg.gain.exponentialRampToValueAtTime(0.0001, end);
+  n.connect(php).connect(pg).connect(c.sfx);
+}
+
+/** The auto-cutter: a sharp click as the blade fires, a duller clack as it returns, and a faint ring of metal. */
+export function cutter(c: Cue, vel: number, seed: string): void {
+  burst(c, c.t, 0.012, 3600, 1.4, vel, `${seed}-a`);
+  burst(c, c.t + 0.004, 0.03, 900, 1.1, vel * 0.6, `${seed}-b`);
+  burst(c, c.t + 0.055, 0.025, 1500, 1.2, vel * 0.55, `${seed}-c`);
+  const o = c.ctx.createOscillator();
+  o.frequency.value = 3170;
+  const g = c.ctx.createGain();
+  g.gain.setValueAtTime(vel * 0.06, c.t);
+  g.gain.exponentialRampToValueAtTime(0.0003, c.t + 0.09);
+  o.connect(g).connect(c.sfx);
+  o.start(c.t);
+  o.stop(c.t + 0.1);
+}
+
+/** A slip of paper falling onto a pile: the air past it, then a soft slap and a small thud as it lands `fall`
+ *  seconds later. */
+export function paperDrop(c: Cue, fall: number, vel: number, seed: string): void {
+  sweep(c, Math.max(0.12, fall), 2400, 700, vel * 0.35, 0.8, `${seed}-air`, 0.7);
+  const t = c.t + fall;
+  burst(c, t, 0.05, 2200, 0.6, vel, `${seed}-slap`);
+  burst(c, t + 0.008, 0.11, 700, 0.8, vel * 0.5, `${seed}-body`);
+  const o = c.ctx.createOscillator();
+  o.frequency.setValueAtTime(110, t);
+  o.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+  const g = c.ctx.createGain();
+  g.gain.setValueAtTime(vel * 0.4, t);
+  g.gain.exponentialRampToValueAtTime(0.0005, t + 0.12);
+  o.connect(g).connect(c.sfx);
+  o.start(t);
+  o.stop(t + 0.13);
+}
+
+/** A quiet room: low, slow noise, for under a still scene. */
+export function room(c: Cue, seconds: number, vel: number, seed: string): void {
+  rumble(c, seconds, vel, 0.3, seed);
+  const n = noiseSource(c, c.t, `${seed}-air`, Math.min(seconds, 2.8));
   const bp = c.ctx.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.frequency.value = 1800;
-  bp.Q.value = 0.6;
+  bp.frequency.value = 450;
+  bp.Q.value = 0.5;
   const g = c.ctx.createGain();
-  g.gain.setValueAtTime(vel, c.t);
-  g.gain.exponentialRampToValueAtTime(0.0005, c.t + 0.1);
+  g.gain.setValueAtTime(0.0001, c.t);
+  g.gain.linearRampToValueAtTime(vel * 0.35, c.t + 0.3);
+  g.gain.linearRampToValueAtTime(0.0001, c.t + seconds);
   n.connect(bp).connect(g).connect(c.sfx);
-  kick(c, vel * 0.5, c.sfx);
 }
 
 /** A soft pop for something landing on screen: a short low thump and a pitched tick. */

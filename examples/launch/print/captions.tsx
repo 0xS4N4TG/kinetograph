@@ -1,215 +1,253 @@
-// Shot 7's captions: the voiceover word by word, big, timed from the narrator's own word timestamps
-// (tools/narration/voice/asr_narrator_final.json). Each word springs in, tilted a few degrees, with a thick stepped
-// outline; the key nouns are bigger and red. A page holds at most three words, centred, with no box. One face per
-// voiceover line, from the pixel and dot-matrix type of jellysynth.com (Geist Pixel, Doto).
+// Shot 7's captions, in the Geronimo Stilton way (the look of jellysynth.com's projected captions): the voiceover
+// writes itself on letter by letter in a mix of handwritten faces, a face per letter, so it reads as one restless
+// hand; the key words break out in a big display face, with a small doodle drawn beside them. The words glow warm, like
+// projected light, and each letter lands with a pink and cyan fringe.
 //
-// The tracking is on the words themselves: each word gets a box that hunts for it and locks on, with an id tag,
-// small blobs that hop across its letters, and a dashed link to the next word. An emphasis word's box inverts the
-// picture behind it.
+// The text hangs off a tracked subject in the footage (`anchor`, from tools/track/track.mjs): a reticle sits on the
+// subject, thin lines run from it to the text and off the frame, and a bracket rides the letter being written with
+// the subject's coordinates beside it. Timed from the narrator's own word timestamps
+// (tools/narration/voice/asr_narrator_final.json).
 
 import React from 'react';
-import { AbsoluteFill, random, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
-import { loadFont } from '@kinetograph/core/fonts';
-import { loadFont as loadDoto } from '@remotion/google-fonts/Doto';
-import { loadFont as loadDMMono } from '@remotion/google-fonts/DMMono';
-import { RED } from '../common.js';
+import { AbsoluteFill, interpolate, random, useCurrentFrame, useVideoConfig } from 'remotion';
+import { loadFont as loadCaveat } from '@remotion/google-fonts/Caveat';
+import { loadFont as loadShadows } from '@remotion/google-fonts/ShadowsIntoLight';
+import { loadFont as loadIndie } from '@remotion/google-fonts/IndieFlower';
+import { loadFont as loadGloria } from '@remotion/google-fonts/GloriaHallelujah';
+import { loadFont as loadPatrick } from '@remotion/google-fonts/PatrickHand';
+import { loadFont as loadGochi } from '@remotion/google-fonts/GochiHand';
+import { loadFont as loadAbril } from '@remotion/google-fonts/AbrilFatface';
+import { loadFont as loadArchivo } from '@remotion/google-fonts/ArchivoBlack';
+import { CLAMP, MONO } from '../common.js';
 import asr from '../tools/narration/voice/asr_narrator_final.json';
 
-for (const v of ['Square', 'Circle', 'Line', 'Grid', 'Triangle']) {
-  loadFont({ family: `Geist Pixel ${v}`, url: staticFile(`fonts/geist-pixel/GeistPixel-${v}.woff2`), weight: 500 });
-}
-const DOTO = loadDoto('normal', { weights: ['900'] }).fontFamily;
-const TAG = loadDMMono('normal', { weights: ['500'] }).fontFamily;
+/** The hands, mixed a letter at a time. `k` evens out how big each reads at one size. */
+const HANDS = [
+  { family: loadCaveat('normal', { weights: ['700'] }).fontFamily, weight: 700, k: 1.18 },
+  { family: loadShadows('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 1.02 },
+  { family: loadIndie('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 0.98 },
+  { family: loadGloria('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 0.86 },
+  { family: loadPatrick('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 1.04 },
+  { family: loadGochi('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 1.0 },
+];
+/** The display faces an emphasis word breaks out in, taken in turn: a soft fat serif, and a heavy italic that streaks. */
+const ABRIL = loadAbril('normal', { weights: ['400'] }).fontFamily;
+const ARCHIVO = loadArchivo('normal', { weights: ['400'] }).fontFamily;
 
-export interface Face { family: string; weight: number; /** evens out how big each face reads at one size */ k: number; spacing?: number }
-export const FACES = {
-  square: { family: 'Geist Pixel Square', weight: 500, k: 1 },
-  circle: { family: 'Geist Pixel Circle', weight: 500, k: 1 },
-  doto: { family: DOTO, weight: 900, k: 1.08, spacing: -2 },
-} satisfies Record<string, Face>;
+/** One voiceover line: its file, the shot frame it starts on, how its words split into pages (word counts), and the
+ *  words that break out. */
+export interface CaptionLine { file: string; at: number; split: number[]; hot: string[] }
+export interface Point { x: number; y: number }
 
-/** One voiceover line on screen: its file, the shot frame it starts on, how its words split into pages (word
- *  counts, at most three each), its face, and the words to blow up. */
-export interface CaptionLine { file: string; at: number; split: number[]; face: Face; hot: string[] }
-
-export interface Spoken { text: string; from: number; to: number; hot: boolean; id: number }
-interface Page { words: Spoken[]; face: Face; from: number; to: number }
+interface Spoken { text: string; from: number; to: number; hot: number; id: number }
+interface Page { words: Spoken[]; from: number; to: number; index: number }
 
 const ASR = asr as Record<string, { words: { w: string; s: number; e: number }[] }>;
 const bare = (w: string) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
 
-/** The words of `line`, in shot frames. */
-function spoken(line: CaptionLine, fps: number, first: number): Spoken[] {
-  const words = ASR[`voice/final_narrator/${line.file}.wav`]?.words;
-  if (!words) throw new Error(`no word timestamps for voiceover line ${line.file}`);
-  return words.map((w, i) => ({
-    text: w.w.replace(/[,.;:]+$/, ''),
-    from: line.at + Math.round(w.s * fps),
-    to: line.at + Math.round(w.e * fps),
-    hot: line.hot.includes(bare(w.w)),
-    id: first + i,
-  }));
-}
-
-/** Every page of every line, each up until the next one starts or a third of a second after its last word. */
+/** Every page of every line, in shot frames. A page stays up until the next starts, or 12 frames after its last word. */
 export function pages(lines: CaptionLine[], fps: number): Page[] {
   const out: Page[] = [];
   let id = 1;
+  let hot = 0;
   for (const line of lines) {
-    const words = spoken(line, fps, id);
+    const words = ASR[`voice/final_narrator/${line.file}.wav`]?.words;
+    if (!words) throw new Error(`no word timestamps for voiceover line ${line.file}`);
+    const said: Spoken[] = words.map((w, i) => ({
+      text: w.w,
+      from: line.at + Math.round(w.s * fps),
+      to: line.at + Math.round(w.e * fps),
+      hot: line.hot.includes(bare(w.w)) ? ++hot : 0,
+      id: id + i,
+    }));
     id += words.length;
-    if (line.split.reduce((a, b) => a + b, 0) !== words.length) throw new Error(`split of ${line.file} does not cover its ${words.length} words`);
+    if (line.split.reduce((a, b) => a + b, 0) !== said.length) throw new Error(`split of ${line.file} does not cover its ${said.length} words`);
     let k = 0;
     for (const n of line.split) {
-      const ws = words.slice(k, k + n);
+      const ws = said.slice(k, k + n);
       k += n;
-      out.push({ words: ws, face: line.face, from: ws[0]!.from, to: ws[ws.length - 1]!.to + 10 });
+      out.push({ words: ws, from: ws[0]!.from, to: ws[ws.length - 1]!.to + 12, index: out.length });
     }
   }
   out.forEach((p, i) => { const next = out[i + 1]; if (next && next.from < p.to) p.to = next.from; });
   return out;
 }
 
-const BASE = 150;
-const HOT_SCALE = 1.34;
-const GAP = 84;
-/** The box sits this far outside the word. */
-const PAD = 16;
-/** Frames the box hunts before it locks. */
-const LOCK = 7;
-const INK = '#0A0A0A';
-const WHITE = '#FFFFFF';
+/** The frame letter `k` of `n` in a word appears: the word writes itself across its spoken time. */
+const letterAt = (w: Spoken, k: number, n: number) => w.from + ((w.to - w.from) * k) / Math.max(1, n);
 
-/** A thick outline in hard steps, from offset copies (no blur), which suits pixel type; then a drop shadow. */
-function outline(r: number): string {
-  const s: string[] = [];
-  for (let k = 0; k < 16; k++) {
-    const a = (k / 16) * Math.PI * 2;
-    s.push(`${(Math.cos(a) * r).toFixed(1)}px ${(Math.sin(a) * r).toFixed(1)}px 0 ${INK}`);
-  }
-  for (let k = 0; k < 8; k++) {
-    const a = (k / 8) * Math.PI * 2 + 0.2;
-    s.push(`${(Math.cos(a) * r * 0.5).toFixed(1)}px ${(Math.sin(a) * r * 0.5).toFixed(1)}px 0 ${INK}`);
-  }
-  s.push(`0 ${(r * 1.6).toFixed(1)}px 0 ${INK}`, `0 ${(r * 2.4).toFixed(1)}px ${(r * 2.6).toFixed(1)}px rgba(0,0,0,0.45)`);
-  return s.join(', ');
+const CREAM = '#FFF4E2';
+const SIZE = 124;
+const GLOW = '0 0 10px rgba(255,236,210,0.55), 0 0 28px rgba(255,214,170,0.28)';
+
+/** Lands over 6 frames: a little big, with a pink and cyan fringe that closes up. */
+function landing(t: number): { scale: number; opacity: number; fringe: string } {
+  const a = interpolate(t, [0, 6], [1, 0], CLAMP);
+  const off = 5 * a;
+  return {
+    scale: interpolate(t, [0, 3], [1.3, 1], CLAMP),
+    opacity: interpolate(t, [0, 1.5], [0, 1], CLAMP),
+    fringe: `${-off}px 0 0 rgba(255,70,160,${(0.85 * a).toFixed(3)}), ${off}px 0 0 rgba(70,255,220,${(0.85 * a).toFixed(3)}), `,
+  };
 }
 
-const pad2 = (n: number) => String(n).padStart(2, '0');
-
-/** Corner ticks of a box, heavier than its edge. */
-const Ticks: React.FC = () => (
-  <>
-    {([['top', 'left'], ['top', 'right'], ['bottom', 'left'], ['bottom', 'right']] as const).map(([v, h]) => (
-      <div key={v + h} style={{
-        position: 'absolute', [v]: -3, [h]: -3, width: 18, height: 18,
-        [`border${v === 'top' ? 'Top' : 'Bottom'}`]: `4px solid ${WHITE}`, [`border${h === 'left' ? 'Left' : 'Right'}`]: `4px solid ${WHITE}`,
-      }} />
-    ))}
-  </>
-);
-
-/** Small blobs on the letters: each holds a spot for a few frames, then hops to another. */
-const Blobs: React.FC<{ id: number; t: number }> = ({ id, t }) => (
-  <>
-    {[0, 1].map((k) => {
-      const hop = Math.floor((t + k * 5) / 9);
-      const x = 8 + random(`bx-${id}-${k}-${hop}`) * 84;
-      const y = 22 + random(`by-${id}-${k}-${hop}`) * 56;
-      const s = 16 + random(`bs-${id}-${k}-${hop}`) * 18;
-      return (
-        <div key={k} style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, width: s, height: s, marginLeft: -s / 2, marginTop: -s / 2, border: `1.5px solid ${WHITE}` }}>
-          <div style={{ position: 'absolute', left: s / 2 - 0.75, top: -6, width: 1.5, height: s + 12, background: WHITE }} />
-          <div style={{ position: 'absolute', top: s / 2 - 0.75, left: -6, height: 1.5, width: s + 12, background: WHITE }} />
-        </div>
-      );
-    })}
-  </>
-);
-
-/** The tracking box of one word: `t` frames since the word began. It starts wide and off-centre and steps in, two
- *  frames at a time, then locks and only jitters. */
-const Track: React.FC<{ w: Spoken; t: number; frame: number; last: boolean; scale: number }> = ({ w, t, frame, last, scale }) => {
-  if (t < 0) return null;
-  const locked = t >= LOCK;
-  const step = Math.floor(t / 2);
-  const wide = locked ? 0 : 1 - step / Math.ceil(LOCK / 2);
-  const dx = (random(`hx-${w.id}-${step}`) - 0.5) * 70 * wide + (random(`jx-${w.id}-${frame}`) - 0.5) * 2.4;
-  const dy = (random(`hy-${w.id}-${step}`) - 0.5) * 40 * wide + (random(`jy-${w.id}-${frame}`) - 0.5) * 2.4;
-  const grow = PAD + 46 * wide;
-  const conf = (0.9 + random(`c-${w.id}-${Math.floor(frame / 4)}`) * 0.09).toFixed(2);
-  return (
-    // the box follows the word's bounce (its scale), not its tilt: a tracker sees an upright box
-    <div style={{ position: 'absolute', left: -grow + dx, right: -grow - dx, top: -grow * 0.6 + dy, bottom: -grow * 0.6 - dy, transform: `scale(${scale.toFixed(4)})` }}>
-      <div style={{ position: 'absolute', inset: 0, border: `2px ${locked ? 'solid' : 'dashed'} ${WHITE}` }} />
-      {locked && <Ticks />}
-      {locked && <Blobs id={w.id} t={t} />}
-      <div style={{
-        position: 'absolute', left: -2, bottom: '100%', marginBottom: 6, padding: '3px 8px', whiteSpace: 'pre',
-        fontFamily: TAG, fontWeight: 500, fontSize: 17, letterSpacing: 0.5,
-        background: locked ? WHITE : 'rgba(0,0,0,0.55)', color: locked ? INK : WHITE,
-      }}>{locked ? `ID ${pad2(w.id)}  ${w.text.toUpperCase()}  ${conf}` : `SCAN ${pad2(w.id)}`}</div>
-      {/* the dashed link to the next word, with a node where it meets this box */}
-      {locked && !last && (
-        <div style={{ position: 'absolute', left: '100%', top: '50%', width: GAP - 2 * PAD + 6, borderTop: `2px dashed ${WHITE}`, opacity: 0.8 }}>
-          <div style={{ position: 'absolute', left: -4, top: -5, width: 8, height: 8, background: WHITE }} />
-        </div>
-      )}
+/** The bracket on the letter being written, with the subject's coordinates in small type. */
+const Bracket: React.FC<{ at: Point }> = ({ at }) => (
+  <div style={{ position: 'absolute', left: -5, right: -5, top: '8%', bottom: '-4%', border: `1.5px solid ${CREAM}`, boxShadow: '0 0 6px rgba(255,236,210,0.5)' }}>
+    <div style={{ position: 'absolute', left: -4, top: -4, width: 6, height: 6, background: CREAM }} />
+    <div style={{ position: 'absolute', right: -4, bottom: -4, width: 6, height: 6, background: CREAM }} />
+    <div style={{ position: 'absolute', left: '100%', top: -18, marginLeft: 8, fontFamily: MONO, fontSize: 13, color: CREAM, whiteSpace: 'pre', letterSpacing: 0.5, opacity: 0.9 }}>
+      {`x: ${Math.round(at.x)}  y: ${Math.round(at.y)}`}
     </div>
+  </div>
+);
+
+/** A little flower, drawn on stroke by stroke, beside a word that broke out. */
+const Doodle: React.FC<{ t: number; seed: number }> = ({ t, seed }) => {
+  const draw = interpolate(t, [0, 10], [0, 1], CLAMP);
+  const petals = [0, 1, 2, 3, 4].map((i) => {
+    const a = (i / 5) * Math.PI * 2 + seed;
+    const x = Math.cos(a) * 15, y = Math.sin(a) * 15;
+    return `M0 0 Q${(x * 0.2 - y * 0.6).toFixed(1)} ${(y * 0.2 + x * 0.6).toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)} Q${(x * 0.2 + y * 0.6).toFixed(1)} ${(y * 0.2 - x * 0.6).toFixed(1)} 0 0`;
+  });
+  return (
+    <svg width={60} height={60} viewBox="-30 -30 60 60" style={{ position: 'absolute', right: -52, top: -30, overflow: 'visible' }}>
+      {petals.map((d, i) => (
+        <path key={i} d={d} fill="none" stroke="#FF8FC8" strokeWidth={2.4} strokeLinecap="round" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - interpolate(draw, [i / 6, (i + 1) / 6], [0, 1], CLAMP)} />
+      ))}
+      <circle r={3.5 * interpolate(draw, [0.8, 1], [0, 1], CLAMP)} fill="#FFE27A" />
+    </svg>
   );
 };
 
-const Word: React.FC<{ w: Spoken; face: Face; last: boolean }> = ({ w, face, last }) => {
+/** One word: plain words letter by letter in mixed hands; a hot word whole, in its display face. */
+const Word: React.FC<{ w: Spoken; head: number | null; anchor: Point }> = ({ w, head, anchor }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const t = frame - w.from;
-  const pop = spring({ frame: t, fps, config: { damping: 10, stiffness: 210, mass: 0.6 } });
-  const size = BASE * face.k * (w.hot ? HOT_SCALE : 1);
-  const tilt = (random(`tilt-${w.id}`) - 0.5) * 6; // within ±3 degrees
-  const box = -PAD;
+  const letters = [...w.text];
+  if (w.hot) {
+    const t = frame - w.from;
+    if (t < 0) return <span style={{ display: 'inline-block', width: 0 }} />;
+    const l = landing(t);
+    const serif = w.hot % 2 === 1;
+    const size = SIZE * (serif ? 1.38 : 1.26);
+    return (
+      <span style={{ position: 'relative', display: 'inline-block', margin: '0 22px', verticalAlign: 'baseline' }}>
+        {/* the heavy italic streaks in from the left */}
+        {!serif && t < 8 && (
+          <span style={{ position: 'absolute', left: 0, top: 0, fontFamily: ARCHIVO, fontSize: size, fontStyle: 'italic', color: CREAM, whiteSpace: 'nowrap',
+            opacity: 0.35 * (1 - t / 8), filter: 'blur(6px)', transform: `translateX(${-40 + t * 5}px) scaleX(1.25)` }}>{w.text}</span>
+        )}
+        <span style={{
+          display: 'inline-block', fontFamily: serif ? ABRIL : ARCHIVO, fontStyle: serif ? 'normal' : 'italic', fontSize: size, lineHeight: 1,
+          color: CREAM, whiteSpace: 'nowrap', textShadow: l.fringe + GLOW, opacity: l.opacity,
+          transform: `scale(${l.scale.toFixed(3)}) rotate(${((random(`r-${w.id}`) - 0.5) * 5).toFixed(2)}deg)`,
+        }}>{w.text}</span>
+        {serif && <Doodle t={t - 4} seed={w.id} />}
+        {head === 0 && <Bracket at={anchor} />}
+      </span>
+    );
+  }
   return (
-    <div style={{ position: 'relative', margin: `0 ${GAP / 2}px` }}>
-      {/* an emphasis word inverts the picture inside its box, under the word */}
-      {w.hot && t >= LOCK && <div style={{ position: 'absolute', left: box, right: box, top: box * 0.6, bottom: box * 0.6, background: WHITE, mixBlendMode: 'difference', transform: `scale(${pop.toFixed(4)})` }} />}
-      <div style={{
-        position: 'relative', zIndex: 1, fontFamily: face.family, fontWeight: face.weight, fontSize: size, lineHeight: 1, letterSpacing: face.spacing ?? 0,
-        color: w.hot ? RED : WHITE, textShadow: outline(size * 0.045), whiteSpace: 'nowrap',
-        // Before its time the word is a point, so the page does not reflow as words arrive.
-        transform: `rotate(${tilt.toFixed(2)}deg) scale(${pop.toFixed(4)})`, opacity: t >= 0 ? 1 : 0,
-      }}>{w.text}</div>
-      <Track w={w} t={t} frame={frame} last={last} scale={pop} />
+    <span style={{ display: 'inline-block', margin: '0 18px', whiteSpace: 'nowrap' }}>
+      {letters.map((ch, k) => {
+        const t = frame - letterAt(w, k, letters.length);
+        const hand = HANDS[Math.floor(random(`h-${w.id}-${k}`) * HANDS.length)]!;
+        const l = landing(t);
+        const lift = (random(`y-${w.id}-${k}`) - 0.5) * 10;
+        const tilt = (random(`t-${w.id}-${k}`) - 0.5) * 9;
+        const big = 0.92 + random(`s-${w.id}-${k}`) * 0.18;
+        return (
+          <span key={k} style={{ position: 'relative', display: 'inline-block', verticalAlign: 'baseline' }}>
+            <span style={{
+              display: 'inline-block', fontFamily: hand.family, fontWeight: hand.weight, fontSize: SIZE * hand.k * big, lineHeight: 1,
+              color: CREAM, textShadow: l.fringe + GLOW, opacity: t >= 0 ? l.opacity : 0,
+              transform: `translateY(${lift.toFixed(1)}px) rotate(${tilt.toFixed(1)}deg) scale(${l.scale.toFixed(3)})`,
+            }}>{ch}</span>
+            {head === k && <Bracket at={anchor} />}
+          </span>
+        );
+      })}
+    </span>
+  );
+};
+
+/** Where on the page the bracket is: the last letter that has appeared, as [word index, letter index]. */
+function writeHead(page: Page, frame: number): [number, number] {
+  let at: [number, number] = [0, 0];
+  page.words.forEach((w, i) => {
+    if (w.hot) { if (frame >= w.from) at = [i, 0]; return; }
+    const n = [...w.text].length;
+    for (let k = 0; k < n; k++) if (frame >= letterAt(w, k, n)) at = [i, k];
+  });
+  return at;
+}
+
+/** The reticle on the tracked subject: a box with ticks and an id, nudged a pixel or two each frame. */
+const Reticle: React.FC<{ at: Point; frame: number }> = ({ at, frame }) => {
+  const jx = (random(`rx-${frame}`) - 0.5) * 3, jy = (random(`ry-${frame}`) - 0.5) * 3;
+  return (
+    <div style={{ position: 'absolute', left: at.x - 46 + jx, top: at.y - 46 + jy, width: 92, height: 92, border: `1px solid rgba(255,244,226,0.75)` }}>
+      {[[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => (
+        <div key={`${x}${y}`} style={{ position: 'absolute', left: x ? undefined : -2, right: x ? -2 : undefined, top: y ? undefined : -2, bottom: y ? -2 : undefined, width: 12, height: 12,
+          [`border${y ? 'Bottom' : 'Top'}`]: `3px solid ${CREAM}`, [`border${x ? 'Right' : 'Left'}`]: `3px solid ${CREAM}` }} />
+      ))}
+      <div style={{ position: 'absolute', left: 0, top: '100%', marginTop: 6, fontFamily: MONO, fontSize: 13, color: CREAM, whiteSpace: 'pre', opacity: 0.85 }}>
+        {`TRK 01  ${(0.91 + random(`c-${Math.floor(frame / 5)}`) * 0.08).toFixed(2)}`}
+      </div>
     </div>
   );
 };
 
-/** The captions of `lines`, over a transparent ground, in shot frames. */
-export const Captions: React.FC<{ lines: CaptionLine[] }> = ({ lines }) => {
+/** A page's width on one line, roughly: the hands are about half an em a letter, the display faces a little more. */
+function guessWidth(page: Page): number {
+  return page.words.reduce((a, w) => a + 40 + [...w.text].length * (w.hot ? SIZE * (w.hot % 2 ? 1.38 : 1.26) * 0.58 : SIZE * 0.46), 0);
+}
+
+/** The text sits this far beside and above the subject, on the side it fits (or the side `anchor` names). */
+const BESIDE = 90;
+const ABOVE = 150;
+
+/** The captions of `lines` over the footage. `anchor(frame)` is the tracked subject in frame pixels, or null when the
+ *  tracker has nothing. */
+export const Captions: React.FC<{
+  lines: CaptionLine[]; anchor: (frame: number) => (Point & { side?: 'left' | 'right' }) | null; width: number; height: number; top?: number;
+}> = ({ lines, anchor, width, height, top = 160 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const page = pages(lines, fps).find((p) => frame >= p.from && frame < p.to);
-  if (!page) return null;
+  const at = anchor(frame);
+  if (!page || !at) return null;
+  // the block goes on the side where the page fits on one line, or the roomier side; its near edge is BESIDE the
+  // subject and it grows up from its bottom, never above `top`
+  const need = guessWidth(page);
+  const roomOf = (sd: 'left' | 'right') => (sd === 'right' ? width - 60 - (at.x + BESIDE) : at.x - BESIDE - 60);
+  const side = at.side ?? (roomOf('right') >= need ? 'right' : roomOf('left') >= need ? 'left' : roomOf('right') > roomOf('left') ? 'right' : 'left');
+  const near = side === 'right' ? at.x + BESIDE : at.x - BESIDE;
+  const room = roomOf(side);
+  const rows = Math.max(1, Math.ceil(need / room));
+  const bottom = Math.min(Math.max(height - (at.y - ABOVE), 160), height - top - rows * SIZE * 1.6);
+  const [hw, hk] = writeHead(page, frame);
+  // the lines: subject to the text's corner, and subject off the frame's edge, faint
+  const cx = near + (side === 'right' ? 30 : -30), cy = height - bottom + 10;
+  const edge = { x: at.x < width / 2 ? width + 40 : -40, y: at.y + (at.y < height / 2 ? 260 : -260) };
   return (
-    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {page.words.map((w, i) => <Word key={w.id} w={w} face={page.face} last={i === page.words.length - 1} />)}
+    <AbsoluteFill>
+      <svg width={width} height={height} style={{ position: 'absolute', left: 0, top: 0 }}>
+        <line x1={at.x} y1={at.y} x2={cx} y2={cy} stroke={CREAM} strokeWidth={1.2} strokeOpacity={0.6} />
+        <line x1={at.x} y1={at.y} x2={edge.x} y2={edge.y} stroke={CREAM} strokeWidth={1} strokeOpacity={0.35} />
+        <line x1={cx} y1={cy} x2={cx + (side === 'right' ? -260 : 260)} y2={cy - 40} stroke={CREAM} strokeWidth={1} strokeOpacity={0.3} />
+      </svg>
+      <Reticle at={at} frame={frame} />
+      <div style={{
+        position: 'absolute', bottom, width: room, ...(side === 'right' ? { left: near } : { left: near - room }),
+        display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: side === 'right' ? 'flex-start' : 'flex-end', rowGap: 4,
+      }}>
+        {page.words.map((w, i) => <Word key={w.id} w={w} head={i === hw ? hk : null} anchor={at} />)}
       </div>
     </AbsoluteFill>
   );
 };
 
-/** The tracker's readout in the corner: how many words it holds and the frame. */
-export const TrackHud: React.FC<{ lines: CaptionLine[] }> = ({ lines }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const page = pages(lines, fps).find((p) => frame >= p.from && frame < p.to);
-  const held = page ? page.words.filter((w) => frame - w.from >= LOCK).length : 0;
-  return (
-    <div style={{ position: 'absolute', left: 40, top: 34, color: WHITE, fontFamily: TAG, fontWeight: 500, fontSize: 18, letterSpacing: 1, whiteSpace: 'pre', textShadow: '0 0 6px rgba(0,0,0,0.7)' }}>
-      {`TRK:TEXT   LOCK ${held}/${page?.words.length ?? 0}   F${String(frame).padStart(4, '0')}`}
-    </div>
-  );
-};
-
-/** The frame each word's box locks, for the sound. */
-export const lockFrames = (lines: CaptionLine[], fps: number): number[] =>
-  pages(lines, fps).flatMap((p) => p.words.map((w) => w.from + LOCK).filter((f) => f < p.to));
+/** When each word is written, for the sound: a pen across a plain word, a soft thump for one that breaks out. */
+export const wordSpans = (lines: CaptionLine[], fps: number): { from: number; to: number; hot: boolean }[] =>
+  pages(lines, fps).flatMap((p) => p.words.filter((w) => w.from < p.to).map((w) => ({ from: w.from, to: Math.min(w.to, p.to), hot: w.hot > 0 })));
