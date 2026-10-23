@@ -45,12 +45,23 @@ const run = spawnSync(process.execPath, [path.join(project, 'node_modules/kineto
   encoding: 'utf8',
 });
 process.stderr.write(run.stderr ?? '');
+const tail = (text, lines = 40) => (text ?? '').trimEnd().split('\n').slice(-lines).join('\n');
 const backend = /kinetograph: drawing with (\w+)/.exec(run.stderr ?? '')?.[1] ?? 'unknown';
 let result = {};
 try {
   result = JSON.parse(run.stdout);
 } catch {
-  console.error(`render printed no JSON:\n${run.stdout}`);
+  console.error(`render printed no JSON.`);
+}
+if (run.status !== 0 || run.error || run.signal || result.frames === undefined) {
+  console.error(
+    [
+      `render failed: exit code ${run.status}${run.signal ? `, signal ${run.signal}` : ''}${run.error ? `, spawn error ${run.error.message}` : ''}`,
+      `--- stderr (last 40 lines) ---\n${tail(run.stderr)}`,
+      `--- stdout (last 40 lines) ---\n${tail(run.stdout)}`,
+      '---',
+    ].join('\n'),
+  );
 }
 const lines = [
   `backend: ${backend}`,
