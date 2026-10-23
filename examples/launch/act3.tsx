@@ -5,7 +5,7 @@ import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame 
 import { measureText } from '@remotion/layout-utils';
 import { FADE_END, LogoFlicker } from '@/components/snap-cn/logo-flicker';
 import { Layer, glow, grain } from '@kinetograph/core';
-import { CLAMP, H, INK, LEN, MONO, OUT, RED, RENDER_SECONDS, SANS, TITLE_GLOW, W } from './common.js';
+import { CLAMP, H, LEN, MONO, OUT, RED, RENDER_SECONDS, SANS, TITLE_GLOW, W } from './common.js';
 import { pixels } from './looks.js';
 import { spoken, spokenIn } from './sound-timing.js';
 
@@ -161,8 +161,18 @@ const SELF = [
 /** The flicker's pace: its reveal lands as the narrator says "Kinetograph.", the first word of 12-end. */
 export const S11_SPEED = Math.min(3, Math.max(0.75, FADE_END / (spokenIn('12-end', 's11')[0]!.from + 2)));
 
+/** The logo: the name with its red full stop, set where the end card sets it, so the flicker resolves into the end
+ *  card and the cut to shot 12 doesn't move it. */
+const Wordmark: React.FC = () => (
+  <div style={{ position: 'absolute', left: 0, right: 0, top: 300, textAlign: 'center', fontFamily: SANS, color: '#f3efe8' }}>
+    <div style={{ fontWeight: 700, fontSize: 210, letterSpacing: '-0.05em', lineHeight: 1, textShadow: TITLE_GLOW }}>
+      kinetograph<span style={{ color: RED }}>.</span>
+    </div>
+  </div>
+);
+
 export const S11: React.FC = () => (
-  <LogoFlicker speed={S11_SPEED} images={SELF} brandName="kinetograph" logoSrc={staticFile('brand/kinetograph-mark.png')} mode="dark" fontFamily={SANS} background={INK} />
+  <LogoFlicker speed={S11_SPEED} images={SELF} reveal={<Wordmark />} mode="dark" fontFamily={SANS} background="#060606" />
 );
 
 // ---- shot 12: end card ----
@@ -176,15 +186,17 @@ const S12_WORDS = ['motion', 'pictures,', 'written', 'in', 'code.'];
 
 export const S12: React.FC<{ renderSeconds?: number | null }> = ({ renderSeconds = RENDER_SECONDS }) => {
   const frame = useCurrentFrame();
-  const land = interpolate(frame, [6, 14], [0, 1], { ...CLAMP, easing: OUT });
-  const dot = interpolate(frame, [12, 22], [0, 1], { ...CLAMP, easing: Easing.out(Easing.back(2.2)) });
+  // the wordmark has already resolved out of shot 11's flicker; the light comes up under it
+  const land = 1;
+  const dot = 1;
+  const light = interpolate(frame, [0, 12], [0, 1], { ...CLAMP, easing: OUT });
   const fade = (a: number, b: number) => interpolate(frame, [a, b], [0, 1], CLAMP);
   const words = S12_WORDS;
   const urlT = interpolate(frame, [S12_URL, S12_URL + 8], [0, 1], { ...CLAMP, easing: OUT });
   return (
     <AbsoluteFill style={{ background: '#060606' }}>
       {/* the projector's light on the screen: a warm pool, falling off to the dark */}
-      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 62% 58% at 50% 46%, rgba(255,236,205,0.11) 0%, rgba(255,226,190,0.04) 45%, rgba(0,0,0,0) 75%)', opacity: land }} />
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 62% 58% at 50% 46%, rgba(255,236,205,0.11) 0%, rgba(255,226,190,0.04) 45%, rgba(0,0,0,0) 75%)', opacity: light }} />
       <div style={{ position: 'absolute', left: 0, right: 0, top: 300, textAlign: 'center', fontFamily: SANS, color: '#f3efe8' }}>
         <div style={{ fontWeight: 700, fontSize: 210, letterSpacing: '-0.05em', lineHeight: 1, textShadow: TITLE_GLOW, opacity: land, transform: `scale(${1.05 - 0.05 * land})`, filter: `blur(${(1 - land) * 10}px)` }}>
           kinetograph<span style={{ color: RED, display: 'inline-block', transform: `scale(${dot})`, transformOrigin: '50% 85%' }}>.</span>

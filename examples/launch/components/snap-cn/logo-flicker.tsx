@@ -2,6 +2,7 @@
 
 // From snapcn (https://github.com/shadcn-labs/snapcn), MIT licence: see LICENSE beside this file.
 
+import type { ReactNode } from "react";
 import {
   Easing,
   getRemotionEnvironment,
@@ -52,6 +53,8 @@ export interface LogoFlickerProps {
    * timeline from one value.
    */
   fontFamily?: string;
+  /** What resolves out of the flicker in place of the logo mark and brand name (a wordmark, say). */
+  reveal?: ReactNode;
 }
 
 const FONT_FAMILY =
@@ -142,6 +145,7 @@ export function LogoFlicker({
   theme,
   mode,
   fontFamily,
+  reveal: revealNode,
 }: LogoFlickerProps) {
   const frame = useCurrentFrame() * speed;
   const { width, height } = useVideoConfig();
@@ -204,6 +208,8 @@ export function LogoFlicker({
             transformOrigin: "center center",
           }}
         >
+          {revealNode ?? (
+            <>
           <Img
             src={resolveSrc(logoSrc)}
             style={{
@@ -223,6 +229,8 @@ export function LogoFlicker({
           >
             {brandName}
           </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -3,7 +3,7 @@
 // Every effect is placed on the frame of the thing it belongs to, read from the shot that draws it (the windows of
 // shot 3, the cards of shot 7, the counters, the pen strokes), so the sound moves with the picture when a shot is
 // retimed. The music is a pad bed per section in D minor; a beat (120 BPM, every 15 frames) runs only under the
-// collage of shot 7 and the flicker of shot 11, the two places the picture cuts on a pulse.
+// collage of shot 7, where the picture cuts on a pulse.
 
 import { BURN, FPS, START, TOTAL, VO } from './sound-timing.js';
 import { LEN } from './common.js';
@@ -19,7 +19,7 @@ import { S08_REAL } from './act2-s08.js';
 import { M2_DIVE, M3_TYPE, M4_SPIN, WHIP } from './act2-mg.js';
 import { RACE } from './act2-s09.js';
 import { S10_CIRCLE, S10_LAND, S10_STRIKE, S10_ZOOM, S11_SPEED, S12_TAG, S12_URL } from './act3.js';
-import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
+import { FADE_START } from '@/components/snap-cn/logo-flicker';
 import { DUCK, bass, bell, cue, cutter, hat, hit, kick, pad, paperDrop, pen, pop, projector, riser, room, rumble, shutter, sweep, thermal, tick } from './sound-synth.js';
 
 const BEAT = 15;
@@ -158,24 +158,15 @@ if (LEN.s11 > 0) {
   const s11 = (f: number) => at('s11', Math.round(f / S11_SPEED));
   cue(START.s11 - 16, (q) => riser(q, sec(16), 0.16));
 
-  // ---- shot 11: a hit on the first frame, the beat, a click on every flip; a swell into the reveal ----
-  cue(START.s11, (q) => hit(q, 0.75));
-  for (let f = 0; f < FADE_START; f += BEAT) {
-    cue(s11(f), (q) => kick(q, 0.9));
-    cue(s11(f + BEAT / 2), (q) => hat(q, 0.07));
-    cue(s11(f + BEAT / 2), (q) => bass(q, 73.42, 0.22, 0.45));
-  }
-  for (let f = FLIP_INTERVAL; f < FADE_START; f += FLIP_INTERVAL) cue(s11(f), (q) => shutter(q, 0.03));
-  cue(s11(FADE_START - 14), (q) => sweep(q, sec(16), 800, 7000, 0.12, 0.95, 'reveal-swell', 0.8));
+  // ---- shot 11: a soft hit on the first frame and a swell into the reveal ----
+  cue(START.s11, (q) => hit(q, 0.5));
+  // no beat or flip clicks under it (they chattered at this pace): one long swell carries the flicker into the reveal
+  cue(START.s11, (q) => sweep(q, sec(Math.round(FADE_START / S11_SPEED)), 300, 6000, 0.1, 0.9, 'reveal-swell', 0.8));
   cue(s11(FADE_START), (q) => bell(q, 880, 0.09, 3));
   cue(s11(FADE_START), (q) => bass(q, 73.42, 1.8, 0.3));
 }
 
-// ---- shot 12: the final hit on the wordmark, a pop for the red dot, ticks on the tagline words and the URL ----
-cue(at('s12', 6) - 12, (q) => riser(q, sec(12), 0.08, false));
-cue(at('s12', 6), (q) => hit(q, 0.9));
-cue(at('s12', 6), (q) => bell(q, 587.33, 0.09, 3.5));
-cue(at('s12', 6), (q) => bell(q, 1174.66, 0.04, 3));
-cue(at('s12', 14), (q) => pop(q, 0.35, 1000));
+// ---- shot 12: ticks on the tagline words and the URL ----
+// (the wordmark lands in shot 11, with its bell; the end card adds only its words)
 S12_TAG.forEach((l) => cue(at('s12', l), (q) => tick(q, 0.05, 1500, 800)));
 cue(at('s12', S12_URL), (q) => tick(q, 0.06, 1800, 900));
