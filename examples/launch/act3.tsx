@@ -145,9 +145,12 @@ export const S10: React.FC = () => {
   );
 };
 
-// ---- shot 11: snapcn's logo-flicker over stills of this film itself (public/self, rendered from frames.tsx), then the name ----
-const SELF = ['s01-2', 'm1-85', 's01-8', 'm3-40', 's01-14', 's02-66', 'm2-40', 's03-60', 's04-22', 'm5-60', 's05-30', 's05-70', 'm4-40', 's08-40', 's08-200', 's09-60', 's09-150', 's10-70']
-  .map((n) => staticFile(`self/${n}.jpg`));
+// ---- shot 11: snapcn's logo-flicker over stills of this film and its 1927 footage, each through one of the film's
+//      looks (public/self/v2-*, rendered from self-stills.tsx), then the name ----
+const SELF = [
+  'v2-veteran-iron', 'v2-s03', 'v2-hat-1bit', 'v2-m3', 'v2-s05-pass', 'v2-beard-iron', 'v2-crowd-vhs', 'v2-m4', 'v2-s05',
+  'v2-veteran-rainbow', 'v2-m5', 'v2-veteran-crt', 'v2-s08', 'v2-hat-crt', 'v2-s10', 'v2-s09', 'v2-crowd-1bit', 'v2-pair-vhs',
+].map((n) => staticFile(`self/${n}.jpg`));
 
 export const S11: React.FC = () => (
   <LogoFlicker images={SELF} brandName="kinetograph" logoSrc={staticFile('brand/kinetograph-mark.png')} mode="dark" fontFamily={SANS} background={INK} />
