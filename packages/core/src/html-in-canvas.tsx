@@ -1,24 +1,25 @@
 // `<HtmlInCanvas>`: Remotion's way to run a canvas program over live HTML (Chrome's `drawElementImage`). The HTML is a
 // child, the canvas shows it, `onPaint` / `onInit` / `effects` may change what is shown. Kinetograph has no browser
-// canvas, so `isHtmlInCanvasSupported()` is false (a project can pick another path from it) and the component shows
-// its children as the CSS engine draws them, which is what the canvas shows when nothing paints over it. An
-// `onPaint`, `onInit` or enabled effect is not run, and a warning says so.
+// canvas, but the program runs all the same on recording canvases (effect-chain.tsx): the children are drawn as a layer,
+// `elementImage` is the picture of that layer, and what `onPaint` draws with it on a 2D, WebGL or WebGL 2 context
+// replaces the picture. `onInit` runs before `onPaint` for every frame, and the cleanup it returns after it. A WebGPU
+// context is not run (the children are shown, and the frame reports it). So `isHtmlInCanvasSupported()` is true;
+// `isHtmlInCanvasNestingSupported()` (an `<HtmlInCanvas>` inside another) is false, as that is not tried.
 
 import type { CSSProperties, ReactNode } from 'react';
-import { assertValidPixelDensity, warnEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
+import { assertValidPixelDensity, EffectsBox, hasEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
 import { croppedStyle, Sequenced, splitCrop, splitTiming, type CropProps, type SequenceTimingProps } from './sequenced.js';
-import { warnOnce } from './warn.js';
 
 /** The message a project shows, or Remotion throws, where `<HtmlInCanvas>` cannot run its canvas program. */
 export const HTML_IN_CANVAS_UNSUPPORTED_MESSAGE =
-  'HTML in Canvas needs a browser canvas that can draw an element (Chrome 149 or newer with Canvas Draw Element enabled), and Kinetograph has none: <HtmlInCanvas> shows its children as they are, without onPaint, onInit or effects.';
+  'HTML in Canvas needs a browser canvas that can draw an element (Chrome 149 or newer with Canvas Draw Element enabled), and Kinetograph has none: <HtmlInCanvas> draws its onPaint, onInit and effects on recording canvases instead, which run 2D and WebGL contexts (not WebGPU).';
 
-/** Always false: there is no canvas that can draw an element. */
+/** Always true: the element is drawn as a layer and its picture is handed to `onPaint` (a recording canvas, not Chrome's). */
 export function isHtmlInCanvasSupported(): boolean {
-  return false;
+  return true;
 }
 
-/** Always false, for the same reason. */
+/** Always false: an `<HtmlInCanvas>` in the children of another is not tried. */
 export function isHtmlInCanvasNestingSupported(): boolean {
   return false;
 }
@@ -27,9 +28,14 @@ export function getHtmlInCanvasUnsupportedMessage(): string {
   return HTML_IN_CANVAS_UNSUPPORTED_MESSAGE;
 }
 
-/** What `onPaint` and `onInit` are handed in the browser. Nothing here calls them. */
+/**
+ * What `onPaint` and `onInit` are handed. `canvas` is a recorder: `getContext('2d')`, `getContext('webgl2')` and
+ * `getContext('webgl')` work, `drawElementImage(elementImage, dx, dy[, dw, dh])` and `texElementImage2D` draw the
+ * element. `element` has the size of the element (`clientWidth`, `offsetHeight`, `getBoundingClientRect()`), and
+ * `elementImage` is its picture (`width`, `height`, `close()`).
+ */
 export interface HtmlInCanvasOnPaintParams {
-  readonly canvas: unknown;
+  readonly canvas: any;
   readonly element: unknown;
   readonly elementImage: unknown;
   readonly pixelDensity: number;
@@ -46,7 +52,7 @@ export interface HtmlInCanvasProps extends SequenceTimingProps, CropProps {
   height: number;
   children: ReactNode;
   effects?: EffectsProp;
-  effectsOutputSize?: EffectsOutputSize;
+  effectsOutputSize?: EffectsOutputSize | null;
   onPaint?: HtmlInCanvasOnPaint;
   onInit?: HtmlInCanvasOnInit;
   pixelDensity?: HtmlInCanvasPixelDensity;
@@ -63,17 +69,35 @@ function assertDimensions(width: unknown, height: unknown): void {
 
 function HtmlInCanvasComponent(props: HtmlInCanvasProps): ReactNode {
   const [timing, withoutTiming] = splitTiming(props);
-  const [crop, { width, height, children, effects, onPaint, onInit, pixelDensity, style }] = splitCrop(withoutTiming);
+  const [crop, { width, height, children, effects, effectsOutputSize, onPaint, onInit, pixelDensity, style }] = splitCrop(withoutTiming);
   assertDimensions(width, height);
   assertValidPixelDensity('HtmlInCanvas', pixelDensity);
-  if (onPaint !== undefined || onInit !== undefined) {
-    warnOnce('<HtmlInCanvas>.paint', '<HtmlInCanvas> does not run onPaint or onInit: they draw on a browser canvas. Its children are shown as they are.');
+  const css = croppedStyle('<HtmlInCanvas />', crop, style);
+  if (!hasEffects(effects) && onPaint === undefined && onInit === undefined) {
+    // The canvas clips what it shows to its own size.
+    return (
+      <Sequenced timing={timing} component="<HtmlInCanvas>" defaultName="<HtmlInCanvas>">
+        <div style={{ width, height, overflow: 'hidden', ...css }}>{children}</div>
+      </Sequenced>
+    );
   }
-  warnEffects('<HtmlInCanvas>', effects);
-  // The canvas clips what it shows to its own size.
   return (
     <Sequenced timing={timing} component="<HtmlInCanvas>" defaultName="<HtmlInCanvas>">
-      <div style={{ width, height, overflow: 'hidden', ...croppedStyle('<HtmlInCanvas />', crop, style) }}>{children}</div>
+      <EffectsBox
+        component="<HtmlInCanvas>"
+        effects={effects}
+        effectsOutputSize={effectsOutputSize}
+        width={width}
+        height={height}
+        pixelDensity={pixelDensity}
+        paint={onPaint === undefined && onInit === undefined ? undefined : { onPaint: onPaint as never, onInit: onInit as never }}
+        style={css ?? {}}
+        source={(size) => (
+          <div style={{ width, height, overflow: 'hidden', ...(size.width === width && size.height === height ? {} : { transform: `scale(${size.width / width}, ${size.height / height})`, transformOrigin: '0 0' }) }}>
+            {children}
+          </div>
+        )}
+      />
     </Sequenced>
   );
 }
