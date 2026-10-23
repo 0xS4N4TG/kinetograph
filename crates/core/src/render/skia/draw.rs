@@ -15,10 +15,10 @@ use crate::render::Renderer;
 
 use crate::resolve::{
     ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient, ResolvedGradientGeometry, ResolvedKind,
-    ResolvedLayer, ResolvedPaint, ResolvedScene, ShapeStyle,
+    ResolvedLayer, ResolvedPaint, ResolvedScene, ShapeStyle, TextStroke,
 };
 use crate::scene::{
-    BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Scene, StrokeCap, StrokeJoin, Units,
+    BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Scene, StrokeCap, StrokeJoin, TextPaintOrder, Units,
 };
 use crate::text::TextEngine;
 
@@ -752,9 +752,11 @@ impl Translator {
                 let _ = geometry;
                 Some(b)
             }
-            ResolvedKind::Text { size, chars, text, font, line_height, max_width, align, runs, box_size, .. } => {
+            ResolvedKind::Text { size, chars, text, font, line_height, max_width, align, runs, box_size, stroke, .. } => {
                 let b = self.layer_box(layer)?;
-                let g = *size * 1.0;
+                // A stroke reaches half its width (a miter join, up to the limit) past the outline.
+                let reach = stroke.as_ref().map_or(0.0, |st| st.width as f32 * 0.5 * if st.join == StrokeJoin::Miter { st.miter_limit as f32 } else { 1.0 }.max(1.0) + 1.0);
+                let g = (*size).max(reach);
                 let mut b = Rect::new(b.left - g, b.top - g, b.right + g, b.bottom + g);
                 if chars.iter().any(Option::is_some) {
                     // A styled character moves, scales and turns about its centre: its glyph box goes through that.
@@ -1550,8 +1552,24 @@ impl Translator {
         t
     }
 
+    /// The paint of a text's stroke: centred on the glyph outline, with the join and miter limit it asks for.
+    fn text_stroke_paint(st: &TextStroke, comp: Comp) -> Paint {
+        let mut p = Self::base_paint(comp);
+        let c = color4(st.color);
+        p.set_color4f(Color4f::new(c.r, c.g, c.b, c.a * comp.alpha), None);
+        p.set_style(PaintStyle::Stroke);
+        p.set_stroke_width(st.width as f32);
+        p.set_stroke_join(match st.join {
+            StrokeJoin::Round => PaintJoin::Round,
+            StrokeJoin::Miter => PaintJoin::Miter,
+            StrokeJoin::Bevel => PaintJoin::Bevel,
+        });
+        p.set_stroke_miter(st.miter_limit as f32);
+        p
+    }
+
     fn draw_text(&mut self, canvas: &Canvas, layer: &ResolvedLayer, comp: Comp) {
-        let ResolvedKind::Text { text, font, size, color, line_height, max_width, align, chars, runs, box_size } = &layer.kind else {
+        let ResolvedKind::Text { text, font, size, color, line_height, max_width, align, chars, runs, box_size, stroke, paint_order } = &layer.kind else {
             return;
         };
         let laid = self.text.layout_layer(text, font, *size, *line_height, *max_width, *align, runs, *box_size);
@@ -1561,6 +1579,24 @@ impl Translator {
         let centres = if styled { laid.char_centres() } else { BTreeMap::new() };
         let mut paint = Self::base_paint(comp);
         self.set_paint(&mut paint, color, text_box);
+        let stroke_paint = stroke.as_ref().map(|st| Self::text_stroke_paint(st, comp));
+        let stroke_first = *paint_order == TextPaintOrder::StrokeFill;
+        // The fill and the stroke of a path, in the order `paint-order` gives.
+        let draw_both = |canvas: &Canvas, path: &Path, fill: &Paint, stroke: Option<&Paint>| {
+            let mut draws = 0;
+            for pass in 0..2 {
+                if (pass == 0) == stroke_first {
+                    if let Some(sp) = stroke {
+                        canvas.draw_path(path, sp);
+                        draws += 1;
+                    }
+                } else {
+                    canvas.draw_path(path, fill);
+                    draws += 1;
+                }
+            }
+            draws
+        };
         for run in &laid.runs {
             if run.glyphs.is_empty() {
                 continue;
@@ -1601,8 +1637,7 @@ impl Translator {
                         continue;
                     };
                     // A character with its own style is drawn about its centre, after the ones before it.
-                    canvas.draw_path(&std::mem::replace(&mut pb, PathBuilder::new()).detach(), &paint);
-                    self.stats.draws += 1;
+                    self.stats.draws += draw_both(canvas, &std::mem::replace(&mut pb, PathBuilder::new()).detach(), &paint, stroke_paint.as_ref());
                     let (Some(outline), true) = (outline, style.opacity > 0.0) else { continue };
                     let centre = centres.get(&g.char_index).copied().unwrap_or_default();
                     let mut own = Self::base_paint(comp);
@@ -1613,12 +1648,15 @@ impl Translator {
                     }
                     canvas.save();
                     canvas.concat(&mat(crate::render::char_matrix(style, centre)));
-                    canvas.draw_path(&Path::from(outline).make_offset((g.x, g.y)), &own);
+                    let own_stroke = stroke.as_ref().map(|st| {
+                        let mut sp = Self::text_stroke_paint(st, comp);
+                        sp.set_alpha_f(sp.alpha_f() * style.opacity);
+                        sp
+                    });
+                    self.stats.draws += draw_both(canvas, &Path::from(outline).make_offset((g.x, g.y)), &own, own_stroke.as_ref());
                     canvas.restore();
-                    self.stats.draws += 1;
                 }
-                canvas.draw_path(&pb.detach(), &paint);
-                self.stats.draws += 1;
+                self.stats.draws += draw_both(canvas, &pb.detach(), &paint, stroke_paint.as_ref());
                 continue;
             }
             let mut b = TextBlobBuilder::new();

@@ -35,6 +35,7 @@ mod shim;
 pub mod svg;
 mod table;
 mod text;
+mod text_stroke;
 mod util;
 
 pub use fonts::register_font_path;

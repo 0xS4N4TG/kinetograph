@@ -558,6 +558,10 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   once per document (`document.rs` does both). This Stylo is the Servo build: it drops `filter: url()`,
   `background-clip: text`, `-webkit-text-stroke`, `-webkit-text-fill-color` and `paint-order` as invalid. The shim
   writes the same value into a non-inherited custom property (`--kg-filter`, ...) that the painter reads back.
+  `-webkit-text-stroke` and `paint-order` inherit in CSS, so `paint/text_stroke.rs` takes the nearest ancestor's
+  declaration. The stroke is a `stroke` and `paintOrder` on the text layer (SCENE.md, "Text stroke"), drawn by Skia as the
+  glyph outlines stroked with a miter join (Chrome's, checked against Chrome for Testing); a text shadow of stroked
+  text is stroked too.
 - Fonts: a glyph run needs the font file. The painter matches a run's font bytes to a file of `request.fonts` (once per
   font), or to a path registered with `paint::register_font_path(blob_id, path)`.
 
@@ -634,7 +638,7 @@ opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
 `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
-`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`, `-webkit-text-stroke`, `paint-order`,
+`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`,
 form controls, iframes, SVG pictures (`<img src=x.svg>`, `url(x.svg)`), `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list
