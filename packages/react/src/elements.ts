@@ -35,7 +35,7 @@ import type {
   Turbulence,
   Vec3,
 } from '@kinetograph/scene';
-import { useTimeline } from './timeline.js';
+import { useTimeline, type TimelineState } from './timeline.js';
 
 export interface CommonProps {
   id?: string;
@@ -479,6 +479,21 @@ function snapToFrame(value: number): number {
   return Math.abs(value - whole) < 1e-6 ? whole : value;
 }
 
+/**
+ * The composition frame at which a media element's own frame 0 falls, and its rate in composition frames, when the
+ * children's clock runs `timeline.rate` times as fast as the composition's (enclosing `<Sequence playbackRate>`s). The
+ * children's frame c is `(absolute - origin) * rate`, so a clip starting at `offset` of them plays from the composition
+ * frame `origin + offset / rate`, at `rate * its own rate`. `trimBefore` and the loop of a Sequence are already in
+ * `timeline.frame`, so they move the origin. Inside a `<Freeze>` the frame is pinned and the rate plays no part.
+ */
+function mediaClock(timeline: TimelineState, offset: number): { from: number; rate: number } {
+  const rate = timeline.frozen ? 1 : (timeline.rate ?? 1);
+  if (rate === 1) return { from: snapToFrame(timeline.absoluteFrame - timeline.frame + offset), rate };
+  // A fractional start, held to a grid so a motion-blur sub-frame's rounding noise does not make it a new clip.
+  const from = timeline.absoluteFrame - timeline.frame / rate + offset / rate;
+  return { from: Math.round(from * 1e6) / 1e6, rate };
+}
+
 export function Audio(props: AudioProps) {
   const timeline = useTimeline();
   const volumeProp = props.volume ?? 1;
@@ -487,12 +502,13 @@ export function Audio(props: AudioProps) {
   if (typeof volume !== 'number' || !Number.isFinite(volume)) {
     throw new Error(`<Audio src="${props.src}"> volume must be a finite number, got ${String(volume)}`);
   }
+  const { from, rate } = mediaClock(timeline, 0);
   const clip: Omit<AudioClipJson, 'id'> = {
     src: props.src,
-    from: snapToFrame(timeline.absoluteFrame - timeline.frame),
+    from,
     trimBefore: props.trimBefore ?? props.startFrom ?? 0,
     trimAfter: props.trimAfter ?? props.endAt ?? null,
-    playbackRate: props.playbackRate ?? 1,
+    playbackRate: (props.playbackRate ?? 1) * rate,
     volume,
     loop: props.loop ?? false,
     muted: (props.muted ?? false) || timeline.frozen,
@@ -622,13 +638,14 @@ export function Video(props: VideoProps): ReactNode {
   // As <Sequence from>: the video is not there before it starts.
   if (timeline.frame < offset) return null;
   // As <Audio>: the absolute frame at which the clip's own frame 0 falls.
-  const from = snapToFrame(timeline.absoluteFrame - timeline.frame + offset);
+  const { from, rate } = mediaClock(timeline, offset);
+  const rated = rate === 1 ? playbackRate : (playbackRate ?? 1) * rate;
   const sound: Omit<AudioClipJson, 'id'> = {
     src,
     from,
     trimBefore: trimBefore ?? 0,
     trimAfter: trimAfter ?? null,
-    playbackRate: playbackRate ?? 1,
+    playbackRate: rated ?? 1,
     volume,
     loop: props.loop ?? false,
     muted: (props.muted ?? false) || timeline.frozen,
@@ -641,7 +658,7 @@ export function Video(props: VideoProps): ReactNode {
     const clock: Record<string, number | boolean> = { from };
     if (trimBefore !== undefined) clock.trimBefore = trimBefore;
     if (trimAfter !== undefined) clock.trimAfter = trimAfter;
-    if (playbackRate !== undefined) clock.playbackRate = playbackRate;
+    if (rated !== undefined) clock.playbackRate = rated;
     if (props.loop) clock.loop = true;
     if (timeline.frozen) clock.frame = timeline.absoluteFrame;
     return createElement(
@@ -658,6 +675,7 @@ export function Video(props: VideoProps): ReactNode {
     from,
     trimBefore,
     trimAfter,
+    playbackRate: rated,
     // Inside a <Freeze> the clock reads the composition's frame; `from` is shifted so that frame is the frozen one.
     frame: timeline.frozen ? timeline.absoluteFrame : undefined,
     sound,
