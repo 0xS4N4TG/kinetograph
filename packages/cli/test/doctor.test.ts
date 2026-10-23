@@ -102,6 +102,8 @@ describe('doctor <entry>', () => {
     expect(text.text).toContain('2 imports of packages Kinetograph does not support');
     expect(text.text).toContain('@remotion/three  imported by');
     expect(text.text).toContain('Main: frames 0..19');
+    expect(text.text).not.toContain('nothing is left out');
+    expect(text.text).toContain('2 unsupported imports drawn as nothing');
   });
 
   it('lists the unsupported imports instead of the error when the project cannot be opened', async () => {

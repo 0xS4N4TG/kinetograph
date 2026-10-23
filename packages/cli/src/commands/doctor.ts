@@ -35,6 +35,8 @@ function ranges(list: readonly [number, number][]): string {
 const percent = (share: number): string => `${(share * 100).toFixed(1)}%`;
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+const NOTHING_LEFT_OUT = 'nothing is left out: every frame is drawn in full by the engine';
+
 /** The report as people read it. */
 export function formatReport(report: DoctorReport): string {
   const lines: string[] = [];
@@ -45,7 +47,7 @@ export function formatReport(report: DoctorReport): string {
       `with unsupported content: ${report.unsupportedFrames}`,
   );
   if (report.issues.length === 0) {
-    lines.push('nothing is left out: every frame is drawn in full by the engine');
+    lines.push(NOTHING_LEFT_OUT);
   } else {
     lines.push('these are drawn without it or approximated (`render --strict` fails on them instead)');
     lines.push('', `${plural(report.issues.length, 'issue')}, most frames first:`);
@@ -101,7 +103,12 @@ export const doctor: Command = {
     // An import of an unsupported package would fail the bundle: it is listed instead, and the rest is checked.
     const imports: UnsupportedImport[] = [];
     const withImports = <T extends object>(data: T, text: string): { data: T | (T & { unsupportedImports: UnsupportedImport[] }); text: string } =>
-      imports.length === 0 ? { data, text } : { data: { ...data, unsupportedImports: imports }, text: `${formatImports(imports)}\n\n${text}` };
+      imports.length === 0
+        ? { data, text }
+        : {
+            data: { ...data, unsupportedImports: imports },
+            text: `${formatImports(imports)}\n\n${text.replace(NOTHING_LEFT_OUT, `${plural(imports.length, 'unsupported import')} drawn as nothing`)}`,
+          };
     const failed = (error: unknown): { data: object; text: string } => {
       const reason = error instanceof Error ? error.message : String(error);
       return withImports({ error: reason }, `the frames could not be checked: ${reason}`);
