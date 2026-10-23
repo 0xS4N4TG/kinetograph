@@ -8,6 +8,8 @@ description: Make videos and motion graphics with Kinetograph. Write Remotion-sh
 Kinetograph renders video without a browser. You write TypeScript with the Remotion API and a few native elements; Node
 runs it; a GPU compositor draws it. You cannot watch a video, so you look at single frames and read the scene graph.
 
+To move an existing Remotion project onto Kinetograph, use the `kinetograph-migrate` skill.
+
 Run everything as `npx kinetograph <command>`. Add `--json` to get one JSON object you can parse; a failure is
 `{ "error": { "code", "message" } }` with exit code 1. (Over MCP (`kinetograph mcp`) there is one tool per command except `studio`, named
 like the command (`audio analyze` is `audio_analyze`), with the same arguments; `still`, `strip` and `onion` return the image
