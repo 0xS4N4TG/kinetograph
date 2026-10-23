@@ -3,7 +3,7 @@ import { SmoothScroll } from '@/components/smooth-scroll';
 import { Hero } from '@/sections/hero';
 import { GITHUB, doc } from '@/sections/links';
 import { Nav } from '@/sections/nav';
-import { About, Facts, Film } from '@/sections/page';
+import { About, Facts } from '@/sections/page';
 import { Start } from '@/sections/static';
 
 const FOOTER_COLUMNS = [
@@ -22,7 +22,6 @@ export default function Page() {
         <Facts />
         <About />
         <Start />
-        <Film />
       </main>
       <HalftoneWordmarkFooter
         wordmark="kinetograph"

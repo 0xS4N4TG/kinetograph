@@ -3,8 +3,6 @@ import type { ReactNode } from 'react';
 
 import '@fontsource-variable/dm-sans/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
-import '@fontsource/caveat/latin-700.css';
-import '@fontsource/archivo-black/latin-400.css';
 import '@fontsource-variable/geist'; // the footer's faces
 import '@fontsource-variable/geist-mono';
 import '@fontsource-variable/newsreader/opsz.css';

@@ -13,7 +13,7 @@ export function Wordmark({ className }: { className?: string }) {
 
 /** Small uppercase label with the film's wide tracking. */
 export function Label({ children, className }: { children: ReactNode; className?: string }) {
-  return <p className={cn('font-dm text-[12px] font-medium tracking-[0.32em] text-mute uppercase', className)}>{children}</p>;
+  return <p className={cn('font-jb text-[11px] font-medium tracking-[0.24em] text-mute uppercase', className)}>{children}</p>;
 }
 
 export const shell = 'mx-auto w-full max-w-[1200px] px-[clamp(20px,5vw,64px)]';
