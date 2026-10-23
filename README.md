@@ -8,13 +8,11 @@ resolve to Kinetograph's own implementation of them.
 **Status (2026-10-16):** the core renderer, effects, authoring layer, studio, Remotion compatibility on a native DOM
 engine (CSS, SVG, Canvas 2D, WebGL fragment shaders) and an own 3D layer are built. The papercut test project renders
 all 988 of its frames natively, and a reference scene renders 7.0x faster than Remotion (1.28 s against 8.96 s, median,
-on an Apple M4). What is left is logged in [docs/OPEN_ISSUES.md](docs/OPEN_ISSUES.md).
+on an Apple M4). What is left is listed under known issues on the kinetograph site (`/docs/known-issues/`).
 
-- [Technical handoff and roadmap](docs/HANDOFF.md)
-- [The DOM engine](docs/ENGINE.md) and [Remotion compatibility](docs/COMPAT.md)
+- [The DOM engine](docs/ENGINE.md), and Remotion compatibility on the kinetograph site (`/docs/compat/`)
 - [Authoring contract](docs/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
 - [Scene format](docs/SCENE.md)
-- [Research notes](docs/RESEARCH.md) and [the no-Chrome decision](docs/DECISION_RENDERING_CRITICAL.md)
 
 ## Architecture
 
@@ -97,8 +95,7 @@ flowchart TB
 **Decisions behind it.** No Chrome anywhere in rendering, including canvas and WebGL: every CSS, SVG and canvas feature
 is ported natively, and Chrome for Testing is used only by tests, as a reference to compare against. Node hosts the
 engine so every npm package and Web API is there; the engine is a native addon so pixels never cross into JavaScript.
-Existing crates do text shaping, layout, CSS and rasterising; Kinetograph writes the glue. Reasons and measurements
-are in [docs/HANDOFF.md](docs/HANDOFF.md) §4 and [docs/DECISION_RENDERING_CRITICAL.md](docs/DECISION_RENDERING_CRITICAL.md).
+Existing crates do text shaping, layout, CSS and rasterising; Kinetograph writes the glue.
 
 ## Projects in TSX
 

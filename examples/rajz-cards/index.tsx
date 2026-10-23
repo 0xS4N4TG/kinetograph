@@ -11,7 +11,7 @@
 // from shapes: a pale studio backdrop and a dark figure in a pose picked by
 // `random(seed)`.
 //
-// Render on the M4 (docs/HANDOFF.md §8, Phase 3):
+// Render on the M4:
 //   npx kinetograph still examples/rajz-cards/index.tsx 60 -o out/rajz-60.png
 //   npx kinetograph strip examples/rajz-cards/index.tsx -n 12 -o out/rajz-strip.png
 //   npx kinetograph render examples/rajz-cards/index.tsx -o out/rajz-cards.mp4

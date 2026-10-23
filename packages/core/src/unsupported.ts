@@ -1,4 +1,4 @@
-// What a component of this package cannot draw (docs/COMPAT.md §6.1). A DOM element's unsupported items come from the
+// What a component of this package cannot draw (kinetograph site, /docs/compat/). A DOM element's unsupported items come from the
 // painter in the addon; a component that draws through a canvas (`<RemotionRiveCanvas>`, `<SkiaCanvas>`) has no
 // painter to ask, so it reports what it knows it left out while it renders, and the frame loop adds the report to the
 // frame's. A report is read right after the frame's tree is settled and forgotten when the next render starts, so it

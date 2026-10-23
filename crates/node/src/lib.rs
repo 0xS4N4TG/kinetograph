@@ -254,7 +254,7 @@ pub fn model_unsupported(src: String, base_dir: Option<String>) -> Result<Vec<Mo
         .collect())
 }
 
-/// CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a
+/// CSS block and flex layout of one DOM island: a
 /// `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out.
 #[napi]
 pub fn layout_dom(request_json: String) -> Result<String> {

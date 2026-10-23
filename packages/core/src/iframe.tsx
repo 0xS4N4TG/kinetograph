@@ -1,5 +1,5 @@
 // `<IFrame>`: Remotion's `<iframe>` that holds the frame until the page has loaded. Kinetograph draws no embedded
-// documents (the CSS engine reports an `iframe` as unsupported, docs/COMPAT.md §6), so this is the `iframe` element
+// documents (the CSS engine reports an `iframe` as unsupported, kinetograph site, /docs/compat/), so this is the `iframe` element
 // and nothing more: it is in the tree, `--strict` refuses it, and nothing loads, so there is nothing to wait for.
 
 import type { ComponentPropsWithRef, ReactNode } from 'react';

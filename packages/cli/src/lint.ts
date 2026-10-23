@@ -302,7 +302,7 @@ export function mergeFindings(perFrame: { frame: number; findings: Finding[]; in
 }
 
 /**
- * What the engine cannot draw in the checked frames (docs/COMPAT.md §7): one warning per issue group of
+ * What the engine cannot draw in the checked frames (kinetograph site, /docs/compat/): one warning per issue group of
  * `kinetograph doctor`, since the frame still renders, without it or approximated. The ranges are of the checked
  * frames only.
  */

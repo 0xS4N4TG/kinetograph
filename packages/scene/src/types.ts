@@ -1045,7 +1045,7 @@ export interface AudioClipJson {
   toneFrequency?: number;
 }
 
-/** Something compat mode cannot draw (docs/COMPAT.md §6.1); a frame holding one is drawn without it or approximated. */
+/** Something compat mode cannot draw (kinetograph site, /docs/compat/); a frame holding one is drawn without it or approximated. */
 export interface Unsupported {
   /** The element's host-tree path and tag: `'$0.2.1 <div>'`. */
   path: string;

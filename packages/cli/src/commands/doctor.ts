@@ -1,4 +1,4 @@
-// `kinetograph doctor` (docs/COMPAT.md §7): what a project holds that the engine cannot draw.
+// `kinetograph doctor`: what a project holds that the engine cannot draw.
 
 import { describeIssue, summarize, type DoctorReport } from '@kinetograph/compat/doctor';
 import type { Unsupported } from '@kinetograph/scene';

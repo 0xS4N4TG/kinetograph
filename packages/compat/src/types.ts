@@ -1,4 +1,4 @@
-// The types compat mode's streams share (docs/COMPAT.md §2, §6.1). Owned by the orchestrator.
+// The types compat mode's streams share (kinetograph site, /docs/compat/). Owned by the orchestrator.
 
 import type { CameraJson, LayerJson, Unsupported } from '@kinetograph/scene';
 
@@ -30,7 +30,7 @@ export interface IslandContext {
 export interface IslandResult {
   layers: LayerJson[];
   unsupported: Unsupported[];
-  /** From a `perspective` property (docs/COMPAT.md §4.3). */
+  /** From a `perspective` property. */
   camera: CameraJson | null;
   /** The least scene `margin` (pixels) the island needs, for the blurs that reach past their layers (docs/ENGINE.md §2). */
   margin?: number;

@@ -1,5 +1,5 @@
 // The browser's `FontFace` and `document.fonts`, as far as a project loading its own font files uses them
-// (docs/COMPAT.md §2): `new FontFace(family, "url(...)", { weight, style })`, `await face.load()` and
+// (kinetograph site, /docs/compat/): `new FontFace(family, "url(...)", { weight, style })`, `await face.load()` and
 // `document.fonts.add(face)` register the file with `registerFont`. Installed in Node only where the globals are missing.
 //
 // A remote `url(https://…)` is downloaded once into the font cache (`~/.cache/kinetograph/fonts`) and read from there

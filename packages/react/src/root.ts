@@ -52,7 +52,7 @@ function checkChild(parentType: string, child: HostNode): void {
     }
     return;
   }
-  // A DOM element takes text and elements (DOM or native) as children (docs/COMPAT.md §4.1).
+  // A DOM element takes text and elements (DOM or native) as children.
   if (isDomElement(parentType)) return;
   if (child.kind === 'text') {
     throw new Error(`Raw text "${child.text}" is not allowed inside ${describeParent(parentType)}; wrap it in <Text>`);

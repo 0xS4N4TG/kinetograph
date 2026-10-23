@@ -1,4 +1,4 @@
-// What the engine could not draw in the frames a command drew (docs/COMPAT.md §6.1): the frame is drawn anyway, with
+// What the engine could not draw in the frames a command drew (kinetograph site, /docs/compat/): the frame is drawn anyway, with
 // the native approximation, and this says what was left out. `--strict` turns it into an error.
 
 import type { Unsupported } from '@kinetograph/scene';

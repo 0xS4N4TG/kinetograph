@@ -551,7 +551,7 @@ GLSL fragment shader that mixes the scene going out with the scene coming in) ar
   engine. The mean difference over the picture is 0.3 of 255 or less for every shader presentation, `fade`, `slide`,
   `wipe`, `clock-wipe` and `iris`, and no more than 0.1% of pixels are over 48 levels off (edge pixels of the shapes).
   `<LightLeak>` differs by up to 3 at the end of its retraction, a smooth gradient, and `<Starburst>` by 0 to 0.1. The
-  exception is `flip`, which is the open `preserve-3d` issue (docs/OPEN_ISSUES.md §1.1). The goldens
+  exception is `flip`, which is the open `preserve-3d` issue (see the known issues, `/docs/known-issues/`). The goldens
   `transition-*` in `crates/core/tests/golden` are six of these frames.
 
 ### scene3d
@@ -697,8 +697,7 @@ plus GGX specular per light, and the environment if there is one.
     dropped), scenes other than the default, and every glTF extension the file lists in `extensionsUsed` (this includes
     `KHR_texture_transform` and `KHR_materials_*`). Cameras and lights in the file are not read and not reported. Each
     kind of thing is listed once for a file as unsupported content on every frame that draws the model (element
-    `Model`, property the feature, value the file), so `render`, `still` and `strip` warn and `--strict` fails (COMPAT.md
-    §6.1); the addon's `modelUnsupported(src, baseDir)` is what lists them.
+    `Model`, property the feature, value the file), so `render`, `still` and `strip` warn and `--strict` fails (the Remotion compatibility docs, `/docs/compat/`); the addon's `modelUnsupported(src, baseDir)` is what lists them.
 - <a id="3d-shadows"></a>**Shadows.** A directional, spot or point light with `castShadow: true` draws a shadow map (a spot light's is a perspective view along its cone, a point light's six, one for each face of a cube around it; the same `shadow` settings): a depth image of the
   objects with `castShadow` seen along the light, fitted automatically to their boxes (so the map's resolution follows
   the scene's size, and a ground plane that only receives does not stretch it). The objects with `receiveShadow` are

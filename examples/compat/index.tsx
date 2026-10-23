@@ -1,4 +1,4 @@
-// A Remotion project written as a Remotion user would write it (docs/COMPAT.md):
+// A Remotion project written as a Remotion user would write it (the Remotion compatibility docs, `/docs/compat/`):
 // DOM elements with inline styles, SVG, `Img`, and nothing from Kinetograph.
 // Compat mode renders it without a port. It is written for this repo (none of
 // the papercut kit, which is private) and leans on what the kit leans on:

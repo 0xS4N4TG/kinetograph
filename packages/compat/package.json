@@ -1,7 +1,7 @@
 {
   "name": "@kinetograph/compat",
   "version": "0.1.0",
-  "description": "Remotion compat mode: DOM islands handed to the Rust CSS engine, and the DOM shim for refs and browser globals (docs/ENGINE.md, docs/COMPAT.md)",
+  "description": "Remotion compat mode: DOM islands handed to the Rust CSS engine, and the DOM shim for refs and browser globals (docs/ENGINE.md, /docs/compat/)",
   "license": "PolyForm-Small-Business-1.0.0",
   "type": "module",
   "exports": {

@@ -1,4 +1,4 @@
-//! `layoutDom` (docs/COMPAT.md §5.1): CSS block and flex layout of a DOM
+//! `layoutDom`: CSS block and flex layout of a DOM
 //! island by taffy, text measured by Parley. CPU only.
 //!
 //! Also the full engine's DOM islands (docs/ENGINE.md §2): `renderDomIsland`,

@@ -175,7 +175,7 @@ export interface Keyframe {
 }
 
 /**
- * CSS block and flex layout of one DOM island (docs/COMPAT.md §5.1): a
+ * CSS block and flex layout of one DOM island: a
  * `DomLayoutRequest` as JSON in, a `DomLayoutBox` as JSON out.
  */
 export declare function layoutDom(requestJson: string): string

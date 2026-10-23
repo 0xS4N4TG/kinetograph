@@ -6,7 +6,7 @@ and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is the fina
 Phases 0 to 5 are built and merged into `main` (core renderer, effects, authoring, studio and video layers, Remotion
 compat on a native DOM engine, GPU-pass work); see `README.md`, `docs/ENGINE.md`, `docs/AUTHORING.md` and `docs/SCENE.md`.
 The Remotion compatibility reference (what is drawn, what is unsupported, `doctor`) is on the kinetograph site at
-`/docs/#compat`, and the known gaps at `/docs/#known-issues`.
+`/docs/compat/`, and the known gaps at `/docs/known-issues/`.
 
 - `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.
 

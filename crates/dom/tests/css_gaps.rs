@@ -1,5 +1,4 @@
-//! The CSS features Blitz did not lay out or draw (docs/HANDOFF.md §8,
-//! "CSS gaps"), through the island pipeline: `-webkit-line-clamp`,
+//! The CSS features Blitz did not lay out or draw through the island pipeline: `-webkit-line-clamp`,
 //! `@container` and transitions. The pictures are in `features.rs`.
 
 mod common;
