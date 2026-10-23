@@ -22,7 +22,7 @@ registerRoot(() => (
 | `durationInFrames`, `fps`, `width`, `height` | The length, frame rate and size. |
 | `defaultProps` | The props used when `--props` does not set them. |
 | `background` | The background colour of every frame. The default is transparent. |
-| `margin` | The least margin, in pixels, around the canvas for effects that draw past its edge. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 7.2. |
+| `margin` | The least margin, in pixels, around the canvas for effects that draw past its edge. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 7.2. |
 
 `--props` takes a JSON object. The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object.
 
@@ -70,7 +70,7 @@ These elements come from `@kinetograph/core`. They draw in the engine, not in th
 | `Scene3D`, `Camera3D`, lights, `Mesh`, `Model`, `Extrude`, `Text3D` | The 3D layer. |
 | `Video`, `OffthreadVideo`, `Audio`, `Gif` | Video, GIF and sound files. |
 
-Every element takes the common props: `id`, `x`, `y`, `scale`, `rotation`, `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `opacity`, `blendMode`, `effects`, `clip`, `mask`, `matte` and `motionBlur`. Give an element an `id` when another layer refers to it, or when its id has to stay the same as the tree changes. The full table of props is in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 6.3.
+Every element takes the common props: `id`, `x`, `y`, `scale`, `rotation`, `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `opacity`, `blendMode`, `effects`, `clip`, `mask`, `matte` and `motionBlur`. Give an element an `id` when another layer refers to it, or when its id has to stay the same as the tree changes. The full table of props is in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.3.
 
 A shape with a gradient fill and a drop shadow:
 
@@ -150,7 +150,7 @@ Then use `font="Brand"` on a `Text` element.
 <GlslShader width={160} height={60} fragment={FRAGMENT} uniforms={{ time: frame / fps }} />
 ```
 
-The details of both are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), sections 6.5 and 6.7. Known gaps are in [Known issues](/docs/known-issues/).
+The details of both are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), sections 6.5 and 6.7. Known gaps are in [Known issues](/docs/known-issues/).
 
 ## 2.5D and 3D
 
@@ -163,7 +163,7 @@ For depth without a 3D scene, put a `Camera` in the composition and turn a `Laye
 </Layer>
 ```
 
-For a full 3D scene, use `Scene3D`, `Camera3D`, the lights and `Mesh` or `Model`. Rotations there are in degrees. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 6.6. Groups that intersect each other in 3D are drawn in painter's order. [Known issues](/docs/known-issues/) has the details.
+For a full 3D scene, use `Scene3D`, `Camera3D`, the lights and `Mesh` or `Model`. Rotations there are in degrees. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6. Groups that intersect each other in 3D are drawn in painter's order. [Known issues](/docs/known-issues/) has the details.
 
 ## Checking the work
 

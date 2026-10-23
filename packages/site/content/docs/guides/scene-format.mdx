@@ -57,9 +57,9 @@ Render a frame of it with `npx kinetograph still scene.json 15 -o out/card-15.pn
 | `fps` | number | Above 0. The frame rate used when encoding. |
 | `durationInFrames` | integer | At least 1. Valid frames run from 0 to `durationInFrames` minus 1. |
 | `background` | colour | Optional. The default is `#000000`. It may be transparent. |
-| `margin` | integer | Optional. The least canvas margin in pixels. See [Canvas margin](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#canvas-margin). |
+| `margin` | integer | Optional. The least canvas margin in pixels. See [Canvas margin](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md#canvas-margin). |
 | `fonts` | object | Font family names to font file paths. A `text` layer names one of these families. |
-| `camera` | object | The viewpoint for 3D transforms. See [3D transforms and the camera](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#3d-transforms-and-the-camera). |
+| `camera` | object | The viewpoint for 3D transforms. See [3D transforms and the camera](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first. The last layer is on top. |
 
 Paths in the scene, such as font files, image files and video files, are relative to the scene file. Only the fonts listed in `fonts` exist. There is no fallback to a system font.
@@ -139,7 +139,7 @@ A group holds children. It composites them into its own buffer, then blends the 
 { "id": "stack", "type": "group", "opacity": 0.8, "children": [ ] }
 ```
 
-The types `noise`, `meshGradient`, `lottie`, `canvas`, `scene3d`, `video` and `gif` have their own fields. See [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md) for each.
+The types `noise`, `meshGradient`, `lottie`, `canvas`, `scene3d`, `video` and `gif` have their own fields. See [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md) for each.
 
 ## Gradients
 
@@ -167,11 +167,11 @@ A group with a `layout` places its children with flexbox. Any layer can take par
       "layoutItem": { "flexGrow": 1, "margin": 8 } } ] }
 ```
 
-Layout is flexbox only, with sizes in pixels. Layout names and values follow CSS. The full list of fields is in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#layout).
+Layout is flexbox only, with sizes in pixels. Layout names and values follow CSS. The full list of fields is in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md#layout).
 
 ## Effects
 
-Effects go in a layer's `effects` list. Each entry has a `type`, such as `blur`, `glow`, `dropShadow`, `grain` or `displace`. `npx kinetograph effects` lists them with their fields. Each effect is described in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#effects).
+Effects go in a layer's `effects` list. Each entry has a `type`, such as `blur`, `glow`, `dropShadow`, `grain` or `displace`. `npx kinetograph effects` lists them with their fields. Each effect is described in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md#effects).
 
 ## Unknown fields
 
@@ -179,4 +179,4 @@ A scene loader ignores fields it does not know. A misspelt optional field has no
 
 ## The full reference
 
-[SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md) has every field, every layer type and the limits of this version. The [Authoring](/docs/guides/authoring/) guide covers the TSX side that writes these scenes.
+[SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md) has every field, every layer type and the limits of this version. The [Authoring](/docs/guides/authoring/) guide covers the TSX side that writes these scenes.

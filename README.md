@@ -20,6 +20,18 @@ projects render as they are: `remotion` and `@remotion/*` imports resolve to Kin
 **The film above is 1,184 frames of 1080p video, sound included, rendered in 26 seconds on a laptop.** It is one
 TypeScript project in [`examples/launch`](examples/launch).
 
+<details>
+<summary>Credits for the film's footage</summary>
+
+- "Blacksmith Scene" (Edison, 1893) and "Fred Ott's Sneeze" (Edison, 1894), public domain.
+- "Armistice Day Parade, Columbus, Ohio, 1927", US National Archives
+  ([archive.org/details/111-h-1555](https://archive.org/details/111-h-1555)), a US government work.
+- SMPTE Universal Leader, public domain.
+- The handwritten "FILM" and the 16mm film burn are from licensed overlay packs ("Text Animation Overlays" and
+  "Custom Transitions: Film Burns"); they are not in the repo.
+
+</details>
+
 ## Rendered with Kinetograph
 
 Each clip is an example in this repo. Times are `kinetograph render --concurrency 4` on an Apple M4, the median of
@@ -41,6 +53,19 @@ three runs.
   <tr>
     <td><img src="docs/readme/bench-diorama.gif" alt="Diorama scene" width="60%"><br><b>Diorama scene (JSON)</b><br><sub>90 frames · 1080×1920 · 3 s of video · <b>rendered in 2.2 s</b></sub></td>
     <td><img src="docs/readme/papercut-card.gif" alt="Papercut card scene" width="60%"><br><b>Papercut card (JSON)</b><br><sub>60 frames · 1080×1920 · 2 s of video · <b>rendered in 0.7 s</b></sub></td>
+  </tr>
+</table>
+
+### Papercut explainers
+
+Three episodes of *Tape & Code*, the papercut explainer series of the Tiny Agent channel, written for Remotion and
+rendered by Kinetograph as they are. Same machine and settings as above.
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/readme/papercut-13-mods.gif" alt="Tape & Code ep. 13: Mods"><br><b>Ep. 13: Mods</b><br><sub>988 frames · 1080×1920 · 33 s of video<br><b>rendered in 23 s</b></sub></td>
+    <td width="33%"><img src="docs/readme/papercut-12-mirofish.gif" alt="Tape & Code ep. 12: Mirofish"><br><b>Ep. 12: Mirofish</b><br><sub>879 frames · 1080×1920 · 29 s of video<br><b>rendered in 32 s</b></sub></td>
+    <td width="33%"><img src="docs/readme/papercut-10-war.gif" alt="Tape & Code ep. 10: The War Skill"><br><b>Ep. 10: The War Skill</b><br><sub>850 frames · 1080×1920 · 28 s of video<br><b>rendered in 75 s</b></sub></td>
   </tr>
 </table>
 
