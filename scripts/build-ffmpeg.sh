@@ -75,14 +75,16 @@ case "$OS" in
   linux) CONFIG+=(--enable-zlib) ;;
   windows)
     # MSVC's cl and link (run this from a shell where vcvars has been loaded) and Media Foundation for h264_mf.
-    CONFIG+=(--toolchain=msvc --enable-mediafoundation)
+    # mfenc.c embeds an AVD3D11VADeviceContext in its context struct, which exists only with CONFIG_D3D11VA (the
+    # autodetect that would set it is off); without it MSVC reports MFContext undeclared. System headers, no GPL.
+    CONFIG+=(--toolchain=msvc --enable-mediafoundation --enable-d3d11va)
     ;;
 esac
 
 clone https://github.com/FFmpeg/FFmpeg "$FFMPEG_REF" "$WORK/ffmpeg"
 cd "$WORK/ffmpeg"
 ./configure "${CONFIG[@]}" --extra-cflags=-w >"$WORK/configure.log" 2>&1 || { tail -50 "$WORK/configure.log"; exit 1; }
-make -j"$JOBS" >"$WORK/make.log" 2>&1 || { tail -50 "$WORK/make.log"; exit 1; }
+make -j"$JOBS" >"$WORK/make.log" 2>&1 || { grep -m20 -n -i 'error' "$WORK/make.log"; tail -30 "$WORK/make.log"; exit 1; }
 make install >/dev/null
 
 # MSVC's linker looks for avcodec.lib, ffmpeg's static archive is libavcodec.a.
