@@ -19,8 +19,8 @@ import { VO, spoken } from './sound-timing.js';
 /** The voiceover of shot 3: "Today," / "to make a video" / "with code," / "a browser screenshots" / "every single frame." */
 export const S03_LINES: CaptionLine[] = [{ file: '03-today', at: VO.find((v) => v.file === '03-today')!.at, split: [1, 4, 2, 3, 3], hot: ['today', 'screenshots', 'frame'] }];
 
-/** The pile sits up and to the right on the tube, leaving the dark under it for the words. */
-const PILE = { x: 330, y: 10, s: 0.8 };
+/** The pile sits centred in the top of the tube, leaving the dark under it for the words. */
+const PILE = { x: 196, y: -10, s: 0.72 };
 const onPile = (p: Point): Point => ({ x: PILE.x + p.x * PILE.s, y: PILE.y + p.y * PILE.s });
 
 /** The captions are set at this scale, a little smaller than on shot 7's film. */
@@ -54,8 +54,8 @@ const Picture: React.FC<{ t: number }> = ({ t }) => (
 export const S03: React.FC = () => {
   const frame = useCurrentFrame();
   const ball = (f: number) => { const b = ballAt(f); if (!b) return null; const p = onPile(b); return { x: p.x / K, y: p.y / K }; };
-  // the words hang along the bottom, under the pile, from the left
-  const place = () => ({ x: 120 / K, y: H / K, side: 'right' as const });
+  // the words hang along the bottom, under the pile, from a little left of centre
+  const place = () => ({ x: 600 / K, y: H / K, side: 'right' as const });
   return (
     <Stock id="s03">
       <Tube id="s03-tube">

@@ -92,7 +92,7 @@ function loop(cx: number, cy: number, rx: number, ry: number, seed: string): Pt[
   return pts;
 }
 
-// ---- shot 10: "No browser. No screenshots. Just pixels." The words land in projected light, a pen strikes out the
+// ---- shot 10: "No Chromium. No screenshots. Just pixels." The words land in projected light, a pen strikes out the
 //      first two phrases and rings the last in red; then the camera pushes into "pixels." until the screen's own
 //      pixels show, each a block, then three stripes of red, green and blue ----
 const S10_WORDS = spoken('10-pixels');
