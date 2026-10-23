@@ -36,8 +36,14 @@ pub(in super::super) struct Inner {
     /// The frame `tr` was last told about (`Translator::begin_frame`), and the one being drawn.
     tr_frame: u64,
     frame: u64,
-    // Dropped in this order: what Skia made (the translator's images), the recorder, the context they were made on,
-    // then what the context runs on.
+    /// `None` when Skia draws on the CPU (`init`). Last: what Skia made (the translator's images) is dropped before the
+    /// context it was made on.
+    gpu: Option<Gpu>,
+}
+
+/// Graphite on the GPU, for the layers the wgpu path asks Skia to draw.
+struct Gpu {
+    // Dropped in this order: the recorder, then the context it records for, then what the context runs on.
     rec: Rc<RefCell<graphite::Recorder>>,
     ctx: graphite::Context,
     native: Native,
@@ -47,7 +53,9 @@ pub(in super::super) struct Inner {
 unsafe impl Send for Inner {}
 
 pub(in super::super) struct SkiaBackend {
-    rec: Rc<RefCell<graphite::Recorder>>,
+    /// The frame's recorder; `None` when Skia draws on the CPU, into raster surfaces that are uploaded to the textures
+    /// the GPU path would have drawn into.
+    rec: Option<Rc<RefCell<graphite::Recorder>>>,
     tr: Translator,
     /// Frames take the targets in turn, so that a frame is not drawn into the texture the one before is still being
     /// read from.
@@ -80,26 +88,59 @@ struct Target {
     _texture: wgpu::Texture,
 }
 
-/// A Skia backend on `device`'s GPU device and `queue`'s command queue. An error if Skia cannot start on this device
-/// (no Metal device, or a Vulkan driver without what Graphite needs).
+/// `KINETOGRAPH_SKIA_CPU=1`: draw with Skia's CPU backend even where a GPU one would start (to test that path).
+fn cpu_forced() -> bool {
+    std::env::var("KINETOGRAPH_SKIA_CPU").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// Graphite on `device`'s GPU device and `queue`'s command queue, with two recorders (the frame's and the one for the
+/// layers the wgpu path asks for), if Skia can start there and draw into the textures wgpu makes of both formats it
+/// draws to. `None` if there is no such GPU API (a Metal or Vulkan device) or the driver lacks what Graphite needs.
+fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<(Gpu, graphite::Recorder)> {
+    let (native, mut ctx) = Native::new(device, queue)?;
+    let mut rec = ctx.make_recorder(None)?;
+    let raster = ctx.make_recorder(None)?;
+    // A texture of each format, wrapped as Graphite wraps the real ones: refused by a driver that cannot be drawn to.
+    for (format, color_type, space) in [
+        (wgpu::TextureFormat::Rgba8Unorm, ColorType::RGBA8888, ColorSpace::new_srgb()),
+        (wgpu::TextureFormat::Rgba16Float, ColorType::RGBAF16, ColorSpace::new_srgb_linear()),
+    ] {
+        let texture = Native::create_texture(
+            device,
+            &wgpu::TextureDescriptor {
+                label: Some("skia probe"),
+                size: wgpu::Extent3d { width: 16, height: 16, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: Native::target_usage(),
+                view_formats: &[],
+            },
+        );
+        let bt = Native::backend_texture(device, &texture, (16, 16), Role::Target)?;
+        graphite::surfaces::wrap_backend_texture(&mut rec, &bt, color_type, Some(space), None)?;
+    }
+    Some((Gpu { native, ctx, rec: Rc::new(RefCell::new(raster)) }, rec))
+}
+
+/// A Skia backend on `device`'s GPU device and `queue`'s command queue; if Skia's GPU backend cannot start on this
+/// device (no Metal or Vulkan device, or a Vulkan driver without what Graphite needs), or `KINETOGRAPH_SKIA_CPU=1`,
+/// one that draws with Skia's CPU backend instead, and says so once.
 pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: &Scene) -> Result<SkiaBackend> {
-    let started = Native::new(device, queue).and_then(|(native, mut ctx)| {
-        let rec = ctx.make_recorder(None)?;
-        let raster = ctx.make_recorder(None)?;
-        Some((native, ctx, rec, raster))
-    });
-    let Some((native, ctx, rec, raster)) = started else {
-        return Err(Error::Render(
-            "the Skia backend could not start on this GPU (on macOS it needs a Metal device; on Linux and Windows a \
-             Vulkan driver with what Skia's Graphite needs)"
-                .into(),
-        ));
+    let forced = cpu_forced();
+    let started = if forced { None } else { start_gpu(device, queue) };
+    if started.is_none() {
+        warn_cpu(forced);
+    }
+    let (gpu, rec) = match started {
+        Some((gpu, rec)) => (Some(gpu), Some(Rc::new(RefCell::new(rec)))),
+        None => (None, None),
     };
-    let rec = Rc::new(RefCell::new(rec));
     let mut tr = Translator::new(scene);
-    tr.set_recorder(rec.clone());
-    let upload_rec = rec.clone();
-    tr.upload = Some(Rc::new(move |img: &Image| graphite::images::texture_from_image(&mut upload_rec.borrow_mut(), img)));
+    if let Some(rec) = &rec {
+        use_recorder(&mut tr, rec);
+    }
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let stats_file = std::env::var("KINETOGRAPH_SKIA_STATS").ok().and_then(|dir| {
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -115,8 +156,27 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
         std::fs::create_dir_all(&dir).ok()?;
         std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
     });
-    let inner = Inner { native, ctx, rec: Rc::new(RefCell::new(raster)), tr: None, tr_frame: u64::MAX, frame: 0 };
+    let inner = Inner { gpu, tr: None, tr_frame: u64::MAX, frame: 0 };
     Ok(SkiaBackend { _device: device.clone(), inner: Some(inner), rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
+}
+
+/// Tells, once per process, that Skia draws on the CPU.
+fn warn_cpu(forced: bool) {
+    static SAID: std::sync::Once = std::sync::Once::new();
+    SAID.call_once(|| {
+        if forced {
+            eprintln!("kinetograph: drawing with Skia on the CPU (KINETOGRAPH_SKIA_CPU is set)");
+        } else {
+            eprintln!("kinetograph: drawing with Skia on the CPU; no GPU Skia can use");
+        }
+    });
+}
+
+/// Makes `tr` draw with Graphite: images are uploaded by `rec` and the wgpu path's textures are wrapped by it.
+fn use_recorder(tr: &mut Translator, rec: &Rc<RefCell<graphite::Recorder>>) {
+    tr.set_recorder(rec.clone());
+    let upload_rec = rec.clone();
+    tr.upload = Some(Rc::new(move |img: &Image| graphite::images::texture_from_image(&mut upload_rec.borrow_mut(), img)));
 }
 
 fn warn_once(what: &str) {
@@ -160,41 +220,51 @@ impl Renderer {
         }
         let size = self.target_size;
         let linear = self.scene.blend_space == crate::scene::BlendSpace::Linear;
+        let cpu = sk.rec.is_none();
         if sk.targets.first().is_none_or(|t| t.size != size || t.linear != linear) {
             sk.targets.clear();
-            for _ in 0..=FRAMES_IN_FLIGHT {
-            let texture = Native::create_texture(&self.device, &wgpu::TextureDescriptor {
-                label: Some("skia target"),
-                size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: if linear { wgpu::TextureFormat::Rgba16Float } else { wgpu::TextureFormat::Rgba8Unorm },
-                usage: Native::target_usage(),
-                view_formats: &[],
-            });
-            // wgpu zeroes a texture it has not seen written before its first read, which would wipe what Skia drew: one
-            // clear marks it as written.
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder = self.device.create_command_encoder(&Default::default());
-            drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("skia target init"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
-                })],
-                ..Default::default()
-            }));
-            self.queue.submit([encoder.finish()]);
-            let bt = Native::backend_texture(&self.device, &texture, size, Role::Target)
-                .ok_or_else(|| Error::Render("the Skia target is not a texture of the GPU API Skia runs on".into()))?;
-            let (color_type, space) =
-                if linear { (ColorType::RGBAF16, ColorSpace::new_srgb_linear()) } else { (ColorType::RGBA8888, ColorSpace::new_srgb()) };
-            let surface = graphite::surfaces::wrap_backend_texture(&mut sk.rec.borrow_mut(), &bt, color_type, Some(space), None)
-                    .ok_or_else(|| Error::Render("Skia could not wrap its target texture".into()))?;
-            sk.targets.push(Target { size, linear, view, surface, _texture: texture });
+            // Drawn on the CPU, a frame is uploaded whole, in order, so one texture serves every frame.
+            for _ in 0..if cpu { 1 } else { FRAMES_IN_FLIGHT + 1 } {
+                let texture = Native::create_texture(
+                    &self.device,
+                    &wgpu::TextureDescriptor {
+                        label: Some("skia target"),
+                        size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: if linear { wgpu::TextureFormat::Rgba16Float } else { wgpu::TextureFormat::Rgba8Unorm },
+                        usage: if cpu { Native::target_usage() | wgpu::TextureUsages::COPY_DST } else { Native::target_usage() },
+                        view_formats: &[],
+                    },
+                );
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let (color_type, space) =
+                    if linear { (ColorType::RGBAF16, ColorSpace::new_srgb_linear()) } else { (ColorType::RGBA8888, ColorSpace::new_srgb()) };
+                let surface = match &sk.rec {
+                    Some(rec) => {
+                        // wgpu zeroes a texture it has not seen written before its first read, which would wipe what Skia drew:
+                        // one clear marks it as written.
+                        let mut encoder = self.device.create_command_encoder(&Default::default());
+                        drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("skia target init"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &view,
+                                depth_slice: None,
+                                resolve_target: None,
+                                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                            })],
+                            ..Default::default()
+                        }));
+                        self.queue.submit([encoder.finish()]);
+                        let bt = Native::backend_texture(&self.device, &texture, size, Role::Target)
+                            .ok_or_else(|| Error::Render("the Skia target is not a texture of the GPU API Skia runs on".into()))?;
+                        graphite::surfaces::wrap_backend_texture(&mut rec.borrow_mut(), &bt, color_type, Some(space), None)
+                            .ok_or_else(|| Error::Render("Skia could not wrap its target texture".into()))?
+                    }
+                    None => cpu_surface(size, color_type, space)?,
+                };
+                sk.targets.push(Target { size, linear, view, surface, _texture: texture });
             }
         }
         let current = sk.next_target % sk.targets.len();
@@ -211,7 +281,7 @@ impl Renderer {
         let margin = self.margin;
         tr.draw_scene(target.surface.canvas(), scene, scene.background, self, margin);
         *inner = self.skia_inner.take();
-        let Inner { native, ctx, tr: raster, .. } = inner.as_mut().expect("the Skia context");
+        let Inner { gpu, tr: raster, .. } = inner.as_mut().expect("the Skia context");
         if let Some(raster) = raster {
             for (what, n) in std::mem::take(&mut raster.stats.unsupported) {
                 *tr.stats.unsupported.entry(what).or_default() += n;
@@ -222,7 +292,9 @@ impl Renderer {
         }
         if let Some(e) = tr.error.take() {
             // The recording is abandoned: whatever was queued is dropped with it.
-            let _ = rec.borrow_mut().snap();
+            if let Some(rec) = rec.as_ref() {
+                let _ = rec.borrow_mut().snap();
+            }
             for tex in tr.take_held() {
                 self.compositor.release(tex);
             }
@@ -231,15 +303,23 @@ impl Renderer {
         // What the fallbacks drew goes first; Skia reads it.
         self.compositor.submit();
         let held = tr.take_held();
-        // Whatever wgpu has to do to the textures first (image layouts on Vulkan; nothing on Metal).
-        native.before_skia(&self.device, &self.queue, &targets[current].view, &held.iter().collect::<Vec<_>>());
-        let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
-        let info = graphite::InsertRecordingInfo::new(&mut recording);
-        if ctx.insert_recording(&info) != graphite::InsertStatus::Success {
-            return Err(Error::Render("Skia refused its recording".into()));
+        match (gpu.as_mut(), rec.as_ref()) {
+            (Some(Gpu { native, ctx, .. }), Some(rec)) => {
+                // Whatever wgpu has to do to the textures first (image layouts on Vulkan; nothing on Metal).
+                native.before_skia(&self.device, &self.queue, &targets[current].view, &held.iter().collect::<Vec<_>>());
+                let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
+                let info = graphite::InsertRecordingInfo::new(&mut recording);
+                if ctx.insert_recording(&info) != graphite::InsertStatus::Success {
+                    return Err(Error::Render("Skia refused its recording".into()));
+                }
+                ctx.submit(None);
+                ctx.check_async_work_completion();
+            }
+            _ => {
+                let target = &mut targets[current];
+                upload_pixels(&self.queue, &mut target.surface, &target._texture, size)?;
+            }
         }
-        ctx.submit(None);
-        ctx.check_async_work_completion();
         // The fallback textures are free to be drawn into again: what follows on the queue comes after Skia's reads.
         for tex in held {
             self.compositor.release(tex);
@@ -329,11 +409,41 @@ impl Renderer {
         self.projection
     }
 
-    /// `tex`, a linear premultiplied Rgba16Float texture of the compositor's, as a Skia image.
-    pub(in super::super) fn skia_wrap(&self, rec: &mut graphite::Recorder, tex: &Tex) -> Option<Image> {
+    /// `tex`, a linear premultiplied Rgba16Float texture of the compositor's, as a Skia image: wrapped, for Graphite
+    /// (`rec`), or, drawing on the CPU (`rec` is `None`), read back from the GPU (only the box it holds anything in).
+    pub(in super::super) fn skia_wrap(&self, rec: Option<&mut graphite::Recorder>, tex: &Tex) -> Option<Image> {
+        let Some(rec) = rec else {
+            let texels = self.compositor.read_texels(tex).ok()?;
+            let info = skia_safe::ImageInfo::new(
+                (tex.size[0] as i32, tex.size[1] as i32),
+                ColorType::RGBAF16,
+                AlphaType::Premul,
+                Some(ColorSpace::new_srgb_linear()),
+            );
+            return skia_safe::images::raster_from_data(&info, skia_safe::Data::new_copy(&texels), tex.size[0] as usize * 8);
+        };
         let bt = Native::backend_texture(&self.device, &tex.texture, (tex.size[0], tex.size[1]), Role::Sampled)?;
         graphite::images::wrap_texture(rec, &bt, ColorType::RGBAF16, AlphaType::Premul, ColorSpace::new_srgb_linear())
     }
+}
+
+/// A CPU surface for Skia to draw a `size` canvas into: premultiplied, `color_type` in `space`.
+fn cpu_surface(size: (u32, u32), color_type: ColorType, space: ColorSpace) -> Result<Surface> {
+    let info = skia_safe::ImageInfo::new((size.0 as i32, size.1 as i32), color_type, AlphaType::Premul, Some(space));
+    skia_safe::surfaces::raster(&info, None, None).ok_or_else(|| Error::Render(format!("no memory for a {}x{} Skia surface", size.0, size.1)))
+}
+
+/// Writes the pixels of the CPU `surface` over the whole of `texture` (the same size, the same format).
+fn upload_pixels(queue: &wgpu::Queue, surface: &mut Surface, texture: &wgpu::Texture, size: (u32, u32)) -> Result<()> {
+    let pixmap = surface.peek_pixels().ok_or_else(|| Error::Render("Skia's CPU surface has no pixels".into()))?;
+    let bytes = pixmap.bytes().ok_or_else(|| Error::Render("Skia's CPU surface has no pixels".into()))?;
+    queue.write_texture(
+        texture.as_image_copy(),
+        bytes,
+        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(pixmap.row_bytes() as u32), rows_per_image: Some(size.1) },
+        wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+    );
+    Ok(())
 }
 
 /// One step of `Renderer::skia_flat`.
@@ -417,11 +527,12 @@ impl Renderer {
         if region.is_empty() {
             return Ok(tex);
         }
+        let gpu_rec = inner.gpu.as_ref().map(|g| g.rec.clone());
         if inner.tr.is_none() {
             let mut tr = Translator::new(&self.scene);
-            tr.set_recorder(inner.rec.clone());
-            let upload_rec = inner.rec.clone();
-            tr.upload = Some(Rc::new(move |img: &Image| graphite::images::texture_from_image(&mut upload_rec.borrow_mut(), img)));
+            if let Some(rec) = &gpu_rec {
+                use_recorder(&mut tr, rec);
+            }
             inner.tr = Some(tr);
             inner.tr_frame = u64::MAX;
         }
@@ -434,30 +545,35 @@ impl Renderer {
             (None, None)
         } else {
             let (w, h) = (region.width(), region.height());
-            let texture = Native::create_texture(&self.device, &wgpu::TextureDescriptor {
-                label: Some("skia srgb page"),
-                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: Native::target_usage(),
-                view_formats: &[],
-            });
+            let texture = Native::create_texture(
+                &self.device,
+                &wgpu::TextureDescriptor {
+                    label: Some("skia srgb page"),
+                    size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: if gpu_rec.is_some() { Native::target_usage() } else { Native::target_usage() | wgpu::TextureUsages::COPY_DST },
+                    view_formats: &[],
+                },
+            );
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            // Marks the texture as written (see `skia_draw`).
-            let mut encoder = self.device.create_command_encoder(&Default::default());
-            drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("skia page init"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
-                })],
-                ..Default::default()
-            }));
-            self.queue.submit([encoder.finish()]);
+            if gpu_rec.is_some() {
+                // Marks the texture as written (see `skia_draw`).
+                let mut encoder = self.device.create_command_encoder(&Default::default());
+                drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("skia page init"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                    })],
+                    ..Default::default()
+                }));
+                self.queue.submit([encoder.finish()]);
+            }
             (Some((texture, view)), Some((w, h)))
         };
         let (draw_texture, draw_view, size, origin) = match &target {
@@ -466,13 +582,18 @@ impl Renderer {
         };
         // The compositor's pending passes may still read this texture: they go first.
         self.compositor.submit();
-        inner.native.before_skia(&self.device, &self.queue, draw_view, held);
-        let bt = Native::backend_texture(&self.device, draw_texture, size, Role::Target)
-            .ok_or_else(|| Error::Render("the Skia raster target is not a texture of the GPU API Skia runs on".into()))?;
         let (color_type, space) =
             if linear { (ColorType::RGBAF16, ColorSpace::new_srgb_linear()) } else { (ColorType::RGBA8888, ColorSpace::new_srgb()) };
-        let mut surface = graphite::surfaces::wrap_backend_texture(&mut inner.rec.borrow_mut(), &bt, color_type, Some(space), None)
-            .ok_or_else(|| Error::Render("Skia could not wrap its raster target".into()))?;
+        let mut surface = match (&mut inner.gpu, &gpu_rec) {
+            (Some(gpu), Some(rec)) => {
+                gpu.native.before_skia(&self.device, &self.queue, draw_view, held);
+                let bt = Native::backend_texture(&self.device, draw_texture, size, Role::Target)
+                    .ok_or_else(|| Error::Render("the Skia raster target is not a texture of the GPU API Skia runs on".into()))?;
+                graphite::surfaces::wrap_backend_texture(&mut rec.borrow_mut(), &bt, color_type, Some(space), None)
+                    .ok_or_else(|| Error::Render("Skia could not wrap its raster target".into()))?
+            }
+            _ => cpu_surface(size, color_type, space)?,
+        };
         let canvas = surface.canvas();
         canvas.clear(skia_safe::Color4f::new(0.0, 0.0, 0.0, 0.0));
         canvas.translate((-origin.0 as f32, -origin.1 as f32));
@@ -486,14 +607,19 @@ impl Renderer {
         tr.set_host(self);
         draw(tr, canvas);
         tr.set_host(std::ptr::null_mut());
-        let mut recording = inner.rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
-        drop(surface);
-        let info = graphite::InsertRecordingInfo::new(&mut recording);
-        if inner.ctx.insert_recording(&info) != graphite::InsertStatus::Success {
-            return Err(Error::Render("Skia refused its recording".into()));
+        match (&mut inner.gpu, &gpu_rec) {
+            (Some(gpu), Some(rec)) => {
+                let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
+                drop(surface);
+                let info = graphite::InsertRecordingInfo::new(&mut recording);
+                if gpu.ctx.insert_recording(&info) != graphite::InsertStatus::Success {
+                    return Err(Error::Render("Skia refused its recording".into()));
+                }
+                gpu.ctx.submit(None);
+                gpu.ctx.check_async_work_completion();
+            }
+            _ => upload_pixels(&self.queue, &mut surface, draw_texture, size)?,
         }
-        inner.ctx.submit(None);
-        inner.ctx.check_async_work_completion();
         match target {
             Some((_, view)) => {
                 // `tex` was only the size class; the converted page replaces it.

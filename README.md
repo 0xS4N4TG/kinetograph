@@ -72,8 +72,10 @@ flowchart TB
    GLSL by naga; the `scene3d` renderer for meshes and glTF models; ThorVG for Lottie. Layers that did not change since
    the last frame are reused.
    Skia (Graphite on Metal, or on Vulkan on Linux and Windows) draws every 2D layer; layers it cannot draw (3D, GLSL
-   groups, mesh gradients, `preserve3d` groups) are drawn by the wgpu path and Skia composites them. There is no other
-   2D backend: if Skia cannot start on the GPU, rendering fails with an error that says so.
+   groups, mesh gradients, `preserve3d` groups) are drawn by the wgpu path and Skia composites them. On a machine where
+   Skia's GPU backend cannot start (no Vulkan driver, a driver without what Graphite needs) Skia draws the same layers
+   with its CPU backend and the result is uploaded to the wgpu textures; it says so once on stderr, and
+   `KINETOGRAPH_SKIA_CPU=1` forces that path (to test it). It is slower, and its blurs are box approximations.
 6. **Encode.** Frames go to FFmpeg (VideoToolbox on macOS) on another thread while the GPU draws the next one; the
    project's audio, rendered offline with the Web Audio API, is mixed and muxed at the end.
 

@@ -209,6 +209,15 @@ impl Translator {
         self.rec = Some(rec);
     }
 
+    /// `tex`, a texture of the wgpu path's, as an image: wrapped for Graphite if there is a recorder, else (Skia is
+    /// drawing on the CPU) read back.
+    fn wrap(&self, host: &Renderer, tex: &Tex) -> Option<Image> {
+        match &self.rec {
+            Some(rec) => host.skia_wrap(Some(&mut rec.borrow_mut()), tex),
+            None => host.skia_wrap(None, tex),
+        }
+    }
+
     /// The fallback textures of the frame, to be released once Skia has run its recording.
     pub fn take_held(&mut self) -> Vec<Tex> {
         std::mem::take(&mut self.held)
@@ -1864,7 +1873,7 @@ impl Translator {
                 return;
             }
         };
-        let image = self.rec.as_ref().and_then(|rec| host.skia_wrap(&mut rec.borrow_mut(), &tex));
+        let image = self.wrap(host, &tex);
         let b = tex.bounds;
         if let Some(ref image) = image
             && !b.is_empty()
@@ -1927,9 +1936,7 @@ impl Translator {
             return;
         };
         let mut images = HashMap::new();
-        if !self.host.is_null()
-            && let Some(rec) = self.rec.clone()
-        {
+        if !self.host.is_null() {
             // SAFETY: `host` is the renderer `raster_leaf`'s caller holds; this translator is not part of it.
             let host = unsafe { &*self.host };
             for (id, tex) in pictures {
@@ -1937,7 +1944,7 @@ impl Translator {
                 if b.is_empty() {
                     continue;
                 }
-                match host.skia_wrap(&mut rec.borrow_mut(), tex) {
+                match self.wrap(host, tex) {
                     Some(img) => {
                         let src = Rect::new(
                             (b.x0 - tex.origin[0]) as f32,
