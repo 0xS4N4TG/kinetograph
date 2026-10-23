@@ -7,7 +7,7 @@ An agent can't watch a video, so Kinetograph gives it two things instead. A skil
 
 ## What an agent gets
 
-**The skill** is one file, `SKILL.md`, that the agent reads. It covers the loop below, how a project is laid out (`registerRoot`, `Composition`, the native elements and effects), sound, Remotion compatibility and `doctor`, and the CLI flags an agent needs.
+**The skill** is a folder with a `SKILL.md` that the agent reads. It covers the loop below, how a project is laid out (`registerRoot`, `Composition`, the native elements and effects), sound, Remotion compatibility and `doctor`, and the CLI flags an agent needs.
 
 **The MCP server** is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. A tool takes the same arguments as its command. Command names with a space use an underscore. An error comes back as `{ "error": { "code", "message" } }`.
 
@@ -88,18 +88,20 @@ args = ["-y", "kinetograph", "mcp"]
 
 Or run `codex mcp add kinetograph -- npx -y kinetograph mcp`. `codex mcp list` shows the result.
 
-## Install the skill
+## Install the skills
 
-The skill comes inside the npm package. Once the package is installed in a project, copy it to where Claude Code looks for skills:
+There are two skills. `kinetograph` teaches the write, look, check, render loop. `kinetograph-migrate` moves an existing Remotion project onto Kinetograph: it runs `doctor`, fixes each finding with reference files for 3D, tooling and unsupported content, and renders with `--strict`. See [Migrate from Remotion](/docs/guides/migrate/).
+
+The skills come inside the npm package. Once the package is installed in a project, copy it to where Claude Code looks for skills:
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -R node_modules/kinetograph/skills/kinetograph ~/.claude/skills/
+cp -R node_modules/kinetograph/skills/kinetograph node_modules/kinetograph/skills/kinetograph-migrate ~/.claude/skills/
 ```
 
 For one project only, copy it to `.claude/skills/kinetograph/` in that project instead. Other agents that read `SKILL.md` files can use the same folder in their own skills folder.
 
-You can also install it from the repository with the [`skills`](https://www.npmjs.com/package/skills) CLI, which finds `packages/cli/skills/kinetograph/SKILL.md` and asks which agents to install it for:
+You can also install it from the repository with the [`skills`](https://www.npmjs.com/package/skills) CLI, which finds both skills in `packages/cli/skills/` and asks which agents to install it for:
 
 ```bash
 npx skills add 0xS4N4TG/kinetograph --list   # show what it found, install nothing
