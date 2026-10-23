@@ -1,4 +1,4 @@
-// Readback against the real addon (docs/ENGINE.md §1): the paths the TS side numbers must be the ones Rust answers
+// Readback against the real addon (packages/cli/skills/kinetograph/references/ENGINE.md §1): the paths the TS side numbers must be the ones Rust answers
 // for, and a measure-then-render component must see CSS-correct sizes. Skipped where the addon is not built.
 
 import { createRequire } from 'node:module';

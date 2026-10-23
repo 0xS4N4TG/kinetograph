@@ -1,4 +1,4 @@
-// Changing the host tree from a script (docs/ENGINE.md §1, "Readback"): `appendChild`, `prepend`, `insertBefore`,
+// Changing the host tree from a script (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"): `appendChild`, `prepend`, `insertBefore`,
 // `removeChild`, `replaceChildren` and the rest of the DOM's tree methods, on the same tree the reconciler keeps and
 // `emit` draws from, so a library that mounts its own nodes (a canvas, a `<style>`) is drawn with the rest. There is no
 // second tree: a node is a `DomNode` (data) whose place is its raw parent link (`host.ts`), set by whoever puts it there.

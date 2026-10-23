@@ -1,4 +1,4 @@
-// `render --concurrency N` (docs/AUTHORING.md §9): N worker threads each run the composition's JS and draw frames with a
+// `render --concurrency N` (packages/cli/skills/kinetograph/references/AUTHORING.md §9): N worker threads each run the composition's JS and draw frames with a
 // renderer of their own, and this thread feeds the encoder in frame order. Rendering is a pure function of (project,
 // frame), so a frame is the same whichever worker draws it.
 

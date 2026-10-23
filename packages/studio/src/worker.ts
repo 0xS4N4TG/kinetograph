@@ -1,4 +1,4 @@
-// The worker thread of the studio (docs/AUTHORING.md §11.5). It loads the engine module it is told to, and answers the
+// The worker thread of the studio (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). It loads the engine module it is told to, and answers the
 // server's calls one at a time (the project's clock is global to the thread, so frames cannot interleave).
 //
 // Once a project's bundle is loaded the determinism shim has replaced this thread's `Date`, `performance.now` and

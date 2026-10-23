@@ -1,6 +1,6 @@
 //! The `scene3d` layer: a 3D scene (camera, lights, meshes, models, extruded
 //! type) drawn by our own renderer on the compositor's wgpu device
-//! (`docs/SCENE.md`, "scene3d").
+//! (`packages/cli/skills/kinetograph/references/SCENE.md`, "scene3d").
 //!
 //! This module holds what the scene file says (`Scene3dLayer`) and what it
 //! comes to at one frame (`Resolved3d`: every animated value evaluated, the
@@ -62,7 +62,7 @@ pub struct Scene3dLayer {
     pub environment: Option<Environment3d>,
     /// Depth fog over the objects (not the background).
     pub fog: Option<Fog3d>,
-    /// Drawn in this order when opaque; see `docs/SCENE.md` for transparency.
+    /// Drawn in this order when opaque; see `packages/cli/skills/kinetograph/references/SCENE.md` for transparency.
     #[serde(default)]
     pub objects: Vec<Object3d>,
 }

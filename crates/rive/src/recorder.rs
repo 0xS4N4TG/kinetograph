@@ -2,7 +2,7 @@
 //!
 //! Rive's C++ runtime animates an artboard and calls back with what to draw:
 //! paths, paints, clips and pictures. `Recorder` answers those calls by writing
-//! the matching canvas commands (docs/SCENE.md, "canvas"), so the Skia pass
+//! the matching canvas commands (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), so the Skia pass
 //! that draws a canvas draws the artboard, and a Rive file needs no layer type
 //! of its own. Nothing here keeps anything between frames but the pictures
 //! decoded from the file, so a frame is a pure function of the file and the

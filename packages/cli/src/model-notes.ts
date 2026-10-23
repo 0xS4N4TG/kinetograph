@@ -1,4 +1,4 @@
-// What the glTF models of a scene use that the engine does not read (docs/SCENE.md, "scene3d"). The addon reads each
+// What the glTF models of a scene use that the engine does not read (packages/cli/skills/kinetograph/references/SCENE.md, "scene3d"). The addon reads each
 // file once (`modelUnsupported`); every frame that draws the model then holds these as unsupported content
 // (kinetograph site, /docs/compat/), so the warning, `--strict`, `doctor` and the studio treat them as they do anything else the
 // engine leaves out.

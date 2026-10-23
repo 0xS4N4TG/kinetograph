@@ -1,4 +1,4 @@
-// Readback (docs/ENGINE.md §1): what a ref to a DOM host element, `getComputedStyle` and the observers learn about the
+// Readback (packages/cli/skills/kinetograph/references/ENGINE.md §1): what a ref to a DOM host element, `getComputedStyle` and the observers learn about the
 // current host tree. The island that holds the element is sent to the addon as an `IslandRequest` (the same JSON the
 // frame is drawn from) and its boxes or computed styles come back; both are cached until the tree changes (`generation`).
 

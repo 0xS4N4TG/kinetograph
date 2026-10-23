@@ -1,4 +1,4 @@
-// `@remotion/google-fonts/<Family>` (docs/AUTHORING.md §7.2). The CLI maps an
+// `@remotion/google-fonts/<Family>` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.2). The CLI maps an
 // import of `@remotion/google-fonts/PlayfairDisplay` onto
 // `makeGoogleFont('PlayfairDisplay')`, which returns what that module exports:
 // `fontFamily`, `getInfo()` and `loadFont()`.

@@ -10,7 +10,7 @@ import { CliError } from './errors.js';
 /** The package directory of the CLI: the bundle's `@kinetograph/*` imports resolve from here, so one copy of each. */
 const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
 
-/** The `@remotion/<pkg>` packages that have a `@kinetograph/core/<pkg>` subpath (docs/AUTHORING.md §7.5). */
+/** The `@remotion/<pkg>` packages that have a `@kinetograph/core/<pkg>` subpath (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5). */
 const REMOTION_PACKAGES = new Set([
   'transitions',
   'motion-blur',
@@ -68,7 +68,7 @@ export function resolveSpecifier(specifier: string): Resolution | null {
       message: `"${specifier}" is not supported by Kinetograph yet. Run \`kinetograph doctor\` for what is.`,
     };
   }
-  // React Native Skia's components are the core's (drawn by the optional @kinetograph/skia addon, docs/AUTHORING.md §7.7).
+  // React Native Skia's components are the core's (drawn by the optional @kinetograph/skia addon, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7).
   if (specifier === '@shopify/react-native-skia') return { kind: 'path', target: '@kinetograph/core/skia' };
   if (specifier.startsWith('@shopify/react-native-skia/')) {
     return { kind: 'unsupported', message: `"${specifier}" is an internal of React Native Skia; import from "@shopify/react-native-skia".` };
@@ -167,7 +167,7 @@ function entryPlugin(absolute: string): Plugin {
   };
 }
 
-/** The synthetic entry (docs/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
+/** The synthetic entry (packages/cli/skills/kinetograph/references/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
 export function syntheticEntry(entry: string): string {
   return [
     `import '@kinetograph/core/determinism/install';`,
@@ -178,7 +178,7 @@ export function syntheticEntry(entry: string): string {
     `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
     `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
     `export { setMediaParserAddon } from '@kinetograph/core/media-parser';`,
-    // DOM elements are styled, laid out and painted by the addon too (docs/ENGINE.md §2).
+    // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph/references/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
     '',
   ].join('\n');
@@ -205,7 +205,7 @@ export interface BundleResult {
   warnings: string[];
 }
 
-/** The esbuild options that bundle the project at `absolute` (docs/AUTHORING.md §9). */
+/** The esbuild options that bundle the project at `absolute` (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
 function bundleOptions(absolute: string, unsupported?: UnsupportedImport[]): BuildOptions {
   return {
     stdin: {
@@ -225,7 +225,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[]): Bui
     sourcemap: 'inline',
     logLevel: 'silent',
     external: EXTERNAL,
-    // An `import './index.css'` registers the stylesheet's text for the DOM engine (docs/ENGINE.md §1); Tailwind's
+    // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
     plugins: [entryPlugin(absolute), aliasPlugin(unsupported), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.

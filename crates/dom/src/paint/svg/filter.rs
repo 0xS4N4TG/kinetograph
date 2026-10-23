@@ -1,5 +1,5 @@
 //! A `<filter>` element of the document as a `filterGraph` effect
-//! (`docs/SCENE.md`).
+//! (`packages/cli/skills/kinetograph/references/SCENE.md`).
 //!
 //! The attributes are the scene's attributes, as SVG spells them, so this only
 //! reads them: the units, the default region and subregions, `in`/`result`

@@ -1,4 +1,4 @@
-// `@remotion/fonts` (docs/AUTHORING.md §7.2): `loadFont({ family, url, weight, style })`.
+// `@remotion/fonts` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.2): `loadFont({ family, url, weight, style })`.
 // Here `url` is a path (what `staticFile()` returns), a `file://` URL, or an
 // http(s) URL, which is downloaded once into the font cache. The font is
 // registered under the key a `<Text font weight fontStyle>` resolves to.

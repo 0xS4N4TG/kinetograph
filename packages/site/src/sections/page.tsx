@@ -61,7 +61,7 @@ export function Proof() {
           </div>
           <p className="mt-4 text-xs text-night/50">
             The bars fill at a quarter of real time. Method in{' '}
-            <a className="underline decoration-cobalt/40 underline-offset-2 hover:text-cobalt" href={doc('README.md#build-and-run')} target="_blank" rel="noreferrer">the README</a>.
+            <a className="underline decoration-cobalt/40 underline-offset-2 hover:text-cobalt" href={doc('README.md#build-from-source')} target="_blank" rel="noreferrer">the README</a>.
           </p>
         </Reveal>
 

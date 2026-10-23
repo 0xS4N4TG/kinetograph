@@ -1,5 +1,5 @@
 // onLoad / onError of an <img> and the load events of a <video> are delivered once per src when the frame's work is
-// done (docs/ENGINE.md §10.3), so a project that holds the frame with delayRender() until onLoad is not left waiting.
+// done (packages/cli/skills/kinetograph/references/ENGINE.md §10.3), so a project that holds the frame with delayRender() until onLoad is not left waiting.
 
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

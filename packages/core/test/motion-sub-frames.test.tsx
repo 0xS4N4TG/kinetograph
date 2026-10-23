@@ -1,4 +1,4 @@
-// The motion-blur sub-frames of the frame loop (docs/AUTHORING.md §7.3): one pass of island renders per frame, only
+// The motion-blur sub-frames of the frame loop (packages/cli/skills/kinetograph/references/AUTHORING.md §7.3): one pass of island renders per frame, only
 // the blurred layers read out of a sub-frame's tree, and the scene's `changes` saying what a whole render at the
 // sub-frame time would have drawn.
 

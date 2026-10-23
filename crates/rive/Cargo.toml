@@ -9,7 +9,7 @@ license.workspace = true
 # Rive's own runtime (C++, MIT) behind a Rust trait for the renderer: the
 # rive-rs crate, vendored with the C++ it builds (vendor/README.md). This crate
 # implements the renderer, as the commands the `canvas` layer draws with Skia
-# (docs/AUTHORING.md §7.6).
+# (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6).
 rive-rs = { path = "../../vendor/rive/rive-rs" }
 serde_json = "1.0.154"
 # Pictures embedded in a file are PNG, JPEG or WebP; they are decoded here and

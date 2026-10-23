@@ -1,5 +1,5 @@
 // AbsoluteFill and Img: Remotion's two CSS-shaped components, mapped onto the
-// engine's layers (docs/AUTHORING.md §7.1). Only the style keys that mean
+// engine's layers (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1). Only the style keys that mean
 // something to a layer are read, and with only those keys the mapping is the
 // layers' (the hand ports render as they did). With any other key they are the
 // DOM elements they are in Remotion, `div` and `img`, which compat mode maps
@@ -169,7 +169,7 @@ export interface ImgProps {
 /** An image whose CSS-style `width`, `height` and `objectFit` become the layer's box and fit. */
 export function Img({ src, style = {}, width, height, id, className }: ImgProps): ReactNode {
   // Pixels for the size and a fit the image layer has are the layer mapping; a percentage, `auto`, `object-fit: none`
-  // are CSS (docs/ENGINE.md §10.1).
+  // are CSS (packages/cli/skills/kinetograph/references/ENGINE.md §10.1).
   const layerFit = style.objectFit === undefined || ['fill', 'contain', 'cover', 'scale-down'].includes(String(style.objectFit));
   const layerSize = (style.width === undefined || px(style.width) !== null) && (style.height === undefined || px(style.height) !== null);
   if (className !== undefined || hasOtherKeys(style, IMG_KEYS) || !layerFit || !layerSize) {

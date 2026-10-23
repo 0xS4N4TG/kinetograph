@@ -1958,7 +1958,7 @@ impl Compositor {
     /// The shadow `shadow` casts from `src`'s alpha, alone: a drop shadow
     /// without the layer over it. `src` is only read; the result is a new
     /// texture. A Canvas 2D `shadowColor` shadow, which is composited apart
-    /// from the shape that casts it (docs/SCENE.md, "canvas").
+    /// from the shape that casts it (packages/cli/skills/kinetograph/references/SCENE.md, "canvas").
     pub fn cast_shadow(&mut self, src: &Tex, shadow: &ResolvedShadow) -> Tex {
         if src.bounds.is_empty() {
             return self.empty();

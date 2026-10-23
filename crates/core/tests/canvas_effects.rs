@@ -1,6 +1,6 @@
 //! Canvas layers with shadows and filters: what a command drawn with
 //! `shadowColor` and the rest, or with a `filter`, leaves in the pixels
-//! (docs/SCENE.md, "canvas"). The look of both is in the `canvas-effects`
+//! (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"). The look of both is in the `canvas-effects`
 //! golden.
 
 

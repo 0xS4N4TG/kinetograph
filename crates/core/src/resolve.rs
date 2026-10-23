@@ -831,7 +831,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// The box of a resolved leaf layer in layer space (`docs/SCENE.md`,
+    /// The box of a resolved leaf layer in layer space (`packages/cli/skills/kinetograph/references/SCENE.md`,
     /// "Clip paths"), or `None` for a layer without one.
     pub(crate) fn layer_box(&mut self, kind: &ResolvedKind) -> Result<Option<Rect>> {
         Ok(match kind {

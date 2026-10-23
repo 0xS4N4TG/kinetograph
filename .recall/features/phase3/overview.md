@@ -1,13 +1,13 @@
 # phase3
 
 **Status:** active
-**Paths:** `docs/AUTHORING.md`, `packages/**`, `crates/node/**`, `crates/core/**`, `crates/cli/**`, `spikes/three-dawn/**`,
+**Paths:** `packages/cli/skills/kinetograph/references/AUTHORING.md`, `packages/**`, `crates/node/**`, `crates/core/**`, `crates/cli/**`, `spikes/three-dawn/**`,
 `examples/rajz-cards/**`
 **Last touched:** 2026-10-14
 
 ## What this is
 HANDOFF §8 Phase 3 (authoring + agents), built in one cloud session: an Opus orchestrator wrote the contract
-(`docs/AUTHORING.md`) and typed stubs, five Sonnet subagents built the streams in worktrees, the orchestrator merged
+(`packages/cli/skills/kinetograph/references/AUTHORING.md`) and typed stubs, five Sonnet subagents built the streams in worktrees, the orchestrator merged
 them into `feat/node-authoring` (draft PR against main). Stream PRs: #6 reconciler, #7 CLI/audio/MCP, #8 Remotion shim,
 #9 N-API addon, #10 layout/glyphs/Lottie. No GPU was opened in the cloud.
 

@@ -1,4 +1,4 @@
-//! Reading the JSON the authoring side writes (docs/AUTHORING.md §7.7). The
+//! Reading the JSON the authoring side writes (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7). The
 //! values are RN-Skia's own, normalised by the authoring side: a colour is
 //! `[r, g, b, a]` with every channel from 0 to 1, a point `{ x, y }`, a rect
 //! `{ x, y, width, height }`, a matrix nine numbers, a path SVG path data.

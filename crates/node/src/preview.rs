@@ -1,4 +1,4 @@
-//! `Renderer.preview` (docs/AUTHORING.md §11.2): a rendered frame scaled down
+//! `Renderer.preview` (packages/cli/skills/kinetograph/references/AUTHORING.md §11.2): a rendered frame scaled down
 //! by a box filter and encoded as JPEG or PNG for the studio.
 //!
 //! The filter averages, over each output pixel's exact footprint in the

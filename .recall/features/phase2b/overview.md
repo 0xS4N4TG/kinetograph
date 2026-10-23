@@ -1,7 +1,7 @@
 # phase2b
 
 **Status:** stable
-**Paths:** `crates/core/**`, `crates/cli/**`, `docs/SCENE.md`, `README.md`
+**Paths:** `crates/core/**`, `crates/cli/**`, `packages/cli/skills/kinetograph/references/SCENE.md`, `README.md`
 **Last touched:** 2026-10-14
 
 ## What this is

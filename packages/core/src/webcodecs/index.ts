@@ -1,4 +1,4 @@
-// `@remotion/webcodecs` (docs/AUTHORING.md §7.5): media conversion, whose browser half (WebCodecs decoders and encoders,
+// `@remotion/webcodecs` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5): media conversion, whose browser half (WebCodecs decoders and encoders,
 // frames) is exported and throws `UnsupportedApiError`. What works: the lists of containers and codecs, whether a track
 // can be copied or re-encoded, the default handlers, `getPartialAudioData`, and `convertMedia` to WAV.
 

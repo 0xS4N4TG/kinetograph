@@ -1,5 +1,5 @@
-// Types of the scene JSON: docs/SCENE.md, plus the additions of
-// docs/AUTHORING.md §4 (flex layout, transform origin, text align and per
+// Types of the scene JSON: packages/cli/skills/kinetograph/references/SCENE.md, plus the additions of
+// packages/cli/skills/kinetograph/references/AUTHORING.md §4 (flex layout, transform origin, text align and per
 // character styles, lottie, image fit, box-unit gradients, motion-blur
 // frames). A JSON value that type-checks as `SceneJson` should load.
 
@@ -468,13 +468,13 @@ export interface GroupLayer extends LayerBase {
   /**
    * Does not isolate the children: one that blends with a mode other than `normal` blends with what is behind the
    * group, as if it were not there (CSS `isolation: auto` on an element that is not a stacking context). Takes effect
-   * on a group that is otherwise plain (docs/SCENE.md, "group").
+   * on a group that is otherwise plain (packages/cli/skills/kinetograph/references/SCENE.md, "group").
    */
   passThrough?: boolean;
   layout?: Layout;
-  /** A GLSL pass that makes the group's picture out of its children, which its `layer` textures name (docs/SCENE.md, "Shader groups"). */
+  /** A GLSL pass that makes the group's picture out of its children, which its `layer` textures name (packages/cli/skills/kinetograph/references/SCENE.md, "Shader groups"). */
   glsl?: GlslPass;
-  /** A Canvas 2D drawing that makes the group's picture out of its children, which its `layer` sources name (docs/SCENE.md, "Canvas passes"). */
+  /** A Canvas 2D drawing that makes the group's picture out of its children, which its `layer` sources name (packages/cli/skills/kinetograph/references/SCENE.md, "Canvas passes"). */
   canvas?: CanvasPass;
 }
 
@@ -512,7 +512,7 @@ export interface LottieLayer extends LayerBase {
   loop?: boolean;
 }
 
-// ---- canvas (docs/SCENE.md, "canvas") ----
+// ---- canvas (packages/cli/skills/kinetograph/references/SCENE.md, "canvas") ----
 
 /** `[a, b, c, d, e, f]`, as a canvas's `setTransform` and SVG's `matrix()`. */
 export type CanvasMatrix = [number, number, number, number, number, number];
@@ -537,7 +537,7 @@ export type CanvasSource =
   | { kind: 'canvas'; width: number; height: number; commands: CanvasCommand[] }
   /**
    * The picture of a child of a canvas pass (`GroupLayer.canvas`), by `id`: the child drawn on the canvas and read
-   * as the pixels a browser holds for a canvas it was drawn on (docs/SCENE.md, "Canvas passes"). Outside such a
+   * as the pixels a browser holds for a canvas it was drawn on (packages/cli/skills/kinetograph/references/SCENE.md, "Canvas passes"). Outside such a
    * group nothing is drawn.
    */
   | { kind: 'layer'; id: string; width: number; height: number };
@@ -662,7 +662,7 @@ export interface CanvasLayer extends LayerBase {
   commands?: CanvasCommand[];
 }
 
-// ---- glsl (docs/SCENE.md, "glsl") ----
+// ---- glsl (packages/cli/skills/kinetograph/references/SCENE.md, "glsl") ----
 
 export interface GlslProgram {
   vertex: string;
@@ -811,7 +811,7 @@ export interface GifLayer extends LayerBase {
   loop?: boolean;
 }
 
-// ---- scene3d (docs/SCENE.md, "scene3d") ----
+// ---- scene3d (packages/cli/skills/kinetograph/references/SCENE.md, "scene3d") ----
 
 /** Three animatable numbers: x, y, z. */
 export type Vec3 = [Num, Num, Num];
@@ -1054,7 +1054,7 @@ export interface AudioClipJson {
   volume: number;
   loop: boolean;
   muted: boolean;
-  /** The sound of a `<Video>`: decoded with the addon's `decodeAudio` (docs/AUTHORING.md §11.3). */
+  /** The sound of a `<Video>`: decoded with the addon's `decodeAudio` (packages/cli/skills/kinetograph/references/AUTHORING.md §11.3). */
   video?: boolean;
   /** Remotion's `toneFrequency`: the pitch times this (0.01 to 2), the length unchanged. Left out when it is 1. */
   toneFrequency?: number;
@@ -1072,7 +1072,7 @@ export interface Unsupported {
   reason: string;
 }
 
-/** A `<Sequence>` as the timeline sees it (docs/AUTHORING.md §11.4). */
+/** A `<Sequence>` as the timeline sees it (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
 export interface SequenceJson {
   /** `${parent key ?? ''}/${name ?? 'Sequence'}@${from}+${durationInFrames}`, stable across frames. */
   key: string;

@@ -1,4 +1,4 @@
-// staticFile and the delayRender family (docs/AUTHORING.md §7.1).
+// staticFile and the delayRender family (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1).
 //
 // A frame is not final while a `delayRender()` handle is open: the frame loop
 // waits for every handle to be continued, and fails if one stays open too long

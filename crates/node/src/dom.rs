@@ -1,7 +1,7 @@
 //! `layoutDom`: CSS block and flex layout of a DOM
 //! island by taffy, text measured by Parley. CPU only.
 //!
-//! Also the full engine's DOM islands (docs/ENGINE.md §2): `renderDomIsland`,
+//! Also the full engine's DOM islands (packages/cli/skills/kinetograph/references/ENGINE.md §2): `renderDomIsland`,
 //! `domLayoutBoxes` and `domComputedStyle`, which build a Blitz document from
 //! an `IslandRequest`, style and lay it out with Stylo, taffy and Parley, and
 //! paint it or read it back.
@@ -58,7 +58,7 @@ pub fn layout_dom(request_json: &str) -> Result<String> {
         .map_err(|e| error(Code::Render, format!("cannot write the layout: {e}")))
 }
 
-// ---- the full engine's DOM islands (docs/ENGINE.md §2) ----
+// ---- the full engine's DOM islands (packages/cli/skills/kinetograph/references/ENGINE.md §2) ----
 
 /// An error made off the JS thread: the code and the message.
 type Failure = (Code, String);

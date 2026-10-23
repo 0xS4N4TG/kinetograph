@@ -1,5 +1,5 @@
 //! Per-frame cost of building and resolving a papercut-shaped island
-//! (docs/ENGINE.md §7): `cargo run --release -p kinetograph-dom --example perf [slabs]`.
+//! (packages/cli/skills/kinetograph/references/ENGINE.md §7): `cargo run --release -p kinetograph-dom --example perf [slabs]`.
 //!
 //! The island imitates `lib/papercut/kit`: absolutely positioned "slabs" with a
 //! grain `background-image`, `backgroundBlendMode`, rotation by the individual

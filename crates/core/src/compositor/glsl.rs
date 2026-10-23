@@ -1,4 +1,4 @@
-//! WebGL layers (`crate::glsl`, docs/SCENE.md, "glsl"): the draws a page
+//! WebGL layers (`crate::glsl`, packages/cli/skills/kinetograph/references/SCENE.md, "glsl"): the draws a page
 //! recorded run on the device with the page's own shaders, into an Rgba8
 //! target as a browser's drawing buffer is, and `shaders/glsl_blit.wgsl` then
 //! places that on the canvas.

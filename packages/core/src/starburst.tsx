@@ -1,5 +1,5 @@
 // `@remotion/starburst`: rays in a palette of colours fanning out from a point. `<Starburst>` is the component (a WebGL
-// shader over the composition, run natively as a recorded draw, docs/AUTHORING.md §6.7), with a vignette that fades it
+// shader over the composition, run natively as a recorded draw, packages/cli/skills/kinetograph/references/AUTHORING.md §6.7), with a vignette that fades it
 // out toward the edges; `starburst()` is the same rays as an effect of a layer, which replaces what the layer holds.
 
 import type { ReactNode } from 'react';

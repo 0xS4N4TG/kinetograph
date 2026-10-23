@@ -1,4 +1,4 @@
-// `<Track>` and `Interactive` (docs/AUTHORING.md §7.1): the components Remotion's Studio can show in its timeline and
+// `<Track>` and `Interactive` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1): the components Remotion's Studio can show in its timeline and
 // edit by hand. A render shows what they wrap, so each is a `<Sequence layout="none">` (timing, `hidden`, `freeze`)
 // around the element, with the crop props as a clip-path. The schemas the Studio draws its controls from are data,
 // exported as Remotion has them (interactivity-schema.ts).

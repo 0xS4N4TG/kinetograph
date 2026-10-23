@@ -1,4 +1,4 @@
-// `@remotion/timeline-utils` (docs/AUTHORING.md §7.5): the utilities the Studio's timeline is drawn with. The audio
+// `@remotion/timeline-utils` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5): the utilities the Studio's timeline is drawn with. The audio
 // waveform and the pure helpers work; the frame strip works from frames in the cache, and what needs pictures decoded
 // to WebCodecs frames throws `UnsupportedApiError` (frame-strip.ts).
 

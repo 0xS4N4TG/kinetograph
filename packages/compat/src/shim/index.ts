@@ -1,4 +1,4 @@
-// `@kinetograph/compat/shim`: the DOM a React ref and a project's browser globals see in compat mode (docs/ENGINE.md
+// `@kinetograph/compat/shim`: the DOM a React ref and a project's browser globals see in compat mode (packages/cli/skills/kinetograph/references/ENGINE.md
 // §1 "Readback", §10). The reconciler implements `Readback`; core installs the globals.
 
 export { DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, isDomElementShim, computedStyleOf, selectorContextOf, affineOf } from './element.js';

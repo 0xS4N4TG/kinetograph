@@ -1,4 +1,4 @@
-// The timeline every component reads time from (docs/AUTHORING.md §6.2).
+// The timeline every component reads time from (packages/cli/skills/kinetograph/references/AUTHORING.md §6.2).
 // Owned by the orchestrator: the Remotion shim (`@kinetograph/core`), the
 // native elements and the motion-blur sub-frames all agree on time through
 // this one context, so only the orchestrator changes it.
@@ -26,7 +26,7 @@ export interface TimelineState {
   config: VideoConfig;
   /** Inside an active `<Freeze>`; `<Audio>` is silent there. */
   frozen: boolean;
-  /** Key of the enclosing `<Sequence>` (docs/AUTHORING.md §11.4); unset or null outside one. */
+  /** Key of the enclosing `<Sequence>` (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4); unset or null outside one. */
   sequence?: string | null;
   /**
    * How many frames of `frame` pass per composition frame: the product of the `playbackRate` of every enclosing

@@ -4,7 +4,7 @@ Kinetograph has no `@remotion/three`, `three` or `@react-three/fiber`. A `<Three
 `"@remotion/three" is not supported by Kinetograph yet`. Rebuild the scene with the own 3D layer from `@kinetograph/core`.
 It is drawn by the GPU compositor, so it renders at the same speed as the rest of the frame and needs no WebGL.
 
-Details: `docs/AUTHORING.md` section 6.6 and `docs/SCENE.md` ("scene3d") in the Kinetograph repo
+Details: `../kinetograph/references/AUTHORING.md` section 6.6 and `../kinetograph/references/SCENE.md` ("scene3d") in the Kinetograph repo
 (github.com/0xS4N4TG/kinetograph); they are not in the npm package.
 
 ## Mapping

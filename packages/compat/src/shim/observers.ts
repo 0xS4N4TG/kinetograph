@@ -1,4 +1,4 @@
-// `ResizeObserver`, `IntersectionObserver` and `MutationObserver` for DOM refs (docs/ENGINE.md §1, "Readback").
+// `ResizeObserver`, `IntersectionObserver` and `MutationObserver` for DOM refs (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback").
 // A frame is rendered once, so there is no animation of time between observations: the observers are delivered by the
 // root after each pass of React's work on the frame, `deliverObservations()`, and a callback that sets state makes
 // the root render again before the frame is emitted. Everything is "visible"; nothing scrolls.

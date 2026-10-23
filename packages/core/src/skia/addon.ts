@@ -1,4 +1,4 @@
-// The optional Skia addon (`@kinetograph/skia`, docs/AUTHORING.md §7.7). Nothing else loads it: it is read the first time
+// The optional Skia addon (`@kinetograph/skia`, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7). Nothing else loads it: it is read the first time
 // a project draws a Skia canvas, so a project that never imports `@remotion/skia` or `@shopify/react-native-skia`
 // does not need it installed.
 

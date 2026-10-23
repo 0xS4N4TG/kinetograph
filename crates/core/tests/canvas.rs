@@ -1,4 +1,4 @@
-//! Canvas layers: what a few commands leave in the pixels (docs/SCENE.md,
+//! Canvas layers: what a few commands leave in the pixels (packages/cli/skills/kinetograph/references/SCENE.md,
 //! "canvas"). The whole feature set is in the `canvas` golden.
 
 

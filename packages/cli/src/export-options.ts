@@ -1,4 +1,4 @@
-// `render`'s export options (docs/AUTHORING.md §9): size, codec, quality, pixel format and audio, as Remotion names
+// `render`'s export options (packages/cli/skills/kinetograph/references/AUTHORING.md §9): size, codec, quality, pixel format and audio, as Remotion names
 // them. The flags are checked here for what they say alone; the addon (`resolveExport`) checks them against the output
 // path and the ffmpeg it has.
 

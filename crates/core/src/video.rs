@@ -5,7 +5,7 @@
 //!
 //! - `probe` reads a file's container (size, time base, first timestamp,
 //!   duration, streams) without decoding, when a scene loads;
-//! - the time rules of `docs/SCENE.md` ("video"): `Clip::source_time` turns a
+//! - the time rules of `packages/cli/skills/kinetograph/references/SCENE.md` ("video"): `Clip::source_time` turns a
 //!   scene frame into a time in the file, and `VideoInfo::media_time` turns
 //!   that into the timestamp of the picture to show;
 //! - `VideoDecoder`, one per file in a renderer, which produces the RGBA
@@ -81,7 +81,7 @@ impl VideoInfo {
     }
 
     /// The picture a clip shows `seconds` after its first picture
-    /// (`docs/SCENE.md`, "video", rule 5): `seconds` rounded to the nearest
+    /// (`packages/cli/skills/kinetograph/references/SCENE.md`, "video", rule 5): `seconds` rounded to the nearest
     /// tick and moved to the stream's own timestamps, but never to `end`
     /// (seconds from the first picture) or past it, since the clip shows the
     /// last picture before its end.
@@ -98,7 +98,7 @@ impl VideoInfo {
 #[derive(Clone, Copy, Debug)]
 pub struct MediaTime {
     /// Seconds after the stream's first picture, as the rules in
-    /// `docs/SCENE.md` give it (not rounded).
+    /// `packages/cli/skills/kinetograph/references/SCENE.md` give it (not rounded).
     pub seconds: f64,
     /// The timestamp, in the stream's time base, that the picture is the last
     /// one at or before.
@@ -147,7 +147,7 @@ impl Clip {
     }
 
     /// The time in the file, in seconds after its first picture, that scene
-    /// frame `frame` shows (`docs/SCENE.md`, "video", rules 1 to 4). `fps` is
+    /// frame `frame` shows (`packages/cli/skills/kinetograph/references/SCENE.md`, "video", rules 1 to 4). `fps` is
     /// the scene's and `duration` the stream's, in seconds.
     pub fn source_time(&self, frame: f64, fps: f64, duration: f64) -> f64 {
         // 1. The clip's frame.
@@ -710,7 +710,7 @@ impl VideoDecoder {
         }
     }
 
-    /// The picture as straight-alpha sRGB RGBA8 (`docs/SCENE.md`, "video",
+    /// The picture as straight-alpha sRGB RGBA8 (`packages/cli/skills/kinetograph/references/SCENE.md`, "video",
     /// "Colour").
     fn convert(&mut self, picture: &frame::Video) -> std::result::Result<ImageData, String> {
         let (format, width, height) = (picture.format(), picture.width(), picture.height());
@@ -779,7 +779,7 @@ fn open_streams(
 
 /// Sets swscale's matrix and ranges for a YUV source: the picture's own
 /// matrix and range, and for an untagged one BT.709 from 720 lines up and
-/// BT.601 below, and limited range (`docs/SCENE.md`, "video", "Colour").
+/// BT.601 below, and limited range (`packages/cli/skills/kinetograph/references/SCENE.md`, "video", "Colour").
 fn set_colour(
     context: &mut scaling::Context,
     (format, _, height, space, range): (Pixel, u32, u32, color::Space, color::Range),
@@ -967,7 +967,7 @@ mod tests {
         [d[i], d[i + 1], d[i + 2], d[i + 3]]
     }
 
-    // --- The time rules (docs/SCENE.md, "video"). -----------------------------
+    // --- The time rules (packages/cli/skills/kinetograph/references/SCENE.md, "video"). -----------------------------
 
     fn clip(from: f64, before: f64, after: Option<f64>, rate: f64, looped: bool) -> Clip {
         Clip {

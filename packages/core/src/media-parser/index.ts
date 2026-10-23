@@ -1,4 +1,4 @@
-// `@remotion/media-parser` (docs/AUTHORING.md §7.5): `parseMedia` and its errors, controller and reader/writer
+// `@remotion/media-parser` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5): `parseMedia` and its errors, controller and reader/writer
 // interfaces. Files are read by FFmpeg through the addon; see parse-media.ts for what that does and does not cover.
 
 import { createAacCodecPrivate } from './aac.js';

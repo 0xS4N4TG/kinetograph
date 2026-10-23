@@ -1,5 +1,5 @@
 //! The errors JavaScript sees: an `Error` whose `code` is one of `Code` and
-//! whose `message` is the Rust error's text (`docs/AUTHORING.md` §3).
+//! whose `message` is the Rust error's text (`packages/cli/skills/kinetograph/references/AUTHORING.md` §3).
 
 use kinetograph_cli::render::RenderError;
 use kinetograph_core::Error as CoreError;

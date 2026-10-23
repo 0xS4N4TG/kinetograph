@@ -69,7 +69,7 @@ Commits). The orchestrator merges them into `feat/full-engine`.
 | 4 runtime | `engine/runtime` | `packages/**`: DomNode → IslandRequest (React style serialization, `className`, `<style>`, `.css` imports as text), switch `mapDomIsland` to the addon, readback DOM shim and the `useLayoutEffect` measure loop, frame-driven CSS animation time, web APIs (`Image`, `fetch` of project files, `requestAnimationFrame`, `matchMedia`, `window.inner*`), doctor wiring, the episode 13 corpus harness |
 | 5 perf | `perf/gpu-passes` (from `perf/gpu-pass-timing`) | compositor internals only: one to-linear pass per Vello page, merged blends of layers that do not overlap, closed-form inset shadows for rect shapes, anything else `bench --passes` shows; output byte-identical |
 
-Shared files (`crates/core/src/scene.rs`, `compositor.rs`, `docs/SCENE.md`, `crates/node/src/lib.rs`): add new
+Shared files (`crates/core/src/scene.rs`, `compositor.rs`, `packages/cli/skills/kinetograph/references/SCENE.md`, `crates/node/src/lib.rs`): add new
 items in new places (new enum variants, new functions), do not reorder or reformat existing ones. The orchestrator
 resolves merge conflicts.
 
@@ -126,7 +126,7 @@ pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str,
   units and the default region (-10%, -10%, 120%, 120%). It returns `None` for an id that names no `<filter>`
   (CSS ignores the reference then). A filter of the wrong kind of element is `None` too.
 - Both return `Unsupported` items for what they could not draw as Chrome would.
-- The `filterGraph` effect is documented in `docs/SCENE.md` ("filterGraph").
+- The `filterGraph` effect is documented in `packages/cli/skills/kinetograph/references/SCENE.md` ("filterGraph").
 
 ## 7. Stream 1 notes (front: Blitz document, fonts, files, animations, readback)
 
@@ -653,7 +653,7 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 ### Scene changes
 
 `TextLayer.runs` / `boxWidth` / `boxHeight`, `Transform.matrix` / `backfaceHidden`, `Paint::Image`, scene
-`blendSpace` (all in docs/SCENE.md, "Boxes from the DOM painter"), `data:` URLs as image sources, `Gradient.transform`
+`blendSpace` (all in packages/cli/skills/kinetograph/references/SCENE.md, "Boxes from the DOM painter"), `data:` URLs as image sources, `Gradient.transform`
 (stream 3's, also used here). Core goldens are unchanged byte for byte.
 
 ### Known gaps and findings
@@ -829,7 +829,7 @@ Goal: stop redoing what did not change between frames. What was found, measured 
 - **Overlap.** `Renderer.startFrame` and `VideoWriter.pushFrame` queue the scene parse and the GPU start on a thread of
   their own, so the JS of frame N+1 runs while N is started (`KINETOGRAPH_SYNC_START=1` gives the old order). Worth
   0.5-1.6 s of wall at one worker, nothing measurable at four. Errors of a queued frame come from `finishFrame`, or
-  from the next `pushFrame` or `finish` (docs/AUTHORING.md).
+  from the next `pushFrame` or `finish` (packages/cli/skills/kinetograph/references/AUTHORING.md).
 - **The layer cache cannot do more here.** In frames 140-150, 158 of 167 layers are byte-identical to the frame before,
   yet 1-3 of 140-200 lookups a frame hit: the groups around them animate a scale (`matrix`) every frame, and a group's
   children are rasterised at the final matrix, so the parent matrix is in every key. No group changed by a

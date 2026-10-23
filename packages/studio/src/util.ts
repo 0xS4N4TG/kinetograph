@@ -25,7 +25,7 @@ export function toStudioError(error: unknown): StudioError {
   return { code: 'INTERNAL', message: String(error) };
 }
 
-/** The HTTP status for an error, with the code the client sees (docs/AUTHORING.md §11.5). */
+/** The HTTP status for an error, with the code the client sees (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). */
 export function httpError(error: unknown): { status: number; error: StudioError } {
   const { code, message } = toStudioError(error);
   switch (code) {

@@ -1,4 +1,4 @@
-// A `WebGLRenderingContext` and `WebGL2RenderingContext` that record instead of rasterising (docs/SCENE.md, "glsl").
+// A `WebGLRenderingContext` and `WebGL2RenderingContext` that record instead of rasterising (packages/cli/skills/kinetograph/references/SCENE.md, "glsl").
 // It keeps the context's state as a browser's does and writes each clear and each draw as an op that carries the
 // program, the vertex data, the uniforms, the textures and the state it ran with; the renderer replays the ops on the
 // GPU with the page's own GLSL, translated to WGSL by naga. Nothing here reads a clock or anything else outside the
@@ -18,7 +18,7 @@ import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 export const LAYER_SOURCE: unique symbol = Symbol.for('kinetograph.layerSource');
 
 /**
- * A picture of a child of a shader group or a canvas pass (docs/SCENE.md, "Shader groups", "Canvas passes"), to upload as
+ * A picture of a child of a shader group or a canvas pass (packages/cli/skills/kinetograph/references/SCENE.md, "Shader groups", "Canvas passes"), to upload as
  * a texture the way a page uploads a canvas (`gl.texImage2D(..., picture)`) or to draw on a 2D canvas
  * (`ctx.drawImage(picture, ...)`). The renderer draws the child and reads it; nothing is read here.
  */
@@ -31,7 +31,7 @@ export function layerPicture(id: string, width: number, height: number): { reado
 export class WebGLUnsupportedError extends Error {
   override name = 'WebGLUnsupportedError';
   constructor(what: string) {
-    super(`unsupported: ${what} (docs/SCENE.md, "glsl")`);
+    super(`unsupported: ${what} (packages/cli/skills/kinetograph/references/SCENE.md, "glsl")`);
   }
 }
 

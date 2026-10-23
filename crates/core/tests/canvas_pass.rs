@@ -1,4 +1,4 @@
-//! Canvas passes (docs/SCENE.md, "Canvas passes"): a group whose picture is a Canvas 2D drawing of its children, and the
+//! Canvas passes (packages/cli/skills/kinetograph/references/SCENE.md, "Canvas passes"): a group whose picture is a Canvas 2D drawing of its children, and the
 //! two things a WebGL pass reads of a child that depend on how the page uploaded it (`flipY`, `premultiply`). These run
 //! on whichever backend the environment picks: a canvas pass is drawn by the wgpu path on both.
 

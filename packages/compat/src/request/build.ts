@@ -1,4 +1,4 @@
-// The DOM island a frame holds as the JSON the addon takes (docs/ENGINE.md §2, `crates/dom/src/request.rs`):
+// The DOM island a frame holds as the JSON the addon takes (packages/cli/skills/kinetograph/references/ENGINE.md §2, `crates/dom/src/request.rs`):
 // tags, attributes, `style` as CSS text, text, and native `kg-*` elements as boxes. Pure: no addon, no clock.
 
 import type { DomNode } from '../types.js';
@@ -30,7 +30,7 @@ export interface IslandRequestJson {
   time: number;
   path: string;
   /**
-   * Earlier states of the island, oldest first, for CSS transitions (docs/ENGINE.md §7.12). The frame loop fills it (history.ts): with
+   * Earlier states of the island, oldest first, for CSS transitions (packages/cli/skills/kinetograph/references/ENGINE.md §7.12). The frame loop fills it (history.ts): with
    * none, no transition runs and every value is its final one.
    */
   history?: IslandSnapshotJson[];

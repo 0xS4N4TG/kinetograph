@@ -2,7 +2,7 @@ import { CliError } from '../errors.js';
 import { parseProps } from '../source.js';
 import { ENTRY, type Command } from './types.js';
 
-/** What the command needs of `@kinetograph/studio` (its `startStudio`, docs/AUTHORING.md §11.5). */
+/** What the command needs of `@kinetograph/studio` (its `startStudio`, packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). */
 export interface StudioModule {
   startStudio(options: {
     entry: string;

@@ -1,4 +1,4 @@
-//! The JSON scene graph. See docs/SCENE.md for the format.
+//! The JSON scene graph. See packages/cli/skills/kinetograph/references/SCENE.md for the format.
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -253,7 +253,7 @@ impl LayerKind {
         }
     }
 
-    /// Whether the layer has a box (`docs/SCENE.md`, "Clip paths"): every kind
+    /// Whether the layer has a box (`packages/cli/skills/kinetograph/references/SCENE.md`, "Clip paths"): every kind
     /// but a group without a `layout`, whose box is the size the layout gives
     /// it.
     pub fn has_box(&self) -> bool {
@@ -1169,7 +1169,7 @@ pub struct TextLayer {
 }
 
 /// A run of glyphs that share a font file and size, already positioned
-/// (`docs/SCENE.md`, "Glyph runs").
+/// (`packages/cli/skills/kinetograph/references/SCENE.md`, "Glyph runs").
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlyphRun {
@@ -1197,7 +1197,7 @@ pub struct GlyphRun {
 }
 
 /// How one character of a text layer differs from the layer, in text-box
-/// pixels and about the character's centre (`docs/SCENE.md`, "Per-character
+/// pixels and about the character's centre (`packages/cli/skills/kinetograph/references/SCENE.md`, "Per-character
 /// styles").
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1264,7 +1264,7 @@ pub struct LottieLayer {
     pub looped: bool,
 }
 
-/// What a Canvas 2D context drew in a frame (`docs/SCENE.md`, "canvas"): the
+/// What a Canvas 2D context drew in a frame (`packages/cli/skills/kinetograph/references/SCENE.md`, "canvas"): the
 /// box `(0, 0, width, height)`, drawn with Skia from `commands`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1276,7 +1276,7 @@ pub struct CanvasLayer {
     pub commands: crate::canvas::CanvasOps,
 }
 
-/// What a WebGL context drew in a frame (`docs/SCENE.md`, "glsl"): the box
+/// What a WebGL context drew in a frame (`packages/cli/skills/kinetograph/references/SCENE.md`, "glsl"): the box
 /// `(0, 0, width, height)`, drawn by the GPU with the page's own shaders.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1288,7 +1288,7 @@ pub struct GlslLayer {
     pub recording: crate::glsl::GlslRecording,
 }
 
-/// A video file, one picture per frame (`docs/SCENE.md`, "video").
+/// A video file, one picture per frame (`packages/cli/skills/kinetograph/references/SCENE.md`, "video").
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoLayer {
@@ -1321,7 +1321,7 @@ pub struct VideoLayer {
     pub looped: bool,
 }
 
-/// An animated GIF (`docs/SCENE.md`, "gif").
+/// An animated GIF (`packages/cli/skills/kinetograph/references/SCENE.md`, "gif").
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GifLayer {
@@ -1378,18 +1378,18 @@ pub struct GroupLayer {
     /// Flex layout of the children, applied when the scene is resolved.
     pub layout: Option<Layout>,
     /// A GLSL pass that makes the group's picture out of its children
-    /// (`docs/SCENE.md`, "Shader groups"): the children are drawn into
+    /// (`packages/cli/skills/kinetograph/references/SCENE.md`, "Shader groups"): the children are drawn into
     /// textures that the recording's `layer` textures name, and are not drawn
     /// on their own.
     pub glsl: Option<GlslLayer>,
     /// A Canvas 2D pass that makes the group's picture out of its children
-    /// (`docs/SCENE.md`, "Canvas passes"): the commands draw on a canvas of
+    /// (`packages/cli/skills/kinetograph/references/SCENE.md`, "Canvas passes"): the commands draw on a canvas of
     /// `width` x `height`, and their `layer` sources are the children, drawn
     /// as pictures and not drawn on their own.
     pub canvas: Option<CanvasLayer>,
 }
 
-/// A group's flex layout (`docs/SCENE.md`, "Layout"). Names and values are
+/// A group's flex layout (`packages/cli/skills/kinetograph/references/SCENE.md`, "Layout"). Names and values are
 /// CSS's.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

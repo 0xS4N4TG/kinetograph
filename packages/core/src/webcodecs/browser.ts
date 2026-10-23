@@ -1,7 +1,7 @@
 // The parts of `@remotion/webcodecs` that are thin wrappers over the browser's WebCodecs classes (`VideoDecoder`,
 // `AudioEncoder`, ...) and over frames and audio data. They are exported, so a project that mentions them bundles, and
 // each throws `UnsupportedApiError` when called: Kinetograph has no browser, and its addon decodes video inside the
-// renderer and returns no pictures to JavaScript (docs/AUTHORING.md §7.5).
+// renderer and returns no pictures to JavaScript (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5).
 
 import { UnsupportedApiError } from '../unsupported.js';
 import type {

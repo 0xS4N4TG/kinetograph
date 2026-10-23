@@ -1,4 +1,4 @@
-//! `probeStreams` and `scanStreams` (docs/AUTHORING.md §3, `@remotion/media-parser`): what a media file's container
+//! `probeStreams` and `scanStreams` (packages/cli/skills/kinetograph/references/AUTHORING.md §3, `@remotion/media-parser`): what a media file's container
 //! says about its streams, and what its packets add. CPU only, through FFmpeg; nothing is decoded, and unlike
 //! `probeMedia` a file without a video stream (an MP3, a WAV) is fine.
 
@@ -220,7 +220,7 @@ fn details_of(stream: &format::stream::Stream<'_>) -> StreamDetails {
     }
 }
 
-/// Reads a file's container, without decoding anything (docs/AUTHORING.md §3).
+/// Reads a file's container, without decoding anything (packages/cli/skills/kinetograph/references/AUTHORING.md §3).
 #[napi]
 pub fn probe_streams(path: String, base_dir: Option<String>) -> Result<MediaStreams> {
     let input = open(&resolve_base(base_dir).join(path))?;

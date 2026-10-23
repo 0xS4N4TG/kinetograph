@@ -1,4 +1,4 @@
-// Canvas 2D (docs/SCENE.md, "canvas"), two ways, with nothing from a browser behind either.
+// Canvas 2D (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), two ways, with nothing from a browser behind either.
 //
 // `<Chart>` is a Remotion project's canvas, written as a Remotion user writes one: a `<canvas>` element, a ref, and a
 // `useEffect` that draws with `getContext('2d')`. The engine records the calls and draws them natively. It clears the

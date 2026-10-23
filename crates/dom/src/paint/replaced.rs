@@ -28,7 +28,7 @@ impl<'a> Painter<'a> {
         let (content, radii) = geom.region(Region::Content);
 
         // A native `kg-*` element of the TS side: a replaced box whose layers
-        // the caller puts where this placeholder is (docs/ENGINE.md section 2).
+        // the caller puts where this placeholder is (packages/cli/skills/kinetograph/references/ENGINE.md section 2).
         if &**tag == "kg-native" {
             let path = self.path_of(node);
             return vec![serde_json::json!({
@@ -188,7 +188,7 @@ impl<'a> Painter<'a> {
     }
 
     /// What a `<canvas>`'s context drew: the 2D commands the TS side puts in
-    /// `data-kg-canvas` (docs/SCENE.md, "canvas"), as one canvas layer the size
+    /// `data-kg-canvas` (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), as one canvas layer the size
     /// of the canvas's bitmap (`width` and `height`, 300 x 150 without them),
     /// stretched to the content box as `object-fit: fill` does. A canvas
     /// nothing was drawn on draws nothing.
@@ -199,7 +199,7 @@ impl<'a> Painter<'a> {
         content: Rect,
         radii: super::geom::Radii,
     ) -> Vec<Value> {
-        // A WebGL context's recording (`data-kg-webgl`, docs/SCENE.md, "glsl") is
+        // A WebGL context's recording (`data-kg-webgl`, packages/cli/skills/kinetograph/references/SCENE.md, "glsl") is
         // a glsl layer the same way; a 2D context's commands a canvas layer.
         let (kind, text) = if let Some(recording) = super::attr(node, "data-kg-webgl") {
             ("glsl", recording)

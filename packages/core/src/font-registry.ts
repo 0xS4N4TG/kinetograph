@@ -1,4 +1,4 @@
-// The font registry (docs/AUTHORING.md §7.2): which font file serves which
+// The font registry (packages/cli/skills/kinetograph/references/AUTHORING.md §7.2): which font file serves which
 // `font` key of the scene. Text must never be measured before its fonts are
 // registered, so fonts that are still downloading are tracked here and the
 // frame loop waits for them before the first frame.

@@ -1,4 +1,4 @@
-// kinetograph: the agent CLI and MCP server (docs/AUTHORING.md §9).
+// kinetograph: the agent CLI and MCP server (packages/cli/skills/kinetograph/references/AUTHORING.md §9).
 
 import { createRequire } from 'node:module';
 import { parseCommandArgs, usage } from './args.js';

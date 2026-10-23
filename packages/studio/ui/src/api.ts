@@ -1,4 +1,4 @@
-// The one module that talks to the studio server (docs/AUTHORING.md §11.5): the HTTP routes and the `/ws` WebSocket.
+// The one module that talks to the studio server (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5): the HTTP routes and the `/ws` WebSocket.
 // Everything else in the UI depends on the `StudioApi` interface, so tests swap in a mock server.
 
 import { decodeFrameMessage } from '../../src/protocol.ts';

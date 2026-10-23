@@ -49,7 +49,7 @@ export const STRICT_OPTION: OptionSpec = {
   description: 'Fail on a frame holding content the engine cannot draw (Remotion compat), instead of drawing it without and warning',
 };
 
-/** `--dev-react`, on the commands that run a project to render it (docs/AUTHORING.md §9). */
+/** `--dev-react`, on the commands that run a project to render it (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
 export const DEV_REACT_OPTION: OptionSpec = {
   name: 'dev-react',
   type: 'boolean',

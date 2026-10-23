@@ -1,4 +1,4 @@
-// The determinism shim (docs/AUTHORING.md §7.4). Rendering is a pure function
+// The determinism shim (packages/cli/skills/kinetograph/references/AUTHORING.md §7.4). Rendering is a pure function
 // of (project, frame), so everything in a project that looks at time or luck
 // has to be driven by the frame being rendered:
 //

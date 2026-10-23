@@ -1,4 +1,4 @@
-// What a React ref to a DOM host element is in compat mode (docs/ENGINE.md §1, "Readback"): an object that answers like
+// What a React ref to a DOM host element is in compat mode (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"): an object that answers like
 // a DOM element for measurement. Its boxes and computed styles come from the addon, for the island's current host tree
 // (`Readback`, cached by tree generation). Script changes to `style` and attributes are laid over the props; nothing
 // is ever drawn from this object, only read.
@@ -764,7 +764,7 @@ export class DomElement {
   pause(): void {}
   load(): void {}
   async decode(): Promise<void> {}
-  // `<canvas>`: the 2D context records what is drawn, and the painter draws it (docs/SCENE.md, "canvas").
+  // `<canvas>`: the 2D context records what is drawn, and the painter draws it (packages/cli/skills/kinetograph/references/SCENE.md, "canvas").
   getContext(type: string, attributes?: unknown): CanvasContext2D | WebGLContext | null {
     if (this.host.type !== 'canvas') throw new TypeError(`getContext is not a function: <${this.host.type}> is not a canvas`);
     return contextOfHost(this.host, String(type), () => ({ width: this.width, height: this.height }), this, attributes);

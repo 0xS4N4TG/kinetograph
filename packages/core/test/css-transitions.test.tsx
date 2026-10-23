@@ -1,4 +1,4 @@
-// CSS transitions end to end (docs/ENGINE.md §7.12): a composition whose DOM sets `opacity` by the frame and
+// CSS transitions end to end (packages/cli/skills/kinetograph/references/ENGINE.md §7.12): a composition whose DOM sets `opacity` by the frame and
 // declares a transition is rendered through the real addon. A frame's history comes from the frames before it, so
 // rendering a frame alone, in order, or out of order gives the same value, and the value is mid-transition.
 

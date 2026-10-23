@@ -3,7 +3,7 @@
 //
 //   node crates/dom/tools/chrome-compare.mjs <island.json | directory of them> [--tolerance 1] [--verbose]
 //
-// An island file is an IslandRequest as JSON (docs/ENGINE.md §2), e.g. what `renderDomIsland` is called with. Chrome
+// An island file is an IslandRequest as JSON (packages/cli/skills/kinetograph/references/ENGINE.md §2), e.g. what `renderDomIsland` is called with. Chrome
 // gets the same tree built with createElementNS in a page of its own (body margin 0, a `position: relative` box of
 // the viewport's size, `@font-face` for each registered font, `<base>` at baseDir), and `getBoundingClientRect` of
 // every element with a host-tree path is compared with the engine's `rect`. Chrome for Testing is looked for in

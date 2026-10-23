@@ -4,7 +4,7 @@
 //! `UPDATE_GOLDEN=1 cargo test -p kinetograph-dom --test svg_golden` after
 //! checking the change by eye). Each page was also rendered by Chrome for
 //! Testing and compared with the result by eye and by pixel difference; the
-//! numbers are in docs/ENGINE.md section 9.
+//! numbers are in packages/cli/skills/kinetograph/references/ENGINE.md section 9.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

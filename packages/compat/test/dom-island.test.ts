@@ -1,4 +1,4 @@
-// mapDomIsland on the addon's renderDomIsland (docs/ENGINE.md §2), with a stand-in addon: what is sent, and how the
+// mapDomIsland on the addon's renderDomIsland (packages/cli/skills/kinetograph/references/ENGINE.md §2), with a stand-in addon: what is sent, and how the
 // answer is turned into layers (native placeholders filled and placed, top-level layers made absolute).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

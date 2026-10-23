@@ -1,5 +1,5 @@
 //! Canvas 2D: the commands a `CanvasRenderingContext2D` was given in a frame,
-//! drawn into one layer with Skia (`render/skia/draw/canvas2d.rs`; docs/SCENE.md, "canvas").
+//! drawn into one layer with Skia (`render/skia/draw/canvas2d.rs`; packages/cli/skills/kinetograph/references/SCENE.md, "canvas").
 //!
 //! The authoring side (`@kinetograph/scene`'s `createCanvasContext`) keeps the
 //! context's state, so every command arrives with the state it is drawn in

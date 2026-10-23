@@ -1,4 +1,4 @@
-// Canvas 2D in the reconciler (docs/SCENE.md, "canvas"): the native `<Canvas draw>` becomes a canvas layer whose
+// Canvas 2D in the reconciler (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"): the native `<Canvas draw>` becomes a canvas layer whose
 // commands the draw function made, and a DOM `<canvas>` that a project draws on through a ref reaches the addon as
 // the commands in its `data-kg-canvas` attribute. The addon is a stand-in that records the request.
 

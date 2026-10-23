@@ -1,4 +1,4 @@
-// Readback (docs/ENGINE.md §1): refs to DOM host elements answer for measurement from the addon's boxes, a layout effect
+// Readback (packages/cli/skills/kinetograph/references/ENGINE.md §1): refs to DOM host elements answer for measurement from the addon's boxes, a layout effect
 // that measures and sets state settles within the frame, observers fire after layout. The addon is a stand-in that
 // lays each element out from its inline width/height (px) and answers computed styles from the request.
 

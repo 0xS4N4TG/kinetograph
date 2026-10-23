@@ -5,7 +5,7 @@ import { decodePng, diffPng } from '../png.js';
 import { checkFrame, evenFrames, type Source } from '../source.js';
 import { ENTRY, newRenderer, openFromArgs, type Command } from './types.js';
 
-/** The largest difference in any channel that still counts as the same picture (docs/AUTHORING.md §9). */
+/** The largest difference in any channel that still counts as the same picture (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
 const TOLERANCE = 2;
 
 export type SnapshotStatus = 'match' | 'mismatch' | 'missing' | 'created' | 'updated';

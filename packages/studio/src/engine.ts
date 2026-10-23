@@ -1,4 +1,4 @@
-// The boundary between the studio server and the project (docs/AUTHORING.md §11.5). The server never runs the
+// The boundary between the studio server and the project (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). The server never runs the
 // project: a worker thread loads an *engine module* that exports `createEngine`, and everything the server needs of the
 // project, the renderer and the addon goes through this interface. The default engine (`real-engine.ts`) drives the
 // CLI's source and the addon; tests name a stub module in `StudioOptions.engine`, which opens no GPU.
@@ -23,7 +23,7 @@ export interface FrameScene {
   height: number;
   fps: number;
   durationInFrames: number;
-  /** Every `<Sequence>` in the frame's tree (docs/AUTHORING.md §11.4). */
+  /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
   /** A `.json` scene: every frame is the same scene. */
   constant: boolean;

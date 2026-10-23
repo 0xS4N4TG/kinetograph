@@ -1,4 +1,4 @@
-// The history of an island's tree, for CSS transitions (docs/ENGINE.md §7.12). A transition starts when a style
+// The history of an island's tree, for CSS transitions (packages/cli/skills/kinetograph/references/ENGINE.md §7.12). A transition starts when a style
 // value changes, so a frame needs the states before it; the Rust side replays `IslandRequest.history`. The frame
 // loop makes that history a function of the frame alone: it renders the frames of the window before the one asked
 // for, with recording on, and `mapDomIsland` keeps each island's request root whenever it differs from the last.

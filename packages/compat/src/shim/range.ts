@@ -1,4 +1,4 @@
-// `document.createRange()` (docs/ENGINE.md §1, "Readback"): a range over the host tree whose `getBoundingClientRect()` is
+// `document.createRange()` (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"): a range over the host tree whose `getBoundingClientRect()` is
 // the union of the boxes of the text and elements it covers, as the DOM engine lays them out. A piece of a text node is
 // measured by the root (`Readback.textRangeBox`); an element is its own box.
 

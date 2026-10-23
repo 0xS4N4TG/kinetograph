@@ -1,4 +1,4 @@
-// The browser globals a project commonly touches (docs/ENGINE.md §10): sizes, matchMedia, Image, fetch of project files,
+// The browser globals a project commonly touches (packages/cli/skills/kinetograph/references/ENGINE.md §10): sizes, matchMedia, Image, fetch of project files,
 // canvas, requestAnimationFrame on the frame clock, and the rule that nothing here looks at a wall clock or the network.
 
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';

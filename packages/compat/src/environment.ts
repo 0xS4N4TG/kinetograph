@@ -1,4 +1,4 @@
-// What a DOM island needs from the project around it (docs/ENGINE.md §2): where relative paths resolve, and the
+// What a DOM island needs from the project around it (packages/cli/skills/kinetograph/references/ENGINE.md §2): where relative paths resolve, and the
 // stylesheets the project imported. The bundler turns each `import './x.css'` into a `registerStylesheet(text)` call
 // that runs when the project loads, so the list is complete before the first frame.
 

@@ -1,5 +1,5 @@
-// `@remotion/rive` (docs/AUTHORING.md §7.6): `<RemotionRiveCanvas>`. Remotion plays the file with Rive's WebAssembly
-// runtime in a `<canvas>`; this plays it with Rive's own C++ runtime inside the addon (docs/AUTHORING.md §7.6) and
+// `@remotion/rive` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6): `<RemotionRiveCanvas>`. Remotion plays the file with Rive's WebAssembly
+// runtime in a `<canvas>`; this plays it with Rive's own C++ runtime inside the addon (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6) and
 // draws what it asks for on the same `<canvas>`, so the element is laid out and styled as the DOM element it is in
 // Remotion. A frame is played from the file's start to the frame's time, never from what was played before.
 

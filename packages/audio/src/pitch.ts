@@ -1,4 +1,4 @@
-// `toneFrequency` (docs/AUTHORING.md §6.4): the pitch of a clip times `ratio`, its length unchanged. The sound is
+// `toneFrequency` (packages/cli/skills/kinetograph/references/AUTHORING.md §6.4): the pitch of a clip times `ratio`, its length unchanged. The sound is
 // first stretched to `ratio` times its length without changing its pitch (WSOLA: overlapping windows taken from the
 // input at the stretched pace, each one nudged to where it lines up best with the last), then read back `ratio` times
 // as fast, which brings the length back and moves the pitch. Every channel uses the same window positions (found on

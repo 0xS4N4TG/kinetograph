@@ -1,4 +1,4 @@
-// IFrame, Artifact, HtmlInCanvas, createEffect, Solid and CanvasImage (docs/AUTHORING.md §7.1). The browser-canvas
+// IFrame, Artifact, HtmlInCanvas, createEffect, Solid and CanvasImage (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1). The browser-canvas
 // parts are not run; what they draw without them is checked here, and createEffect against the published package.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

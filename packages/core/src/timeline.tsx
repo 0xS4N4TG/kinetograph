@@ -1,5 +1,5 @@
 // The frame clock and the components that bend it: useCurrentFrame,
-// useVideoConfig, Sequence, Series, Loop and Freeze (docs/AUTHORING.md §7.1).
+// useVideoConfig, Sequence, Series, Loop and Freeze (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1).
 // The state they all read and write is the `TimelineContext` that
 // `@kinetograph/react` owns, so the native elements (`<Audio>`, `<Lottie>`) and
 // the motion-blur sub-frames agree with them on time.
@@ -40,7 +40,7 @@ function checkNumber(component: string, prop: string, value: unknown, { allowInf
 
 function Scoped({ state, layout, children }: { state: TimelineState; layout?: LayoutProp; children: ReactNode }) {
   // `layout="none"` is Remotion's "no wrapper": the children go straight into the parent. The wrapper is Remotion's
-  // AbsoluteFill: with DOM elements inside it is that `div` (docs/ENGINE.md §10), else a plain layer.
+  // AbsoluteFill: with DOM elements inside it is that `div` (packages/cli/skills/kinetograph/references/ENGINE.md §10), else a plain layer.
   const inner =
     layout === 'none' ? (
       <>{children}</>
@@ -72,7 +72,7 @@ function startOf(parent: TimelineState): number {
 }
 
 /**
- * What the timeline records for a Sequence or Loop (docs/AUTHORING.md §11.4): rendered whether or not the Sequence is
+ * What the timeline records for a Sequence or Loop (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4): rendered whether or not the Sequence is
  * showing. `from` is relative to the enclosing Sequence and `duration` already clamped.
  */
 function recorded(parent: TimelineState, name: string | undefined, label: 'Sequence' | 'Loop', from: number, duration: number) {

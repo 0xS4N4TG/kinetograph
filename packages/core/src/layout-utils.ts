@@ -115,7 +115,7 @@ function layoutOf(options: MeasureTextOptions, text: string, maxWidth?: number):
 }
 
 /**
- * Measures text as the DOM engine lays out a `span` (docs/ENGINE.md §10): the node bundle installs this, so that
+ * Measures text as the DOM engine lays out a `span` (packages/cli/skills/kinetograph/references/ENGINE.md §10): the node bundle installs this, so that
  * `measureText` and `fitText` give what `getBoundingClientRect` gives in Chrome, with `letterSpacing`, `textTransform`
  * and `additionalStyles` applied by CSS. It returns null where the DOM engine is not there; the text engine's own
  * measure (`layoutText`) answers then.

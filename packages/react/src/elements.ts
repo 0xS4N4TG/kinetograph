@@ -1,4 +1,4 @@
-// The native elements (docs/AUTHORING.md §6.3). Most are thin: they render a
+// The native elements (packages/cli/skills/kinetograph/references/AUTHORING.md §6.3). Most are thin: they render a
 // `kg-*` host element carrying their props, and the reconciler's `emit` turns
 // the host tree into scene JSON. The ones that need time (`<Lottie>`,
 // `<Audio>`) read it from the timeline here, so the host tree stays free of
@@ -73,19 +73,19 @@ export interface LayerProps extends CommonProps {
   layout?: Layout;
   children?: ReactNode;
   /**
-   * A GLSL pass that makes the layer's picture out of its children (docs/SCENE.md, "Shader groups"). A texture of the
+   * A GLSL pass that makes the layer's picture out of its children (packages/cli/skills/kinetograph/references/SCENE.md, "Shader groups"). A texture of the
    * pass names a layer by `id` (`layerPicture`); a layer elsewhere in the tree that a texture names is moved in as a
    * child, so a shader can mix two parts of the tree, as a shader transition mixes two scenes.
    */
   glsl?: GlslPass;
   /**
-   * A Canvas 2D drawing that makes the layer's picture out of its children (docs/SCENE.md, "Canvas passes"): its
+   * A Canvas 2D drawing that makes the layer's picture out of its children (packages/cli/skills/kinetograph/references/SCENE.md, "Canvas passes"): its
    * `layer` sources (`layerPicture`) name children of this layer by `id`.
    */
   canvas?: CanvasPass;
   /**
    * @internal `<AbsoluteFill>`'s layer mapping says what the CSS box it stands for is, so that a tree holding DOM
-   * elements draws it as that `div` (docs/ENGINE.md §10): the author's style, and whether the first child is the
+   * elements draws it as that `div` (packages/cli/skills/kinetograph/references/ENGINE.md §10): the author's style, and whether the first child is the
    * background rectangle the layer mapping adds.
    */
   domFill?: { style: Record<string, unknown>; id?: string; background: boolean };
@@ -178,7 +178,7 @@ export interface CanvasProps extends CommonProps {
   height: number;
   /**
    * Draws the canvas with a Canvas 2D context. It is called with a fresh, empty context each time the frame is read,
-   * and everything it draws is the frame's canvas (docs/SCENE.md, "canvas"), so what it draws must come from the
+   * and everything it draws is the frame's canvas (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), so what it draws must come from the
    * props and the frame it closes over, not from what was drawn before.
    */
   draw: (context: CanvasContext2D) => void;
@@ -188,7 +188,7 @@ export interface GlslShaderProps extends CommonProps {
   /** The size of the shader's drawing buffer in layer pixels, whole, not animated. */
   width: number;
   height: number;
-  /** The fragment shader, GLSL ES 100 or 300 es (docs/SCENE.md, "glsl"). */
+  /** The fragment shader, GLSL ES 100 or 300 es (packages/cli/skills/kinetograph/references/SCENE.md, "glsl"). */
   fragment: string;
   /** The vertex shader. Default: one that covers the box with the attribute `a_position`, in clip space. */
   vertex?: string;
@@ -198,7 +198,7 @@ export interface GlslShaderProps extends CommonProps {
   textures?: Record<string, string | GlslTextureOptions>;
 }
 
-// ---- the 3D layer (docs/AUTHORING.md §6.6) ----
+// ---- the 3D layer (packages/cli/skills/kinetograph/references/AUTHORING.md §6.6) ----
 
 export interface Scene3DProps extends CommonProps {
   /** The layer's box in layer pixels; the camera's aspect ratio is its width over its height. */
@@ -366,7 +366,7 @@ export function Camera(props: CameraProps) {
   return createElement('kg-camera', props);
 }
 
-// ---- the host element of <Sequence> (docs/AUTHORING.md §11.4) ----
+// ---- the host element of <Sequence> (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4) ----
 
 export interface SequenceHostProps {
   /** What the timeline records; `layer` is filled in by `emit`. */
@@ -387,7 +387,7 @@ export function SequenceHost(props: SequenceHostProps) {
 
 // ---- the 3D layer ----
 
-/** A 3D scene drawn natively into a box of `width` x `height` (docs/SCENE.md, "scene3d"). */
+/** A 3D scene drawn natively into a box of `width` x `height` (packages/cli/skills/kinetograph/references/SCENE.md, "scene3d"). */
 export function Scene3D(props: Scene3DProps) {
   return createElement('kg-scene3d', props);
 }
@@ -421,14 +421,14 @@ export function Group3D(props: Group3DProps) {
 
 // ---- <Canvas> ----
 
-/** A canvas drawn with `draw(context)`: a Canvas 2D context's commands, drawn natively (docs/SCENE.md, "canvas"). */
+/** A canvas drawn with `draw(context)`: a Canvas 2D context's commands, drawn natively (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"). */
 export function Canvas(props: CanvasProps) {
   return createElement('kg-canvas', props);
 }
 
 // ---- <GlslShader> ----
 
-/** A full-screen GLSL fragment shader, run natively on the GPU (docs/SCENE.md, "glsl"). */
+/** A full-screen GLSL fragment shader, run natively on the GPU (packages/cli/skills/kinetograph/references/SCENE.md, "glsl"). */
 export function GlslShader(props: GlslShaderProps) {
   return createElement('kg-glsl', props);
 }
@@ -523,7 +523,7 @@ export function Audio(props: AudioProps) {
   return createElement('kg-audio', { id: props.id, clip });
 }
 
-// ---- <Video>, <OffthreadVideo>, <Gif> (docs/AUTHORING.md §11.3, stream 2) ----
+// ---- <Video>, <OffthreadVideo>, <Gif> (packages/cli/skills/kinetograph/references/AUTHORING.md §11.3, stream 2) ----
 
 export interface VideoProps extends CommonProps {
   src: string;

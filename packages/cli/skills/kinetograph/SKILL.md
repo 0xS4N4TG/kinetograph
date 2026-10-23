@@ -47,7 +47,7 @@ cannot draw and in which frames (see "Compat mode and doctor"; `doctor` alone sa
 and opens a browser; it is for the person at the screen, runs until stopped, and is not an MCP tool. Use `--no-open`
 when you start it yourself.
 
-An entry is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene (docs/SCENE.md); every command takes both.
+An entry is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene (references/SCENE.md); every command takes both.
 
 ## A project
 
@@ -121,9 +121,9 @@ Effects (helpers of the same name; `kinetograph effects` lists their fields): `b
 `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`, `halftone`, `dotMatrix`, `displace`, `cornerPin`, and `shader`
 for your own WGSL. `motionBlur({ samples: 8 })` goes in the same `effects` array.
 
-The details are in `docs/AUTHORING.md` (§5 helpers, §6 elements and their JSON, §7 the Remotion API) and
-`docs/SCENE.md` (every layer type, effect and field; the exact meaning of each), both in the repo
-(github.com/0xS4N4TG/kinetograph); they are not in the npm package.
+The details are in this skill's references: `references/AUTHORING.md` (§5 helpers, §6 elements and their JSON, §7 the
+Remotion API), `references/SCENE.md` (every layer type, effect and field; the exact meaning of each),
+`references/ENGINE.md` (the DOM engine) and `references/INTERNALS.md` (how a frame is made, the code map).
 
 ## Sound
 
@@ -148,7 +148,7 @@ both into the video. Check it with `kinetograph audio analyze src/index.tsx`: `i
 ## Compat mode and doctor
 
 A project written for Remotion may use DOM elements, `style`, `className` and stylesheets next to the native ones. The
-engine styles and lays them out with its own CSS engine (docs/ENGINE.md) and draws what it can. There is no browser:
+engine styles and lays them out with its own CSS engine (references/ENGINE.md) and draws what it can. There is no browser:
 a frame holding anything it cannot draw yet is still drawn, without that item or approximated, and `still`, `strip`
 and `render` print a `warning:` on stderr naming each kind (element, property, values, reason, frames); with `--json`
 the same list is in the result under `compat.leftOut`. Pass `--strict` to `still`, `strip` or `render` to fail with

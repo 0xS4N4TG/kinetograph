@@ -1,4 +1,4 @@
-// Imported by the CLI's Node bundle entry right after the determinism shim (docs/ENGINE.md §10): the browser globals a
+// Imported by the CLI's Node bundle entry right after the determinism shim (packages/cli/skills/kinetograph/references/ENGINE.md §10): the browser globals a
 // project commonly touches (`window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, observers,
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 

@@ -1,4 +1,4 @@
-// Compositions (docs/AUTHORING.md §7.2): `registerRoot`, `<Composition>`,
+// Compositions (packages/cli/skills/kinetograph/references/AUTHORING.md §7.2): `registerRoot`, `<Composition>`,
 // `<Still>`, `<Folder>`, `getInputProps`, `getCompositions` and
 // `calculateMetadata`. A project registers a Root component; the compositions
 // are found by rendering that Root once (nothing is drawn), as Remotion's Studio

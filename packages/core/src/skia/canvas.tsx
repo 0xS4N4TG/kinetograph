@@ -1,5 +1,5 @@
 // `<Canvas>` of RN-Skia and `<SkiaCanvas>` of `@remotion/skia`: the children are rendered into a tree of nodes (host.ts),
-// drawn by Skia's CPU rasteriser in the addon (docs/AUTHORING.md §7.7), and the picture is an `<img>` of a PNG the
+// drawn by Skia's CPU rasteriser in the addon (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7), and the picture is an `<img>` of a PNG the
 // addon wrote, which the layout and the compositor treat like any other image.
 
 import { homedir } from 'node:os';

@@ -1,5 +1,5 @@
 // The six React Native Skia components that draw an object or a list rather than a shape: `Atlas`, `Patch`, `Glyphs`,
-// `TextBlob`, `Picture` and `ImageSVG` (docs/AUTHORING.md §7.7), one composition each, written the way a
+// `TextBlob`, `Picture` and `ImageSVG` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7), one composition each, written the way a
 // `@remotion/skia` project writes them. Skia (the optional `@kinetograph/skia` addon) draws them.
 //
 //   npx kinetograph still examples/skia-components/index.tsx 20 --comp Atlas -o out/atlas.png

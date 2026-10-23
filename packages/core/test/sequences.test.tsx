@@ -1,4 +1,4 @@
-// The timeline data (docs/AUTHORING.md §11.4): every <Sequence> in the tree is recorded whether or not it is showing,
+// The timeline data (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4): every <Sequence> in the tree is recorded whether or not it is showing,
 // and recording changes none of the automatic ids.
 
 import { Fragment, type ReactNode } from 'react';

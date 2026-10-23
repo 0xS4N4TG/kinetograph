@@ -1,8 +1,8 @@
-//! The painter (docs/ENGINE.md §4, stream 2): a styled, laid-out Blitz document
+//! The painter (packages/cli/skills/kinetograph/references/ENGINE.md §4, stream 2): a styled, laid-out Blitz document
 //! walked in CSS paint order and written as scene layers.
 //!
 //! Layout is Blitz's (Stylo styles, taffy boxes, Parley lines); everything
-//! here is reading that result and emitting `docs/SCENE.md` layers:
+//! here is reading that result and emitting `packages/cli/skills/kinetograph/references/SCENE.md` layers:
 //!
 //! - `walk` is CSS 2.1 Appendix E: each stacking context collects its
 //!   descendants' backgrounds, floats, inline content, outlines, normal-flow

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The corpus harness (docs/ENGINE.md §10.5): how many frames of the tiny-agent episode 13 papercut project have nothing
+// The corpus harness (packages/cli/skills/kinetograph/references/ENGINE.md §10.5): how many frames of the tiny-agent episode 13 papercut project have nothing
 // unsupported, what the engine cannot draw yet, and how far the native frames are from the real thing.
 //
 //   node scripts/corpus.mjs                         coverage of all 988 frames (no GPU, about a minute)

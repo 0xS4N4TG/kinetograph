@@ -1,4 +1,4 @@
-// Turns the host tree into scene JSON (docs/AUTHORING.md §6.3). The host tree
+// Turns the host tree into scene JSON (packages/cli/skills/kinetograph/references/AUTHORING.md §6.3). The host tree
 // keeps each element's props as React gave them; everything the JSON needs
 // (automatic ids, the transform object, lifted motion-blur markers, text
 // concatenation) is worked out here, in one pass, each time a tree is asked
@@ -54,11 +54,11 @@ export interface RenderedTree {
   layers: LayerJson[];
   camera: CameraJson | null;
   audio: AudioClipJson[];
-  /** Every `<Sequence>` in the tree, showing or not, in tree order (docs/AUTHORING.md §11.4). */
+  /** Every `<Sequence>` in the tree, showing or not, in tree order (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
   /** What DOM elements in the tree ask for that compat mode cannot draw natively (kinetograph site, /docs/compat/). */
   unsupported: Unsupported[];
-  /** The least scene `margin` the DOM islands need for their blurs (docs/ENGINE.md §2); absent when none does. */
+  /** The least scene `margin` the DOM islands need for their blurs (packages/cli/skills/kinetograph/references/ENGINE.md §2); absent when none does. */
   margin?: number;
   /** `srgb` when any DOM island was painted for it (ENGINE.md §2); absent otherwise. */
   blendSpace?: 'srgb';
@@ -76,7 +76,7 @@ export interface EmitOptions {
   time?: () => number;
   /**
    * While the frame loop renders motion-blur sub-frames: the ids of the blurred layers, the only layers a sub-frame's
-   * tree is read for (docs/AUTHORING.md §7.3). What cannot hold one is left out of the tree then: a DOM island with no
+   * tree is read for (packages/cli/skills/kinetograph/references/AUTHORING.md §7.3). What cannot hold one is left out of the tree then: a DOM island with no
    * native element in it, a native element other than a `<Layer>`. Null for a whole tree.
    */
   subFrameLayers?: () => ReadonlySet<string> | null;
@@ -243,7 +243,7 @@ export function domFillOf(element: HostElement, insideDom = false): HostElement 
 
 /**
  * A DOM element with each `<Sequence>` inside it replaced by what is inside that (and, when `sequences` is given,
- * recorded there), so a Sequence takes no place in the paths (docs/AUTHORING.md §11.4). Native elements are kept as
+ * recorded there), so a Sequence takes no place in the paths (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). Native elements are kept as
  * they are: they are emitted on their own.
  */
 export function flattenDomElement(element: HostElement, path: string, sequences: SequenceJson[] | null): HostElement {
@@ -382,7 +382,7 @@ class Emitter {
   /**
    * Emits `nodes` into `out`. A `kg-sequence` is transparent: it is recorded in `sequences` (before what is inside it,
    * so the list is in tree order) and its children are emitted as if they stood where it does, taking no place in
-   * the index path themselves, so a `<Sequence>` never moves an automatic id (docs/AUTHORING.md §11.4).
+   * the index path themselves, so a `<Sequence>` never moves an automatic id (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4).
    */
   private collect(nodes: HostNode[], parentPath: string, parentName: string, out: LayerJson[], place: { next: number }): void {
     for (const node of nodes) {

@@ -1,4 +1,4 @@
-//! `<canvas>` (docs/SCENE.md, "canvas"): the commands a 2D context drew, put by the TS side in `data-kg-canvas`, are
+//! `<canvas>` (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"): the commands a 2D context drew, put by the TS side in `data-kg-canvas`, are
 //! one canvas layer in the painted scene. Each case is a file of Canvas 2D calls (`tests/canvas/<name>.js`) and the
 //! commands the recorder made of it (`<name>.json`, `tools/canvas-cases.mjs`). The page has both: Chrome runs the
 //! calls, which draw the canvas as Chrome does, and the engine paints the commands. The two pictures are compared

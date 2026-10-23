@@ -1,13 +1,13 @@
-// `@remotion/canvas` (docs/AUTHORING.md §7.5). Despite the name this is not a drawing API: it is the interactive canvas of
+// `@remotion/canvas` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5). Despite the name this is not a drawing API: it is the interactive canvas of
 // Remotion Studio's editor, "experimental primitives for building Remotion authoring interfaces": a `<Canvas>` that
 // wraps `@remotion/player` and lets a person hover, select and drag the outlines of sequences, plus the controllers,
 // keyframe and easing editing and snapping logic behind it. Everything in it is made of DOM pointer events, React DOM,
 // the Player, and the sequence registry and fast-refresh hooks of Remotion Studio; it is never part of a video.
 //
 // Kinetograph renders video and has none of that (no Player, no Studio registry; its own studio is a separate app,
-// docs/AUTHORING.md §11.5). So every name the package exports is exported, so that a project which imports it bundles,
+// packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). So every name the package exports is exported, so that a project which imports it bundles,
 // and each one throws `UnsupportedApiError` when it is called or rendered, saying what it is. There is no Canvas 2D
-// involved: for drawing, `<Canvas draw>` and `getContext('2d')` are docs/AUTHORING.md §6.5.
+// involved: for drawing, `<Canvas draw>` and `getContext('2d')` are packages/cli/skills/kinetograph/references/AUTHORING.md §6.5.
 //
 // The published package is at 4.0.532; there is no 4.0.536 of it.
 

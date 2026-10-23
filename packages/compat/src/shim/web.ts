@@ -1,5 +1,5 @@
 // The browser globals a Remotion project commonly touches, as far as rendering is a pure function of (project, frame)
-// (docs/ENGINE.md §10): `window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, `document` queries over
+// (packages/cli/skills/kinetograph/references/ENGINE.md §10): `window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, `document` queries over
 // the host tree, `getComputedStyle`, the observers. There is no network and no clock: remote URLs fail with a message
 // that says so. `<canvas>` is the native 2D canvas (`./canvas.ts`). Installed in Node only where the globals are missing.
 

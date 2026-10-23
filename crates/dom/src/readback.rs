@@ -1,6 +1,6 @@
 //! What the DOM shim of the TS side asks the laid-out document: boxes for
 //! `offsetWidth`, `getBoundingClientRect`, `clientWidth`, `scrollHeight` and
-//! `ResizeObserver` (docs/ENGINE.md §2), and computed styles for
+//! `ResizeObserver` (packages/cli/skills/kinetograph/references/ENGINE.md §2), and computed styles for
 //! `getComputedStyle`.
 
 use std::collections::BTreeMap;

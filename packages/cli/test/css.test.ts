@@ -1,4 +1,4 @@
-// `.css` imports (docs/ENGINE.md §1): imports inlined, urls made absolute, Tailwind built by the project's own, CSS
+// `.css` imports (packages/cli/skills/kinetograph/references/ENGINE.md §1): imports inlined, urls made absolute, Tailwind built by the project's own, CSS
 // modules scoped; and what the bundle does with them.
 
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';

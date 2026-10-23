@@ -1,11 +1,11 @@
 # phase1
 
 **Status:** stable
-**Paths:** `crates/**`, `examples/**`, `assets/**`, `docs/SCENE.md`
+**Paths:** `crates/**`, `examples/**`, `assets/**`, `packages/cli/skills/kinetograph/references/SCENE.md`
 **Last touched:** 2026-10-14
 
 ## What this is
-HANDOFF §8 Phase 1: Rust workspace, GPU compositor with shape/text/image/group layers, blur, blend modes, PNG `still`, `bench`. Input is a JSON scene graph (docs/SCENE.md), the shape Phase 3's reconciler will emit.
+HANDOFF §8 Phase 1: Rust workspace, GPU compositor with shape/text/image/group layers, blur, blend modes, PNG `still`, `bench`. Input is a JSON scene graph (packages/cli/skills/kinetograph/references/SCENE.md), the shape Phase 3's reconciler will emit.
 
 ## Current state
 - crates/core (kinetograph-core), crates/cli (binary `kinetograph`: `still`, `bench`, both `--json`).
@@ -31,4 +31,4 @@ HANDOFF §8 Phase 1: Rust workspace, GPU compositor with shape/text/image/group 
 ## Key files
 - crates/core/src/{scene,resolve,anim,render,compositor,blur,text}.rs, crates/core/src/shaders/
 - examples/papercut-card.json, crates/core/tests/golden/
-- docs/SCENE.md
+- packages/cli/skills/kinetograph/references/SCENE.md

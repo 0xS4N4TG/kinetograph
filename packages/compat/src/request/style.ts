@@ -1,4 +1,4 @@
-// A `style` prop as CSS declaration text, by React DOM's rules (docs/ENGINE.md §2, `DomNode::Element::style`):
+// A `style` prop as CSS declaration text, by React DOM's rules (packages/cli/skills/kinetograph/references/ENGINE.md §2, `DomNode::Element::style`):
 //  - null, undefined, booleans and empty strings leave the property out;
 //  - a number gets `px`, except 0, custom properties (`--x`) and the unitless properties below;
 //  - camelCase becomes kebab-case (`backgroundColor` → `background-color`), `WebkitX` → `-webkit-x`, `msX` → `-ms-x`,

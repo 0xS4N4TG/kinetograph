@@ -1,4 +1,4 @@
-// A script changing the tree (docs/ENGINE.md §1, "Readback"): a library that mounts its own nodes with appendChild,
+// A script changing the tree (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"): a library that mounts its own nodes with appendChild,
 // prepend and insertBefore, makes elements with document.createElement, puts a <style> in document.head, and watches with
 // a MutationObserver; Range boxes and SVG character positions. The addon is a stand-in that lays each element out from its
 // inline width/height (px), a text range 8 px per character, and records the requests it is sent.

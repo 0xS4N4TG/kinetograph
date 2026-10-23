@@ -48,7 +48,7 @@ const Main = () => (
 registerRoot(() => <Composition id="Main" component={Main} width={64} height={36} fps={30} durationInFrames={200} />);
 `;
 
-// CSS transitions (docs/ENGINE.md §7.12): a frame's look depends on the frames before it, which a worker that starts a
+// CSS transitions (packages/cli/skills/kinetograph/references/ENGINE.md §7.12): a frame's look depends on the frames before it, which a worker that starts a
 // chunk on its own has to reach by replaying them. The levels change at frames 55, 100 and 150 and each fade takes a
 // second (30 frames), so chunk starts land before, inside and after a fade.
 const FADES = `

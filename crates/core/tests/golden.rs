@@ -82,7 +82,7 @@ fn check(name: &str, frame: &Frame) {
 #[test]
 fn filter_graphs_match_golden() {
     // 39 SVG filters on one source, in a grid, checked against Chrome's
-    // rendering of the same <filter> elements (docs/SCENE.md, "filterGraph").
+    // rendering of the same <filter> elements (packages/cli/skills/kinetograph/references/SCENE.md, "filterGraph").
     let frame = render_still(scene("tests/scenes/filter-graph.json"), 0).unwrap();
     check("filter-graph", &frame);
 }
@@ -128,7 +128,7 @@ fn track_mattes_match_golden() {
 #[test]
 fn canvas_commands_match_golden() {
     // Fills, strokes, gradients, a clip, composite operations, pixels, a canvas
-    // drawn into a canvas and text, in one canvas layer (docs/SCENE.md, "canvas").
+    // drawn into a canvas and text, in one canvas layer (packages/cli/skills/kinetograph/references/SCENE.md, "canvas").
     let frame = render_still(scene("tests/scenes/canvas.json"), 0).unwrap();
     check("canvas", &frame);
 }
@@ -137,7 +137,7 @@ fn canvas_commands_match_golden() {
 fn canvas_shadows_and_filters_match_golden() {
     // Soft and hard shadows, and each `filter` function, in one canvas layer;
     // the same commands the dom crate's `canvas_effects` case checks against
-    // Chrome (docs/SCENE.md, "canvas").
+    // Chrome (packages/cli/skills/kinetograph/references/SCENE.md, "canvas").
     let frame = render_still(scene("tests/scenes/canvas-effects.json"), 0).unwrap();
     check("canvas-effects", &frame);
 }
@@ -146,7 +146,7 @@ fn canvas_shadows_and_filters_match_golden() {
 fn scene3d_primitives_match_golden() {
     // Frame 15 of 30: halfway through the box and cylinder turning. A box, a
     // sphere, a cylinder, a cone and a torus on a plane, under an ambient
-    // and a directional light (docs/SCENE.md, "scene3d").
+    // and a directional light (packages/cli/skills/kinetograph/references/SCENE.md, "scene3d").
     let frame = render_still(scene("tests/scenes/scene3d-primitives.json"), 15).unwrap();
     check("scene3d-primitives", &frame);
 }
@@ -609,7 +609,7 @@ fn transitions_match_golden() {
     // Frames of @remotion/transitions presentations (two scenes, each a
     // gradient with a few shapes, 40 frames of transition, linear timing) and
     // of @remotion/light-leaks and @remotion/starburst, emitted by the
-    // project's own TypeScript (shader groups, docs/SCENE.md) and checked
+    // project's own TypeScript (shader groups, packages/cli/skills/kinetograph/references/SCENE.md) and checked
     // against Remotion 4.0.536 in Chrome for Testing: the mean difference over
     // the picture was 0.25 of 255 or less, and no pixel was more than 48 off,
     // for cross-zoom at progress 0.25, film-burn and book-flip at 0.5, ripple

@@ -1,4 +1,4 @@
-// `<RemotionRiveCanvas>` (docs/AUTHORING.md §7.6) on the addon's Rive runtime and the tiny `volume_bars.riv` (MIT, from
+// `<RemotionRiveCanvas>` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6) on the addon's Rive runtime and the tiny `volume_bars.riv` (MIT, from
 // rive-app/rive-runtime): three dark bars on a 96 x 47 artboard whose heights animate.
 
 import { join } from 'node:path';

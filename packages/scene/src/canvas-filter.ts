@@ -1,6 +1,6 @@
 // The CSS `filter` strings a Canvas 2D context takes (`ctx.filter`): `none`, or a list of `blur()`, `brightness()`,
 // `contrast()`, `drop-shadow()`, `grayscale()`, `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`.
-// They become the functions the renderer runs (docs/SCENE.md, "canvas"), which are the passes of the scene's effects
+// They become the functions the renderer runs (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), which are the passes of the scene's effects
 // of the same names. A `url()` reference is a valid value the renderer cannot draw; the rest of the list is.
 
 import { parseCssColor, toSceneColor } from './canvas-color.js';

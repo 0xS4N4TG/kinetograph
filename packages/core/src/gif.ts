@@ -1,4 +1,4 @@
-// `@remotion/gif` (docs/AUTHORING.md §11.3): the native <Gif> element and
+// `@remotion/gif` (packages/cli/skills/kinetograph/references/AUTHORING.md §11.3): the native <Gif> element and
 // `getGifDurationInSeconds`, which reads the sum of the pictures' delays from the file's header (`probeMedia`).
 
 import type { ReactNode } from 'react';

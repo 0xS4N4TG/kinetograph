@@ -32,7 +32,7 @@ export interface IslandResult {
   unsupported: Unsupported[];
   /** From a `perspective` property. */
   camera: CameraJson | null;
-  /** The least scene `margin` (pixels) the island needs, for the blurs that reach past their layers (docs/ENGINE.md §2). */
+  /** The least scene `margin` (pixels) the island needs, for the blurs that reach past their layers (packages/cli/skills/kinetograph/references/ENGINE.md §2). */
   margin?: number;
   /** The scene's `blendSpace` the island is painted for (ENGINE.md §2). */
   blendSpace?: 'linear' | 'srgb';

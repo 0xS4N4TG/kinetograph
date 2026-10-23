@@ -1,7 +1,7 @@
 //! Rive files (`.riv`) played to the commands of a `canvas` layer.
 //!
 //! `Riv` reads a file once; `Riv::frame` plays it to a time and returns what a
-//! canvas of the given size draws (docs/SCENE.md, "canvas"). Each call starts
+//! canvas of the given size draws (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"). Each call starts
 //! from a fresh artboard and animation, so a frame is a pure function of the
 //! file, the choices and the time, whatever was played before it.
 

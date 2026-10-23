@@ -1,4 +1,4 @@
-// `.css` imports (docs/ENGINE.md §1; kinetograph site, /docs/compat/): the bundle collects each imported stylesheet's text, with its
+// `.css` imports (packages/cli/skills/kinetograph/references/ENGINE.md §1; kinetograph site, /docs/compat/): the bundle collects each imported stylesheet's text, with its
 // local `@import`s inlined and its relative `url()`s made absolute, and hands it to the DOM engine as a stylesheet.
 // Tailwind's own `@tailwind` / `@import "tailwindcss"` files are built with the project's Tailwind when it has one;
 // CSS modules (`*.module.css`) get their class names scoped and exported.

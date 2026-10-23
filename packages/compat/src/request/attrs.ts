@@ -1,4 +1,4 @@
-// A React element's props as the attributes the DOM would have (docs/ENGINE.md §2, `DomNode::Element::attrs`).
+// A React element's props as the attributes the DOM would have (packages/cli/skills/kinetograph/references/ENGINE.md §2, `DomNode::Element::attrs`).
 // React DOM's rules: `className` → `class`, `htmlFor` → `for`, SVG presentation props camelCase → kebab-case
 // (`strokeWidth` → `stroke-width`) while the SVG attributes that are camelCase in the DOM keep their case
 // (`viewBox`, `gradientUnits`, `stdDeviation`, …), HTML attribute names in lower case, booleans, numbers as text.

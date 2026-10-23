@@ -1,5 +1,5 @@
 // Shaders that draw natively: WebGL code written as a page writes it runs against a recording context, which the
-// renderer replays on the GPU with the same GLSL (docs/AUTHORING.md §6.7). The few steps every full-screen shader of the
+// renderer replays on the GPU with the same GLSL (packages/cli/skills/kinetograph/references/AUTHORING.md §6.7). The few steps every full-screen shader of the
 // core takes (a context, a program, a quad) are here.
 
 import { createWebGLContext, type GL, type GL2, type WebGLContext, type WebGLContextAttributesLike } from '@kinetograph/scene';

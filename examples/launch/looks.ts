@@ -1,4 +1,4 @@
-// The film's looks, as layer effects: a CRT tube and a VHS tape (WGSL shaders of our own, docs/SCENE.md "shader"), and
+// The film's looks, as layer effects: a CRT tube and a VHS tape (WGSL shaders of our own, packages/cli/skills/kinetograph/references/SCENE.md "shader"), and
 // 1-bit, thermal and depth-map grades built from the engine's own effects. Each is a function of the frame and its
 // arguments only, so a look is a pure part of the picture like everything else.
 

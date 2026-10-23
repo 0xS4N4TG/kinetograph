@@ -1947,7 +1947,7 @@ usually the same at every sub-frame (a wall of cards that only moves as one), an
 
 ## Boxes from the DOM painter
 
-The painter of the full engine (`crates/dom/src/paint`, docs/ENGINE.md section 8) writes CSS boxes as the layers above
+The painter of the full engine (`crates/dom/src/paint`, packages/cli/skills/kinetograph/references/ENGINE.md section 8) writes CSS boxes as the layers above
 and needs these fields, all optional, all new. Existing scenes do not change.
 
 ### Glyph runs

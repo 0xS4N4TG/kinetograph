@@ -1,6 +1,6 @@
 //! The Node-API addon (`@kinetograph/native`): the Rust core as a Node
 //! module. Scenes cross as JSON strings and pixels stay in Rust. The JS API
-//! is specified in `docs/AUTHORING.md` §3.
+//! is specified in `packages/cli/skills/kinetograph/references/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
 //! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `riveFrame`,
@@ -196,7 +196,7 @@ pub fn parse_range(range: String, duration_in_frames: f64) -> Result<Vec<u32>> {
     Ok(vec![first, last])
 }
 
-/// What `probeMedia` reads from a video's or GIF's header (docs/AUTHORING.md §11.2).
+/// What `probeMedia` reads from a video's or GIF's header (packages/cli/skills/kinetograph/references/AUTHORING.md §11.2).
 #[napi(object)]
 pub struct MediaInfo {
     /// `video` or `gif`.
@@ -239,7 +239,7 @@ pub struct ModelUnsupported {
 }
 
 /// Reads a glTF or GLB model and lists what it uses that the 3D layer does not
-/// read (docs/SCENE.md, "scene3d"); a file that cannot be read is an error.
+/// read (packages/cli/skills/kinetograph/references/SCENE.md, "scene3d"); a file that cannot be read is an error.
 #[napi]
 pub fn model_unsupported(src: String, base_dir: Option<String>) -> Result<Vec<ModelUnsupported>> {
     // Only the glTF's JSON and buffers are read: the pictures are not decoded.
@@ -261,7 +261,7 @@ pub fn layout_dom(request_json: String) -> Result<String> {
     dom::layout_dom(&request_json)
 }
 
-/// One DOM island at one frame (docs/ENGINE.md §2): an `IslandRequest` as
+/// One DOM island at one frame (packages/cli/skills/kinetograph/references/ENGINE.md §2): an `IslandRequest` as
 /// JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
 /// Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
 /// painted as scene layers. CPU only.
@@ -285,7 +285,7 @@ pub fn finish_dom_island(ticket: u32) -> Result<String> {
     dom::finish_island(ticket)
 }
 
-/// The boxes of every element of a DOM island (docs/ENGINE.md §2): an
+/// The boxes of every element of a DOM island (packages/cli/skills/kinetograph/references/ENGINE.md §2): an
 /// `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
 /// scroll } }` as JSON out. `x`..`height` are the border box where layout put
 /// it, `rect` the transformed bounding box `getBoundingClientRect` gives.
@@ -306,7 +306,7 @@ pub fn dom_computed_style(
 }
 
 /// A Rive file (`.riv`) played to a time, as the commands of a canvas layer
-/// (docs/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
+/// (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
 /// time, width, height, fit, alignment }` as JSON in, the commands as a JSON
 /// array out. CPU only; the file is read once.
 #[napi]
@@ -316,7 +316,7 @@ pub fn rive_frame(request_json: String) -> Result<String> {
 
 // ---- GPU ----
 
-/// A Canvas 2D context's commands drawn on a transparent canvas (docs/SCENE.md,
+/// A Canvas 2D context's commands drawn on a transparent canvas (packages/cli/skills/kinetograph/references/SCENE.md,
 /// "canvas"): `{ width, height, commands, fonts, baseDir, format }` as JSON in,
 /// straight-alpha RGBA (`format: "rgba"`, the default) or a PNG out. For
 /// `getImageData` and `toDataURL`; opens the GPU for each call.
@@ -380,7 +380,7 @@ pub struct AudioPcm {
     pub channels: Vec<Float32Array>,
 }
 
-/// `render`'s export options (docs/AUTHORING.md §9); everything left out takes its default.
+/// `render`'s export options (packages/cli/skills/kinetograph/references/AUTHORING.md §9); everything left out takes its default.
 #[napi(object)]
 pub struct ExportOptions {
     /// `h264` (default; `vp9` for `.webm` and `gif` for `.gif` paths), `h265`, `prores`, `vp9` or `gif`.

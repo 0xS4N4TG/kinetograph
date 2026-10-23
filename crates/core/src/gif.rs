@@ -3,7 +3,7 @@
 //! A GIF is decoded once, when a renderer opens it, into its full-screen
 //! pictures (the `image` crate composes each frame over the ones before it by
 //! the frame's disposal method), and the picture for a time is picked by the
-//! frame delays (`docs/SCENE.md`, "gif"). All the pictures stay in memory.
+//! frame delays (`packages/cli/skills/kinetograph/references/SCENE.md`, "gif"). All the pictures stay in memory.
 
 use std::collections::HashMap;
 use std::fs::File;

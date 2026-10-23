@@ -1,6 +1,6 @@
 // The browser types `@remotion/timeline-utils` is written against (`HTMLCanvasElement`, `OffscreenCanvas`,
 // `VideoFrame`, mediabunny's tracks), as the little each function uses. The library has no DOM types, and these are
-// what Kinetograph's `<canvas>` and `OffscreenCanvas` (docs/AUTHORING.md §6.5) answer to.
+// what Kinetograph's `<canvas>` and `OffscreenCanvas` (packages/cli/skills/kinetograph/references/AUTHORING.md §6.5) answer to.
 
 export interface ImageDataLike {
   readonly data: Uint8ClampedArray;

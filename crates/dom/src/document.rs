@@ -446,7 +446,7 @@ fn transform_changes(
     Some(moved)
 }
 
-/// The islands of one motion-blurred frame's samples (docs/SCENE.md, "Motion
+/// The islands of one motion-blurred frame's samples (packages/cli/skills/kinetograph/references/SCENE.md, "Motion
 /// blur"). A layer is drawn at several moments of the same frame, and its
 /// islands differ in a few styles (a transform, an opacity) while their
 /// structure, text and sheets stay. The document of an earlier sample is

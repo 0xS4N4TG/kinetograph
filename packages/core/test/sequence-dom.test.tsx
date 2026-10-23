@@ -1,5 +1,5 @@
 // A <Sequence> is an AbsoluteFill in Remotion: with DOM inside it (or around it) it is that `div`, in the same CSS tree
-// as its surroundings, so a flex-centered AbsoluteFill does not move it (docs/ENGINE.md §10.1).
+// as its surroundings, so a flex-centered AbsoluteFill does not move it (packages/cli/skills/kinetograph/references/ENGINE.md §10.1).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setDomAddon } from '@kinetograph/compat/dom';

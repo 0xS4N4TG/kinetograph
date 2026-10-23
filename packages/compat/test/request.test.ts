@@ -1,4 +1,4 @@
-// DomNode → IslandRequest (docs/ENGINE.md §2): React's style and attribute rules, paths, text, native boxes, `<style>`.
+// DomNode → IslandRequest (packages/cli/skills/kinetograph/references/ENGINE.md §2): React's style and attribute rules, paths, text, native boxes, `<style>`.
 
 import { describe, expect, it } from 'vitest';
 import { attributesOf } from '../src/request/attrs.js';

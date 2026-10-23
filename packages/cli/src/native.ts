@@ -28,7 +28,7 @@ export function setNativeForTests(stub: Native | undefined): void {
   loaded = stub;
 }
 
-// ---- InspectResult (docs/AUTHORING.md §3), which the addon returns as JSON text ----
+// ---- InspectResult (packages/cli/skills/kinetograph/references/AUTHORING.md §3), which the addon returns as JSON text ----
 
 export interface InspectLayer {
   id: string;

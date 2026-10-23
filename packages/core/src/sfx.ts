@@ -1,4 +1,4 @@
-// `@remotion/sfx` (docs/AUTHORING.md §7.5): a list of sound-effect files that remotion.media serves. Each export is
+// `@remotion/sfx` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5): a list of sound-effect files that remotion.media serves. Each export is
 // the file's URL, for `<Audio src={whip} />`, and the values are the published package's, so a project that prints or
 // compares one sees what it would under Remotion. Kinetograph renders offline, so the mix does not fetch them: it asks
 // `resolveSoundSource` (./sound-source.ts) for a local copy, downloaded once into `~/.cache/kinetograph/sfx`.

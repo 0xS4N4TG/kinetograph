@@ -1,7 +1,7 @@
 # phase2a
 
 **Status:** stable
-**Paths:** `crates/core/**`, `docs/SCENE.md`
+**Paths:** `crates/core/**`, `packages/cli/skills/kinetograph/references/SCENE.md`
 **Last touched:** 2026-10-14
 
 ## What this is
@@ -30,7 +30,7 @@ gradient fills, backdrop blur, glow, chromatic aberration, custom WGSL. Built in
 - crates/core/src/{scene,resolve,render,compositor,color}.rs, src/tests.rs
 - crates/core/src/shaders/{composite,shadow,color,...}.wgsl
 - crates/core/tests/{golden,render}.rs, crates/core/tests/scenes/*.json
-- docs/SCENE.md
+- packages/cli/skills/kinetograph/references/SCENE.md
 
 ## Recent sessions
 - 2026-10-14-m4-verify-and-merge — M4 tests + goldens, papercut demo + bench, 2c planned, merged as PR #2

@@ -1,7 +1,7 @@
 # @kinetograph/native
 
 The Node-API addon over the Rust core: validate, inspect and measure scenes on the CPU, and render them on the GPU.
-Scenes cross as JSON strings (`docs/SCENE.md`); pixels stay in Rust. The API is specified in `docs/AUTHORING.md` §3
+Scenes cross as JSON strings (`packages/cli/skills/kinetograph/references/SCENE.md`); pixels stay in Rust. The API is specified in `packages/cli/skills/kinetograph/references/AUTHORING.md` §3
 and typed in `index.d.ts`, which `napi build` generates from `src/lib.rs`.
 
 - CPU only, safe anywhere: `version`, `validateScene`, `inspect`, `layoutText`, `parseRange`. They never open a GPU

@@ -1,5 +1,5 @@
 // @kinetograph/react: the react-reconciler host config that emits scene
-// JSON (`createSceneRoot`), the native elements (docs/AUTHORING.md §6) and
+// JSON (`createSceneRoot`), the native elements (packages/cli/skills/kinetograph/references/AUTHORING.md §6) and
 // the timeline context every component reads time from.
 
 export { TimelineContext, useTimeline } from './timeline.js';

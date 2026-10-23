@@ -1,5 +1,5 @@
 //! `riveFrame`: a Rive file (`.riv`) played to a time, as the commands of a
-//! canvas layer (docs/AUTHORING.md §7.6). CPU only: the Rive runtime animates
+//! canvas layer (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6). CPU only: the Rive runtime animates
 //! the artboard, and the canvas the commands go into is drawn with Skia like
 //! any other.
 

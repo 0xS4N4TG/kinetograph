@@ -1,6 +1,6 @@
 // Remotion's effect chain (`runEffectChain`) on recording canvases. In a browser each effect draws the picture of the
 // canvas before it onto the next canvas, with a 2D or WebGL 2 context, and the last canvas replaces the element's
-// picture. Here the pictures are layers and the canvases record (docs/SCENE.md, "Shader groups" and "Canvas passes"):
+// picture. Here the pictures are layers and the canvases record (packages/cli/skills/kinetograph/references/SCENE.md, "Shader groups" and "Canvas passes"):
 //
 //   - the element's content is drawn as a layer, `<id>-src`;
 //   - effect 1 is run on a recording canvas whose `source` is the picture of that layer (`layerPicture`); what it draws

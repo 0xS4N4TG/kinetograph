@@ -1,4 +1,4 @@
-// `@remotion/media` (docs/AUTHORING.md §11.3): its `<Audio>` and `<Video>` are this repo's, which take the same props.
+// `@remotion/media` (packages/cli/skills/kinetograph/references/AUTHORING.md §11.3): its `<Audio>` and `<Video>` are this repo's, which take the same props.
 
 import { AUDIO_DATA_SAMPLE_RATE } from './media-utils.js';
 

@@ -1,4 +1,4 @@
-// An <AbsoluteFill>'s layer mapping that holds DOM elements is drawn as the `div` it is in Remotion (docs/ENGINE.md §10):
+// An <AbsoluteFill>'s layer mapping that holds DOM elements is drawn as the `div` it is in Remotion (packages/cli/skills/kinetograph/references/ENGINE.md §10):
 // the island's root is that flex column, its children are the layer's, and the paths stay where they were.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

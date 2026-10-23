@@ -1,4 +1,4 @@
-// `@remotion/media-utils` (docs/AUTHORING.md §11.3): `getVideoMetadata`, read
+// `@remotion/media-utils` (packages/cli/skills/kinetograph/references/AUTHORING.md §11.3): `getVideoMetadata`, read
 // from the file's header by the addon's `probeMedia`. Nothing is decoded.
 //
 // The addon is found the way `layout-utils` finds `layoutText`: the host hands it over with `setMediaProbe`, and
@@ -85,7 +85,7 @@ export async function getVideoMetadata(src: string): Promise<VideoMetadata> {
   };
 }
 
-// ---- Audio data (docs/AUTHORING.md §11.7) ----
+// ---- Audio data (packages/cli/skills/kinetograph/references/AUTHORING.md §11.7) ----
 //
 // `getAudioData` and its hooks decode the whole file once with the addon's `decodeAudio` (ffmpeg: any file with an
 // audio stream, video files included) at a fixed 48 kHz, and keep it per `src`. Decoding is synchronous, so

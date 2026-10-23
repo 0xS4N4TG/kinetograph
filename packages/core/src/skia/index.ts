@@ -1,4 +1,4 @@
-// `@remotion/skia` and `@shopify/react-native-skia` (docs/AUTHORING.md §7.7): the components of RN-Skia's `<Canvas>`
+// `@remotion/skia` and `@shopify/react-native-skia` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7): the components of RN-Skia's `<Canvas>`
 // drawn by real Skia, in the optional `@kinetograph/skia` addon, with its CPU rasteriser.
 
 export { Canvas, SkiaCanvas, useCanvasRef, type CanvasProps } from './canvas.js';

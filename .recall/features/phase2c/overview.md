@@ -1,7 +1,7 @@
 # phase2c
 
 **Status:** active
-**Paths:** `crates/core/**`, `crates/cli/**`, `examples/bench-diorama.json`, `docs/SCENE.md`, `README.md`
+**Paths:** `crates/core/**`, `crates/cli/**`, `examples/bench-diorama.json`, `packages/cli/skills/kinetograph/references/SCENE.md`, `README.md`
 **Last touched:** 2026-10-14
 
 ## What this is

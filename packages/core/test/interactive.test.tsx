@@ -1,4 +1,4 @@
-// <Track>, Interactive, and the crop and timing props they share (docs/AUTHORING.md §7.1). The schemas and the crop
+// <Track>, Interactive, and the crop and timing props they share (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1). The schemas and the crop
 // clip-path are recorded from the published package (fixtures/interactivity-schema.json, fixtures/crop-style.json).
 
 import { createElement } from 'react';

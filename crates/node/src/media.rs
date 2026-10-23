@@ -1,4 +1,4 @@
-//! `probeMedia` and `decodeAudio` (docs/AUTHORING.md §11.2): CPU-only reads of
+//! `probeMedia` and `decodeAudio` (packages/cli/skills/kinetograph/references/AUTHORING.md §11.2): CPU-only reads of
 //! video and GIF files through FFmpeg and the `image` crate.
 
 use std::path::Path;

@@ -1,4 +1,4 @@
-// The usual hold-the-frame-until-the-picture-loads pattern: delayRender() released in <img onLoad> (docs/ENGINE.md §10.3).
+// The usual hold-the-frame-until-the-picture-loads pattern: delayRender() released in <img onLoad> (packages/cli/skills/kinetograph/references/ENGINE.md §10.3).
 
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

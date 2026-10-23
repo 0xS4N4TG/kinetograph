@@ -1,4 +1,4 @@
-// The addon functions DOM islands need (docs/ENGINE.md §2), handed over by the host or found when first needed (a
+// The addon functions DOM islands need (packages/cli/skills/kinetograph/references/ENGINE.md §2), handed over by the host or found when first needed (a
 // project with no DOM elements does not need the addon). A bundle in a project's cache may sit where `require` cannot
 // reach `@kinetograph/native`; the CLI then calls `setDomAddon(native)` itself.
 

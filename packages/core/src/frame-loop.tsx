@@ -1,4 +1,4 @@
-// The frame loop (docs/AUTHORING.md §7.3): one composition, one `SceneRoot`
+// The frame loop (packages/cli/skills/kinetograph/references/AUTHORING.md §7.3): one composition, one `SceneRoot`
 // kept across frames (as a Remotion tab keeps its page), and for each frame
 //
 //   1. move the virtual clock to the frame (timers and animation frames run),
@@ -40,7 +40,7 @@ import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js'
 export interface FrameResult {
   scene: SceneJson;
   audio: AudioClipJson[];
-  /** Every `<Sequence>` in the frame's tree, showing or not (docs/AUTHORING.md §11.4). */
+  /** Every `<Sequence>` in the frame's tree, showing or not (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
   /** Empty when the engine draws everything in the frame; otherwise what it leaves out or approximates (kinetograph site, /docs/compat/). */
   unsupported: Unsupported[];
@@ -153,7 +153,7 @@ class Renderer implements FrameRenderer {
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
     }
-    // CSS transitions need the states of the islands before this frame (docs/ENGINE.md §7.12). A frame has the
+    // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph/references/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
     // else renders the frames of the window again, with the addon off, to see them.
     const window = Math.ceil(transitionWindowSeconds() * config.fps);

@@ -1,4 +1,4 @@
-// The react-reconciler host config and `createSceneRoot` (docs/AUTHORING.md
+// The react-reconciler host config and `createSceneRoot` (packages/cli/skills/kinetograph/references/AUTHORING.md
 // §6.1). The host tree is plain data: elements keep their props, and `emit`
 // reads them out as scene JSON when a tree is asked for. Mutation mode, one
 // synchronous render per call, every update at the highest priority so that
@@ -108,7 +108,7 @@ const hostConfig = {
   },
   finalizeInitialChildren: () => false,
   shouldSetTextContent: () => false,
-  // A ref to a DOM element is an object that answers like one for measurement (docs/ENGINE.md §1, "Readback").
+  // A ref to a DOM element is an object that answers like one for measurement (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback").
   getPublicInstance: (instance: HostNode) => {
     if (instance.kind !== 'element' || !isDomElement(instance.type)) return instance;
     const container = hostMeta.get(instance)?.container;

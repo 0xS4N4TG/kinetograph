@@ -1,5 +1,5 @@
 // `@remotion/light-leaks`: a warm, drifting light leak that grows over a scene and retracts again. `<LightLeak>` is the
-// component (a WebGL shader over the composition, run natively as a recorded draw, docs/AUTHORING.md §6.7);
+// component (a WebGL shader over the composition, run natively as a recorded draw, packages/cli/skills/kinetograph/references/AUTHORING.md §6.7);
 // `lightLeak()` is the same leak as an effect of a layer, which paints it over what the layer holds.
 
 import type { ReactNode } from 'react';

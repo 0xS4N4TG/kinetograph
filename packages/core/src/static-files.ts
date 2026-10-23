@@ -1,4 +1,4 @@
-// `getStaticFiles`, `watchStaticFile` and `prefetch` (docs/AUTHORING.md §7.1): Remotion's calls about the files of the
+// `getStaticFiles`, `watchStaticFile` and `prefetch` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1): Remotion's calls about the files of the
 // public folder. A project's files are on disk and nothing changes while it renders, so listing them is a directory
 // read, watching one is a Studio-only no-op, and prefetching one is already done.
 

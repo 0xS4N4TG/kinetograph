@@ -9,7 +9,7 @@ interface SceneLayer {
 
 /**
  * The timeline of a composition: its JS stage run for every frame (no addon), with the Sequences and the layers the
- * frames show folded into one list each (docs/AUTHORING.md §11.5).
+ * frames show folded into one list each (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5).
  */
 export async function sweepTimeline(
   engine: Engine,

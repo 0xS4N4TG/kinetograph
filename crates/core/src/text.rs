@@ -63,7 +63,7 @@ impl LaidOutText {
             .collect()
     }
 
-    /// The text box (`docs/SCENE.md`, "Clip paths"): `max_width`, or the
+    /// The text box (`packages/cli/skills/kinetograph/references/SCENE.md`, "Clip paths"): `max_width`, or the
     /// widest line without one, by the height.
     pub fn box_size(&self, max_width: Option<f32>) -> (f64, f64) {
         (

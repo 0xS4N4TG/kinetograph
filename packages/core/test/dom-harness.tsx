@@ -1,5 +1,5 @@
 // Renders React with DOM elements through a fake DOM island renderer, and keeps what was sent to it: the request is
-// the tree the CSS engine would be asked to lay out (docs/ENGINE.md §10.1).
+// the tree the CSS engine would be asked to lay out (packages/cli/skills/kinetograph/references/ENGINE.md §10.1).
 
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach } from 'vitest';

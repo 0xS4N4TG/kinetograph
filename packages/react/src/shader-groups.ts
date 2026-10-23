@@ -1,4 +1,4 @@
-// Shader groups (docs/SCENE.md, "Shader groups"): a group with a `glsl` pass samples its children. A texture of the pass
+// Shader groups (packages/cli/skills/kinetograph/references/SCENE.md, "Shader groups"): a group with a `glsl` pass samples its children. A texture of the pass
 // may name a layer that is somewhere else in the tree (a shader transition mixes the scene going out, which another
 // `<Sequence>` holds, with the one coming in); this moves such a layer in as a child of the group, so the renderer finds
 // every texture among the group's own children.

@@ -126,7 +126,7 @@ describe('Freeze', () => {
   });
 });
 
-// ---- the DOM elements they are with any other key, or with DOM inside them (docs/ENGINE.md §10.1) ----
+// ---- the DOM elements they are with any other key, or with DOM inside them (packages/cli/skills/kinetograph/references/ENGINE.md §10.1) ----
 
 /** Renders in the 1280 x 720 composition of the harness, as the frame loop makes its root. */
 function renderDom(node: ReactNode) {
@@ -243,7 +243,7 @@ describe('as DOM elements', () => {
         </AbsoluteFill>
       </AbsoluteFill>,
     );
-    // The fills hold DOM, so they are one island (docs/ENGINE.md §10): the outer `div`, the Rect a box inside it, and
+    // The fills hold DOM, so they are one island (packages/cli/skills/kinetograph/references/ENGINE.md §10): the outer `div`, the Rect a box inside it, and
     // the inner fill its absolutely positioned `div`: out of the column's flow, as in CSS.
     expect(sent).toHaveLength(1);
     const [rect, inner] = sent[0].root.children;

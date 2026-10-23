@@ -72,7 +72,7 @@ Counts for the `import` rows come from loading the built modules in Node. The Re
 2. **Run doctor.** `npx kinetograph doctor src/index.ts` goes through every frame without the GPU. It lists each element and property the engine can't draw, and the frames it happens on.
 3. **Fix each finding.**
    - Tooling imports (`player`, `renderer`, `bundler`, `lambda`): remove them and use the CLI. `remotion render` becomes `kinetograph render <entry> --comp <id> -o out.mp4`, and `remotion studio` becomes `kinetograph studio <entry>`.
-   - `@remotion/three`: rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [Authoring](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 6.6.
+   - `@remotion/three`: rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [Authoring](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6.
    - `IFrame`: rebuild the page as components, or use a screenshot.
    - A CSS property or element in the report: change it to one the engine draws, or remove it.
 4. **Lint and look.** `kinetograph lint src/index.ts`, then `kinetograph strip src/index.ts -n 12 -o out/strip.png` and open the picture.

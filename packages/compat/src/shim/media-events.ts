@@ -1,5 +1,5 @@
 // `onLoad` / `onError` of an `<img>` and `onLoadedMetadata`, `onLoadedData`, `onCanPlay` of a `<video>` or `<audio>`
-// (docs/ENGINE.md §10.3). In a browser they fire when the file has loaded; a project that holds the frame with
+// (packages/cli/skills/kinetograph/references/ENGINE.md §10.3). In a browser they fire when the file has loaded; a project that holds the frame with
 // `delayRender()` and releases it in such a handler would wait for ever here, because nothing is downloaded. The files
 // are local and read at once, so the events are delivered when React's work on the frame is done, once per `src`.
 

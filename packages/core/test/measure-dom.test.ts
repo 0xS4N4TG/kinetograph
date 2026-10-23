@@ -1,4 +1,4 @@
-// measureText and fitText through the DOM engine (docs/ENGINE.md §10): the box of a `span`, as Remotion asks Chrome.
+// measureText and fitText through the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §10): the box of a `span`, as Remotion asks Chrome.
 
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';

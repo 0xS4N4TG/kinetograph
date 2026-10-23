@@ -23,7 +23,7 @@ struct Cli {
 enum Command {
     /// Render one frame of a scene to a PNG
     Still {
-        /// Scene JSON file (see docs/SCENE.md)
+        /// Scene JSON file (see packages/cli/skills/kinetograph/references/SCENE.md)
         scene: PathBuf,
         /// Frame number, 0-based
         #[arg(allow_negative_numbers = true)]
@@ -37,7 +37,7 @@ enum Command {
     },
     /// Render frames of a scene to an H.264 video (.mp4 or .mov)
     Render {
-        /// Scene JSON file (see docs/SCENE.md)
+        /// Scene JSON file (see packages/cli/skills/kinetograph/references/SCENE.md)
         scene: PathBuf,
         /// Output video path; the extension picks the container
         #[arg(short, long)]
@@ -59,7 +59,7 @@ enum Command {
     /// Time the render stages of one frame on a warm renderer, or of
     /// successive frames with the layer cache on
     Bench {
-        /// Scene JSON file (see docs/SCENE.md)
+        /// Scene JSON file (see packages/cli/skills/kinetograph/references/SCENE.md)
         scene: PathBuf,
         /// Frame number, 0-based. It is rendered over and over, so the layer
         /// cache is off (on, only the cache would be timed)

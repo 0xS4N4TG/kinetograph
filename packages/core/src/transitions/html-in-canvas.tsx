@@ -1,8 +1,8 @@
 // `makeHtmlInCanvasPresentation`: a presentation drawn by a WebGL shader over the two scenes of a transition, the way the
 // published package draws its shader presentations (`blurSlide`, `crossZoom`, ...). There, a browser hands each scene to
 // the shader as the picture of an element drawn into a canvas. Here the shader is recorded, as any WebGL code is
-// (docs/AUTHORING.md §6.7), and the pictures are the two scenes' layers: the renderer draws each scene, uploads it as
-// the texture the shader samples, and runs the shader's own GLSL on the GPU (docs/SCENE.md, "Shader groups"). Nothing
+// (packages/cli/skills/kinetograph/references/AUTHORING.md §6.7), and the pictures are the two scenes' layers: the renderer draws each scene, uploads it as
+// the texture the shader samples, and runs the shader's own GLSL on the GPU (packages/cli/skills/kinetograph/references/SCENE.md, "Shader groups"). Nothing
 // here reads a clock; the picture is a function of the progress.
 
 import { useContext, type ReactNode } from 'react';

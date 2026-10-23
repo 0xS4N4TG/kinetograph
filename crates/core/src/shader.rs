@@ -3,7 +3,7 @@
 //!
 //! The scene supplies `fn effect(px: vec2<f32>) -> vec4<f32>`. The engine
 //! puts a prelude before it (the layer texture, the frame clock, the named
-//! uniforms) and the entry points after it. docs/SCENE.md describes what the
+//! uniforms) and the entry points after it. packages/cli/skills/kinetograph/references/SCENE.md describes what the
 //! prelude gives the user's code.
 
 use naga::{Module, Scalar, TypeInner, VectorSize};
@@ -141,7 +141,7 @@ pub fn validate(id: &str, code: &str, names: &[&str]) -> Result<()> {
     if own_binding {
         return bad(
             "must not declare bindings of its own (@group, @binding); the engine's are \
-                    listed in docs/SCENE.md"
+                    listed in packages/cli/skills/kinetograph/references/SCENE.md"
                 .into(),
         );
     }

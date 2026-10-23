@@ -1,4 +1,4 @@
-// The studio server (docs/AUTHORING.md §11.5): HTTP routes, the WebSocket, and the pieces they sit on. The project and
+// The studio server (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5): HTTP routes, the WebSocket, and the pieces they sit on. The project and
 // the renderer live in worker threads (`project.ts`, `render-queue.ts`); this thread only routes.
 
 import { existsSync } from 'node:fs';

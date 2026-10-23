@@ -1,7 +1,7 @@
-//! Inline SVG and SVG filters (docs/ENGINE.md §5, stream 3): an `<svg>` subtree
+//! Inline SVG and SVG filters (packages/cli/skills/kinetograph/references/ENGINE.md §5, stream 3): an `<svg>` subtree
 //! painted as scene layers, and the filter graph a CSS `filter: url(#id)` names.
 //!
-//! Stream 2's box painter calls two functions from here, see docs/ENGINE.md §9:
+//! Stream 2's box painter calls two functions from here, see packages/cli/skills/kinetograph/references/ENGINE.md §9:
 //!
 //! - [`paint_svg`] for an `<svg>` element's content, and
 //! - [`filter_graph`] for a `url(#id)` in a `filter` property.

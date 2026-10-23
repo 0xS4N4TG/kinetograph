@@ -1,4 +1,4 @@
-// `@kinetograph/compat/dom` (docs/ENGINE.md §1, §2): a DOM island is handed to the addon as an `IslandRequest`; Stylo,
+// `@kinetograph/compat/dom` (packages/cli/skills/kinetograph/references/ENGINE.md §1, §2): a DOM island is handed to the addon as an `IslandRequest`; Stylo,
 // taffy and Parley style and lay it out, our compositor paints it, and the layers come back as scene JSON. Native
 // (`kg-*`) elements inside the island are drawn here and put where Rust placed their boxes.
 
@@ -53,7 +53,7 @@ interface IslandOutputJson {
   delta?: boolean;
 }
 
-/** The pass in progress, or null (docs/SCENE.md, "Motion blur"). */
+/** The pass in progress, or null (packages/cli/skills/kinetograph/references/SCENE.md, "Motion blur"). */
 let samplePass: number | null = null;
 let passes = 0;
 /** The first layers each island drew in the pass, by path: the addon writes the later ones against them. */
@@ -170,7 +170,7 @@ function prepare(root: DomNode, context: IslandContext) {
   }
   if (INVISIBLE.has(root.type)) return null;
   const { request, natives } = requestFor(root, context);
-  // A CSS transition needs the island's earlier states (docs/ENGINE.md §7.12).
+  // A CSS transition needs the island's earlier states (packages/cli/skills/kinetograph/references/ENGINE.md §7.12).
   noteTransitions(request.root, request.stylesheets);
   const history = historyFor(request.path, request.time);
   recordIsland(request.path, request.time, request.root);

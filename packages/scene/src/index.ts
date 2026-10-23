@@ -1,5 +1,5 @@
-// @kinetograph/scene: TypeScript types of the scene JSON (docs/SCENE.md and
-// docs/AUTHORING.md §4) and the effect, paint and motion-blur helpers
+// @kinetograph/scene: TypeScript types of the scene JSON (packages/cli/skills/kinetograph/references/SCENE.md and
+// packages/cli/skills/kinetograph/references/AUTHORING.md §4) and the effect, paint and motion-blur helpers
 // (AUTHORING.md §5). Pure TypeScript, no dependencies.
 
 export type * from './types.js';

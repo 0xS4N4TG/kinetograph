@@ -1,4 +1,4 @@
-// DOM islands in the reconciler (docs/ENGINE.md §1, §2): which host elements are accepted, where an island's layers
+// DOM islands in the reconciler (packages/cli/skills/kinetograph/references/ENGINE.md §1, §2): which host elements are accepted, where an island's layers
 // stand, how native elements are put back where Rust placed them, and what reaches the tree's `unsupported`, camera
 // and margin. The addon is a stand-in that answers as the Rust painter does: a group per island root, a placeholder
 // for each native element, and whatever the request's attributes ask it to report.

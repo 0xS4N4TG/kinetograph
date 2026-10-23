@@ -1,5 +1,5 @@
 //! `glsl` layers: what a few recorded draws leave in the pixels
-//! (docs/SCENE.md, "glsl"). The goldens in `golden.rs` cover the classic
+//! (packages/cli/skills/kinetograph/references/SCENE.md, "glsl"). The goldens in `golden.rs` cover the classic
 //! shaders; these pin the state and the data a draw is given.
 
 use std::path::Path;

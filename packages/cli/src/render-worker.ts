@@ -1,4 +1,4 @@
-// A render worker (`render --concurrency N`, docs/AUTHORING.md §9): a worker thread that opens the composition itself,
+// A render worker (`render --concurrency N`, packages/cli/skills/kinetograph/references/AUTHORING.md §9): a worker thread that opens the composition itself,
 // runs its JS for the chunks of frames it is given, draws them with a renderer of its own and posts the pixels back.
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -30,7 +30,7 @@ export type ToWorker =
 /** Worker to main. */
 export type FromWorker =
   | { type: 'ready' }
-  /** `repeated`: the frame was not drawn, being the same as the one before it in its chunk (docs/AUTHORING.md §9). */
+  /** `repeated`: the frame was not drawn, being the same as the one before it in its chunk (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
   | { type: 'frame'; frame: number; yuv: ArrayBuffer; audio: AudioClipJson[]; unsupported: Unsupported[]; repeated: boolean }
   | { type: 'chunk'; first: number; last: number }
   /** The frames of the chunk it gave up, `first..=last` (empty when `first > last`). */

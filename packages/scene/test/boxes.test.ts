@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GlyphRun, ImagePaint, SceneJson, Transform } from '../src/index.js';
 
-// The fields the DOM painter writes (docs/SCENE.md, "Boxes from the DOM painter"). `tsc` checks that they type; the
+// The fields the DOM painter writes (packages/cli/skills/kinetograph/references/SCENE.md, "Boxes from the DOM painter"). `tsc` checks that they type; the
 // round trip checks that they are plain JSON.
 describe('the fields of the DOM painter', () => {
   it('type glyph runs, a matrix transform, image paints, gradient matrices and the blend space', () => {

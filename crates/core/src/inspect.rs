@@ -4,7 +4,7 @@
 //! touches the GPU; the fonts are loaded because text boxes need them, and
 //! images and tables are not.
 //!
-//! The shape of the result is `InspectResult` in `docs/AUTHORING.md` §3.
+//! The shape of the result is `InspectResult` in `packages/cli/skills/kinetograph/references/AUTHORING.md` §3.
 
 use std::fmt::Debug;
 
@@ -101,7 +101,7 @@ pub struct InspectText {
 /// Where in its file a video or GIF layer is.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct InspectMedia {
-    /// Seconds: for a video the source time of `docs/SCENE.md`'s "video"
+    /// Seconds: for a video the source time of `packages/cli/skills/kinetograph/references/SCENE.md`'s "video"
     /// rules (from the stream's first picture), for a GIF its `time`.
     pub time: f64,
 }

@@ -351,7 +351,7 @@ test('layoutDom errors', () => {
   );
 });
 
-// ---- DOM islands (docs/ENGINE.md §2) ----
+// ---- DOM islands (packages/cli/skills/kinetograph/references/ENGINE.md §2) ----
 
 const el = (tag, p, style = '', children = [], attrs = {}) => ({ kind: 'element', tag, path: p, attrs, style, children });
 const txt = (text) => ({ kind: 'text', text });

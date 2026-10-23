@@ -114,14 +114,14 @@ export declare function decodeAudio(path: string, sampleRate: number, baseDir?: 
 export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>): Array<string>
 
 /**
- * The boxes of every element of a DOM island (docs/ENGINE.md §2): an
+ * The boxes of every element of a DOM island (packages/cli/skills/kinetograph/references/ENGINE.md §2): an
  * `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
  * scroll } }` as JSON out. `x`..`height` are the border box where layout put
  * it, `rect` the transformed bounding box `getBoundingClientRect` gives.
  */
 export declare function domLayoutBoxes(requestJson: string): string
 
-/** `render`'s export options (docs/AUTHORING.md §9); everything left out takes its default. */
+/** `render`'s export options (packages/cli/skills/kinetograph/references/AUTHORING.md §9); everything left out takes its default. */
 export interface ExportOptions {
   /** `h264` (default; `vp9` for `.webm` and `gif` for `.gif` paths), `h265`, `prores`, `vp9` or `gif`. */
   codec?: string
@@ -186,7 +186,7 @@ export declare function layoutDom(requestJson: string): string
  */
 export declare function layoutText(request: TextLayoutRequest): TextLayout
 
-/** What `probeMedia` reads from a video's or GIF's header (docs/AUTHORING.md §11.2). */
+/** What `probeMedia` reads from a video's or GIF's header (packages/cli/skills/kinetograph/references/AUTHORING.md §11.2). */
 export interface MediaInfo {
   /** `video` or `gif`. */
   kind: string
@@ -223,7 +223,7 @@ export interface MediaTag {
 
 /**
  * Reads a glTF or GLB model and lists what it uses that the 3D layer does not
- * read (docs/SCENE.md, "scene3d"); a file that cannot be read is an error.
+ * read (packages/cli/skills/kinetograph/references/SCENE.md, "scene3d"); a file that cannot be read is an error.
  */
 export declare function modelUnsupported(src: string, baseDir?: string | undefined | null): Array<ModelUnsupported>
 
@@ -256,11 +256,11 @@ export interface PreviewOptions {
 /** Reads a video's or GIF's header, without decoding a picture. */
 export declare function probeMedia(path: string, baseDir?: string | undefined | null): MediaInfo
 
-/** Reads a file's container, without decoding anything (docs/AUTHORING.md §3). */
+/** Reads a file's container, without decoding anything (packages/cli/skills/kinetograph/references/AUTHORING.md §3). */
 export declare function probeStreams(path: string, baseDir?: string | undefined | null): MediaStreams
 
 /**
- * A Canvas 2D context's commands drawn on a transparent canvas (docs/SCENE.md,
+ * A Canvas 2D context's commands drawn on a transparent canvas (packages/cli/skills/kinetograph/references/SCENE.md,
  * "canvas"): `{ width, height, commands, fonts, baseDir, format }` as JSON in,
  * straight-alpha RGBA (`format: "rgba"`, the default) or a PNG out. For
  * `getImageData` and `toDataURL`; opens the GPU for each call.
@@ -268,7 +268,7 @@ export declare function probeStreams(path: string, baseDir?: string | undefined 
 export declare function renderCanvas(requestJson: string): Buffer
 
 /**
- * One DOM island at one frame (docs/ENGINE.md §2): an `IslandRequest` as
+ * One DOM island at one frame (packages/cli/skills/kinetograph/references/ENGINE.md §2): an `IslandRequest` as
  * JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
  * Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
  * painted as scene layers. CPU only.
@@ -338,7 +338,7 @@ export declare function rgbaToYuv(rgba: Buffer, width: number, height: number, p
 
 /**
  * A Rive file (`.riv`) played to a time, as the commands of a canvas layer
- * (docs/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
+ * (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
  * time, width, height, fit, alignment }` as JSON in, the commands as a JSON
  * array out. CPU only; the file is read once.
  */

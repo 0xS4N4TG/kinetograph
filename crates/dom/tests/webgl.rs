@@ -1,4 +1,4 @@
-//! `<canvas>` with a WebGL context (docs/SCENE.md, "glsl"): the recording the TS side puts in `data-kg-webgl` is one
+//! `<canvas>` with a WebGL context (packages/cli/skills/kinetograph/references/SCENE.md, "glsl"): the recording the TS side puts in `data-kg-webgl` is one
 //! glsl layer in the painted scene. Each case is a file of WebGL calls (`tests/webgl/<name>.js`) and the recording
 //! the recorder made of it (`<name>.json`, `tools/webgl-cases.mjs`). The page has both: Chrome runs the calls with
 //! its own WebGL (the oracle; SwiftShader, so the numbers do not depend on the GPU), and the engine runs the

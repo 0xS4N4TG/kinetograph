@@ -1,4 +1,4 @@
-// A `CanvasRenderingContext2D` that records instead of rasterising (docs/SCENE.md, "canvas"). It keeps the canvas's
+// A `CanvasRenderingContext2D` that records instead of rasterising (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"). It keeps the canvas's
 // state, as the browser's does, and writes each drawing call as a command with the state it is drawn in; the renderer
 // draws the commands with Skia. Nothing here reads a clock or anything else outside the calls, so what a context
 // holds is a function of what it was told.

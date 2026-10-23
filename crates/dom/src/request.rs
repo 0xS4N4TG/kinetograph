@@ -1,5 +1,5 @@
 //! The JSON the TS side sends for one DOM island and what comes back
-//! (docs/ENGINE.md §2). Owned by the orchestrator: a stream may add optional
+//! (packages/cli/skills/kinetograph/references/ENGINE.md §2). Owned by the orchestrator: a stream may add optional
 //! fields; changing an existing one goes through the orchestrator.
 
 use std::collections::BTreeMap;
@@ -32,7 +32,7 @@ pub struct IslandRequest {
     /// Earlier states of this island, oldest first. A CSS transition starts when a
     /// style value changes, and a frame has no "before" of its own; the caller
     /// supplies it here, and the engine replays the states in order to find
-    /// when each value changed (`document::resolve`, docs/ENGINE.md §7.12).
+    /// when each value changed (`document::resolve`, packages/cli/skills/kinetograph/references/ENGINE.md §7.12).
     /// Empty: nothing transitions, every value is its final one.
     #[serde(default)]
     pub history: Vec<Snapshot>,
@@ -91,7 +91,7 @@ pub enum DomNode {
 /// What the island draws: `IslandResult` of `@kinetograph/compat`.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct IslandOutput {
-    /// Scene layers (docs/SCENE.md) in paint order. `{"type": "native", "path", "x", "y", "width", "height"}` marks
+    /// Scene layers (packages/cli/skills/kinetograph/references/SCENE.md) in paint order. `{"type": "native", "path", "x", "y", "width", "height"}` marks
     /// where a `Native` node's layers go.
     pub layers: Vec<Value>,
     /// What could not be drawn as Chrome would draw it; the frame is drawn without it, or approximated, and the CLI warns.

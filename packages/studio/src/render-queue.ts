@@ -21,7 +21,7 @@ interface Entry {
 }
 
 /**
- * Render jobs, one at a time, each in a worker of its own so that the preview stays live (docs/AUTHORING.md §11.5).
+ * Render jobs, one at a time, each in a worker of its own so that the preview stays live (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5).
  * Clock reads here are the server's bookkeeping (job timestamps, ms per frame), never part of a render.
  */
 export class RenderQueue extends EventEmitter<{ update: [job: RenderJob] }> {

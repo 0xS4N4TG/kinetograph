@@ -1,4 +1,4 @@
-//! SVG filter graphs: the `filterGraph` effect (docs/SCENE.md).
+//! SVG filter graphs: the `filterGraph` effect (packages/cli/skills/kinetograph/references/SCENE.md).
 //!
 //! A `<filter>` is a list of primitives (`feTurbulence`, `feGaussianBlur`, ...)
 //! that read the layer (`SourceGraphic`, `SourceAlpha`) or each other's results

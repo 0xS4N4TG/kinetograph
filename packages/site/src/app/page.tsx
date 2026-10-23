@@ -10,7 +10,7 @@ import { FinalCta, Problem, Solution } from '@/sections/story';
 
 const FOOTER_COLUMNS = [
   { title: 'Site', links: [{ label: 'Why', href: '#why' }, { label: 'The engine', href: '#engine' }, { label: 'Agents', href: '#agents' }, { label: 'The film', href: '#film' }, { label: 'Get started', href: '#start' }] },
-  { title: 'Docs', links: [{ label: 'README', href: `${GITHUB}#readme` }, { label: 'DOM engine', href: doc('docs/ENGINE.md') }, { label: 'Remotion compat', href: '/docs/compat/' }, { label: 'Known issues', href: '/docs/known-issues/' }] },
+  { title: 'Docs', links: [{ label: 'README', href: `${GITHUB}#readme` }, { label: 'DOM engine', href: doc('packages/cli/skills/kinetograph/references/ENGINE.md') }, { label: 'Remotion compat', href: '/docs/compat/' }, { label: 'Known issues', href: '/docs/known-issues/' }] },
   { title: 'Project', links: [{ label: 'GitHub', href: GITHUB }, { label: 'Licence', href: doc('LICENSE.md') }, { label: 'Commercial licence', href: doc('COMMERCIAL.md') }, { label: 'llms.txt', href: '/llms.txt' }] },
 ];
 
