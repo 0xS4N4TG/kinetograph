@@ -27,7 +27,14 @@ export function useFakeDom(unsupportedTags: string[] = []): void {
           node.children.forEach(visit);
         };
         visit(request.root);
-        return JSON.stringify({ layers: [{ id: request.path, type: 'group', children: [] }], unsupported, camera: null });
+        // A native element is a placeholder at the corner of its box, as the painter leaves it.
+        const natives: unknown[] = [];
+        const place = (node: any): void => {
+          if (node.kind === 'native') natives.push({ type: 'native', path: node.path, x: 0, y: 0, width: node.width ?? 0, height: node.height ?? 0 });
+          if (node.kind === 'element') node.children.forEach(place);
+        };
+        place(request.root);
+        return JSON.stringify({ layers: [{ id: request.path, type: 'group', children: natives }], unsupported, camera: null });
       },
     });
   });

@@ -396,7 +396,7 @@ export const getAudioDuration = getAudioDurationInSeconds;
 // ---- Small helpers ----
 
 /** The pixel size of the image at `src`: a project file or a `data:` URL, from its header. */
-export async function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+export function imageSizeSync(src: string): { width: number; height: number } {
   if (typeof src !== 'string' || src === '') throw new TypeError(`src must be an image path, but got ${JSON.stringify(src)}`);
   if (/^https?:\/\//i.test(src)) throw new Error(remoteMessage('getImageDimensions', src));
   let bytes: Uint8Array;
@@ -412,6 +412,11 @@ export async function getImageDimensions(src: string): Promise<{ width: number; 
   const size = imageSizeOfBytes(bytes);
   if (size === null) throw new Error(`Cannot read the size of the image at ${src}: it is not a PNG, JPEG, GIF, WebP, BMP or SVG`);
   return size;
+}
+
+/** The pixel size of the image at `src`: a project file or a `data:` URL, from its header. */
+export async function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return imageSizeSync(src);
 }
 
 /**

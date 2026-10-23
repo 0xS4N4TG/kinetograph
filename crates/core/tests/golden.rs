@@ -643,3 +643,17 @@ fn transitions_match_golden() {
         check(&format!("transition-{name}"), &frame);
     }
 }
+
+#[test]
+fn effects_match_golden() {
+    // `<Solid>` and `<CanvasImage>` through 2D and WebGL 2 effects, a chain of both kinds, and `<HtmlInCanvas>` with an
+    // `onPaint` that draws the HTML and an overlay: the scenes `scripts/effects-scenes.mjs` writes from
+    // `examples/effects`. There is no Remotion run of these (Chrome for Testing has no canvas effects of HTML in
+    // canvas); the pictures were checked by eye: the inverted teal box, the checker with a vertical wave and its
+    // channels swapped (upright), the same tinted pink then inverted, and the gradient box with a translucent
+    // yellow rectangle over it.
+    for name in ["solid", "image", "chain", "html"] {
+        let frame = render_still(scene(&format!("tests/scenes/effect-{name}.json")), 0).unwrap();
+        check(&format!("effect-{name}"), &frame);
+    }
+}
