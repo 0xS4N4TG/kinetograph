@@ -2153,6 +2153,64 @@ impl Compositor {
         }
     }
 
+    /// The texels of `tex` (`LINEAR_FORMAT`, 8 bytes each) as rows of `tex.size[0]` texels, read back now and in full:
+    /// the part inside `tex.bounds` holds what the texture holds there, the rest (where it is transparent) zeros. This is
+    /// how Skia's CPU backend (`render/skia/backend.rs`) gets the layers the wgpu path drew.
+    pub(crate) fn read_texels(&self, tex: &Tex) -> Result<Vec<u8>> {
+        const TEXEL: u32 = 8;
+        let (width, height) = (tex.size[0], tex.size[1]);
+        let mut texels = vec![0u8; width as usize * height as usize * TEXEL as usize];
+        let b = tex.bounds.intersect(tex.rect());
+        if b.is_empty() {
+            return Ok(texels);
+        }
+        let (x0, y0) = ((b.x0 - tex.origin[0]) as u32, (b.y0 - tex.origin[1]) as u32);
+        let (w, h) = (b.width(), b.height());
+        // What the passes recorded for `tex` goes first.
+        self.submit();
+        let row_bytes = w * TEXEL;
+        let padded_row = row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("skia cpu readback"),
+            size: u64::from(padded_row) * u64::from(h),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut source = tex.texture.as_image_copy();
+        source.origin = wgpu::Origin3d { x: x0, y: y0, z: 0 };
+        encoder.copy_texture_to_buffer(
+            source,
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded_row), rows_per_image: Some(h) },
+            },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        let submission = self.queue.submit([encoder.finish()]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait { submission_index: Some(submission), timeout: None })
+            .map_err(|e| Error::Render(format!("GPU poll failed: {e}")))?;
+        rx.recv()
+            .map_err(|e| Error::Render(format!("readback channel closed: {e}")))?
+            .map_err(|e| Error::Render(format!("readback map failed: {e}")))?;
+        let mapped = buffer
+            .slice(..)
+            .get_mapped_range()
+            .map_err(|e| Error::Render(format!("readback range failed: {e}")))?;
+        for (y, row) in mapped.chunks(padded_row as usize).enumerate() {
+            let at = ((y0 as usize + y) * width as usize + x0 as usize) * TEXEL as usize;
+            texels[at..at + row_bytes as usize].copy_from_slice(&row[..row_bytes as usize]);
+        }
+        drop(mapped);
+        buffer.unmap();
+        Ok(texels)
+    }
+
     /// Waits for the GPU to finish what `readback` needs (not anything
     /// submitted since) and returns its pixels.
     pub fn finish_readback(&self, readback: Readback) -> Result<Vec<u8>> {
@@ -2856,7 +2914,8 @@ fn shader_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 /// A linear texture of any size that can be drawn to, read and copied, with
 /// empty bounds.
 pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
+    // Skia draws into these too (`render/skia.rs`).
+    let texture = crate::render::create_texture(device, &wgpu::TextureDescriptor {
         label: Some("layer"),
         size: wgpu::Extent3d {
             width,

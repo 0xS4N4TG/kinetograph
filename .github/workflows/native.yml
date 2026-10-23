@@ -137,7 +137,7 @@ jobs:
     name: smoke (${{ matrix.platform }})
     needs: build
     runs-on: ${{ matrix.os }}
-    # Windows runners have no GPU; whether anything can draw there is what the first run finds out.
+    # Windows runners have no GPU and no Vulkan driver: wgpu uses Direct3D 12 (WARP) and Skia draws on the CPU.
     continue-on-error: ${{ matrix.allow_fail }}
     strategy:
       fail-fast: false
@@ -151,7 +151,7 @@ jobs:
             allow_fail: false
           - os: windows-latest
             platform: win32-x64-msvc
-            allow_fail: true
+            allow_fail: false
     steps:
       - uses: actions/checkout@v7
 
