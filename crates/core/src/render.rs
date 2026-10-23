@@ -1888,6 +1888,9 @@ fn text_bounds(
     }
     let em = f64::from(size).abs();
     let mut b = b.inflate(em, em);
+    if let Some([l, t, r, bot]) = laid_out.ink_extent() {
+        b = b.union(Rect::new(f64::from(l), f64::from(t), f64::from(r), f64::from(bot)));
+    }
     if chars.iter().any(Option::is_some) {
         let centres = laid_out.char_centres();
         for glyph in laid_out.runs.iter().flat_map(|run| &run.glyphs) {
