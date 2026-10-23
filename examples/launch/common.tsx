@@ -20,8 +20,9 @@ export const TITLE_WEIGHT = 200;
 export const TITLE_GLOW = '0 0 18px rgba(255,240,220,0.35), 0 0 60px rgba(255,220,180,0.18)';
 
 /** Seconds this whole film took to render (kinetograph render, --concurrency 4, M4, measured with the bench lock held:
- *  23.1 s on 2026-10-23). Shot 9 and the end card say it; set it again from the final render. */
-export const RENDER_SECONDS = 23;
+ *  27.3 s, the median of 3 runs of the 1,491-frame cut on 2026-10-23). Shot 9 and the end card say it; set it again
+ *  from the final render. */
+export const RENDER_SECONDS = 27;
 
 export const PAPER = '#ECEAE6';
 export const INK = '#111111';

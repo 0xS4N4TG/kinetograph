@@ -15,7 +15,7 @@ export const VO_SECONDS: Record<string, number> = {
   'm4-canvas': 0.4,
   'm5-glass': 1.19,
   '08-remotion': 2.29,
-  '09-film': 1.91,
+  '09-film': 1.837,
   '10-pixels': 2.01,
   '12-end': 3.451,
 };

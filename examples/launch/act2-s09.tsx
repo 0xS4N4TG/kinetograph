@@ -1,4 +1,4 @@
-// Shot 9: "This whole film rendered in twenty-three seconds." This film's own frames run past on a strip of film as a
+// Shot 9: "This whole film rendered in twenty-seven seconds." This film's own frames run past on a strip of film as a
 // render clock counts up beside a frame counter; the strip stops when the counter reaches the last frame, and the
 // clock holds at the film's measured render time (RENDER_SECONDS, common.tsx), set very large, with the film's own
 // length under it for scale.
