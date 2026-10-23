@@ -44,8 +44,9 @@ export function nativeSize(node: ElementNode): { width?: number; height?: number
 /**
  * The native elements that are drawn rather than laid out lie over the DOM around them, at the top left corner of the
  * nearest positioned element (what an `<AbsoluteFill>` around each did by hand), and take no room in the flow: a
- * `<Layer>`, a shape, a canvas, a shader, a 3D scene, a video. An image, a GIF, a Lottie and a text box are content of
- * the flow, as the replaced elements and text they stand for are in CSS.
+ * `<Layer>`, a shape, a canvas, a 3D scene, a video. An image, a GIF, a Lottie, a shader and a text box are content of
+ * the flow, as the replaced elements and text they stand for are in CSS: a `<GlslShader>` is a box of its own `width`
+ * and `height`.
  */
 export function overlaysSiblings(node: ElementNode): boolean {
   switch (node.type) {
@@ -57,7 +58,6 @@ export function overlaysSiblings(node: ElementNode): boolean {
     case 'kg-noise':
     case 'kg-mesh-gradient':
     case 'kg-canvas':
-    case 'kg-glsl':
     case 'kg-scene3d':
     case 'kg-video':
       return true;

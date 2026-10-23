@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDomAddon } from '@kinetograph/compat/dom';
 import type { LayerJson } from '@kinetograph/scene';
-import { Camera, createSceneRoot, Image, Layer, Rect, SequenceHost, Text, TimelineContext, Video } from '../src/index.js';
+import { Camera, createSceneRoot, GlslShader, Image, Layer, Rect, SequenceHost, Text, TimelineContext, Video } from '../src/index.js';
 import { timeline } from './harness.js';
 
 interface Node {
@@ -183,6 +183,18 @@ describe('islands', () => {
       ['$0.2', undefined],
       ['$0.3', undefined],
     ]);
+  });
+
+  it('lays a <GlslShader> out in the flow as a replaced box of its own width and height', () => {
+    render(
+      <div style={sq}>
+        <GlslShader width={30} height={12} fragment="precision mediump float; void main() { gl_FragColor = vec4(1.0); }" />
+        <span>after</span>
+      </div>,
+    );
+    const shader = requests[0]!.root.children![0] as Node & { overlay?: boolean };
+    expect(shader).toEqual({ kind: 'native', path: '$0.0', width: 30, height: 12 });
+    expect(shader.overlay).toBeUndefined();
   });
 
   it('draw islands inside native elements inside them', () => {

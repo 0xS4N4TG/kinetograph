@@ -162,7 +162,9 @@ What the TypeScript side does around the addon, as built on `engine/runtime`. Co
   `layout` size, a `<Text>`'s `maxWidth` and measured height; a path or a group without a layout is 0 by 0; an animated
   size is its first value). Rust leaves a `{"type": "native", path, x, y, …}` layer where the box went; TypeScript
   replaces it with `emitNative`'s layers moved there (the layer's own `x`/`y` are an offset from the box, its anchor
-  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped.
+  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped. A
+  `<Layer>`, shape, canvas, 3D scene or video is an overlay (absolute, at the corner of its positioned ancestor, no room
+  in the flow); an `<Image>`, GIF, Lottie, `<GlslShader>` and text are in the flow, a replaced box of their own size.
 - **Top-level layers** of an island get `layoutItem: { position: 'absolute' }`, so a native flex parent does not
   place them again.
 - **`fonts`** is `getFonts()` as it is: keys are the scene's `fontKey`s (`Inter`, `Inter:800`, `Inter:400i`), not the

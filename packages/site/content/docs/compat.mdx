@@ -63,7 +63,7 @@ CSS lays out HTML content the same way a browser would, with a few rules to know
 - A group of HTML elements is laid out as a box the size of the composition, as Remotion's root `div` is.
 - An `<AbsoluteFill>` or `<Sequence>` around HTML is an absolutely positioned column flex `div`, as in Remotion.
 - HTML inside a Kinetograph layer is laid out in the composition's box. It does not know the layer's own size.
-- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0.
+- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0. A `<GlslShader>` in the flow takes its `width` and `height` as a box, like an `<Image>`, and takes up that room.
 - Styles are read on every frame, so animation comes from your component re-rendering, as in Remotion. CSS `@keyframes` follow the frame's time.
 - A layer made from an HTML node takes its `id` attribute as its layer id if that is a valid id. Otherwise it gets where the node sits in the page, such as `$0.2`.
 
