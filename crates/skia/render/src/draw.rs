@@ -11,7 +11,7 @@ use skia_safe::{
 use crate::enums;
 use crate::render::{Ctx, Node, default_paint};
 use crate::value::{Props, rect_of, rrect_of};
-use crate::{Error, text};
+use crate::{Error, compound, text};
 
 pub fn draw(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
     if matches!(
@@ -19,6 +19,10 @@ pub fn draw(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
         "Group" | "Layer" | "BackdropFilter" | "BoxShadow" | "Paint"
     ) {
         return Ok(());
+    }
+    // A picture carries its own paints: it is drawn once, whatever paints are declared.
+    if n.kind == "Picture" {
+        return compound::picture(ctx, n);
     }
     let mut paints = vec![ctx.paint().clone()];
     paints.append(&mut ctx.declared);
@@ -82,6 +86,7 @@ fn draw_with(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
         "Box" => draw_box(ctx, n, paint)?,
         "Vertices" => draw_vertices(canvas, props, paint)?,
         "Text" | "TextPath" | "Paragraph" => text::draw(ctx, n, paint)?,
+        "Atlas" | "Patch" | "Glyphs" | "TextBlob" | "ImageSVG" => compound::draw(ctx, n, paint)?,
         other => ctx.leave_out(other, None, "this node is not drawn by the Skia addon"),
     }
     Ok(())
