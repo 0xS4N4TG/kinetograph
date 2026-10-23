@@ -308,6 +308,28 @@ impl Translator {
         }
         let [a, b, c, d, e, f] = parent.as_coeffs();
         let p = DMat3::from_cols(DVec3::new(a, b, 0.0), DVec3::new(c, d, 0.0), DVec3::new(e, f, 1.0));
+        let bounds = self.layer_bounds(layer, scale).map(|r| mat(layer.transform.matrix()).map_rect(r).0);
+        // Skia reads the warp with its last entry made 1: where the layer's local origin is behind the camera (w <= 0)
+        // that flips the sign of w everywhere, and Skia drops the half that is in front. So the layer is warped in a
+        // frame whose origin `o` is in front (the farthest in front of the layer's corners and of what is visible), the
+        // canvas translated there; a layer whose origin is already in front is warped as it always was.
+        let w_at = |m: &DMat3, x: f64, y: f64| m.x_axis.z * x + m.y_axis.z * y + m.z_axis.z;
+        let l0 = p.inverse() * h * p;
+        let mut origin = (0.0f64, 0.0f64);
+        if w_at(&l0, 0.0, 0.0) <= 0.0 {
+            let mut corners: Vec<(f64, f64)> = Vec::new();
+            for r in [bounds, Some(canvas.local_clip_bounds().unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)))].into_iter().flatten() {
+                corners.extend([(r.left, r.top), (r.right, r.top), (r.right, r.bottom), (r.left, r.bottom)].map(|(x, y)| (f64::from(x), f64::from(y))));
+            }
+            let best = corners.into_iter().max_by(|a, b| w_at(&l0, a.0, a.1).total_cmp(&w_at(&l0, b.0, b.1)));
+            match best {
+                Some(o) if w_at(&l0, o.0, o.1) > 0.0 => origin = o,
+                // Everything is behind the camera.
+                _ => return,
+            }
+        }
+        let moved = origin != (0.0, 0.0);
+        let p = if moved { p * DMat3::from_translation(glam::DVec2::new(origin.0, origin.1)) } else { p };
         // The filter works in the local space of the layer, the device-space warp `h` in that: P^-1 H P.
         let l = p.inverse() * h * p;
         let l = l * (1.0 / l.z_axis.z);
@@ -317,14 +339,25 @@ impl Translator {
             l.x_axis.z as f32, l.y_axis.z as f32, 1.0,
         );
         let filter = image_filters::matrix_transform(&local, SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), None);
-        let bounds = self.layer_bounds(layer, scale).map(|r| mat(layer.transform.matrix()).map_rect(r).0);
+        let (ox, oy) = (origin.0 as f32, origin.1 as f32);
+        let bounds = bounds.map(|r| Rect::new(r.left - ox, r.top - oy, r.right - ox, r.bottom - oy));
         let mut paint = Paint::default();
         paint.set_alpha_f(comp.alpha);
         paint.set_blend_mode(comp.blend);
         paint.set_image_filter(filter);
+        if moved {
+            canvas.save();
+            canvas.translate((ox, oy));
+        }
         self.save_layer(canvas, bounds, &paint, None);
+        if moved {
+            canvas.translate((-ox, -oy));
+        }
         self.draw_flat(canvas, layer, siblings, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, scale);
         canvas.restore();
+        if moved {
+            canvas.restore();
+        }
     }
 
     fn draw_flat(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64) {
