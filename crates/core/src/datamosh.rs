@@ -518,6 +518,60 @@ mod tests {
         assert_eq!(px(&out, w, 24, 4), px(&held, w, 24, 4));
     }
 
+    /// `cargo test --release -p kinetograph-core --lib datamosh_cost -- --ignored --nocapture`: the cost of a
+    /// step at 1080p with a field in which every other 16 x 16 block moves by a quarter-pixel multiple.
+    #[test]
+    #[ignore]
+    fn datamosh_cost() {
+        let (w, h) = (1920usize, 1080usize);
+        let mut vectors = Vec::new();
+        for by in 0..h.div_ceil(16) {
+            for bx in 0..w.div_ceil(16) {
+                if (bx + by) % 2 == 0 {
+                    let (mx, my) = (
+                        ((bx * 7 + by * 3) % 41) as i32 - 20,
+                        ((bx * 5 + by * 11) % 33) as i32 - 16,
+                    );
+                    vectors.push(vector(
+                        (bx * 16 + 8) as i16,
+                        (by * 16 + 8) as i16,
+                        16,
+                        mx,
+                        my,
+                        4,
+                        -1,
+                    ));
+                }
+            }
+        }
+        let field = MotionField::from_vectors(w, h, &vectors);
+        let pic = ramp_big(w, h);
+        let mut out = pic.clone();
+        let mut prev = pic.clone();
+        let mut scratch = vec![0u8; pic.len()];
+        let time = |name: &str, f: &mut dyn FnMut()| {
+            f();
+            let t = std::time::Instant::now();
+            for _ in 0..10 {
+                f();
+            }
+            eprintln!("{name}: {:.2} ms", t.elapsed().as_secs_f64() * 100.0);
+        };
+        time("advect", &mut || advect(&pic, &mut scratch, &field));
+        time("step mix 0", &mut || {
+            step(&mut out, &mut prev, &pic, &field, 0, &mut scratch)
+        });
+        time("step mix 0.5", &mut || {
+            step(&mut out, &mut prev, &pic, &field, 128, &mut scratch)
+        });
+    }
+
+    fn ramp_big(w: usize, h: usize) -> Vec<u8> {
+        (0..w * h * 4)
+            .map(|i| (i.wrapping_mul(2654435761) >> 13) as u8)
+            .collect()
+    }
+
     fn fake(w: u32, h: u32, n: i64) -> Fetched {
         let (w, h) = (w as usize, h as usize);
         // Picture n: a ramp offset by n; every frame pulls 1 pixel from the right in the left half.
