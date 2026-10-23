@@ -183,7 +183,19 @@ fn paint_serialized(
     let children = emitter.group(tree.root(), Affine::IDENTITY);
     notes.append(&mut emitter.notes);
     // Text with no font to set it in is dropped by usvg without a word.
-    if serialized.xml.contains("<text") && request.fonts.is_empty() {
+    if serialized.xml.contains("<text") && crate::fonts::is_fallback(&request.fonts) {
+        notes.push(Note {
+            element: "text".into(),
+            property: Some("font-family".into()),
+            value: serialized
+                .xml
+                .split("font-family=\"")
+                .nth(1)
+                .and_then(|rest| rest.split('"').next())
+                .map(str::to_string),
+            reason: crate::fonts::FALLBACK_REASON.into(),
+        });
+    } else if serialized.xml.contains("<text") && request.fonts.is_empty() {
         notes.push(Note {
             element: "text".into(),
             property: Some("font-family".into()),

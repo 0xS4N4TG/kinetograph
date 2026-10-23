@@ -166,7 +166,7 @@ export {
   getCompositions,
 } from './compositions.js';
 export type { CompositionInfo, CompositionProps, StillProps } from './compositions.js';
-export { registerFont, getFonts } from './font-registry.js';
+export { registerFont, getFonts, setFallbackFont } from './font-registry.js';
 export type { FontRegistration } from './font-registry.js';
 
 // ---- frame loop (AUTHORING.md §7.3) ----

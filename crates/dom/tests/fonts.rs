@@ -225,3 +225,89 @@ fn a_bad_font_file_is_an_error() {
     req["fonts"] = json!({ "Broken": "/nonexistent/font.ttf" });
     assert!(kinetograph_dom::document::resolve(&parse(&req)).is_err());
 }
+
+/// The island painted with `fonts` registered.
+fn painted(root: Value, fonts: Value) -> kinetograph_dom::request::IslandOutput {
+    let mut req = request(root);
+    req["fonts"] = fonts;
+    let parsed = parse(&req);
+    let island = kinetograph_dom::document::resolve(&parsed).expect("resolves");
+    kinetograph_dom::paint::paint(&island.doc, &parsed)
+}
+
+fn fallback_only() -> Value {
+    json!({ kinetograph_dom::fonts::FALLBACK_KEY: dm_sans() })
+}
+
+fn fallback_notes(
+    out: &kinetograph_dom::request::IslandOutput,
+) -> Vec<&kinetograph_dom::request::Unsupported> {
+    out.unsupported
+        .iter()
+        .filter(|u| u.reason == kinetograph_dom::fonts::FALLBACK_REASON)
+        .collect()
+}
+
+#[test]
+fn html_text_with_no_loaded_font_is_drawn_in_the_fallback_and_reported() {
+    let root = el(
+        "div",
+        "$0",
+        "font-size: 40px; font-family: 'Helvetica Neue', Arial",
+        vec![text("Hello")],
+    );
+    let out = painted(root.clone(), fallback_only());
+    assert!(
+        out.layers.iter().any(|l| l.to_string().contains("glyphs")),
+        "{:?}",
+        out.layers
+    );
+    let notes = fallback_notes(&out);
+    assert_eq!(notes.len(), 1, "{:?}", out.unsupported);
+    assert_eq!(notes[0].property.as_deref(), Some("font-family"));
+    assert!(
+        notes[0]
+            .value
+            .as_deref()
+            .unwrap()
+            .contains("Helvetica Neue")
+    );
+
+    // A project that registered a font is not told anything.
+    let out = painted(root, json!({ "DM Sans": dm_sans() }));
+    assert!(fallback_notes(&out).is_empty(), "{:?}", out.unsupported);
+}
+
+#[test]
+fn svg_text_with_no_loaded_font_is_drawn_in_the_fallback_and_reported() {
+    let label = el_attrs(
+        "text",
+        "$0.0.0",
+        json!({ "x": "10", "y": "60", "font-size": "40", "font-family": "Helvetica Neue" }),
+        "",
+        vec![text("Hello")],
+    );
+    let svg = el_attrs(
+        "svg",
+        "$0.0",
+        json!({ "width": "300", "height": "100", "viewBox": "0 0 300 100" }),
+        "",
+        vec![label],
+    );
+    let root = el("div", "$0", "", vec![svg]);
+    let out = painted(root.clone(), fallback_only());
+    let notes = fallback_notes(&out);
+    assert_eq!(notes.len(), 1, "{:?}", out.unsupported);
+    assert_eq!(notes[0].element, "text");
+    assert_eq!(notes[0].value.as_deref(), Some("Helvetica Neue"));
+    assert!(
+        out.layers
+            .iter()
+            .any(|l| l.to_string().contains("\"type\":\"path\"") || l.to_string().contains("svg")),
+        "{:?}",
+        out.layers
+    );
+
+    let out = painted(root, json!({ "DM Sans": dm_sans() }));
+    assert!(fallback_notes(&out).is_empty(), "{:?}", out.unsupported);
+}

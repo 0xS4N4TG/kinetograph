@@ -5,6 +5,7 @@ import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetograp
 import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetograph/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
+import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
@@ -19,6 +20,7 @@ interface ProjectModule {
   setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
   setMediaParserAddon(addon: import('@kinetograph/core/media-parser').MediaParserAddon | null): void;
   setDomAddon(addon: object | null): void;
+  setFallbackFont(path: string | null): void;
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
   stylesheetNotes(): string[];
@@ -139,6 +141,8 @@ async function loadProject(
   }
   mod.setPublicDir(publicDir);
   mod.setLayoutText(native().layoutText);
+  // Text with no font of the project's is set in the font Kinetograph ships (and reported), not left out.
+  mod.setFallbackFont(LABEL_FONT_PATH);
   // The DOM engine: islands are styled, laid out and painted by the addon, relative paths resolve from the entry.
   mod.setDomAddon(native());
   mod.setDomEnvironment({ baseDir: dirname(entry), publicDir });

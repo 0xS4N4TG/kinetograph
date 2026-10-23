@@ -33,8 +33,22 @@ export function registerFont(font: FontRegistration): void {
   generation++;
 }
 
-/** fontKey → absolute path, every font registered. */
+/** The key the built-in fallback font is registered under; the same one the DOM engine reports text set in it by. */
+export const FALLBACK_FONT_KEY = 'Kinetograph Fallback';
+let fallbackPath: string | null = null;
+
+/**
+ * The font file the host ships for text when the project registered no font. Kinetograph reads no system fonts, so
+ * without one such text would not be drawn at all; with it, the text is drawn and reported as approximated.
+ */
+export function setFallbackFont(path: string | null): void {
+  fallbackPath = path === null ? null : resolve(path);
+  generation++;
+}
+
+/** fontKey → absolute path, every font registered (the built-in fallback alone when there is none). */
 export function getFonts(): Record<string, string> {
+  if (fonts.size === 0 && fallbackPath !== null) return { [FALLBACK_FONT_KEY]: fallbackPath };
   return Object.fromEntries(fonts);
 }
 

@@ -18,6 +18,19 @@ use parley::fontique::{
     SourceCache,
 };
 
+/// The key the host registers the built-in fallback font under when the project
+/// registered no font at all. Text then has to be set in it, which is not what
+/// the author asked for, so the painter reports it.
+pub const FALLBACK_KEY: &str = "Kinetograph Fallback";
+
+/// Whether `fonts` is only the built-in fallback.
+pub fn is_fallback(fonts: &BTreeMap<String, String>) -> bool {
+    fonts.contains_key(FALLBACK_KEY)
+}
+
+/// The reason text set in the built-in fallback is reported with.
+pub const FALLBACK_REASON: &str = "font not loaded; drawn with the built-in fallback";
+
 /// A font key split into family, weight and style.
 pub fn parse_key(key: &str) -> (&str, f32, FontStyle) {
     if let Some((family, rest)) = key.rsplit_once(':') {

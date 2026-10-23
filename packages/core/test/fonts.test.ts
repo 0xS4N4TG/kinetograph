@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FontDownloadError, type FetchLike } from '../src/font-files.js';
-import { clearFonts, getFonts, pendingFontLoads, registerFont, waitForFonts } from '../src/font-registry.js';
+import { clearFonts, FALLBACK_FONT_KEY, getFonts, pendingFontLoads, registerFont, setFallbackFont, waitForFonts } from '../src/font-registry.js';
 import { loadFont } from '../src/fonts.js';
 import {
   familyFromModuleName,
@@ -12,9 +12,20 @@ import {
   parseFontFaces,
 } from '../src/google-fonts.js';
 
-beforeEach(() => clearFonts());
+beforeEach(() => {
+  clearFonts();
+  setFallbackFont(null);
+});
 
 describe('font registry', () => {
+  it('offers the built-in fallback only while the project has registered no font', () => {
+    expect(getFonts()).toEqual({});
+    setFallbackFont('/cli/DMSans-Medium.ttf');
+    expect(getFonts()).toEqual({ [FALLBACK_FONT_KEY]: '/cli/DMSans-Medium.ttf' });
+    registerFont({ family: 'Inter', path: '/f/Inter-Regular.ttf' });
+    expect(getFonts()).toEqual({ Inter: '/f/Inter-Regular.ttf' });
+  });
+
   it('keys fonts by fontKey and stores absolute paths', () => {
     registerFont({ family: 'Inter', path: '/f/Inter-Regular.ttf' });
     registerFont({ family: 'Inter', path: '/f/Inter-Bold.ttf', weight: 700 });

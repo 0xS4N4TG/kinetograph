@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use usvg::fontdb::{self, Database, Language};
 
 /// The font database for a request's fonts (`fontKey` -> file, the key being
-/// `family:weight:style`), built once per distinct set. Each font is
+/// `family:weight[i]`, see `fonts::parse_key`), built once per distinct set. Each font is
 /// registered under the family name of its key as well as the one in its own
 /// tables, and the generic families (`sans-serif`, ...) resolve to the first.
 pub fn database(fonts: &BTreeMap<String, String>) -> Arc<Database> {
@@ -36,23 +36,15 @@ fn build(fonts: &BTreeMap<String, String>) -> Database {
             .filter(|f| !before.contains(&f.id))
             .cloned()
             .collect();
-        let mut parts = key.rsplitn(3, ':');
-        let (style, weight, family) = (parts.next(), parts.next(), parts.next());
-        let Some(family) = family else {
-            continue;
-        };
+        let (family, weight, style) = crate::fonts::parse_key(key);
         first.get_or_insert_with(|| family.to_string());
         for mut info in added {
             info.families = vec![(family.to_string(), Language::English_UnitedStates)];
-            if let Some(w) = weight.and_then(|w| w.parse::<u16>().ok()) {
-                info.weight = fontdb::Weight(w);
-            }
-            match style {
-                Some("italic") => info.style = fontdb::Style::Italic,
-                Some("oblique") => info.style = fontdb::Style::Oblique,
-                Some("normal") => info.style = fontdb::Style::Normal,
-                _ => {}
-            }
+            info.weight = fontdb::Weight(weight as u16);
+            info.style = match style {
+                parley::fontique::FontStyle::Italic => fontdb::Style::Italic,
+                _ => fontdb::Style::Normal,
+            };
             db.push_face_info(info);
         }
     }
@@ -71,7 +63,6 @@ pub fn default_family(fonts: &BTreeMap<String, String>) -> String {
     fonts
         .keys()
         .next()
-        .and_then(|k| k.rsplitn(3, ':').nth(2))
-        .unwrap_or("sans-serif")
+        .map_or("sans-serif", |k| crate::fonts::parse_key(k).0)
         .to_string()
 }
