@@ -49,7 +49,7 @@ export function sequenceOf(
 function currentValues(layer: InspectLayer): string[] {
   const t = layer.transform;
   const out: string[] = [];
-  if (layer.text) out.push(`font ${layer.text.font} ${formatNumber(layer.text.size)}`);
+  if (layer.text?.font) out.push(`font ${layer.text.font} ${formatNumber(layer.text.size)}`);
   if (layer.opacity !== 1) out.push(`opacity ${formatNumber(layer.opacity)}`);
   if (t.scale !== 1) out.push(`scale ${formatNumber(t.scale)}`);
   if (t.rotation !== 0) out.push(`rotation ${formatNumber(t.rotation)}`);
@@ -66,7 +66,7 @@ export function buildAgentMessage({ entry, cwd, comp, frame, layer, timeline }: 
   const lines = [`In ${relativePath(entry, cwd)}, composition \`${comp.id}\`, frame ${frame} (${formatTimecode(frame, comp.fps)}):`];
 
   let what = `change the ${layer.type} layer \`${layer.id}\``;
-  if (layer.text) what += `, text ${quoted(layer.text.text)}`;
+  if (layer.text?.text) what += `, text ${quoted(layer.text.text)}`;
   const sequence = sequenceOf(layer.id, frame, timeline);
   if (sequence) {
     what += `, inside Sequence ${quoted(sequence.name ?? 'Sequence')} (frames ${sequence.from} to ${sequence.from + sequence.durationInFrames - 1})`;

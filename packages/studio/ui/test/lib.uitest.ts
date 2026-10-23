@@ -182,6 +182,13 @@ describe('agent message', () => {
     );
   });
 
+  it('leaves out the text and the font of a text layer that has none at this frame', () => {
+    const empty = layer('$0.1', 'text', { text: { text: '', font: '', size: 1, width: 0, height: 66, maxWidth: null, lines: [] } });
+    const message = buildAgentMessage({ ...base, layer: empty, timeline: null });
+    expect(message).toContain('change the text layer `$0.1`, at 0,0, 100\u00d750.');
+    expect(message).not.toContain('font');
+  });
+
   it('leaves out what it does not know, and says how to find a layer whose id is its place in the tree', () => {
     const plain = layer('$0.3', 'shape', { box: null, bounds: null });
     const message = buildAgentMessage({ ...base, layer: plain, timeline: null });
