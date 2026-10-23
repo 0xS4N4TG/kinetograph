@@ -16,7 +16,7 @@ import { wordSpans } from './print/captions.js';
 import { RECEIPT_SOUND } from './print/receipts.js';
 import { S08_HOLD } from './act2-s08.js';
 import { M1_DROPS, M2_DIVE, M3_TYPE, M4_SPIRO, WHIP } from './act2-mg.js';
-import { IMPACT_AT, KINETOGRAPH_S, MULT_AT, RACE, REMOTION_S } from './act2-s09.js';
+import { KINETOGRAPH_S, MULT_AT, RACE, REMOTION_S } from './act2-s09.js';
 import { S10_CIRCLE, S10_LAND, S10_STRIKE, S12_TAG, S12_URL } from './act3.js';
 import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
 import { DUCK, bass, bell, cue, cutter, hat, hit, kick, pad, paperDrop, pen, pop, projector, riser, room, rumble, shutter, sweep, thermal, tick } from './sound-synth.js';
@@ -137,13 +137,12 @@ cue(s08(112), (q) => hit(q, 0.4, 0.3));
 cue(s08(112), (q) => bell(q, 1318.5, 0.06, 1.6));
 
 // ---- shot 9: Kinetograph's bar stops first (a bright tick), Remotion's much later (a dull one); the multiple
-//      counts up; IMPACT lands ----
+//      counts up ----
 const finish = (s: number): number => RACE[0] + ((RACE[1] - RACE[0]) * s) / REMOTION_S;
 cue(at('s09', Math.round(finish(KINETOGRAPH_S))), (q) => tick(q, 0.14, 2600, 1300));
 cue(at('s09', Math.round(finish(KINETOGRAPH_S))), (q) => bell(q, 987.77, 0.05, 1.2));
 cue(at('s09', RACE[1]), (q) => tick(q, 0.1, 500, 300));
 for (let f = MULT_AT; f < MULT_AT + 26; f += 3) cue(at('s09', f), (q) => tick(q, 0.045, 1500 + (f - MULT_AT) * 40, 800));
-cue(at('s09', IMPACT_AT), (q) => hit(q, 0.6, 0.6));
 
 // ---- shot 10: a pen tap as each word lands; the scratch of each strike and of the red loop; a riser into 11 ----
 S10_LAND.forEach((l, i) => cue(at('s10', l), (q) => tick(q, i % 2 ? 0.05 : 0.07, 1100, 600)));

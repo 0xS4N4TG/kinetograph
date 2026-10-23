@@ -5,7 +5,6 @@ import { AbsoluteFill, Easing, Img, interpolate, staticFile, useCurrentFrame } f
 import { loadFont as loadDMSans } from '@remotion/google-fonts/DMSans';
 import { loadFont as loadMono } from '@remotion/google-fonts/JetBrainsMono';
 import { loadFont as loadRockSalt } from '@remotion/google-fonts/RockSalt';
-import { loadFont as loadBodoni } from '@remotion/google-fonts/BodoniModa';
 
 export const W = 1920;
 export const H = 1080;
@@ -14,9 +13,9 @@ export const FPS = 30;
 export const SANS = loadDMSans('normal', { weights: ['400', '500', '700'] }).fontFamily;
 export const MONO = loadMono('normal', { weights: ['400', '500'] }).fontFamily;
 export const HAND = loadRockSalt('normal', { weights: ['400'] }).fontFamily;
-/** The title face for the film's big numbers: a high-contrast Bodoni with hairline strokes, the way a film's title cards
- *  are set (its figures are lining by default, so a 7 or a 9 sits on the line). */
-export const TITLE = loadBodoni('normal', { weights: ['400'] }).fontFamily;
+/** The film's big numbers: its own face at a hairline weight, set very large, the way a film's title cards are. */
+export const TITLE = loadDMSans('normal', { weights: ['200'] }).fontFamily;
+export const TITLE_WEIGHT = 200;
 /** Its glow: the number lit like projected light, with a little halation round the thin strokes. */
 export const TITLE_GLOW = '0 0 18px rgba(255,240,220,0.35), 0 0 60px rgba(255,220,180,0.18)';
 

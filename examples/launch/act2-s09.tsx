@@ -1,11 +1,10 @@
 // Shot 9: the numbers. Two bars race on one time scale, the same project (S04, 89 frames, M4, measured 2026-10-15):
-// Remotion 8.86 s, Kinetograph 1.25 s. The multiple counts up to 7.0x and a handwritten "IMPACT" lands. The chart is
+// Remotion 8.86 s, Kinetograph 1.25 s. The multiple counts up to 7.0x. The chart is
 // styled after bklit's bar chart (rounded bars, a clean grid, a spring on the bars) but is driven by the frame.
 
 import React from 'react';
-import { AbsoluteFill, Freeze, Sequence, interpolate, spring, staticFile, useCurrentFrame } from 'remotion';
-import { Video } from '@kinetograph/core';
-import { CLAMP, FPS, InkGround, MONO, OUT, PAPER, RED, SANS, TITLE, TITLE_GLOW } from './common.js';
+import { AbsoluteFill, interpolate, spring, useCurrentFrame } from 'remotion';
+import { CLAMP, FPS, InkGround, MONO, OUT, PAPER, RED, SANS, TITLE, TITLE_GLOW, TITLE_WEIGHT } from './common.js';
 
 export const REMOTION_S = 8.86;
 export const KINETOGRAPH_S = 1.25;
@@ -19,8 +18,6 @@ const ROWS = [
 const BAR_H = 92;
 export const RACE = [12, 84] as const; // frames over which the clock runs from 0 to 8.86 s
 export const MULT_AT = 76;
-export const IMPACT_AT = 118;
-const IMPACT_HOLD = 17;
 
 export const S09: React.FC = () => {
   const frame = useCurrentFrame();
@@ -35,10 +32,6 @@ export const S09: React.FC = () => {
   return (
     <AbsoluteFill>
       <InkGround />
-      <div style={{ position: 'absolute', left: 140, top: 112, fontFamily: MONO, fontSize: 24, color: '#8a8a8a', opacity: interpolate(frame, [0, 8], [0, 1], CLAMP) }}>
-        same project · same 89 frames · render time
-      </div>
-
       {/* the grid, drawn in from the left, one line every 2 s */}
       {AXIS.map((s, i) => {
         const g = interpolate(frame, [2 + i * 2, 12 + i * 2], [0, 1], { ...CLAMP, easing: OUT });
@@ -83,7 +76,7 @@ export const S09: React.FC = () => {
       })()}
 
       <div style={{
-        position: 'absolute', left: 120, top: 590, fontFamily: TITLE, fontWeight: 400, fontSize: 400, lineHeight: 1.1, color: '#f6efe4', letterSpacing: '-0.02em', paddingRight: 40,
+        position: 'absolute', left: 120, top: 590, fontFamily: TITLE, fontWeight: TITLE_WEIGHT, fontSize: 400, lineHeight: 1.1, color: '#f6efe4', letterSpacing: '-0.045em', paddingRight: 40,
         textShadow: TITLE_GLOW, opacity: multIn, filter: `blur(${(1 - multIn) * 12}px)`, transform: `scale(${pop})`, transformOrigin: '0 60%',
       }}>
         {mult.toFixed(1)}x
@@ -91,20 +84,6 @@ export const S09: React.FC = () => {
       <div style={{ position: 'absolute', left: 150, top: 975, fontFamily: SANS, fontWeight: 500, fontSize: 28, letterSpacing: '0.32em', textTransform: 'uppercase', color: '#b9b2a6', opacity: interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [0, 1], { ...CLAMP, easing: OUT }), transform: `translateY(${interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [14, 0], { ...CLAMP, easing: OUT })}px)` }}>
         faster, same frames
       </div>
-
-      <AbsoluteFill style={{ mixBlendMode: 'screen' }}>
-      {/* the word is drawn on over IMPACT_HOLD frames, then the last picture of it stays (the clip goes on to scribble itself out) */}
-      <Sequence from={IMPACT_AT} durationInFrames={IMPACT_HOLD}>
-        <Video src={staticFile('fx/hand-impact.mp4')} x={866} y={450} width={1070} height={602} fit="contain" muted />
-      </Sequence>
-      <Sequence from={IMPACT_AT + IMPACT_HOLD}>
-        <Freeze frame={IMPACT_HOLD}>
-          <Video src={staticFile('fx/hand-impact.mp4')} x={866} y={450} width={1070} height={602} fit="contain" muted />
-        </Freeze>
-      </Sequence>
-      </AbsoluteFill>
-
-      <div style={{ position: 'absolute', right: 120, bottom: 56, fontFamily: MONO, fontSize: 22, color: '#666' }}>S04 · M4 · measured 2026-10-15</div>
     </AbsoluteFill>
   );
 };
