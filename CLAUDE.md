@@ -3,19 +3,9 @@
 A browserless programmatic video engine: agents write Remotion-shaped TypeScript and Web Audio code, Node runs it,
 and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is the final name (decided 2026-10-16).
 
-Phases 0 to 5 are built and merged into `main` (core renderer, effects, authoring, studio and video layers, Remotion
-compat on a native DOM engine, GPU-pass work); see `README.md`, `docs/ENGINE.md`, `docs/AUTHORING.md` and `docs/SCENE.md`.
-The Remotion compatibility reference (what is drawn, what is unsupported, `doctor`) is on the kinetograph site at
-`/docs/compat/`, and the known gaps at `/docs/known-issues/`.
-
-- `docs/reference/`: the target motion-graphics video (`rajz-reference.mp4`) and frame sheets from it.
-
-Decided 2026-10-14: own the engine, built from scratch. fframes is a reference only. Phase 2 (2a,
-2b, 2c) done 2026-10-14. Phase 3 done 2026-10-15 (PR #11, with its fixes #18–#21). Phases 4 and 5 and
-the GPU-pass work merged into `main` 2026-10-16 (S04 7.0x faster than Remotion; papercut corpus 988/988 frames native).
-Phase 6 done 2026-10-16: Canvas 2D, CSS gaps, corpus leftovers, WebGL fragment shaders, the own 3D layer, and the
-Chrome fallback is removed (the render path has no browser; unsupported content warns, `--strict` fails; Chrome for
-Testing stays only as a test oracle).
+Docs: `README.md`, `docs/ENGINE.md`, `docs/AUTHORING.md` and `docs/SCENE.md`. The Remotion compatibility reference
+(what is drawn, what is unsupported, `doctor`) is on the kinetograph site at `/docs/compat/`, and the known gaps at
+`/docs/known-issues/`.
 
 Use the rustup toolchain (`~/.cargo/bin`, `/opt/homebrew/opt/rustup/bin`); Homebrew's `/opt/homebrew/bin/rustc` is
 broken.
