@@ -901,7 +901,8 @@ How a frame is drawn:
 Supported (RN-Skia's names): `Canvas`, `Group` (`transform`, `origin`, `matrix`, `clip`, `invertClip`, `layer`, `opacity`,
 `blendMode`, paint props), `Fill`, `Rect`, `RoundedRect`, `Circle`, `Oval`, `Line`, `Points`, `DiffRect`, `Path` (`start`,
 `end`, `stroke`, `fillType`), `Box`/`BoxShadow`, `Vertices`, `Image` (`fit`, `sampling`), `Text`, `TextPath`, `Paragraph`,
-`Mask`, `BackdropFilter`/`BackdropBlur`, `Paint`; shaders `Shader` (SkSL, run by Skia), `ImageShader`, `ColorShader`, the
+`Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture`, `ImageSVG`, `Mask`, `BackdropFilter`/`BackdropBlur`, `Paint`;
+shaders `Shader` (SkSL, run by Skia), `ImageShader`, `ColorShader`, the
 four gradients, `Turbulence`, `FractalNoise`, `Blend`; image filters `Blur`, `Shadow`, `Offset`, `Morphology`,
 `DisplacementMap`, `RuntimeShader`; colour filters `ColorMatrix`, `BlendColor`, `Lerp`, `LumaColorFilter` and the two gamma
 ones; `BlurMask`; path effects `DashPathEffect`, `CornerPathEffect`, `DiscretePathEffect`, `SumPathEffect`, and the 1D and
@@ -909,17 +910,26 @@ ones; `BlurMask`; path effects `DashPathEffect`, `CornerPathEffect`, `DiscretePa
 `arcToRotated`, `addRect`, `addCircle`, `addOval`, `addRRect`, `addArc`, `addPath`, `close`), and Skia answers `op`,
 `simplify`, `trim`, `dash`, `stroke`, `transform`, `getBounds`, `contains`; `Skia.Color`, `Skia.XYWHRect`,
 `Skia.RRectXY`, `Skia.Matrix`, `Skia.Paint`, `Skia.RuntimeEffect.Make` (null and Skia's message logged on a compile
-error), `Skia.ParagraphBuilder.Make`; hooks `useImage`, `useFont`, `matchFont`, `useCanvasRef`; the enums as strings.
+error), `Skia.ParagraphBuilder.Make`, `Skia.TextBlob.MakeFromText`/`MakeFromGlyphs`/`MakeFromRSXform`/`MakeFromRSXformGlyphs`,
+`Skia.RSXform`/`RSXformFromRadians`, `Skia.PictureRecorder` and `createPicture` (the canvas it records takes the `SkCanvas`
+calls for shapes, paths, images, text, blobs, glyphs, atlases, patches, clips and transforms), `Skia.SVG.MakeFromString`
+(null if it does not parse); hooks `useImage`, `useFont`, `useSVG`, `matchFont`, `useCanvasRef`; the enums as strings.
 
 Fonts are files, as everywhere: `matchFont` and `Paragraph` find only fonts registered with `loadFont()`/`registerFont()`
 (no system fonts, so text is the same on every machine); `useFont(staticFile('a.ttf'), size)` reads a file. Pictures are
 read from the project or its `public` directory. Everything a render reads is read when the frame is drawn.
 
-Reported as unsupported (a warning; `--strict` fails) when drawn: `Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture`,
-`ImageSVG`. Not provided (an import of one fails the bundle, naming the export): Reanimated
+`Atlas` is `canvas.drawAtlas` (`colorBlendMode` combines a sprite, the source, with its colour, the destination; default
+`dstOver`), `Patch` is `drawPatch` (corners clockwise from the top left, `c1` the control point on the edge that arrives
+at the corner and `c2` on the one that leaves it), `Glyphs` and `TextBlob` draw glyphs of a registered font, `Picture` is
+recorded again by Skia's own recorder and drawn once, whatever paints are declared around it, and `ImageSVG` is Skia's SVG
+DOM: an SVG with a size of its own is fitted whole and centred into `width` by `height`, one sized by percentages is laid
+out in them. An SVG has no system fonts, so its `<text>` is left out and reported (a warning; `--strict` fails).
+
+Not provided (an import of one fails the bundle, naming the export): Reanimated
 values and hooks (`useSharedValue`, `useDerivedValue`, `useClock`; a Remotion project drives props from the frame),
 `FitBox`/`fitbox`/`rect2rect`, `Skia.Surface`/`Offscreen`/`makeImageFromView`, `Skia.Image.*` and `Skia.Data.*` factories,
-`Skia.SVG`/`useSVG`, `Skia.Typeface`/`FontMgr`, `useVideo`, animated images, `Paragraph` measurement, a `Skia.Paint()` with a
+`Skia.SVG.MakeFromData`, `Skia.Typeface`/`FontMgr`, `useVideo`, animated images, `Paragraph` measurement, a `Skia.Paint()` with a
 shader or filter set on it (use the JSX children), touch handling.
 
 ## 8. `@kinetograph/audio` (stream 5)
