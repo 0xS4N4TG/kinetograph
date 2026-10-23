@@ -84,8 +84,20 @@ pub struct Translator {
     /// The fallback textures of the frame: Skia reads them when the recording runs, so they go back to the compositor's
     /// pool after that (`take_held`).
     held: Vec<Tex>,
+    /// The pictures of a canvas pass's children while its commands are drawn (`raster_canvas_pass`).
+    layer_pics: Option<LayerPictures>,
     /// A fallback failed (`Renderer::skia_fallback`'s error), reported by `draw_scene`'s caller.
     pub error: Option<crate::error::Error>,
+}
+
+/// The children of a canvas pass as pictures: each a compositor texture wrapped as an image, with the matrix that takes
+/// a point of the picture (the pass's own space, `size` across) to a texel of that image.
+struct LayerPictures {
+    size: (f64, f64),
+    /// The canvas pixels back to the pass's space.
+    from_canvas: Affine,
+    /// By child id: the image, the part of it that holds pixels, and the canvas pixel its texel (0, 0) is.
+    images: HashMap<String, (Image, Rect, [i32; 2])>,
 }
 
 fn mat(a: Affine) -> Matrix {
@@ -178,6 +190,7 @@ impl Translator {
             host: std::ptr::null_mut(),
             rec: None,
             held: Vec::new(),
+            layer_pics: None,
             error: None,
         }
     }
@@ -1849,6 +1862,45 @@ impl Translator {
             _ => self.draw_content(canvas, layer, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, 1.0),
         }
         canvas.restore();
+    }
+
+    /// The canvas layer `layer` (a canvas pass: its commands) under `matrix`, with the children `pictures` (by id) as the
+    /// pictures its `layer` sources name. Each child is a compositor texture of the canvas, drawn through the inverse of
+    /// `matrix`, so a picture is the child in the pass's own space.
+    pub fn raster_canvas_pass(&mut self, canvas: &Canvas, layer: &ResolvedLayer, matrix: Affine, pictures: &[(&str, &Tex)]) {
+        let ResolvedKind::Canvas { width, height, .. } = &layer.kind else {
+            return;
+        };
+        let mut images = HashMap::new();
+        if !self.host.is_null()
+            && let Some(rec) = self.rec.clone()
+        {
+            // SAFETY: `host` is the renderer `raster_leaf`'s caller holds; this translator is not part of it.
+            let host = unsafe { &*self.host };
+            for (id, tex) in pictures {
+                let b = tex.bounds;
+                if b.is_empty() {
+                    continue;
+                }
+                match host.skia_wrap(&mut rec.borrow_mut(), tex) {
+                    Some(img) => {
+                        let src = Rect::new(
+                            (b.x0 - tex.origin[0]) as f32,
+                            (b.y0 - tex.origin[1]) as f32,
+                            (b.x1 - tex.origin[0]) as f32,
+                            (b.y1 - tex.origin[1]) as f32,
+                        );
+                        images.insert((*id).to_string(), (img, src, tex.origin));
+                    }
+                    None => self.stats.no("canvas layer picture (wrap failed)"),
+                }
+            }
+        }
+        // The pass's picture of a child is a buffer of the pass's size, rounded, that `matrix` puts on the canvas.
+        let side = |v: f64| v.round().clamp(1.0, 16384.0);
+        self.layer_pics = Some(LayerPictures { size: (side(*width), side(*height)), from_canvas: matrix.inverse(), images });
+        self.raster_leaf(canvas, layer, matrix);
+        self.layer_pics = None;
     }
 
     /// The fill and stroke of the shape `layer` in opaque white, whatever their colours and alphas.

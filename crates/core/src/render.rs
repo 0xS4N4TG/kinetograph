@@ -1628,6 +1628,24 @@ impl Renderer {
         Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h)))
     }
 
+    /// A canvas pass's picture, drawn by Skia: the commands `ops` on a canvas of `size` under `matrix`, with the
+    /// textures `layers` (the pass's children, by id) as the pictures its `layer` sources name.
+    fn canvas_pass_skia(
+        &mut self,
+        id: &str,
+        size: (f64, f64),
+        ops: &std::sync::Arc<Vec<canvas::CanvasOp>>,
+        matrix: Affine,
+        layers: &[(&str, &Tex)],
+    ) -> Result<Tex> {
+        let canvas = canvas_layer(id, size, ops);
+        let region = self.raster_bounds(&canvas, matrix)?;
+        if region.is_empty() {
+            return Ok(self.compositor.empty());
+        }
+        self.timed(Stage::Raster, |s| s.skia_canvas_pass(&canvas, matrix, region, layers))
+    }
+
     /// A canvas pass's picture: the commands `ops` drawn by Vello on a canvas of `size` under `matrix`, with the
     /// textures `pictures` as the pictures its `layer` sources name.
     fn canvas_pass(
@@ -1649,23 +1667,7 @@ impl Renderer {
             self.images.insert(canvas::layer_key(&child), image.clone());
             kept.push((child, image));
         }
-        let canvas = ResolvedLayer {
-            id: id.to_string(),
-            transform: crate::resolve::ResolvedTransform::default(),
-            opacity: 1.0,
-            blend_mode: BlendMode::Normal,
-            effects: Vec::new(),
-            clip: None,
-            mask: None,
-            matte: None,
-            kind: ResolvedKind::Canvas {
-                width: size.0,
-                height: size.1,
-                ops: ops.clone(),
-            },
-            item: None,
-            motion: Vec::new(),
-        };
+        let canvas = canvas_layer(id, size, ops);
         let drawn = self.raster_bounds(&canvas, matrix).and_then(|region| {
             if region.is_empty() {
                 return Ok(self.compositor.empty());
@@ -1772,11 +1774,17 @@ impl Renderer {
                 self.cache_path.pop();
                 let layers: Vec<(&str, &Tex)> =
                     children.iter().map(|c| c.id.as_str()).zip(&drawn).collect();
-                let pictures = self.compositor.canvas_pictures((*width, *height), matrix, &layers);
+                let tex = if self.skia_rasters() {
+                    // Skia draws the children as they are, and the commands over them.
+                    self.canvas_pass_skia(&layer.id, (*width, *height), ops, matrix, &layers)
+                } else {
+                    let pictures = self.compositor.canvas_pictures((*width, *height), matrix, &layers);
+                    self.canvas_pass(&layer.id, (*width, *height), ops, matrix, pictures)
+                };
                 for tex in drawn {
                     self.compositor.release(tex);
                 }
-                self.canvas_pass(&layer.id, (*width, *height), ops, matrix, pictures)?
+                tex?
             }
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
@@ -4445,6 +4453,27 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         canvas_pictures,
         rebound,
     })
+}
+
+/// The canvas layer that draws a canvas pass's commands `ops`, `size` across.
+fn canvas_layer(id: &str, size: (f64, f64), ops: &std::sync::Arc<Vec<canvas::CanvasOp>>) -> ResolvedLayer {
+    ResolvedLayer {
+        id: id.to_string(),
+        transform: crate::resolve::ResolvedTransform::default(),
+        opacity: 1.0,
+        blend_mode: BlendMode::Normal,
+        effects: Vec::new(),
+        clip: None,
+        mask: None,
+        matte: None,
+        kind: ResolvedKind::Canvas {
+            width: size.0,
+            height: size.1,
+            ops: ops.clone(),
+        },
+        item: None,
+        motion: Vec::new(),
+    }
 }
 
 #[cfg(test)]

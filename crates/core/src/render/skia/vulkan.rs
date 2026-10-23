@@ -241,7 +241,7 @@ impl Native {
     /// in the same, as the module comment says. `target` is this frame's canvas texture and `held` the fallback
     /// textures Skia samples; it runs after the compositor's pending commands (they wrote `held`) and before Skia's
     /// recording is inserted.
-    pub(super) fn before_skia(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, target: &wgpu::TextureView, held: &[Tex]) {
+    pub(super) fn before_skia(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, target: &wgpu::TextureView, held: &[&Tex]) {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("skia touch") });
         drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("skia target to attachment"),

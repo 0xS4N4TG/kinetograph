@@ -357,8 +357,36 @@ impl Translator {
                 img
             }
             // A canvas is drawn, not sampled; a canvas pass's layers are pictures only to the wgpu path that draws that group.
-            CanvasSource::Canvas { .. } | CanvasSource::Layer { .. } => None,
+            // A canvas is drawn, not sampled; a canvas pass's layer is drawn through `draw_layer_picture`, which a
+            // pattern cannot use.
+            CanvasSource::Layer { .. } => {
+                self.stats.no("canvas pattern of a layer picture");
+                None
+            }
+            CanvasSource::Canvas { .. } => None,
         }
+    }
+
+    /// The child `id` of a canvas pass, over the source rectangle `src` of its picture (the pass's space), under the
+    /// current matrix. The picture is the child as the compositor drew it, so it is cut to the pass's box and to the
+    /// pixels the child has.
+    fn draw_layer_picture(&mut self, canvas: &Canvas, id: &str, src: Rect, paint: &Paint, sampling: SamplingOptions) {
+        let Some(pics) = &self.layer_pics else {
+            self.stats.no("canvas layer picture (outside a canvas pass)");
+            return;
+        };
+        let Some((img, has, origin)) = pics.images.get(id) else {
+            // A child with nothing drawn, or one that could not be wrapped (noted when it was).
+            return;
+        };
+        let to_picture = pics.from_canvas * Affine::translate((f64::from(origin[0]), f64::from(origin[1])));
+        let (img, has) = (img.clone(), *has);
+        canvas.save();
+        canvas.clip_rect(src, ClipOp::Intersect, true);
+        canvas.concat(&mat(to_picture));
+        canvas.draw_image_rect_with_sampling_options(&img, Some((&has, skia_safe::canvas::SrcRectConstraint::Strict)), has, sampling, paint);
+        canvas.restore();
+        self.stats.draws += 1;
     }
 
     /// A pattern of another canvas: the area of `path` (its outline when stroked) is clipped and the canvas drawn once
@@ -427,7 +455,14 @@ impl Translator {
 
     fn canvas_image(&mut self, canvas: &Canvas, op: &ImageOp, comp: Comp) {
         let (nw, nh) = match &op.source {
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Layer { .. } => match self.canvas_picture(&op.source) {
+            CanvasSource::Layer { .. } => match &self.layer_pics {
+                Some(p) => p.size,
+                None => {
+                    self.stats.no("canvas layer picture (outside a canvas pass)");
+                    return;
+                }
+            },
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => match self.canvas_picture(&op.source) {
                 Some(i) => (i.width() as f64, i.height() as f64),
                 None => {
                     self.stats.no("canvas image (file)");
@@ -450,6 +485,11 @@ impl Translator {
             CanvasSource::Canvas { width, height, commands } => {
                 canvas.clip_rect(src, ClipOp::Intersect, true);
                 self.canvas_nested(canvas, (*width, *height), commands, comp.alpha, comp.blend);
+            }
+            CanvasSource::Layer { id } => {
+                let p = Self::base_paint(comp);
+                let filter = if op.smooth { skia_safe::FilterMode::Linear } else { skia_safe::FilterMode::Nearest };
+                self.draw_layer_picture(canvas, id, src, &p, SamplingOptions::new(filter, skia_safe::MipmapMode::None));
             }
             source => {
                 if let Some(img) = self.canvas_picture(source) {

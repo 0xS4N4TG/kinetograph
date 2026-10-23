@@ -108,6 +108,10 @@ mod stub {
             unreachable!("no Skia backend in this build")
         }
 
+        pub(in super::super) fn skia_canvas_pass(&mut self, _: &crate::resolve::ResolvedLayer, _: vello::kurbo::Affine, _: crate::bounds::PixelRect, _: &[(&str, &Tex)]) -> Result<Tex> {
+            unreachable!("no Skia backend in this build")
+        }
+
         pub(in super::super) fn skia_clip(&mut self, _: &vello::kurbo::BezPath, _: vello::kurbo::Affine, _: crate::bounds::PixelRect) -> Result<Tex> {
             unreachable!("no Skia backend in this build")
         }

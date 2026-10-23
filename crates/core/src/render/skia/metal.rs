@@ -43,5 +43,5 @@ impl Native {
         Some(unsafe { graphite::mtl::backend_textures::make_metal((size.0 as i32, size.1 as i32), ptr) })
     }
 
-    pub(super) fn before_skia(&mut self, _: &wgpu::Device, _: &wgpu::Queue, _: &wgpu::TextureView, _: &[Tex]) {}
+    pub(super) fn before_skia(&mut self, _: &wgpu::Device, _: &wgpu::Queue, _: &wgpu::TextureView, _: &[&Tex]) {}
 }

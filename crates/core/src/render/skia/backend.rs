@@ -228,7 +228,7 @@ impl Renderer {
         self.compositor.submit();
         let held = tr.take_held();
         // Whatever wgpu has to do to the textures first (image layouts on Vulkan; nothing on Metal).
-        native.before_skia(&self.device, &self.queue, &targets[current].view, &held);
+        native.before_skia(&self.device, &self.queue, &targets[current].view, &held.iter().collect::<Vec<_>>());
         let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
         let info = graphite::InsertRecordingInfo::new(&mut recording);
         if ctx.insert_recording(&info) != graphite::InsertStatus::Success {
@@ -381,16 +381,33 @@ impl Renderer {
         })
     }
 
-    /// Runs `draw` on a canvas whose pixels are the canvas pixels of `region` (cut to the target), and returns what it
-    /// drew as a texture whose bounds are `region`.
-    fn skia_raster(&mut self, region: PixelRect, draw: impl FnOnce(&mut Translator, &Canvas)) -> Result<Tex> {
+    /// A canvas pass: the canvas layer `layer` (its commands) under `matrix`, with the children `pictures` as the
+    /// pictures its `layer` sources name.
+    pub(in super::super) fn skia_canvas_pass(
+        &mut self,
+        layer: &ResolvedLayer,
+        matrix: Affine,
+        region: PixelRect,
+        pictures: &[(&str, &Tex)],
+    ) -> Result<Tex> {
+        let held: Vec<&Tex> = pictures.iter().map(|(_, t)| *t).collect();
         let mut inner = self.skia_inner.take().expect("a Skia frame is being drawn");
-        let drawn = self.skia_raster_in(&mut inner, region, draw);
+        let drawn = self.skia_raster_with(&mut inner, region, &held, |tr, canvas| tr.raster_canvas_pass(canvas, layer, matrix, pictures));
         self.skia_inner = Some(inner);
         drawn
     }
 
-    fn skia_raster_in(&mut self, inner: &mut Inner, region: PixelRect, draw: impl FnOnce(&mut Translator, &Canvas)) -> Result<Tex> {
+    /// Runs `draw` on a canvas whose pixels are the canvas pixels of `region` (cut to the target), and returns what it
+    /// drew as a texture whose bounds are `region`.
+    fn skia_raster(&mut self, region: PixelRect, draw: impl FnOnce(&mut Translator, &Canvas)) -> Result<Tex> {
+        let mut inner = self.skia_inner.take().expect("a Skia frame is being drawn");
+        let drawn = self.skia_raster_with(&mut inner, region, &[], draw);
+        self.skia_inner = Some(inner);
+        drawn
+    }
+
+    /// `held` are the compositor textures `draw` samples.
+    fn skia_raster_with(&mut self, inner: &mut Inner, region: PixelRect, held: &[&Tex], draw: impl FnOnce(&mut Translator, &Canvas)) -> Result<Tex> {
         let region = region.intersect(self.whole());
         let linear = self.scene.blend_space == crate::scene::BlendSpace::Linear;
         let tex = self.compositor.skia_target(region);
@@ -446,7 +463,7 @@ impl Renderer {
         };
         // The compositor's pending passes may still read this texture: they go first.
         self.compositor.submit();
-        inner.native.before_skia(&self.device, &self.queue, draw_view, &[]);
+        inner.native.before_skia(&self.device, &self.queue, draw_view, held);
         let bt = Native::backend_texture(&self.device, draw_texture, size, Role::Target)
             .ok_or_else(|| Error::Render("the Skia raster target is not a texture of the GPU API Skia runs on".into()))?;
         let (color_type, space) =
