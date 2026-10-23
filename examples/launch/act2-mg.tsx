@@ -1,23 +1,22 @@
 // The motion-graphics run between shots 7 and 8: what the engine draws beyond type, each piece on its own API.
 //
-//   m1  <Scene3D>: the wordmark as extruded 3D type, a dolly zoom out of a flat front view, props dropping in.
+//   m1  <Scene3D>: the wordmark as extruded chrome type on a dark stage, a raking key light, the camera dollying back.
 //   m2  an orthographic camera: an isometric city of blocks rising in a ripple; the camera dives into the red block.
-//   m3  <GlslShader>: domain-warped marbling seen through a thermal camera's palette, its source typing on beside it.
-//   m4  <Canvas>: a flow field of 2,000 strokes and a spirograph, drawn in phosphor on a vector tube (with the beam's
-//       afterglow), opened with an iris.
-//   m5  <GlslShader>: three glass spheres refracting (with dispersion) a frame of the 1927 parade film, the camera
-//       pulling back, graded with shot 7's film.
+//   m3  <GlslShader>: a frame of Fred Ott's Sneeze in heat haze, eaten by a wash of ink, its source typing on beside it.
+//   m4  <Canvas>: a zoetrope: Muybridge's galloping horse (1878) in pen strokes round a drum that spins up until the
+//       horse gallops in its windows, opened with an iris.
+//   m5  <GlslShader>: a thick lens sliding over a woodblock print, refracting it with dispersion.
 //
 // m1 to m2 is a whip pan (both sides motion-blurred), m2 to m3 a dive into a red face, m3 to m4 an iris, m4 to m5 a cut.
 
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import {
-  AmbientLight, Camera3D, Canvas, DirectionalLight, GlslShader, Group3D, Layer, Mesh, Scene3D, Text3D, glow, gradientMap, grain,
+  AmbientLight, Camera3D, Canvas, DirectionalLight, GlslShader, Group3D, Layer, Mesh, PointLight, Scene3D, Text3D, glow, gradientMap, grain,
 } from '@kinetograph/core';
-import { crt, thermal } from './looks.js';
-import { CLAMP, H, INK, LEN, MONO, MUSTARD, OUT, PAPER, RED, SANS, W } from './common.js';
+import { CLAMP, H, INK, LEN, MONO, OUT, PAPER, RED, SANS, W } from './common.js';
 import { IO } from './act1-kit.js';
+import horse from './public/mg/horse.json';
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const HDRI = staticFile('hdri/studio_small_08_1k.hdr');
@@ -42,72 +41,47 @@ const Plate: React.FC<{ n: string; api: string; what: string; at?: number; dark?
 
 // ---- m1: real 3D ----
 
-/** A prop that falls onto the floor at `at` and settles with a damped bounce. */
-function drop(frame: number, at: number, rest: number): { y: number; sq: number; on: boolean } {
-  const t = frame - at;
-  if (t < 0) return { y: rest + 8, sq: 0, on: false };
-  const fall = 10;
-  if (t < fall) return { y: rest + 8 * (1 - (t / fall) ** 2), sq: -0.08, on: true };
-  const k = t - fall;
-  const sq = 0.22 * Math.exp(-k / 4) * Math.cos(k * 0.9);
-  return { y: rest - Math.max(0, sq) * 0.2 + Math.abs(Math.sin(k * 0.45)) * 0.7 * Math.exp(-k / 3.5), sq, on: true };
-}
-
-/** Frames the props land in m1 ("real 3D"). */
-export const M1_DROPS = [55, 60, 64, 69];
-
 export const M1: React.FC = () => {
   const frame = useCurrentFrame();
   const L = LEN.m1;
-  // The dolly zoom: from far away with a long lens (the type looks flat, as the 2D line before it) to close with a
-  // wide one, keeping the wordmark the same width, while the camera swings round 38 degrees and lifts.
-  // The reveal starts flat on "and not just text" and turns all the way through "real 3D" (07c-text, then m1-3d).
-  const k = interpolate(frame, [6, 64], [0, 1], { ...CLAMP, easing: IO });
-  const drift = interpolate(frame, [64, L], [0, 1], CLAMP);
-  const fov = 7 + 29 * k;
-  const dist = 3.4 / Math.tan(rad(fov / 2)) - drift * 0.7; // distance x tan(fov / 2) held, so the type keeps its width
-  const az = rad(-2 + 28 * k + 6 * drift);
-  const el = rad(8 + 15 * k + 2 * drift); // above the horizon from the first frame
-  const target: [number, number, number] = [0, 0.75, 0];
-  const pos: [number, number, number] = [dist * Math.sin(az) * Math.cos(el), target[1] + dist * Math.sin(el), dist * Math.cos(az) * Math.cos(el)];
+  // A dark stage (the floor is unlit black, so only the metal takes the light). The camera starts low on the end of
+  // the chrome wordmark and dollies back along it to a three-quarter view of the whole word, while a hard key light
+  // rakes across from the left and the studio picture turns, so the reflections slide over the metal.
+  const k = interpolate(frame, [0, L - WHIP], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) });
+  const dist = 6.2 + 4.8 * k;
+  const az = rad(30 - 6 * k);
+  const el = rad(5 + 8 * k);
+  const target: [number, number, number] = [1.8 * (1 - k), 1.35, 0];
+  const pos: [number, number, number] = [target[0] + dist * Math.sin(az) * Math.cos(el), target[1] + dist * Math.sin(el), dist * Math.cos(az) * Math.cos(el)];
+  const key = rad(interpolate(frame, [0, L], [-10, 40], CLAMP));
+  const fade = interpolate(frame, [0, 6], [0, 1], CLAMP);
+  // the sweep: a light passing along the front of the letters, left to right, so a sheen runs over the metal
+  const sweep = interpolate(frame, [10, L - WHIP], [-9, 9], { ...CLAMP, easing: Easing.inOut(Easing.sin) });
 
   const whip = interpolate(frame, [L - WHIP, L], [0, 1], { ...CLAMP, easing: Easing.in(Easing.cubic) });
-  const props = [
-    { geometry: { kind: 'sphere' as const, radius: 0.55, segments: 64, rings: 32 }, material: { color: '#d8d8d8', metallic: 1, roughness: 0.08 }, x: -3.4, z: 1.6, rest: 0.55 },
-    { geometry: { kind: 'torus' as const, radius: 0.48, tube: 0.18, ringSegments: 64 }, material: { color: MUSTARD, roughness: 0.35 }, x: 3.1, z: 1.9, rest: 0.66 },
-    { geometry: { kind: 'cylinder' as const, radiusTop: 0, radiusBottom: 0.45, height: 1.1, segments: 48 }, material: { color: INK, roughness: 0.4 }, x: 4.4, z: 0.2, rest: 0.55 },
-    { geometry: { kind: 'box' as const, width: 0.8, height: 0.8, depth: 0.8 }, material: { color: PAPER, roughness: 0.6 }, x: -4.6, z: 0.1, rest: 0.4 },
-  ];
   return (
     <>
-    <AbsoluteFill style={{ background: PAPER }} />
+    <AbsoluteFill style={{ background: '#000' }} />
     {/* a native layer beside a DOM one goes in an AbsoluteFill, or it lands in the flow */}
     <AbsoluteFill>
-    <Layer id="m1" x={-W * 0.6 * whip} motionBlur={whip > 0 ? { samples: 12, shutter: 0.8 } : undefined}>
-      <AbsoluteFill style={{ background: `radial-gradient(ellipse 80% 80% at 50% 40%, #F6F5F2 0%, ${PAPER} 50%, #CFCCC7 100%)` }} />
+    <Layer id="m1" x={-W * 0.6 * whip} opacity={fade} motionBlur={whip > 0 ? { samples: 12, shutter: 0.8 } : undefined}
+      effects={[glow({ radius: 34, intensity: 0.5 }), grain(0.09, { seed: 11, animate: true })]}>
+      <AbsoluteFill style={{ background: '#000' }} />
       <AbsoluteFill>
-        <Scene3D id="m1-3d" width={W} height={H} environment={{ src: HDRI, intensity: 0.55 }}>
-          <Camera3D fov={fov} position={pos} target={target} far={6000} />
-          <AmbientLight intensity={0.25} />
-          <DirectionalLight direction={[0.5, -0.9, -0.55]} intensity={1.5} castShadow shadow={{ mapSize: 2048, radius: 2.5 }} />
-          <DirectionalLight direction={[-0.7, -0.3, -0.6]} intensity={0.5} />
-          <Mesh geometry={{ kind: 'plane', width: 4000, height: 4000 }} material={{ color: '#bcb8b1', roughness: 0.95 }} rotation={[-90, 0, 0]} receiveShadow />
-          <Text3D font={SANS} weight={700} size={1.55} depth={0.55} position={[0, 0.78, 0]} material={{ color: RED, roughness: 0.32 }} castShadow receiveShadow>
+        <Scene3D id="m1-3d" width={W} height={H} environment={{ src: HDRI, intensity: 0.45, rotation: 40 + frame * 2.2 }}>
+          <Camera3D fov={30} position={pos} target={target} far={600} />
+          <AmbientLight intensity={0.02} />
+          <DirectionalLight direction={[Math.cos(key), -0.3, Math.sin(key)]} color="#fff1dc" intensity={4.6} castShadow shadow={{ mapSize: 2048, radius: 1.5 }} />
+          <DirectionalLight direction={[0.15, -0.35, 1]} color="#ffd2a0" intensity={1.6} />
+          <PointLight position={[sweep, 2.2, 2.6]} color="#fff4e4" intensity={40} range={9} />
+          <Mesh geometry={{ kind: 'plane', width: 400, height: 400 }} material={{ color: '#040404', unlit: true }} rotation={[-90, 0, 0]} />
+          <Text3D font={SANS} weight={700} size={1.55} depth={0.55} position={[0, 0.78, 0]} material={{ color: '#b9ad9c', metallic: 1, roughness: 0.22 }} castShadow receiveShadow>
             kinetograph
           </Text3D>
-          {props.map((p, i) => {
-            const d = drop(frame, M1_DROPS[i]!, p.rest);
-            const spin = i === 1 ? frame * 4 : i === 2 ? 0 : (frame - M1_DROPS[i]!) * 1.5;
-            return (
-              <Mesh
-                key={i} geometry={p.geometry} material={p.material} visible={d.on} castShadow receiveShadow
-                position={[p.x, d.y, p.z]} rotation={i === 1 ? [70, spin, 0] : [0, spin, 0]} scale={[1 + d.sq * 0.5, 1 - d.sq, 1 + d.sq * 0.5]}
-              />
-            );
-          })}
         </Scene3D>
       </AbsoluteFill>
-      <Plate n="01" api="<Scene3D>" what="extruded type, PBR, image lighting, shadows" at={52} />
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 50%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.85) 100%)' }} />
+      <Plate n="01" api="<Scene3D>" what="extruded chrome, PBR, image lighting, shadows" at={40} dark />
     </Layer>
     </AbsoluteFill>
     </>
@@ -118,7 +92,7 @@ export const M1: React.FC = () => {
 
 const GRID = 9;
 /** The lit floor's colour as it renders, for the ground behind the whip-in. */
-const FLOOR = '#E1AF33';
+const FLOOR = '#2a2622';
 const CELL = 1.1;
 /** Frame the camera starts its dive into the red block that ends m2. */
 export const M2_DIVE = LEN.m2 - 16;
@@ -126,7 +100,7 @@ export const M2_DIVE = LEN.m2 - 16;
 const blockColor = (i: number, j: number): string => {
   if (i === 4 && j === 4) return RED;
   const r = random(`iso-${i}-${j}`);
-  return r < 0.12 ? INK : r < 0.24 ? MUSTARD : r < 0.3 ? RED : PAPER;
+  return r < 0.3 ? '#1c1a18' : r < 0.36 ? RED : '#e9e1d2';
 };
 
 export const M2: React.FC = () => {
@@ -162,19 +136,19 @@ export const M2: React.FC = () => {
     <AbsoluteFill style={{ background: FLOOR }} />
     {/* a native layer beside a DOM one goes in an AbsoluteFill, or it lands in the flow */}
     <AbsoluteFill>
-    <Layer id="m2" x={W * 0.6 * enter} motionBlur={enter > 0 ? { samples: 12, shutter: 0.8 } : undefined}>
+    <Layer id="m2" x={W * 0.6 * enter} motionBlur={enter > 0 ? { samples: 12, shutter: 0.8 } : undefined} effects={[glow({ radius: 30, intensity: 0.2 }), grain(0.07, { seed: 13, animate: true })]}>
       <AbsoluteFill style={{ background: FLOOR }} />
       <AbsoluteFill>
         <Scene3D id="m2-3d" width={W} height={H}>
           <Camera3D type="orthographic" height={10.5 * (1 - dive) + 0.25 * dive} position={[look[0] + dir[0]! * 30, look[1] + dir[1]! * 30, look[2] + dir[2]! * 30]} target={look} far={200} />
-          <AmbientLight intensity={0.3} />
-          <DirectionalLight direction={[-0.35, -1, -0.6]} intensity={1.05} castShadow shadow={{ mapSize: 2048, radius: 1.5 }} />
-          <DirectionalLight direction={[0.8, -0.4, 0.3]} intensity={0.35} />
-          <Mesh geometry={{ kind: 'plane', width: 60, height: 60 }} material={{ color: '#c99a1e', roughness: 1 }} rotation={[-90, 0, 0]} receiveShadow />
+          <AmbientLight color="#8a9bb8" intensity={0.16} />
+          <DirectionalLight direction={[-0.9, -0.3, -0.35]} color="#ffc48a" intensity={1.5} castShadow shadow={{ mapSize: 2048, radius: 1.5 }} />
+          <DirectionalLight direction={[0.7, -0.5, 0.4]} color="#6f86b0" intensity={0.22} />
+          <Mesh geometry={{ kind: 'plane', width: 60, height: 60 }} material={{ color: '#4a4440', roughness: 1 }} rotation={[-90, 0, 0]} receiveShadow />
           <Group3D>{blocks}</Group3D>
         </Scene3D>
       </AbsoluteFill>
-      <div style={{ opacity: 1 - dive }}><Plate n="02" api='<Camera3D type="orthographic">' what="81 blocks, one ripple" at={10} /></div>
+      <div style={{ opacity: 1 - dive }}><Plate n="02" api='<Camera3D type="orthographic">' what="81 blocks, one ripple" at={10} dark /></div>
     </Layer>
     </AbsoluteFill>
     </>
@@ -183,10 +157,11 @@ export const M2: React.FC = () => {
 
 // ---- m3: a WebGL shader ----
 
-const MARBLE = `precision highp float;
+const INKWASH = `precision highp float;
 uniform vec2 u_res;
 uniform float u_t;
 uniform float u_red;
+uniform sampler2D u_film;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -199,42 +174,41 @@ float fbm(vec2 p) {
   for (int i = 0; i < 5; i++) { v += a * noise(p); p = m * p; a *= 0.5; }
   return v;
 }
-float field(vec2 p, out vec2 q, out vec2 r) {
-  q = vec2(fbm(p + vec2(0.0, 0.0) + 0.12 * u_t), fbm(p + vec2(5.2, 1.3) - 0.1 * u_t));
-  r = vec2(fbm(p + 3.6 * q + vec2(1.7, 9.2) + 0.3 * u_t), fbm(p + 3.6 * q + vec2(8.3, 2.8) - 0.24 * u_t));
-  return fbm(p + 3.6 * r);
+/** Shot 7's film grade: luma to black, warm grey, cream. */
+vec3 tone(float l) {
+  vec3 a = vec3(0.024, 0.027, 0.031), b = vec3(0.49, 0.463, 0.42), c = vec3(1.0, 0.949, 0.863);
+  return l < 0.5 ? mix(a, b, l * 2.0) : mix(b, c, l * 2.0 - 1.0);
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / u_res;
-  vec2 p = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
-  float zoom = 2.2 - 0.5 * smoothstep(0.0, 3.0, u_t);
-  p = p * zoom + vec2(0.3 * u_t, 0.1 * u_t);
-  vec2 q, r;
-  float f = field(p, q, r);
-  vec2 q2, r2;
-  float fx = field(p + vec2(0.004, 0.0), q2, r2);
-  float fy = field(p + vec2(0.0, 0.004), q2, r2);
-  vec3 n = normalize(vec3((f - fx) * 90.0, (f - fy) * 90.0, 1.0));
-  vec3 ink = vec3(0.067), red = vec3(0.878, 0.149, 0.106), mus = vec3(0.851, 0.651, 0.129), pap = vec3(0.925, 0.918, 0.902);
-  vec3 col = mix(ink, red, smoothstep(0.25, 0.62, f));
-  col = mix(col, mus, smoothstep(0.55, 0.95, length(q) * f * 1.4));
-  col = mix(col, pap, smoothstep(0.62, 0.9, r.x * f * 1.5));
-  col = mix(col, ink, smoothstep(0.5, 0.9, 1.0 - r.y) * 0.55);
-  vec3 l = normalize(vec3(-0.5, 0.6, 0.8));
-  float spec = pow(max(dot(reflect(-l, n), vec3(0.0, 0.0, 1.0)), 0.0), 40.0);
-  col = col * (0.75 + 0.35 * max(dot(n, l), 0.0)) + spec * 0.45;
-  col *= 1.0 - 0.35 * dot(uv - 0.5, uv - 0.5) * 2.0;
-  gl_FragColor = vec4(mix(col, red, u_red), 1.0);
+  vec2 p = uv * vec2(u_res.x / u_res.y, 1.0) * 3.0;
+  float t = u_t;
+  // heat haze: the air rising off the film, stronger as the shot goes on
+  vec2 w = vec2(fbm(p * 2.2 + vec2(0.0, -t * 1.8)), fbm(p * 2.2 + vec2(4.1, -t * 1.8))) - 0.5;
+  float haze = 0.008 + 0.03 * smoothstep(0.0, 1.6, t);
+  vec2 st = (uv - 0.5) / (1.0 + 0.06 * t) + 0.5;
+  float l = dot(texture2D(u_film, vec2(st.x, 1.0 - st.y) + w * haze).rgb, vec3(0.299, 0.587, 0.114));
+  vec3 col = tone(l);
+  // the ink: a wash that blooms in from the edges along the warped noise and eats the picture
+  float f = fbm(p * 1.4 + 3.0 * w + vec2(0.0, t * 0.3));
+  float edge = length((uv - 0.5) * vec2(1.3, 1.0));
+  float front = f * 0.9 + edge * 0.8;
+  float th = 1.45 - 1.25 * smoothstep(0.45, 2.15, t);
+  float ink = smoothstep(th - 0.015, th + 0.015, front);
+  float rim = smoothstep(0.05, 0.0, abs(front - th)) * (1.0 - ink * 0.6);
+  col = mix(col, vec3(0.035, 0.03, 0.028), ink);
+  col += rim * vec3(0.878, 0.149, 0.106) * 1.4;
+  col *= 1.0 - 0.45 * dot(uv - 0.5, uv - 0.5) * 2.0;
+  gl_FragColor = vec4(mix(col, vec3(0.878, 0.149, 0.106), u_red), 1.0);
 }`;
 
-/** The lines of MARBLE shown typing on beside it, and the frame typing starts. */
+/** The lines of INKWASH shown typing on beside it, and the frame typing starts. */
 const CODE = [
-  'float field(vec2 p) {',
-  '  q = vec2(fbm(p + 0.12*t), fbm(p + o - 0.1*t));',
-  '  r = vec2(fbm(p + 3.6*q + a), fbm(p + 3.6*q + b));',
-  '  return fbm(p + 3.6*r);',
-  '}',
-  'col = mix(ink, red, smoothstep(.25, .62, f));',
+  'vec2 w = vec2(fbm(p*2.2 - t), fbm(p*2.2 + o - t));',
+  'float l = luma(texture2D(film, uv + w*haze));',
+  'vec3 col = tone(l);',
+  'float front = fbm(p*1.4 + 3.0*w) + edge;',
+  'col = mix(col, ink, step(th, front));',
 ];
 export const M3_TYPE = 8;
 const M3_CPS = 2.4; // characters per frame
@@ -252,12 +226,14 @@ export const M3: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: INK }}>
       <AbsoluteFill>
-        <GlslShader id="m3-gl" width={W} height={H} fragment={MARBLE} uniforms={{ u_res: [W, H], u_t: frame / 30, u_red: red }} effects={thermal({ soft: 2 })} />
+        <GlslShader id="m3-gl" width={W} height={H} fragment={INKWASH} uniforms={{ u_res: [W, H], u_t: frame / 30, u_red: red }}
+          textures={{ u_film: { src: staticFile('mg/fred.png'), filter: 'linear', wrap: 'mirror' } }}
+          effects={[glow({ radius: 36, intensity: 0.35 }), grain(0.09, { seed: 9, animate: true })]} />
       </AbsoluteFill>
-      <div style={{ position: 'absolute', left: 72, top: 96, padding: '28px 34px', background: 'rgba(10,10,10,0.72)', borderRadius: 14, fontFamily: MONO, fontSize: 27, lineHeight: 1.6, color: PAPER, opacity: panel, transform: `translateY(${(1 - panel) * 16}px)`, whiteSpace: 'pre', minWidth: 720 }}>
+      <div style={{ position: 'absolute', left: 72, top: 96, padding: '28px 34px', textShadow: '0 0 10px #000, 0 0 22px #000', fontFamily: MONO, fontSize: 27, lineHeight: 1.6, color: PAPER, opacity: panel, transform: `translateY(${(1 - panel) * 16}px)`, whiteSpace: 'pre', minWidth: 720 }}>
         {shown.map((l, i) => (
           <div key={i} style={{ minHeight: 43 }}>
-            {l.startsWith('col') ? <span style={{ color: MUSTARD }}>{l}</span> : l}
+            {l.startsWith('col = mix') ? <span style={{ color: RED }}>{l}</span> : l}
           </div>
         ))}
       </div>
@@ -268,90 +244,131 @@ export const M3: React.FC = () => {
 
 // ---- m4: Canvas 2D ----
 
-/** The vector tube's dark glass, its green phosphor and the amber of the hot strokes. */
-const TUBE = '#020604';
-const PHOSPHOR = '#8dffbf';
-const AMBER = '#ffb54a';
+/** The zoetrope's paper strip, its ink, and the drum. */
+const STRIP = '#e6d7b8';
+const PEN = '#1d1712';
+const DRUM = '#16120f';
+const RIM = '#8a7458';
 
-/** The flow field's angle at a point: three slow waves, turning over time. */
-const flow = (x: number, y: number, t: number) =>
-  Math.sin(x * 0.0042 + t * 0.9) * 1.7 + Math.cos(y * 0.0051 - t * 0.6) * 1.7 + Math.sin((x + y) * 0.0021 + t * 0.4);
+/** The frames of the gallop around the drum (public/mg/horse.json, traced from Muybridge's card by tools/zoetrope). */
+const NF = horse.frames.length;
+const STEP = (Math.PI * 2) / NF;
+/** Frames over which the drum spins up; from the end of it, it turns one frame's width per film frame. */
+export const M4_SPIN = [0, 20] as const;
 
-/** Frames the spirograph draws over, inside m4. */
-export const M4_SPIRO = [8, 44] as const;
+/** How far the drum has turned at m4 frame `f`: speeding up to one STEP a frame, then holding that speed. It lands on
+ *  a whole number of steps as the spin-up ends, so from there every window shows a frame square on (the strobe). */
+function turned(f: number): number {
+  const ramp = (g: number) => { let a = 0; for (let k = 0; k < g; k++) a += STEP * Easing.inOut(Easing.quad)(Math.min(1, k / M4_SPIN[1])); return a; };
+  const end = ramp(M4_SPIN[1]);
+  const whole = Math.round(end / STEP) * STEP;
+  return f <= M4_SPIN[1] ? ramp(f) * (whole / end) : whole + (f - M4_SPIN[1]) * STEP;
+}
 
 export const M4: React.FC = () => {
   const frame = useCurrentFrame();
-  const t = frame / 30;
   const iris = interpolate(frame, [0, 10], [60, 1200], { ...CLAMP, easing: Easing.out(Easing.quad) });
-  const spiro = interpolate(frame, [...M4_SPIRO], [0, 1], { ...CLAMP, easing: Easing.inOut(Easing.quad) });
-  const disc = interpolate(frame, [4, 14], [0, 1], { ...CLAMP, easing: Easing.out(Easing.back(1.5)) });
+  const push = interpolate(frame, [M4_SPIN[1] - 4, LEN.m4], [1, 2.3], { ...CLAMP, easing: Easing.inOut(Easing.cubic) });
+  const th = turned(frame);
   const draw = (ctx: any) => {
-    ctx.fillStyle = TUBE;
+    const cx = W / 2, cy = H / 2 + 230;
+    const R = 560, ry = R * 0.3, wall = 230;
+    const fw = (2 * Math.PI * R) / NF * 0.86, fh = fw * horse.aspect;
+    ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
-    ctx.lineCap = 'round';
-    const STEP = 30;
-    // the field now and, fainter, a frame and two frames ago: the phosphor's afterglow behind the beam
-    for (const [lag, alpha] of [[2, 0.12], [1, 0.32], [0, 1]] as const) {
-      const tt = t - lag / 30;
-      ctx.globalAlpha = alpha;
-      for (const colour of [PHOSPHOR, AMBER]) {
-        ctx.beginPath();
-        for (let gx = STEP / 2; gx < W; gx += STEP) {
-          for (let gy = STEP / 2; gy < H; gy += STEP) {
-            const hot = random(`ff-${gx}-${gy}`) < 0.05;
-            if ((colour === AMBER) !== hot) continue;
-            const a = flow(gx, gy, tt);
-            const grow = interpolate(Math.hypot(gx - W / 2, gy - H / 2), [0, 1100], [0, 1]) < (frame - lag) / 14 ? 1 : 0;
-            const len = grow * (12 + 18 * (0.5 + 0.5 * Math.sin(gx * 0.013 + gy * 0.011 + tt * 2)));
-            ctx.moveTo(gx - (Math.cos(a) * len) / 2, gy - (Math.sin(a) * len) / 2);
-            ctx.lineTo(gx + (Math.cos(a) * len) / 2, gy + (Math.sin(a) * len) / 2);
-          }
-        }
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = colour === AMBER ? 3.2 : 2.2;
-        ctx.stroke();
+    ctx.save();
+    // the push in on the far window
+    const fx = cx, fy = cy - ry - wall / 2;
+    ctx.translate(fx, fy);
+    ctx.scale(push, push);
+    ctx.translate(-fx, -fy);
+    // the inside of the drum: its floor (at cy), its far wall up to the rim (at cy - wall), then the strip on that wall
+    ctx.fillStyle = DRUM;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, R, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0d0a08';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - wall, R, ry, 0, Math.PI, 0);
+    ctx.ellipse(cx, cy, R, ry, 0, 0, Math.PI, true);
+    ctx.closePath();
+    ctx.fill();
+    for (let i = 0; i < NF; i++) {
+      const a = -th + i * STEP;
+      const s = Math.sin(a), c = Math.cos(a);
+      if (s > -0.08) continue; // the near half is hidden by the near wall
+      const sq = -s; // the far wall is seen square on at the back, edge on at the sides
+      ctx.save();
+      ctx.translate(cx + R * c, cy + ry * s - wall / 2);
+      ctx.scale(sq, 1);
+      ctx.fillStyle = STRIP;
+      ctx.globalAlpha = Math.min(1, sq * 1.6);
+      ctx.fillRect(-fw / 2 - 6, -wall / 2 + 8, fw + 12, wall - 16);
+      ctx.translate(-fw / 2, -fh / 2);
+      const f = horse.frames[i]!;
+      ctx.strokeStyle = PEN;
+      ctx.lineWidth = 1.3 / sq;
+      ctx.beginPath();
+      for (const [x1, y1, x2, y2] of f.hatch) { ctx.moveTo(x1 * fw, y1 * fw); ctx.lineTo(x2 * fw, y2 * fw); }
+      ctx.stroke();
+      ctx.lineWidth = 2.2 / sq;
+      ctx.beginPath();
+      for (const line of f.outline) {
+        for (let k = 0; k < line.length; k += 2) (k ? ctx.lineTo : ctx.moveTo).call(ctx, line[k]! * fw, line[k + 1]! * fw);
       }
+      ctx.stroke();
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
-    // the disc and the spirograph on it (a hypotrochoid, R 8, r 5, d 5: eight lobes, closes after five turns)
-    const cx = W / 2 + 230;
-    const cy = H / 2;
-    ctx.fillStyle = TUBE;
+    // the shade inside the drum, darker at the sides where the wall turns away
+    const shade = ctx.createLinearGradient(cx - R, 0, cx + R, 0);
+    shade.addColorStop(0, 'rgba(0,0,0,0.85)');
+    shade.addColorStop(0.3, 'rgba(0,0,0,0)');
+    shade.addColorStop(0.7, 'rgba(0,0,0,0)');
+    shade.addColorStop(1, 'rgba(0,0,0,0.85)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(cx - R, cy - ry - wall, 2 * R, wall + 2 * ry);
+    // the near wall, from the rim down to the floor, with its slots turning past; then the rim
+    const wallFill = ctx.createLinearGradient(cx - R, 0, cx + R, 0);
+    wallFill.addColorStop(0, '#050403');
+    wallFill.addColorStop(0.45, '#2a221b');
+    wallFill.addColorStop(1, '#050403');
+    ctx.fillStyle = wallFill;
     ctx.beginPath();
-    ctx.arc(cx, cy, 330 * disc, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy - wall, R, ry, 0, 0, Math.PI);
+    ctx.ellipse(cx, cy, R, ry, 0, Math.PI, 0, true);
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = PHOSPHOR;
-    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#000';
+    for (let i = 0; i < NF; i++) {
+      const a = -th + (i + 0.5) * STEP;
+      const s = Math.sin(a), c = Math.cos(a);
+      if (s < 0.05) continue;
+      ctx.globalAlpha = Math.min(1, s * 1.5);
+      ctx.fillRect(cx + R * c - 7 * s, cy + ry * s - wall + 14, 14 * s, wall * 0.42);
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = RIM;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - wall, R, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, R, ry, 0, 0, Math.PI);
     ctx.stroke();
     ctx.globalAlpha = 1;
-    const N = 1500;
-    const upto = Math.floor(N * spiro);
-    if (upto > 1) {
-      ctx.beginPath();
-      for (let k = 0; k <= upto; k++) {
-        const th = (k / N) * Math.PI * 10;
-        const x = 3 * Math.cos(th) + 5 * Math.cos((3 / 5) * th);
-        const y = 3 * Math.sin(th) - 5 * Math.sin((3 / 5) * th);
-        const px = cx + x * 36 * Math.cos(t * 0.6) - y * 36 * Math.sin(t * 0.6);
-        const py = cy + x * 36 * Math.sin(t * 0.6) + y * 36 * Math.cos(t * 0.6);
-        if (k === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.strokeStyle = AMBER;
-      ctx.lineWidth = 3.5;
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-    }
+    ctx.restore();
   };
   return (
-    <AbsoluteFill style={{ background: INK }}>
+    <AbsoluteFill style={{ background: '#000' }}>
       <AbsoluteFill style={{ clipPath: `circle(${iris}px at 50% 50%)` }}>
-        <Layer id="m4-tube" effects={[glow({ radius: 16, intensity: 0.9, color: PHOSPHOR }), crt({ curve: 0.05, pitch: 3, scan: 0.5, mask: 0.22, conv: 0.8, glass: 0 })]}>
+        <Layer id="m4-zoetrope" effects={[gradientMap({ stops: [{ offset: 0, color: '#0b0806' }, { offset: 0.55, color: '#8a7458' }, { offset: 1, color: '#fff0d6' }] }), glow({ radius: 30, intensity: 0.35 }), grain(0.1, { seed: 17, animate: true })]}>
           <Canvas id="m4-canvas" width={W} height={H} draw={draw} />
         </Layer>
-        <Plate n="04" api="<Canvas>" what="2,000 strokes and a spirograph, drawn every frame" at={10} dark />
+        <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 45%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.8) 100%)' }} />
+        <Plate n="04" api="<Canvas>" what="Muybridge's horse, 1878, redrawn in pen strokes every frame" at={10} dark />
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -359,82 +376,77 @@ export const M4: React.FC = () => {
 
 // ---- m5: glass ----
 
-/** Shot 7's film grade (act2-s07.tsx), so the glass looks at the same 1927 film. */
-const FILM_TONE = [{ offset: 0, color: '#060708' }, { offset: 0.5, color: '#7d766b' }, { offset: 1, color: '#fff2dc' }];
+/** The print the lens looks at (public/mg/print.jpg, a public-domain woodblock print; see public/CREDITS.md), and its
+ *  width over its height. */
+const PRINT = staticFile('mg/print.jpg');
+export const PRINT_ASPECT = 2031 / 1326;
 
 const GLASS = `precision highp float;
 uniform vec2 u_res;
-uniform float u_cz;
-uniform vec4 u_s0;
-uniform vec4 u_s1;
-uniform vec4 u_s2;
+uniform vec4 u_lens;
+uniform float u_k;
+uniform float u_ia;
+uniform float u_pan;
+uniform float u_zoom;
 uniform sampler2D u_plate;
 const vec3 L = vec3(-0.42, 0.62, 0.66);
 float aspect;
 
+/** The print, filling the frame (cover), panned up or down its height by u_pan (0 top, 1 bottom). */
 vec3 plate(vec2 xy) {
-  vec2 uv = vec2(xy.x / aspect, xy.y) * 0.5 + 0.5;
+  vec2 uv = vec2(xy.x / aspect, xy.y) * 0.5 / u_zoom + 0.5;
+  float fill = u_ia / aspect; // below 1, the share of the print's height the frame shows when its width fills it
+  if (fill < 1.0) { uv.y = (1.0 - uv.y) * fill + u_pan * (1.0 - fill); return texture2D(u_plate, uv).rgb; }
+  uv.x = uv.x / fill + 0.5 * (1.0 - 1.0 / fill);
   return texture2D(u_plate, vec2(uv.x, 1.0 - uv.y)).rgb;
 }
-float hitSphere(vec3 ro, vec3 rd, vec4 s) {
-  vec3 oc = ro - s.xyz;
-  float b = dot(oc, rd);
-  float c = dot(oc, oc) - s.w * s.w;
-  float h = b * b - c;
+/** The lens: an ellipsoid, round in x and y and squashed by u_k in z. Its surface's normal at p. */
+vec3 lensN(vec3 p) { vec3 d = p - u_lens.xyz; return normalize(vec3(d.xy, d.z / (u_k * u_k))); }
+/** Where a ray meets the lens: t of the near (sgn -1) or far (sgn 1) hit, or -1. */
+float hitLens(vec3 ro, vec3 rd, float sgn) {
+  vec3 s = vec3(1.0, 1.0, 1.0 / u_k);
+  vec3 o = (ro - u_lens.xyz) * s, d = rd * s;
+  float a = dot(d, d), b = dot(o, d), c = dot(o, o) - u_lens.w * u_lens.w;
+  float h = b * b - a * c;
   if (h < 0.0) return -1.0;
-  return -b - sqrt(h);
+  return (-b + sgn * sqrt(h)) / a;
 }
 vec3 env(vec3 d) {
   float sky = smoothstep(-0.2, 0.9, d.y);
-  vec3 c = mix(vec3(0.55, 0.53, 0.5), vec3(1.0), sky);
+  vec3 c = mix(vec3(0.05), vec3(0.5, 0.45, 0.38), sky);
   float box = smoothstep(0.12, 0.0, abs(d.x + 0.35) - 0.25) * smoothstep(0.1, 0.0, abs(d.y - 0.55) - 0.18);
-  return c + box * 2.5;
+  return c + box * 1.1;
 }
-/** What the plate shows at a point, with the spheres' shadows and the light they focus. */
+/** The print at a point, with the lens's shadow and the light it gathers. */
 vec3 ground(vec2 xy) {
   vec3 c = plate(xy);
-  float sh = 1.0;
-  float caustic = 0.0;
-  for (int i = 0; i < 3; i++) {
-    vec4 s = i == 0 ? u_s0 : i == 1 ? u_s1 : u_s2;
-    vec2 pr = s.xy - L.xy * (s.z / L.z);
-    float d = length(xy - pr);
-    sh *= 1.0 - 0.32 * smoothstep(s.w * 1.35, s.w * 0.5, d);
-    caustic += smoothstep(s.w * 0.42, 0.0, d) * 0.55;
-  }
-  return c * sh + caustic * vec3(1.0, 0.92, 0.75);
+  vec2 pr = u_lens.xy - L.xy * (u_lens.z / L.z);
+  float d = length(xy - pr);
+  float sh = 1.0 - 0.35 * smoothstep(u_lens.w * 1.25, u_lens.w * 0.6, d);
+  float caustic = smoothstep(u_lens.w * 0.38, 0.0, d) * 0.22;
+  return c * sh + caustic * vec3(1.0, 0.9, 0.7);
 }
-float channel(vec3 hit, vec3 rd, vec4 s, float ior, int k) {
-  vec3 n = normalize(hit - s.xyz);
-  vec3 r1 = refract(rd, n, 1.0 / ior);
-  vec3 oc = hit - s.xyz;
-  vec3 ex = hit + r1 * (-2.0 * dot(oc, r1));
-  vec3 n2 = normalize(ex - s.xyz);
-  vec3 r2 = refract(r1, -n2, ior);
-  if (dot(r2, r2) < 0.001) r2 = reflect(r1, -n2);
+float channel(vec3 hit, vec3 rd, float ior, int k) {
+  vec3 r1 = refract(rd, lensN(hit), 1.0 / ior);
+  float t = hitLens(hit + r1 * 0.001, r1, 1.0);
+  vec3 ex = hit + r1 * max(t, 0.0);
+  vec3 r2 = refract(r1, -lensN(ex), ior);
+  if (dot(r2, r2) < 0.001) r2 = reflect(r1, -lensN(ex));
   if (r2.z > -0.02) return env(r2)[k];
-  vec2 xy = ex.xy + r2.xy * (ex.z / -r2.z);
-  return ground(xy)[k];
+  return ground(ex.xy + r2.xy * (ex.z / -r2.z))[k];
 }
 vec3 shade(vec2 frag) {
   vec2 p = (frag / u_res * 2.0 - 1.0) * vec2(aspect, 1.0);
-  vec3 ro = vec3(0.0, 0.0, u_cz);
+  vec3 ro = vec3(0.0, 0.0, 4.0);
   vec3 rd = normalize(vec3(p, -4.0));
-  float best = 1e9;
-  vec4 hs = vec4(0.0);
-  for (int i = 0; i < 3; i++) {
-    vec4 s = i == 0 ? u_s0 : i == 1 ? u_s1 : u_s2;
-    float t = hitSphere(ro, rd, s);
-    if (t > 0.0 && t < best) { best = t; hs = s; }
-  }
-  if (best > 1e8) return ground(ro.xy + rd.xy * (ro.z / -rd.z));
-  vec3 hit = ro + rd * best;
-  vec3 n = normalize(hit - hs.xyz);
+  float t = hitLens(ro, rd, -1.0);
+  if (t < 0.0) return ground(ro.xy + rd.xy * (ro.z / -rd.z));
+  vec3 hit = ro + rd * t;
+  vec3 n = lensN(hit);
   float fr = 0.04 + 0.96 * pow(1.0 - max(dot(-rd, n), 0.0), 5.0);
-  vec3 refr = vec3(channel(hit, rd, hs, 1.46, 0), channel(hit, rd, hs, 1.5, 1), channel(hit, rd, hs, 1.55, 2));
-  refr *= vec3(0.97, 0.985, 1.0);
+  vec3 refr = vec3(channel(hit, rd, 1.495, 0), channel(hit, rd, 1.51, 1), channel(hit, rd, 1.53, 2));
   vec3 refl = env(reflect(rd, n));
-  float spec = pow(max(dot(reflect(rd, n), normalize(L)), 0.0), 220.0) * 3.0;
+  float spec = pow(max(dot(reflect(rd, n), normalize(L)), 0.0), 400.0) * 2.0;
   return mix(refr, refl, fr) + spec;
 }
 void main() {
@@ -449,25 +461,22 @@ void main() {
 
 export const M5: React.FC = () => {
   const frame = useCurrentFrame();
-  const t = frame / 30;
-  // The camera starts pressed up against the big sphere and pulls back to the plate's full frame.
-  const back = interpolate(frame, [0, 34], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) });
-  const cz = 1.75 + 2.25 * back;
-  const roll = interpolate(frame, [0, LEN.m5], [0.55, -0.45], { ...CLAMP, easing: Easing.inOut(Easing.sin) });
-  const s0 = [roll, -0.05 + 0.03 * Math.sin(t * 2.1), 0.62, 0.52];
-  const s1 = [roll + 0.95 * Math.cos(t * 1.6 + 0.6), 0.32 * Math.sin(t * 1.6 + 0.6) + 0.28, 0.75, 0.2];
-  const s2 = [-1.15 + 0.12 * Math.sin(t * 1.3), -0.45 + 0.1 * Math.cos(t * 1.7), 0.5, 0.3];
+  // A thick lens slides across the print, left to right, lifting a little, while the view drifts down the print.
+  const slide = interpolate(frame, [0, LEN.m5], [0, 1], { ...CLAMP, easing: Easing.inOut(Easing.sin) });
+  const lens = [-1.45 + 2.9 * slide, -0.12 + 0.14 * Math.sin(slide * Math.PI), 0.3 + 0.08 * Math.sin(slide * Math.PI), 0.62];
+  const fade = interpolate(frame, [0, 6], [0, 1], CLAMP);
   return (
     <AbsoluteFill style={{ background: '#000' }}>
-      <AbsoluteFill>
+      <AbsoluteFill style={{ opacity: fade }}>
         <GlslShader
           id="m5-gl" width={W} height={H} fragment={GLASS}
-          uniforms={{ u_res: [W, H], u_cz: cz, u_s0: s0, u_s1: s1, u_s2: s2 }}
-          textures={{ u_plate: { src: staticFile('receipts/crowd.png'), filter: 'linear', wrap: 'mirror' } }}
-          effects={[gradientMap({ stops: FILM_TONE }), glow({ radius: 40, intensity: 0.3 }), grain(0.08, { seed: 5, animate: true })]}
+          uniforms={{ u_res: [W, H], u_lens: lens, u_k: 0.26, u_ia: PRINT_ASPECT, u_pan: 0.25 + 0.3 * slide, u_zoom: 1.04 - 0.04 * slide }}
+          textures={{ u_plate: { src: PRINT, filter: 'linear', wrap: 'mirror' } }}
+          effects={[glow({ radius: 40, intensity: 0.3 }), grain(0.07, { seed: 5, animate: true })]}
         />
       </AbsoluteFill>
-      <Plate n="05" api="<GlslShader>" what="refraction with dispersion, ray-traced per pixel" at={16} dark />
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 80% 75% at 50% 50%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.55) 100%)' }} />
+      <Plate n="05" api="<GlslShader>" what="a lens, ray-traced per pixel, with dispersion" at={16} dark />
     </AbsoluteFill>
   );
 };

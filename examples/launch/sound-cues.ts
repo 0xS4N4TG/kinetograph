@@ -9,14 +9,14 @@ import { VO_SECONDS } from './sound-vo.js';
 import { BURN, FPS, START, TOTAL, VO } from './sound-timing.js';
 import { LEN } from './common.js';
 import { WINDOWS, WIN_EVERY } from './act1.js';
-import { FRED_AT, S02_LINES } from './act1-open.js';
+import { FRED_AT, S01_POP, S02_LINES } from './act1-open.js';
 import { S03_LINES, S04_AT, S04_OFF } from './act1-crt.js';
 import { FILM_AT, S05_PASS } from './act1-camera.js';
 import { CUTS, LINES, RECEIPTS_AT } from './act2-s07.js';
 import { wordSpans } from './print/captions.js';
 import { RECEIPT_SOUND } from './print/receipts.js';
 import { S08_HOLD } from './act2-s08.js';
-import { M1_DROPS, M2_DIVE, M3_TYPE, M4_SPIRO, WHIP } from './act2-mg.js';
+import { M2_DIVE, M3_TYPE, M4_SPIN, WHIP } from './act2-mg.js';
 import { RACE } from './act2-s09.js';
 import { S10_CIRCLE, S10_LAND, S10_STRIKE, S10_ZOOM, S12_TAG, S12_URL } from './act3.js';
 import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
@@ -50,10 +50,10 @@ for (const c of chords) {
   cue(start, (q) => pad(q, sec(c.to - start), c.hz, c.level, c.cutoff, c.from === 0 ? 0.6 : 0.9, c.to === TOTAL ? 1.2 : 0.9));
 }
 
-// ---- shot 1: the leader's countdown, a beep as it starts and the projector running up; shot 2: the projector runs on
+// ---- shot 1: the leader's countdown, the projector running up and the 2-pop, a one-frame beep on the 2; shot 2: the projector runs on
 //      under the films, a shutter on the cut to Fred Ott, a pen as each word writes, a low thump where one breaks out ----
 cue(0, (q) => projector(q, sec(LEN.s01 + LEN.s02), 0.14, 'open-projector'));
-cue(at('s01', 0), (q) => bell(q, 1000, 0.05, 0.25));
+cue(at('s01', S01_POP), (q) => bell(q, 1000, 0.07, sec(1)));
 cue(START.s02, (q) => hit(q, 0.35, 0.2));
 cue(at('s02', FRED_AT), (q) => shutter(q, 0.12));
 wordSpans(S02_LINES, FPS).forEach((w, i) => {
@@ -120,10 +120,8 @@ for (let f = at('m1', 26); f < START.s08 - 4; f += BEAT) {
   cue(f + BEAT / 2, (q) => hat(q, 0.035));
 }
 cue(at('m1', 24), (q) => sweep(q, sec(40), 180, 1800, 0.16, 0.7, 'm1-reveal', 0.9));
-M1_DROPS.forEach((f, i) => {
-  cue(at('m1', f + 10), (q) => kick(q, 0.35, q.sfx));
-  cue(at('m1', f + 10), (q) => pop(q, 0.3, 520 + i * 140));
-});
+cue(START.m1, (q) => bass(q, 41.2, 1.6, 0.3));
+cue(START.m1, (q) => rumble(q, sec(LEN.m1 - WHIP), 0.1, 0.4, 'm1-stage'));
 cue(START.m2 - WHIP - 2, (q) => sweep(q, sec(WHIP * 2 + 4), 900, 5200, 0.34, 0.5, 'whip', 0.7));
 for (let d = 0; d < 6; d++) cue(at('m2', 2 + d * 3), (q) => tick(q, 0.06, 1300 + d * 160, 800));
 cue(at('m2', M2_DIVE - 2), (q) => sweep(q, sec(LEN.m2 - M2_DIVE + 2), 300, 4200, 0.26, 0.95, 'dive', 0.9));
@@ -131,8 +129,9 @@ cue(START.m3, (q) => hit(q, 0.45, 0.2));
 cue(START.m3, (q) => rumble(q, sec(LEN.m3), 0.14, 0.5, 'm3-swell'));
 for (let f = M3_TYPE; f < M3_TYPE + 34; f += 2) cue(at('m3', f), (q) => shutter(q, 0.03));
 cue(START.m4, (q) => sweep(q, sec(12), 400, 3000, 0.2, 0.8, 'iris'));
-cue(at('m4', M4_SPIRO[0]), (q) => pen(q, sec(M4_SPIRO[1] - M4_SPIRO[0]), 0.13, 'pen-spiro'));
-cue(START.m5, (q) => sweep(q, sec(30), 5200, 900, 0.12, 0.15, 'm5-pull', 0.8));
+cue(at('m4', M4_SPIN[0]), (q) => sweep(q, sec(M4_SPIN[1] + 4), 120, 900, 0.14, 0.9, 'm4-spin', 0.8));
+for (let f = M4_SPIN[1]; f < LEN.m4; f += 2) cue(at('m4', f), (q) => tick(q, 0.03, 1500, 600));
+cue(START.m5, (q) => sweep(q, sec(LEN.m5), 900, 2600, 0.08, 0.5, 'm5-slide', 0.8));
 [1318.5, 1760, 2637].forEach((hz, i) => cue(at('m5', 14 + i * 5), (q) => bell(q, hz, 0.05 - i * 0.01, 2.2)));
 
 // ---- shot 8: a tick as "from 'remotion'" lights up; a whoosh on the pull-out; the counter ticks up to 98 ----
