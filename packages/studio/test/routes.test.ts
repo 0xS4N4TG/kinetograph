@@ -30,7 +30,7 @@ describe('project and compositions', () => {
   it('GET /api/project', async () => {
     const r = await api(studio, '/api/project');
     expect(r.status).toBe(200);
-    expect(r.json).toMatchObject({ entry, buildId: 1, buildError: null });
+    expect(r.json).toMatchObject({ entry, cwd: process.cwd(), buildId: 1, buildError: null });
     expect(r.json.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 

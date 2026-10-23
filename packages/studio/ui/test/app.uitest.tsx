@@ -649,6 +649,28 @@ describe('project panel', () => {
   });
 });
 
+describe('copy for agent', () => {
+  it('opens an editable message about the selected layer and copies what the user made of it', async () => {
+    const { user } = await start();
+    expect(screen.queryByRole('button', { name: 'Copy for agent' })).not.toBeInTheDocument();
+    const titleRow = (await screen.findAllByTestId('layer-row')).find((r) => r.getAttribute('title') === 'title (text)')!;
+    await user.click(titleRow);
+    await user.click(await screen.findByRole('button', { name: 'Copy for agent' }));
+
+    const box = (await screen.findByRole('textbox', { name: 'Message for the agent' })) as HTMLTextAreaElement;
+    expect(box.value).toContain('In scene.tsx, composition `Intro`, frame 0 (00:00:00):');
+    expect(box.value).toContain('change the text layer `title`, text "Hello"');
+    expect(box.selectionStart).toBe(box.value.length);
+
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await user.type(box, 'make it red');
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\nChange: make it red$/));
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+});
+
 describe('timeline controls', () => {
   it('scrubs from any lane, not only the ruler', async () => {
     const { server } = await start();

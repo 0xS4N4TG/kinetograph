@@ -19,6 +19,8 @@ export interface StudioError {
 export interface ProjectInfo {
   /** The entry file, absolute. */
   entry: string;
+  /** The directory the studio was started in: paths shown to the user are relative to it. */
+  cwd: string;
   /** The `kinetograph` package version. */
   version: string;
   /** The build being served; 0 before the first good build. */

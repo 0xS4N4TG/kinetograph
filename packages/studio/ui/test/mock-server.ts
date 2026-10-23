@@ -23,7 +23,7 @@ import type { FrameRequest } from '../../src/protocol';
 import { inspectFor, intro, introTimeline, outro } from './fixtures';
 
 export class MockServer implements StudioApi {
-  projectInfo: ProjectInfo = { entry: '/work/scene.tsx', version: '0.1.0', buildId: 1, buildError: null };
+  projectInfo: ProjectInfo = { entry: '/work/scene.tsx', cwd: '/work', version: '0.1.0', buildId: 1, buildError: null };
   comps: CompositionInfo[] = [intro, outro];
   jobs: RenderJob[] = [];
   /** When set, `compositions()` fails as the server does before the first good build. */

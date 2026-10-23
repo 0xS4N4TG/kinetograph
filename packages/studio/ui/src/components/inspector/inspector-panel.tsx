@@ -1,4 +1,4 @@
-import type { CompositionInfo, InspectResult, RenderJob, RenderRequest } from '@/api';
+import type { CompositionInfo, InspectResult, ProjectInfo, RenderJob, RenderRequest, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
@@ -15,6 +15,9 @@ interface InspectorPanelProps {
   comp: CompositionInfo | null;
   frame: number;
   inspect: InspectResult | null;
+  project: ProjectInfo | null;
+  /** The timeline once read, to name the Sequence a layer is in. */
+  timeline: TimelineData | null;
   selectedLayer: string | null;
   onSelectLayer(id: string | null): void;
   propValues: Record<string, unknown>;
@@ -34,6 +37,8 @@ export function InspectorPanel({
   comp,
   frame,
   inspect,
+  project,
+  timeline,
   selectedLayer,
   onSelectLayer,
   propValues,
@@ -66,7 +71,13 @@ export function InspectorPanel({
         }
       />
       <TabsContent value="scene" className="min-h-0">
-        <SceneTree inspect={inspect} frame={frame} selected={selectedLayer} onSelect={onSelectLayer} />
+        <SceneTree
+          inspect={inspect}
+          frame={frame}
+          selected={selectedLayer}
+          onSelect={onSelectLayer}
+          agent={project && comp ? { entry: project.entry, cwd: project.cwd, comp, timeline } : null}
+        />
       </TabsContent>
       <TabsContent value="props" className="min-h-0">
         <PropsPanel comp={comp} values={propValues} edited={propsEdited} onChange={onChangeProps} onReset={onResetProps} />

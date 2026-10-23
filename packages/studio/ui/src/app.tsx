@@ -124,6 +124,8 @@ export function App({ api }: { api: StudioApi }) {
                   comp={comp}
                   frame={playerState.frame}
                   inspect={studio.inspect}
+                  project={studio.project}
+                  timeline={studio.timeline.state === 'ready' ? studio.timeline.data : null}
                   selectedLayer={studio.selectedLayer}
                   onSelectLayer={studio.selectLayer}
                   propValues={studio.propValues}
