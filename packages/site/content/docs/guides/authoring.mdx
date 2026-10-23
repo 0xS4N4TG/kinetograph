@@ -1,6 +1,178 @@
 ---
 title: Authoring
-description: Write a video in TypeScript.
+description: Write a Kinetograph project with compositions, Remotion APIs, native elements, effects, fonts and assets.
 ---
 
-Coming soon.
+A project is a TypeScript or TSX file. It draws each frame from the frame number and the props it is given. This page covers what a project can use. For the first steps, see [First video](/docs/getting-started/first-video/).
+
+## Compositions
+
+The entry file calls `registerRoot` with a function that returns one or more `Composition`s:
+
+```tsx
+registerRoot(() => (
+  <Composition id="Card" component={Card} durationInFrames={60} fps={30} width={640} height={360} />
+));
+```
+
+| Prop | Meaning |
+|---|---|
+| `id` | The name that `--comp` selects. Without `--comp`, the first composition is used. |
+| `component` | The component that draws a frame. |
+| `durationInFrames`, `fps`, `width`, `height` | The length, frame rate and size. |
+| `defaultProps` | The props used when `--props` does not set them. |
+| `background` | The background colour of every frame. The default is transparent. |
+| `margin` | The least margin, in pixels, around the canvas for effects that draw past its edge. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 7.2. |
+
+`--props` takes a JSON object. The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object.
+
+```sh
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}' -o out/card.mp4
+```
+
+## Remotion APIs
+
+Import Remotion's APIs from `remotion` and `@remotion/*`, as Remotion projects do. The CLI maps those imports onto Kinetograph's own versions. These are the ones most projects use:
+
+- Time: `useCurrentFrame`, `useVideoConfig`, `Sequence`, `Series`, `Loop`, `Freeze`.
+- Motion: `interpolate`, `interpolateColors`, `spring`, `measureSpring`, `Easing`.
+- Layout: `AbsoluteFill`, `Img`.
+- Files: `staticFile`, `delayRender`, `continueRender`, `cancelRender`.
+- Random values: `random(seed)`. The same seed gives the same value every time.
+
+Which packages and names are supported, and which are not, is in [Remotion compatibility](/docs/compat/). To move an existing project, see [Migrate from Remotion](/docs/guides/migrate/).
+
+## Determinism
+
+A frame is a function of the frame number. Kinetograph replaces the clock the project would otherwise read:
+
+- `Date.now()` and `performance.now()` return the virtual time for the frame.
+- `Math.random()` is seeded from the frame number.
+- Timers and `requestAnimationFrame` run on the frame clock.
+
+Use `random('name')` when a value has to be the same for every render. Do not read values that change between runs, such as the system time.
+
+## Native elements
+
+These elements come from `@kinetograph/core`. They draw in the engine, not in the DOM.
+
+| Element | Draws |
+|---|---|
+| `Layer` | A group of layers. Takes `layout` for flexbox and `preserve3d` for 3D. |
+| `Rect`, `Ellipse`, `Shape`, `Path` | Shapes, with `fill`, `stroke` and, for `Rect`, `radius`. |
+| `Text` | Text in a registered font. Takes `font`, `size`, `color`, `maxWidth`, `align` and `chars`. |
+| `Image` | A PNG or JPEG. |
+| `Noise`, `MeshGradient` | Noise and mesh gradients. |
+| `Canvas` | A Canvas 2D drawing, made in `draw(context)`. |
+| `GlslShader` | A GLSL fragment shader, with `uniforms`. |
+| `Lottie` | A Lottie animation, from `src` or `animationData`. |
+| `Camera` | The perspective for 3D turns. |
+| `Scene3D`, `Camera3D`, lights, `Mesh`, `Model`, `Extrude`, `Text3D` | The 3D layer. |
+| `Video`, `OffthreadVideo`, `Audio`, `Gif` | Video, GIF and sound files. |
+
+Every element takes the common props: `id`, `x`, `y`, `scale`, `rotation`, `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `opacity`, `blendMode`, `effects`, `clip`, `mask`, `matte` and `motionBlur`. Give an element an `id` when another layer refers to it, or when its id has to stay the same as the tree changes. The full table of props is in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 6.3.
+
+A shape with a gradient fill and a drop shadow:
+
+```tsx
+import { Rect, dropShadow, linearGradient } from '@kinetograph/core';
+
+<Rect
+  width={220}
+  height={300}
+  fill={linearGradient(['#fafafa', '#d9d9d9'], { angle: 160 })}
+  effects={[dropShadow({ y: 8, blur: 12, color: '#00000030' })]}
+/>
+```
+
+Raw text outside `Text` is an error. A `Text` layer needs a registered font, or the render fails.
+
+## Effects
+
+Pass effects as `effects={[...]}` on any layer. Effects run in order on the layer's own pixels, before the layer is blended. These helpers come from `@kinetograph/core`:
+
+- Blur and glow: `blur`, `backdropBlur`, `glow`.
+- Shadows: `dropShadow`, `insetShadow`.
+- Colour: `saturate`, `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `chromaticAberration`.
+- Texture and pattern: `grain`, `dither`, `halftone`, `dotMatrix`, `displace`, `cornerPin`, `shader`.
+
+`npx kinetograph effects` lists each effect with its parameters.
+
+Gradients work as fills and as text colours. `linearGradient`, `radialGradient` and `conicGradient` each take a list of colours and, for the linear form, an `angle`.
+
+## Fonts
+
+A text layer uses a font by family name. Register the font before the text uses it. There are two ways.
+
+Google Fonts download once and are kept in `~/.cache/kinetograph/fonts`:
+
+```tsx
+import { loadFont } from '@remotion/google-fonts/Inter';
+
+const { fontFamily } = loadFont('normal', { weights: ['400'] });
+```
+
+A font file in the project uses `loadFont` from `@remotion/fonts`. Its `url` is a path, and `staticFile` gives that path:
+
+```tsx
+import { loadFont } from '@remotion/fonts';
+import { staticFile } from 'remotion';
+
+loadFont({ family: 'Brand', url: staticFile('DMSans-Medium.ttf') });
+```
+
+Then use `font="Brand"` on a `Text` element.
+
+## Assets
+
+`staticFile('name')` gives the path of a file in `public/`, next to the entry. If there is no `public/` folder there, it looks next to the nearest `package.json`. Use it for images, video, sound and fonts. The `src` of `Image`, `Video`, `Audio` and `Gif` takes these paths.
+
+## Canvas and shaders
+
+`Canvas` runs `draw` with a fresh Canvas 2D context on every frame. What `draw` paints must come from the props and the frame, not from what was painted before:
+
+```tsx
+<Canvas
+  x={40}
+  y={40}
+  width={120}
+  height={60}
+  draw={(ctx) => {
+    ctx.fillStyle = '#f6c177';
+    ctx.fillRect(0, 0, 120, 60);
+  }}
+/>
+```
+
+`GlslShader` takes a fragment shader in GLSL ES 100 or `300 es`. Compute its `uniforms` from the frame:
+
+```tsx
+<GlslShader width={160} height={60} fragment={FRAGMENT} uniforms={{ time: frame / fps }} />
+```
+
+The details of both are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), sections 6.5 and 6.7. Known gaps are in [Known issues](/docs/known-issues/).
+
+## 2.5D and 3D
+
+For depth without a 3D scene, put a `Camera` in the composition and turn a `Layer` with `rotateX` or `rotateY`. Set `preserve3d` on the layer that holds the turned children:
+
+```tsx
+<Camera perspective={1400} />
+<Layer x={960} y={540} rotateY={spin} preserve3d>
+  {/* cards */}
+</Layer>
+```
+
+For a full 3D scene, use `Scene3D`, `Camera3D`, the lights and `Mesh` or `Model`. Rotations there are in degrees. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 6.6. Groups that intersect each other in 3D are drawn in painter's order. [Known issues](/docs/known-issues/) has the details.
+
+## Checking the work
+
+Look at the output while you write. The loop is:
+
+1. `still` for one frame, or `strip` for a sheet of frames.
+2. `inspect` for the position and bounds of each layer.
+3. `lint` for overflowing text, layers off the canvas and missing fonts.
+4. `check` for type errors.
+5. `render` when the frames look right.
+
+The [CLI reference](/docs/reference/cli/) lists the options. The [agents guide](/docs/guides/agents/) runs the same loop from an agent.
