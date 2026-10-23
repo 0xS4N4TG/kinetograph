@@ -5,10 +5,12 @@ CSS, SVG, Canvas 2D, WebGL shaders and Web Audio; Node runs the code; a Rust GPU
 N-API addon, draws every frame. Existing Remotion projects render as they are: `remotion` and `@remotion/*` imports
 resolve to Kinetograph's own implementation of them.
 
-**Status (2026-10-16):** the core renderer, effects, authoring layer, studio, Remotion compatibility on a native DOM
+**Status: beta, version 0.1.0.** It works and renders real projects, but APIs can still change between versions and
+some features are missing. The core renderer, effects, authoring layer, studio, Remotion compatibility on a native DOM
 engine (CSS, SVG, Canvas 2D, WebGL fragment shaders) and an own 3D layer are built. The papercut test project renders
-all 988 of its frames natively, and a reference scene renders 7.0x faster than Remotion (1.28 s against 8.96 s, median,
-on an Apple M4). What is left is listed under known issues on the kinetograph site (`/docs/known-issues/`).
+all 988 of its frames natively. On 2026-10-16, with the earlier Vello renderer, a reference scene rendered 7.0x faster
+than Remotion (1.28 s against 8.96 s, median, on an Apple M4). What is left is listed under known issues on the
+kinetograph site (`/docs/known-issues/`).
 
 - [The DOM engine](docs/ENGINE.md), and Remotion compatibility on the kinetograph site (`/docs/compat/`)
 - [Authoring contract](docs/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
