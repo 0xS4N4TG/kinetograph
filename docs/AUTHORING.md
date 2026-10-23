@@ -311,7 +311,7 @@ function of `time`: expressions that use randomness must be seeded. Counts nothi
 
 ### 4.6 Renderer reuse and inspect (stream 1)
 
-- `Renderer` gets a way to take a new `Scene` while keeping its device, queue, Vello renderers, compositor pipelines
+- `Renderer` gets a way to take a new `Scene` while keeping its device, queue, Skia context, compositor pipelines
   and layer cache: fonts, images, LUTs and shader pipelines are loaded only when the new scene has ones not seen yet;
   size-dependent textures are rebuilt only when the size or margin changes. Frames are byte-identical to a fresh
   `Renderer` on the same scene.
@@ -453,7 +453,7 @@ Raw text outside `<Text>` is an error naming the parent element. Duplicate expli
 A Canvas 2D context that records instead of rasterising (`createCanvasContext` of `@kinetograph/scene`,
 `packages/scene/src/canvas.ts`). It keeps the canvas's state as a browser's does (transform, `fillStyle` and the
 other styles, line and text state, `save`/`restore`, clips) and writes each drawing call as a `canvas` layer command
-with the state it is drawn in (SCENE.md, "canvas"); Rust draws the commands with Vello. Nothing in it reads a clock,
+with the state it is drawn in (SCENE.md, "canvas"); Rust draws the commands with Skia. Nothing in it reads a clock,
 so what a context holds is a function of the calls it was given.
 
 Two ways to draw:
@@ -870,7 +870,7 @@ one place.
 Rive's WebAssembly runtime in a `<canvas>`; Kinetograph plays it with Rive's own C++ runtime, built into the addon from
 `rive-rs` (`vendor/rive`, licences in `vendor/README.md`), and the component hands the runtime's draw calls to the
 `<canvas>`'s 2D context as commands, so the element is laid out and styled like the DOM element it is in Remotion and is
-drawn natively with Vello.
+drawn natively with Skia.
 
 | Prop | |
 |---|---|

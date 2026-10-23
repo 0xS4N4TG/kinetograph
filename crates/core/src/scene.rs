@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::Deserialize;
-use vello::kurbo::BezPath;
+use kurbo::BezPath;
 
 use crate::anim::Num;
 use crate::color::Color;
@@ -1265,7 +1265,7 @@ pub struct LottieLayer {
 }
 
 /// What a Canvas 2D context drew in a frame (`docs/SCENE.md`, "canvas"): the
-/// box `(0, 0, width, height)`, drawn with Vello from `commands`.
+/// box `(0, 0, width, height)`, drawn with Skia from `commands`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanvasLayer {

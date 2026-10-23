@@ -1,18 +1,16 @@
 //! Compiles `src/render/skia/vk_shim.cpp` for the Skia backend on Linux and Windows (Vulkan). Nothing else here: on
-//! macOS, or without the `skia` feature, this script does nothing.
+//! macOS this script does nothing.
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/render/skia/vk_shim.cpp");
     println!("cargo:rerun-if-env-changed=KINETOGRAPH_SKIA_SOURCE");
-    #[cfg(feature = "skia")]
     shim();
 }
 
 /// The `skia` directory of the skia-bindings crate this build links: its headers are the ones the shim needs, and
 /// they are the ones the libskia it links was built from. `KINETOGRAPH_SKIA_SOURCE` overrides (a `SKIA_SOURCE_DIR`
 /// build of skia-bindings, say).
-#[cfg(feature = "skia")]
 fn skia_source() -> std::path::PathBuf {
     use std::path::PathBuf;
     if let Ok(dir) = std::env::var("KINETOGRAPH_SKIA_SOURCE") {
@@ -21,8 +19,7 @@ fn skia_source() -> std::path::PathBuf {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let out = std::process::Command::new(cargo)
-        // `--all-features`: skia-bindings is an optional dependency that the default features leave out of the listing.
-        .args(["metadata", "--offline", "--all-features", "--format-version", "1", "--manifest-path"])
+        .args(["metadata", "--offline", "--format-version", "1", "--manifest-path"])
         .arg(format!("{manifest}/Cargo.toml"))
         .output()
         .expect("cargo metadata");
@@ -35,7 +32,6 @@ fn skia_source() -> std::path::PathBuf {
     manifest_path.parent().expect("crate directory").join("skia")
 }
 
-#[cfg(feature = "skia")]
 fn shim() {
     if std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "macos") {
         return;

@@ -25,9 +25,8 @@ pub fn sync() -> bool {
     })
 }
 
-/// Whether the GPU time of each kind of compositor pass and of each Vello page is recorded too
-/// (`KINETOGRAPH_PROFILE_PASSES`; with `KINETOGRAPH_PROFILE_PASSES=stages` each Vello dispatch gets its own compute
-/// pass, so each shader has a time). Implies `sync`: the frame loop waits for the GPU after each frame, so the numbers
+/// Whether the GPU time of each kind of compositor pass is recorded too
+/// (`KINETOGRAPH_PROFILE_PASSES`). Implies `sync`: the frame loop waits for the GPU after each frame, so the numbers
 /// are for a render slowed by that.
 pub fn passes() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
@@ -156,12 +155,4 @@ pub fn add_dyn(name: &str, value: f64) {
 pub fn add_gpu(name: &str, ms: f64) {
     add_dyn(&format!("gpu_{name}"), ms);
     add_dyn(&format!("gpun_{name}"), 1.0);
-}
-
-/// Whether each Vello shader is timed alone (`KINETOGRAPH_PROFILE_PASSES=stages`).
-pub fn stages() -> bool {
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| {
-        passes() && std::env::var("KINETOGRAPH_PROFILE_PASSES").is_ok_and(|v| v == "stages")
-    })
 }

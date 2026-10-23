@@ -23,7 +23,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use base64::Engine as _;
-use vello::kurbo::Point;
+use kurbo::Point;
 
 use super::*;
 use crate::glsl::{
@@ -163,26 +163,6 @@ impl Compositor {
         let rt = self.glsl.target.as_ref().expect("made by glsl_draw");
         let view = rt.view.clone();
         Ok(self.glsl_place(&view, (width, height), matrix, content))
-    }
-
-    /// A canvas pass's pictures of its children (`GroupLayer::canvas`): each child as `glsl_group` samples it,
-    /// straight alpha, as a texture of the pass's size that Vello can draw from. They are valid until the next
-    /// group's pass.
-    pub fn canvas_pictures(
-        &mut self,
-        (width, height): (f64, f64),
-        matrix: Affine,
-        layers: &[(&str, &Tex)],
-    ) -> Vec<(String, wgpu::Texture)> {
-        let side = |v: f64| (v.round() as i64).clamp(1, i64::from(MAX_BUFFER_SIDE)) as u32;
-        let size = (side(width), side(height));
-        let mut out = Vec::with_capacity(layers.len());
-        for (n, (id, tex)) in layers.iter().enumerate() {
-            self.glsl_input(n, tex, size, matrix, false);
-            let target = self.glsl.inputs[n].as_ref().expect("made by glsl_input");
-            out.push(((*id).to_string(), target._texture.clone()));
-        }
-        out
     }
 
     /// The texture a group's child `n` is sampled as (`glsl_input.wgsl`): the

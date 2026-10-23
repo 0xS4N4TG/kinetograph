@@ -16,8 +16,7 @@
 
 use std::collections::HashMap;
 
-use vello::kurbo::{Affine, Rect};
-use vello::wgpu;
+use kurbo::{Affine, Rect};
 
 use super::{Compositor, Tex, mode_index, shader_module};
 use crate::bounds::{self, PixelRect};
@@ -800,7 +799,7 @@ impl Compositor {
                     }
                     ResolvedLight::Point { position } => {
                         let p = fe.matrix
-                            * vello::kurbo::Point::new(
+                            * kurbo::Point::new(
                                 f64::from(position[0]),
                                 f64::from(position[1]),
                             );
@@ -817,7 +816,7 @@ impl Compositor {
                         cone,
                     } => {
                         let p = fe.matrix
-                            * vello::kurbo::Point::new(
+                            * kurbo::Point::new(
                                 f64::from(position[0]),
                                 f64::from(position[1]),
                             );

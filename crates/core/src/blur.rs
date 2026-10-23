@@ -25,7 +25,6 @@
 
 use std::sync::Arc;
 
-use vello::wgpu;
 
 use crate::bounds::PixelRect;
 use crate::compositor::{Input, LINEAR_FORMAT, Tex, new_texture};

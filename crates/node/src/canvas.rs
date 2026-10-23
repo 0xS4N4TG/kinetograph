@@ -1,7 +1,7 @@
 //! `renderCanvas`: a Canvas 2D context's commands drawn on a transparent
 //! canvas, for `getImageData` and `toDataURL` (docs/SCENE.md, "canvas"). It
 //! draws the same layer a frame does, so what is read back is what is drawn.
-//! The GPU device, the pipelines and the Vello renderers are made by the
+//! The GPU device, the pipelines and the Skia context are made by the
 //! first call and kept for the next ones (`set_scene`); only a canvas of a
 //! new size makes its textures again.
 

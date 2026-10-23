@@ -10,7 +10,7 @@ use std::fmt::Debug;
 
 use glam::{DMat3, DMat4, DVec3};
 use serde::Serialize;
-use vello::kurbo::{Affine, BezPath, Point, Rect, Shape, Vec2};
+use kurbo::{Affine, BezPath, Point, Rect, Shape, Vec2};
 
 use crate::bounds;
 use crate::error::Result;

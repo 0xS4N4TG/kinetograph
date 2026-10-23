@@ -22,7 +22,7 @@ use crate::scene::{
 };
 use crate::text::TextEngine;
 
-use vello::kurbo::{Affine, BezPath, PathEl};
+use kurbo::{Affine, BezPath, PathEl};
 use skia_safe::{
     BlendMode as SkBlend, Canvas, ClipOp, Color, Color4f, ColorFilter, ColorSpace, Data, Font, FontMgr, Image, ImageFilter,
     Matrix, Paint, PaintCap, PaintJoin, PaintStyle, Path, PathBuilder, PathFillType, Point, RRect, Rect, SamplingOptions,
@@ -212,6 +212,16 @@ impl Translator {
     /// The fallback textures of the frame, to be released once Skia has run its recording.
     pub fn take_held(&mut self) -> Vec<Tex> {
         std::mem::take(&mut self.held)
+    }
+
+    /// Forgets everything read from a file, so that it is read again.
+    pub fn forget_files(&mut self) {
+        self.images.clear();
+        self.videos.clear();
+        self.video_last.clear();
+        self.gif_pics.clear();
+        self.lottie_last.clear();
+        self.fonts_key.clear();
     }
 
     pub fn begin_frame(&mut self, scene: &Scene) {
@@ -676,7 +686,19 @@ impl Translator {
                         }
                     }
                     let g = grow / s;
+                    let content = r;
                     r = Rect::new(r.left - g, r.top - g, r.right + g, r.bottom + g);
+                    // A tile repeats over the whole filter region, not just where the layer draws.
+                    if fg.nodes.iter().any(|n| matches!(n.op, FeOp::Tile)) {
+                        let content = kurbo::Rect::new(content.left as f64, content.top as f64, content.right as f64, content.bottom as f64);
+                        match fg.plan(Some(content)) {
+                            Some(p) => {
+                                let reg = p.region;
+                                r = Rect::new(r.left.min(reg.x0 as f32), r.top.min(reg.y0 as f32), r.right.max(reg.x1 as f32), r.bottom.max(reg.y1 as f32));
+                            }
+                            None => return None,
+                        }
+                    }
                 }
                 ResolvedEffect::InsetShadow(_) | ResolvedEffect::ColorMatrix(_) | ResolvedEffect::GradientMap(_) | ResolvedEffect::Grain(_) | ResolvedEffect::BackdropBlur { .. } => {}
                 _ => return None,
@@ -902,11 +924,11 @@ impl Translator {
         let mut results: Vec<Option<ImageFilter>> = Vec::new();
         // The region and subregions in layer units, and the lengths scaled by `primitiveUnits`; each result is cut to its
         // subregion, as the wgpu path does.
-        let plan = g.plan(layer_box.map(|b| vello::kurbo::Rect::new(b.left as f64, b.top as f64, b.right as f64, b.bottom as f64)));
+        let plan = g.plan(layer_box.map(|b| kurbo::Rect::new(b.left as f64, b.top as f64, b.right as f64, b.bottom as f64)));
         if plan.is_none() {
             self.stats.approx("filter region/subregion not applied (no layer box)");
         }
-        let sk = |r: &vello::kurbo::Rect| Rect::new(r.x0 as f32, r.y0 as f32, r.x1 as f32, r.y1 as f32);
+        let sk = |r: &kurbo::Rect| Rect::new(r.x0 as f32, r.y0 as f32, r.x1 as f32, r.y1 as f32);
         for (idx, node) in g.nodes.iter().enumerate() {
             let op = plan.as_ref().map_or(&node.op, |p| &p.nodes[idx].op);
             // A primitive that works in linearRGB reads its inputs decoded and its result is encoded again (flood
@@ -1655,7 +1677,7 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 
 /// A gradient as a Skia shader, following `render::gradient_brush_in`: the span between the first and last stop is
 /// what repeats, and a gradient with no extent is its last stop's colour.
-/// `linear`: the surface holds linear light, but stops blend in sRGB-encoded values (as CSS and the Vello path do).
+/// `linear`: the surface holds linear light, but stops blend in sRGB-encoded values (as CSS does).
 fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bool) -> Option<Shader> {
     let last = g.stops[g.stops.len() - 1];
     let solid = || Some(skia_safe::shaders::color(Color::from_argb(last.1.a, last.1.r, last.1.g, last.1.b)));
@@ -1713,7 +1735,7 @@ fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bo
         }
         ResolvedGradientGeometry::Conic { cx, cy, angle } => {
             // Skia's sweep starts at 3 o'clock; CSS starts at 12.
-            turn = Affine::rotate_about((angle - 90.0).to_radians(), vello::kurbo::Point::new(cx, cy));
+            turn = Affine::rotate_about((angle - 90.0).to_radians(), kurbo::Point::new(cx, cy));
             (2, Some((Point::new(cx as f32, cy as f32), Point::new(0.0, 0.0), Point::new(0.0, 0.0), (lo * 360.0) as f32, (hi * 360.0) as f32)))
         }
     };
@@ -1838,8 +1860,8 @@ impl Translator {
 
 const WHITE: crate::color::Color = crate::color::Color { r: 255, g: 255, b: 255, a: 255 };
 
-/// What the wgpu path asks Skia to draw into a texture in place of Vello (`Renderer::skia_leaf` and its kin): the 2D
-/// content of one layer, with no effect, clip, mask or matte (the compositor applies those), under the matrix the Vello
+/// What the wgpu path asks Skia to draw into a texture (`Renderer::skia_leaf` and its kin): the 2D
+/// content of one layer, with no effect, clip, mask or matte (the compositor applies those), under the matrix the
 /// path rasterised it with.
 impl Translator {
     /// The renderer whose Lottie and GIF pictures this draws, for the length of one call.

@@ -12,7 +12,7 @@
 //! reproduces a regular grid exactly. The twist is the same rule applied to
 //! the slopes across the other axis.
 
-use vello::kurbo::{Affine, Point};
+use kurbo::{Affine, Point};
 
 use crate::color::Color;
 

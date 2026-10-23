@@ -367,7 +367,7 @@ by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like an
 ```
 
 What a Canvas 2D context drew: the list of commands a `CanvasRenderingContext2D` was given, drawn into the box
-`(0, 0, width, height)` with Vello, under the layer's transform. The authoring layer's `<Canvas>` and a Remotion
+`(0, 0, width, height)` with Skia, under the layer's transform. The authoring layer's `<Canvas>` and a Remotion
 project's `<canvas>` (`getContext('2d')`) both make one; the context object is `createCanvasContext` of
 `@kinetograph/scene` (AUTHORING.md §6.5). Like any layer it takes `effects`, `clip`, `mask`, `matte`,
 `blendMode` and `opacity`.
@@ -434,14 +434,10 @@ default `source-over`), `shadow` and `filter` (below).
   valid value that is not drawn: the context writes it as `unsupportedFilter` on the command (the rest of the list is
   drawn) and the host reports it as unsupported (`<Canvas>`: the tree's `unsupported`; a `<canvas>` in a DOM island:
   the painter's), so `--strict` fails on it.
-- A command with a shadow or a filter is drawn on its own on a transparent canvas the size of its box, through the
-  compositor's passes, and the pictures come back as images that Vello draws where the command stands in the list. So
-  the canvas layer is rasterised alone (not on a page with other leaves), and the picture of a command is 8 bits, as
-  the canvas's is. A command's shadow and filtered drawing reach no further than the scene's padded canvas
-  (`margin`, which a canvas does not count), and the canvas's own box cuts them. Vello keeps them in one image atlas
-  of 8192 x 8192 pixels, and a picture is the box its command can touch (a blur's reach included), so a canvas layer's
-  pictures may total 50 million pixels in a frame (hundreds of shadows of shapes a few hundred pixels across, or 24 of
-  a whole 1080p canvas); a frame with more is an error, since Vello would leave out what does not fit.
+- A command with a shadow or a filter is drawn by Skia as a layer with image filters (a blur, a colour filter, a drop
+  shadow) at the place the command stands in the list, with its alpha, blend mode and clip. A command's shadow and
+  filtered drawing reach no further than the scene's padded canvas (`margin`, which a canvas does not count), and the
+  canvas's own box cuts them.
 - **Not drawn.** `imageSmoothingQuality` above the default, `fontKerning`, `textRendering`, `fontStretch` and hit
   testing (`isPointInPath`) are not part of a layer; the context accepts the assignments and draws nothing for them.
 - The pictures a canvas draws from files (`kind: "src"`) are read when a renderer is built from the scene, as an image
@@ -575,11 +571,11 @@ sRGB-encoded, straight alpha, `width` x `height` pixels, row 0 at the top), at t
 `width` and `height` the source carries. The children are only ever those pictures and are not drawn on their own; the
 group's picture is the canvas, placed like a canvas layer's, and the group's own `opacity`, `effects`, `clip`, `mask` and
 `blendMode` apply to it. Checked when the scene loads: a layer source names a child of the group; the group has no `glsl`
-pass, no `layout`, and is not `preserve3d`. A `layer` source outside such a group is a render error on the Vello backend and not drawn (reported) on Skia.
+pass, no `layout`, and is not `preserve3d`. A `layer` source outside such a group is not drawn (reported).
 
-The group is drawn by the wgpu path on both backends (the Skia backend counts it as a fallback, "canvas group"): the
-children become the textures of the shader-group path, are registered with Vello's image renderer, and the commands are
-drawn with Vello's canvas (shadows and filters included). `getImageData` of a layer picture is not available to a script.
+The group is drawn by the wgpu path (Skia counts it as a fallback, "canvas group"): the children are drawn as layers,
+and Skia draws the canvas's commands with each child's texture as the image of its `layer` source (shadows and filters
+included). A pattern made from a `layer` source is not drawn (reported). `getImageData` of a layer picture is not available to a script.
 
 ### scene3d
 
@@ -798,9 +794,8 @@ Which picture is shown, for scene frame `f` (`frame`, or the frame being rendere
   the stream ends instead. A missing or unreadable file, one without a video stream, a `trimAfter` not above
   `trimBefore`, a `trimBefore` at or past the end of the stream, or a `playbackRate` not above 0 is a load error naming
   the layer.
-- Decoded pictures are cached per file (the last 64 MiB, and at least 4 pictures), and a picture reaches Vello as one
-  image, so the image atlas holds only the pictures drawn lately: Vello drops those unused for two frames when it needs
-  the room. The layer cache redraws a video layer whenever the timestamp it asks for changes, which is when its
+- Decoded pictures are cached per file (the last 64 MiB, and at least 4 pictures), and a picture reaches Skia as one
+  image. The layer cache redraws a video layer whenever the timestamp it asks for changes, which is when its
   picture changes and, for a clip slower than the scene, also between two frames of one picture.
 - Counts nothing in the [margin](#canvas-margin).
 

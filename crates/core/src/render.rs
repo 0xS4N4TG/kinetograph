@@ -1,5 +1,5 @@
-//! Scene -> pixels. Vello rasterises each leaf layer into an sRGB texture;
-//! the compositor blends them in linear light.
+//! Scene -> pixels. Skia draws the 2D layers of a frame (`render/skia.rs`); the wgpu path draws what Skia does not
+//! (3D, shaders, mesh gradients) and the compositor blends in linear light.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -7,33 +7,27 @@ use std::time::{Instant, SystemTime};
 
 use glam::{DMat3, DMat4, DVec3};
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
-use vello::kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
-use vello::peniko::{self, Blob, Fill, ImageAlphaType, ImageData, ImageFormat};
-use vello::util::RenderContext;
-use vello::wgpu;
-use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
+use kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape};
+use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
 use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::cache::{self, Inputs, LayerCache};
 use crate::canvas;
-use crate::color::Color;
-use crate::compositor::{BLEND_SLOTS, BlendLayer, BlendSource, Compositor, Readback, Tex};
+use crate::compositor::{BLEND_SLOTS, BlendLayer, Compositor, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::gif::{Gif, Gifs, gif_sources, open_gif};
 use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
 use crate::lut::Lut;
 use crate::mesh;
 use crate::resolve::{
-    ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedGradient,
-    ResolvedGradientGeometry, ResolvedKind, ResolvedLayer, ResolvedMask, ResolvedPaint,
-    ResolvedScene, ResolvedShadow, ShapeStyle,
+    ResolvedChar, ResolvedClip, ResolvedEffect, ResolvedGeometry, ResolvedKind, ResolvedLayer, ResolvedPaint,
+    ResolvedScene, ShapeStyle,
 };
 use crate::reuse;
 use crate::scene::{
-    BlendMode, DotOrder, Extend, Fit, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer,
-    Units, walk_layers,
+    BlendMode, DotOrder, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
 };
 use crate::scene3d::draw::{Assets3d, Texture};
 use crate::scene3d::environment::Environment;
@@ -51,11 +45,6 @@ const SHAPE_TOLERANCE: f64 = 0.1;
 /// How many bytes of finished layer textures the layer cache keeps from one
 /// frame to the next (`cache.rs`).
 const CACHE_BYTES: u64 = 1 << 30;
-
-/// How many bytes of Vello page targets are kept from one frame to the next.
-/// A frame with hundreds of pages makes them all, and without a limit they
-/// stay for the rest of the render, in every worker.
-const PAGE_TARGET_BYTES: u64 = 512 << 20;
 
 /// Tightly packed RGBA8, straight alpha, sRGB-encoded.
 pub struct Frame {
@@ -110,7 +99,7 @@ impl PendingFrame {
 pub struct Timings {
     /// Evaluating the scene's animated values.
     pub resolve_ms: f64,
-    /// Vello drawing leaf layers into textures.
+    /// Skia drawing the 2D layers into textures.
     pub raster_ms: f64,
     /// Colour conversion, effects and blending.
     pub composite_ms: f64,
@@ -138,22 +127,11 @@ pub fn render_still(scene: Scene, frame: u32) -> Result<Frame> {
 pub struct Renderer {
     scene: Scene,
     // Keeps the wgpu instance alive for the device.
-    _context: RenderContext,
+    _instance: wgpu::Instance,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    vello: vello::Renderer,
-    /// Rasterises image layers only; `None` if the scene has none.
-    ///
-    /// Vello 0.11 keeps an image atlas between renders but resets it to 1x1
-    /// when a scene has only solid-colour paths, while its cache still treats
-    /// the images as uploaded. Rendering a shape after an image therefore
-    /// blanks the image on every later render. Giving images their own
-    /// renderer means it only ever sees scenes that contain an image.
-    vello_images: Option<vello::Renderer>,
-    vello_scene: vello::Scene,
-    vello_view: wgpu::TextureView,
-    /// Size of the Vello target and of every compositor texture: the canvas
-    /// plus `margin` pixels on every side.
+    /// Size of every compositor texture: the canvas plus `margin` pixels on
+    /// every side.
     target_size: (u32, u32),
     /// See `Scene::margin`.
     margin: u32,
@@ -181,20 +159,8 @@ pub struct Renderer {
     /// The ids of the groups the layer being drawn is in, outermost first.
     /// With the layer's own id they say which layer it is to the cache.
     cache_path: Vec<String>,
-    /// The leaves of the frame that Vello draws a page at a time
-    /// (`plan_pages`), and the textures of those drawn and not yet used.
-    pages: Pages,
-    /// The Vello targets of the frame's pages once it is over, to be drawn
-    /// into again by the next frame's.
-    /// Each with the number of the release that put it back, oldest first in
-    /// its list; the oldest go when they take more than `PAGE_TARGET_BYTES`.
-    page_targets: HashMap<(u32, u32), Vec<(u64, wgpu::TextureView)>>,
-    /// Counts the targets given back to `page_targets`.
-    page_target_seq: u64,
     /// Above 0 while the samples of a motion-blurred layer are drawn: they are
     /// copies of one layer with the same ids, and only their average is kept.
-    /// Their leaves are also rasterised into the box they cover, not the
-    /// whole target (`vello_area`).
     cache_paused: u32,
     /// Identical-frame reuse (`reuse.rs`), off in a new renderer.
     reuse: bool,
@@ -212,11 +178,10 @@ pub struct Renderer {
     /// Above 0 while the children of a fused group are drawn
     /// (`draw_fused_group`): what they wait to be blended stays together.
     group_depth: u32,
-    /// The Skia backend when `KINETOGRAPH_BACKEND=skia` and it could start (`skia.rs`).
+    /// The Skia backend (`skia.rs`); `None` only while a frame is being drawn.
     skia: Option<skia::SkiaBackend>,
     /// Skia's GPU context and the translator that draws the 2D content of the layers it hands to this renderer, while
     /// a Skia frame is being drawn (`skia/backend.rs`); `None` otherwise.
-    #[cfg_attr(not(feature = "skia"), allow(dead_code))]
     skia_inner: Option<skia::Inner>,
 }
 
@@ -227,19 +192,12 @@ impl Renderer {
         // cheaply.
         let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
 
-        let mut context = render_context();
-        let mut gpu = pollster::block_on(new_device(&context.instance));
-        if gpu.is_none() && cfg!(all(feature = "skia", not(target_os = "macos"))) && skia::wants_skia() {
-            // The Vulkan-only instance (for Skia) found no adapter: let wgpu pick any, and Vello draws.
-            context = RenderContext::new();
-            gpu = pollster::block_on(new_device(&context.instance));
-        }
-        let (device, queue) = gpu.ok_or_else(|| Error::Render("no compatible GPU adapter found".into()))?;
+        let instance = new_instance();
+        let (device, queue) = pollster::block_on(new_device(&instance))
+            .ok_or_else(|| Error::Render("no compatible GPU adapter found (Skia needs Metal on macOS, Vulkan elsewhere)".into()))?;
 
-        let vello = new_vello(&device)?;
         let margin = scene.margin();
         let target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
-        let vello_view = new_vello_target(&device, target_size);
         // The scene's shaders and tables join below, the way a later
         // scene's do (`set_scene`).
         let mut compositor = Compositor::new(
@@ -259,13 +217,9 @@ impl Renderer {
             .expect("the first read of a scene's assets builds the text engine");
         let mut renderer = Renderer {
             scene,
-            _context: context,
+            _instance: instance,
             device,
             queue,
-            vello,
-            vello_images: None,
-            vello_scene: vello::Scene::new(),
-            vello_view,
             target_size,
             margin,
             projection: DMat4::IDENTITY,
@@ -280,9 +234,6 @@ impl Renderer {
             timings: None,
             cache: LayerCache::new(CACHE_BYTES),
             cache_path: Vec::new(),
-            pages: Pages::default(),
-            page_targets: HashMap::new(),
-            page_target_seq: 0,
             cache_paused: 0,
             reuse: false,
             starts: 0,
@@ -294,19 +245,14 @@ impl Renderer {
             skia: None,
             skia_inner: None,
         };
-        renderer.skia = skia::init(&renderer.device, &renderer.queue, &renderer.scene);
-        static SAY: std::sync::Once = std::sync::Once::new();
-        SAY.call_once(|| {
-            eprintln!("kinetograph: drawing with {}", if renderer.skia.is_some() { "Skia" } else { "Vello" })
-        });
-        renderer.ensure_image_renderer(fresh.has_pictures())?;
+        renderer.skia = Some(skia::init(&renderer.device, &renderer.queue, &renderer.scene)?);
         renderer.install_assets(fresh);
         renderer.add_shaders();
         Ok(renderer)
     }
 
     /// Takes `scene` as the one to render from now on, keeping the device,
-    /// the Vello renderers, the compositor's pipelines and the layer cache.
+    /// the compositor's pipelines and the layer cache.
     /// Only what the scene needs that the renderer has not read yet is
     /// loaded: fonts, images and tables by the file they came from, shader
     /// pipelines by their source. The textures that depend on the size are
@@ -325,7 +271,6 @@ impl Renderer {
     /// that is edited between scenes is read again.
     pub fn set_scene(&mut self, scene: Scene) -> Result<()> {
         let fresh = read_assets(&scene, &self.loaded, true)?;
-        self.ensure_image_renderer(fresh.has_pictures())?;
         // Nothing fails from here on.
         let margin = scene.margin();
         let resized = (scene.width, scene.height, margin)
@@ -351,11 +296,8 @@ impl Renderer {
         self.compositor
             .set_srgb_blend(scene.blend_space == crate::scene::BlendSpace::Srgb);
         if resized {
-            self.clear_pages();
             self.margin = margin;
             self.target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
-            self.vello_view = new_vello_target(&self.device, self.target_size);
-            self.page_targets.clear();
             self.compositor.resize(scene.width, scene.height, margin);
         }
         self.install_assets(fresh);
@@ -369,23 +311,15 @@ impl Renderer {
         &self.scene
     }
 
-    /// Makes the Vello renderer for image layers once a scene has an image
-    /// (see `vello_images`), or when `will_have_images`.
-    fn ensure_image_renderer(&mut self, will_have_images: bool) -> Result<()> {
-        if self.vello_images.is_none()
-            && (will_have_images
-                || !self.images.is_empty()
-                || !self.lotties.is_empty()
-                || !self.videos.is_empty()
-                || !self.gifs.is_empty())
-        {
-            self.vello_images = Some(new_vello(&self.device)?);
-        }
-        Ok(())
-    }
-
     /// Keeps what `read_assets` read.
     fn install_assets(&mut self, fresh: NewAssets) {
+        // Skia reads picture and video files itself and keeps what it read, by name: a name that now means another
+        // file (or a file that changed) must be read again.
+        if fresh.text.is_some()
+            || !(fresh.images.is_empty() && fresh.lotties.is_empty() && fresh.videos.is_empty() && fresh.gifs.is_empty())
+        {
+            self.skia_forget_files();
+        }
         if let Some(text) = fresh.text {
             self.text = text;
             self.assets3d.forget_text();
@@ -478,7 +412,7 @@ impl Renderer {
     }
 
     /// The compositing passes since the last call, with their GPU times.
-    /// Vello's rasterising and the copies between textures are not passes
+    /// Skia's drawing and the copies between textures are not passes
     /// that can be timed, so they are not in it.
     pub fn take_pass_times(&mut self) -> Vec<crate::pass_timer::PassTime> {
         self.compositor.take_pass_times()
@@ -530,11 +464,6 @@ impl Renderer {
         if crate::profile::passes() {
             if !self.compositor.is_timing_passes() {
                 self.compositor.set_pass_timing(true);
-            }
-            let stages = crate::profile::stages();
-            self.vello.set_pass_timing(&self.device, true, stages);
-            if let Some(images) = &mut self.vello_images {
-                images.set_pass_timing(&self.device, true, stages);
             }
         }
         let timer = crate::profile::start();
@@ -588,9 +517,7 @@ impl Renderer {
     }
 
     /// Adds the GPU time of the passes of the frame `start_frame` just encoded to the profile: each compositor pass kind
-    /// (`gpu_<name>` ms, `gpun_<name>` count, `gput_<name>` texels), each Vello compute pass (`gpu_v_<label>`), and
-    /// each Vello page (one `render_to_texture`) in time order as `pgpx_<i>` (pixels), `pgspan_<i>` (ms from its first
-    /// compute pass's start to its last one's end), `pgbusy_<i>` (ms in its compute passes) and `pgn_<i>` (passes).
+    /// (`gpu_<name>` ms, `gpun_<name>` count, `gput_<name>` texels) and the frame's span and busy time.
     fn record_pass_profile(&mut self) {
         use crate::profile::{add_dyn, add_gpu};
         // The frame's first start, last end and the sum of its passes' times, on the GPU's clock.
@@ -602,39 +529,6 @@ impl Renderer {
             last = last.max(pass.begin_ms + pass.ms);
             busy += pass.ms;
         }
-        let mut times = self.vello.take_pass_times(&self.device, &self.queue);
-        let images = self
-            .vello_images
-            .as_mut()
-            .map(|v| v.take_pass_times(&self.device, &self.queue));
-        let main = times.len();
-        times.extend(images.into_iter().flatten());
-        // (renderer, render) -> (first start, last end, busy, passes, tag)
-        let mut pages: std::collections::BTreeMap<(bool, u64), (f64, f64, f64, u32, u64)> =
-            Default::default();
-        for (i, t) in times.iter().enumerate() {
-            add_gpu(&format!("v_{}", t.label), t.ms);
-            first = first.min(t.begin_ms);
-            last = last.max(t.begin_ms + t.ms);
-            busy += t.ms;
-            let page = pages
-                .entry((i >= main, t.render))
-                .or_insert((f64::MAX, 0.0, 0.0, 0, t.tag));
-            page.0 = page.0.min(t.begin_ms);
-            page.1 = page.1.max(t.begin_ms + t.ms);
-            page.2 += t.ms;
-            page.3 += 1;
-        }
-        let mut pages: Vec<_> = pages.into_values().collect();
-        pages.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for (i, (start, end, busy, n, tag)) in pages.iter().enumerate() {
-            add_dyn(&format!("pgpx_{i:02}"), (tag & !(1 << 63)) as f64);
-            add_dyn(&format!("pgcv_{i:02}"), (tag >> 63) as f64);
-            add_dyn(&format!("pgspan_{i:02}"), end - start);
-            add_dyn(&format!("pgbusy_{i:02}"), *busy);
-            add_dyn(&format!("pgn_{i:02}"), f64::from(*n));
-        }
-        add_dyn("vpages", pages.len() as f64);
         if last > first {
             // `gspan` is the time from the frame's first timed pass to its last; what `gbusy` leaves out of it is
             // the copies, buffer clears and uploads, and the gaps between passes.
@@ -734,23 +628,11 @@ impl Renderer {
         self.group_depth = 0;
         self.cache.begin_frame();
         self.compositor.begin_frame();
-        self.clear_pages();
-        let canvas = if self.skia.is_some() {
-            self.skia_canvas(scene)?
-        } else {
-            let timer = crate::profile::start();
-            self.plan_pages(&scene.layers)?;
-            crate::profile::add_since("plan_pages", timer);
-            crate::profile::add_value("pages", self.pages.pages.len() as f64);
-            let color = scene.background.linear_premultiplied();
-            let background = self.timed(Stage::Composite, |s| s.compositor.filled(color));
-            self.draw_layers(&scene.layers, margin_origin(self.margin), background, None)?
-        };
+        let canvas = self.skia_canvas(scene)?;
         // What this frame did not draw, the next probably will not either.
         for tex in self.cache.end_frame() {
             self.compositor.release(tex);
         }
-        self.clear_pages();
         let readback = self.timed(Stage::Readback, |s| s.compositor.start_readback(&canvas));
         self.compositor.release(canvas);
         self.skia_submitted(&readback);
@@ -785,7 +667,7 @@ impl Renderer {
         below: Option<&Tex>,
         pending: &mut Vec<Pending<'a>>,
     ) -> Result<Tex> {
-        // Plain leaves met under motion blur, drawn together in one Vello scene.
+        // Plain leaves met under motion blur, drawn together in one Skia pass.
         let mut run: Vec<FlatOp<'a>> = Vec::new();
         for layer in layers {
             // A matte source is only drawn through the layer it mattes.
@@ -877,20 +759,14 @@ impl Renderer {
         }
         let region = self.raster_bounds(layer, matrix)?;
         if !region.is_empty() {
-            run.push(FlatOp::Leaf(Leaf {
-                layer,
-                matrix,
-                region,
-                clip: None,
-            }));
+            run.push(FlatOp::Leaf(layer, matrix, region));
         }
         Ok(())
     }
 
-    /// Draws the leaves in `run` bottom first into one Vello scene, one
+    /// Draws the leaves in `run` bottom first with one Skia pass into one
     /// texture, and leaves it in `pending`. Many plain leaves of a
     /// motion-blurred layer's sample cost one draw instead of one each.
-    /// Overlapping edges blend in Vello's sRGB, not in linear light.
     fn flush_flat(
         &mut self,
         run: &mut Vec<FlatOp<'_>>,
@@ -900,49 +776,23 @@ impl Renderer {
             return Ok(());
         }
         let region = run.iter().fold(PixelRect::EMPTY, |r, op| match op {
-            FlatOp::Leaf(l) => r.union(l.region),
+            FlatOp::Leaf(_, _, region) => r.union(*region),
             _ => r,
         });
         if region.is_empty() {
             run.clear();
             return Ok(());
         }
-        if self.skia_rasters() {
-            let ops: Vec<skia::RasterOp<'_>> = run
-                .drain(..)
-                .map(|op| match op {
-                    FlatOp::Leaf(leaf) => skia::RasterOp::Leaf(leaf.layer, leaf.matrix),
-                    FlatOp::Clip(path, matrix) => skia::RasterOp::Clip(path, matrix),
-                    FlatOp::Pop => skia::RasterOp::Pop,
-                })
-                .collect();
-            let tex = self.timed(Stage::Raster, |s| s.skia_flat(&ops, region))?;
-            pending.push(Pending::new(Waiting::Loose(tex), 1.0, BlendMode::Normal));
-            return Ok(());
-        }
-        let area = self.vello_area(region);
-        self.vello_scene.reset();
-        for op in run.drain(..) {
-            match op {
-                FlatOp::Leaf(leaf) => {
-                    self.encode_leaf(leaf.layer, in_area(area, leaf.matrix), None)?;
-                }
-                FlatOp::Clip(path, matrix) => {
-                    self.vello_scene
-                        .push_clip_layer(Fill::NonZero, in_area(area, matrix), &path);
-                }
-                FlatOp::Pop => self.vello_scene.pop_layer(),
-            }
-        }
-        self.timed(Stage::Raster, |s| s.render_vello_scene(false, area))?;
-        let tex = self.timed(Stage::Composite, |s| {
-            s.compositor.from_srgb8(&s.vello_view, area, region)
-        });
-        pending.push(Pending::new(
-            Waiting::Loose(tex),
-            1.0,
-            BlendMode::Normal,
-        ));
+        let ops: Vec<skia::RasterOp<'_>> = run
+            .drain(..)
+            .map(|op| match op {
+                FlatOp::Leaf(layer, matrix, _) => skia::RasterOp::Leaf(layer, matrix),
+                FlatOp::Clip(path, matrix) => skia::RasterOp::Clip(path, matrix),
+                FlatOp::Pop => skia::RasterOp::Pop,
+            })
+            .collect();
+        let tex = self.timed(Stage::Raster, |s| s.skia_flat(&ops, region))?;
+        pending.push(Pending::new(Waiting::Loose(tex), 1.0, BlendMode::Normal));
         Ok(())
     }
 
@@ -983,12 +833,6 @@ impl Renderer {
                     }
                 }
                 Waiting::Loose(texture) => self.compositor.release(texture),
-                Waiting::Page { id, inputs, .. } => {
-                    if let Some(id) = id {
-                        self.cache.note(id, &inputs);
-                    }
-                }
-                Waiting::Mask { .. } => {}
             }
         }
         canvas
@@ -1117,32 +961,10 @@ impl Renderer {
             }
         }
 
-        // A plain leaf goes to the blend straight from its page, unless it
-        // was the same last frame too: then it is drawn the way that gives
-        // the layer cache a texture to keep.
-        if !unchanged
-            && let Some((leaf, clip, bounds)) =
-                self.page_source(layer, siblings, parent, placement)?
-        {
-            census(layer, "page", opacity);
-            pending.push(Pending::new(
-                Waiting::Page {
-                    id,
-                    inputs,
-                    leaf,
-                    clip,
-                    bounds,
-                },
-                opacity,
-                layer.blend_mode,
-            ));
-            return Ok(canvas);
-        }
-
         // A group of plain leaves goes to the blend as they are, in one pass.
-        if !unchanged && let Some(clip) = self.fusable_group(layer, siblings, parent, placement)? {
+        if !unchanged && self.fusable_group(layer, siblings, placement) {
             census(layer, "fused", opacity);
-            return self.draw_fused_group(layer, parent, opacity, id, inputs, clip, canvas, pending);
+            return self.draw_fused_group(layer, parent, opacity, id, inputs, canvas, pending);
         }
 
         census(layer, "tex", opacity);
@@ -1189,16 +1011,13 @@ impl Renderer {
     /// matte, motion blur or 3D placement, blends per pixel, does not look at
     /// the backdrop, and everything in it that is drawn blends per pixel and
     /// is one layer of the pass (the pass has `BLEND_SLOTS` of them, a clip
-    /// uses one). `Some(clip)` if so: the page of its clip and the box the
-    /// clip keeps, if it has one.
-    #[allow(clippy::type_complexity)]
+    /// uses one).
     fn fusable_group(
-        &mut self,
+        &self,
         layer: &ResolvedLayer,
         siblings: &[ResolvedLayer],
-        parent: Affine,
         placement: Option<Placement>,
-    ) -> Result<Option<Option<((wgpu::TextureView, PixelRect), PixelRect)>>> {
+    ) -> bool {
         let ResolvedKind::Group {
             children,
             preserve3d: false,
@@ -1207,7 +1026,7 @@ impl Renderer {
             ..
         } = &layer.kind
         else {
-            return Ok(None);
+            return false;
         };
         let reason = if !self.compositor.is_fused() {
             "unfused"
@@ -1221,7 +1040,7 @@ impl Renderer {
             "motion"
         } else if !layer.effects.is_empty() {
             "effects"
-        } else if layer.mask.is_some() || layer.matte.is_some() {
+        } else if layer.mask.is_some() || layer.matte.is_some() || layer.clip.is_some() {
             "mask"
         } else if !self.compositor.blends_per_pixel(layer.blend_mode) {
             "mode"
@@ -1232,32 +1051,20 @@ impl Renderer {
         };
         if !reason.is_empty() {
             census_why(layer, reason);
-            return Ok(None);
+            return false;
         }
-        let clipped = usize::from(layer.clip.is_some());
         match self.fused_layers(children) {
-            Some(n) if n + clipped <= BLEND_SLOTS => {}
+            Some(n) if n <= BLEND_SLOTS => {}
             Some(n) => {
                 census_why(layer, &format!("big{n}"));
-                return Ok(None);
+                return false;
             }
             None => {
                 census_why(layer, "children");
-                return Ok(None);
+                return false;
             }
         }
-        let Some(clip) = &layer.clip else {
-            return Ok(Some(None));
-        };
-        let matrix = parent * layer.transform.matrix();
-        let path = self.clip_path(clip, layer)?;
-        let keep = self.path_bounds(&path, matrix);
-        if keep.is_empty() {
-            return Ok(None);
-        }
-        Ok(self
-            .clip_page_target(layer, matrix)?
-            .map(|(page, area)| Some(((page, area), keep))))
+        true
     }
 
     /// How many layers of a `blend_many` pass `layers` take when `draw_layers_into`
@@ -1300,7 +1107,6 @@ impl Renderer {
         opacity: f32,
         id: Option<Vec<String>>,
         inputs: Inputs<'a>,
-        clip: Option<((wgpu::TextureView, PixelRect), PixelRect)>,
         canvas: Tex,
         pending: &mut Vec<Pending<'a>>,
     ) -> Result<Tex> {
@@ -1323,143 +1129,12 @@ impl Renderer {
         if pending.len() == start {
             return Ok(canvas);
         }
-        debug_assert!(pending.len() - start + usize::from(clip.is_some()) <= BLEND_SLOTS);
+        debug_assert!(pending.len() - start <= BLEND_SLOTS);
         pending[start].opens = true;
-        let closes = Some((opacity, layer.blend_mode));
-        let note = id.map(|id| (id, inputs));
-        match clip {
-            None => {
-                let last = pending.last_mut().expect("the group drew something");
-                last.closes = closes;
-                last.note = note;
-            }
-            Some(((view, area), keep)) => {
-                let mut mask = Pending::new(
-                    Waiting::Mask {
-                        clip: (view, area),
-                        bounds: keep,
-                    },
-                    1.0,
-                    BlendMode::Normal,
-                );
-                mask.closes = closes;
-                mask.note = note;
-                pending.push(mask);
-            }
-        }
+        let last = pending.last_mut().expect("the group drew something");
+        last.closes = Some((opacity, layer.blend_mode));
+        last.note = id.map(|id| (id, inputs));
         Ok(canvas)
-    }
-
-    /// What `blend_many` needs to blend the leaf `layer` straight from its
-    /// page (and its clip's, if it has one): the leaf's page and the pixels
-    /// of it Vello drew, the clip's, and the box the leaf is not transparent
-    /// in. `None` unless the leaf is plain: drawn flat, with no effects, mask
-    /// or matte, nothing behind it to look at, a blend mode that works pixel
-    /// by pixel, its clip (if any) keeping something, and both on pages.
-    #[allow(clippy::type_complexity)]
-    fn page_source(
-        &mut self,
-        layer: &ResolvedLayer,
-        siblings: &[ResolvedLayer],
-        parent: Affine,
-        placement: Option<Placement>,
-    ) -> Result<
-        Option<(
-            (wgpu::TextureView, PixelRect),
-            Option<(wgpu::TextureView, PixelRect)>,
-            PixelRect,
-        )>,
-    > {
-        if !self.compositor.is_fused()
-            || placement.is_some()
-            || !layer.motion.is_empty()
-            || !layer.effects.is_empty()
-            || layer.mask.is_some()
-            || layer.matte.is_some()
-            || !self.compositor.blends_per_pixel(layer.blend_mode)
-            || matches!(
-                layer.kind,
-                ResolvedKind::Group { .. }
-                    | ResolvedKind::MeshGradient { .. }
-                    | ResolvedKind::Glsl { .. }
-                    | ResolvedKind::Scene3d { .. }
-                    | ResolvedKind::Noise { .. }
-            )
-            || uses_backdrop(siblings, layer)
-        {
-            return Ok(None);
-        }
-        let matrix = parent * layer.transform.matrix();
-        let Some(&(_, region)) = self.pages.page_of.get(&leaf_key(layer, matrix)) else {
-            return Ok(None);
-        };
-        let Some(leaf) = self.page_target(layer, matrix)? else {
-            return Ok(None);
-        };
-        let Some(clip) = &layer.clip else {
-            return Ok(Some((leaf, None, region)));
-        };
-        let path = self.clip_path(clip, layer)?;
-        let bounds = region.intersect(self.path_bounds(&path, matrix));
-        if bounds.is_empty() {
-            return Ok(None);
-        }
-        let Some(clip_page) = self.clip_page_target(layer, matrix)? else {
-            return Ok(None);
-        };
-        Ok(Some((leaf, Some(clip_page), bounds)))
-    }
-
-    /// The leaf `layer` cut out of its page `page` (drawn over `area`) and
-    /// masked by its clip, in one pass, when it can be: it has no effects
-    /// (which come between the cut and the clip), its clip shape is on a page
-    /// too, and the clip keeps some of the leaf's box `region`.
-    fn clipped_from_page(
-        &mut self,
-        layer: &ResolvedLayer,
-        matrix: Affine,
-        page: &wgpu::TextureView,
-        area: PixelRect,
-        region: PixelRect,
-    ) -> Result<Option<Tex>> {
-        let Some(clip) = &layer.clip else {
-            return Ok(None);
-        };
-        if !self.compositor.is_fused()
-            || !layer.effects.is_empty()
-            || matches!(layer.kind, ResolvedKind::Noise { .. })
-        {
-            return Ok(None);
-        }
-        let path = self.clip_path(clip, layer)?;
-        let keep = self.path_bounds(&path, matrix);
-        if region.intersect(keep).is_empty() {
-            return Ok(None);
-        }
-        let Some((clip_page, clip_area)) = self.clip_page_target(layer, matrix)? else {
-            return Ok(None);
-        };
-        Ok(Some(self.timed(Stage::Composite, |s| {
-            s.compositor
-                .leaf_clipped_from_page((page, area), (&clip_page, clip_area), region, keep)
-        })))
-    }
-
-    /// The inset shadow that is the first effect of the leaf `layer`, if it
-    /// can be drawn in the one pass that cuts the leaf out of its page
-    /// (`Compositor::inset_from_page`): it has no blur and no spread, and the
-    /// leaf's pixels are what the page holds (a noise layer's are made from
-    /// them first).
-    fn sharp_inset_first(&self, layer: &ResolvedLayer) -> Option<ResolvedShadow> {
-        match (&layer.kind, layer.effects.first()) {
-            (ResolvedKind::Noise { .. }, _) => None,
-            (_, Some(ResolvedEffect::InsetShadow(shadow)))
-                if self.compositor.is_sharp_inset(shadow) =>
-            {
-                Some(*shadow)
-            }
-            _ => None,
-        }
     }
 
     /// Where `layer`'s texture is cached, if it may be: the cache is on, the
@@ -1574,29 +1249,6 @@ impl Renderer {
         }
     }
 
-    /// The matrix `layer_texture` is given as its parent for `layer` in
-    /// `siblings` under `parent`: `parent` moved by `source_shift` if the layer
-    /// is warped. `plan_pages` takes it too, so a leaf is found on its page.
-    fn shifted_parent(
-        &self,
-        siblings: &[ResolvedLayer],
-        layer: &ResolvedLayer,
-        parent: Affine,
-    ) -> Affine {
-        let Some(world) = warp::layer_world(&layer.transform) else {
-            return parent;
-        };
-        if uses_backdrop(siblings, layer) {
-            return parent;
-        }
-        let placement = Placement {
-            parent,
-            world,
-            backface_hidden: layer.transform.backface_hidden,
-        };
-        shifted(self.source_shift(&placement), parent)
-    }
-
     /// Warps a finished layer texture, drawn `shift` pixels right and down of
     /// where it belongs, to where its 3D placement puts it, as seen by the
     /// camera. `None` (and `src` released) if the layer is seen edge on.
@@ -1628,9 +1280,9 @@ impl Renderer {
         Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h)))
     }
 
-    /// A canvas pass's picture, drawn by Skia: the commands `ops` on a canvas of `size` under `matrix`, with the
+    /// A canvas pass's picture: the commands `ops` on a canvas of `size` under `matrix`, with the
     /// textures `layers` (the pass's children, by id) as the pictures its `layer` sources name.
-    fn canvas_pass_skia(
+    fn canvas_pass(
         &mut self,
         id: &str,
         size: (f64, f64),
@@ -1644,45 +1296,6 @@ impl Renderer {
             return Ok(self.compositor.empty());
         }
         self.timed(Stage::Raster, |s| s.skia_canvas_pass(&canvas, matrix, region, layers))
-    }
-
-    /// A canvas pass's picture: the commands `ops` drawn by Vello on a canvas of `size` under `matrix`, with the
-    /// textures `pictures` as the pictures its `layer` sources name.
-    fn canvas_pass(
-        &mut self,
-        id: &str,
-        size: (f64, f64),
-        ops: &std::sync::Arc<Vec<canvas::CanvasOp>>,
-        matrix: Affine,
-        pictures: Vec<(String, wgpu::Texture)>,
-    ) -> Result<Tex> {
-        self.ensure_image_renderer(true)?;
-        let mut kept = Vec::with_capacity(pictures.len());
-        for (child, texture) in pictures {
-            let image = self
-                .vello_images
-                .as_mut()
-                .expect("made above")
-                .register_texture(texture);
-            self.images.insert(canvas::layer_key(&child), image.clone());
-            kept.push((child, image));
-        }
-        let canvas = canvas_layer(id, size, ops);
-        let drawn = self.raster_bounds(&canvas, matrix).and_then(|region| {
-            if region.is_empty() {
-                return Ok(self.compositor.empty());
-            }
-            let area = self.vello_area(region);
-            self.rasterise(&canvas, matrix, area)?;
-            Ok(self.compositor.from_srgb8(&self.vello_view, area, region))
-        });
-        for (child, image) in kept {
-            self.images.remove(&canvas::layer_key(&child));
-            if let Some(renderer) = self.vello_images.as_mut() {
-                renderer.unregister_texture(image);
-            }
-        }
-        drawn
     }
 
     /// One layer's own pixels, ready to blend: drawn, then run through its
@@ -1712,10 +1325,6 @@ impl Renderer {
             | ResolvedKind::Scene3d { .. } => None,
             _ => Some(self.raster_bounds(layer, matrix)?),
         };
-        // How many of the layer's effects drawing it has applied already, and
-        // whether its clip has been.
-        let mut applied = 0;
-        let mut clipped = false;
         let src = match &layer.kind {
             // The children are the textures of a GLSL pass.
             ResolvedKind::Group {
@@ -1774,13 +1383,8 @@ impl Renderer {
                 self.cache_path.pop();
                 let layers: Vec<(&str, &Tex)> =
                     children.iter().map(|c| c.id.as_str()).zip(&drawn).collect();
-                let tex = if self.skia_rasters() {
-                    // Skia draws the children as they are, and the commands over them.
-                    self.canvas_pass_skia(&layer.id, (*width, *height), ops, matrix, &layers)
-                } else {
-                    let pictures = self.compositor.canvas_pictures((*width, *height), matrix, &layers);
-                    self.canvas_pass(&layer.id, (*width, *height), ops, matrix, pictures)
-                };
+                // Skia draws the children as they are, and the commands over them.
+                let tex = self.canvas_pass(&layer.id, (*width, *height), ops, matrix, &layers);
                 for tex in drawn {
                     self.compositor.release(tex);
                 }
@@ -1793,7 +1397,7 @@ impl Renderer {
                 self.cache_path.pop();
                 drawn?
             }
-            // Triangles with vertex colours, not a Vello scene.
+            // Triangles with vertex colours.
             ResolvedKind::MeshGradient {
                 columns,
                 rows,
@@ -1816,7 +1420,7 @@ impl Renderer {
                         .glsl(&recording.0, (*width, *height), matrix, &base_dir)
                 })?
             }
-            // Meshes drawn with a depth buffer, not a Vello scene.
+            // Meshes drawn with a depth buffer.
             ResolvedKind::Scene3d {
                 width,
                 height,
@@ -1828,37 +1432,7 @@ impl Renderer {
             }
             _ => {
                 let region = raster.unwrap_or_else(|| self.whole());
-                let drawn = match self.page_target(layer, matrix)? {
-                    Some((page, area)) => match self.sharp_inset_first(layer) {
-                        // One pass cuts the leaf out and draws its inset shadow.
-                        Some(shadow) => {
-                            applied = 1;
-                            self.timed(Stage::Composite, |s| {
-                                s.compositor.inset_from_page(&page, area, region, &shadow)
-                            })
-                        }
-                        None => match self.clipped_from_page(layer, matrix, &page, area, region)? {
-                            // One pass cuts the leaf out and masks it.
-                            Some(tex) => {
-                                clipped = true;
-                                tex
-                            }
-                            None => self.timed(Stage::Composite, |s| {
-                                s.compositor.from_srgb8(&page, area, region)
-                            }),
-                        },
-                    },
-                    None if self.skia_rasters() => {
-                        self.timed(Stage::Raster, |s| s.skia_leaf(layer, matrix, region))?
-                    }
-                    None => {
-                        let area = self.vello_area(region);
-                        self.timed(Stage::Raster, |s| s.rasterise(layer, parent, area))?;
-                        self.timed(Stage::Composite, |s| {
-                            s.compositor.from_srgb8(&s.vello_view, area, region)
-                        })
-                    }
-                };
+                let drawn = self.timed(Stage::Raster, |s| s.skia_leaf(layer, matrix, region))?;
                 match &layer.kind {
                     // What was drawn is the box's coverage; the noise fills it.
                     ResolvedKind::Noise {
@@ -1878,14 +1452,8 @@ impl Renderer {
                 let region = raster.unwrap_or_else(|| self.whole());
                 if region.is_empty() {
                     Some(self.timed(Stage::Composite, |s| s.compositor.empty()))
-                } else if self.skia_rasters() {
-                    Some(self.timed(Stage::Raster, |s| s.skia_coverage(layer, matrix, region))?)
                 } else {
-                    let area = self.vello_area(region);
-                    self.timed(Stage::Raster, |s| s.rasterise_coverage(layer, parent, area))?;
-                    Some(self.timed(Stage::Composite, |s| {
-                        s.compositor.from_srgb8(&s.vello_view, area, region)
-                    }))
+                    Some(self.timed(Stage::Raster, |s| s.skia_coverage(layer, matrix, region))?)
                 }
             }
             _ => None,
@@ -1902,7 +1470,7 @@ impl Renderer {
                 src,
                 matrix,
                 layer_box,
-                &layer.effects[applied..],
+                &layer.effects,
                 backdrop,
                 coverage.as_ref(),
                 box_shadow.as_ref(),
@@ -1911,7 +1479,7 @@ impl Renderer {
         if let Some(coverage) = coverage {
             self.compositor.release(coverage);
         }
-        if let Some(clip) = layer.clip.as_ref().filter(|_| !clipped) {
+        if let Some(clip) = layer.clip.as_ref() {
             let path = self.clip_path(clip, layer)?;
             let keep = self.path_bounds(&path, matrix);
             if keep.is_empty() {
@@ -1919,51 +1487,22 @@ impl Renderer {
                 self.compositor.release(src);
                 src = self.timed(Stage::Composite, |s| s.compositor.empty());
             } else if !src.bounds.is_empty() {
-                src = match self.clip_page_target(layer, matrix)? {
-                    // The shape was drawn with the page it is on.
-                    Some((page, area)) => self.timed(Stage::Composite, |s| {
-                        s.compositor
-                            .mask_from(src, &page, area, MaskMode::Alpha, keep)
-                    }),
-                    None if self.skia_rasters() => {
-                        let clip = self.timed(Stage::Raster, |s| s.skia_clip(&path, matrix, keep))?;
-                        self.timed(Stage::Composite, |s| {
-                            s.compositor.matte(src, clip, 1.0, MatteMode::Alpha)
-                        })
-                    }
-                    None => {
-                        self.timed(Stage::Raster, |s| s.rasterise_clip(&path, matrix))?;
-                        self.timed(Stage::Composite, |s| {
-                            s.compositor.mask(src, &s.vello_view, MaskMode::Alpha, keep)
-                        })
-                    }
-                };
+                let clip = self.timed(Stage::Raster, |s| s.skia_clip(&path, matrix, keep))?;
+                src = self.timed(Stage::Composite, |s| {
+                    s.compositor.matte(src, clip, 1.0, MatteMode::Alpha)
+                });
             }
         }
         if let Some(mask) = &layer.mask
             && !src.bounds.is_empty()
         {
-            // A gradient in box units is measured in the layer's box.
-            let mask_box = if mask.gradient.units == Units::Box {
-                self.layer_box(layer)?
-            } else {
-                None
+            let whole = self.whole();
+            let gradient = self.timed(Stage::Raster, |s| s.skia_mask(layer, mask, matrix, whole))?;
+            let mode = match mask.mode {
+                MaskMode::Alpha => MatteMode::Alpha,
+                MaskMode::Luminance => MatteMode::Luminance,
             };
-            if self.skia_rasters() {
-                let whole = self.whole();
-                let gradient = self.timed(Stage::Raster, |s| s.skia_mask(layer, mask, matrix, whole))?;
-                let mode = match mask.mode {
-                    MaskMode::Alpha => MatteMode::Alpha,
-                    MaskMode::Luminance => MatteMode::Luminance,
-                };
-                src = self.timed(Stage::Composite, |s| s.compositor.matte(src, gradient, 1.0, mode));
-            } else {
-                self.timed(Stage::Raster, |s| s.rasterise_mask(mask, matrix, mask_box))?;
-                let whole = self.whole();
-                src = self.timed(Stage::Composite, |s| {
-                    s.compositor.mask(src, &s.vello_view, mask.mode, whole)
-                });
-            }
+            src = self.timed(Stage::Composite, |s| s.compositor.matte(src, gradient, 1.0, mode));
         }
         if let Some(matte) = &layer.matte {
             let source = siblings
@@ -2010,262 +1549,14 @@ impl Renderer {
         }))
     }
 
-    /// Groups the leaves of the frame that `layer_texture` will rasterise
-    /// into pages, and encodes each page's Vello scene. No two leaves of a
-    /// page overlap, and a page is drawn over the whole target with the
-    /// matrices `rasterise` uses, so each leaf comes out of it as it would
-    /// from a draw of its own. A page is drawn when one of its leaves is
-    /// first wanted (`take_from_page`), so a frame whose layers all come
-    /// from the layer cache draws none. Motion-blurred layers and the
-    /// children of preserve3d groups are left out, and are drawn the way
-    /// they always were.
-    fn plan_pages(&mut self, layers: &[ResolvedLayer]) -> Result<()> {
-        let timer = crate::profile::start();
-        let mut leaves = Vec::new();
-        self.collect_leaves(layers, margin_origin(self.margin), &mut leaves)?;
-        crate::profile::add_since("pp_collect", timer);
-        let timer = crate::profile::start();
-        let regions: Vec<PixelRect> = leaves.iter().map(|leaf| leaf.region).collect();
-        let packed = pack_pages(&regions);
-        crate::profile::add_since("pp_pack", timer);
-        crate::profile::add_value("leaves", leaves.len() as f64);
-        let timer = crate::profile::start();
-        for page in packed {
-            self.vello_scene.reset();
-            let mut has_images = false;
-            // Vello draws from the canvas's top left corner, as a draw of the
-            // whole canvas does; only the box up to the page's farthest
-            // leaf is asked for.
-            let mut reach = PixelRect::EMPTY;
-            for i in page {
-                let leaf = &leaves[i];
-                match &leaf.clip {
-                    Some(path) => {
-                        self.vello_scene.fill(
-                            Fill::NonZero,
-                            leaf.matrix,
-                            peniko::Color::WHITE,
-                            None,
-                            path,
-                        );
-                    }
-                    None => {
-                        let timer = crate::profile::start();
-                        self.encode_leaf(leaf.layer, leaf.matrix, None)?;
-                        if timer.is_some() {
-                            let kind = format!("{:?}", leaf.layer.kind);
-                            let kind = kind.split([' ', '(', '{']).next().unwrap_or("");
-                            let ms = crate::profile::since(timer).unwrap_or(0.0);
-                            crate::profile::add_dyn(&format!("enc_{kind}"), ms);
-                            crate::profile::add_dyn(&format!("encn_{kind}"), 1.0);
-                        }
-                        has_images |= draws_image(&leaf.layer.kind);
-                    }
-                }
-                reach = reach.union(leaf.region);
-                let key = if leaf.clip.is_some() {
-                    clip_key(leaf.layer, leaf.matrix)
-                } else {
-                    leaf_key(leaf.layer, leaf.matrix)
-                };
-                self.pages
-                    .page_of
-                    .insert(key, (self.pages.pages.len(), leaf.region));
-            }
-            self.pages.pages.push(Page {
-                scene: Some(std::mem::replace(
-                    &mut self.vello_scene,
-                    vello::Scene::new(),
-                )),
-                has_images,
-                area: PixelRect::new(0, 0, reach.x1, reach.y1).intersect(self.whole()),
-                target_size: (0, 0),
-                target: None,
-            });
-        }
-        crate::profile::add_since("pp_encode", timer);
-        Ok(())
-    }
-
-    /// The leaves of `layers` and their groups for `plan_pages`: each with
-    /// the matrix and the box `layer_texture` rasterises it with, and the
-    /// clip shapes of the layers that have a clip, in white, with the box
-    /// they are masked by.
-    fn collect_leaves<'a>(
-        &mut self,
-        layers: &'a [ResolvedLayer],
-        parent: Affine,
-        leaves: &mut Vec<Leaf<'a>>,
-    ) -> Result<()> {
-        for layer in layers {
-            let matte_source = is_matte_source(layers, layer);
-            if (is_hidden(layer) && !matte_source) || !layer.motion.is_empty() {
-                continue;
-            }
-            let matrix = self.shifted_parent(layers, layer, parent) * layer.transform.matrix();
-            if let Some(clip) = &layer.clip {
-                let path = self.clip_path(clip, layer)?;
-                let region = self.path_bounds(&path, matrix);
-                if !region.is_empty() {
-                    leaves.push(Leaf {
-                        layer,
-                        matrix,
-                        region,
-                        clip: Some(path),
-                    });
-                }
-            }
-            match &layer.kind {
-                ResolvedKind::Group {
-                    children,
-                    preserve3d: false,
-                    ..
-                } => self.collect_leaves(children, matrix, leaves)?,
-                ResolvedKind::Group { .. }
-                | ResolvedKind::MeshGradient { .. }
-                | ResolvedKind::Glsl { .. } => {}
-                ResolvedKind::Scene3d { .. } => {}
-                // The passes of its shadows and filters run between its
-                // commands, so it is drawn alone (`rasterise`).
-                ResolvedKind::Canvas { ops, .. } if canvas::has_effects(ops) => {}
-                _ => {
-                    let region = self.raster_bounds(layer, matrix)?;
-                    if !region.is_empty() {
-                        leaves.push(Leaf {
-                            layer,
-                            matrix,
-                            region,
-                            clip: None,
-                        });
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// The Vello texture that holds the leaf `layer` under `matrix`, from
-    /// its page, if it is on one, and the pixels of it that Vello drew: the
-    /// page's, drawn now if this is the first leaf of it that is wanted.
-    /// `from_srgb8` cuts the leaf out of it. The pixels of the other leaves of
-    /// the page are in it too, outside this leaf's box.
-    fn page_target(
-        &mut self,
-        layer: &ResolvedLayer,
-        matrix: Affine,
-    ) -> Result<Option<(wgpu::TextureView, PixelRect)>> {
-        self.page_target_of(leaf_key(layer, matrix))
-    }
-
-    /// `page_target` for the clip shape of `layer` under `matrix`, drawn in
-    /// white: its alpha is the clip's coverage.
-    fn clip_page_target(
-        &mut self,
-        layer: &ResolvedLayer,
-        matrix: Affine,
-    ) -> Result<Option<(wgpu::TextureView, PixelRect)>> {
-        self.page_target_of(clip_key(layer, matrix))
-    }
-
-    fn page_target_of(&mut self, key: LeafKey) -> Result<Option<(wgpu::TextureView, PixelRect)>> {
-        if self.cache_paused > 0 {
-            return Ok(None);
-        }
-        let Some(&(page, _)) = self.pages.page_of.get(&key) else {
-            return Ok(None);
-        };
-        let area = self.pages.pages[page].area;
-        if let Some(target) = &self.pages.pages[page].target {
-            return Ok(Some((target.clone(), area)));
-        }
-        let scene = self.pages.pages[page]
-            .scene
-            .take()
-            .expect("a page that is not drawn has its scene");
-        let has_images = self.pages.pages[page].has_images;
-        // A texture just big enough for the area, in steps of
-        // `bounds::SIZE_STEP` so that the frames' pages find ones to reuse.
-        let size = (
-            bounds::size_class(area.width(), self.target_size.0),
-            bounds::size_class(area.height(), self.target_size.1),
-        );
-        let target = self
-            .page_targets
-            .entry(size)
-            .or_default()
-            .pop()
-            .map(|(_, target)| target)
-            .unwrap_or_else(|| new_vello_target(&self.device, size));
-        self.pages.pages[page].target_size = size;
-        let previous = std::mem::replace(&mut self.vello_scene, scene);
-        let rendered = self.timed(Stage::Raster, |s| {
-            s.render_vello_scene_to(has_images, area, &target)
-        });
-        self.vello_scene = previous;
-        rendered?;
-        self.pages.pages[page].target = Some(target.clone());
-        Ok(Some((target, area)))
-    }
-
-    /// Forgets the pages, keeping their Vello textures for the next frame's.
-    fn clear_pages(&mut self) {
-        for page in self.pages.pages.drain(..) {
-            if let Some(target) = page.target {
-                self.page_targets
-                    .entry(page.target_size)
-                    .or_default()
-                    .push((self.page_target_seq, target));
-                self.page_target_seq += 1;
-            }
-        }
-        self.pages.page_of.clear();
-        self.trim_page_targets();
-    }
-
-    /// Drops the page targets released longest ago until the rest fit in
-    /// `PAGE_TARGET_BYTES`.
-    fn trim_page_targets(&mut self) {
-        let bytes = |k: &(u32, u32)| u64::from(k.0) * u64::from(k.1) * 4;
-        let mut held: u64 = self
-            .page_targets
-            .iter()
-            .map(|(k, v)| bytes(k) * v.len() as u64)
-            .sum();
-        while held > PAGE_TARGET_BYTES {
-            let oldest = self
-                .page_targets
-                .iter()
-                .filter_map(|(k, v)| v.first().map(|(seq, _)| (*seq, *k)))
-                .min();
-            let Some((_, key)) = oldest else { break };
-            if let Some(list) = self.page_targets.get_mut(&key) {
-                list.remove(0);
-                held -= bytes(&key);
-            }
-        }
-        self.page_targets.retain(|_, v| !v.is_empty());
-    }
-
     /// The box of the padded canvas's pixels.
     fn whole(&self) -> PixelRect {
         PixelRect::whole(self.target_size.0, self.target_size.1)
     }
 
-    /// The pixels Vello is asked to draw for a leaf whose pixels are in
-    /// `region`. The whole target, except for the leaves of a motion-blurred
-    /// layer's samples (`cache_paused`), which are drawn many times a frame
-    /// and are drawn into the box they cover (`bounds::vello_area`).
-    fn vello_area(&self, region: PixelRect) -> PixelRect {
-        if self.cache_paused > 0 && !region.is_empty() {
-            bounds::vello_area(region)
-        } else {
-            self.whole()
-        }
-    }
-
     /// The pixels that rasterising the leaf `layer` under `matrix` can touch:
     /// the box of what it draws in layer space, through the matrix, a pixel
-    /// more all round for the anti-aliased edge (Vello draws nothing else),
+    /// more all round for the anti-aliased edge (the edge of a shape reaches that far),
     /// cut to the target.
     ///
     /// - a shape: the box of its path, and for a stroke half the stroke's
@@ -2332,360 +1623,6 @@ impl Renderer {
             return PixelRect::EMPTY;
         }
         device_bounds(matrix, path.bounding_box()).intersect(self.whole())
-    }
-
-    /// Draws one leaf layer, with all transforms applied, into the Vello
-    /// target texture: the pixels `area` of the canvas, from the texture's
-    /// top left corner.
-    fn rasterise(&mut self, layer: &ResolvedLayer, parent: Affine, area: PixelRect) -> Result<()> {
-        let matrix = in_area(area, parent * layer.transform.matrix());
-        self.vello_scene.reset();
-        // The pictures a canvas's shadows and filters make live in Vello's
-        // image atlas until it has drawn them.
-        let mut pictures = Vec::new();
-        let drawn = self
-            .encode_leaf(layer, matrix, Some((area, &mut pictures)))
-            .and_then(|()| self.render_vello_scene(draws_image(&layer.kind), area));
-        if let Some(renderer) = self.vello_images.as_mut() {
-            for picture in pictures {
-                renderer.unregister_texture(picture);
-            }
-        }
-        drawn
-    }
-
-    /// Adds the leaf `layer`, drawn with `matrix`, to `vello_scene`. A canvas
-    /// layer's shadows and filters run when `effects` says where on the
-    /// canvas the scene's corner is (`rasterise`'s `area`) and holds the
-    /// pictures they make.
-    fn encode_leaf(
-        &mut self,
-        layer: &ResolvedLayer,
-        matrix: Affine,
-        effects: Option<(PixelRect, &mut Vec<ImageData>)>,
-    ) -> Result<()> {
-        match &layer.kind {
-            ResolvedKind::Shape {
-                geometry,
-                fill,
-                stroke,
-                style,
-            } => {
-                let path = geometry_path(geometry)?;
-                if let Some(paint) = fill {
-                    // The box a gradient in box units is measured in: the
-                    // geometry, without the stroke.
-                    let (brush, brush_transform) =
-                        paint_brush_in(paint, Some(path.bounding_box()), &self.images);
-                    self.vello_scene
-                        .fill(fill_rule(style), matrix, &brush, brush_transform, &path);
-                }
-                if let Some((color, width)) = stroke {
-                    self.vello_scene.stroke(
-                        &stroke_of(*width, style),
-                        matrix,
-                        to_peniko(*color),
-                        None,
-                        &path,
-                    );
-                }
-            }
-            ResolvedKind::Text {
-                text,
-                font,
-                size,
-                color,
-                line_height,
-                max_width,
-                align,
-                chars,
-                runs,
-                box_size,
-            } => {
-                let laid_out = self.text.layout_layer(
-                    text,
-                    font,
-                    *size,
-                    *line_height,
-                    *max_width,
-                    *align,
-                    runs,
-                    *box_size,
-                );
-                let (box_width, box_height) = laid_out.box_size(*max_width);
-                let text_box = Rect::new(0.0, 0.0, box_width, box_height);
-                let (brush, brush_transform) = paint_brush_in(color, Some(text_box), &self.images);
-                let centres = if chars.iter().any(Option::is_some) {
-                    laid_out.char_centres()
-                } else {
-                    BTreeMap::new()
-                };
-                for run in &laid_out.runs {
-                    let mut plain = Vec::new();
-                    let draw = |scene: &mut vello::Scene,
-                                matrix: Affine,
-                                brush: &peniko::Brush,
-                                brush_transform: Option<Affine>,
-                                glyphs: &mut Vec<vello::Glyph>| {
-                        if glyphs.is_empty() {
-                            return;
-                        }
-                        scene
-                            .draw_glyphs(&run.font)
-                            .transform(matrix)
-                            .glyph_transform(
-                                (run.skew != 0.0).then(|| {
-                                    Affine::skew(f64::from(run.skew).to_radians().tan(), 0.0)
-                                }),
-                            )
-                            .normalized_coords(&run.coords)
-                            .font_embolden(vello::FontEmbolden::new(vello::kurbo::Diagonal2::new(
-                                f64::from(run.embolden),
-                                f64::from(run.embolden),
-                            )))
-                            .brush_transform(brush_transform)
-                            .font_size(run.font_size)
-                            .hint(false)
-                            .brush(brush)
-                            .draw(Fill::NonZero, glyphs.drain(..));
-                    };
-                    for g in &run.glyphs {
-                        let glyph = vello::Glyph {
-                            id: g.id,
-                            x: g.x,
-                            y: g.y,
-                        };
-                        let Some(style) = char_style(chars, g.char_index) else {
-                            plain.push(glyph);
-                            continue;
-                        };
-                        // The characters before this one are drawn first, to
-                        // keep the order of the text.
-                        draw(
-                            &mut self.vello_scene,
-                            matrix,
-                            &brush,
-                            brush_transform,
-                            &mut plain,
-                        );
-                        if style.opacity <= 0.0 {
-                            continue;
-                        }
-                        let centre = centres.get(&g.char_index).copied().unwrap_or_default();
-                        let own = match style.color {
-                            Some(c) => peniko::Brush::Solid(to_peniko(c)),
-                            None => brush.clone(),
-                        }
-                        .multiply_alpha(style.opacity);
-                        let own_transform = if style.color.is_some() {
-                            None
-                        } else {
-                            brush_transform
-                        };
-                        draw(
-                            &mut self.vello_scene,
-                            matrix * char_matrix(style, centre),
-                            &own,
-                            own_transform,
-                            &mut vec![glyph],
-                        );
-                    }
-                    draw(
-                        &mut self.vello_scene,
-                        matrix,
-                        &brush,
-                        brush_transform,
-                        &mut plain,
-                    );
-                }
-            }
-            ResolvedKind::Image {
-                src,
-                width,
-                height,
-                fit,
-            } => {
-                draw_picture(
-                    &mut self.vello_scene,
-                    &self.images[src],
-                    matrix,
-                    (*width, *height),
-                    *fit,
-                );
-            }
-            // A video's picture and a GIF's go in like an image.
-            ResolvedKind::Video {
-                src,
-                width,
-                height,
-                fit,
-                time,
-            } => {
-                let image = self.videos.image(src, *time)?;
-                draw_picture(
-                    &mut self.vello_scene,
-                    &image,
-                    matrix,
-                    (*width, *height),
-                    *fit,
-                );
-            }
-            ResolvedKind::Gif {
-                src,
-                width,
-                height,
-                fit,
-                time,
-                looped,
-            } => {
-                let image = self.gifs.image(src, *time, *looped)?;
-                draw_picture(
-                    &mut self.vello_scene,
-                    &image,
-                    matrix,
-                    (*width, *height),
-                    *fit,
-                );
-            }
-            // ThorVG paints the animation at the size it is drawn at, and
-            // it goes in like an image.
-            ResolvedKind::Lottie {
-                src,
-                width,
-                height,
-                time,
-                looped,
-            } => {
-                if let Some((pixels_wide, pixels_high)) = lottie_pixels((*width, *height), matrix) {
-                    let image =
-                        self.lotties
-                            .image(src, *time, *looped, pixels_wide, pixels_high)?;
-                    let to_box = Affine::scale_non_uniform(
-                        width / f64::from(pixels_wide),
-                        height / f64::from(pixels_high),
-                    );
-                    self.vello_scene.draw_image(&image, matrix * to_box);
-                }
-            }
-            ResolvedKind::Canvas { width, height, ops } => {
-                let whole = self.whole();
-                let mut passes = effects.map(|(area, pictures)| CanvasPasses {
-                    device: &self.device,
-                    queue: &self.queue,
-                    vello: &mut self.vello,
-                    vello_images: self.vello_images.as_mut(),
-                    target: &self.vello_view,
-                    compositor: &mut self.compositor,
-                    area,
-                    whole,
-                    pictures,
-                });
-                canvas::encode(
-                    &mut self.vello_scene,
-                    &mut canvas::Drawing {
-                        text: &mut self.text,
-                        images: &self.images,
-                        effects: passes
-                            .as_mut()
-                            .map(|passes| passes as &mut dyn canvas::Effects),
-                    },
-                    (*width, *height),
-                    ops,
-                    matrix,
-                )?;
-            }
-            // The box in opaque white: the noise pass fills its coverage.
-            ResolvedKind::Noise { width, height, .. } => {
-                self.vello_scene.fill(
-                    Fill::NonZero,
-                    matrix,
-                    peniko::Color::WHITE,
-                    None,
-                    &Rect::new(0.0, 0.0, *width, *height),
-                );
-            }
-            ResolvedKind::Group { .. }
-            | ResolvedKind::MeshGradient { .. }
-            | ResolvedKind::Glsl { .. }
-            | ResolvedKind::Scene3d { .. } => {
-                unreachable!(
-                    "groups, meshes, WebGL layers and 3D scenes are composited, not rasterised"
-                )
-            }
-        }
-        Ok(())
-    }
-
-    /// Draws a shape layer's fill and stroke in opaque white into the Vello
-    /// target (the pixels `area`, as in `rasterise`), whatever their colours
-    /// and alphas; its alpha is then where the shape is solid.
-    fn rasterise_coverage(
-        &mut self,
-        layer: &ResolvedLayer,
-        parent: Affine,
-        area: PixelRect,
-    ) -> Result<()> {
-        let matrix = in_area(area, parent * layer.transform.matrix());
-        self.vello_scene.reset();
-        if let ResolvedKind::Shape {
-            geometry,
-            fill,
-            stroke,
-            style,
-        } = &layer.kind
-        {
-            let path = geometry_path(geometry)?;
-            if fill.is_some() {
-                self.vello_scene
-                    .fill(fill_rule(style), matrix, peniko::Color::WHITE, None, &path);
-            }
-            if let Some((_, width)) = stroke {
-                self.vello_scene.stroke(
-                    &stroke_of(*width, style),
-                    matrix,
-                    peniko::Color::WHITE,
-                    None,
-                    &path,
-                );
-            }
-        }
-        self.render_vello_scene(false, area)
-    }
-
-    /// Draws the layer's clip shape (`path`, in layer space) in opaque white
-    /// into the Vello target; its alpha is then the clip's coverage.
-    fn rasterise_clip(&mut self, path: &BezPath, matrix: Affine) -> Result<()> {
-        self.vello_scene.reset();
-        self.vello_scene
-            .fill(Fill::NonZero, matrix, peniko::Color::WHITE, None, path);
-        self.render_vello_scene(false, self.whole())
-    }
-
-    /// Fills the whole target (canvas and margin) with the mask's gradient,
-    /// which lives in layer space (or in the layer's box, `layer_box`), into
-    /// the Vello target.
-    fn rasterise_mask(
-        &mut self,
-        mask: &ResolvedMask,
-        matrix: Affine,
-        layer_box: Option<Rect>,
-    ) -> Result<()> {
-        let (brush, brush_transform) = gradient_brush_in(&mask.gradient, layer_box);
-        let canvas = Rect::new(
-            0.0,
-            0.0,
-            f64::from(self.target_size.0),
-            f64::from(self.target_size.1),
-        );
-        self.vello_scene.reset();
-        self.vello_scene.fill(
-            Fill::NonZero,
-            Affine::IDENTITY,
-            &brush,
-            Some(matrix * brush_transform),
-            &canvas,
-        );
-        self.render_vello_scene(false, self.whole())
     }
 
     /// The clip as a path in layer space. Empty when it keeps nothing.
@@ -2778,191 +1715,6 @@ impl Renderer {
         })
     }
 
-    /// Renders `vello_scene` into the top left corner of the Vello target
-    /// texture, `area` pixels across and down (`area` is a box of the padded
-    /// canvas, and the scene's matrices already put its corner at (0, 0), see
-    /// `in_area`). Vello writes only the pixels of that size, so the rest of
-    /// the texture keeps what it held and is not read (`from_srgb8`). Image
-    /// layers use their own renderer (see `vello_images`).
-    fn render_vello_scene(&mut self, has_images: bool, area: PixelRect) -> Result<()> {
-        // The passes recorded so far may read what Vello drew last.
-        self.compositor.submit();
-        let target = self.vello_view.clone();
-        self.render_vello_scene_to(has_images, area, &target)
-    }
-
-    /// `render_vello_scene` into `target`, a texture of the same size that no
-    /// recorded pass is to read the old contents of.
-    fn render_vello_scene_to(
-        &mut self,
-        has_images: bool,
-        area: PixelRect,
-        target: &wgpu::TextureView,
-    ) -> Result<()> {
-        let renderer = if has_images {
-            self.vello_images.as_mut()
-        } else {
-            Some(&mut self.vello)
-        }
-        .expect("scenes with image layers get an image renderer");
-        renderer.set_timing_tag(u64::from(area.width()) * u64::from(area.height()));
-        VELLO_RASTERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let timer = crate::profile::start();
-        let rendered = renderer
-            .render_to_texture(
-                &self.device,
-                &self.queue,
-                &self.vello_scene,
-                target,
-                &RenderParams {
-                    base_color: peniko::Color::TRANSPARENT,
-                    width: area.width(),
-                    height: area.height(),
-                    antialiasing_method: AaConfig::Msaa16,
-                },
-            );
-        crate::profile::add_since("vello_cpu", timer);
-        crate::profile::add_value("vello_n", 1.0);
-        rendered.map_err(|e| Error::Render(format!("Vello render failed: {e}")))
-    }
-}
-
-/// How many times Vello has rasterised a scene in this process. A Skia render adds none (`skia/backend.rs` reports it
-/// in `KINETOGRAPH_SKIA_STATS`).
-pub(crate) static VELLO_RASTERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// How many pixels of pictures the shadows and filters of one canvas layer may
-/// make: three quarters of Vello's largest image atlas (8192 x 8192), which a
-/// fuller one cannot be counted on to pack. Vello leaves out what does not
-/// fit, so past this a frame is refused instead.
-const PICTURE_PIXELS: u64 = 8192 * 8192 / 4 * 3;
-
-/// The shadows and filters of a canvas layer's commands (`canvas::Effects`):
-/// each is drawn alone with Vello, run through the compositor's passes, and
-/// handed back as a picture registered with the image renderer.
-struct CanvasPasses<'a> {
-    device: &'a wgpu::Device,
-    queue: &'a wgpu::Queue,
-    vello: &'a mut vello::Renderer,
-    vello_images: Option<&'a mut vello::Renderer>,
-    /// The Vello target, which a command is drawn alone into.
-    target: &'a wgpu::TextureView,
-    compositor: &'a mut Compositor,
-    /// The pixels of the canvas that the scene being encoded starts at
-    /// (`rasterise`'s `area`).
-    area: PixelRect,
-    whole: PixelRect,
-    /// Every picture made, for the caller to unregister.
-    pictures: &'a mut Vec<ImageData>,
-}
-
-impl canvas::Effects for CanvasPasses<'_> {
-    fn run(
-        &mut self,
-        alone: &vello::Scene,
-        pictures: bool,
-        bounds: Rect,
-        filter: &[ResolvedEffect],
-        shadow: Option<&ResolvedShadow>,
-    ) -> Result<canvas::Rendered> {
-        let corner = Affine::translate((f64::from(self.area.x0), f64::from(self.area.y0)));
-        let region = device_bounds(corner, bounds).intersect(self.whole);
-        if region.is_empty() {
-            return Ok(canvas::Rendered::default());
-        }
-        // Vello draws only the box the command can touch, at the target's
-        // corner.
-        let mut moved = vello::Scene::new();
-        moved.append(
-            alone,
-            Some(Affine::translate((
-                f64::from(self.area.x0 - region.x0),
-                f64::from(self.area.y0 - region.y0),
-            ))),
-        );
-        // The commands recorded so far may read what Vello drew last.
-        self.compositor.submit();
-        let renderer = if pictures {
-            self.vello_images.as_deref_mut()
-        } else {
-            Some(&mut *self.vello)
-        }
-        .expect("scenes with a shadow or a filter get an image renderer");
-        // The top bit marks a canvas command's own render.
-        renderer.set_timing_tag((1 << 63) | u64::from(region.width()) * u64::from(region.height()));
-        VELLO_RASTERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        renderer
-            .render_to_texture(
-                self.device,
-                self.queue,
-                &moved,
-                self.target,
-                &RenderParams {
-                    base_color: peniko::Color::TRANSPARENT,
-                    width: region.width(),
-                    height: region.height(),
-                    antialiasing_method: AaConfig::Msaa16,
-                },
-            )
-            .map_err(|e| Error::Render(format!("Vello render failed: {e}")))?;
-        let drawn = self.compositor.from_srgb8(self.target, region, region);
-        let filtered =
-            self.compositor
-                .apply_effects(drawn, Affine::IDENTITY, None, filter, None, None, None);
-        let shadow = shadow.map(|s| self.compositor.cast_shadow(&filtered, s));
-        let rendered = canvas::Rendered {
-            shape: if filter.is_empty() {
-                None
-            } else {
-                self.picture(&filtered)?
-            },
-            shadow: match &shadow {
-                Some(s) => self.picture(s)?,
-                None => None,
-            },
-        };
-        self.compositor.release(filtered);
-        if let Some(shadow) = shadow {
-            self.compositor.release(shadow);
-        }
-        Ok(rendered)
-    }
-}
-
-impl CanvasPasses<'_> {
-    /// `tex` as a picture of the scene, where it is non-zero. `None` when it
-    /// is nowhere.
-    fn picture(&mut self, tex: &Tex) -> Result<Option<canvas::Placed>> {
-        let region = tex.bounds.intersect(self.whole);
-        if region.is_empty() {
-            return Ok(None);
-        }
-        let made: u64 = self
-            .pictures
-            .iter()
-            .map(|p| u64::from(p.width) * u64::from(p.height))
-            .sum();
-        if made + u64::from(region.width()) * u64::from(region.height()) > PICTURE_PIXELS {
-            return Err(Error::Render(format!(
-                "canvas: the shadows and filters of one canvas layer make pictures of more than {PICTURE_PIXELS} \
-                 pixels (Vello's image atlas holds 8192 x 8192): draw fewer, or smaller ones"
-            )));
-        }
-        let texture = self.compositor.to_srgb8(tex, region);
-        let image = self
-            .vello_images
-            .as_deref_mut()
-            .expect("scenes with a shadow or a filter get an image renderer")
-            .register_texture(texture);
-        self.pictures.push(image.clone());
-        Ok(Some(canvas::Placed {
-            image,
-            at: (
-                f64::from(region.x0 - self.area.x0),
-                f64::from(region.y0 - self.area.y0),
-            ),
-        }))
-    }
 }
 
 /// How a layer is moved in 3D: `world` is its `W` (see `warp.rs`; inside a
@@ -3069,38 +1821,6 @@ fn collect_preserve3d<'a>(
     Ok(())
 }
 
-/// The fill rule of a shape as Vello has it.
-fn fill_rule(style: &ShapeStyle) -> Fill {
-    match style.fill_rule {
-        crate::scene::FillRule::NonZero => Fill::NonZero,
-        crate::scene::FillRule::EvenOdd => Fill::EvenOdd,
-    }
-}
-
-/// The stroke of a shape: `width` wide, finished as `style` says.
-fn stroke_of(width: f64, style: &ShapeStyle) -> Stroke {
-    use crate::scene::{StrokeCap, StrokeJoin};
-    let cap = match style.cap {
-        StrokeCap::Butt => vello::kurbo::Cap::Butt,
-        StrokeCap::Round => vello::kurbo::Cap::Round,
-        StrokeCap::Square => vello::kurbo::Cap::Square,
-    };
-    let join = match style.join {
-        StrokeJoin::Miter => vello::kurbo::Join::Miter,
-        StrokeJoin::Round => vello::kurbo::Join::Round,
-        StrokeJoin::Bevel => vello::kurbo::Join::Bevel,
-    };
-    let stroke = Stroke::new(width)
-        .with_caps(cap)
-        .with_join(join)
-        .with_miter_limit(style.miter_limit);
-    if style.dash.is_empty() {
-        stroke
-    } else {
-        stroke.with_dashes(style.dash_offset, style.dash.iter().copied())
-    }
-}
-
 /// How many half stroke widths past the path a stroke finished as `style`
 /// reaches: a miter join as far as its limit, a square cap a corner.
 fn stroke_reach(style: &ShapeStyle) -> f64 {
@@ -3203,18 +1923,6 @@ pub(crate) fn char_matrix(style: &ResolvedChar, centre: (f64, f64)) -> Affine {
         * Affine::translate((-centre.0, -centre.1))
 }
 
-/// `matrix` (layer space to padded-canvas pixels) for a draw of the pixels
-/// `area` of the canvas, whose corner Vello takes for (0, 0): moved back by
-/// that corner, a whole number of pixels. A draw from the canvas's own corner
-/// gets `matrix` itself.
-fn in_area(area: PixelRect, matrix: Affine) -> Affine {
-    if area.x0 == 0 && area.y0 == 0 {
-        matrix
-    } else {
-        Affine::translate((-f64::from(area.x0), -f64::from(area.y0))) * matrix
-    }
-}
-
 /// `parent` moved `shift` pixels right and down (`Renderer::source_shift`),
 /// itself when there is none: the same bits for a layer that is not moved.
 fn shifted(shift: (f64, f64), parent: Affine) -> Affine {
@@ -3225,148 +1933,13 @@ fn shifted(shift: (f64, f64), parent: Affine) -> Affine {
     }
 }
 
-/// Where the canvas's top-left corner sits in the padded textures: `margin`
-/// pixels in from the corner. Every layer is drawn inside this transform. At
-/// margin 0 it is bit for bit `Affine::IDENTITY`.
-fn margin_origin(margin: u32) -> Affine {
-    Affine::translate((f64::from(margin), f64::from(margin)))
-}
-
-/// Whether `layer` draws nothing at any time of its frame.
-/// A leaf layer as `layer_texture` rasterises it: the layer itself (its
-/// address, which is the same for the whole frame) and its matrix.
-type LeafKey = (usize, [u64; 6]);
-
-/// A leaf of `plan_pages`: a layer's own pixels, or the white shape of its
-/// clip (`clip`, which `region` is the box of).
-struct Leaf<'a> {
-    layer: &'a ResolvedLayer,
-    matrix: Affine,
-    region: PixelRect,
-    clip: Option<BezPath>,
-}
-
 /// What `flush_flat` draws, in order: a leaf, the start of a group's clip, or
 /// the end of the innermost clip.
 enum FlatOp<'a> {
-    Leaf(Leaf<'a>),
+    /// A leaf, the matrix that takes its layer space to canvas pixels, and the pixels it can touch.
+    Leaf(&'a ResolvedLayer, Affine, PixelRect),
     Clip(BezPath, Affine),
     Pop,
-}
-
-/// Where the clip shape of a layer is: its key with the address one past
-/// the layer's, which no layer is at.
-fn clip_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
-    let (address, matrix) = leaf_key(layer, matrix);
-    (address + 1, matrix)
-}
-
-fn leaf_key(layer: &ResolvedLayer, matrix: Affine) -> LeafKey {
-    (
-        std::ptr::from_ref(layer) as usize,
-        matrix.as_coeffs().map(f64::to_bits),
-    )
-}
-
-/// The leaves of a frame that Vello draws a page at a time
-/// (`Renderer::plan_pages`).
-#[derive(Default)]
-struct Pages {
-    pages: Vec<Page>,
-    /// Which page each leaf is on, and the pixels it can touch.
-    page_of: HashMap<LeafKey, (usize, PixelRect)>,
-}
-
-struct Page {
-    /// Its Vello scene, until the page is drawn.
-    scene: Option<vello::Scene>,
-    /// Whether it has an image, which picks the renderer (`vello_images`).
-    has_images: bool,
-    /// The pixels Vello draws of it: the canvas's top left corner and what
-    /// reaches as far as the page's leaves do.
-    area: PixelRect,
-    /// The size of the texture Vello draws it into, once it is drawn.
-    target_size: (u32, u32),
-    /// The texture Vello drew it into, once it is drawn. Each page has one
-    /// of its own for the rest of the frame, so a leaf is cut out of it
-    /// whenever the leaf is wanted.
-    target: Option<wgpu::TextureView>,
-}
-
-/// Groups the leaves whose pixels are in `regions` into pages, so that no
-/// two leaves of a page overlap: each page is drawn by one Vello render. The
-/// pages are lists of indices into `regions`, in order. Few pages is what is
-/// wanted, and finding the fewest is hard, so this colours the overlap graph
-/// with DSATUR (the leaf that has the most colours among the leaves it
-/// overlaps, then the most overlaps, takes the first colour free of them),
-/// which comes within a page or two of the deepest stack of leaves. Past
-/// `DSATUR_LEAVES` leaves, where its quadratic cost is not worth it, each leaf
-/// goes on the first page it fits on.
-fn pack_pages(regions: &[PixelRect]) -> Vec<Vec<usize>> {
-    const DSATUR_LEAVES: usize = 600;
-    let n = regions.len();
-    let overlaps = |i: usize, j: usize| !regions[i].intersect(regions[j]).is_empty();
-    let mut pages: Vec<Vec<usize>> = Vec::new();
-    if n > DSATUR_LEAVES {
-        // Largest first: the big boxes that overlap everything are alone on
-        // their pages early, and the small ones fill in around them.
-        let area = |i: usize| i64::from(regions[i].width()) * i64::from(regions[i].height());
-        let mut order: Vec<usize> = (0..n).collect();
-        order.sort_by_key(|&i| (std::cmp::Reverse(area(i)), i));
-        for i in order {
-            match pages
-                .iter_mut()
-                .find(|page| page.iter().all(|&j| !overlaps(i, j)))
-            {
-                Some(page) => page.push(i),
-                None => pages.push(vec![i]),
-            }
-        }
-        for page in &mut pages {
-            page.sort_unstable();
-        }
-        return pages;
-    }
-    let neighbours: Vec<Vec<usize>> = (0..n)
-        .map(|i| (0..n).filter(|&j| j != i && overlaps(i, j)).collect())
-        .collect();
-    // Per leaf: a bitset of the colours its neighbours have, and how many
-    // that is (its saturation), kept up to date as leaves are coloured.
-    let mut seen: Vec<Vec<u64>> = vec![Vec::new(); n];
-    let mut saturation = vec![0usize; n];
-    let mut coloured = vec![false; n];
-    for _ in 0..n {
-        let next = (0..n)
-            .filter(|&i| !coloured[i])
-            .max_by_key(|&i| (saturation[i], neighbours[i].len(), std::cmp::Reverse(i)))
-            .expect("a leaf without a colour is left");
-        // The first colour none of its neighbours has.
-        let free = seen[next]
-            .iter()
-            .position(|&word| word != u64::MAX)
-            .map_or(seen[next].len() * 64, |w| {
-                w * 64 + seen[next][w].trailing_ones() as usize
-            });
-        coloured[next] = true;
-        if free == pages.len() {
-            pages.push(Vec::new());
-        }
-        pages[free].push(next);
-        let (word, bit) = (free / 64, 1u64 << (free % 64));
-        for &j in &neighbours[next] {
-            if seen[j].len() <= word {
-                seen[j].resize(word + 1, 0);
-            }
-            if seen[j][word] & bit == 0 {
-                seen[j][word] |= bit;
-                saturation[j] += 1;
-            }
-        }
-    }
-    for page in &mut pages {
-        page.sort_unstable();
-    }
-    pages
 }
 
 /// A layer drawn and waiting to be blended onto its canvas.
@@ -3414,42 +1987,13 @@ enum Waiting<'a> {
     },
     /// Drawn now, not for the layer cache: the pool has it back.
     Loose(Tex),
-    /// Not drawn into a texture of its own: blended straight from its Vello
-    /// page (and its clip's), the layer cache told only what it was made
-    /// from (`LayerCache::note`).
-    Page {
-        id: Option<Vec<String>>,
-        inputs: Inputs<'a>,
-        leaf: (wgpu::TextureView, PixelRect),
-        clip: Option<(wgpu::TextureView, PixelRect)>,
-        bounds: PixelRect,
-    },
-    /// No layer: the clip of a fused group (`BlendSource::GroupMask`), its
-    /// page and the box the clip keeps.
-    Mask {
-        clip: (wgpu::TextureView, PixelRect),
-        bounds: PixelRect,
-    },
 }
 
 impl Pending<'_> {
-    fn source(&self) -> BlendSource<'_> {
+    fn source(&self) -> &Tex {
         match &self.what {
-            Waiting::Cached { hit, .. } => BlendSource::Texture(hit.texture()),
-            Waiting::Kept { texture, .. } | Waiting::Loose(texture) => {
-                BlendSource::Texture(texture)
-            }
-            Waiting::Page {
-                leaf, clip, bounds, ..
-            } => BlendSource::Page {
-                leaf: (&leaf.0, leaf.1),
-                clip: clip.as_ref().map(|(view, area)| (view, *area)),
-                bounds: *bounds,
-            },
-            Waiting::Mask { clip, bounds } => BlendSource::GroupMask {
-                clip: (&clip.0, clip.1),
-                bounds: *bounds,
-            },
+            Waiting::Cached { hit, .. } => hit.texture(),
+            Waiting::Kept { texture, .. } | Waiting::Loose(texture) => texture,
         }
     }
 }
@@ -3534,6 +2078,31 @@ fn is_flat(layer: &ResolvedLayer) -> bool {
         ResolvedKind::Shape { .. } | ResolvedKind::Text { .. } => !draws_image(&layer.kind),
         _ => false,
     }
+}
+
+/// Whether a leaf is drawn with an image (a flat run of a motion-blurred layer's samples leaves such a leaf out, `is_flat`).
+fn draws_image(kind: &ResolvedKind) -> bool {
+    let image_paint = |p: &Option<ResolvedPaint>| matches!(p, Some(ResolvedPaint::Image(_)));
+    if let ResolvedKind::Shape { fill, .. } = kind
+        && image_paint(fill)
+    {
+        return true;
+    }
+    if let ResolvedKind::Text { color, .. } = kind
+        && matches!(color, ResolvedPaint::Image(_))
+    {
+        return true;
+    }
+    if let ResolvedKind::Canvas { ops, .. } = kind {
+        return canvas::draws_pictures(ops);
+    }
+    matches!(
+        kind,
+        ResolvedKind::Image { .. }
+            | ResolvedKind::Lottie { .. }
+            | ResolvedKind::Video { .. }
+            | ResolvedKind::Gif { .. }
+    )
 }
 
 /// Whether `layer` is a flat group whose children can be drawn straight onto
@@ -3635,306 +2204,6 @@ fn uses_backdrop(siblings: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
             .is_some_and(needs_backdrop)
 }
 
-/// The brush for a fill or text colour, and the transform to apply to it on
-/// top of the transform of whatever it paints (`None` for a solid colour).
-///
-/// `layer_box` is the box of the layer being painted, which a gradient in box
-/// units is measured in (`gradient_brush_in`).
-fn paint_brush(paint: &ResolvedPaint, layer_box: Option<Rect>) -> (peniko::Brush, Option<Affine>) {
-    match paint {
-        ResolvedPaint::Solid(color) => (peniko::Brush::Solid(to_peniko(*color)), None),
-        ResolvedPaint::Gradient(g) => {
-            let (brush, brush_transform) = gradient_brush_in(g, layer_box);
-            (brush, Some(brush_transform))
-        }
-        // Needs the decoded pictures: see `paint_brush_in`.
-        ResolvedPaint::Image(_) => (peniko::Brush::Solid(peniko::Color::TRANSPARENT), None),
-    }
-}
-
-/// `paint_brush`, with the pictures an image paint draws (`Renderer::images`).
-/// The picture is placed and sized by the paint, and repeats in the
-/// directions it says (an axis that does not repeat holds its edge pixels, so
-/// the shape painted must stop at the tile).
-fn paint_brush_in(
-    paint: &ResolvedPaint,
-    layer_box: Option<Rect>,
-    images: &HashMap<String, ImageData>,
-) -> (peniko::Brush, Option<Affine>) {
-    let ResolvedPaint::Image(i) = paint else {
-        return paint_brush(paint, layer_box);
-    };
-    let Some(image) = images.get(&i.src) else {
-        return (peniko::Brush::Solid(peniko::Color::TRANSPARENT), None);
-    };
-    let extend = |repeat: bool| {
-        if repeat {
-            peniko::Extend::Repeat
-        } else {
-            peniko::Extend::Pad
-        }
-    };
-    let sampler = peniko::ImageSampler {
-        x_extend: extend(i.repeat_x),
-        y_extend: extend(i.repeat_y),
-        ..Default::default()
-    };
-    let brush = peniko::Brush::Image(peniko::ImageBrush {
-        image: image.clone(),
-        sampler,
-    });
-    let to_tile = Affine::translate((i.x, i.y))
-        * Affine::scale_non_uniform(
-            i.width / f64::from(image.width.max(1)),
-            i.height / f64::from(image.height.max(1)),
-        );
-    (brush, Some(to_tile))
-}
-
-/// `gradient_brush`, for a gradient that may be in box units: its coordinates
-/// are then fractions of `layer_box`, so the brush is moved to the box's
-/// corner and stretched to its size, after the gradient's own turn (SVG's
-/// `objectBoundingBox`). A box with no width or height has no extent, and so
-/// paints the last stop's colour, like any gradient without one.
-fn gradient_brush_in(g: &ResolvedGradient, layer_box: Option<Rect>) -> (peniko::Brush, Affine) {
-    let (brush, turn) = gradient_brush(g);
-    let turn = g.transform * turn;
-    let (Units::Box, Some(b)) = (g.units, layer_box) else {
-        return (
-            linear_in_layer_space(g, brush, Affine::IDENTITY, turn),
-            linear_transform(g, turn),
-        );
-    };
-    if !(b.width() > 0.0 && b.height() > 0.0) {
-        let last = g.stops[g.stops.len() - 1].1;
-        return (peniko::Brush::Solid(to_peniko(last)), Affine::IDENTITY);
-    }
-    let to_box = Affine::translate((b.x0, b.y0)) * Affine::scale_non_uniform(b.width(), b.height());
-    (
-        linear_in_layer_space(g, brush, to_box, turn),
-        linear_transform(g, to_box * turn),
-    )
-}
-
-/// Vello places a linear gradient by moving its two end points, so a matrix
-/// that stretches or skews does not tilt the lines of one colour as it should
-/// (SVG's `gradientTransform` on a diagonal gradient, or `objectBoundingBox`
-/// on a box that is not square). The same gradient, for any matrix, is the
-/// one whose line runs along the direction its colour changes fastest in the
-/// painted space; the brush for that has no matrix of its own
-/// (`linear_transform`). Everything else goes through Vello's matrix as it is.
-fn linear_in_layer_space(
-    g: &ResolvedGradient,
-    brush: peniko::Brush,
-    to_box: Affine,
-    turn: Affine,
-) -> peniko::Brush {
-    let ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } = g.geometry else {
-        return brush;
-    };
-    let m = to_box * turn;
-    if !moves_by_matrix(g, m) {
-        return brush;
-    }
-    let (dx, dy) = (x1 - x0, y1 - y0);
-    let len2 = dx * dx + dy * dy;
-    if len2 < 1e-12 {
-        return brush;
-    }
-    // t at a layer point p is ((m^-1 p - start) . d) / |d|^2: a plane, with
-    // this slope and its value at the origin.
-    let [a, b, c, d, e, f] = m.inverse().as_coeffs();
-    let slope = Vec2::new((a * dx + b * dy) / len2, (c * dx + d * dy) / len2);
-    let at_origin = ((e - x0) * dx + (f - y0) * dy) / len2;
-    let slope2 = slope.hypot2();
-    if slope2 < 1e-18 {
-        return brush;
-    }
-    let start = Point::ZERO - slope * (at_origin / slope2);
-    let end = start + slope / slope2;
-    let mut moved = g.clone();
-    moved.geometry = ResolvedGradientGeometry::Linear {
-        x0: start.x,
-        y0: start.y,
-        x1: end.x,
-        y1: end.y,
-    };
-    gradient_brush(&moved).0
-}
-
-/// The matrix to give the brush `linear_in_layer_space` made, or `m` for any
-/// other.
-fn linear_transform(g: &ResolvedGradient, m: Affine) -> Affine {
-    if moves_by_matrix(g, m) {
-        Affine::IDENTITY
-    } else {
-        m
-    }
-}
-
-/// Whether `linear_in_layer_space` applies: a linear gradient with a matrix
-/// of its own (`Gradient::transform`) that Vello would place wrongly. One
-/// without keeps the placement it always had.
-fn moves_by_matrix(g: &ResolvedGradient, m: Affine) -> bool {
-    matches!(g.geometry, ResolvedGradientGeometry::Linear { .. })
-        && g.transform != Affine::IDENTITY
-        && !m.is_nan()
-        && m.determinant().abs() >= 1e-12
-        && !is_similarity(m)
-}
-
-/// Whether `m` is a rotation, a uniform scale and a move: Vello then places a
-/// linear gradient exactly.
-fn is_similarity(m: Affine) -> bool {
-    let [a, b, c, d, _, _] = m.as_coeffs();
-    let s = a.hypot(b);
-    (a - d).abs() < 1e-9 * s.max(1.0) && (b + c).abs() < 1e-9 * s.max(1.0)
-}
-
-/// A resolved gradient as a Vello brush, plus a transform to apply to the
-/// brush on top of the transform of whatever it paints (a conic gradient is
-/// turned here so its first stop points the way CSS wants).
-///
-/// Stops are adjusted for how Vello reads them: it ignores the first stop's
-/// offset (treating it as 0) and pads past the last, so end stops are added at
-/// 0 and 1. For `repeat` and `reflect`, the span between the first and last
-/// stop is what repeats (as in CSS), so the line, radius or angle is scaled to
-/// that span and the stops stretched to fill 0..=1. A gradient with no
-/// extent (zero length or radius, or all stops at one offset in a repeating
-/// gradient) is the solid colour of its last stop.
-pub(crate) fn gradient_brush(g: &ResolvedGradient) -> (peniko::Brush, Affine) {
-    let last = g.stops[g.stops.len() - 1];
-    let solid = (peniko::Brush::Solid(to_peniko(last.1)), Affine::IDENTITY);
-    let (lo, hi) = match g.extend {
-        Extend::Pad => (0.0, 1.0),
-        _ => (g.stops[0].0, last.0),
-    };
-    if hi - lo < 1e-6 {
-        return solid;
-    }
-    let mut turn = Affine::IDENTITY;
-    let gradient = match g.geometry {
-        ResolvedGradientGeometry::Linear { x0, y0, x1, y1 } => {
-            let (p0, p1) = (Point::new(x0, y0), Point::new(x1, y1));
-            if p0.distance(p1) < 1e-6 {
-                return solid;
-            }
-            peniko::Gradient::new_linear(p0 + (p1 - p0) * lo, p0 + (p1 - p0) * hi)
-        }
-        ResolvedGradientGeometry::Radial { cx, cy, r } => {
-            if r < 1e-6 {
-                return solid;
-            }
-            let c = Point::new(cx, cy);
-            peniko::Gradient::new_two_point_radial(c, (r * lo) as f32, c, (r * hi) as f32)
-        }
-        ResolvedGradientGeometry::FocalRadial {
-            cx,
-            cy,
-            r,
-            fx,
-            fy,
-            fr,
-        } => {
-            // The circles run from the focal one (offset 0) to the outer one
-            // (offset 1); the span `lo..hi` is what is drawn.
-            let at = |t: f64| {
-                (
-                    Point::new(fx + (cx - fx) * t, fy + (cy - fy) * t),
-                    (fr + (r - fr) * t) as f32,
-                )
-            };
-            let ((c0, r0), (c1, r1)) = (at(lo), at(hi));
-            if c0.distance(c1) < 1e-6 && (r1 - r0).abs() < 1e-6 {
-                return solid;
-            }
-            peniko::Gradient::new_two_point_radial(c0, r0, c1, r1)
-        }
-        ResolvedGradientGeometry::Conic { cx, cy, angle } => {
-            let c = Point::new(cx, cy);
-            // Vello's sweep starts at 3 o'clock; CSS starts at 12.
-            turn = Affine::rotate_about((angle - 90.0).to_radians(), c);
-            let turns = std::f64::consts::TAU;
-            peniko::Gradient::new_sweep(c, (lo * turns) as f32, (hi * turns) as f32)
-        }
-    };
-    let extend = match g.extend {
-        Extend::Pad => peniko::Extend::Pad,
-        Extend::Repeat => peniko::Extend::Repeat,
-        Extend::Reflect => peniko::Extend::Reflect,
-    };
-    let gradient = gradient
-        .with_extend(extend)
-        .with_stops(vello_stops(&g.stops, lo, hi).as_slice());
-    (peniko::Brush::Gradient(gradient), turn)
-}
-
-/// `stops` with offsets mapped from `lo..=hi` onto 0..=1, and a stop added at
-/// 0 and at 1 if the first or last does not already sit there.
-fn vello_stops(stops: &[(f64, Color)], lo: f64, hi: f64) -> Vec<peniko::ColorStop> {
-    let at = |offset: f64, color: Color| peniko::ColorStop::from((offset as f32, to_peniko(color)));
-    let mut out = Vec::with_capacity(stops.len() + 2);
-    let (first, last) = (stops[0], stops[stops.len() - 1]);
-    if first.0 > lo {
-        out.push(at(0.0, first.1));
-    }
-    for &(offset, color) in stops {
-        out.push(at(((offset - lo) / (hi - lo)).clamp(0.0, 1.0), color));
-    }
-    if last.0 < hi {
-        out.push(at(1.0, last.1));
-    }
-    out
-}
-
-/// Whether a leaf is drawn with an image (the image renderer, `vello_images`).
-fn draws_image(kind: &ResolvedKind) -> bool {
-    let image_paint = |p: &Option<ResolvedPaint>| matches!(p, Some(ResolvedPaint::Image(_)));
-    if let ResolvedKind::Shape { fill, .. } = kind
-        && image_paint(fill)
-    {
-        return true;
-    }
-    if let ResolvedKind::Text { color, .. } = kind
-        && matches!(color, ResolvedPaint::Image(_))
-    {
-        return true;
-    }
-    if let ResolvedKind::Canvas { ops, .. } = kind {
-        return canvas::draws_pictures(ops);
-    }
-    matches!(
-        kind,
-        ResolvedKind::Image { .. }
-            | ResolvedKind::Lottie { .. }
-            | ResolvedKind::Video { .. }
-            | ResolvedKind::Gif { .. }
-    )
-}
-
-/// Adds `image` to `scene`, fitted to the box `size` at the layer origin as
-/// `fit` says, under `matrix`. `cover` overhangs the box, so a clip cuts it
-/// to the box.
-fn draw_picture(
-    scene: &mut vello::Scene,
-    image: &ImageData,
-    matrix: Affine,
-    size: (f64, f64),
-    fit: Fit,
-) {
-    let natural = (f64::from(image.width), f64::from(image.height));
-    if let Some(placed) = fit_image(fit, size, natural) {
-        let cut = fit == Fit::Cover;
-        if cut {
-            scene.push_clip_layer(Fill::NonZero, matrix, &Rect::new(0.0, 0.0, size.0, size.1));
-        }
-        scene.draw_image(image, matrix * placed);
-        if cut {
-            scene.pop_layer();
-        }
-    }
-}
-
 /// Largest side, in pixels, ThorVG is asked to paint a Lottie layer at.
 const MAX_LOTTIE_SIDE: f64 = 4096.0;
 
@@ -3954,31 +2223,6 @@ pub(crate) fn lottie_pixels(size: (f64, f64), matrix: Affine) -> Option<(u32, u3
     ))
 }
 
-/// Where a picture of `image` pixels sits in a box of `size`, as the matrix
-/// from the picture's pixels to the box's space; `None` when it would have no
-/// area. `Fill` stretches it to the box, `Contain` and `Cover` keep its aspect
-/// ratio and centre it, the first inside the box, the second over it.
-fn fit_image(fit: Fit, size: (f64, f64), image: (f64, f64)) -> Option<Affine> {
-    let (sx, sy) = (size.0 / image.0, size.1 / image.1);
-    if fit == Fit::Fill {
-        return Some(Affine::scale_non_uniform(sx, sy));
-    }
-    let scale = if fit == Fit::Contain {
-        sx.min(sy)
-    } else {
-        sx.max(sy)
-    };
-    if !(scale > 0.0 && scale.is_finite()) {
-        return None;
-    }
-    Some(
-        Affine::translate((
-            (size.0 - image.0 * scale) / 2.0,
-            (size.1 - image.1 * scale) / 2.0,
-        )) * Affine::scale(scale),
-    )
-}
-
 /// `b` shrunk by the four distances, with rounded corners. Empty when
 /// nothing is left. The radius is limited to half the shorter side.
 fn inset_path(b: Rect, top: f64, right: f64, bottom: f64, left: f64, radius: f64) -> BezPath {
@@ -3990,49 +2234,26 @@ fn inset_path(b: Rect, top: f64, right: f64, bottom: f64, left: f64, radius: f64
     RoundedRect::from_rect(r, radius).to_path(SHAPE_TOLERANCE)
 }
 
-/// The texture Vello draws into: the padded canvas, `size` texels.
-fn new_vello_target(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("vello target"),
-        size: wgpu::Extent3d {
-            width: size.0,
-            height: size.1,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
+/// The wgpu instance. Skia's Graphite shares wgpu's device: on Linux and Windows that must be a Vulkan one (Windows
+/// would otherwise default to D3D12; `render/skia/vulkan.rs`); on macOS it is Metal (`render/skia/metal.rs`). An
+/// explicit `WGPU_BACKEND` still decides.
+fn new_instance() -> wgpu::Instance {
+    let backends = wgpu::Backends::from_env().unwrap_or(if cfg!(target_os = "macos") {
+        wgpu::Backends::default()
+    } else {
+        wgpu::Backends::VULKAN
     });
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
+    wgpu::Instance::new(wgpu::InstanceDescriptor {
+        display: None,
+        backends,
+        flags: wgpu::InstanceFlags::from_build_config().with_env(),
+        memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+        backend_options: wgpu::BackendOptions::from_env_or_default(),
+    })
 }
 
-/// `RenderContext::new()`, except that on Linux and Windows a Skia run (the default; not `KINETOGRAPH_BACKEND=vello`)
-/// gets a Vulkan-only instance (Windows would otherwise default to D3D12, and Skia's Graphite shares wgpu's VkDevice;
-/// `render/skia/vulkan.rs`). An explicit `WGPU_BACKEND` still decides.
-fn render_context() -> RenderContext {
-    #[cfg(all(feature = "skia", not(target_os = "macos")))]
-    if skia::wants_skia() && wgpu::Backends::from_env().is_none()
-    {
-        // The rest is `RenderContext::new()`'s.
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            display: None,
-            backends: wgpu::Backends::VULKAN,
-            flags: wgpu::InstanceFlags::from_build_config().with_env(),
-            memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
-            backend_options: wgpu::BackendOptions::from_env_or_default(),
-        });
-        return RenderContext { instance, devices: Vec::new() };
-    }
-    RenderContext::new()
-}
-
-/// The GPU device, made as `vello::util::RenderContext::device` makes it
-/// (the default adapter, default limits, `CLEAR_TEXTURE` and
-/// `PIPELINE_CACHE` when there), plus `TIMESTAMP_QUERY` when there, for
-/// `set_pass_timing`.
+/// The GPU device: the default adapter, default limits, `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
+/// `TIMESTAMP_QUERY` when there, for `set_pass_timing`.
 async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Queue)> {
     let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, None)
         .await
@@ -4049,30 +2270,6 @@ async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Qu
         })
         .await
         .ok()
-}
-
-fn new_vello(device: &wgpu::Device) -> Result<vello::Renderer> {
-    vello::Renderer::new(
-        device,
-        RendererOptions {
-            // 16x MSAA, not Vello's analytic `Area` mode: with `Area`, the
-            // order of path segments inside a tile depends on GPU thread
-            // timing, which changed a couple of edge pixels by a level or
-            // two between runs of the same frame. MSAA coverage comes from
-            // integer masks, so it does not.
-            antialiasing_support: AaSupport {
-                area: false,
-                msaa8: false,
-                msaa16: true,
-            },
-            ..Default::default()
-        },
-    )
-    .map_err(|e| Error::Render(format!("Vello init failed: {e}")))
-}
-
-pub(crate) fn to_peniko(c: Color) -> peniko::Color {
-    peniko::Color::from_rgba8(c.r, c.g, c.b, c.a)
 }
 
 fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {
@@ -4230,9 +2427,6 @@ struct NewAssets {
     models: Vec<(String, FileId, Model)>,
     textures3d: Vec<(String, FileId, Texture)>,
     environments: Vec<(String, FileId, Environment)>,
-    /// Whether a canvas layer draws pictures (pixels of its own count, with no
-    /// file behind them).
-    canvas_pictures: bool,
     /// A name the renderer already held now stands for another file, so what
     /// the layer cache drew from the old one is out of date.
     rebound: bool,
@@ -4252,15 +2446,6 @@ impl NewAssets {
             && self.textures3d.is_empty()
             && self.environments.is_empty()
             && !self.rebound
-    }
-
-    /// Whether any of it is drawn with Vello's image renderer.
-    fn has_pictures(&self) -> bool {
-        self.canvas_pictures
-            || !(self.images.is_empty()
-                && self.lotties.is_empty()
-                && self.videos.is_empty()
-                && self.gifs.is_empty())
     }
 }
 
@@ -4432,13 +2617,6 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         environments.push((src, id, environment));
     }
 
-    let mut canvas_pictures = false;
-    walk_layers(&scene.layers, &mut |layer| {
-        if let LayerKind::Canvas(c) = &layer.kind {
-            canvas_pictures |= canvas::draws_pictures(&c.commands.0);
-        }
-    });
-
     Ok(NewAssets {
         text,
         fonts,
@@ -4450,7 +2628,6 @@ fn read_assets(scene: &Scene, loaded: &Loaded, has_text: bool) -> Result<NewAsse
         models,
         textures3d,
         environments,
-        canvas_pictures,
         rebound,
     })
 }
@@ -4480,76 +2657,6 @@ fn canvas_layer(id: &str, size: (f64, f64), ops: &std::sync::Arc<Vec<canvas::Can
 mod tests {
     use super::*;
     use crate::scene::TextAlign;
-    use vello::peniko::GradientKind;
-
-    /// `pack_pages` as it was before its saturation was kept incrementally:
-    /// every pick collects and sorts the colours around each candidate.
-    fn pack_pages_reference(regions: &[PixelRect]) -> Vec<Vec<usize>> {
-        let n = regions.len();
-        let overlaps = |i: usize, j: usize| !regions[i].intersect(regions[j]).is_empty();
-        let mut pages: Vec<Vec<usize>> = Vec::new();
-        let neighbours: Vec<Vec<usize>> = (0..n)
-            .map(|i| (0..n).filter(|&j| j != i && overlaps(i, j)).collect())
-            .collect();
-        let mut colour: Vec<Option<usize>> = vec![None; n];
-        for _ in 0..n {
-            let saturation = |i: usize| {
-                let mut seen: Vec<usize> =
-                    neighbours[i].iter().filter_map(|&j| colour[j]).collect();
-                seen.sort_unstable();
-                seen.dedup();
-                seen.len()
-            };
-            let next = (0..n)
-                .filter(|&i| colour[i].is_none())
-                .max_by_key(|&i| (saturation(i), neighbours[i].len(), std::cmp::Reverse(i)))
-                .unwrap();
-            let taken: Vec<usize> = neighbours[next].iter().filter_map(|&j| colour[j]).collect();
-            let free = (0..).find(|c| !taken.contains(c)).unwrap();
-            colour[next] = Some(free);
-            if free == pages.len() {
-                pages.push(Vec::new());
-            }
-            pages[free].push(next);
-        }
-        for page in &mut pages {
-            page.sort_unstable();
-        }
-        pages
-    }
-
-    #[test]
-    fn pack_pages_matches_the_quadratic_dsatur_on_random_overlap_graphs() {
-        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
-        let mut next = move |m: u64| {
-            state = state
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1_442_695_040_888_963_407);
-            (state >> 33) % m
-        };
-        let mut most_pages = 0;
-        for case in 0..300 {
-            // Small boxes in a big field are sparse; big boxes in a small one
-            // are dense, and the densest pass 64 pages.
-            let n = 1 + next(if case % 10 == 0 { 220 } else { 80 }) as usize;
-            let field = [40, 200, 1000][case % 3];
-            let size = [5, 30, 120][(case / 3) % 3];
-            let regions: Vec<PixelRect> = (0..n)
-                .map(|_| {
-                    let (x, y) = (next(field as u64) as i32, next(field as u64) as i32);
-                    let (w, h) = (next(size as u64) as i32, next(size as u64) as i32);
-                    PixelRect::new(x, y, x + w, y + h)
-                })
-                .collect();
-            let pages = pack_pages(&regions);
-            assert_eq!(pages, pack_pages_reference(&regions), "case {case}");
-            most_pages = most_pages.max(pages.len());
-        }
-        let stack = vec![PixelRect::new(0, 0, 10, 10); 150];
-        assert_eq!(pack_pages(&stack), pack_pages_reference(&stack));
-        assert_eq!(pack_pages(&stack).len(), 150);
-        assert!(most_pages > 5, "the cases should need several pages");
-    }
 
     #[test]
     fn only_a_sweep_and_a_corner_pin_need_the_layer_box() {
@@ -4570,38 +2677,6 @@ mod tests {
         let pin =
             ResolvedEffect::CornerPin(crate::resolve::ResolvedCornerPin { corners: [None; 4] });
         assert!(needs_box(&[dots(DotOrder::Random), pin]));
-    }
-
-    const RED: Color = Color {
-        r: 255,
-        g: 0,
-        b: 0,
-        a: 255,
-    };
-
-    fn gradient(
-        geometry: ResolvedGradientGeometry,
-        stops: &[(f64, Color)],
-        extend: Extend,
-    ) -> ResolvedGradient {
-        ResolvedGradient {
-            geometry,
-            stops: stops.to_vec(),
-            extend,
-            units: Units::User,
-            transform: Affine::IDENTITY,
-        }
-    }
-
-    fn peniko_gradient(brush: peniko::Brush) -> peniko::Gradient {
-        match brush {
-            peniko::Brush::Gradient(g) => g,
-            other => panic!("expected a gradient, got {other:?}"),
-        }
-    }
-
-    fn offsets(g: &peniko::Gradient) -> Vec<f32> {
-        g.stops.iter().map(|s| s.offset).collect()
     }
 
     #[test]
@@ -4640,43 +2715,6 @@ mod tests {
     }
 
     #[test]
-    fn no_margin_is_the_identity() {
-        let bits = |a: Affine| a.as_coeffs().map(f64::to_bits);
-        assert_eq!(bits(margin_origin(0)), bits(Affine::IDENTITY));
-        assert_eq!(
-            margin_origin(7) * Point::new(1.0, 2.0),
-            Point::new(8.0, 9.0)
-        );
-    }
-
-    #[test]
-    fn a_draw_of_part_of_the_canvas_puts_its_corner_at_the_origin() {
-        let bits = |a: Affine| a.as_coeffs().map(f64::to_bits);
-        let matrix = Affine::translate((130.25, 77.5)) * Affine::rotate(0.3) * Affine::scale(1.5);
-        // From the canvas's own corner: the matrix itself, not a product.
-        assert_eq!(
-            bits(in_area(PixelRect::new(0, 0, 500, 300), matrix)),
-            bits(matrix)
-        );
-        // From a corner on the tile grid: the same matrix moved back by the
-        // corner, a whole number of pixels, so the linear part keeps its bits.
-        let area = bounds::vello_area(PixelRect::new(133, 85, 200, 150));
-        assert_eq!((area.x0, area.y0), (128, 80));
-        let moved = in_area(area, matrix);
-        assert_eq!(bits(moved)[..4], bits(matrix)[..4]);
-        for p in [Point::new(0.0, 0.0), Point::new(40.5, 12.25)] {
-            let (at, in_draw) = (matrix * p, moved * p);
-            assert!((in_draw.x - (at.x - 128.0)).abs() < 1e-9, "{p:?}");
-            assert!((in_draw.y - (at.y - 80.0)).abs() < 1e-9, "{p:?}");
-        }
-        // A corner on one axis only moves along the other.
-        let moved = in_area(PixelRect::new(0, 48, 10, 60), matrix);
-        let (at, in_draw) = (matrix * Point::new(3.0, 4.0), moved * Point::new(3.0, 4.0));
-        assert_eq!(in_draw.x, at.x);
-        assert!((in_draw.y - (at.y - 48.0)).abs() < 1e-9);
-    }
-
-    #[test]
     fn only_matte_sources_are_skipped() {
         let json = r##"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1,
             "layers": [
@@ -4693,135 +2731,6 @@ mod tests {
         assert_eq!(skipped, [false, true, false]);
         let matte = resolved.layers[0].matte.as_ref().unwrap();
         assert_eq!(matte.layer, "shape");
-    }
-
-    #[test]
-    fn padded_gradients_get_end_stops() {
-        let line = ResolvedGradientGeometry::Linear {
-            x0: 0.0,
-            y0: 0.0,
-            x1: 100.0,
-            y1: 0.0,
-        };
-        let (brush, turn) = gradient_brush(&gradient(
-            line,
-            &[(0.2, RED), (0.8, Color::BLACK)],
-            Extend::Pad,
-        ));
-        let g = peniko_gradient(brush);
-        assert_eq!(offsets(&g), [0.0, 0.2, 0.8, 1.0]);
-        assert_eq!(turn, Affine::IDENTITY);
-        let GradientKind::Linear(pos) = g.kind else {
-            panic!("not linear");
-        };
-        assert_eq!(
-            (pos.start, pos.end),
-            (Point::new(0.0, 0.0), Point::new(100.0, 0.0))
-        );
-    }
-
-    #[test]
-    fn repeating_gradients_repeat_the_stop_span() {
-        let line = ResolvedGradientGeometry::Linear {
-            x0: 0.0,
-            y0: 10.0,
-            x1: 100.0,
-            y1: 10.0,
-        };
-        let stops = [(0.25, RED), (0.75, Color::BLACK)];
-        let (brush, _) = gradient_brush(&gradient(line, &stops, Extend::Repeat));
-        let g = peniko_gradient(brush);
-        // The period is half the line, starting a quarter of the way along.
-        assert_eq!(offsets(&g), [0.0, 1.0]);
-        assert_eq!(g.extend, peniko::Extend::Repeat);
-        let GradientKind::Linear(pos) = g.kind else {
-            panic!("not linear");
-        };
-        assert_eq!(
-            (pos.start, pos.end),
-            (Point::new(25.0, 10.0), Point::new(75.0, 10.0))
-        );
-
-        let circle = ResolvedGradientGeometry::Radial {
-            cx: 5.0,
-            cy: 6.0,
-            r: 40.0,
-        };
-        let (brush, _) = gradient_brush(&gradient(circle, &stops, Extend::Reflect));
-        let g = peniko_gradient(brush);
-        assert_eq!(g.extend, peniko::Extend::Reflect);
-        let GradientKind::Radial(pos) = g.kind else {
-            panic!("not radial");
-        };
-        assert_eq!((pos.start_radius, pos.end_radius), (10.0, 30.0));
-        assert_eq!(
-            (pos.start_center, pos.end_center),
-            (Point::new(5.0, 6.0), Point::new(5.0, 6.0))
-        );
-    }
-
-    #[test]
-    fn conic_gradients_start_at_twelve_oclock() {
-        let conic = |angle| ResolvedGradientGeometry::Conic {
-            cx: 10.0,
-            cy: 20.0,
-            angle,
-        };
-        let stops = [(0.0, RED), (1.0, Color::BLACK)];
-        let direction = |angle: f64| {
-            let (brush, turn) = gradient_brush(&gradient(conic(angle), &stops, Extend::Pad));
-            let GradientKind::Sweep(pos) = peniko_gradient(brush).kind else {
-                panic!("not a sweep");
-            };
-            assert_eq!(
-                (pos.start_angle, pos.end_angle),
-                (0.0, std::f32::consts::TAU)
-            );
-            // Where the sweep's start direction (+x from the centre) ends up.
-            let p = turn * Point::new(11.0, 20.0);
-            (p.x - 10.0, p.y - 20.0)
-        };
-        let (x, y) = direction(0.0);
-        assert!(
-            x.abs() < 1e-9 && (y + 1.0).abs() < 1e-9,
-            "up, got ({x}, {y})"
-        );
-        let (x, y) = direction(90.0);
-        assert!(
-            (x - 1.0).abs() < 1e-9 && y.abs() < 1e-9,
-            "right, got ({x}, {y})"
-        );
-    }
-
-    #[test]
-    fn gradients_without_extent_are_solid_colours() {
-        let stops = [(0.0, RED), (1.0, Color::BLACK)];
-        let is_black = |g: ResolvedGradient| matches!(gradient_brush(&g).0, peniko::Brush::Solid(c) if c == to_peniko(Color::BLACK));
-        let zero_line = ResolvedGradientGeometry::Linear {
-            x0: 3.0,
-            y0: 3.0,
-            x1: 3.0,
-            y1: 3.0,
-        };
-        assert!(is_black(gradient(zero_line, &stops, Extend::Pad)));
-        let no_radius = ResolvedGradientGeometry::Radial {
-            cx: 0.0,
-            cy: 0.0,
-            r: 0.0,
-        };
-        assert!(is_black(gradient(no_radius, &stops, Extend::Pad)));
-        // Repeating a span of zero width.
-        let line = ResolvedGradientGeometry::Linear {
-            x0: 0.0,
-            y0: 0.0,
-            x1: 9.0,
-            y1: 0.0,
-        };
-        let same = [(0.5, RED), (0.5, Color::BLACK)];
-        assert!(is_black(gradient(line, &same, Extend::Repeat)));
-        // Padding it is fine: a hard edge at 0.5.
-        let (brush, _) = gradient_brush(&gradient(line, &same, Extend::Pad));
-        assert_eq!(offsets(&peniko_gradient(brush)), [0.0, 0.5, 0.5, 1.0]);
     }
 
     #[test]
@@ -4852,127 +2761,6 @@ mod tests {
                 .elements()
                 .is_empty()
         );
-    }
-
-    #[test]
-    fn paint_brush_only_transforms_gradients() {
-        let (brush, transform) = paint_brush(&ResolvedPaint::Solid(RED), None);
-        assert!(matches!(brush, peniko::Brush::Solid(_)) && transform.is_none());
-        let g = gradient(
-            ResolvedGradientGeometry::Conic {
-                cx: 10.0,
-                cy: 20.0,
-                angle: 90.0,
-            },
-            &[(0.0, RED), (1.0, Color::BLACK)],
-            Extend::Pad,
-        );
-        let (brush, transform) = paint_brush(&ResolvedPaint::Gradient(g), None);
-        assert!(matches!(brush, peniko::Brush::Gradient(_)));
-        // The conic turn about its centre leaves the centre where it is.
-        let moved = transform.unwrap() * Point::new(10.0, 20.0);
-        assert!(moved.distance(Point::new(10.0, 20.0)) < 1e-9);
-    }
-
-    fn in_box_units(mut g: ResolvedGradient) -> ResolvedGradient {
-        g.units = Units::Box;
-        g
-    }
-
-    #[test]
-    fn a_box_unit_gradient_is_stretched_to_the_layers_box() {
-        let line = ResolvedGradientGeometry::Linear {
-            x0: 0.0,
-            y0: 0.0,
-            x1: 1.0,
-            y1: 1.0,
-        };
-        let stops = [(0.0, RED), (1.0, Color::BLACK)];
-        let g = in_box_units(gradient(line, &stops, Extend::Pad));
-        let b = Rect::new(10.0, 20.0, 50.0, 40.0);
-        let (_, transform) = gradient_brush_in(&g, Some(b));
-        // The unit square's corners land on the box's.
-        let corner = |x: f64, y: f64| transform * Point::new(x, y);
-        assert!(corner(0.0, 0.0).distance(Point::new(10.0, 20.0)) < 1e-9);
-        assert!(corner(1.0, 1.0).distance(Point::new(50.0, 40.0)) < 1e-9);
-        assert!(corner(1.0, 0.0).distance(Point::new(50.0, 20.0)) < 1e-9);
-        // The same gradient in pixels is left alone, box or not.
-        let plain = gradient(line, &stops, Extend::Pad);
-        assert_eq!(gradient_brush_in(&plain, Some(b)).1, Affine::IDENTITY);
-        // A conic gradient turns about its centre first, and the box then
-        // stretches the turn: the centre (0.5, 0.5) lands on the box's.
-        let conic = in_box_units(gradient(
-            ResolvedGradientGeometry::Conic {
-                cx: 0.5,
-                cy: 0.5,
-                angle: 90.0,
-            },
-            &stops,
-            Extend::Pad,
-        ));
-        let (_, transform) = gradient_brush_in(&conic, Some(b));
-        assert!((transform * Point::new(0.5, 0.5)).distance(b.center()) < 1e-9);
-        // Through paint_brush, which text and shapes use.
-        let (_, via_paint) = paint_brush(&ResolvedPaint::Gradient(g), Some(b));
-        assert_eq!(
-            via_paint.map(|t| t * Point::new(1.0, 1.0)),
-            Some(Point::new(50.0, 40.0))
-        );
-    }
-
-    #[test]
-    fn a_box_unit_gradient_on_an_empty_box_is_the_last_stop() {
-        let line = ResolvedGradientGeometry::Linear {
-            x0: 0.0,
-            y0: 0.0,
-            x1: 1.0,
-            y1: 0.0,
-        };
-        let g = in_box_units(gradient(
-            line,
-            &[(0.0, RED), (1.0, Color::BLACK)],
-            Extend::Pad,
-        ));
-        for b in [
-            Rect::new(0.0, 0.0, 0.0, 10.0),
-            Rect::new(0.0, 0.0, 10.0, 0.0),
-        ] {
-            let (brush, _) = gradient_brush_in(&g, Some(b));
-            assert!(
-                matches!(brush, peniko::Brush::Solid(c) if c == to_peniko(Color::BLACK)),
-                "{b:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn images_fit_their_box_by_fill_contain_or_cover() {
-        let at = |m: Affine, x: f64, y: f64| m * Point::new(x, y);
-        // A 720 x 540 picture in a 200 x 200 box.
-        let (size, image) = ((200.0, 200.0), (720.0, 540.0));
-        let fill = fit_image(Fit::Fill, size, image).unwrap();
-        assert_eq!(
-            fill,
-            Affine::scale_non_uniform(200.0 / 720.0, 200.0 / 540.0)
-        );
-        // Contain: the width fills the box, the picture is 150 high and
-        // centred.
-        let contain = fit_image(Fit::Contain, size, image).unwrap();
-        assert!(at(contain, 0.0, 0.0).distance(Point::new(0.0, 25.0)) < 1e-9);
-        assert!(at(contain, 720.0, 540.0).distance(Point::new(200.0, 175.0)) < 1e-9);
-        // Cover: the height fills the box, the picture is 266.67 wide and
-        // overhangs by a sixth on each side.
-        let cover = fit_image(Fit::Cover, size, image).unwrap();
-        let overhang = (200.0 * 720.0 / 540.0 - 200.0) / 2.0;
-        assert!(at(cover, 0.0, 0.0).distance(Point::new(-overhang, 0.0)) < 1e-9);
-        assert!(at(cover, 720.0, 540.0).distance(Point::new(200.0 + overhang, 200.0)) < 1e-9);
-        // A box of the picture's own shape needs no fitting.
-        let same = fit_image(Fit::Cover, (360.0, 270.0), image).unwrap();
-        assert!(at(same, 720.0, 540.0).distance(Point::new(360.0, 270.0)) < 1e-9);
-        // An empty box has nothing to fit (fill keeps its old, empty, result; a
-        // cover with one side left is cut to nothing by the clip).
-        assert!(fit_image(Fit::Contain, (0.0, 50.0), image).is_none());
-        assert!(fit_image(Fit::Cover, (0.0, 0.0), image).is_none());
     }
 
     /// The box of a rect shape or an empty group, which is all these tests
@@ -5627,12 +3415,10 @@ mod tests {
         let fresh = read_assets(&scene, &loaded, false).unwrap();
         // Four layers, two files.
         assert_eq!((fresh.videos.len(), fresh.gifs.len()), (1, 1));
-        assert!(fresh.has_pictures());
         hold(&mut loaded, &fresh);
         // The next frame's scene names them again: nothing is read.
         let fresh = read_assets(&scene, &loaded, true).unwrap();
         assert!(fresh.videos.is_empty() && fresh.gifs.is_empty() && !fresh.rebound);
-        assert!(!fresh.has_pictures());
     }
 
     #[test]
@@ -5689,66 +3475,4 @@ mod tests {
         assert_eq!((b.x0, b.y0), (plain.x0, plain.y0));
     }
 
-    /// Whether `pages` holds each of the `n` leaves once and no page has two
-    /// that overlap.
-    fn is_a_packing(pages: &[Vec<usize>], regions: &[PixelRect]) -> bool {
-        let mut seen = vec![0; regions.len()];
-        for page in pages {
-            for (k, &i) in page.iter().enumerate() {
-                seen[i] += 1;
-                for &j in &page[k + 1..] {
-                    if !regions[i].intersect(regions[j]).is_empty() {
-                        return false;
-                    }
-                }
-            }
-        }
-        seen.iter().all(|&n| n == 1)
-    }
-
-    #[test]
-    fn leaves_that_overlap_go_on_different_pages() {
-        // Five boxes in a stack, and five more at its sides, each on only one
-        // of the stack's boxes.
-        let mut regions: Vec<PixelRect> = (0..5)
-            .map(|k| PixelRect::new(10 + k, 10 + k, 60, 60))
-            .collect();
-        regions.extend((0..5).map(|k| PixelRect::new(50 + 10 * k, 5, 54 + 10 * k, 12)));
-        let pages = pack_pages(&regions);
-        assert!(is_a_packing(&pages, &regions));
-        assert_eq!(pages.len(), 5, "five deep at most: {pages:?}");
-        // Each page lists its leaves in order.
-        assert!(pages.iter().all(|p| p.windows(2).all(|w| w[0] < w[1])));
-    }
-
-    #[test]
-    fn leaves_that_overlap_nothing_share_a_page_and_nothing_gives_no_pages() {
-        let spread: Vec<PixelRect> = (0..20)
-            .map(|k| PixelRect::new(10 * k, 0, 10 * k + 9, 9))
-            .collect();
-        assert_eq!(pack_pages(&spread), vec![(0..20).collect::<Vec<_>>()]);
-        assert!(pack_pages(&[]).is_empty());
-    }
-
-    #[test]
-    fn a_chain_of_overlaps_needs_two_pages() {
-        // 0-1, 1-2, 2-3 and 3-4 overlap and nothing else does: {0, 2, 4} and
-        // {1, 3}.
-        let chain: Vec<PixelRect> = (0..5)
-            .map(|k| PixelRect::new(20 * k, 0, 20 * k + 30, 10))
-            .collect();
-        let pages = pack_pages(&chain);
-        assert!(is_a_packing(&pages, &chain));
-        assert_eq!(pages.len(), 2, "{pages:?}");
-    }
-
-    #[test]
-    fn many_leaves_are_still_packed() {
-        // More than DSATUR is used for.
-        let regions: Vec<PixelRect> = (0..700)
-            .map(|k| PixelRect::new(k % 50, 0, k % 50 + 8, 8))
-            .collect();
-        let pages = pack_pages(&regions);
-        assert!(is_a_packing(&pages, &regions));
-    }
 }

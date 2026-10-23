@@ -7,7 +7,6 @@
 use std::ffi::c_void;
 
 use skia_safe::gpu::graphite;
-use vello::wgpu;
 use wgpu::hal::api::Metal;
 
 use super::Role;

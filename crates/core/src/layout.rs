@@ -17,7 +17,7 @@
 
 use taffy::prelude::*;
 use taffy::{Baselines, TaffyTree, compute_leaf_layout};
-use vello::kurbo::Rect as KRect;
+use kurbo::Rect as KRect;
 
 use crate::error::{Error, Result};
 use crate::resolve::{ResolvedItem, ResolvedKind, ResolvedLayer, ResolvedLayout, Resolver};
@@ -734,9 +734,9 @@ mod tests {
         // Its corner is at left 50 (after a's 40), top 10, and its box starts at (20, 10).
         near(at(&kids[1]), (50.0 - 20.0, 10.0 - 10.0));
         // So the box's corner lands at the laid-out place.
-        let corner = kids[1].transform.matrix() * vello::kurbo::Point::new(20.0, 10.0);
+        let corner = kids[1].transform.matrix() * kurbo::Point::new(20.0, 10.0);
         near((corner.x, corner.y), (50.0, 10.0));
-        let corner = kids[0].transform.matrix() * vello::kurbo::Point::new(0.0, 0.0);
+        let corner = kids[0].transform.matrix() * kurbo::Point::new(0.0, 0.0);
         near((corner.x, corner.y), (13.0, 8.0));
     }
 

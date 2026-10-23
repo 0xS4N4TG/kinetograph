@@ -14,7 +14,7 @@ use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::codecs::webp::WebPDecoder;
 use image::{AnimationDecoder, DynamicImage, Frames, ImageDecoder};
-use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
+use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
 use crate::error::{Error, Result};
 use crate::scene::{LayerKind, Scene, walk_layers};
@@ -206,7 +206,7 @@ impl Gif {
     }
 
     /// The picture shown `seconds` in. The same picture twice is the same
-    /// `ImageData`, so it is one entry in Vello's image atlas.
+    /// `ImageData`, so Skia keeps one image for it.
     pub fn picture(&self, seconds: f64, looped: bool) -> &ImageData {
         &self.pictures[picture_index(&self.ends_ms, seconds, looped)]
     }

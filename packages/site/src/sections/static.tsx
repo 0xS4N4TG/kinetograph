@@ -52,7 +52,7 @@ const STEPS = [
   ['Run the frame', 'Date, Math.random, timers and requestAnimationFrame follow the frame number. A frame is a pure function of (project, frame).'],
   ['Split the tree', 'Native elements become scene layers. Runs of HTML and SVG become DOM islands, sent to Rust as JSON.'],
   ['Style and lay out', 'Stylo applies the CSS, taffy and Parley lay it out, and it is painted in CSS paint order.'],
-  ['Composite', 'wgpu draws the layer tree: Vello for vectors and text, WGSL for effects, naga for GLSL, scene3d for meshes.'],
+  ['Composite', 'wgpu draws the layer tree: Skia for vectors and text, WGSL for effects, naga for GLSL, scene3d for meshes.'],
   ['Encode', 'FFmpeg encodes on another thread while the GPU draws the next frame. Web Audio is mixed offline and muxed.'],
 ] as const;
 

@@ -37,7 +37,7 @@
 use std::collections::BTreeMap;
 
 use glam::DMat4;
-use vello::kurbo::Affine;
+use kurbo::Affine;
 
 use crate::pool::Pooled;
 use crate::resolve::{ResolvedEffect, ResolvedKind, ResolvedLayer};

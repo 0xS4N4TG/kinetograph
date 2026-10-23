@@ -1,7 +1,7 @@
 // Noise layer pass. Textures are Rgba16Float, linear, premultiplied.
 //
 //   fs_noise: fills a box with the raw feTurbulence image. The input is the
-//             box's coverage, drawn by Vello in opaque white through the layer
+//             box's coverage, drawn by Skia in opaque white through the layer
 //             matrix (so the edge is anti-aliased like any shape's); this pass
 //             replaces its colour with the noise and keeps its alpha as the
 //             coverage.

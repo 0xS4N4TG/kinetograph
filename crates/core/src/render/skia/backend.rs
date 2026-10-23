@@ -9,8 +9,7 @@ use std::sync::Mutex;
 
 use skia_safe::gpu::graphite;
 use skia_safe::{AlphaType, Canvas, ColorSpace, ColorType, Image, Surface};
-use vello::kurbo::{Affine, BezPath};
-use vello::wgpu;
+use kurbo::{Affine, BezPath};
 
 use super::super::{Renderer, warp};
 use super::draw::Translator;
@@ -75,24 +74,20 @@ struct Target {
     _texture: wgpu::Texture,
 }
 
-/// A Skia backend on `device`'s GPU device and `queue`'s command queue, unless `KINETOGRAPH_BACKEND=vello`. If Skia
-/// cannot start on this device (no Metal device, or a Vulkan driver without what Graphite needs), warns once and
-/// returns `None`: Vello draws the run.
-pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: &Scene) -> Option<SkiaBackend> {
-    if !super::wants_skia() {
-        return None;
-    }
+/// A Skia backend on `device`'s GPU device and `queue`'s command queue. An error if Skia cannot start on this device
+/// (no Metal device, or a Vulkan driver without what Graphite needs).
+pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: &Scene) -> Result<SkiaBackend> {
     let started = Native::new(device, queue).and_then(|(native, mut ctx)| {
         let rec = ctx.make_recorder(None)?;
         let raster = ctx.make_recorder(None)?;
         Some((native, ctx, rec, raster))
     });
     let Some((native, ctx, rec, raster)) = started else {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| {
-            eprintln!("kinetograph: the Skia backend could not start on this GPU; drawing with Vello (set KINETOGRAPH_BACKEND=vello to silence this)")
-        });
-        return None;
+        return Err(Error::Render(
+            "the Skia backend could not start on this GPU (on macOS it needs a Metal device; on Linux and Windows a \
+             Vulkan driver with what Skia's Graphite needs)"
+                .into(),
+        ));
     };
     let rec = Rc::new(RefCell::new(rec));
     let mut tr = Translator::new(scene);
@@ -115,7 +110,7 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
         std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
     });
     let inner = Inner { native, ctx, rec: Rc::new(RefCell::new(raster)), tr: None, tr_frame: u64::MAX, frame: 0 };
-    Some(SkiaBackend { inner: Some(inner), rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
+    Ok(SkiaBackend { inner: Some(inner), rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
 }
 
 fn warn_once(what: &str) {
@@ -132,11 +127,14 @@ fn json_map(m: &std::collections::BTreeMap<String, u32>) -> String {
 }
 
 impl Renderer {
-    /// Whether the 2D content of the layers the wgpu path draws is drawn by Skia (while a Skia frame is drawn) and not
-    /// by Vello. `KINETOGRAPH_SKIA_VELLO_FALLBACK=1` gives Vello back those pages, to compare the two.
-    pub(in super::super) fn skia_rasters(&self) -> bool {
-        static VELLO: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        self.skia_inner.is_some() && !*VELLO.get_or_init(|| std::env::var_os("KINETOGRAPH_SKIA_VELLO_FALLBACK").is_some_and(|v| v == "1"))
+    /// Drops what Skia read from files (pictures, videos, fonts), so that the next frame reads them again.
+    pub(in super::super) fn skia_forget_files(&mut self) {
+        if let Some(sk) = &mut self.skia {
+            sk.tr.forget_files();
+            if let Some(tr) = sk.inner.as_mut().and_then(|inner| inner.tr.as_mut()) {
+                tr.forget_files();
+            }
+        }
     }
 
     /// Draws `scene` with Skia into the canvas texture (linear, premultiplied, the size of the canvas and its margin).
@@ -252,13 +250,12 @@ impl Renderer {
             let s = &tr.stats;
             let _ = writeln!(
                 file,
-                "{{\"frame\":{},\"layers\":{},\"fallbacks\":{},\"not_drawn\":{},\"approx\":{},\"vello\":{}}}",
+                "{{\"frame\":{},\"layers\":{},\"fallbacks\":{},\"not_drawn\":{},\"approx\":{}}}",
                 sk.frame,
                 s.layers,
                 json_map(&s.fallbacks),
                 json_map(&s.unsupported),
-                json_map(&s.approximated),
-                super::super::VELLO_RASTERS.load(std::sync::atomic::Ordering::Relaxed)
+                json_map(&s.approximated)
             );
         }
         Ok(self.compositor.from_skia(&sk.targets[current].view, linear))
@@ -343,9 +340,9 @@ pub(in super::super) enum RasterOp<'a> {
     Pop,
 }
 
-/// What the wgpu path asks Skia to draw in place of Vello. Each returns a texture of the compositor's (linear,
+/// What the wgpu path asks Skia to draw. Each returns a texture of the compositor's (linear,
 /// premultiplied Rgba16Float, `region` as its bounds, transparent outside) that Skia drew into directly, so the
-/// compositor takes it as it takes what Vello drew, minus the sRGB8 round trip. A scene that blends in sRGB is drawn
+/// compositor takes it directly. A scene that blends in sRGB is drawn
 /// into sRGB-encoded Rgba8 first, as the frame is, and converted.
 impl Renderer {
     /// The leaf `layer` (no effects, clip, mask or matte) under `matrix`, which takes its layer space to canvas pixels.

@@ -407,7 +407,7 @@ fn time_passes(renderer: &mut Renderer, frames: &[u32]) -> Result<(String, Value
     text.push_str(
         "\nEach pass is timed from its start to its end on the GPU; passes can overlap,\n\
          so their sum can differ from the frame's time. Mtexels is the size of the\n\
-         textures drawn into. Vello's rasterising and texture copies are not timed.",
+         textures drawn into. Skia's drawing and texture copies are not timed.",
     );
     let value = json!({
         "frames": frames.len(),

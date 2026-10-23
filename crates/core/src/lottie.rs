@@ -19,7 +19,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use dotlottie_rs::{ColorSpace, Player};
-use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
+use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
 use crate::error::{Error, Result};
 use crate::scene::{LayerKind, Scene, walk_layers};

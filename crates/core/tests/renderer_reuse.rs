@@ -1,7 +1,6 @@
 //! One `Renderer` taking one scene after another (`Renderer::set_scene`) must
 //! draw every frame exactly as a renderer made for that scene does.
 
-mod common;
 
 use std::path::{Path, PathBuf};
 
@@ -77,9 +76,8 @@ fn scenes_in_turn_match_fresh_renderers() {
     }
 }
 
-/// Vello keeps one image atlas per renderer, and every Lottie frame is a new
-/// image in it, so a frame's pixels must not depend on which images the
-/// renderer drew before (#12).
+/// Every Lottie frame is a new image, so a frame's pixels must not depend on
+/// which images the renderer drew before (#12).
 #[test]
 fn lottie_frames_in_order_match_fresh_renderers() {
     let scene = load("tests/scenes/lottie.json");
@@ -102,12 +100,18 @@ fn lottie_frames_in_order_match_fresh_renderers() {
 
 #[test]
 fn the_same_scene_again_keeps_its_layer_cache() {
-    common::pin_vello();
-    let scene = load("tests/scenes/clip-paths.json");
+    // (Skia draws 2D layers itself; the cache keeps what the wgpu path draws: here the child of a canvas pass.)
+    let json = r##"{"width": 16, "height": 16, "fps": 30, "durationInFrames": 30, "background": "#000000",
+        "layers": [{"id": "pass", "type": "group",
+          "children": [{"id": "a", "type": "shape", "shape": {"kind": "rect", "width": 8, "height": 16}, "fill": "#ff0000"}],
+          "canvas": {"width": 16, "height": 16, "commands": [
+            {"op": "image", "source": {"kind": "layer", "id": "a", "width": 16, "height": 16},
+             "dx": 0, "dy": 0, "dw": 16, "dh": 16}]}}]}"##;
+    let scene = Scene::from_json(json, std::path::PathBuf::new()).unwrap();
     let mut renderer = Renderer::new(scene.clone()).unwrap();
     renderer.set_layer_cache(true);
-    // A layer that stays the same is cached from its third frame on (a plain
-    // leaf, or a group of them, is only noted in the first).
+    // A layer that stays the same is cached from its third frame on.
+    renderer.render_frame(10).unwrap();
     renderer.render_frame(10).unwrap();
     renderer.render_frame(10).unwrap();
     let (hits_before, _) = renderer.layer_cache_counts();
@@ -142,7 +146,6 @@ fn picture_scene(dir: &Path) -> Scene {
 
 #[test]
 fn a_name_that_means_another_file_is_read_again() {
-    common::pin_vello();
     let base = std::env::temp_dir().join(format!("kinetograph-reuse-{}", std::process::id()));
     let (red, blue) = (base.join("red"), base.join("blue"));
     write_picture(&red, [255, 0, 0, 255]);

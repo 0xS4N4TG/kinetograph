@@ -30,7 +30,7 @@
 //! along the canvas axes, so only those get a spread here; with a spread, a
 //! shape that is turned, or an ellipse, keeps the blurred path.
 
-use vello::kurbo::{Affine, Rect};
+use kurbo::{Affine, Rect};
 
 use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
@@ -164,7 +164,7 @@ impl BoxShadow {
         }
 
         let offset = [f64::from(shadow.x), f64::from(shadow.y)];
-        let middle = matrix * vello::kurbo::Point::new(width / 2.0, height / 2.0);
+        let middle = matrix * kurbo::Point::new(width / 2.0, height / 2.0);
         let centre = [middle.x + offset[0], middle.y + offset[1]];
         // The linear part's inverse.
         let inverse = [d / det, -c / det, -b / det, a / det];
@@ -179,7 +179,7 @@ impl BoxShadow {
             height / 2.0 + half[1],
         );
         let cast =
-            bounds::transformed(matrix, local) + vello::kurbo::Vec2::new(offset[0], offset[1]);
+            bounds::transformed(matrix, local) + kurbo::Vec2::new(offset[0], offset[1]);
         let reach = REACH * sigma_px + 1.0;
         let extent = bounds::pixel_rect(cast.inflate(reach, reach))?;
 

@@ -10,8 +10,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
 use glam::DMat3;
-use vello::kurbo::Affine;
-use vello::wgpu::util::TextureDataOrder;
+use kurbo::Affine;
+use wgpu::util::TextureDataOrder;
 
 use super::environment::{Baked, Baker, empty_cube};
 use super::*;

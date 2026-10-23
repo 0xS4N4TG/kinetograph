@@ -51,7 +51,6 @@ use std::mem::MaybeUninit;
 
 use ash::vk::{self, Handle};
 use skia_safe::gpu::{self, graphite, vk as skvk};
-use vello::wgpu;
 use wgpu::hal::api::Vulkan;
 
 use super::Role;

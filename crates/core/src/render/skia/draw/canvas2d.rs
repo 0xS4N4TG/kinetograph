@@ -1,5 +1,5 @@
-//! Canvas 2D commands (`crate::canvas`) drawn with Skia, onto the same canvas the other layers go to. The Vello path in
-//! `canvas.rs` stays what it was; this draws the same recorded commands: fills, strokes (caps, joins, dashes), text as
+//! Canvas 2D commands (`crate::canvas`) drawn with Skia, onto the same canvas the other layers go to. It draws the recorded commands
+//! (`canvas.rs` holds their types): fills, strokes (caps, joins, dashes), text as
 //! glyph outlines, `drawImage`, gradients, patterns (also for strokes and text), the composite operations, clips,
 //! shadows and `filter` lists (as image filters of a layer).
 
@@ -79,7 +79,7 @@ fn stroke_style(p: &mut Paint, l: &LineStyle) {
 impl Translator {
     /// Draws a canvas layer's commands in the box `(0, 0, width, height)` of the current space.
     pub(super) fn draw_canvas_layer(&mut self, canvas: &Canvas, size: (f64, f64), ops: &[CanvasOp]) {
-        // The commands blend in sRGB-encoded values, as the Vello path blends them, even on a surface of linear light.
+        // The commands blend in sRGB-encoded values, as a browser blends them, even on a surface of linear light.
         let srgb_layer = self.linear();
         let isolate = srgb_layer || uses_composite(ops);
         if isolate {
@@ -418,7 +418,7 @@ impl Translator {
             path.clone()
         };
         let bb = cover.bounds();
-        let tile_bbox = base.inverse().transform_rect_bbox(vello::kurbo::Rect::new(
+        let tile_bbox = base.inverse().transform_rect_bbox(kurbo::Rect::new(
             bb.left as f64,
             bb.top as f64,
             bb.right as f64,

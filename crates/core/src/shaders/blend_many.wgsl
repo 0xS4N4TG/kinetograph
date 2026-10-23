@@ -1,6 +1,6 @@
 // Several blends in one pass: the canvas with up to seven layers composited
 // over it in order, each by the same formula as `fs_blend` (composite.wgsl).
-// All textures but a Vello page are Rgba16Float, linear light, premultiplied.
+// All textures are Rgba16Float, linear light, premultiplied.
 //
 // The passes this stands for each wrote the canvas to a texture of 16-bit
 // floats and the next read it back, so the canvas is rounded to a half float
@@ -11,40 +11,27 @@
 // `Compositor::blend`), so drawing the box that holds all the layers changes
 // only what the separate passes changed.
 //
-// A layer is either a texture (kind 0, in `a`) or a leaf that is still in its
-// Vello page (kind 1: Rgba8, sRGB-encoded, straight alpha, drawn over the box
-// `place`), which is cut out and converted to linear light inside `bounds` as
-// `fs_to_linear` does, and, with a clip (`clipped`), multiplied by the alpha
-// of the clip's page (`b`, placed by `clip`) as `fs_mask` does, each rounded
-// to half floats as the textures of those passes would be.
-//
 // A run of layers can be a group, composited into a buffer of its own that starts
 // transparent, as the pass that blends the group's children into the group's
 // texture would, and then over the canvas with the group's opacity and blend
 // mode, as the pass that blends the group's texture would. `flags` bit 0 says
 // the group opens before the layer, bit 1 that it closes after it (the group's
 // opacity and mode are `gopacity` and `gmode`, the box it can be non-zero in
-// `gbounds`). A slot of kind 3 holds no layer: it multiplies the group so far
-// by the alpha of a clip's page (`b`), as `fs_mask` does, and closes the group.
-// The accumulator is rounded to half floats after every step, as the group's
-// texture would be.
+// `gbounds`). The accumulator is rounded to half floats after every step, as
+// the group's texture would be.
 
 const SLOTS: u32 = 7u;
 
 struct Slot {
     // xy: the canvas pixel of `a`'s texel (0, 0). zw: its size in texels.
     place: vec4<i32>,
-    // The same for the clip's page `b`.
-    clip: vec4<i32>,
     // The canvas pixels the layer can be non-zero in: x0 y0 x1 y1.
     bounds: vec4<i32>,
     opacity: f32,
     mode: u32,
-    // 0: a texture. 1: a leaf in a page. 2: a leaf in a page, with a clip.
-    // 3: the clip of a group (no layer).
-    kind: u32,
     // Bit 0: a group opens before this slot's layer. Bit 1: it closes after it.
     flags: u32,
+    pad: u32,
     gopacity: f32,
     gmode: u32,
     pad0: u32,
@@ -65,20 +52,13 @@ struct Params {
 
 @group(0) @binding(0) var canvas_tex: texture_2d<f32>;
 @group(0) @binding(1) var a0: texture_2d<f32>;
-@group(0) @binding(2) var b0: texture_2d<f32>;
-@group(0) @binding(3) var a1: texture_2d<f32>;
-@group(0) @binding(4) var b1: texture_2d<f32>;
-@group(0) @binding(5) var a2: texture_2d<f32>;
-@group(0) @binding(6) var b2: texture_2d<f32>;
-@group(0) @binding(7) var a3: texture_2d<f32>;
-@group(0) @binding(8) var b3: texture_2d<f32>;
-@group(0) @binding(9) var a4: texture_2d<f32>;
-@group(0) @binding(10) var b4: texture_2d<f32>;
-@group(0) @binding(11) var a5: texture_2d<f32>;
-@group(0) @binding(12) var b5: texture_2d<f32>;
-@group(0) @binding(13) var a6: texture_2d<f32>;
-@group(0) @binding(14) var b6: texture_2d<f32>;
-@group(0) @binding(15) var<uniform> params: Params;
+@group(0) @binding(2) var a1: texture_2d<f32>;
+@group(0) @binding(3) var a2: texture_2d<f32>;
+@group(0) @binding(4) var a3: texture_2d<f32>;
+@group(0) @binding(5) var a4: texture_2d<f32>;
+@group(0) @binding(6) var a5: texture_2d<f32>;
+@group(0) @binding(7) var a6: texture_2d<f32>;
+@group(0) @binding(8) var<uniform> params: Params;
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
@@ -109,32 +89,6 @@ fn load_a_slot(i: u32, q: vec2<i32>) -> vec4<f32> {
         }
         default: {
             return textureLoad(a6, q, 0);
-        }
-    }
-}
-
-fn load_b_slot(i: u32, q: vec2<i32>) -> vec4<f32> {
-    switch i {
-        case 0u: {
-            return textureLoad(b0, q, 0);
-        }
-        case 1u: {
-            return textureLoad(b1, q, 0);
-        }
-        case 2u: {
-            return textureLoad(b2, q, 0);
-        }
-        case 3u: {
-            return textureLoad(b3, q, 0);
-        }
-        case 4u: {
-            return textureLoad(b4, q, 0);
-        }
-        case 5u: {
-            return textureLoad(b5, q, 0);
-        }
-        default: {
-            return textureLoad(b6, q, 0);
         }
     }
 }
@@ -186,40 +140,11 @@ fn fs_blend_many(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
             open = true;
             acc = vec4<f32>(0.0);
         }
-        if slot.kind == 3u {
-            var masked = vec4<f32>(0.0);
-            if in_box(xy, slot.bounds) {
-                var clip = vec4<f32>(0.0);
-                let cq2 = xy - slot.clip.xy;
-                if inside(cq2, slot.clip.zw) {
-                    clip = load_b_slot(i, cq2);
-                }
-                let m = acc * clamp(clip.a, 0.0, 1.0);
-                masked = vec4<f32>(store_f16(m.x), store_f16(m.y), store_f16(m.z), store_f16(m.w));
-            }
-            acc = masked;
-        } else if in_box(xy, slot.bounds) {
+        if in_box(xy, slot.bounds) {
             let q = xy - slot.place.xy;
             var layer = vec4<f32>(0.0);
             if inside(q, slot.place.zw) {
                 layer = load_a_slot(i, q);
-            }
-            if slot.kind != 0u {
-                // The page's pixel as `fs_to_linear` converts it.
-                let linear = vec4<f32>(srgb_to_linear(layer.rgb) * layer.a, layer.a);
-                layer = vec4<f32>(
-                    store_f16(linear.x), store_f16(linear.y), store_f16(linear.z), store_f16(linear.w));
-                if slot.kind == 2u {
-                    // And as `fs_mask` masks it by the clip's alpha.
-                    var clip = vec4<f32>(0.0);
-                    let cq2 = xy - slot.clip.xy;
-                    if inside(cq2, slot.clip.zw) {
-                        clip = load_b_slot(i, cq2);
-                    }
-                    let masked = layer * clamp(clip.a, 0.0, 1.0);
-                    layer = vec4<f32>(
-                        store_f16(masked.x), store_f16(masked.y), store_f16(masked.z), store_f16(masked.w));
-                }
             }
             let s = layer * slot.opacity;
             if open {

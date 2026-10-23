@@ -1,7 +1,6 @@
 //! The pass timer (`Renderer::set_pass_timing`) records the compositing
 //! passes and never changes what is drawn.
 
-mod common;
 
 use std::path::Path;
 
@@ -13,8 +12,6 @@ fn load(path: &str) -> Scene {
 
 #[test]
 fn timing_passes_draws_the_same_pixels_and_names_them() {
-    common::pin_vello();
-    // Blur, shadows and blends, so most kinds of pass run.
     let scene = load("tests/scenes/shadows.json");
     let mut renderer = Renderer::new(scene).unwrap();
     let plain = renderer.render_frame(15).unwrap();
@@ -28,7 +25,8 @@ fn timing_passes_draws_the_same_pixels_and_names_them() {
 
     let times = renderer.take_pass_times();
     assert!(!times.is_empty());
-    assert!(times.iter().any(|t| t.name == "blend" || t.name == "blend many"));
+    // Skia draws the layers; the compositor still reads the frame back.
+    assert!(times.iter().any(|t| t.name == "encode"));
     assert!(times.iter().all(|t| t.ms >= 0.0 && t.ms.is_finite()));
     // Taken: the next call has nothing until another frame is drawn.
     assert!(renderer.take_pass_times().is_empty());

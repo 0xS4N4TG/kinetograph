@@ -8,7 +8,6 @@
 
 use std::num::NonZeroU64;
 
-use vello::wgpu;
 
 /// Bytes in each buffer.
 const CHUNK: u64 = 1 << 18;
