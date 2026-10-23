@@ -1,0 +1,93 @@
+# Publishes the npm packages. Runs only when started by hand (Actions tab, "Run workflow"); nothing triggers it.
+#
+# It takes the addons from a finished run of native.yml (give its run id), so the three .node files are the ones that
+# were smoke-tested. Needs the repository secret NPM_TOKEN (an npm automation token that can publish @kinetograph/* and
+# kinetograph). `--provenance` needs a public repository.
+name: publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      native_run_id:
+        description: 'Run id of a successful native.yml run on this commit (the number in its URL)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run: npm publish --dry-run, nothing is published'
+        required: true
+        type: boolean
+        default: true
+      tag:
+        description: 'npm dist-tag'
+        required: true
+        type: string
+        default: latest
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bindings-*
+          path: crates/node/artifacts
+          run-id: ${{ inputs.native_run_id }}
+          github-token: ${{ github.token }}
+
+      # napi-rs's own steps: `artifacts` puts each .node into its platform package (npm/<platform>) and fails if one of
+      # the three is missing; `pre-publish` writes optionalDependencies into the root package.json. The platform
+      # packages are published below, in the same job, not by napi (--skip-optional-publish), and no GitHub release is
+      # made (--no-gh-release).
+      - name: Assemble the native packages
+        working-directory: crates/node
+        run: |
+          npx napi artifacts --output-dir artifacts
+          npm run legal
+          npx napi pre-publish -t npm --skip-optional-publish --no-gh-release
+          grep -A4 optionalDependencies package.json
+          for d in npm/*; do ls -l "$d"; done
+
+      # In dependency order. Never `npm run build --workspaces`.
+      - name: Build the TypeScript packages and the studio UI
+        run: |
+          for p in scene compat react core audio cli; do npm run build -w "packages/$p"; done
+          npm run build -w @kinetograph/studio-ui
+          npm run build -w @kinetograph/studio
+
+      - name: Check the package contents
+        run: |
+          node scripts/check-packages.mjs
+          for d in crates/node/npm/*; do test -f "$d"/kinetograph.*.node; done
+          test -f packages/studio/ui/dist/index.html
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+          DRY: ${{ inputs.dry_run && '--dry-run' || '' }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -e
+          publish() { (cd "$1" && npm publish --access public --provenance --tag "$TAG" $DRY); }
+          # The platform packages first, then the package that lists them, then the rest, each after what it depends on:
+          # scene; compat (scene); react (compat); core (compat, native, react); audio (native); cli (all of those);
+          # studio (core, native, cli).
+          for d in crates/node/npm/*; do publish "$d"; done
+          for d in crates/node packages/scene packages/compat packages/react packages/core packages/audio packages/cli packages/studio; do
+            publish "$d"
+          done

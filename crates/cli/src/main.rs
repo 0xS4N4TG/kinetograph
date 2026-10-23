@@ -47,7 +47,8 @@ enum Command {
         #[arg(long)]
         range: Option<String>,
         /// ffmpeg encoder name; default h264_videotoolbox on macOS when
-        /// ffmpeg has it, else libx264
+        /// ffmpeg has it, else libx264, libopenh264, h264_mf, h264_nvenc or
+        /// h264_amf, the first it has
         #[arg(long)]
         encoder: Option<String>,
         /// Print the result as JSON: {output, encoder, width, height, fps,

@@ -3,13 +3,37 @@
   "version": "0.1.0",
   "description": "Node-API addon exposing the Kinetograph renderer",
   "license": "PolyForm-Small-Business-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
+    "directory": "crates/node"
+  },
+  "homepage": "https://github.com/0xS4N4TG/kinetograph#readme",
+  "bugs": {
+    "url": "https://github.com/0xS4N4TG/kinetograph/issues"
+  },
+  "keywords": [
+    "video",
+    "remotion",
+    "motion-graphics",
+    "renderer",
+    "gpu",
+    "headless"
+  ],
   "type": "commonjs",
   "main": "index.js",
   "types": "index.d.ts",
-  "files": ["index.js", "index.d.ts", "*.node"],
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
   "napi": {
     "binaryName": "kinetograph",
-    "targets": ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"]
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc"
+    ]
   },
   "engines": {
     "node": ">=22"
@@ -17,9 +41,13 @@
   "scripts": {
     "build": "napi build --platform",
     "build:release": "napi build --platform --release",
-    "test": "node --test \"test/*.test.cjs\""
+    "test": "node --test \"test/*.test.cjs\"",
+    "legal": "node scripts/copy-legal.mjs"
   },
   "devDependencies": {
     "@napi-rs/cli": "3.10.8"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

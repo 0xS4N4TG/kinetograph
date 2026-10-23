@@ -3,6 +3,23 @@
   "version": "0.1.0",
   "description": "kinetograph studio: a local web server and browser UI whose preview frames the addon renders",
   "license": "PolyForm-Small-Business-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
+    "directory": "packages/studio"
+  },
+  "homepage": "https://github.com/0xS4N4TG/kinetograph#readme",
+  "bugs": {
+    "url": "https://github.com/0xS4N4TG/kinetograph/issues"
+  },
+  "keywords": [
+    "video",
+    "remotion",
+    "motion-graphics",
+    "renderer",
+    "gpu",
+    "headless"
+  ],
   "type": "module",
   "exports": {
     ".": {
@@ -16,6 +33,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "ui/dist"
   ],
   "scripts": {
@@ -31,5 +49,11 @@
   },
   "devDependencies": {
     "@types/ws": "8.18.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

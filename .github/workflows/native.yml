@@ -1,0 +1,210 @@
+# Builds the native addon (Rust, Skia, ffmpeg) on macOS, Linux and Windows, then installs it the way a user would and
+# renders a few frames. The Linux and Windows builds had never been run when this file was written: expect to fix them.
+name: native
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The ffmpeg that scripts/build-ffmpeg.sh builds, and its cache key part.
+  FFMPEG_CACHE_VERSION: v2
+
+jobs:
+  build:
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin-arm64
+            target: aarch64-apple-darwin
+          - os: ubuntu-22.04
+            platform: linux-x64-gnu
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            platform: win32-x64-msvc
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # Build dependencies. Skia needs no source build: rust-skia publishes graphite + vulkan (Linux, Windows) and
+      # graphite + metal (macOS) binaries. dotlottie's ThorVG is compiled with clang++, ffmpeg-sys-next's bindings with
+      # libclang, openh264 (x86) with nasm.
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-dev pkg-config nasm make git
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkgconf
+
+      - name: Install build dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          path-type: inherit
+          update: false
+          install: >-
+            make
+            diffutils
+            git
+            pkgconf
+            nasm
+
+      - name: Cache ffmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ffmpeg
+          key: ffmpeg-${{ env.FFMPEG_CACHE_VERSION }}-${{ matrix.platform }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+      # LGPL-only static ffmpeg (no libx264/libx265), see the header of the script.
+      - name: Build ffmpeg (macOS, Linux)
+        if: runner.os != 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh "$RUNNER_TEMP/ffmpeg"
+
+      # MSVC's compiler on the PATH first, then ffmpeg's configure from MSYS2. MSYS2's link.exe would shadow MSVC's.
+      - name: Load the MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build ffmpeg (Windows)
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          rm -f /usr/bin/link.exe
+          scripts/build-ffmpeg.sh "$(cygpath -u "$RUNNER_TEMP")/ffmpeg"
+
+      - run: npm ci
+
+      - name: Build the addon (macOS, Linux)
+        if: runner.os != 'Windows'
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: npm run build:release -w @kinetograph/native -- --target ${{ matrix.target }} --features ffmpeg-static
+
+      - name: Build the addon (Windows)
+        if: runner.os == 'Windows'
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: npm run build:release -w @kinetograph/native -- --target ${{ matrix.target }} --features ffmpeg-static
+
+      - name: Libraries the addon links
+        shell: bash
+        run: |
+          f=crates/node/kinetograph.${{ matrix.platform }}.node
+          ls -l "$f"
+          case "$RUNNER_OS" in
+            macOS) otool -L "$f" ;;
+            Linux) ldd "$f" ;;
+            Windows) dumpbin //dependents "$f" || true ;;
+          esac
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bindings-${{ matrix.platform }}
+          path: crates/node/kinetograph.${{ matrix.platform }}.node
+          if-no-files-found: error
+
+  smoke:
+    name: smoke (${{ matrix.platform }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    # Windows runners have no GPU; whether anything can draw there is what the first run finds out.
+    continue-on-error: ${{ matrix.allow_fail }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin-arm64
+            allow_fail: false
+          - os: ubuntu-22.04
+            platform: linux-x64-gnu
+            allow_fail: false
+          - os: windows-latest
+            platform: win32-x64-msvc
+            allow_fail: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # Software Vulkan (lavapipe), so that Skia has a device on a runner with no GPU.
+      - name: Install a Vulkan driver (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+          vulkaninfo --summary || true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: bindings-${{ matrix.platform }}
+          path: crates/node
+
+      - run: npm ci
+
+      - name: Build the TypeScript packages
+        shell: bash
+        run: |
+          for p in scene compat react core audio cli; do npm run build -w "packages/$p"; done
+
+      # Packs the packages and the addon, installs them into an empty project outside the repository, renders 30 frames.
+      - name: Clean install and render
+        run: node scripts/smoke/clean-install.mjs
+
+  js:
+    name: typecheck and test (JS)
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/download-artifact@v8
+        with:
+          name: bindings-linux-x64-gnu
+          path: crates/node
+      - run: npm ci
+      # In dependency order. Never `npm run build --workspaces`: it would also build the site and the addon.
+      - name: Typecheck (tsc builds)
+        run: |
+          for p in scene compat react core audio cli studio; do npm run build -w "packages/$p"; done
+      # The tests open no GPU unless KINETOGRAPH_GPU_TESTS is set. Not blocking until a run has shown they pass here.
+      - name: Test
+        continue-on-error: true
+        run: |
+          for p in scene compat react core audio cli studio; do npm test -w "packages/$p"; done
