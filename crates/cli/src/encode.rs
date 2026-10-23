@@ -952,6 +952,11 @@ fn encoder_options(
             }
         },
     }
+    if is_videotoolbox(&settings.encoder) {
+        // Fall back to Apple's software encoder where the hardware one is missing (a macOS VM, as on CI) or busy;
+        // with the hardware present it is still what runs.
+        options.set("allow_sw", "1");
+    }
     options
 }
 
