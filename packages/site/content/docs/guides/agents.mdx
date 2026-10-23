@@ -92,7 +92,13 @@ Or run `codex mcp add kinetograph -- npx -y kinetograph mcp`. `codex mcp list` s
 
 There are two skills. `kinetograph` teaches the write, look, check, render loop. `kinetograph-migrate` moves an existing Remotion project onto Kinetograph: it runs `doctor`, fixes each finding with reference files for 3D, tooling and unsupported content, and renders with `--strict`. See [Migrate from Remotion](/docs/guides/migrate/).
 
-The skills come inside the npm package. Once the package is installed in a project, copy it to where Claude Code looks for skills:
+Install both from the GitHub repo with the `skills` CLI (it asks which agents to install them for):
+
+```sh
+npx skills add 0xS4N4TG/kinetograph
+```
+
+The skills also come inside the npm package. Once the package is installed in a project, you can copy them to where Claude Code looks for skills instead:
 
 ```bash
 mkdir -p ~/.claude/skills

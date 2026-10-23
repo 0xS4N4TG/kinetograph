@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { PlayIcon } from 'lucide-react';
 
+import { CommandBar } from '@/components/code';
 import { Heading } from '@/sections/heading';
+import { commandBar } from '@/sections/hero';
 import { doc } from '@/sections/links';
 import renders from '@/sections/renders.json';
 import { body, h2Size, link, section, shell } from '@/sections/shared';
@@ -143,6 +145,8 @@ export function About() {
             <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX,
             renders a still, reads the scene graph and fixes what it finds before anyone watches.
           </p>
+          <p className={`${body} mt-6 max-w-[44ch]`}>Give your agent the Kinetograph skills:</p>
+          <CommandBar command="npx skills add 0xS4N4TG/kinetograph" className={`mt-4 ${commandBar}`} />
         </div>
       </div>
     </section>

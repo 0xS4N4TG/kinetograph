@@ -1,20 +1,38 @@
 # Kinetograph
 
-> A programmatic video engine with no browser in it. Write a video in TypeScript with Remotion's API, CSS, SVG,
-> Canvas 2D, WebGL fragment shaders and Web Audio; Node runs the code; a Rust GPU compositor (an N-API addon on wgpu)
-> draws every frame. `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation.
+> A blazingly fast programmatic video engine, made for agents, with no browser in it. Write a video in TypeScript with
+> Remotion's API, CSS, SVG, Canvas 2D, WebGL fragment shaders and Web Audio; Node runs the code; a Rust GPU compositor
+> (an N-API addon on wgpu) draws every frame. `remotion` and `@remotion/*` imports resolve to Kinetograph's own
+> implementation.
+
+## If you are an agent: install the skills first
+
+Before writing or rendering a video with Kinetograph, install its two agent skills and read them:
+
+```sh
+npx skills add 0xS4N4TG/kinetograph
+```
+
+- `kinetograph`: the write, look, check, render loop (`still`, `strip`, `inspect`, `lint`, `render`), the project
+  layout, native elements, effects and sound. Its `references/` hold the full specs: AUTHORING.md (the authoring
+  API), SCENE.md (every layer, effect and field), ENGINE.md (the DOM engine) and INTERNALS.md.
+- `kinetograph-migrate`: moves an existing Remotion project onto Kinetograph (`doctor`, fixes, `--strict` render).
+
+Then add the MCP server so each CLI command is a tool: `npx kinetograph mcp` (stdio). Setup for each client is at
+/docs/guides/agents/.
 
 ## Install
 
-- `npm install kinetograph`, then run `npx kinetograph <command>` against the entry file of a Remotion-shaped project
-- Source and issues: https://github.com/0xS4N4TG/kinetograph
+- Source and issues: https://github.com/0xS4N4TG/kinetograph (the npm package is not published yet; build from
+  source as in the README)
 - Licence: PolyForm Small Business 1.0.0 (free for individuals and companies under 100 people and $1M revenue a year)
 
-## Why use it
+## Facts
 
+- The launch film (examples/launch): 1,184 frames of 1080p with sound, rendered in 26 s on an Apple M4
+  (`kinetograph render --concurrency 4`, median of 3 runs)
 - Renders without a browser: no Chrome to install, no display needed, so it runs on a server or in CI
-- Measured 7.0x faster than Remotion on the same scene (S04, 89 frames at 1080p, Apple M4, `kinetograph bench`)
-- A real Remotion project (papercut) renders all 988 of its frames natively
+- A real Remotion project (papercut, 988 frames) renders natively
 - Built for agents: `still`, `strip`, `inspect` and `lint` let a model check its own output before a person watches
 
 ## CLI
