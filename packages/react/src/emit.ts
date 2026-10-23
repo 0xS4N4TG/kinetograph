@@ -121,6 +121,13 @@ function localSrc(props: Props): Record<string, unknown> {
   return typeof src === 'string' ? { src: resolveRemoteAsset(src) ?? src } : {};
 }
 
+/** A datamosh whose hold clip's `src` is the local file a remote one was downloaded to. */
+function moshHold(datamosh: Props): Props {
+  const hold = datamosh.hold;
+  if (hold === undefined || hold === 'previous') return datamosh;
+  return { ...datamosh, hold: { ...hold, src: resolveRemoteAsset(hold.src) ?? hold.src } };
+}
+
 /** Only the keys of `source` listed in `keys` that are set. */
 function pick(source: Props, keys: readonly string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -662,6 +669,7 @@ class Emitter {
           type: 'video',
           ...pick(props, ['width', 'height', 'fit', 'frame', 'from', 'trimBefore', 'trimAfter', 'playbackRate', 'loop']),
           ...localSrc(props),
+          ...(props.datamosh !== undefined ? { datamosh: moshHold(props.datamosh) } : {}),
           ...commonOf(props, name),
         } as LayerJson;
       case 'kg-gif':

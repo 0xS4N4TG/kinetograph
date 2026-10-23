@@ -71,6 +71,7 @@ export type {
   TimelineState,
   VideoConfig,
   VideoProps,
+  DatamoshOptions,
   GifProps,
 } from '@kinetograph/react';
 

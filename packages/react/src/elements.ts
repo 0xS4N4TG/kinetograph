@@ -19,6 +19,7 @@ import type {
   CharStyle,
   Clip,
   ColorString,
+  DatamoshJson,
   Effect,
   Environment3DJson,
   Geometry3D,
@@ -525,6 +526,22 @@ export function Audio(props: AudioProps) {
 
 // ---- <Video>, <OffthreadVideo>, <Gif> (docs/AUTHORING.md §11.3, stream 2) ----
 
+/**
+ * A datamosh: the look of a video whose keyframe was dropped. Between `from` and `to` the clip's own picture is not
+ * drawn; the held picture is pushed around by the clip's motion instead, so it smears and melts along the movement.
+ * Frames are those of the enclosing Sequence (what `useCurrentFrame()` returns), like `<Video from>`; the window is
+ * `from <= frame < to`, at most 600 frames. Needs a codec that exports motion vectors (H.264, MPEG-4); another is drawn
+ * plain with a warning.
+ */
+export interface DatamoshOptions {
+  from: number;
+  to: number;
+  /** `'previous'` (default): the clip's own picture one frame before `from`. `{ src, frame }`: a frame of another file. */
+  hold?: 'previous' | { src: string; frame: number };
+  /** The share of the clip's residual added back, 0 to 1 (default 0: the old picture only melts; 1: the new shot's detail rides on it). */
+  mix?: number;
+}
+
 export interface VideoProps extends CommonProps {
   src: string;
   width?: Num;
@@ -549,6 +566,8 @@ export interface VideoProps extends CommonProps {
    * falls on it (as for `<Sequence from>` around the video).
    */
   from?: number;
+  /** A datamosh window (see `DatamoshOptions`). Not for a video with CSS style: it needs `width`, `height` and `fit` only. */
+  datamosh?: DatamoshOptions;
   /** A number, or a function of the frame within the video's Sequence. */
   volume?: number | ((frame: number) => number);
   muted?: boolean;
@@ -615,6 +634,27 @@ function videoNeedsCss(props: VideoProps): boolean {
   return false;
 }
 
+/** `DatamoshOptions` checked, with its frames moved from the Sequence's to the composition's (as `mediaClock` does `from`). */
+function moshOf(label: string, options: DatamoshOptions, timeline: TimelineState): DatamoshJson {
+  const { from, to, hold, mix } = options;
+  if (!(typeof from === 'number' && typeof to === 'number' && Number.isFinite(from) && Number.isFinite(to) && to > from)) {
+    throw new Error(`${label} datamosh needs from and to frames with to above from, got ${String(from)} and ${String(to)}`);
+  }
+  if (to - from > 600) throw new Error(`${label} datamosh window is ${to - from} frames, at most 600`);
+  if (mix !== undefined && !(typeof mix === 'number' && mix >= 0 && mix <= 1)) {
+    throw new Error(`${label} datamosh mix must be 0 to 1, got ${String(mix)}`);
+  }
+  if (hold !== undefined && hold !== 'previous') {
+    const ok = typeof hold === 'object' && hold !== null && typeof hold.src === 'string' && hold.src !== '' &&
+      typeof hold.frame === 'number' && hold.frame >= 0 && Number.isFinite(hold.frame);
+    if (!ok) throw new Error(`${label} datamosh hold is 'previous' or { src, frame } with a frame of 0 or more, got ${JSON.stringify(hold)}`);
+  }
+  const out: DatamoshJson = { from: mediaClock(timeline, from).from, to: mediaClock(timeline, to).from };
+  if (hold !== undefined) out.hold = hold;
+  if (mix !== undefined) out.mix = mix;
+  return out;
+}
+
 export function Video(props: VideoProps): ReactNode {
   const timeline = useTimeline();
   const { src, playbackRate } = props;
@@ -643,6 +683,10 @@ export function Video(props: VideoProps): ReactNode {
   }
   // As <Sequence from>: the video is not there before it starts.
   if (timeline.frame < offset) return null;
+  const datamosh = props.datamosh === undefined ? undefined : moshOf(label, props.datamosh, timeline);
+  if (datamosh !== undefined && videoNeedsCss(props)) {
+    throw new Error(`${label} datamosh needs a plain video: use width, height and fit, not style or className`);
+  }
   // As <Audio>: the absolute frame at which the clip's own frame 0 falls.
   const { from, rate } = mediaClock(timeline, offset);
   const rated = rate === 1 ? playbackRate : (playbackRate ?? 1) * rate;
@@ -682,6 +726,7 @@ export function Video(props: VideoProps): ReactNode {
     trimBefore,
     trimAfter,
     playbackRate: rated,
+    datamosh,
     // Inside a <Freeze> the clock reads the composition's frame; `from` is shifted so that frame is the frozen one.
     frame: timeline.frozen ? timeline.absoluteFrame : undefined,
     sound,

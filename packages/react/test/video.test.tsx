@@ -151,6 +151,43 @@ describe('<Video>', () => {
 
 });
 
+describe('<Video datamosh>', () => {
+  it('puts the window on the composition timeline, like `from`', () => {
+    const mosh = { from: 10, to: 40, mix: 0.25 };
+    expect(renderAt(<Video id="v" src="a.mp4" datamosh={mosh} />, 12).layers[0]).toMatchObject({
+      datamosh: { from: 10, to: 40, mix: 0.25 },
+    });
+    // In a Sequence at 30 the window is 30 frames later.
+    expect(renderAt(<Video id="v" src="a.mp4" datamosh={mosh} />, inSequence()).layers[0]).toMatchObject({
+      datamosh: { from: 40, to: 70, mix: 0.25 },
+    });
+    expect(renderAt(<Video id="v" src="a.mp4" />, 12).layers[0]).not.toHaveProperty('datamosh');
+  });
+
+  it('carries the hold clip', () => {
+    const hold = { src: 'b.mp4', frame: 20 };
+    const layer = renderAt(<Video id="v" src="a.mp4" datamosh={{ from: 0, to: 5, hold }} />, 1).layers[0];
+    expect(layer).toMatchObject({ datamosh: { from: 0, to: 5, hold } });
+    const previous = renderAt(<Video id="v" src="a.mp4" datamosh={{ from: 0, to: 5, hold: 'previous' }} />, 1).layers[0];
+    expect(previous).toMatchObject({ datamosh: { hold: 'previous' } });
+  });
+
+  it('checks the window, the mix and the hold', () => {
+    const at = (datamosh: object) => () => renderAt(<Video id="v" src="a.mp4" datamosh={datamosh as never} />, 1);
+    expect(at({ from: 5, to: 5 })).toThrow(/to above from/);
+    expect(at({ from: 0, to: 601 })).toThrow(/at most 600/);
+    expect(at({ from: 0, to: 5, mix: 2 })).toThrow(/mix must be 0 to 1/);
+    expect(at({ from: 0, to: 5, hold: 'next' })).toThrow(/hold is 'previous'/);
+    expect(at({ from: 0, to: 5, hold: { src: 'b.mp4', frame: -1 } })).toThrow(/hold/);
+  });
+
+  it('needs a plain video, not one with CSS', () => {
+    const css = () =>
+      renderAt(<Video id="v" src="a.mp4" style={{ borderRadius: 8 }} datamosh={{ from: 0, to: 5 }} />, 1);
+    expect(css).toThrow(/plain video/);
+  });
+});
+
 describe('the sound of <Video>', () => {
   it('is an AudioClipJson with video: true and the layer id, not a layer', () => {
     const tree = renderAt(<Video id="v" src="/abs/city.mp4" />, inSequence());
