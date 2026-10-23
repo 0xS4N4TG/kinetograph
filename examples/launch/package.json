@@ -1,1 +1,1 @@
-{"name":"kinetograph-launch","private":true,"type":"module","dependencies":{"@remotion/google-fonts":"^4.0.536","culori":"^4.0.2","remotion":"^4.0.536"},"devDependencies":{"@types/culori":"^4.0.1"}}
+{"name":"kinetograph-launch","private":true,"type":"module","dependencies":{"@remotion/google-fonts":"^4.0.536","culori":"^4.0.2","qrcode-generator":"^2.0.4","remotion":"^4.0.536"},"devDependencies":{"@types/culori":"^4.0.1"}}

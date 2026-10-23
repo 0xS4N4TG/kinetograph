@@ -1,136 +1,99 @@
-// Shot 7: "Your demo / launch / changelog". The scene of inspire.mp4, rebuilt with our own renders: a line of small type
-// swaps its word, cards of our renders (stills and short clips of the showcase, 3D and rajz films) pop in around it
-// tinted green and orange and settle to true colour, then everything greys, blurs and pulls to the centre as the
-// ground goes dark, and "that render for you" types on with a block cursor.
+// Shot 7: "your demo, your launch, your changelog, write it in code and it renders for you." Archive film of the 1927
+// Armistice Day parade in Columbus, Ohio (US National Archives, public domain): the veterans of the reviewing stand,
+// graded silver and warm, grain and gate weave, pushing in slowly, letterboxed. The voiceover writes itself beside a
+// tracked face in the Geronimo Stilton way (print/captions.tsx). On "and it renders" the cut is to a thermal printer
+// feeding out a receipt, then to the pile of receipts on a table (print/receipts.tsx).
 
 import React from 'react';
-import { AbsoluteFill, Easing, interpolate, interpolateColors, staticFile, useCurrentFrame } from 'remotion';
-import { Image, Layer, Video, blur, gradientMap } from '@kinetograph/core';
-import { CLAMP, INK, OUT, SANS } from './common.js';
+import { AbsoluteFill, Sequence, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
+import { Layer, Video, glow, gradientMap, grain } from '@kinetograph/core';
+import { CLAMP, H, LEN, W } from './common.js';
+import { Captions, type CaptionLine, type Point } from './print/captions.js';
+import { Receipts } from './print/receipts.js';
+import veteranTrack from './track/veteran.json';
+import hatTrack from './track/hat.json';
 
-const CREAM = '#F3EFEC';
-const DARK = '#121212';
-const pool = (n: string) => staticFile(`pool/${n}`);
-
-type Card = { x: number; y: number; w: number; h: number; src: string; video?: boolean; r: number; at: number; hue: 'g' | 'o' };
-/** Where each card sits (x, y, w, h; several run off the frame), what it shows and the frame it pops in. */
-export const CARDS: Card[] = [
-  { x: -10, y: 566, w: 572, h: 444, src: pool('clip-pig.mp4'), video: true, r: 0, at: 2, hue: 'g' },
-  { x: 1380, y: -50, w: 430, h: 500, src: pool('clip-ep13.mp4'), video: true, r: 30, at: 5, hue: 'g' },
-  { x: 330, y: 840, w: 520, h: 292, src: pool('clip-clouds.mp4'), video: true, r: 0, at: 20, hue: 'o' },
-  { x: 1230, y: 706, w: 720, h: 405, src: pool('10-showcase-v1.jpg'), r: 0, at: 32, hue: 'g' },
-  { x: -30, y: 70, w: 480, h: 300, src: pool('clip-imagine.mp4'), video: true, r: 0, at: 44, hue: 'o' },
-  { x: 1640, y: 500, w: 360, h: 203, src: pool('08-showcase-v1.jpg'), r: 0, at: 56, hue: 'g' },
-  { x: 700, y: -36, w: 440, h: 248, src: pool('07-showcase-v1.jpg'), r: 0, at: 68, hue: 'o' },
-  { x: 560, y: 600, w: 330, h: 186, src: pool('06-showcase-v1.jpg'), r: 0, at: 80, hue: 'g' },
+/** The voiceover lines of the shot (sound-timing.ts puts 07a at frame 4 and 07b at frame 58). */
+export const LINES: CaptionLine[] = [
+  { file: '07a-your', at: 4, split: [2, 2, 2], hot: ['demo', 'launch', 'changelog'] },
+  { file: '07b-write', at: 58, split: [4, 3, 2], hot: ['code', 'renders'] },
 ];
 
-const stops = (a: string, b: string, c: string) => [{ offset: 0, color: a }, { offset: 0.5, color: b }, { offset: 1, color: c }];
-const GREEN = stops('#26463a', '#6fa07f', '#d6ead9');
-const ORANGE = stops('#3d2314', '#c47c45', '#ffe0b3');
-const PALE = stops('#7f8c70', '#c2cdb2', '#eef3e2');
+type Track = { points: number[][] };
+/** The film under the captions: the clip (public/footage, cut by tools/track/README.md's recipe), the frame of the
+ *  shot it cuts in, and its tracked face (tools/track/track.mjs, one point per frame). */
+export const CUTS = [
+  { at: 0, src: 'footage/veteran.mp4', track: veteranTrack as Track },
+  { at: 56, src: 'footage/hat.mp4', track: hatTrack as Track },
+] as const;
+/** The cut to the receipts, on "and it renders". */
+export const RECEIPTS_AT = 78;
+/** Letterbox bars for 2.39:1. */
+const BAR = Math.round((H - W / 2.39) / 2);
 
-/** Little squares scattered over the ground: (x, y, colour, frame it appears). */
-const DOTS: [number, number, string, number][] = [
-  [300, 184, '#c97a5f', 0], [1712, 160, '#c97a5f', 0], [1552, 628, '#55603f', 0], [984, 784, '#c97a5f', 0], [300, 1264 - 220, '#c97a5f', 0],
-  [848, 248, '#55603f', 10], [1170, 960, '#55603f', 14], [1500, 940, '#c97a5f', 22], [560, 700, '#55603f', 30],
-];
-export const WORDS = [{ w: 'demo', at: 8 }, { w: 'launch', at: 23 }, { w: 'changelog', at: 36 }]; // on the VO (07a at frame 4)
-export const COLLAPSE = [94, 118] as const;
-const DARK_AT = [104, 112] as const;
-export const TYPE_AT = 118;
-export const TEXT = 'that render for you';
+const TONE = [{ offset: 0, color: '#060708' }, { offset: 0.5, color: '#7d766b' }, { offset: 1, color: '#fff2dc' }];
 
-const roundRect = (w: number, h: number, r: number) =>
-  `M${r} 0H${w - r}Q${w} 0 ${w} ${r}V${h - r}Q${w} ${h} ${w - r} ${h}H${r}Q0 ${h} 0 ${h - r}V${r}Q0 0 ${r} 0Z`;
+/** The film's slow push-in and its gate weave at shot frame `f` of a cut that began at `at`. */
+function camera(f: number, at: number) {
+  const s = 1.04 + 0.05 * ((f - at) / 60);
+  const jx = (random(`weave-x-${f}`) - 0.5) * 3, jy = (random(`weave-y-${f}`) - 0.5) * 2.5;
+  return { s, jx, jy, map: (p: Point): Point => ({ x: W / 2 + (p.x - W / 2) * s + jx, y: H / 2 + (p.y - H / 2) * s + jy }) };
+}
 
-const Sq: React.FC<{ c: string; pop: number }> = ({ c, pop }) => (
-  <div style={{ width: 13, height: 13, background: c, opacity: pop, transform: `scale(${0.4 + 0.6 * pop})` }} />
-);
+/** The tracked face on shot frame `f`, through the camera; null where nothing is tracked. */
+function anchor(f: number): (Point & { side?: 'left' | 'right' }) | null {
+  const i = [...CUTS].reverse().findIndex((c) => f >= c.at);
+  if (f >= RECEIPTS_AT || i < 0) return receiptAnchor(f);
+  const c = CUTS[CUTS.length - 1 - i]!;
+  const pts = c.track.points;
+  const [x, y] = pts[Math.min(pts.length - 1, f - c.at)]!;
+  return camera(f, c.at).map({ x, y });
+}
+
+/** On the printer close-up the words hang off the paper's right edge as it comes out of the slot, to its right. */
+function receiptAnchor(f: number): (Point & { side: 'right' }) | null {
+  const t = f - RECEIPTS_AT;
+  if (t < 0 || t > 44) return null;
+  return { x: 1110, y: Math.max(560, 820 - t * 24), side: 'right' };
+}
+
+const Film: React.FC<{ src: string; at: number }> = ({ src, at }) => {
+  const frame = useCurrentFrame() + at;
+  const cam = camera(frame, at);
+  // the projector's flicker: the exposure breathes a few percent frame to frame
+  const flicker = 0.94 + random(`flicker-${frame}`) * 0.08;
+  return (
+    <Layer id={`film-${at}`} x={(1 - cam.s) * (W / 2) + cam.jx} y={(1 - cam.s) * (H / 2) + cam.jy} scale={cam.s} opacity={flicker}
+      effects={[gradientMap({ stops: TONE }), glow({ radius: 40, intensity: 0.3 }), grain(0.09, { seed: 7 + at })]}>
+      <Video src={staticFile(src)} width={W} height={H} fit="cover" muted />
+    </Layer>
+  );
+};
+
+/** A two-frame flash on a cut, warm, like light through the gate. */
+const Flash: React.FC<{ at: number }> = ({ at }) => {
+  const frame = useCurrentFrame();
+  return <AbsoluteFill style={{ background: '#FFE9C8', opacity: interpolate(frame, [at, at + 1, at + 4], [0.6, 0.3, 0], CLAMP) }} />;
+};
 
 export const S07: React.FC = () => {
   const frame = useCurrentFrame();
-  const collapse = interpolate(frame, COLLAPSE, [0, 1], { ...CLAMP, easing: Easing.inOut(Easing.cubic) });
-  const dark = interpolate(frame, DARK_AT, [0, 1], CLAMP);
-  const ground = interpolateColors(dark, [0, 1], [CREAM, DARK]);
-  const lineAlpha = interpolate(frame, [96, 112], [1, 0], CLAMP);
-  const cardsOut = interpolate(frame, [114, 128], [1, 0], { ...CLAMP, easing: Easing.in(Easing.quad) });
-
-  const cur = [...WORDS].reverse().find((s) => frame >= s.at) ?? WORDS[0]!;
-  const idx = WORDS.indexOf(cur);
-  const age = frame - cur.at;
-  const wordIn = interpolate(age, [0, 8], [0, 1], CLAMP);
-  const wordColor = interpolateColors(wordIn, [0, 1], ['#bdb6ae', INK]);
-  const sq = interpolate(age, [0, 6], [0, 1], { ...CLAMP, easing: OUT });
-
-  const typedCount = Math.max(0, Math.min(TEXT.length, Math.floor((frame - TYPE_AT) / 1.1) + 1));
-  const typing = frame >= TYPE_AT;
-  const cursorOn = typing && (typedCount < TEXT.length || frame < TYPE_AT + 22 + 10) && (typedCount < TEXT.length || Math.floor(frame / 5) % 2 === 0);
-
   return (
-    <AbsoluteFill style={{ background: ground }}>
-      {DOTS.map(([x, y, c, at], i) => (
-        <div key={i} style={{ position: 'absolute', left: x, top: y, width: 11, height: 11, background: c, opacity: frame >= at ? 1 - collapse : 0 }} />
+    <AbsoluteFill style={{ background: '#000' }}>
+      {CUTS.map((c, i) => (
+        <Sequence key={c.src} from={c.at} durationInFrames={(CUTS[i + 1]?.at ?? RECEIPTS_AT) - c.at}>
+          <Film src={c.src} at={c.at} />
+        </Sequence>
       ))}
-      {frame < 114 && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 500, height: 80, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 22, fontFamily: SANS, fontWeight: 400, fontSize: 64, color: INK, opacity: lineAlpha }}>
-          <div style={{ display: 'flex', gap: 6, width: 32, justifyContent: 'flex-end' }}>
-            {idx >= 1 && <Sq c="#55603f" pop={idx === 1 ? sq : 1} />}
-            {idx >= 2 && <Sq c="#cfc9c2" pop={sq} />}
-          </div>
-          <span>Your <span style={{ color: wordColor }}>{cur.w}</span></span>
-          <div style={{ display: 'flex', gap: 6, width: 32 }}>
-            {idx >= 2 && <Sq c="#cfc9c2" pop={sq} />}
-            {idx >= 1 && <Sq c="#55603f" pop={idx === 1 ? sq : 1} />}
-          </div>
-        </div>
-      )}
-      {CARDS.map((c, i) => {
-        const a = frame - c.at;
-        if (a < 0 || cardsOut <= 0) return null;
-        const pop = interpolate(a, [0, 7], [0, 1], { ...CLAMP, easing: OUT });
-        // Green first, crossing through orange, then true colour.
-        const g = interpolate(a, [0, 4, 8], [1, 1, 0], CLAMP);
-        const o = interpolate(a, [3, 7, 15], [0, 1, 0], CLAMP);
-        const cx = c.x + c.w / 2;
-        const cy = c.y + c.h / 2;
-        const k = collapse * 0.78;
-        const s = (0.94 + 0.06 * pop) * (1 - collapse * 0.55) * (1 - (1 - cardsOut) * 0.5);
-        const x = cx + (960 - cx) * k - (c.w * s) / 2;
-        const y = cy + (540 - cy) * k - (c.h * s) / 2;
-        const first = c.hue === 'g' ? GREEN : ORANGE;
-        const second = c.hue === 'g' ? ORANGE : GREEN;
-        const effects = [
-          ...(g > 0.01 ? [gradientMap({ stops: first, amount: g })] : []),
-          ...(o > 0.01 ? [gradientMap({ stops: second, amount: o })] : []),
-          ...(collapse > 0.01 ? [gradientMap({ stops: PALE, amount: collapse * 0.85 }), blur(collapse * 12)] : []),
-        ];
-        return (
-          <AbsoluteFill key={i}>
-          <Layer
-            id={`card-${i}`}
-            x={x}
-            y={y}
-            scale={s}
-            opacity={Math.min(1, a / 2) * cardsOut}
-            clip={c.r ? { kind: 'path', d: roundRect(c.w, c.h, c.r) } : undefined}
-            effects={effects}
-            motionBlur={frame >= COLLAPSE[0] - 2 && frame <= COLLAPSE[1] + 4 ? { samples: 8, shutter: 0.4 } : undefined}
-          >
-            {c.video
-              ? <Video src={c.src} width={c.w} height={c.h} fit="cover" loop muted />
-              : <Image src={c.src} width={c.w} height={c.h} fit="cover" />}
-          </Layer>
-          </AbsoluteFill>
-        );
-      })}
-      {typing && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 500, height: 80, display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: SANS, fontSize: 64, color: '#F3EFEC', whiteSpace: 'pre' }}>
-          <span>{TEXT.slice(0, typedCount)}</span>
-          <span style={{ display: 'inline-block', width: 28, height: 50, marginLeft: 3, marginRight: -3, background: '#F3EFEC', opacity: cursorOn ? 1 : 0 }} />
-          <span style={{ opacity: 0 }}>{TEXT.slice(typedCount)}</span>
-        </div>
-      )}
+      <Sequence from={RECEIPTS_AT}><Receipts frames={LEN.s07 - RECEIPTS_AT} /></Sequence>
+      {/* the vignette of an old lens */}
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 80% 75% at 50% 50%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.6) 100%)' }} />
+      <Captions lines={LINES} anchor={anchor} width={W} height={H} top={BAR + 30} />
+      <AbsoluteFill>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: BAR, background: '#000' }} />
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR, background: '#000' }} />
+      </AbsoluteFill>
+      {[CUTS[1].at, RECEIPTS_AT].map((at) => frame >= at && frame < at + 4 && <Flash key={at} at={at} />)}
     </AbsoluteFill>
   );
 };
