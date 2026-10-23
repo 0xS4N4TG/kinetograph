@@ -38,6 +38,12 @@ export interface TimelineData {
   layers: TimelineLayer[];
 }
 
+/** `GET /api/timeline/progress`: how far the sweep for the timeline has got; `total` is 0 before it starts. */
+export interface TimelineProgress {
+  done: number;
+  total: number;
+}
+
 export interface TimelineLayer {
   id: string;
   type: string;

@@ -16,6 +16,7 @@ import {
   type StudioError,
   type StudioSocket,
   type TimelineData,
+  type TimelineProgress,
 } from '../src/api';
 import { decodeFrameMessage, encodeFrameMessage } from '../../src/protocol';
 import type { FrameRequest } from '../../src/protocol';
@@ -75,7 +76,18 @@ export class MockServer implements StudioApi {
 
   async timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData> {
     this.timelineCalls.push({ comp, props });
+    if (this.timelineGate) await this.timelineGate;
+    if (this.timelineError) throw this.timelineError;
     return this.timelineFor(comp);
+  }
+
+  /** Held back by a test to keep `timeline()` loading. */
+  timelineGate: Promise<void> | null = null;
+  timelineError: ApiError | null = null;
+  progress: TimelineProgress = { done: 0, total: 0 };
+
+  async timelineProgress(): Promise<TimelineProgress> {
+    return this.progress;
   }
 
   async renders(): Promise<RenderJob[]> {

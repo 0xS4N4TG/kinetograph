@@ -141,7 +141,7 @@ export function App({ api }: { api: StudioApi }) {
           <ResizablePanel defaultSize="36%" minSize="18%" className="overflow-hidden rounded-[2px] border border-white/10">
             <Timeline
               comp={comp}
-              data={studio.timeline}
+              status={studio.timeline}
               state={playerState}
               player={player}
               selectedLayer={studio.selectedLayer}

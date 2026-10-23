@@ -42,7 +42,9 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return e.inspect(scene);
     }
     case 'timeline':
-      return sweepTimeline(e, { comp: request.comp, props: request.props });
+      return sweepTimeline(e, { comp: request.comp, props: request.props }, (done, total) =>
+        port.postMessage({ event: 'progress', id: request.id, done, total } satisfies WorkerReply),
+      );
     case 'render': {
       const cancel = init.cancel ? new Int32Array(init.cancel) : null;
       return e.render(request.spec, {

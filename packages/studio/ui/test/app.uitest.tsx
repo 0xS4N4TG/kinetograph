@@ -207,6 +207,29 @@ describe('timeline', () => {
     expect(labelOf(layers[1]!)).toHaveClass('pl-5');
   });
 
+  it('shows the progress of reading the timeline, never an empty list, until the rows arrive', async () => {
+    const server = new MockServer();
+    let open!: () => void;
+    server.timelineGate = new Promise<void>((resolve) => (open = resolve));
+    server.progress = { done: 300, total: 1521 };
+    await start(server);
+    expect(await screen.findByText('Reading the timeline: frame 300 of 1521')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-loading')).toBeInTheDocument();
+    expect(screen.queryByText('No Sequences')).not.toBeInTheDocument();
+    expect(screen.queryByText('No layers')).not.toBeInTheDocument();
+    open();
+    expect(await screen.findAllByTestId('sequence-row')).toHaveLength(3);
+    expect(screen.queryByTestId('timeline-loading')).not.toBeInTheDocument();
+  });
+
+  it('shows the error, not an empty list, when the timeline cannot be read', async () => {
+    const server = new MockServer();
+    server.timelineError = new ApiError('PROJECT_ERROR', 'the composition threw at frame 12', 500);
+    await start(server);
+    expect(await screen.findByTestId('timeline-error')).toHaveTextContent('Could not read the timeline: the composition threw at frame 12');
+    expect(screen.queryByText('No Sequences')).not.toBeInTheDocument();
+  });
+
   it('moves the playhead and asks for preview-quality frames while the ruler is dragged, full quality on release', async () => {
     const { server } = await start();
     const ruler = screen.getByTestId('timeline-ruler');

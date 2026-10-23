@@ -14,6 +14,7 @@ import type {
   ServerMessage,
   StudioError,
   TimelineData,
+  TimelineProgress,
 } from '../../src/protocol.ts';
 
 export type {
@@ -26,6 +27,7 @@ export type {
   ServerMessage,
   StudioError,
   TimelineData,
+  TimelineProgress,
 };
 export type { SequenceJson } from '../../src/protocol.ts';
 export type { RenderStatus, TimelineLayer } from '../../src/protocol.ts';
@@ -69,6 +71,8 @@ export interface StudioApi {
   compositions(): Promise<CompositionInfo[]>;
   inspect(comp: string, frame: number, props?: Record<string, unknown>): Promise<InspectResult>;
   timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData>;
+  /** How far the sweep that `timeline` waits for has got. */
+  timelineProgress(comp: string, props?: Record<string, unknown>): Promise<TimelineProgress>;
   renders(): Promise<RenderJob[]>;
   startRender(request: RenderRequest): Promise<RenderJob>;
   cancelRender(id: string): Promise<RenderJob>;
@@ -134,6 +138,8 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     inspect: (comp, frame, props) =>
       request<InspectResult>(`/api/inspect${query({ comp, frame, props: propsParam(props) })}`),
     timeline: (comp, props) => request<TimelineData>(`/api/timeline${query({ comp, props: propsParam(props) })}`),
+    timelineProgress: (comp, props) =>
+      request<TimelineProgress>(`/api/timeline/progress${query({ comp, props: propsParam(props) })}`),
     renders: () => request<RenderJob[]>('/api/renders'),
     startRender: (body) =>
       request<RenderJob>('/api/renders', {

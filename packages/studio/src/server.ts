@@ -246,6 +246,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       known(comp);
       return json(res, 200, await project.timeline(comp, { ...baseProps, ...queryProps(q.get('props')) }));
     }
+    if (method === 'GET' && path === '/api/timeline/progress') {
+      const comp = q.get('comp') ?? '';
+      if (comp === '') throw invalid('comp is required');
+      known(comp);
+      return json(res, 200, project.timelineProgressOf(comp, { ...baseProps, ...queryProps(q.get('props')) }));
+    }
     if (method === 'GET' && path === '/api/renders') return json(res, 200, queue.list());
     if (method === 'POST' && path === '/api/renders') return json(res, 201, await createRender(await readBody(req)));
     const cancel = /^\/api\/renders\/([^/]+)$/.exec(path);
