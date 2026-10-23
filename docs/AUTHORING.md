@@ -1039,7 +1039,7 @@ The bundle is written under `node_modules/.cache/kinetograph/`.
 
 The MCP server (`@modelcontextprotocol/sdk`, stdio) exposes one tool per command with the same arguments; each call
 runs the CLI as a child process with `--json`, so the server process never installs the determinism shim. `still`,
-`strip` and `onion` also return the PNG as image content. An agent skill (`packages/cli/skill/SKILL.md`) explains the
+`strip` and `onion` also return the PNG as image content. An agent skill (`packages/cli/skills/kinetograph/SKILL.md`) explains the
 loop: write TSX, `still`/`strip`, `inspect`/`lint`, fix, `render`.
 
 Spike 2 (`spikes/three-dawn`, its own `package.json`, not a workspace): renders a torus knot built in code and a glTF

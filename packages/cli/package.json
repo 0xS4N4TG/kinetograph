@@ -10,7 +10,7 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
   },
-  "files": ["dist", "skill", "assets"],
+  "files": ["dist", "skills", "assets"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
