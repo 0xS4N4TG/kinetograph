@@ -78,8 +78,10 @@ case "$OS" in
     # mfenc.c embeds an AVD3D11VADeviceContext in its context struct, which exists only with CONFIG_D3D11VA (the
     # autodetect that would set it is off); without it MSVC reports MFContext undeclared. System headers, no GPL.
     # -MD: cl defaults to the static CRT (/MT), Rust links the dynamic one (/MD); mixing them fails with LNK2038.
+    # dshow and vfwcap are camera inputs that need DirectShow and VfW libraries nothing here uses.
     # gfxcapture is a C++ WinRT screen-capture filter that --enable-d3d11va would switch on; it needs the C++ runtime.
     CONFIG+=(--toolchain=msvc --enable-mediafoundation --enable-d3d11va --disable-filter=gfxcapture
+      --disable-indev=dshow --disable-indev=vfwcap
       --extra-cflags=-MD --extra-cxxflags=-MD)
     ;;
 esac

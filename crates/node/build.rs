@@ -13,6 +13,11 @@ fn windows_system_libraries() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
+    // What the encoders and the random-seed code in the static archives call: Media Foundation (`mfenc.o`), COM GUIDs
+    // (`IID_ICodecAPI` is in strmiids), BCryptGenRandom. The `.pc` files below do not always name them for MSVC.
+    for lib in ["mfuuid", "strmiids", "ole32", "oleaut32", "bcrypt", "user32", "ws2_32", "secur32"] {
+        println!("cargo:rustc-link-lib={lib}");
+    }
     let Ok(dir) = std::env::var("FFMPEG_DIR") else {
         return;
     };
