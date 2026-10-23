@@ -66,6 +66,6 @@ export const Build: React.FC<{ words: string[]; start: number; per: number; colo
 /** Frames of each shot at 30 fps, in order (about 50 s). The cut is the sum; shot 6, the burn, lies over the cut
  *  from shot 5 into shot 7 rather than taking time of its own. Keep a shot inside its length. */
 export const LEN = {
-  s01: 24, s02: 90, s03: 92, s04: 56, s05: 80, s06: 27,
+  s01: 26, s02: 90, s03: 92, s04: 56, s05: 80, s06: 27,
   s07: 180, m1: 92, m2: 64, m3: 60, m4: 48, m5: 80, s08: 170, s09: 110, s10: 90, s11: 120, s12: 135,
 } as const;

@@ -1,5 +1,5 @@
-// Shots 1 and 2, the opening: "In 1891, a camera called the Kinetograph made pictures move." Shot 1 is a film leader
-// counting down (4, 3) as the projector runs up. Shot 2 is two of the first films ever shot, both made on Edison's
+// Shots 1 and 2, the opening: "In 1891, the Kinetograph made pictures move." Shot 1 is a film leader counting down
+// through the 3 to the 2, where it pops and goes black, as the projector runs up. Shot 2 is two of the first films ever shot, both made on Edison's
 // Kinetograph and in the public domain: the Blacksmith Scene (1893), then Fred Ott's Sneeze (1894), whose sneeze lands
 // on "move". Both are graded like shot 7's archive film, and the line writes itself beside the tracked face in the
 // same mixed hands (print/captions.tsx).
@@ -32,6 +32,9 @@ function anchor(f: number): Point | null {
   const [x, y] = pts[Math.min(pts.length - 1, Math.max(0, f - c.at))]!;
   return camera(f, c.at).map({ x, y });
 }
+
+/** The leader's frame with the first "2" (public/footage/leader.mp4: 22 frames of 3, two of 2, two of black). */
+export const S01_POP = 22;
 
 /** Shot 1: the leader, sepia, flickering, its sweep turning, the projector getting up to speed. */
 export const S01: React.FC = () => {
