@@ -10,7 +10,6 @@ import pigBlobs from '../blobs/clip-pig.json';
 import { BlobOverlay, type BlobData } from './blobs.js';
 import { CaptionAudio, Captions, type CaptionFile } from './captions.js';
 
-const MONO = loadMono('normal', { weights: ['500'] }).fontFamily;
 
 export const CAPTIONS_FILE = wordsFile as CaptionFile;
 export const CAPTIONS_FRAMES = Math.ceil((wordsFile as { duration: number }).duration * FPS);
@@ -28,11 +27,12 @@ export const captionsDefaults: CaptionsSceneProps = { file: CAPTIONS_FILE, clip:
 export const CaptionsScene: React.FC<Partial<CaptionsSceneProps>> = (props) => {
   const { file, clip, blobs } = { ...captionsDefaults, ...props };
   const frame = useCurrentFrame();
+  const mono = loadMono('normal', { weights: ['500'] }).fontFamily; // on first use, see captions.tsx
   return (
     <AbsoluteFill style={{ background: '#000' }}>
       <Video src={staticFile(clip)} loop muted width={W} height={H} fit="cover" />
       {/* the footage loops, and so do its blobs */}
-      <BlobOverlay data={blobs} frame={frame % blobs.frames} width={W} height={H} mono={MONO} />
+      <BlobOverlay data={blobs} frame={frame % blobs.frames} width={W} height={H} mono={mono} />
       <Captions file={file} />
       <CaptionAudio file={file} />
     </AbsoluteFill>

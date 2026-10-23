@@ -18,8 +18,10 @@ export interface CaptionLine { id: string; file: string; start: number; end: num
 /** `words.json`: either the bare array of words, or an object with `words` (and, optionally, the voiceover `lines`). */
 export type CaptionFile = CaptionWord[] | { estimated?: boolean; words: CaptionWord[]; lines?: CaptionLine[]; duration?: number };
 
-/** The font set, in cycling order. `k` evens out how big each face reads at the same size. */
-const FONTS = [
+/** The font set, in cycling order. `k` evens out how big each face reads at the same size. Loaded on first use, not at
+ *  import: the launch film shares this Root, and registering fonts it never draws would change its text fallback. */
+let fonts: { family: string; weight: number; k: number; spacing?: number }[] | undefined;
+const getFonts = () => (fonts ??= [
   { family: loadComicNeue('normal', { weights: ['700'] }).fontFamily, weight: 700, k: 1.0 },
   { family: loadBangers('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 0.92, spacing: 2 },
   { family: loadPixelify('normal', { weights: ['700'] }).fontFamily, weight: 700, k: 0.92 },
@@ -27,7 +29,7 @@ const FONTS = [
   { family: loadBubbles('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 0.9 },
   { family: loadLuckiest('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 0.86 },
   { family: loadMarker('normal', { weights: ['400'] }).fontFamily, weight: 400, k: 1.05 },
-];
+]);
 
 const WHITE = '#FFFFFF';
 /** Emphasis words take these in turn. */
@@ -78,7 +80,8 @@ function outline(r: number): string {
 const Word: React.FC<{ w: CaptionWord; index: number }> = ({ w, index }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const font = FONTS[index % FONTS.length];
+  const all = getFonts();
+  const font = all[index % all.length];
   const born = Math.round(w.start * fps);
   const pop = spring({ frame: frame - born, fps, config: { damping: 7, stiffness: 190, mass: 0.7 } });
   const size = BASE_SIZE * font.k * (w.emphasis ? EMPHASIS_SCALE : 1);
