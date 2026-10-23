@@ -3,35 +3,15 @@ import type { CSSProperties } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The launch film's caption type: words written in a rotating set of handwritten faces, a face per letter, with the
- * key word broken out in a heavy display face inside a thin tracking box (corner ticks, a small mono readout).
+ * The launch film's caption type, cut down to two faces for the site: words in one handwritten face (Caveat), the key
+ * word broken out in Archivo Black italic inside a thin tracking box (corner ticks, a small mono readout).
  */
-const HANDS = [
-  { family: "'Caveat'", weight: 700, k: 1.18 },
-  { family: "'Shadows Into Light'", weight: 400, k: 1.02 },
-  { family: "'Indie Flower'", weight: 400, k: 0.98 },
-  { family: "'Gloria Hallelujah'", weight: 400, k: 0.86 },
-  { family: "'Patrick Hand'", weight: 400, k: 1.04 },
-  { family: "'Gochi Hand'", weight: 400, k: 1.0 },
-] as const;
-
-/** Deterministic 0..1 from a string, so server and client draw the same letters. */
-function rand(seed: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
-  h ^= h >>> 15;
-  h = Math.imul(h, 2246822507);
-  h ^= h >>> 13;
-  return (h >>> 0) / 4294967295;
-}
-
 const bare = (w: string) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
 
 export function Hand({
   text,
   hot,
   tag = 'TRK 01  0.97',
-  display = 'archivo',
   as: Tag = 'h2',
   animate = false,
   className,
@@ -41,7 +21,6 @@ export function Hand({
   hot: string;
   /** The readout at the tracking box's top-right corner. */
   tag?: string;
-  display?: 'archivo' | 'abril';
   as?: 'h1' | 'h2' | 'p';
   /** Words resolve one by one, then the tracking box eases onto the hot word. */
   animate?: boolean;
@@ -54,16 +33,15 @@ export function Hand({
         const delay: CSSProperties = animate ? { animationDelay: `${wi * 90}ms` } : {};
         const anim = animate ? 'kg-in' : '';
         if (bare(word) === bare(hot)) {
-          const archivo = display === 'archivo';
           return (
             <span key={wi} aria-hidden className="relative mx-[0.12em] inline-block" style={delay}>
               <span
                 className={cn('inline-block px-[0.1em] leading-[1.05] whitespace-nowrap', anim)}
                 style={{
                   ...delay,
-                  fontFamily: archivo ? "'Archivo Black'" : "'Abril Fatface'",
-                  fontStyle: archivo ? 'italic' : 'normal',
-                  fontSize: archivo ? '1.08em' : '1.2em',
+                  fontFamily: "'Archivo Black'",
+                  fontStyle: 'italic',
+                  fontSize: '1.08em',
                 }}
               >
                 {word}
@@ -83,28 +61,13 @@ export function Hand({
           );
         }
         return (
-          <span key={wi} aria-hidden className={cn('inline-block whitespace-nowrap', anim)} style={delay}>
-            {[...word].map((ch, k) => {
-              const hand = HANDS[Math.floor(rand(`h-${wi}-${k}-${word}`) * HANDS.length)]!;
-              const lift = (rand(`y-${wi}-${k}-${word}`) - 0.5) * 0.09;
-              const tilt = (rand(`t-${wi}-${k}-${word}`) - 0.5) * 7;
-              const big = 0.94 + rand(`s-${wi}-${k}-${word}`) * 0.14;
-              return (
-                <span
-                  key={k}
-                  className="inline-block"
-                  style={{
-                    fontFamily: hand.family,
-                    fontWeight: hand.weight,
-                    fontSize: `${(hand.k * big).toFixed(3)}em`,
-                    lineHeight: 1,
-                    transform: `translateY(${lift.toFixed(3)}em) rotate(${tilt.toFixed(1)}deg)`,
-                  }}
-                >
-                  {ch}
-                </span>
-              );
-            })}
+          <span
+            key={wi}
+            aria-hidden
+            className={cn('inline-block whitespace-nowrap', anim)}
+            style={{ ...delay, fontFamily: "'Caveat'", fontWeight: 700, fontSize: '1.18em', lineHeight: 1 }}
+          >
+            {word}
           </span>
         );
       })}

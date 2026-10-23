@@ -47,7 +47,7 @@ function RenderCard({ r }: { r: Render }) {
     <figure onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <video
         ref={video}
-        className="aspect-video w-full bg-ink object-cover"
+        className="aspect-video w-full bg-ink object-contain"
         src={`/${r.web}`}
         poster={`/${r.poster}`}
         muted
@@ -92,7 +92,7 @@ export function Film() {
     <section id="film" className={`${shell} ${section}`}>
       <div className="border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)]">
         <Label>The launch film</Label>
-        <Hand text="rendered by Kinetograph" hot="Kinetograph" display="abril" tag="TRK 05  0.99" className={`mt-8 ${h2Size}`} />
+        <Hand text="rendered by Kinetograph" hot="Kinetograph" tag="TRK 05  0.99" className={`mt-8 ${h2Size}`} />
         <div className="relative mt-14 aspect-video overflow-hidden bg-ink">
           <video
             ref={video}
@@ -142,7 +142,7 @@ export function About() {
         </div>
         <div id="agents">
           <Label>For agents</Label>
-          <Hand text="an agent can see its own work." hot="see" display="abril" tag="TRK 04  0.92" className={`mt-8 text-[clamp(32px,3.6vw,52px)]`} />
+          <Hand text="an agent can see its own work." hot="see" tag="TRK 04  0.92" className={`mt-8 text-[clamp(32px,3.6vw,52px)]`} />
           <p className={`${body} mt-10 max-w-[44ch]`}>
             Every command takes <code className="font-jb text-[14px]">--json</code>, and{' '}
             <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX,

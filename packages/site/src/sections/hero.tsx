@@ -2,7 +2,7 @@ import { CommandBar } from '@/components/code';
 import { Hand } from '@/sections/hand';
 import { Label, shell } from '@/sections/shared';
 
-const TAGLINE = 'The fastest programmatic video engine on earth, made for agents.';
+const TAGLINE = 'Made for agents: they write the video in TypeScript, and Kinetograph renders every frame on the GPU, with no browser in it.';
 
 /** Command bars: square, hairline cobalt, mono. */
 export const commandBar =
@@ -18,16 +18,16 @@ export function Hero() {
         style={{ background: 'radial-gradient(ellipse 75% 85% at 50% 40%, #eceae6 35%, #cfccc7 130%)' }}
       />
       <div className={`${shell} pt-[clamp(56px,9vw,130px)] pb-[clamp(96px,13vw,200px)]`}>
-        <Label>A video engine</Label>
+        <Label>An agentic video engine</Label>
         <Hand
           as="h1"
           animate
-          text="with no browser in it."
-          hot="browser"
+          text="blazingly fast programmatic video."
+          hot="fast"
           tag="TRK 01  0.97"
           className="mt-14 max-w-[13em] text-[clamp(44px,8.4vw,128px)]"
         />
-        <p className="mt-14 max-w-[34ch] font-dm text-[clamp(18px,1.7vw,22px)] leading-snug tracking-[-0.01em] text-ink/75">{TAGLINE}</p>
+        <p className="mt-14 max-w-[44ch] font-dm text-[clamp(18px,1.7vw,22px)] leading-snug tracking-[-0.01em] text-ink/75">{TAGLINE}</p>
         <div className="mt-12 flex flex-col items-start gap-6">
           <CommandBar command="npx kinetograph render index.tsx -o out.mp4" className={commandBar} />
           <div className="flex gap-8">
