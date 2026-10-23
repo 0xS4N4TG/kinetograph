@@ -537,8 +537,10 @@ GLSL fragment shader that mixes the scene going out with the scene coming in) ar
 
 - **The picture.** The child is drawn as it would be on the canvas, under the group's matrix, and sampled as the
   picture a browser holds for a canvas it was drawn on: sRGB-encoded, straight alpha, `width` x `height` pixels, row 0
-  at the top of the box. A texture's `flipY`, `premultiply` and `mipmaps` are not read (there is no mip chain); the
-  sampler of the draw (`min`, `mag`, `wrapS`, `wrapT`) is.
+  at the top of the box. A texture's `flipY` (`UNPACK_FLIP_Y_WEBGL`: the rows are turned over) and `premultiply`
+  (`UNPACK_PREMULTIPLY_ALPHA_WEBGL`: the encoded colour is multiplied by the alpha) are read, as the page set them when
+  it uploaded the picture; `mipmaps` is not (there is no mip chain). The sampler of the draw (`min`, `mag`, `wrapS`,
+  `wrapT`) is read.
 - **Not drawn on their own.** The children of a group with a `glsl` are only ever the pictures the shader samples.
   The group's picture is the shader's, placed like a glsl layer's. The group's own `opacity`, `effects`, `clip`, `mask`
   and `blendMode` apply to it.
@@ -553,6 +555,31 @@ GLSL fragment shader that mixes the scene going out with the scene coming in) ar
   `<LightLeak>` differs by up to 3 at the end of its retraction, a smooth gradient, and `<Starburst>` by 0 to 0.1. The
   exception is `flip`, which is the open `preserve-3d` issue (see the known issues, `/docs/known-issues/`). The goldens
   `transition-*` in `crates/core/tests/golden` are six of these frames.
+
+### Canvas passes
+
+A group with a `canvas` field is a [canvas](#canvas) drawn over its children, the Canvas 2D counterpart of a shader
+group: a canvas effect of Remotion (`drawImage(source, ...)` on a 2D context) is this.
+
+```json
+{ "id": "pass", "type": "group",
+  "children": [ { "id": "in", "type": "group", "children": [ ... ] } ],
+  "canvas": { "width": 640, "height": 360,
+              "commands": [ { "op": "image", "source": { "kind": "layer", "id": "in", "width": 640, "height": 360 },
+                              "dx": 0, "dy": 0, "dw": 640, "dh": 360, "filter": [ { "type": "invert", "amount": 1 } ] } ] } }
+```
+
+`canvas` has the fields of a canvas layer. A command's `source` can be `{ "kind": "layer", "id": "<id of a child>" }`
+(an image or a pattern): the child's picture as in a [shader group](#shader-groups) (drawn under the group's matrix,
+sRGB-encoded, straight alpha, `width` x `height` pixels, row 0 at the top), at the size of the canvas, whatever
+`width` and `height` the source carries. The children are only ever those pictures and are not drawn on their own; the
+group's picture is the canvas, placed like a canvas layer's, and the group's own `opacity`, `effects`, `clip`, `mask` and
+`blendMode` apply to it. Checked when the scene loads: a layer source names a child of the group; the group has no `glsl`
+pass, no `layout`, and is not `preserve3d`. A `layer` source outside such a group is a render error on the Vello backend and not drawn (reported) on Skia.
+
+The group is drawn by the wgpu path on both backends (the Skia backend counts it as a fallback, "canvas group"): the
+children become the textures of the shader-group path, are registered with Vello's image renderer, and the commands are
+drawn with Vello's canvas (shadows and filters included). `getImageData` of a layer picture is not available to a script.
 
 ### scene3d
 

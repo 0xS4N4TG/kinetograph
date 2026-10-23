@@ -12,17 +12,19 @@
 // accepted and then ignored where it would change the picture.
 
 import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslSampler, GlslTexture, GlslUniform } from './types.js';
-import { pictureOf } from './canvas.js';
+import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
 export const LAYER_SOURCE: unique symbol = Symbol.for('kinetograph.layerSource');
 
 /**
- * A picture of a child of a shader group (docs/SCENE.md, "Shader groups"), to upload as a texture the way a page uploads
- * a canvas: `gl.texImage2D(..., picture)`. The renderer draws the child and samples it; nothing is read here.
+ * A picture of a child of a shader group or a canvas pass (docs/SCENE.md, "Shader groups", "Canvas passes"), to upload as
+ * a texture the way a page uploads a canvas (`gl.texImage2D(..., picture)`) or to draw on a 2D canvas
+ * (`ctx.drawImage(picture, ...)`). The renderer draws the child and reads it; nothing is read here.
  */
 export function layerPicture(id: string, width: number, height: number): { readonly width: number; readonly height: number } {
-  return { width, height, [LAYER_SOURCE]: () => ({ id, width, height }) } as { readonly width: number; readonly height: number };
+  const picture: CanvasPicture = { source: { kind: 'layer', id, width, height }, width, height };
+  return { width, height, [LAYER_SOURCE]: () => ({ id, width, height }), [CANVAS_SOURCE]: () => picture } as { readonly width: number; readonly height: number };
 }
 
 /** Thrown by a call the engine does not draw. The message starts with "unsupported:". */
@@ -1455,6 +1457,11 @@ export class WebGLContext {
     this.uploadPicture(texture, source);
   }
 
+  /** `texElementImage2D(target, level, internalformat, format, type, elementImage)` of HTML in Canvas: `texImage2D` of an element's picture. */
+  texElementImage2D(target: number, level: number, internalformat: number, format: number, type: number, elementImage: unknown): void {
+    this.texImage2D(target, level, internalformat, format, type, elementImage);
+  }
+
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, ...rest: unknown[]): void {
     const texture = this.bound(target);
     if (texture === null) return;
@@ -1516,6 +1523,8 @@ export class WebGLContext {
     } else if (s.kind === 'pixels') {
       texture.src = null;
       texture.pixels = new Uint8Array(Buffer.from(s.data, 'base64'));
+    } else if (s.kind === 'layer') {
+      throw new WebGLUnsupportedError('a texture from a layer picture outside layerPicture()');
     } else {
       const pixels = this.options.rasterize?.(s) ?? null;
       if (pixels === null) throw new WebGLUnsupportedError('a texture from a canvas here (the pixels of a canvas need the addon)');

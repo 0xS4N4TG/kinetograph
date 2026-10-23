@@ -474,6 +474,8 @@ export interface GroupLayer extends LayerBase {
   layout?: Layout;
   /** A GLSL pass that makes the group's picture out of its children, which its `layer` textures name (docs/SCENE.md, "Shader groups"). */
   glsl?: GlslPass;
+  /** A Canvas 2D drawing that makes the group's picture out of its children, which its `layer` sources name (docs/SCENE.md, "Canvas passes"). */
+  canvas?: CanvasPass;
 }
 
 export interface NoiseLayer extends LayerBase {
@@ -532,7 +534,13 @@ export type CanvasSource =
   /** Straight-alpha RGBA8, base64: an `ImageData`. */
   | { kind: 'pixels'; width: number; height: number; data: string }
   /** Another canvas, drawn as a whole. */
-  | { kind: 'canvas'; width: number; height: number; commands: CanvasCommand[] };
+  | { kind: 'canvas'; width: number; height: number; commands: CanvasCommand[] }
+  /**
+   * The picture of a child of a canvas pass (`GroupLayer.canvas`), by `id`: the child drawn on the canvas and read
+   * as the pixels a browser holds for a canvas it was drawn on (docs/SCENE.md, "Canvas passes"). Outside such a
+   * group nothing is drawn.
+   */
+  | { kind: 'layer'; id: string; width: number; height: number };
 
 export type CanvasBlend =
   | 'source-over'
@@ -751,6 +759,13 @@ export interface GlslLayer extends LayerBase, Partial<GlslContent> {
   type: 'glsl';
   width: Num;
   height: Num;
+}
+
+/** A group's canvas pass: commands drawn on a canvas of `width` by `height`, whose `layer` sources are the group's children. */
+export interface CanvasPass {
+  width: Num;
+  height: Num;
+  commands?: CanvasCommand[];
 }
 
 /** A group's GLSL pass: a recording drawn into a buffer of `width` by `height`. */

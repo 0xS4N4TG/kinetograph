@@ -356,7 +356,8 @@ impl Translator {
                 self.images.insert(key, img.clone());
                 img
             }
-            CanvasSource::Canvas { .. } => None,
+            // A canvas is drawn, not sampled; a canvas pass's layers are pictures only to the wgpu path that draws that group.
+            CanvasSource::Canvas { .. } | CanvasSource::Layer { .. } => None,
         }
     }
 
@@ -426,7 +427,7 @@ impl Translator {
 
     fn canvas_image(&mut self, canvas: &Canvas, op: &ImageOp, comp: Comp) {
         let (nw, nh) = match &op.source {
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => match self.canvas_picture(&op.source) {
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Layer { .. } => match self.canvas_picture(&op.source) {
                 Some(i) => (i.width() as f64, i.height() as f64),
                 None => {
                     self.stats.no("canvas image (file)");

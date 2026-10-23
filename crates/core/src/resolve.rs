@@ -169,6 +169,27 @@ pub struct ResolvedTransform {
     pub backface_hidden: bool,
 }
 
+impl Default for ResolvedTransform {
+    /// The transform that moves nothing.
+    fn default() -> Self {
+        ResolvedTransform {
+            x: 0.0,
+            y: 0.0,
+            scale: 1.0,
+            rotation: 0.0,
+            anchor_x: 0.0,
+            anchor_y: 0.0,
+            rotate_x: 0.0,
+            rotate_y: 0.0,
+            z: 0.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            matrix: None,
+            backface_hidden: false,
+        }
+    }
+}
+
 impl ResolvedTransform {
     /// Layer space to parent space: move the anchor to the origin, scale,
     /// rotate, then translate to (x, y).
@@ -627,6 +648,9 @@ pub enum ResolvedKind {
         /// `GroupLayer::glsl`: a GLSL pass in the box `(0, 0, width,
         /// height)` over the children, which are its textures.
         glsl: Option<ResolvedGlsl>,
+        /// `GroupLayer::canvas`: commands drawn in the box `(0, 0, width,
+        /// height)`, whose `layer` sources are the children.
+        canvas: Option<(f64, f64, Arc<Vec<CanvasOp>>)>,
     },
     /// A Lottie animation fitted into the box `(0, 0, width, height)`.
     Lottie {
@@ -1086,6 +1110,10 @@ impl<'a> Resolver<'a> {
                     height: glsl.height.at(f),
                     recording: glsl.recording.clone(),
                 }),
+                canvas: g
+                    .canvas
+                    .as_ref()
+                    .map(|c| (c.width.at(f), c.height.at(f), c.commands.0.clone())),
             },
             LayerKind::Lottie(l) => {
                 let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;

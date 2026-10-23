@@ -13,6 +13,8 @@ struct Params {
     ef: vec4<f32>,
     // xy: the canvas pixel of the texture's texel (0, 0). zw: its size.
     texture: vec4<f32>,
+    // x: 1 to multiply the colour by the alpha (UNPACK_PREMULTIPLY_ALPHA_WEBGL).
+    flags: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -44,5 +46,6 @@ fn fs_input(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let c = textureSampleLevel(layer_tex, layer_sampler, uv, 0.0);
     let straight = select(vec3<f32>(0.0), c.rgb / c.a, c.a > 0.0);
     let a = clamp(c.a, 0.0, 1.0);
-    return vec4<f32>(linear_to_srgb(clamp(straight, vec3<f32>(0.0), vec3<f32>(1.0))), a);
+    let encoded = linear_to_srgb(clamp(straight, vec3<f32>(0.0), vec3<f32>(1.0)));
+    return vec4<f32>(select(encoded, encoded * a, params.flags.x > 0.5), a);
 }

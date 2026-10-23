@@ -13,6 +13,7 @@ import type {
   AudioClipJson,
   BlendMode,
   CanvasContext2D,
+  CanvasPass,
   GlslPass,
   GlslTextureOptions,
   CharStyle,
@@ -77,6 +78,11 @@ export interface LayerProps extends CommonProps {
    * child, so a shader can mix two parts of the tree, as a shader transition mixes two scenes.
    */
   glsl?: GlslPass;
+  /**
+   * A Canvas 2D drawing that makes the layer's picture out of its children (docs/SCENE.md, "Canvas passes"): its
+   * `layer` sources (`layerPicture`) name children of this layer by `id`.
+   */
+  canvas?: CanvasPass;
   /**
    * @internal `<AbsoluteFill>`'s layer mapping says what the CSS box it stands for is, so that a tree holding DOM
    * elements draws it as that `div` (docs/ENGINE.md §10): the author's style, and whether the first child is the

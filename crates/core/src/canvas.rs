@@ -425,6 +425,9 @@ pub enum CanvasSource {
         height: u32,
         data: String,
     },
+    /// The picture of a child of a canvas pass (`GroupLayer::canvas`), by id:
+    /// the child as a browser would hold it for a canvas it was drawn on.
+    Layer { id: String },
     /// Another canvas, drawn at its commands' size.
     Canvas {
         width: f64,
@@ -665,7 +668,7 @@ pub fn sources(ops: &[CanvasOp], out: &mut Vec<String>) {
     let source = |s: &CanvasSource, out: &mut Vec<String>| match s {
         CanvasSource::Src { src } => out.push(src.clone()),
         CanvasSource::Canvas { commands, .. } => sources(commands, out),
-        CanvasSource::Pixels { .. } => {}
+        CanvasSource::Pixels { .. } | CanvasSource::Layer { .. } => {}
     };
     for op in ops {
         match op {
@@ -680,6 +683,37 @@ pub fn sources(ops: &[CanvasOp], out: &mut Vec<String>) {
             _ => {}
         }
     }
+}
+
+/// The key a canvas pass's picture of the child `id` has among `Drawing::images`; no `src` can be it.
+pub fn layer_key(id: &str) -> String {
+    format!("\0layer:{id}")
+}
+
+/// The ids of the children of a canvas pass that `ops` draw, also inside the canvases they draw.
+pub fn layer_sources(ops: &[CanvasOp]) -> Vec<String> {
+    fn source(s: &CanvasSource, out: &mut Vec<String>) {
+        match s {
+            CanvasSource::Layer { id } => out.push(id.clone()),
+            CanvasSource::Canvas { commands, .. } => out.extend(layer_sources(commands)),
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => {}
+        }
+    }
+    let mut out = Vec::new();
+    for op in ops {
+        match op {
+            CanvasOp::Image(i) => source(&i.source, &mut out),
+            CanvasOp::Fill(FillOp { paint, .. })
+            | CanvasOp::Stroke(StrokeOp { paint, .. })
+            | CanvasOp::Text(TextOp { paint, .. }) => {
+                if let CanvasPaint::Pattern { source: s, .. } = paint {
+                    source(s, &mut out);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Whether any command draws a picture, which picks Vello's image renderer: a
@@ -1098,6 +1132,15 @@ fn picture(
         } => pixels(*width, *height, data)
             .map(Some)
             .map_err(Error::Scene),
+        CanvasSource::Layer { id } => images
+            .get(&layer_key(id))
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| {
+                Error::Render(format!(
+                    "canvas: the layer {id:?} is not a picture here (only a canvas pass draws its children)"
+                ))
+            }),
         CanvasSource::Canvas { .. } => Ok(None),
     }
 }
@@ -1122,6 +1165,14 @@ fn image(
             }
         },
         CanvasSource::Pixels { width, height, .. } => (f64::from(*width), f64::from(*height)),
+        CanvasSource::Layer { id } => match drawing.images.get(&layer_key(id)) {
+            Some(i) => (f64::from(i.width), f64::from(i.height)),
+            None => {
+                return Err(Error::Render(format!(
+                    "canvas: the layer {id:?} is not a picture here (only a canvas pass draws its children)"
+                )));
+            }
+        },
         CanvasSource::Canvas { width, height, .. } => (*width, *height),
     };
     let (sx, sy) = (op.sx.unwrap_or(0.0), op.sy.unwrap_or(0.0));

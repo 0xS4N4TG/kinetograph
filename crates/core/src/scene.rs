@@ -1382,6 +1382,11 @@ pub struct GroupLayer {
     /// textures that the recording's `layer` textures name, and are not drawn
     /// on their own.
     pub glsl: Option<GlslLayer>,
+    /// A Canvas 2D pass that makes the group's picture out of its children
+    /// (`docs/SCENE.md`, "Canvas passes"): the commands draw on a canvas of
+    /// `width` x `height`, and their `layer` sources are the children, drawn
+    /// as pictures and not drawn on their own.
+    pub canvas: Option<CanvasLayer>,
 }
 
 /// A group's flex layout (`docs/SCENE.md`, "Layout"). Names and values are
@@ -1978,6 +1983,27 @@ impl Scene {
                         non_negative("width", &glsl.width)?;
                         non_negative("height", &glsl.height)?;
                         validate_shader_group(layer, g, glsl)?;
+                    }
+                    if let Some(canvas) = &g.canvas {
+                        non_negative("width", &canvas.width)?;
+                        non_negative("height", &canvas.height)?;
+                        if g.glsl.is_some() || g.preserve3d || g.layout.is_some() {
+                            return Err(Error::Scene(format!(
+                                "layer {:?}: a group with a canvas pass cannot also have a glsl pass, a layout or be preserve3d",
+                                layer.id
+                            )));
+                        }
+                        if let Some(bad) = crate::canvas::bad_path(&canvas.commands.0) {
+                            return Err(Error::Scene(format!("layer {:?}: canvas: {bad}", layer.id)));
+                        }
+                        for id in crate::canvas::layer_sources(&canvas.commands.0) {
+                            if !g.children.iter().any(|c| c.id == id) {
+                                return Err(Error::Scene(format!(
+                                    "layer {:?}: the canvas pass draws the layer {id:?}, which is not one of its children",
+                                    layer.id
+                                )));
+                            }
+                        }
                     }
                     if g.preserve3d {
                         validate_preserve3d(layer, layers)?;

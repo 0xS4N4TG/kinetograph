@@ -1203,6 +1203,7 @@ impl Renderer {
             children,
             preserve3d: false,
             glsl: None,
+            canvas: None,
             ..
         } = &layer.kind
         else {
@@ -1627,6 +1628,61 @@ impl Renderer {
         Some(self.timed(Stage::Composite, |s| s.compositor.warp(src, h)))
     }
 
+    /// A canvas pass's picture: the commands `ops` drawn by Vello on a canvas of `size` under `matrix`, with the
+    /// textures `pictures` as the pictures its `layer` sources name.
+    fn canvas_pass(
+        &mut self,
+        id: &str,
+        size: (f64, f64),
+        ops: &std::sync::Arc<Vec<canvas::CanvasOp>>,
+        matrix: Affine,
+        pictures: Vec<(String, wgpu::Texture)>,
+    ) -> Result<Tex> {
+        self.ensure_image_renderer(true)?;
+        let mut kept = Vec::with_capacity(pictures.len());
+        for (child, texture) in pictures {
+            let image = self
+                .vello_images
+                .as_mut()
+                .expect("made above")
+                .register_texture(texture);
+            self.images.insert(canvas::layer_key(&child), image.clone());
+            kept.push((child, image));
+        }
+        let canvas = ResolvedLayer {
+            id: id.to_string(),
+            transform: crate::resolve::ResolvedTransform::default(),
+            opacity: 1.0,
+            blend_mode: BlendMode::Normal,
+            effects: Vec::new(),
+            clip: None,
+            mask: None,
+            matte: None,
+            kind: ResolvedKind::Canvas {
+                width: size.0,
+                height: size.1,
+                ops: ops.clone(),
+            },
+            item: None,
+            motion: Vec::new(),
+        };
+        let drawn = self.raster_bounds(&canvas, matrix).and_then(|region| {
+            if region.is_empty() {
+                return Ok(self.compositor.empty());
+            }
+            let area = self.vello_area(region);
+            self.rasterise(&canvas, matrix, area)?;
+            Ok(self.compositor.from_srgb8(&self.vello_view, area, region))
+        });
+        for (child, image) in kept {
+            self.images.remove(&canvas::layer_key(&child));
+            if let Some(renderer) = self.vello_images.as_mut() {
+                renderer.unregister_texture(image);
+            }
+        }
+        drawn
+    }
+
     /// One layer's own pixels, ready to blend: drawn, then run through its
     /// effects, clip, mask and matte, in that order. `siblings` is the list
     /// `layer` is in, where its matte source is found. `backdrop` is what is
@@ -1694,6 +1750,33 @@ impl Renderer {
                     self.compositor.release(tex);
                 }
                 tex?
+            }
+            // The children are the pictures a Canvas 2D pass draws.
+            ResolvedKind::Group {
+                children,
+                canvas: Some((width, height, ops)),
+                ..
+            } => {
+                let mut drawn = Vec::with_capacity(children.len());
+                self.cache_path.push(layer.id.clone());
+                for child in children {
+                    let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
+                    match self.draw_layers(std::slice::from_ref(child), matrix, empty, backdrop) {
+                        Ok(tex) => drawn.push(tex),
+                        Err(e) => {
+                            self.cache_path.pop();
+                            return Err(e);
+                        }
+                    }
+                }
+                self.cache_path.pop();
+                let layers: Vec<(&str, &Tex)> =
+                    children.iter().map(|c| c.id.as_str()).zip(&drawn).collect();
+                let pictures = self.compositor.canvas_pictures((*width, *height), matrix, &layers);
+                for tex in drawn {
+                    self.compositor.release(tex);
+                }
+                self.canvas_pass(&layer.id, (*width, *height), ops, matrix, pictures)?
             }
             ResolvedKind::Group { children, .. } => {
                 let empty = self.timed(Stage::Composite, |s| s.compositor.filled([0.0; 4]));
@@ -3434,6 +3517,7 @@ fn is_flat(layer: &ResolvedLayer) -> bool {
             children,
             preserve3d: false,
             glsl: None,
+            canvas: None,
             ..
         } => children
             .iter()
@@ -3460,6 +3544,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
         preserve3d: false,
         pass_through,
         glsl: None,
+        canvas: None,
         ..
     } = &layer.kind
     else {

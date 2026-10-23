@@ -841,6 +841,14 @@ export class CanvasContext2D {
     this.log.push(command);
   }
 
+  /**
+   * HTML in Canvas's `drawElementImage(elementImage, dx, dy[, dw, dh])`: `drawImage` of the picture of an element. The
+   * same forms as `drawImage` are read.
+   */
+  drawElementImage(elementImage: unknown, ...args: number[]): void {
+    this.drawImage(elementImage, ...args);
+  }
+
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient {
     if (![x0, y0, x1, y1].every(Number.isFinite)) throw new TypeError('createLinearGradient: the coordinates must be finite numbers');
     return new CanvasGradient({ type: 'linear', x0, y0, x1, y1 });

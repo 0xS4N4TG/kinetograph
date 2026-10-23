@@ -1736,6 +1736,7 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
     match &layer.kind {
         ResolvedKind::Group { preserve3d: true, .. } => return Some("preserve3d group"),
         ResolvedKind::Group { glsl: Some(_), .. } => return Some("glsl group"),
+        ResolvedKind::Group { canvas: Some(_), .. } => return Some("canvas group"),
         ResolvedKind::Glsl { .. } => return Some("glsl layer"),
         ResolvedKind::Scene3d { .. } => return Some("scene3d layer"),
         ResolvedKind::MeshGradient { .. } => return Some("meshGradient layer"),
