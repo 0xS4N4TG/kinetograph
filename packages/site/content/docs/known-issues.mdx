@@ -7,7 +7,7 @@ Gaps and differences you may hit when a project renders, with what happens in ea
 
 ## Remotion APIs
 
-- **Effects on some elements.** `createEffect` on `Solid`, `CanvasImage`, `AnimatedImage` and `HtmlInCanvas` is exported, but the effect is left out, and a warning is printed once. The `onPaint` and `onInit` props of `HtmlInCanvas` are not supported. Both need an element drawn into a canvas, and a GPU effect pass, which are not built yet.
+- **Effects and `HtmlInCanvas`.** The `2d` and `webgl2` effects (`createEffect`) and the `onPaint` and `onInit` props run. `webgpu` effects, and an `onInit` or `onPaint` that asks for `canvas.getContext('webgpu')`, are drawn without the effect, with a warning once (`--strict` fails). State an effect keeps in the result of `setup` does not carry from one frame to the next: each frame runs `setup`, `apply` and `cleanup` anew. `getImageData` of the source is not supported, because the picture belongs to the renderer, not the script. The part of an `async` `onPaint` or `onInit` after its first `await` does not run. An `<HtmlInCanvas>` inside another is not supported.
 - **IFrame.** `IFrame` is not drawn. An iframe is reported as unsupported content.
 - **Sequence timing and speed.** `trimBefore`, `playbackRate` and `loop` on `<Sequence>` change only its frame clock. An `<Audio>` or `<Video>` inside it does not take the rate or the trim.
 - **Not exported.** `Internals`, `FolderContext`, `PathInternals` and `AudioForPreview` are not exported. They are internal to Remotion.
