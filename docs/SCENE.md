@@ -764,6 +764,7 @@ A video file, decoded by FFmpeg (`ffmpeg-next`), one picture per frame. The pict
 | `trimAfter` | none | A number of scene frames from the start of the file, not animated, greater than `trimBefore`. The clip ends there. |
 | `playbackRate` | `1` | A number above 0, not animated. |
 | `loop` | `false` | Past the end, `false` holds the last picture and `true` starts again at `trimBefore`. |
+| `datamosh` | none | A [datamosh](#video-datamosh) window: `{ "from", "to", "hold", "mix" }`. |
 
 Which picture is shown, for scene frame `f` (`frame`, or the frame being rendered) and the scene's `fps`:
 
@@ -798,6 +799,47 @@ Which picture is shown, for scene frame `f` (`frame`, or the frame being rendere
   image. The layer cache redraws a video layer whenever the timestamp it asks for changes, which is when its
   picture changes and, for a clip slower than the scene, also between two frames of one picture.
 - Counts nothing in the [margin](#canvas-margin).
+
+#### video: datamosh
+
+```json
+{ "id": "clip", "type": "video", "src": "clips/pig.mp4",
+  "datamosh": { "from": 30, "to": 75, "hold": { "src": "clips/clouds.mp4", "frame": 90 }, "mix": 0.2 } }
+```
+
+A datamosh is the look of a video whose keyframe was dropped: the old picture stays and the new shot's motion pushes
+it around. Inside the window the layer does not draw the clip's pictures; it draws the held picture moved by the
+clip's own motion vectors.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `from`, `to` | required | Scene frames, `to` above `from`, at most 600 apart. The window is `from ≤ f < to` (`f` is the frame the clip's clock reads, a sub-frame rounds). Outside it the clip plays. |
+| `hold` | `"previous"` | What the motion moves. `"previous"`: the picture the clip shows on frame `from − 1`. `{ "src", "frame" }`: picture `frame` (at the scene's `fps`, from the first picture, by the same rule 5 as above) of another file, fitted to this clip's size by covering it and cropping the middle. |
+| `mix` | `0` | 0 to 1. How much of the clip's residual is added back after each step (below). |
+
+- **Motion.** The decoder's own vectors, read with FFmpeg's `export_mvs` (`AV_FRAME_DATA_MOTION_VECTORS`): H.264 and
+  the MPEG family (`h264`, `mpeg4`, `mpeg2video`, `mpeg1video`, `h263`, `h263p`, `flv1`; tested on H.264 and MPEG-4).
+  A block predicted from the past pulls from `dst + motion`; one predicted from the future (B frames) pulls the
+  other way; a block with both takes the mean. Motion is kept per 4 × 4 pixel cell, in 1/16 pixel. Cells with no
+  vector (intra blocks, keyframes) do not move. A clip in another codec is drawn plain and reported as unsupported
+  (a block-matching estimate would cost far more than the effect is worth, and would not be the codec's own motion).
+- **Steps.** Frame `from` shows the held picture. For each later frame the output is advected: each cell pulls its
+  pixels from where its vector says, bilinear, an edge pixel for anything outside the picture. With `mix` above 0 the
+  residual is then added: `out += mix × (real − real_previous moved by the same vectors)`, which is what a decoder
+  adds to a P frame, so at `1` the new shot's detail rides on the old picture's colour. All of it is integer
+  arithmetic on 8-bit RGBA. A frame whose clip picture is the same one as the frame before (a clip slower than the
+  scene) does not step.
+- **Purity.** Frame `n` is the held picture stepped `n − from` times, by the pictures and vectors of the clip's frames
+  `from + 1 … n`. A renderer keeps the last output and steps it when the next frame is asked for; otherwise it starts
+  again from the held picture. Both run the same steps, so the bytes are the same in any order and at any
+  concurrency. A render that starts inside a window (each `--concurrency` chunk does) pays one decode and step per
+  frame since `from` once, then one per frame: about 15 ms and one picture decode at 1080p with `mix` (7 ms without).
+  The 600-frame cap bounds that.
+- A mosh layer decodes its clip with a decoder of its own (vectors on), so a plain layer of the same file is not
+  disturbed. The held picture of another clip is read from that file's ordinary decoder. A hold file is read when the
+  scene loads, so a missing one is a load error naming the layer. A `to` not above `from`, a window over 600 frames, a
+  `mix` outside 0 to 1, or a `hold` that is neither `"previous"` nor `{ src, frame }` with a frame of 0 or more, is a
+  load error naming the layer.
 
 ### gif
 

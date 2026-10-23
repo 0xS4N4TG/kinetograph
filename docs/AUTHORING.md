@@ -1187,6 +1187,7 @@ Written from Remotion's documented props. Exported from `@kinetograph/react` and
 | `playbackRate` | `playbackRate` |
 | `loop` | `loop` |
 | `volume` (number or `(frame) => number`), `muted` | not in the layer: an `AudioClipJson` with `video: true` in `RenderedTree.audio`, with the same `id` |
+| `datamosh` | `datamosh` (a Kinetograph prop, §11.8) |
 | `transparent`, `toneMapped`, `pauseWhenBuffering`, `acceptableTimeShiftInSeconds`, `onError`, `showInTimeline`, `name`, `delayRenderTimeoutInMilliseconds` | accepted and ignored |
 
 `AudioClipJson` gains `video?: boolean`. `renderAudio` (§8) decodes a clip with `video: true` through
@@ -1317,3 +1318,36 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
   cubic path through the points, and `audioBufferToDataUrl(buffer)` the 32-bit float WAV of an `AudioBuffer` as a
   `data:` URL (stereo interleaved; both match the published package digit for digit).
 
+### 11.8 Datamosh (`<Video datamosh>`)
+
+A datamosh is the look of a video whose keyframe was dropped: the old picture stays on screen and the new shot's
+motion pushes it around, so pixels smear and melt along the movement. It is a prop of `<Video>`, drawn by the engine
+(the scene's `datamosh`, SCENE.md "video: datamosh"), not a baked clip:
+
+```tsx
+<Video src={staticFile('pig.mp4')} width={1920} height={1080} fit="cover"
+  datamosh={{ from: 0, to: 45, hold: { src: staticFile('clouds.mp4'), frame: 90 }, mix: 0.2 }} />
+```
+
+```ts
+interface DatamoshOptions {
+  from: number;                                   // first frame of the window; it shows the held picture
+  to: number;                                     // the clip plays again from here; to - from <= 600
+  hold?: 'previous' | { src: string; frame: number }; // default 'previous': the clip's own frame from - 1
+  mix?: number;                                   // 0 to 1, default 0: share of the new picture's detail added back
+}
+```
+
+- `from` and `to` are frames of the enclosing Sequence (what `useCurrentFrame()` returns), as `<Video from>` is. The
+  component moves them to the composition's timeline.
+- `hold: 'previous'` melts the clip against itself. `hold: { src, frame }` is the classic transition: clip B's motion
+  moves clip A's pixels (`frame` is a frame of that file at the composition's rate). Put the video of clip B in a
+  Sequence that starts when the cut should be.
+- `mix` 0 only moves the old picture; 1 adds the full residual of the new shot, so its detail rides on the old colour.
+- Needs motion vectors: H.264 and MPEG-4 (the MPEG family). Another codec is drawn plain and warned about
+  (`--strict` fails). A `<Video>` with CSS style or `className` (laid out by the DOM engine) cannot take `datamosh`:
+  use `width`, `height` and `fit`.
+- Deterministic and the same at any `--concurrency`. A render pays one decode and step per frame since `from` the
+  first time it enters a window, then one per frame (about 15 ms at 1080p with `mix`, 7 ms without, plus the decode),
+  so the window is capped at 600 frames.
+- `examples/datamosh/` is a composition with a transition mosh, a self mosh and a `mix` comparison.
