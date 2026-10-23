@@ -8,7 +8,7 @@ import { cssPropertyName, styleToCss } from '../request/style.js';
 import { isDomElement } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
-import { CANVAS_SOURCE, fontKey, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetograph/scene';
+import { CANVAS_SOURCE, fontKey, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetographdev/scene';
 import {
   bitmapSide,
   canvasCommandsOf,

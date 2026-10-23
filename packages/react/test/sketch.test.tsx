@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropShadow, linearGradient, motionBlur } from '@kinetograph/scene';
+import { dropShadow, linearGradient, motionBlur } from '@kinetographdev/scene';
 import { Image, Layer, Text, useTimeline } from '../src/index.js';
 import { renderAt } from './harness.js';
 

@@ -5,8 +5,8 @@
 
 import type { ReactNode } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { setDomAddon } from '@kinetograph/compat/dom';
-import type { LayerJson } from '@kinetograph/scene';
+import { setDomAddon } from '@kinetographdev/compat/dom';
+import type { LayerJson } from '@kinetographdev/scene';
 import { Camera, createSceneRoot, Image, Layer, Rect, SequenceHost, Text, TimelineContext, Video } from '../src/index.js';
 import { timeline } from './harness.js';
 

@@ -8,7 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, type CanvasPicture } from '@kinetograph/scene';
+import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveProjectFile } from '../environment.js';
 import { OffscreenCanvasShim } from './canvas.js';
 import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';

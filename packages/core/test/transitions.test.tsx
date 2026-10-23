@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { createSceneRoot, Rect, TimelineContext } from '@kinetograph/react';
-import type { LayerJson } from '@kinetograph/scene';
+import { createSceneRoot, Rect, TimelineContext } from '@kinetographdev/react';
+import type { LayerJson } from '@kinetographdev/scene';
 import { useCurrentFrame, useVideoConfig } from '../src/timeline.js';
 import { TransitionSeries, linearTiming, springTiming } from '../src/transitions/index.js';
 import { fade } from '../src/transitions/fade.js';

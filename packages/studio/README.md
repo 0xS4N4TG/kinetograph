@@ -1,4 +1,4 @@
-# @kinetograph/studio
+# @kinetographdev/studio
 
 The local studio: a web server and browser UI whose preview frames the native addon renders.
 

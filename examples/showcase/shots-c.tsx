@@ -15,7 +15,7 @@ import {
   dropShadow,
   glow,
   linearGradient,
-} from '@kinetograph/core';
+} from '@kinetographdev/core';
 import {
   BENCH_LABEL,
   Center,

@@ -5,8 +5,8 @@
 
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { Audio, Video } from '@kinetograph/react';
-import type { AudioClipJson } from '@kinetograph/scene';
+import { Audio, Video } from '@kinetographdev/react';
+import type { AudioClipJson } from '@kinetographdev/scene';
 import { Sequence } from '../src/timeline.js';
 import { renderAt } from './scene-harness.js';
 

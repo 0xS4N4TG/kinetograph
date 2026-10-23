@@ -1,4 +1,4 @@
-# @kinetograph/core
+# @kinetographdev/core
 
 The Remotion-shaped authoring API: frame clock, Remotion core and packages, determinism.
 

@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { MediaInfo } from '@kinetograph/native';
+import type { MediaInfo } from '@kinetographdev/native';
 import { setNativeForTests } from '../src/native.js';
 import { openSource } from '../src/source.js';
 import { fakeNative } from './helpers.js';

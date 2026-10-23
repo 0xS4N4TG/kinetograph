@@ -87,8 +87,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-android-arm64')
-        const bindingPackageVersion = require('@kinetograph/native-android-arm64/package.json').version
+        const binding = require('@kinetographdev/native-android-arm64')
+        const bindingPackageVersion = require('@kinetographdev/native-android-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -103,8 +103,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-android-arm-eabi')
-        const bindingPackageVersion = require('@kinetograph/native-android-arm-eabi/package.json').version
+        const binding = require('@kinetographdev/native-android-arm-eabi')
+        const bindingPackageVersion = require('@kinetographdev/native-android-arm-eabi/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -124,8 +124,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-win32-x64-gnu')
-          const bindingPackageVersion = require('@kinetograph/native-win32-x64-gnu/package.json').version
+          const binding = require('@kinetographdev/native-win32-x64-gnu')
+          const bindingPackageVersion = require('@kinetographdev/native-win32-x64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -140,8 +140,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-win32-x64-msvc')
-          const bindingPackageVersion = require('@kinetograph/native-win32-x64-msvc/package.json').version
+          const binding = require('@kinetographdev/native-win32-x64-msvc')
+          const bindingPackageVersion = require('@kinetographdev/native-win32-x64-msvc/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -157,8 +157,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-win32-ia32-msvc')
-        const bindingPackageVersion = require('@kinetograph/native-win32-ia32-msvc/package.json').version
+        const binding = require('@kinetographdev/native-win32-ia32-msvc')
+        const bindingPackageVersion = require('@kinetographdev/native-win32-ia32-msvc/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -173,8 +173,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-win32-arm64-msvc')
-        const bindingPackageVersion = require('@kinetograph/native-win32-arm64-msvc/package.json').version
+        const binding = require('@kinetographdev/native-win32-arm64-msvc')
+        const bindingPackageVersion = require('@kinetographdev/native-win32-arm64-msvc/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -192,8 +192,8 @@ function requireNative() {
       loadErrors.push(e)
     }
     try {
-      const binding = require('@kinetograph/native-darwin-universal')
-      const bindingPackageVersion = require('@kinetograph/native-darwin-universal/package.json').version
+      const binding = require('@kinetographdev/native-darwin-universal')
+      const bindingPackageVersion = require('@kinetographdev/native-darwin-universal/package.json').version
       if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
         throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
       }
@@ -208,8 +208,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-darwin-x64')
-        const bindingPackageVersion = require('@kinetograph/native-darwin-x64/package.json').version
+        const binding = require('@kinetographdev/native-darwin-x64')
+        const bindingPackageVersion = require('@kinetographdev/native-darwin-x64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -224,8 +224,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-darwin-arm64')
-        const bindingPackageVersion = require('@kinetograph/native-darwin-arm64/package.json').version
+        const binding = require('@kinetographdev/native-darwin-arm64')
+        const bindingPackageVersion = require('@kinetographdev/native-darwin-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -244,8 +244,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-freebsd-x64')
-        const bindingPackageVersion = require('@kinetograph/native-freebsd-x64/package.json').version
+        const binding = require('@kinetographdev/native-freebsd-x64')
+        const bindingPackageVersion = require('@kinetographdev/native-freebsd-x64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -260,8 +260,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-freebsd-arm64')
-        const bindingPackageVersion = require('@kinetograph/native-freebsd-arm64/package.json').version
+        const binding = require('@kinetographdev/native-freebsd-arm64')
+        const bindingPackageVersion = require('@kinetographdev/native-freebsd-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -281,8 +281,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-x64-musl')
-          const bindingPackageVersion = require('@kinetograph/native-linux-x64-musl/package.json').version
+          const binding = require('@kinetographdev/native-linux-x64-musl')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-x64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -297,8 +297,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-x64-gnu')
-          const bindingPackageVersion = require('@kinetograph/native-linux-x64-gnu/package.json').version
+          const binding = require('@kinetographdev/native-linux-x64-gnu')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-x64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -315,8 +315,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-arm64-musl')
-          const bindingPackageVersion = require('@kinetograph/native-linux-arm64-musl/package.json').version
+          const binding = require('@kinetographdev/native-linux-arm64-musl')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-arm64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -331,8 +331,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-arm64-gnu')
-          const bindingPackageVersion = require('@kinetograph/native-linux-arm64-gnu/package.json').version
+          const binding = require('@kinetographdev/native-linux-arm64-gnu')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-arm64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -349,8 +349,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-arm-musleabihf')
-          const bindingPackageVersion = require('@kinetograph/native-linux-arm-musleabihf/package.json').version
+          const binding = require('@kinetographdev/native-linux-arm-musleabihf')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-arm-musleabihf/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -365,8 +365,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-arm-gnueabihf')
-          const bindingPackageVersion = require('@kinetograph/native-linux-arm-gnueabihf/package.json').version
+          const binding = require('@kinetographdev/native-linux-arm-gnueabihf')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-arm-gnueabihf/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -383,8 +383,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-loong64-musl')
-          const bindingPackageVersion = require('@kinetograph/native-linux-loong64-musl/package.json').version
+          const binding = require('@kinetographdev/native-linux-loong64-musl')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-loong64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -399,8 +399,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-loong64-gnu')
-          const bindingPackageVersion = require('@kinetograph/native-linux-loong64-gnu/package.json').version
+          const binding = require('@kinetographdev/native-linux-loong64-gnu')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-loong64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -417,8 +417,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-riscv64-musl')
-          const bindingPackageVersion = require('@kinetograph/native-linux-riscv64-musl/package.json').version
+          const binding = require('@kinetographdev/native-linux-riscv64-musl')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-riscv64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -433,8 +433,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@kinetograph/native-linux-riscv64-gnu')
-          const bindingPackageVersion = require('@kinetograph/native-linux-riscv64-gnu/package.json').version
+          const binding = require('@kinetographdev/native-linux-riscv64-gnu')
+          const bindingPackageVersion = require('@kinetographdev/native-linux-riscv64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -450,8 +450,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-linux-ppc64-gnu')
-        const bindingPackageVersion = require('@kinetograph/native-linux-ppc64-gnu/package.json').version
+        const binding = require('@kinetographdev/native-linux-ppc64-gnu')
+        const bindingPackageVersion = require('@kinetographdev/native-linux-ppc64-gnu/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -466,8 +466,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-linux-s390x-gnu')
-        const bindingPackageVersion = require('@kinetograph/native-linux-s390x-gnu/package.json').version
+        const binding = require('@kinetographdev/native-linux-s390x-gnu')
+        const bindingPackageVersion = require('@kinetographdev/native-linux-s390x-gnu/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -486,8 +486,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-openharmony-arm64')
-        const bindingPackageVersion = require('@kinetograph/native-openharmony-arm64/package.json').version
+        const binding = require('@kinetographdev/native-openharmony-arm64')
+        const bindingPackageVersion = require('@kinetographdev/native-openharmony-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -502,8 +502,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-openharmony-x64')
-        const bindingPackageVersion = require('@kinetograph/native-openharmony-x64/package.json').version
+        const binding = require('@kinetographdev/native-openharmony-x64')
+        const bindingPackageVersion = require('@kinetographdev/native-openharmony-x64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -518,8 +518,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@kinetograph/native-openharmony-arm')
-        const bindingPackageVersion = require('@kinetograph/native-openharmony-arm/package.json').version
+        const binding = require('@kinetographdev/native-openharmony-arm')
+        const bindingPackageVersion = require('@kinetographdev/native-openharmony-arm/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -656,16 +656,16 @@ if (!nativeBinding || forceWasi) {
     let candidateError = null
     let candidateFailed = false
     try {
-      candidateError = __napiWasiResolveCandidate('@kinetograph/native-wasm32-wasi', true, undefined)
+      candidateError = __napiWasiResolveCandidate('@kinetographdev/native-wasm32-wasi', true, undefined)
       candidateFailed = candidateError !== null
       if (!candidateFailed) {
         if (process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          const bindingPackageVersion = require('@kinetograph/native-wasm32-wasi/package.json').version
+          const bindingPackageVersion = require('@kinetographdev/native-wasm32-wasi/package.json').version
           if (bindingPackageVersion !== '0.1.0') {
             throw new Error(`WASI binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
         }
-        wasiBinding = require('@kinetograph/native-wasm32-wasi')
+        wasiBinding = require('@kinetographdev/native-wasm32-wasi')
         nativeBinding = wasiBinding
         __napiLoadedBindingTarget = 'wasm32-wasi'
         wasiBindingLoaded = true

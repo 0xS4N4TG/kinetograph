@@ -1,7 +1,7 @@
 // `kinetograph doctor`: what a project holds that the engine cannot draw.
 
-import { describeIssue, summarize, type DoctorReport } from '@kinetograph/compat/doctor';
-import type { Unsupported } from '@kinetograph/scene';
+import { describeIssue, summarize, type DoctorReport } from '@kinetographdev/compat/doctor';
+import type { Unsupported } from '@kinetographdev/scene';
 import { relative } from 'node:path';
 import type { UnsupportedImport } from '../bundle.js';
 import { CliError } from '../errors.js';

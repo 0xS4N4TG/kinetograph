@@ -3,7 +3,7 @@
 // for the serrated clip-path) is the sum, and `shown` reveals it a printed line at a time.
 
 import React from 'react';
-import { GlslShader } from '@kinetograph/core';
+import { GlslShader } from '@kinetographdev/core';
 import { staticFile } from 'remotion';
 import { loadFont as loadCourier } from '@remotion/google-fonts/CourierPrime';
 import { loadFont as loadNoto } from '@remotion/google-fonts/NotoSansJP';

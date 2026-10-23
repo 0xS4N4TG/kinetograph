@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import type { SceneJson, Unsupported } from '@kinetograph/scene';
+import type { SceneJson, Unsupported } from '@kinetographdev/scene';
 import { parseFrameList } from '../args.js';
 import { toErrorObject } from '../errors.js';
 import { lintAudio, lintCompat, lintInspect, lintNotes, lintScene, mergeFindings, sortIssues, textInsideCanvas, type Finding } from '../lint.js';

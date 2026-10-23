@@ -36,7 +36,7 @@ const hostConfig = {
   cancelTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
   noTimeout: -1,
   rendererVersion: '0.1.0',
-  rendererPackageName: '@kinetograph/core/skia',
+  rendererPackageName: '@kinetographdev/core/skia',
   extraDevToolsConfig: null,
   bindToConsole: (method: 'log' | 'warn' | 'error', args: unknown[]) => console[method].bind(console, ...args),
 

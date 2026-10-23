@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { MediaInfo } from '@kinetograph/native';
-import { Layer, Video } from '@kinetograph/react';
-import { motionSubFrames, type GifLayer, type GroupLayer, type VideoLayer } from '@kinetograph/scene';
+import type { MediaInfo } from '@kinetographdev/native';
+import { Layer, Video } from '@kinetographdev/react';
+import { motionSubFrames, type GifLayer, type GroupLayer, type VideoLayer } from '@kinetographdev/scene';
 import { resetRenderState } from '../src/assets.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { resetVirtualClock } from '../src/determinism.js';
@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 afterEach(() => setMediaProbe(null));
 
-describe('@kinetograph/core/media-utils', () => {
+describe('@kinetographdev/core/media-utils', () => {
   it('getVideoMetadata reads the header through the probe', async () => {
     const calls = probe({ '/clips/city.mp4': info() });
     await expect(getVideoMetadata('/clips/city.mp4')).resolves.toEqual({
@@ -84,7 +84,7 @@ describe('@kinetograph/core/media-utils', () => {
   });
 });
 
-describe('@kinetograph/core/gif', () => {
+describe('@kinetographdev/core/gif', () => {
   it('getGifDurationInSeconds is the probe\'s duration, for a GIF', async () => {
     probe({ 'spin.gif': info({ kind: 'gif', durationInSeconds: 1.2, hasAudio: false, videoCodec: 'gif' }) });
     await expect(getGifDurationInSeconds('spin.gif')).resolves.toBe(1.2);

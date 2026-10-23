@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds the static, LGPL-only ffmpeg that the published @kinetograph/native addon links.
+# Builds the static, LGPL-only ffmpeg that the published @kinetographdev/native addon links.
 #
 #   scripts/build-ffmpeg.sh PREFIX
 #
 # Installs headers, static libraries and pkg-config files into PREFIX. Then build the addon with
 #
-#   PKG_CONFIG_PATH=PREFIX/lib/pkgconfig npm run build:release -w @kinetograph/native -- --features ffmpeg-static      (macOS, Linux)
-#   FFMPEG_DIR=PREFIX                    npm run build:release -w @kinetograph/native -- --features ffmpeg-static      (Windows)
+#   PKG_CONFIG_PATH=PREFIX/lib/pkgconfig npm run build:release -w @kinetographdev/native -- --features ffmpeg-static      (macOS, Linux)
+#   FFMPEG_DIR=PREFIX                    npm run build:release -w @kinetographdev/native -- --features ffmpeg-static      (Windows)
 #
 # Licence: no --enable-gpl, --enable-version3 or --enable-nonfree anywhere, so libavcodec and the rest are LGPL 2.1+
 # and the PolyForm-licensed addon may link them statically. That rules out libx264 and libx265 (GPL). H.264 comes from

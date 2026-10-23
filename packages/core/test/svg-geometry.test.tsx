@@ -1,10 +1,10 @@
 // getTotalLength, getPointAtLength and getBBox on refs to SVG elements (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"): the maths is
-// the Remotion path functions of `@kinetograph/core/paths`, handed to the shim by `web/install`.
+// the Remotion path functions of `@kinetographdev/core/paths`, handed to the shim by `web/install`.
 
 import { useLayoutEffect, useRef } from 'react';
 import { describe, expect, it } from 'vitest';
-import { createSceneRoot, TimelineContext } from '@kinetograph/react';
-import { setDomAddon } from '@kinetograph/compat/dom';
+import { createSceneRoot, TimelineContext } from '@kinetographdev/react';
+import { setDomAddon } from '@kinetographdev/compat/dom';
 import '../src/web-install.js';
 
 const timeline = {

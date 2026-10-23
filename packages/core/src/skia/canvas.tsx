@@ -5,8 +5,8 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createElement, type CSSProperties, type ReactElement, type ReactNode } from 'react';
-import { getDomEnvironment } from '@kinetograph/compat/dom';
-import { TimelineContext, useTimeline } from '@kinetograph/react';
+import { getDomEnvironment } from '@kinetographdev/compat/dom';
+import { TimelineContext, useTimeline } from '@kinetographdev/react';
 import { reportUnsupported } from '../unsupported.js';
 import { skiaAddon } from './addon.js';
 import { renderNodes } from './host.js';

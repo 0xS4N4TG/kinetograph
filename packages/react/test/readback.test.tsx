@@ -4,8 +4,8 @@
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { setDomAddon, resetStylesheets } from '@kinetograph/compat/dom';
-import { installDomGlobals, resetObservers } from '@kinetograph/compat/shim';
+import { setDomAddon, resetStylesheets } from '@kinetographdev/compat/dom';
+import { installDomGlobals, resetObservers } from '@kinetographdev/compat/shim';
 import { createSceneRoot, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 

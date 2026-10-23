@@ -23,7 +23,7 @@ import {
   halftone,
   linearGradient,
   lut,
-} from '@kinetograph/core';
+} from '@kinetographdev/core';
 import { Center, H, INK, GREY, SANS, SERIF, W, blink, clamp, ramp, useSpring } from './common.js';
 import { CARET_X } from './widths.js';
 import { PORTRAITS, PORTRAIT_H, PORTRAIT_W, Portrait, roundedPath } from './art.js';

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
-import { Layer, blur } from '@kinetograph/core';
+import { Layer, blur } from '@kinetographdev/core';
 import { CLAMP, H, LEN, MONO, OUT, SANS, TITLE, TITLE_GLOW, TITLE_WEIGHT, W } from './common.js';
 import { spoken } from './sound-timing.js';
 

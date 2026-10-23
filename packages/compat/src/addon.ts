@@ -1,6 +1,6 @@
 // The addon functions DOM islands need (packages/cli/skills/kinetograph/references/ENGINE.md §2), handed over by the host or found when first needed (a
 // project with no DOM elements does not need the addon). A bundle in a project's cache may sit where `require` cannot
-// reach `@kinetograph/native`; the CLI then calls `setDomAddon(native)` itself.
+// reach `@kinetographdev/native`; the CLI then calls `setDomAddon(native)` itself.
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -37,14 +37,14 @@ function load(): Partial<DomAddon> {
   const failures: string[] = [];
   for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
     try {
-      return createRequire(base)('@kinetograph/native') as Partial<DomAddon>;
+      return createRequire(base)('@kinetographdev/native') as Partial<DomAddon>;
     } catch (error) {
       failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
     }
   }
   throw new Error(
-    `DOM elements cannot be drawn: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
-      'Build the addon, or pass it to setDomAddon() from @kinetograph/compat/dom.',
+    `DOM elements cannot be drawn: @kinetographdev/native could not be loaded (${failures.join('; ')}). ` +
+      'Build the addon, or pass it to setDomAddon() from @kinetographdev/compat/dom.',
   );
 }
 
@@ -53,7 +53,7 @@ export function addonFunction<K extends keyof DomAddon>(name: K): NonNullable<Do
   const addon = override ?? (loaded ??= load());
   const fn = addon[name];
   if (typeof fn !== 'function') {
-    throw new Error(`The addon has no ${name}(): rebuild @kinetograph/native (npm run build:release -w crates/node)`);
+    throw new Error(`The addon has no ${name}(): rebuild @kinetographdev/native (npm run build:release -w crates/node)`);
   }
   // Called as a method of the addon object, as napi functions expect.
   return ((...args: unknown[]) => (fn as (...a: unknown[]) => unknown).apply(addon, args)) as NonNullable<DomAddon[K]>;

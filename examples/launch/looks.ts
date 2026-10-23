@@ -2,7 +2,7 @@
 // 1-bit, thermal and depth-map grades built from the engine's own effects. Each is a function of the frame and its
 // arguments only, so a look is a pure part of the picture like everything else.
 
-import { blur, contrast, dither, gradientMap, grayscale, shader } from '@kinetograph/core';
+import { blur, contrast, dither, gradientMap, grayscale, shader } from '@kinetographdev/core';
 
 const HASH = /* wgsl */ `
 fn kh(p: vec2<f32>) -> f32 { return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453); }

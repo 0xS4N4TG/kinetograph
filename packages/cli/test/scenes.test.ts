@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { SceneJson } from '@kinetograph/scene';
+import type { SceneJson } from '@kinetographdev/scene';
 import { LABEL_FONT_PATH, buildOnionScene, buildStripScene, draftScene, halfSize, stripLayout } from '../src/scenes.js';
 import { evenFrames } from '../src/source.js';
 

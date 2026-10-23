@@ -8,30 +8,30 @@ import { publicDirOf } from '../src/source.js';
 
 describe('resolveSpecifier', () => {
   it('maps remotion to the core', () => {
-    expect(resolveSpecifier('remotion')).toEqual({ kind: 'path', target: '@kinetograph/core' });
+    expect(resolveSpecifier('remotion')).toEqual({ kind: 'path', target: '@kinetographdev/core' });
   });
 
   it('maps @remotion/<pkg>[/sub] to the core subpath', () => {
-    expect(resolveSpecifier('@remotion/transitions')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions' });
-    expect(resolveSpecifier('@remotion/transitions/book-flip')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions/book-flip' });
-    expect(resolveSpecifier('@remotion/transitions/fade')).toEqual({ kind: 'path', target: '@kinetograph/core/transitions/fade' });
+    expect(resolveSpecifier('@remotion/transitions')).toEqual({ kind: 'path', target: '@kinetographdev/core/transitions' });
+    expect(resolveSpecifier('@remotion/transitions/book-flip')).toEqual({ kind: 'path', target: '@kinetographdev/core/transitions/book-flip' });
+    expect(resolveSpecifier('@remotion/transitions/fade')).toEqual({ kind: 'path', target: '@kinetographdev/core/transitions/fade' });
     for (const pkg of ['motion-blur', 'noise', 'paths', 'shapes', 'layout-utils', 'animation-utils', 'captions', 'fonts', 'lottie', 'gif', 'media-utils', 'media', 'light-leaks', 'starburst']) {
-      expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetograph/core/${pkg}` });
+      expect(resolveSpecifier(`@remotion/${pkg}`)).toEqual({ kind: 'path', target: `@kinetographdev/core/${pkg}` });
     }
-    expect(resolveSpecifier('@remotion/sfx')).toEqual({ kind: 'path', target: '@kinetograph/core/sfx' });
-    expect(resolveSpecifier('@remotion/zod-types')).toEqual({ kind: 'path', target: '@kinetograph/core/zod-types' });
-    expect(resolveSpecifier('@remotion/timeline-utils')).toEqual({ kind: 'path', target: '@kinetograph/core/timeline-utils' });
+    expect(resolveSpecifier('@remotion/sfx')).toEqual({ kind: 'path', target: '@kinetographdev/core/sfx' });
+    expect(resolveSpecifier('@remotion/zod-types')).toEqual({ kind: 'path', target: '@kinetographdev/core/zod-types' });
+    expect(resolveSpecifier('@remotion/timeline-utils')).toEqual({ kind: 'path', target: '@kinetographdev/core/timeline-utils' });
     expect(resolveSpecifier('@remotion/timeline-utils/audio-waveform-worker')).toEqual({
       kind: 'path',
-      target: '@kinetograph/core/timeline-utils/audio-waveform-worker',
+      target: '@kinetographdev/core/timeline-utils/audio-waveform-worker',
     });
-    expect(resolveSpecifier('@remotion/webcodecs/web-fs')).toEqual({ kind: 'path', target: '@kinetograph/core/webcodecs/web-fs' });
-    expect(resolveSpecifier('@remotion/canvas')).toEqual({ kind: 'path', target: '@kinetograph/core/canvas' });
-    expect(resolveSpecifier('@remotion/media-parser')).toEqual({ kind: 'path', target: '@kinetograph/core/media-parser' });
+    expect(resolveSpecifier('@remotion/webcodecs/web-fs')).toEqual({ kind: 'path', target: '@kinetographdev/core/webcodecs/web-fs' });
+    expect(resolveSpecifier('@remotion/canvas')).toEqual({ kind: 'path', target: '@kinetographdev/core/canvas' });
+    expect(resolveSpecifier('@remotion/media-parser')).toEqual({ kind: 'path', target: '@kinetographdev/core/media-parser' });
     for (const sub of ['node', 'web', 'universal', 'node-writer', 'worker', 'server-worker', 'worker-web-entry', 'worker-server-entry']) {
-      expect(resolveSpecifier(`@remotion/media-parser/${sub}`)).toEqual({ kind: 'path', target: `@kinetograph/core/media-parser/${sub}` });
+      expect(resolveSpecifier(`@remotion/media-parser/${sub}`)).toEqual({ kind: 'path', target: `@kinetographdev/core/media-parser/${sub}` });
     }
-    expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetograph/core/google-fonts' });
+    expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetographdev/core/google-fonts' });
   });
 
   it('turns @remotion/google-fonts/<Family> into a font module with the family name', () => {
@@ -49,10 +49,10 @@ describe('resolveSpecifier', () => {
     expect((r as { message: string }).message).toContain('doctor');
   });
 
-  it('re-resolves the @kinetograph packages from the CLI and leaves everything else alone', () => {
-    expect(resolveSpecifier('@kinetograph/react')).toEqual({ kind: 'path', target: '@kinetograph/react' });
-    expect(resolveSpecifier('@kinetograph/audio')).toEqual({ kind: 'path', target: '@kinetograph/audio' });
-    expect(resolveSpecifier('@kinetograph/native')).toBeNull();
+  it('re-resolves the @kinetographdev packages from the CLI and leaves everything else alone', () => {
+    expect(resolveSpecifier('@kinetographdev/react')).toEqual({ kind: 'path', target: '@kinetographdev/react' });
+    expect(resolveSpecifier('@kinetographdev/audio')).toEqual({ kind: 'path', target: '@kinetographdev/audio' });
+    expect(resolveSpecifier('@kinetographdev/native')).toBeNull();
     expect(resolveSpecifier('./local')).toBeNull();
     expect(resolveSpecifier('react-dom')).toBeNull();
   });
@@ -75,14 +75,14 @@ describe('syntheticEntry', () => {
   it('imports the determinism shim before the project, then re-exports the core', () => {
     const lines = syntheticEntry('/p/index.tsx').trim().split('\n');
     expect(lines).toEqual([
-      `import '@kinetograph/core/determinism/install';`,
-      `import '@kinetograph/core/web/install';`,
+      `import '@kinetographdev/core/determinism/install';`,
+      `import '@kinetographdev/core/web/install';`,
       `import "/p/index.tsx";`,
-      `export * from '@kinetograph/core';`,
-      `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
-      `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
-      `export { setMediaParserAddon } from '@kinetograph/core/media-parser';`,
-      `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
+      `export * from '@kinetographdev/core';`,
+      `export { setLayoutText } from '@kinetographdev/core/layout-utils';`,
+      `export { setAudioDecoder, setMediaProbe } from '@kinetographdev/core/media-utils';`,
+      `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
+      `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
     ]);
   });
 });
@@ -116,7 +116,7 @@ describe('bundleProject', () => {
         `import { fade } from '@remotion/transitions/fade';`,
         `import { noise2D } from '@remotion/noise';`,
         `import { loadFont } from '@remotion/google-fonts/DMSans';`,
-        `import { onFrame } from '@kinetograph/audio';`,
+        `import { onFrame } from '@kinetographdev/audio';`,
         `import { helper } from './helper';`,
         `registerRoot(() => null); loadFont(); onFrame(0, () => {});`,
         `console.log(interpolate, fade, noise2D, helper);`,
@@ -307,8 +307,8 @@ describe('bundleProject', () => {
 
   it('says where a React Native Skia internal import should come from', async () => {
     expect(resolveSpecifier('@shopify/react-native-skia/lib/module/skia')).toMatchObject({ kind: 'unsupported' });
-    expect(resolveSpecifier('@shopify/react-native-skia')).toEqual({ kind: 'path', target: '@kinetograph/core/skia' });
-    expect(resolveSpecifier('@remotion/skia/enable')).toEqual({ kind: 'path', target: '@kinetograph/core/skia/enable' });
+    expect(resolveSpecifier('@shopify/react-native-skia')).toEqual({ kind: 'path', target: '@kinetographdev/core/skia' });
+    expect(resolveSpecifier('@remotion/skia/enable')).toEqual({ kind: 'path', target: '@kinetographdev/core/skia/enable' });
   });
 
 

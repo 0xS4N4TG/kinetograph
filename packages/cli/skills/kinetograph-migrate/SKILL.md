@@ -52,18 +52,18 @@ so in step 7. Do not hide it by dropping `--strict` for the final render.
 
 ## Rules
 
-- A `remotion` import needs no edit. Do not rewrite `remotion` or `@remotion/*` imports to `@kinetograph/core`.
+- A `remotion` import needs no edit. Do not rewrite `remotion` or `@remotion/*` imports to `@kinetographdev/core`.
 - Never remove a feature silently. Every omission or approximation goes in the report from step 7.
 - **Fonts.** Text in a font that is not registered may be drawn as nothing, with no warning from `doctor`. A
   `fontFamily` that names only system fonts (`Helvetica, Arial, sans-serif`) is the usual cause. Register a font file
   the user is allowed to use: `@remotion/google-fonts/<Family>` (`loadFont()`), `registerFont({ family, path:
-  staticFile('F.ttf') })` from `@kinetograph/core`, or `@font-face { src: url(...) }` in an imported `.css` file. Do not
+  staticFile('F.ttf') })` from `@kinetographdev/core`, or `@font-face { src: url(...) }` in an imported `.css` file. Do not
   copy system fonts into the project.
 - Rendering is a pure function of the frame. Replace `Date.now()`, `Math.random()` and timers with frame maths and
   `random(seed)`.
 - There is no network. `fetch` reads project files only. Copy remote assets into `public/` and use `staticFile`.
 - Do not add dependencies for the render path, except `kinetograph` itself as a dev dependency (it brings
-  `@kinetograph/core`, which the 3D elements import from). If it is not on npm yet, ask the user where to install it
+  `@kinetographdev/core`, which the 3D elements import from). If it is not on npm yet, ask the user where to install it
   from. Packages for the studio or tests are fine.
 
 ## Coverage in one line

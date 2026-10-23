@@ -5,8 +5,8 @@
 // every render.
 
 import { random } from 'remotion';
-import { onFrame } from '@kinetograph/audio';
-import type { OnFrameCallback } from '@kinetograph/audio';
+import { onFrame } from '@kinetographdev/audio';
+import type { OnFrameCallback } from '@kinetographdev/audio';
 import { FPS, T, fr } from './common.js';
 import { WHIP_AT } from './shots-c.js';
 

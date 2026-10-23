@@ -1,8 +1,8 @@
 // `@remotion/lottie`'s getLottieMetadata, `@remotion/gif`'s preloadGif and `@remotion/media`'s extra names.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import type { MediaInfo } from '@kinetograph/native';
-import { Audio, Video } from '@kinetograph/react';
+import type { MediaInfo } from '@kinetographdev/native';
+import { Audio, Video } from '@kinetographdev/react';
 import { preloadGif } from '../src/gif.js';
 import { getLottieMetadata, type LottieAnimationData } from '../src/lottie.js';
 import { experimental_Audio, experimental_Video, getTargetSampleRate, Audio as MediaAudio, Video as MediaVideo } from '../src/media.js';
@@ -49,7 +49,7 @@ describe('preloadGif', () => {
   });
 });
 
-describe('@kinetograph/core/media', () => {
+describe('@kinetographdev/core/media', () => {
   it('keeps the experimental names, which are the same components', () => {
     expect(experimental_Audio).toBe(Audio);
     expect(experimental_Video).toBe(Video);

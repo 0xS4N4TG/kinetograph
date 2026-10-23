@@ -8,7 +8,7 @@
 
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame } from 'remotion';
-import { Layer, glow, grain } from '@kinetograph/core';
+import { Layer, glow, grain } from '@kinetographdev/core';
 import { CLAMP, H, LEN, OUT, SANS, W } from './common.js';
 import { IN } from './act1-kit.js';
 import { Problem, ballAt } from './act1.js';

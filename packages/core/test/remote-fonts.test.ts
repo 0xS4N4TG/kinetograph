@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { TextLayoutRequest } from '@kinetograph/native';
+import type { TextLayoutRequest } from '@kinetographdev/native';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addFace, NodeFontFace } from '../src/font-face.js';
 import { fetchFileCachedSync, FontDownloadError, type FetchLike } from '../src/font-files.js';

@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
-import { setDomAddon } from '@kinetograph/compat/dom';
+import { setDomAddon } from '@kinetographdev/compat/dom';
 import { resetRenderState } from '../src/assets.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
@@ -13,7 +13,7 @@ import { useCurrentFrame } from '../src/timeline.js';
 
 let addon: any = null;
 try {
-  addon = createRequire(import.meta.url)('@kinetograph/native');
+  addon = createRequire(import.meta.url)('@kinetographdev/native');
 } catch {
   addon = null;
 }

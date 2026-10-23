@@ -35,7 +35,7 @@ import type {
   Stroke,
   Turbulence,
   Vec3,
-} from '@kinetograph/scene';
+} from '@kinetographdev/scene';
 import { useTimeline, type TimelineState } from './timeline.js';
 
 export interface CommonProps {
@@ -704,7 +704,7 @@ export interface GifProps extends CommonProps {
   /** Seconds into the animation, in place of the frame clock: for a caller that picks the picture itself (`<AnimatedImage>`). */
   time?: number;
   /**
-   * The GIF's duration, which `loopBehavior="unmount-after-finish"` needs. Set by `Gif` from `@kinetograph/core/gif`,
+   * The GIF's duration, which `loopBehavior="unmount-after-finish"` needs. Set by `Gif` from `@kinetographdev/core/gif`,
    * which probes the file (this package cannot).
    */
   durationInSeconds?: number;
@@ -731,7 +731,7 @@ export function Gif(props: GifProps): ReactNode {
   if (loopBehavior === 'unmount-after-finish') {
     if (props.durationInSeconds === undefined) {
       throw new Error(
-        `${label} with loopBehavior="unmount-after-finish" needs the GIF's duration, which this package cannot read: import Gif from @kinetograph/core/gif (or @remotion/gif), which probes the file`,
+        `${label} with loopBehavior="unmount-after-finish" needs the GIF's duration, which this package cannot read: import Gif from @kinetographdev/core/gif (or @remotion/gif), which probes the file`,
       );
     }
     if (time >= props.durationInSeconds) return null;

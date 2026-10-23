@@ -2,7 +2,7 @@
 // renderer replays on the GPU with the same GLSL (packages/cli/skills/kinetograph/references/AUTHORING.md §6.7). The few steps every full-screen shader of the
 // core takes (a context, a program, a quad) are here.
 
-import { createWebGLContext, type GL, type GL2, type WebGLContext, type WebGLContextAttributesLike } from '@kinetograph/scene';
+import { createWebGLContext, type GL, type GL2, type WebGLContext, type WebGLContextAttributesLike } from '@kinetographdev/scene';
 
 /** A WebGL context as a page uses it: the calls, and the constants (`gl.TEXTURE_2D`) on the context itself. */
 export type ShaderGL = WebGLContext & typeof GL & typeof GL2;

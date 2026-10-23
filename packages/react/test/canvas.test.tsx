@@ -4,9 +4,9 @@
 
 import { useEffect, useRef } from 'react';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setDomAddon, setDomEnvironment } from '@kinetograph/compat/dom';
-import { installDomGlobals, resetCanvasStates } from '@kinetograph/compat/shim';
-import type { CanvasCommand, CanvasContext2D, CanvasLayer } from '@kinetograph/scene';
+import { setDomAddon, setDomEnvironment } from '@kinetographdev/compat/dom';
+import { installDomGlobals, resetCanvasStates } from '@kinetographdev/compat/shim';
+import type { CanvasCommand, CanvasContext2D, CanvasLayer } from '@kinetographdev/scene';
 import { Canvas, createSceneRoot, Layer, TimelineContext } from '../src/index.js';
 import { layersOf, timeline } from './harness.js';
 

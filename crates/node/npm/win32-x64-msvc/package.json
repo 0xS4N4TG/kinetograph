@@ -1,5 +1,5 @@
 {
-  "name": "@kinetograph/native-win32-x64-msvc",
+  "name": "@kinetographdev/native-win32-x64-msvc",
   "version": "0.1.0",
   "cpu": [
     "x64"

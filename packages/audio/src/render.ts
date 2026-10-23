@@ -121,7 +121,7 @@ function addonDecodeAudio(): DecodeAudio {
   const failures: string[] = [];
   for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
     try {
-      const native = createRequire(base)('@kinetograph/native') as { decodeAudio: DecodeAudio };
+      const native = createRequire(base)('@kinetographdev/native') as { decodeAudio: DecodeAudio };
       addonDecoder = native.decodeAudio;
       return addonDecoder;
     } catch (error) {
@@ -129,7 +129,7 @@ function addonDecodeAudio(): DecodeAudio {
     }
   }
   throw new Error(
-    `The sound of a video cannot be decoded: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
+    `The sound of a video cannot be decoded: @kinetographdev/native could not be loaded (${failures.join('; ')}). ` +
       'Build the addon, or pass its decodeAudio to renderAudio().',
   );
 }

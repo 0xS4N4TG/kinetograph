@@ -2,7 +2,7 @@
 // the composition). It records itself when it is rendered (`artifacts.ts`) and `kinetograph render` writes the files that
 // were recorded in the frames it rendered into the folder of the video. It draws nothing.
 
-import { useTimeline } from '@kinetograph/react';
+import { useTimeline } from '@kinetographdev/react';
 import type { ReactNode } from 'react';
 import { assertValidArtifactFilename, recordArtifact } from './artifacts.js';
 

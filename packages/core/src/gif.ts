@@ -3,10 +3,10 @@
 
 import type { ReactNode } from 'react';
 import { createElement } from 'react';
-import { Gif as NativeGif, type GifProps } from '@kinetograph/react';
+import { Gif as NativeGif, type GifProps } from '@kinetographdev/react';
 import { probeMedia } from './media-utils.js';
 
-export type { GifProps } from '@kinetograph/react';
+export type { GifProps } from '@kinetographdev/react';
 
 function gifDuration(src: string): number {
   const info = probeMedia(src, { cache: true });

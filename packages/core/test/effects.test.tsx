@@ -2,7 +2,7 @@
 // canvas pass over the layer before it), what the effect and `onPaint` are handed, and what is left out.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CanvasCommand, GroupLayer, LayerJson } from '@kinetograph/scene';
+import type { CanvasCommand, GroupLayer, LayerJson } from '@kinetographdev/scene';
 import { CanvasImage, createEffect, HtmlInCanvas, Solid } from '../src/index.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { resetWarnings } from '../src/warn.js';

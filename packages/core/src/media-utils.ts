@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { imageSizeOfBytes, projectFileOf, remoteMessage } from '@kinetograph/compat/shim';
-import type { MediaInfo } from '@kinetograph/native';
+import { imageSizeOfBytes, projectFileOf, remoteMessage } from '@kinetographdev/compat/shim';
+import type { MediaInfo } from '@kinetographdev/native';
 
 export type ProbeMedia = (path: string, baseDir?: string) => MediaInfo;
 
@@ -42,14 +42,14 @@ function loadNative(): ProbeMedia {
   const failures: string[] = [];
   for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
     try {
-      return (createRequire(base)('@kinetograph/native') as { probeMedia: ProbeMedia }).probeMedia;
+      return (createRequire(base)('@kinetographdev/native') as { probeMedia: ProbeMedia }).probeMedia;
     } catch (error) {
       failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
     }
   }
   throw new Error(
-    `Media cannot be probed: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
-      'Build the addon, or pass its probeMedia to setMediaProbe() from @kinetograph/core/media-utils.',
+    `Media cannot be probed: @kinetographdev/native could not be loaded (${failures.join('; ')}). ` +
+      'Build the addon, or pass its probeMedia to setMediaProbe() from @kinetographdev/core/media-utils.',
   );
 }
 
@@ -123,14 +123,14 @@ function loadNativeDecoder(): DecodeAudio {
   const failures: string[] = [];
   for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
     try {
-      return (createRequire(base)('@kinetograph/native') as { decodeAudio: DecodeAudio }).decodeAudio;
+      return (createRequire(base)('@kinetographdev/native') as { decodeAudio: DecodeAudio }).decodeAudio;
     } catch (error) {
       failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
     }
   }
   throw new Error(
-    `Audio cannot be decoded: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
-      'Build the addon, or pass its decodeAudio to setAudioDecoder() from @kinetograph/core/media-utils.',
+    `Audio cannot be decoded: @kinetographdev/native could not be loaded (${failures.join('; ')}). ` +
+      'Build the addon, or pass its decodeAudio to setAudioDecoder() from @kinetographdev/core/media-utils.',
   );
 }
 

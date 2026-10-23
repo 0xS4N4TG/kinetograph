@@ -2,7 +2,7 @@
 // them. The flags are checked here for what they say alone; the addon (`resolveExport`) checks them against the output
 // path and the ffmpeg it has.
 
-import type { ExportOptions } from '@kinetograph/native';
+import type { ExportOptions } from '@kinetographdev/native';
 import type { OptionSpec } from './args.js';
 import { CliError } from './errors.js';
 

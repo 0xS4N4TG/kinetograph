@@ -3,8 +3,8 @@
 
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach } from 'vitest';
-import { setDomAddon } from '@kinetograph/compat/dom';
-import { createSceneRoot, TimelineContext, type RenderedTree } from '@kinetograph/react';
+import { setDomAddon } from '@kinetographdev/compat/dom';
+import { createSceneRoot, TimelineContext, type RenderedTree } from '@kinetographdev/react';
 import { timeline } from './scene-harness.js';
 
 /** The island requests sent since the last `renderDom`, in order. Fill it from a `describe` with `useFakeDom()`. */

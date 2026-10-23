@@ -1,4 +1,4 @@
-# @kinetograph/audio
+# @kinetographdev/audio
 
 Web Audio synthesis and mixing through node-web-audio-api.
 

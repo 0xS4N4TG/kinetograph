@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import type * as NativeApi from '@kinetograph/native';
+import type * as NativeApi from '@kinetographdev/native';
 import { CliError } from './errors.js';
 
 export type Native = typeof NativeApi;
@@ -13,11 +13,11 @@ let loaded: Native | undefined;
 export function native(): Native {
   if (loaded) return loaded;
   try {
-    loaded = createRequire(import.meta.url)('@kinetograph/native') as Native;
+    loaded = createRequire(import.meta.url)('@kinetographdev/native') as Native;
   } catch (error) {
     throw new CliError(
       'NATIVE_UNAVAILABLE',
-      `cannot load @kinetograph/native: ${error instanceof Error ? error.message : String(error)}`,
+      `cannot load @kinetographdev/native: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   return loaded;

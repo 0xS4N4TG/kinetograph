@@ -7,7 +7,7 @@
 import { createContext, type ReactNode } from 'react';
 import Reconciler from 'react-reconciler';
 import { ConcurrentRoot, DiscreteEventPriority, NoEventPriority } from 'react-reconciler/constants.js';
-import { isDomElement } from '@kinetograph/compat/dom';
+import { isDomElement } from '@kinetographdev/compat/dom';
 import {
   deliverMediaEvents,
   deliverObservations,
@@ -20,7 +20,7 @@ import {
   setRawParent,
   setWebViewport,
   unregisterReadbackRoot,
-} from '@kinetograph/compat/shim';
+} from '@kinetographdev/compat/shim';
 import { ELEMENT_NAMES, emit, type EmitOptions, type HostElement, type HostNode, type HostText, type RenderedTree } from './emit.js';
 import { createReadback, hostMeta, MAX_MEASURE_PASSES, measureLoopError, type Container } from './readback.js';
 
@@ -76,7 +76,7 @@ const hostConfig = {
   cancelTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
   noTimeout: -1,
   rendererVersion: '0.1.0',
-  rendererPackageName: '@kinetograph/react',
+  rendererPackageName: '@kinetographdev/react',
   extraDevToolsConfig: null,
   bindToConsole: (method: 'log' | 'warn' | 'error', args: unknown[]) => console[method].bind(console, ...args),
 

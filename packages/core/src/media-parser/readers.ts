@@ -6,7 +6,7 @@ import { createReadStream, existsSync, promises as fs, statSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { remoteMessage } from '@kinetograph/compat/shim';
+import { remoteMessage } from '@kinetographdev/compat/shim';
 import { UnsupportedApiError } from '../unsupported.js';
 import type { MediaParserReaderInterface, ParseMediaSrc } from './types.js';
 

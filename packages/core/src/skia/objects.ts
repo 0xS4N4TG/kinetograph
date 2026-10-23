@@ -2,8 +2,8 @@
 // serialises itself (`toJSON`) into the prop of a node. Geometry that needs Skia (boolean ops, bounds, trimming) asks
 // the addon.
 
-import { getDomEnvironment, resolveProjectFile } from '@kinetograph/compat/dom';
-import { fontKey } from '@kinetograph/scene';
+import { getDomEnvironment, resolveProjectFile } from '@kinetographdev/compat/dom';
+import { fontKey } from '@kinetographdev/scene';
 import { getFonts } from '../font-registry.js';
 import { skiaAddon } from './addon.js';
 import { plain, toColor, type SkColor } from './values.js';

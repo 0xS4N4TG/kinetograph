@@ -5,7 +5,7 @@
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import type { AudioPcm, MediaStreams, StreamScan } from '@kinetograph/native';
+import type { AudioPcm, MediaStreams, StreamScan } from '@kinetographdev/native';
 
 export interface MediaParserAddon {
   probeStreams(path: string, baseDir?: string | null): MediaStreams;
@@ -25,14 +25,14 @@ function load(): MediaParserAddon {
   const failures: string[] = [];
   for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
     try {
-      return createRequire(base)('@kinetograph/native') as MediaParserAddon;
+      return createRequire(base)('@kinetographdev/native') as MediaParserAddon;
     } catch (error) {
       failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
     }
   }
   throw new Error(
-    `Media cannot be parsed: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
-      'Build the addon, or pass it to setMediaParserAddon() from @kinetograph/core/media-parser.',
+    `Media cannot be parsed: @kinetographdev/native could not be loaded (${failures.join('; ')}). ` +
+      'Build the addon, or pass it to setMediaParserAddon() from @kinetographdev/core/media-parser.',
   );
 }
 

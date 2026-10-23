@@ -11,7 +11,7 @@ Video decoding and encoding use FFmpeg 9.0.1 (<https://ffmpeg.org>), built as LG
 - Source: the unmodified `n9.0.1` tag of <https://github.com/FFmpeg/FFmpeg>.
 - Build: `scripts/build-ffmpeg.sh` in <https://github.com/0xS4N4TG/kinetograph> holds the exact configure options. The
   addon's Rust source is in the same repository, so you can rebuild the addon against a different build of FFmpeg
-  (`npm run build:release -w @kinetograph/native -- --features ffmpeg-static` with `PKG_CONFIG_PATH` or `FFMPEG_DIR`
+  (`npm run build:release -w @kinetographdev/native -- --features ffmpeg-static` with `PKG_CONFIG_PATH` or `FFMPEG_DIR`
   pointing at it) and replace the file in this package, which is the right the LGPL gives you.
 
 ## OpenH264 (BSD-2-Clause), macOS and Linux builds

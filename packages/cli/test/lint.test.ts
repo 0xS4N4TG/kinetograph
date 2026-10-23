@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SceneJson, Unsupported } from '@kinetograph/scene';
+import type { SceneJson, Unsupported } from '@kinetographdev/scene';
 import { lintAudio, lintCompat, lintInspect, lintNotes, lintScene, mergeFindings, sortIssues, textInsideCanvas } from '../src/lint.js';
 import type { InspectLayer, InspectResult } from '../src/native.js';
 

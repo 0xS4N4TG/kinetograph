@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetograph/core';
-import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetograph/scene';
+import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetographdev/core';
+import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
 import { LABEL_FONT_PATH } from './scenes.js';
@@ -10,15 +10,15 @@ import { modelNotes } from './model-notes.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
 
-/** What the bundle exports: the parts of `@kinetograph/core` the CLI drives (packages/cli/skills/kinetograph/references/AUTHORING.md §7). */
+/** What the bundle exports: the parts of `@kinetographdev/core` the CLI drives (packages/cli/skills/kinetograph/references/AUTHORING.md §7). */
 interface ProjectModule {
   getCompositions(): CompositionInfo[];
   createFrameRenderer(id: string, options?: { inputProps?: Record<string, unknown> }): FrameRenderer;
   setPublicDir(dir: string): void;
-  setLayoutText(fn: typeof import('@kinetograph/native').layoutText | null): void;
-  setMediaProbe(fn: typeof import('@kinetograph/native').probeMedia | null): void;
-  setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
-  setMediaParserAddon(addon: import('@kinetograph/core/media-parser').MediaParserAddon | null): void;
+  setLayoutText(fn: typeof import('@kinetographdev/native').layoutText | null): void;
+  setMediaProbe(fn: typeof import('@kinetographdev/native').probeMedia | null): void;
+  setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetographdev/native').decodeAudio>) | null): void;
+  setMediaParserAddon(addon: import('@kinetographdev/core/media-parser').MediaParserAddon | null): void;
   setDomAddon(addon: object | null): void;
   setFallbackFont(path: string | null): void;
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;

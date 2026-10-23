@@ -41,8 +41,8 @@ import {
   blur,
   dropShadow,
   linearGradient,
-} from '@kinetograph/core';
-import { onFrame } from '@kinetograph/audio';
+} from '@kinetographdev/core';
+import { onFrame } from '@kinetographdev/audio';
 
 const { fontFamily } = loadFont('normal', { weights: ['400'] });
 

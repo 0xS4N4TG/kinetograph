@@ -1,10 +1,10 @@
-// The optional Skia addon (`@kinetograph/skia`, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7). Nothing else loads it: it is read the first time
+// The optional Skia addon (`@kinetographdev/skia`, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7). Nothing else loads it: it is read the first time
 // a project draws a Skia canvas, so a project that never imports `@remotion/skia` or `@shopify/react-native-skia`
 // does not need it installed.
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { getDomEnvironment } from '@kinetograph/compat/dom';
+import { getDomEnvironment } from '@kinetographdev/compat/dom';
 
 export interface SkiaAddon {
   renderSkia(requestJson: string): string;
@@ -18,13 +18,13 @@ export interface SkiaAddon {
 let override: SkiaAddon | null = null;
 let loaded: SkiaAddon | undefined;
 
-/** Uses `addon` in place of `@kinetograph/skia` (tests); null goes back to loading the package. */
+/** Uses `addon` in place of `@kinetographdev/skia` (tests); null goes back to loading the package. */
 export function setSkiaAddon(addon: SkiaAddon | null): void {
   override = addon;
   loaded = undefined;
 }
 
-/** Whether `@kinetograph/skia` can be loaded here. */
+/** Whether `@kinetographdev/skia` can be loaded here. */
 export function hasSkiaAddon(): boolean {
   try {
     skiaAddon();
@@ -44,7 +44,7 @@ export function skiaAddon(): SkiaAddon {
   if (baseDir !== undefined) bases.push(pathToFileURL(`${baseDir}/`).href);
   for (const base of bases) {
     try {
-      loaded = createRequire(base)('@kinetograph/skia') as SkiaAddon;
+      loaded = createRequire(base)('@kinetographdev/skia') as SkiaAddon;
       return loaded;
     } catch (error) {
       // A missing package is the expected failure; anything else (a binary for another platform) is worth saying.
@@ -53,6 +53,6 @@ export function skiaAddon(): SkiaAddon {
   }
   throw new Error(
     'This project draws with React Native Skia (@remotion/skia or @shopify/react-native-skia), which Kinetograph runs ' +
-      'on real Skia in an optional addon that is not installed. Install it: npm install @kinetograph/skia',
+      'on real Skia in an optional addon that is not installed. Install it: npm install @kinetographdev/skia',
   );
 }

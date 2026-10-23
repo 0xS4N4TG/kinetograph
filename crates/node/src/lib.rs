@@ -1,4 +1,4 @@
-//! The Node-API addon (`@kinetograph/native`): the Rust core as a Node
+//! The Node-API addon (`@kinetographdev/native`): the Rust core as a Node
 //! module. Scenes cross as JSON strings and pixels stay in Rust. The JS API
 //! is specified in `packages/cli/skills/kinetograph/references/AUTHORING.md` §3.
 //!

@@ -13,7 +13,7 @@ vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const addon = (() => {
   try {
-    createRequire(import.meta.url)('@kinetograph/native');
+    createRequire(import.meta.url)('@kinetographdev/native');
     return true;
   } catch {
     return false;

@@ -1,4 +1,4 @@
-import { effectCatalog } from '@kinetograph/scene';
+import { effectCatalog } from '@kinetographdev/scene';
 import { listCompositions } from '../source.js';
 import { ENTRY, type Command } from './types.js';
 

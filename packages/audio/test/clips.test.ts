@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AudioClipJson } from '@kinetograph/scene';
+import type { AudioClipJson } from '@kinetographdev/scene';
 import { joinClips } from '../src/index.js';
 
 const clip = (over: Partial<AudioClipJson> = {}): AudioClipJson => ({

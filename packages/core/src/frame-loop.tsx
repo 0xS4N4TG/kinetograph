@@ -10,8 +10,8 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { resetCanvasStates } from '@kinetograph/compat/shim';
-import { createSceneRoot, finishIslands, TimelineContext, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetograph/react';
+import { resetCanvasStates } from '@kinetographdev/compat/shim';
+import { createSceneRoot, finishIslands, TimelineContext, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
   attachMotionChanges,
   collectMotionLayers,
@@ -21,7 +21,7 @@ import {
   type SceneJson,
   type SequenceJson,
   type Unsupported,
-} from '@kinetograph/scene';
+} from '@kinetographdev/scene';
 import {
   beginSamplePass,
   breakSamplePasses,
@@ -30,7 +30,7 @@ import {
   resetTransitionWindow,
   setHistoryMode,
   transitionWindowSeconds,
-} from '@kinetograph/compat/dom';
+} from '@kinetographdev/compat/dom';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, setVirtualFrame, virtualNow } from './determinism.js';

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { layoutText } = require('@kinetograph/native');
+const { layoutText } = require('@kinetographdev/native');
 const dir = join(homedir(), '.cache', 'kinetograph', 'fonts');
 const files = readdirSync(dir).filter((f) => f.endsWith('.ttf'));
 const find = (suffix) => join(dir, files.find((f) => f.endsWith(suffix)));

@@ -107,14 +107,14 @@ jobs:
         if: runner.os != 'Windows'
         env:
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
-        run: npm run build:release -w @kinetograph/native -- --target ${{ matrix.target }} --features ffmpeg-static
+        run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
 
       - name: Build the addon (Windows)
         if: runner.os == 'Windows'
         env:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
-        run: npm run build:release -w @kinetograph/native -- --target ${{ matrix.target }} --features ffmpeg-static
+        run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
 
       - name: Libraries the addon links
         shell: bash

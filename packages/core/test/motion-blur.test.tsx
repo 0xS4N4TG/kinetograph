@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LayerJson } from '@kinetograph/scene';
+import type { LayerJson } from '@kinetographdev/scene';
 import { CameraMotionBlur, Trail, type TrailProps } from '../src/motion-blur.js';
 import { probe, renderAt, type Seen } from './scene-harness.js';
 
@@ -64,7 +64,7 @@ describe('Trail', () => {
   });
 });
 
-import { useTimeline } from '@kinetograph/react';
+import { useTimeline } from '@kinetographdev/react';
 function Probe2({ seen }: { seen: boolean[] }) {
   seen.push(useTimeline().frozen);
   return null;

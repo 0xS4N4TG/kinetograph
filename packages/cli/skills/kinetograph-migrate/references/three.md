@@ -1,7 +1,7 @@
 # @remotion/three and three.js to the scene3d layer
 
 Kinetograph has no `@remotion/three`, `three` or `@react-three/fiber`. A `<ThreeCanvas>` import stops the bundle with
-`"@remotion/three" is not supported by Kinetograph yet`. Rebuild the scene with the own 3D layer from `@kinetograph/core`.
+`"@remotion/three" is not supported by Kinetograph yet`. Rebuild the scene with the own 3D layer from `@kinetographdev/core`.
 It is drawn by the GPU compositor, so it renders at the same speed as the rest of the frame and needs no WebGL.
 
 Details: `../kinetograph/references/AUTHORING.md` section 6.6 and `../kinetograph/references/SCENE.md` ("scene3d") in the Kinetograph repo
@@ -57,7 +57,7 @@ After:
 
 ```tsx
 import { useCurrentFrame, useVideoConfig } from 'remotion';
-import { AmbientLight, Camera3D, DirectionalLight, Mesh, Scene3D } from '@kinetograph/core';
+import { AmbientLight, Camera3D, DirectionalLight, Mesh, Scene3D } from '@kinetographdev/core';
 
 export const Spin = () => {
   const frame = useCurrentFrame();

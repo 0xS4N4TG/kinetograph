@@ -5,8 +5,8 @@ import React from 'react';
 import { Easing, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadFont as loadInter } from '@remotion/google-fonts/Inter';
 import { loadFont as loadSerif } from '@remotion/google-fonts/InstrumentSerif';
-import { makeGoogleFont } from '@kinetograph/core/google-fonts';
-import { Layer, Rect, Text } from '@kinetograph/core';
+import { makeGoogleFont } from '@kinetographdev/core/google-fonts';
+import { Layer, Rect, Text } from '@kinetographdev/core';
 
 export const W = 1920;
 export const H = 1080;

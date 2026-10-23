@@ -1,3 +1,3 @@
-# `@kinetograph/native-win32-x64-msvc`
+# `@kinetographdev/native-win32-x64-msvc`
 
-This is the **x86_64-pc-windows-msvc** binary for `@kinetograph/native`
+This is the **x86_64-pc-windows-msvc** binary for `@kinetographdev/native`

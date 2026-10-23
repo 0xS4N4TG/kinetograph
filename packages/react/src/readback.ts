@@ -10,9 +10,9 @@ import {
   isDomElement,
   noteStylesheet,
   requestFor,
-} from '@kinetograph/compat/dom';
-import type { BoxInfo, Readback } from '@kinetograph/compat/shim';
-import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetograph/compat/shim';
+} from '@kinetographdev/compat/dom';
+import type { BoxInfo, Readback } from '@kinetographdev/compat/shim';
+import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetographdev/compat/shim';
 import { domFillOf, flattenDomElement, type EmitOptions, type HostElement, type HostNode } from './emit.js';
 
 /** The root of the host tree, as `root.ts` keeps it. */

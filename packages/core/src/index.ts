@@ -1,10 +1,10 @@
-// @kinetograph/core: the Remotion-shaped authoring API (packages/cli/skills/kinetograph/references/AUTHORING.md
+// @kinetographdev/core: the Remotion-shaped authoring API (packages/cli/skills/kinetograph/references/AUTHORING.md
 // §7). Projects import everything from here (and from `remotion`, which the
 // CLI aliases to this package). Implemented from Remotion's documented
 // behaviour, never from its source; the numeric functions are checked against
 // values recorded from the published package (test/fixtures).
 
-export * from '@kinetograph/scene';
+export * from '@kinetographdev/scene';
 
 /** Remotion's `VERSION`: the release whose behaviour the numeric functions are checked against (test/fixtures). */
 export const VERSION = '4.0.535';
@@ -38,9 +38,9 @@ export {
   useTimeline,
   Video,
   OffthreadVideo,
-} from '@kinetograph/react';
+} from '@kinetographdev/react';
 // Remotion's names for the plain HTML media tags, which are the engine's <Audio> and <Video> here.
-export { Audio as Html5Audio, Video as Html5Video } from '@kinetograph/react';
+export { Audio as Html5Audio, Video as Html5Video } from '@kinetographdev/react';
 export type {
   AmbientLightProps,
   AudioProps,
@@ -72,7 +72,7 @@ export type {
   VideoConfig,
   VideoProps,
   GifProps,
-} from '@kinetograph/react';
+} from '@kinetographdev/react';
 
 // <Gif> with the duration lookup that `loopBehavior="unmount-after-finish"` needs (AUTHORING.md §11.3).
 export { Gif } from './gif.js';

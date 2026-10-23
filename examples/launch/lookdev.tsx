@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { AbsoluteFill, Composition, registerRoot, staticFile, useCurrentFrame } from 'remotion';
-import { Layer, Video } from '@kinetograph/core';
+import { Layer, Video } from '@kinetographdev/core';
 import { H, W } from './common.js';
 import { crt, depthLook, oneBit, RAINBOW, thermal, vhs } from './looks.js';
 import { Problem } from './act1.js';

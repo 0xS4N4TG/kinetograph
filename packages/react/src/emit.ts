@@ -13,8 +13,8 @@ import {
   resolveRemoteAsset,
   startDomIsland,
   type StartedIsland,
-} from '@kinetograph/compat/dom';
-import { canvasEnvironment, headHost, propsWithOverlay, withCanvasCommands } from '@kinetograph/compat/shim';
+} from '@kinetographdev/compat/dom';
+import { canvasEnvironment, headHost, propsWithOverlay, withCanvasCommands } from '@kinetographdev/compat/shim';
 import { gatherShaderInputs } from './shader-groups.js';
 import {
   createCanvasContext,
@@ -34,7 +34,7 @@ import {
   type MotionBlurJson,
   type Num,
   type Transform,
-} from '@kinetograph/scene';
+} from '@kinetographdev/scene';
 
 /** An element of the host tree: what the reconciler keeps for a `kg-*` element. */
 export interface HostElement {

@@ -3,8 +3,8 @@
 // out toward the edges; `starburst()` is the same rays as an effect of a layer, which replaces what the layer holds.
 
 import type { ReactNode } from 'react';
-import { Layer } from '@kinetograph/react';
-import { shader, type ShaderEffect } from '@kinetograph/scene';
+import { Layer } from '@kinetographdev/react';
+import { shader, type ShaderEffect } from '@kinetographdev/scene';
 import { parseColor } from './colors.js';
 import { bindQuad, recordingContext, useProgram } from './gl-recording.js';
 import { layerStyleOf, type LightLeakProps } from './light-leaks.js';

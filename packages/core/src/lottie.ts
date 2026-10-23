@@ -1,7 +1,7 @@
 // `@remotion/lottie` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5): the native <Lottie> element, and `getLottieMetadata`.
 
-export { Lottie } from '@kinetograph/react';
-export type { LottieProps } from '@kinetograph/react';
+export { Lottie } from '@kinetographdev/react';
+export type { LottieProps } from '@kinetographdev/react';
 
 /** The parsed JSON of a Lottie animation: the fields `getLottieMetadata` reads, and whatever else the file has. */
 export type LottieAnimationData = {

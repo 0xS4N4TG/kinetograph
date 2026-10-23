@@ -6,7 +6,7 @@
 export type ColorString = string;
 
 /** The easing of the segment that starts at a keyframe (SCENE.md, "Animated numbers"). Named so it cannot clash with
- *  Remotion's `Easing` when `@kinetograph/core` re-exports this package. */
+ *  Remotion's `Easing` when `@kinetographdev/core` re-exports this package. */
 export type KeyframeEasing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
 export interface Keyframe {
   frame: number;

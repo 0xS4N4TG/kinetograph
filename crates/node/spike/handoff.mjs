@@ -7,7 +7,7 @@
 //                   loop pays to turn its scene object into the string
 //   validateSceneMs validateScene on that string: parsing and validating
 // Only with KINETOGRAPH_GPU_TESTS=1 (opens a GPU; run it on the M4, on a
-// release build: `npm run build:release -w @kinetograph/native`):
+// release build: `npm run build:release -w @kinetographdev/native`):
 //   bench           Renderer.bench on the string, frame mode: the stages
 //                   handoff (parse, validate, swap into the renderer),
 //                   resolve, raster, composite, readback and total

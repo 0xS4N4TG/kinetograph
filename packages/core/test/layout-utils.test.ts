@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { TextLayoutRequest } from '@kinetograph/native';
+import type { TextLayoutRequest } from '@kinetographdev/native';
 import { clearFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
 import { fillTextBox, fitText, fitTextOnNLines, measureText, setLayoutText } from '../src/layout-utils.js';
 import { fixture } from './helpers.js';

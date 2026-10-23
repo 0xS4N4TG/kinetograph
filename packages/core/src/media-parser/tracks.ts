@@ -1,6 +1,6 @@
 // The tracks, metadata and location of `parseMedia`, made from what the addon's `probeStreams` reads from a container.
 
-import type { MediaStreams, StreamDetails } from '@kinetograph/native';
+import type { MediaStreams, StreamDetails } from '@kinetographdev/native';
 import { createAacCodecPrivate } from './aac.js';
 import {
   audioCodecOf,

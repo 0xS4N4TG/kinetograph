@@ -5,8 +5,8 @@
 
 import { closeSync, openSync, readFileSync, readSync } from 'node:fs';
 import type { CSSProperties, ReactNode } from 'react';
-import { Gif } from '@kinetograph/react';
-import { remoteMessage } from '@kinetograph/compat/shim';
+import { Gif } from '@kinetographdev/react';
+import { remoteMessage } from '@kinetographdev/compat/shim';
 import { EffectsBox, hasEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
 import { Img, type FillStyle } from './fill.js';
 import { imageSizeSync } from './media-utils.js';

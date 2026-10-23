@@ -7,7 +7,7 @@
 // averaged (SCENE.md, "Motion blur"; the frame loop renders the sub-frames).
 
 import type { ReactNode } from 'react';
-import { Layer } from '@kinetograph/react';
+import { Layer } from '@kinetographdev/react';
 import { Freeze, useCurrentFrame } from './timeline.js';
 
 function requireNumber(name: string, value: unknown): number {

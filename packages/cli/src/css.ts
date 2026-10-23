@@ -294,7 +294,7 @@ function finish(
 ) {
   const text = JSON.stringify(css);
   const lines: string[] = [];
-  lines.push(`import { registerStylesheet, noteStylesheetProblem } from '@kinetograph/compat/dom';`);
+  lines.push(`import { registerStylesheet, noteStylesheetProblem } from '@kinetographdev/compat/dom';`);
   lines.push(`void noteStylesheetProblem;`);
   if (extra) lines.push(extra);
   lines.push(`registerStylesheet(${text}, ${JSON.stringify(file)});`);

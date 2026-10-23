@@ -1,4 +1,4 @@
-// Downloads for fonts: a cached fetch shared by `@kinetograph/core/fonts` and
+// Downloads for fonts: a cached fetch shared by `@kinetographdev/core/fonts` and
 // `/google-fonts`. A file is downloaded once into `~/.cache/kinetograph/fonts`
 // and read from there after that, so a second render needs no network. The
 // fetch is injectable so tests (and offline projects) never touch the network.

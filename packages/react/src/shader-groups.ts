@@ -3,7 +3,7 @@
 // `<Sequence>` holds, with the one coming in); this moves such a layer in as a child of the group, so the renderer finds
 // every texture among the group's own children.
 
-import type { LayerJson } from '@kinetograph/scene';
+import type { LayerJson } from '@kinetographdev/scene';
 
 type Group = Extract<LayerJson, { type: 'group' }>;
 type ShaderGroup = Group & { glsl: NonNullable<Group['glsl']> };

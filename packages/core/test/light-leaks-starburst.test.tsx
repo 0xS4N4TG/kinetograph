@@ -3,8 +3,8 @@
 
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { createSceneRoot, TimelineContext } from '@kinetograph/react';
-import type { GlslDraw, GroupLayer, LayerJson } from '@kinetograph/scene';
+import { createSceneRoot, TimelineContext } from '@kinetographdev/react';
+import type { GlslDraw, GroupLayer, LayerJson } from '@kinetographdev/scene';
 import { LightLeak, LightLeakInternals, lightLeak, lightLeakEffectSchema } from '../src/light-leaks.js';
 import { Starburst, StarburstInternals, starburst, starburstEffectSchema } from '../src/starburst.js';
 import { Sequence } from '../src/timeline.js';

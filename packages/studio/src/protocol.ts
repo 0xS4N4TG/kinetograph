@@ -3,8 +3,8 @@
 // import this file, and only the orchestrator changes it: types and the
 // binary frame codec, nothing that touches Node or the DOM.
 
-import type { CompositionInfo } from '@kinetograph/core';
-import type { SequenceJson } from '@kinetograph/scene';
+import type { CompositionInfo } from '@kinetographdev/core';
+import type { SequenceJson } from '@kinetographdev/scene';
 import type { InspectResult } from 'kinetograph';
 
 export type { CompositionInfo, InspectResult, SequenceJson };

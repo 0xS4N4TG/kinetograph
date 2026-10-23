@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { Easing, interpolate, random, spring, useCurrentFrame } from 'remotion';
-import { Ellipse, Layer, Path, Rect, Text, backdropBlur, blur, dropShadow, glow, gradientMap, grain, linearGradient } from '@kinetograph/core';
+import { Ellipse, Layer, Path, Rect, Text, backdropBlur, blur, dropShadow, glow, gradientMap, grain, linearGradient } from '@kinetographdev/core';
 import { FPS, H, INK, MONO, SANS, W, blink, clamp, ramp, useSpring } from './common.js';
 import { CARD_W, CardArt, Landscape, profilePath, roundedPath } from './art.js';
 import { WIDTHS as M } from './widths.js';

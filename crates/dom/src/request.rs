@@ -17,7 +17,7 @@ pub struct IslandRequest {
     pub stylesheets: Vec<String>,
     /// The composition's size: the box the island is laid out in.
     pub viewport: Size,
-    /// `fontKey` of `@kinetograph/scene` (`Inter`, `Inter:800`, `Inter:400i`) → absolute font file.
+    /// `fontKey` of `@kinetographdev/scene` (`Inter`, `Inter:800`, `Inter:400i`) → absolute font file.
     #[serde(default)]
     pub fonts: BTreeMap<String, String>,
     /// Relative paths in `src`/`url()` resolve against this, then `public_dir`.
@@ -88,7 +88,7 @@ pub enum DomNode {
     },
 }
 
-/// What the island draws: `IslandResult` of `@kinetograph/compat`.
+/// What the island draws: `IslandResult` of `@kinetographdev/compat`.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct IslandOutput {
     /// Scene layers (packages/cli/skills/kinetograph/references/SCENE.md) in paint order. `{"type": "native", "path", "x", "y", "width", "height"}` marks
@@ -173,7 +173,7 @@ pub fn undelta(layers: &[Value], base: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// `Unsupported` of `@kinetograph/scene`.
+/// `Unsupported` of `@kinetographdev/scene`.
 #[derive(Clone, Debug, Serialize)]
 pub struct Unsupported {
     /// `'$0.2.1 <div>'`

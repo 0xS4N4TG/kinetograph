@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setDomAddon } from '@kinetograph/compat/dom';
-import { createSceneRoot, Rect, Text, TimelineContext, useTimeline } from '@kinetograph/react';
+import { setDomAddon } from '@kinetographdev/compat/dom';
+import { createSceneRoot, Rect, Text, TimelineContext, useTimeline } from '@kinetographdev/react';
 import { AbsoluteFill, Img, resetStyleWarnings } from '../src/fill.js';
 import { Freeze } from '../src/timeline.js';
 import { renderAt, timeline } from './scene-harness.js';

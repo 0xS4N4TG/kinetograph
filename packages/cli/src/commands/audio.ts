@@ -1,6 +1,6 @@
-import { analyzeAudio, hasOnFrame, joinClips, renderAudio } from '@kinetograph/audio';
-import { resolveSoundSource } from '@kinetograph/core/sound-source';
-import type { AudioClipJson } from '@kinetograph/scene';
+import { analyzeAudio, hasOnFrame, joinClips, renderAudio } from '@kinetographdev/audio';
+import { resolveSoundSource } from '@kinetographdev/core/sound-source';
+import type { AudioClipJson } from '@kinetographdev/scene';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
 import { frameRange } from '../source.js';

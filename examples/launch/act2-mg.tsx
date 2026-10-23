@@ -13,7 +13,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import {
   AmbientLight, Camera3D, Canvas, DirectionalLight, GlslShader, Group3D, Layer, Mesh, PointLight, Scene3D, Text3D, glow, gradientMap, grain,
-} from '@kinetograph/core';
+} from '@kinetographdev/core';
 import { CLAMP, H, INK, LEN, MONO, OUT, PAPER, RED, SANS, W } from './common.js';
 import { IO } from './act1-kit.js';
 import horse from './public/mg/horse.json';

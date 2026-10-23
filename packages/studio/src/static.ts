@@ -31,7 +31,7 @@ const TYPES: Record<string, string> = {
 const MISSING =
   'The studio UI is not built.\n\n' +
   'The server is running and its API works (/api/project, /api/compositions, ...), but there is nothing to show here:\n' +
-  'ui/dist of @kinetograph/studio is missing. Build it with "npm run build -w @kinetograph/studio-ui" from the repository.\n';
+  'ui/dist of @kinetographdev/studio is missing. Build it with "npm run build -w @kinetographdev/studio-ui" from the repository.\n';
 
 /**
  * Serves a file of the UI for `pathname`, or `index.html` for a path that is no file (the UI routes itself), or a plain

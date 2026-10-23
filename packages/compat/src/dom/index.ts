@@ -1,8 +1,8 @@
-// `@kinetograph/compat/dom` (packages/cli/skills/kinetograph/references/ENGINE.md §1, §2): a DOM island is handed to the addon as an `IslandRequest`; Stylo,
+// `@kinetographdev/compat/dom` (packages/cli/skills/kinetograph/references/ENGINE.md §1, §2): a DOM island is handed to the addon as an `IslandRequest`; Stylo,
 // taffy and Parley style and lay it out, our compositor paints it, and the layers come back as scene JSON. Native
 // (`kg-*`) elements inside the island are drawn here and put where Rust placed their boxes.
 
-import type { CameraJson, LayerJson, Unsupported } from '@kinetograph/scene';
+import type { CameraJson, LayerJson, Unsupported } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStylesheet } from '../environment.js';
 import { buildIslandRequest, type IslandRequestJson } from '../request/build.js';

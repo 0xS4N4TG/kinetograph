@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Audio, Layer, Rect, Text } from '@kinetograph/react';
-import { motionSubFrames, type GroupLayer, type ShapeLayer, type TextLayer } from '@kinetograph/scene';
+import { Audio, Layer, Rect, Text } from '@kinetographdev/react';
+import { motionSubFrames, type GroupLayer, type ShapeLayer, type TextLayer } from '@kinetographdev/scene';
 import { cancelRender, continueRender, delayRender, resetRenderState } from '../src/assets.js';
 import {
   Composition,

@@ -3,8 +3,8 @@
 // `lightLeak()` is the same leak as an effect of a layer, which paints it over what the layer holds.
 
 import type { ReactNode } from 'react';
-import { Layer } from '@kinetograph/react';
-import { shader, type BlendMode, type ShaderEffect } from '@kinetograph/scene';
+import { Layer } from '@kinetographdev/react';
+import { shader, type BlendMode, type ShaderEffect } from '@kinetographdev/scene';
 import { bindQuad, recordingContext, useProgram } from './gl-recording.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from './timeline.js';
 

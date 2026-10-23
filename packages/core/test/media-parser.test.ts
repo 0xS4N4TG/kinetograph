@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MediaStreams, StreamDetails, StreamScan } from '@kinetograph/native';
+import type { MediaStreams, StreamDetails, StreamScan } from '@kinetographdev/native';
 import * as mp from '../src/media-parser/index.js';
 import { setMediaParserAddon } from '../src/media-parser/index.js';
 import { nodeReader, universalReader, webReader } from '../src/media-parser/readers.js';
@@ -353,7 +353,7 @@ describe('the small exports', () => {
 
 function loadAddon(): Record<string, unknown> | null {
   try {
-    const native = createRequire(import.meta.url)('@kinetograph/native') as Record<string, unknown>;
+    const native = createRequire(import.meta.url)('@kinetographdev/native') as Record<string, unknown>;
     return typeof native.probeStreams === 'function' ? native : null;
   } catch {
     return null;

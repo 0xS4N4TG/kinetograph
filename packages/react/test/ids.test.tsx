@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import type { LayerJson } from '@kinetograph/scene';
+import type { LayerJson } from '@kinetographdev/scene';
 import { Camera, createSceneRoot, Layer, Rect, Text } from '../src/index.js';
 import { at, layersOf } from './harness.js';
 

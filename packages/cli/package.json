@@ -41,11 +41,11 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetograph/audio": "0.1.0",
-    "@kinetograph/compat": "0.1.0",
-    "@kinetograph/core": "0.1.0",
-    "@kinetograph/native": "0.1.0",
-    "@kinetograph/scene": "0.1.0",
+    "@kinetographdev/audio": "0.1.0",
+    "@kinetographdev/compat": "0.1.0",
+    "@kinetographdev/core": "0.1.0",
+    "@kinetographdev/native": "0.1.0",
+    "@kinetographdev/scene": "0.1.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "esbuild": "0.28.2",
     "typescript": "5.9.3",

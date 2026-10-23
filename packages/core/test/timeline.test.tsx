@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
-import { createSceneRoot } from '@kinetograph/react';
+import { createSceneRoot } from '@kinetographdev/react';
 import { Freeze, Loop, Sequence, Series, useCurrentFrame, useVideoConfig } from '../src/timeline.js';
 import { ids, probe, renderAt, type Seen } from './scene-harness.js';
 

@@ -1,10 +1,10 @@
 // The types compat mode's streams share (kinetograph site, /docs/compat/). Owned by the orchestrator.
 
-import type { CameraJson, LayerJson, Unsupported } from '@kinetograph/scene';
+import type { CameraJson, LayerJson, Unsupported } from '@kinetographdev/scene';
 
 export type { Unsupported };
 
-/** A host node as the reconciler keeps it: the same shape as `@kinetograph/react`'s `HostNode`. */
+/** A host node as the reconciler keeps it: the same shape as `@kinetographdev/react`'s `HostNode`. */
 export type DomNode =
   | { kind: 'element'; type: string; props: Record<string, any>; children: DomNode[] }
   | { kind: 'text'; text: string };

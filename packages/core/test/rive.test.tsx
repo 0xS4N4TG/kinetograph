@@ -3,7 +3,7 @@
 
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { setDomEnvironment } from '@kinetograph/compat/dom';
+import { setDomEnvironment } from '@kinetographdev/compat/dom';
 import { RemotionRiveCanvas } from '../src/rive.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { renderDom } from './dom-harness.js';

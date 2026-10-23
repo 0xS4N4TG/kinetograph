@@ -2,7 +2,7 @@ import { CliError } from '../errors.js';
 import { parseProps } from '../source.js';
 import { ENTRY, type Command } from './types.js';
 
-/** What the command needs of `@kinetograph/studio` (its `startStudio`, packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). */
+/** What the command needs of `@kinetographdev/studio` (its `startStudio`, packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). */
 export interface StudioModule {
   startStudio(options: {
     entry: string;
@@ -17,7 +17,7 @@ export interface StudioModule {
 // The studio depends on this package (its types and its bundling), so this package cannot depend on the studio: it
 // is loaded by name when the command runs, and the specifier is not a literal so that the compiler does not look
 // for its types.
-const STUDIO = '@kinetograph/studio';
+const STUDIO = '@kinetographdev/studio';
 
 async function loadStudio(): Promise<StudioModule> {
   try {

@@ -31,7 +31,7 @@ import {
 import { Gif } from '@remotion/gif';
 import { createTikTokStyleCaptions, parseSrt } from '@remotion/captions';
 import { loadFont } from '@remotion/google-fonts/Inter';
-import { Layer, Rect, Text, dropShadow, linearGradient } from '@kinetograph/core';
+import { Layer, Rect, Text, dropShadow, linearGradient } from '@kinetographdev/core';
 
 const { fontFamily } = loadFont('normal', { weights: ['400', '700'] });
 

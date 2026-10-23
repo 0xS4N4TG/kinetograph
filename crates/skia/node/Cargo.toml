@@ -1,6 +1,6 @@
 [package]
 name = "kinetograph-skia-node"
-description = "Node-API addon that draws React Native Skia scene trees with Skia (@kinetograph/skia)"
+description = "Node-API addon that draws React Native Skia scene trees with Skia (@kinetographdev/skia)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

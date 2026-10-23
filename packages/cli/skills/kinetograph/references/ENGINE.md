@@ -217,7 +217,7 @@ until the tree changes (`generation`: bumped by every commit, before layout effe
   laid over the props and are part of the next request, as in a DOM) and event listeners (nothing fires them).
   `document.querySelector/getElementById/…` search every root.
 - SVG: `getTotalLength`, `getPointAtLength` and `getBBox` of `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
-  `polygon` use the path functions of `@kinetograph/core/paths` (handed over by `web/install`); a group's `getBBox` is
+  `polygon` use the path functions of `@kinetographdev/core/paths` (handed over by `web/install`); a group's `getBBox` is
   the union of its children's, with their `transform` attributes applied.
 - `ResizeObserver` and `IntersectionObserver` deliver after React's work is done and layout is settled: a callback that
   sets state makes the root render again before the frame is emitted; resize observers fire when the border-box
@@ -234,7 +234,7 @@ until the tree changes (`generation`: bumped by every commit, before layout effe
 
 ### 10.4 Web APIs and time
 
-`@kinetograph/core/web/install` (imported by the Node bundle after the determinism shim) puts
+`@kinetographdev/core/web/install` (imported by the Node bundle after the determinism shim) puts
 these on the global object where they are missing:
 
 - `window` (is `globalThis`), `self`, `innerWidth/Height` and `outerWidth/Height` (the composition's size, set by

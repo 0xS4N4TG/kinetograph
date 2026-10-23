@@ -1,5 +1,5 @@
 {
-  "name": "@kinetograph/skia",
+  "name": "@kinetographdev/skia",
   "version": "0.1.0",
   "description": "Optional Node-API addon: React Native Skia scenes drawn with Skia, for @remotion/skia and @shopify/react-native-skia projects",
   "license": "PolyForm-Small-Business-1.0.0",

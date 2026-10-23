@@ -6,8 +6,8 @@
 // (kinetograph site, /docs/compat/).
 
 import type { ReactNode } from 'react';
-import { Image, Layer, Rect } from '@kinetograph/react';
-import type { Layout } from '@kinetograph/scene';
+import { Image, Layer, Rect } from '@kinetographdev/react';
+import type { Layout } from '@kinetographdev/scene';
 import { parseColor } from './colors.js';
 import { useVideoConfig } from './timeline.js';
 

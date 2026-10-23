@@ -3,8 +3,8 @@
 
 import React from 'react';
 import { random } from 'remotion';
-import { Ellipse, Layer, MeshGradient, Path, Rect, linearGradient, radialGradient } from '@kinetograph/core';
-import type { CommonProps } from '@kinetograph/core';
+import { Ellipse, Layer, MeshGradient, Path, Rect, linearGradient, radialGradient } from '@kinetographdev/core';
+import type { CommonProps } from '@kinetographdev/core';
 
 /** A rounded rectangle as path data, for `clip`. */
 export function roundedPath(w: number, h: number, r: number): string {

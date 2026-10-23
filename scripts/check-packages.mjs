@@ -1,5 +1,5 @@
 // For every publishable package directory given (default: all): `npm pack --dry-run` must list LICENSE.md, a README and
-// no source, test or source-map files, and every `@kinetograph/*` or `kinetograph` dependency must be an exact version.
+// no source, test or source-map files, and every `@kinetographdev/*` or `kinetograph` dependency must be an exact version.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 
@@ -16,7 +16,7 @@ for (const dir of dirs) {
   for (const p of paths) if (/\.map$|(^|\/)(src|test|tests|scratch)\//.test(p)) problems.push(`should not ship ${p}`);
   if (!/^Required Notice:/m.test(fs.readFileSync(`${dir}/LICENSE.md`, 'utf8'))) problems.push('LICENSE.md has no Required Notice line');
   for (const [name, range] of Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies })) {
-    if ((name === 'kinetograph' || name.startsWith('@kinetograph/')) && !/^\d+\.\d+\.\d+$/.test(range)) problems.push(`${name} is ${range}, not an exact version`);
+    if ((name === 'kinetograph' || name.startsWith('@kinetographdev/')) && !/^\d+\.\d+\.\d+$/.test(range)) problems.push(`${name} is ${range}, not an exact version`);
   }
   console.log(`${pkg.name}: ${paths.length} files, ${entry.size} bytes packed${problems.length ? '\n  ' + problems.join('\n  ') : ''}`);
   bad += problems.length;

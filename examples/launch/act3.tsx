@@ -4,7 +4,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import { measureText } from '@remotion/layout-utils';
 import { FADE_END, LogoFlicker } from '@/components/snap-cn/logo-flicker';
-import { Layer, glow, grain } from '@kinetograph/core';
+import { Layer, glow, grain } from '@kinetographdev/core';
 import { CLAMP, H, LEN, MONO, OUT, RED, RENDER_SECONDS, SANS, TITLE_GLOW, W } from './common.js';
 import { pixels } from './looks.js';
 import { spoken, spokenIn } from './sound-timing.js';

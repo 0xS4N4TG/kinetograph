@@ -14,19 +14,19 @@ before testing. Relative imports carry `.js` extensions (`moduleResolution: Node
 
 | Path | Package | Owner | What |
 |---|---|---|---|
-| `crates/node` | `@kinetograph/native` | stream 1 `feat/napi-addon` | napi-rs addon over `kinetograph-core` and the `kinetograph-cli` encoder (§3) |
+| `crates/node` | `@kinetographdev/native` | stream 1 `feat/napi-addon` | napi-rs addon over `kinetograph-core` and the `kinetograph-cli` encoder (§3) |
 | `crates/core`, `crates/cli` | Rust | stream 1 (renderer reuse, `inspect.rs`, encoder) and stream 4 (scene features) | §4 |
-| `packages/scene` | `@kinetograph/scene` | stream 3 `feat/reconciler` | TS types of the whole SCENE.md schema, effect and paint helpers, motion-blur JSON helpers (§5) |
-| `packages/react` | `@kinetograph/react` | stream 3 | `react-reconciler` host config, native elements, `TimelineContext` (§6) |
-| `packages/core` | `@kinetograph/core` | stream 2 `feat/remotion-shim` | Remotion core API, frame loop, determinism shim, the pure-TS Remotion packages as subpaths (§7) |
-| `packages/audio` | `@kinetograph/audio` | stream 5 `feat/cli-audio-mcp` | `onFrame`, offline mix through `node-web-audio-api`, loudness analysis (§8) |
+| `packages/scene` | `@kinetographdev/scene` | stream 3 `feat/reconciler` | TS types of the whole SCENE.md schema, effect and paint helpers, motion-blur JSON helpers (§5) |
+| `packages/react` | `@kinetographdev/react` | stream 3 | `react-reconciler` host config, native elements, `TimelineContext` (§6) |
+| `packages/core` | `@kinetographdev/core` | stream 2 `feat/remotion-shim` | Remotion core API, frame loop, determinism shim, the pure-TS Remotion packages as subpaths (§7) |
+| `packages/audio` | `@kinetographdev/audio` | stream 5 `feat/cli-audio-mcp` | `onFrame`, offline mix through `node-web-audio-api`, loudness analysis (§8) |
 | `packages/cli` | `kinetograph` (bin `kinetograph`) | stream 5 | the CLI commands, the MCP server, project bundling (§9) |
 | `spikes/three-dawn` | not a workspace | stream 5 | spike 2 (§9) |
 | stream 4 `feat/layout-glyphs` | Rust only | stream 4 | flex layout, per-character text, Lottie and the smaller scene additions of §4 |
 
 Dependencies point one way: `scene` ← `react` ← `core`; `cli` uses `core`, `audio`, `native`; `core` uses `native` only
-for text measurement (`layout-utils`). `react` and `react-reconciler` are peer dependencies of `@kinetograph/react` and
-`@kinetograph/core`, so a project has one React.
+for text measurement (`layout-utils`). `react` and `react-reconciler` are peer dependencies of `@kinetographdev/react` and
+`@kinetographdev/core`, so a project has one React.
 
 Files committed by the orchestrator with this contract are stubs: exported names and types are final, bodies throw
 `not implemented`. Each stream replaces the bodies in the packages it owns and may add exports; it does not rename or
@@ -41,7 +41,7 @@ measured; Remotion APIs are written from Remotion's documentation, never from it
 
 ```
 kinetograph render src/index.tsx -o out.mp4
-  cli: esbuild bundles the entry (aliases `remotion` → @kinetograph/core, …), installs the determinism shim, imports it
+  cli: esbuild bundles the entry (aliases `remotion` → @kinetographdev/core, …), installs the determinism shim, imports it
   user code: registerRoot(Root) with <Composition id="Main" component={Main} …/>
   core: createFrameRenderer("Main") → for each frame f: renderFrame(f)
           sets the virtual clock to f, renders <TimelineContext.Provider frame=f><Main/></…> into a SceneRoot,
@@ -58,7 +58,7 @@ Each frame's scene is a complete SCENE.md document whose `durationInFrames` is t
 the values at that frame, and it is rendered *at that frame number* (so `grain`, `dither` and shaders see the real
 frame). Keyframe lists remain legal in it.
 
-## 3. `@kinetograph/native` (stream 1)
+## 3. `@kinetographdev/native` (stream 1)
 
 `crates/node`, built with `@napi-rs/cli` (`npm run build` debug, `npm run build:release` for benchmarks). `napi build`
 generates the loader `index.js` and `index.d.ts` from `src/lib.rs`; both are committed. The scaffold's `src/lib.rs`
@@ -324,7 +324,7 @@ function of `time`: expressions that use randomness must be seeded. Counts nothi
 - `kinetograph-cli`'s `render` takes a `Scene` (not only a path) so the addon can drive it, and the encoder can mux an
   AAC audio stream from PCM.
 
-## 5. `@kinetograph/scene` (stream 3)
+## 5. `@kinetographdev/scene` (stream 3)
 
 Pure TypeScript, no dependencies.
 
@@ -333,7 +333,7 @@ Pure TypeScript, no dependencies.
 `SceneJson`, `LayerJson` (a union over `type`), `Transform`, `Effect` (a union over all 22 SCENE.md effect types),
 `Paint`, `Gradient`, `Clip`, `Mask`, `Matte`, `MotionBlurJson`, `CameraJson`, `Layout`, `LayoutItem`, `CharStyle`,
 `Num` (`number | Keyframe[]`), `KeyframeEasing` (named so it cannot clash with Remotion's `Easing` when
-`@kinetograph/core` re-exports this package), `ColorString`, `BlendMode`, plus `AudioClipJson` (§6.4). Field names, optionality and
+`@kinetographdev/core` re-exports this package), `ColorString`, `BlendMode`, plus `AudioClipJson` (§6.4). Field names, optionality and
 literal unions follow SCENE.md and §4 exactly. A JSON value that type-checks as `SceneJson` should load.
 
 ### 5.2 Helpers
@@ -378,7 +378,7 @@ attachMotionFrames(layers: LayerJson[], frame: number, treesAt: ReadonlyMap<numb
 //   the same as whole copies in motionBlur.frames
 ```
 
-## 6. `@kinetograph/react` (stream 3)
+## 6. `@kinetographdev/react` (stream 3)
 
 ### 6.1 Root
 
@@ -450,7 +450,7 @@ Raw text outside `<Text>` is an error naming the parent element. Duplicate expli
 
 ### 6.5 Canvas 2D
 
-A Canvas 2D context that records instead of rasterising (`createCanvasContext` of `@kinetograph/scene`,
+A Canvas 2D context that records instead of rasterising (`createCanvasContext` of `@kinetographdev/scene`,
 `packages/scene/src/canvas.ts`). It keeps the canvas's state as a browser's does (transform, `fillStyle` and the
 other styles, line and text state, `save`/`restore`, clips) and writes each drawing call as a `canvas` layer command
 with the state it is drawn in (SCENE.md, "canvas"); Rust draws the commands with Skia. Nothing in it reads a clock,
@@ -566,7 +566,7 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   work them out from the frame (`useCurrentFrame()`), as the shader has no clock. `textures` maps `sampler2D` names to
   a project file or `{ src, filter: 'linear' | 'nearest', wrap: 'clamp' | 'repeat' | 'mirror' }`. `gl_FragCoord`
   counts up from the bottom row, as in a browser. The same thing outside React: `glslShader({ width, height,
-  fragment, ... })` of `@kinetograph/scene` returns the recording, and `glslLayer(context, layer)` makes a layer from
+  fragment, ... })` of `@kinetographdev/scene` returns the recording, and `glslLayer(context, layer)` makes a layer from
   any context.
 - **`canvas.getContext('webgl' | 'webgl2' | 'experimental-webgl')`** in a Remotion project (`<canvas>`,
   `document.createElement('canvas')`): a `WebGLRenderingContext` that records. A project's own WebGL code (shader
@@ -627,11 +627,11 @@ the same file and value always give the same sound. A change of `toneFrequency` 
 A clip appears in the tree of every frame it plays in; the CLI joins them by `id` into one clip with a volume per
 frame (§8).
 
-## 7. `@kinetograph/core` (stream 2)
+## 7. `@kinetographdev/core` (stream 2)
 
 ### 7.1 Remotion core API
 
-Exported from `@kinetograph/core` (and so from `remotion` through the CLI's alias), behaving as Remotion documents
+Exported from `@kinetographdev/core` (and so from `remotion` through the CLI's alias), behaving as Remotion documents
 them: `useCurrentFrame`, `useVideoConfig`, `interpolate`, `interpolateColors`, `spring`, `measureSpring`, `Easing`,
 `random`, `Sequence`, `Series`, `Loop`, `Freeze`, `AbsoluteFill`, `Img`, `Audio` (re-exported from react), `staticFile`,
 `delayRender`, `continueRender`, `cancelRender`, `getRemotionEnvironment`, `Composition`, `Still`, `Folder`,
@@ -771,8 +771,8 @@ takes it, checked to be a non-empty string when the composition is found, its sy
 background also fills the margin, which `backdropBlur` and the other effects that read past the canvas edge see, and a
 rect does not.
 
-`registerFont` is also behind `@kinetograph/core/fonts` as `loadFont({ family, url, weight, style })` (Remotion's
-`@remotion/fonts`, with `url` a path). `@kinetograph/core/google-fonts` provides `makeGoogleFont(familyName)`, which
+`registerFont` is also behind `@kinetographdev/core/fonts` as `loadFont({ family, url, weight, style })` (Remotion's
+`@remotion/fonts`, with `url` a path). `@kinetographdev/core/google-fonts` provides `makeGoogleFont(familyName)`, which
 returns the module Remotion's `@remotion/google-fonts/<Family>` exports (`loadFont(style?, { weights, subsets })`,
 `fontFamily`); it downloads TTFs once into `~/.cache/kinetograph/fonts` and registers them, and the frame loop waits
 for downloads before the first frame. The CLI maps `@remotion/google-fonts/<Family>` imports onto it.
@@ -804,8 +804,8 @@ composition's `width`, `height`, `fps`, `durationInFrames`, its `background` (`"
 
 ### 7.4 Determinism shim
 
-`@kinetograph/core/determinism` exports `installDeterminism()` and `setVirtualFrame(frame, fps)`.
-`@kinetograph/core/determinism/install` is a side-effect module that calls `installDeterminism()`; the CLI's bundle
+`@kinetographdev/core/determinism` exports `installDeterminism()` and `setVirtualFrame(frame, fps)`.
+`@kinetographdev/core/determinism/install` is a side-effect module that calls `installDeterminism()`; the CLI's bundle
 imports it before the project (ESM evaluates imports in order, so a call in the entry's body would come too late).
 Once installed:
 
@@ -819,7 +819,7 @@ Once installed:
 - `crypto.getRandomValues()` and `crypto.randomUUID()` draw from the same seeded generator.
 - Nothing else is patched (`setImmediate`, promises and I/O are real).
 
-`@kinetograph/core/web/install` (imported by the Node bundle right after it) adds the
+`@kinetographdev/core/web/install` (imported by the Node bundle right after it) adds the
 browser globals a project commonly touches: `window` and its sizes (the composition's), `matchMedia`, `new Image()` for
 project files, `fetch` of project files (remote URLs fail saying Kinetograph renders offline), `document` queries over
 the host tree, `getComputedStyle`, `ResizeObserver`, `IntersectionObserver` and `MutationObserver`, and `<canvas>`, `OffscreenCanvas`,
@@ -838,35 +838,35 @@ engine (ENGINE.md §10.3).
 
 | Subpath | Remotion package | Notes |
 |---|---|---|
-| `@kinetograph/core/transitions` (+ `/transitions/fade`, `/slide`, `/wipe`, `/flip`, `/clock-wipe`, `/iris`, `/none`, and the shader ones: `/blur-slide`, `/book-flip`, `/cross-zoom`, `/crosswarp`, `/dissolve`, `/dreamy-zoom`, `/film-burn`, `/linear-blur`, `/push-cut`, `/ripple`, `/swap`, `/zoom-blur`, `/zoom-in-out`) | `@remotion/transitions` | `TransitionSeries`, `linearTiming`, `springTiming`, `useTransitionProgress`, `makeHtmlInCanvasPresentation`; presentations render `<Layer>`s with opacity, transforms and clips; a shader presentation is a recorded WebGL shader over the two scenes, run as a shader group (SCENE.md, "Shader groups"; `effects` of a shader presentation are ignored) |
-| `@kinetograph/core/light-leaks`, `/starburst` | `@remotion/light-leaks`, `@remotion/starburst` | `<LightLeak>`, `<Starburst>` (a recorded WebGL draw; of `style` only `opacity` and `mixBlendMode` apply) and the `lightLeak()` and `starburst()` effects (native `shader` effects, for `<Layer effects>`) |
-| `@kinetograph/core/motion-blur` | `@remotion/motion-blur` | `Trail`; `CameraMotionBlur` is `<Layer motionBlur={{ samples, shutter: shutterAngle / 360 }}>` |
-| `@kinetograph/core/noise` | `@remotion/noise` | `noise2D/3D/4D(seed, …)` |
-| `@kinetograph/core/paths` | `@remotion/paths` | pure path maths: `parsePath`, `serializeInstructions`, `reduceInstructions`, `normalizePath`, `getLength`, `getBoundingBox`, `scalePath`, `interpolatePath`, `interpolatePaths(input, inputRange, paths, { easing, posterize, extrapolateLeft, extrapolateRight })`, `warpPath(path, transformer, { interpolationThreshold })`, …; the blends and the warp match the published package digit for digit (arcs aside) |
-| `@kinetograph/core/shapes` | `@remotion/shapes` | `make*` functions (`makeRect`, `makeCircle`, `makeEllipse`, `makeTriangle`, `makeStar`, `makePolygon`, `makePie`, `makeHeart`, `makeArrow`, `makeCallout`, `makeSpark`) and the `Instruction` type; components render `<Path>`. `makeArrow`, `makeCallout` and `makeSpark` match the published package's paths exactly |
-| `@kinetograph/core/layout-utils` | `@remotion/layout-utils` | `measureText`, `fitText`, `fillTextBox`, `fitTextOnNLines` through `layoutText` (§3), fonts from `getFonts()`; the box filling and the size search follow the published package step by step and give its results on a recorded set of texts |
-| `@kinetograph/core/animation-utils` | `@remotion/animation-utils` | `interpolateStyles`, `makeTransform` |
-| `@kinetograph/core/captions` | `@remotion/captions` | `parseSrt`, `serializeSrt`, `createTikTokStyleCaptions` |
-| `@kinetograph/core/google-fonts` | `@remotion/google-fonts/*` | §7.2 |
-| `@kinetograph/core/fonts` | `@remotion/fonts` | §7.2 |
-| `@kinetograph/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>`; `getLottieMetadata(animationData)` (`{ fps, durationInSeconds, durationInFrames, width, height }` or null, as the published package) |
-| `@kinetograph/core/media` | `@remotion/media` | `Audio` and `Video` (also as `experimental_Audio` and `experimental_Video`), `getTargetSampleRate()` (48000) |
-| `@kinetograph/core/sfx` | `@remotion/sfx` | the 32 sound-effect URLs of the package (`whip`, `ding`, …), for `<Audio src>`. The mix downloads each once into `~/.cache/kinetograph/sfx` (`resolveSoundSource`, `@kinetograph/core/sound-source`), so a render after the first is offline; the CLI's `render` and `audio analyze` pass it to `renderAudio` as `resolveSource`, and `lint` does not look for these URLs on disk |
-| `@kinetograph/core/zod-types` | `@remotion/zod-types` | `zColor`, `zMatrix`, `zTextarea` and `ZodZypesInternals`: zod schemas with Remotion's brands in their descriptions, accepting and refusing what the published ones do (a colour is any string Remotion's colour parser reads, `lab()`, `oklch()` and `hwb()` included). `zod` 4 is an optional peer dependency of the core. `<Composition schema>` is accepted and not validated |
-| `@kinetograph/core/timeline-utils` (+ `/timeline-utils/audio-waveform-worker`) | `@remotion/timeline-utils` | the Studio timeline's helpers, 33 exports. Pure ones (`getLoopDisplaySegments`, `sliceWaveformPeaks`, `calculateTimestampSlots`, …), `drawBars` into a canvas, `loadWaveformPeaks` and `subscribeToWaveformPeaks` (a path, decoded by the addon at 48 kHz, no worker) and the frame cache work, each against values recorded from the published package. `extractFrames`, `resizeVideoFrame` with a scale other than 1, and `renderFrameStripToCanvas` for frames not in the cache throw `UnsupportedApiError` (`@kinetograph/core`'s `unsupported.ts`): the addon decodes video inside the renderer and has no call that returns a picture |
-| `@kinetograph/core/media-parser` (+ `/media-parser/node`, `/web`, `/universal`, `/node-writer`, `/worker`, `/server-worker`, `/worker-web-entry`, `/worker-server-entry`) | `@remotion/media-parser` | `parseMedia` and `downloadAndParseMedia` for a **local file** (a path, a `file:` URL; a URL to the network is the "renders offline" error), `mediaParserController`, the errors (`IsAnImageError`, `IsAPdfError`, `IsAnUnsupportedFileTypeError`, `MediaParserAbortError`), readers and `nodeWriter`. FFmpeg reads the container through the addon's `probeStreams` and `scanStreams` (`crates/node/src/streams.rs`), so every field of the published parser is answered, checked against it on MP4, WebM, transport-stream, MP3, AAC, FLAC and WAV files (test/media-parser.test.ts). Known differences: MP4's `trackMediaTimeOffsetInTrackTimescale` is 0; the `slow*` bitrates and durations are within a few percent; raw AAC gets a correct `AudioSpecificConfig`; metadata keys follow FFmpeg's names except for Matroska (lower case), MP3 (ID3 frame ids) and WAV (RIFF chunk ids). Throws `UnsupportedApiError`: `slowStructure` (the box tree), `onAudioTrack` / `onVideoTrack` (encoded samples), a `Blob` source, M3U8 playlists, `simulateSeek`; `seek()` and `seekingHints` change nothing. `MediaParserInternals` has `Log`, `createAacCodecPrivate`, `internalParseMedia` and `fieldsNeedSamplesMap` only |
-| `@kinetograph/core/webcodecs` (+ `/webcodecs/buffer`, `/web-fs`, `/worker`) | `@remotion/webcodecs` | works: the container and codec lists, `canCopy*`/`canReencode*`, the default track handlers, `getPartialAudioData`, `convertMedia` of a local file's sound to `container: 'wav'` (decoded by the addon's FFmpeg), `bufferWriter`, `webcodecsController`. Throws `UnsupportedApiError`: every other `convertMedia` output (the addon has no video or audio encoder to hand frames to), `onVideoFrame`/`onAudioData` (WebCodecs objects), `createVideoDecoder`/`createAudioDecoder`/`createVideoEncoder`/`createAudioEncoder`, `convertAudioData`, `extractFrames`, `extractFramesOnWebWorker`, `webFsWriter` |
-| `@kinetograph/core/canvas` | `@remotion/canvas` | the Studio editor's canvas (an overlay of `@remotion/player` with pointer selection, hover and keyframe dragging), not a drawing API. Every name is exported and throws `UnsupportedApiError` when called or rendered, so a project that imports it bundles; for drawing, see §6.5. The published package is at 4.0.532 |
-| `@kinetograph/core/rive` | `@remotion/rive` | `RemotionRiveCanvas`, §7.6 |
-| `@kinetograph/core/skia` (+ `/skia/enable`) | `@remotion/skia`, `@shopify/react-native-skia` | `SkiaCanvas`, `Canvas` and RN-Skia's components on real Skia in the optional `@kinetograph/skia` addon, §7.7 |
-| `@kinetograph/core/determinism`, `/determinism/install` | none | §7.4 |
+| `@kinetographdev/core/transitions` (+ `/transitions/fade`, `/slide`, `/wipe`, `/flip`, `/clock-wipe`, `/iris`, `/none`, and the shader ones: `/blur-slide`, `/book-flip`, `/cross-zoom`, `/crosswarp`, `/dissolve`, `/dreamy-zoom`, `/film-burn`, `/linear-blur`, `/push-cut`, `/ripple`, `/swap`, `/zoom-blur`, `/zoom-in-out`) | `@remotion/transitions` | `TransitionSeries`, `linearTiming`, `springTiming`, `useTransitionProgress`, `makeHtmlInCanvasPresentation`; presentations render `<Layer>`s with opacity, transforms and clips; a shader presentation is a recorded WebGL shader over the two scenes, run as a shader group (SCENE.md, "Shader groups"; `effects` of a shader presentation are ignored) |
+| `@kinetographdev/core/light-leaks`, `/starburst` | `@remotion/light-leaks`, `@remotion/starburst` | `<LightLeak>`, `<Starburst>` (a recorded WebGL draw; of `style` only `opacity` and `mixBlendMode` apply) and the `lightLeak()` and `starburst()` effects (native `shader` effects, for `<Layer effects>`) |
+| `@kinetographdev/core/motion-blur` | `@remotion/motion-blur` | `Trail`; `CameraMotionBlur` is `<Layer motionBlur={{ samples, shutter: shutterAngle / 360 }}>` |
+| `@kinetographdev/core/noise` | `@remotion/noise` | `noise2D/3D/4D(seed, …)` |
+| `@kinetographdev/core/paths` | `@remotion/paths` | pure path maths: `parsePath`, `serializeInstructions`, `reduceInstructions`, `normalizePath`, `getLength`, `getBoundingBox`, `scalePath`, `interpolatePath`, `interpolatePaths(input, inputRange, paths, { easing, posterize, extrapolateLeft, extrapolateRight })`, `warpPath(path, transformer, { interpolationThreshold })`, …; the blends and the warp match the published package digit for digit (arcs aside) |
+| `@kinetographdev/core/shapes` | `@remotion/shapes` | `make*` functions (`makeRect`, `makeCircle`, `makeEllipse`, `makeTriangle`, `makeStar`, `makePolygon`, `makePie`, `makeHeart`, `makeArrow`, `makeCallout`, `makeSpark`) and the `Instruction` type; components render `<Path>`. `makeArrow`, `makeCallout` and `makeSpark` match the published package's paths exactly |
+| `@kinetographdev/core/layout-utils` | `@remotion/layout-utils` | `measureText`, `fitText`, `fillTextBox`, `fitTextOnNLines` through `layoutText` (§3), fonts from `getFonts()`; the box filling and the size search follow the published package step by step and give its results on a recorded set of texts |
+| `@kinetographdev/core/animation-utils` | `@remotion/animation-utils` | `interpolateStyles`, `makeTransform` |
+| `@kinetographdev/core/captions` | `@remotion/captions` | `parseSrt`, `serializeSrt`, `createTikTokStyleCaptions` |
+| `@kinetographdev/core/google-fonts` | `@remotion/google-fonts/*` | §7.2 |
+| `@kinetographdev/core/fonts` | `@remotion/fonts` | §7.2 |
+| `@kinetographdev/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>`; `getLottieMetadata(animationData)` (`{ fps, durationInSeconds, durationInFrames, width, height }` or null, as the published package) |
+| `@kinetographdev/core/media` | `@remotion/media` | `Audio` and `Video` (also as `experimental_Audio` and `experimental_Video`), `getTargetSampleRate()` (48000) |
+| `@kinetographdev/core/sfx` | `@remotion/sfx` | the 32 sound-effect URLs of the package (`whip`, `ding`, …), for `<Audio src>`. The mix downloads each once into `~/.cache/kinetograph/sfx` (`resolveSoundSource`, `@kinetographdev/core/sound-source`), so a render after the first is offline; the CLI's `render` and `audio analyze` pass it to `renderAudio` as `resolveSource`, and `lint` does not look for these URLs on disk |
+| `@kinetographdev/core/zod-types` | `@remotion/zod-types` | `zColor`, `zMatrix`, `zTextarea` and `ZodZypesInternals`: zod schemas with Remotion's brands in their descriptions, accepting and refusing what the published ones do (a colour is any string Remotion's colour parser reads, `lab()`, `oklch()` and `hwb()` included). `zod` 4 is an optional peer dependency of the core. `<Composition schema>` is accepted and not validated |
+| `@kinetographdev/core/timeline-utils` (+ `/timeline-utils/audio-waveform-worker`) | `@remotion/timeline-utils` | the Studio timeline's helpers, 33 exports. Pure ones (`getLoopDisplaySegments`, `sliceWaveformPeaks`, `calculateTimestampSlots`, …), `drawBars` into a canvas, `loadWaveformPeaks` and `subscribeToWaveformPeaks` (a path, decoded by the addon at 48 kHz, no worker) and the frame cache work, each against values recorded from the published package. `extractFrames`, `resizeVideoFrame` with a scale other than 1, and `renderFrameStripToCanvas` for frames not in the cache throw `UnsupportedApiError` (`@kinetographdev/core`'s `unsupported.ts`): the addon decodes video inside the renderer and has no call that returns a picture |
+| `@kinetographdev/core/media-parser` (+ `/media-parser/node`, `/web`, `/universal`, `/node-writer`, `/worker`, `/server-worker`, `/worker-web-entry`, `/worker-server-entry`) | `@remotion/media-parser` | `parseMedia` and `downloadAndParseMedia` for a **local file** (a path, a `file:` URL; a URL to the network is the "renders offline" error), `mediaParserController`, the errors (`IsAnImageError`, `IsAPdfError`, `IsAnUnsupportedFileTypeError`, `MediaParserAbortError`), readers and `nodeWriter`. FFmpeg reads the container through the addon's `probeStreams` and `scanStreams` (`crates/node/src/streams.rs`), so every field of the published parser is answered, checked against it on MP4, WebM, transport-stream, MP3, AAC, FLAC and WAV files (test/media-parser.test.ts). Known differences: MP4's `trackMediaTimeOffsetInTrackTimescale` is 0; the `slow*` bitrates and durations are within a few percent; raw AAC gets a correct `AudioSpecificConfig`; metadata keys follow FFmpeg's names except for Matroska (lower case), MP3 (ID3 frame ids) and WAV (RIFF chunk ids). Throws `UnsupportedApiError`: `slowStructure` (the box tree), `onAudioTrack` / `onVideoTrack` (encoded samples), a `Blob` source, M3U8 playlists, `simulateSeek`; `seek()` and `seekingHints` change nothing. `MediaParserInternals` has `Log`, `createAacCodecPrivate`, `internalParseMedia` and `fieldsNeedSamplesMap` only |
+| `@kinetographdev/core/webcodecs` (+ `/webcodecs/buffer`, `/web-fs`, `/worker`) | `@remotion/webcodecs` | works: the container and codec lists, `canCopy*`/`canReencode*`, the default track handlers, `getPartialAudioData`, `convertMedia` of a local file's sound to `container: 'wav'` (decoded by the addon's FFmpeg), `bufferWriter`, `webcodecsController`. Throws `UnsupportedApiError`: every other `convertMedia` output (the addon has no video or audio encoder to hand frames to), `onVideoFrame`/`onAudioData` (WebCodecs objects), `createVideoDecoder`/`createAudioDecoder`/`createVideoEncoder`/`createAudioEncoder`, `convertAudioData`, `extractFrames`, `extractFramesOnWebWorker`, `webFsWriter` |
+| `@kinetographdev/core/canvas` | `@remotion/canvas` | the Studio editor's canvas (an overlay of `@remotion/player` with pointer selection, hover and keyframe dragging), not a drawing API. Every name is exported and throws `UnsupportedApiError` when called or rendered, so a project that imports it bundles; for drawing, see §6.5. The published package is at 4.0.532 |
+| `@kinetographdev/core/rive` | `@remotion/rive` | `RemotionRiveCanvas`, §7.6 |
+| `@kinetographdev/core/skia` (+ `/skia/enable`) | `@remotion/skia`, `@shopify/react-native-skia` | `SkiaCanvas`, `Canvas` and RN-Skia's components on real Skia in the optional `@kinetographdev/skia` addon, §7.7 |
+| `@kinetographdev/core/determinism`, `/determinism/install` | none | §7.4 |
 
-`@kinetograph/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from
+`@kinetographdev/core` also re-exports every element of §6.3 and every helper and type of §5, so a project imports from
 one place.
 
 ### 7.6 `@remotion/rive`
 
-`import { RemotionRiveCanvas } from '@remotion/rive'` (also `@kinetograph/core/rive`). Remotion plays a `.riv` file with
+`import { RemotionRiveCanvas } from '@remotion/rive'` (also `@kinetographdev/core/rive`). Remotion plays a `.riv` file with
 Rive's WebAssembly runtime in a `<canvas>`; Kinetograph plays it with Rive's own C++ runtime, built into the addon from
 `rive-rs` (`vendor/rive`, licences in `vendor/README.md`), and the component hands the runtime's draw calls to the
 `<canvas>`'s 2D context as commands, so the element is laid out and styled like the DOM element it is in Remotion and is
@@ -890,7 +890,7 @@ of the file and the frame number. Pictures embedded in a file are decoded and wr
 
 ### 7.7 `@remotion/skia` and `@shopify/react-native-skia`
 
-Real Skia (`skia-safe`, Skia's CPU rasteriser) in an **optional** addon, `@kinetograph/skia` (`crates/skia/node`). It
+Real Skia (`skia-safe`, Skia's CPU rasteriser) in an **optional** addon, `@kinetographdev/skia` (`crates/skia/node`). It
 is its own Cargo workspace (`crates/skia`), not a member of the root one, so `cargo build`, `cargo test` and
 `cargo clippy` at the root and the default `npm run build`/`npm test` never compile or link Skia. The npm package has no
 `build` or `test` script for the same reason; build and test it with
@@ -901,9 +901,9 @@ npm run test:addon -w crates/skia/node
 cargo test --manifest-path crates/skia/Cargo.toml    # the pixel tests of the primitives, filters, SkSL and text
 ```
 
-The CLI maps `@remotion/skia`, `@remotion/skia/enable` and `@shopify/react-native-skia` to `@kinetograph/core/skia`.
+The CLI maps `@remotion/skia`, `@remotion/skia/enable` and `@shopify/react-native-skia` to `@kinetographdev/core/skia`.
 The addon is loaded the first time a frame draws a canvas, so a project that never imports Skia does not need it. If it
-is not installed, the first Skia canvas fails with `npm install @kinetograph/skia`.
+is not installed, the first Skia canvas fails with `npm install @kinetographdev/skia`.
 
 How a frame is drawn:
 
@@ -953,7 +953,7 @@ values and hooks (`useSharedValue`, `useDerivedValue`, `useClock`; a Remotion pr
 `Skia.SVG.MakeFromData`, `Skia.Typeface`/`FontMgr`, `useVideo`, animated images, `Paragraph` measurement, a `Skia.Paint()` with a
 shader or filter set on it (use the JSX children), touch handling.
 
-## 8. `@kinetograph/audio` (stream 5)
+## 8. `@kinetographdev/audio` (stream 5)
 
 ```ts
 export type OnFrameCallback = (ctx: OfflineAudioContext, time: number) => void;
@@ -1064,10 +1064,10 @@ picture, a GIF's or Lottie's time, canvas commands, WebGL uniforms, motion blur 
 frame, so the output is the same however the chunks were shared out. The summary says how many frames were repeats
 (`repeated`); `KINETOGRAPH_NO_REUSE=1` draws every frame.
 
-Bundling: esbuild bundles the entry with a synthetic entry that imports `@kinetograph/core/determinism/install` first,
-then the project, and re-exports `@kinetograph/core`, so the CLI drives frames through the same core and React instance the
-project uses. Aliases: `remotion` → `@kinetograph/core`, `@remotion/<pkg>[/sub]` → `@kinetograph/core/<pkg>[/sub]`,
-`@remotion/google-fonts/<Family>` → a virtual module calling `makeGoogleFont`. `@kinetograph/native` stays external.
+Bundling: esbuild bundles the entry with a synthetic entry that imports `@kinetographdev/core/determinism/install` first,
+then the project, and re-exports `@kinetographdev/core`, so the CLI drives frames through the same core and React instance the
+project uses. Aliases: `remotion` → `@kinetographdev/core`, `@remotion/<pkg>[/sub]` → `@kinetographdev/core/<pkg>[/sub]`,
+`@remotion/google-fonts/<Family>` → a virtual module calling `makeGoogleFont`. `@kinetographdev/native` stays external.
 The bundle is written under `node_modules/.cache/kinetograph/`.
 
 The MCP server (`@modelcontextprotocol/sdk`, stdio) exposes one tool per command with the same arguments; each call
@@ -1092,7 +1092,7 @@ fallback), writes PNGs and prints timings as JSON. Run on the M4.
   `noise*`) are tested against fixtures recorded from the published `remotion` packages, run as black boxes in a
   scratch directory outside the repo (never added as dependencies, never read). The fixture file says how it was
   recorded.
-- `@kinetograph/react` has snapshot tests of the emitted JSON; `@kinetograph/core` renders small compositions to
+- `@kinetographdev/react` has snapshot tests of the emitted JSON; `@kinetographdev/core` renders small compositions to
   `FrameResult`s and checks them; the CLI's GPU-free paths (bundling, `compositions`, `inspect`, `lint`, `effects`,
   argument parsing) are tested in the cloud.
 
@@ -1116,7 +1116,7 @@ whose committed bodies return a `not implemented` error; `index.d.ts` is regener
 ### 11.1 Scene: `video` and `gif` layers
 
 As SCENE.md's [video](SCENE.md#video) and [gif](SCENE.md#gif) sections, typed as `VideoLayer` and `GifLayer` in
-`@kinetograph/scene`. `InspectLayer.type` gains `'video' | 'gif'`; both have `src`, and `media: { time: number }`,
+`@kinetographdev/scene`. `InspectLayer.type` gains `'video' | 'gif'`; both have `src`, and `media: { time: number }`,
 the source time in seconds that SCENE.md's rules give at the inspected frame (computed, nothing decoded).
 `inspect` and `validateScene` read containers (sizes, durations) but never decode a picture.
 
@@ -1174,7 +1174,7 @@ wins where its form differs from this sketch: there a `null` above is an absent 
 
 ### 11.3 `<Video>`, `<OffthreadVideo>`, `<Gif>` (stream 2)
 
-Written from Remotion's documented props. Exported from `@kinetograph/react` and re-exported by `@kinetograph/core`
+Written from Remotion's documented props. Exported from `@kinetographdev/react` and re-exported by `@kinetographdev/core`
 (so `remotion`'s `Video` and `OffthreadVideo` resolve to them); `<OffthreadVideo>` is the same component.
 
 | Prop | JSON |
@@ -1193,15 +1193,15 @@ Written from Remotion's documented props. Exported from `@kinetograph/react` and
 `decodeAudio(src, sampleRate)` instead of `decodeAudioData`; a file without sound plays silence. Volume, mute,
 trims, rate, loop and `<Freeze>` work as for `<Audio>`.
 
-`@kinetograph/core/gif` is `@remotion/gif`: `Gif` (`src`, `width`, `height`, `fit` (default `fill`), `style`,
+`@kinetographdev/core/gif` is `@remotion/gif`: `Gif` (`src`, `width`, `height`, `fit` (default `fill`), `style`,
 `playbackRate` (default 1), `loopBehavior`: `loop` (default), `pause-after-finish`, `unmount-after-finish`; `onLoad`,
 `onError` accepted) emits a `gif` layer with `time = frame / fps * playbackRate` (the native element also takes a
 `time`, which `<AnimatedImage>` sets) and `loop = loopBehavior === 'loop'`, and renders nothing past the GIF's duration
 with `unmount-after-finish`. `getGifDurationInSeconds(src): Promise<number>`. `preloadGif(src)` probes the file now and
 returns `{ waitUntilDone, free }`: `waitUntilDone()` resolves, or rejects with what is wrong with the file, and `free()`
-does nothing. `@kinetograph/core/media-utils` is `@remotion/media-utils`' `getVideoMetadata(src): Promise<{
+does nothing. `@kinetographdev/core/media-utils` is `@remotion/media-utils`' `getVideoMetadata(src): Promise<{
 durationInSeconds, width, height, aspectRatio, isRemote: false, fps }>`. Both read `probeMedia`, which the host passes
-in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetograph/core/media-utils`, which the CLI's
+in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetographdev/core/media-utils`, which the CLI's
 synthetic entry re-exports next to `setLayoutText`.
 
 ### 11.4 Timeline data (stream 3)
@@ -1229,8 +1229,8 @@ rendered, so a whole timeline is the union over frames; two entries with one `ke
 ### 11.5 The studio server (stream 3)
 
 `kinetograph studio <entry> [--port 3000] [--host 127.0.0.1] [--no-open] [--props <json>]` (the CLI command loads
-`@kinetograph/studio` with a dynamic import) calls `startStudio({ entry, port, host, open, props })` from
-`@kinetograph/studio`, which resolves to `{ url, close() }`. A taken port is an `INVALID_ARG` error.
+`@kinetographdev/studio` with a dynamic import) calls `startStudio({ entry, port, host, open, props })` from
+`@kinetographdev/studio`, which resolves to `{ url, close() }`. A taken port is an `INVALID_ARG` error.
 
 - **Isolation.** The project runs in a `worker_threads` worker, so the determinism shim patches only the worker's
   globals; the server thread keeps real timers. The worker owns the preview `Renderer` (one GPU setup) and a
@@ -1267,7 +1267,7 @@ The routes and messages are typed in `packages/studio/src/protocol.ts`; that fil
 
 ### 11.6 The studio UI (stream 4)
 
-`packages/studio/ui` (`@kinetograph/studio-ui`, private): React 19 + Vite, Tailwind CSS v4 utilities only (no
+`packages/studio/ui` (`@kinetographdev/studio-ui`, private): React 19 + Vite, Tailwind CSS v4 utilities only (no
 hand-written CSS beyond the Tailwind entry and shadcn's theme variables), shadcn/ui components (default style, zinc
 base colour, dark theme) under `src/components/ui/`, used wherever one fits; the timeline and the preview canvas are
 the only custom components. It imports the protocol types from `../src/protocol.ts` (type-only) and talks to the
@@ -1291,7 +1291,7 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
 
 ### 11.7 Audio data (`@remotion/media-utils`)
 
-`@kinetograph/core/media-utils` also has the audio half of `@remotion/media-utils`, for audio-reactive visuals:
+`@kinetographdev/core/media-utils` also has the audio half of `@remotion/media-utils`, for audio-reactive visuals:
 
 - `getAudioData(src)`, `useAudioData(src)`, `useWindowedAudioData({ src, frame, fps, windowInSeconds })` and
   `getAudioDurationInSeconds(src)`. The file is decoded once by the addon's `decodeAudio` (ffmpeg: any file with an

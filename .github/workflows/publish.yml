@@ -1,7 +1,7 @@
 # Publishes the npm packages. Runs only when started by hand (Actions tab, "Run workflow"); nothing triggers it.
 #
 # It takes the addons from a finished run of native.yml (give its run id), so the three .node files are the ones that
-# were smoke-tested. Needs the repository secret NPM_TOKEN (an npm automation token that can publish @kinetograph/* and
+# were smoke-tested. Needs the repository secret NPM_TOKEN (an npm automation token that can publish @kinetographdev/* and
 # kinetograph). `--provenance` needs a public repository.
 name: publish
 
@@ -66,8 +66,8 @@ jobs:
       - name: Build the TypeScript packages and the studio UI
         run: |
           for p in scene compat react core audio cli; do npm run build -w "packages/$p"; done
-          npm run build -w @kinetograph/studio-ui
-          npm run build -w @kinetograph/studio
+          npm run build -w @kinetographdev/studio-ui
+          npm run build -w @kinetographdev/studio
 
       - name: Check the package contents
         run: |

@@ -45,7 +45,7 @@ A volume that rises over the first second:
 `onFrame` schedules a function to run at a frame. The function gets a Web Audio context and the time to play at:
 
 ```tsx
-import { onFrame } from '@kinetograph/audio';
+import { onFrame } from '@kinetographdev/audio';
 
 onFrame(4, (ctx, t) => {
   const osc = ctx.createOscillator();
@@ -102,6 +102,6 @@ The command mixes the audio and prints:
 
 ## Code API
 
-`@kinetograph/audio` exports `onFrame`, `clearOnFrame`, `renderAudio` and `analyzeAudio`, which the CLI uses. The signatures are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 8.
+`@kinetographdev/audio` exports `onFrame`, `clearOnFrame`, `renderAudio` and `analyzeAudio`, which the CLI uses. The signatures are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 8.
 
 For the gaps in the audio elements, see [Known issues](/docs/known-issues/).

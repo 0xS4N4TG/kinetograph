@@ -1,5 +1,5 @@
 // SVG measurement for `getBBox`, `getTotalLength` and `getPointAtLength` (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"). Shapes are
-// written as path data and handed to the path measuring functions of `@kinetograph/core/paths` (set with
+// written as path data and handed to the path measuring functions of `@kinetographdev/core/paths` (set with
 // `setPathMeasure`; compat cannot import core). Lengths are in the element's own user units, before any transform.
 
 export interface PathMeasure {
@@ -16,7 +16,7 @@ export function setPathMeasure(fn: PathMeasure | null): void {
 }
 
 export function pathMeasure(): PathMeasure {
-  if (measure === null) throw new Error('SVG geometry is not available: @kinetograph/core has not handed over its path functions (setPathMeasure)');
+  if (measure === null) throw new Error('SVG geometry is not available: @kinetographdev/core has not handed over its path functions (setPathMeasure)');
   return measure;
 }
 

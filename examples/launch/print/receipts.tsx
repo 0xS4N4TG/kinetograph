@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import { Layer, grain } from '@kinetograph/core';
+import { Layer, grain } from '@kinetographdev/core';
 import { CLAMP, FPS, MONO } from '../common.js';
 import { Receipt, receiptHeight, type Line, type PhotoSpec } from './receipt.js';
 

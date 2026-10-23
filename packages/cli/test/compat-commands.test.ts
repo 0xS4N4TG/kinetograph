@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SceneJson, Unsupported } from '@kinetograph/scene';
+import type { SceneJson, Unsupported } from '@kinetographdev/scene';
 import { run } from '../src/index.js';
 import { setNativeForTests } from '../src/native.js';
 import type { Source } from '../src/source.js';

@@ -1,4 +1,4 @@
-// @kinetograph/audio: `onFrame` synthesis, the offline mix and loudness analysis (packages/cli/skills/kinetograph/references/AUTHORING.md §8). Web Audio
+// @kinetographdev/audio: `onFrame` synthesis, the offline mix and loudness analysis (packages/cli/skills/kinetograph/references/AUTHORING.md §8). Web Audio
 // runs on node-web-audio-api's `OfflineAudioContext`, on the CPU.
 
 export { onFrame, clearOnFrame, hasOnFrame } from './registry.js';

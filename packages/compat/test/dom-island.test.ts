@@ -2,7 +2,7 @@
 // answer is turned into layers (native placeholders filled and placed, top-level layers made absolute).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { LayerJson } from '@kinetograph/scene';
+import type { LayerJson } from '@kinetographdev/scene';
 import {
   beginSamplePass,
   endSamplePass,

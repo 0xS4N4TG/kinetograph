@@ -3,9 +3,9 @@
 // frame), so a frame is the same whichever worker draws it.
 
 import { Worker } from 'node:worker_threads';
-import type { VideoWriter } from '@kinetograph/native';
-import type { ArtifactRecord } from '@kinetograph/core';
-import type { AudioClipJson, Unsupported } from '@kinetograph/scene';
+import type { VideoWriter } from '@kinetographdev/native';
+import type { ArtifactRecord } from '@kinetographdev/core';
+import type { AudioClipJson, Unsupported } from '@kinetographdev/scene';
 import { CliError } from './errors.js';
 import { ProfileLog, now, profiling, stage } from './profile.js';
 import type { FromWorker, ToWorker, WorkerInit } from './render-worker.js';

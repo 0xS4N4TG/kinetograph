@@ -1,5 +1,5 @@
 {
-  "name": "@kinetograph/native-linux-x64-gnu",
+  "name": "@kinetographdev/native-linux-x64-gnu",
   "version": "0.1.0",
   "cpu": [
     "x64"

@@ -6,7 +6,7 @@ architecture diagram are in the [README](../../../../../README.md); the DOM engi
 ## A frame
 
 1. **Bundle.** The CLI bundles the project with esbuild. `remotion` and `@remotion/*` imports are rewritten to
-   `@kinetograph/core`, so the project's code runs unchanged; `@remotion/google-fonts` families are downloaded once and
+   `@kinetographdev/core`, so the project's code runs unchanged; `@remotion/google-fonts` families are downloaded once and
    cached.
 2. **Run the frame.** Node imports the bundle with a determinism shim installed: `Date`, `Math.random`, timers and
    `requestAnimationFrame` all follow the frame number, so a frame is a pure function of (project, frame) and nothing
@@ -38,7 +38,7 @@ architecture diagram are in the [README](../../../../../README.md); the DOM engi
 |---|---|
 | `crates/core` | `kinetograph-core`: scene format, compositor, effects, text, Canvas 2D, GLSL, 3D, Lottie, video |
 | `crates/dom` | `kinetograph-dom`: the DOM engine (Blitz document, CSS, layout, paint, SVG, readback) |
-| `crates/node` | `@kinetograph/native`: the N-API addon over both |
+| `crates/node` | `@kinetographdev/native`: the N-API addon over both |
 | `crates/cli` | the Rust `kinetograph` binary for JSON scenes (`still`, `render`, `bench`) |
 | `packages/scene` | scene types, effect helpers, the recording Canvas 2D and WebGL contexts |
 | `packages/react` | the reconciler, native elements, DOM-island emit |

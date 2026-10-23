@@ -4,7 +4,7 @@
 
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { remoteMessage } from '@kinetograph/compat/shim';
+import { remoteMessage } from '@kinetographdev/compat/shim';
 import { getPublicDir, staticFile } from './assets.js';
 import { warnOnce } from './warn.js';
 

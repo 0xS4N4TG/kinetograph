@@ -1,7 +1,7 @@
 // The frame clock and the components that bend it: useCurrentFrame,
 // useVideoConfig, Sequence, Series, Loop and Freeze (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1).
 // The state they all read and write is the `TimelineContext` that
-// `@kinetograph/react` owns, so the native elements (`<Audio>`, `<Lottie>`) and
+// `@kinetographdev/react` owns, so the native elements (`<Audio>`, `<Lottie>`) and
 // the motion-blur sub-frames agree with them on time.
 
 import {
@@ -10,7 +10,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { Layer, SequenceHost, TimelineContext, useTimeline, type TimelineState, type VideoConfig } from '@kinetograph/react';
+import { Layer, SequenceHost, TimelineContext, useTimeline, type TimelineState, type VideoConfig } from '@kinetographdev/react';
 
 /** The frame, relative to the enclosing Sequences (fractional on a motion-blur sub-frame). */
 export function useCurrentFrame(): number {

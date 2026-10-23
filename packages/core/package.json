@@ -1,5 +1,5 @@
 {
-  "name": "@kinetograph/core",
+  "name": "@kinetographdev/core",
   "version": "0.1.0",
   "description": "Remotion-shaped authoring API for Kinetograph: frame clock, Remotion core and packages, determinism",
   "license": "PolyForm-Small-Business-1.0.0",
@@ -168,10 +168,10 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetograph/compat": "0.1.0",
-    "@kinetograph/native": "0.1.0",
-    "@kinetograph/react": "0.1.0",
-    "@kinetograph/scene": "0.1.0",
+    "@kinetographdev/compat": "0.1.0",
+    "@kinetographdev/native": "0.1.0",
+    "@kinetographdev/react": "0.1.0",
+    "@kinetographdev/scene": "0.1.0",
     "react-reconciler": "0.34.0"
   },
   "peerDependencies": {

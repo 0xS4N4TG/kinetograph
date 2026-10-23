@@ -1,5 +1,5 @@
 // `@remotion/skia` and `@shopify/react-native-skia` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7) on the optional Skia addon. They run when
-// `@kinetograph/skia` is built (`npm run build:addon:release -w crates/skia/node`) and are skipped when it is not, as the
+// `@kinetographdev/skia` is built (`npm run build:addon:release -w crates/skia/node`) and are skipped when it is not, as the
 // default workspace build does not compile Skia.
 
 import { writeFileSync } from 'node:fs';

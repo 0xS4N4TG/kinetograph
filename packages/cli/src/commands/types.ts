@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import type { Renderer } from '@kinetograph/native';
+import type { Renderer } from '@kinetographdev/native';
 import { dirname } from 'node:path';
 import type { OptionSpec, ParsedArgs, PositionalSpec } from '../args.js';
 import { PROJECT_OPTIONS } from '../args.js';

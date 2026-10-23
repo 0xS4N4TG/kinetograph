@@ -3,7 +3,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setDomAddon } from '@kinetograph/compat/dom';
+import { setDomAddon } from '@kinetographdev/compat/dom';
 import { clearFonts, registerFont } from '../src/font-registry.js';
 import { fitText, measureText, setDomTextMeasure } from '../src/layout-utils.js';
 import '../src/web-install.js';
@@ -12,7 +12,7 @@ const font = fileURLToPath(new URL('../../../assets/fonts/DMSans-Medium.ttf', im
 
 function loadAddon(): Record<string, unknown> | null {
   try {
-    const native = createRequire(import.meta.url)('@kinetograph/native') as Record<string, unknown>;
+    const native = createRequire(import.meta.url)('@kinetographdev/native') as Record<string, unknown>;
     return typeof native.domLayoutBoxes === 'function' ? native : null;
   } catch {
     return null;

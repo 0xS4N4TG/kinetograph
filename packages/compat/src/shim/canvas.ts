@@ -1,5 +1,5 @@
 // `<canvas>` and `getContext('2d')` in compat mode (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"): the context records its calls
-// (`createCanvasContext` of `@kinetograph/scene`) and the commands reach the renderer as a canvas layer. A canvas in
+// (`createCanvasContext` of `@kinetographdev/scene`) and the commands reach the renderer as a canvas layer. A canvas in
 // the tree keeps its context with its host element; one that is not in the tree (`document.createElement('canvas')`,
 // `OffscreenCanvas`) is a `CanvasSurface`. Everything a canvas needs of the engine (the fonts, the text engine, the
 // pixels of what was drawn) is asked of the addon here, so the recorder itself is plain TypeScript.
@@ -14,7 +14,7 @@ import {
   type CanvasCommand,
   type CanvasContextOptions,
   type CanvasPicture,
-} from '@kinetograph/scene';
+} from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
 import type { HostElement } from './host.js';

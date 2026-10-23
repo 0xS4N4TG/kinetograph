@@ -2,8 +2,8 @@
 // runs its JS for the chunks of frames it is given, draws them with a renderer of its own and posts the pixels back.
 
 import { parentPort, workerData } from 'node:worker_threads';
-import type { ArtifactRecord } from '@kinetograph/core';
-import type { SceneJson, Unsupported, AudioClipJson } from '@kinetograph/scene';
+import type { ArtifactRecord } from '@kinetographdev/core';
+import type { SceneJson, Unsupported, AudioClipJson } from '@kinetographdev/scene';
 import { native } from './native.js';
 import { ProfileLog, now, profiling, takeAddon, takeJs } from './profile.js';
 import { scaleScene } from './scenes.js';

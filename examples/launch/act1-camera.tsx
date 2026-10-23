@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { AbsoluteFill, Easing, Sequence, Video, interpolate, staticFile, useCurrentFrame } from 'remotion';
-import { Camera3D, DirectionalLight, Model, Rect, Scene3D, glow, gradientMap, grain } from '@kinetograph/core';
+import { Camera3D, DirectionalLight, Model, Rect, Scene3D, glow, gradientMap, grain } from '@kinetographdev/core';
 import { CLAMP, H, INK, LEN, OUT, PAPER, W } from './common.js';
 import { depthLook } from './looks.js';
 import { IN, Over, Words } from './act1-kit.js';

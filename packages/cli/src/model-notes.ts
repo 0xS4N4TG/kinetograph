@@ -3,7 +3,7 @@
 // (kinetograph site, /docs/compat/), so the warning, `--strict`, `doctor` and the studio treat them as they do anything else the
 // engine leaves out.
 
-import type { Unsupported } from '@kinetograph/scene';
+import type { Unsupported } from '@kinetographdev/scene';
 import { native } from './native.js';
 
 interface ModelUse {

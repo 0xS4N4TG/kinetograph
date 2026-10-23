@@ -9,7 +9,7 @@
 // `@remotion/canvas`) export every name Remotion's does, so a project bundles; a call that needs what a render does
 // not have fails with this, saying which call and why, rather than doing something else.
 
-import type { Unsupported } from '@kinetograph/scene';
+import type { Unsupported } from '@kinetographdev/scene';
 
 const reported = new Map<string, Unsupported>();
 

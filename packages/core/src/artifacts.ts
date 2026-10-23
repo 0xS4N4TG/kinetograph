@@ -1,6 +1,6 @@
 // The files `<Artifact>` asks the render to write next to the video. The registry is on `globalThis` under a symbol that
 // `Symbol.for` makes the same in every copy of this package (the project's bundle holds one, the CLI that renders has
-// another), as the `onFrame` registry of `@kinetograph/audio` is.
+// another), as the `onFrame` registry of `@kinetographdev/audio` is.
 
 /** What an artifact holds: text, bytes, or the picture of the frame it was rendered in. */
 export type ArtifactContent = string | Uint8Array | 'thumbnail';

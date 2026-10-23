@@ -1,4 +1,4 @@
-# @kinetograph/scene
+# @kinetographdev/scene
 
 The scene JSON format: types and helpers (packages/cli/skills/kinetograph/references/SCENE.md).
 

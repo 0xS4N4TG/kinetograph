@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { createSceneRoot, Rect, TimelineContext, type RenderedTree, type TimelineState } from '@kinetograph/react';
-import type { LayerJson } from '@kinetograph/scene';
+import { createSceneRoot, Rect, TimelineContext, type RenderedTree, type TimelineState } from '@kinetographdev/react';
+import type { LayerJson } from '@kinetographdev/scene';
 import { useCurrentFrame, useVideoConfig } from '../src/timeline.js';
 
 /** A timeline at `frame` of a 30 fps, 90 frame, 1280x720 composition. */

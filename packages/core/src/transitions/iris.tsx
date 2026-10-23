@@ -2,7 +2,7 @@
 // as a circle that grows until it covers the corners.
 
 import type { ReactNode } from 'react';
-import { Layer } from '@kinetograph/react';
+import { Layer } from '@kinetographdev/react';
 import { useVideoConfig } from '../timeline.js';
 import type { PresentationComponentProps, TransitionPresentation } from './types.js';
 

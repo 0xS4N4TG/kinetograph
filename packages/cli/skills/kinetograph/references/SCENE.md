@@ -369,7 +369,7 @@ by ThorVG, the renderer behind LottieFiles' own player (`dotlottie-rs`). Like an
 What a Canvas 2D context drew: the list of commands a `CanvasRenderingContext2D` was given, drawn into the box
 `(0, 0, width, height)` with Skia, under the layer's transform. The authoring layer's `<Canvas>` and a Remotion
 project's `<canvas>` (`getContext('2d')`) both make one; the context object is `createCanvasContext` of
-`@kinetograph/scene` (AUTHORING.md §6.5). Like any layer it takes `effects`, `clip`, `mask`, `matte`,
+`@kinetographdev/scene` (AUTHORING.md §6.5). Like any layer it takes `effects`, `clip`, `mask`, `matte`,
 `blendMode` and `opacity`.
 
 | Field | Default | Meaning |

@@ -1,4 +1,4 @@
-# @kinetograph/react
+# @kinetographdev/react
 
 The React reconciler that emits Kinetograph scene JSON, and the native elements.
 

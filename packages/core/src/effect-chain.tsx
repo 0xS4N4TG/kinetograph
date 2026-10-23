@@ -17,8 +17,8 @@
 // `webgpu` effects are not run: the picture is drawn without them and the frame reports it (`--strict` fails).
 
 import { useId, type CSSProperties, type ReactNode } from 'react';
-import { canvasEnvironment } from '@kinetograph/compat/shim';
-import { Layer } from '@kinetograph/react';
+import { canvasEnvironment } from '@kinetographdev/compat/shim';
+import { Layer } from '@kinetographdev/react';
 import {
   createCanvasContext,
   createWebGLContext,
@@ -27,7 +27,7 @@ import {
   type CanvasPass,
   type GlslPass,
   type WebGLContext,
-} from '@kinetograph/scene';
+} from '@kinetographdev/scene';
 import type { EffectDescriptor, EffectsOutputSize, EffectsProp } from './effects.js';
 import { reportUnsupported } from './unsupported.js';
 import { warnOnce } from './warn.js';

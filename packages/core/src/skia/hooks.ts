@@ -2,7 +2,7 @@
 // there on the first frame; a file that is missing throws, with its name.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { getDomEnvironment } from '@kinetograph/compat/dom';
+import { getDomEnvironment } from '@kinetographdev/compat/dom';
 import { skiaAddon } from './addon.js';
 import { parseSvg, projectFile, registeredFont, SkFont, SkImage, type SkSVG } from './objects.js';
 

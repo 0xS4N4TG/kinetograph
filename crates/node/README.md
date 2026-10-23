@@ -1,4 +1,4 @@
-# @kinetograph/native
+# @kinetographdev/native
 
 The Node-API addon over the Rust core: validate, inspect and measure scenes on the CPU, and render them on the GPU.
 Scenes cross as JSON strings (`packages/cli/skills/kinetograph/references/SCENE.md`); pixels stay in Rust. The API is specified in `packages/cli/skills/kinetograph/references/AUTHORING.md` §3
@@ -19,16 +19,16 @@ From the repository root, with `CARGO_TARGET_DIR` set if you share a target dire
 
 ```sh
 npm ci
-npm run build -w @kinetograph/native            # debug build; writes kinetograph.<platform>.node, index.js, index.d.ts
-npm test -w @kinetograph/native                 # node --test: the CPU tests; the GPU tests are skipped
-KINETOGRAPH_GPU_TESTS=1 npm test -w @kinetograph/native    # on the M4: opens a GPU
+npm run build -w @kinetographdev/native            # debug build; writes kinetograph.<platform>.node, index.js, index.d.ts
+npm test -w @kinetographdev/native                 # node --test: the CPU tests; the GPU tests are skipped
+KINETOGRAPH_GPU_TESTS=1 npm test -w @kinetographdev/native    # on the M4: opens a GPU
 cargo test --lib                                # Rust unit tests (CPU)
 ```
 
 For benchmarks use the release build, which is several times faster than debug:
 
 ```sh
-npm run build:release -w @kinetograph/native
+npm run build:release -w @kinetographdev/native
 ```
 
 The Rust integration tests (`cargo test`, without `--lib`) need a GPU. `crates/core/tests/renderer_reuse.rs` checks
@@ -74,7 +74,7 @@ the last two, timed per run on the same JSON string, next to `resolve`, `raster`
 (the frame as `render` draws it, without the handoff). A frame from JSON string to pixels costs `handoff + total`.
 
 ```sh
-npm run build:release -w @kinetograph/native
+npm run build:release -w @kinetographdev/native
 KINETOGRAPH_GPU_TESTS=1 node crates/node/spike/handoff.mjs examples/papercut-card.json --frame 30 --runs 50
 ```
 

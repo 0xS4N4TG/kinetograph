@@ -30,7 +30,7 @@ describe('readGifTimeline', () => {
   it('agrees with the engine on the files in the repository', () => {
     let native: { probeMedia(path: string): { durationInSeconds: number; frames?: number; width: number; height: number } };
     try {
-      native = createRequire(import.meta.url)('@kinetograph/native');
+      native = createRequire(import.meta.url)('@kinetographdev/native');
     } catch {
       return; // the addon is not built here
     }

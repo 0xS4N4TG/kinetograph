@@ -7,7 +7,7 @@ import {
   radialGradient,
   type Keyframe,
   type Layout,
-} from '@kinetograph/scene';
+} from '@kinetographdev/scene';
 import { Ellipse, Image, Layer, MeshGradient, Noise, Path, Rect, Shape, Text } from '../src/index.js';
 import { layersOf } from './harness.js';
 

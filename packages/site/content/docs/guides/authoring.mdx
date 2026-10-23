@@ -54,7 +54,7 @@ Use `random('name')` when a value has to be the same for every render. Do not re
 
 ## Native elements
 
-These elements come from `@kinetograph/core`. They draw in the engine, not in the DOM.
+These elements come from `@kinetographdev/core`. They draw in the engine, not in the DOM.
 
 | Element | Draws |
 |---|---|
@@ -75,7 +75,7 @@ Every element takes the common props: `id`, `x`, `y`, `scale`, `rotation`, `anch
 A shape with a gradient fill and a drop shadow:
 
 ```tsx
-import { Rect, dropShadow, linearGradient } from '@kinetograph/core';
+import { Rect, dropShadow, linearGradient } from '@kinetographdev/core';
 
 <Rect
   width={220}
@@ -89,7 +89,7 @@ Raw text outside `Text` is an error. A `Text` layer needs a registered font, or 
 
 ## Effects
 
-Pass effects as `effects={[...]}` on any layer. Effects run in order on the layer's own pixels, before the layer is blended. These helpers come from `@kinetograph/core`:
+Pass effects as `effects={[...]}` on any layer. Effects run in order on the layer's own pixels, before the layer is blended. These helpers come from `@kinetographdev/core`:
 
 - Blur and glow: `blur`, `backdropBlur`, `glow`.
 - Shadows: `dropShadow`, `insetShadow`.

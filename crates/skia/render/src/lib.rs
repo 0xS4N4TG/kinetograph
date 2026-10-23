@@ -1,6 +1,6 @@
 //! RN-Skia's scene tree drawn with Skia's CPU rasteriser.
 //!
-//! `@kinetograph/core/skia` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7) turns the JSX of
+//! `@kinetographdev/core/skia` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7) turns the JSX of
 //! `@shopify/react-native-skia` into a tree of nodes with their props, and this
 //! crate draws that tree into an RGBA picture with `skia-safe`, as RN-Skia's own
 //! renderer does: the paint a node is drawn with is the paint of its group with

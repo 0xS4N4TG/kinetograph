@@ -1,7 +1,7 @@
 //! WebGL, native: the GLSL ES a page gives `gl.shaderSource` read by naga and
 //! run on the shared wgpu device (packages/cli/skills/kinetograph/references/SCENE.md, "glsl").
 //!
-//! The authoring side (`createWebGLContext` of `@kinetograph/scene`, or
+//! The authoring side (`createWebGLContext` of `@kinetographdev/scene`, or
 //! `<GlslShader>`) records what a frame did to the context as the layer's
 //! `ops`: clears and draws, each draw carrying the program, the vertex data,
 //! the uniforms, the textures and the state it ran with. Nothing here reads

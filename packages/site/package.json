@@ -1,5 +1,5 @@
 {
-  "name": "@kinetograph/site",
+  "name": "@kinetographdev/site",
   "version": "0.1.0",
   "private": true,
   "description": "The Kinetograph landing site: Next.js static export, Tailwind CSS, shadcn-style components",

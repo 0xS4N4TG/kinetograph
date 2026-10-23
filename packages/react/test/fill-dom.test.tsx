@@ -2,7 +2,7 @@
 // the island's root is that flex column, its children are the layer's, and the paths stay where they were.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { setDomAddon } from '@kinetograph/compat/dom';
+import { setDomAddon } from '@kinetographdev/compat/dom';
 import { createSceneRoot, Layer, Rect, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 

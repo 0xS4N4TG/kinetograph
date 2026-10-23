@@ -9,7 +9,7 @@ The design notes are in [ENGINE.md](https://github.com/0xS4N4TG/kinetograph/blob
 
 ## One frame
 
-1. **Bundle.** The CLI bundles the project with esbuild. `remotion` and `@remotion/*` imports point at `@kinetograph/core`, so the project's code runs unchanged. Google Fonts files are downloaded once and cached.
+1. **Bundle.** The CLI bundles the project with esbuild. `remotion` and `@remotion/*` imports point at `@kinetographdev/core`, so the project's code runs unchanged. Google Fonts files are downloaded once and cached.
 2. **Run the frame.** Before the project loads, the determinism shim is installed. It makes `Date`, `Math.random`, timers and `requestAnimationFrame` follow the frame number. The React reconciler then renders the tree for that frame.
 3. **Split the tree.** Kinetograph's own elements become scene layers. Each run of plain HTML and SVG becomes a DOM island. The island's tags, attributes, inline styles, stylesheets and the frame's time go to the addon as JSON. Canvas 2D and WebGL contexts record their calls, and the recorded calls become one layer.
 4. **Lay out and paint the DOM.** The addon builds a Blitz document for the island. Stylo, the CSS engine from Firefox, styles it. Taffy lays it out, and Parley shapes its text. The painter writes the result into scene layers in CSS paint order. Anything the painter cannot draw is reported for that frame.
@@ -42,7 +42,7 @@ The tuning switches are `KINETOGRAPH_NO_PREFETCH=1`, which stops decoding the ne
 |---|---|
 | `crates/core` | `kinetograph-core`: scene format, compositor, effects, text, Canvas 2D, GLSL, 3D, Lottie and video. |
 | `crates/dom` | `kinetograph-dom`: the DOM engine. The Blitz document, CSS, layout, paint, SVG and readback. |
-| `crates/node` | `@kinetograph/native`: the N-API addon over both. |
+| `crates/node` | `@kinetographdev/native`: the N-API addon over both. |
 | `crates/cli` | The Rust `kinetograph` binary for JSON scenes. |
 | `packages/scene` | Scene types, effect helpers, and the recording Canvas 2D and WebGL contexts. |
 | `packages/react` | The reconciler, native elements and the DOM island emit. |

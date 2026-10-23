@@ -1,4 +1,4 @@
-# @kinetograph/compat
+# @kinetographdev/compat
 
 Remotion compatibility: DOM islands handed to the Rust CSS engine, and the DOM shim.
 

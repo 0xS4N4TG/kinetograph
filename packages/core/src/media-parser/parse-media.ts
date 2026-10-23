@@ -9,8 +9,8 @@
 
 import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
-import { imageSizeOfBytes } from '@kinetograph/compat/shim';
-import type { MediaStreams, StreamScan } from '@kinetograph/native';
+import { imageSizeOfBytes } from '@kinetographdev/compat/shim';
+import type { MediaStreams, StreamScan } from '@kinetographdev/native';
 import { UnsupportedApiError } from '../unsupported.js';
 import { mediaParserAddon } from './addon.js';
 import { IsAnImageError, IsAnUnsupportedFileTypeError, IsAPdfError, type ImageType } from './errors.js';

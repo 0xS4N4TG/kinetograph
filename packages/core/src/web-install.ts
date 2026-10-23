@@ -2,8 +2,8 @@
 // project commonly touches (`window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, observers,
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 
-import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, type CssFontFace } from '@kinetograph/compat/dom';
-import { installDomGlobals, setCanvasFonts, setPathMeasure } from '@kinetograph/compat/shim';
+import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, type CssFontFace } from '@kinetographdev/compat/dom';
+import { installDomGlobals, setCanvasFonts, setPathMeasure } from '@kinetographdev/compat/shim';
 import { addFace, NodeFontFace } from './font-face.js';
 import { getFonts, setFontProblemHandler } from './font-registry.js';
 import { setDomTextMeasure } from './layout-utils.js';

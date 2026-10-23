@@ -1,10 +1,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { clampPcm, hasOnFrame, joinClips, renderAudio } from '@kinetograph/audio';
-import { resolveSoundSource } from '@kinetograph/core/sound-source';
-import type { ExportOptions, Renderer, RenderSummary } from '@kinetograph/native';
-import type { ArtifactRecord } from '@kinetograph/core';
-import type { AudioClipJson, SceneJson, Unsupported } from '@kinetograph/scene';
+import { clampPcm, hasOnFrame, joinClips, renderAudio } from '@kinetographdev/audio';
+import { resolveSoundSource } from '@kinetographdev/core/sound-source';
+import type { ExportOptions, Renderer, RenderSummary } from '@kinetographdev/native';
+import type { ArtifactRecord } from '@kinetographdev/core';
+import type { AudioClipJson, SceneJson, Unsupported } from '@kinetographdev/scene';
 import { CHUNK_FRAMES, renderInParallel } from './parallel-render.js';
 import { ProfileLog, now, profiling, stage, takeAddon, takeJs, writeShared } from './profile.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';

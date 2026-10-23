@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, '..', 'dist', 'cli.js');
 const addon = (() => {
   try {
-    createRequire(import.meta.url)('@kinetograph/native');
+    createRequire(import.meta.url)('@kinetographdev/native');
     return true;
   } catch {
     return false;
@@ -74,7 +74,7 @@ registerRoot(() => <Composition id="Fade" component={Fade} width={64} height={36
 // differed from a sequential render on the frames after a canvas.
 const CARDS = `
 import { AbsoluteFill, Composition, registerRoot, staticFile, useCurrentFrame } from 'remotion';
-import { Canvas, Image, Layer } from '@kinetograph/core';
+import { Canvas, Image, Layer } from '@kinetographdev/core';
 
 const draw = (ctx: any) => {
   ctx.fillStyle = '#203040';

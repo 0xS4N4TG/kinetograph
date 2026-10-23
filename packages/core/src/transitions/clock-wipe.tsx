@@ -2,7 +2,7 @@
 // hand, clockwise from twelve o'clock, over the old one.
 
 import type { ReactNode } from 'react';
-import { Layer } from '@kinetograph/react';
+import { Layer } from '@kinetographdev/react';
 import { useVideoConfig } from '../timeline.js';
 import type { PresentationComponentProps, TransitionPresentation } from './types.js';
 

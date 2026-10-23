@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blur } from '@kinetograph/scene';
+import { blur } from '@kinetographdev/scene';
 import { Gif, Layer, OffthreadVideo, Video, type VideoProps } from '../src/index.js';
 import { renderAt, timeline } from './harness.js';
 
@@ -233,7 +233,7 @@ describe('<Gif>', () => {
       expect(renderAt(gif, 30).layers).toEqual([]);
     });
 
-    it('needs the duration, which @kinetograph/core/gif supplies', () => {
+    it('needs the duration, which @kinetographdev/core/gif supplies', () => {
       expect(() => renderAt(<Gif id="g" src="a.gif" loopBehavior="unmount-after-finish" />)).toThrow(/needs the GIF's duration/);
     });
   });

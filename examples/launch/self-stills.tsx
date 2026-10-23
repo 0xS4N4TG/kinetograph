@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { AbsoluteFill, Composition, Freeze, Img, registerRoot, staticFile, useCurrentFrame } from 'remotion';
-import { Layer, Video } from '@kinetograph/core';
+import { Layer, Video } from '@kinetographdev/core';
 import { H, W } from './common.js';
 import { S05 } from './act1.js';
 import { S03 } from './act1-crt.js';

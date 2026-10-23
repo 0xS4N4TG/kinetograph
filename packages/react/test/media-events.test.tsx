@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { useState } from 'react';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { resetStylesheets, setDomAddon, setDomEnvironment } from '@kinetograph/compat/dom';
-import { installDomGlobals } from '@kinetograph/compat/shim';
+import { resetStylesheets, setDomAddon, setDomEnvironment } from '@kinetographdev/compat/dom';
+import { installDomGlobals } from '@kinetographdev/compat/shim';
 import { createSceneRoot, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 
@@ -85,7 +85,7 @@ describe('load events', () => {
   });
 
   it('release a delayRender held until onLoad', async () => {
-    const { delayRender, continueRender, openRenderHandles } = await import('@kinetograph/core').catch(() => ({}) as any);
+    const { delayRender, continueRender, openRenderHandles } = await import('@kinetographdev/core').catch(() => ({}) as any);
     if (!delayRender) return;
     function Held() {
       const [handle] = useState(() => delayRender('img'));

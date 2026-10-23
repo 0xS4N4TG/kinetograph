@@ -86,21 +86,21 @@ all 988 of its frames natively. What is left is listed under known issues on the
 ```mermaid
 flowchart TB
   subgraph project["Your project (TSX)"]
-    P["Remotion API · CSS / SVG · Canvas 2D · WebGL · Web Audio<br/>native elements and effects from @kinetograph/core"]
+    P["Remotion API · CSS / SVG · Canvas 2D · WebGL · Web Audio<br/>native elements and effects from @kinetographdev/core"]
   end
 
   subgraph node["Node: the kinetograph CLI, studio and MCP server"]
-    B["esbuild bundle<br/>remotion, @remotion/* → @kinetograph/core"]
+    B["esbuild bundle<br/>remotion, @remotion/* → @kinetographdev/core"]
     D["determinism shim<br/>Date, Math.random, timers, rAF driven by the frame"]
-    R["@kinetograph/react: React reconciler<br/>runs the tree once per frame"]
+    R["@kinetographdev/react: React reconciler<br/>runs the tree once per frame"]
     S["browser shims: DOM readback, Canvas 2D and WebGL<br/>contexts that record their calls"]
-    A["@kinetograph/audio<br/>node-web-audio-api, OfflineAudioContext"]
+    A["@kinetographdev/audio<br/>node-web-audio-api, OfflineAudioContext"]
     E["emit: native elements → scene layers<br/>runs of HTML/SVG → DOM islands"]
     B --> D --> R --> E
     R <--> S
   end
 
-  subgraph rust["Rust: the @kinetograph/native addon (napi-rs)"]
+  subgraph rust["Rust: the @kinetographdev/native addon (napi-rs)"]
     DOM["kinetograph-dom: DOM engine<br/>blitz-dom + Stylo (CSS) + taffy (layout) + Parley (text),<br/>usvg (SVG); painted into scene layers"]
     C["kinetograph-core: compositor on wgpu<br/>Skia (vectors, text, Canvas 2D), WGSL effects,<br/>GLSL via naga (WebGL), scene3d (glTF, PBR),<br/>ThorVG (Lottie), 2.5D camera, motion blur, layer cache"]
     M["media: FFmpeg decode and encode<br/>(VideoToolbox / libx264)"]
@@ -122,14 +122,14 @@ Existing crates do text shaping, layout, CSS and rasterising; Kinetograph writes
 
 ## Projects in TSX
 
-Node 22 or later. The npm workspaces are `@kinetograph/scene` (scene types and effect helpers), `@kinetograph/react`
-(the reconciler and native elements), `@kinetograph/core` (Remotion's API and packages, the frame loop, the
-determinism shim), `@kinetograph/audio`, the `kinetograph` CLI, and `@kinetograph/native` (the addon, `crates/node`).
+Node 22 or later. The npm workspaces are `@kinetographdev/scene` (scene types and effect helpers), `@kinetographdev/react`
+(the reconciler and native elements), `@kinetographdev/core` (Remotion's API and packages, the frame loop, the
+determinism shim), `@kinetographdev/audio`, the `kinetograph` CLI, and `@kinetographdev/native` (the addon, `crates/node`).
 
 ```sh
 npm ci
 npm run build                                   # TS packages and a debug addon
-npm run build:release -w @kinetograph/native    # the addon for timing
+npm run build:release -w @kinetographdev/native    # the addon for timing
 
 npx kinetograph still examples/rajz-cards/index.tsx 60 -o out/rajz-60.png
 npx kinetograph strip examples/rajz-cards/index.tsx -n 12 -o out/rajz-strip.png
@@ -138,7 +138,7 @@ npx kinetograph inspect examples/rajz-cards/index.tsx --frame 60 --json
 ```
 
 A project imports from `remotion` and `@remotion/*` as it would for Remotion (the CLI maps them onto
-`@kinetograph/core`) and from `@kinetograph/core` for the native elements and effects. Every command takes `--json`;
+`@kinetographdev/core`) and from `@kinetographdev/core` for the native elements and effects. Every command takes `--json`;
 `npx kinetograph mcp` serves the same commands over MCP; [Use with agents](packages/site/content/docs/guides/agents.mdx)
 has the client setup and the agent skill. `npm test` runs the CPU tests; the GPU ones run with
 `KINETOGRAPH_GPU_TESTS=1`.

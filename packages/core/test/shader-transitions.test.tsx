@@ -3,8 +3,8 @@
 
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { createSceneRoot, Rect, TimelineContext } from '@kinetograph/react';
-import type { GlslDraw, GlslPass, GroupLayer, LayerJson } from '@kinetograph/scene';
+import { createSceneRoot, Rect, TimelineContext } from '@kinetographdev/react';
+import type { GlslDraw, GlslPass, GroupLayer, LayerJson } from '@kinetographdev/scene';
 import { TransitionSeries, linearTiming, useTransitionProgress, makeHtmlInCanvasPresentation } from '../src/transitions/index.js';
 import type { TransitionPresentation } from '../src/transitions/types.js';
 import { blurSlide, blurSlideMotion } from '../src/transitions/blur-slide.js';

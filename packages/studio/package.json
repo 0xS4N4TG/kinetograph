@@ -1,5 +1,5 @@
 {
-  "name": "@kinetograph/studio",
+  "name": "@kinetographdev/studio",
   "version": "0.1.0",
   "description": "kinetograph studio: a local web server and browser UI whose preview frames the addon renders",
   "license": "PolyForm-Small-Business-1.0.0",
@@ -41,9 +41,9 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetograph/core": "0.1.0",
-    "@kinetograph/native": "0.1.0",
-    "@kinetograph/scene": "0.1.0",
+    "@kinetographdev/core": "0.1.0",
+    "@kinetographdev/native": "0.1.0",
+    "@kinetographdev/scene": "0.1.0",
     "kinetograph": "0.1.0",
     "ws": "8.22.0"
   },

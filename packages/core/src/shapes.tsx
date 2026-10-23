@@ -10,8 +10,8 @@
 // (test/fixtures/shapes-arrow-callout-spark.json).
 
 import type { ReactNode } from 'react';
-import { Path, type CommonProps } from '@kinetograph/react';
-import type { Paint, Stroke } from '@kinetograph/scene';
+import { Path, type CommonProps } from '@kinetographdev/react';
+import type { Paint, Stroke } from '@kinetographdev/scene';
 import { getBoundingBox, parsePath, serializeInstructions, translatePath, type Instruction } from './paths.js';
 
 export type { Instruction } from './paths.js';

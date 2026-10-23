@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Unsupported } from '@kinetograph/scene';
+import type { Unsupported } from '@kinetographdev/scene';
 import { LeftOutCollector, describeLeftOut, strictError } from '../src/compat-report.js';
 
 const issue = (element: string, property: string | null, value: string | null, reason = 'not supported'): Unsupported => ({

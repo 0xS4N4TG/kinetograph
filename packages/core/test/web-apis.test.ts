@@ -5,12 +5,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { resetStylesheets, setDomEnvironment } from '@kinetograph/compat/dom';
-import { setWebViewport } from '@kinetograph/compat/shim';
+import { resetStylesheets, setDomEnvironment } from '@kinetographdev/compat/dom';
+import { setWebViewport } from '@kinetographdev/compat/shim';
 import { getFonts } from '../src/font-registry.js';
 import { installDeterminism, resetVirtualClock, setVirtualFrame } from '../src/determinism.js';
 import '../src/web-install.js';
-import { registerStylesheet } from '@kinetograph/compat/dom';
+import { registerStylesheet } from '@kinetographdev/compat/dom';
 import { staticFile } from '../src/assets.js';
 
 const g = globalThis as any;

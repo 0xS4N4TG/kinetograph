@@ -2,8 +2,8 @@
 // as its surroundings, so a flex-centered AbsoluteFill does not move it (packages/cli/skills/kinetograph/references/ENGINE.md §10.1).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { setDomAddon } from '@kinetograph/compat/dom';
-import { createSceneRoot, Rect, TimelineContext } from '@kinetograph/react';
+import { setDomAddon } from '@kinetographdev/compat/dom';
+import { createSceneRoot, Rect, TimelineContext } from '@kinetographdev/react';
 import { AbsoluteFill } from '../src/fill.js';
 import { Loop, Sequence } from '../src/timeline.js';
 

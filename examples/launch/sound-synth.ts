@@ -1,9 +1,9 @@
-// Synthesis building blocks for the launch soundtrack (Web Audio through @kinetograph/audio's onFrame).
+// Synthesis building blocks for the launch soundtrack (Web Audio through @kinetographdev/audio's onFrame).
 // Everything is deterministic: noise comes from `random(seed)`, never the clock.
 
 import { random } from 'remotion';
-import { onFrame } from '@kinetograph/audio';
-import type { OnFrameCallback } from '@kinetograph/audio';
+import { onFrame } from '@kinetographdev/audio';
+import type { OnFrameCallback } from '@kinetographdev/audio';
 import { FPS } from './sound-timing.js';
 
 export type Ctx = Parameters<OnFrameCallback>[0];

@@ -48,7 +48,7 @@ Every command takes `--json`. `npx kinetograph mcp` serves the same commands as 
 - `npx kinetograph studio <entry>`: local preview, timeline, scene tree, props and render queue
 - Also: `compositions`, `onion`, `check`, `bench`, `audio analyze`, `snapshot`, `effects`
 
-## Native elements (from `@kinetograph/core`)
+## Native elements (from `@kinetographdev/core`)
 
 `<Scene3D>`, `<Camera3D>` (perspective or `type="orthographic"`), `<Mesh>`, `<Text3D>`, `<DirectionalLight>`,
 `<GlslShader>` (GLSL ES fragment shaders with uniforms and textures), `<Canvas>` (a `draw(ctx)` Canvas 2D callback),

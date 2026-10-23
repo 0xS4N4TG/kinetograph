@@ -39,7 +39,7 @@ state and say so.
 
 ## @remotion/skia and @shopify/react-native-skia
 
-Needs the optional addon: `npm install @kinetograph/skia`. Drawing is CPU only. Not drawn (reported): `Atlas`, `Patch`,
+Needs the optional addon: `npm install @kinetographdev/skia`. Drawing is CPU only. Not drawn (reported): `Atlas`, `Patch`,
 `Glyphs`, `TextBlob`, `Picture`, `ImageSVG`. Not supported: Reanimated values (use `useCurrentFrame()`), `FitBox`,
 `Skia.Surface`, `Skia.Offscreen`, `Skia.Image/Data/SVG/Typeface` factories, `useVideo`, animated images, shaders set on
 a `Skia.Paint()`. Pass shaders and filters as components instead. Replace what is left with Canvas 2D or SVG.

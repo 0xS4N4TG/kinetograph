@@ -1,4 +1,4 @@
-import type { AudioClipJson } from '@kinetograph/scene';
+import type { AudioClipJson } from '@kinetographdev/scene';
 
 export interface AudioClipTimeline extends Omit<AudioClipJson, 'volume'> {
   /** frame → volume */

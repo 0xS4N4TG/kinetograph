@@ -2,7 +2,7 @@
 // is pushed out the other way. Offsets are fractions of the composition's size.
 
 import type { ReactNode } from 'react';
-import { Layer } from '@kinetograph/react';
+import { Layer } from '@kinetographdev/react';
 import { useVideoConfig } from '../timeline.js';
 import type { PresentationComponentProps, TransitionPresentation } from './types.js';
 

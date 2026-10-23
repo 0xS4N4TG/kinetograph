@@ -6,8 +6,8 @@
 // here reads a clock; the picture is a function of the progress.
 
 import { useContext, type ReactNode } from 'react';
-import { Layer } from '@kinetograph/react';
-import { createWebGLContext, layerPicture, type GL, type GL2, type GlslContent, type WebGLContext } from '@kinetograph/scene';
+import { Layer } from '@kinetographdev/react';
+import { createWebGLContext, layerPicture, type GL, type GL2, type GlslContent, type WebGLContext } from '@kinetographdev/scene';
 import { useVideoConfig } from '../timeline.js';
 import { TransitionIdContext } from './context.js';
 import type { PresentationComponentProps, TransitionPresentation } from './types.js';

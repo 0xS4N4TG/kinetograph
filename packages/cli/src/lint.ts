@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describeIssue, summarize } from '@kinetograph/compat/doctor';
-import { isSfxUrl } from '@kinetograph/core/sound-source';
-import type { AudioClipJson, LayerJson, SceneJson, Unsupported } from '@kinetograph/scene';
+import { describeIssue, summarize } from '@kinetographdev/compat/doctor';
+import { isSfxUrl } from '@kinetographdev/core/sound-source';
+import type { AudioClipJson, LayerJson, SceneJson, Unsupported } from '@kinetographdev/scene';
 import type { InspectLayer, InspectResult } from './native.js';
 
 export interface Finding {

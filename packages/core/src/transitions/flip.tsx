@@ -7,7 +7,7 @@
 // it passes `perspective: null` to use the camera it has (or none: orthographic).
 
 import type { ReactNode } from 'react';
-import { Camera, Layer } from '@kinetograph/react';
+import { Camera, Layer } from '@kinetographdev/react';
 import { useVideoConfig } from '../timeline.js';
 import type { PresentationComponentProps, TransitionPresentation } from './types.js';
 

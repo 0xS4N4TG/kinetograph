@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blur, type Keyframe, type Scene3DLayer } from '@kinetograph/scene';
+import { blur, type Keyframe, type Scene3DLayer } from '@kinetographdev/scene';
 import {
   AmbientLight,
   Camera3D,

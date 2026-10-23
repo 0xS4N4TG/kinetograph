@@ -1,4 +1,4 @@
-# The optional Skia addon (`@kinetograph/skia`): its own workspace, so that the
+# The optional Skia addon (`@kinetographdev/skia`): its own workspace, so that the
 # main workspace (`cargo build`, `cargo test`, `cargo clippy` at the root) never
 # builds skia-safe. Build it from here (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7).
 [workspace]

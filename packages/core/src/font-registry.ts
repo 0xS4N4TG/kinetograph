@@ -4,7 +4,7 @@
 // frame loop waits for them before the first frame.
 
 import { resolve } from 'node:path';
-import { fontKey } from '@kinetograph/scene';
+import { fontKey } from '@kinetographdev/scene';
 
 export interface FontRegistration {
   family: string;

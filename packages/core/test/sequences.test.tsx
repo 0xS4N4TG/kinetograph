@@ -3,8 +3,8 @@
 
 import { Fragment, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { Layer, Rect } from '@kinetograph/react';
-import type { SequenceJson } from '@kinetograph/scene';
+import { Layer, Rect } from '@kinetographdev/react';
+import type { SequenceJson } from '@kinetographdev/scene';
 import { Freeze, Loop, Sequence, Series, useCurrentFrame, useVideoConfig } from '../src/timeline.js';
 import { TransitionSeries, linearTiming } from '../src/transitions/index.js';
 import { fade } from '../src/transitions/fade.js';

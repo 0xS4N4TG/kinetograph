@@ -1,6 +1,6 @@
 // Single frames as PNGs: what `still`, `strip` and `onion` draw with.
 
-import type { Renderer } from '@kinetograph/native';
+import type { Renderer } from '@kinetographdev/native';
 import { LeftOutCollector, describeLeftOut, strictError, type CompatReport } from './compat-report.js';
 import type { Source } from './source.js';
 

@@ -5,8 +5,8 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setDomAddon, setDomEnvironment, resetStylesheets, registerStylesheet } from '@kinetograph/compat/dom';
-import { installDomGlobals, resetObservers } from '@kinetograph/compat/shim';
+import { setDomAddon, setDomEnvironment, resetStylesheets, registerStylesheet } from '@kinetographdev/compat/dom';
+import { installDomGlobals, resetObservers } from '@kinetographdev/compat/shim';
 import { createSceneRoot, Layer, Rect, SequenceHost, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 
@@ -14,7 +14,7 @@ const font = fileURLToPath(new URL('../../../assets/fonts/DMSans-Medium.ttf', im
 
 function loadAddon(): Record<string, unknown> | null {
   try {
-    const native = createRequire(import.meta.url)('@kinetograph/native') as Record<string, unknown>;
+    const native = createRequire(import.meta.url)('@kinetographdev/native') as Record<string, unknown>;
     return typeof native.domLayoutBoxes === 'function' && typeof native.domComputedStyle === 'function' ? native : null;
   } catch {
     return null;

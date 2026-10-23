@@ -4,8 +4,8 @@
 // Remotion. A frame is played from the file's start to the frame's time, never from what was played before.
 
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, type ForwardedRef, type ReactNode } from 'react';
-import { addonFunction, getDomEnvironment, resolveProjectFile } from '@kinetograph/compat/dom';
-import type { CanvasCommand } from '@kinetograph/scene';
+import { addonFunction, getDomEnvironment, resolveProjectFile } from '@kinetographdev/compat/dom';
+import type { CanvasCommand } from '@kinetographdev/scene';
 import { reportUnsupported } from './unsupported.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from './timeline.js';
 

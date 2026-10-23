@@ -1,4 +1,4 @@
-import type { BenchResult } from '@kinetograph/native';
+import type { BenchResult } from '@kinetographdev/native';
 import { whole } from '../args.js';
 import { CliError } from '../errors.js';
 import { frameRange, checkFrame } from '../source.js';

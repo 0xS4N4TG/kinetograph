@@ -3,14 +3,14 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
-import { familyFromModuleName } from '@kinetograph/core/google-fonts';
+import { familyFromModuleName } from '@kinetographdev/core/google-fonts';
 import { cssPlugin } from './css.js';
 import { CliError } from './errors.js';
 
-/** The package directory of the CLI: the bundle's `@kinetograph/*` imports resolve from here, so one copy of each. */
+/** The package directory of the CLI: the bundle's `@kinetographdev/*` imports resolve from here, so one copy of each. */
 const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
 
-/** The `@remotion/<pkg>` packages that have a `@kinetograph/core/<pkg>` subpath (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5). */
+/** The `@remotion/<pkg>` packages that have a `@kinetographdev/core/<pkg>` subpath (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5). */
 const REMOTION_PACKAGES = new Set([
   'transitions',
   'motion-blur',
@@ -51,29 +51,29 @@ export const familyFromModule = familyFromModuleName;
 
 /**
  * Where an import of a project goes, or null if the bundle resolves it as usual. `remotion` and `@remotion/*` become
- * the matching `@kinetograph/core` subpath; `@remotion/google-fonts/<Family>` becomes a generated module; the
- * `@kinetograph` packages are re-resolved from the CLI so that a project and the CLI share one copy of each.
+ * the matching `@kinetographdev/core` subpath; `@remotion/google-fonts/<Family>` becomes a generated module; the
+ * `@kinetographdev` packages are re-resolved from the CLI so that a project and the CLI share one copy of each.
  */
 export function resolveSpecifier(specifier: string): Resolution | null {
-  if (specifier === 'remotion' || specifier.startsWith('remotion/')) return { kind: 'path', target: '@kinetograph/core' };
+  if (specifier === 'remotion' || specifier.startsWith('remotion/')) return { kind: 'path', target: '@kinetographdev/core' };
   const remotion = /^@remotion\/([^/]+)(?:\/(.+))?$/.exec(specifier);
   if (remotion) {
     const [, pkg, rest] = remotion as unknown as [string, string, string | undefined];
     if (pkg === 'google-fonts' && rest && !rest.includes('/')) return { kind: 'font', family: familyFromModule(rest) };
     if (REMOTION_PACKAGES.has(pkg)) {
-      return { kind: 'path', target: `@kinetograph/core/${pkg}${rest ? `/${rest}` : ''}` };
+      return { kind: 'path', target: `@kinetographdev/core/${pkg}${rest ? `/${rest}` : ''}` };
     }
     return {
       kind: 'unsupported',
       message: `"${specifier}" is not supported by Kinetograph yet. Run \`kinetograph doctor\` for what is.`,
     };
   }
-  // React Native Skia's components are the core's (drawn by the optional @kinetograph/skia addon, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7).
-  if (specifier === '@shopify/react-native-skia') return { kind: 'path', target: '@kinetograph/core/skia' };
+  // React Native Skia's components are the core's (drawn by the optional @kinetographdev/skia addon, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7).
+  if (specifier === '@shopify/react-native-skia') return { kind: 'path', target: '@kinetographdev/core/skia' };
   if (specifier.startsWith('@shopify/react-native-skia/')) {
     return { kind: 'unsupported', message: `"${specifier}" is an internal of React Native Skia; import from "@shopify/react-native-skia".` };
   }
-  if (/^@kinetograph\/(core|react|scene|audio|compat)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
+  if (/^@kinetographdev\/(core|react|scene|audio|compat)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   // React too: a project with its own copy of React would otherwise bundle two, and the core's hooks would run against
   // a different React from the project's components.
   if (/^react(-reconciler)?(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
@@ -114,7 +114,7 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|@kinetograph\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|@kinetographdev\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;
@@ -142,7 +142,7 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
       b.onLoad({ filter: /.*/, namespace: 'kinetograph-unsupported' }, (args) => ({ contents: unsupportedStub(args.pluginData?.names ?? []), loader: 'js' }));
       b.onLoad({ filter: /.*/, namespace: 'kinetograph-google-font' }, (args) => ({
         contents: [
-          `import { makeGoogleFont } from '@kinetograph/core/google-fonts';`,
+          `import { makeGoogleFont } from '@kinetographdev/core/google-fonts';`,
           `const font = makeGoogleFont(${JSON.stringify(args.path)});`,
           `export const { loadFont, fontFamily, getInfo } = font;`,
           `export default font;`,
@@ -170,16 +170,16 @@ function entryPlugin(absolute: string): Plugin {
 /** The synthetic entry (packages/cli/skills/kinetograph/references/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
 export function syntheticEntry(entry: string): string {
   return [
-    `import '@kinetograph/core/determinism/install';`,
-    `import '@kinetograph/core/web/install';`,
+    `import '@kinetographdev/core/determinism/install';`,
+    `import '@kinetographdev/core/web/install';`,
     `import ${JSON.stringify(entry)};`,
-    `export * from '@kinetograph/core';`,
+    `export * from '@kinetographdev/core';`,
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
-    `export { setLayoutText } from '@kinetograph/core/layout-utils';`,
-    `export { setAudioDecoder, setMediaProbe } from '@kinetograph/core/media-utils';`,
-    `export { setMediaParserAddon } from '@kinetograph/core/media-parser';`,
+    `export { setLayoutText } from '@kinetographdev/core/layout-utils';`,
+    `export { setAudioDecoder, setMediaProbe } from '@kinetographdev/core/media-utils';`,
+    `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
     // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph/references/ENGINE.md §2).
-    `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetograph/compat/dom';`,
+    `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
     '',
   ].join('\n');
 }
@@ -197,7 +197,7 @@ export function cacheDir(entry: string): string {
 
 // `node-web-audio-api` and the addon are native modules that cannot be bundled. A bundle never loads the first (the
 // audio package imports it only when it renders), and the CLI loads the second itself.
-const EXTERNAL = ['@kinetograph/native', 'node-web-audio-api'];
+const EXTERNAL = ['@kinetographdev/native', 'node-web-audio-api'];
 
 export interface BundleResult {
   /** The written `.mjs` file. */

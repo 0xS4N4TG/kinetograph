@@ -1,3 +1,3 @@
-# `@kinetograph/native-darwin-arm64`
+# `@kinetographdev/native-darwin-arm64`
 
-This is the **aarch64-apple-darwin** binary for `@kinetograph/native`
+This is the **aarch64-apple-darwin** binary for `@kinetographdev/native`

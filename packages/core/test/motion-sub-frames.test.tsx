@@ -3,9 +3,9 @@
 // sub-frame time would have drawn.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { setDomAddon } from '@kinetograph/compat/dom';
-import { createSceneRoot, Layer, Rect, TimelineContext } from '@kinetograph/react';
-import { motionSubFrames, motionTimes, type LayerJson } from '@kinetograph/scene';
+import { setDomAddon } from '@kinetographdev/compat/dom';
+import { createSceneRoot, Layer, Rect, TimelineContext } from '@kinetographdev/react';
+import { motionSubFrames, motionTimes, type LayerJson } from '@kinetographdev/scene';
 import { resetRenderState } from '../src/assets.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { resetVirtualClock, setVirtualFrame } from '../src/determinism.js';

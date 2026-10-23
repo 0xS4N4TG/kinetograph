@@ -1,4 +1,4 @@
-// @kinetograph/react: the react-reconciler host config that emits scene
+// @kinetographdev/react: the react-reconciler host config that emits scene
 // JSON (`createSceneRoot`), the native elements (packages/cli/skills/kinetograph/references/AUTHORING.md §6) and
 // the timeline context every component reads time from.
 

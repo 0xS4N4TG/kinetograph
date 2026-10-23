@@ -1,3 +1,3 @@
-# `@kinetograph/native-linux-x64-gnu`
+# `@kinetographdev/native-linux-x64-gnu`
 
-This is the **x86_64-unknown-linux-gnu** binary for `@kinetograph/native`
+This is the **x86_64-unknown-linux-gnu** binary for `@kinetographdev/native`

@@ -1,7 +1,7 @@
 // What the engine could not draw in the frames a command drew (kinetograph site, /docs/compat/): the frame is drawn anyway, with
 // the native approximation, and this says what was left out. `--strict` turns it into an error.
 
-import type { Unsupported } from '@kinetograph/scene';
+import type { Unsupported } from '@kinetographdev/scene';
 import { CliError } from './errors.js';
 
 /** One kind of thing the engine left out, over the frames it was left out of. */

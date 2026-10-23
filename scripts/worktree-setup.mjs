@@ -1,8 +1,8 @@
 // Makes a fresh git worktree usable without a network install: `node scripts/worktree-setup.mjs`.
 //
-// A new worktree has no node_modules, so `@kinetograph/*` (and every other dependency) resolves to the main checkout's
+// A new worktree has no node_modules, so `@kinetographdev/*` (and every other dependency) resolves to the main checkout's
 // built packages instead of the worktree's. This links the third-party packages from the main checkout's node_modules
-// (and each workspace's own node_modules) and links every workspace package from this worktree as `@kinetograph/<name>`,
+// (and each workspace's own node_modules) and links every workspace package from this worktree as `@kinetographdev/<name>`,
 // so tests and builds in the worktree use the worktree's code. Build the packages afterwards (`npm run build`).
 // Run `npm install` instead when a dependency changed.
 
@@ -40,7 +40,7 @@ let made = 0;
 const mainModules = join(common, 'node_modules');
 if (existsSync(mainModules)) {
   for (const entry of readdirSync(mainModules)) {
-    if (entry === '@kinetograph') continue;
+    if (entry === '@kinetographdev') continue;
     if (link(join(mainModules, entry), join(here, 'node_modules', entry))) made++;
   }
 }

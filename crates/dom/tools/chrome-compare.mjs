@@ -51,7 +51,7 @@ const files = inputs.flatMap((p) =>
   statSync(p).isDirectory() ? readdirSync(p).filter((f) => f.endsWith('.json')).sort().map((f) => join(p, f)) : [p],
 );
 
-/** `Inter:800i` -> { family: 'Inter', weight: 800, style: 'italic' } (fontKey of @kinetograph/scene). */
+/** `Inter:800i` -> { family: 'Inter', weight: 800, style: 'italic' } (fontKey of @kinetographdev/scene). */
 function parseKey(key) {
   const m = /^(.*):(\d+)(i?)$/.exec(key);
   return m ? { family: m[1], weight: Number(m[2]), style: m[3] ? 'italic' : 'normal' } : { family: key, weight: 400, style: 'normal' };

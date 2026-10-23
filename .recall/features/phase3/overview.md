@@ -19,7 +19,7 @@ them into `feat/node-authoring` (draft PR against main). Stream PRs: #6 reconcil
 
 ## Open threads
 - [ ] M4: `cargo test` (7 new goldens: image-fit, box-units, motion-frames, origin-align, layout, glyph-text, lottie;
-      renderer_reuse), `KINETOGRAPH_GPU_TESTS=1 npm test -w @kinetograph/native`, spike 1, spike 2, render the reference.
+      renderer_reuse), `KINETOGRAPH_GPU_TESTS=1 npm test -w @kinetographdev/native`, spike 1, spike 2, render the reference.
 - [ ] M4: TSX port of ep 13 S04Meter, timing against Remotion (go/no-go 5x).
 - [ ] Box-unit linear gradients at non-axis angles are skewed on non-square boxes (helper has no box size).
 - [ ] Not implemented from @remotion/*: makeArrow, makeCallout, makeSpark, warpPath, interpolatePaths,

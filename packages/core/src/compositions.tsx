@@ -5,7 +5,7 @@
 // does, so a Root can compute its list.
 
 import { createContext, useContext, type ComponentType, type ReactNode } from 'react';
-import { createSceneRoot, type VideoConfig } from '@kinetograph/react';
+import { createSceneRoot, type VideoConfig } from '@kinetographdev/react';
 
 export interface CompositionInfo {
   id: string;

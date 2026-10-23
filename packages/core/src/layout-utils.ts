@@ -1,7 +1,7 @@
 // `@remotion/layout-utils`: `measureText`, `fitText`, `fillTextBox` and `fitTextOnNLines`.
 //
 // Remotion measures text in the browser; here the renderer's own text engine
-// does it (`layoutText` in `@kinetograph/native`), so a measurement is what the
+// does it (`layoutText` in `@kinetographdev/native`), so a measurement is what the
 // renderer will draw. The fonts are the ones registered (`getFonts()`), and text
 // is never measured before they are: a font that is not registered, or one still
 // downloading, is an error rather than a measurement with a stand-in font. A download in flight is finished first
@@ -9,8 +9,8 @@
 
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import type { TextLayout, TextLayoutRequest } from '@kinetograph/native';
-import { fontKey } from '@kinetograph/scene';
+import type { TextLayout, TextLayoutRequest } from '@kinetographdev/native';
+import { fontKey } from '@kinetographdev/scene';
 import { finishFontLoadsSync, fontGeneration, getFonts, pendingFontLoads } from './font-registry.js';
 
 type LayoutText = (request: TextLayoutRequest) => TextLayout;
@@ -32,14 +32,14 @@ function loadNative(): LayoutText {
   const failures: string[] = [];
   for (const base of [import.meta.url, pathToFileURL(`${process.cwd()}/`).href]) {
     try {
-      return (createRequire(base)('@kinetograph/native') as { layoutText: LayoutText }).layoutText;
+      return (createRequire(base)('@kinetographdev/native') as { layoutText: LayoutText }).layoutText;
     } catch (error) {
       failures.push(error instanceof Error ? error.message.split('\n')[0]! : String(error));
     }
   }
   throw new Error(
-    `Text cannot be measured: @kinetograph/native could not be loaded (${failures.join('; ')}). ` +
-      'Build the addon, or pass its layoutText to setLayoutText() from @kinetograph/core/layout-utils.',
+    `Text cannot be measured: @kinetographdev/native could not be loaded (${failures.join('; ')}). ` +
+      'Build the addon, or pass its layoutText to setLayoutText() from @kinetographdev/core/layout-utils.',
   );
 }
 

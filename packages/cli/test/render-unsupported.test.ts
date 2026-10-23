@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Renderer } from '@kinetograph/native';
-import type { SceneJson, Unsupported } from '@kinetograph/scene';
+import type { Renderer } from '@kinetographdev/native';
+import type { SceneJson, Unsupported } from '@kinetographdev/scene';
 import { renderSource } from '../src/render-job.js';
 import type { Source } from '../src/source.js';
 import { fakeNative } from './helpers.js';

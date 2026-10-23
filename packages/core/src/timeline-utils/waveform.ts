@@ -3,7 +3,7 @@
 // published package (test/fixtures/timeline-utils.json).
 //
 // Loading differs from the published package in where the sound comes from: it reads a file the addon decodes
-// (`@kinetograph/core/media-utils`' `readAudioData`: ffmpeg, 48 kHz, whole file at once), not a URL through
+// (`@kinetographdev/core/media-utils`' `readAudioData`: ffmpeg, 48 kHz, whole file at once), not a URL through
 // mediabunny, so a source is a path, there is no worker, and the peaks of a file are there after one call.
 
 import { parseColor } from '../colors.js';

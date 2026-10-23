@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import type { LayerJson, Num, SceneJson } from '@kinetograph/scene';
+import type { LayerJson, Num, SceneJson } from '@kinetographdev/scene';
 
 /** The largest even number not above `n * scale`, at least 2: YUV 4:2:0 video needs even sizes. */
 export const scaledSize = (n: number, scale: number): number => Math.max(2, Math.floor((n * scale + 1e-9) / 2) * 2);

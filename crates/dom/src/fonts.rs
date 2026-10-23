@@ -1,7 +1,7 @@
 //! The fonts of an island: only the files the project registered, no system
 //! fonts, so a frame looks the same on every machine.
 //!
-//! `request.fonts` maps a font key (`fontKey` of `@kinetograph/scene`: `Inter`
+//! `request.fonts` maps a font key (`fontKey` of `@kinetographdev/scene`: `Inter`
 //! for 400 normal, `Inter:800`, `Inter:400i`) to a file. Each file is registered
 //! in Parley's collection under the key's family name, weight and style, which
 //! is what CSS font matching (`font-family` stack, `font-weight`, `font-style`)

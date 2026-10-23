@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, '..', 'dist', 'cli.js');
 const addon = (() => {
   try {
-    createRequire(import.meta.url)('@kinetograph/native');
+    createRequire(import.meta.url)('@kinetographdev/native');
     return true;
   } catch {
     return false;

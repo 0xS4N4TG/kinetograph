@@ -22,8 +22,8 @@ import {
   Scene3D,
   Text,
   grain,
-} from '@kinetograph/core';
-import { makeGoogleFont } from '@kinetograph/core/google-fonts';
+} from '@kinetographdev/core';
+import { makeGoogleFont } from '@kinetographdev/core/google-fonts';
 
 const W = 1920;
 const H = 1080;

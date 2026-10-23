@@ -2,7 +2,7 @@
 // quad with the uniforms the props give.
 
 import { describe, expect, it } from 'vitest';
-import type { GlslLayer, GroupLayer } from '@kinetograph/scene';
+import type { GlslLayer, GroupLayer } from '@kinetographdev/scene';
 import { GlslShader, Layer, Rect } from '../src/index.js';
 import { layersOf } from './harness.js';
 

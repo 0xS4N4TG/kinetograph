@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { AbsoluteFill, Sequence, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
-import { Layer, Video, glow, gradientMap, grain } from '@kinetograph/core';
+import { Layer, Video, glow, gradientMap, grain } from '@kinetographdev/core';
 import { CLAMP, H, LEN, W } from './common.js';
 import { BAR, Film, Flash, camera } from './act2-s07.js';
 import { Captions, type CaptionLine, type Point } from './print/captions.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Unsupported } from '@kinetograph/scene';
+import type { Unsupported } from '@kinetographdev/scene';
 import { describeIssue, summarize } from '../src/doctor.js';
 
 const item = (over: Partial<Unsupported> = {}): Unsupported => ({

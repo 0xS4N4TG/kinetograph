@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
-import { setDomAddon, setDomEnvironment } from '@kinetograph/compat/dom';
-import { createSceneRoot, TimelineContext } from '@kinetograph/react';
+import { setDomAddon, setDomEnvironment } from '@kinetographdev/compat/dom';
+import { createSceneRoot, TimelineContext } from '@kinetographdev/react';
 import { continueRender, delayRender, openRenderHandles, resetRenderState } from '../src/assets.js';
 import '../src/web-install.js';
 

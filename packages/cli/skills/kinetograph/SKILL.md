@@ -80,7 +80,7 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
 - `@remotion/transitions`, `motion-blur`, `noise`, `paths`, `shapes`, `layout-utils`, `animation-utils`, `captions`,
   `fonts`, `lottie` and `@remotion/google-fonts/<Family>` import as usual. `@remotion/rive`'s `<RemotionRiveCanvas src={staticFile('a.riv')}>` plays a Rive file with Rive's own runtime (frame
   exact; `stateMachine` prop added). `@remotion/skia` and `@shopify/react-native-skia` (`<SkiaCanvas>`, RN-Skia's components, SkSL shaders) run on real Skia
-  in the optional `@kinetograph/skia` addon (`npm install @kinetograph/skia`; the first Skia canvas says so if it is
+  in the optional `@kinetographdev/skia` addon (`npm install @kinetographdev/skia`; the first Skia canvas says so if it is
   missing). Other `@remotion/*` packages do not exist yet.
   For new work, use the elements below. `<div>`s, `className`, stylesheets (`.css` imports, `<style>`, Tailwind) and SVG
   also work (compat mode, see "Compat mode and doctor"): the engine's own CSS engine styles, lays out and draws them,
@@ -131,7 +131,7 @@ Web Audio code runs offline against the frame timeline. Call `onFrame` at module
 `OfflineAudioContext`, `t` is the start time in seconds.
 
 ```ts
-import { onFrame } from '@kinetograph/audio';
+import { onFrame } from '@kinetographdev/audio';
 
 onFrame(42, (ctx, t) => {
   const o = ctx.createOscillator(); const g = ctx.createGain();
