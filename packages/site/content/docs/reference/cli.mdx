@@ -1,6 +1,269 @@
 ---
 title: CLI
-description: The kinetograph command line.
+description: Every kinetograph command, with its arguments, options, output and exit codes.
 ---
 
-Coming soon.
+```sh
+npx kinetograph <command> [entry] [options]
+npx kinetograph <command> --help
+```
+
+The entry is a project file (`.tsx`, `.ts`, `.jsx` or `.js`) or a `.json` scene. Some commands take a frame number or a range after the entry, such as `still`.
+
+## Behaviour shared by all commands
+
+- `--json` prints one JSON object on stdout instead of text. Progress goes to stderr, and stderr stays quiet with `--json`. A failure prints `{ "error": { "code", "message" } }` and exits with 1.
+- `--help` or `-h` prints the command's usage.
+- `kinetograph --version` or `-v` prints the package version. `kinetograph --help` lists the commands.
+- Exit code 0 is success. Exit code 1 is an error. A check that fails also exits with 1: `check` with type errors, `lint` with errors, and `snapshot` with a mismatch or a missing approved image.
+
+Commands that open a project take two more options:
+
+| Option | Meaning |
+|---|---|
+| `--comp <id>` | The composition to use. The default is the first composition. |
+| `--props <json>` | Input props as a JSON object. See [Authoring](/docs/guides/authoring/#compositions). |
+
+These commands open a project: `still`, `render`, `strip`, `onion`, `inspect`, `lint`, `bench`, `audio analyze`, `snapshot` and `doctor`.
+
+### Frames and ranges
+
+- A frame is a whole number from 0.
+- `10..40` is frames 10 to 39. `10..=40` is frames 10 to 40.
+- Leave out the start to begin at 0, as in `..40`. Leave out the end to run to the last frame, as in `10..`. An inclusive range (`..=`) needs an end.
+- `--frames` and `snapshot --frames` take a comma-separated list, such as `0,30,60`.
+
+## compositions
+
+Lists the compositions in a project: id, size, frame rate, length in frames and in seconds.
+
+```sh
+npx kinetograph compositions <entry>
+```
+
+No options beyond the shared ones.
+
+## still
+
+Renders one frame to a PNG.
+
+```sh
+npx kinetograph still <entry> <frame> -o <output.png> [options]
+```
+
+| Option | Meaning |
+|---|---|
+| `-o, --output <path>` | Required. The PNG to write. Folders are created. |
+| `--strict` | Fail on the first frame that holds content the engine cannot draw. See [Remotion compatibility](/docs/compat/). |
+| `--dev-react` | Run React's development build. It prints React's warnings, and it is slower. |
+| `--comp`, `--props` | See above. |
+
+## render
+
+Renders frames to a video with audio.
+
+```sh
+npx kinetograph render <entry> -o <output.mp4> [options]
+```
+
+| Option | Meaning |
+|---|---|
+| `-o, --output <path>` | Required. The video to write. The extension sets the container: `.mp4`, `.mov`, `.webm` or `.gif`. Folders are created. |
+| `--range <a..b>` | The frames to render. The default is all of them. |
+| `--draft` | Half size, for a quick look. The same as `--scale 0.5`. |
+| `--scale <n>` | Output size multiplier, above 0 and at most 8. `0.5` renders 1080p as 540p, and `2` renders it as 4K. Each side rounds down to an even number. |
+| `--concurrency <n>` | Frames drawn at once, in worker threads. The default is half the cores, at most 4. `1` draws every frame in the main thread. A `.json` scene is drawn whole. |
+| `--encoder <name>` | The ffmpeg encoder to use, in place of the default. |
+| `--codec <name>` | `h264` (default), `h265`, `prores`, `vp9` or `gif`. A `.webm` path defaults to `vp9`, and a `.gif` path to `gif`. |
+| `--crf <n>` | Constant quality. Lower is better. For h264 and h265 the range is 0 to 51, and for vp9 it is 0 to 63. Not with `--video-bitrate`. |
+| `--video-bitrate <rate>` | A bit rate, such as `8M` or `2500k`. Not with `--crf`. |
+| `--pixel-format <name>` | `yuv420p` (default), `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`. |
+| `--prores-profile <name>` | With `--codec prores`: `proxy`, `light`, `standard`, `hq` (default), `4444` or `4444-xq`. |
+| `--audio-codec <name>` | `aac` (default for `.mp4` and `.mov`), `opus` (`.webm`) or `pcm` (`.mov`). |
+| `--audio-bitrate <rate>` | Total audio bit rate, such as `320k`. The default is 96 kbit/s per channel. Not for `pcm`. |
+| `--every-nth-frame <n>` | With `--codec gif` only. Draws every nth frame and plays them at the frame rate, so the length stays the same. |
+| `--strict` | Fail on the first frame that holds content the engine cannot draw. The output file is not left behind. |
+| `--dev-react` | Run React's development build. |
+| `--comp`, `--props` | See above. |
+
+The export flags are checked before the project is bundled. A refusal says which flag to change.
+
+`render` prints the output path, size, frame range, codec, encoder, pixel format and time. It also says how many frames were the same as the one before and were not drawn again.
+
+## strip
+
+Writes a contact sheet of evenly spaced frames, labelled with the frame number and time.
+
+```sh
+npx kinetograph strip <entry> -n 12 -o <sheet.png> [options]
+```
+
+| Option | Meaning |
+|---|---|
+| `-n, --count <n>` | Number of frames. The default is 12, and the most is 64. |
+| `-o, --output <path>` | Required. The PNG to write. |
+| `--range <a..b>` | The frames to sample. The default is the whole composition. |
+| `--cols <n>` | Columns in the sheet. The default is 4 for landscape and 6 for portrait. |
+| `--strict` | See `still`. |
+| `--comp`, `--props` | See above. |
+
+## onion
+
+Blends frames of a range over one another, to show a motion path.
+
+```sh
+npx kinetograph onion <entry> <a..b> -n 6 -o <onion.png> [options]
+```
+
+| Option | Meaning |
+|---|---|
+| `<a..b>` | Required. The range to blend. |
+| `-n, --count <n>` | Number of frames to blend. The default is 6, and the most is 64. |
+| `-o, --output <path>` | Required. The PNG to write. |
+| `--comp`, `--props` | See above. |
+
+## inspect
+
+Prints the scene graph at one frame: each layer's id and type, its bounds, its effects, and its text or file.
+
+```sh
+npx kinetograph inspect <entry> --frame 30
+```
+
+| Option | Meaning |
+|---|---|
+| `--frame <n>` | The frame. The default is 0. |
+
+With `--json`, the result is the full scene graph.
+
+## lint
+
+Checks a project at a few frames. It reports text that overflows its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, type errors, and content the engine cannot draw. Each finding names its rule, its layer and its frames.
+
+```sh
+npx kinetograph lint <entry> --frames 0,30,60
+```
+
+| Option | Meaning |
+|---|---|
+| `--frames <list>` | Frames to check. The default is 8 frames spread over the composition. |
+
+Exit code 1 means at least one error. Warnings do not change the exit code.
+
+## check
+
+Runs `tsc --noEmit` on the project, using the nearest `tsconfig.json`. A misspelled prop renders without an error, so this finds it.
+
+```sh
+npx kinetograph check <entry>
+```
+
+No options. A scene file, or a JavaScript project with no `tsconfig.json`, has nothing to check.
+
+## bench
+
+Times each stage of drawing a frame, in milliseconds. The stages are `js`, then `stringify`, then the addon's `handoff`, `resolve`, `raster`, `composite` and `readback`, and `total`.
+
+```sh
+npx kinetograph bench <entry> --frame 30 --runs 10
+npx kinetograph bench <entry> --range 40..90
+```
+
+| Option | Meaning |
+|---|---|
+| `--frame <n>` | The frame to time again and again. The default is 0. |
+| `--runs <n>` | Timed runs after the warm-up. The default is 10. |
+| `--range <a..b>` | Times the frames of the range once each, in order. It replaces `--frame` and `--runs`. |
+
+`bench` and the studio run React's development build unless `NODE_ENV` is set. To time the production build, run `NODE_ENV=production npx kinetograph bench ...`.
+
+## audio analyze
+
+Mixes the audio of a project and measures it.
+
+```sh
+npx kinetograph audio analyze <entry> --scenes 0..90,90..180
+```
+
+| Option | Meaning |
+|---|---|
+| `--range <a..b>` | Frames to mix and measure. The default is all of them. |
+| `--scenes <list>` | Frame ranges to measure on their own, as well as the whole mix. |
+
+The output gives the integrated loudness (LUFS), the true peak (dBTP), the number of clipped samples and the silences. See [Audio](/docs/guides/audio/#check-the-loudness).
+
+## snapshot
+
+Compares rendered frames with approved PNGs. The approved files are in a `__snapshots__/` folder next to the entry. Each one is named after the file and the composition, with the frame number, for example `card.Title.f30.png`.
+
+```sh
+npx kinetograph snapshot <entry> --frames 0,30,60
+npx kinetograph snapshot <entry> --update
+```
+
+| Option | Meaning |
+|---|---|
+| `--frames <list>` | Frames to compare. The default is the first, the middle and the last frame. |
+| `--update` | Writes the current renders as the approved PNGs. |
+
+A frame matches when no colour channel differs from the approved image by more than 2 levels. A mismatch or a missing approved file exits with 1.
+
+## effects
+
+Lists every effect with its type, description and fields.
+
+```sh
+npx kinetograph effects
+```
+
+No options.
+
+## doctor
+
+Runs every frame in the range without the GPU, and reports what the engine cannot draw, with the frames it happens in. Use it before a long render. See [Remotion compatibility](/docs/compat/#checking-a-project-with-doctor).
+
+```sh
+npx kinetograph doctor <entry> --range 0..120
+npx kinetograph doctor
+```
+
+| Option | Meaning |
+|---|---|
+| `--range <a..b>` | Frames to check. The default is all of them. |
+
+With no entry, `doctor` prints the Node version, the platform and whether the addon loaded.
+
+## studio
+
+Opens the studio in a browser: a preview, the timeline, the scene tree, props and a render queue.
+
+```sh
+npx kinetograph studio <entry>
+```
+
+| Option | Meaning |
+|---|---|
+| `--port <n>` | Port to listen on. The default is 3000. `0` picks a free port. |
+| `--host <address>` | Address to listen on. The default is `127.0.0.1`. |
+| `--no-open` | Do not open the browser. |
+| `--props <json>` | Input props, merged over each composition's `defaultProps`. |
+
+The studio is the `@kinetograph/studio` package. The command loads it by name, so it must be installed next to `kinetograph`. Stop the studio with Ctrl-C.
+
+## mcp
+
+Runs the MCP server on stdio. It has one tool for each command except `studio`. See [Use with agents](/docs/guides/agents/).
+
+```sh
+npx kinetograph mcp
+```
+
+## Export options
+
+The `render` options that set the codec and quality follow Remotion's names. These are the defaults, unless a flag changes them:
+
+- H.264 uses `crf 18` with the software encoder. With the VideoToolbox encoder on macOS, it uses a bit rate of 0.2 bits per pixel per frame.
+- VP9 uses `crf 30`, and H.265 uses `crf 28`.
+- The audio bit rate is 96 kbit/s per channel. The encoder choice for each codec is in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 9.
+
+`--crf` is not used for `prores` or `gif`.
