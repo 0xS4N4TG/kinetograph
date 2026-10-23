@@ -64,11 +64,16 @@ pub fn families_in_xml(xml: &str) -> Vec<String> {
     for (marker, ends) in [
         ("font-family=\"", &['"'][..]),
         ("font-family='", &['\''][..]),
-        ("font-family:", &[';', '"', '\''][..]),
+        ("font-family:", &[';', '"'][..]),
     ] {
         for part in xml.split(marker).skip(1) {
             let value = part.split(|c| ends.contains(&c)).next().unwrap_or("");
-            let value = value.trim().to_string();
+            let value = value
+                .replace("&quot;", "\"")
+                .replace("&apos;", "'")
+                .replace("&#39;", "'")
+                .trim()
+                .to_string();
             if !value.is_empty() && !out.contains(&value) {
                 out.push(value);
             }

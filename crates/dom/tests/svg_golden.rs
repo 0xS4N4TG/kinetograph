@@ -42,7 +42,7 @@ fn document(name: &str, width: u32, height: u32) -> (BaseDocument, IslandRequest
             height: f64::from(height),
         },
         fonts: BTreeMap::from([(
-            "DM:400:normal".to_string(),
+            "DM".to_string(),
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../assets/fonts/DMSans-Medium.ttf")
                 .to_string_lossy()

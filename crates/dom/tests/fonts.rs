@@ -354,6 +354,9 @@ fn text_whose_families_are_all_unloaded_is_drawn_and_reported_when_another_font_
     assert_eq!(family_notes(&none).len(), 1, "{:?}", none.unsupported);
     assert_eq!(family_notes(&none)[0].1, unloaded);
 
+    // Quoted names are the same family.
+    assert!(family_notes(&one("font-family: \"DM Sans\"")).is_empty());
+    assert!(family_notes(&one("font-family: 'DM Sans'")).is_empty());
     // A loaded family anywhere in the stack is enough.
     assert!(family_notes(&one("font-family: Arial, 'DM Sans', serif")).is_empty());
     assert!(family_notes(&one("font-family: 'dm sans'")).is_empty());
@@ -389,4 +392,6 @@ fn svg_text_whose_families_are_all_unloaded_is_reported_when_another_font_is_loa
     );
     assert!(!helvetica.layers.is_empty());
     assert!(family_notes(&svg("DM Sans")).is_empty());
+    assert!(family_notes(&svg("'DM Sans'")).is_empty());
+    assert!(family_notes(&svg("\"DM Sans\", Arial")).is_empty());
 }

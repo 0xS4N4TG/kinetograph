@@ -110,7 +110,7 @@ pub fn request(w: u32, h: u32) -> IslandRequest {
     serde_json::from_value(json!({
         "root": { "kind": "text", "text": "" },
         "viewport": { "width": w, "height": h },
-        "fonts": { "DM Sans:500:normal": font_path().to_string_lossy() },
+        "fonts": { "DM Sans:500": font_path().to_string_lossy() },
         "baseDir": repo_root().join("crates/dom/tests/assets").to_string_lossy(),
         "path": "$0",
     }))
