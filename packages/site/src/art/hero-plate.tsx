@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * The hero plate: a length of film running across a cobalt toile engraving. The frame in the gate is a window for the
  * live clip (the hero lays a <video> over GATE); the frames either side hold stills from the same film.

@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'fumadocs-ui/css/preset.css';
+@import 'fumadocs-ui/css/lib/default-colors.css';
+@source '../node_modules/fumadocs-ui/dist/**/*.js';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -213,4 +216,24 @@
 .kg-twinkle { animation: kg-twinkle 4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .kg-twinkle, .animate-marquee { animation: none !important; }
+}
+
+/* Docs: map the Fumadocs tokens onto the site's own. */
+@theme {
+  --color-fd-background: var(--paper);
+  --color-fd-foreground: var(--night);
+  --color-fd-muted: color-mix(in oklab, var(--cobalt) 6%, var(--paper));
+  --color-fd-muted-foreground: color-mix(in oklab, var(--cobalt) 30%, #55556a);
+  --color-fd-popover: color-mix(in oklab, var(--paper) 70%, white);
+  --color-fd-popover-foreground: var(--night);
+  --color-fd-card: color-mix(in oklab, var(--paper) 70%, white);
+  --color-fd-card-foreground: var(--night);
+  --color-fd-border: color-mix(in oklab, var(--cobalt) 22%, var(--paper));
+  --color-fd-primary: var(--cobalt);
+  --color-fd-primary-foreground: var(--paper);
+  --color-fd-secondary: color-mix(in oklab, var(--cobalt) 6%, var(--paper));
+  --color-fd-secondary-foreground: var(--night);
+  --color-fd-accent: color-mix(in oklab, var(--cobalt) 9%, var(--paper));
+  --color-fd-accent-foreground: var(--cobalt);
+  --color-fd-ring: var(--cobalt);
 }

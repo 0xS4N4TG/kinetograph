@@ -18,6 +18,7 @@ const LINKS = [
   ['Agents', '#agents'],
   ['Proof', '#proof'],
   ['FAQ', '#faq'],
+  ['Docs', '/docs/'],
 ] as const;
 
 export function Nav() {
