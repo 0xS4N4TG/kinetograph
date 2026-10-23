@@ -1,6 +1,83 @@
 ---
 title: First video
-description: Render your first video.
+description: Write a two-second title card, look at its frames, and render it to an MP4.
 ---
 
-Coming soon.
+This page makes a two-second title card. It needs the build from [Installation](/docs/getting-started/installation/).
+
+## Write the project
+
+Make a folder in the repository, such as `examples/hello`, and save this as `index.tsx` in it:
+
+```tsx
+import React from 'react';
+import { AbsoluteFill, Composition, interpolate, registerRoot, useCurrentFrame } from 'remotion';
+import { Rect, Text } from '@kinetograph/core';
+import { loadFont } from '@remotion/google-fonts/Inter';
+
+const { fontFamily } = loadFont('normal', { weights: ['400'] });
+
+const Title: React.FC = () => {
+  const frame = useCurrentFrame();
+  const width = interpolate(frame, [0, 30], [0, 640], { extrapolateRight: 'clamp' });
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#14171f' }}>
+      <Text x={320} y={200} font={fontFamily} size={96} color="#ffffff">
+        Hello, Kinetograph
+      </Text>
+      <Rect x={320} y={340} width={width} height={12} radius={6} fill="#f6c177" />
+    </AbsoluteFill>
+  );
+};
+
+registerRoot(() => (
+  <Composition id="Title" component={Title} durationInFrames={60} fps={30} width={1280} height={720} />
+));
+```
+
+Each part does one job:
+
+- `registerRoot` takes a function that returns the compositions. `Composition` sets the id, the length in frames, the frame rate and the size.
+- `useCurrentFrame` gives the frame being drawn. The picture depends only on that number. `interpolate` turns it into a width that grows from 0 to 640 over the first 30 frames, then holds.
+- `Text` and `Rect` are Kinetograph's own elements. `x` and `y` place the box. `width` takes a number, so it can change with the frame.
+- `loadFont` gets Inter from Google Fonts. The first render downloads it, and the file is kept in `~/.cache/kinetograph/fonts`.
+
+## Look at the frames
+
+```sh
+npx kinetograph compositions examples/hello/index.tsx
+npx kinetograph still examples/hello/index.tsx 15 -o out/hello-15.png
+npx kinetograph strip examples/hello/index.tsx -n 12 -o out/hello-strip.png
+```
+
+`compositions` lists each composition's id, size, frame rate and length. `still` writes one frame as a PNG. `strip` writes 12 evenly spaced frames on one sheet, labelled with the frame and the time. Open the files and look at them. The output folder is created if it does not exist.
+
+## Check the project
+
+```sh
+npx kinetograph inspect examples/hello/index.tsx --frame 30
+npx kinetograph lint examples/hello/index.tsx
+```
+
+`inspect` prints each layer at a frame, with its bounds. `lint` reports text that overflows its box, layers off the canvas, overlapping text and missing fonts. It exits with 1 when it finds errors.
+
+To find type errors, such as a misspelled prop, run `npx kinetograph check examples/hello/index.tsx`. Rendering does not type-check the project.
+
+## Render the video
+
+```sh
+npx kinetograph render examples/hello/index.tsx -o out/hello.mp4 --draft
+npx kinetograph render examples/hello/index.tsx -o out/hello.mp4
+```
+
+`--draft` renders at half size, for a quick look. Without it, the video is 1280 by 720. The output is H.264 by default. Use a `.mp4` or `.mov` path for it.
+
+`render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
+
+## Next steps
+
+- [Authoring](/docs/guides/authoring/) covers the elements, effects and Remotion APIs a project can use.
+- [Scene format](/docs/guides/scene-format/) describes the JSON scenes that the engine draws.
+- [Audio](/docs/guides/audio/) covers sound files, synthesised sound and loudness checks.
+- [CLI reference](/docs/reference/cli/) lists every command and option.
+- [Use with agents](/docs/guides/agents/) sets up the agent skill and the MCP server.

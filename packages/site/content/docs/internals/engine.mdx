@@ -1,6 +1,61 @@
 ---
 title: Engine
-description: How the DOM engine and GPU compositor work.
+description: How a frame moves from the project through the DOM engine and the GPU compositor to the encoder, and where each part lives.
 ---
 
-Coming soon.
+Kinetograph has two halves. Node runs the project and turns each frame into a scene. A Rust addon draws that scene on the GPU. The addon is loaded into Node, so the frame data moves as JSON and the pixels stay in Rust.
+
+The design notes are in [ENGINE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/ENGINE.md) and [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md) in the repository. This page gives the overview.
+
+## One frame
+
+1. **Bundle.** The CLI bundles the project with esbuild. `remotion` and `@remotion/*` imports point at `@kinetograph/core`, so the project's code runs unchanged. Google Fonts files are downloaded once and cached.
+2. **Run the frame.** Before the project loads, the determinism shim is installed. It makes `Date`, `Math.random`, timers and `requestAnimationFrame` follow the frame number. The React reconciler then renders the tree for that frame.
+3. **Split the tree.** Kinetograph's own elements become scene layers. Each run of plain HTML and SVG becomes a DOM island. The island's tags, attributes, inline styles, stylesheets and the frame's time go to the addon as JSON. Canvas 2D and WebGL contexts record their calls, and the recorded calls become one layer.
+4. **Lay out and paint the DOM.** The addon builds a Blitz document for the island. Stylo, the CSS engine from Firefox, styles it. Taffy lays it out, and Parley shapes its text. The painter writes the result into scene layers in CSS paint order. Anything the painter cannot draw is reported for that frame.
+5. **Composite on the GPU.** wgpu draws the layer tree. Skia draws vector shapes, text and Canvas 2D. WGSL passes do blends, masks, blurs, shadows and the other effects. GLSL shaders are translated with naga. The 3D renderer draws meshes and glTF models, and ThorVG draws Lottie. Skia draws every 2D layer. The layers it cannot draw, such as 3D and GLSL groups, are drawn by the wgpu path, and Skia composites them.
+6. **Encode.** Each finished frame goes to FFmpeg on another thread, while the GPU draws the next one. On macOS, the VideoToolbox encoder is used when FFmpeg has it. The audio is rendered offline with the Web Audio API, then mixed and muxed at the end.
+
+## Rules the engine keeps
+
+- A frame is a pure function of the project and the frame number. Nothing reads the wall clock, so the same frame gives the same pixels every time.
+- No browser is in the render path. That includes Canvas 2D and WebGL. Every CSS, SVG and canvas feature is drawn by Kinetograph's own code.
+- Unsupported content is drawn without, or approximated, and reported. `--strict` makes it an error. See [Remotion compatibility](/docs/compat/).
+- Kinetograph writes its own version of each Remotion API from that API's documented behaviour. Existing crates do the text shaping, layout, CSS and rasterising. Kinetograph's code is the glue between them.
+- There is one 2D backend. If Skia cannot start on the GPU, rendering fails with an error that says so.
+
+## Reuse between frames
+
+Three mechanisms skip work that has not changed. Each one is checked exactly, and the output is the same with them on or off.
+
+- **Layer cache.** A layer that has not changed since the last frame is blended from the texture kept for it. The cache holds at most 1 GiB of textures. `render` turns it on. `still` draws one frame, so it has nothing to reuse.
+- **Frame reuse.** A frame whose resolved scene equals the previous frame's is not drawn. The encoder gets the previous picture again. `render` turns this on. `KINETOGRAPH_NO_REUSE=1` turns it off.
+- **DOM islands.** A DOM island's document is edited from one frame to the next instead of being built again. `KINETOGRAPH_NO_INCREMENTAL=1` turns this off.
+
+`render --concurrency` runs worker threads. Each worker has its own renderer, its own GPU device and its own layer cache. Each one draws a chunk of 60 frames at a time, and the main thread puts the chunks in order and feeds the one encoder. Every worker is a full renderer, so memory grows with the number of workers. On the launch film each one uses 0.5 to 1 GB.
+
+The tuning switches are `KINETOGRAPH_NO_PREFETCH=1`, which stops decoding the next video frame ahead of time, and `KINETOGRAPH_SYNC_START=1`, which stops the start of one frame on the GPU from overlapping the JavaScript of the next. `KINETOGRAPH_PROFILE` turns on stage timers in the DOM island code.
+
+## Where the code is
+
+| Path | What it is |
+|---|---|
+| `crates/core` | `kinetograph-core`: scene format, compositor, effects, text, Canvas 2D, GLSL, 3D, Lottie and video. |
+| `crates/dom` | `kinetograph-dom`: the DOM engine. The Blitz document, CSS, layout, paint, SVG and readback. |
+| `crates/node` | `@kinetograph/native`: the N-API addon over both. |
+| `crates/cli` | The Rust `kinetograph` binary for JSON scenes. |
+| `packages/scene` | Scene types, effect helpers, and the recording Canvas 2D and WebGL contexts. |
+| `packages/react` | The reconciler, native elements and the DOM island emit. |
+| `packages/core` | Remotion's API and `@remotion/*` packages, the frame loop and the determinism shim. |
+| `packages/compat` | Browser shims for the DOM, readback and web APIs, and `doctor`. |
+| `packages/audio` | Web Audio rendering and mixing, and loudness analysis. |
+| `packages/cli` | The `kinetograph` CLI and the MCP server. |
+| `packages/studio` | `kinetograph studio`, a local web UI whose preview frames are drawn by the addon. |
+
+## Measuring speed
+
+Measure with `kinetograph bench`, on the machine you care about. It times each stage of a frame. The project's benchmarks run on an Apple M4 Mac. Speed depends on the content, so a number from one project does not apply to another.
+
+## Known gaps
+
+The gaps in the engine and in Remotion compatibility are listed in [Known issues](/docs/known-issues/).

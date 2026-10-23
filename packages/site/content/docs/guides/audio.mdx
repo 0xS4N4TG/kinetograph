@@ -1,6 +1,107 @@
 ---
 title: Audio
-description: Web Audio in a render.
+description: Play sound files with the Audio element, synthesise sound with onFrame, and measure the loudness of the mix.
 ---
 
-Coming soon.
+A project has two sources of sound. `Audio` plays a file. `onFrame` schedules Web Audio synthesis at a frame. Both are mixed into one stereo track at 48 kHz.
+
+## Play a file
+
+```tsx
+import { Audio, Sequence, staticFile } from 'remotion';
+
+<Sequence from={30} durationInFrames={60}>
+  <Audio src={staticFile('vo/line-1.wav')} volume={0.85} />
+</Sequence>
+```
+
+`src` is a file path. Use `staticFile` for a file in `public/`. The props are Remotion's:
+
+| Prop | Meaning |
+|---|---|
+| `src` | The file. |
+| `volume` | A number, or a function of the frame. The frame is counted from the start of the enclosing `Sequence`. The default is 1. |
+| `trimBefore`, `trimAfter` | Frames of the file to skip at the start, and the frame of the file where it stops. |
+| `playbackRate` | The speed. |
+| `loop` | Play the file again from the start when it ends. |
+| `muted` | Silence the clip. |
+| `toneFrequency` | Multiplies the pitch, from 0.01 to 2. The speed does not change. |
+
+A clip starts at the frame where its `Sequence` starts. Inside a `<Freeze>`, an `Audio` clip is silent.
+
+A volume that rises over the first second:
+
+```tsx
+<Audio
+  src={staticFile('tone.wav')}
+  volume={(frame) => interpolate(frame, [0, 30], [0, 1], { extrapolateRight: 'clamp' })}
+/>
+```
+
+`Video` plays the sound of its file too. Its `volume`, `muted` and `toneFrequency` props work the same way.
+
+## Synthesise sound
+
+`onFrame` schedules a function to run at a frame. The function gets a Web Audio context and the time to play at:
+
+```tsx
+import { onFrame } from '@kinetograph/audio';
+
+onFrame(4, (ctx, t) => {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.frequency.setValueAtTime(1800, t);
+  osc.frequency.exponentialRampToValueAtTime(900, t + 0.05);
+  gain.gain.setValueAtTime(0.25, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.07);
+});
+```
+
+A few rules apply:
+
+- Call `onFrame` at the top level of the module, not inside a component. Each call adds one callback for one frame.
+- `t` is in seconds from the start of the rendered range. Schedule against `t`, not `ctx.currentTime`.
+- The context is an `OfflineAudioContext` from node-web-audio-api. It runs on the CPU.
+- For noise, use `random` from `remotion` with a named seed. The same seed gives the same sound every render:
+
+```tsx
+import { random } from 'remotion';
+
+for (let i = 0; i < data.length; i++) data[i] = random(`whoosh-${i}`) * 2 - 1;
+```
+
+## Mix and render
+
+`render` mixes every `Audio` clip and every `onFrame` callback in the frames it draws. `--range` mixes only those frames.
+
+The output codec follows the container:
+
+- `.mp4` and `.mov` use AAC. `.mov` also takes PCM.
+- `.webm` uses Opus.
+- `.gif` has no sound.
+
+Set the codec and bit rate with `--audio-codec` and `--audio-bitrate`. The default is 96 kbit/s per channel. See the [CLI reference](/docs/reference/cli/#export-options).
+
+## Check the loudness
+
+```sh
+npx kinetograph audio analyze examples/rajz-cards/index.tsx --scenes 0..60,60..125
+```
+
+The command mixes the audio and prints:
+
+- the integrated loudness in LUFS, measured to ITU-R BS.1770-4,
+- the true peak in dBTP,
+- the number of clipped samples,
+- the silences of 0.5 seconds or more below -60 dBFS.
+
+`--range` limits the frames that are mixed. `--scenes` measures frame ranges on their own, as well as the whole range. Add `--json` for the same numbers as an object, with the keys `integratedLufs`, `truePeakDb`, `clippedSamples`, `silences` and `scenes`.
+
+## Code API
+
+`@kinetograph/audio` exports `onFrame`, `clearOnFrame`, `renderAudio` and `analyzeAudio`, which the CLI uses. The signatures are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 8.
+
+For the gaps in the audio elements, see [Known issues](/docs/known-issues/).

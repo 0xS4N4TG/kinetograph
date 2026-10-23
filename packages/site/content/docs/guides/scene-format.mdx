@@ -1,6 +1,182 @@
 ---
 title: Scene format
-description: The scene graph and its format.
+description: The JSON scene the engine draws, with its fields, keyframes, layers and layout.
 ---
 
-Coming soon.
+A scene is one JSON file. The engine draws a scene the same way every time: the same scene and frame give the same pixels.
+
+A project file (TSX) makes a scene for each frame. You can also write a scene by hand. Every command takes a `.json` file as its entry. `render` draws a scene in one pass, not in worker threads.
+
+This is a small scene that moves a card and fades a dot in and out:
+
+```json
+{
+  "width": 640,
+  "height": 360,
+  "fps": 30,
+  "durationInFrames": 60,
+  "background": "#14171f",
+  "layers": [
+    {
+      "id": "card",
+      "type": "shape",
+      "shape": { "kind": "roundedRect", "width": 360, "height": 200, "radius": 28 },
+      "fill": "#f6c177",
+      "stroke": { "color": "#ffffff", "width": 4 },
+      "transform": {
+        "x": [
+          { "frame": 0, "value": 200, "easing": "easeOut" },
+          { "frame": 30, "value": 140 }
+        ],
+        "y": 80,
+        "rotation": [
+          { "frame": 0, "value": -8, "easing": "easeInOut" },
+          { "frame": 59, "value": 8 }
+        ]
+      }
+    },
+    {
+      "id": "dot",
+      "type": "shape",
+      "shape": { "kind": "ellipse", "width": 40, "height": 40 },
+      "fill": "#7aa2f7",
+      "opacity": 0.8,
+      "transform": { "x": 500, "y": 280 }
+    }
+  ]
+}
+```
+
+Render a frame of it with `npx kinetograph still scene.json 15 -o out/card-15.png`.
+
+## Top-level fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `width`, `height` | integer | Pixels, from 1 to 8192. |
+| `fps` | number | Above 0. The frame rate used when encoding. |
+| `durationInFrames` | integer | At least 1. Valid frames run from 0 to `durationInFrames` minus 1. |
+| `background` | colour | Optional. The default is `#000000`. It may be transparent. |
+| `margin` | integer | Optional. The least canvas margin in pixels. See [Canvas margin](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#canvas-margin). |
+| `fonts` | object | Font family names to font file paths. A `text` layer names one of these families. |
+| `camera` | object | The viewpoint for 3D transforms. See [3D transforms and the camera](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#3d-transforms-and-the-camera). |
+| `layers` | array | Bottom layer first. The last layer is on top. |
+
+Paths in the scene, such as font files, image files and video files, are relative to the scene file. Only the fonts listed in `fonts` exist. There is no fallback to a system font.
+
+## Animated numbers
+
+Any number in a scene can be a constant or a list of keyframes:
+
+```json
+"x": 100
+"x": [ {"frame": 0, "value": 0, "easing": "easeOut"}, {"frame": 30, "value": 640} ]
+```
+
+- Keyframes go in increasing `frame` order. Two keyframes on the same frame make a step.
+- Before the first keyframe, the first value holds. After the last keyframe, the last value holds.
+- `easing` shapes the segment that starts at that keyframe. It is `linear` (the default), `easeIn`, `easeOut` or `easeInOut`.
+
+Colours, strings and paths are not animated.
+
+Colours are `#rgb`, `#rrggbb`, `#rgba`, `#rrggbbaa` or `transparent`.
+
+## Layers
+
+Every layer has these fields:
+
+| Field | Default | Notes |
+|---|---|---|
+| `id` | required | Unique in the whole scene, including nested layers. |
+| `type` | required | `shape`, `text`, `image`, `group`, `noise`, `meshGradient`, `lottie`, `canvas`, `scene3d`, `video` or `gif`. |
+| `transform` | identity | Position, scale, rotation and anchor. See below. |
+| `opacity` | `1` | Clamped to 0 to 1. |
+| `blendMode` | `normal` | One of the 16 modes of W3C Compositing and Blending Level 1, such as `multiply` or `screen`. |
+| `effects` | `[]` | Applied in order before the layer is blended. |
+| `clip` | none | Cuts the layer to a shape. |
+| `mask` | none | Fades the layer with a gradient. |
+| `matte` | none | Cuts the layer with a sibling layer. |
+| `motionBlur` | none | Averages the layer over the shutter time. |
+| `layoutItem` | none | How the layer takes part in its parent's flexbox layout. |
+
+The `transform` fields are `x`, `y`, `scale`, `rotation` (in degrees, clockwise), `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `originX` and `originY`. Each is an animated number. The defaults are 0, except `scale` (1).
+
+The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale) * translate(-anchorX, -anchorY)`. A child's matrix applies inside its parent's.
+
+## Layer types
+
+A shape has a `shape` object, a `fill` and an optional `stroke`:
+
+```json
+{ "id": "card", "type": "shape",
+  "shape": { "kind": "roundedRect", "width": 400, "height": 240, "radius": 24 },
+  "fill": "#f6c177",
+  "stroke": { "color": "#ffffff", "width": 4 } }
+```
+
+`shape.kind` is `rect`, `roundedRect`, `ellipse` or `path`. A `path` takes `d`, SVG path data in layer coordinates.
+
+A text layer names a font from `fonts`:
+
+```json
+{ "id": "title", "type": "text", "text": "Hello\nworld", "font": "DM Sans",
+  "size": 64, "color": "#ffffff", "lineHeight": 1.2, "maxWidth": 600 }
+```
+
+`\n` starts a new line. `maxWidth` sets the wrap width. `align` is `left`, `center` or `right`. There is one font per layer, with no fallback and no bidi.
+
+An image layer draws a PNG or JPEG file:
+
+```json
+{ "id": "logo", "type": "image", "src": "logo.png", "width": 256, "height": 256 }
+```
+
+`fit` is `fill` (the default), `contain` or `cover`, as CSS `object-fit`.
+
+A group holds children. It composites them into its own buffer, then blends the result with its opacity and blend mode:
+
+```json
+{ "id": "stack", "type": "group", "opacity": 0.8, "children": [ ] }
+```
+
+The types `noise`, `meshGradient`, `lottie`, `canvas`, `scene3d`, `video` and `gif` have their own fields. See [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md) for each.
+
+## Gradients
+
+A shape's `fill` and a text layer's `color` take a gradient in place of a colour:
+
+```json
+{ "id": "card", "type": "shape", "shape": { "kind": "rect", "width": 400, "height": 240 },
+  "fill": { "type": "linear", "x0": 0, "y0": 0, "x1": 400, "y1": 240,
+            "stops": [{ "offset": 0, "color": "#ff4d4d" }, { "offset": 1, "color": "#2f6bff" }] } }
+```
+
+`type` is `linear`, `radial` or `conic`. Add `"extend": "repeat"` or `"reflect"` for a repeating gradient. The coordinates are in the layer's own space. A gradient needs at least two stops.
+
+## Layout
+
+A group with a `layout` places its children with flexbox. Any layer can take part with `layoutItem`:
+
+```json
+{ "id": "row", "type": "group",
+  "layout": { "flexDirection": "row", "justifyContent": "center", "alignItems": "center",
+              "gap": 24, "padding": [0, 40, 0, 40], "width": 1080, "height": 400 },
+  "children": [
+    { "id": "a", "type": "shape", "shape": { "kind": "rect", "width": 200, "height": 120 }, "fill": "#f00" },
+    { "id": "b", "type": "text", "text": "hi", "font": "DM Sans", "size": 64, "color": "#fff",
+      "layoutItem": { "flexGrow": 1, "margin": 8 } } ] }
+```
+
+Layout is flexbox only, with sizes in pixels. Layout names and values follow CSS. The full list of fields is in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#layout).
+
+## Effects
+
+Effects go in a layer's `effects` list. Each entry has a `type`, such as `blur`, `glow`, `dropShadow`, `grain` or `displace`. `npx kinetograph effects` lists them with their fields. Each effect is described in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md#effects).
+
+## Unknown fields
+
+A scene loader ignores fields it does not know. A misspelt optional field has no effect, and no error is shown. Check a scene with `inspect` and `lint`.
+
+## The full reference
+
+[SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/SCENE.md) has every field, every layer type and the limits of this version. The [Authoring](/docs/guides/authoring/) guide covers the TSX side that writes these scenes.
