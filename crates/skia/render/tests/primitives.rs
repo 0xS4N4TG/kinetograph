@@ -465,9 +465,9 @@ fn text_is_drawn_with_a_registered_font() {
 
 #[test]
 fn a_node_that_is_not_drawn_is_reported_not_failed() {
-    let out = draw(json!([node("Atlas", json!({}), vec![])]));
+    let out = draw(json!([node("Hologram", json!({}), vec![])]));
     assert_eq!(out.unsupported.len(), 1);
-    assert_eq!(out.unsupported[0].element, "Atlas");
+    assert_eq!(out.unsupported[0].element, "Hologram");
 }
 
 #[test]

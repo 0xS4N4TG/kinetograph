@@ -23,7 +23,7 @@ test('a frame is a PNG named by its pixels: equal frames share a file, different
 
 test('what is not drawn is reported, and a bad tree is an error naming the node', () => {
   const dir = out();
-  assert.deepEqual(render([{ type: 'Atlas', props: {}, children: [] }], dir).unsupported.map((u) => u.element), ['Atlas']);
+  assert.deepEqual(render([{ type: 'Hologram', props: {}, children: [] }], dir).unsupported.map((u) => u.element), ['Hologram']);
   assert.throws(() => render([{ type: 'Rect', props: { x: 0 }, children: [] }], dir), /Rect needs/);
   assert.throws(() => skia.renderSkia('{"width":0,"height":4,"nodes":[],"outDir":"/tmp"}'), /pixels/);
 });
@@ -49,4 +49,10 @@ test('the pictures kept are bounded: the oldest are removed past 600', () => {
   for (let i = 0; i < 640; i += 1) render([rect(0, [i / 640, (i % 7) / 7, 0, 1])], dir, 4);
   const kept = readdirSync(dir).filter((name) => name.endsWith('.png')).length;
   assert.ok(kept <= 600 && kept >= 400, `${kept} files kept`);
+});
+
+test('svgSize answers the size an SVG declares and fails on one that does not parse', () => {
+  const size = JSON.parse(skia.svgSize(JSON.stringify({ svg: '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="12"/>' })));
+  assert.deepEqual(size, { width: 30, height: 12 });
+  assert.throws(() => skia.svgSize(JSON.stringify({ svg: 'nope' })), /could not be parsed/);
 });

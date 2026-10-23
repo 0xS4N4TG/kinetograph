@@ -9,6 +9,7 @@
 //! same tree gives the same pixels on any machine, with no GPU.
 
 mod assets;
+mod compound;
 mod declare;
 mod draw;
 mod enums;
@@ -20,6 +21,7 @@ mod value;
 use std::fmt;
 
 pub use assets::Assets;
+pub use compound::svg_size;
 pub use declare::{EffectInfo, compile_effect};
 pub use paths::path_call;
 pub use render::render;

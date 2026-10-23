@@ -57,8 +57,8 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### `@remotion/skia` and `@shopify/react-native-skia`
 
-- `Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture` and `ImageSVG` are reported, not drawn.
-- Not supported: Reanimated values, `FitBox`, `Skia.Surface` and `Skia.Offscreen`, the `Skia.Image`, `Skia.Data`, `Skia.SVG` and `Skia.Typeface` factories, `useVideo`, animated images, paragraph measurement, and shaders or filters set on a `Skia.Paint()` object.
+- `Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture` and `ImageSVG` are drawn. Text inside an SVG is not.
+- Not supported: Reanimated values, `FitBox`, `Skia.Surface` and `Skia.Offscreen`, the `Skia.Image`, `Skia.Data` and `Skia.Typeface` factories, `useVideo`, animated images, paragraph measurement, and shaders or filters set on a `Skia.Paint()` object.
 - Drawing is on the CPU only.
 - PNGs of drawn frames are kept under `~/.cache/kinetograph/skia`, the newest 400 to 600 of them.
 - More in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/AUTHORING.md), section 7.7.

@@ -186,3 +186,15 @@ pub fn image_size(request_json: String) -> Result<String> {
         .map_err(failed)?;
     Ok(json!({ "width": image.width(), "height": image.height() }).to_string())
 }
+
+/// `{ svg }` in; the SVG's own `{ width, height }` out (what `Skia.SVG.MakeFromString(...).width()` reports), or an
+/// error when it does not parse.
+#[napi]
+pub fn svg_size(request_json: String) -> Result<String> {
+    let request = parse(&request_json, "svgSize")?;
+    let svg = request["svg"]
+        .as_str()
+        .ok_or_else(|| failed("svgSize: svg is required"))?;
+    let (width, height) = kinetograph_skia::svg_size(svg).map_err(failed)?;
+    Ok(json!({ "width": width, "height": height }).to_string())
+}
