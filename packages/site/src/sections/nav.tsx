@@ -1,8 +1,7 @@
-import { ArrowUpRightIcon } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
 import { GITHUB } from '@/sections/links';
+import { Label, shell, Wordmark } from '@/sections/shared';
 
+/** The film-strip mark; the docs layout imports it. */
 export function Mark({ className }: { className?: string }) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className={className} aria-hidden>
@@ -12,36 +11,17 @@ export function Mark({ className }: { className?: string }) {
   );
 }
 
-const LINKS = [
-  ['Why', '#why'],
-  ['Engine', '#engine'],
-  ['Agents', '#agents'],
-  ['Proof', '#proof'],
-  ['FAQ', '#faq'],
-  ['Docs', '/docs/'],
-] as const;
-
 export function Nav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-cobalt/10 bg-paper/95 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-8 px-[clamp(16px,3vw,44px)]">
-        <a href="#" className="flex items-center gap-2.5 font-serif text-[21px] text-cobalt">
-          <Mark />
-          Kinetograph
+    <header className="relative z-40">
+      <div className={`${shell} flex h-20 items-center justify-between`}>
+        <a href="#" aria-label="Kinetograph">
+          <Wordmark className="text-[22px] text-ink" />
         </a>
-        <nav className="ml-4 hidden items-center gap-8 md:flex">
-          {LINKS.map(([label, href]) => (
-            <a key={label} href={href} className="text-[12px] font-semibold tracking-[0.2em] text-night/80 uppercase transition-colors hover:text-cobalt">
-              {label}
-            </a>
-          ))}
+        <nav className="flex items-center gap-7">
+          <a href="/docs/" className="transition-colors hover:text-cobalt"><Label className="text-ink">Docs</Label></a>
+          <a href={GITHUB} target="_blank" rel="noreferrer" className="transition-colors hover:text-cobalt"><Label className="text-ink">GitHub</Label></a>
         </nav>
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" className="hidden sm:inline-flex" render={<a href={GITHUB} target="_blank" rel="noreferrer" />}>
-            GitHub <ArrowUpRightIcon />
-          </Button>
-          <Button render={<a href="#start" />}>Get started</Button>
-        </div>
       </div>
     </header>
   );
