@@ -1,0 +1,7 @@
+[
+  { "name": "launch", "title": "The launch film", "frames": 1184, "fps": 30, "width": 1920, "height": 1080, "seconds_video": 39.47, "render_median": 25.6, "web": "film/launch.mp4", "poster": "film/poster.jpg" },
+  { "name": "showcase", "title": "Showcase", "frames": 928, "fps": 25, "width": 1920, "height": 1080, "seconds_video": 37.12, "render_median": 13.29, "web": "examples/showcase.mp4", "poster": "examples/showcase.jpg" },
+  { "name": "showcase-3d", "title": "3D scenes", "frames": 180, "fps": 30, "width": 1920, "height": 1080, "seconds_video": 6.0, "render_median": 2.33, "web": "examples/showcase-3d.mp4", "poster": "examples/showcase-3d.jpg" },
+  { "name": "video-overlay", "title": "Video overlay", "frames": 180, "fps": 30, "width": 1920, "height": 1080, "seconds_video": 6.0, "render_median": 1.86, "web": "examples/video-overlay.mp4", "poster": "examples/video-overlay.jpg" },
+  { "name": "canvas", "title": "Canvas", "frames": 60, "fps": 30, "width": 860, "height": 420, "seconds_video": 2.0, "render_median": 0.59, "web": "examples/canvas.mp4", "poster": "examples/canvas.jpg" }
+]

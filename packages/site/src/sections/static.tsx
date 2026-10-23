@@ -1,7 +1,8 @@
 import { CommandBar } from '@/components/code';
 import { commandBar } from '@/sections/hero';
 import { DOCS, GITHUB } from '@/sections/links';
-import { body, Display, Label, link, section, shell } from '@/sections/shared';
+import { Hand } from '@/sections/hand';
+import { body, Label, link, section, shell } from '@/sections/shared';
 
 const STEPS = [
   ['Install it', 'npm install kinetograph'],
@@ -12,11 +13,11 @@ const STEPS = [
 export function Start() {
   return (
     <section id="start" className={`${shell} ${section}`}>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-14 border-t border-ink/15 pt-[clamp(56px,8vw,112px)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-14 border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
         <div>
           <Label>Get started</Label>
-          <Display className="mt-6 text-[clamp(32px,3.8vw,52px)]">Three commands to a film.</Display>
-          <p className={`${body} mt-8 max-w-[40ch]`}>
+          <Hand text="three commands to a film." hot="commands" tag="TRK 06  0.95" className="mt-8 text-[clamp(32px,3.6vw,52px)]" />
+          <p className={`${body} mt-10 max-w-[40ch]`}>
             You need Node 22 or later and a GPU that wgpu supports, such as Metal on a Mac. It needs no display, so it runs
             on a server too. Rendering video needs FFmpeg.
           </p>

@@ -20,9 +20,9 @@ export default function Page() {
       <main>
         <Hero />
         <Facts />
-        <Film />
         <About />
         <Start />
+        <Film />
       </main>
       <HalftoneWordmarkFooter
         wordmark="kinetograph"
