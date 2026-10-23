@@ -1,6 +1,5 @@
 //! `filterGraph`: what its primitives do to pixels, on the GPU.
 
-mod common;
 
 use std::path::PathBuf;
 
@@ -164,12 +163,12 @@ fn a_tile_repeats_the_inputs_subregion() {
 
 #[test]
 fn a_blur_has_the_standard_deviation_it_is_given_along_each_axis() {
-    common::pin_vello();
-    // A one pixel wide column, blurred along x only.
+    // A column 8 pixels wide, blurred along x only. (A one pixel column loses energy to Skia's
+    // blur, which works at a reduced size for a wide kernel.)
     let f = render(&boxed(
-        50,
+        46,
         0,
-        1,
+        8,
         100,
         r##"[{"primitive": "feGaussianBlur", "stdDeviation": [5, 0]}]"##,
     ));
@@ -189,20 +188,21 @@ fn a_blur_has_the_standard_deviation_it_is_given_along_each_axis() {
         .map(|(x, w)| (x as f64 + 0.5 - mean).powi(2) * w)
         .sum::<f64>()
         / total;
-    assert!((total - 1.0).abs() < 0.05, "total {total}");
-    assert!((var.sqrt() - 5.0).abs() < 0.3, "std {}", var.sqrt());
+    // The column's own variance (8^2 - 1) / 12 adds to the blur's.
+    let std = (var - (8.0 * 8.0 - 1.0) / 12.0).sqrt();
+    assert!((total - 8.0).abs() < 0.4, "total {total}");
+    assert!((std - 5.0).abs() < 0.3, "std {std}");
     // No blur along y: the column is as tall as before at its edge.
     assert!(px(&f, 50, 0)[3] > 0);
-    assert_eq!(px(&f, 30, 0)[3], 0);
+    assert_eq!(px(&f, 20, 0)[3], 0);
 }
 
 #[test]
 fn a_wide_round_blur_keeps_its_standard_deviation_too() {
-    common::pin_vello();
     let f = render(&boxed(
-        50,
+        46,
         0,
-        1,
+        8,
         100,
         r##"[{"primitive": "feGaussianBlur", "stdDeviation": [14, 14]}]"##,
     ));
@@ -225,7 +225,8 @@ fn a_wide_round_blur_keeps_its_standard_deviation_too() {
         .sum::<f64>()
         / total;
     // The canvas cuts the tails at 3 deviations, which trims a little.
-    assert!((var.sqrt() - 14.0).abs() < 1.5, "std {}", var.sqrt());
+    let std = (var - (8.0 * 8.0 - 1.0) / 12.0).sqrt();
+    assert!((std - 14.0).abs() < 1.5, "std {std}");
 }
 
 #[test]

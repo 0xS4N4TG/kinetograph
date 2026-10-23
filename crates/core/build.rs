@@ -1,18 +1,16 @@
 //! Compiles `src/render/skia/vk_shim.cpp` for the Skia backend on Linux and Windows (Vulkan). Nothing else here: on
-//! macOS, or without the `skia` feature, this script does nothing.
+//! macOS this script does nothing.
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/render/skia/vk_shim.cpp");
     println!("cargo:rerun-if-env-changed=KINETOGRAPH_SKIA_SOURCE");
-    #[cfg(feature = "skia")]
     shim();
 }
 
 /// The `skia` directory of the skia-bindings crate this build links: its headers are the ones the shim needs, and
 /// they are the ones the libskia it links was built from. `KINETOGRAPH_SKIA_SOURCE` overrides (a `SKIA_SOURCE_DIR`
 /// build of skia-bindings, say).
-#[cfg(feature = "skia")]
 fn skia_source() -> std::path::PathBuf {
     use std::path::PathBuf;
     if let Ok(dir) = std::env::var("KINETOGRAPH_SKIA_SOURCE") {
@@ -21,7 +19,7 @@ fn skia_source() -> std::path::PathBuf {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let out = std::process::Command::new(cargo)
-        // `--all-features`: skia-bindings is an optional dependency that the default features leave out of the listing.
+        // `--all-features`: optional dependencies are listed too.
         // `--filter-platform`: only the packages this target builds, which are the ones cargo has downloaded (a plain
         // `--offline` listing fails on a fresh CI checkout, where the other platforms' crates are not fetched).
         .args(["metadata", "--all-features", "--format-version", "1", "--filter-platform"])
@@ -50,7 +48,6 @@ fn skia_source() -> std::path::PathBuf {
 /// built Skia from source has it, a machine that downloads the prebuilt libskia does not). The headers are all the
 /// shim needs: fetch `include/` of the commit rust-skia's tag for skia-bindings 0.153.3 points at (`skia-bindings/skia`
 /// at tag 0.153.3). Bump it with the skia-safe version.
-#[cfg(feature = "skia")]
 fn fetch_skia_headers() -> std::path::PathBuf {
     use std::process::Command;
     const REV: &str = "61e7ca4e99062cdd0ab69445d5963fb3365778f6";
@@ -72,7 +69,6 @@ fn fetch_skia_headers() -> std::path::PathBuf {
     dir
 }
 
-#[cfg(feature = "skia")]
 fn shim() {
     if std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "macos") {
         return;

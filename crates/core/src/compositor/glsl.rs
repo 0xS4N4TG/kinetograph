@@ -23,7 +23,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use base64::Engine as _;
-use vello::kurbo::Point;
+use kurbo::Point;
 
 use super::*;
 use crate::glsl::{
@@ -85,6 +85,11 @@ pub(super) struct GlslGpu {
     black: Option<Arc<Uploaded>>,
 }
 
+/// What a group's child is called among the pictures a pass samples: the way the texture reads it is part of the name.
+fn input_key(layer: &str, flip_y: bool, premultiply: bool) -> String {
+    format!("{layer}\0{}{}", u8::from(flip_y), u8::from(premultiply))
+}
+
 fn render_error(what: impl std::fmt::Display) -> Error {
     Error::Render(format!("glsl: {what}"))
 }
@@ -128,9 +133,31 @@ impl Compositor {
         if size.0 == 0 || size.1 == 0 {
             return Ok(self.empty());
         }
+        // A child is sampled once for each way the recording's textures read it: a texture uploaded with
+        // `UNPACK_FLIP_Y_WEBGL` has its rows turned over, one with `UNPACK_PREMULTIPLY_ALPHA_WEBGL` has its
+        // colour multiplied by its alpha.
         let mut inputs = HashMap::new();
-        for (n, (id, tex)) in layers.iter().enumerate() {
-            inputs.insert(*id, self.glsl_input(n, tex, size, matrix));
+        let mut n = 0;
+        for (id, tex) in layers {
+            let mut ways: Vec<(bool, bool)> = Vec::new();
+            for texture in content.textures.values() {
+                let way = (texture.flip_y, texture.premultiply);
+                if texture.layer.as_deref() == Some(*id) && !ways.contains(&way) {
+                    ways.push(way);
+                }
+            }
+            for (flip, premultiply) in ways {
+                let through = if flip {
+                    matrix * Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, f64::from(size.1)])
+                } else {
+                    matrix
+                };
+                inputs.insert(
+                    input_key(id, flip, premultiply),
+                    self.glsl_input(n, tex, size, through, premultiply),
+                );
+                n += 1;
+            }
         }
         self.glsl_draw(content, size, base_dir, &inputs)?;
         let rt = self.glsl.target.as_ref().expect("made by glsl_draw");
@@ -146,6 +173,7 @@ impl Compositor {
         tex: &Tex,
         size: (u32, u32),
         matrix: Affine,
+        premultiply: bool,
     ) -> wgpu::TextureView {
         if self.glsl.input.is_none() {
             self.glsl.input = Some(self.glsl_blit(
@@ -171,7 +199,8 @@ impl Compositor {
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
             self.glsl.inputs[n] = Some(Target {
@@ -182,7 +211,7 @@ impl Compositor {
         }
         let target = self.glsl.inputs[n].as_ref().expect("made above");
         let [a, b, c, d, e, f] = matrix.as_coeffs().map(|v| v as f32);
-        let params: [f32; 12] = [
+        let params: [f32; 16] = [
             a,
             b,
             c,
@@ -195,6 +224,10 @@ impl Compositor {
             tex.origin[1] as f32,
             tex.size[0] as f32,
             tex.size[1] as f32,
+            if premultiply { 1.0 } else { 0.0 },
+            0.0,
+            0.0,
+            0.0,
         ];
         let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
         let params_buffer = self
@@ -249,7 +282,7 @@ impl Compositor {
         content: &GlslContent,
         size: (u32, u32),
         base_dir: &Path,
-        inputs: &HashMap<&str, wgpu::TextureView>,
+        inputs: &HashMap<String, wgpu::TextureView>,
     ) -> Result<()> {
         if self.glsl.target.as_ref().is_none_or(|t| t.size != size) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -452,7 +485,7 @@ impl Compositor {
         content: &'c GlslContent,
         draw: &'c GlslDraw,
         size: (u32, u32),
-        (base_dir, inputs): (&Path, &HashMap<&str, wgpu::TextureView>),
+        (base_dir, inputs): (&Path, &HashMap<String, wgpu::TextureView>),
         buffers: &mut HashMap<&'c str, (Vec<u8>, Option<wgpu::Buffer>)>,
         targets: &mut HashMap<&'c str, Target>,
     ) -> Result<Option<Prepared>> {
@@ -619,7 +652,7 @@ impl Compositor {
                     let uploaded = if let Some(layer) = &texture.layer {
                         Arc::new(Uploaded {
                             view: inputs
-                                .get(layer.as_str())
+                                .get(&input_key(layer, texture.flip_y, texture.premultiply))
                                 .ok_or_else(|| {
                                     render_error(format!(
                                         "the texture {:?} is the layer {layer:?}, which was not drawn",

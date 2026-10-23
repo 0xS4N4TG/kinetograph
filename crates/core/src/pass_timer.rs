@@ -5,7 +5,7 @@
 //! (its pipeline's, `"clear"`, a blur step) with the size of the texture it
 //! draws into. `take` reads the queries back after the frame. Only whole
 //! passes can be timed on Apple GPUs (`TIMESTAMP_QUERY` without the
-//! `_INSIDE_` features), so copies between textures and Vello's compute work
+//! `_INSIDE_` features), so copies between textures and Skia's work
 //! are not in it.
 //!
 //! The timer never changes what is drawn: a pass with timestamps does the
@@ -13,7 +13,6 @@
 
 use std::sync::Mutex;
 
-use vello::wgpu;
 
 /// Queries per query set, the most wgpu allows: 2,048 passes. A frame with
 /// more passes gets another set.
@@ -25,7 +24,7 @@ pub struct PassTime {
     pub name: &'static str,
     /// From the pass's start to its end on the GPU.
     pub ms: f64,
-    /// The pass's start, in ms on the GPU's clock (the same as Vello's passes').
+    /// The pass's start, in ms on the GPU's clock .
     pub begin_ms: f64,
     /// Width times height of the texture the pass draws into.
     pub texels: u64,

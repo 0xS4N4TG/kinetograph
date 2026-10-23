@@ -22,7 +22,7 @@ use crate::scene::{
 };
 use crate::text::TextEngine;
 
-use vello::kurbo::{Affine, BezPath, PathEl};
+use kurbo::{Affine, BezPath, PathEl};
 use skia_safe::{
     BlendMode as SkBlend, Canvas, ClipOp, Color, Color4f, ColorFilter, ColorSpace, Data, Font, FontMgr, Image, ImageFilter,
     Matrix, Paint, PaintCap, PaintJoin, PaintStyle, Path, PathBuilder, PathFillType, Point, RRect, Rect, SamplingOptions,
@@ -84,8 +84,20 @@ pub struct Translator {
     /// The fallback textures of the frame: Skia reads them when the recording runs, so they go back to the compositor's
     /// pool after that (`take_held`).
     held: Vec<Tex>,
+    /// The pictures of a canvas pass's children while its commands are drawn (`raster_canvas_pass`).
+    layer_pics: Option<LayerPictures>,
     /// A fallback failed (`Renderer::skia_fallback`'s error), reported by `draw_scene`'s caller.
     pub error: Option<crate::error::Error>,
+}
+
+/// The children of a canvas pass as pictures: each a compositor texture wrapped as an image, with the matrix that takes
+/// a point of the picture (the pass's own space, `size` across) to a texel of that image.
+struct LayerPictures {
+    size: (f64, f64),
+    /// The canvas pixels back to the pass's space.
+    from_canvas: Affine,
+    /// By child id: the image, the part of it that holds pixels, and the canvas pixel its texel (0, 0) is.
+    images: HashMap<String, (Image, Rect, [i32; 2])>,
 }
 
 fn mat(a: Affine) -> Matrix {
@@ -178,6 +190,7 @@ impl Translator {
             host: std::ptr::null_mut(),
             rec: None,
             held: Vec::new(),
+            layer_pics: None,
             error: None,
         }
     }
@@ -199,6 +212,16 @@ impl Translator {
     /// The fallback textures of the frame, to be released once Skia has run its recording.
     pub fn take_held(&mut self) -> Vec<Tex> {
         std::mem::take(&mut self.held)
+    }
+
+    /// Forgets everything read from a file, so that it is read again.
+    pub fn forget_files(&mut self) {
+        self.images.clear();
+        self.videos.clear();
+        self.video_last.clear();
+        self.gif_pics.clear();
+        self.lottie_last.clear();
+        self.fonts_key.clear();
     }
 
     pub fn begin_frame(&mut self, scene: &Scene) {
@@ -285,6 +308,28 @@ impl Translator {
         }
         let [a, b, c, d, e, f] = parent.as_coeffs();
         let p = DMat3::from_cols(DVec3::new(a, b, 0.0), DVec3::new(c, d, 0.0), DVec3::new(e, f, 1.0));
+        let bounds = self.layer_bounds(layer, scale).map(|r| mat(layer.transform.matrix()).map_rect(r).0);
+        // Skia reads the warp with its last entry made 1: where the layer's local origin is behind the camera (w <= 0)
+        // that flips the sign of w everywhere, and Skia drops the half that is in front. So the layer is warped in a
+        // frame whose origin `o` is in front (the farthest in front of the layer's corners and of what is visible), the
+        // canvas translated there; a layer whose origin is already in front is warped as it always was.
+        let w_at = |m: &DMat3, x: f64, y: f64| m.x_axis.z * x + m.y_axis.z * y + m.z_axis.z;
+        let l0 = p.inverse() * h * p;
+        let mut origin = (0.0f64, 0.0f64);
+        if w_at(&l0, 0.0, 0.0) <= 0.0 {
+            let mut corners: Vec<(f64, f64)> = Vec::new();
+            for r in [bounds, Some(canvas.local_clip_bounds().unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)))].into_iter().flatten() {
+                corners.extend([(r.left, r.top), (r.right, r.top), (r.right, r.bottom), (r.left, r.bottom)].map(|(x, y)| (f64::from(x), f64::from(y))));
+            }
+            let best = corners.into_iter().max_by(|a, b| w_at(&l0, a.0, a.1).total_cmp(&w_at(&l0, b.0, b.1)));
+            match best {
+                Some(o) if w_at(&l0, o.0, o.1) > 0.0 => origin = o,
+                // Everything is behind the camera.
+                _ => return,
+            }
+        }
+        let moved = origin != (0.0, 0.0);
+        let p = if moved { p * DMat3::from_translation(glam::DVec2::new(origin.0, origin.1)) } else { p };
         // The filter works in the local space of the layer, the device-space warp `h` in that: P^-1 H P.
         let l = p.inverse() * h * p;
         let l = l * (1.0 / l.z_axis.z);
@@ -294,14 +339,25 @@ impl Translator {
             l.x_axis.z as f32, l.y_axis.z as f32, 1.0,
         );
         let filter = image_filters::matrix_transform(&local, SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), None);
-        let bounds = self.layer_bounds(layer, scale).map(|r| mat(layer.transform.matrix()).map_rect(r).0);
+        let (ox, oy) = (origin.0 as f32, origin.1 as f32);
+        let bounds = bounds.map(|r| Rect::new(r.left - ox, r.top - oy, r.right - ox, r.bottom - oy));
         let mut paint = Paint::default();
         paint.set_alpha_f(comp.alpha);
         paint.set_blend_mode(comp.blend);
         paint.set_image_filter(filter);
+        if moved {
+            canvas.save();
+            canvas.translate((ox, oy));
+        }
         self.save_layer(canvas, bounds, &paint, None);
+        if moved {
+            canvas.translate((-ox, -oy));
+        }
         self.draw_flat(canvas, layer, siblings, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, scale);
         canvas.restore();
+        if moved {
+            canvas.restore();
+        }
     }
 
     fn draw_flat(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64) {
@@ -663,7 +719,19 @@ impl Translator {
                         }
                     }
                     let g = grow / s;
+                    let content = r;
                     r = Rect::new(r.left - g, r.top - g, r.right + g, r.bottom + g);
+                    // A tile repeats over the whole filter region, not just where the layer draws.
+                    if fg.nodes.iter().any(|n| matches!(n.op, FeOp::Tile)) {
+                        let content = kurbo::Rect::new(content.left as f64, content.top as f64, content.right as f64, content.bottom as f64);
+                        match fg.plan(Some(content)) {
+                            Some(p) => {
+                                let reg = p.region;
+                                r = Rect::new(r.left.min(reg.x0 as f32), r.top.min(reg.y0 as f32), r.right.max(reg.x1 as f32), r.bottom.max(reg.y1 as f32));
+                            }
+                            None => return None,
+                        }
+                    }
                 }
                 ResolvedEffect::InsetShadow(_) | ResolvedEffect::ColorMatrix(_) | ResolvedEffect::GradientMap(_) | ResolvedEffect::Grain(_) | ResolvedEffect::BackdropBlur { .. } => {}
                 _ => return None,
@@ -889,11 +957,11 @@ impl Translator {
         let mut results: Vec<Option<ImageFilter>> = Vec::new();
         // The region and subregions in layer units, and the lengths scaled by `primitiveUnits`; each result is cut to its
         // subregion, as the wgpu path does.
-        let plan = g.plan(layer_box.map(|b| vello::kurbo::Rect::new(b.left as f64, b.top as f64, b.right as f64, b.bottom as f64)));
+        let plan = g.plan(layer_box.map(|b| kurbo::Rect::new(b.left as f64, b.top as f64, b.right as f64, b.bottom as f64)));
         if plan.is_none() {
             self.stats.approx("filter region/subregion not applied (no layer box)");
         }
-        let sk = |r: &vello::kurbo::Rect| Rect::new(r.x0 as f32, r.y0 as f32, r.x1 as f32, r.y1 as f32);
+        let sk = |r: &kurbo::Rect| Rect::new(r.x0 as f32, r.y0 as f32, r.x1 as f32, r.y1 as f32);
         for (idx, node) in g.nodes.iter().enumerate() {
             let op = plan.as_ref().map_or(&node.op, |p| &p.nodes[idx].op);
             // A primitive that works in linearRGB reads its inputs decoded and its result is encoded again (flood
@@ -1642,7 +1710,7 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 
 /// A gradient as a Skia shader, following `render::gradient_brush_in`: the span between the first and last stop is
 /// what repeats, and a gradient with no extent is its last stop's colour.
-/// `linear`: the surface holds linear light, but stops blend in sRGB-encoded values (as CSS and the Vello path do).
+/// `linear`: the surface holds linear light, but stops blend in sRGB-encoded values (as CSS does).
 fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bool) -> Option<Shader> {
     let last = g.stops[g.stops.len() - 1];
     let solid = || Some(skia_safe::shaders::color(Color::from_argb(last.1.a, last.1.r, last.1.g, last.1.b)));
@@ -1700,7 +1768,7 @@ fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bo
         }
         ResolvedGradientGeometry::Conic { cx, cy, angle } => {
             // Skia's sweep starts at 3 o'clock; CSS starts at 12.
-            turn = Affine::rotate_about((angle - 90.0).to_radians(), vello::kurbo::Point::new(cx, cy));
+            turn = Affine::rotate_about((angle - 90.0).to_radians(), kurbo::Point::new(cx, cy));
             (2, Some((Point::new(cx as f32, cy as f32), Point::new(0.0, 0.0), Point::new(0.0, 0.0), (lo * 360.0) as f32, (hi * 360.0) as f32)))
         }
     };
@@ -1736,6 +1804,7 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
     match &layer.kind {
         ResolvedKind::Group { preserve3d: true, .. } => return Some("preserve3d group"),
         ResolvedKind::Group { glsl: Some(_), .. } => return Some("glsl group"),
+        ResolvedKind::Group { canvas: Some(_), .. } => return Some("canvas group"),
         ResolvedKind::Glsl { .. } => return Some("glsl layer"),
         ResolvedKind::Scene3d { .. } => return Some("scene3d layer"),
         ResolvedKind::MeshGradient { .. } => return Some("meshGradient layer"),
@@ -1819,5 +1888,129 @@ impl Translator {
             self.stats.no("fallback texture (wrap failed)");
         }
         self.held.push(tex);
+    }
+}
+
+const WHITE: crate::color::Color = crate::color::Color { r: 255, g: 255, b: 255, a: 255 };
+
+/// What the wgpu path asks Skia to draw into a texture (`Renderer::skia_leaf` and its kin): the 2D
+/// content of one layer, with no effect, clip, mask or matte (the compositor applies those), under the matrix the
+/// path rasterised it with.
+impl Translator {
+    /// The renderer whose Lottie and GIF pictures this draws, for the length of one call.
+    pub fn set_host(&mut self, host: *mut Renderer) {
+        self.host = host;
+    }
+
+    /// The leaf `layer` at full opacity, `Normal`, under `matrix` (layer space to canvas pixels). A noise layer is its
+    /// box in opaque white: the noise pass fills its coverage.
+    pub fn raster_leaf(&mut self, canvas: &Canvas, layer: &ResolvedLayer, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        match &layer.kind {
+            ResolvedKind::Noise { width, height, .. } => {
+                let mut p = Self::base_paint(Comp { alpha: 1.0, blend: SkBlend::SrcOver });
+                p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+                canvas.draw_rect(Rect::new(0.0, 0.0, *width as f32, *height as f32), &p);
+                self.stats.draws += 1;
+            }
+            _ => self.draw_content(canvas, layer, Comp { alpha: 1.0, blend: SkBlend::SrcOver }, 1.0),
+        }
+        canvas.restore();
+    }
+
+    /// The canvas layer `layer` (a canvas pass: its commands) under `matrix`, with the children `pictures` (by id) as the
+    /// pictures its `layer` sources name. Each child is a compositor texture of the canvas, drawn through the inverse of
+    /// `matrix`, so a picture is the child in the pass's own space.
+    pub fn raster_canvas_pass(&mut self, canvas: &Canvas, layer: &ResolvedLayer, matrix: Affine, pictures: &[(&str, &Tex)]) {
+        let ResolvedKind::Canvas { width, height, .. } = &layer.kind else {
+            return;
+        };
+        let mut images = HashMap::new();
+        if !self.host.is_null()
+            && let Some(rec) = self.rec.clone()
+        {
+            // SAFETY: `host` is the renderer `raster_leaf`'s caller holds; this translator is not part of it.
+            let host = unsafe { &*self.host };
+            for (id, tex) in pictures {
+                let b = tex.bounds;
+                if b.is_empty() {
+                    continue;
+                }
+                match host.skia_wrap(&mut rec.borrow_mut(), tex) {
+                    Some(img) => {
+                        let src = Rect::new(
+                            (b.x0 - tex.origin[0]) as f32,
+                            (b.y0 - tex.origin[1]) as f32,
+                            (b.x1 - tex.origin[0]) as f32,
+                            (b.y1 - tex.origin[1]) as f32,
+                        );
+                        images.insert((*id).to_string(), (img, src, tex.origin));
+                    }
+                    None => self.stats.no("canvas layer picture (wrap failed)"),
+                }
+            }
+        }
+        // The pass's picture of a child is a buffer of the pass's size, rounded, that `matrix` puts on the canvas.
+        let side = |v: f64| v.round().clamp(1.0, 16384.0);
+        self.layer_pics = Some(LayerPictures { size: (side(*width), side(*height)), from_canvas: matrix.inverse(), images });
+        self.raster_leaf(canvas, layer, matrix);
+        self.layer_pics = None;
+    }
+
+    /// The fill and stroke of the shape `layer` in opaque white, whatever their colours and alphas.
+    pub fn raster_coverage(&mut self, canvas: &Canvas, layer: &ResolvedLayer, matrix: Affine) {
+        let ResolvedKind::Shape { geometry, fill, stroke, style } = &layer.kind else {
+            return;
+        };
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        let white = ResolvedPaint::Solid(WHITE);
+        let stroke = stroke.as_ref().map(|(_, width)| (WHITE, *width));
+        self.draw_shape(
+            canvas,
+            layer,
+            geometry,
+            fill.as_ref().map(|_| &white),
+            stroke.as_ref(),
+            style,
+            Comp { alpha: 1.0, blend: SkBlend::SrcOver },
+        );
+        canvas.restore();
+    }
+
+    /// `path` (layer space) in opaque white: its alpha is the clip's coverage.
+    pub fn raster_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        let mut p = Paint::default();
+        p.set_anti_alias(true);
+        p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+        canvas.draw_path(&bez_to_path(path, false), &p);
+        self.stats.draws += 1;
+        canvas.restore();
+    }
+
+    /// The mask's gradient over the whole clip, laid out in the layer's box (or in layer space) under `matrix`.
+    pub fn raster_mask(&mut self, canvas: &Canvas, layer: &ResolvedLayer, mask: &crate::resolve::ResolvedMask, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        let mut p = Paint::default();
+        let layer_box = self.layer_box(layer);
+        p.set_shader(gradient_shader_for(&mask.gradient, layer_box, self.linear()));
+        canvas.draw_paint(&p);
+        self.stats.draws += 1;
+        canvas.restore();
+    }
+
+    /// Starts a group's clip: what follows, up to the matching `raster_pop`, is cut by `path`.
+    pub fn raster_push_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+        canvas.save();
+        canvas.concat(&mat(matrix));
+        canvas.clip_path(&bez_to_path(path, false), ClipOp::Intersect, true);
+    }
+
+    pub fn raster_pop(&mut self, canvas: &Canvas) {
+        canvas.restore();
     }
 }

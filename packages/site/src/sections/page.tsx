@@ -196,7 +196,7 @@ const SURFACES = [
   },
   {
     api: '<Canvas>', title: 'Canvas 2D', still: 'm4-40',
-    text: 'A recording 2D context: each call becomes a draw command, and Vello paints them. This frame has 2,000 strokes.',
+    text: 'A recording 2D context: each call becomes a draw command, and Skia paints them. This frame has 2,000 strokes.',
     code: `<Canvas width={W} height={H} draw={(ctx) => {
   ctx.lineWidth = 2.6;
   for (const p of field) {

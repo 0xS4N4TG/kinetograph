@@ -25,7 +25,7 @@
 //! pairs.
 
 use glam::{DMat3, DMat4, DVec3};
-use vello::kurbo::{Affine, Rect};
+use kurbo::{Affine, Rect};
 
 use crate::resolve::{ResolvedCamera, ResolvedTransform};
 
@@ -339,7 +339,7 @@ mod tests {
         // The pivot lands at (x, y) + origin whatever the layer does: it
         // neither turns in 3D out of its place nor moves with the scale.
         let pivot = DVec3::new(165.0, 100.0, 0.0);
-        let anchor_to_pivot = t.matrix() * vello::kurbo::Point::new(75.0, 60.0);
+        let anchor_to_pivot = t.matrix() * kurbo::Point::new(75.0, 60.0);
         assert!((anchor_to_pivot.x - pivot.x).abs() < 1e-9);
         assert!((anchor_to_pivot.y - pivot.y).abs() < 1e-9);
         let moved = w.transform_point3(pivot);
@@ -406,9 +406,9 @@ mod tests {
         let h = plane_homography(proj, parent, w).expect("not edge on");
         for u in [(0.0, 0.0), (120.0, 40.0), (333.0, 211.0)] {
             // The long way: into parent space, up, through W, back, project.
-            let p = parent.inverse() * vello::kurbo::Point::new(u.0, u.1);
+            let p = parent.inverse() * kurbo::Point::new(u.0, u.1);
             let moved = w.transform_point3(DVec3::new(p.x, p.y, 0.0));
-            let back = parent * vello::kurbo::Point::new(moved.x, moved.y);
+            let back = parent * kurbo::Point::new(moved.x, moved.y);
             let z = moved.z;
             let lifted = proj * DVec4::new(back.x, back.y, z, 1.0);
             let want = (lifted.x / lifted.w, lifted.y / lifted.w);
@@ -668,8 +668,8 @@ mod tests {
         let m = Affine::translate((40.0, 30.0)) * Affine::rotate(0.5) * Affine::scale(1.5);
         let h = in_texels(m, local).unwrap();
         for (from, want) in rect_corners(b).into_iter().zip(to) {
-            let p = m * vello::kurbo::Point::new(from[0], from[1]);
-            let w = m * vello::kurbo::Point::new(want[0], want[1]);
+            let p = m * kurbo::Point::new(from[0], from[1]);
+            let w = m * kurbo::Point::new(want[0], want[1]);
             assert!(close(apply(&h, [p.x, p.y]), [w.x, w.y]), "{from:?}");
         }
         assert!(in_texels(Affine::scale(0.0), local).is_none());

@@ -1,7 +1,6 @@
 //! Canvas layers: what a few commands leave in the pixels (docs/SCENE.md,
 //! "canvas"). The whole feature set is in the `canvas` golden.
 
-mod common;
 
 use std::path::Path;
 
@@ -154,7 +153,6 @@ fn text_letter_and_word_spacing_move_glyphs_right() {
 
 #[test]
 fn a_pattern_transforms_its_tile_space_by_m() {
-    common::pin_vello();
     // 2x2 RGBA: left column red, right column blue.
     let data = "/wAA/wAA//8/AAD/AAD//w==";
     let plain = render(&format!(
@@ -174,10 +172,11 @@ fn a_pattern_transforms_its_tile_space_by_m() {
     // With `m = [2, 0, 0, 2, 0, 0]`, each pattern pixel is 2x2 canvas pixels wide: x=0..2 are
     // red and x=2..4 blue (the sampling is smooth, so the middle two are mixes).
     assert_ne!(plain.rgba, scaled.rgba);
-    assert!(px(&scaled, 0, 0)[0] > 200 && px(&scaled, 0, 0)[2] < 50);
+    // (The pattern repeats, so the sampling at its outer edges mixes in the tile next to it.)
+    assert!(px(&scaled, 0, 0)[0] > 120 && px(&scaled, 0, 0)[0] > 2 * px(&scaled, 0, 0)[2]);
     assert!(px(&scaled, 1, 0)[0] > px(&scaled, 1, 0)[2]);
     assert!(px(&scaled, 2, 0)[2] > px(&scaled, 2, 0)[0]);
-    assert!(px(&scaled, 3, 0)[2] > 200 && px(&scaled, 3, 0)[0] < 50);
+    assert!(px(&scaled, 3, 0)[2] > 120 && px(&scaled, 3, 0)[2] > 2 * px(&scaled, 3, 0)[0]);
 }
 
 #[test]

@@ -668,6 +668,11 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 
 ## 11. Stream 5 notes
 
+> **History.** This section and section 12 were written when Vello drew the 2D layers: its pages, to-linear passes,
+> vendored patches and numbers describe that renderer, which has been removed (Oct 2026). Skia (Graphite on Metal, or
+> Vulkan on Linux and Windows) now draws every 2D layer, and the wgpu path draws what Skia cannot (scene3d, GLSL,
+> mesh gradients, `preserve3d` groups). The compositor passes, the layer cache and frame reuse below still apply.
+
 Branch `perf/gpu-passes` (from `perf/gpu-pass-timing`, `feat/full-engine` merged in). Compositor internals only; every
 change below draws the same bytes as the build before it, checked on 34 scenes (`crates/core/tests/scenes`,
 `examples`, the S04 JSON port, all frames; `examples/frame_hashes.rs` prints a hash per frame) against the build

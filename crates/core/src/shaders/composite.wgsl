@@ -12,11 +12,9 @@ struct Params {
 }
 
 // Pass-specific meaning:
-//   to_linear: tex_a = Vello output (Rgba8, sRGB-encoded, straight alpha)
+//   to_linear_premul: tex_a = Skia output (Rgba8, sRGB-encoded, premultiplied)
 //   blend:     tex_a = backdrop, tex_b = source
 //   encode:    tex_a = linear premultiplied image
-//   mask:      tex_a = layer (linear premultiplied), tex_b = Vello output
-//              (Rgba8, sRGB-encoded, straight alpha) that says what to keep
 //   accumulate: tex_a = running sum, tex_b = sample; `opacity` is its weight
 //   matte:     tex_a = layer, tex_b = matte source (linear premultiplied);
 //              `opacity` is the source layer's opacity
@@ -44,13 +42,7 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
 // srgb_to_linear, linear_to_srgb, unpremultiply, blend_fn and the functions they use are
 // in blend_math.wgsl, which the compositor puts in front of this file.
 
-@fragment
-fn fs_to_linear(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let c = load_a(canvas_xy(p));
-    return vec4<f32>(srgb_to_linear(c.rgb) * c.a, c.a);
-}
-
-// Skia's output (`render/skia.rs`): premultiplied, sRGB-encoded. Where alpha is 1 it is `fs_to_linear`.
+// Skia's output (`render/skia.rs`): premultiplied, sRGB-encoded.
 @fragment
 fn fs_to_linear_premul(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let c = load_a(canvas_xy(p));
@@ -109,17 +101,6 @@ fn coverage(m: vec4<f32>, mode: u32) -> f32 {
         c = 1.0 - c;
     }
     return clamp(c, 0.0, 1.0);
-}
-
-// Multiplies the layer by what a Vello output keeps. A clip shape is drawn in
-// opaque white, so its alpha is the anti-aliased coverage; a gradient mask
-// is read by `mode`.
-@fragment
-fn fs_mask(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let xy = canvas_xy(p);
-    let v = load_b(xy);
-    let m = vec4<f32>(srgb_to_linear(v.rgb) * v.a, v.a);
-    return load_a(xy) * coverage(m, params.mode);
 }
 
 // Multiplies the layer by what a matte source (another layer, already

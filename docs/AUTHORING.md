@@ -311,7 +311,7 @@ function of `time`: expressions that use randomness must be seeded. Counts nothi
 
 ### 4.6 Renderer reuse and inspect (stream 1)
 
-- `Renderer` gets a way to take a new `Scene` while keeping its device, queue, Vello renderers, compositor pipelines
+- `Renderer` gets a way to take a new `Scene` while keeping its device, queue, Skia context, compositor pipelines
   and layer cache: fonts, images, LUTs and shader pipelines are loaded only when the new scene has ones not seen yet;
   size-dependent textures are rebuilt only when the size or margin changes. Frames are byte-identical to a fresh
   `Renderer` on the same scene.
@@ -453,7 +453,7 @@ Raw text outside `<Text>` is an error naming the parent element. Duplicate expli
 A Canvas 2D context that records instead of rasterising (`createCanvasContext` of `@kinetograph/scene`,
 `packages/scene/src/canvas.ts`). It keeps the canvas's state as a browser's does (transform, `fillStyle` and the
 other styles, line and text state, `save`/`restore`, clips) and writes each drawing call as a `canvas` layer command
-with the state it is drawn in (SCENE.md, "canvas"); Rust draws the commands with Vello. Nothing in it reads a clock,
+with the state it is drawn in (SCENE.md, "canvas"); Rust draws the commands with Skia. Nothing in it reads a clock,
 so what a context holds is a function of the calls it was given.
 
 Two ways to draw:
@@ -688,16 +688,37 @@ Mapping onto the engine:
   Remotion does. `Interactive.create({ Component, layout: 'absolute-fill' })` puts the component in a clipped `div` of
   the `width` and `height` props. The field tables (`Interactive.baseSchema`, …, and `absoluteFillSchema`) are
   Remotion's data, unused in a render.
-- Canvas components. A browser canvas is what Remotion runs its effects, `<HtmlInCanvas>` and `<Artifact>` on, and there
-  is none, so these are accepted, draw what they can, and warn once about what they leave out:
+- Canvas components. Remotion runs its effects and `<HtmlInCanvas>` on browser canvases; here they run on recording
+  canvases, whose drawing the renderer replays (SCENE.md, "Shader groups" and "Canvas passes"):
   - `createEffect(definition)` returns the factory and its descriptors (key with the `disabled` flag, schema with the
-    `disabled` field; recorded from the published package). An `effects` prop with an enabled effect draws the picture
-    without it.
-  - `<Solid width height color>` is the `div` of that size and colour; `<CanvasImage src width height fit>` is the `Img`
-    (an image layer when nothing needs CSS, an `img` with the `object-fit` and crop when it does).
-  - `<HtmlInCanvas width height>` shows its children in a clipped box of its size, which is what its canvas shows when
-    nothing paints over it; `onPaint` and `onInit` are not run. `isHtmlInCanvasSupported()` is false, so a project can
-    take another path; `getHtmlInCanvasUnsupportedMessage()` and `HTML_IN_CANVAS_UNSUPPORTED_MESSAGE` say why.
+    `disabled` field; recorded from the published package). `validateParams` runs in the factory, as in Remotion.
+  - `<Solid>`, `<CanvasImage>`, `<AnimatedImage>` and `<HtmlInCanvas>` run their `effects` as `runEffectChain` does: the
+    element is drawn as a layer, effect 1 is handed its picture as `source` and draws on `target` (a `2d` or `webgl2`
+    context), effect N is handed what effect N-1 drew, the last picture is what the element shows. `disabled` effects
+    are skipped. `width` and `height` are the canvas's pixels (`ceil(size * pixelDensity)`, or `effectsOutputSize`),
+    and `flipSourceY` is `true` (every source is a canvas as the DOM holds it): upload with
+    `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipSourceY)`. WebGL 2 targets are made as Remotion's pool makes them
+    (`premultipliedAlpha`, `preserveDrawingBuffer`, `UNPACK_PREMULTIPLY_ALPHA_WEBGL` on). A 2D effect draws the source
+    with `ctx.drawImage(source, ...)`, filters, shadows, clips and composite operations included; `getImageData` of the
+    source is not available. **State:** a frame is a function of the frame, so `setup(target)`, `apply` and
+    `cleanup(state)` run in that order for every frame on a canvas that starts empty; Remotion keeps `setup`'s state from
+    frame to frame, which differs only for an effect whose picture depends on what earlier frames left in it. A
+    `webgpu` effect is not run: the picture is drawn without it, with a warning once and an unsupported item, so
+    `--strict` fails.
+  - `<Solid width height color>` is a box of that size and colour; `<CanvasImage src width height fit>` the picture
+    fitted into it (an image layer when nothing needs CSS, an `img` with the `object-fit` and crop when it does). With
+    an enabled effect either is a `div` (the canvas box: its `className`, `style` and crop, clipped to its size)
+    holding the chain's layers.
+  - `<HtmlInCanvas width height onPaint onInit effects>`: the children are drawn as a layer and `elementImage` is its
+    picture, `ctx.drawElementImage(elementImage, dx, dy[, dw, dh])` on a `2d` canvas context and
+    `gl.texElementImage2D(..., elementImage)` on a `webgl2` or `webgl` one draw it. `canvas` is a recorder of the size
+    in pixels, `element` has the size of the element (`clientWidth`, `getBoundingClientRect()`), `pixelDensity` is the
+    prop. For every frame `onInit` runs first, then `onPaint` (with no `onPaint` the picture is drawn on a 2D context,
+    as Remotion's default does), then the cleanup `onInit` returned (it must return one, as in Remotion). What follows
+    is the effect chain over what `onPaint` drew. A function that is `async` records what it draws before its first
+    `await`; the rest is not waited for (a warning once). A `webgpu` context is not run (the children are shown,
+    reported as unsupported). `isHtmlInCanvasSupported()` is true; `isHtmlInCanvasNestingSupported()` is false (an
+    `<HtmlInCanvas>` in the children of another is not tried).
   - `<IFrame>` is the `iframe` element, which the CSS engine reports as unsupported (`--strict` fails on it).
   - `<Artifact>` draws nothing and records its file (`getArtifacts()`); `kinetograph render` writes the ones recorded
     in the frames it rendered into the folder of the video (text and bytes as they are, `Artifact.Thumbnail` as the PNG
@@ -849,7 +870,7 @@ one place.
 Rive's WebAssembly runtime in a `<canvas>`; Kinetograph plays it with Rive's own C++ runtime, built into the addon from
 `rive-rs` (`vendor/rive`, licences in `vendor/README.md`), and the component hands the runtime's draw calls to the
 `<canvas>`'s 2D context as commands, so the element is laid out and styled like the DOM element it is in Remotion and is
-drawn natively with Vello.
+drawn natively with Skia.
 
 | Prop | |
 |---|---|

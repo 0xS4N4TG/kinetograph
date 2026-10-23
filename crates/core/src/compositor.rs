@@ -29,9 +29,8 @@
 //! canvas, and only draws part of it). The passes live in
 //! `shaders/composite.wgsl`:
 //!
-//! - `to_linear`: Vello's sRGB-encoded Rgba8 output -> linear texture
+//! - `to_linear_premul`: Skia's sRGB-encoded Rgba8 output -> linear texture
 //! - `blend`: backdrop + source + opacity + blend mode -> new texture
-//! - `mask`: layer x the alpha or luminance of a Vello-drawn clip or gradient
 //! - `matte`: layer x the alpha or luminance of another layer's texture
 //! - `accumulate`: running sum + sample x weight, to average a motion-blurred
 //!   layer's sub-frames
@@ -96,8 +95,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use glam::DMat3;
-use vello::kurbo::{Affine, Rect};
-use vello::wgpu::{self, util::DeviceExt};
+use kurbo::{Affine, Rect};
+use wgpu::{self, util::DeviceExt};
 
 use crate::blur::{self, Blur};
 use crate::bounds::{self, PixelRect};
@@ -114,7 +113,7 @@ use crate::resolve::{
     ResolvedShadow, ResolvedTurbulence,
 };
 use crate::scene::{
-    BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, MAX_GRADIENT_MAP_STOPS, MaskMode,
+    BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, MAX_GRADIENT_MAP_STOPS,
     MatteMode, NoiseChannels,
 };
 use crate::turbulence::{self, Tables};
@@ -179,43 +178,11 @@ impl Pooled for Tex {
     }
 }
 
-/// What `Compositor::blend_many` composites.
-#[derive(Clone, Copy)]
-pub enum BlendSource<'a> {
-    Texture(&'a Tex),
-    /// A leaf that is still in its Vello page: the page's texture and the
-    /// pixels Vello drew of it, optionally the page that holds the leaf's clip
-    /// shape in white, and the box of the canvas where the leaf, cut to its
-    /// clip's box, is not transparent. It is cut out of the page and masked
-    /// as the passes `from_srgb8` and `mask` would.
-    Page {
-        leaf: (&'a wgpu::TextureView, PixelRect),
-        clip: Option<(&'a wgpu::TextureView, PixelRect)>,
-        bounds: PixelRect,
-    },
-    /// No layer: the group the layers before it make is multiplied by the
-    /// alpha of a clip's page, and this closes the group (`BlendLayer::closes`).
-    /// `bounds` is the box the clipped group can be non-zero in.
-    GroupMask {
-        clip: (&'a wgpu::TextureView, PixelRect),
-        bounds: PixelRect,
-    },
-}
-
-impl BlendSource<'_> {
-    fn bounds(&self) -> PixelRect {
-        match self {
-            BlendSource::Texture(t) => t.bounds,
-            BlendSource::Page { bounds, .. } | BlendSource::GroupMask { bounds, .. } => *bounds,
-        }
-    }
-}
-
 /// A layer for `Compositor::blend_many`: what it is made of, its opacity and
 /// blend mode.
 #[derive(Clone, Copy)]
 pub struct BlendLayer<'a> {
-    pub source: BlendSource<'a>,
+    pub source: &'a Tex,
     pub opacity: f32,
     pub mode: BlendMode,
     /// A group opens before this layer: the layers up to the one that
@@ -283,7 +250,6 @@ pub struct Readback {
 
 impl Readback {
     /// The submit the readback's copy went in.
-    #[cfg(feature = "skia")]
     pub(crate) fn submission(&self) -> Option<wgpu::SubmissionIndex> {
         self.submission.clone()
     }
@@ -301,8 +267,7 @@ pub struct Compositor {
     /// Blend and composite layers on sRGB-encoded values (`Scene::blend_space`).
     srgb_blend: bool,
     layout: wgpu::BindGroupLayout,
-    to_linear: wgpu::RenderPipeline,
-    /// `to_linear` for premultiplied input (Skia's).
+    /// Skia's sRGB-encoded premultiplied output to linear light.
     to_linear_premul: wgpu::RenderPipeline,
     copy: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
@@ -310,7 +275,6 @@ pub struct Compositor {
     /// on its own bind group layout: the canvas, the layers, the uniforms.
     blend_many: wgpu::RenderPipeline,
     blend_many_layout: wgpu::BindGroupLayout,
-    mask: wgpu::RenderPipeline,
     matte: wgpu::RenderPipeline,
     accumulate: wgpu::RenderPipeline,
     encode: wgpu::RenderPipeline,
@@ -322,11 +286,6 @@ pub struct Compositor {
     /// An inset shadow with no spread and no blur, which inverts the layer's
     /// alpha itself.
     inset_inverted: wgpu::RenderPipeline,
-    /// `inset_inverted` on a leaf that is still in its Vello page, cut out
-    /// and converted as it is read (`shaders/page.wgsl`).
-    inset_page: wgpu::RenderPipeline,
-    /// A leaf cut out of its page and masked by its clip's page.
-    leaf_clip: wgpu::RenderPipeline,
     color: wgpu::RenderPipeline,
     glow: wgpu::RenderPipeline,
     aberration: wgpu::RenderPipeline,
@@ -418,7 +377,6 @@ impl Compositor {
             "blend many",
             include_str!("shaders/blend_many.wgsl"),
         );
-        let page_shader = shader_module(device, "page", include_str!("shaders/page.wgsl"));
         let shadow_shader = shader_module(device, "shadow", include_str!("shaders/shadow.wgsl"));
         let shadow_box_shader = shader_module(
             device,
@@ -599,13 +557,11 @@ impl Compositor {
             canvas: (width, height),
             margin,
             srgb_blend: false,
-            to_linear: pipeline(&shader, "fs_to_linear", LINEAR_FORMAT),
             to_linear_premul: pipeline(&shader, "fs_to_linear_premul", LINEAR_FORMAT),
             copy: pipeline(&shader, "fs_copy", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
             blend_many,
             blend_many_layout,
-            mask: pipeline(&shader, "fs_mask", LINEAR_FORMAT),
             matte: pipeline(&shader, "fs_matte", LINEAR_FORMAT),
             accumulate: pipeline(&shader, "fs_accumulate", LINEAR_FORMAT),
             encode: pipeline(&shader, "fs_encode", READBACK_FORMAT),
@@ -614,8 +570,6 @@ impl Compositor {
             drop_box: pipeline(&shadow_box_shader, "fs_drop_box", LINEAR_FORMAT),
             inset_shadow: pipeline(&shadow_shader, "fs_inset", LINEAR_FORMAT),
             inset_inverted: pipeline(&shadow_shader, "fs_inset_inverted", LINEAR_FORMAT),
-            inset_page: pipeline(&page_shader, "fs_inset_page", LINEAR_FORMAT),
-            leaf_clip: pipeline(&page_shader, "fs_leaf_clip", LINEAR_FORMAT),
             color: pipeline(&color_shader, "fs_color", LINEAR_FORMAT),
             glow: pipeline(&glow_shader, "fs_glow", LINEAR_FORMAT),
             aberration: pipeline(&aberration_shader, "fs_aberration", LINEAR_FORMAT),
@@ -667,12 +621,10 @@ impl Compositor {
         };
         let c = &compositor;
         compositor.names = [
-            (&c.to_linear, "to linear"),
             (&c.to_linear_premul, "to linear premul"),
             (&c.copy, "copy"),
             (&c.blend, "blend"),
             (&c.blend_many, "blend many"),
-            (&c.mask, "mask"),
             (&c.matte, "matte"),
             (&c.accumulate, "accumulate"),
             (&c.encode, "encode"),
@@ -681,8 +633,6 @@ impl Compositor {
             (&c.drop_box, "drop shadow (box)"),
             (&c.inset_shadow, "inset shadow"),
             (&c.inset_inverted, "inset shadow"),
-            (&c.inset_page, "inset shadow"),
-            (&c.leaf_clip, "to linear"),
             (&c.color, "colour filter"),
             (&c.glow, "glow"),
             (&c.aberration, "aberration"),
@@ -787,7 +737,7 @@ impl Compositor {
     }
 
     /// Submits what the passes have recorded. Whatever else writes to the
-    /// textures they read (Vello drawing into its target) must come after,
+    /// textures they read (Skia drawing into its target) must come after,
     /// and whatever waits for their results (a readback) too.
     pub fn submit(&self) -> Option<wgpu::SubmissionIndex> {
         let timer = crate::profile::start();
@@ -936,33 +886,29 @@ impl Compositor {
             });
     }
 
-    /// Converts the box `region` of a Vello output texture (Rgba8,
-    /// sRGB-encoded, straight alpha) to a linear premultiplied texture.
-    /// Vello leaves what it did not draw transparent, so `region` is the box
-    /// of what it drew. Vello drew `area` of the canvas (the whole canvas, or
-    /// a smaller box from `bounds::vello_area`) into the texture's top left
-    /// corner, so the canvas pixel (`area.x0`, `area.y0`) is the texel
-    /// (0, 0); `region` is inside `area`, and what is read outside `area`
-    /// is transparent, never what an earlier draw left in the texture.
-    pub fn from_srgb8(
-        &mut self,
-        vello_output: &wgpu::TextureView,
-        area: PixelRect,
-        region: PixelRect,
-    ) -> Tex {
+    /// A cleared texture for Skia to draw the box `region` of into (`Renderer::skia_leaf` and its kin): like `target`,
+    /// marked as written so that wgpu does not zero it after Skia has drawn.
+    pub(crate) fn skia_target(&mut self, region: PixelRect) -> Tex {
+        let tex = self.target(region);
+        self.clear(&tex, wgpu::Color::TRANSPARENT);
+        tex
+    }
+
+    /// Skia's output in a scene that blends in sRGB: premultiplied, sRGB-encoded Rgba8 that drew the box `area` of the canvas from the
+    /// texture's top left corner (a scene that blends in sRGB).
+    pub(crate) fn from_skia_srgb(&mut self, skia_output: &wgpu::TextureView, area: PixelRect, region: PixelRect) -> Tex {
         let target = self.target(region);
         let input = Input {
-            view: vello_output,
+            view: skia_output,
             origin: [area.x0, area.y0],
             size: [area.width(), area.height()],
         };
-        self.pass(&self.to_linear, input, input, 0.0, 0, &target);
+        self.pass(&self.to_linear_premul, input, input, 0.0, 0, &target);
         target
     }
 
     /// The whole canvas texture from `skia_output`, a texture of its size that Skia drew (`render/skia.rs`): premultiplied,
     /// and either Rgba8 holding sRGB-encoded values or, if `linear`, Rgba16Float in linear light.
-    #[cfg(feature = "skia")]
     pub(crate) fn from_skia(&mut self, skia_output: &wgpu::TextureView, linear: bool) -> Tex {
         let target = self.target_full(self.whole());
         let input = Input {
@@ -1022,12 +968,11 @@ impl Compositor {
     pub fn blend_many(&mut self, mut dst: Tex, layers: &[BlendLayer]) -> Tex {
         // A texture that needs the whole texture to blend (a non-separable
         // mode), or is out of the way, is blended on its own, as it always
-        // was. A page leaf is always separable and has something to draw.
+        // was.
         let alone = |l: &BlendLayer| {
-            matches!(l.source, BlendSource::Texture(_))
-                && !l.opens
+            !l.opens
                 && l.closes.is_none()
-                && (mode_index(l.mode) >= FIRST_NON_SEPARABLE_MODE || l.source.bounds().is_empty())
+                && (mode_index(l.mode) >= FIRST_NON_SEPARABLE_MODE || l.source.bounds.is_empty())
         };
         let area = |r: PixelRect| i64::from(r.width()) * i64::from(r.height());
         // The end of the run that starts at `i`: a group, or one layer.
@@ -1047,7 +992,7 @@ impl Compositor {
             let mut end = run_end(i);
             let mut region = group_region(&layers[i..end]);
             if self.fusion && !alone(first) {
-                let mut covered: i64 = layers[i..end].iter().map(|l| area(l.source.bounds())).sum();
+                let mut covered: i64 = layers[i..end].iter().map(|l| area(l.source.bounds)).sum();
                 while end < layers.len() && !alone(&layers[end]) {
                     let next = run_end(end);
                     if next - i > BLEND_SLOTS {
@@ -1055,7 +1000,7 @@ impl Compositor {
                     }
                     let bounds = group_region(&layers[end..next]);
                     let together: i64 =
-                        covered + layers[end..next].iter().map(|l| area(l.source.bounds())).sum::<i64>();
+                        covered + layers[end..next].iter().map(|l| area(l.source.bounds)).sum::<i64>();
                     let joined = region.union(bounds);
                     // Not so spread out that the pass draws mostly what none
                     // of the layers touches.
@@ -1066,7 +1011,7 @@ impl Compositor {
                 }
             }
             match (first.source, end - i) {
-                (BlendSource::Texture(texture), 1) if !first.opens => {
+                (texture, 1) if !first.opens => {
                     dst = self.blend(dst, texture, first.opacity, first.mode);
                 }
                 _ => {
@@ -1089,7 +1034,7 @@ impl Compositor {
     fn blend_many_pass(&self, dst: &Tex, layers: &[BlendLayer], target: &Tex) {
         // Bit 16 of a slot's mode says to composite in sRGB, as in `blend`.
         let space_bit: u32 = if self.srgb_blend { 1 << 16 } else { 0 };
-        let mut bytes = Vec::with_capacity(48 + 96 * BLEND_SLOTS);
+        let mut bytes = Vec::with_capacity(48 + 80 * BLEND_SLOTS);
         let mut put = |values: &[[u8; 4]]| bytes.extend(values.iter().flatten());
         let int = |v: i32| v.to_le_bytes();
         let placed = |origin: [i32; 2], size: [u32; 2]| {
@@ -1100,15 +1045,11 @@ impl Compositor {
                 int(size[1] as i32),
             ]
         };
-        let paged = |(_, area): (&wgpu::TextureView, PixelRect)| {
-            placed([area.x0, area.y0], [area.width(), area.height()])
-        };
         put(&[int(target.origin[0]), int(target.origin[1]), int(0), int(0)]);
         put(&placed(dst.origin, dst.size));
         put(&[(layers.len() as u32).to_le_bytes(), [0; 4], [0; 4], [0; 4]]);
-        // The two textures of each slot, `a` and `b`; a slot that does not use
-        // one binds the canvas.
-        let mut views: Vec<(&wgpu::TextureView, &wgpu::TextureView)> = Vec::new();
+        // The texture of each slot; a slot that does not use one binds the canvas.
+        let mut views: Vec<&wgpu::TextureView> = Vec::new();
         let mut opened = 0;
         for slot in 0..BLEND_SLOTS {
             match layers.get(slot) {
@@ -1116,27 +1057,8 @@ impl Compositor {
                     if l.opens {
                         opened = slot;
                     }
-                    let b = l.source.bounds();
-                    let (kind, place, clip, a_view, b_view) = match l.source {
-                        BlendSource::Texture(t) => (
-                            0u32,
-                            placed(t.origin, t.size),
-                            [[0; 4]; 4],
-                            &t.view,
-                            &dst.view,
-                        ),
-                        BlendSource::Page {
-                            leaf, clip: None, ..
-                        } => (1, paged(leaf), [[0; 4]; 4], leaf.0, &dst.view),
-                        BlendSource::Page {
-                            leaf,
-                            clip: Some(clip),
-                            ..
-                        } => (2, paged(leaf), paged(clip), leaf.0, clip.0),
-                        BlendSource::GroupMask { clip, .. } => {
-                            (3, [[0; 4]; 4], paged(clip), &dst.view, clip.0)
-                        }
-                    };
+                    let b = l.source.bounds;
+                    let t = l.source;
                     let flags = u32::from(l.opens) | (u32::from(l.closes.is_some()) << 1);
                     let (gopacity, gmode) = l.closes.unwrap_or((0.0, BlendMode::Normal));
                     // The box the group can be non-zero in, once it is closed.
@@ -1145,14 +1067,13 @@ impl Compositor {
                     } else {
                         PixelRect::EMPTY
                     };
-                    put(&place);
-                    put(&clip);
+                    put(&placed(t.origin, t.size));
                     put(&[int(b.x0), int(b.y0), int(b.x1), int(b.y1)]);
                     put(&[
                         l.opacity.to_le_bytes(),
                         (mode_index(l.mode) | space_bit).to_le_bytes(),
-                        kind.to_le_bytes(),
                         flags.to_le_bytes(),
+                        [0; 4],
                     ]);
                     put(&[
                         gopacity.to_le_bytes(),
@@ -1161,11 +1082,11 @@ impl Compositor {
                         [0; 4],
                     ]);
                     put(&[int(g.x0), int(g.y0), int(g.x1), int(g.y1)]);
-                    views.push((a_view, b_view));
+                    views.push(&t.view);
                 }
                 None => {
-                    put(&[[0; 4]; 24]);
-                    views.push((&dst.view, &dst.view));
+                    put(&[[0; 4]; 20]);
+                    views.push(&dst.view);
                 }
             }
         }
@@ -1175,12 +1096,11 @@ impl Compositor {
             resource: wgpu::BindingResource::TextureView(view),
         };
         let mut entries = vec![entry(0, &dst.view)];
-        for (slot, (a, b)) in views.into_iter().enumerate() {
-            entries.push(entry(2 * slot as u32 + 1, a));
-            entries.push(entry(2 * slot as u32 + 2, b));
+        for (slot, view) in views.into_iter().enumerate() {
+            entries.push(entry(slot as u32 + 1, view));
         }
         entries.push(wgpu::BindGroupEntry {
-            binding: 2 * BLEND_SLOTS as u32 + 1,
+            binding: BLEND_SLOTS as u32 + 1,
             resource: uniform.binding(),
         });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1214,46 +1134,6 @@ impl Compositor {
         draw(self, dst, &temp);
         copy_box(&mut self.encoder(), &temp, dst, region);
         self.release(temp);
-    }
-
-    /// Multiplies `src` by the alpha or luminance of a Vello output texture
-    /// (Rgba8): a clip shape drawn in opaque white, or a gradient. `keep` is
-    /// the box outside which that is zero (the whole texture for a gradient).
-    /// `src` goes back to the pool; the result is a new texture.
-    pub fn mask(
-        &mut self,
-        src: Tex,
-        vello_output: &wgpu::TextureView,
-        mode: MaskMode,
-        keep: PixelRect,
-    ) -> Tex {
-        let whole = self.whole();
-        self.mask_from(src, vello_output, whole, mode, keep)
-    }
-
-    /// `mask` with a Vello output that drew only `area` of the canvas, from
-    /// the top left corner of the texture: it is transparent outside.
-    pub fn mask_from(
-        &mut self,
-        src: Tex,
-        vello_output: &wgpu::TextureView,
-        area: PixelRect,
-        mode: MaskMode,
-        keep: PixelRect,
-    ) -> Tex {
-        let mode = match mode {
-            MaskMode::Alpha => 0,
-            MaskMode::Luminance => 2,
-        };
-        let target = self.target(src.bounds.intersect(keep));
-        let vello = Input {
-            view: vello_output,
-            origin: [area.x0, area.y0],
-            size: [area.width(), area.height()],
-        };
-        self.pass(&self.mask, src.input(), vello, 0.0, mode, &target);
-        self.release(src);
-        target
     }
 
     /// Multiplies `src` by what the matte source `matte` keeps, after
@@ -1975,89 +1855,23 @@ impl Compositor {
         target
     }
 
-    /// Whether the passes that read Vello pages directly are in use.
+    /// Whether passes that do the work of several are in use (`set_fusion`).
     pub fn is_fused(&self) -> bool {
         self.fusion
     }
 
-    /// Whether `blend_many` can composite a layer in `mode` from a page: the
-    /// mode works pixel by pixel (see `blend`).
+    /// Whether `blend_many` can composite a layer in `mode`: the mode works
+    /// pixel by pixel (see `blend`).
     pub fn blends_per_pixel(&self, mode: BlendMode) -> bool {
         mode_index(mode) < FIRST_NON_SEPARABLE_MODE
     }
 
-    /// The leaf whose pixels are in the box `region` of the page `leaf` (drawn
-    /// over `leaf_area`) masked by the clip shape in `clip` (drawn over
-    /// `clip_area`) inside `keep`: what `from_srgb8` and then `mask` make, in
-    /// one pass. `region` and `keep` must overlap.
-    pub fn leaf_clipped_from_page(
-        &mut self,
-        leaf: (&wgpu::TextureView, PixelRect),
-        clip: (&wgpu::TextureView, PixelRect),
-        region: PixelRect,
-        keep: PixelRect,
-    ) -> Tex {
-        let kept = region.intersect(keep);
-        let target = self.target(kept);
-        fn input(page: (&wgpu::TextureView, PixelRect)) -> Input<'_> {
-            Input {
-                view: page.0,
-                origin: [page.1.x0, page.1.y0],
-                size: [page.1.width(), page.1.height()],
-            }
-        }
-        let mut params: Vec<u8> = [kept.x0, kept.y0, kept.x1, kept.y1]
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
-        params.extend(floats(&[0.0; 8]));
-        self.run_pass(&self.leaf_clip, input(leaf), input(clip), &params, &target);
-        target
-    }
-
     /// Whether the inset shadow `shadow` has no blur and no spread, which
-    /// lets one pass draw it from the layer itself (`shadow`,
-    /// `inset_from_page`).
+    /// lets one pass draw it from the layer itself (`shadow`).
     pub fn is_sharp_inset(&self, shadow: &ResolvedShadow) -> bool {
         self.fusion
             && shadow.spread == 0.0
             && (shadow.blur.is_nan() || shadow.blur < blur::MIN_RADIUS)
-    }
-
-    /// The leaf whose pixels are the box `region` of the Vello page `page`
-    /// (drawn over `area` of the canvas), with the inset shadow `shadow`,
-    /// which `is_sharp_inset`, over it: what `from_srgb8` and then `shadow`
-    /// make, in one pass.
-    pub fn inset_from_page(
-        &mut self,
-        page: &wgpu::TextureView,
-        area: PixelRect,
-        region: PixelRect,
-        shadow: &ResolvedShadow,
-    ) -> Tex {
-        let target = self.target(region);
-        let input = Input {
-            view: page,
-            origin: [area.x0, area.y0],
-            size: [area.width(), area.height()],
-        };
-        let [r, g, b, a] = shadow.color.linear_premultiplied();
-        let mut params: Vec<u8> = [region.x0, region.y0, region.x1, region.y1]
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
-        params.extend(floats(&[
-            shadow.x,
-            shadow.y,
-            self.width as f32,
-            self.height as f32,
-            r as f32,
-            g as f32,
-            b as f32,
-            a as f32,
-        ]));
-        self.run_pass(&self.inset_page, input, input, &params, &target);
-        target
     }
 
     /// Adds a drop shadow under `src`, or an inset shadow over it. `src`
@@ -2249,35 +2063,6 @@ impl Compositor {
             0.0,
         ]);
         self.run_pass(&self.spread, input, input, &params, target);
-    }
-
-    /// The box `region` of `tex` encoded to sRGB, straight alpha, in a new
-    /// texture of the box's size: the form Vello draws a picture from
-    /// (`vello::Renderer::register_texture`).
-    pub fn to_srgb8(&mut self, tex: &Tex, region: PixelRect) -> wgpu::Texture {
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("srgb picture"),
-            size: wgpu::Extent3d {
-                width: region.width(),
-                height: region.height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: READBACK_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let target = Tex {
-            view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
-            texture,
-            origin: [region.x0, region.y0],
-            size: [region.width(), region.height()],
-            bounds: region,
-        };
-        self.pass(&self.encode, tex.input(), tex.input(), 0.0, 0, &target);
-        target.texture
     }
 
     /// Encodes a linear texture to sRGB and reads it back as tightly packed
@@ -2842,7 +2627,7 @@ fn mesh_vertex_bytes(vertices: &[mesh::Vertex]) -> Vec<u8> {
     floats(&flat)
 }
 
-/// The bind group of `blend_many`: the canvas, two textures for each of
+/// The bind group of `blend_many`: the canvas, a texture for each of
 /// `BLEND_SLOTS` layers (all read with `textureLoad`) and the uniform block.
 fn blend_many_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     let texture = |binding| wgpu::BindGroupLayoutEntry {
@@ -2855,9 +2640,9 @@ fn blend_many_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout 
         },
         count: None,
     };
-    let mut entries: Vec<_> = (0..=2 * BLEND_SLOTS as u32).map(texture).collect();
+    let mut entries: Vec<_> = (0..=BLEND_SLOTS as u32).map(texture).collect();
     entries.push(wgpu::BindGroupLayoutEntry {
-        binding: 2 * BLEND_SLOTS as u32 + 1,
+        binding: BLEND_SLOTS as u32 + 1,
         visibility: wgpu::ShaderStages::FRAGMENT,
         ty: wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Uniform,
@@ -3504,7 +3289,7 @@ fn shadow_plan(
 fn mesh_bounds(vertices: &[mesh::Vertex]) -> PixelRect {
     let mut corners: Option<Rect> = None;
     for v in vertices {
-        let p = vello::kurbo::Point::new(f64::from(v.position[0]), f64::from(v.position[1]));
+        let p = kurbo::Point::new(f64::from(v.position[0]), f64::from(v.position[1]));
         corners = Some(match corners {
             Some(r) => r.union_pt(p),
             None => Rect::from_points(p, p),
@@ -3523,17 +3308,9 @@ fn mesh_bounds(vertices: &[mesh::Vertex]) -> PixelRect {
 
 /// The number the shader's `blend_fn` switches on.
 /// The box a run of `blend_many` layers can change: for a group the box its
-/// layers can be non-zero in, cut to its clip's, for a single layer its own.
+/// layers can be non-zero in, for a single layer its own.
 fn group_region(run: &[BlendLayer]) -> PixelRect {
-    let mut region = PixelRect::EMPTY;
-    let mut clip = None;
-    for layer in run {
-        match layer.source {
-            BlendSource::GroupMask { bounds, .. } => clip = Some(bounds),
-            _ => region = region.union(layer.source.bounds()),
-        }
-    }
-    clip.map_or(region, |c| region.intersect(c))
+    run.iter().fold(PixelRect::EMPTY, |region, layer| region.union(layer.source.bounds))
 }
 
 fn mode_index(mode: BlendMode) -> u32 {
@@ -3821,7 +3598,7 @@ mod tests {
     fn displace_values_carry_the_matrix_the_noise_and_the_channels() {
         use crate::resolve::ResolvedTurbulence;
         use crate::scene::Channel;
-        use vello::kurbo::Point;
+        use kurbo::Point;
 
         let displace = ResolvedDisplace {
             scale: 12.0,
@@ -3862,7 +3639,7 @@ mod tests {
             pixel.x + f64::from(float(8)) * shift.0 + f64::from(float(10)) * shift.1,
             pixel.y + f64::from(float(9)) * shift.0 + f64::from(float(11)) * shift.1,
         );
-        let want = matrix * (matrix.inverse() * pixel + vello::kurbo::Vec2::new(shift.0, shift.1));
+        let want = matrix * (matrix.inverse() * pixel + kurbo::Vec2::new(shift.0, shift.1));
         assert!((texel.x - want.x).abs() < 1e-4 && (texel.y - want.y).abs() < 1e-4);
 
         // Turbulence type, and a layer scaled to nothing has no inverse.

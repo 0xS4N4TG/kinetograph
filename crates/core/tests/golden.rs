@@ -10,21 +10,7 @@ use std::path::{Path, PathBuf};
 use image::{ExtendedColorType, ImageEncoder, codecs::png};
 use kinetograph_core::{Frame, Renderer, Scene, render_still};
 
-/// The goldens were made with Vello, and the default backend is Skia: pin Vello (`GOLDEN_REPORT=1` with
-/// `KINETOGRAPH_BACKEND=skia` set judges Skia against them instead). Every test loads its scene through `scene()`,
-/// which calls this before any renderer exists.
-fn pin_backend() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        if std::env::var_os("KINETOGRAPH_BACKEND").is_none() {
-            // SAFETY: runs once, before any renderer reads the variable; nothing else here writes the environment.
-            unsafe { std::env::set_var("KINETOGRAPH_BACKEND", "vello") };
-        }
-    });
-}
-
 fn scene(relative: &str) -> Scene {
-    pin_backend();
     Scene::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)).unwrap()
 }
 
@@ -65,8 +51,7 @@ fn check(name: &str, frame: &Frame) {
         (frame.width, frame.height),
         "{name}: size changed"
     );
-    // `GOLDEN_REPORT=1`: print how far the frame is from the golden (mean and max level of any channel) instead of failing,
-    // for judging another backend (`KINETOGRAPH_BACKEND=skia`).
+    // `GOLDEN_REPORT=1`: print how far the frame is from the golden (mean and max level of any channel) instead of failing, to judge a change before regenerating (`UPDATE_GOLDEN=1`).
     if std::env::var_os("GOLDEN_REPORT").is_some() {
         let diffs = golden.as_raw().iter().zip(&frame.rgba).map(|(a, b)| a.abs_diff(*b) as u64);
         let (sum, max, over2) = diffs.fold((0u64, 0u64, 0u64), |(s, m, o), d| (s + d, m.max(d), o + (d > 2) as u64));
@@ -641,5 +626,19 @@ fn transitions_match_golden() {
         let frame =
             render_still(scene(&format!("tests/scenes/transition-{name}.json")), 0).unwrap();
         check(&format!("transition-{name}"), &frame);
+    }
+}
+
+#[test]
+fn effects_match_golden() {
+    // `<Solid>` and `<CanvasImage>` through 2D and WebGL 2 effects, a chain of both kinds, and `<HtmlInCanvas>` with an
+    // `onPaint` that draws the HTML and an overlay: the scenes `scripts/effects-scenes.mjs` writes from
+    // `examples/effects`. There is no Remotion run of these (Chrome for Testing has no canvas effects of HTML in
+    // canvas); the pictures were checked by eye: the inverted teal box, the checker with a vertical wave and its
+    // channels swapped (upright), the same tinted pink then inverted, and the gradient box with a translucent
+    // yellow rectangle over it.
+    for name in ["solid", "image", "chain", "html"] {
+        let frame = render_still(scene(&format!("tests/scenes/effect-{name}.json")), 0).unwrap();
+        check(&format!("effect-{name}"), &frame);
     }
 }

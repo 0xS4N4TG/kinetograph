@@ -150,9 +150,9 @@ describe('Artifact', () => {
 });
 
 describe('HtmlInCanvas', () => {
-  it('is not supported, and says why', () => {
-    expect(isHtmlInCanvasSupported()).toBe(false);
-    expect(HtmlInCanvas.isSupported()).toBe(false);
+  it('is supported (on recording canvases), nested ones are not tried, and the browser message is kept', () => {
+    expect(isHtmlInCanvasSupported()).toBe(true);
+    expect(HtmlInCanvas.isSupported()).toBe(true);
     expect(HtmlInCanvas.isNestingSupported()).toBe(false);
     expect(getHtmlInCanvasUnsupportedMessage()).toBe(HTML_IN_CANVAS_UNSUPPORTED_MESSAGE);
     expect(HTML_IN_CANVAS_UNSUPPORTED_MESSAGE).toMatch(/Canvas Draw Element/);
@@ -172,15 +172,10 @@ describe('HtmlInCanvas', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('warns once when onPaint, onInit or an enabled effect would have changed the picture', () => {
-    const noop = () => undefined;
-    renderDom(<HtmlInCanvas width={10} height={10} onPaint={noop}>x</HtmlInCanvas>);
-    renderDom(<HtmlInCanvas width={10} height={10} onInit={() => noop}>x</HtmlInCanvas>);
+  it('is the plain box when nothing runs: no onPaint, no onInit, only disabled effects', () => {
     renderDom(<HtmlInCanvas width={10} height={10} effects={[never({ disabled: true })]}>x</HtmlInCanvas>);
-    expect(warn).toHaveBeenCalledTimes(1);
-    renderDom(<HtmlInCanvas width={10} height={10} effects={[never({ radius: 2 })]}>x</HtmlInCanvas>);
-    expect(warn).toHaveBeenCalledTimes(2);
-    expect(warn.mock.calls[1]![0]).toMatch(/without its effects \(Blur\)/);
+    expect(summary(sent[0].root)).toMatchObject({ tag: 'div', style: 'width: 10px; height: 10px; overflow: hidden' });
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('refuses a size that is not a positive whole number, as Remotion does', () => {
@@ -205,11 +200,10 @@ describe('Solid', () => {
     expect(sent[0].root.style).toBe('width: 4px; height: 4px');
   });
 
-  it('warns about an enabled effect only, and refuses a bad pixelDensity', () => {
+  it('is the plain box for a disabled effect, and refuses a bad pixelDensity', () => {
     renderDom(<Solid width={4} height={4} effects={[never({ disabled: true })]} />);
+    expect(sent[0].root.style).toBe('width: 4px; height: 4px');
     expect(warn).not.toHaveBeenCalled();
-    renderDom(<Solid width={4} height={4} effects={[never({ radius: 1 })]} />);
-    expect(warn).toHaveBeenCalledTimes(1);
     expect(() => renderDom(<Solid width={4} height={4} pixelDensity={-1} />)).toThrow('<Solid>: `pixelDensity` must be a positive finite number. Received: -1.');
   });
 });
@@ -232,9 +226,7 @@ describe('CanvasImage', () => {
     expect(sent[0].root.style).toBe('object-fit: fill; clip-path: inset(0% 0% 0% 25%)');
   });
 
-  it('needs a src, and warns about an enabled effect', () => {
+  it('needs a src', () => {
     expect(() => renderAt(<CanvasImage src="" />)).toThrow('No "src" prop was passed to <CanvasImage>.');
-    renderAt(<CanvasImage src="/p/cat.png" effects={[never({ radius: 1 })]} />);
-    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

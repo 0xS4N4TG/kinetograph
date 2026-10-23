@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use vello::kurbo::{Affine, BezPath, Rect, Shape};
+use kurbo::{Affine, BezPath, Rect, Shape};
 
 use crate::anim::Num;
 use crate::canvas::CanvasOp;
@@ -167,6 +167,27 @@ pub struct ResolvedTransform {
     pub matrix: Option<[f64; 16]>,
     /// `scene::Transform::backface_hidden`.
     pub backface_hidden: bool,
+}
+
+impl Default for ResolvedTransform {
+    /// The transform that moves nothing.
+    fn default() -> Self {
+        ResolvedTransform {
+            x: 0.0,
+            y: 0.0,
+            scale: 1.0,
+            rotation: 0.0,
+            anchor_x: 0.0,
+            anchor_y: 0.0,
+            rotate_x: 0.0,
+            rotate_y: 0.0,
+            z: 0.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            matrix: None,
+            backface_hidden: false,
+        }
+    }
 }
 
 impl ResolvedTransform {
@@ -627,6 +648,9 @@ pub enum ResolvedKind {
         /// `GroupLayer::glsl`: a GLSL pass in the box `(0, 0, width,
         /// height)` over the children, which are its textures.
         glsl: Option<ResolvedGlsl>,
+        /// `GroupLayer::canvas`: commands drawn in the box `(0, 0, width,
+        /// height)`, whose `layer` sources are the children.
+        canvas: Option<(f64, f64, Arc<Vec<CanvasOp>>)>,
     },
     /// A Lottie animation fitted into the box `(0, 0, width, height)`.
     Lottie {
@@ -1086,6 +1110,10 @@ impl<'a> Resolver<'a> {
                     height: glsl.height.at(f),
                     recording: glsl.recording.clone(),
                 }),
+                canvas: g
+                    .canvas
+                    .as_ref()
+                    .map(|c| (c.width.at(f), c.height.at(f), c.commands.0.clone())),
             },
             LayerKind::Lottie(l) => {
                 let (width, height) = self.box_size(layer, &l.src, &l.width, &l.height, f)?;
@@ -1630,9 +1658,9 @@ mod tests {
         let m = r.layers[0].transform.matrix();
         // The anchor (50, 25) lands on (x, y) = (0, 0); the rect's origin
         // rotated 90 degrees clockwise about it lands at (25, -50).
-        let anchor = m * vello::kurbo::Point::new(50.0, 25.0);
+        let anchor = m * kurbo::Point::new(50.0, 25.0);
         assert!(anchor.x.abs() < 1e-9 && anchor.y.abs() < 1e-9);
-        let origin = m * vello::kurbo::Point::new(0.0, 0.0);
+        let origin = m * kurbo::Point::new(0.0, 0.0);
         assert!((origin.x - 25.0).abs() < 1e-9 && (origin.y + 50.0).abs() < 1e-9);
     }
 
@@ -2336,7 +2364,7 @@ mod tests {
         let t = scene.resolve(5).unwrap().layers[0].transform;
         assert_eq!((t.rotate_x, t.rotate_y, t.z), (30.0, -25.0, 50.0));
         // The flat matrix is what it always was.
-        assert_eq!(t.matrix(), vello::kurbo::Affine::IDENTITY);
+        assert_eq!(t.matrix(), kurbo::Affine::IDENTITY);
     }
 
     #[test]
@@ -2778,16 +2806,16 @@ mod tests {
         // Turning about the pivot leaves it where it is, and without any
         // turn the layer is where it would be without an origin.
         let mut rect = layers[0].transform;
-        let pivot = rect.matrix() * vello::kurbo::Point::new(50.0, 20.0);
-        assert!(pivot.distance(vello::kurbo::Point::new(100.0, 80.0)) < 1e-9);
+        let pivot = rect.matrix() * kurbo::Point::new(50.0, 20.0);
+        assert!(pivot.distance(kurbo::Point::new(100.0, 80.0)) < 1e-9);
         rect.rotation = 70.0;
         rect.scale = 2.0;
-        let turned = rect.matrix() * vello::kurbo::Point::new(50.0, 20.0);
+        let turned = rect.matrix() * kurbo::Point::new(50.0, 20.0);
         assert!(turned.distance(pivot) < 1e-9);
         rect.rotation = 0.0;
         rect.scale = 1.0;
-        let corner = rect.matrix() * vello::kurbo::Point::new(0.0, 0.0);
-        assert!(corner.distance(vello::kurbo::Point::new(50.0, 60.0)) < 1e-9);
+        let corner = rect.matrix() * kurbo::Point::new(0.0, 0.0);
+        assert!(corner.distance(kurbo::Point::new(50.0, 60.0)) < 1e-9);
         // The same answers through an engine the caller owns.
         let again = scene.resolve_with_text(5, &mut engine).unwrap().layers;
         assert_eq!(again, layers);

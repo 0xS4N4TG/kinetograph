@@ -94,7 +94,6 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
         "dither.wgsl",
         "dot_matrix.wgsl",
         "lut.wgsl",
-        "page.wgsl",
     ] {
         assert_eq!(declared_bindings(file), shared, "{file}");
     }

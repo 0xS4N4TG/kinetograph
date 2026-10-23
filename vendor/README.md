@@ -10,16 +10,6 @@ The crates are wired in by `[patch.crates-io]` in the root `Cargo.toml`. `rive` 
 2. Commit it unchanged. Take the version and commit from `.cargo_vcs_info.json`, and update this file.
 3. Reapply the changes below in a separate `fix(vendor)` commit, so that diff is the whole change.
 
-## vello_shaders 0.11.0
-
-Upstream: crates.io `vello_shaders` 0.11.0 (`linebender/vello`, commit `f3000c8d9e7a9c7e6abb09b9587238bf8b4860ff`). Licence: Apache-2.0 OR MIT. An image's `atlas_offset` depends on what the renderer drew before, and adding it to an f32 sample position lost precision. The same image drew differently on a reused renderer (#12).
-
-- `shader/fine.wgsl`, bilinear (`IMAGE_QUALITY_MEDIUM`): the position stays image-local, the clamp is `0 .. extents - 1`, and `atlas_offset` is added to the four texel indices.
-- `shader/fine.wgsl`, nearest (`IMAGE_QUALITY_LOW`): same clamp; `atlas_offset` is added to the truncated texel index.
-- `shader/fine.wgsl`, bicubic (`IMAGE_QUALITY_HIGH`): `bicubic_sample` takes the image-local position and builds `coords` as `atlas_offset + floor(p - 0.5) + 0.5`.
-
-Drop when a `vello_shaders` release does the same.
-
 ## fontique 0.12.0
 
 Upstream: crates.io `fontique` 0.12.0 (`linebender/parley`, commit `6e1143dda817360dd3a2a64f9133c6e5dfabd881`). Licence: Apache-2.0 OR MIT. A project registers a variable font under one weight (`Inter:800`). fontique sets the `wght` axis to the requested weight, but a browser clamps it to the `@font-face` weight.
@@ -28,26 +18,6 @@ Upstream: crates.io `fontique` 0.12.0 (`linebender/parley`, commit `6e1143dda817
 - `crates/dom/src/fonts.rs` (our code): registers every project font with the flag.
 
 Drop when fontique can hold an axis at the face's weight.
-
-## vello 0.11.0
-
-Upstream: crates.io `vello` 0.11.0 (same commit as `vello_shaders`). Licence: Apache-2.0 OR MIT. `run_recording` began a compute pass per dispatch, about 340 Metal compute encoders a frame on S04.
-
-- `src/wgpu_engine.rs`: consecutive dispatches share one compute pass (`open_pass`), ended before anything else uses the encoder. All 34 test scenes render byte-identically.
-- `src/render.rs`: `make_mask_lut_16` is computed once (`OnceLock`) instead of per `render_to_texture`.
-- `src/lib.rs`: `Renderer::unregister_texture` calls `evict_image` (see `vello_encoding`).
-
-Drop when a vello release does the same.
-
-## vello_encoding 0.11.0
-
-Upstream: crates.io `vello_encoding` 0.11.0 (same commit as `vello_shaders`). Licence: Apache-2.0 OR MIT. Canvas 2D shadows and filters are new pictures every frame, and Vello kept each in its atlas for two more renders. The atlas filled up and Vello dropped some without an error.
-
-- `src/image_cache.rs`: new `ImageCache::evict` and `ImageCache::resident_atlas`, with tests.
-- `src/resolve.rs`: new `Resolver::evict_image` frees an image's atlas place at once; `Scene::draw_image` images are not touched.
-- `src/resolve.rs`: `Resolver::resolve` keeps the atlas for a solid-paths-only scene when images are resident. Before, a later scene drew a resident image blank (seen at `render --concurrency 4`).
-
-Drop when `unregister_texture` frees the atlas place itself and a solid-paths-only resolve keeps the atlas.
 
 ## stylo 0.22.0
 

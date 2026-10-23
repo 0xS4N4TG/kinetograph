@@ -5,12 +5,6 @@ description: What doesn't work yet in Kinetograph, and what you see instead.
 
 Each item says what doesn't work and what you see instead. For what does work, see [Remotion compatibility](/docs/compat/). Items marked "reported" show up in the warnings and in `doctor`.
 
-## Being fixed
-
-Work on these has started.
-
-- **Effects on some elements.** `createEffect` on `Solid`, `CanvasImage`, `AnimatedImage` and `HtmlInCanvas` is exported, but the effect is left out, and a warning is printed once. The `onPaint` and `onInit` props of `HtmlInCanvas` are not supported. Both need an element drawn into a canvas, and a GPU effect pass, which are not built yet.
-
 ## Not planned
 
 - **`IFrame`.** Not drawn, because a real webpage needs a browser. It is reported as unsupported content.
@@ -19,6 +13,15 @@ Work on these has started.
 - **Tailwind packages.** `tailwind` and `tailwind-v4` are webpack configuration only, so they do nothing here. Tailwind itself works.
 
 ## Partly working
+
+### Effects and `HtmlInCanvas`
+
+- `2d` and `webgl2` effects (`createEffect`) run, and so do the `onPaint` and `onInit` props.
+- `webgpu` effects, and an `onInit` or `onPaint` that asks for `canvas.getContext('webgpu')`, are drawn without the effect and reported.
+- State an effect keeps from `setup` does not carry to the next frame. Each frame runs `setup`, `apply` and `cleanup` again.
+- `getImageData` of the source is not supported.
+- In an `async` `onPaint` or `onInit`, the part after the first `await` does not run.
+- An `<HtmlInCanvas>` inside another is not supported.
 
 ### Video and audio encoding and decoding in your own code
 

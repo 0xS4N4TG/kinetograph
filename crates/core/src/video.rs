@@ -28,7 +28,7 @@ use ffmpeg::format::{self, Pixel};
 use ffmpeg::software::scaling::{self, Flags as ScaleFlags};
 use ffmpeg::util::color;
 use ffmpeg::{Error as AvError, Packet, codec, frame, media};
-use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
+use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
 use crate::error::{Error, Result};
 use crate::scene::{LayerKind, Scene, VideoLayer, walk_layers};
@@ -865,8 +865,8 @@ impl Videos {
     }
 
     /// The picture file `src` shows at `time`, as an image to draw. The same
-    /// picture twice is the same `ImageData` (and so the same entry in
-    /// Vello's image atlas), while it is among the decoder's recent ones.
+    /// picture twice is the same `ImageData` (and so the same image
+    /// for Skia), while it is among the decoder's recent ones.
     pub fn image(&mut self, src: &str, time: MediaTime) -> Result<ImageData> {
         let decoder = self
             .decoders

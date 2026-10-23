@@ -7,8 +7,9 @@ import { closeSync, openSync, readFileSync, readSync } from 'node:fs';
 import type { CSSProperties, ReactNode } from 'react';
 import { Gif } from '@kinetograph/react';
 import { remoteMessage } from '@kinetograph/compat/shim';
-import { warnEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
+import { EffectsBox, hasEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
 import { Img, type FillStyle } from './fill.js';
+import { imageSizeSync } from './media-utils.js';
 import { isGif, nearestPicture, readApngTimeline, readGifTimeline, readWebpTimeline, type GifTimeline } from './gif-timeline.js';
 import { croppedStyle, Sequenced, splitCrop, splitTiming, type CropProps, type SequenceTimingProps } from './sequenced.js';
 import { useCurrentFrame, useVideoConfig } from './timeline.js';
@@ -166,9 +167,8 @@ function AnimatedFrame({
 
 export function AnimatedImage(props: AnimatedImageProps): ReactNode {
   const [timing, withoutTiming] = splitTiming(props);
-  const [crop, { src, width, height, fit = 'fill', loopBehavior = 'loop', className, style, id, onError, effects }] = splitCrop(withoutTiming);
+  const [crop, { src, width, height, fit = 'fill', loopBehavior = 'loop', className, style, id, onError, effects, effectsOutputSize }] = splitCrop(withoutTiming);
   const { playbackRate = 1, loop, durationInFrames, ...otherTiming } = timing;
-  warnEffects('<AnimatedImage>', effects);
 
   let source: Source;
   try {
@@ -187,6 +187,42 @@ export function AnimatedImage(props: AnimatedImageProps): ReactNode {
     ...(durationInFrames === undefined ? {} : { durationInFrames: durationInFrames / playbackRate }),
   };
 
+  if (hasEffects(effects)) {
+    const natural = width === undefined || height === undefined ? (source.kind === 'gif' ? source.timeline : imageSizeSync(src)) : null;
+    return (
+      <Sequenced timing={sequence} component="<AnimatedImage>" defaultName="<AnimatedImage>">
+        <EffectsBox
+          component="<AnimatedImage>"
+          effects={effects}
+          effectsOutputSize={effectsOutputSize}
+          width={width ?? natural!.width}
+          height={height ?? natural!.height}
+          pixelDensity={undefined}
+          className={className}
+          id={id}
+          style={css}
+          source={(size) =>
+            source.kind === 'still' ? (
+              <Img src={src} width={size.width} height={size.height} style={{ objectFit: fit }} />
+            ) : (
+              <AnimatedFrame
+                src={src}
+                timeline={source.timeline}
+                playbackRate={playbackRate}
+                loopBehavior={wrapped ? 'loop' : loopBehavior}
+                width={size.width}
+                height={size.height}
+                fit={fit}
+                id={undefined}
+                className={undefined}
+                css={undefined}
+              />
+            )
+          }
+        />
+      </Sequenced>
+    );
+  }
   if (source.kind === 'still') {
     return (
       <Sequenced timing={sequence} component="<AnimatedImage>" defaultName="<AnimatedImage>">

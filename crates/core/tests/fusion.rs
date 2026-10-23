@@ -2,7 +2,6 @@
 //! (`Renderer::set_pass_fusion`) draw exactly what the passes they replace
 //! draw, byte for byte: same scene, same frames, fusion on and off.
 
-mod common;
 
 use std::path::Path;
 
@@ -47,38 +46,6 @@ fn fused_passes_leave_the_other_scenes_alone() {
     for scene in ["shadows", "mattes", "masks", "camera", "blend-blur", "filter-graph"] {
         same_with_and_without_fusion(&format!("tests/scenes/{scene}.json"), &[0, 15]);
     }
-}
-
-/// The names of the passes that drawing `frame` of `path` takes, or `None`
-/// if this GPU cannot time passes.
-fn pass_names(path: &str, frame: u32, fusion: bool) -> Option<Vec<&'static str>> {
-    let mut renderer = Renderer::new(load(path)).unwrap();
-    renderer.set_pass_fusion(fusion);
-    if !renderer.set_pass_timing(true) {
-        return None;
-    }
-    renderer.render_frame(frame).unwrap();
-    Some(renderer.take_pass_times().iter().map(|p| p.name).collect())
-}
-
-#[test]
-fn an_inset_shadow_with_no_blur_or_spread_is_one_pass() {
-    common::pin_vello();
-    let path = "tests/scenes/passes.json";
-    let (Some(fused), Some(plain)) = (pass_names(path, 15, true), pass_names(path, 15, false))
-    else {
-        eprintln!("this GPU cannot time passes; skipped");
-        return;
-    };
-    let count = |names: &[&str], name| names.iter().filter(|n| **n == name).count();
-    // Seven layers, each with an inset shadow.
-    assert_eq!(count(&plain, "inset shadow"), 7);
-    assert_eq!(count(&fused, "inset shadow"), 7);
-    assert_eq!(count(&plain, "shadow spread"), 7);
-    assert_eq!(count(&fused, "shadow spread"), 0);
-    // And each is cut out of its Vello page by that pass, not another.
-    assert_eq!(count(&plain, "to linear"), 7);
-    assert_eq!(count(&fused, "to linear"), 0);
 }
 
 #[test]
@@ -239,51 +206,6 @@ fn random_scenes_draw_the_same_pixels() {
 }
 
 #[test]
-fn a_leaf_that_stays_the_same_is_cached_from_its_third_frame() {
-    common::pin_vello();
-    // blend-runs.json has plain layers that never change. With fusion a plain
-    // leaf goes to the blend from its page without a texture, so the cache
-    // learns that it was the same in the second frame and keeps a texture
-    // from the third: it has one fewer hit in the second frame than without
-    // fusion (its leaves are not cached yet), and as many from the third on.
-    let hits = |fusion: bool| {
-        let mut renderer = Renderer::new(load("tests/scenes/blend-runs.json")).unwrap();
-        renderer.set_pass_fusion(fusion);
-        renderer.set_layer_cache(true);
-        let mut hits = Vec::new();
-        for frame in 0..6 {
-            renderer.render_frame(frame).unwrap();
-            hits.push(renderer.layer_cache_counts().0);
-        }
-        hits
-    };
-    let (on, off) = (hits(true), hits(false));
-    let new = |h: &[u64], frame: usize| h[frame] - h[frame - 1];
-    assert!(new(&on, 1) < new(&off, 1), "{on:?} {off:?}");
-    for frame in 3..6 {
-        assert_eq!(new(&on, frame), new(&off, frame), "{on:?} {off:?}");
-    }
-}
-
-#[test]
-fn a_run_of_blends_is_a_few_passes() {
-    common::pin_vello();
-    let path = "tests/scenes/blend-runs.json";
-    let (Some(fused), Some(plain)) = (pass_names(path, 15, true), pass_names(path, 15, false))
-    else {
-        eprintln!("this GPU cannot time passes; skipped");
-        return;
-    };
-    let blends = |names: &[&str]| names.iter().filter(|n| **n == "blend").count();
-    assert!(
-        blends(&fused) * 2 < blends(&plain),
-        "{} blend passes fused, {} not",
-        blends(&fused),
-        blends(&plain)
-    );
-}
-
-#[test]
 fn runs_of_blends_draw_the_same_pixels_in_srgb() {
     // blend-runs.json with `blendSpace: "srgb"`, as every DOM island is: the
     // fused blends must composite on the encoded colours too.
@@ -303,69 +225,5 @@ fn runs_of_blends_draw_the_same_pixels_in_srgb() {
     let (fused, plain) = (run(true), run(false));
     for (frame, (a, b)) in frames.iter().zip(fused.iter().zip(&plain)) {
         assert!(a == b, "frame {frame}: fusion changed the pixels in sRGB");
-    }
-}
-
-/// Cards the way the DOM painter makes them: a group of a colour and a
-/// grain multiplied over it, and a clipped group of text-like shapes.
-fn cards_json(srgb: bool) -> String {
-    let mut layers = Vec::new();
-    for i in 0..6 {
-        let x = 20 + (i % 3) * 100;
-        let y = 20 + (i / 3) * 110;
-        layers.push(format!(
-            r##"{{"id": "card{i}", "type": "group", "transform": {{"x": {x}, "y": {y}}}, "children": [
-                {{"id": "bg{i}", "type": "group", "children": [
-                    {{"id": "colour{i}", "type": "shape", "shape": {{"kind": "roundedRect", "width": 90, "height": 100, "radius": 8}}, "fill": "#c8a46e"}},
-                    {{"id": "grain{i}", "type": "shape", "shape": {{"kind": "roundedRect", "width": 90, "height": 100, "radius": 8}}, "fill": "#8899aa66", "blendMode": "multiply"}}
-                ]}},
-                {{"id": "content{i}", "type": "group", "clip": {{"kind": "polygon", "points": [[5, 5], [85, 12], [80, 95], [8, 90]]}}, "children": [
-                    {{"id": "a{i}", "type": "shape", "shape": {{"kind": "rect", "width": 60, "height": 20}}, "fill": "#224466", "transform": {{"x": 10, "y": 15}}}},
-                    {{"id": "b{i}", "type": "shape", "shape": {{"kind": "ellipse", "width": 70, "height": 40}}, "fill": "#aa3322cc", "transform": {{"x": 30, "y": 40, "rotation": 20}}}}
-                ]}},
-                {{"id": "veil{i}", "type": "group", "opacity": 0.5, "children": [
-                    {{"id": "v1{i}", "type": "shape", "shape": {{"kind": "rect", "width": 50, "height": 50}}, "fill": "#ffffff", "transform": {{"x": 5, "y": 5}}}},
-                    {{"id": "v2{i}", "type": "shape", "shape": {{"kind": "rect", "width": 50, "height": 50}}, "fill": "#000000", "transform": {{"x": 25, "y": 25}}}}
-                ]}}
-            ]}}"##
-        ));
-    }
-    format!(
-        r##"{{{space}"width": 320, "height": 240, "fps": 30, "durationInFrames": 8, "background": "#303a52",
-            "layers": [{}]}}"##,
-        layers.join(","),
-        space = if srgb { r#""blendSpace": "srgb","# } else { "" }
-    )
-}
-
-#[test]
-fn groups_of_leaves_draw_the_same_pixels_in_fewer_passes() {
-    common::pin_vello();
-    for srgb in [false, true] {
-        let json = cards_json(srgb);
-        let run = |on: bool| {
-            let mut renderer =
-                Renderer::new(Scene::from_json(&json, std::path::PathBuf::new()).unwrap()).unwrap();
-            renderer.set_pass_fusion(on);
-            renderer.set_layer_cache(true);
-            let timed = renderer.set_pass_timing(true);
-            let mut frames = Vec::new();
-            let mut passes = 0;
-            for f in 0..6 {
-                frames.push(renderer.render_frame(f).unwrap().rgba);
-                let taken = renderer.take_pass_times().len();
-                if f == 0 {
-                    passes = taken;
-                }
-            }
-            (frames, timed.then_some(passes))
-        };
-        let ((fused, fused_passes), (plain, plain_passes)) = (run(true), run(false));
-        for (frame, (a, b)) in fused.iter().zip(&plain).enumerate() {
-            assert!(a == b, "srgb {srgb} frame {frame}: fusing groups changed the pixels");
-        }
-        if let (Some(f), Some(p)) = (fused_passes, plain_passes) {
-            assert!(f * 2 < p, "{f} passes fused, {p} not");
-        }
     }
 }

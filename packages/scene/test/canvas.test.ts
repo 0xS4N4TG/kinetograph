@@ -4,6 +4,7 @@ import {
   canvasLayer,
   createCanvasContext,
   ImageData,
+  layerPicture,
   parseCssColor,
   Path2D,
   toSceneColor,
@@ -764,5 +765,23 @@ describe('hit testing', () => {
     ctx.lineTo(30, 10);
     expect(ctx.isPointInStroke(20, 11.5)).toBe(true);
     expect(ctx.isPointInStroke(20, 13)).toBe(false);
+  });
+});
+
+describe('the picture of a layer', () => {
+  it('is drawn with drawImage and drawElementImage, as a source of kind layer', () => {
+    const ctx = make();
+    const picture = layerPicture('child', 40, 20);
+    ctx.drawImage(picture, 1, 2);
+    ctx.drawElementImage(picture, 3, 4, 10, 5);
+    expect(ctx.commands).toMatchObject([
+      { op: 'image', source: { kind: 'layer', id: 'child', width: 40, height: 20 }, dx: 1, dy: 2, dw: 40, dh: 20 },
+      { op: 'image', source: { kind: 'layer', id: 'child' }, dx: 3, dy: 4, dw: 10, dh: 5 },
+    ]);
+  });
+
+  it('is a pattern too', () => {
+    const ctx = make();
+    expect(ctx.createPattern(layerPicture('child', 4, 4), 'repeat')).not.toBeNull();
   });
 });

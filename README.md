@@ -37,7 +37,7 @@ flowchart TB
 
   subgraph rust["Rust: the @kinetograph/native addon (napi-rs)"]
     DOM["kinetograph-dom: DOM engine<br/>blitz-dom + Stylo (CSS) + taffy (layout) + Parley (text),<br/>usvg (SVG); painted into scene layers"]
-    C["kinetograph-core: compositor on wgpu<br/>Vello (vectors, text, Canvas 2D), WGSL effects,<br/>GLSL via naga (WebGL), scene3d (glTF, PBR),<br/>ThorVG (Lottie), 2.5D camera, motion blur, layer cache"]
+    C["kinetograph-core: compositor on wgpu<br/>Skia (vectors, text, Canvas 2D), WGSL effects,<br/>GLSL via naga (WebGL), scene3d (glTF, PBR),<br/>ThorVG (Lottie), 2.5D camera, motion blur, layer cache"]
     M["media: FFmpeg decode and encode<br/>(VideoToolbox / libx264)"]
     DOM --> C
     M <--> C
@@ -67,13 +67,13 @@ flowchart TB
    scene layers native elements use. Readback that a component needs (`getBoundingClientRect`, `getComputedStyle`,
    `ResizeObserver`) is answered from the same document. Anything it cannot draw is reported, and `--strict` fails on
    it.
-5. **Composite on the GPU.** `kinetograph-core` draws the layer tree with wgpu: Vello for vectors, text and Canvas 2D;
+5. **Composite on the GPU.** `kinetograph-core` draws the layer tree with wgpu: Skia for vectors, text and Canvas 2D;
    WGSL passes for blends, masks, blurs, shadows, filters and the rest of the effects; WebGL shaders translated from
    GLSL by naga; the `scene3d` renderer for meshes and glTF models; ThorVG for Lottie. Layers that did not change since
    the last frame are reused.
-   Skia (Graphite on Metal, or on Vulkan elsewhere) draws the 2D layers by default; layers it cannot draw fall back to
-   Vello and wgpu. `KINETOGRAPH_BACKEND=vello` selects Vello for the whole run, and a build with
-   `--no-default-features` has Vello only. If Skia cannot start on the GPU, one warning is printed and Vello draws.
+   Skia (Graphite on Metal, or on Vulkan on Linux and Windows) draws every 2D layer; layers it cannot draw (3D, GLSL
+   groups, mesh gradients, `preserve3d` groups) are drawn by the wgpu path and Skia composites them. There is no other
+   2D backend: if Skia cannot start on the GPU, rendering fails with an error that says so.
 6. **Encode.** Frames go to FFmpeg (VideoToolbox on macOS) on another thread while the GPU draws the next one; the
    project's audio, rendered offline with the Web Audio API, is mixed and muxed at the end.
 
@@ -92,7 +92,7 @@ flowchart TB
 | `packages/audio` | Web Audio rendering and mixing |
 | `packages/cli` | the `kinetograph` CLI and MCP server (the agent surface) |
 | `packages/studio` | `kinetograph studio`: a local web UI whose preview frames are rendered by the addon |
-| `vendor/` | patched copies of Vello, Stylo, blitz-dom and fontique (each patch explained in `vendor/README.md`) |
+| `vendor/` | patched copies of Stylo, blitz-dom, fontique and the Rive runtime (each patch explained in `vendor/README.md`) |
 
 **Decisions behind it.** No Chrome anywhere in rendering, including canvas and WebGL: every CSS, SVG and canvas feature
 is ported natively, and Chrome for Testing is used only by tests, as a reference to compare against. Node hosts the
@@ -204,7 +204,7 @@ and no more than 1 GiB of textures is kept.
 - `bench --passes` (with either form) renders the frames once more with a GPU timestamp around every compositing pass
   and groups the passes by kind (`blend`, `to linear`, each blur step and shadow, `displace`, `clear`, …): passes per
   frame, their GPU time, time per pass and the texels drawn into. Passes can overlap on the GPU, so their sum is not
-  the frame's time. Vello's rasterising and copies between textures cannot be timed this way and are not in it.
+  the frame's time. Skia's drawing and copies between textures cannot be timed this way and are not in it.
 
 ### Frame reuse
 

@@ -1,6 +1,6 @@
 // A `CanvasRenderingContext2D` that records instead of rasterising (docs/SCENE.md, "canvas"). It keeps the canvas's
 // state, as the browser's does, and writes each drawing call as a command with the state it is drawn in; the renderer
-// draws the commands with Vello. Nothing here reads a clock or anything else outside the calls, so what a context
+// draws the commands with Skia. Nothing here reads a clock or anything else outside the calls, so what a context
 // holds is a function of what it was told.
 
 import { parseCssColor, toCssColor, toSceneColor, type Rgba } from './canvas-color.js';
@@ -839,6 +839,14 @@ export class CanvasContext2D {
     const command: CanvasCommand = { op: 'image', source: picture.source, ...rect, ...this.drawn() };
     if (!this.state.smoothing) command.smooth = false;
     this.log.push(command);
+  }
+
+  /**
+   * HTML in Canvas's `drawElementImage(elementImage, dx, dy[, dw, dh])`: `drawImage` of the picture of an element. The
+   * same forms as `drawImage` are read.
+   */
+  drawElementImage(elementImage: unknown, ...args: number[]): void {
+    this.drawImage(elementImage, ...args);
   }
 
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient {

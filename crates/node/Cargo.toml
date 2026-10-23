@@ -10,15 +10,13 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-default = ["skia"]
-skia = ["kinetograph-core/skia", "kinetograph-cli/skia"]
 # Links the LGPL-only static ffmpeg that `scripts/build-ffmpeg.sh` builds (PKG_CONFIG_PATH, or FFMPEG_DIR on Windows)
 # instead of the system's shared one. This is the build that is published; the default links whatever ffmpeg is installed.
 ffmpeg-static = ["ffmpeg/static"]
 
 [dependencies]
-kinetograph-core = { path = "../core", default-features = false }
-kinetograph-cli = { path = "../cli", default-features = false }
+kinetograph-core = { path = "../core" }
+kinetograph-cli = { path = "../cli" }
 kinetograph-dom = { path = "../dom" }
 kinetograph-rive = { path = "../rive" }
 ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }

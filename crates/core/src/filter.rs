@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 
 use serde::Deserialize;
-use vello::kurbo::Rect;
+use kurbo::Rect;
 
 use crate::anim::Num;
 use crate::color::Color;

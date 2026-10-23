@@ -3,7 +3,6 @@
 //! (docs/SCENE.md, "canvas"). The look of both is in the `canvas-effects`
 //! golden.
 
-mod common;
 
 use std::path::Path;
 
@@ -429,23 +428,6 @@ fn whole_canvas_pictures(count: usize, frames: u32) -> Scene {
 /// Whether the shadow of command `i` of `whole_canvas_pictures` is drawn.
 fn has_shadow(frame: &Frame, i: usize) -> bool {
     px(frame, 11 + 10 * i, 30) == [0, 0, 255, 255]
-}
-
-#[test]
-fn pictures_past_what_vellos_atlas_holds_are_an_error_not_a_hole() {
-    common::pin_vello();
-    // Vello's atlas is 8192 x 8192; 11 of these are over three quarters of it.
-    let message = render_still(whole_canvas_pictures(11, 1), 0)
-        .err()
-        .expect("too many pictures")
-        .to_string();
-    assert!(message.contains("image atlas"), "{message}");
-    // A renderer that refused one frame draws the next.
-    let mut renderer = Renderer::new(whole_canvas_pictures(11, 1)).unwrap();
-    assert!(renderer.render_frame(0).is_err());
-    renderer.set_scene(whole_canvas_pictures(5, 1)).unwrap();
-    let frame = renderer.render_frame(0).unwrap();
-    assert!((0..5).all(|i| has_shadow(&frame, i)));
 }
 
 #[test]

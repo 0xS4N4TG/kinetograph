@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use glam::{DMat4, DQuat, DVec3, EulerRot};
 use serde::Deserialize;
-use vello::kurbo::BezPath;
+use kurbo::BezPath;
 
 use crate::anim::Num;
 use crate::color::Color;

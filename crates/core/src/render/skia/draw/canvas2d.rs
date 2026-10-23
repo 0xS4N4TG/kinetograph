@@ -1,5 +1,5 @@
-//! Canvas 2D commands (`crate::canvas`) drawn with Skia, onto the same canvas the other layers go to. The Vello path in
-//! `canvas.rs` stays what it was; this draws the same recorded commands: fills, strokes (caps, joins, dashes), text as
+//! Canvas 2D commands (`crate::canvas`) drawn with Skia, onto the same canvas the other layers go to. It draws the recorded commands
+//! (`canvas.rs` holds their types): fills, strokes (caps, joins, dashes), text as
 //! glyph outlines, `drawImage`, gradients, patterns (also for strokes and text), the composite operations, clips,
 //! shadows and `filter` lists (as image filters of a layer).
 
@@ -79,7 +79,7 @@ fn stroke_style(p: &mut Paint, l: &LineStyle) {
 impl Translator {
     /// Draws a canvas layer's commands in the box `(0, 0, width, height)` of the current space.
     pub(super) fn draw_canvas_layer(&mut self, canvas: &Canvas, size: (f64, f64), ops: &[CanvasOp]) {
-        // The commands blend in sRGB-encoded values, as the Vello path blends them, even on a surface of linear light.
+        // The commands blend in sRGB-encoded values, as a browser blends them, even on a surface of linear light.
         let srgb_layer = self.linear();
         let isolate = srgb_layer || uses_composite(ops);
         if isolate {
@@ -356,8 +356,37 @@ impl Translator {
                 self.images.insert(key, img.clone());
                 img
             }
+            // A canvas is drawn, not sampled; a canvas pass's layers are pictures only to the wgpu path that draws that group.
+            // A canvas is drawn, not sampled; a canvas pass's layer is drawn through `draw_layer_picture`, which a
+            // pattern cannot use.
+            CanvasSource::Layer { .. } => {
+                self.stats.no("canvas pattern of a layer picture");
+                None
+            }
             CanvasSource::Canvas { .. } => None,
         }
+    }
+
+    /// The child `id` of a canvas pass, over the source rectangle `src` of its picture (the pass's space), under the
+    /// current matrix. The picture is the child as the compositor drew it, so it is cut to the pass's box and to the
+    /// pixels the child has.
+    fn draw_layer_picture(&mut self, canvas: &Canvas, id: &str, src: Rect, paint: &Paint, sampling: SamplingOptions) {
+        let Some(pics) = &self.layer_pics else {
+            self.stats.no("canvas layer picture (outside a canvas pass)");
+            return;
+        };
+        let Some((img, has, origin)) = pics.images.get(id) else {
+            // A child with nothing drawn, or one that could not be wrapped (noted when it was).
+            return;
+        };
+        let to_picture = pics.from_canvas * Affine::translate((f64::from(origin[0]), f64::from(origin[1])));
+        let (img, has) = (img.clone(), *has);
+        canvas.save();
+        canvas.clip_rect(src, ClipOp::Intersect, true);
+        canvas.concat(&mat(to_picture));
+        canvas.draw_image_rect_with_sampling_options(&img, Some((&has, skia_safe::canvas::SrcRectConstraint::Strict)), has, sampling, paint);
+        canvas.restore();
+        self.stats.draws += 1;
     }
 
     /// A pattern of another canvas: the area of `path` (its outline when stroked) is clipped and the canvas drawn once
@@ -389,7 +418,7 @@ impl Translator {
             path.clone()
         };
         let bb = cover.bounds();
-        let tile_bbox = base.inverse().transform_rect_bbox(vello::kurbo::Rect::new(
+        let tile_bbox = base.inverse().transform_rect_bbox(kurbo::Rect::new(
             bb.left as f64,
             bb.top as f64,
             bb.right as f64,
@@ -426,6 +455,13 @@ impl Translator {
 
     fn canvas_image(&mut self, canvas: &Canvas, op: &ImageOp, comp: Comp) {
         let (nw, nh) = match &op.source {
+            CanvasSource::Layer { .. } => match &self.layer_pics {
+                Some(p) => p.size,
+                None => {
+                    self.stats.no("canvas layer picture (outside a canvas pass)");
+                    return;
+                }
+            },
             CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => match self.canvas_picture(&op.source) {
                 Some(i) => (i.width() as f64, i.height() as f64),
                 None => {
@@ -449,6 +485,11 @@ impl Translator {
             CanvasSource::Canvas { width, height, commands } => {
                 canvas.clip_rect(src, ClipOp::Intersect, true);
                 self.canvas_nested(canvas, (*width, *height), commands, comp.alpha, comp.blend);
+            }
+            CanvasSource::Layer { id } => {
+                let p = Self::base_paint(comp);
+                let filter = if op.smooth { skia_safe::FilterMode::Linear } else { skia_safe::FilterMode::Nearest };
+                self.draw_layer_picture(canvas, id, src, &p, SamplingOptions::new(filter, skia_safe::MipmapMode::None));
             }
             source => {
                 if let Some(img) = self.canvas_picture(source) {

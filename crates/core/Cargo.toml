@@ -5,26 +5,20 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[features]
-# The Skia Graphite backend for 2D pages and compositing (`render/skia.rs`), the default at run time (Metal on macOS,
-# Vulkan on Linux and Windows: the `[target]` tables below). KINETOGRAPH_BACKEND=vello selects Vello; a build with
-# `--no-default-features` has Vello only.
-default = ["skia"]
-skia = ["dep:skia-safe", "dep:objc2", "dep:objc2-metal", "dep:ash", "dep:cc", "wgpu/metal", "wgpu/vulkan"]
-
 [target.'cfg(target_os = "macos")'.dependencies]
-skia-safe = { version = "0.153.3", optional = true, features = ["metal", "graphite"] }
-objc2 = { version = "0.6", optional = true }
-objc2-metal = { version = "0.3", optional = true }
+skia-safe = { version = "0.153.3", features = ["metal", "graphite"] }
+objc2 = { version = "0.6" }
+objc2-metal = { version = "0.3" }
 
 # Vulkan: the Skia Graphite context is made on wgpu's VkDevice (`render/skia/vulkan.rs`). `ash` is the version wgpu-hal
 # 30 uses, for the handles and the proc-address calls.
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-skia-safe = { version = "0.153.3", optional = true, features = ["vulkan", "graphite"] }
-ash = { version = "0.38", optional = true }
+skia-safe = { version = "0.153.3", features = ["vulkan", "graphite"] }
+ash = { version = "0.38" }
 
 [dependencies]
-vello = "0.11.0"
+kurbo = "0.13.1"
+peniko = "0.6.1"
 parley = "0.12.0"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "hdr", "webp"] }
 serde = { version = "1", features = ["derive"] }
@@ -34,10 +28,10 @@ pollster = "0.4"
 # tests, and users' custom effect shaders when a scene loads. `glsl-in` reads
 # the GLSL of a `glsl` layer (src/glsl.rs); `wgsl-out` writes it as WGSL.
 naga = { version = "30.0.1", features = ["wgsl-in", "wgsl-out", "glsl-in"] }
-# The same wgpu as Vello's. `naga-ir` lets a shader module be made from the
+# `naga-ir` lets a shader module be made from the
 # naga module the GLSL frontend produced, with no round trip through WGSL text
 # (which would not keep the array strides of a uniform block).
-wgpu = { version = "30.0.1", default-features = false, features = ["naga-ir"] }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "metal", "vulkan", "naga-ir"] }
 glam = "0.34.1"
 # LottieFiles' own player, which builds ThorVG (C++) from a submodule. Its
 # crates.io release is a stale 2024 alpha, so this is pinned to a git tag. CPU
@@ -64,7 +58,7 @@ base64 = "0.23"
 taffy = { version = "0.15.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "block_layout"] }
 # The 3D layer (`scene3d`): glTF/GLB models, the triangulation of extruded
 # type and paths, and the glyph outlines that type is extruded from (the
-# version Parley and Vello already use).
+# version Parley already uses).
 gltf = "1.4"
 lyon_tessellation = "1"
 skrifa = "0.44"
@@ -73,5 +67,5 @@ half = "2"
 
 # `build.rs`: the C++ shim that wraps a wgpu VkImage as a Graphite backend texture (skia-safe has no binding for it).
 [build-dependencies]
-cc = { version = "1", optional = true }
+cc = "1"
 serde_json = "1.0.154"

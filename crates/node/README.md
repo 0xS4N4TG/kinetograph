@@ -36,8 +36,8 @@ that one renderer taking scene after scene draws what a new renderer draws.
 
 ## Renderer reuse
 
-`kinetograph_core::Renderer::set_scene` takes a new scene and keeps the device, queue, Vello
-renderers, compositor pipelines and the layer cache.
+`kinetograph_core::Renderer::set_scene` takes a new scene and keeps the device, queue,
+the Skia context, compositor pipelines and the layer cache.
 
 - Fonts, images and LUTs are read only if the scene names one the renderer has not read, or one whose file changed
   (path, size and modification time tell). Custom shader pipelines are built by source text the first time they are

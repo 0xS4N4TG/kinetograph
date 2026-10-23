@@ -16,7 +16,7 @@ use lyon_tessellation::{
 use skrifa::instance::{LocationRef, NormalizedCoord, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::{FontRef, GlyphId, MetadataProvider};
-use vello::kurbo::{BezPath, PathEl, Shape};
+use kurbo::{BezPath, PathEl, Shape};
 
 use super::mesh::{MeshData, Vertex3};
 use super::{ExtrudeSpec, TextSpec};
@@ -154,7 +154,7 @@ impl OutlinePen for PathPen {
 fn flatten(path: &BezPath, tolerance: f64) -> Vec<Contour> {
     let mut contours = Vec::new();
     let mut current: Contour = Vec::new();
-    vello::kurbo::flatten(path.elements().iter().copied(), tolerance, |el| match el {
+    kurbo::flatten(path.elements().iter().copied(), tolerance, |el| match el {
         PathEl::MoveTo(p) => {
             if current.len() >= 3 {
                 contours.push(std::mem::take(&mut current));

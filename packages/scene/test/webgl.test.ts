@@ -104,6 +104,16 @@ describe('the recording WebGL context', () => {
     expect(second).not.toHaveProperty('layer');
   });
 
+  it('uploads an element image with texElementImage2D as it does with texImage2D', () => {
+    const { gl, program } = setup();
+    gl.bindTexture(GL.TEXTURE_2D, gl.createTexture());
+    gl.texElementImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, layerPicture('el', 8, 4));
+    gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    const content = gl.content();
+    expect(Object.values(content.textures)).toEqual([{ layer: 'el' }]);
+  });
+
   it('names every texture unit it has, as gl.TEXTURE1 is used by multi-texture pages', () => {
     const { gl } = setup();
     const constants = gl as unknown as Record<string, number>;
