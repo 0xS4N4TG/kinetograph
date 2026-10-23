@@ -16,6 +16,11 @@ objc2-metal = { version = "0.3" }
 skia-safe = { version = "0.153.3", features = ["vulkan", "graphite"] }
 ash = { version = "0.38" }
 
+# Windows with no Vulkan driver: wgpu draws the compositor's passes through Direct3D 12 (its software adapter, WARP, where
+# there is no GPU), and Skia draws on the CPU (`render/skia/backend.rs`).
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "30.0.1", default-features = false, features = ["dx12"] }
+
 [dependencies]
 kurbo = "0.13.1"
 peniko = "0.6.1"

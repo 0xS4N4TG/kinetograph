@@ -1,7 +1,8 @@
 // Packs the built packages and the native addon, installs the tarballs into an empty project outside the repository and
 // renders a small project there, the way a user would. Run after the addon is built into crates/node and the TS
 // packages are built (scene, compat, react, core, audio, cli). Prints which backend drew and which encoder wrote the
-// file; exits 1 if the render fails or the frame count is wrong. Falling back from Skia to Vello is reported, not failed.
+// file; exits 1 if the render fails or the frame count is wrong. Whether Skia drew on the GPU or (no GPU it can use)
+// on the CPU is reported, not failed.
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -46,7 +47,7 @@ const run = spawnSync(process.execPath, [path.join(project, 'node_modules/kineto
 });
 process.stderr.write(run.stderr ?? '');
 const tail = (text, lines = 40) => (text ?? '').trimEnd().split('\n').slice(-lines).join('\n');
-const backend = /kinetograph: drawing with (\w+)/.exec(run.stderr ?? '')?.[1] ?? 'unknown';
+const backend = /kinetograph: drawing with Skia on the CPU/.test(run.stderr ?? '') ? 'Skia on the CPU' : 'Skia on the GPU';
 let result = {};
 try {
   result = JSON.parse(run.stdout);

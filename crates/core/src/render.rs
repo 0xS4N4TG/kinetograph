@@ -193,9 +193,9 @@ impl Renderer {
         // cheaply.
         let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
 
-        let instance = new_instance();
-        let (device, queue) = pollster::block_on(new_device(&instance))
-            .ok_or_else(|| Error::Render("no compatible GPU adapter found (Skia needs Metal on macOS, Vulkan elsewhere)".into()))?;
+        let (instance, device, queue) = pollster::block_on(new_gpu()).ok_or_else(|| {
+            Error::Render("no compatible GPU adapter found (Metal on macOS; Vulkan on Linux and Windows, or Direct3D 12 on Windows)".into())
+        })?;
 
         let margin = scene.margin();
         let target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
@@ -2235,15 +2235,8 @@ fn inset_path(b: Rect, top: f64, right: f64, bottom: f64, left: f64, radius: f64
     RoundedRect::from_rect(r, radius).to_path(SHAPE_TOLERANCE)
 }
 
-/// The wgpu instance. Skia's Graphite shares wgpu's device: on Linux and Windows that must be a Vulkan one (Windows
-/// would otherwise default to D3D12; `render/skia/vulkan.rs`); on macOS it is Metal (`render/skia/metal.rs`). An
-/// explicit `WGPU_BACKEND` still decides.
-fn new_instance() -> wgpu::Instance {
-    let backends = wgpu::Backends::from_env().unwrap_or(if cfg!(target_os = "macos") {
-        wgpu::Backends::default()
-    } else {
-        wgpu::Backends::VULKAN
-    });
+/// The wgpu instance on `backends`.
+fn new_instance(backends: wgpu::Backends) -> wgpu::Instance {
     wgpu::Instance::new(wgpu::InstanceDescriptor {
         display: None,
         backends,
@@ -2251,6 +2244,26 @@ fn new_instance() -> wgpu::Instance {
         memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
         backend_options: wgpu::BackendOptions::from_env_or_default(),
     })
+}
+
+/// The wgpu instance, device and queue. Skia's Graphite shares wgpu's device when that is a Metal one (macOS,
+/// `render/skia/metal.rs`) or a Vulkan one (Linux and Windows, `render/skia/vulkan.rs`), so those come first. Where
+/// there is no such adapter (a Windows machine with no Vulkan driver) wgpu may use any backend that has one, Direct3D 12
+/// with its software adapter (WARP) included, and Skia then draws on the CPU (`render/skia/backend.rs`). An explicit
+/// `WGPU_BACKEND` decides alone. wgpu itself takes a software adapter (lavapipe, WARP) when it is the only one.
+async fn new_gpu() -> Option<(wgpu::Instance, wgpu::Device, wgpu::Queue)> {
+    let tries = match wgpu::Backends::from_env() {
+        Some(backends) => vec![backends],
+        None if cfg!(target_os = "macos") => vec![wgpu::Backends::default()],
+        None => vec![wgpu::Backends::VULKAN, wgpu::Backends::PRIMARY],
+    };
+    for backends in tries {
+        let instance = new_instance(backends);
+        if let Some((device, queue)) = new_device(&instance).await {
+            return Some((instance, device, queue));
+        }
+    }
+    None
 }
 
 /// The GPU device: the default adapter, default limits, `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
