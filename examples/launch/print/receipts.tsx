@@ -1,13 +1,11 @@
-// v2-receipts: a collage of thermal receipts on a dark ground. Some print out a line at a time, some drop in with a
-// tilt; their photos print top to bottom through a dither shader; then the camera drifts and pushes in.
-// Placeholder photos: frames of our own clips (public/receipts, public/pool).
+// The receipts of shot 7 ("...and it renders for you"): a collage of thermal receipts on a dark ground. Some print out
+// a line at a time, some drop in with a tilt; their photos print top to bottom through a dither shader; the camera
+// drifts and pushes in. The photos are frames of our own renders (public/receipts, public/pool).
 
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import { FPS, H, W } from '../common.js';
+import { FPS } from '../common.js';
 import { Receipt, receiptHeight, type Line, type PhotoSpec } from './receipt.js';
-
-export const RECEIPTS_FRAMES = 10 * FPS;
 
 const SILHOUETTE: PhotoSpec = { src: 'receipts/photo-silhouette.png', w: 800, h: 450, mid: 0.74, contrast: 5.2, dot: 3 };
 const EP13: PhotoSpec = { src: 'receipts/photo-ep13.png', w: 480, h: 854, mid: 0.45, contrast: 2.0, dot: 3 };
@@ -22,7 +20,7 @@ const R: Record<string, Line[]> = {
     ['r', '2026/10/23 (金)', '14:52'], ['r', 'レジ 03', 'No.0018-4472'], ['rule'],
     ['photo', SILHOUETTE, 250],
     ['rule'],
-    ['r', 'フレーム描画 x1521', '¥0'], ['r', 'GPU compositor', '¥0'], ['r', 'ブラウザ (不要)', '-¥480'],
+    ['r', 'フレーム描画 x1542', '¥0'], ['r', 'GPU compositor', '¥0'], ['r', 'ブラウザ (不要)', '-¥480'],
     ['r', 'JSON scene file', '¥120'], ['r', '消費税 10%', '¥12'], ['dbl'],
     ['b', '合計 TOTAL', '¥132'], ['r', 'お預り / CASH', '¥200'], ['r', 'お釣り / CHANGE', '¥68'], ['sp', 10],
     ['qr', 'https://kinetograph.dev/r/0018-4472', 150], ['s', 'ご来店ありがとうございます'], ['s', 'THANK YOU, COME AGAIN'], ['sp', 8],
@@ -30,12 +28,12 @@ const R: Record<string, Line[]> = {
   ],
   browser: [
     ['sp', 6], ['title', 'ブラウザ堂'], ['c', 'BROWSER-DO  CO., LTD.'], ['s', '東京都新宿区 1-2-3'], ['sp', 4], ['rule'],
-    ['r', '2026/10/23', '09:07'], ['r', 'TEL 03-0000-1521', ''], ['rule'],
+    ['r', '2026/10/23', '09:07'], ['r', 'TEL 03-0000-1542', ''], ['rule'],
     ['photo', EP13, 300],
     ['rule'],
-    ['r', 'スクリーンショット', '¥30'], ['r', '  x 1,521 枚', '¥45,630'], ['r', 'Chrome タブ', '¥0'], ['r', '  (読み込み中...)', ''],
+    ['r', 'スクリーンショット', '¥30'], ['r', '  x 1,542 枚', '¥46,260'], ['r', 'Chrome タブ', '¥0'], ['r', '  (読み込み中...)', ''],
     ['r', 'headless 起動', '¥980'], ['r', 'メモリ 4GB', '¥1,200'], ['r', 'ファン騒音', '¥300'], ['dbl'],
-    ['b', '小計', '¥48,110'], ['b', '合計 TOTAL', '¥52,921'], ['sp', 8],
+    ['b', '小計', '¥48,740'], ['b', '合計 TOTAL', '¥53,614'], ['sp', 8],
     ['s', 'レシートは大切に保管してください'], ['bar', 'b21', 56], ['sp', 4],
   ],
   gpu: [
@@ -80,7 +78,7 @@ const R: Record<string, Line[]> = {
 };
 
 interface Placement { key: string; left: number; top: number; rot: number; at: number; mode: 'print' | 'drop'; seed: number }
-// Painted in this order: later ones lie on top.
+// Painted in this order: later ones lie on top. `at` is in collage frames at pace 1.
 const PLACEMENTS: Placement[] = [
   { key: 'shibuya', left: 60, top: 40, rot: -3, at: 4, mode: 'print', seed: 3 },
   { key: 'browser', left: 410, top: 150, rot: 3, at: 22, mode: 'drop', seed: 11 },
@@ -91,10 +89,29 @@ const PLACEMENTS: Placement[] = [
   { key: 'mart', left: 960, top: 620, rot: -5, at: 112, mode: 'drop', seed: 31 },
 ];
 
+/** How much faster than its first cut the collage plays in the film. */
+export const PACE = 1.6;
 const LINE_STEP = 31;
+const DROP = { damping: 13, stiffness: 95, mass: 0.9 };
 
-const Placed: React.FC<{ p: Placement }> = ({ p }) => {
-  const frame = useCurrentFrame();
+/** Frames (at pace 1) a printed receipt takes to feed out: the paper moves 22 px a frame. */
+const feedOf = (key: string) => Math.round(receiptHeight(R[key]) / 22);
+/** Frames (at pace 1) a dropped receipt takes to land: the first frame its spring reaches its rest (it overshoots). */
+const landOf = (() => {
+  let f = 0;
+  while (f < 120 && spring({ frame: f, fps: FPS, config: DROP }) < 1) f++;
+  return f;
+})();
+
+/** When each receipt starts and stops making noise, in frames from the start of the collage, for sound-cues.ts:
+ *  a printed one feeds `lines` lines over `dur`, slowing down; a dropped one lands at `at + dur`. */
+export const PRINTS = PLACEMENTS.map((p) => ({
+  key: p.key, mode: p.mode, at: p.at / PACE,
+  dur: (p.mode === 'print' ? feedOf(p.key) : landOf) / PACE,
+  lines: Math.round(receiptHeight(R[p.key]) / LINE_STEP),
+}));
+
+const Placed: React.FC<{ p: Placement; frame: number }> = ({ p, frame }) => {
   const { fps } = useVideoConfig();
   const lines = R[p.key];
   const h = receiptHeight(lines);
@@ -102,13 +119,13 @@ const Placed: React.FC<{ p: Placement }> = ({ p }) => {
   let y = p.top, rot = p.rot, shown = Infinity, photo = 1;
   if (t < 0) return null;
   if (p.mode === 'drop') {
-    const s = spring({ frame: t, fps, config: { damping: 13, stiffness: 95, mass: 0.9 } });
+    const s = spring({ frame: t, fps, config: DROP });
     y = p.top + (1 - s) * -(h + 500);
     rot = p.rot + (1 - s) * (random(`spin-${p.key}`) > 0.5 ? 16 : -16);
     photo = interpolate(t, [10, 34], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   } else {
     // Printing: the paper feeds a line at a time, so the reveal steps in whole lines.
-    const dur = Math.round(h / 22);
+    const dur = feedOf(p.key);
     const p01 = interpolate(t, [0, dur], [0, 1], { extrapolateRight: 'clamp', easing: Easing.out(Easing.quad) });
     shown = Math.floor((p01 * h) / LINE_STEP) * LINE_STEP + (p01 >= 1 ? h : 0);
     photo = interpolate(t, [dur * 0.25, dur * 0.8], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
@@ -122,17 +139,18 @@ const Placed: React.FC<{ p: Placement }> = ({ p }) => {
   );
 };
 
-export const ReceiptsScene: React.FC = () => {
+/** The collage, `frames` long on screen; frame 0 is its first frame. */
+export const Receipts: React.FC<{ frames: number }> = ({ frames }) => {
   const frame = useCurrentFrame();
-  const p = frame / RECEIPTS_FRAMES;
+  const at = frame * PACE;
   // Slow drift down the paper and push-in across the collage, easing in and out.
-  const e = Easing.inOut(Easing.cubic)(p);
+  const e = Easing.inOut(Easing.cubic)(Math.min(1, frame / frames));
   const scale = 1 + 0.12 * e;
   const tx = -90 * e, ty = -240 * e, rot = -1.2 * e;
   return (
     <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 80% at 50% 42%, #66666b 0%, #3a3a3e 55%, #1b1b1e 100%)' }}>
       <AbsoluteFill style={{ transform: `translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rot}deg)`, transformOrigin: '50% 50%' }}>
-        {PLACEMENTS.map((pl) => <Placed key={pl.key} p={pl} />)}
+        {PLACEMENTS.map((pl) => <Placed key={pl.key} p={pl} frame={at} />)}
       </AbsoluteFill>
       <AbsoluteFill style={{ background: 'radial-gradient(ellipse 90% 90% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%)' }} />
     </AbsoluteFill>

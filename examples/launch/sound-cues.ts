@@ -10,13 +10,15 @@ import { BURN, FPS, START, TOTAL, VO } from './sound-timing.js';
 import { LEN } from './common.js';
 import { LOOK, RISE_AT, S02_AT, S03_AT, WINDOWS, WIN_EVERY } from './act1.js';
 import { FILM_AT } from './act1-camera.js';
-import { CARDS, COLLAPSE, TEXT, TYPE_AT, WORDS } from './act2-s07.js';
+import { CUTS, LINES, RECEIPTS_AT } from './act2-s07.js';
+import { lockFrames } from './print/captions.js';
+import { PRINTS } from './print/receipts.js';
 import { S08_HOLD } from './act2-s08.js';
 import { M1_DROPS, M2_DIVE, M3_TYPE, M4_SPIRO, WHIP } from './act2-mg.js';
 import { IMPACT_AT, KINETOGRAPH_S, MULT_AT, RACE, REMOTION_S } from './act2-s09.js';
 import { S10_CIRCLE, S10_LAND, S10_STRIKE, S12_TAG, S12_URL } from './act3.js';
 import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
-import { DUCK, bass, bell, cue, hat, hit, kick, pad, pen, pop, projector, riser, rumble, shutter, sweep, tick } from './sound-synth.js';
+import { DUCK, bass, bell, cue, hat, hit, kick, pad, paper, pen, pop, printer, projector, riser, rumble, shutter, sweep, tick } from './sound-synth.js';
 
 const BEAT = 15;
 const sec = (frames: number): number => frames / FPS;
@@ -77,22 +79,26 @@ cue(BURN - 16, (q) => projector(q, sec(LEN.s06 + 6), 0.32, 'burn-projector'));
 cue(BURN - 12, (q) => rumble(q, sec(LEN.s06), 0.22, 0.45, 'burn-swell'));
 cue(BURN - 10, (q) => sweep(q, sec(LEN.s06 - 4), 700, 5200, 0.1, 0.5, 'burn-air', 0.7));
 
-// ---- shot 7: the beat comes in on the cut; each card pops in; ticks on the word swaps; the collapse sucks in;
-//      the line types on key by key ----
+// ---- shot 7: the beat comes in on the cut and runs under the footage; a shutter on every cut; a data blip as the
+//      tracker locks on each word; on the cut to the receipts the beat stops and the printers take over: each printed
+//      receipt feeds with its stepper whine and a snap of the cutter, each dropped one lands with a slap ----
 const BASS_LINE = [73.42, 73.42, 87.31, 73.42];
-for (let f = 0, i = 0; f < COLLAPSE[0]; f += BEAT, i++) {
+for (let f = 0, i = 0; f < RECEIPTS_AT; f += BEAT, i++) {
   cue(at('s07', f), (q) => kick(q, 0.6));
   cue(at('s07', f + BEAT / 2), (q) => hat(q, 0.04));
   cue(at('s07', f + BEAT / 2), (q) => bass(q, BASS_LINE[i % 4]!, 0.2, 0.24));
 }
-CARDS.forEach((c, i) => cue(at('s07', c.at), (q) => pop(q, 0.32, 1100 + (i % 4) * 180)));
-WORDS.forEach((w) => cue(at('s07', w.at + 4), (q) => tick(q, 0.06, 1700, 850)));
-cue(at('s07', COLLAPSE[0]), (q) => sweep(q, sec(COLLAPSE[1] - COLLAPSE[0]), 4200, 200, 0.28, 0.85, 'collapse'));
-cue(at('s07', COLLAPSE[1] - 2), (q) => kick(q, 0.5, q.sfx));
-for (let k = 0; k < TEXT.length; k++) {
-  if (TEXT[k] === ' ') continue;
-  cue(at('s07', TYPE_AT + k * 1.1), (q) => shutter(q, 0.045));
-}
+CUTS.slice(1).forEach((c) => cue(at('s07', c.at), (q) => shutter(q, 0.12)));
+lockFrames(LINES, FPS).forEach((f, i) => cue(at('s07', f), (q) => tick(q, 0.035, 2900 + (i % 3) * 300, 2300)));
+cue(at('s07', RECEIPTS_AT), (q) => hit(q, 0.35, 0.25));
+PRINTS.forEach((p) => {
+  const from = at('s07', RECEIPTS_AT + p.at);
+  if (p.mode === 'print') cue(from, (q) => printer(q, sec(p.dur), p.lines, 0.11, `printer-${p.key}`));
+  else {
+    cue(from, (q) => sweep(q, sec(p.dur) * 0.8, 2600, 700, 0.06, 0.6, `air-${p.key}`, 0.8));
+    cue(from + p.dur, (q) => paper(q, 0.22, `paper-${p.key}`));
+  }
+});
 
 // ---- the motion-graphics run: a pulse from the 3D reveal to the cut into shot 8; each piece has its own sound ----
 for (let f = at('m1', 26); f < START.s08 - 4; f += BEAT) {

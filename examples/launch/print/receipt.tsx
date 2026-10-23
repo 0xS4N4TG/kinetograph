@@ -10,17 +10,10 @@ import { loadFont as loadNoto } from '@remotion/google-fonts/NotoSansJP';
 import { Barcode, Qr } from './qr.js';
 import { THERMAL } from './thermal.js';
 
-/** Loaded on first use, not at import: the launch film shares this Root, and fonts it never draws must not be
- *  registered for it (that changes its text fallback). */
-let faces: { COURIER: string; NOTO: string; MIXED: string; JP: string } | undefined;
-const getFaces = () => {
-  if (!faces) {
-    const COURIER = loadCourier('normal', { weights: ['400', '700'] }).fontFamily;
-    const NOTO = loadNoto('normal', { weights: ['400', '700'] }).fontFamily;
-    faces = { COURIER, NOTO, MIXED: `${COURIER}, ${NOTO}`, JP: `${NOTO}, ${COURIER}` };
-  }
-  return faces;
-};
+const COURIER = loadCourier('normal', { weights: ['400', '700'] }).fontFamily;
+const NOTO = loadNoto('normal', { weights: ['400', '700'] }).fontFamily;
+const MIXED = `${COURIER}, ${NOTO}`;
+const JP = `${NOTO}, ${COURIER}`;
 
 export const RECEIPT_W = 460;
 const PAD = 30;
@@ -63,7 +56,6 @@ const FADE = '#55555b';
 const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', height: LINE, alignItems: 'center' };
 
 const Row: React.FC<{ line: Line; reveal: number; seed: number; id: string }> = ({ line, reveal, seed, id }) => {
-  const { COURIER, MIXED, JP } = getFaces();
   switch (line[0]) {
     case 'title':
       return <div style={{ height: 62, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: JP, fontWeight: 700, fontSize: 36, letterSpacing: 2, whiteSpace: 'nowrap' }}>{line[1]}</div>;

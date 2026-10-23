@@ -352,6 +352,60 @@ export function projector(c: Cue, seconds: number, vel: number, seed: string): v
   n.connect(bp).connect(g).connect(c.sfx);
 }
 
+/** A thermal printer feeding `lines` lines over `seconds`, slowing as the paper does (an ease-out): the stepper's
+ *  whine chopped once a line, the head's hiss, and a hard stop. */
+export function printer(c: Cue, seconds: number, lines: number, vel: number, seed: string): void {
+  const steps = Math.max(8, Math.round(seconds * 200));
+  const chop = new Float32Array(steps);
+  const hiss = new Float32Array(steps);
+  for (let i = 0; i < steps; i++) {
+    const p = i / (steps - 1);
+    // the paper's travel follows 1 - (1 - p)^2, so the line count does too
+    const line = (1 - (1 - p) ** 2) * lines;
+    const inLine = line - Math.floor(line);
+    const env = Math.min(1, p * 30) * (p > 0.985 ? 0 : 1);
+    chop[i] = vel * env * (inLine < 0.55 ? 1 : 0.2) * (0.85 + 0.15 * random(`${seed}-c${i}`));
+    hiss[i] = vel * 0.45 * env * (inLine < 0.55 ? 1 : 0.5);
+  }
+  const o = c.ctx.createOscillator();
+  o.type = 'square';
+  o.frequency.setValueAtTime(820, c.t);
+  o.frequency.linearRampToValueAtTime(560, c.t + seconds);
+  const bp = c.ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1500;
+  bp.Q.value = 2.2;
+  const g = c.ctx.createGain();
+  g.gain.setValueCurveAtTime(chop, c.t, seconds);
+  o.connect(bp).connect(g).connect(c.sfx);
+  o.start(c.t);
+  o.stop(c.t + seconds + 0.02);
+  const n = noiseSource(c, c.t, seed, seconds);
+  const hp = c.ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 4200;
+  const ng = c.ctx.createGain();
+  ng.gain.setValueCurveAtTime(hiss, c.t, seconds);
+  n.connect(hp).connect(ng).connect(c.sfx);
+  // the cutter at the end: a dry snap
+  const end: Cue = { ...c, t: c.t + seconds };
+  shutter(end, vel * 1.6);
+}
+
+/** Paper landing on a pile: a soft papery slap and a low thud. */
+export function paper(c: Cue, vel: number, seed: string): void {
+  const n = noiseSource(c, c.t, seed, 0.12);
+  const bp = c.ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1800;
+  bp.Q.value = 0.6;
+  const g = c.ctx.createGain();
+  g.gain.setValueAtTime(vel, c.t);
+  g.gain.exponentialRampToValueAtTime(0.0005, c.t + 0.1);
+  n.connect(bp).connect(g).connect(c.sfx);
+  kick(c, vel * 0.5, c.sfx);
+}
+
 /** A soft pop for something landing on screen: a short low thump and a pitched tick. */
 export function pop(c: Cue, vel: number, hz = 1300): void {
   kick(c, vel * 0.6, c.sfx);

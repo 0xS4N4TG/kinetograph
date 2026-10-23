@@ -19,7 +19,7 @@ export const VO: { file: string; shot: keyof typeof START; at: number }[] = [
   { file: '04-you-dont', shot: 's04', at: 0 },
   { file: '05-render', shot: 's05', at: 4 },
   { file: '07a-your', shot: 's07', at: 4 },
-  { file: '07b-write', shot: 's07', at: 100 },
+  { file: '07b-write', shot: 's07', at: 58 },
   { file: '07c-past', shot: 'm1', at: 2 },
   { file: 'm1-3d', shot: 'm1', at: 46 },
   { file: 'm2-iso', shot: 'm2', at: 6 },
