@@ -8,7 +8,7 @@ import { GITHUB } from '@/sections/links';
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <RootProvider theme={{ enabled: false }} search={{ options: { type: 'static', api: '/api/search/' } }}>
+    <RootProvider theme={{ enabled: false }} search={{ options: { type: 'static', api: '/api/search' } }}>
       <DocsLayout
         tree={source.getPageTree()}
         nav={{
@@ -21,6 +21,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           url: '/',
         }}
         githubUrl={GITHUB}
+        themeSwitch={{ enabled: false }}
       >
         {children}
       </DocsLayout>
