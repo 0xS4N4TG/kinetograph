@@ -1,7 +1,7 @@
 # Authoring contract (Phases 3 and 4)
 
-Written 2026-10-14 by the Phase 3 orchestrator. This is the contract the five Phase 3 streams build against
-(`HANDOFF.md` §8, "Phase 3 in a cloud session"): the package layout, the addon's JS API, the authoring API, and how
+Written 2026-10-14 by the Phase 3 orchestrator. This is the contract the five Phase 3 streams build against:
+the package layout, the addon's JS API, the authoring API, and how
 every element and helper maps to `SCENE.md` JSON. A stream that needs another stream's API codes against this file
 and the typed stubs committed with it, never against the other branch. Changes to this file go through the
 orchestrator.
@@ -20,7 +20,7 @@ before testing. Relative imports carry `.js` extensions (`moduleResolution: Node
 | `packages/react` | `@kinetograph/react` | stream 3 | `react-reconciler` host config, native elements, `TimelineContext` (§6) |
 | `packages/core` | `@kinetograph/core` | stream 2 `feat/remotion-shim` | Remotion core API, frame loop, determinism shim, the pure-TS Remotion packages as subpaths (§7) |
 | `packages/audio` | `@kinetograph/audio` | stream 5 `feat/cli-audio-mcp` | `onFrame`, offline mix through `node-web-audio-api`, loudness analysis (§8) |
-| `packages/cli` | `kinetograph` (bin `kinetograph`) | stream 5 | the §7 commands of HANDOFF, the MCP server, project bundling (§9) |
+| `packages/cli` | `kinetograph` (bin `kinetograph`) | stream 5 | the CLI commands, the MCP server, project bundling (§9) |
 | `spikes/three-dawn` | not a workspace | stream 5 | spike 2 (§9) |
 | stream 4 `feat/layout-glyphs` | Rust only | stream 4 | flex layout, per-character text, Lottie and the smaller scene additions of §4 |
 
@@ -33,7 +33,7 @@ Files committed by the orchestrator with this contract are stubs: exported names
 remove exports, and does not edit another stream's files. `packages/react/src/timeline.ts` is complete and belongs to
 the orchestrator.
 
-Determinism rules from `HANDOFF.md` §9 hold everywhere: rendering is a pure function of (project, frame); nothing
+The determinism rules in CLAUDE.md hold everywhere: rendering is a pure function of (project, frame); nothing
 reads the wall clock (benchmarks aside) or calls an unseeded random generator; fonts are registered before any text is
 measured; Remotion APIs are written from Remotion's documentation, never from its source.
 
@@ -345,7 +345,7 @@ take it bare: `blur(24)`, `glow(16)`, `backdropBlur(16)`, `saturate(1.5)`, `cont
 seed, … })` and `dither(levels, { … })` take their main field first. Each returns the plain SCENE.md object.
 
 `motionBlur({ samples, shutter })` returns a marker that may sit in an `effects` array; the reconciler moves it to
-the layer's `motionBlur` (so the HANDOFF §5 sketch works).
+the layer's `motionBlur`.
 
 Paints and geometry:
 
@@ -644,7 +644,7 @@ Mapping onto the engine:
 - `Sequence` renders its children inside a `<Layer>` (no layout), only while `from <= frame < from +
   durationInFrames`, and shifts the timeline by `from`. `name` becomes nothing; `layout="none"` is accepted. With
   DOM elements inside it, or around it, that layer is Remotion's wrapper, an `AbsoluteFill` `div`, in the same CSS tree
-  as the DOM around it (COMPAT.md §2, ENGINE.md §10.1); a `Sequence` of native elements keeps its own positions.
+  as the DOM around it (the Remotion compatibility docs, `/docs/compat/`; ENGINE.md §10.1); a `Sequence` of native elements keeps its own positions.
 - `AbsoluteFill` is `<Layer layout={{ flexDirection: 'column', width, height }} layoutItem={{ position: 'absolute' }}>`
   covering the composition, so its children stack in a column as in CSS and it overlays its siblings, as long as
   everything inside it is a native element. `style` maps `backgroundColor`/`background` (a colour) to a full-size rect
@@ -958,8 +958,8 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | Command | Does |
 |---|---|
 | `compositions <entry>` | lists compositions |
-| `still <entry> <frame> -o out.png [--strict] [--dev-react]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (COMPAT.md §6) |
-| `render <entry> -o out.mp4 [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (COMPAT.md §6); React runs in production mode unless `--dev-react` (below) |
+| `still <entry> <frame> -o out.png [--strict] [--dev-react]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (the Remotion compatibility docs, `/docs/compat/`) |
+| `render <entry> -o out.mp4 [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
 | `strip <entry> -n 12 -o sheet.png [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
 | `onion <entry> <range> -n 6 -o onion.png` | frames of the range blended over one another |
 | `inspect <entry> [--frame N]` | `InspectResult` |
@@ -969,7 +969,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` (frame ranges `a..b`, as `--range`; each scene is reported in both units: `fromFrame`/`toFrame` and `from`/`to` in seconds) |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
-| `doctor [entry] [--range]` | without an entry, the install report; with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (COMPAT.md §7) |
+| `doctor [entry] [--range]` | without an entry, the install report; with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (the Remotion compatibility docs, `/docs/compat/`) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
 
@@ -1067,7 +1067,7 @@ fallback), writes PNGs and prints timings as JSON. Run on the M4.
 
 ## 11. Phase 4: video layers and the studio
 
-Written 2026-10-15 by the Phase 4 orchestrator (`HANDOFF.md` §8, "Phase 4 in a cloud session"). §1's rules hold:
+Written 2026-10-15 by the Phase 4 orchestrator. §1's rules hold:
 the stubs committed with this section have final names and types; streams fill the bodies, may add exports, and do
 not edit another stream's files. `packages/studio/src/protocol.ts` is complete and belongs to the orchestrator.
 

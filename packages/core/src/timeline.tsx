@@ -103,8 +103,8 @@ export interface SequenceProps {
 /**
  * Shows its children from frame `from` for `durationInFrames`, with time shifted so their frame 0 is `from`. The
  * children sit in a plain `<Layer>`. `trimBefore` starts their clock later, `playbackRate` runs it faster or slower, and
- * `loop` repeats it. Only the frame clock changes: an `<Audio>` or `<Video>` inside takes the Sequence's start but not its
- * rate or trim (put those on the media).
+ * `loop` repeats it. An `<Audio>` or `<Video>` inside follows that clock: its clip starts where the children's frame 0
+ * falls, plays at this `playbackRate` times its own (nested rates multiply), and restarts with each loop iteration.
  */
 export function Sequence({
   from = 0,
@@ -163,7 +163,7 @@ export function Sequence({
   return (
     <SequenceHost sequence={sequence} wrapped={layout !== 'none'}>
       {showing ? (
-        <Scoped state={{ ...parent, frame, durationInFrames: clockEnd, sequence: key }} layout={layout}>
+        <Scoped state={{ ...parent, frame, durationInFrames: clockEnd, sequence: key, rate: (parent.rate ?? 1) * playbackRate }} layout={layout}>
           {children}
         </Scoped>
       ) : undefined}

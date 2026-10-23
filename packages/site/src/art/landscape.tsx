@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * The footer frieze: hills, a river with a boat, Edison's Black Maria (1893, the first film studio) at the centre,
  * telegraph wires and a balloon. Cobalt lines on paper, ending in a cobalt band that runs into the footer.

@@ -29,8 +29,7 @@ export interface RenderJobOptions {
   /** Run React's development build in the worker threads (the main thread is set by the caller). */
   devReact?: boolean;
   /**
-   * Fail with `UNSUPPORTED_CONTENT` on the first frame that holds something the engine cannot draw (docs/COMPAT.md
-   * §6.1), instead of drawing it without. Default off: the report says what was left out.
+   * Fail with `UNSUPPORTED_CONTENT` on the first frame that holds something the engine cannot draw (kinetograph site, /docs/compat/), instead of drawing it without. Default off: the report says what was left out.
    */
   strict?: boolean;
   /**

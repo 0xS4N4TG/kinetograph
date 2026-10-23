@@ -1,4 +1,4 @@
-// `@kinetograph/compat/doctor` (docs/COMPAT.md §7): the report `kinetograph
+// `@kinetograph/compat/doctor` (kinetograph site, /docs/compat/): the report `kinetograph
 // doctor` prints, built from each frame's unsupported items. Stream 4.
 
 import type { Unsupported } from './types.js';
@@ -67,7 +67,7 @@ function withoutDuplicateResources(items: readonly Unsupported[]): Unsupported[]
 }
 
 /**
- * What the engine cannot draw in the frames of composition `comp` (docs/COMPAT.md §7): the share of frames with
+ * What the engine cannot draw in the frames of composition `comp` (kinetograph site, /docs/compat/): the share of frames with
  * nothing unsupported and the unsupported items grouped by (element, property, reason), the group on the most frames
  * first. A frame listed twice is one frame with both lists' items.
  */

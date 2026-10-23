@@ -1,5 +1,4 @@
-//! Text and CSS features the papercut corpus uses (docs/DECISION_RENDERING_CRITICAL.md
-//! §4): letter-spacing, white-space: pre, vertical-align, inline-blocks next to
+//! Text and CSS features the papercut corpus uses: letter-spacing, white-space: pre, vertical-align, inline-blocks next to
 //! text, `@font-face` and linked stylesheets from project files.
 
 mod common;

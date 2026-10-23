@@ -42,7 +42,7 @@ export interface FrameResult {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree, showing or not (docs/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
-  /** Empty when the engine draws everything in the frame; otherwise what it leaves out or approximates (docs/COMPAT.md §6.1). */
+  /** Empty when the engine draws everything in the frame; otherwise what it leaves out or approximates (kinetograph site, /docs/compat/). */
   unsupported: Unsupported[];
 }
 

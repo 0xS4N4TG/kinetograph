@@ -1,4 +1,4 @@
-//! CSS block and flex layout of a DOM island (docs/COMPAT.md §5.1), with
+//! CSS block and flex layout of a DOM island, with
 //! taffy. Text leaves are measured with the renderer's own Parley engine, at
 //! the width taffy offers, so the lines a text layer will break at are the
 //! lines this layout counted.

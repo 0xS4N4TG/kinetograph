@@ -1,6 +1,6 @@
 # The full engine (Phase 6)
 
-Decided 2026-10-15 (`DECISION_RENDERING_CRITICAL.md` §6, approved by the user the same day): compat mode stops
+Decided 2026-10-15 (approved by the user the same day): compat mode stops
 parsing CSS in TypeScript. A DOM island is handed to Rust, styled by Stylo, laid out by taffy and Parley through
 Blitz's DOM (`blitz-dom` 0.3.0-beta.3, which uses the same Parley 0.12 and taffy 0.15 as the core), and painted by our
 own compositor. Blitz's painter (`blitz-paint`) is not used. No Chrome in the render path, ever (the Phase 5
@@ -25,7 +25,7 @@ React tree (DOM host elements + native kg-* ones)
       Rust (stream 2): paint(doc) → scene layers in CSS paint order; core gains what boxes need
       Rust (stream 3): <svg> subtrees and filter graphs → scene layers and a filterGraph effect
     → IslandOutput JSON: layers, unsupported, camera
-  frame loop, render: every frame is drawn by the addon; unsupported items are warned about, `--strict` fails (COMPAT.md §6)
+  frame loop, render: every frame is drawn by the addon; unsupported items are warned about, `--strict` fails (the Remotion compatibility docs, `/docs/compat/`)
 ```
 
 Readback (`getBoundingClientRect`, `offsetWidth`, `getComputedStyle`, `ResizeObserver`) goes through the same
@@ -686,7 +686,7 @@ machine; mins and medians of 4 rounds):
 | speedup against Remotion | 7.1x | 7.0x |
 
 The two videos decode to the same 89 frames (md5 of the frame md5s). Per frame (`frame_hashes --times`, min of 5): 25.8
-to 11.4 ms. Passes a frame (`bench --passes`): 278 to 113. The per-stage times are in HANDOFF (Phase 2c). The first of
+to 11.4 ms. Passes a frame (`bench --passes`): 278 to 113. The first of
 the four rounds was a cold start for all three (Remotion 11.13 s, before 2.92 s, after 2.51 s); the others were 8.86–9.15
 s, 2.68–2.74 s and 1.25–1.41 s.
 

@@ -1,5 +1,5 @@
 // A footage overlay, the kind of composition where Kinetograph's speed gain
-// over Remotion should be smallest (docs/HANDOFF.md §8, Phase 4): a full-frame
+// over Remotion should be smallest: a full-frame
 // clip with its sound, word-by-word captions, a lower third that springs in
 // and out, and a looping GIF badge.
 //

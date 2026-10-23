@@ -1,7 +1,6 @@
 //! The `scene3d` layer: a 3D scene (camera, lights, meshes, models, extruded
 //! type) drawn by our own renderer on the compositor's wgpu device
-//! (`docs/SCENE.md`, "scene3d"; the choice of renderer is in `docs/HANDOFF.md`
-//! §8, "3D layer").
+//! (`docs/SCENE.md`, "scene3d").
 //!
 //! This module holds what the scene file says (`Scene3dLayer`) and what it
 //! comes to at one frame (`Resolved3d`: every animated value evaluated, the

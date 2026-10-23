@@ -272,7 +272,7 @@ test('decodeAudio returns null without an audio stream, and errors', () => {
   rejects(() => native.decodeAudio(`${media}/tone-mono.wav`, 0, repo), 'INVALID_ARG', /sampleRate/);
 });
 
-// ---- layoutDom (docs/COMPAT.md §5.1) ----
+// ---- layoutDom ----
 
 const domRequest = (root, extra = {}) =>
   JSON.stringify({

@@ -1,6 +1,6 @@
 # Spike 2: Three.js `WebGPURenderer` headless on Dawn in Node
 
-Question (`docs/HANDOFF.md` §4, §10): can real Three.js render offscreen in Node, on the `webgpu` npm package (Dawn),
+Question: can real Three.js render offscreen in Node, on the `webgpu` npm package (Dawn),
 so that a 3D layer is a texture the compositor draws? The answer decides Three.js against the kiss3d backup.
 
 This directory is its own project, not an npm workspace. It needs a GPU, so it is run on the M4, never in the cloud.
@@ -40,10 +40,10 @@ Exit code 0 and `"ok": true` on success; on failure exit code 1 and `{ "ok": fal
   Wrong colours (too dark or washed out) point at the sRGB handling of the render target (`target.texture.colorSpace`
   in `render.mjs`); a flipped picture at the readback row order.
 - `renderAndReadbackMs` is the cost of one 3D layer per frame, readback included: the number that decides whether a
-  CPU readback is acceptable (`HANDOFF.md` §4 estimates ~2 ms at 1080x1920 for the readback alone). Run it with `SIZE=1080`
+  CPU readback is acceptable (an earlier estimate was ~2 ms at 1080x1920 for the readback alone). Run it with `SIZE=1080`
   too, since the layer would be that large.
 - The Dawn adapter in the output should be the M4's GPU, not a software one.
 - If it fails, the message says where: the adapter, the backend assertion, a blank picture, or a Three.js exception
   (printed to stderr). A blank picture with the WebGPU assertion passing is the failure the forum reports describe.
 - Not covered here: GLSL `ShaderMaterial` (`WebGPURenderer` does not run it), `@remotion/three` and react-three-fiber
-  examples (the count of those that render unchanged is the second half of the spike in `HANDOFF.md` §4).
+  examples (the count of those that render unchanged is the second half of the spike).

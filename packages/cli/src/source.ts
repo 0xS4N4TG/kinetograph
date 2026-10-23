@@ -33,7 +33,7 @@ export interface FrameOutput {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree (docs/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
-  /** What the engine cannot draw on this frame (docs/COMPAT.md §6.1); none for a scene file. */
+  /** What the engine cannot draw on this frame (kinetograph site, /docs/compat/); none for a scene file. */
   unsupported?: Unsupported[];
   /** ms spent in `renderFrame` and in `JSON.stringify` (0 for a scene file), for `bench`. */
   jsMs: number;

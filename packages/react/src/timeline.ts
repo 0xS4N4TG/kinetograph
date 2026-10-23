@@ -28,6 +28,11 @@ export interface TimelineState {
   frozen: boolean;
   /** Key of the enclosing `<Sequence>` (docs/AUTHORING.md §11.4); unset or null outside one. */
   sequence?: string | null;
+  /**
+   * How many frames of `frame` pass per composition frame: the product of the `playbackRate` of every enclosing
+   * `<Sequence>`. Unset is 1. A media element folds it into its clip, so it plays at that rate times its own.
+   */
+  rate?: number;
 }
 
 export const TimelineContext = createContext<TimelineState | null>(null);

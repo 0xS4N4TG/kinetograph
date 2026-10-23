@@ -5,7 +5,7 @@ import { Reveal } from '@/components/reveal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DOCS, GITHUB } from '@/sections/links';
-import { body, H2, shell } from '@/sections/page';
+import { body, H2, shell } from '@/sections/shared';
 
 const PAINS = [
   ['Slow', 'Every frame waits on a browser.', 'A browser renderer takes a screenshot of a live page for each frame. The same 89-frame scene takes 8.96 seconds there and 1.28 seconds here.'],

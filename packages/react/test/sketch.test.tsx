@@ -3,7 +3,7 @@ import { dropShadow, linearGradient, motionBlur } from '@kinetograph/scene';
 import { Image, Layer, Text, useTimeline } from '../src/index.js';
 import { renderAt } from './harness.js';
 
-// The component of HANDOFF.md §5, with plain arithmetic standing in for `spring` and `interpolate`.
+// The component of the authoring sketch, with plain arithmetic standing in for `spring` and `interpolate`.
 const Card = () => {
   const { frame } = useTimeline();
   const s = Math.min(1, frame / 30);
@@ -17,7 +17,7 @@ const Card = () => {
   );
 };
 
-describe('the HANDOFF.md §5 sketch', () => {
+describe('the authoring sketch', () => {
   it('emits the scene JSON of the contract at frame 15', () => {
     expect(renderAt(<Card />, 15).layers).toEqual([
       {

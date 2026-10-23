@@ -1,3 +1,5 @@
+'use client';
+
 "use client";
 
 // Halftone Wordmark Footer — a site footer whose wordmark is set enormous and

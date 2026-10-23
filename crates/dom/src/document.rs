@@ -9,7 +9,7 @@
 //! ```
 //!
 //! The island is laid out as CSS would in a box the viewport's size, as
-//! Remotion's root `div` is (docs/COMPAT.md §2): percentages, `auto` margins and
+//! Remotion's root `div` is. Percentages, `auto` margins and
 //! absolute positions of the island root resolve against the composition.
 //!
 //! A document is built per call and resolved at the request's time, so a frame

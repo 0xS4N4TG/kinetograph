@@ -42,7 +42,7 @@ export const ENTRY: PositionalSpec = {
 
 export const OUTPUT_OPTION: OptionSpec = { name: 'output', short: 'o', type: 'string', description: 'Output file path' };
 
-/** `--strict`, on the commands that draw frames (docs/COMPAT.md §6.1). */
+/** `--strict`, on the commands that draw frames (kinetograph site, /docs/compat/). */
 export const STRICT_OPTION: OptionSpec = {
   name: 'strict',
   type: 'boolean',

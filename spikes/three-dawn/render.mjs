@@ -1,4 +1,4 @@
-// Spike 2 (docs/HANDOFF.md §4, docs/AUTHORING.md §9): does Three.js `WebGPURenderer` render headless on Dawn in Node?
+// Spike 2 (docs/AUTHORING.md §9): does Three.js `WebGPURenderer` render headless on Dawn in Node?
 //
 // It renders a torus knot built in code and a glTF model (built here, exported with GLTFExporter, loaded back with
 // GLTFLoader, so there is no third-party asset) into render targets, reads the pixels back, checks that they are not

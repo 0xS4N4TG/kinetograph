@@ -56,7 +56,7 @@ export interface RenderedTree {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the tree, showing or not, in tree order (docs/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
-  /** What DOM elements in the tree ask for that compat mode cannot draw natively (docs/COMPAT.md §6.1). */
+  /** What DOM elements in the tree ask for that compat mode cannot draw natively (kinetograph site, /docs/compat/). */
   unsupported: Unsupported[];
   /** The least scene `margin` the DOM islands need for their blurs (docs/ENGINE.md §2); absent when none does. */
   margin?: number;
@@ -64,7 +64,7 @@ export interface RenderedTree {
   blendSpace?: 'srgb';
 }
 
-/** What `emit` needs to know to draw DOM elements (docs/COMPAT.md §2). */
+/** What `emit` needs to know to draw DOM elements. */
 export interface EmitOptions {
   /** The composition's size: the box a DOM island is laid out in. */
   viewport?: { width: number; height: number };
@@ -321,7 +321,7 @@ class Emitter {
   }
 
   /**
-   * An island: a DOM element, with everything inside it, drawn by the compat mapping (docs/COMPAT.md §2). Its
+   * An island: a DOM element, with everything inside it, drawn by the compat mapping. Its
    * `<Sequence>`s are taken out first, as `collect` does, so that they take no place in the paths.
    */
   private island(root: HostElement, path: string): LayerJson[] {

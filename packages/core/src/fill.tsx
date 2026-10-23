@@ -3,7 +3,7 @@
 // something to a layer are read, and with only those keys the mapping is the
 // layers' (the hand ports render as they did). With any other key they are the
 // DOM elements they are in Remotion, `div` and `img`, which compat mode maps
-// (docs/COMPAT.md §4.1).
+// (kinetograph site, /docs/compat/).
 
 import type { ReactNode } from 'react';
 import { Image, Layer, Rect } from '@kinetograph/react';
