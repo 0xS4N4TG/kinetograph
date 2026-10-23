@@ -783,3 +783,4 @@ module.exports.imageSize = nativeBinding.imageSize
 module.exports.measureText = nativeBinding.measureText
 module.exports.pathCall = nativeBinding.pathCall
 module.exports.renderSkia = nativeBinding.renderSkia
+module.exports.svgSize = nativeBinding.svgSize

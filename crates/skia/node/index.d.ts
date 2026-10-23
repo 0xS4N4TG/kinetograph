@@ -29,3 +29,9 @@ export declare function pathCall(requestJson: string): string
  * hash, and `{ path, width, height, unsupported }` out. A frame is a pure function of the tree and the files it names.
  */
 export declare function renderSkia(requestJson: string): string
+
+/**
+ * `{ svg }` in; the SVG's own `{ width, height }` out (what `Skia.SVG.MakeFromString(...).width()` reports), or an
+ * error when it does not parse.
+ */
+export declare function svgSize(requestJson: string): string

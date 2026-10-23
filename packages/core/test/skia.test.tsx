@@ -2,7 +2,10 @@
 // `@kinetograph/skia` is built (`npm run build:addon:release -w crates/skia/node`) and are skipped when it is not, as the
 // default workspace build does not compile Skia.
 
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearFonts, registerFont } from '../src/font-registry.js';
 import {
@@ -11,20 +14,27 @@ import {
   Canvas,
   Circle,
   ColorMatrix,
+  createPicture,
+  Glyphs,
   Group,
   hasSkiaAddon,
+  ImageSVG,
   Image,
   LinearGradient,
   Mask,
   matchFont,
   Paint,
+  Patch,
   Path,
+  Picture,
   Rect,
   Shader,
   Skia,
   SkiaCanvas,
   Text,
+  TextBlob,
   useImage,
+  useSVG,
 } from '../src/skia/index.js';
 import { renderNodes } from '../src/skia/host.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
@@ -74,6 +84,42 @@ describe('the nodes the components make', () => {
       children: [],
     });
     expect(Skia.Matrix().translate(2, 3).toJSON()).toEqual([1, 0, 2, 0, 1, 3, 0, 0, 1]);
+  });
+
+  it('serialises the objects of the six drawings: blobs, pictures, SVGs and RSXforms', () => {
+    registerFont({ family: 'DM Sans', path: FONT });
+    const font = matchFont({ fontFamily: 'DM Sans', fontSize: 20 });
+    const blob = Skia.TextBlob.MakeFromRSXform('Hi', [Skia.RSXform(1, 0, 2, 3), Skia.RSXform(1, 0, 12, 3)], font);
+    const [node] = renderNodes(<TextBlob blob={blob} x={4} />);
+    expect(node!.props).toEqual({
+      x: 4,
+      y: 0,
+      blob: {
+        text: 'Hi',
+        xforms: [{ scos: 1, ssin: 0, tx: 2, ty: 3 }, { scos: 1, ssin: 0, tx: 12, ty: 3 }],
+        font: { file: FONT, size: 20 },
+      },
+    });
+    expect(Skia.TextBlob.MakeFromGlyphs([3, 4], font).toJSON()).toMatchObject({ glyphs: [3, 4] });
+    expect(Skia.RSXformFromRadians(2, 0, 10, 20, 1, 1)).toEqual({ scos: 2, ssin: 0, tx: 8, ty: 18 });
+  });
+
+  it('records a picture as operations, copying what it was given', () => {
+    const recorder = Skia.PictureRecorder();
+    const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, 10, 10));
+    const paint = Skia.Paint().setColor(Skia.Color('red'));
+    canvas.save().translate(2, 3).drawRect(Skia.XYWHRect(0, 0, 4, 4), paint).restore();
+    paint.setColor(Skia.Color('blue'));
+    canvas.drawCircle(5, 5, 2, paint);
+    const [node] = renderNodes(<Picture picture={recorder.finishRecordingAsPicture()} />);
+    const picture = node!.props.picture as { ops: Record<string, any>[]; bounds: unknown };
+    expect(picture.bounds).toEqual({ x: 0, y: 0, width: 10, height: 10 });
+    expect(picture.ops.map((op) => op.op)).toEqual(['save', 'translate', 'drawRect', 'restore', 'drawCircle']);
+    expect(picture.ops[2]!.paint.props.color).toEqual([1, 0, 0, 1]);
+    expect(picture.ops[4]!.paint.props.color).toEqual([0, 0, 1, 1]);
+    expect(createPicture((c) => c.drawColor(Skia.Color('lime'))).toJSON().ops).toEqual([
+      { op: 'drawColor', color: [0, 1, 0, 1] },
+    ]);
   });
 
   it('refuses text outside <Text>', () => {
@@ -191,11 +237,88 @@ describe.skipIf(!hasSkiaAddon())('drawn by Skia', () => {
     expect(pixel(picture, 10, 10)).toEqual([0, 255, 0, 255]);
   });
 
+
+  it('draws an Atlas: every sprite at its transform, tinted by colors', () => {
+    const { src } = draw(<Rect x={0} y={0} width={2} height={2} color="blue" />);
+    const sheet = useImage(src)!;
+    const sprites = [Skia.XYWHRect(0, 0, 2, 2), Skia.XYWHRect(0, 0, 2, 2)];
+    const transforms = [Skia.RSXform(5, 0, 4, 4), Skia.RSXform(3, 0, 40, 30)];
+    const { picture } = draw(<Atlas image={sheet} sprites={sprites} transforms={transforms} />);
+    expect(pixel(picture, 8, 8)).toEqual([0, 0, 255, 255]);
+    expect(pixel(picture, 43, 33)).toEqual([0, 0, 255, 255]);
+    expect(pixel(picture, 25, 20)[3]).toBe(0);
+    const tinted = draw(<Atlas image={sheet} sprites={sprites} transforms={transforms} colors={['red', 'lime']} colorBlendMode="dst" />);
+    expect(pixel(tinted.picture, 8, 8)).toEqual([255, 0, 0, 255]);
+    expect(pixel(tinted.picture, 43, 33)).toEqual([0, 255, 0, 255]);
+  });
+
+  it('draws a Patch with the colours of its corners', () => {
+    const corner = (x: number, y: number, c1: [number, number], c2: [number, number]) => ({
+      pos: { x, y },
+      c1: { x: c1[0], y: c1[1] },
+      c2: { x: c2[0], y: c2[1] },
+    });
+    const patch = [
+      corner(0, 0, [0, 16], [21, 0]),
+      corner(64, 0, [43, 0], [64, 16]),
+      corner(64, 48, [64, 32], [43, 48]),
+      corner(0, 48, [21, 48], [0, 32]),
+    ];
+    const { picture } = draw(<Patch patch={patch} colors={['red', 'lime', 'blue', 'yellow']} />);
+    expect(pixel(picture, 2, 2)[0]).toBeGreaterThan(200);
+    expect(pixel(picture, 61, 2)[1]).toBeGreaterThan(200);
+    expect(pixel(picture, 61, 45)[2]).toBeGreaterThan(200);
+    const mid = pixel(picture, 32, 24);
+    expect(mid[3]).toBe(255);
+    expect(mid[0]).toBeGreaterThan(60);
+  });
+
+  it('draws TextBlob and Glyphs like Text, and a blob with transforms where they say', () => {
+    registerFont({ family: 'DM Sans', path: FONT });
+    const font = matchFont({ fontFamily: 'DM Sans', fontSize: 24 });
+    const text = draw(<Text x={2} y={30} text="Hi" font={font} color="white" />);
+    const blob = draw(<TextBlob blob={Skia.TextBlob.MakeFromText('Hi', font)} x={2} y={30} color="white" />);
+    expect(blob.src).toBe(text.src);
+    const widths = font.getGlyphWidths('Hi');
+    const glyphs = font.getGlyphIDs('Hi').map((id, i) => ({ id, pos: { x: widths.slice(0, i).reduce((a, b) => a + b, 0), y: 0 } }));
+    expect(draw(<Glyphs font={font} glyphs={glyphs} x={2} y={30} color="white" />).src).toBe(text.src);
+    const moved = draw(<TextBlob blob={Skia.TextBlob.MakeFromRSXform('Hi', glyphs.map((g) => Skia.RSXform(1, 0, 2 + g.pos.x, 30)), font)} color="white" />);
+    expect(moved.src).toBe(text.src);
+  });
+
+  it('draws a recorded Picture once, with the paints it was recorded with', () => {
+    const picture = createPicture((canvas) => {
+      canvas.save();
+      canvas.translate(10, 10);
+      canvas.drawRect(Skia.XYWHRect(0, 0, 20, 20), Skia.Paint().setColor(Skia.Color('red')));
+      canvas.restore();
+      canvas.drawCircle(50, 24, 6, Skia.Paint().setColor(Skia.Color('lime')));
+    });
+    const { picture: drawn } = draw(<Picture picture={picture} />);
+    expect(pixel(drawn, 20, 20)).toEqual([255, 0, 0, 255]);
+    expect(pixel(drawn, 5, 5)[3]).toBe(0);
+    expect(pixel(drawn, 50, 24)).toEqual([0, 255, 0, 255]);
+  });
+
+  it('draws an ImageSVG made from a string and from a file, in its rectangle', () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>';
+    const svg = Skia.SVG.MakeFromString(source)!;
+    expect([svg.width(), svg.height()]).toEqual([10, 10]);
+    const { picture } = draw(<ImageSVG svg={svg} x={4} y={4} width={30} height={30} />);
+    expect(pixel(picture, 6, 6)).toEqual([255, 0, 0, 255]);
+    expect(pixel(picture, 32, 32)).toEqual([255, 0, 0, 255]);
+    expect(pixel(picture, 40, 10)[3]).toBe(0);
+    const file = join(tmpdir(), 'kinetograph-skia-test.svg');
+    writeFileSync(file, source);
+    expect(draw(<ImageSVG svg={useSVG(file)} x={4} y={4} width={30} height={30} />).src).toBe(draw(<ImageSVG svg={svg} x={4} y={4} width={30} height={30} />).src);
+    expect(Skia.SVG.MakeFromString('not an svg')).toBeNull();
+  });
+
   it('reports what it does not draw, once, and draws the rest', () => {
     const { picture } = draw(
       <>
         <Rect x={0} y={0} width={10} height={10} color="red" />
-        <Atlas />
+        {createElement('Hologram')}
       </>,
     );
     expect(pixel(picture, 5, 5)).toEqual([255, 0, 0, 255]);

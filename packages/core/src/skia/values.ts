@@ -36,7 +36,7 @@ function transformItems(item: Record<string, unknown>): Record<string, unknown>[
 }
 
 /** Anything RN-Skia accepts as a prop value, as JSON-able data. */
-function plain(value: unknown): unknown {
+export function plain(value: unknown): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (ArrayBuffer.isView(value)) return Array.from(value as unknown as ArrayLike<number>);
   if ('toJSON' in value && typeof value.toJSON === 'function') return value.toJSON();

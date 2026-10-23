@@ -1,10 +1,10 @@
 // RN-Skia's hooks for files and fonts. A render is synchronous, so a file is read when the hook runs and the result is
 // there on the first frame; a file that is missing throws, with its name.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { getDomEnvironment } from '@kinetograph/compat/dom';
 import { skiaAddon } from './addon.js';
-import { projectFile, registeredFont, SkFont, SkImage } from './objects.js';
+import { parseSvg, projectFile, registeredFont, SkFont, SkImage, type SkSVG } from './objects.js';
 
 /** The picture in a project file (`staticFile('a.png')`, or a path or an import the bundle resolves), or null for null. */
 export function useImage(source: string | null | undefined): SkImage | null {
@@ -12,6 +12,12 @@ export function useImage(source: string | null | undefined): SkImage | null {
   const src = projectFile(source, 'picture');
   const size = JSON.parse(skiaAddon().imageSize(JSON.stringify({ src, baseDir: getDomEnvironment().baseDir ?? '' })));
   return new SkImage(src, size);
+}
+
+/** The SVG in a project file (`staticFile('a.svg')`), or null for null; a file that is not an SVG gives null as RN-Skia's does. */
+export function useSVG(source: string | null | undefined): SkSVG | null {
+  if (source === null || source === undefined) return null;
+  return parseSvg(readFileSync(projectFile(source, 'SVG file'), 'utf8'));
 }
 
 /** The font file at `source` (a project file) at `size`, or null for null. */

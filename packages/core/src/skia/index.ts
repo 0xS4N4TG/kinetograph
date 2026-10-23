@@ -3,9 +3,12 @@
 
 export { Canvas, SkiaCanvas, useCanvasRef, type CanvasProps } from './canvas.js';
 export * from './components.js';
-export { matchFont, useFont, useImage, type FontStyleDescription } from './hooks.js';
+export { matchFont, useFont, useImage, useSVG, type FontStyleDescription } from './hooks.js';
 export {
   BlendMode,
+  ClipOp,
+  createPicture,
+  PointMode,
   BlurStyle,
   FillType,
   PathOp,
@@ -16,11 +19,17 @@ export {
   SkPaint,
   SkParagraph,
   SkPath,
+  SkPicture,
+  SkPictureRecorder,
+  SkRecordingCanvas,
+  SkSVG,
+  SkTextBlob,
   SkRuntimeEffect,
   StrokeCap,
   StrokeJoin,
   TileMode,
   type SkPoint,
+  type SkRSXform,
   type SkRect,
   type SkRRect,
 } from './objects.js';

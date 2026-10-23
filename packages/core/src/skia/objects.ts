@@ -6,7 +6,7 @@ import { getDomEnvironment, resolveProjectFile } from '@kinetograph/compat/dom';
 import { fontKey } from '@kinetograph/scene';
 import { getFonts } from '../font-registry.js';
 import { skiaAddon } from './addon.js';
-import { toColor, type SkColor } from './values.js';
+import { plain, toColor, type SkColor } from './values.js';
 
 export interface SkRect {
   x: number;
@@ -448,6 +448,218 @@ export class SkRuntimeEffect {
   }
   toJSON(): { sksl: string } {
     return { sksl: this.sksl };
+  }
+}
+
+// ---- text blobs, pictures, SVGs ----
+
+/** A rotation/scale/translation in four numbers, as RN-Skia's `Skia.RSXform`: the matrix `[scos -ssin tx; ssin scos ty]`. */
+export interface SkRSXform {
+  scos: number;
+  ssin: number;
+  tx: number;
+  ty: number;
+}
+
+/** `Skia.TextBlob.Make*`: the glyphs of a text (or the glyph ids) in a font, laid out by its advances or by one transform each. */
+export class SkTextBlob {
+  constructor(
+    private readonly shape: { text?: string; glyphs?: number[]; xforms?: SkRSXform[] },
+    private readonly font: SkFont,
+  ) {}
+  toJSON(): Record<string, unknown> {
+    return { ...this.shape, font: this.font.toJSON() };
+  }
+}
+
+export const PointMode = { Points: 'points', Lines: 'lines', Polygon: 'polygon' } as const;
+export const ClipOp = { Difference: 'difference', Intersect: 'intersect' } as const;
+
+/** What is kept of an argument when it is recorded, so that changing a paint or a path afterwards does not change the picture. */
+const snapshot = <T,>(value: T): T => JSON.parse(JSON.stringify(plain(value))) as T;
+
+/** The canvas `Skia.PictureRecorder().beginRecording()` hands out: RN-Skia's `SkCanvas` calls, written down as operations. */
+export class SkRecordingCanvas {
+  readonly ops: Record<string, unknown>[] = [];
+
+  private record(op: string, args: Record<string, unknown> = {}): this {
+    this.ops.push(snapshot({ op, ...args }));
+    return this;
+  }
+
+  save(): this {
+    return this.record('save');
+  }
+  restore(): this {
+    return this.record('restore');
+  }
+  translate(x: number, y: number): this {
+    return this.record('translate', { x, y });
+  }
+  scale(x: number, y = x): this {
+    return this.record('scale', { x, y });
+  }
+  /** `rotate(degrees, rx, ry)` about (rx, ry), else about the origin. */
+  rotate(degrees: number, rx?: number, ry?: number): this {
+    return this.record('rotate', { degrees, x: rx, y: ry });
+  }
+  skew(x: number, y: number): this {
+    return this.record('skew', { x, y });
+  }
+  concat(matrix: SkMatrix | number[]): this {
+    return this.record('concat', { matrix });
+  }
+  clipRect(rect: SkRect, clipOp: (typeof ClipOp)[keyof typeof ClipOp] = 'intersect', antiAlias = true): this {
+    return this.record('clipRect', { shape: rect, clipOp, antiAlias });
+  }
+  clipRRect(rrect: SkRRect, clipOp: (typeof ClipOp)[keyof typeof ClipOp] = 'intersect', antiAlias = true): this {
+    return this.record('clipRRect', { shape: rrect, clipOp, antiAlias });
+  }
+  clipPath(path: SkPath, clipOp: (typeof ClipOp)[keyof typeof ClipOp] = 'intersect', antiAlias = true): this {
+    return this.record('clipPath', { shape: path, clipOp, antiAlias });
+  }
+  drawPaint(paint: SkPaint): this {
+    return this.record('drawPaint', { paint });
+  }
+  drawColor(color: SkColor, blendMode?: (typeof BlendMode)[keyof typeof BlendMode]): this {
+    return this.record('drawColor', { color: toColor(color), blendMode });
+  }
+  drawRect(rect: SkRect, paint: SkPaint): this {
+    return this.record('drawRect', { rect, paint });
+  }
+  drawRRect(rrect: SkRRect, paint: SkPaint): this {
+    return this.record('drawRRect', { rrect, paint });
+  }
+  drawOval(rect: SkRect, paint: SkPaint): this {
+    return this.record('drawOval', { rect, paint });
+  }
+  drawCircle(x: number, y: number, r: number, paint: SkPaint): this {
+    return this.record('drawCircle', { x, y, r, paint });
+  }
+  drawLine(x0: number, y0: number, x1: number, y1: number, paint: SkPaint): this {
+    return this.record('drawLine', { x0, y0, x1, y1, paint });
+  }
+  drawPath(path: SkPath, paint: SkPaint): this {
+    return this.record('drawPath', { path, paint });
+  }
+  drawPoints(mode: (typeof PointMode)[keyof typeof PointMode], points: SkPoint[], paint: SkPaint): this {
+    return this.record('drawPoints', { mode, points, paint });
+  }
+  drawImage(image: SkImage, x: number, y: number, paint?: SkPaint | null): this {
+    return this.record('drawImage', { image, x, y, paint: paint ?? undefined });
+  }
+  drawImageRect(image: SkImage, src: SkRect, dest: SkRect, paint: SkPaint): this {
+    return this.record('drawImageRect', { image, src, dest, paint });
+  }
+  drawText(text: string, x: number, y: number, paint: SkPaint, font: SkFont): this {
+    return this.record('drawText', { text, x, y, paint, font });
+  }
+  drawTextBlob(blob: SkTextBlob, x: number, y: number, paint: SkPaint): this {
+    return this.record('drawTextBlob', { blob, x, y, paint });
+  }
+  drawGlyphs(glyphs: number[], positions: SkPoint[], x: number, y: number, font: SkFont, paint: SkPaint): this {
+    return this.record('drawGlyphs', { glyphs, positions, x, y, font, paint });
+  }
+  drawPicture(picture: SkPicture): this {
+    return this.record('drawPicture', { picture });
+  }
+  drawAtlas(
+    image: SkImage,
+    sprites: SkRect[],
+    transforms: SkRSXform[],
+    paint: SkPaint,
+    blendMode?: (typeof BlendMode)[keyof typeof BlendMode],
+    colors?: SkColor[],
+    sampling?: unknown,
+  ): this {
+    return this.record('drawAtlas', {
+      image,
+      sprites,
+      transforms,
+      paint,
+      colorBlendMode: blendMode,
+      colors: colors?.map(toColor),
+      sampling,
+    });
+  }
+  /** The 12 points of the four cubics, clockwise from the top left (Skia's `drawPatch`). */
+  drawPatch(
+    cubics: SkPoint[],
+    colors: SkColor[] | null | undefined,
+    texs: SkPoint[] | null | undefined,
+    blendMode: (typeof BlendMode)[keyof typeof BlendMode] | null | undefined,
+    paint: SkPaint,
+  ): this {
+    return this.record('drawPatch', {
+      points: cubics,
+      colors: colors?.map(toColor),
+      texs: texs ?? undefined,
+      blendMode: blendMode ?? undefined,
+      paint,
+    });
+  }
+}
+
+/** A recorded picture: the operations, replayed by the addon through Skia's own recorder when it is drawn. */
+export class SkPicture {
+  constructor(
+    private readonly ops: Record<string, unknown>[],
+    private readonly bounds?: SkRect,
+  ) {}
+  toJSON(): { ops: Record<string, unknown>[]; bounds?: SkRect } {
+    return { ops: this.ops, bounds: this.bounds };
+  }
+}
+
+/** `Skia.PictureRecorder()`. */
+export class SkPictureRecorder {
+  private canvas: SkRecordingCanvas | null = null;
+  private bounds: SkRect | undefined;
+
+  beginRecording(bounds?: SkRect): SkRecordingCanvas {
+    this.bounds = bounds;
+    this.canvas = new SkRecordingCanvas();
+    return this.canvas;
+  }
+  finishRecordingAsPicture(): SkPicture {
+    if (this.canvas === null) throw new Error('finishRecordingAsPicture() needs beginRecording() first');
+    const picture = new SkPicture(this.canvas.ops, this.bounds);
+    this.canvas = null;
+    return picture;
+  }
+}
+
+/** RN-Skia's `createPicture(cb, size?)`: what `cb` draws on the canvas it is given, as a picture. */
+export function createPicture(cb: (canvas: SkRecordingCanvas) => void, size?: { width: number; height: number }): SkPicture {
+  const recorder = new SkPictureRecorder();
+  const canvas = recorder.beginRecording(size ? { x: 0, y: 0, ...size } : undefined);
+  cb(canvas);
+  return recorder.finishRecordingAsPicture();
+}
+
+/** An SVG from `Skia.SVG.MakeFromString` or `useSVG`; the addon parses and draws it. */
+export class SkSVG {
+  constructor(
+    private readonly source: string,
+    private readonly size: { width: number; height: number },
+  ) {}
+  width(): number {
+    return this.size.width;
+  }
+  height(): number {
+    return this.size.height;
+  }
+  toJSON(): { svg: string } {
+    return { svg: this.source };
+  }
+}
+
+/** The SVG in `source`, or null when it does not parse. */
+export function parseSvg(source: string): SkSVG | null {
+  try {
+    return new SkSVG(source, JSON.parse(skiaAddon().svgSize(JSON.stringify({ svg: source }))));
+  } catch {
+    return null;
   }
 }
 
