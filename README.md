@@ -1,9 +1,9 @@
 # Kinetograph
 
-A programmatic video engine with no browser in it. You (or an agent) write a video in TypeScript with Remotion's API,
-CSS, SVG, Canvas 2D, WebGL shaders and Web Audio; Node runs the code; a Rust GPU compositor, loaded into Node as an
-N-API addon, draws every frame. Existing Remotion projects render as they are: `remotion` and `@remotion/*` imports
-resolve to Kinetograph's own implementation of them.
+A blazingly fast programmatic video engine, made for agents, with no browser in it. You (or an agent) write a video in
+TypeScript with Remotion's API, CSS, SVG, Canvas 2D, WebGL shaders and Web Audio; Node runs the code; a Rust GPU
+compositor, loaded into Node as an N-API addon, draws every frame. Existing Remotion projects render as they are:
+`remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation of them.
 
 **Status: beta, version 0.1.0.** It works and renders real projects, but APIs can still change between versions and
 some features are missing. The core renderer, effects, authoring layer, studio, Remotion compatibility on a native DOM
