@@ -34,10 +34,10 @@ export const SELF_STILLS: { name: string; draw: () => React.ReactNode; frame: nu
   { name: 'v2-veteran-rainbow', draw: clip('footage/veteran.mp4'), frame: 50, fx: thermal({ palette: RAINBOW }) },
   { name: 'v2-m5', draw: shot(M5), frame: 60 },
   { name: 'v2-veteran-crt', draw: clip('footage/veteran.mp4'), frame: 40, fx: [crt({ pitch: 5 })] },
-  { name: 'v2-s08', draw: shot(S08), frame: 200 },
+  { name: 'v2-s08', draw: shot(S08), frame: 150 },
   { name: 'v2-hat-crt', draw: clip('footage/hat.mp4'), frame: 30, fx: [crt({ pitch: 5 })] },
-  { name: 'v2-s10', draw: shot(S10), frame: 70 },
-  { name: 'v2-s09', draw: shot(S09), frame: 150 },
+  { name: 'v2-s10', draw: shot(S10), frame: 66 },
+  { name: 'v2-s09', draw: shot(S09), frame: 90 },
   { name: 'v2-crowd-1bit', draw: crowd, frame: 0, fx: oneBit({ size: 4, ink: '#04060a', paper: '#cfe3ff' }) },
   { name: 'v2-pair-vhs', draw: face('receipts/face-pair.png'), frame: 0, fx: [vhs({ track: 0.5, trackAt: 0.7, trackW: 60 })] },
 ];

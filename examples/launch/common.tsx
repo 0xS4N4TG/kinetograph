@@ -19,6 +19,10 @@ export const TITLE_WEIGHT = 200;
 /** Its glow: the number lit like projected light, with a little halation round the thin strokes. */
 export const TITLE_GLOW = '0 0 18px rgba(255,240,220,0.35), 0 0 60px rgba(255,220,180,0.18)';
 
+/** Seconds this whole film took to render (kinetograph render, --concurrency 4, M4, measured with the bench lock held:
+ *  23.1 s on 2026-10-23). Shot 9 and the end card say it; set it again from the final render. */
+export const RENDER_SECONDS = 23;
+
 export const PAPER = '#ECEAE6';
 export const INK = '#111111';
 export const RED = '#E0261B';
@@ -61,6 +65,6 @@ export const Build: React.FC<{ words: string[]; start: number; per: number; colo
 /** Frames of each shot at 30 fps, in order (about 50 s). The cut is the sum; shot 6, the burn, lies over the cut
  *  from shot 5 into shot 7 rather than taking time of its own. Keep a shot inside its length. */
 export const LEN = {
-  s01: 24, s02: 80, s03: 84, s04: 56, s05: 80, s06: 27,
-  s07: 174, m1: 92, m2: 64, m3: 60, m4: 48, m5: 80, s08: 210, s09: 160, s10: 75, s11: 120, s12: 135,
+  s01: 24, s02: 90, s03: 92, s04: 56, s05: 80, s06: 27,
+  s07: 180, m1: 92, m2: 64, m3: 60, m4: 48, m5: 80, s08: 170, s09: 110, s10: 90, s11: 120, s12: 135,
 } as const;

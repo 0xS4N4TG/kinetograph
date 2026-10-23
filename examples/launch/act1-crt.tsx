@@ -1,5 +1,5 @@
-// Shots 3 and 4 on an old colour tube that fills the frame. Shot 3: "Right now, a browser screenshots every single
-// frame." The pile of browser screenshots (act1.tsx's Problem) plays on the tube, curved by its glass and drawn in
+// Shots 3 and 4 on an old colour tube that fills the frame. Shot 3: "Today, to make a video with code, a browser
+// screenshots every single frame." The pile of browser screenshots (act1.tsx's Problem) plays on the tube, curved by its glass and drawn in
 // scanlines; a tracker hops from screenshot to screenshot on the red ball, and the voiceover writes itself under the
 // pile, on the same glass, in shot 7's mixed hands (print/captions.tsx). Shot 4: "With Kinetograph, you don't need one."
 // The tape-fed picture tears, the tube switches off (the raster folds to a bright line, the line to a dot, the dot
@@ -9,14 +9,15 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame } from 'remotion';
 import { Layer, glow, grain } from '@kinetograph/core';
-import { CLAMP, H, OUT, SANS, W } from './common.js';
+import { CLAMP, H, LEN, OUT, SANS, W } from './common.js';
 import { IN } from './act1-kit.js';
 import { Problem, ballAt } from './act1.js';
 import { Captions, type CaptionLine, type Point } from './print/captions.js';
 import { crt, vhs } from './looks.js';
+import { VO, spoken } from './sound-timing.js';
 
-/** The voiceover of shot 3 (sound-timing.ts puts it at frame 3). */
-export const S03_LINES: CaptionLine[] = [{ file: '03-screenshot', at: 3, split: [2, 3, 3], hot: ['screenshots', 'frame'] }];
+/** The voiceover of shot 3: "Today," / "to make a video" / "with code," / "a browser screenshots" / "every single frame." */
+export const S03_LINES: CaptionLine[] = [{ file: '03-today', at: VO.find((v) => v.file === '03-today')!.at, split: [1, 4, 2, 3, 3], hot: ['today', 'screenshots', 'frame'] }];
 
 /** The pile sits up and to the right on the tube, leaving the dark under it for the words. */
 const PILE = { x: 330, y: 10, s: 0.8 };
@@ -69,9 +70,9 @@ export const S03: React.FC = () => {
 
 /** Shot 4's switch-off, in shot frames: the picture tears, folds to a line, the line to a dot, the dot dies. */
 export const S04_OFF = { tear: [0, 9], line: [9, 14], dot: [14, 19], die: [19, 28] } as const;
-/** "you don't need one." lands on the voiceover's words (04-you-dont at frame 0). */
+/** "you don't need one." lands on the voiceover's words. */
 export const S04_WORDS = ['you', 'don’t', 'need', 'one.'];
-export const S04_AT = [22, 26, 30, 35];
+export const S04_AT = spoken('04-you-dont').slice(2).map((w) => w.from);
 
 export const S04: React.FC = () => {
   const frame = useCurrentFrame();
@@ -86,7 +87,7 @@ export const S04: React.FC = () => {
       <AbsoluteFill style={{ background: '#000' }} />
       {dot > 0 && (
         <Tube id="s04-tube" tear={tear} offy={offy} offx={offx} opacity={dot}>
-          <Picture t={84 + frame} />
+          <Picture t={LEN.s03 + frame} />
         </Tube>
       )}
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>

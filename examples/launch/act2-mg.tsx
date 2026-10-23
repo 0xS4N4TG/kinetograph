@@ -61,7 +61,7 @@ export const M1: React.FC = () => {
   const L = LEN.m1;
   // The dolly zoom: from far away with a long lens (the type looks flat, as the 2D line before it) to close with a
   // wide one, keeping the wordmark the same width, while the camera swings round 38 degrees and lifts.
-  // The reveal starts flat on "way past text" and turns all the way through "real 3D" (07c-past at 2, m1-3d at 46).
+  // The reveal starts flat on "and not just text" and turns all the way through "real 3D" (07c-text, then m1-3d).
   const k = interpolate(frame, [6, 64], [0, 1], { ...CLAMP, easing: IO });
   const drift = interpolate(frame, [64, L], [0, 1], CLAMP);
   const fov = 7 + 29 * k;

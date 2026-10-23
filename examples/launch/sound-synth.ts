@@ -99,7 +99,9 @@ export function cue(frame: number, fn: (c: Cue) => void): void {
 const noiseSource = (c: Bus, t: number, seed: string, dur: number): AudioBufferSourceNode => {
   const src = c.ctx.createBufferSource();
   src.buffer = c.noise;
-  src.start(t, random(seed) * (c.noise.duration - dur - 0.1));
+  // a sound longer than the buffer loops it; a shorter one starts somewhere inside it
+  src.loop = dur > c.noise.duration - 0.1;
+  src.start(t, src.loop ? 0 : random(seed) * (c.noise.duration - dur - 0.1));
   src.stop(t + dur);
   return src;
 };

@@ -1,0 +1,4 @@
+file                                       dur  f0med  f0IQR(st) voiced  peak  rms
+full_0.wav                                 26.0    116      7.6   0.57  0.75 0.090
+full_1.wav                                 26.5    125      8.7   0.56  0.81 0.096
+full_2.wav                                 26.1    112      8.3   0.62  0.79 0.099

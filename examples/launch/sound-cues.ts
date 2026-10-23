@@ -8,7 +8,8 @@
 import { VO_SECONDS } from './sound-vo.js';
 import { BURN, FPS, START, TOTAL, VO } from './sound-timing.js';
 import { LEN } from './common.js';
-import { LOOK, S02_AT, WINDOWS, WIN_EVERY } from './act1.js';
+import { WINDOWS, WIN_EVERY } from './act1.js';
+import { FRED_AT, S02_LINES } from './act1-open.js';
 import { S03_LINES, S04_AT, S04_OFF } from './act1-crt.js';
 import { FILM_AT, S05_PASS } from './act1-camera.js';
 import { CUTS, LINES, RECEIPTS_AT } from './act2-s07.js';
@@ -16,8 +17,8 @@ import { wordSpans } from './print/captions.js';
 import { RECEIPT_SOUND } from './print/receipts.js';
 import { S08_HOLD } from './act2-s08.js';
 import { M1_DROPS, M2_DIVE, M3_TYPE, M4_SPIRO, WHIP } from './act2-mg.js';
-import { KINETOGRAPH_S, MULT_AT, RACE, REMOTION_S } from './act2-s09.js';
-import { S10_CIRCLE, S10_LAND, S10_STRIKE, S12_TAG, S12_URL } from './act3.js';
+import { RACE } from './act2-s09.js';
+import { S10_CIRCLE, S10_LAND, S10_STRIKE, S10_ZOOM, S12_TAG, S12_URL } from './act3.js';
 import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
 import { DUCK, bass, bell, cue, cutter, hat, hit, kick, pad, paperDrop, pen, pop, projector, riser, room, rumble, shutter, sweep, thermal, tick } from './sound-synth.js';
 
@@ -49,12 +50,18 @@ for (const c of chords) {
   cue(start, (q) => pad(q, sec(c.to - start), c.hz, c.level, c.cutoff, c.from === 0 ? 0.6 : 0.9, c.to === TOTAL ? 1.2 : 0.9));
 }
 
-// ---- shot 1: each of the four looks of "how" lands with a pop ----
-for (let k = 0; k < 4; k++) cue(at('s01', k * LOOK), (q) => pop(q, 0.7 - k * 0.05, 900 + k * 250));
-
-// ---- shot 2: the redaction bar whooshes across; the ink stroke scratches under "browser?" ----
-cue(at('s02', 3), (q) => sweep(q, 0.45, 300, 3800, 0.22, 0.5, 'bar-whoosh'));
-cue(at('s02', S02_AT[S02_AT.length - 1]! + 4), (q) => pen(q, sec(16), 0.18, 'pen-s02'));
+// ---- shot 1: the leader's countdown, a beep as it starts and the projector running up; shot 2: the projector runs on
+//      under the films, a shutter on the cut to Fred Ott, a pen as each word writes, a low thump where one breaks out ----
+cue(0, (q) => projector(q, sec(LEN.s01 + LEN.s02), 0.14, 'open-projector'));
+cue(at('s01', 0), (q) => bell(q, 1000, 0.05, 0.25));
+cue(START.s02, (q) => hit(q, 0.35, 0.2));
+cue(at('s02', FRED_AT), (q) => shutter(q, 0.12));
+wordSpans(S02_LINES, FPS).forEach((w, i) => {
+  if (w.hot) {
+    cue(at('s02', w.from), (q) => bass(q, 65.41, 0.5, 0.2));
+    cue(at('s02', w.from), (q) => tick(q, 0.04, 900, 500));
+  } else cue(at('s02', w.from), (q) => pen(q, sec(Math.max(3, w.to - w.from)), 0.06, `pen-s02-${i}`));
+});
 cue(START.s03 - 18, (q) => riser(q, sec(18) - 0.03, 0.06, false));
 
 // ---- shot 3: the monitor's hum under the pile; a shutter on every window that lands; a pen as each word writes ----
@@ -136,18 +143,20 @@ for (let o = 80; o < 112; o += 3) cue(s08(o), (q) => tick(q, 0.045, 1200 + (o - 
 cue(s08(112), (q) => hit(q, 0.4, 0.3));
 cue(s08(112), (q) => bell(q, 1318.5, 0.06, 1.6));
 
-// ---- shot 9: Kinetograph's bar stops first (a bright tick), Remotion's much later (a dull one); the multiple
-//      counts up ----
-const finish = (s: number): number => RACE[0] + ((RACE[1] - RACE[0]) * s) / REMOTION_S;
-cue(at('s09', Math.round(finish(KINETOGRAPH_S))), (q) => tick(q, 0.14, 2600, 1300));
-cue(at('s09', Math.round(finish(KINETOGRAPH_S))), (q) => bell(q, 987.77, 0.05, 1.2));
-cue(at('s09', RACE[1]), (q) => tick(q, 0.1, 500, 300));
-for (let f = MULT_AT; f < MULT_AT + 26; f += 3) cue(at('s09', f), (q) => tick(q, 0.045, 1500 + (f - MULT_AT) * 40, 800));
+// ---- shot 9: the reel runs past on a projector's clatter while the clock counts; on the last frame a bright tick, a
+//      bell and a low note as the clock stops ----
+cue(at('s09', RACE[0]), (q) => projector(q, sec(RACE[1] - RACE[0]), 0.16, 's09-projector'));
+for (let f = RACE[0]; f < RACE[1]; f += 3) cue(at('s09', f), (q) => tick(q, 0.025, 1400 + (f - RACE[0]) * 12, 700));
+cue(at('s09', RACE[1]), (q) => tick(q, 0.14, 2600, 1300));
+cue(at('s09', RACE[1]), (q) => bell(q, 987.77, 0.05, 1.2));
+cue(at('s09', RACE[1]), (q) => bass(q, 73.42, 1.2, 0.26));
 
-// ---- shot 10: a pen tap as each word lands; the scratch of each strike and of the red loop; a riser into 11 ----
+// ---- shot 10: a pen tap as each word lands; the scratch of each strike and of the red loop; a whoosh as the lens
+//      racks into the pixels; a riser into 11 ----
 S10_LAND.forEach((l, i) => cue(at('s10', l), (q) => tick(q, i % 2 ? 0.05 : 0.07, 1100, 600)));
 S10_STRIKE.forEach(([a, b], i) => cue(at('s10', a), (q) => pen(q, sec(b - a), 0.2, `pen-strike-${i}`)));
 cue(at('s10', S10_CIRCLE[0]), (q) => pen(q, sec(S10_CIRCLE[1] - S10_CIRCLE[0]), 0.17, 'pen-loop'));
+cue(at('s10', S10_ZOOM[0]), (q) => sweep(q, sec(LEN.s10 - S10_ZOOM[0]), 300, 6000, 0.14, 0.9, 'pixel-zoom', 0.8));
 cue(START.s11 - 16, (q) => riser(q, sec(16), 0.16));
 
 // ---- shot 11: a hit on the first frame, the beat, a click on every flip; a swell into the reveal ----

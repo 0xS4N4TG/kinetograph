@@ -1,88 +1,75 @@
-// Shot 9: the numbers. Two bars race on one time scale, the same project (S04, 89 frames, M4, measured 2026-10-15):
-// Remotion 8.86 s, Kinetograph 1.25 s. The multiple counts up to 7.0x. The chart is
-// styled after bklit's bar chart (rounded bars, a clean grid, a spring on the bars) but is driven by the frame.
+// Shot 9: "This whole film rendered in twenty-three seconds." This film's own frames run past on a strip of film as a
+// render clock counts up beside a frame counter; the strip stops when the counter reaches the last frame, and the
+// clock holds at the film's measured render time (RENDER_SECONDS, common.tsx), set very large, with the film's own
+// length under it for scale.
 
 import React from 'react';
-import { AbsoluteFill, interpolate, spring, useCurrentFrame } from 'remotion';
-import { CLAMP, FPS, InkGround, MONO, OUT, PAPER, RED, SANS, TITLE, TITLE_GLOW, TITLE_WEIGHT } from './common.js';
+import { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame } from 'remotion';
+import { Layer } from '@kinetograph/core';
+import { CLAMP, FPS, InkGround, MONO, OUT, RED, RENDER_SECONDS, SANS, TITLE, TITLE_GLOW, TITLE_WEIGHT, W } from './common.js';
+import { TOTAL, spoken } from './sound-timing.js';
 
-export const REMOTION_S = 8.86;
-export const KINETOGRAPH_S = 1.25;
-const X0 = 380; // where 0 s sits
-const SCALE = 150; // px per second: 10 s is 1500 px
-const AXIS = [0, 2, 4, 6, 8, 10];
-const ROWS = [
-  { name: 'remotion', secs: REMOTION_S, y: 300, fill: 'linear-gradient(90deg,#2b2b2b,#6b6b6b)', tip: '#9a9a9a' },
-  { name: 'kinetograph', secs: KINETOGRAPH_S, y: 470, fill: `linear-gradient(90deg,#8f1a11,${RED})`, tip: '#ff6a5c' },
-];
-const BAR_H = 92;
-export const RACE = [12, 84] as const; // frames over which the clock runs from 0 to 8.86 s
-export const MULT_AT = 76;
+/** Frames of the shot over which the render runs, start to finish (the strip moving, the clock and counter counting):
+ *  the clock reaches the render time as the voiceover says it. */
+export const RACE = [8, spoken('09-film')[5]!.from + 2] as const;
+
+const STILLS = [
+  'v2-veteran-iron', 'v2-s03', 'v2-hat-1bit', 'v2-m3', 'v2-s05-pass', 'v2-beard-iron', 'v2-crowd-vhs', 'v2-m4', 'v2-s05',
+  'v2-veteran-rainbow', 'v2-m5', 'v2-veteran-crt', 'v2-s08', 'v2-hat-crt', 'v2-s10', 'v2-crowd-1bit', 'v2-pair-vhs',
+].map((n) => staticFile(`self/${n}.jpg`));
+const CELL_W = 400;
+const CELL_H = 225;
+const GAP = 34;
+const STRIP_Y = 210;
+const STRIP_H = CELL_H + 92;
+/** How far the strip runs over the render, in px: many frames' worth, so it reads as a reel going by. */
+const RUN = 46 * (CELL_W + GAP);
+
+const clock = (s: number) => String(Math.floor(s));
 
 export const S09: React.FC = () => {
   const frame = useCurrentFrame();
-  const t = interpolate(frame, RACE, [0, REMOTION_S], CLAMP); // seconds of render time elapsed, both bars racing
-  const kDoneAt = RACE[0] + (KINETOGRAPH_S / REMOTION_S) * (RACE[1] - RACE[0]);
-
-  const mult = interpolate(frame, [MULT_AT, MULT_AT + 26], [1, 7.0], { ...CLAMP, easing: OUT });
-  const multIn = interpolate(frame, [MULT_AT - 2, MULT_AT + 6], [0, 1], { ...CLAMP, easing: OUT });
-  const settle = spring({ frame: frame - (MULT_AT + 26), fps: FPS, config: { damping: 9, stiffness: 160 }, durationInFrames: 22 });
-  const pop = 1 + 0.05 * settle * (frame >= MULT_AT + 26 ? 1 : 0) * Math.exp(-(frame - MULT_AT - 26) / 6);
-
+  const p = interpolate(frame, [...RACE], [0, 1], { ...CLAMP, easing: (t) => t * t * (3 - 2 * t) });
+  const done = frame >= RACE[1];
+  const offset = p * RUN;
+  const counter = Math.round(p * TOTAL);
+  const stripIn = interpolate(frame, [0, 8], [0, 1], { ...CLAMP, easing: OUT });
+  const settle = done ? spring({ frame: frame - RACE[1], fps: FPS, config: { damping: 10, stiffness: 170 } }) : 0;
+  const pop = 1 + 0.04 * Math.sin(settle * Math.PI);
+  const capIn = interpolate(frame, [RACE[1] + 4, RACE[1] + 14], [0, 1], { ...CLAMP, easing: OUT });
+  const moving = !done && frame > RACE[0];
+  const first = Math.floor(offset / (CELL_W + GAP));
   return (
     <AbsoluteFill>
       <InkGround />
-      {/* the grid, drawn in from the left, one line every 2 s */}
-      {AXIS.map((s, i) => {
-        const g = interpolate(frame, [2 + i * 2, 12 + i * 2], [0, 1], { ...CLAMP, easing: OUT });
-        return (
-          <div key={s} style={{ position: 'absolute', left: X0 + s * SCALE, top: 230, width: 2, height: 360 * g, background: 'repeating-linear-gradient(180deg,#3a3a3a 0 8px,transparent 8px 16px)' }}>
-            <div style={{ position: 'absolute', top: 372, left: -22, width: 44, textAlign: 'center', fontFamily: MONO, fontSize: 22, color: '#666', opacity: g }}>{s}s</div>
-          </div>
-        );
-      })}
-
-      {ROWS.map((r, i) => {
-        const isK = r.name === 'kinetograph';
-        const rowIn = interpolate(frame, [6 + i * 3, 18 + i * 3], [0, 1], { ...CLAMP, easing: OUT });
-        const elapsed = Math.min(t, r.secs);
-        let w = elapsed * SCALE;
-        // A spring on the finish: the bar overshoots its mark a touch and settles.
-        const since = frame - (isK ? kDoneAt : RACE[1]);
-        if (since >= 0) w += SCALE * 0.07 * Math.exp(-since / 3.2) * Math.sin(since * 0.85);
-        const done = t >= r.secs;
-        const label = elapsed.toFixed(2);
-        const glow = isK ? interpolate(since, [0, 4, 24], [0, 1, 0], CLAMP) : 0;
-        return (
-          <div key={r.name} style={{ position: 'absolute', left: 0, top: 0, width: 1920, height: 1080, opacity: rowIn, transform: `translateX(${(1 - rowIn) * -30}px)` }}>
-            <div style={{ position: 'absolute', left: 140, top: r.y + 26, width: 220, fontFamily: SANS, fontWeight: 500, fontSize: 30, color: isK ? PAPER : '#b0b0b0' }}>{r.name}</div>
-            <div style={{
-              position: 'absolute', left: X0, top: r.y, width: Math.max(4, w), height: BAR_H, borderRadius: 16, background: r.fill,
-              boxShadow: glow > 0 ? `0 0 ${40 * glow}px rgba(224,38,27,${0.55 * glow})` : 'none',
-            }}>
-              {!done && <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, borderRadius: 3, background: r.tip, opacity: 0.55 + 0.45 * Math.abs(Math.sin(frame * 0.5)) }} />}
-            </div>
-            <div style={{ position: 'absolute', left: X0 + Math.max(4, w) + 22, top: r.y + 22, fontFamily: MONO, fontSize: 38, color: isK && done ? '#ff6a5c' : PAPER, fontWeight: 500 }}>
-              {label}s
-            </div>
-          </div>
-        );
-      })}
-
-      {/* a guide at 1.25 s through both bars once the fast one is done */}
-      {(() => {
-        const g = interpolate(frame, [kDoneAt + 2, kDoneAt + 12], [0, 1], { ...CLAMP, easing: OUT });
-        return <div style={{ position: 'absolute', left: X0 + KINETOGRAPH_S * SCALE, top: 270, width: 3, height: 300 * g, background: 'repeating-linear-gradient(180deg,rgba(224,38,27,0.8) 0 10px,transparent 10px 18px)' }} />;
-      })()}
-
-      <div style={{
-        position: 'absolute', left: 120, top: 590, fontFamily: TITLE, fontWeight: TITLE_WEIGHT, fontSize: 400, lineHeight: 1.1, color: '#f6efe4', letterSpacing: '-0.045em', paddingRight: 40,
-        textShadow: TITLE_GLOW, opacity: multIn, filter: `blur(${(1 - multIn) * 12}px)`, transform: `scale(${pop})`, transformOrigin: '0 60%',
-      }}>
-        {mult.toFixed(1)}x
+      {/* the strip: the film's frames between rows of sprocket holes, lit from behind */}
+      <Layer id="s09-strip" opacity={stripIn} motionBlur={moving ? { samples: 10, shutter: 0.5 } : undefined}>
+        <div style={{ position: 'absolute', left: 0, top: STRIP_Y, width: W, height: STRIP_H, background: '#0b0a09', boxShadow: '0 0 120px rgba(255,226,190,0.08)' }}>
+          {[14, STRIP_H - 30].map((y) => (
+            <div key={y} style={{ position: 'absolute', left: -(offset % 52), top: y, width: W + 104, height: 16,
+              background: 'repeating-linear-gradient(90deg, #2c2925 0 26px, transparent 26px 52px)', borderRadius: 3 }} />
+          ))}
+          {Array.from({ length: Math.ceil(W / (CELL_W + GAP)) + 2 }, (_, k) => {
+            const i = first + k;
+            const x = i * (CELL_W + GAP) - offset + 40;
+            return (
+              <Img key={i} src={STILLS[i % STILLS.length]!} style={{ position: 'absolute', left: x, top: 46, width: CELL_W, height: CELL_H, objectFit: 'cover', opacity: 0.92 }} />
+            );
+          })}
+        </div>
+      </Layer>
+      <div style={{ position: 'absolute', right: 120, top: STRIP_Y - 54, fontFamily: MONO, fontSize: 24, color: '#9a948a', letterSpacing: '0.06em' }}>
+        {`frame ${String(counter).padStart(4, '0')} / ${TOTAL}`}
       </div>
-      <div style={{ position: 'absolute', left: 150, top: 975, fontFamily: SANS, fontWeight: 500, fontSize: 28, letterSpacing: '0.32em', textTransform: 'uppercase', color: '#b9b2a6', opacity: interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [0, 1], { ...CLAMP, easing: OUT }), transform: `translateY(${interpolate(frame, [MULT_AT + 20, MULT_AT + 30], [14, 0], { ...CLAMP, easing: OUT })}px)` }}>
-        faster, same frames
+      {/* the clock */}
+      <div style={{ position: 'absolute', left: 110, top: 560, fontFamily: TITLE, fontWeight: TITLE_WEIGHT, fontSize: 340, lineHeight: 1.1, letterSpacing: '-0.045em',
+        color: '#f6efe4', textShadow: TITLE_GLOW, transform: `scale(${pop})`, transformOrigin: '0 60%' }}>
+        {clock(p * RENDER_SECONDS)}
+        <span style={{ fontSize: 120, letterSpacing: '0', marginLeft: 18, color: done ? RED : '#6f6a62' }}>s</span>
+      </div>
+      <div style={{ position: 'absolute', left: 1010, top: 700, fontFamily: SANS, fontWeight: 500, fontSize: 28, letterSpacing: '0.32em', textTransform: 'uppercase', lineHeight: 1.9, color: '#b9b2a6', opacity: capIn, transform: `translateY(${(1 - capIn) * 14}px)` }}>
+        <div style={{ color: '#f6efe4' }}>to render this whole film</div>
+        <div>{`${Math.round(TOTAL / FPS)} seconds · ${TOTAL.toLocaleString('en-US')} frames`}</div>
       </div>
     </AbsoluteFill>
   );

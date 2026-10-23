@@ -94,9 +94,9 @@ const Tick: React.FC<{ t: number }> = ({ t }) => (
   </svg>
 );
 
-/** Frames the camera holds tight on `from 'remotion'` (the VO's "Already using Remotion? Kinetograph runs your existing
- *  projects as they are."); the pull-out and the count then run on, so "98%" lands on the VO's "ninety-eight". */
-export const S08_HOLD = 76;
+/** Frames the camera holds tight on `from 'remotion'` (the VO's "Already using Remotion? Your projects run as they
+ *  are."); the pull-out and the count then run on under the end of the line. */
+export const S08_HOLD = 40;
 
 export const S08: React.FC = () => {
   const real = useCurrentFrame();

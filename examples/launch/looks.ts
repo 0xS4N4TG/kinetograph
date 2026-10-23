@@ -166,6 +166,34 @@ export function vhs(o: VhsOptions = {}) {
   });
 }
 
+/** A magnifier on the screen: the picture blown up `zoom` times about (cx, cy), each of its pixels drawn as a block,
+ *  and, as the blocks grow, as the three red, green and blue stripes a screen's pixel is made of. At zoom 1 the picture
+ *  is untouched. */
+const PIXELS = /* wgsl */ `
+fn effect(px: vec2<f32>) -> vec4<f32> {
+  let c = vec2<f32>(u.cx, u.cy);
+  let s = c + (px - c) / u.zoom;
+  let base = layer(s).rgb;
+  let cell = layer(floor(s) + vec2<f32>(0.5)).rgb;
+  let f = fract(s);
+  // the stripes: a third of the pixel each, with a dark gap round each stripe and between rows
+  let k = floor(f.x * 3.0);
+  var m = vec3<f32>(0.0);
+  if (k < 1.0) { m.x = 3.0; } else if (k < 2.0) { m.y = 3.0; } else { m.z = 3.0; }
+  let fx = fract(f.x * 3.0);
+  let gap = smoothstep(0.0, 0.12, fx) * smoothstep(1.0, 0.88, fx) * smoothstep(0.0, 0.08, f.y) * smoothstep(1.0, 0.92, f.y);
+  let sub = cell * m * gap * 1.25;
+  let blocky = smoothstep(1.5, 3.0, u.zoom);
+  let striped = smoothstep(5.0, 14.0, u.zoom);
+  let col = mix(mix(base, cell, blocky), sub, striped);
+  return vec4<f32>(col, 1.0);
+}
+`;
+
+export function pixels({ zoom, cx, cy }: { zoom: number; cx: number; cy: number }) {
+  return shader({ code: PIXELS, uniforms: { zoom, cx, cy } });
+}
+
 /** One bit a pixel: grey, hard contrast, an ordered dither in cells of `size` px, printed in `ink` on `paper`. */
 export function oneBit({ size = 3, punch = 1.6, ink = '#050605', paper = '#d9ecd9' }: { size?: number; punch?: number; ink?: string; paper?: string } = {}) {
   return [

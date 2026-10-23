@@ -4,12 +4,13 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import { measureText } from '@remotion/layout-utils';
 import { LogoFlicker } from '@/components/snap-cn/logo-flicker';
-import { Layer } from '@kinetograph/core';
-import { CLAMP, H, INK, MONO, OUT, PaperGround, RED, SANS, TITLE_GLOW, W } from './common.js';
-import { oneBit } from './looks.js';
+import { Layer, glow, grain } from '@kinetograph/core';
+import { CLAMP, H, INK, LEN, MONO, OUT, RED, RENDER_SECONDS, SANS, TITLE_GLOW, W } from './common.js';
+import { pixels } from './looks.js';
+import { spoken } from './sound-timing.js';
 
-/** Seconds this video took to render, filled in by the final render (until then the end card prints "N"). */
-export const RENDER_SECONDS: number | null = 297;
+export { RENDER_SECONDS };
+
 
 // ---- hand-drawn strokes ----
 type Pt = [number, number];
@@ -91,20 +92,26 @@ function loop(cx: number, cy: number, rx: number, ry: number, seed: string): Pt[
   return pts;
 }
 
-// ---- shot 10: no chrome, no screenshots, just pixels: the page in one bit a pixel, the dither's cells growing on
-//      "pixels" until they read as pixels; only the red loop is in colour ----
-const S10_WORDS = ['no', 'chrome.', 'no', 'screenshots.', 'just', 'pixels.'];
-// Frames each word lands, matched to the voiceover (sound.tsx places it at VO_AT.s10, in the voice's own pauses).
-export const S10_LAND = [4, 10, 20, 24, 41, 47];
+// ---- shot 10: "No browser. No screenshots. Just pixels." The words land in projected light, a pen strikes out the
+//      first two phrases and rings the last in red; then the camera pushes into "pixels." until the screen's own
+//      pixels show, each a block, then three stripes of red, green and blue ----
+const S10_WORDS = spoken('10-pixels');
+if (S10_WORDS.length !== 6) throw new Error(`10-pixels has ${S10_WORDS.length} words, the shot is laid out for 6`);
+/** Frames each word lands (the voiceover's own word starts). */
+export const S10_LAND = S10_WORDS.map((w) => w.from);
 /** The two strike-outs and the red loop, each just after its phrase is spoken. */
-export const S10_STRIKE = [[15, 26], [31, 42]] as const;
-export const S10_CIRCLE = [50, 65] as const;
+export const S10_STRIKE = [[S10_WORDS[1]!.to + 1, S10_WORDS[1]!.to + 12], [S10_WORDS[3]!.to + 1, S10_WORDS[3]!.to + 12]] as const;
+export const S10_CIRCLE = [S10_WORDS[5]!.to - 2, S10_WORDS[5]!.to + 12] as const;
+/** The push into the pixels: from the loop's close to the end of the shot. */
+export const S10_ZOOM = [S10_CIRCLE[1] - 2, LEN.s10] as const;
 const S10_SIZE = 76;
 const S10_TOP = 470;
+const CREAM = '#f3efe8';
 
 export const S10: React.FC = () => {
   const frame = useCurrentFrame();
-  const m = S10_WORDS.map((text) => measureText({ text, fontFamily: SANS, fontSize: S10_SIZE, fontWeight: '500', letterSpacing: `${-0.01 * S10_SIZE}px` }).width);
+  const text = S10_WORDS.map((w) => w.w.toLowerCase());
+  const m = text.map((t) => measureText({ text: t, fontFamily: SANS, fontSize: S10_SIZE, fontWeight: '500', letterSpacing: `${-0.01 * S10_SIZE}px` }).width);
   const gap = S10_SIZE * 0.26;
   const total = m.reduce((a, b) => a + b, 0) + gap * (m.length - 1);
   const xs: number[] = [];
@@ -113,34 +120,32 @@ export const S10: React.FC = () => {
   const runs: [number, number][] = [[0, 1], [2, 3], [4, 5]].map(([a, b]) => [xs[a!]!, xs[b!]! + m[b!]!]);
   const yc = S10_TOP + S10_SIZE * 0.53; // the middle of the lowercase letters
   const pen = Easing.bezier(0.45, 0, 0.35, 1);
-  const strike = [
-    interpolate(frame, [...S10_STRIKE[0]], [0, 1], { ...CLAMP, easing: pen }),
-    interpolate(frame, [...S10_STRIKE[1]], [0, 1], { ...CLAMP, easing: pen }),
-  ];
+  const strike = S10_STRIKE.map((r) => interpolate(frame, [...r], [0, 1], { ...CLAMP, easing: pen }));
   const circle = interpolate(frame, [...S10_CIRCLE], [0, 1], { ...CLAMP, easing: Easing.bezier(0.3, 0, 0.2, 1) });
-  const cell = Math.round(interpolate(frame, [S10_LAND[5]!, S10_LAND[5]! + 14], [2, 5], { ...CLAMP, easing: OUT }));
+  // the push: slow, then faster, as a lens racks in (an exponential in the zoom)
+  const z = interpolate(frame, [...S10_ZOOM], [0, 1], { ...CLAMP, easing: Easing.in(Easing.cubic) });
+  const zoom = Math.pow(70, z);
+  const focus = { cx: xs[5]! + m[5]! * 0.3, cy: yc };
   return (
-    <AbsoluteFill>
-      <Layer id="s10-bits" effects={oneBit({ size: cell, punch: 1.3, ink: '#060606', paper: '#ece9e2' })}>
-      <PaperGround />
-      {/* a deeper falloff than the paper's own, so the dither's dots spread in from the corners */}
-      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 62% 60% at 50% 48%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.55) 100%)' }} />
-      {S10_WORDS.map((w, i) => {
-        const t = interpolate(frame, [S10_LAND[i]!, S10_LAND[i]! + 4], [0, 1], CLAMP);
-        const phrase = Math.floor(i / 2);
-        const dim = phrase < 2 ? interpolate(strike[phrase]!, [0.3, 1], [1, 0.45], CLAMP) : 1;
-        return (
-          <span key={i} style={{ position: 'absolute', left: xs[i], top: S10_TOP, fontFamily: SANS, fontWeight: 500, fontSize: S10_SIZE, lineHeight: 1, letterSpacing: '-0.01em', color: INK, whiteSpace: 'pre', opacity: t * dim, filter: `blur(${(1 - t) * 6}px)` }}>{w}</span>
-        );
-      })}
-      <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0 }}>
-        <Pen pts={scrawl(runs[0]![0], runs[0]![1], yc, S10_SIZE * 0.31, 'k1')} progress={strike[0]!} width={6.5} color={INK} seed="k1" />
-        <Pen pts={scrawl(runs[1]![0], runs[1]![1], yc, S10_SIZE * 0.31, 'k2')} progress={strike[1]!} width={6.5} color={INK} seed="k2" />
-      </svg>
+    <AbsoluteFill style={{ background: '#050505' }}>
+      <Layer id="s10-grain" effects={[grain(0.06, { seed: 12, animate: true })]}>
+      <Layer id="s10-screen" effects={[pixels({ zoom, ...focus }), glow({ radius: 18, intensity: 0.35 })]}>
+        <AbsoluteFill style={{ background: 'radial-gradient(ellipse 60% 55% at 50% 48%, #141312 0%, #070707 60%, #030303 100%)' }} />
+        {text.map((w, i) => {
+          const t = interpolate(frame, [S10_LAND[i]!, S10_LAND[i]! + 5], [0, 1], { ...CLAMP, easing: OUT });
+          const phrase = Math.floor(i / 2);
+          const dim = phrase < 2 ? interpolate(strike[phrase]!, [0.3, 1], [1, 0.38], CLAMP) : 1;
+          return (
+            <span key={i} style={{ position: 'absolute', left: xs[i], top: S10_TOP, fontFamily: SANS, fontWeight: 500, fontSize: S10_SIZE, lineHeight: 1.2, letterSpacing: '-0.01em', color: CREAM, whiteSpace: 'pre', textShadow: TITLE_GLOW, opacity: t * dim, filter: `blur(${(1 - t) * 6}px)` }}>{w}</span>
+          );
+        })}
+        <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0 }}>
+          <Pen pts={scrawl(runs[0]![0], runs[0]![1], yc, S10_SIZE * 0.31, 'k1')} progress={strike[0]!} width={6} color={CREAM} seed="k1" />
+          <Pen pts={scrawl(runs[1]![0], runs[1]![1], yc, S10_SIZE * 0.31, 'k2')} progress={strike[1]!} width={6} color={CREAM} seed="k2" />
+          <Pen pts={loop((runs[2]![0] + runs[2]![1]) / 2, yc, (runs[2]![1] - runs[2]![0]) / 2 + 56, S10_SIZE * 0.78, 'k3')} progress={circle} width={8} color={RED} seed="k3" />
+        </svg>
       </Layer>
-      <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0 }}>
-        <Pen pts={loop((runs[2]![0] + runs[2]![1]) / 2, yc, (runs[2]![1] - runs[2]![0]) / 2 + 56, S10_SIZE * 0.78, 'k3')} progress={circle} width={8} color={RED} seed="k3" />
-      </svg>
+      </Layer>
     </AbsoluteFill>
   );
 };
@@ -157,16 +162,20 @@ export const S11: React.FC = () => (
 );
 
 // ---- shot 12: end card ----
-// Frames the tagline words land, matched to the voiceover (sound.tsx places it at VO_AT.s12).
-export const S12_TAG = [28, 32, 48, 53];
-export const S12_URL = 82;
+// "Kinetograph. Motion pictures, written in code. Try it at kinetograph.dev." The tagline's words land on the
+// voiceover's (words 2 to 6 of 12-end), the address on its own.
+const S12_SAID = spoken('12-end');
+export const S12_TAG = S12_SAID.slice(1, 6).map((w) => w.from);
+/** The URL lands as it is spoken, just after "at" (the ASR leaves "kinetograph dot dev" out of its words). */
+export const S12_URL = S12_SAID[S12_SAID.length - 1]!.to + 2;
+const S12_WORDS = ['motion', 'pictures,', 'written', 'in', 'code.'];
 
 export const S12: React.FC<{ renderSeconds?: number | null }> = ({ renderSeconds = RENDER_SECONDS }) => {
   const frame = useCurrentFrame();
   const land = interpolate(frame, [6, 14], [0, 1], { ...CLAMP, easing: OUT });
   const dot = interpolate(frame, [12, 22], [0, 1], { ...CLAMP, easing: Easing.out(Easing.back(2.2)) });
   const fade = (a: number, b: number) => interpolate(frame, [a, b], [0, 1], CLAMP);
-  const words = ['write', 'remotion.', 'render', 'native.'];
+  const words = S12_WORDS;
   const urlT = interpolate(frame, [S12_URL, S12_URL + 8], [0, 1], { ...CLAMP, easing: OUT });
   return (
     <AbsoluteFill style={{ background: '#060606' }}>

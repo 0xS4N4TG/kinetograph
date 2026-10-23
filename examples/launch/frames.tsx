@@ -3,7 +3,8 @@
 import React from 'react';
 import { Composition, registerRoot } from 'remotion';
 import { FPS, H, LEN, W } from './common.js';
-import { S01, S02, S05, S06 } from './act1.js';
+import { S01, S02 } from './act1-open.js';
+import { S05, S06 } from './act1.js';
 import { S03, S04 } from './act1-crt.js';
 import { S07, S08, S09 } from './act2.js';
 import { S10, S11, S12 } from './act3.js';

@@ -1,18 +1,18 @@
 {
- "02-question": "voice/final_narrator/02-question.wav",
- "03-screenshot": "voice/final_narrator/03-screenshot.wav",
+ "02-1891": "voice/final_narrator/02-1891.wav",
+ "03-today": "voice/final_narrator/03-today.wav",
  "04-you-dont": "voice/final_narrator/04-you-dont.wav",
  "05-render": "voice/final_narrator/05-render.wav",
  "07a-your": "voice/final_narrator/07a-your.wav",
  "07b-write": "voice/final_narrator/07b-write.wav",
- "07c-past": "voice/final_narrator/07c-past.wav",
+ "07c-text": "voice/final_narrator/07c-text.wav",
  "m1-3d": "voice/final_narrator/m1-3d.wav",
  "m2-iso": "voice/final_narrator/m2-iso.wav",
- "m3-webgl": "voice/final_narrator/m3-webgl.wav",
+ "m3-shaders": "voice/final_narrator/m3-shaders.wav",
  "m4-canvas": "voice/final_narrator/m4-canvas.wav",
  "m5-glass": "voice/final_narrator/m5-glass.wav",
  "08-remotion": "voice/final_narrator/08-remotion.wav",
- "09-numbers": "voice/final_narrator/09-numbers.wav",
+ "09-film": "voice/final_narrator/09-film.wav",
  "10-pixels": "voice/final_narrator/10-pixels.wav",
  "12-end": "voice/final_narrator/12-end.wav"
 }

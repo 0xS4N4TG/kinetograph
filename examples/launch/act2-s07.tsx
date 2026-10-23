@@ -1,4 +1,4 @@
-// Shot 7: "your demo, your launch, your changelog, write it in code and it renders for you." Archive film of the 1927
+// Shot 7: "Your demo. Your launch. Your changelog. Write it in code, and it renders." Archive film of the 1927
 // Armistice Day parade in Columbus, Ohio (US National Archives, public domain): the veterans of the reviewing stand,
 // graded silver and warm, grain and gate weave, pushing in slowly, letterboxed. The voiceover writes itself beside a
 // tracked face in the Geronimo Stilton way (print/captions.tsx). On "and it renders" the cut is to a thermal printer
@@ -10,13 +10,15 @@ import { Layer, Video, glow, gradientMap, grain } from '@kinetograph/core';
 import { CLAMP, H, LEN, W } from './common.js';
 import { Captions, type CaptionLine, type Point } from './print/captions.js';
 import { Receipts } from './print/receipts.js';
+import { VO, spoken } from './sound-timing.js';
 import veteranTrack from './track/veteran.json';
 import hatTrack from './track/hat.json';
 
-/** The voiceover lines of the shot (sound-timing.ts puts 07a at frame 4 and 07b at frame 58). */
+const AT = (file: string) => VO.find((v) => v.file === file)!.at;
+/** The voiceover lines of the shot, where sound-timing.ts puts them. */
 export const LINES: CaptionLine[] = [
-  { file: '07a-your', at: 4, split: [2, 2, 2], hot: ['demo', 'launch', 'changelog'] },
-  { file: '07b-write', at: 58, split: [4, 3, 2], hot: ['code', 'renders'] },
+  { file: '07a-your', at: AT('07a-your'), split: [2, 2, 2], hot: ['demo', 'launch', 'changelog'] },
+  { file: '07b-write', at: AT('07b-write'), split: [4, 3], hot: ['code', 'renders'] },
 ];
 
 type Track = { points: number[][] };
@@ -24,17 +26,17 @@ type Track = { points: number[][] };
  *  shot it cuts in, and its tracked face (tools/track/track.mjs, one point per frame). */
 export const CUTS = [
   { at: 0, src: 'footage/veteran.mp4', track: veteranTrack as Track },
-  { at: 56, src: 'footage/hat.mp4', track: hatTrack as Track },
+  { at: AT('07b-write') - 2, src: 'footage/hat.mp4', track: hatTrack as Track },
 ] as const;
 /** The cut to the receipts, on "and it renders". */
-export const RECEIPTS_AT = 78;
+export const RECEIPTS_AT = spoken('07b-write')[4]!.from;
 /** Letterbox bars for 2.39:1. */
-const BAR = Math.round((H - W / 2.39) / 2);
+export const BAR = Math.round((H - W / 2.39) / 2);
 
 const TONE = [{ offset: 0, color: '#060708' }, { offset: 0.5, color: '#7d766b' }, { offset: 1, color: '#fff2dc' }];
 
 /** The film's slow push-in and its gate weave at shot frame `f` of a cut that began at `at`. */
-function camera(f: number, at: number) {
+export function camera(f: number, at: number) {
   const s = 1.04 + 0.05 * ((f - at) / 60);
   const jx = (random(`weave-x-${f}`) - 0.5) * 3, jy = (random(`weave-y-${f}`) - 0.5) * 2.5;
   return { s, jx, jy, map: (p: Point): Point => ({ x: W / 2 + (p.x - W / 2) * s + jx, y: H / 2 + (p.y - H / 2) * s + jy }) };
@@ -57,13 +59,13 @@ function receiptAnchor(f: number): (Point & { side: 'right' }) | null {
   return { x: 1110, y: Math.max(560, 820 - t * 24), side: 'right' };
 }
 
-const Film: React.FC<{ src: string; at: number }> = ({ src, at }) => {
+export const Film: React.FC<{ src: string; at: number; id?: string }> = ({ src, at, id = 'film' }) => {
   const frame = useCurrentFrame() + at;
   const cam = camera(frame, at);
   // the projector's flicker: the exposure breathes a few percent frame to frame
   const flicker = 0.94 + random(`flicker-${frame}`) * 0.08;
   return (
-    <Layer id={`film-${at}`} x={(1 - cam.s) * (W / 2) + cam.jx} y={(1 - cam.s) * (H / 2) + cam.jy} scale={cam.s} opacity={flicker}
+    <Layer id={`${id}-${at}`} x={(1 - cam.s) * (W / 2) + cam.jx} y={(1 - cam.s) * (H / 2) + cam.jy} scale={cam.s} opacity={flicker}
       effects={[gradientMap({ stops: TONE }), glow({ radius: 40, intensity: 0.3 }), grain(0.09, { seed: 7 + at })]}>
       <Video src={staticFile(src)} width={W} height={H} fit="cover" muted />
     </Layer>
@@ -71,7 +73,7 @@ const Film: React.FC<{ src: string; at: number }> = ({ src, at }) => {
 };
 
 /** A two-frame flash on a cut, warm, like light through the gate. */
-const Flash: React.FC<{ at: number }> = ({ at }) => {
+export const Flash: React.FC<{ at: number }> = ({ at }) => {
   const frame = useCurrentFrame();
   return <AbsoluteFill style={{ background: '#FFE9C8', opacity: interpolate(frame, [at, at + 1, at + 4], [0.6, 0.3, 0], CLAMP) }} />;
 };
