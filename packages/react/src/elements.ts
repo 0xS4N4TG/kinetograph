@@ -634,6 +634,17 @@ function videoNeedsCss(props: VideoProps): boolean {
   return false;
 }
 
+let datamoshCheck: ((src: string) => void) | null = null;
+
+/**
+ * `@kinetograph/core` sets this: called with the `src` of every `<Video datamosh>` that renders, so that a codec that
+ * exports no motion vectors is reported as unsupported (the header is read there, with the addon; this package has no
+ * addon).
+ */
+export function setDatamoshCheck(fn: ((src: string) => void) | null): void {
+  datamoshCheck = fn;
+}
+
 /** `DatamoshOptions` checked, with its frames moved from the Sequence's to the composition's (as `mediaClock` does `from`). */
 function moshOf(label: string, options: DatamoshOptions, timeline: TimelineState): DatamoshJson {
   const { from, to, hold, mix } = options;
@@ -687,6 +698,7 @@ export function Video(props: VideoProps): ReactNode {
   if (datamosh !== undefined && videoNeedsCss(props)) {
     throw new Error(`${label} datamosh needs a plain video: use width, height and fit, not style or className`);
   }
+  if (datamosh !== undefined) datamoshCheck?.(src);
   // As <Audio>: the absolute frame at which the clip's own frame 0 falls.
   const { from, rate } = mediaClock(timeline, offset);
   const rated = rate === 1 ? playbackRate : (playbackRate ?? 1) * rate;

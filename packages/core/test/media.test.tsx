@@ -5,9 +5,11 @@ import { motionSubFrames, type GifLayer, type GroupLayer, type VideoLayer } from
 import { resetRenderState } from '../src/assets.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { resetVirtualClock } from '../src/determinism.js';
+import '../src/datamosh.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
 import { Gif, getGifDurationInSeconds } from '../src/gif.js';
 import { getVideoMetadata, setMediaProbe } from '../src/media-utils.js';
+import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { Freeze, Sequence } from '../src/timeline.js';
 import { renderAt } from './scene-harness.js';
 
@@ -123,6 +125,21 @@ describe('@kinetograph/core/gif', () => {
     expect(renderAt(gif, 29).layers).toEqual([]);
     const at45 = (renderAt(gif, 45).layers[0] as GroupLayer).children[0] as GifLayer;
     expect(at45.time).toBe(0.5);
+  });
+});
+
+describe('<Video datamosh> on a codec without motion vectors', () => {
+  it('is reported as unsupported, and only for that codec', () => {
+    probe({ 'a.mp4': info(), 'b.webm': info({ videoCodec: 'vp9' }) });
+    clearReportedUnsupported();
+    renderAt(<Video id="v" src="a.mp4" datamosh={{ from: 0, to: 10 }} />, 3);
+    expect(reportedUnsupported()).toEqual([]);
+    renderAt(<Video id="v" src="b.webm" datamosh={{ from: 0, to: 10 }} />, 3);
+    expect(reportedUnsupported()).toMatchObject([{ element: 'Video', property: 'datamosh', value: 'vp9' }]);
+    // A video without a datamosh is not asked.
+    clearReportedUnsupported();
+    renderAt(<Video id="v" src="b.webm" />, 3);
+    expect(reportedUnsupported()).toEqual([]);
   });
 });
 

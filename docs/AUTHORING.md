@@ -1344,8 +1344,8 @@ interface DatamoshOptions {
   moves clip A's pixels (`frame` is a frame of that file at the composition's rate). Put the video of clip B in a
   Sequence that starts when the cut should be.
 - `mix` 0 only moves the old picture; 1 adds the full residual of the new shot, so its detail rides on the old colour.
-- Needs motion vectors: H.264 and MPEG-4 (the MPEG family). Another codec is drawn plain and warned about
-  (`--strict` fails). A `<Video>` with CSS style or `className` (laid out by the DOM engine) cannot take `datamosh`:
+- Needs motion vectors: H.264 and MPEG-4 (the MPEG family). Another codec is drawn plain and reported as
+  unsupported (`--strict` fails; core's `<Video>` check reads the file's codec). A `<Video>` with CSS style or `className` (laid out by the DOM engine) cannot take `datamosh`:
   use `width`, `height` and `fit`.
 - Deterministic and the same at any `--concurrency`. A render pays one decode and step per frame since `from` the
   first time it enters a window, then one per frame (about 15 ms at 1080p with `mix`, 7 ms without, plus the decode),

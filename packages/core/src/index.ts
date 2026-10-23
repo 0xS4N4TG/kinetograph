@@ -75,6 +75,9 @@ export type {
   GifProps,
 } from '@kinetograph/react';
 
+// <Video datamosh> on a codec without motion vectors is reported as unsupported (AUTHORING.md §11.8).
+import './datamosh.js';
+
 // <Gif> with the duration lookup that `loopBehavior="unmount-after-finish"` needs (AUTHORING.md §11.3).
 export { Gif } from './gif.js';
 
