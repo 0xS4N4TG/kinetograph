@@ -13,14 +13,15 @@ export const FPS = 30;
 export const SANS = loadDMSans('normal', { weights: ['400', '500', '700'] }).fontFamily;
 export const MONO = loadMono('normal', { weights: ['400', '500'] }).fontFamily;
 export const HAND = loadRockSalt('normal', { weights: ['400'] }).fontFamily;
-/** The film's big numbers: its own face at a hairline weight, set very large, the way a film's title cards are. */
-export const TITLE = loadDMSans('normal', { weights: ['200'] }).fontFamily;
-export const TITLE_WEIGHT = 200;
-/** Its glow: the number lit like projected light, with a little halation round the thin strokes. */
+/** The film's big numbers: its own face at the end card's bold weight, set very large, the way a film's title cards
+ *  are (a hairline read too thin at this size). */
+export const TITLE = SANS;
+export const TITLE_WEIGHT = 700;
+/** Its glow: the number lit like projected light, with a little halation round the strokes. */
 export const TITLE_GLOW = '0 0 18px rgba(255,240,220,0.35), 0 0 60px rgba(255,220,180,0.18)';
 
 /** Seconds this whole film takes to render (kinetograph render, --concurrency 4, M4, the median of 3 runs with the
- *  bench lock held). Shot 9, the end card and the narration say it. Measured on the 39 s cut: 26.20, 26.25 and 26.31 s
+ *  bench lock held). Shot 9, the end card and the narration say it. Measured on the 39.5 s cut: 25.44, 25.59 and 28.91 s
  *  (2026-10-23). If the cut changes, measure again and re-voice the take if the number moves. */
 export const RENDER_SECONDS = 26;
 
