@@ -87,12 +87,15 @@ cd "$WORK/ffmpeg"
 make -j"$JOBS" >"$WORK/make.log" 2>&1 || { grep -m20 -n -i 'error' "$WORK/make.log"; tail -30 "$WORK/make.log"; exit 1; }
 make install >/dev/null
 
-# MSVC's linker looks for avcodec.lib, ffmpeg's static archive is libavcodec.a.
+# MSVC's linker looks for avcodec.lib. With --toolchain=msvc ffmpeg installs exactly that; a MinGW-style libavcodec.a
+# gets a .lib copy.
 if [ "$OS" = windows ]; then
   for f in "$PREFIX"/lib/lib*.a; do
+    [ -e "$f" ] || continue
     b=$(basename "$f" .a)
     cp "$f" "$PREFIX/lib/${b#lib}.lib"
   done
+  ls "$PREFIX"/lib
 fi
 
 # The licence check: LGPL, and none of the GPL or non-free pieces.
