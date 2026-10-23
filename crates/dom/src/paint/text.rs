@@ -11,6 +11,7 @@ use style::properties::ComputedValues;
 use style::values::computed::{Float, Length};
 use style::values::specified::TextDecorationLine;
 use style::values::specified::box_::DisplayOutside;
+use style_traits::ToCss;
 
 use super::geom::Rect;
 use super::util::{Layer, current_color, hex_of, num, num4, resolve_color, rgba, shift};
@@ -159,6 +160,12 @@ impl<'a> Painter<'a> {
                             );
                             continue;
                         };
+                        let family = style.get_font().font_family.to_css_string();
+                        if let Some(reason) =
+                            crate::fonts::unloaded_reason(&family, &self.req.fonts)
+                        {
+                            self.report(node, "font-family", family, reason);
+                        }
                         let synth = run.synthesis();
                         let mut glyphs: Vec<Value> = Vec::new();
                         for g in gr.positioned_glyphs() {

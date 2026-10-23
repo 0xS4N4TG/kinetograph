@@ -3,8 +3,9 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetograph/core';
 import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetograph/scene';
-import { bundleProject } from './bundle.js';
+import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
+import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
@@ -19,6 +20,7 @@ interface ProjectModule {
   setAudioDecoder(fn: ((path: string, sampleRate: number) => ReturnType<typeof import('@kinetograph/native').decodeAudio>) | null): void;
   setMediaParserAddon(addon: import('@kinetograph/core/media-parser').MediaParserAddon | null): void;
   setDomAddon(addon: object | null): void;
+  setFallbackFont(path: string | null): void;
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
   stylesheetNotes(): string[];
@@ -72,6 +74,8 @@ export interface OpenOptions {
   props?: string;
   /** An already built bundle of the entry (the studio's): used instead of bundling again. */
   bundleFile?: string;
+  /** When given, an import of an unsupported package is listed here and stubbed, instead of failing the bundle. */
+  unsupportedImports?: UnsupportedImport[];
 }
 
 export function isSceneFile(entry: string): boolean {
@@ -114,8 +118,12 @@ export function publicDirOf(entry: string): string {
   }
 }
 
-async function loadProject(entry: string, bundleFile?: string): Promise<{ mod: ProjectModule; file: string }> {
-  const file = bundleFile ?? (await bundleProject(entry)).file;
+async function loadProject(
+  entry: string,
+  bundleFile?: string,
+  unsupported?: UnsupportedImport[],
+): Promise<{ mod: ProjectModule; file: string }> {
+  const file = bundleFile ?? (await bundleProject(entry, unsupported ? { unsupported } : {})).file;
   process.setSourceMapsEnabled(true);
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
   // before setPublicDir below can.
@@ -133,6 +141,8 @@ async function loadProject(entry: string, bundleFile?: string): Promise<{ mod: P
   }
   mod.setPublicDir(publicDir);
   mod.setLayoutText(native().layoutText);
+  // Text with no font of the project's is set in the font Kinetograph ships (and reported), not left out.
+  mod.setFallbackFont(LABEL_FONT_PATH);
   // The DOM engine: islands are styled, laid out and painted by the addon, relative paths resolve from the entry.
   mod.setDomAddon(native());
   mod.setDomEnvironment({ baseDir: dirname(entry), publicDir });
@@ -186,7 +196,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
   }
 
   const inputProps = parseProps(options.props);
-  const { mod, file: bundleFile } = await loadProject(absolute, options.bundleFile);
+  const { mod, file: bundleFile } = await loadProject(absolute, options.bundleFile, options.unsupportedImports);
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);

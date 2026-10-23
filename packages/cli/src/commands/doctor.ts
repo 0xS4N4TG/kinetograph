@@ -2,6 +2,8 @@
 
 import { describeIssue, summarize, type DoctorReport } from '@kinetograph/compat/doctor';
 import type { Unsupported } from '@kinetograph/scene';
+import { relative } from 'node:path';
+import type { UnsupportedImport } from '../bundle.js';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
 import { frameRange, type Source } from '../source.js';
@@ -33,6 +35,8 @@ function ranges(list: readonly [number, number][]): string {
 const percent = (share: number): string => `${(share * 100).toFixed(1)}%`;
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+const NOTHING_LEFT_OUT = 'nothing is left out: every frame is drawn in full by the engine';
+
 /** The report as people read it. */
 export function formatReport(report: DoctorReport): string {
   const lines: string[] = [];
@@ -43,7 +47,7 @@ export function formatReport(report: DoctorReport): string {
       `with unsupported content: ${report.unsupportedFrames}`,
   );
   if (report.issues.length === 0) {
-    lines.push('nothing is left out: every frame is drawn in full by the engine');
+    lines.push(NOTHING_LEFT_OUT);
   } else {
     lines.push('these are drawn without it or approximated (`render --strict` fails on them instead)');
     lines.push('', `${plural(report.issues.length, 'issue')}, most frames first:`);
@@ -55,6 +59,13 @@ export function formatReport(report: DoctorReport): string {
     });
   }
   if (report.notes) lines.push('', 'stylesheets:', ...report.notes.map((note) => `  ${note}`));
+  return lines.join('\n');
+}
+
+/** The imports of packages Kinetograph does not support, one line each, with the file that imports them. */
+export function formatImports(imports: readonly UnsupportedImport[]): string {
+  const lines = [`${plural(imports.length, 'import')} of packages Kinetograph does not support (they draw nothing here):`];
+  for (const { specifier, file } of imports) lines.push(`  ${specifier}  imported by ${file === null ? 'the entry' : relative(process.cwd(), file) || file}`);
   return lines.join('\n');
 }
 
@@ -89,13 +100,36 @@ export const doctor: Command = {
       return installReport();
     }
 
-    const source = await openFromArgs(args);
+    // An import of an unsupported package would fail the bundle: it is listed instead, and the rest is checked.
+    const imports: UnsupportedImport[] = [];
+    const withImports = <T extends object>(data: T, text: string): { data: T | (T & { unsupportedImports: UnsupportedImport[] }); text: string } =>
+      imports.length === 0
+        ? { data, text }
+        : {
+            data: { ...data, unsupportedImports: imports },
+            text: `${formatImports(imports)}\n\n${text.replace(NOTHING_LEFT_OUT, `${plural(imports.length, 'unsupported import')} drawn as nothing`)}`,
+          };
+    const failed = (error: unknown): { data: object; text: string } => {
+      const reason = error instanceof Error ? error.message : String(error);
+      return withImports({ error: reason }, `the frames could not be checked: ${reason}`);
+    };
+
+    let source: Source;
+    try {
+      source = await openFromArgs(args, { unsupportedImports: imports });
+    } catch (error) {
+      if (imports.length === 0) throw error;
+      return failed(error);
+    }
     try {
       const [first, last] = frameRange(args.options.range as string | undefined, source.composition.durationInFrames);
       const report = summarize(source.composition.id, await scan(source, first, last, context.progress));
       const notes = source.notes?.() ?? [];
       if (notes.length > 0) report.notes = notes;
-      return { data: report, text: formatReport(report) };
+      return withImports(report, formatReport(report));
+    } catch (error) {
+      if (imports.length === 0) throw error;
+      return failed(error);
     } finally {
       source.dispose();
     }
