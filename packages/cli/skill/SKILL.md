@@ -9,8 +9,9 @@ Kinetograph renders video without a browser. You write TypeScript with the Remot
 runs it; a GPU compositor draws it. You cannot watch a video, so you look at single frames and read the scene graph.
 
 Run everything as `npx kinetograph <command>`. Add `--json` to get one JSON object you can parse; a failure is
-`{ "error": { "code", "message" } }` with exit code 1. (If you are connected to the MCP server there is one tool per
-command (except `studio`) with the same arguments; `still`, `strip` and `onion` return the image itself.)
+`{ "error": { "code", "message" } }` with exit code 1. (Over MCP (`kinetograph mcp`) there is one tool per command except `studio`, named
+like the command (`audio analyze` is `audio_analyze`), with the same arguments; `still`, `strip` and `onion` return the image
+itself, and `output` is optional for them.)
 
 ## The loop
 
@@ -19,7 +20,7 @@ command (except `studio`) with the same arguments; `still`, `strip` and `onion` 
    for twelve labelled frames at once (do this first, it shows the whole animation); `kinetograph onion src/index.tsx 0..60 -n 6 -o out/path.png`
    to see a motion path. Open the PNG to look at it.
 3. **Check** without pixels: `kinetograph inspect src/index.tsx --frame 45` gives every layer's resolved position, size,
-   bounds, effects and text lines. `kinetograph lint src/index.tsx` reports text overflowing its box or the canvas,
+   bounds, effects and text lines. `kinetograph lint src/index.tsx` (`--frames 0,45,89` picks the frames; default 8 spread out) reports text overflowing its box or the canvas,
    layers off the canvas, overlapping text, missing fonts and assets, each with the frame and layer id. Fix what it
    says. It only checks what a frame can show: a layer at opacity 0 (or inside a group at opacity 0) and one that its
    clip cuts away completely are skipped at that frame, so a toast fading in off the canvas is not reported while hidden.
@@ -119,7 +120,8 @@ Effects (helpers of the same name; `kinetograph effects` lists their fields): `b
 for your own WGSL. `motionBlur({ samples: 8 })` goes in the same `effects` array.
 
 The details are in `docs/AUTHORING.md` (§5 helpers, §6 elements and their JSON, §7 the Remotion API) and
-`docs/SCENE.md` (every layer type, effect and field; the exact meaning of each).
+`docs/SCENE.md` (every layer type, effect and field; the exact meaning of each), both in the repo
+(github.com/0xS4N4TG/kinetograph); they are not in the npm package.
 
 ## Sound
 
