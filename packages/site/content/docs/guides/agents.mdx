@@ -3,13 +3,13 @@ title: Use with agents
 description: Give a coding agent the Kinetograph skill and MCP tools so it can write, check and render videos.
 ---
 
-An agent cannot watch a video. Kinetograph gives it two things to work around that: a skill that teaches the write, look, check, render loop, and an MCP server that runs each CLI command as a tool, returning frames as images.
+An agent can't watch a video, so Kinetograph gives it two things instead. A skill teaches it a loop: write, look, check, render. An MCP server lets it run each CLI command as a tool and see frames as images.
 
 ## What an agent gets
 
-**The skill** is one file, `SKILL.md`, loaded into the agent's context. It covers the loop below, the project shape (`registerRoot`, `Composition`, the native elements and effects), sound, compat mode and `doctor`, and the CLI flags an agent needs.
+**The skill** is one file, `SKILL.md`, that the agent reads. It covers the loop below, how a project is laid out (`registerRoot`, `Composition`, the native elements and effects), sound, Remotion compatibility and `doctor`, and the CLI flags an agent needs.
 
-**The MCP server** is `npx kinetograph mcp`, over stdio. It has one tool per CLI command except `studio`, which serves until stopped. A tool takes the same arguments as its command, and an error comes back as `{ "error": { "code", "message" } }`. Names with a space use an underscore.
+**The MCP server** is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. A tool takes the same arguments as its command. Command names with a space use an underscore. An error comes back as `{ "error": { "code", "message" } }`.
 
 | Tool | What it does |
 |---|---|
@@ -18,7 +18,7 @@ An agent cannot watch a video. Kinetograph gives it two things to work around th
 | `strip` | Contact sheet of evenly spaced frames, labelled with frame and time; returns the image |
 | `onion` | Frames of a range blended over one another, to show a motion path; returns the image |
 | `inspect` | The scene graph at a frame: layers, bounds and resolved styles |
-| `lint` | Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, type errors, and what compat mode cannot draw |
+| `lint` | Text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts and assets, type errors, and what the engine can't draw from a Remotion project |
 | `check` | Type errors in the project (`tsc --noEmit`), such as a misspelled prop that renders without an error |
 | `doctor` | What a project holds that the engine cannot draw, and in which frames; with no entry, what this install can do |
 | `render` | Render frames to a video with audio |
@@ -31,7 +31,7 @@ For `still`, `strip` and `onion`, `output` is optional: the server writes a temp
 
 ## Set up the MCP server
 
-Every client below starts the same command, `npx -y kinetograph mcp`. Node 22 or newer must be on the path, and a GPU that wgpu supports (Metal on macOS) must be present.
+Every client below runs the same command, `npx -y kinetograph mcp`. You need Node 22 or newer, and a GPU that wgpu supports (Metal on macOS).
 
 > Until 0.1.0 is on npm, run the server from a clone: build the repo, then use `node` as the command with the arguments `/path/to/kinetograph/packages/cli/dist/cli.js` and `mcp` (`node packages/cli/dist/cli.js mcp` from the repo root).
 
@@ -41,7 +41,7 @@ Every client below starts the same command, `npx -y kinetograph mcp`. Node 22 or
 claude mcp add kinetograph -- npx -y kinetograph mcp
 ```
 
-This stores the server for you in the current project. Add `--scope project` to write it to `.mcp.json` for the team, or `--scope user` to use it in every project.
+This saves the server for the current project. Add `--scope project` to write it to `.mcp.json` for the team, or `--scope user` to use it in every project.
 
 ### Claude Desktop
 
@@ -90,14 +90,14 @@ Or run `codex mcp add kinetograph -- npx -y kinetograph mcp`. `codex mcp list` s
 
 ## Install the skill
 
-The skill ships inside the npm package. With the package installed in a project, copy it where Claude Code looks for skills:
+The skill comes inside the npm package. Once the package is installed in a project, copy it to where Claude Code looks for skills:
 
 ```bash
 mkdir -p ~/.claude/skills/kinetograph
 cp node_modules/kinetograph/skill/SKILL.md ~/.claude/skills/kinetograph/
 ```
 
-For one project only, copy it to `.claude/skills/kinetograph/` in that project instead. Other agents that read `SKILL.md` files take the same file in their own skills directory.
+For one project only, copy it to `.claude/skills/kinetograph/` in that project instead. Other agents that read `SKILL.md` files can use the same file in their own skills folder.
 
 You can also install it from the repository with the [`skills`](https://www.npmjs.com/package/skills) CLI, which finds `packages/cli/skill/SKILL.md` and asks which agents to install it for:
 
@@ -110,8 +110,8 @@ npx skills add 0xS4N4TG/kinetograph          # install
 
 1. **Write** a project file that calls `registerRoot`.
 2. **Look.** `strip` shows twelve labelled frames at once, `still` shows one, and `onion` shows a motion path. The agent reads the PNG.
-3. **Check** without pixels. `inspect` gives each layer's resolved position and bounds at a frame. `lint` reports overflow, off-canvas layers, missing fonts and assets, with the frame and layer id. `check` catches type errors that render without complaint.
+3. **Check** without looking at pixels. `inspect` gives each layer's final position and bounds at a frame. `lint` reports overflow, off-canvas layers, missing fonts and assets, with the frame and layer id. `check` catches type errors that render without complaint.
 4. **Fix** and go back to step 2. A still takes well under a second.
-5. **Render** with `render`. Use `--draft` for a half-size look first, and `doctor` before a long render on a project that uses DOM elements or CSS, to see what the render will leave out.
+5. **Render** with `render`. Use `--draft` for a half-size look first, and `doctor` before a long render on a project that uses HTML elements or CSS, to see what the render will leave out.
 
 A prompt as short as "make a 5 second title card for X, check it with strip and lint, and render it to out/title.mp4" is enough to start this loop.
