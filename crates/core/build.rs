@@ -22,10 +22,17 @@ fn skia_source() -> std::path::PathBuf {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let out = std::process::Command::new(cargo)
         // `--all-features`: skia-bindings is an optional dependency that the default features leave out of the listing.
-        .args(["metadata", "--offline", "--all-features", "--format-version", "1", "--manifest-path"])
+        // `--filter-platform`: only the packages this target builds, which are the ones cargo has downloaded (a plain
+        // `--offline` listing fails on a fresh CI checkout, where the other platforms' crates are not fetched).
+        .args(["metadata", "--all-features", "--format-version", "1", "--filter-platform"])
+        .arg(std::env::var("TARGET").expect("TARGET"))
+        .arg("--manifest-path")
         .arg(format!("{manifest}/Cargo.toml"))
         .output()
         .expect("cargo metadata");
+    if !out.status.success() {
+        panic!("cargo metadata failed: {}", String::from_utf8_lossy(&out.stderr));
+    }
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).expect("cargo metadata output");
     let package = json["packages"]
         .as_array()
