@@ -9,6 +9,7 @@ import { S07, S08, S09 } from './act2.js';
 import { M1, M2, M3, M4, M5 } from './act2-mg.js';
 import { S10, S11, S12 } from './act3.js';
 import { Soundtrack } from './sound.js';
+import { V2Compositions } from './v2/index.js';
 
 /** Where the burn (shot 6) is centred: on the cut from shot 5 into shot 7. */
 export const BURN_CUT = LEN.s01 + LEN.s02 + LEN.s03 + LEN.s04 + LEN.s05;
@@ -39,4 +40,9 @@ const Launch: React.FC = () => (
   </AbsoluteFill>
 );
 
-registerRoot(() => <Composition id="launch" component={Launch} width={W} height={H} fps={FPS} durationInFrames={TOTAL} />);
+registerRoot(() => (
+  <>
+    <Composition id="launch" component={Launch} width={W} height={H} fps={FPS} durationInFrames={TOTAL} />
+    <V2Compositions />
+  </>
+));
