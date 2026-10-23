@@ -39,7 +39,37 @@ fn skia_source() -> std::path::PathBuf {
         .and_then(|all| all.iter().find(|p| p["name"] == "skia-bindings"))
         .expect("the skia-bindings package");
     let manifest_path = PathBuf::from(package["manifest_path"].as_str().expect("manifest_path"));
-    manifest_path.parent().expect("crate directory").join("skia")
+    let bundled = manifest_path.parent().expect("crate directory").join("skia");
+    if bundled.join("include/gpu/graphite/BackendTexture.h").exists() {
+        return bundled;
+    }
+    fetch_skia_headers()
+}
+
+/// The crates.io package of skia-bindings has no Skia source (it is a git submodule of rust-skia; a machine that has
+/// built Skia from source has it, a machine that downloads the prebuilt libskia does not). The headers are all the
+/// shim needs: fetch `include/` of the commit rust-skia's tag for skia-bindings 0.153.3 points at (`skia-bindings/skia`
+/// at tag 0.153.3). Bump it with the skia-safe version.
+#[cfg(feature = "skia")]
+fn fetch_skia_headers() -> std::path::PathBuf {
+    use std::process::Command;
+    const REV: &str = "61e7ca4e99062cdd0ab69445d5963fb3365778f6";
+    let dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("skia-headers");
+    if dir.join("include/gpu/graphite/BackendTexture.h").exists() {
+        return dir;
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create the Skia headers directory");
+    let git = |args: &[&str]| {
+        let out = Command::new("git").args(args).current_dir(&dir).output().expect("run git");
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    git(&["init", "--quiet"]);
+    git(&["remote", "add", "origin", "https://github.com/rust-skia/skia"]);
+    git(&["sparse-checkout", "set", "--no-cone", "/include/"]);
+    git(&["fetch", "--quiet", "--depth=1", "origin", REV]);
+    git(&["-c", "advice.detachedHead=false", "checkout", "--quiet", "FETCH_HEAD"]);
+    dir
 }
 
 #[cfg(feature = "skia")]
