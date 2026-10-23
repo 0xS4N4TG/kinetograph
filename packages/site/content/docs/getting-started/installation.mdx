@@ -1,6 +1,67 @@
 ---
 title: Installation
-description: Install Kinetograph.
+description: Build Kinetograph from a clone and check that the native addon loads.
 ---
 
-Coming soon.
+Kinetograph is not on npm yet. Build it from a clone of the repository.
+
+## What you need
+
+- Node.js 22 or newer.
+- A Rust toolchain from rustup. Use the stable channel. The addon is built with it.
+- The FFmpeg development libraries, pkg-config and libclang. The addon links FFmpeg, so the build needs them.
+- A GPU that wgpu supports. On macOS that means Metal. No window or display is needed.
+
+Install the system libraries:
+
+- macOS: `brew install ffmpeg pkgconf`
+- Debian or Ubuntu: `sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libavutil-dev libclang-dev pkg-config`
+
+If Homebrew's `rustc` is first on your `PATH` and does not start, put rustup first:
+
+```sh
+export PATH="$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:$PATH"
+```
+
+The GPU tests, the golden images and the benchmarks run on an Apple M4 Mac. The Linux and Windows builds are set up in CI.
+
+## Build
+
+From the repository root:
+
+```sh
+npm ci
+npm run build
+```
+
+`npm ci` installs the workspace packages. `npm run build` builds the TypeScript packages and a debug build of the addon.
+
+For timings, build the release addon as well:
+
+```sh
+npm run build:release -w @kinetograph/native
+```
+
+## Check the install
+
+```sh
+npx kinetograph doctor
+```
+
+With no entry, `doctor` prints the Node version, the platform and whether the addon loaded:
+
+```text
+node v22.x.x on darwin-arm64
+addon: loaded, version 0.1.0
+kinetograph doctor <entry> reports what a project holds that the engine cannot draw
+```
+
+If the addon line says `NOT loaded`, the text after it gives the reason.
+
+`npx kinetograph --version` prints the package version.
+
+## Run the CLI
+
+From the repository root, `npx kinetograph <command>` runs the CLI. Without `npx`, run `node packages/cli/dist/cli.js <command>`. The [CLI reference](/docs/reference/cli/) lists every command.
+
+Projects inside the repository resolve the `@kinetograph/*` packages from the workspace. The next page writes a first project: [First video](/docs/getting-started/first-video/).
