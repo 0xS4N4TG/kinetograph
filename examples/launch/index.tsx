@@ -1,5 +1,5 @@
-// The Kinetograph launch film (STORYBOARD.md, storyboard.html): twelve shots and the motion-graphics run in one cut,
-// about 50 s at 30 fps.
+// The Kinetograph launch film (HANDOFF.md): the shots and the motion-graphics run in one cut, timed to one take of
+// narration (cut.ts).
 
 import React from 'react';
 import { AbsoluteFill, Composition, Series, Sequence, registerRoot } from 'remotion';
@@ -33,7 +33,7 @@ const Launch: React.FC = () => (
       <Series.Sequence durationInFrames={LEN.s08}><S08 /></Series.Sequence>
       <Series.Sequence durationInFrames={LEN.s09}><S09 /></Series.Sequence>
       <Series.Sequence durationInFrames={LEN.s10}><S10 /></Series.Sequence>
-      <Series.Sequence durationInFrames={LEN.s11}><S11 /></Series.Sequence>
+      {LEN.s11 > 0 && <Series.Sequence durationInFrames={LEN.s11}><S11 /></Series.Sequence>}
       <Series.Sequence durationInFrames={LEN.s12}><S12 /></Series.Sequence>
     </Series>
     <Sequence from={BURN_CUT - Math.floor(LEN.s06 / 2)} durationInFrames={LEN.s06}><S06 /></Sequence>

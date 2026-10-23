@@ -32,11 +32,11 @@ const BACK_ARC = `M${CX - RX} ${CY} A${RX} ${RY} 0 0 1 ${CX + RX} ${CY}`;
 const FRONT_ARC = `M${CX + RX} ${CY} A${RX} ${RY} 0 0 1 ${CX - RX} ${CY}`;
 
 const SAID = spoken('05-render');
-/** The frame the finished picture replaces the depth pass: the voiceover's "render". */
-export const S05_PASS = SAID[2]!.from;
+/** The frame the finished picture replaces the depth pass: the voiceover's "renders". */
+export const S05_PASS = SAID[1]!.from;
 
 /** The frame the handwritten FILM starts drawing: its ladder and scribble take 18 frames, then it boils on (we skip the ladder it starts with). */
-export const FILM_AT = 50;
+export const FILM_AT = S05_PASS + 14;
 
 export const S05: React.FC<{ graded?: boolean }> = ({ graded = true }) => {
   const frame = useCurrentFrame();
@@ -91,8 +91,8 @@ export const S05: React.FC<{ graded?: boolean }> = ({ graded = true }) => {
             <Over blend="screen"><Video muted src={staticFile('fx/hand-film.mp4')} trimBefore={18} trimAfter={31} loop x={900} y={560} width={1100} height={619} /></Over>
           </Sequence>
           <AbsoluteFill>
-            <Words words={['you', 'just', 'render.']} at={SAID.slice(0, 3).map((w) => w.from)} color={PAPER} size={64} style={{ position: 'absolute', left: 140, top: 510 }} />
-            <Words words={['straight', 'on', 'the', 'GPU.']} at={SAID.slice(3).map((w) => w.from)} color="#9a9590" size={40} style={{ position: 'absolute', left: 142, top: 600 }} />
+            <Words words={['it', 'renders']} at={SAID.slice(0, 2).map((w) => w.from)} color={PAPER} size={120} style={{ position: 'absolute', left: 136, top: 430 }} />
+            <Words words={['straight', 'on', 'the', 'GPU.']} at={SAID.slice(2).map((w) => w.from)} color="#9a9590" size={68} style={{ position: 'absolute', left: 142, top: 590 }} />
           </AbsoluteFill>
         </>
       )}

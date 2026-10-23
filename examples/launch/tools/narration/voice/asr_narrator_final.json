@@ -1,1 +1,1015 @@
-{"voice/final_narrator/02-1891.wav": {"text": "In 1891, a camera called the Kinetograph made pictures move", "words": [{"w": "In", "s": 0, "e": 0.091}, {"w": "1891,", "s": 0.091, "e": 0.651}, {"w": "a", "s": 0.751, "e": 0.831}, {"w": "camera", "s": 0.831, "e": 1.031}, {"w": "called", "s": 1.031, "e": 1.191}, {"w": "the", "s": 1.191, "e": 1.351}, {"w": "Kinetograph", "s": 1.351, "e": 1.711}, {"w": "made", "s": 1.711, "e": 1.971}, {"w": "pictures", "s": 1.971, "e": 2.271}, {"w": "move", "s": 2.271, "e": 2.551}], "dur": 2.550625}, "voice/final_narrator/03-today.wav": {"text": "today. To make a video with code, a browser screenshots every single frame.", "words": [{"w": "today.", "s": 0, "e": 0.24}, {"w": "To", "s": 0.42, "e": 0.54}, {"w": "make", "s": 0.54, "e": 0.66}, {"w": "a", "s": 0.66, "e": 0.74}, {"w": "video", "s": 0.74, "e": 0.92}, {"w": "with", "s": 0.92, "e": 1.08}, {"w": "code,", "s": 1.08, "e": 1.28}, {"w": "a", "s": 1.34, "e": 1.4}, {"w": "browser", "s": 1.4, "e": 1.62}, {"w": "screenshots", "s": 1.62, "e": 2.0}, {"w": "every", "s": 2.0, "e": 2.24}, {"w": "single", "s": 2.24, "e": 2.44}, {"w": "frame.", "s": 2.44, "e": 2.72}], "dur": 2.78}, "voice/final_narrator/04-you-dont.wav": {"text": "With Kinetograph, you don't need one?", "words": [{"w": "With", "s": 0.06, "e": 0.12}, {"w": "Kinetograph,", "s": 0.12, "e": 0.58}, {"w": "you", "s": 0.62, "e": 0.76}, {"w": "don't", "s": 0.76, "e": 0.9}, {"w": "need", "s": 0.9, "e": 1.02}, {"w": "one?", "s": 1.02, "e": 1.18}], "dur": 1.23}, "voice/final_narrator/05-render.wav": {"text": "You just render straight on the GPU.", "words": [{"w": "You", "s": 0.05, "e": 0.29}, {"w": "just", "s": 0.29, "e": 0.43}, {"w": "render", "s": 0.43, "e": 0.73}, {"w": "straight", "s": 0.73, "e": 1.05}, {"w": "on", "s": 1.05, "e": 1.19}, {"w": "the", "s": 1.19, "e": 1.29}, {"w": "GPU.", "s": 1.29, "e": 1.63}], "dur": 1.76}, "voice/final_narrator/07a-your.wav": {"text": "Your demo, your launch, your changelog.", "words": [{"w": "Your", "s": 0.13, "e": 0.37}, {"w": "demo,", "s": 0.37, "e": 0.65}, {"w": "your", "s": 0.79, "e": 0.89}, {"w": "launch,", "s": 0.89, "e": 1.17}, {"w": "your", "s": 1.25, "e": 1.35}, {"w": "changelog.", "s": 1.35, "e": 1.79}], "dur": 1.85}, "voice/final_narrator/07b-write.wav": {"text": "Write it in code and it renders.", "words": [{"w": "Write", "s": 0.06, "e": 0.32}, {"w": "it", "s": 0.32, "e": 0.42}, {"w": "in", "s": 0.42, "e": 0.54}, {"w": "code", "s": 0.54, "e": 0.74}, {"w": "and", "s": 0.74, "e": 0.86}, {"w": "it", "s": 0.86, "e": 0.96}, {"w": "renders.", "s": 0.96, "e": 1.26}], "dur": 1.31}, "voice/final_narrator/07c-text.wav": {"text": "And not just text,", "words": [{"w": "And", "s": 0.05, "e": 0.09}, {"w": "not", "s": 0.09, "e": 0.21}, {"w": "just", "s": 0.21, "e": 0.39}, {"w": "text,", "s": 0.39, "e": 0.67}], "dur": 0.72}, "voice/final_narrator/m1-3d.wav": {"text": "real 3D,", "words": [{"w": "real", "s": 0.05, "e": 0.23}, {"w": "3D,", "s": 0.23, "e": 0.61}], "dur": 0.69}, "voice/final_narrator/m2-iso.wav": {"text": "isometric scenes,", "words": [{"w": "isometric", "s": 0.08, "e": 0.58}, {"w": "scenes,", "s": 0.58, "e": 0.94}], "dur": 1.09}, "voice/final_narrator/m3-shaders.wav": {"text": "shaders,", "words": [{"w": "shaders,", "s": 0.15, "e": 0.53}], "dur": 0.6}, "voice/final_narrator/m4-canvas.wav": {"text": "canvas,", "words": [{"w": "canvas,", "s": 0.07, "e": 0.33}], "dur": 0.4}, "voice/final_narrator/m5-glass.wav": {"text": "even glass that bends the light.", "words": [{"w": "even", "s": 0.07, "e": 0.23}, {"w": "glass", "s": 0.23, "e": 0.49}, {"w": "that", "s": 0.49, "e": 0.61}, {"w": "bends", "s": 0.61, "e": 0.81}, {"w": "the", "s": 0.81, "e": 0.93}, {"w": "light.", "s": 0.93, "e": 1.09}], "dur": 1.19}, "voice/final_narrator/08-remotion.wav": {"text": "Already using Remotion, your projects run as they are.", "words": [{"w": "Already", "s": 0.1, "e": 0.32}, {"w": "using", "s": 0.32, "e": 0.58}, {"w": "Remotion,", "s": 0.58, "e": 0.92}, {"w": "your", "s": 1.0, "e": 1.12}, {"w": "projects", "s": 1.12, "e": 1.5}, {"w": "run", "s": 1.5, "e": 1.74}, {"w": "as", "s": 1.74, "e": 1.92}, {"w": "they", "s": 1.92, "e": 2.04}, {"w": "are.", "s": 2.04, "e": 2.22}], "dur": 2.29}, "voice/final_narrator/09-film.wav": {"text": "This whole film rendered in 27 seconds.", "words": [{"w": "This", "s": 0.0, "e": 0.18}, {"w": "whole", "s": 0.18, "e": 0.34}, {"w": "film", "s": 0.34, "e": 0.54}, {"w": "rendered", "s": 0.54, "e": 0.76}, {"w": "in", "s": 0.76, "e": 0.92}, {"w": "27", "s": 0.92, "e": 1.24}, {"w": "seconds.", "s": 1.24, "e": 1.58}], "dur": 1.837}, "voice/final_narrator/10-pixels.wav": {"text": "No browser, no screenshots, just pixels.", "words": [{"w": "No", "s": 0.08, "e": 0.26}, {"w": "browser,", "s": 0.26, "e": 0.54}, {"w": "no", "s": 0.66, "e": 0.74}, {"w": "screenshots,", "s": 0.74, "e": 1.1}, {"w": "just", "s": 1.34, "e": 1.48}, {"w": "pixels.", "s": 1.48, "e": 1.8}], "dur": 2.01}, "voice/final_narrator/12-end.wav": {"text": "Kinetograph motion pictures written in code. Try it at", "words": [{"w": "Kinetograph", "s": 0.21, "e": 0.57}, {"w": "motion", "s": 0.57, "e": 0.81}, {"w": "pictures", "s": 0.81, "e": 1.13}, {"w": "written", "s": 1.13, "e": 1.39}, {"w": "in", "s": 1.39, "e": 1.53}, {"w": "code.", "s": 1.53, "e": 1.73}, {"w": "Try", "s": 1.93, "e": 2.15}, {"w": "it", "s": 2.15, "e": 2.27}, {"w": "at", "s": 2.27, "e": 2.37}], "dur": 3.4509166666666666}}
+{
+ "take": {
+  "src": "voice/takes/pC_5_spaced.wav",
+  "dur": 35.804208333333335,
+  "text": "In 1891, the Kinetograph made pictures move until now. Video from code meant a browser, screenshotting every single frame. Kinetograph doesn't need one. It renders straight on the GPU. Your demo, your launch, your changelog. Write it in code, and it renders, and not just text, real 3D isometric scenes, shaders, canvas, even glass. That bends the light already using Remotion? Kinetograph is a drop-in replacement. This whole film rendered in 30 seconds. No chromium, no screenshots. Just pixels. Kinetograph. Motion pictures written in code. Try it at kinetograph.dev.",
+  "words": [
+   {
+    "w": "In",
+    "s": 0,
+    "e": 0.18
+   },
+   {
+    "w": "1891,",
+    "s": 0.18,
+    "e": 0.8
+   },
+   {
+    "w": "the",
+    "s": 0.98,
+    "e": 1
+   },
+   {
+    "w": "Kinetograph",
+    "s": 1,
+    "e": 1.36
+   },
+   {
+    "w": "made",
+    "s": 1.36,
+    "e": 1.6
+   },
+   {
+    "w": "pictures",
+    "s": 1.6,
+    "e": 1.94
+   },
+   {
+    "w": "move",
+    "s": 1.94,
+    "e": 2.2
+   },
+   {
+    "w": "until",
+    "s": 2.7,
+    "e": 2.88
+   },
+   {
+    "w": "now.",
+    "s": 2.88,
+    "e": 3.1
+   },
+   {
+    "w": "Video",
+    "s": 3.24,
+    "e": 3.42
+   },
+   {
+    "w": "from",
+    "s": 3.42,
+    "e": 3.62
+   },
+   {
+    "w": "code",
+    "s": 3.62,
+    "e": 3.86
+   },
+   {
+    "w": "meant",
+    "s": 3.86,
+    "e": 4.02
+   },
+   {
+    "w": "a",
+    "s": 4.02,
+    "e": 4.16
+   },
+   {
+    "w": "browser,",
+    "s": 4.16,
+    "e": 4.52
+   },
+   {
+    "w": "screenshotting",
+    "s": 4.7,
+    "e": 5.14
+   },
+   {
+    "w": "every",
+    "s": 5.14,
+    "e": 5.42
+   },
+   {
+    "w": "single",
+    "s": 5.42,
+    "e": 5.64
+   },
+   {
+    "w": "frame.",
+    "s": 5.64,
+    "e": 5.96
+   },
+   {
+    "w": "Kinetograph",
+    "s": 6.68,
+    "e": 7.08
+   },
+   {
+    "w": "doesn't",
+    "s": 7.08,
+    "e": 7.38
+   },
+   {
+    "w": "need",
+    "s": 7.38,
+    "e": 7.5
+   },
+   {
+    "w": "one.",
+    "s": 7.5,
+    "e": 7.68
+   },
+   {
+    "w": "It",
+    "s": 8.12,
+    "e": 8.26
+   },
+   {
+    "w": "renders",
+    "s": 8.26,
+    "e": 8.56
+   },
+   {
+    "w": "straight",
+    "s": 8.56,
+    "e": 8.78
+   },
+   {
+    "w": "on",
+    "s": 8.78,
+    "e": 8.96
+   },
+   {
+    "w": "the",
+    "s": 8.96,
+    "e": 9.04
+   },
+   {
+    "w": "GPU.",
+    "s": 9.04,
+    "e": 9.34
+   },
+   {
+    "w": "Your",
+    "s": 10.24,
+    "e": 10.4
+   },
+   {
+    "w": "demo,",
+    "s": 10.4,
+    "e": 10.66
+   },
+   {
+    "w": "your",
+    "s": 10.78,
+    "e": 10.88
+   },
+   {
+    "w": "launch,",
+    "s": 10.88,
+    "e": 11.1
+   },
+   {
+    "w": "your",
+    "s": 11.2,
+    "e": 11.26
+   },
+   {
+    "w": "changelog.",
+    "s": 11.26,
+    "e": 11.72
+   },
+   {
+    "w": "Write",
+    "s": 12,
+    "e": 12.14
+   },
+   {
+    "w": "it",
+    "s": 12.14,
+    "e": 12.26
+   },
+   {
+    "w": "in",
+    "s": 12.26,
+    "e": 12.38
+   },
+   {
+    "w": "code,",
+    "s": 12.38,
+    "e": 12.64
+   },
+   {
+    "w": "and",
+    "s": 12.76,
+    "e": 12.84
+   },
+   {
+    "w": "it",
+    "s": 12.84,
+    "e": 12.96
+   },
+   {
+    "w": "renders,",
+    "s": 12.96,
+    "e": 13.3
+   },
+   {
+    "w": "and",
+    "s": 14.54,
+    "e": 14.64
+   },
+   {
+    "w": "not",
+    "s": 14.64,
+    "e": 14.78
+   },
+   {
+    "w": "just",
+    "s": 14.78,
+    "e": 14.98
+   },
+   {
+    "w": "text,",
+    "s": 14.98,
+    "e": 15.3
+   },
+   {
+    "w": "real",
+    "s": 15.92,
+    "e": 16.1
+   },
+   {
+    "w": "3D",
+    "s": 16.1,
+    "e": 16.44
+   },
+   {
+    "w": "isometric",
+    "s": 16.44,
+    "e": 16.9
+   },
+   {
+    "w": "scenes,",
+    "s": 16.9,
+    "e": 17.28
+   },
+   {
+    "w": "shaders,",
+    "s": 17.88,
+    "e": 18.28
+   },
+   {
+    "w": "canvas,",
+    "s": 19.08,
+    "e": 19.34
+   },
+   {
+    "w": "even",
+    "s": 20.18,
+    "e": 20.34
+   },
+   {
+    "w": "glass.",
+    "s": 20.34,
+    "e": 20.7
+   },
+   {
+    "w": "That",
+    "s": 20.9,
+    "e": 21.1
+   },
+   {
+    "w": "bends",
+    "s": 21.1,
+    "e": 21.34
+   },
+   {
+    "w": "the",
+    "s": 21.34,
+    "e": 21.5
+   },
+   {
+    "w": "light",
+    "s": 21.5,
+    "e": 21.66
+   },
+   {
+    "w": "already",
+    "s": 22.26,
+    "e": 22.5
+   },
+   {
+    "w": "using",
+    "s": 22.5,
+    "e": 22.82
+   },
+   {
+    "w": "Remotion?",
+    "s": 22.82,
+    "e": 23.22
+   },
+   {
+    "w": "Kinetograph",
+    "s": 23.46,
+    "e": 23.86
+   },
+   {
+    "w": "is",
+    "s": 23.86,
+    "e": 24.02
+   },
+   {
+    "w": "a",
+    "s": 24.02,
+    "e": 24.1
+   },
+   {
+    "w": "drop",
+    "s": 24.1,
+    "e": 24.3
+   },
+   {
+    "w": "-in",
+    "s": 24.3,
+    "e": 24.4
+   },
+   {
+    "w": "replacement.",
+    "s": 24.4,
+    "e": 24.76
+   },
+   {
+    "w": "This",
+    "s": 25.52,
+    "e": 25.76
+   },
+   {
+    "w": "whole",
+    "s": 25.76,
+    "e": 25.92
+   },
+   {
+    "w": "film",
+    "s": 25.92,
+    "e": 26.2
+   },
+   {
+    "w": "rendered",
+    "s": 26.2,
+    "e": 26.44
+   },
+   {
+    "w": "in",
+    "s": 26.44,
+    "e": 26.62
+   },
+   {
+    "w": "30",
+    "s": 26.62,
+    "e": 26.82
+   },
+   {
+    "w": "seconds.",
+    "s": 26.82,
+    "e": 27.18
+   },
+   {
+    "w": "No",
+    "s": 27.94,
+    "e": 28.08
+   },
+   {
+    "w": "chromium,",
+    "s": 28.08,
+    "e": 28.46
+   },
+   {
+    "w": "no",
+    "s": 28.54,
+    "e": 28.64
+   },
+   {
+    "w": "screenshots.",
+    "s": 28.64,
+    "e": 29.02
+   },
+   {
+    "w": "Just",
+    "s": 29.36,
+    "e": 29.54
+   },
+   {
+    "w": "pixels.",
+    "s": 29.54,
+    "e": 29.9
+   },
+   {
+    "w": "Kinetograph.",
+    "s": 31.88,
+    "e": 32.26
+   },
+   {
+    "w": "Motion",
+    "s": 32.74,
+    "e": 33.06
+   },
+   {
+    "w": "pictures",
+    "s": 33.06,
+    "e": 33.42
+   },
+   {
+    "w": "written",
+    "s": 33.42,
+    "e": 33.66
+   },
+   {
+    "w": "in",
+    "s": 33.66,
+    "e": 33.8
+   },
+   {
+    "w": "code.",
+    "s": 33.8,
+    "e": 34.02
+   },
+   {
+    "w": "Try",
+    "s": 34.28,
+    "e": 34.48
+   },
+   {
+    "w": "it",
+    "s": 34.48,
+    "e": 34.62
+   },
+   {
+    "w": "at",
+    "s": 34.62,
+    "e": 34.78
+   },
+   {
+    "w": "kinetograph",
+    "s": 34.78,
+    "e": 35.22
+   },
+   {
+    "w": ".dev.",
+    "s": 35.22,
+    "e": 35.66
+   }
+  ]
+ },
+ "voice/final_narrator/02-1891.wav": {
+  "text": "In 1891, the Kinetograph made pictures move",
+  "at": 0,
+  "words": [
+   {
+    "w": "In",
+    "s": 0,
+    "e": 0.18
+   },
+   {
+    "w": "1891,",
+    "s": 0.18,
+    "e": 0.8
+   },
+   {
+    "w": "the",
+    "s": 0.98,
+    "e": 1
+   },
+   {
+    "w": "Kinetograph",
+    "s": 1,
+    "e": 1.36
+   },
+   {
+    "w": "made",
+    "s": 1.36,
+    "e": 1.6
+   },
+   {
+    "w": "pictures",
+    "s": 1.6,
+    "e": 1.94
+   },
+   {
+    "w": "move",
+    "s": 1.94,
+    "e": 2.2
+   }
+  ]
+ },
+ "voice/final_narrator/03-today.wav": {
+  "text": "until now. Video from code meant a browser, screenshotting every single frame.",
+  "at": 2.7,
+  "words": [
+   {
+    "w": "until",
+    "s": 0,
+    "e": 0.18
+   },
+   {
+    "w": "now.",
+    "s": 0.18,
+    "e": 0.4
+   },
+   {
+    "w": "Video",
+    "s": 0.54,
+    "e": 0.72
+   },
+   {
+    "w": "from",
+    "s": 0.72,
+    "e": 0.92
+   },
+   {
+    "w": "code",
+    "s": 0.92,
+    "e": 1.16
+   },
+   {
+    "w": "meant",
+    "s": 1.16,
+    "e": 1.32
+   },
+   {
+    "w": "a",
+    "s": 1.32,
+    "e": 1.46
+   },
+   {
+    "w": "browser,",
+    "s": 1.46,
+    "e": 1.82
+   },
+   {
+    "w": "screenshotting",
+    "s": 2,
+    "e": 2.44
+   },
+   {
+    "w": "every",
+    "s": 2.44,
+    "e": 2.72
+   },
+   {
+    "w": "single",
+    "s": 2.72,
+    "e": 2.94
+   },
+   {
+    "w": "frame.",
+    "s": 2.94,
+    "e": 3.26
+   }
+  ]
+ },
+ "voice/final_narrator/04-you-dont.wav": {
+  "text": "Kinetograph doesn't need one.",
+  "at": 6.68,
+  "words": [
+   {
+    "w": "Kinetograph",
+    "s": 0,
+    "e": 0.4
+   },
+   {
+    "w": "doesn't",
+    "s": 0.4,
+    "e": 0.7
+   },
+   {
+    "w": "need",
+    "s": 0.7,
+    "e": 0.82
+   },
+   {
+    "w": "one.",
+    "s": 0.82,
+    "e": 1
+   }
+  ]
+ },
+ "voice/final_narrator/05-render.wav": {
+  "text": "It renders straight on the GPU.",
+  "at": 8.12,
+  "words": [
+   {
+    "w": "It",
+    "s": 0,
+    "e": 0.14
+   },
+   {
+    "w": "renders",
+    "s": 0.14,
+    "e": 0.44
+   },
+   {
+    "w": "straight",
+    "s": 0.44,
+    "e": 0.66
+   },
+   {
+    "w": "on",
+    "s": 0.66,
+    "e": 0.84
+   },
+   {
+    "w": "the",
+    "s": 0.84,
+    "e": 0.92
+   },
+   {
+    "w": "GPU.",
+    "s": 0.92,
+    "e": 1.22
+   }
+  ]
+ },
+ "voice/final_narrator/07a-your.wav": {
+  "text": "Your demo, your launch, your changelog.",
+  "at": 10.24,
+  "words": [
+   {
+    "w": "Your",
+    "s": 0,
+    "e": 0.16
+   },
+   {
+    "w": "demo,",
+    "s": 0.16,
+    "e": 0.42
+   },
+   {
+    "w": "your",
+    "s": 0.54,
+    "e": 0.64
+   },
+   {
+    "w": "launch,",
+    "s": 0.64,
+    "e": 0.86
+   },
+   {
+    "w": "your",
+    "s": 0.96,
+    "e": 1.02
+   },
+   {
+    "w": "changelog.",
+    "s": 1.02,
+    "e": 1.48
+   }
+  ]
+ },
+ "voice/final_narrator/07b-write.wav": {
+  "text": "Write it in code, and it renders,",
+  "at": 12,
+  "words": [
+   {
+    "w": "Write",
+    "s": 0,
+    "e": 0.14
+   },
+   {
+    "w": "it",
+    "s": 0.14,
+    "e": 0.26
+   },
+   {
+    "w": "in",
+    "s": 0.26,
+    "e": 0.38
+   },
+   {
+    "w": "code,",
+    "s": 0.38,
+    "e": 0.64
+   },
+   {
+    "w": "and",
+    "s": 0.76,
+    "e": 0.84
+   },
+   {
+    "w": "it",
+    "s": 0.84,
+    "e": 0.96
+   },
+   {
+    "w": "renders,",
+    "s": 0.96,
+    "e": 1.3
+   }
+  ]
+ },
+ "voice/final_narrator/07c-text.wav": {
+  "text": "and not just text,",
+  "at": 14.54,
+  "words": [
+   {
+    "w": "and",
+    "s": 0,
+    "e": 0.1
+   },
+   {
+    "w": "not",
+    "s": 0.1,
+    "e": 0.24
+   },
+   {
+    "w": "just",
+    "s": 0.24,
+    "e": 0.44
+   },
+   {
+    "w": "text,",
+    "s": 0.44,
+    "e": 0.76
+   }
+  ]
+ },
+ "voice/final_narrator/m1-3d.wav": {
+  "text": "real 3D",
+  "at": 15.92,
+  "words": [
+   {
+    "w": "real",
+    "s": 0,
+    "e": 0.18
+   },
+   {
+    "w": "3D",
+    "s": 0.18,
+    "e": 0.52
+   }
+  ]
+ },
+ "voice/final_narrator/m2-iso.wav": {
+  "text": "isometric scenes,",
+  "at": 16.44,
+  "words": [
+   {
+    "w": "isometric",
+    "s": 0,
+    "e": 0.46
+   },
+   {
+    "w": "scenes,",
+    "s": 0.46,
+    "e": 0.84
+   }
+  ]
+ },
+ "voice/final_narrator/m3-shaders.wav": {
+  "text": "shaders,",
+  "at": 17.88,
+  "words": [
+   {
+    "w": "shaders,",
+    "s": 0,
+    "e": 0.4
+   }
+  ]
+ },
+ "voice/final_narrator/m4-canvas.wav": {
+  "text": "canvas,",
+  "at": 19.08,
+  "words": [
+   {
+    "w": "canvas,",
+    "s": 0,
+    "e": 0.26
+   }
+  ]
+ },
+ "voice/final_narrator/m5-glass.wav": {
+  "text": "even glass. That bends the light",
+  "at": 20.18,
+  "words": [
+   {
+    "w": "even",
+    "s": 0,
+    "e": 0.16
+   },
+   {
+    "w": "glass.",
+    "s": 0.16,
+    "e": 0.52
+   },
+   {
+    "w": "That",
+    "s": 0.72,
+    "e": 0.92
+   },
+   {
+    "w": "bends",
+    "s": 0.92,
+    "e": 1.16
+   },
+   {
+    "w": "the",
+    "s": 1.16,
+    "e": 1.32
+   },
+   {
+    "w": "light",
+    "s": 1.32,
+    "e": 1.48
+   }
+  ]
+ },
+ "voice/final_narrator/08-remotion.wav": {
+  "text": "already using Remotion? Kinetograph is a drop -in replacement.",
+  "at": 22.26,
+  "words": [
+   {
+    "w": "already",
+    "s": 0,
+    "e": 0.24
+   },
+   {
+    "w": "using",
+    "s": 0.24,
+    "e": 0.56
+   },
+   {
+    "w": "Remotion?",
+    "s": 0.56,
+    "e": 0.96
+   },
+   {
+    "w": "Kinetograph",
+    "s": 1.2,
+    "e": 1.6
+   },
+   {
+    "w": "is",
+    "s": 1.6,
+    "e": 1.76
+   },
+   {
+    "w": "a",
+    "s": 1.76,
+    "e": 1.84
+   },
+   {
+    "w": "drop",
+    "s": 1.84,
+    "e": 2.04
+   },
+   {
+    "w": "-in",
+    "s": 2.04,
+    "e": 2.14
+   },
+   {
+    "w": "replacement.",
+    "s": 2.14,
+    "e": 2.5
+   }
+  ]
+ },
+ "voice/final_narrator/09-film.wav": {
+  "text": "This whole film rendered in 30 seconds.",
+  "at": 25.52,
+  "words": [
+   {
+    "w": "This",
+    "s": 0,
+    "e": 0.24
+   },
+   {
+    "w": "whole",
+    "s": 0.24,
+    "e": 0.4
+   },
+   {
+    "w": "film",
+    "s": 0.4,
+    "e": 0.68
+   },
+   {
+    "w": "rendered",
+    "s": 0.68,
+    "e": 0.92
+   },
+   {
+    "w": "in",
+    "s": 0.92,
+    "e": 1.1
+   },
+   {
+    "w": "30",
+    "s": 1.1,
+    "e": 1.3
+   },
+   {
+    "w": "seconds.",
+    "s": 1.3,
+    "e": 1.66
+   }
+  ]
+ },
+ "voice/final_narrator/10-pixels.wav": {
+  "text": "No chromium, no screenshots. Just pixels.",
+  "at": 27.94,
+  "words": [
+   {
+    "w": "No",
+    "s": 0,
+    "e": 0.14
+   },
+   {
+    "w": "chromium,",
+    "s": 0.14,
+    "e": 0.52
+   },
+   {
+    "w": "no",
+    "s": 0.6,
+    "e": 0.7
+   },
+   {
+    "w": "screenshots.",
+    "s": 0.7,
+    "e": 1.08
+   },
+   {
+    "w": "Just",
+    "s": 1.42,
+    "e": 1.6
+   },
+   {
+    "w": "pixels.",
+    "s": 1.6,
+    "e": 1.96
+   }
+  ]
+ },
+ "voice/final_narrator/12-end.wav": {
+  "text": "Kinetograph. Motion pictures written in code. Try it at kinetograph .dev.",
+  "at": 31.88,
+  "words": [
+   {
+    "w": "Kinetograph.",
+    "s": 0,
+    "e": 0.38
+   },
+   {
+    "w": "Motion",
+    "s": 0.86,
+    "e": 1.18
+   },
+   {
+    "w": "pictures",
+    "s": 1.18,
+    "e": 1.54
+   },
+   {
+    "w": "written",
+    "s": 1.54,
+    "e": 1.78
+   },
+   {
+    "w": "in",
+    "s": 1.78,
+    "e": 1.92
+   },
+   {
+    "w": "code.",
+    "s": 1.92,
+    "e": 2.14
+   },
+   {
+    "w": "Try",
+    "s": 2.4,
+    "e": 2.6
+   },
+   {
+    "w": "it",
+    "s": 2.6,
+    "e": 2.74
+   },
+   {
+    "w": "at",
+    "s": 2.74,
+    "e": 2.9
+   },
+   {
+    "w": "kinetograph",
+    "s": 2.9,
+    "e": 3.34
+   },
+   {
+    "w": ".dev.",
+    "s": 3.34,
+    "e": 3.78
+   }
+  ]
+ }
+}

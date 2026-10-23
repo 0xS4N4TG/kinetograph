@@ -15,11 +15,11 @@ import fredTrack from './track/fred.json';
 import smithTrack from './track/blacksmith.json';
 
 const OPEN_AT = VO.find((v) => v.file === '02-1891')!.at;
-/** The opening line, split into pages: "In 1891," / "a camera called" / "the Kinetograph" / "made pictures move." */
-export const S02_LINES: CaptionLine[] = [{ file: '02-1891', at: OPEN_AT, split: [2, 3, 2, 3], hot: ['1891', 'kinetograph', 'move'] }];
+/** The opening line, split into pages: "In 1891," / "the Kinetograph" / "made pictures move." */
+export const S02_LINES: CaptionLine[] = [{ file: '02-1891', at: OPEN_AT, split: [2, 2, 3], hot: ['1891', 'kinetograph', 'move'] }];
 
-/** The cut to Fred Ott, on "the Kinetograph" (the sixth word). */
-export const FRED_AT = spoken('02-1891')[5]!.from - 2;
+/** The cut to Fred Ott, on "the Kinetograph" (the third word). */
+export const FRED_AT = spoken('02-1891')[2]!.from - 2;
 type Track = { points: number[][] };
 export const S02_CUTS = [
   { at: 0, src: 'footage/blacksmith.mp4', track: smithTrack as Track },

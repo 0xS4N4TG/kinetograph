@@ -3,11 +3,11 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, random, staticFile, useCurrentFrame } from 'remotion';
 import { measureText } from '@remotion/layout-utils';
-import { LogoFlicker } from '@/components/snap-cn/logo-flicker';
+import { FADE_END, LogoFlicker } from '@/components/snap-cn/logo-flicker';
 import { Layer, glow, grain } from '@kinetograph/core';
 import { CLAMP, H, INK, LEN, MONO, OUT, RED, RENDER_SECONDS, SANS, TITLE_GLOW, W } from './common.js';
 import { pixels } from './looks.js';
-import { spoken } from './sound-timing.js';
+import { spoken, spokenIn } from './sound-timing.js';
 
 export { RENDER_SECONDS };
 
@@ -101,9 +101,10 @@ if (S10_WORDS.length !== 6) throw new Error(`10-pixels has ${S10_WORDS.length} w
 export const S10_LAND = S10_WORDS.map((w) => w.from);
 /** The two strike-outs and the red loop, each just after its phrase is spoken. */
 export const S10_STRIKE = [[S10_WORDS[1]!.to + 1, S10_WORDS[1]!.to + 12], [S10_WORDS[3]!.to + 1, S10_WORDS[3]!.to + 12]] as const;
-export const S10_CIRCLE = [S10_WORDS[5]!.to - 2, S10_WORDS[5]!.to + 12] as const;
+/** The loop draws as "pixels" is said, closing before the push (the take runs straight on into the end card). */
+export const S10_CIRCLE = [S10_WORDS[5]!.from, Math.min(S10_WORDS[5]!.to + 6, LEN.s10 - 4)] as const;
 /** The push into the pixels: from the loop's close to the end of the shot. */
-export const S10_ZOOM = [S10_CIRCLE[1] - 2, LEN.s10] as const;
+export const S10_ZOOM = [Math.min(S10_CIRCLE[1] - 2, LEN.s10 - 6), LEN.s10] as const;
 const S10_SIZE = 76;
 const S10_TOP = 470;
 const CREAM = '#f3efe8';
@@ -157,14 +158,17 @@ const SELF = [
   'v2-veteran-rainbow', 'v2-m5', 'v2-veteran-crt', 'v2-s08', 'v2-hat-crt', 'v2-s10', 'v2-s09', 'v2-crowd-1bit', 'v2-pair-vhs',
 ].map((n) => staticFile(`self/${n}.jpg`));
 
+/** The flicker's pace: its reveal lands as the narrator says "Kinetograph.", the first word of 12-end. */
+export const S11_SPEED = Math.min(3, Math.max(0.75, FADE_END / (spokenIn('12-end', 's11')[0]!.from + 2)));
+
 export const S11: React.FC = () => (
-  <LogoFlicker images={SELF} brandName="kinetograph" logoSrc={staticFile('brand/kinetograph-mark.png')} mode="dark" fontFamily={SANS} background={INK} />
+  <LogoFlicker speed={S11_SPEED} images={SELF} brandName="kinetograph" logoSrc={staticFile('brand/kinetograph-mark.png')} mode="dark" fontFamily={SANS} background={INK} />
 );
 
 // ---- shot 12: end card ----
 // "Kinetograph. Motion pictures, written in code. Try it at kinetograph.dev." The tagline's words land on the
 // voiceover's (words 2 to 6 of 12-end), the address on its own.
-const S12_SAID = spoken('12-end');
+const S12_SAID = spokenIn('12-end', 's12');
 export const S12_TAG = S12_SAID.slice(1, 6).map((w) => w.from);
 /** The URL lands as it is spoken, just after "at" (the ASR leaves "kinetograph dot dev" out of its words). */
 export const S12_URL = S12_SAID[S12_SAID.length - 1]!.to + 2;

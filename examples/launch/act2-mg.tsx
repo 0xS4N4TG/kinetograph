@@ -95,7 +95,7 @@ const GRID = 9;
 const FLOOR = '#2a2622';
 const CELL = 1.1;
 /** Frame the camera starts its dive into the red block that ends m2. */
-export const M2_DIVE = LEN.m2 - 16;
+export const M2_DIVE = LEN.m2 - Math.min(16, Math.round(LEN.m2 * 0.4));
 
 const blockColor = (i: number, j: number): string => {
   if (i === 4 && j === 4) return RED;
@@ -117,7 +117,7 @@ export const M2: React.FC = () => {
       const di = i - 4;
       const dj = j - 4;
       const d = Math.hypot(di, dj);
-      const rise = interpolate(frame, [2 + d * 3, 14 + d * 3], [0, 1], { ...CLAMP, easing: Easing.out(Easing.back(1.8)) });
+      const rise = interpolate(frame, [d * 1.4, 8 + d * 1.4], [0, 1], { ...CLAMP, easing: Easing.out(Easing.back(1.8)) });
       const wave = 0.5 + 0.5 * Math.sin(frame * 0.16 - d * 0.9);
       const base = 0.35 + random(`isoh-${i}-${j}`) * 1.3;
       let h = Math.max(0.02, rise * (base + wave * 0.9));
@@ -210,12 +210,12 @@ const CODE = [
   'float front = fbm(p*1.4 + 3.0*w) + edge;',
   'col = mix(col, ink, step(th, front));',
 ];
-export const M3_TYPE = 8;
-const M3_CPS = 2.4; // characters per frame
+export const M3_TYPE = 2;
+const M3_CPS = 14; // characters per frame
 
 export const M3: React.FC = () => {
   const frame = useCurrentFrame();
-  const red = interpolate(frame, [0, 7], [1, 0], { ...CLAMP, easing: Easing.out(Easing.cubic) });
+  const red = interpolate(frame, [0, 4], [1, 0], { ...CLAMP, easing: Easing.out(Easing.cubic) });
   let budget = Math.max(0, (frame - M3_TYPE) * M3_CPS);
   const shown = CODE.map((l) => {
     const s = l.slice(0, Math.max(0, Math.min(l.length, Math.floor(budget))));
@@ -226,7 +226,7 @@ export const M3: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: INK }}>
       <AbsoluteFill>
-        <GlslShader id="m3-gl" width={W} height={H} fragment={INKWASH} uniforms={{ u_res: [W, H], u_t: frame / 30, u_red: red }}
+        <GlslShader id="m3-gl" width={W} height={H} fragment={INKWASH} uniforms={{ u_res: [W, H], u_t: (frame / LEN.m3) * 2.2, u_red: red }}
           textures={{ u_film: { src: staticFile('mg/fred.png'), filter: 'linear', wrap: 'mirror' } }}
           effects={[glow({ radius: 36, intensity: 0.35 }), grain(0.09, { seed: 9, animate: true })]} />
       </AbsoluteFill>
@@ -254,7 +254,7 @@ const RIM = '#8a7458';
 const NF = horse.frames.length;
 const STEP = (Math.PI * 2) / NF;
 /** Frames over which the drum spins up; from the end of it, it turns one frame's width per film frame. */
-export const M4_SPIN = [0, 20] as const;
+export const M4_SPIN = [0, Math.min(20, Math.round(LEN.m4 * 0.45))] as const;
 
 /** How far the drum has turned at m4 frame `f`: speeding up to one STEP a frame, then holding that speed. It lands on
  *  a whole number of steps as the spin-up ends, so from there every window shows a frame square on (the strobe). */
@@ -267,8 +267,8 @@ function turned(f: number): number {
 
 export const M4: React.FC = () => {
   const frame = useCurrentFrame();
-  const iris = interpolate(frame, [0, 10], [60, 1200], { ...CLAMP, easing: Easing.out(Easing.quad) });
-  const push = interpolate(frame, [M4_SPIN[1] - 4, LEN.m4], [1, 2.3], { ...CLAMP, easing: Easing.inOut(Easing.cubic) });
+  const iris = interpolate(frame, [0, Math.min(10, LEN.m4 / 3)], [60, 1200], { ...CLAMP, easing: Easing.out(Easing.quad) });
+  const push = interpolate(frame, [Math.max(0, M4_SPIN[1] - 4), LEN.m4], [1, 2.3], { ...CLAMP, easing: Easing.inOut(Easing.cubic) });
   const th = turned(frame);
   const draw = (ctx: any) => {
     const cx = W / 2, cy = H / 2 + 230;

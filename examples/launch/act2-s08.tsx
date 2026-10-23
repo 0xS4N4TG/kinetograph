@@ -7,6 +7,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
 import { Layer, blur } from '@kinetograph/core';
 import { CLAMP, H, LEN, MONO, OUT, SANS, TITLE, TITLE_GLOW, TITLE_WEIGHT, W } from './common.js';
+import { spoken } from './sound-timing.js';
 
 const BG = '#0d1117';
 const SYN: Record<string, string> = { k: '#ff7b72', f: '#d2a8ff', s: '#a5d6ff', p: '#c9d1d9' };
@@ -94,16 +95,20 @@ const Tick: React.FC<{ t: number }> = ({ t }) => (
   </svg>
 );
 
-/** Frames the camera holds tight on `from 'remotion'` (the VO's "Already using Remotion? Your projects run as they
- *  are."); the pull-out and the count then run on under the end of the line. */
-export const S08_HOLD = 40;
+/** The shot's moves are laid out on a 152-frame clock (the tight hold on `from 'remotion'`, the pull-out, the count to
+ *  98%), run at whatever speed fits the shot into the narration ("Already using Remotion? Kinetograph is a drop-in
+ *  replacement."). S08_REAL turns a frame of that clock into a frame of the shot. */
+const S08_CLOCK = 152;
+export const S08_REAL = (v: number): number => Math.round((v * LEN.s08) / S08_CLOCK);
+/** The shot frame "Remotion" is said on, when `from 'remotion'` lights up. */
+const S08_REMOTION = spoken('08-remotion')[2]!.from;
 
 export const S08: React.FC = () => {
   const real = useCurrentFrame();
-  const frame = real < S08_HOLD ? (real * 22) / S08_HOLD : real - (S08_HOLD - 22);
+  const frame = (real * S08_CLOCK) / LEN.s08;
   const pull = interpolate(frame, [22, 84], [0, 1], { ...CLAMP, easing: Easing.inOut(Easing.cubic) });
   const creep = interpolate(frame, [0, 22], [0, 1], CLAMP); // the push before the pull, so the camera is never still
-  const settle = interpolate(frame, [84, LEN.s08 - (S08_HOLD - 22)], [0, 1], { ...CLAMP, easing: Easing.out(Easing.quad) });
+  const settle = interpolate(frame, [84, S08_CLOCK], [0, 1], { ...CLAMP, easing: Easing.out(Easing.quad) });
   const zoom = 3.3 + creep * 0.18 + pull * (0.46 - 3.48) + settle * 0.05;
   const pan = interpolate(pull, [0, 0.8], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) });
   const fx = FROM_CX + (960 - FROM_CX) * pan;
@@ -126,7 +131,7 @@ export const S08: React.FC = () => {
   const moving = frame >= 18 && frame <= 90;
   const blurFx = moving ? { samples: 10, shutter: 0.35 } : undefined;
 
-  const hl = interpolate(real, [26, 38], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) }); // on "Remotion"
+  const hl = interpolate(real, [S08_REMOTION - 4, S08_REMOTION + 6], [0, 1], { ...CLAMP, easing: Easing.out(Easing.cubic) });
   const count = Math.round(interpolate(frame, [80, 112], [0, 98], { ...CLAMP, easing: OUT }));
   const numIn = interpolate(frame, [78, 88], [0, 1], { ...CLAMP, easing: OUT });
   const subIn = interpolate(frame, [108, 118], [0, 1], { ...CLAMP, easing: OUT });

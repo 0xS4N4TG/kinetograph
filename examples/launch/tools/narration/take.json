@@ -1,6 +1,6 @@
 [
  {
-  "id": "full",
-  "text": "In eighteen ninety-one, a camera called the Kinetograph made pictures move. Today, to make a video with code, a browser screenshots every single frame. With Kinetograph, you don't need one. You just render. Straight on the GPU. Your demo. Your launch. Your changelog. Write it in code, and it renders. And not just text. Real three D. Isometric scenes. Shaders. Canvas. Even glass that bends the light. Already using Remotion? Your projects run as they are. This whole film rendered in twenty-seven seconds. No browser. No screenshots. Just pixels. Kinetograph. Motion pictures, written in code. Try it at kinetograph dot dev."
+  "id": "p26",
+  "text": "In eighteen ninety-one, the Kinetograph made pictures move. ...\n\nUntil now, video from code meant a browser, screenshotting every single frame. ...\n\nKinetograph doesn't need one. ...\n\nIt renders straight on the GPU. ...\n\nYour demo. ... Your launch. ... Your changelog. ...\n\nWrite it in code, and it renders. ...\n\nAnd not just text. ...\n\nReal three D. ...\n\nIsometric scenes. ...\n\nShaders. ...\n\nCanvas. ...\n\nEven glass that bends the light. ...\n\nAlready using Remotion? ... Kinetograph is a drop-in replacement. ...\n\nThis whole film rendered in twenty-six seconds. ...\n\nNo Chromium. ... No screenshots. ... Just pixels. ...\n\nKinetograph. ...\n\nMotion pictures, written in code. ...\n\nTry it at kinetograph dot dev."
  }
 ]

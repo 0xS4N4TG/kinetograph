@@ -1,7 +1,7 @@
 // Shot 7: "Your demo. Your launch. Your changelog. Write it in code, and it renders." Archive film of the 1927
 // Armistice Day parade in Columbus, Ohio (US National Archives, public domain): the veterans of the reviewing stand,
 // graded silver and warm, grain and gate weave, pushing in slowly, letterboxed. The voiceover writes itself beside a
-// tracked face in the Geronimo Stilton way (print/captions.tsx). On "and it renders" the cut is to a thermal printer
+// tracked face in the Geronimo Stilton way (print/captions.tsx). On "write it in code" the cut is to a thermal printer
 // feeding out a receipt, then to the pile of receipts on a table (print/receipts.tsx).
 
 import React from 'react';
@@ -26,10 +26,10 @@ type Track = { points: number[][] };
  *  shot it cuts in, and its tracked face (tools/track/track.mjs, one point per frame). */
 export const CUTS = [
   { at: 0, src: 'footage/veteran.mp4', track: veteranTrack as Track },
-  { at: AT('07b-write') - 2, src: 'footage/hat.mp4', track: hatTrack as Track },
+  { at: spoken('07a-your')[2]!.from - 2, src: 'footage/hat.mp4', track: hatTrack as Track },
 ] as const;
-/** The cut to the receipts, on "and it renders". */
-export const RECEIPTS_AT = spoken('07b-write')[4]!.from;
+/** The cut to the receipts, on "write it in code". */
+export const RECEIPTS_AT = AT('07b-write') - 2;
 /** Letterbox bars for 2.39:1. */
 export const BAR = Math.round((H - W / 2.39) / 2);
 

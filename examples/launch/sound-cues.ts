@@ -5,9 +5,9 @@
 // retimed. The music is a pad bed per section in D minor; a beat (120 BPM, every 15 frames) runs only under the
 // collage of shot 7 and the flicker of shot 11, the two places the picture cuts on a pulse.
 
-import { VO_SECONDS } from './sound-vo.js';
 import { BURN, FPS, START, TOTAL, VO } from './sound-timing.js';
 import { LEN } from './common.js';
+import { lineFrom, lineTo } from './cut.js';
 import { WINDOWS, WIN_EVERY } from './act1.js';
 import { FRED_AT, S01_POP, S02_LINES } from './act1-open.js';
 import { S03_LINES, S04_AT, S04_OFF } from './act1-crt.js';
@@ -15,10 +15,10 @@ import { FILM_AT, S05_PASS } from './act1-camera.js';
 import { CUTS, LINES, RECEIPTS_AT } from './act2-s07.js';
 import { wordSpans } from './print/captions.js';
 import { RECEIPT_SOUND } from './print/receipts.js';
-import { S08_HOLD } from './act2-s08.js';
+import { S08_REAL } from './act2-s08.js';
 import { M2_DIVE, M3_TYPE, M4_SPIN, WHIP } from './act2-mg.js';
 import { RACE } from './act2-s09.js';
-import { S10_CIRCLE, S10_LAND, S10_STRIKE, S10_ZOOM, S12_TAG, S12_URL } from './act3.js';
+import { S10_CIRCLE, S10_LAND, S10_STRIKE, S10_ZOOM, S11_SPEED, S12_TAG, S12_URL } from './act3.js';
 import { FADE_START, FLIP_INTERVAL } from '@/components/snap-cn/logo-flicker';
 import { DUCK, bass, bell, cue, cutter, hat, hit, kick, pad, paperDrop, pen, pop, projector, riser, room, rumble, shutter, sweep, thermal, tick } from './sound-synth.js';
 
@@ -26,10 +26,7 @@ const BEAT = 15;
 const sec = (frames: number): number => frames / FPS;
 const at = (shot: keyof typeof START, local: number): number => START[shot] + local;
 
-for (const v of VO) {
-  const a = sec(at(v.shot, v.at));
-  DUCK.push([a, a + (VO_SECONDS[v.file] ?? 2)]);
-}
+for (const v of VO) DUCK.push([sec(lineFrom(v.file)), sec(lineTo(v.file))]);
 
 // ---- pads: one chord per section, overlapping a little so they cross-fade ----
 const D = { D2: 73.42, A2: 110, D3: 146.83, F3: 174.61, A3: 220, D4: 293.66, Fs3: 185 };
@@ -41,11 +38,11 @@ const chords: { from: number; to: number; hz: number[]; level: number; cutoff: [
   { from: START.s08, to: START.s09, hz: [58.27, 87.31, 116.54, D.F3, 233.08], level: 0.16, cutoff: [500, 1100] },
   { from: START.s09, to: START.s10, hz: [98, D.D3, 196, 233.08], level: 0.15, cutoff: [500, 1000] },
   { from: START.s10, to: START.s11, hz: [D.D2, D.A2], level: 0.12, cutoff: [220, 420] },
-  { from: START.s11, to: at('s11', FADE_START), hz: [D.D2, D.A2, D.D3, D.F3, D.D4], level: 0.24, cutoff: [900, 1800] },
-  { from: at('s11', FADE_START), to: at('s12', 6), hz: [D.D2, D.A2, D.D3, D.F3], level: 0.15, cutoff: [500, 900] },
+  { from: START.s11, to: at('s11', Math.round(FADE_START / S11_SPEED)), hz: [D.D2, D.A2, D.D3, D.F3, D.D4], level: 0.24, cutoff: [900, 1800] },
+  { from: at('s11', Math.round(FADE_START / S11_SPEED)), to: at('s12', 6), hz: [D.D2, D.A2, D.D3, D.F3], level: 0.15, cutoff: [500, 900] },
   { from: at('s12', 6), to: TOTAL, hz: [D.D2, D.A2, D.D3, D.Fs3, D.A3, D.D4], level: 0.2, cutoff: [1400, 2400] },
 ];
-for (const c of chords) {
+for (const c of chords.filter((c) => c.to > c.from && (LEN.s11 > 0 || c.from !== START.s11))) {
   const start = Math.max(0, c.from - 8);
   cue(start, (q) => pad(q, sec(c.to - start), c.hz, c.level, c.cutoff, c.from === 0 ? 0.6 : 0.9, c.to === TOTAL ? 1.2 : 0.9));
 }
@@ -135,9 +132,9 @@ cue(START.m5, (q) => sweep(q, sec(LEN.m5), 900, 2600, 0.08, 0.5, 'm5-slide', 0.8
 [1318.5, 1760, 2637].forEach((hz, i) => cue(at('m5', 14 + i * 5), (q) => bell(q, hz, 0.05 - i * 0.01, 2.2)));
 
 // ---- shot 8: a tick as "from 'remotion'" lights up; a whoosh on the pull-out; the counter ticks up to 98 ----
-const s08 = (orig: number): number => at('s08', orig + (S08_HOLD - 22));
+const s08 = (v: number): number => at('s08', S08_REAL(v));
 cue(at('s08', 16), (q) => tick(q, 0.08, 2200, 1100));
-cue(at('s08', S08_HOLD - 4), (q) => sweep(q, sec(62), 250, 3600, 0.24, 0.55, 'whoosh-pull'));
+cue(s08(18), (q) => sweep(q, sec(S08_REAL(62)), 250, 3600, 0.24, 0.55, 'whoosh-pull'));
 for (let o = 80; o < 112; o += 3) cue(s08(o), (q) => tick(q, 0.045, 1200 + (o - 80) * 25, 700));
 cue(s08(112), (q) => hit(q, 0.4, 0.3));
 cue(s08(112), (q) => bell(q, 1318.5, 0.06, 1.6));
@@ -156,19 +153,23 @@ S10_LAND.forEach((l, i) => cue(at('s10', l), (q) => tick(q, i % 2 ? 0.05 : 0.07,
 S10_STRIKE.forEach(([a, b], i) => cue(at('s10', a), (q) => pen(q, sec(b - a), 0.2, `pen-strike-${i}`)));
 cue(at('s10', S10_CIRCLE[0]), (q) => pen(q, sec(S10_CIRCLE[1] - S10_CIRCLE[0]), 0.17, 'pen-loop'));
 cue(at('s10', S10_ZOOM[0]), (q) => sweep(q, sec(LEN.s10 - S10_ZOOM[0]), 300, 6000, 0.14, 0.9, 'pixel-zoom', 0.8));
-cue(START.s11 - 16, (q) => riser(q, sec(16), 0.16));
+if (LEN.s11 > 0) {
+  /** A frame of the flicker's own clock, in shot 11's frames. */
+  const s11 = (f: number) => at('s11', Math.round(f / S11_SPEED));
+  cue(START.s11 - 16, (q) => riser(q, sec(16), 0.16));
 
-// ---- shot 11: a hit on the first frame, the beat, a click on every flip; a swell into the reveal ----
-cue(START.s11, (q) => hit(q, 0.75));
-for (let f = 0; f < FADE_START; f += BEAT) {
-  cue(at('s11', f), (q) => kick(q, 0.9));
-  cue(at('s11', f + BEAT / 2), (q) => hat(q, 0.07));
-  cue(at('s11', f + BEAT / 2), (q) => bass(q, 73.42, 0.22, 0.45));
+  // ---- shot 11: a hit on the first frame, the beat, a click on every flip; a swell into the reveal ----
+  cue(START.s11, (q) => hit(q, 0.75));
+  for (let f = 0; f < FADE_START; f += BEAT) {
+    cue(s11(f), (q) => kick(q, 0.9));
+    cue(s11(f + BEAT / 2), (q) => hat(q, 0.07));
+    cue(s11(f + BEAT / 2), (q) => bass(q, 73.42, 0.22, 0.45));
+  }
+  for (let f = FLIP_INTERVAL; f < FADE_START; f += FLIP_INTERVAL) cue(s11(f), (q) => shutter(q, 0.03));
+  cue(s11(FADE_START - 14), (q) => sweep(q, sec(16), 800, 7000, 0.12, 0.95, 'reveal-swell', 0.8));
+  cue(s11(FADE_START), (q) => bell(q, 880, 0.09, 3));
+  cue(s11(FADE_START), (q) => bass(q, 73.42, 1.8, 0.3));
 }
-for (let f = FLIP_INTERVAL; f < FADE_START; f += FLIP_INTERVAL) cue(at('s11', f), (q) => shutter(q, 0.03));
-cue(at('s11', FADE_START - 14), (q) => sweep(q, sec(16), 800, 7000, 0.12, 0.95, 'reveal-swell', 0.8));
-cue(at('s11', FADE_START), (q) => bell(q, 880, 0.09, 3));
-cue(at('s11', FADE_START), (q) => bass(q, 73.42, 1.8, 0.3));
 
 // ---- shot 12: the final hit on the wordmark, a pop for the red dot, ticks on the tagline words and the URL ----
 cue(at('s12', 6) - 12, (q) => riser(q, sec(12), 0.08, false));

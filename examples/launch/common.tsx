@@ -19,10 +19,10 @@ export const TITLE_WEIGHT = 200;
 /** Its glow: the number lit like projected light, with a little halation round the thin strokes. */
 export const TITLE_GLOW = '0 0 18px rgba(255,240,220,0.35), 0 0 60px rgba(255,220,180,0.18)';
 
-/** Seconds this whole film took to render (kinetograph render, --concurrency 4, M4, measured with the bench lock held:
- *  27.3 s, the median of 3 runs of the 1,491-frame cut on 2026-10-23). Shot 9 and the end card say it; set it again
- *  from the final render. */
-export const RENDER_SECONDS = 27;
+/** Seconds this whole film takes to render (kinetograph render, --concurrency 4, M4, the median of 3 runs with the
+ *  bench lock held). Shot 9, the end card and the narration say it. Measured on the 39 s cut: 26.20, 26.25 and 26.31 s
+ *  (2026-10-23). If the cut changes, measure again and re-voice the take if the number moves. */
+export const RENDER_SECONDS = 26;
 
 export const PAPER = '#ECEAE6';
 export const INK = '#111111';
@@ -63,9 +63,5 @@ export const Build: React.FC<{ words: string[]; start: number; per: number; colo
   );
 };
 
-/** Frames of each shot at 30 fps, in order (about 50 s). The cut is the sum; shot 6, the burn, lies over the cut
- *  from shot 5 into shot 7 rather than taking time of its own. Keep a shot inside its length. */
-export const LEN = {
-  s01: 26, s02: 90, s03: 92, s04: 56, s05: 80, s06: 27,
-  s07: 180, m1: 92, m2: 64, m3: 60, m4: 48, m5: 80, s08: 170, s09: 110, s10: 90, s11: 120, s12: 135,
-} as const;
+/** Frames of each shot, derived from the narration take (cut.ts). */
+export { LEN } from './cut.js';
