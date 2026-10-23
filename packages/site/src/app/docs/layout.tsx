@@ -2,9 +2,9 @@ import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import type { ReactNode } from 'react';
 
-import { Mark } from '@/sections/nav';
 import { source } from '@/lib/source';
 import { GITHUB } from '@/sections/links';
+import { Wordmark } from '@/sections/shared';
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
@@ -12,12 +12,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <DocsLayout
         tree={source.getPageTree()}
         nav={{
-          title: (
-            <span className="flex items-center gap-2 font-serif text-[19px] text-cobalt">
-              <Mark />
-              Kinetograph
-            </span>
-          ),
+          title: <Wordmark className="text-[20px] text-ink" />,
           url: '/',
         }}
         githubUrl={GITHUB}
