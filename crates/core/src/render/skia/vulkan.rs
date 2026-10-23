@@ -1,8 +1,10 @@
 //! The Vulkan side of the Skia backend (Linux and Windows): Graphite on the VkInstance, VkPhysicalDevice, VkDevice and
 //! VkQueue that wgpu made, and wgpu textures as Graphite backend textures.
 //!
-//! Untested at run time (no Linux or Windows machine yet); it is written to compile for both and to follow the Metal
-//! recipe (`metal.rs`, `S/skia/stage1.md`) where Vulkan allows.
+//! Run on lavapipe (Mesa's software Vulkan) on Linux, which is what the CI smoke job has; written to follow the Metal
+//! recipe (`metal.rs`, `S/skia/stage1.md`) where Vulkan allows. Graphite's Vulkan backend needs two things of what wgpu
+//! hands it: every renderable image has `INPUT_ATTACHMENT` usage (`Native::create_texture`), and the context is dropped
+//! after everything made on it (`SkiaBackend`'s field order).
 //!
 //! # Queue and ordering
 //!
@@ -192,6 +194,16 @@ impl Native {
             | wgpu::TextureUsages::COPY_DST
     }
 
+    /// `device.create_texture(desc)`, except that a texture wgpu can render to also gets `INPUT_ATTACHMENT` usage, which
+    /// Graphite requires of every renderable image (its `VulkanCaps::getTextureUsage` treats an image without it as not
+    /// renderable, and `validate_backend_texture` then refuses to wrap it). wgpu has no way to ask for that usage, so the
+    /// image is made here and handed to wgpu to own (`texture_from_raw`, with the memory `Dedicated`), the way wgpu would
+    /// have made it. Every texture Skia may draw into goes through here (`compositor::new_texture` and the Skia targets).
+    pub(crate) fn create_texture(device: &wgpu::Device, desc: &wgpu::TextureDescriptor<'_>) -> wgpu::Texture {
+        // SAFETY: the image and memory made in `make_image` are handed to wgpu-hal, which frees them with the texture.
+        unsafe { make_image(device, desc) }.unwrap_or_else(|| device.create_texture(desc))
+    }
+
     /// `texture` as a Graphite backend texture, told the layout the module comment gives for `role`.
     pub(super) fn backend_texture(
         device: &wgpu::Device,
@@ -208,6 +220,7 @@ impl Native {
         let (usage, layout) = match role {
             Role::Target => (
                 vk::ImageUsageFlags::COLOR_ATTACHMENT
+                    | vk::ImageUsageFlags::INPUT_ATTACHMENT
                     | vk::ImageUsageFlags::SAMPLED
                     | vk::ImageUsageFlags::TRANSFER_SRC
                     | vk::ImageUsageFlags::TRANSFER_DST,
@@ -274,4 +287,97 @@ impl Native {
         }
         queue.submit([encoder.finish()]);
     }
+}
+
+/// `Native::create_texture`: the 2D, single-mip, single-sample renderable textures of the two formats Skia draws to,
+/// made with `INPUT_ATTACHMENT` too. `None` for anything else (or on failure), which the caller makes the plain way.
+///
+/// # Safety
+///
+/// Only calls Vulkan with handles of `device`; nothing is kept but what wgpu then owns.
+unsafe fn make_image(device: &wgpu::Device, desc: &wgpu::TextureDescriptor<'_>) -> Option<wgpu::Texture> {
+    if !desc.usage.contains(wgpu::TextureUsages::RENDER_ATTACHMENT)
+        || desc.dimension != wgpu::TextureDimension::D2
+        || desc.size.depth_or_array_layers != 1
+        || desc.mip_level_count != 1
+        || desc.sample_count != 1
+        || !desc.view_formats.is_empty()
+        || desc.usage.contains(wgpu::TextureUsages::STORAGE_BINDING)
+    {
+        return None;
+    }
+    let format = match desc.format {
+        wgpu::TextureFormat::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
+        wgpu::TextureFormat::Rgba16Float => vk::Format::R16G16B16A16_SFLOAT,
+        _ => return None,
+    };
+    let mut usage = vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::INPUT_ATTACHMENT;
+    let mut uses = wgpu::TextureUses::COLOR_TARGET;
+    for (wgpu_usage, vk_usage, hal_use) in [
+        (wgpu::TextureUsages::TEXTURE_BINDING, vk::ImageUsageFlags::SAMPLED, wgpu::TextureUses::RESOURCE),
+        (wgpu::TextureUsages::COPY_SRC, vk::ImageUsageFlags::TRANSFER_SRC, wgpu::TextureUses::COPY_SRC),
+        (wgpu::TextureUsages::COPY_DST, vk::ImageUsageFlags::TRANSFER_DST, wgpu::TextureUses::COPY_DST),
+    ] {
+        if desc.usage.contains(wgpu_usage) {
+            usage |= vk_usage;
+            uses |= hal_use;
+        }
+    }
+    let hal = unsafe { device.as_hal::<Vulkan>() }?;
+    let raw = hal.raw_device();
+    let instance = hal.shared_instance().raw_instance();
+    let info = vk::ImageCreateInfo::default()
+        .image_type(vk::ImageType::TYPE_2D)
+        .format(format)
+        .extent(vk::Extent3D { width: desc.size.width, height: desc.size.height, depth: 1 })
+        .mip_levels(1)
+        .array_layers(1)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .tiling(vk::ImageTiling::OPTIMAL)
+        .usage(usage)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .initial_layout(vk::ImageLayout::UNDEFINED);
+    let image = unsafe { raw.create_image(&info, None) }.ok()?;
+    let requirements = unsafe { raw.get_image_memory_requirements(image) };
+    let memory_properties = unsafe { instance.get_physical_device_memory_properties(hal.raw_physical_device()) };
+    let types = &memory_properties.memory_types[..memory_properties.memory_type_count as usize];
+    let wanted = |flags: vk::MemoryPropertyFlags| {
+        types
+            .iter()
+            .enumerate()
+            .position(|(i, t)| requirements.memory_type_bits & (1 << i) != 0 && t.property_flags.contains(flags))
+    };
+    let memory = wanted(vk::MemoryPropertyFlags::DEVICE_LOCAL)
+        .or_else(|| wanted(vk::MemoryPropertyFlags::empty()))
+        .and_then(|index| {
+            let allocate = vk::MemoryAllocateInfo::default().allocation_size(requirements.size).memory_type_index(index as u32);
+            unsafe { raw.allocate_memory(&allocate, None) }.ok()
+        });
+    let Some(memory) = memory else {
+        unsafe { raw.destroy_image(image, None) };
+        return None;
+    };
+    if unsafe { raw.bind_image_memory(image, memory, 0) }.is_err() {
+        unsafe {
+            raw.destroy_image(image, None);
+            raw.free_memory(memory, None);
+        }
+        return None;
+    }
+    let hal_desc = wgpu::hal::TextureDescriptor {
+        label: desc.label,
+        size: desc.size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: desc.format,
+        usage: uses,
+        memory_flags: wgpu::hal::MemoryFlags::empty(),
+        view_formats: Vec::new(),
+    };
+    // SAFETY: the image was made as `hal_desc` says; with no drop callback and `Dedicated` memory wgpu-hal owns both.
+    let texture = unsafe { hal.texture_from_raw(image, &hal_desc, None, wgpu::hal::vulkan::TextureMemory::Dedicated(memory)) };
+    drop(hal);
+    // SAFETY: `texture` is from this device, made as `desc` says, and not yet used (so not initialised).
+    Some(unsafe { device.create_texture_from_hal::<Vulkan>(texture, desc, wgpu::TextureUses::UNINITIALIZED) })
 }

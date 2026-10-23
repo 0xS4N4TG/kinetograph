@@ -157,7 +157,7 @@ impl Renderer {
         if sk.targets.first().is_none_or(|t| t.size != size || t.linear != linear) {
             sk.targets.clear();
             for _ in 0..=FRAMES_IN_FLIGHT {
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            let texture = Native::create_texture(&self.device, &wgpu::TextureDescriptor {
                 label: Some("skia target"),
                 size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
                 mip_level_count: 1,
@@ -428,7 +428,7 @@ impl Renderer {
             (None, None)
         } else {
             let (w, h) = (region.width(), region.height());
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            let texture = Native::create_texture(&self.device, &wgpu::TextureDescriptor {
                 label: Some("skia srgb page"),
                 size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
                 mip_level_count: 1,

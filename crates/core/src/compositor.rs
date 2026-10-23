@@ -2856,7 +2856,8 @@ fn shader_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 /// A linear texture of any size that can be drawn to, read and copied, with
 /// empty bounds.
 pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
+    // Skia draws into these too (`render/skia.rs`).
+    let texture = crate::render::create_texture(device, &wgpu::TextureDescriptor {
         label: Some("layer"),
         size: wgpu::Extent3d {
             width,

@@ -38,6 +38,7 @@ use crate::video::{VideoDecoder, Videos, open_video, video_sources};
 use crate::warp;
 
 mod skia;
+pub(crate) use skia::create_texture;
 
 /// Curve flattening tolerance when converting shapes to paths.
 const SHAPE_TOLERANCE: f64 = 0.1;

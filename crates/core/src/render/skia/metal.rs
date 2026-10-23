@@ -32,6 +32,11 @@ impl Native {
         Some((Native, ctx))
     }
 
+    /// `device.create_texture(desc)`: Metal needs nothing more of a texture Skia draws to.
+    pub(crate) fn create_texture(device: &wgpu::Device, desc: &wgpu::TextureDescriptor<'_>) -> wgpu::Texture {
+        device.create_texture(desc)
+    }
+
     /// What the textures Skia draws to are created with.
     pub(super) fn target_usage() -> wgpu::TextureUsages {
         wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING

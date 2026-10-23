@@ -29,6 +29,12 @@ mod vulkan;
 #[cfg(not(target_os = "macos"))]
 use vulkan as native;
 
+/// A texture the compositor or Skia may draw into: `device.create_texture(desc)`, plus whatever the GPU API Skia runs on
+/// requires of a texture it draws to (`native::Native::create_texture`).
+pub(crate) fn create_texture(device: &wgpu::Device, desc: &wgpu::TextureDescriptor<'_>) -> wgpu::Texture {
+    native::Native::create_texture(device, desc)
+}
+
 mod backend;
 // skia-safe deprecates the gradient_shader module for `gradient`; the calls here are the ones that were measured.
 #[allow(deprecated)]
