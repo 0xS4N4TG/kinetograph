@@ -77,7 +77,10 @@ case "$OS" in
     # MSVC's cl and link (run this from a shell where vcvars has been loaded) and Media Foundation for h264_mf.
     # mfenc.c embeds an AVD3D11VADeviceContext in its context struct, which exists only with CONFIG_D3D11VA (the
     # autodetect that would set it is off); without it MSVC reports MFContext undeclared. System headers, no GPL.
-    CONFIG+=(--toolchain=msvc --enable-mediafoundation --enable-d3d11va)
+    # -MD: cl defaults to the static CRT (/MT), Rust links the dynamic one (/MD); mixing them fails with LNK2038.
+    # gfxcapture is a C++ WinRT screen-capture filter that --enable-d3d11va would switch on; it needs the C++ runtime.
+    CONFIG+=(--toolchain=msvc --enable-mediafoundation --enable-d3d11va --disable-filter=gfxcapture
+      --extra-cflags=-MD --extra-cxxflags=-MD)
     ;;
 esac
 

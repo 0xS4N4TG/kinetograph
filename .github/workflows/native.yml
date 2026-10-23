@@ -15,7 +15,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   # The ffmpeg that scripts/build-ffmpeg.sh builds, and its cache key part.
-  FFMPEG_CACHE_VERSION: v1
+  FFMPEG_CACHE_VERSION: v2
 
 jobs:
   build:
