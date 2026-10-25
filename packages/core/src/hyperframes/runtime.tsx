@@ -45,11 +45,11 @@ const doc = (): AnyRecord => g.document;
 
 /**
  * The rules every HyperFrames page gets before its own: what a browser's default stylesheet says of `<body>` (the
- * wrapper elements stand in for `<html>` and `<body>`), and the hidden clips' contents.
+ * wrapper elements stand in for `<html>` and `<body>`; `:where` gives it no specificity, so any rule of the page wins), and the hidden clips' contents.
  */
 const BASE_CSS = `
-.kg-hf-html { display: block; }
-.kg-hf-body { display: block; margin: 8px; }
+:where(.kg-hf-html) { display: block; }
+:where(.kg-hf-body) { display: block; margin: 8px; }
 [${HIDDEN_ATTR}], [${HIDDEN_ATTR}] * { visibility: hidden !important; }
 `;
 
@@ -172,6 +172,7 @@ class Runtime {
     this.html.appendChild(body);
     for (const node of plan.body) buildNode(node, body);
     this.mount();
+    this.bindVariables();
 
     for (const script of plan.scripts) {
       if (script.scope === null) {
@@ -208,6 +209,38 @@ class Runtime {
     pinSvgFonts(svgs, (el) => g.getComputedStyle(el));
     this.root = doc().querySelector(`[data-composition-id="${attrValue(plan.compositionId)}"]`);
     this.timing.reset();
+  }
+
+  /**
+   * `data-var-text` and `data-var-src` (HyperFrames' bindings that need no script), and each scalar variable as a CSS
+   * custom property on its composition (`var(--accent)`), with the values of the composition the element is in.
+   */
+  private bindVariables(): void {
+    const variables = this.plan.variables;
+    const valuesOf = (el: AnyRecord): Record<string, unknown> => {
+      for (let p = el; p; p = p.parentElement) {
+        const id = p.getAttribute?.('data-composition-id');
+        if (id && variables[id]) return variables[id]!;
+      }
+      return variables[this.plan.compositionId] ?? {};
+    };
+    const scalar = (v: unknown): string | null => (typeof v === 'string' || typeof v === 'number' ? String(v) : null);
+    for (const el of Array.from(doc().querySelectorAll('[data-composition-id]')) as AnyRecord[]) {
+      const values = variables[el.getAttribute('data-composition-id')] ?? {};
+      for (const [name, value] of Object.entries(values)) {
+        const text = scalar(value);
+        if (text !== null && /^[\w-]+$/.test(name)) el.style.setProperty(`--${name}`, text);
+      }
+    }
+    for (const el of Array.from(doc().querySelectorAll('[data-var-text]')) as AnyRecord[]) {
+      const value = scalar(valuesOf(el)[el.getAttribute('data-var-text')]);
+      if (value !== null) el.textContent = value;
+    }
+    for (const el of Array.from(doc().querySelectorAll('[data-var-src]')) as AnyRecord[]) {
+      const raw = valuesOf(el)[el.getAttribute('data-var-src')];
+      const value = scalar(raw && typeof raw === 'object' ? ((raw as AnyRecord).url ?? (raw as AnyRecord).src) : raw);
+      if (value !== null) el.setAttribute('src', value.startsWith('/') || /^[a-z]+:/i.test(value) ? value : `${this.plan.baseDir}/${value}`);
+    }
   }
 
   /** Puts the document in the scene's body (a render that starts the scene again has a new one). */

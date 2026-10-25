@@ -58,6 +58,6 @@ export function pinSvgFonts(svgs: readonly AnyRecord[], computed: (element: AnyR
   for (const svg of svgs) {
     if (svg.style.getPropertyValue('font-family') !== '') continue;
     const family = computed(svg).getPropertyValue('font-family');
-    if (typeof family === 'string' && family !== '') svg.style.setProperty('font-family', family);
+    if (typeof family === 'string' && family !== '') svg.style.setProperty('font-family', family.replace(/&quot;|"/g, "'"));
   }
 }

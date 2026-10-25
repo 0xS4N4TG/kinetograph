@@ -450,10 +450,21 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     fonts.set(request.family, set);
   }
 
+  // The root's own variables: what `<html>` and the root element declare, under the values the root element gives.
+  const rootId = attr('data-composition-id') ?? 'main';
+  const declared: Record<string, unknown> = {};
+  for (const text of [attrsOf(html).find(([n]) => n === 'data-composition-variables')?.[1] ?? null, attr('data-composition-variables')]) {
+    for (const item of (safeJson(text) as { id?: string; default?: unknown }[] | null) ?? []) {
+      if (item && typeof item.id === 'string' && 'default' in item) declared[item.id] = item.default;
+    }
+  }
+  const given = safeJson(attr('data-variable-values'));
+  builder.variables[rootId] = { ...declared, ...(given && typeof given === 'object' ? (given as object) : {}), ...builder.variables[rootId] };
+
   const plan: HfPlan = {
     file,
     baseDir: root,
-    compositionId: attr('data-composition-id') ?? 'main',
+    compositionId: rootId,
     width,
     height,
     fps: DEFAULT_FPS,
