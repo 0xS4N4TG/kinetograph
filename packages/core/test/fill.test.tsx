@@ -72,7 +72,7 @@ describe('AbsoluteFill', () => {
 
   it('takes `background` as a colour too and draws nothing for a transparent one', () => {
     const [a] = renderAt(<AbsoluteFill style={{ background: 'red' }} />).layers as any[];
-    expect(a.children[0].fill).toBe('red');
+    expect(a.children[0].fill).toBe('#ff0000');
     const [b] = renderAt(<AbsoluteFill style={{ backgroundColor: 'transparent' }} />).layers as any[];
     expect(b.children ?? []).toHaveLength(0);
   });

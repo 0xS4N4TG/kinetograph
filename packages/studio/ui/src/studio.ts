@@ -2,20 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import type {
-  CompositionInfo,
-  InspectResult,
-  ProjectInfo,
-  ReceivedFrame,
-  RenderJob,
-  RenderRequest,
-  ServerMessage,
-  StudioApi,
-  StudioError,
-  StudioSocket,
-  TimelineData,
+import {
+  ApiError,
+  type CompositionInfo,
+  type InspectResult,
+  type ProjectInfo,
+  type ReceivedFrame,
+  type RenderJob,
+  type RenderRequest,
+  type ServerMessage,
+  type StudioApi,
+  type StudioError,
+  type StudioSocket,
+  type TimelineData,
 } from '@/api';
 import { Player, type PlayerState } from '@/lib/player';
+
+function toStudioError(error: unknown): StudioError {
+  if (error instanceof ApiError) return { code: error.code, message: error.message };
+  return { code: 'IO', message: error instanceof Error ? error.message : String(error) };
+}
 
 export function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -28,6 +34,12 @@ function upsertJob(jobs: RenderJob[], job: RenderJob): RenderJob[] {
   next[index] = job;
   return next;
 }
+
+/** What the timeline has to show: the sweep is slow on a long film, so loading and failing are states of their own. */
+export type TimelineStatus =
+  | { state: 'loading'; done: number; total: number }
+  | { state: 'ready'; data: TimelineData }
+  | { state: 'error'; error: StudioError };
 
 export interface Studio {
   project: ProjectInfo | null;
@@ -54,7 +66,7 @@ export interface Studio {
   setPropValues(values: Record<string, unknown>): void;
   resetProps(): void;
 
-  timeline: TimelineData | null;
+  timeline: TimelineStatus;
   inspect: InspectResult | null;
   selectedLayer: string | null;
   selectLayer(id: string | null): void;
@@ -66,6 +78,7 @@ export interface Studio {
 
 const INSPECT_DELAY_MS = 80;
 const TIMELINE_DELAY_MS = 200;
+const TIMELINE_POLL_MS = 400;
 
 export function useStudio(api: StudioApi): Studio {
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -75,7 +88,7 @@ export function useStudio(api: StudioApi): Studio {
   const [buildId, setBuildId] = useState(0);
   const [buildError, setBuildError] = useState<StudioError | null>(null);
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
-  const [timeline, setTimeline] = useState<TimelineData | null>(null);
+  const [timeline, setTimeline] = useState<TimelineStatus>({ state: 'loading', done: 0, total: 0 });
   const [inspect, setInspect] = useState<InspectResult | null>(null);
   const [selectedLayer, selectLayer] = useState<string | null>(null);
   const [renders, setRenders] = useState<RenderJob[]>([]);
@@ -237,20 +250,27 @@ export function useStudio(api: StudioApi): Studio {
   // ---- timeline and scene tree ----
 
   useEffect(() => {
-    if (!comp) {
-      setTimeline(null);
-      return;
-    }
+    setTimeline({ state: 'loading', done: 0, total: 0 });
+    if (!comp) return;
     let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | undefined;
     const timer = setTimeout(() => {
+      // The request answers only when the whole film has been read: meanwhile, ask how far it has got.
+      poll = setInterval(() => {
+        api.timelineProgress(comp.id, propsOverride).then(
+          ({ done, total }) => !cancelled && setTimeline((s) => (s.state === 'loading' ? { state: 'loading', done, total } : s)),
+          () => {},
+        );
+      }, TIMELINE_POLL_MS);
       api.timeline(comp.id, propsOverride).then(
-        (data) => !cancelled && setTimeline(data),
-        () => !cancelled && setTimeline(null),
+        (data) => !cancelled && setTimeline({ state: 'ready', data }),
+        (error: unknown) => !cancelled && setTimeline({ state: 'error', error: toStudioError(error) }),
       );
     }, TIMELINE_DELAY_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearInterval(poll);
     };
   }, [api, comp?.id, comp?.durationInFrames, overrideKey, reloads]);
 

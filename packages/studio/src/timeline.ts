@@ -7,6 +7,9 @@ interface SceneLayer {
   children?: SceneLayer[];
 }
 
+/** How many frames the sweep reads between two progress reports. */
+const PROGRESS_EVERY = 20;
+
 /**
  * The timeline of a composition: its JS stage run for every frame (no addon), with the Sequences and the layers the
  * frames show folded into one list each (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5).
@@ -14,6 +17,8 @@ interface SceneLayer {
 export async function sweepTimeline(
   engine: Engine,
   request: { comp: string; props: Record<string, unknown> },
+  /** Called every few frames with the frames read so far and the total. */
+  onProgress?: (done: number, total: number) => void,
 ): Promise<TimelineData> {
   const { composition } = await engine.plan(request);
   const { durationInFrames, fps } = composition;
@@ -44,6 +49,7 @@ export async function sweepTimeline(
       else if (known.entry.layer === null && entry.layer !== null) known.entry.layer = entry.layer;
     }
     walk((JSON.parse(scene.sceneJson) as { layers: SceneLayer[] }).layers, null, frame);
+    if (onProgress && ((frame + 1) % PROGRESS_EVERY === 0 || frame + 1 === durationInFrames)) onProgress(frame + 1, durationInFrames);
     if (scene.constant) {
       // A scene file is one scene: every layer is there for the whole composition.
       for (const layer of layers.values()) layer.ranges = [[0, durationInFrames - 1]];

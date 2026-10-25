@@ -22,6 +22,11 @@ The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islan
 - [ ] Audio test off-by-one (squareA 11917 vs 11918); cli test tsc errors (render-parallel.test.ts)
 - [ ] 45 Skia "non-invertible transform" warnings on papercut ep 13 (unchecked)
 - [ ] Profile why launch film does not scale with workers
+- [ ] FUTURE (user asked 2026-10-25 to park it): scale-out rendering pipeline, in this order:
+  1. Chunked rendering: split frames into ranges, render + encode each range separately (machine/container/Lambda), join losslessly with ffmpeg concat (same encoder settings, keyframe at each chunk start), mix audio once. Deterministic frames mean seams cannot drift.
+  2. Local parallel CPU encode: libx264 per chunk instead of one VideoToolbox session (VT caps ~218 fps and does not scale with sessions; Linux/Windows have no VT).
+  3. Cloud: a `kinetograph render --chunk` primitive, then AWS Lambda and Cloud Run wrappers (no Chrome layer, so a much smaller bundle than Remotion/HyperFrames).
+  Context: Remotion scales via --concurrency Chrome tabs + Lambda chunks; HyperFrames via `render --workers N` + AWS Lambda/Cloud Run chunk stitching (packages/aws-lambda, gcp-cloud-run). Ours: launch film ~28-30 s at any --concurrency (encoder + memory bandwidth + shared GPU bound).
 
 ## Key files
 - `vendor/blitz-dom/src/layout/inline.rs` (baseline fix; noted in vendor/README.md)

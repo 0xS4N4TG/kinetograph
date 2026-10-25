@@ -88,6 +88,14 @@ function isTransparent(color: string): boolean {
   return parsed !== null && parsed.a === 0;
 }
 
+/** A colour the scene accepts (`#rrggbb[aa]`): the layers take no colour names or `rgb()`. */
+function hexOf(color: string): string {
+  const c = parseColor(color);
+  if (c === null) return color;
+  const byte = (n: number): string => Math.round(n).toString(16).padStart(2, '0');
+  return `#${byte(c.r)}${byte(c.g)}${byte(c.b)}${c.a === 255 ? '' : byte(c.a)}`;
+}
+
 export interface AbsoluteFillProps {
   style?: FillStyle;
   id?: string;
@@ -149,7 +157,7 @@ export function AbsoluteFill({ style = {}, id, className, children }: AbsoluteFi
       domFill={{ style, ...(id !== undefined ? { id } : {}), background: background !== undefined && !isTransparent(background) }}
     >
       {background !== undefined && !isTransparent(background) ? (
-        <Rect width={width} height={height} fill={background} layoutItem={{ position: 'absolute' }} />
+        <Rect width={width} height={height} fill={hexOf(background)} layoutItem={{ position: 'absolute' }} />
       ) : null}
       {children}
     </Layer>

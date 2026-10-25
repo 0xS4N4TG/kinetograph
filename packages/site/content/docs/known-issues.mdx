@@ -60,6 +60,13 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 - `background-repeat: space` with thousands of gradient tiles still errors. The other repeats are drawn as one tile repeated by `feTile`.
 - Backdrop blur and glow are capped at 128 px. The `blur` effect takes up to 512.
 
+### GSAP
+
+- A tween that plays by itself, without a `seek` on a paused timeline, does not advance. The render's clock is virtual and GSAP's ticker does not run between frames.
+- `Flip`, `ScrollTrigger` and `Draggable` are not tested. `ScrollTrigger` has nothing to scroll in a render.
+- An SVG shape's `getBoundingClientRect` is worked out from its `getBBox`, its transforms and the `<svg>`'s `viewBox`, not from layout. Strokes and filters are not in it.
+- More in [GSAP](/docs/compat/#gsap).
+
 ### `@remotion/skia` and `@shopify/react-native-skia`
 
 - `Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture` and `ImageSVG` are drawn. Text inside an SVG is not.

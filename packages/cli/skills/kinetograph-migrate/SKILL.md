@@ -72,4 +72,5 @@ Core `remotion` and these `@remotion/*` packages are mapped: transitions, motion
 layout-utils, animation-utils, captions, google-fonts, fonts, lottie, gif, media-utils, media, light-leaks, starburst,
 sfx, zod-types, timeline-utils, media-parser, webcodecs, canvas, rive, skia. Not ported on purpose: three, player,
 renderer, bundler, cli, lambda, cloudrun, tailwind, tailwind-v4 (Tailwind itself works). The full table is on the docs
-site at `/docs/guides/migrate/`.
+site at `/docs/guides/migrate/`. GSAP (core and the free plugins) works too, with a paused timeline seeked to
+`frame / fps` in a layout effect; a tween that plays by itself does not advance (`/docs/compat/#gsap`).

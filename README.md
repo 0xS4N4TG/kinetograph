@@ -4,7 +4,7 @@
 
 <h1 align="center">kinetograph.</h1>
 
-<p align="center"><b>A blazingly fast programmatic video engine, made for agents, with no browser in it.</b></p>
+<p align="center"><b>A blazingly fast programmatic video engine, made for agents.</b></p>
 
 <p align="center">
   <a href="#rendered-with-kinetograph">Examples</a> ·
