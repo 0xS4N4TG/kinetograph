@@ -264,9 +264,11 @@ export class GPURenderPassEncoderShim extends GpuObject {
   }
   setVertexBuffer(slot: number, buffer: GPUBufferShim | null, offset = 0, size?: number): void {
     if (buffer === null) return;
+    boundRange('setVertexBuffer', buffer.size, offset, size, 4);
     this.add(size === undefined ? { c: 'vertex', slot, buffer, offset } : { c: 'vertex', slot, buffer, offset, size });
   }
   setIndexBuffer(buffer: GPUBufferShim, format: string, offset = 0, size?: number): void {
+    boundRange('setIndexBuffer', buffer.size, offset, size, format === 'uint16' ? 2 : 4);
     this.add(size === undefined ? { c: 'index', buffer, format, offset } : { c: 'index', buffer, format, offset, size });
   }
   draw(vertices: number, instances = 1, first = 0, firstInstance = 0): void {
@@ -306,6 +308,15 @@ export class GPURenderPassEncoderShim extends GpuObject {
     this.ended = true;
     this.encoder.finishPass({ kind: 'pass', attachment: this.attachment, commands: this.commands });
   }
+}
+
+/** A vertex or index buffer's range must be aligned, not empty and inside the buffer (the renderer refuses the same). */
+function boundRange(call: string, length: number, offset: number, size: number | undefined, align: number): void {
+  const end = size === undefined ? length : offset + size;
+  if (!Number.isInteger(offset) || offset < 0 || offset % align !== 0) throw new RangeError(`OperationError: ${call}: the offset ${offset} is not a multiple of ${align}`);
+  if (size !== undefined && (!Number.isInteger(size) || size % 4 !== 0)) throw new RangeError(`OperationError: ${call}: the size ${size} is not a multiple of 4`);
+  if (!(offset < end)) throw new RangeError(`OperationError: ${call}: the range ${offset}..${end} is empty`);
+  if (end > length) throw new RangeError(`OperationError: ${call}: the range ${offset}..${end} is outside a buffer of ${length} bytes`);
 }
 
 function colorOf(value: unknown): [number, number, number, number] {

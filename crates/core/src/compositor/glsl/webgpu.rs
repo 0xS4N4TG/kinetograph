@@ -188,7 +188,7 @@ impl Compositor {
                     }
                     Command::Vertex { slot, buffer, offset, size } => {
                         let b = buffer_of(&buffers, buffer)?;
-                        rp.set_vertex_buffer(*slot, slice(b, *offset, *size)?);
+                        rp.set_vertex_buffer(*slot, slice(b, *offset, *size, 4)?);
                     }
                     Command::Index { buffer, format, offset, size } => {
                         let b = buffer_of(&buffers, buffer)?;
@@ -198,7 +198,7 @@ impl Compositor {
                             other => return Err(format!("index format {other}")),
                         };
                         index_size = Some(if format == wgpu::IndexFormat::Uint16 { 2 } else { 4 });
-                        rp.set_index_buffer(slice(b, *offset, *size)?, format);
+                        rp.set_index_buffer(slice(b, *offset, *size, index_size.unwrap_or(4))?, format);
                     }
                     Command::Draw { vertices, instances, first, first_instance } => {
                         if !has_pipeline {
@@ -458,15 +458,47 @@ fn buffer_of<'a>(buffers: &'a HashMap<&str, wgpu::Buffer>, id: &str) -> Fail<&'a
     buffers.get(id).ok_or_else(|| format!("buffer {id} is not in the recording"))
 }
 
-fn slice(buffer: &wgpu::Buffer, offset: u64, size: Option<u64>) -> Fail<wgpu::BufferSlice<'_>> {
+/// A range of a buffer to bind. wgpu panics on an empty slice, so it is refused here, with offsets that are not
+/// aligned (`align`: 4 for a vertex buffer, the index size for an index buffer).
+fn slice(buffer: &wgpu::Buffer, offset: u64, size: Option<u64>, align: u64) -> Fail<wgpu::BufferSlice<'_>> {
+    let end = checked_range(buffer.size(), offset, size, align)?;
+    Ok(buffer.slice(offset..end))
+}
+
+/// The end of the range `offset` and `size` name in a buffer of `length` bytes, if it is a range wgpu accepts.
+fn checked_range(length: u64, offset: u64, size: Option<u64>, align: u64) -> Fail<u64> {
+    if offset % align != 0 {
+        return Err(format!("the offset {offset} of a bound buffer is not a multiple of {align}"));
+    }
     let end = match size {
         Some(s) => offset.checked_add(s).ok_or("a buffer range overflows")?,
-        None => buffer.size(),
+        None => length,
     };
-    if offset > end || end > buffer.size() {
-        return Err(format!("the range {offset}..{end} is outside a buffer of {} bytes", buffer.size()));
+    if offset >= end {
+        return Err(format!("the range {offset}..{end} of a bound buffer is empty"));
     }
-    Ok(buffer.slice(offset..end))
+    if end > length {
+        return Err(format!("the range {offset}..{end} is outside a buffer of {length} bytes"));
+    }
+    Ok(end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_range;
+
+    #[test]
+    fn an_empty_misaligned_or_outside_range_is_refused_not_a_panic() {
+        assert_eq!(checked_range(64, 0, None, 4), Ok(64));
+        assert_eq!(checked_range(64, 16, Some(16), 4), Ok(32));
+        assert!(checked_range(64, 64, None, 4).unwrap_err().contains("empty"));
+        assert!(checked_range(64, 8, Some(0), 4).unwrap_err().contains("empty"));
+        assert!(checked_range(64, 2, Some(8), 4).unwrap_err().contains("multiple of 4"));
+        assert!(checked_range(64, 2, Some(8), 2).is_ok());
+        assert!(checked_range(64, 1, Some(8), 2).unwrap_err().contains("multiple of 2"));
+        assert!(checked_range(64, 60, Some(8), 4).unwrap_err().contains("outside"));
+        assert!(checked_range(64, 8, Some(u64::MAX), 4).unwrap_err().contains("overflows"));
+    }
 }
 
 fn check_count(vertices: u32, instances: u32) -> Fail<()> {

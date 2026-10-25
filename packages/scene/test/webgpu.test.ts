@@ -80,6 +80,28 @@ describe('the recording WebGPU context', () => {
     expect(context.drawn).toBe(true);
   });
 
+  it('refuses an empty, misaligned or out-of-range vertex buffer', async () => {
+    const { context, device } = await page(0);
+    const buffer = device.createBuffer({ size: 64, usage: GPU_BUFFER_USAGE.VERTEX | GPU_BUFFER_USAGE.COPY_DST });
+    const pass = device.createCommandEncoder().beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] });
+    expect(() => pass.setVertexBuffer(0, buffer, 64)).toThrow(/is empty/);
+    expect(() => pass.setVertexBuffer(0, buffer, 8, 0)).toThrow(/is empty/);
+    expect(() => pass.setVertexBuffer(0, buffer, 2, 8)).toThrow(/multiple of 4/);
+    expect(() => pass.setVertexBuffer(0, buffer, 56, 16)).toThrow(/outside/);
+    expect(() => pass.setVertexBuffer(0, buffer, 16, 16)).not.toThrow();
+  });
+
+  it('refuses an empty, misaligned or out-of-range index buffer, by the size of its format', async () => {
+    const { context, device } = await page(0);
+    const buffer = device.createBuffer({ size: 64, usage: GPU_BUFFER_USAGE.INDEX | GPU_BUFFER_USAGE.COPY_DST });
+    const pass = device.createCommandEncoder().beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] });
+    expect(() => pass.setIndexBuffer(buffer, 'uint16', 64)).toThrow(/is empty/);
+    expect(() => pass.setIndexBuffer(buffer, 'uint32', 2)).toThrow(/multiple of 4/);
+    expect(() => pass.setIndexBuffer(buffer, 'uint16', 1)).toThrow(/multiple of 2/);
+    expect(() => pass.setIndexBuffer(buffer, 'uint16', 60, 8)).toThrow(/outside/);
+    expect(() => pass.setIndexBuffer(buffer, 'uint16', 2, 8)).not.toThrow();
+  });
+
   it('refuses a context that is not configured, and a device that is not one', () => {
     const context = createGpuCanvasContext({ size: () => ({ width: 1, height: 1 }) });
     expect(() => context.getCurrentTexture()).toThrow(/not configured/);
