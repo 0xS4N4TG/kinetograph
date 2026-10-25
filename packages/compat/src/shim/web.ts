@@ -106,7 +106,19 @@ function feature(name: string, value: string | undefined): boolean {
   }
 }
 
-class MediaQueryListShim extends EventTarget {
+/** A browser ignores a null listener (feature tests pass one); Node's EventTarget prints a warning for it. */
+class BrowserEventTarget extends EventTarget {
+  override addEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean): void {
+    if (listener === null || listener === undefined) return;
+    super.addEventListener(type, listener, options);
+  }
+  override removeEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean): void {
+    if (listener === null || listener === undefined) return;
+    super.removeEventListener(type, listener, options);
+  }
+}
+
+class MediaQueryListShim extends BrowserEventTarget {
   onchange: ((event: unknown) => void) | null = null;
   constructor(readonly media: string) {
     super();
@@ -167,7 +179,7 @@ function imagePicture(src: string): CanvasPicture | null {
 
 // ---- Image ----
 
-class ImageShim extends EventTarget {
+class ImageShim extends BrowserEventTarget {
   onload: ((event: unknown) => void) | null = null;
   onerror: ((event: unknown) => void) | null = null;
   crossOrigin: string | null = null;
@@ -461,7 +473,7 @@ export function installDomGlobals(): void {
   define(doc, 'getElementsByClassName', (names: string) => collectionOf(documentQuery(String(names).split(/\s+/).filter(Boolean).map((n) => `.${n}`).join(''), false)));
   define(doc, 'elementFromPoint', () => null);
   define(doc, 'hasFocus', () => true);
-  const listeners = new EventTarget();
+  const listeners = new BrowserEventTarget();
   define(doc, 'addEventListener', listeners.addEventListener.bind(listeners));
   define(doc, 'removeEventListener', listeners.removeEventListener.bind(listeners));
   define(doc, 'dispatchEvent', listeners.dispatchEvent.bind(listeners));
@@ -469,7 +481,7 @@ export function installDomGlobals(): void {
 
   // `window.addEventListener('resize' | 'load' | …)`: accepted, never fired (the window never changes size).
   if (typeof g.addEventListener !== 'function') {
-    const events = new EventTarget();
+    const events = new BrowserEventTarget();
     define(g, 'addEventListener', events.addEventListener.bind(events));
     define(g, 'removeEventListener', events.removeEventListener.bind(events));
     define(g, 'dispatchEvent', events.dispatchEvent.bind(events));

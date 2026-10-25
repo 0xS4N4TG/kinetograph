@@ -68,6 +68,25 @@ describe('compareDocumentPosition', () => {
   });
 });
 
+describe('a null listener', () => {
+  it('is ignored by window, document and Image, with no Node warning', () => {
+    const warnings: string[] = [];
+    const onWarning = (w: Error) => warnings.push(w.name);
+    process.on('warning', onWarning);
+    g.window.addEventListener('test', null, {});
+    g.window.removeEventListener('test', null);
+    g.document.addEventListener('test', null);
+    new g.Image().addEventListener('load', null);
+    return new Promise<void>((done) =>
+      setTimeout(() => {
+        process.off('warning', onWarning);
+        expect(warnings).toEqual([]);
+        done();
+      }, 20),
+    );
+  });
+});
+
 describe('defaultView', () => {
   it('is the window, from the document and from an element\'s ownerDocument', () => {
     const el = g.document.createElement('div');
