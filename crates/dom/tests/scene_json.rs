@@ -591,3 +591,61 @@ fn text_stroke_and_paint_order_inherit_into_inline_children() {
     assert_eq!(texts[0]["paintOrder"], "strokeFill");
     assert!(texts[1].get("stroke").is_none(), "0 turns it off");
 }
+
+/// CSS Transforms 2 "grouping property values": each of these makes
+/// `transform-style: preserve-3d` compute as flat, as in Chrome. The painted
+/// group is then a flat group (no `preserve3d`) and the scene loads, where a
+/// preserve3d group with an effect, clip, mask or blend is refused.
+const GROUPING: &[(&str, &str)] = &[
+    ("opacity", "opacity:.6"),
+    ("filter", "filter:hue-rotate(40deg)"),
+    ("filter opacity()", "filter:opacity(50%)"),
+    ("backdrop-filter", "backdrop-filter:blur(2px)"),
+    ("clip-path", "clip-path:inset(0 10px 0 0)"),
+    ("mask-image", "mask-image:linear-gradient(#000,transparent)"),
+    ("mix-blend-mode", "mix-blend-mode:multiply"),
+    ("isolation", "isolation:isolate"),
+    ("overflow hidden", "overflow:hidden"),
+    ("overflow auto", "overflow:auto"),
+    ("contain paint", "contain:paint"),
+];
+
+fn stack(extra: &str) -> String {
+    format!(
+        r#"<div style="perspective:400px;width:140px;height:110px"><div id="a" style="position:relative;width:140px;height:110px;transform-style:preserve-3d;transform:rotateY(30deg);{extra}"><div id="g" style="position:absolute;left:20px;top:15px;width:80px;height:80px;background:#6c6;transform:translateZ(60px)"></div><div id="r" style="position:absolute;left:20px;top:15px;width:80px;height:80px;background:#f66;transform:translateZ(-60px)"></div></div></div>"#
+    )
+}
+
+#[test]
+fn a_grouping_property_flattens_a_preserve_3d_element() {
+    let control = paint(&stack(""), 200, 200);
+    assert_eq!(find(&control.layers, "a")["preserve3d"], true);
+    for (name, css) in GROUPING {
+        let out = paint(&stack(css), 200, 200);
+        let a = find(&out.layers, "a");
+        assert!(a.get("preserve3d").is_none(), "{name}: still preserve3d: {a}");
+        // The 3D children are in the flattened group, not lost.
+        find(&out.layers, "g");
+        // The scene is one the validator accepts.
+        let json = paintkit::scene_json(&out, 200, 200).to_string();
+        kinetograph_core::Scene::from_json(
+            &json,
+            paintkit::repo_root().join("crates/dom/tests/assets"),
+        )
+        .unwrap_or_else(|e| panic!("{name}: scene rejected: {e}"));
+    }
+}
+
+#[test]
+fn values_that_are_not_grouping_leave_preserve_3d_alone() {
+    for css in [
+        "opacity:1",
+        "overflow:clip",
+        "mix-blend-mode:normal",
+        "isolation:auto",
+        "filter:none",
+    ] {
+        let out = paint(&stack(css), 200, 200);
+        assert_eq!(find(&out.layers, "a")["preserve3d"], true, "{css}");
+    }
+}

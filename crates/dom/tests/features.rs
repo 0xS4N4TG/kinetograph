@@ -185,6 +185,36 @@ case!(preserve_3d, 360, 220, {
         .to_string()
 });
 
+// CSS Transforms 2 "grouping property values": each of these flattens a preserve-3d element, so the red plane
+// (behind, later in the document) is painted over the green one (in front), as Chrome does.
+case!(preserve_3d_flattened, 720, 280, {
+    let extras = [
+        "opacity:.7",
+        "filter:hue-rotate(40deg)",
+        "clip-path:inset(0 14px 0 0)",
+        "mask-image:linear-gradient(#000,#0006)",
+        "mix-blend-mode:multiply",
+        "isolation:isolate",
+        "overflow:hidden",
+        "backdrop-filter:blur(2px)",
+    ];
+    extras
+        .iter()
+        .enumerate()
+        .map(|(i, extra)| {
+            format!(
+                r#"<div style="position:absolute;left:{}px;top:{}px;width:170px;height:130px;perspective:400px">
+<div style="position:relative;width:140px;height:110px;transform-style:preserve-3d;transform:rotateY(30deg);{extra}">
+<div style="position:absolute;left:20px;top:15px;width:80px;height:80px;background:#6c6;transform:translateZ(60px)"></div>
+<div style="position:absolute;left:20px;top:15px;width:80px;height:80px;background:#f66;transform:translateZ(-60px)"></div>
+</div></div>"#,
+                (i % 4) * 180,
+                (i / 4) * 140
+            )
+        })
+        .collect()
+});
+
 case!(border_images, 340, 220, {
     format!(
         r#"<div style="position:absolute;left:10px;top:10px;width:90px;height:60px;border:12px solid transparent;border-image:url({0}) 16 round"></div>
