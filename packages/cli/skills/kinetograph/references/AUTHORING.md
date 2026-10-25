@@ -1246,6 +1246,11 @@ rendered, so a whole timeline is the union over frames; two entries with one `ke
   arrives is dropped without a reply (latest wins).
 - **Timeline.** `/api/timeline` runs the JS stage for every frame of the composition (no addon) and returns the
   union of `sequences` and each layer's frame ranges, cached per (buildId, composition, props).
+- **Names and source.** The studio bundles a project with esbuild's dev JSX transform, so each Sequence and layer
+  (`/api/timeline`, `/api/inspect`) can carry optional `label` (a person's name for it: the Sequence `name`, the
+  element `id`, `Component · “text…”`, the tag and class, or its kind), `component` (the nearest user component) and
+  `source` (`{ file, line, column }` of the JSX, relative to the directory the studio started in). The path id stays
+  the layer's `id`. A render's bundle has none of this and draws the same pixels.
 - The UI's built files (`packages/studio/ui/dist`) are served at `/`, with `index.html` for unknown non-API paths.
 
 The routes and messages are typed in `packages/studio/src/protocol.ts`; that file is the contract:

@@ -51,6 +51,8 @@ interface RowProps {
   index: number;
   swatch: string;
   label: string;
+  /** Dim text after the label: the component and the source line. */
+  detail?: string;
   badge?: string;
   title: string;
   depth: number;
@@ -61,7 +63,7 @@ interface RowProps {
   'data-testid': string;
 }
 
-export function Row({ index, swatch, label, badge, title, depth, selected, onSelect, laneWidth, children, ...rest }: RowProps) {
+export function Row({ index, swatch, label, detail, badge, title, depth, selected, onSelect, laneWidth, children, ...rest }: RowProps) {
   return (
     <div
       {...rest}
@@ -92,6 +94,7 @@ export function Row({ index, swatch, label, badge, title, depth, selected, onSel
         </span>
         <span className={cn('size-2.5 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
         <span className="truncate text-[11px] font-medium">{label}</span>
+        {detail && <span className="text-muted-foreground/60 min-w-0 truncate text-[10px]">{detail}</span>}
         {badge && (
           <Badge variant="outline" className="text-muted-foreground ml-auto rounded-xs px-1 py-0 font-mono text-[9px]">
             {badge}

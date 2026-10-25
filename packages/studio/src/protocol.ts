@@ -4,10 +4,10 @@
 // binary frame codec, nothing that touches Node or the DOM.
 
 import type { CompositionInfo } from '@kinetographdev/core';
-import type { SequenceJson } from '@kinetographdev/scene';
-import type { InspectResult } from 'kinetograph';
+import type { LayerName, SequenceJson, SourceLocation } from '@kinetographdev/scene';
+import type { InspectLayer, InspectResult } from 'kinetograph';
 
-export type { CompositionInfo, InspectResult, SequenceJson };
+export type { CompositionInfo, InspectLayer, InspectResult, LayerName, SequenceJson, SourceLocation };
 
 /** `code` is one of the CLI's error codes (`INVALID_ARG`, `IO`, `RENDER`, …), or `NOT_FOUND` or `BUILD`. */
 export interface StudioError {
@@ -53,6 +53,12 @@ export interface TimelineLayer {
   parent: string | null;
   /** Inclusive frame ranges in which the layer is in the tree, ascending and disjoint. */
   ranges: [first: number, last: number][];
+  /** What a person calls it (`Title · “Rewrote Remotion…”`); the id is a path for the studio's own use. */
+  label?: string;
+  /** The nearest user component that drew it. */
+  component?: string;
+  /** The JSX that made it. */
+  source?: SourceLocation;
 }
 
 /** `POST /api/renders`. */

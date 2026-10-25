@@ -1,8 +1,12 @@
 import type { SequenceJson, TimelineLayer } from '@/api';
+import type { SourceLocation } from '../../../src/protocol.ts';
+import { displayName } from '@/lib/names';
 
 export interface SequenceRow {
   key: string;
   label: string;
+  component?: string;
+  source?: SourceLocation;
   depth: number;
   from: number;
   /** Exclusive. */
@@ -13,6 +17,10 @@ export interface SequenceRow {
 
 export interface LayerRow {
   id: string;
+  /** What a person calls it. */
+  label: string;
+  component?: string;
+  source?: SourceLocation;
   type: string;
   depth: number;
   ranges: [first: number, last: number][];
@@ -50,7 +58,9 @@ export function sequenceRows(sequences: SequenceJson[]): SequenceRow[] {
     false,
   ).map(({ item, depth }) => ({
     key: item.key,
-    label: item.name ?? 'Sequence',
+    label: item.label ?? item.name ?? 'Sequence',
+    ...(item.component !== undefined ? { component: item.component } : {}),
+    ...(item.source !== undefined ? { source: item.source } : {}),
     depth,
     from: item.from,
     end: item.from + item.durationInFrames,
@@ -65,7 +75,15 @@ export function layerRows(layers: TimelineLayer[]): LayerRow[] {
     (l) => l.id,
     (l) => l.parent,
     true,
-  ).map(({ item, depth }) => ({ id: item.id, type: item.type, depth, ranges: item.ranges }));
+  ).map(({ item, depth }) => ({
+    id: item.id,
+    label: displayName(item),
+    ...(item.component !== undefined ? { component: item.component } : {}),
+    ...(item.source !== undefined ? { source: item.source } : {}),
+    type: item.type,
+    depth,
+    ranges: item.ranges,
+  }));
 }
 
 /** Tailwind padding classes for nesting depth (written out so the class scanner finds them). */
