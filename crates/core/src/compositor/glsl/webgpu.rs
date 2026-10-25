@@ -941,7 +941,7 @@ fn slice(buffer: &wgpu::Buffer, offset: u64, size: Option<u64>, align: u64) -> F
 
 /// The end of the range `offset` and `size` name in a buffer of `length` bytes, if it is a range wgpu accepts.
 fn checked_range(length: u64, offset: u64, size: Option<u64>, align: u64) -> Fail<u64> {
-    if offset % align != 0 {
+    if !offset.is_multiple_of(align) {
         return Err(format!("the offset {offset} of a bound buffer is not a multiple of {align}"));
     }
     let end = match size {
