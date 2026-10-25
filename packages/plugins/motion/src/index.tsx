@@ -18,7 +18,13 @@
 
 import { Fragment, createElement, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
-import { MotionGlobalConfig, frameData, motionValue, processFrame, spring, time, type AnimationPlaybackControls, type MotionValue } from 'motion';
+import * as motionNs from 'motion';
+import { MotionGlobalConfig, frameData, motionValue, spring, time, type AnimationPlaybackControls, type MotionValue } from 'motion';
+
+// `processFrame` is new in Motion 14.6. Without it MotionFrame does nothing (and says so once); the engine's own
+// frame-pure requestAnimationFrame still drives Motion, and the other exports work on Motion 12 and later.
+const processFrame = (motionNs as unknown as { processFrame?: (timestamp?: number) => void }).processFrame;
+let warnedOld = false;
 
 export interface MotionFrameProps {
   children?: ReactNode;
@@ -27,8 +33,8 @@ export interface MotionFrameProps {
 /**
  * Ties Motion's clock to the composition's frame. Put it around everything that uses Motion.
  *
- * Children mount at Motion time 0; every frame, Motion's loop runs to `frame / fps` seconds. Needs `motion` 14.6 or
- * later (`processFrame`).
+ * Children mount at Motion time 0; every frame, Motion's loop runs to `frame / fps` seconds. `processFrame` needs `motion` 14.6
+ * or later; on an older Motion this does nothing.
  *
  * ```tsx
  * <MotionFrame>
@@ -43,7 +49,12 @@ export function MotionFrame({ children }: MotionFrameProps) {
   const started = useRef(false);
   const before = useRef(false);
 
-  if (!started.current) {
+  const drive = processFrame !== undefined;
+  if (!drive && !warnedOld) {
+    warnedOld = true;
+    console.warn('MotionFrame: this version of motion has no processFrame (added in 14.6), so MotionFrame does nothing.');
+  }
+  if (drive && !started.current) {
     // Before the children mount, so that what they start is started at time 0.
     started.current = true;
     before.current = MotionGlobalConfig.useManualTiming === true;
@@ -56,13 +67,15 @@ export function MotionFrame({ children }: MotionFrameProps) {
   // A passive effect, because Motion starts a component's animations in its passive effect and a parent's passive
   // effect runs after its children's. Runs on every frame.
   useEffect(() => {
+    if (!processFrame) return;
     processFrame(0);
     if (ms > 0) processFrame(ms);
   }, [ms]);
   useLayoutEffect(
     () => () => {
-      MotionGlobalConfig.useManualTiming = before.current;
+      if (drive) MotionGlobalConfig.useManualTiming = before.current;
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
