@@ -26,7 +26,7 @@ const scope = useGsapTimeline((tl) => {
 return <div ref={scope}>{/* elements with className="box" */}</div>;
 ```
 
-Put every tween on `tl`. A `gsap.to(...)` in the build function plays on GSAP's own ticker, which a render does not run, so the plugin warns about it once. `gsap.set` is fine. `<GsapTimeline build={...}>` is the same thing as a component.
+Put every tween on `tl`: it is the pattern that does not depend on when a tween was made. A `gsap.to(...)` in the build function is not on the timeline and plays on GSAP's root clock, which Kinetograph moves with the frame, so it is right in a render too (see [the compatibility page](/docs/compat/#gsap)). `<GsapTimeline build={...}>` is the same thing as a component.
 
 Checked: three ports of the GSAP test compositions render byte for byte like the hand-written Remotion pattern, and match the Remotion stills (mean difference 0.00 to 0.08). The plain pattern without the plugin is described in [the compatibility page](/docs/compat/#gsap).
 
