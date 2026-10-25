@@ -45,11 +45,11 @@ const doc = (): AnyRecord => g.document;
 
 /**
  * The rules every HyperFrames page gets before its own: what a browser's default stylesheet says of `<body>` (the
- * wrapper elements stand in for `<html>` and `<body>`; `:where` gives it no specificity, so any rule of the page wins), and the hidden clips' contents.
+ * wrapper elements stand in for `<html>` and `<body>`, which fill the picture so that a background on either paints it; `:where` gives it no specificity, so any rule of the page wins), and the hidden clips' contents.
  */
-const BASE_CSS = `
-:where(.kg-hf-html) { display: block; }
-:where(.kg-hf-body) { display: block; margin: 8px; }
+const baseCss = (plan: HfPlan): string => `
+:where(.kg-hf-html) { display: block; width: ${plan.width}px; height: ${plan.height}px; }
+:where(.kg-hf-body) { display: block; margin: 8px; min-height: 100%; }
 [${HIDDEN_ATTR}], [${HIDDEN_ATTR}] * { visibility: hidden !important; }
 `;
 
@@ -355,7 +355,7 @@ class Runtime {
 }
 
 export function defineHyperframes(plan: HfPlan): void {
-  registerStylesheet(BASE_CSS, 'hyperframes');
+  registerStylesheet(baseCss(plan), 'hyperframes');
   for (const sheet of plan.stylesheets) registerStylesheet(sheet.css, sheet.file);
   for (const request of fontRequests(plan)) {
     try {
