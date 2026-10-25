@@ -163,6 +163,25 @@ One font per layer, no fallback, no bidi. `\n` starts a new line. The layer orig
 
 Fonts are registered before any text is measured.
 
+### Text stroke
+
+`stroke` outlines each glyph (CSS `-webkit-text-stroke`), and `paintOrder` says whether it goes over or under the fill:
+
+```json
+{ "id": "caption", "type": "text", "text": "BOOM", "font": "DM Sans", "size": 96, "color": "#ffffff",
+  "stroke": { "color": "#000000", "width": 12, "join": "miter" }, "paintOrder": "strokeFill" }
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `stroke.color`, `stroke.width` | required | The stroke is centred on the glyph's edge, so half of it is inside the glyph. A width of 0 or less draws nothing. |
+| `stroke.join`, `stroke.miterLimit` | `round`, `4` | As for a [shape](#shape)'s stroke. The DOM painter writes `miter`, which is what browsers use for text. `cap` and the dash fields are not used. |
+| `paintOrder` | `fillStroke` | `fillStroke`: the stroke is drawn over the fill. `strokeFill`: the fill is drawn over the stroke, so only the outer half of the stroke shows (the usual caption outline). |
+
+The fill and stroke are drawn together for each glyph, so `chars` styles (offset, scale, rotation, opacity)
+move and fade a character's stroke with its fill. The layer's bounds grow by half the stroke width, times the miter
+limit for a `miter` join. Effects, clips and masks work on the layer after the stroke.
+
 ### Per-character styles
 
 `chars` styles single characters, for kinetic type:

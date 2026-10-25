@@ -449,6 +449,11 @@ export interface TextLayer extends LayerBase {
   /** The box of a layer with `runs`, in pixels. */
   boxWidth?: Num;
   boxHeight?: Num;
+  /** An outline around each glyph (CSS `-webkit-text-stroke`), centred on the glyph's edge. Only `color`, `width`,
+   *  `join` and `miterLimit` are used; `join` defaults to `round`. */
+  stroke?: Stroke & { join?: 'miter' | 'round' | 'bevel'; miterLimit?: Num };
+  /** Which is drawn on top: the fill (`strokeFill`) or the stroke (`fillStroke`, the default). */
+  paintOrder?: 'fillStroke' | 'strokeFill';
 }
 
 export interface ImageLayer extends LayerBase {

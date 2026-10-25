@@ -1589,6 +1589,7 @@ impl Renderer {
                 chars,
                 runs,
                 box_size,
+                stroke,
                 ..
             } => {
                 let laid_out = self.text.layout_layer(
@@ -1601,7 +1602,12 @@ impl Renderer {
                     runs,
                     *box_size,
                 );
-                text_bounds(&laid_out, *size, *max_width, chars)
+                // A stroke reaches half its width (a miter join, up to the limit) past the outline.
+                let reach = stroke.as_ref().map_or(0.0, |st| {
+                    let join = if st.join == crate::scene::StrokeJoin::Miter { st.miter_limit } else { 1.0 };
+                    st.width * 0.5 * join.max(1.0) + 1.0
+                });
+                text_bounds(&laid_out, (*size).max(reach as f32), *max_width, chars)
             }
             ResolvedKind::Image { width, height, .. }
             | ResolvedKind::Lottie { width, height, .. }

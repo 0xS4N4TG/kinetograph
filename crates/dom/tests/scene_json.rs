@@ -497,3 +497,97 @@ fn list_markers_follow_chromes_sizes() {
     assert_eq!(m["shape"]["kind"], "ellipse");
     assert_eq!(m["shape"]["width"], 16, "a third of the ascent");
 }
+
+#[test]
+fn a_webkit_text_stroke_is_a_stroke_on_the_text_layer() {
+    let out = paint(
+        r#"<div id="t" style="font-size:40px;color:#fff;-webkit-text-stroke:6px #123456">Hi</div>"#,
+        200,
+        80,
+    );
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+    let l = find(&out.layers, "t.text");
+    assert_eq!(l["stroke"]["color"], "#123456");
+    assert_eq!(l["stroke"]["width"], 6);
+    assert_eq!(l["stroke"]["join"], "miter");
+    assert!(
+        l.get("paintOrder").is_none(),
+        "fill, then stroke is the default"
+    );
+}
+
+#[test]
+fn the_text_stroke_longhands_and_current_color_work_and_zero_width_is_none() {
+    let out = paint(
+        r#"<div id="a" style="font-size:40px;color:#abcdef;-webkit-text-stroke-width:3px">Hi</div>
+<div id="b" style="font-size:40px;-webkit-text-stroke-width:2px;-webkit-text-stroke-color:#f00">Hi</div>
+<div id="c" style="font-size:40px;-webkit-text-stroke:0 #f00">Hi</div>
+<div id="d" style="font-size:40px;-webkit-text-stroke:medium red">Hi</div>"#,
+        200,
+        240,
+    );
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+    assert_eq!(find(&out.layers, "a.text")["stroke"]["color"], "#abcdef");
+    assert_eq!(find(&out.layers, "a.text")["stroke"]["width"], 3);
+    assert_eq!(find(&out.layers, "b.text")["stroke"]["color"], "#ff0000");
+    assert!(find(&out.layers, "c.text").get("stroke").is_none());
+    assert_eq!(
+        find(&out.layers, "d.text")["stroke"]["width"],
+        3,
+        "medium is 3px"
+    );
+}
+
+#[test]
+fn paint_order_stroke_fill_puts_the_stroke_under_the_fill() {
+    let out = paint(
+        r#"<div id="t" style="font-size:40px;-webkit-text-stroke:6px #000;paint-order:stroke fill">Hi</div>
+<div id="u" style="font-size:40px;-webkit-text-stroke:6px #000;paint-order:fill stroke">Hi</div>
+<div id="v" style="font-size:40px;-webkit-text-stroke:6px #000;paint-order:stroke">Hi</div>"#,
+        200,
+        240,
+    );
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+    assert_eq!(find(&out.layers, "t.text")["paintOrder"], "strokeFill");
+    assert!(find(&out.layers, "u.text").get("paintOrder").is_none());
+    assert_eq!(
+        find(&out.layers, "v.text")["paintOrder"],
+        "strokeFill",
+        "stroke alone is stroke, fill, markers"
+    );
+}
+
+#[test]
+fn a_text_shadow_of_stroked_text_is_stroked_too() {
+    let out = paint(
+        r#"<div id="t" style="font-size:40px;-webkit-text-stroke:4px #f00;text-shadow:3px 3px #00f">Hi</div>"#,
+        200,
+        80,
+    );
+    let s = find(&out.layers, "t.shadow0");
+    assert_eq!(s["stroke"]["color"], "#0000ff");
+    assert_eq!(s["stroke"]["width"], 4);
+}
+
+#[test]
+fn text_stroke_and_paint_order_inherit_into_inline_children() {
+    let out = paint(
+        r#"<div id="p" style="font-size:30px;-webkit-text-stroke:5px #f00;paint-order:stroke fill">plain <span id="s">inner</span><span id="z" style="-webkit-text-stroke:0">none</span></div>"#,
+        400,
+        80,
+    );
+    let texts: Vec<&Value> = flat(&out.layers)
+        .into_iter()
+        .filter(|l| l["type"] == "text")
+        .collect();
+    // "plain " and the span share the parent's stroke, so they are one layer; the span that turns it off is another.
+    assert_eq!(texts.len(), 2, "{texts:?}");
+    assert_eq!(
+        texts[0]["runs"].as_array().unwrap().len(),
+        2,
+        "plain text and the inheriting span"
+    );
+    assert_eq!(texts[0]["stroke"]["width"], 5);
+    assert_eq!(texts[0]["paintOrder"], "strokeFill");
+    assert!(texts[1].get("stroke").is_none(), "0 turns it off");
+}
