@@ -35,20 +35,37 @@ export async function sweepTimeline(
   const sequences = new Map<string, { entry: SequenceJson; order: number }>();
   const layers = new Map<string, TimelineLayer>();
 
-  const walk = (list: SceneLayer[], parent: string | null, frame: number, names: Record<string, LayerName> | undefined): void => {
+  const walk = (
+    list: SceneLayer[],
+    parent: string | null,
+    frame: number,
+    names: Record<string, LayerName> | undefined,
+    /** Sequence group ids of this frame -> Sequence key (ids are paths, so they only mean something per frame). */
+    groups: ReadonlyMap<string, string>,
+    owner: string | undefined,
+    /** The Sequence a layer outside every Sequence group is taken to be in: the tightest one showing on this frame. */
+    fallback: string | undefined,
+  ): void => {
     for (const layer of list) {
-      const known = layers.get(layer.id);
+      const strong = groups.get(layer.id) ?? owner;
+      // A path id (`$0.1.2`) names whatever sits there on a frame, so the same id in two Sequences is two layers.
+      // A name the author gave is one layer wherever it is; with no group to go by it stays in the Sequence it began in.
+      const sticky = strong === undefined && !layer.id.startsWith('$');
+      const slot = sticky ? `\u0001${layer.id}` : `${strong ?? fallback ?? ''}\u0000${layer.id}`;
+      const known = layers.get(slot);
+      const own = strong ?? (known ? known.sequence : fallback);
       if (!known) {
         const added: TimelineLayer = { id: layer.id, type: layer.type, parent, ranges: [[frame, frame]] };
         nameLayer(added, lookupName(names, layer.id));
-        layers.set(layer.id, added);
+        if (own !== undefined) added.sequence = own;
+        layers.set(slot, added);
       } else {
         if (known.label === undefined) nameLayer(known, lookupName(names, layer.id));
         const last = known.ranges[known.ranges.length - 1]!;
         if (last[1] >= frame - 1) last[1] = Math.max(last[1], frame);
         else known.ranges.push([frame, frame]);
       }
-      if (layer.children) walk(layer.children, layer.id, frame, names);
+      if (layer.children) walk(layer.children, layer.id, frame, names, groups, strong, fallback);
     }
   };
 
@@ -64,7 +81,18 @@ export async function sweepTimeline(
         if (entry.label !== undefined && (known.entry.label === undefined || known.entry.label === 'Sequence')) known.entry.label = entry.label;
       }
     }
-    walk((JSON.parse(scene.sceneJson) as { layers: SceneLayer[] }).layers, null, frame, scene.names);
+    // Entries come outer first: a group two Sequences share belongs to the outer one.
+    const groups = new Map<string, string>();
+    for (const entry of scene.sequences) if (entry.layer !== null && !groups.has(entry.layer)) groups.set(entry.layer, entry.key);
+    let fallback: string | undefined;
+    let tightest = Infinity;
+    for (const entry of scene.sequences) {
+      if (frame >= entry.from && frame < entry.from + entry.durationInFrames && entry.durationInFrames <= tightest) {
+        tightest = entry.durationInFrames;
+        fallback = entry.key;
+      }
+    }
+    walk((JSON.parse(scene.sceneJson) as { layers: SceneLayer[] }).layers, null, frame, scene.names, groups, undefined, fallback);
     if (onProgress && ((frame + 1) % PROGRESS_EVERY === 0 || frame + 1 === durationInFrames)) onProgress(frame + 1, durationInFrames);
     if (scene.constant) {
       // A scene file is one scene: every layer is there for the whole composition.

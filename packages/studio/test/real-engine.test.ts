@@ -73,7 +73,7 @@ describe.skipIf(!addon)('the default engine (no GPU)', () => {
       { key: '/second@8+8', name: 'second', from: 8, durationInFrames: 8, parent: null, layer: expect.any(String), label: 'second' },
     ]);
     const layer = (id: string) => timeline.json.layers.find((l: { id: string }) => l.id === id);
-    expect(layer('bg')).toEqual({
+    expect(layer('bg')).toMatchObject({
       id: 'bg', type: 'shape', parent: null, ranges: [[0, 19]],
       label: 'bg', component: 'Main', source: { ...here, line: at('<Rect id="bg"') },
     });
@@ -81,6 +81,8 @@ describe.skipIf(!addon)('the default engine (no GPU)', () => {
     expect(layer('dot')).toMatchObject({ label: 'dot', component: 'Dot', source: { line: at('const Dot') } });
     expect(layer('dot')).toMatchObject({ parent: expect.any(String), ranges: [[5, 14]] });
     expect(layer('tag')).toMatchObject({ type: 'group', ranges: [[7, 9]] });
+    // A layer in a Sequence's group says which Sequence, so the UI can nest it there.
+    expect(layer('dot')).toMatchObject({ sequence: '/intro@5+10' });
     expect(layer('s1').ranges).toEqual([[0, 7]]);
     expect(layer('s2').ranges).toEqual([[8, 15]]);
 

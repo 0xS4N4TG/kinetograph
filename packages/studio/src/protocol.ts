@@ -59,6 +59,9 @@ export interface TimelineLayer {
   component?: string;
   /** The JSX that made it. */
   source?: SourceLocation;
+  /** Key of the innermost Sequence whose group the layer sits in; absent for layers outside every Sequence group (older
+   * servers never send it). Path ids repeat between Sequences, so `id` is only unique together with `sequence`. */
+  sequence?: string;
 }
 
 /** `POST /api/renders`. */
