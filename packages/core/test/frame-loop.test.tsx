@@ -475,6 +475,27 @@ describe('the determinism shim in a render', () => {
     expect(second[0]!.split(' ')[2]).toBe(first[3]!.split(' ')[2]);
     expect(second[1]).toBe(first[1]);
   });
+
+  it('runs requestAnimationFrame callbacks after the frame renders, so what they set is in that frame', async () => {
+    installDeterminism();
+    let drawn = '';
+    function Raf() {
+      const frame = useCurrentFrame();
+      useEffect(() => {
+        requestAnimationFrame((t) => {
+          drawn = `${frame}@${Math.round(t)}`;
+        });
+      });
+      return <Text id="c" font="Inter" size={10}>{`f${frame}`}</Text>;
+    }
+    registerRoot(() => <Composition id="R" component={Raf} width={10} height={10} fps={30} durationInFrames={90} />);
+    const r = createFrameRenderer('R');
+    await r.renderFrame(3);
+    // Not at the start of frame 4, and in a frame rendered alone as well as in a sequence.
+    expect(drawn).toBe('3@100');
+    await r.renderFrame(4);
+    expect(drawn).toBe('4@133');
+  });
 });
 
 describe('motion blur', () => {

@@ -199,6 +199,8 @@ export interface VirtualFrameOptions {
   seedFrame?: number;
   /** Default true. False moves the clock without running timers or animation frames (sub-frames, restoring). */
   fireTimers?: boolean;
+  /** Leave the animation-frame callbacks queued: the caller runs them with `runAnimationFrames` once the frame has rendered. */
+  deferAnimationFrames?: boolean;
 }
 
 function seedFor(frame: number): number {
@@ -223,6 +225,11 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   }
   fireTimersUpTo(target);
   virtualMs = target;
+  if (options.deferAnimationFrames !== true) runAnimationFrames();
+}
+
+/** Runs the animation-frame callbacks queued so far, once, with the virtual `performance.now()`; what they ask for waits for the next call. */
+export function runAnimationFrames(): void {
   const due = animationQueue;
   animationQueue = [];
   for (const entry of due) entry.callback(virtualMs);
