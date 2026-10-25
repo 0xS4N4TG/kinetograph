@@ -795,6 +795,21 @@ export interface VideoLayer extends LayerBase {
   playbackRate?: number;
   /** Default false. */
   loop?: boolean;
+  /** Datamosh (SCENE.md "video", "datamosh"): inside the window the clip's motion moves a held picture. */
+  datamosh?: DatamoshJson;
+}
+
+/**
+ * A datamosh window, in scene frames: `from` shows the held picture, each later frame to `to` (exclusive) moves it by
+ * the clip's own motion vectors, and the clip plays again from `to`. At most 600 frames.
+ */
+export interface DatamoshJson {
+  from: number;
+  to: number;
+  /** What the motion moves: the clip's own picture one frame before `from` (default), or a frame of another file. */
+  hold?: 'previous' | { src: string; frame: number };
+  /** How much of the clip's residual (the new picture's detail) is added back, 0 to 1. Default 0. */
+  mix?: number;
 }
 
 export interface GifLayer extends LayerBase {

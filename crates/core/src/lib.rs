@@ -5,6 +5,7 @@ pub mod blur;
 pub mod bounds;
 pub mod box_shadow;
 pub mod cache;
+pub mod datamosh;
 pub mod canvas;
 pub mod color;
 pub mod compositor;
