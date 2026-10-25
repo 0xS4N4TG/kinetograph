@@ -13,7 +13,7 @@ import {
 } from 'kinetograph';
 import type { Engine, EngineOptions, FrameScene } from './engine.js';
 import type { InspectLayer, InspectResult, LayerName, SequenceJson, SourceLocation } from './protocol.js';
-import { stableStringify } from './util.js';
+import { lookupName, stableStringify } from './util.js';
 
 /** Project compositions kept ready at once, each with its own frame renderer. */
 const MAX_SOURCES = 4;
@@ -51,7 +51,7 @@ const withSource = <T extends { source?: SourceLocation }>(item: T, entryDir: st
 /** `layers` and their children with the names of `names` laid over. */
 export function nameLayers(layers: InspectLayer[], names: Record<string, LayerName>): InspectLayer[] {
   return layers.map((layer) => {
-    const name = names[layer.id];
+    const name = lookupName(names, layer.id);
     return {
       ...layer,
       ...(name !== undefined ? { label: name.label, ...(name.component !== undefined ? { component: name.component } : {}), ...(name.source !== undefined ? { source: name.source } : {}) } : {}),

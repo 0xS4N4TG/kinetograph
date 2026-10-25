@@ -1,5 +1,6 @@
 import type { Engine } from './engine.js';
 import type { LayerName, SequenceJson, TimelineData, TimelineLayer } from './protocol.js';
+import { lookupName } from './util.js';
 
 interface SceneLayer {
   id: string;
@@ -39,10 +40,10 @@ export async function sweepTimeline(
       const known = layers.get(layer.id);
       if (!known) {
         const added: TimelineLayer = { id: layer.id, type: layer.type, parent, ranges: [[frame, frame]] };
-        nameLayer(added, names?.[layer.id]);
+        nameLayer(added, lookupName(names, layer.id));
         layers.set(layer.id, added);
       } else {
-        nameLayer(known, names?.[layer.id]);
+        if (known.label === undefined) nameLayer(known, lookupName(names, layer.id));
         const last = known.ranges[known.ranges.length - 1]!;
         if (last[1] >= frame - 1) last[1] = Math.max(last[1], frame);
         else known.ranges.push([frame, frame]);

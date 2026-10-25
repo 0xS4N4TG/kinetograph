@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { nameLayers, relativeSource } from '../src/real-engine.js';
+import { lookupName } from '../src/util.js';
 import type { InspectLayer } from '../src/protocol.js';
 
 describe('relativeSource', () => {
@@ -26,5 +27,21 @@ describe('nameLayers', () => {
     expect(named[0]!.children![0]).toMatchObject({ id: '$0.0', label: 'Title' });
     expect(named[0]!.children![0]).not.toHaveProperty('component');
     expect(named[0]!.children![1]).not.toHaveProperty('label');
+  });
+});
+
+describe('lookupName', () => {
+  const names = { '$0.1': { label: 'Word \u00b7 \u201cI\u201d', component: 'Word' }, bg: { label: 'bg' } };
+
+  it('names the layers the addon adds under an element after the element', () => {
+    expect(lookupName(names, '$0.1')).toBe(names['$0.1']);
+    expect(lookupName(names, '$0.1.shadow2')).toEqual({ label: 'Word \u00b7 \u201cI\u201d \u00b7 shadow2', component: 'Word' });
+    expect(lookupName(names, '$0.1.border.top')?.label).toBe('Word \u00b7 \u201cI\u201d \u00b7 border top');
+    expect(lookupName(names, '$0.1.svg.3')?.label).toBe('Word \u00b7 \u201cI\u201d \u00b7 svg 3');
+  });
+
+  it('has no name for a layer that is not under a named one', () => {
+    expect(lookupName(names, '$7.3')).toBeUndefined();
+    expect(lookupName(undefined, '$0.1')).toBeUndefined();
   });
 });
