@@ -59,6 +59,8 @@ export interface BuiltPlan {
   files: string[];
   /** The URLs of the CDN scripts the project loads (`fetch-deps` downloads these). */
   scriptUrls: string[];
+  /** The `integrity` attribute of each script URL's tag. */
+  scriptIntegrity: Record<string, string>;
 }
 
 interface Context {
@@ -83,6 +85,7 @@ class Builder {
   readonly notes: string[] = [];
   readonly files = new Set<string>();
   readonly scriptUrls: string[] = [];
+  readonly scriptIntegrity: Record<string, string> = {};
   usesThree = false;
 
   constructor(
@@ -128,6 +131,8 @@ class Builder {
       if (/^https?:\/\//i.test(src) || src.startsWith('//')) {
         const url = src.startsWith('//') ? `https:${src}` : src;
         this.scriptUrls.push(url);
+        const integrity = attrOf(el, 'integrity');
+        if (integrity) this.scriptIntegrity[url] = integrity;
         if (THREE_URL.test(url)) this.usesThree = true;
         const found = (this.options.resolveScriptUrl ?? resolveCdnScript)(url, this.root);
         if ('error' in found) {
@@ -457,5 +462,5 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     notes: builder.notes,
     usesThree: builder.usesThree,
   };
-  return { plan, files: [...builder.files], scriptUrls: [...new Set(builder.scriptUrls)] };
+  return { plan, files: [...builder.files], scriptUrls: [...new Set(builder.scriptUrls)], scriptIntegrity: builder.scriptIntegrity };
 }

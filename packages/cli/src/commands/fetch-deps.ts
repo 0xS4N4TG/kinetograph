@@ -13,14 +13,17 @@ export const fetchDeps: Command = {
   name: 'fetch-deps',
   summary: 'Download the CDN scripts and Google Fonts a HyperFrames project loads, into the local cache',
   positionals: [ENTRY],
-  options: [],
+  options: [{ name: 'allow-host', type: 'string', description: 'Also download from this host (comma-separated for several); by default only cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com and esm.sh' }],
   project: false,
   async run(args, context) {
     const entry = resolveEntry(String(args.positionals.entry));
     if (!isHyperframesEntry(entry)) throw new CliError('INVALID_ARG', `${entry} is not an HTML file: fetch-deps is for HyperFrames projects`);
-    const { plan, scriptUrls } = await buildPlan(entry, { discoverOnly: true });
+    const { plan, scriptUrls, scriptIntegrity } = await buildPlan(entry, { discoverOnly: true });
     context.progress(`${scriptUrls.length} script URL(s), ${plan.googleFonts.length} Google font famil${plan.googleFonts.length === 1 ? 'y' : 'ies'}`);
-    const scripts = await fetchCdnScripts(scriptUrls, plan.baseDir);
+    const scripts = await fetchCdnScripts(scriptUrls, plan.baseDir, {
+      integrity: scriptIntegrity,
+      allowHosts: String(args.options['allow-host'] ?? '').split(',').map((h) => h.trim()).filter(Boolean),
+    });
     const fonts: { family: string; status: 'ready' | 'failed'; error?: string }[] = [];
     for (const font of plan.googleFonts) {
       for (const style of ['normal', 'italic'] as const) {
