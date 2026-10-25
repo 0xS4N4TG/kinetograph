@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TextLayoutRequest } from '@kinetographdev/native';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addFace, NodeFontFace } from '../src/font-face.js';
+import { addFace, installFontFace, NodeFontFace } from '../src/font-face.js';
 import { fetchFileCachedSync, FontDownloadError, type FetchLike } from '../src/font-files.js';
 import { clearFonts, getFonts, pendingFontLoads, setFontProblemHandler, waitForFonts } from '../src/font-registry.js';
 import { loadFont } from '../src/fonts.js';
@@ -184,5 +184,17 @@ describe('Google font getInfo().fonts', () => {
     expect(url.startsWith('file://')).toBe(true);
     expect([...(await readFile(fileURLToPath(url)))]).toEqual([...BYTES]);
     expect(requested.filter((u) => u.includes('gstatic'))).toEqual(['https://fonts.gstatic.com/s/inter/v20/lat500.woff2']);
+  });
+});
+
+describe('document.fonts as a event target', () => {
+  it('accepts listeners that never fire (GSAP SplitText listens for loadingdone)', () => {
+    installFontFace();
+    const fonts = (globalThis as unknown as { document: { fonts: { addEventListener(t: string, f: () => void): void; removeEventListener(t: string, f: () => void): void } } }).document.fonts;
+    const listener = () => {};
+    expect(() => {
+      fonts.addEventListener('loadingdone', listener);
+      fonts.removeEventListener('loadingdone', listener);
+    }).not.toThrow();
   });
 });

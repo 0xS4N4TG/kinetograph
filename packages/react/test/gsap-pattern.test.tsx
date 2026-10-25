@@ -5,7 +5,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDomAddon, resetStylesheets } from '@kinetographdev/compat/dom';
-import { installDomGlobals, resetObservers } from '@kinetographdev/compat/shim';
+import { installDomGlobals, resetObservers, setPathMeasure } from '@kinetographdev/compat/shim';
 import { createSceneRoot, Layer, Rect, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 
@@ -266,5 +266,53 @@ describe('a read the engine cannot answer', () => {
     expect(tree.unsupported).toHaveLength(1);
     expect(tree.unsupported[0]).toMatchObject({ element: 'div' });
     expect(tree.unsupported[0]!.reason).toContain('computed style');
+  });
+});
+
+describe('what GSAP plugins do at load and to text', () => {
+  it('lets a script add to and remove from document.body before any root holds it', () => {
+    const probe = doc().createElement('div');
+    doc().body.appendChild(probe);
+    expect(() => doc().body.removeChild(probe)).not.toThrow();
+  });
+
+  it('normalizes adjacent and empty text nodes (SplitText calls it on what it split)', () => {
+    let texts: string[] = [];
+    function Probe() {
+      const ref = useRef<any>(null);
+      useLayoutEffect(() => {
+        const el = ref.current;
+        el.appendChild(doc().createTextNode('b'));
+        el.appendChild(doc().createTextNode(''));
+        el.appendChild(doc().createTextNode('c'));
+        el.normalize();
+        texts = [...el.childNodes].map((n: any) => n.textContent);
+      }, []);
+      return <div ref={ref}>a</div>;
+    }
+    render(<Probe />);
+    expect(texts).toEqual(['abc']);
+  });
+
+  it('gives an SVG shape a client rect from its bbox, transform and the svg’s viewBox', () => {
+    let rect: any;
+    // The path functions core hands over, here a stand-in that knows the one rect.
+    setPathMeasure({ getLength: () => 40, getPointAtLength: () => ({ x: 0, y: 0 }), getBoundingBox: () => ({ x1: 5, y1: 5, x2: 15, y2: 15, width: 10, height: 10 }) });
+    function Probe() {
+      const ref = useRef<any>(null);
+      useLayoutEffect(() => {
+        ref.current.setAttribute('transform', 'translate(10,20)');
+        rect = ref.current.getBoundingClientRect().toJSON();
+      }, []);
+      return (
+        <svg width={200} height={200} viewBox="0 0 100 100">
+          <rect ref={ref} x={5} y={5} width={10} height={10} />
+        </svg>
+      );
+    }
+    render(<Probe />);
+    // The stand-in addon gives the svg a 10 x 10 box at the origin: a 100 x 100 viewBox scales by 0.1.
+    setPathMeasure(null);
+    expect(rect).toMatchObject({ x: 1.5, y: 2.5, width: 1, height: 1 });
   });
 });

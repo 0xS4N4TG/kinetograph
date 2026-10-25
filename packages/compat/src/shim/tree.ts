@@ -114,6 +114,8 @@ export function isShellHost(host: HostElement): boolean {
 /** Whether a node is in the document: in a root's tree, or in `head`/`body`. */
 export function isConnectedHost(node: DomNode): boolean {
   if (inDocumentShell(node)) return true;
+  // What a script put on `document.body` before a root held it (at module load) waits in the body's list.
+  if (bodyChildren().includes(topOf(node))) return true;
   for (const readback of readbackRoots()) if (node.kind === 'element' ? readback.isConnected(node) : textIsConnected(readback, node)) return true;
   return false;
 }

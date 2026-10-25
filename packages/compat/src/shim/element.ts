@@ -476,6 +476,26 @@ export class DomElement {
     if (host === null) throw new TypeError(`Failed to execute '${method}' on 'Node': parameter 1 is not of type 'Node'.`);
     return host;
   }
+  /** Merges adjacent text nodes into one and drops empty ones, in this element and everything inside it. */
+  normalize(): void {
+    const visit = (host: HostElement): void => {
+      let previous: HostText | null = null;
+      for (const child of [...host.children]) {
+        if (child.kind === 'element') {
+          previous = null;
+          visit(child);
+        } else if (child.text === '') {
+          removeChild(child);
+        } else if (previous !== null) {
+          setText(previous, previous.text + child.text);
+          removeChild(child);
+        } else {
+          previous = child;
+        }
+      }
+    };
+    visit(this.host);
+  }
   appendChild<T>(child: T): T {
     insertChild(this.host, DomElement.required(child, 'appendChild'), null);
     return child;
@@ -658,11 +678,40 @@ export class DomElement {
     return this.readback.box(this.host);
   }
   getBoundingClientRect(): DOMRectShim {
+    const shape = this.svgClientRect();
+    if (shape !== null) return shape;
     const box = this.box();
     return box === null ? new DOMRectShim() : new DOMRectShim(box.rect.x, box.rect.y, box.rect.width, box.rect.height);
   }
   getClientRects(): DOMRectShim[] {
-    return this.box() === null ? [] : [this.getBoundingClientRect()];
+    return this.box() === null && this.svgClientRect() === null ? [] : [this.getBoundingClientRect()];
+  }
+  /**
+   * The rect of an SVG shape inside an `<svg>` (the layout has no boxes for them): its `getBBox` through its transforms and its
+   * `<svg>`'s `viewBox`, placed at the `<svg>`'s box. Null for anything else.
+   */
+  private svgClientRect(): DOMRectShim | null {
+    const owner = this.ownerSVGElement;
+    if (owner === null) return null;
+    const svg = owner.box();
+    const ctm = this.getCTM();
+    if (svg === null || ctm === null) return null;
+    const b = this.getBBox();
+    const view = (owner.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
+    const [vx, vy, vw, vh] = view.length === 4 && view.every(Number.isFinite) && view[2]! > 0 && view[3]! > 0 ? view : [0, 0, svg.width, svg.height];
+    const scale = Math.min(svg.width / vw!, svg.height / vh!);
+    const ox = svg.rect.x + (svg.width - vw! * scale) / 2 - vx! * scale;
+    const oy = svg.rect.y + (svg.height - vh! * scale) / 2 - vy! * scale;
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const [px, py] of [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]] as const) {
+      const x = ox + (ctm.a * px + ctm.c * py + ctm.e) * scale;
+      const y = oy + (ctm.b * px + ctm.d * py + ctm.f) * scale;
+      x1 = Math.min(x1, x);
+      y1 = Math.min(y1, y);
+      x2 = Math.max(x2, x);
+      y2 = Math.max(y2, y);
+    }
+    return new DOMRectShim(x1, y1, x2 - x1, y2 - y1);
   }
   get offsetWidth(): number {
     return Math.round(this.box()?.width ?? 0);
@@ -886,11 +935,11 @@ export class DomElement {
     return this.getCTM();
   }
   /** `element.transform.baseVal`: the `transform` attribute as one matrix (`consolidate()`), for libraries that read it. */
-  get transform(): { baseVal: { numberOfItems: number; consolidate(): { matrix: { a: number; b: number; c: number; d: number; e: number; f: number } } | null } } | undefined {
+  get transform(): { baseVal: { numberOfItems: number; consolidate(): { matrix: Record<string, number> } | null; getItem(index: number): { matrix: Record<string, number> } } } | undefined {
     if (!this.inSvg) return undefined;
     const t = affineOf(this.getAttribute('transform'));
     const matrix = { a: t[0], b: t[1], c: t[2], d: t[3], e: t[4], f: t[5] };
-    return { baseVal: { numberOfItems: this.getAttribute('transform') === null ? 0 : 1, consolidate: () => ({ matrix }) } };
+    return { baseVal: { numberOfItems: this.getAttribute('transform') === null ? 0 : 1, consolidate: () => ({ matrix }), getItem: () => ({ matrix }) } };
   }
   getComputedTextLength(): number {
     return this.box()?.width ?? 0;
