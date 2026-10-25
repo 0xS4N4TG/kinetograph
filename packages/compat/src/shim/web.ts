@@ -8,7 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, type CanvasPicture } from '@kinetographdev/scene';
+import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveProjectFile } from '../environment.js';
 import { OffscreenCanvasShim } from './canvas.js';
 import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
@@ -392,6 +392,10 @@ export function installDomGlobals(): void {
   define(g, 'CanvasRenderingContext2D', CanvasContext2D);
   define(g, 'WebGLRenderingContext', WebGLContext);
   define(g, 'WebGL2RenderingContext', WebGLContext);
+  // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
+  for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
+  const navigator = (g.navigator ??= {}) as Record<string, unknown>;
+  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu(), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
   define(g, 'Path2D', Path2D);

@@ -512,7 +512,7 @@ const EQUATIONS: Record<number, string> = {
 
 // ---- bytes ----
 
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
   if (typeof Buffer !== 'undefined') return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -520,7 +520,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /** Two FNV-1a passes with different bases: an id for content, 16 hex digits. */
-function hashOf(text: string): string {
+export function hashOf(text: string): string {
   let a = 0x811c9dc5;
   let b = 0x01000193 ^ text.length;
   for (let i = 0; i < text.length; i += 1) {
