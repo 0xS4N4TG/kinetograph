@@ -14,7 +14,7 @@
 
 ## Conventions
 - One Conventional Commit per logical change; push only when asked.
-- Branches `feat/<work>`, phase in the PR title, merge commits, no session links in commits/PRs (HANDOFF §8).
+- Branches `feat/<work>`, phase in the PR title, merge commits, no session links in commits/PRs (HANDOFF §8). PR bodies do NOT end with "🤖 Generated with Claude Code" (user, 2026-10-25); commits keep "Co-Authored-By: Claude Opus 5.5".
 - Coding happens in Claude Code cloud sessions; the M4 does rendering, goldens, benchmarks and ideation.
 - docs/reference/ (third-party reference video and stills) was deleted 2026-10-25; do not bring it back.
 - Subagents: Sonnet 5.5 medium implements, Haiku 5.5 helpers run renders/benchmarks/test material; ask before using Opus. Give each agent one scoped task, its own worktree, a shared CARGO_TARGET_DIR (disk is tight) and NAPI_RS_NATIVE_LIBRARY_PATH to test its addon without touching crates/node/*.node.
