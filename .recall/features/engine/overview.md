@@ -19,7 +19,7 @@ The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islan
 ## Open threads
 - [ ] Clean the 8 crates/core clippy lints
 - [ ] CLI should log which backend/device it uses (GPU Skia vs CPU Skia vs Vello)
-- [ ] Audio test off-by-one (squareA 11917 vs 11918); cli test tsc errors (render-parallel.test.ts)
+- [ ] Audio test off-by-one (squareA 11917 vs 11918); cli test tsc errors fixed in #22; scene test tsc errors (test/webgpu.test.ts:50-55) still on main
 - [ ] 45 Skia "non-invertible transform" warnings on papercut ep 13 (unchecked)
 - [ ] Profile why launch film does not scale with workers
 - [ ] FUTURE (user asked 2026-10-25 to park it): scale-out rendering pipeline, in this order:
@@ -27,6 +27,10 @@ The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islan
   2. Local parallel CPU encode: libx264 per chunk instead of one VideoToolbox session (VT caps ~218 fps and does not scale with sessions; Linux/Windows have no VT).
   3. Cloud: a `kinetograph render --chunk` primitive, then AWS Lambda and Cloud Run wrappers (no Chrome layer, so a much smaller bundle than Remotion/HyperFrames).
   Context: Remotion scales via --concurrency Chrome tabs + Lambda chunks; HyperFrames via `render --workers N` + AWS Lambda/Cloud Run chunk stitching (packages/aws-lambda, gcp-cloud-run). Ours: launch film ~28-30 s at any --concurrency (encoder + memory bandwidth + shared GPU bound).
+- [ ] UNDECIDED (user 2026-10-25: both options still to choose from, not started): drawing the HyperFrames `effects` list (18 effects in `data-color-grading`: blur, bloom, kuwahara, chromaBleed, pixelate, halftone, twoInkPrint, ascii, dither, monoScreen, scanlines, chromaticAberration, crtCurvature, engraving, crosshatch, digitalGlitch, tapeDamage, filmArtifacts). Today they are reported, not drawn. The effect code lives in HyperFrames' player (heygen-com/hyperframes `packages/core/src/runtime/colorGrading.ts`, 4313 lines, Apache-2.0; plain WebGL), not in projects, and our loader replaces that player. Start after feat/hf-grading-fast-styles merges.
+  - Option A, "pinned copy": save their effects file in our repo exactly as at one HF version and run it unchanged on our WebGL, for elements with `effects` only (keep our native grading pass). Needs: video frames into WebGL textures, `requestVideoFrameCallback` on the frame clock, drawing the canvas it inserts in place of the video, glue in packages/core/src/hyperframes/runtime.tsx, Apache LICENSE + NOTICE. Updating = a script copies their newer file in, then run the 18 effect tests vs HF renders. Hand work only if they rename what our glue calls. Exact by construction; a bit slower (WebGL path).
+  - Option B, "porting script" (user's idea): each update, a script pulls their shaders out and converts GLSL to WGSL (naga) into our native GPU pass. The code around the shaders (which setting feeds which shader, pass order, multi-pass blur/bloom) cannot be converted reliably, so it is re-ported by hand when they change it. Fully native and fastest; no WebGL video work needed.
+  - I recommended A (less hand re-porting). Both run the same tests vs HyperFrames' own renders.
 
 ## Key files
 - `vendor/blitz-dom/src/layout/inline.rs` (baseline fix; noted in vendor/README.md)
