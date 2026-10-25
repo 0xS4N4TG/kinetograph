@@ -22,6 +22,7 @@ import {
   registeredFonts,
   resetCanvasOf,
 } from './canvas.js';
+import { isKnownCssProperty } from './css-names.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
 import { parseHtmlFragment } from '../request/html.js';
 import { bodyHost, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
@@ -69,7 +70,16 @@ export class DOMRectShim {
   }
 }
 
+/** An `<AbsoluteFill>` (or the wrapper of a `<Sequence>`): the `div` it is in Remotion, which a script sees as one. */
+const isFillLayer = (host: HostElement): boolean => host.type === 'kg-layer' && host.props.domFill !== undefined;
+
 const kebab = (name: string): string => cssPropertyName(name);
+
+/**
+ * What a script's write is stored as: the individual transform properties' initial value, `none` (GSAP writes it to
+ * `translate`, `rotate` and `scale` beside its `transform`), is the same as nothing written.
+ */
+const written = (property: string, value: string): string => (/^(translate|rotate|scale)$/.test(property) && value.trim() === 'none' ? '' : value);
 
 /** `element.style`: the inline style as React gave it, with what a script wrote on top. Properties read as camelCase. */
 function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDeclarationShim {
@@ -87,7 +97,7 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
     getPropertyValue: read,
     setProperty(property: string, value: string | null): void {
       const old = oldAttribute(host, 'style');
-      overlayOf(host, true)!.style.set(kebab(property), value === null ? '' : String(value));
+      overlayOf(host, true)!.style.set(kebab(property), value === null ? '' : written(kebab(property), String(value)));
       readbackOf().touch();
       recordAttribute(host, 'style', old);
     },
@@ -107,7 +117,10 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
       const overlay = overlayOf(host, true)!;
       for (const part of text.split(';')) {
         const colon = part.indexOf(':');
-        if (colon > 0) overlay.style.set(part.slice(0, colon).trim().toLowerCase(), part.slice(colon + 1).trim());
+        if (colon > 0) {
+          const name = part.slice(0, colon).trim().toLowerCase();
+          overlay.style.set(name, written(name, part.slice(colon + 1).trim()));
+        }
       }
       readbackOf().touch();
       recordAttribute(host, 'style', was);
@@ -125,6 +138,7 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
       t.setProperty(kebab(prop), value == null ? '' : String(value));
       return true;
     },
+    has: (t, prop) => prop in t || (typeof prop === 'string' && isKnownCssProperty(prop)),
   }) as unknown as CSSStyleDeclarationShim;
 }
 
@@ -157,6 +171,7 @@ export function computedStyleOf(host: HostElement, readback: Readback): CSSStyle
       if (typeof prop === 'symbol' || prop in t) return Reflect.get(t, prop, receiver);
       return read(prop);
     },
+    has: (t, prop) => prop in t || (typeof prop === 'string' && isKnownCssProperty(prop)),
   }) as unknown as CSSStyleDeclarationShim;
 }
 
@@ -236,13 +251,14 @@ export class DomElement {
     return false;
   }
   get tagName(): string {
+    if (isFillLayer(this.host)) return 'DIV';
     return this.inSvg ? this.host.type : this.host.type.toUpperCase();
   }
   get nodeName(): string {
     return this.tagName;
   }
   get localName(): string {
-    return this.host.type.toLowerCase();
+    return isFillLayer(this.host) ? 'div' : this.host.type.toLowerCase();
   }
   get namespaceURI(): string {
     return this.inSvg ? SVG_NS : HTML_NS;
@@ -337,7 +353,7 @@ export class DomElement {
     if (this.host === htmlHost) return null;
     if (this.host === bodyHost || this.host === headHost) return htmlHost;
     const parent = effectiveParentOf(this.host);
-    if (parent !== null) return isDomElement(parent.type) ? parent : null;
+    if (parent !== null) return isDomElement(parent.type) || isFillLayer(parent) ? parent : null;
     // At the top of a root's tree (or of a script's detached one).
     return isConnectedHost(this.host) ? bodyHost : null;
   }
@@ -654,27 +670,32 @@ export class DomElement {
   get offsetHeight(): number {
     return Math.round(this.box()?.height ?? 0);
   }
-  /** The nearest ancestor that is not `position: static`, else null (the island's origin, as `body` is). */
+  /**
+   * The nearest ancestor that is not `position: static`, else `body` (the island's origin). As in a browser it is null
+   * only for an element with no box, a fixed one, `body` and `html`: a library tells attached from detached by it
+   * (GSAP re-parents an element whose `offsetParent` is null, to measure it).
+   */
   get offsetParent(): DomElement | null {
-    if (this.box() === null) return null;
+    if (this.host === htmlHost || this.host === bodyHost || this.box() === null) return null;
+    if (this.readback.computed(this.host, 'position') === 'fixed') return null;
     for (let h = this.readback.parent(this.host); h !== null; h = this.readback.parent(h)) {
       const position = this.readback.computed(h, 'position');
       if (position !== null && position !== 'static') return this.wrap(h);
     }
-    return null;
+    return this.wrap(bodyHost);
   }
   get offsetLeft(): number {
     const box = this.box();
     if (box === null) return 0;
     const parent = this.offsetParent?.host;
-    const origin = parent ? this.readback.box(parent) : null;
+    const origin = parent && parent !== bodyHost ? this.readback.box(parent) : null;
     return Math.round(box.x - (origin?.x ?? 0));
   }
   get offsetTop(): number {
     const box = this.box();
     if (box === null) return 0;
     const parent = this.offsetParent?.host;
-    const origin = parent ? this.readback.box(parent) : null;
+    const origin = parent && parent !== bodyHost ? this.readback.box(parent) : null;
     return Math.round(box.y - (origin?.y ?? 0));
   }
   get clientWidth(): number {
@@ -837,6 +858,39 @@ export class DomElement {
       return box === null ? new DOMRectShim() : new DOMRectShim(0, 0, box.width, box.height);
     }
     return new DOMRectShim(x1, y1, x2 - x1, y2 - y1);
+  }
+  /** The nearest `<svg>` this SVG element is inside (null for the `<svg>` itself and for anything outside SVG). */
+  get ownerSVGElement(): DomElement | null {
+    if (!this.inSvg) return null;
+    for (let h = this.readback.parent(this.host); h !== null; h = this.readback.parent(h)) if (h.type === 'svg') return this.wrap(h);
+    return null;
+  }
+  get viewportElement(): DomElement | null {
+    return this.ownerSVGElement;
+  }
+  /** The element's transform to its `<svg>`'s user space: its own `transform` attribute and its ancestors', up to the `<svg>`. */
+  getCTM(): { a: number; b: number; c: number; d: number; e: number; f: number } | null {
+    if (!this.inSvg) return null;
+    let m: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
+    for (let h: HostElement | null = this.host; h !== null && h.type !== 'svg'; h = this.readback.parent(h)) {
+      const t = affineOf(domElementFor(h).getAttribute('transform'));
+      m = [
+        t[0] * m[0] + t[2] * m[1], t[1] * m[0] + t[3] * m[1],
+        t[0] * m[2] + t[2] * m[3], t[1] * m[2] + t[3] * m[3],
+        t[0] * m[4] + t[2] * m[5] + t[4], t[1] * m[4] + t[3] * m[5] + t[5],
+      ];
+    }
+    return { a: m[0], b: m[1], c: m[2], d: m[3], e: m[4], f: m[5] };
+  }
+  getScreenCTM(): { a: number; b: number; c: number; d: number; e: number; f: number } | null {
+    return this.getCTM();
+  }
+  /** `element.transform.baseVal`: the `transform` attribute as one matrix (`consolidate()`), for libraries that read it. */
+  get transform(): { baseVal: { numberOfItems: number; consolidate(): { matrix: { a: number; b: number; c: number; d: number; e: number; f: number } } | null } } | undefined {
+    if (!this.inSvg) return undefined;
+    const t = affineOf(this.getAttribute('transform'));
+    const matrix = { a: t[0], b: t[1], c: t[2], d: t[3], e: t[4], f: t[5] };
+    return { baseVal: { numberOfItems: this.getAttribute('transform') === null ? 0 : 1, consolidate: () => ({ matrix }) } };
   }
   getComputedTextLength(): number {
     return this.box()?.width ?? 0;
