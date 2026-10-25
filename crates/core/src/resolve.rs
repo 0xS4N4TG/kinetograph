@@ -9,8 +9,9 @@ use crate::anim::Num;
 use crate::canvas::CanvasOp;
 use crate::color::{Color, ColorMatrix};
 use crate::error::{Error, Result};
+use crate::datamosh::{ResolvedHold, ResolvedMosh};
 use crate::scene::{
-    AlignContent, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
+    AlignContent, Datamosh, Hold, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
     Effect, Extend, FillRule, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun,
     Gradient, GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind,
     Layout, LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
@@ -19,7 +20,7 @@ use crate::scene::{
 };
 use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
-use crate::video::{Clip as VideoClip, MediaTime};
+use crate::video::{Clip as VideoClip, MediaTime, VideoInfo};
 use crate::warp;
 
 /// The time a scene is evaluated at.
@@ -682,6 +683,9 @@ pub enum ResolvedKind {
         fit: Fit,
         /// The time in the file and the picture it picks.
         time: MediaTime,
+        /// Datamosh: set on a frame inside the layer's window, where the
+        /// picture is the held one moved by the clip's motion (`datamosh.rs`).
+        mosh: Option<ResolvedMosh>,
     },
     /// A GIF's picture fitted into the box `(0, 0, width, height)` like an
     /// image.
@@ -1161,12 +1165,18 @@ impl<'a> Resolver<'a> {
                 let frame = v.frame.as_ref().map_or(clock.t, |n| n.at(f));
                 let clip = VideoClip::from(v);
                 let seconds = clip.source_time(frame, clock.fps, info.duration);
+                let end = clip.end(clock.fps, info.duration);
+                let mosh = match &v.datamosh {
+                    Some(m) => self.resolve_mosh(m, &clip, info, frame, clock.fps)?,
+                    None => None,
+                };
                 ResolvedKind::Video {
                     src: v.src.clone(),
                     width,
                     height,
                     fit: v.fit,
-                    time: info.media_time(seconds, clip.end(clock.fps, info.duration)),
+                    time: info.media_time(seconds, end),
+                    mosh,
                 }
             }
             LayerKind::Gif(g) => {
@@ -1234,6 +1244,47 @@ impl<'a> Resolver<'a> {
     /// file's aspect ratio (one left out).
     fn image_size(&self, layer: &Layer, image: &ImageLayer, f: f64) -> Result<(f64, f64)> {
         self.box_size(layer, &image.src, &image.width, &image.height, f)
+    }
+
+    /// The datamosh of a video layer on the frame its clock reads: `None`
+    /// outside the window `from..to` (the clip plays), inside it the
+    /// timestamps of the pictures from the frame before `from` to this
+    /// frame. The window is in scene frames; a sub-frame of motion blur
+    /// rounds to its frame.
+    fn resolve_mosh(
+        &self,
+        m: &Datamosh,
+        clip: &VideoClip,
+        info: &VideoInfo,
+        frame: f64,
+        fps: f64,
+    ) -> Result<Option<ResolvedMosh>> {
+        let n = frame.round();
+        let from = m.from.round();
+        if n < from || n >= m.to.round() {
+            return Ok(None);
+        }
+        let end = clip.end(fps, info.duration);
+        let ts = ((from as i64 - 1)..=(n as i64))
+            .map(|g| info.media_time(clip.source_time(g as f64, fps, info.duration), end).ts)
+            .collect();
+        let hold = match &m.hold {
+            Some(Hold::Clip { src, frame }) => {
+                let other = self.scene.videos.get(src).ok_or_else(|| {
+                    Error::Render(format!("the container of datamosh hold {src:?} was not read when the scene loaded"))
+                })?;
+                ResolvedHold::Clip {
+                    src: src.clone(),
+                    ts: other.media_time(frame / fps, other.duration).ts,
+                }
+            }
+            _ => ResolvedHold::Previous,
+        };
+        Ok(Some(ResolvedMosh {
+            hold,
+            mix: (m.mix * 256.0).round() as u16,
+            ts: Arc::new(ts),
+        }))
     }
 
     /// The box of a layer with a file behind it: see `image_size`.
@@ -3002,6 +3053,40 @@ mod tests {
         let scene =
             video_scene(r#""frame": [{"frame": 0, "value": 0}, {"frame": 10, "value": 30}]"#);
         assert_eq!(video_at(&scene, 5).1, 15 * 512);
+    }
+
+    fn mosh_at(scene: &Scene, frame: u32) -> Option<ResolvedMosh> {
+        match scene.resolve(frame).unwrap().layers.remove(0).kind {
+            ResolvedKind::Video { mosh, .. } => mosh,
+            _ => panic!("not a video layer"),
+        }
+    }
+
+    #[test]
+    fn a_datamosh_window_lists_the_pictures_from_the_frame_before_it() {
+        let scene = video_scene(r#""datamosh": {"from": 10, "to": 14, "mix": 0.5}"#);
+        // Outside the window the clip plays.
+        assert!(mosh_at(&scene, 9).is_none());
+        assert!(mosh_at(&scene, 14).is_none());
+        // On `from` the window has the held frame and its own first.
+        let m = mosh_at(&scene, 10).unwrap();
+        assert_eq!(*m.ts, [9 * 512, 10 * 512]);
+        assert_eq!((m.hold.clone(), m.mix), (ResolvedHold::Previous, 128));
+        let m = mosh_at(&scene, 13).unwrap();
+        assert_eq!(*m.ts, [9 * 512, 10 * 512, 11 * 512, 12 * 512, 13 * 512]);
+        // Another clip's frame is a timestamp of that clip (24 fps, 512 ticks a picture).
+        let scene = video_scene(
+            r#""datamosh": {"from": 2, "to": 6, "hold": {"src": "mosh-h264.mp4", "frame": 5}}"#,
+        );
+        let hold = mosh_at(&scene, 3).unwrap().hold;
+        let ResolvedHold::Clip { src, ts } = hold else {
+            panic!("not a clip hold");
+        };
+        assert_eq!(src, "mosh-h264.mp4");
+        assert!(ts > 0);
+        // The window follows the clip's own timing: from the first frame it holds frame 0 twice.
+        let scene = video_scene(r#""datamosh": {"from": 0, "to": 3}"#);
+        assert_eq!(*mosh_at(&scene, 1).unwrap().ts, [0, 0, 512]);
     }
 
     #[test]

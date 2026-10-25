@@ -13,6 +13,7 @@ import {
 } from '@kinetographdev/compat/dom';
 import type { BoxInfo, Readback } from '@kinetographdev/compat/shim';
 import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetographdev/compat/shim';
+import type { Unsupported } from '@kinetographdev/scene';
 import { domFillOf, flattenDomElement, type EmitOptions, type HostElement, type HostNode } from './emit.js';
 
 /** The root of the host tree, as `root.ts` keeps it. */
@@ -20,8 +21,12 @@ export interface Container {
   children: HostNode[];
   /** Bumped when the tree changes: a commit, or a script's write to a style or attribute. */
   generation: number;
+  /** Bumped by a commit only: a script's writes (GSAP's, between its reads) are not passes of rendering. */
+  commits: number;
   readback: Readback | null;
-  /** The tree generations measured since the frame's work began (see `settle`): one per pass of measuring. */
+  /** What a read of the layout could not answer (the engine has no such element): reported with the frame's unsupported content. */
+  readFailures: Map<string, Unsupported>;
+  /** The commits measured since the frame's work began (see `settle`): one per pass of measuring. */
   measuredGenerations: Set<number>;
   /** The `<img>`, `<video>` and `<audio>` elements made so far (their load events are delivered, see `settle`). */
   media: Set<HostElement>;
@@ -78,13 +83,20 @@ export function createReadback(container: Container, options: EmitOptions): Read
     islands.clear();
   };
 
+  /**
+   * The children of `parent` the island sees: an `<AbsoluteFill>` inside DOM is the `div` of `domFillOf`, which drops the
+   * layer mapping's background rectangle (the `div`'s own `background` is that), so paths count without it.
+   */
+  const childrenOf = (parent: HostElement | null): HostNode[] =>
+    parent === null ? container.children : parent.type === 'kg-layer' && inCss(parent) ? (domFillOf(parent, true) ?? parent).children : parent.children;
+
   /** The host-tree path of an element (`$0.2.1`): its index among the elements of its parent, `<Sequence>` transparent. */
   const pathOf = (host: HostElement): string => {
     fresh();
     const known = paths.get(host);
     if (known !== undefined) return known;
     const parent = effectiveParent(host);
-    const siblings = flatten(parent === null ? container.children : parent.children).filter((n) => n.kind === 'element');
+    const siblings = flatten(childrenOf(parent)).filter((n) => n.kind === 'element');
     const index = siblings.indexOf(host);
     const path = parent === null ? `$${index}` : `${pathOf(parent)}.${index}`;
     paths.set(host, path);
@@ -94,9 +106,16 @@ export function createReadback(container: Container, options: EmitOptions): Read
   /** The path of an element computed from the tree as it is now, not from the cache. */
   const pathOfFresh = (host: HostElement): string => {
     const parent = effectiveParent(host);
-    const siblings = flatten(parent === null ? container.children : parent.children).filter((n) => n.kind === 'element');
+    const siblings = flatten(childrenOf(parent)).filter((n) => n.kind === 'element');
     const index = siblings.indexOf(host);
     return parent === null ? `$${index}` : `${pathOfFresh(parent)}.${index}`;
+  };
+
+  /** A read the engine could not answer is a warning and a fallback, never an error. */
+  const failed = (host: HostElement, what: string, error: unknown): void => {
+    const path = pathOfFresh(host);
+    const reason = `${what} could not be read from the layout (${error instanceof Error ? error.message : String(error)}); answered from the element's own style`;
+    container.readFailures.set(`${path}\0${what}`, { path, element: host.type, property: null, value: null, reason });
   };
 
   const isDom = (node: HostElement | null): node is HostElement => node !== null && isDomElement(node.type);
@@ -141,9 +160,9 @@ export function createReadback(container: Container, options: EmitOptions): Read
     return island;
   };
 
-  /** Notes that the layout of this generation of the tree is being read; a ninth generation in one frame is a loop. */
+  /** Notes that the layout of this commit's tree is being read; a ninth commit measured in one frame is a loop. */
   const measuring = (): void => {
-    container.measuredGenerations.add(container.generation);
+    container.measuredGenerations.add(container.commits);
     if (container.measuredGenerations.size > MAX_MEASURE_PASSES) throw measureLoopError();
   };
 
@@ -154,7 +173,12 @@ export function createReadback(container: Container, options: EmitOptions): Read
       if (!hasAddonFunction('domLayoutBoxes')) return null;
       const island = islandOf(host);
       if (island === null) return null;
-      island.boxes ??= JSON.parse(addonFunction('domLayoutBoxes')(island.json)) as Boxes;
+      try {
+        island.boxes ??= JSON.parse(addonFunction('domLayoutBoxes')(island.json)) as Boxes;
+      } catch (error) {
+        failed(host, 'a box', error);
+        island.boxes = {};
+      }
       return island.boxes[pathOf(host)] ?? null;
     },
     computed(host, property) {
@@ -166,8 +190,13 @@ export function createReadback(container: Container, options: EmitOptions): Read
       let value: string | null;
       if (hasAddonFunction('domComputedStyle')) {
         // One value per property asked for, "" for one the engine does not know.
-        const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), [property]);
-        value = answer[0] !== undefined && answer[0] !== '' ? answer[0] : null;
+        try {
+          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), [property]);
+          value = answer[0] !== undefined && answer[0] !== '' ? answer[0] : null;
+        } catch (error) {
+          failed(host, 'a computed style', error);
+          value = inlineValue(host, property);
+        }
       } else {
         value = inlineValue(host, property);
       }
@@ -207,7 +236,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
         });
         const markerPath = ((): string => {
           const p = effectiveParent(marker)!;
-          const siblings = flatten(p.children).filter((n) => n.kind === 'element');
+          const siblings = flatten(childrenOf(p)).filter((n) => n.kind === 'element');
           return `${pathOfFresh(p)}.${siblings.indexOf(marker)}`;
         })();
         const boxes = JSON.parse(addonFunction('domLayoutBoxes')(JSON.stringify(request))) as Boxes;
@@ -220,7 +249,8 @@ export function createReadback(container: Container, options: EmitOptions): Read
     },
     parent: (host) => {
       const parent = effectiveParent(host);
-      return isDom(parent) ? parent : null;
+      // An `<AbsoluteFill>` holding DOM is the `div` it is in Remotion: a script sees it as the parent.
+      return isDom(parent) || (parent !== null && inCss(parent)) ? parent : null;
     },
     childNodes: (host) => flatten(host.children).filter((n) => n.kind === 'text' || isDomElement(n.type)),
     isConnected(host) {

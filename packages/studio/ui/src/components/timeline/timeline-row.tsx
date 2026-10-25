@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { indent } from '@/lib/tree';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +18,33 @@ export function SectionLabel({ children }: { children: string }) {
 
 export function EmptyRow({ children }: { children: string }) {
   return <div className="text-muted-foreground sticky left-0 h-7 px-2.5 py-1.5 text-xs">{children}</div>;
+}
+
+/** What stands in for the rows while the timeline is being read, or when it could not be. */
+export function TimelineNotice({
+  children,
+  progress,
+  error,
+  testId,
+}: {
+  children: string;
+  /** 0 to 1, or null when the total is not known yet. */
+  progress?: number | null;
+  error?: boolean;
+  testId: string;
+}) {
+  return (
+    <div
+      data-testid={testId}
+      role={error ? 'alert' : 'status'}
+      className={cn('sticky left-0 flex max-w-lg flex-col gap-2 px-4 py-5 text-xs', error ? 'text-destructive' : 'text-muted-foreground')}
+    >
+      <p>{children}</p>
+      {progress !== undefined && (
+        <Progress value={progress === null ? 0 : Math.round(progress * 100)} aria-label="Timeline progress" className="h-1.5" />
+      )}
+    </div>
+  );
 }
 
 interface RowProps {

@@ -2,9 +2,11 @@ import { useState, type ReactNode } from 'react';
 import { ChevronDownIcon, LayersIcon, SparklesIcon } from 'lucide-react';
 
 import type { InspectResult } from '@/api';
+import { CopyForAgent } from '@/components/inspector/agent-copy';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { buildAgentMessage, type AgentMessageInput } from '@/lib/agent-message';
 import { formatNumber } from '@/lib/format';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { layerColors } from '@/lib/layer-colors';
@@ -15,10 +17,12 @@ interface SceneTreeProps {
   frame: number;
   selected: string | null;
   onSelect(id: string): void;
+  /** What the "Copy for agent" message needs besides the layer; null before the project is known. */
+  agent: Omit<AgentMessageInput, 'frame' | 'layer'> | null;
 }
 
 /** The layers of the current frame (topmost first) and the selected layer's resolved fields. */
-export function SceneTree({ inspect, frame, selected, onSelect }: SceneTreeProps) {
+export function SceneTree({ inspect, frame, selected, onSelect, agent }: SceneTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   if (inspect === null) return <p className="text-muted-foreground p-3 text-xs">Scene not loaded.</p>;
   const layer = selected === null ? null : findLayer(inspect.layers, selected);
@@ -69,6 +73,11 @@ export function SceneTree({ inspect, frame, selected, onSelect }: SceneTreeProps
       {/* Properties header */}
       <div className="bg-secondary/50 flex h-7 shrink-0 items-center border-b px-2.5 text-[11px]">
         <span className="truncate font-medium">{layer ? `Properties: ${layer.id}` : 'Effect Controls & Transform'}</span>
+        {layer && agent && (
+          <span className="ml-auto pl-2">
+            <CopyForAgent message={buildAgentMessage({ ...agent, frame: inspect.frame, layer })} />
+          </span>
+        )}
       </div>
 
       <ScrollArea className="min-h-0 flex-1">

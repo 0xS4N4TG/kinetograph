@@ -73,6 +73,9 @@ pub struct Translator {
     fx: HashMap<String, Option<skia_safe::RuntimeEffect>>,
     videos: HashMap<String, crate::video::VideoDecoder>,
     video_last: HashMap<String, (i64, Image)>,
+    /// Datamosh: a decoder with motion vectors per file, and the mosh so far per layer (`datamosh.rs`).
+    mosh_videos: HashMap<String, crate::video::VideoDecoder>,
+    mosh_states: HashMap<String, Option<crate::datamosh::MoshState>>,
     gif_pics: HashMap<(String, usize), Option<Image>>,
     lottie_last: HashMap<(String, u32, u32), ((u64, bool), Image)>,
     /// Effect classes to leave out (SKIA_SKIP=blur,shadow,inset,color,filtergraph,mask,matte,backdrop), to see where the GPU time goes.
@@ -184,6 +187,8 @@ impl Translator {
             fx: HashMap::new(),
             videos: HashMap::new(),
             video_last: HashMap::new(),
+            mosh_videos: HashMap::new(),
+            mosh_states: HashMap::new(),
             gif_pics: HashMap::new(),
             lottie_last: HashMap::new(),
             skip: std::env::var("SKIA_SKIP").unwrap_or_default().split(',').map(str::to_string).collect(),
@@ -228,6 +233,8 @@ impl Translator {
         self.images.clear();
         self.videos.clear();
         self.video_last.clear();
+        self.mosh_videos.clear();
+        self.mosh_states.clear();
         self.gif_pics.clear();
         self.lottie_last.clear();
         self.fonts_key.clear();
@@ -1251,10 +1258,13 @@ impl Translator {
             ResolvedKind::Image { src, width, height, fit } => {
                 self.draw_image(canvas, src, (*width, *height), *fit, comp)
             }
-            ResolvedKind::Video { src, width, height, fit, time } => match self.video_image(src, time.ts) {
-                Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
-                None => self.stats.no("video layer (decode failed)"),
-            },
+            ResolvedKind::Video { src, width, height, fit, time, mosh } => {
+                let moshed = mosh.as_ref().and_then(|m| self.mosh_image(&layer.id, src, m));
+                match moshed.or_else(|| self.video_image(src, time.ts)) {
+                    Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
+                    None => self.stats.no("video layer (decode failed)"),
+                }
+            }
             ResolvedKind::Canvas { width, height, ops } => self.draw_canvas_layer(canvas, (*width, *height), ops),
             ResolvedKind::Gif { src, width, height, fit, time, looped } => match self.gif_image(src, *time, *looped) {
                 Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
@@ -1426,6 +1436,65 @@ impl Translator {
         };
         self.video_last.insert(src.to_string(), (ts, img.clone()));
         Some(img)
+    }
+
+    /// A datamosh frame of video layer `id` (`datamosh.rs`): the held picture moved by the clip's motion up to this
+    /// frame. `None` (the caller then draws the clip plain, and the frame says why) when the clip's codec exports no
+    /// motion vectors or a file cannot be decoded.
+    fn mosh_image(&mut self, id: &str, src: &str, mosh: &crate::datamosh::ResolvedMosh) -> Option<Image> {
+        use crate::video::{VideoDecoder, init, probe};
+        init();
+        if !self.mosh_videos.contains_key(src) {
+            let path = self.base_dir.join(src);
+            let info = probe(&path).ok()?;
+            if !crate::datamosh::exports_vectors(&info.video_codec) {
+                self.stats.no("datamosh (the codec exports no motion vectors; drawn without it)");
+                return None;
+            }
+            self.mosh_videos.insert(src.to_string(), VideoDecoder::open_with_motion(&path, info).ok()?);
+        }
+        // The held picture of another file is its own decoder's, so the plain video cache is shared with `video_image`.
+        let base_dir = self.base_dir.clone();
+        let videos = &mut self.videos;
+        let clip = self.mosh_videos.get_mut(src)?;
+        let mut state = self.mosh_states.remove(id).unwrap_or(None);
+        let result = crate::datamosh::frame(
+            &mut state,
+            mosh,
+            |w, h| {
+                let crate::datamosh::ResolvedHold::Clip { src: other, ts } = &mosh.hold else {
+                    return Err(crate::error::Error::Render("datamosh: no held clip".into()));
+                };
+                if !videos.contains_key(other) {
+                    let path = base_dir.join(other);
+                    let info = probe(&path).map_err(crate::error::Error::Render)?;
+                    let decoder = VideoDecoder::open(&path, info).map_err(crate::error::Error::Render)?;
+                    videos.insert(other.clone(), decoder);
+                }
+                let pic = videos
+                    .get_mut(other)
+                    .expect("just opened")
+                    .picture(*ts)
+                    .map_err(crate::error::Error::Render)?;
+                Ok(crate::datamosh::cover(pic.data.data(), pic.width, pic.height, w, h))
+            },
+            |ts| clip.picture_motion(ts).map_err(|e| crate::error::Error::Render(format!("video {src:?}: {e}"))),
+        );
+        let image = match &result {
+            Ok(state) => {
+                let (w, h) = state.size();
+                self.rgba_image(state.rgba(), w, h)
+            }
+            Err(e) => {
+                self.stats.no(&format!("datamosh ({e})"));
+                None
+            }
+        };
+        self.mosh_states.insert(id.to_string(), state);
+        if self.mosh_states.len() > 8 {
+            self.mosh_states.retain(|k, _| k == id);
+        }
+        image
     }
 
     /// The noise layer: SVG's turbulence over the box, in layer space (Skia's Perlin shader is the reference algorithm;

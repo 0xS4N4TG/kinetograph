@@ -1336,6 +1336,35 @@ pub struct VideoLayer {
     /// picture (`false`).
     #[serde(default, rename = "loop")]
     pub looped: bool,
+    /// A datamosh window: the clip's own motion moves a held picture instead
+    /// of the clip's pictures (`docs/SCENE.md`, "video", "datamosh").
+    pub datamosh: Option<Datamosh>,
+}
+
+/// A window of scene frames in which a video layer is moshed (`datamosh.rs`).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Datamosh {
+    /// The first frame of the window (it shows the held picture) and the
+    /// frame the clip comes back on (the window is `from..to`).
+    pub from: f64,
+    pub to: f64,
+    /// What the motion moves: `"previous"` (default), the clip's own picture
+    /// one frame before `from`, or a frame of another file.
+    pub hold: Option<Hold>,
+    /// How much of the clip's residual is added back, 0 to 1. Default 0.
+    #[serde(default)]
+    pub mix: f64,
+}
+
+/// The picture a datamosh starts from.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Hold {
+    /// `"previous"`.
+    Keyword(String),
+    /// Frame `frame` of the file `src`, at the scene's frame rate.
+    Clip { src: String, frame: f64 },
 }
 
 /// An animated GIF (`packages/cli/skills/kinetograph/references/SCENE.md`, "gif").
@@ -1678,6 +1707,22 @@ impl Scene {
                     info
                 }
             };
+            if let Some(Datamosh { hold: Some(Hold::Clip { src: other, .. }), .. }) = &video.datamosh
+                && !self.videos.contains_key(other)
+            {
+                let other_path = self.base_dir.join(other);
+                let other_info = crate::video::probe(&other_path).map_err(|e| {
+                    Error::Scene(format!(
+                        "layer {id:?}: cannot read datamosh hold video {}: {e}",
+                        other_path.display()
+                    ))
+                })?;
+                self.asset_sizes.insert(
+                    other.clone(),
+                    (f64::from(other_info.width), f64::from(other_info.height)),
+                );
+                self.videos.insert(other.clone(), other_info);
+            }
             if video.trim_before / self.fps >= info.duration {
                 return Err(Error::Scene(format!(
                     "layer {id:?}: trimBefore {} is at or past the end of video {} \
@@ -2104,6 +2149,41 @@ impl Scene {
                             "video playbackRate must be above 0, got {}",
                             v.playback_rate
                         ));
+                    }
+                    if let Some(m) = &v.datamosh {
+                        if !(m.from.is_finite() && m.to.is_finite() && m.to > m.from) {
+                            return bad(format!(
+                                "video datamosh needs from and to frames with to above from, got {} and {}",
+                                m.from, m.to
+                            ));
+                        }
+                        if m.to - m.from > crate::datamosh::MAX_WINDOW {
+                            return bad(format!(
+                                "video datamosh window is {} frames, at most {} (the cost of a cold start grows with it)",
+                                m.to - m.from,
+                                crate::datamosh::MAX_WINDOW
+                            ));
+                        }
+                        if !(0.0..=1.0).contains(&m.mix) {
+                            return bad(format!("video datamosh mix must be 0 to 1, got {}", m.mix));
+                        }
+                        match &m.hold {
+                            None => {}
+                            Some(Hold::Keyword(word)) if word == "previous" => {}
+                            Some(Hold::Keyword(word)) => {
+                                return bad(format!(
+                                    "video datamosh hold is \"previous\" or {{ src, frame }}, got {word:?}"
+                                ));
+                            }
+                            Some(Hold::Clip { src, frame })
+                                if src.trim().is_empty() || !(frame.is_finite() && *frame >= 0.0) =>
+                            {
+                                return bad(
+                                    "video datamosh hold needs a src and a frame of 0 or more".into(),
+                                );
+                            }
+                            Some(Hold::Clip { .. }) => {}
+                        }
                     }
                 }
                 LayerKind::Gif(g) => {
@@ -4849,6 +4929,32 @@ mod tests {
             (v.from, v.trim_before, v.playback_rate, v.looped, v.fit),
             (0.0, 0.0, 1.0, false, Fit::Fill)
         );
+    }
+
+    #[test]
+    fn a_datamosh_window_is_checked_and_its_hold_file_is_read() {
+        let mosh = |m: &str| media_scene("video", &format!(r#""src": "clip.mp4", "datamosh": {m}"#));
+        let scene = mosh(r#"{"from": 4, "to": 8, "mix": 0.5, "hold": {"src": "mosh-h264.mp4", "frame": 3}}"#).unwrap();
+        let LayerKind::Video(v) = &scene.layers[0].kind else {
+            panic!("not a video layer");
+        };
+        let m = v.datamosh.as_ref().unwrap();
+        assert_eq!((m.from, m.to, m.mix), (4.0, 8.0, 0.5));
+        assert!(matches!(&m.hold, Some(Hold::Clip { src, frame }) if src == "mosh-h264.mp4" && *frame == 3.0));
+        // The hold file is read with the scene, like the clip.
+        assert_eq!(scene.videos["mosh-h264.mp4"].video_codec, "h264");
+        assert!(mosh(r#"{"from": 4, "to": 8, "hold": "previous"}"#).is_ok());
+        for (bad, word) in [
+            (r#"{"from": 8, "to": 8}"#, "above from"),
+            (r#"{"from": 0, "to": 601}"#, "at most 600"),
+            (r#"{"from": 0, "to": 4, "mix": 1.5}"#, "mix"),
+            (r#"{"from": 0, "to": 4, "hold": "next"}"#, "hold"),
+            (r#"{"from": 0, "to": 4, "hold": {"src": "", "frame": 0}}"#, "hold"),
+            (r#"{"from": 0, "to": 4, "hold": {"src": "nope.mp4", "frame": 0}}"#, "nope.mp4"),
+        ] {
+            let msg = mosh(bad).unwrap_err().to_string();
+            assert!(msg.contains(word), "{bad}: {msg}");
+        }
     }
 
     #[test]
