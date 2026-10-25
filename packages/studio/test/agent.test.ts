@@ -47,6 +47,27 @@ describe('the files an agent may touch', () => {
     expect(isInside('/work/app', '/work/app/x')).toBe(true);
   });
 
+  it('refuses a dangling symlink to outside, a symlinked directory to outside, and writes through neither', async () => {
+    const root = tempDir();
+    const other = tempDir();
+    symlinkSync(join(other, 'not-there.txt'), join(root, 'dangling.txt'));
+    symlinkSync(other, join(root, 'dir'));
+    expect(() => resolveInside(root, 'dangling.txt')).toThrow(/outside the project/);
+    expect(() => resolveInside(root, 'dir/new.txt')).toThrow(/outside the project/);
+    await expect(writeTextFile(root, 'dangling.txt', 'x')).rejects.toThrow(/outside the project/);
+    await expect(writeTextFile(root, 'dir/new.txt', 'x')).rejects.toThrow(/outside the project/);
+    expect(existsSync(join(other, 'not-there.txt'))).toBe(false);
+    expect(existsSync(join(other, 'new.txt'))).toBe(false);
+  });
+
+  it('allows a normal new nested file and a symlink that stays inside', async () => {
+    const root = tempDir();
+    await writeTextFile(root, 'a/b/c.txt', 'ok');
+    expect(readFileSync(join(root, 'a/b/c.txt'), 'utf8')).toBe('ok');
+    symlinkSync(join(root, 'a'), join(root, 'alias'));
+    expect(await readTextFile(root, 'alias/b/c.txt')).toBe('ok');
+  });
+
   it('reads line ranges and writes new files', async () => {
     const root = tempDir();
     await writeTextFile(root, 'sub/f.txt', 'one\ntwo\nthree\nfour');

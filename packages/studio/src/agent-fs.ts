@@ -1,22 +1,42 @@
 // The files an agent may read and write through ACP: the project directory and nothing outside it. A path that leaves
 // it, by `..` or by a symlink, is refused.
 
-import { existsSync, realpathSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { constants, lstatSync, realpathSync } from 'node:fs';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { StudioFailure } from './util.js';
 
-/** The real path of `path`, or of its nearest existing parent with the rest appended (for a file about to be created). */
-function realish(path: string): string {
-  const rest: string[] = [];
-  let current = path;
-  while (!existsSync(current)) {
-    const parent = dirname(current);
-    if (parent === current) break;
-    rest.unshift(current.slice(parent.length + 1));
-    current = parent;
+const outside = (path: string) => new StudioFailure('FORBIDDEN', `the agent asked for a file outside the project: ${path}`);
+
+/**
+ * `path` with every symlink on the way resolved, walking down from the real `root`. A link that leaves `root` is
+ * refused, and so is a dangling one (it could be filled in later to point anywhere). Parts that do not exist yet are
+ * appended as they are.
+ */
+function realish(root: string, path: string, asked: string): string {
+  let current = root;
+  const rel = relative(root, path);
+  const parts = rel === '' ? [] : rel.split(sep);
+  for (let i = 0; i < parts.length; i++) {
+    const next = join(current, parts[i]!);
+    let info;
+    try {
+      info = lstatSync(next);
+    } catch {
+      return join(current, ...parts.slice(i));
+    }
+    if (info.isSymbolicLink()) {
+      let real: string;
+      try {
+        real = realpathSync(next);
+      } catch {
+        throw outside(asked);
+      }
+      if (!isInside(root, real)) throw outside(asked);
+      current = real;
+    } else current = next;
   }
-  return join(realpathSync(current), ...rest);
+  return current;
 }
 
 /** Whether `child` is `root` or inside it. */
@@ -29,8 +49,10 @@ export function isInside(root: string, child: string): boolean {
 export function resolveInside(root: string, path: string): string {
   if (typeof path !== 'string' || path === '' || path.includes('\0')) throw new StudioFailure('FORBIDDEN', 'the path is empty or invalid');
   const realRoot = realpathSync(root);
-  const target = realish(resolve(realRoot, path));
-  if (!isInside(realRoot, target)) throw new StudioFailure('FORBIDDEN', `the agent asked for a file outside the project: ${path}`);
+  const lexical = resolve(realRoot, path);
+  if (!isInside(realRoot, lexical)) throw outside(path);
+  const target = realish(realRoot, lexical, path);
+  if (!isInside(realRoot, target)) throw outside(path);
   return target;
 }
 
@@ -46,5 +68,16 @@ export async function readTextFile(root: string, path: string, line?: number | n
 export async function writeTextFile(root: string, path: string, content: string): Promise<void> {
   const target = resolveInside(root, path);
   await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, content, 'utf8');
+  // The directory was checked; the file itself must not be a link (also refused by O_NOFOLLOW, in case it changes meanwhile).
+  try {
+    if (lstatSync(target).isSymbolicLink()) throw outside(path);
+  } catch (error) {
+    if (error instanceof StudioFailure) throw error;
+  }
+  const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o644);
+  try {
+    await handle.writeFile(content, 'utf8');
+  } finally {
+    await handle.close();
+  }
 }
