@@ -454,6 +454,23 @@ What is drawn (stream 3, as built):
   (`transform-box: view-box` only), and `filter="url(#id)"` on any element, including a `<filter>` defined in another
   `<svg>` of the page. The group returned is `passThrough` (no clip, no isolation) unless something reaches outside
   the box, so a `mix-blend-mode` inside blends with what is behind the `<svg>`.
+- **The page's cascade reaches the SVG** (`serialize.rs`, `cascaded`): Stylo styles the elements inside an `<svg>` like
+  any others, so a rule that crosses from the HTML into it (`[data-composition-id="x"] .bar { fill: #5c5c5c }`,
+  `.chart circle { stroke: red }`, `div > svg rect[data-k]`) applies, and a class a script toggles between frames
+  restyles the shapes on the next frame. (`text-anchor`, `shape-rendering`, `paint-order`, `clip-rule` and
+  `dominant-baseline` are computed because `vendor/stylo` enables them in its Servo build.) Stylo does not read SVG presentation attributes, so a computed value that
+  differs from the parent's (from the initial one, for `opacity` and `display`) is the cascade's and is written on the
+  element as style, where it beats the attribute; one that equals the parent's is inheritance, which usvg does too, and
+  an attribute stands. Properties: `fill`, `stroke` and their `-width`, `-opacity`, `-linecap`, `-linejoin`,
+  `-miterlimit`, `-dasharray`, `-dashoffset`, `fill-opacity`, `fill-rule`, `font-family|size|weight|style`,
+  `letter-spacing`, `word-spacing`, `text-rendering`, `text-anchor`, `shape-rendering`, `paint-order`, `clip-rule`,
+  `dominant-baseline`, `visibility`, `opacity`, `display: none`, `mix-blend-mode`. The
+  root takes what the HTML around it passes down (`fill`, the font). Families go through `font-family` as Stylo
+  prints them (double quotes and all, escaped as XML); `@font-face` and Google families the page loaded are in the
+  request's fonts, so text in the `<svg>` finds them. A `fill`, `stroke`, `stop-color`, `flood-color` or
+  `lighting-color` usvg cannot read (`var(--x)`, `oklch()`, `oklab()`, `color-mix()`, `rgb(r g b / a)`, `rebeccapurple`)
+  goes through Stylo's colour parser, as an HTML colour does, and is written as a plain `rgb` (`svg/color.rs`); one
+  that cannot be resolved is an `Unsupported` item. Tests: `crates/dom/tests/svg_cascade.rs`.
 - **Filters** (`filterGraph`, `filter_graph`): all 17 primitives but `feImage`, which becomes a transparent flood and an
   `Unsupported` item. CSS filter functions on an element inside an `<svg>` are `Unsupported` (the box painter does
   them for HTML boxes).
@@ -650,6 +667,24 @@ dropped it. `texSubImage2D` into a target is an `upload` op: a pass of its own t
 then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
 empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
+
+A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
+records the device (buffers, WGSL modules, bind group layouts, render pipelines, bind groups, command encoders with render
+passes into `getCurrentTexture()`, `queue.writeBuffer`, `submit`) and the canvas context writes the `webgpu` part of the
+`glsl` layer (`WebGpuContent`, `data-kg-webgl`). A buffer's bytes are shadowed on the JS side and snapshotted when a command
+buffer that draws from it is submitted, ids come from content, and the first submit after `resetState()` starts the drawing
+afresh, so a frame is the same whichever frames were drawn before it. `compositor/glsl/webgpu.rs` makes the pipelines
+(kept by id), builds the buffers from the recording and replays the passes in a command buffer of its own, inside a
+validation error scope, into the Rgba8 drawing buffer that `glsl_blit.wgsl` places (a bgra8 canvas is the same colours; the
+buffer is flushed first because earlier glsl layers' place passes read it). The dom painter reads every module with naga
+(`webgpu::check`) and reports a module that is wrong, and each call the recorder does not draw (textures, samplers, compute,
+queries, bundles, `rgba16float` range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic. HyperFrames' runtime
+(`core/src/hyperframes/runtime.tsx`) dispatches `hf-seek {time, waitUntil}` each frame and holds the frame on a
+`delayRender` until the page's promise settles; that is how the `shaders.iife.js` blocks (shaders.com on TypeGPU, which draw
+one full-screen triangle with a uniform buffer) are driven from the frame number. Measured against HyperFrames' own stills,
+`ripples` and `swirl` are identical at 0, 25, 50, 75 and 100 % of the run (mean absolute difference 0.0, 0 % of pixels more
+than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
 
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 

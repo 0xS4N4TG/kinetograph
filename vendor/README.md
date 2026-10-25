@@ -26,9 +26,10 @@ Upstream: crates.io `stylo` 0.22.0 (`servo/stylo`, commit `34d25f741765a0bdb894f
 - `stylesheets/rule_parser.rs`: `@container` takes the `layout.container-queries.enabled` pref.
 - `values/specified/length.rs`: the six `cq*` units take the same pref.
 - `properties/shorthands.rs`, `properties/shorthands.toml`: the `container` shorthand uses `servo_pref` instead of `engine = "gecko"`.
+- `properties/longhands.toml`: `text-anchor`, `shape-rendering`, `paint-order`, `clip-rule` and `dominant-baseline` lose `engine = "gecko"`, so the Servo build parses and computes them; the SVG painter reads them from the cascade (`paint/svg/serialize.rs`).
 - `properties/properties.mako.rs`: new `ComputedValues::same_values_except(other, except)`, used by `IslandCache` to repaint transform-only edits.
 
-Drop when a stylo release parses `@container` without Gecko. `same_values_except` can move to `kinetograph-dom`.
+Drop when a stylo release parses `@container` without Gecko and computes the SVG properties above in its Servo build. `same_values_except` can move to `kinetograph-dom`.
 
 ## blitz-dom 0.3.0-beta.3
 
