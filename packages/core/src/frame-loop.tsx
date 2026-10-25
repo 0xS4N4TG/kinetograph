@@ -33,7 +33,7 @@ import {
 } from '@kinetographdev/compat/dom';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { realTimers, resetVirtualClock, setVirtualFrame, virtualNow } from './determinism.js';
+import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
 
@@ -139,19 +139,26 @@ class Renderer implements FrameRenderer {
       this.trailFrom = this.trailTo = -1;
     }
     const fresh = this.lastFrame < 0;
+    // The frame the clock stood at before this one (frame 0 for a scene that has just started).
+    const was = fresh ? 0 : this.lastFrame;
     this.lastFrame = frame;
 
     await waitForFonts();
+    // A handle the project opened as it loaded (a WASM module's init) holds the first frame, as it holds every other.
+    if (fresh) await whenRenderIdle();
     let main!: RenderedTree;
     if (!replays) {
       const scene = this.scene!;
       if (fresh && frame > 0) {
         // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
         // frame looks the same whether the render began there or somewhere later.
-        setVirtualFrame(0, config.fps);
+        setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
         await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
       }
-      setVirtualFrame(frame, config.fps);
+      // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
+      // by their time (Motion) shows the same as in a render of every frame.
+      stepAnimationFrames(was + 1, frame, config.fps);
+      setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
     }
@@ -169,15 +176,15 @@ class Renderer implements FrameRenderer {
         const again = this.scene!;
         if (start > 0) {
           setHistoryMode({ record: false, warm: true });
-          setVirtualFrame(0, config.fps);
+          setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
           await this.settle(again, () => this.update(again, this.element(component, config, 0)));
         }
         for (let at = start; at < frame; at++) {
           setHistoryMode({ record: true, warm: true });
-          setVirtualFrame(at, config.fps);
+          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
           await this.settle(again, () => this.update(again, this.element(component, config, at)));
         }
-        setVirtualFrame(frame, config.fps);
+        setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
         setHistoryMode({ record: true });
         main = await this.settle(again, () => this.update(again, this.element(component, config, frame)));
         this.lastFrame = frame;
@@ -204,7 +211,7 @@ class Renderer implements FrameRenderer {
         // The clock sits on the sub-frame, but timers and Math.random() stay with the frame.
         setVirtualFrame(time, config.fps, { seedFrame: frame, fireTimers: false });
         const live = this.scene!;
-        const tree = await this.settle(live, () => this.update(live, this.element(component, config, time)));
+        const tree = await this.settle(live, () => this.update(live, this.element(component, config, time)), false);
         treesAt.set(time, tree.layers);
       }
       this.subFrameLayers = null;
@@ -252,7 +259,7 @@ class Renderer implements FrameRenderer {
       subFrameLayers: () => this.subFrameLayers,
     });
     this.lastFrame = -1;
-    resetVirtualClock();
+    resetVirtualClock({ keepAnimationFrames: true });
   }
 
   private openPass(): void {
@@ -286,7 +293,7 @@ class Renderer implements FrameRenderer {
   }
 
   /** Renders, then waits until nothing is pending and returns the tree as it stands. */
-  private async settle(scene: SceneRoot, render: () => void): Promise<RenderedTree> {
+  private async settle(scene: SceneRoot, render: () => void, animationFrames = true): Promise<RenderedTree> {
     try {
       render();
     } catch (error) {
@@ -299,6 +306,12 @@ class Renderer implements FrameRenderer {
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
       if (openRenderHandles() === 0 && pendingFontLoads() === 0) break;
+    }
+    // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
+    // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
+    if (animationFrames) {
+      runAnimationFrames();
+      await tick();
     }
     const tree = scene.snapshot();
     const failure = renderFailure();

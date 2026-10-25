@@ -84,6 +84,31 @@ useLayoutEffect(() => { tl.current?.seek(frame / fps); }, [frame, fps]);
 - A read of the layout that the engine can't answer is a warning, and GSAP gets the element's own style.
 - Not tested: `Flip`, `ScrollTrigger` and `Draggable`. They load, but nothing scrolls or is dragged in a render.
 
+## Libraries
+
+Third-party libraries run unchanged on the engine's DOM, as long as the frame is what a seek or the frame number says. Checked against Chrome stills at frames 0, 30 and 59 (mean per-channel difference, 0 to 255, in brackets).
+
+- **d3** (scale, shape, selection): d3 makes the paths and React draws them, or `d3-selection` appends to a ref, including `join()` and `order()` (under 0.2).
+- **rough.js**: the SVG and Canvas 2D generators (under 0.5).
+- **Paper.js**: `paper-full` on a canvas (under 0.2). The bundle reads a package's `browser` map for imports that don't resolve (Paper.js drops `jsdom` and `canvas` there).
+- **Chart.js**: line charts on a canvas (under 1.4). Load a font before the chart, or it uses the built-in one.
+- **Recharts**: SVG charts with `isAnimationActive={false}` (under 0.3). Pass a fixed `width` and `height`. Recharts draws its marks through `createPortal`, which places children into the element a ref gave and into `document.body`.
+- **visx**: shapes, scales and axes (under 0.5).
+- **anime.js** v4: build a paused timeline and `seek(ms)` it to the frame (under 0.03).
+- **Motion**: vanilla `animate()` with `controls.time = seconds` on a paused animation, and `motion.div` with style values (under 0.4). Colours come from Motion's own mixing, which differs a little from the browser's. See [Libraries that run their own frame loop](#libraries-that-run-their-own-frame-loop).
+- **Matter.js** and **Rapier** (`@dimforge/rapier2d-compat`, WASM embedded): step the world from the frame number (under 0.2). A `delayRender` opened while the module loads holds frame 0 like any other frame.
+- **`@remotion/motion-blur`, `layout-utils` and `captions`** (under 1.1).
+- **Bklit UI** (visx, d3 and Motion charts): layout, animation timing and text match Chrome. Colours do not yet: see [Known issues](/docs/known-issues/#svg-paint).
+
+Also available to libraries: `NodeList` and `HTMLCollection` as real classes, `HTMLElement` and `SVGElement` that tell the two apart, `compareDocumentPosition`, `document.defaultView`, `customElements`, `setAttributeNS` and its siblings, lookups of nodes appended to `document.body`, and SVG text `getBBox` and `getComputedTextLength` from the text engine.
+
+### Libraries that run their own frame loop
+
+`requestAnimationFrame` callbacks run once per frame with the frame's time, after the frame has rendered. A jump to a frame (a still, or a worker starting at frame 600) runs them through the frames it skips without rendering those, so a library that advances by the time between frames, such as Motion's mount animations, shows the same pixels in a still as in a render of every frame. Two limits:
+
+- Motion's frame loop clamps each step to 40 ms, so below 25 fps its animations run a little slow.
+- A scene that starts over (going back a frame) keeps the callbacks already asked for, because the library's own state outlives it. A loop of your own should cancel its `requestAnimationFrame` in the effect's cleanup.
+
 ## Layout of HTML content
 
 CSS lays out HTML content the same way a browser would, with a few rules to know:

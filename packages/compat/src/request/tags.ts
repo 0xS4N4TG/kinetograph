@@ -31,6 +31,11 @@ export function isDomElement(type: string): boolean {
   return /^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(type);
 }
 
+/** Whether `type` is an SVG element's name (and no HTML element's). */
+export function isSvgTag(type: string): boolean {
+  return SVG_TAGS.has(type) && !HTML_TAGS.has(type);
+}
+
 /** Whether `type` starts an SVG subtree (its children are SVG elements). */
 export function isSvgRoot(type: string): boolean {
   return type === 'svg';

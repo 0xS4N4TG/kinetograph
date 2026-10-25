@@ -199,6 +199,8 @@ export interface VirtualFrameOptions {
   seedFrame?: number;
   /** Default true. False moves the clock without running timers or animation frames (sub-frames, restoring). */
   fireTimers?: boolean;
+  /** Leave the animation-frame callbacks queued: the caller runs them with `runAnimationFrames` once the frame has rendered. */
+  deferAnimationFrames?: boolean;
 }
 
 function seedFor(frame: number): number {
@@ -223,18 +225,39 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   }
   fireTimersUpTo(target);
   virtualMs = target;
+  if (options.deferAnimationFrames !== true) runAnimationFrames();
+}
+
+/** Runs the animation-frame callbacks queued so far, once, with the virtual `performance.now()`; what they ask for waits for the next call. */
+export function runAnimationFrames(): void {
   const due = animationQueue;
   animationQueue = [];
   for (const entry of due) entry.callback(virtualMs);
 }
 
-/** Back to frame 0 with no timers or animation frames pending, as before the first frame. */
-export function resetVirtualClock(): void {
+/**
+ * Runs the animation-frame callbacks of frames `from` to `to - 1`, one frame at a time, while any are queued: what a
+ * library that advances by the time between frames (Motion) would have seen on the way to `to`, so a frame rendered
+ * after a jump is the one a render of every frame gives. Nothing is rendered; with no callbacks queued it does nothing.
+ */
+export function stepAnimationFrames(from: number, to: number, fps: number): void {
+  for (let frame = from; frame < to && animationQueue.length > 0; frame++) {
+    setVirtualFrame(frame, fps, { deferAnimationFrames: true });
+    runAnimationFrames();
+  }
+}
+
+/**
+ * Back to frame 0 with no timers or animation frames pending, as before the first frame. With `keepAnimationFrames`
+ * the callbacks already asked for stay queued: a library keeps its state between scenes (Motion's frame loop believes
+ * a callback it asked for is still coming), and a scene started over has to run them or the library stalls for good.
+ */
+export function resetVirtualClock(options: { keepAnimationFrames?: boolean } = {}): void {
   virtualMs = 0;
   currentFps = 30;
   randomState = INITIAL_SEED;
   timers.clear();
-  animationQueue = [];
+  if (options.keepAnimationFrames !== true) animationQueue = [];
 }
 
 /** The virtual time in milliseconds since frame 0 (what `performance.now()` returns once installed). */
