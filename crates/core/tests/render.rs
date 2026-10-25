@@ -396,3 +396,64 @@ fn displace_gives_the_same_pixels_at_any_margin() {
         }
     }
 }
+
+/// A text layer of "I" (a stem) with a 16 px red stroke on white fill, on grey.
+fn stroked_text(extra: serde_json::Value) -> Scene {
+    let mut layer = serde_json::json!({
+        "id": "t", "type": "text", "text": "I", "font": "DM Sans", "size": 120, "color": "#ffffff",
+        "transform": {"x": 60, "y": 10}
+    });
+    layer.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    scene_of(&serde_json::json!({
+        "width": 200, "height": 160, "fps": 30, "durationInFrames": 1, "background": "#404040",
+        "fonts": {"DM Sans": Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts/DMSans-Medium.ttf")},
+        "layers": [layer]
+    }))
+}
+
+/// (white pixels, red pixels) of a frame.
+fn white_and_red(frame: &kinetograph_core::Frame) -> (usize, usize) {
+    let mut w = 0;
+    let mut r = 0;
+    for p in frame.rgba.chunks(4) {
+        if p[0] > 200 && p[1] > 200 && p[2] > 200 {
+            w += 1;
+        } else if p[0] > 150 && p[1] < 80 && p[2] < 80 {
+            r += 1;
+        }
+    }
+    (w, r)
+}
+
+#[test]
+fn a_text_stroke_is_drawn_and_paint_order_decides_which_is_on_top() {
+    let stroke = serde_json::json!({"color": "#ff0000", "width": 16, "join": "miter"});
+    let plain = render_still(stroked_text(serde_json::json!({})), 0).unwrap();
+    let over = render_still(stroked_text(serde_json::json!({"stroke": stroke})), 0).unwrap();
+    let under = render_still(
+        stroked_text(serde_json::json!({"stroke": stroke, "paintOrder": "strokeFill"})),
+        0,
+    )
+    .unwrap();
+    let (w0, r0) = white_and_red(&plain);
+    let (w1, r1) = white_and_red(&over);
+    let (w2, r2) = white_and_red(&under);
+    assert!(w0 > 500 && r0 == 0, "plain text: {w0} white {r0} red");
+    // The stroke is centred on the outline: stroke over fill eats half of it from the fill...
+    assert!(r1 > 500, "the stroke drew {r1} red pixels");
+    assert!(w1 < w0 * 9 / 10, "stroke over fill leaves {w1} of {w0} white pixels");
+    // ...and under the fill only the outer half shows, the fill is whole.
+    assert!(w2 >= w0 - w0 / 100, "stroke under fill left {w2} of {w0} white pixels");
+    assert!(r2 > 300 && r2 < r1, "outer half only: {r2} red pixels against {r1}");
+}
+
+#[test]
+fn a_text_stroke_of_no_width_draws_nothing() {
+    let plain = render_still(stroked_text(serde_json::json!({})), 0).unwrap();
+    let none = render_still(
+        stroked_text(serde_json::json!({"stroke": {"color": "#ff0000", "width": 0}})),
+        0,
+    )
+    .unwrap();
+    assert_eq!(plain.rgba, none.rgba);
+}

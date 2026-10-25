@@ -155,6 +155,14 @@ case!(background_clip_text, 340, 120, {
         .to_string()
 });
 
+case!(text_stroke, 460, 330, {
+    r#"<div style="margin:6px 10px;font-size:64px;line-height:72px;font-weight:700;color:#fff;background:#6a9bd1;-webkit-text-stroke:12px #000;paint-order:stroke fill">MAKE KW</div>
+<div style="margin:6px 10px;font-size:64px;line-height:72px;font-weight:700;color:#fff;background:#6a9bd1;-webkit-text-stroke:8px #000">MAKE KW</div>
+<div style="margin:6px 10px;font-size:48px;line-height:60px;color:#fff;background:#6a9bd1;-webkit-text-stroke-width:2px;-webkit-text-stroke-color:#c00;text-shadow:5px 5px 0 #00f;transform:rotate(-3deg);opacity:.8">Shadow <span>inherits</span></div>
+<div style="margin:6px 10px;font-size:56px;line-height:64px;background:#222;background-image:linear-gradient(90deg,#f0c,#0cf);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;-webkit-text-stroke:3px #000">Gradient</div>"#
+        .to_string()
+});
+
 case!(lists_and_outline, 340, 200, {
     r#"<ul style="margin:0;padding-left:40px;font-size:22px;position:absolute;left:0;top:0"><li>Disc</li><li style="list-style:circle">Circle</li><li style="list-style:square">Square</li></ul>
 <ol style="margin:0;padding-left:40px;font-size:22px;position:absolute;left:150px;top:0"><li>One</li><li>Two</li><li style="list-style:upper-alpha">Alpha</li></ol>

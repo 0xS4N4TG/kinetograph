@@ -16,7 +16,7 @@ use crate::scene::{
     Gradient, GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind,
     Layout, LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
     NoiseChannels, Paint, Position, SampleChange, Scene, Shadow, ShapeLayer, Spacing, Stop,
-    StrokeCap, StrokeJoin, TextAlign, Transform, Turbulence, TurbulenceKind, Units, changes_by_id,
+    StrokeCap, StrokeJoin, TextAlign, TextPaintOrder, Transform, Turbulence, TurbulenceKind, Units, changes_by_id,
 };
 use crate::text::TextEngine;
 use crate::turbulence::MAX_OCTAVES;
@@ -525,6 +525,15 @@ impl ShapeStyle {
     }
 }
 
+/// A text's stroke at one frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextStroke {
+    pub color: Color,
+    pub width: f64,
+    pub join: StrokeJoin,
+    pub miter_limit: f64,
+}
+
 /// What a shape's fill or a text's colour paints with, at one frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedPaint {
@@ -627,6 +636,9 @@ pub enum ResolvedKind {
         runs: Vec<GlyphRun>,
         /// The box of a layer with `runs`.
         box_size: (f32, f32),
+        /// The outline of each glyph, and how it is drawn.
+        stroke: Option<TextStroke>,
+        paint_order: TextPaintOrder,
     },
     Image {
         src: String,
@@ -1080,6 +1092,17 @@ impl<'a> Resolver<'a> {
                     t.box_width.as_ref().map_or(0.0, |n| n.at(f) as f32),
                     t.box_height.as_ref().map_or(0.0, |n| n.at(f) as f32),
                 ),
+                stroke: t
+                    .stroke
+                    .as_ref()
+                    .map(|st| TextStroke {
+                        color: st.color,
+                        width: st.width.at(f),
+                        join: st.join,
+                        miter_limit: st.miter_limit.as_ref().map_or(4.0, |n| n.at(f)).max(1.0),
+                    })
+                    .filter(|st| st.width > 0.0 && st.width.is_finite()),
+                paint_order: t.paint_order,
             },
             LayerKind::Image(i) => {
                 let (width, height) = self.image_size(layer, i, f)?;
