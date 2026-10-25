@@ -14,7 +14,7 @@ import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { HfNode, HfPlan, HfScript, HfStylesheet, HfSvgRule } from '@kinetographdev/core/hyperframes';
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
-import { resolveCdnScript, verifyIntegrity } from './deps.js';
+import { DEFAULT_ALLOWED_HOSTS, resolveCdnData, resolveCdnScript, verifyIntegrity } from './deps.js';
 import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
   crossingRules,
@@ -52,6 +52,8 @@ export interface PlanOptions {
   resolveScriptUrl?: typeof resolveCdnScript;
   /** Lists what the project loads (`fetch-deps`): a script that is not available is left out instead of failing the read. */
   discoverOnly?: boolean;
+  /** Hosts besides the CDNs whose URLs in a script count as files it fetches (`--allow-host`). */
+  allowHosts?: string[];
 }
 
 export interface BuiltPlan {
@@ -62,6 +64,10 @@ export interface BuiltPlan {
   scriptUrls: string[];
   /** The `integrity` attribute of each script URL's tag. */
   scriptIntegrity: Record<string, string>;
+  /** URLs of data files the page's scripts name (`d3.json("https://cdn.jsdelivr.net/...")`), on the allowed hosts: `fetch-deps` downloads these. */
+  dataUrls: string[];
+  /** URLs of remote `<video>`, `<audio>`, `<img>` and `<source>` files, which `fetch-deps` downloads too. */
+  mediaUrls: string[];
 }
 
 interface Context {
@@ -89,6 +95,10 @@ class Builder {
   readonly files = new Set<string>();
   readonly scriptUrls: string[] = [];
   readonly scriptIntegrity: Record<string, string> = {};
+  readonly dataUrls = new Set<string>();
+  readonly mediaUrls = new Set<string>();
+  /** Remote files found in the cache, by URL. */
+  readonly remoteData: Record<string, string> = {};
   usesThree = false;
 
   constructor(
@@ -163,7 +173,42 @@ class Builder {
       }
     }
     if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
+    if (/\bnavigator\s*\.\s*gpu\b|getContext\(\s*['"]webgpu['"]/.test(code)) {
+      this.note(`${file}: the page uses WebGPU, which the engine does not have: what it draws with it is not drawn`);
+    }
+    this.scanDataUrls(code, src === null ? null : normalizeUrl(src));
     this.scripts.push({ code, file, scope: src === null ? ctx.scope : null, sourceFile: src === null && ctx.scope !== null ? ctx.file : null });
+  }
+
+  /**
+   * The URLs a script names on the allowed hosts (the CDNs, and `--allow-host`): files it fetches. Scripts themselves are
+   * not among them. A file that is cached is served to `fetch()` of exactly that URL; one that is not is a note.
+   */
+  scanDataUrls(code: string, own: string | null): void {
+    const hosts = new Set([...DEFAULT_ALLOWED_HOSTS, ...(this.options.allowHosts ?? [])]);
+    for (const m of code.matchAll(/https:\/\/[^\s'"`<>)\\,;]+/g)) {
+      const url = m[0].replace(/[.]+$/, '');
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        continue;
+      }
+      if (!hosts.has(parsed.hostname) || url === own || this.scriptUrls.includes(url) || /\.(m?js|css|woff2?|ttf|otf)$/i.test(parsed.pathname) || parsed.pathname === '/') continue;
+      this.dataUrls.add(url);
+      this.useCached(url);
+    }
+  }
+
+  /** Records the cached file of a remote URL, or the note that says it is not cached. */
+  useCached(url: string): string | null {
+    const found = resolveCdnData(url);
+    if ('file' in found) {
+      this.remoteData[url] = found.file;
+      return found.file;
+    }
+    if (!this.options.discoverOnly) this.note(found.error);
+    return null;
   }
 
   /** The script's `integrity` attribute against the bytes about to run, wherever they came from. */
@@ -262,13 +307,25 @@ class Builder {
       } else if (name === 'data-font-family') noteFamilyValue(this.fontUse, value);
       attrs.push([name, value]);
     }
-    if (MEDIA_TAGS.has(tag)) {
-      const src = attrs.find(([n]) => n === 'src')?.[1];
-      if (src && !isRemote(src) && existsSync(src.split(/[?#]/)[0]!)) this.mediaFiles.add(src.split(/[?#]/)[0]!);
-    }
-    if (tag === 'source') {
-      const src = attrs.find(([n]) => n === 'src')?.[1];
-      if (src && !isRemote(src) && existsSync(src.split(/[?#]/)[0]!)) this.mediaFiles.add(src.split(/[?#]/)[0]!);
+    if (MEDIA_TAGS.has(tag) || tag === 'source') {
+      const at = attrs.findIndex(([n]) => n === 'src');
+      const src = at < 0 ? undefined : attrs[at]![1];
+      if (src && /^(https?:)?\/\//i.test(src.trim())) {
+        // A remote file: played from the cache `fetch-deps` filled, else not played, and said so on every frame.
+        const url = normalizeUrl(src.trim());
+        this.mediaUrls.add(url);
+        const found = resolveCdnData(url);
+        if ('file' in found) {
+          attrs[at] = ['src', found.file];
+          this.mediaFiles.add(found.file);
+        } else if (!this.options.discoverOnly) {
+          this.note(`${tag === 'source' ? 'a <source>' : `<${tag}>`} of ${url} is not drawn: ${found.error}`);
+        }
+      } else if (src && !isRemote(src)) {
+        const file = src.split(/[?#]/)[0]!;
+        if (existsSync(file)) this.mediaFiles.add(file);
+        else if (!this.options.discoverOnly) this.note(`<${tag === 'source' ? 'source' : tag}> src="${src}" was not found beside ${ctx.file} or in ${this.root}: it is not drawn`);
+      }
     }
     // A page's `<template>` keeps its content apart from the document: its scripts and styles are not the page's.
     const inert = tag === 'template' ? await this.nodes(childrenOf((el as PTemplate).content), ctx, svg) : null;
@@ -425,6 +482,9 @@ const positiveInt = (value: string | null): number | null => {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 };
 
+/** `//host/x` is `https://host/x`. */
+const normalizeUrl = (url: string): string => (url.startsWith('//') ? `https:${url}` : url);
+
 /** Reads the project whose entry file is `indexFile`. */
 export async function buildPlan(indexFile: string, options: PlanOptions = {}): Promise<BuiltPlan> {
   const file = resolve(indexFile);
@@ -507,9 +567,17 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     svgRules: builder.svgRules,
     googleFonts,
     variables: builder.variables,
+    remoteData: builder.remoteData,
     mediaDurations,
     notes: builder.notes,
     usesThree: builder.usesThree,
   };
-  return { plan, files: [...builder.files], scriptUrls: [...new Set(builder.scriptUrls)], scriptIntegrity: builder.scriptIntegrity };
+  return {
+    plan,
+    files: [...builder.files],
+    scriptUrls: [...new Set(builder.scriptUrls)],
+    scriptIntegrity: builder.scriptIntegrity,
+    dataUrls: [...builder.dataUrls],
+    mediaUrls: [...builder.mediaUrls],
+  };
 }

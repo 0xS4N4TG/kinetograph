@@ -10,26 +10,30 @@
 
 import postcss from 'postcss';
 
-/** HyperFrames' bundled families: the Google Fonts family name, and the weights it embeds (all in the normal style). */
+/**
+ * HyperFrames' bundled families: the Google Fonts family name and the weights it has. HyperFrames embeds 400, 700 (and 900
+ * for some) and adds the other weights of the family from Google Fonts, so a page's `font-weight: 600` is the family's 600;
+ * these are all the weights Google serves of each (normal style), asked for in one request that `fetch-deps` caches.
+ */
 export const BUNDLED: Record<string, { family: string; weights: string[] }> = {
-  inter: { family: 'Inter', weights: ['400', '700', '900'] },
-  montserrat: { family: 'Montserrat', weights: ['400', '700', '900'] },
-  outfit: { family: 'Outfit', weights: ['400', '700', '900'] },
-  nunito: { family: 'Nunito', weights: ['400', '700', '900'] },
-  oswald: { family: 'Oswald', weights: ['400', '700'] },
+  inter: { family: 'Inter', weights: ['100', '200', '300', '400', '500', '600', '700', '800', '900'] },
+  montserrat: { family: 'Montserrat', weights: ['100', '200', '300', '400', '500', '600', '700', '800', '900'] },
+  outfit: { family: 'Outfit', weights: ['100', '200', '300', '400', '500', '600', '700', '800', '900'] },
+  nunito: { family: 'Nunito', weights: ['200', '300', '400', '500', '600', '700', '800', '900'] },
+  oswald: { family: 'Oswald', weights: ['200', '300', '400', '500', '600', '700'] },
   'league-gothic': { family: 'League Gothic', weights: ['400'] },
   'archivo-black': { family: 'Archivo Black', weights: ['400'] },
   'space-mono': { family: 'Space Mono', weights: ['400', '700'] },
-  'ibm-plex-mono': { family: 'IBM Plex Mono', weights: ['400', '700'] },
-  'jetbrains-mono': { family: 'JetBrains Mono', weights: ['400', '700'] },
-  'eb-garamond': { family: 'EB Garamond', weights: ['400', '700'] },
-  'playfair-display': { family: 'Playfair Display', weights: ['400', '700', '900'] },
-  'source-code-pro': { family: 'Source Code Pro', weights: ['400', '700'] },
-  'noto-sans-jp': { family: 'Noto Sans JP', weights: ['400', '700'] },
-  roboto: { family: 'Roboto', weights: ['400', '700', '900'] },
-  'open-sans': { family: 'Open Sans', weights: ['400', '700'] },
-  lato: { family: 'Lato', weights: ['400', '700', '900'] },
-  poppins: { family: 'Poppins', weights: ['400', '700', '900'] },
+  'ibm-plex-mono': { family: 'IBM Plex Mono', weights: ['100', '200', '300', '400', '500', '600', '700'] },
+  'jetbrains-mono': { family: 'JetBrains Mono', weights: ['100', '200', '300', '400', '500', '600', '700', '800'] },
+  'eb-garamond': { family: 'EB Garamond', weights: ['400', '500', '600', '700', '800'] },
+  'playfair-display': { family: 'Playfair Display', weights: ['400', '500', '600', '700', '800', '900'] },
+  'source-code-pro': { family: 'Source Code Pro', weights: ['200', '300', '400', '500', '600', '700', '800', '900'] },
+  'noto-sans-jp': { family: 'Noto Sans JP', weights: ['100', '200', '300', '400', '500', '600', '700', '800', '900'] },
+  roboto: { family: 'Roboto', weights: ['100', '300', '400', '500', '700', '900'] },
+  'open-sans': { family: 'Open Sans', weights: ['300', '400', '500', '600', '700', '800'] },
+  lato: { family: 'Lato', weights: ['100', '300', '400', '700', '900'] },
+  poppins: { family: 'Poppins', weights: ['100', '200', '300', '400', '500', '600', '700', '800', '900'] },
 };
 
 const SANS = 'inter';

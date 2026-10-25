@@ -3,6 +3,7 @@
 // timeline is seeked to. Written from the documented behaviour of HyperFrames' runtime (Apache-2.0).
 
 import { parseAutomation, sourceTimeAt, timeAtSourceTime, type RateSpec } from './automation.js';
+import { hasZeroDurationCallbackTween, rerenderAt, seekTimelineTo } from './gsap-seek.js';
 
 /** The two instants closer than this are one (HyperFrames' half-open windows would otherwise flicker on float sums). */
 const SAME_INSTANT = 1e-6;
@@ -288,11 +289,13 @@ export function localTimelineTime(clock: SceneClock, time: number, duration: num
   return Math.max(0, clamped);
 }
 
-/** Seeks one timeline: paused, to `time`, with `suppressEvents` as given. */
-export function seekTimeline(timeline: TimelineLike, time: number, suppressEvents = false): void {
+/** Seeks one timeline: paused, to `time`, the way HyperFrames seeks a GSAP one (see `gsap-seek.ts`). */
+export function seekTimeline(timeline: TimelineLike, time: number, suppressEvents = false, rerender = false): void {
   timeline.pause?.();
-  if (typeof timeline.totalTime === 'function') timeline.totalTime(time, suppressEvents);
-  else timeline.seek?.(time, suppressEvents);
+  if (typeof timeline.totalTime === 'function') {
+    const redrawn = seekTimelineTo(timeline as never, time, suppressEvents);
+    if (rerender && !redrawn && !suppressEvents && !hasZeroDurationCallbackTween(timeline as never)) rerenderAt(timeline as never, time);
+  } else timeline.seek?.(time, suppressEvents);
 }
 
 /**
@@ -306,20 +309,22 @@ export function seekTimelines(
   time: number,
   clockOf: (compositionId: string) => SceneClock | null,
   suppressEvents = false,
+  /** Hears each seek that failed (a tween's callback threw: what it drew is missing), so the frame can say so. */
+  onFailure: (message: string) => void = (message) => console.warn(`HyperFrames: ${message}`),
 ): void {
   for (const [id, timeline] of Object.entries(registry)) {
     if (!timeline || typeof timeline !== 'object') continue;
     try {
       if (id === rootId) {
         const total = timelineDuration(timeline);
-        seekTimeline(timeline, total !== null && time > total ? total : time, suppressEvents);
+        seekTimeline(timeline, total !== null && time > total ? total : time, suppressEvents, true);
         continue;
       }
       const clock = clockOf(id);
       if (clock === null) continue;
       seekTimeline(timeline, localTimelineTime(clock, time, timelineDuration(timeline)), suppressEvents);
     } catch (error) {
-      console.warn(`HyperFrames: seeking the timeline of "${id}" failed: ${error instanceof Error ? error.message : String(error)}`);
+      onFailure(`seeking the timeline of "${id}" failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

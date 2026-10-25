@@ -156,7 +156,9 @@ describe('timeline seeking', () => {
     seekTimelines(registry, 'main', 3, clockOf);
     seekTimelines(registry, 'main', 7, clockOf);
     seekTimelines(registry, 'main', 3, clockOf);
-    expect(root.calls).toEqual([[3, false], [5, false], [3, false]]);
+    // The seeks that carry events; the root is then rendered again, silently, from just below (see `gsap-seek.ts`).
+    expect(root.calls.filter(([, suppress]) => suppress === false)).toEqual([[3, false], [5, false], [3, false]]);
+    expect(root.calls.filter(([, suppress]) => suppress === true).map(([t]) => t)).toEqual([2.999, 3, 4.999, 5, 2.999, 3]);
     expect(child.calls).toEqual([[1, false], [2, false], [1, false]]);
     expect(root.paused).toBe(3);
   });

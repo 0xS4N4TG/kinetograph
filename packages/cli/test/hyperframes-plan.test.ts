@@ -179,8 +179,8 @@ describe('fonts HyperFrames embeds', () => {
     });
     const { plan } = await buildPlan(join(dir, 'index.html'));
     const byFamily = Object.fromEntries(plan.googleFonts.map((f) => [f.family, f]));
-    expect(byFamily.Inter).toMatchObject({ variants: ['400', '700', '900'], as: ['Arial'], cacheOnly: true });
-    expect(byFamily['JetBrains Mono']).toMatchObject({ variants: ['400', '700'], as: ['Consolas'], cacheOnly: true });
+    expect(byFamily.Inter).toMatchObject({ variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], as: ['Arial'], cacheOnly: true });
+    expect(byFamily['JetBrains Mono']).toMatchObject({ as: ['Consolas'], cacheOnly: true });
     expect(byFamily['EB Garamond']).toMatchObject({ as: ['Georgia'] });
   });
 
@@ -221,5 +221,61 @@ describe('page features', () => {
       ['[data-composition-id="x"] .bar', ['(min-width: 600px)']],
       ['.c .d', ['print']],
     ]);
+  });
+});
+
+describe('what a page fetches and plays from the web', () => {
+  const savedCache = process.env.KINETOGRAPH_CDN_CACHE;
+  const withCache = async <T>(run: (cache: string) => Promise<T>): Promise<T> => {
+    const cache = mkdtempSync(join(tmpdir(), 'kg-hf-cache-'));
+    process.env.KINETOGRAPH_CDN_CACHE = cache;
+    try {
+      return await run(cache);
+    } finally {
+      if (savedCache === undefined) delete process.env.KINETOGRAPH_CDN_CACHE;
+      else process.env.KINETOGRAPH_CDN_CACHE = savedCache;
+    }
+  };
+  const ATLAS = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+  const page = `<html><body><div data-composition-id="m" data-duration="1"></div>
+    <script>d3.json("${ATLAS}").then(draw); var lib = "https://cdn.jsdelivr.net/npm/x@1/dist/x.min.js";</script></body></html>`;
+
+  it('finds the data URLs a script names, serves the cached ones to fetch, and notes the ones that are not cached', async () => {
+    await withCache(async () => {
+      const dir = project({ 'index.html': page });
+      const missing = await buildPlan(join(dir, 'index.html'));
+      expect(missing.dataUrls).toEqual([ATLAS]);
+      expect(missing.plan.remoteData).toEqual({});
+      expect(missing.plan.notes.join('\n')).toContain('fetch-deps');
+      const { fetchCdnData, dataCachePath } = await import('../src/hyperframes/deps.js');
+      await fetchCdnData([ATLAS], { fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: async () => new TextEncoder().encode('{}').buffer as ArrayBuffer }) });
+      const cached = await buildPlan(join(dir, 'index.html'));
+      expect(cached.plan.remoteData).toEqual({ [ATLAS]: dataCachePath(ATLAS) });
+      expect(cached.plan.notes.join('\n')).not.toContain('is not cached');
+    });
+  });
+
+  it('plays a remote video from the cache and says on every frame that it cannot when it is not there', async () => {
+    await withCache(async () => {
+      const url = 'https://media.example.com/a.mp4';
+      const dir = project({ 'index.html': `<html><body><div data-composition-id="m" data-duration="1"><video src="${url}" data-start="0"></video></div></body></html>` });
+      const missing = await buildPlan(join(dir, 'index.html'));
+      expect(missing.mediaUrls).toEqual([url]);
+      expect(missing.plan.notes.join('\n')).toContain('is not drawn');
+      const { fetchCdnData, dataCachePath } = await import('../src/hyperframes/deps.js');
+      await fetchCdnData([url], { allowHosts: ['media.example.com'], fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: async () => new Uint8Array(4).buffer as ArrayBuffer }) });
+      const cached = await buildPlan(join(dir, 'index.html'));
+      expect(attr(find(cached.plan.body, (n) => n.tag === 'video')!, 'src')).toBe(dataCachePath(url));
+    });
+  });
+
+  it('notes a local media file that is not there, and a page that needs WebGPU', async () => {
+    const dir = project({
+      'index.html': `<html><body><div data-composition-id="m" data-duration="1"><video src="gone.mp4" data-start="0"></video></div>
+        <script>if (navigator.gpu) { start(); }</script></body></html>`,
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    expect(plan.notes.join('\n')).toContain('gone.mp4');
+    expect(plan.notes.join('\n')).toContain('WebGPU');
   });
 });

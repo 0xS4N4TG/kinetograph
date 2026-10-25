@@ -77,6 +77,8 @@ export interface HfPlan {
   googleFonts: HfGoogleFont[];
   /** The declared defaults and the host's values of each composition's variables (`getVariables()`), by composition id. */
   variables: Record<string, Record<string, unknown>>;
+  /** Remote files the page fetches that `fetch-deps` has cached: URL to the cached file's path. `fetch(url)` of one reads it. */
+  remoteData: Record<string, string>;
   /** Natural duration in seconds of each media file (absolute path), probed by the CLI. */
   mediaDurations: Record<string, number>;
   /** Things the loader saw and the engine cannot do (Three.js, an import map), shown by `doctor`. */

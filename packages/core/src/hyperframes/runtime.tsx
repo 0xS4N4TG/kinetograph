@@ -14,6 +14,8 @@
 import { type ReactNode } from 'react';
 import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet } from '@kinetographdev/compat/dom';
+import { setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
+import { continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
 import { finishFontLoadsSync, getFonts } from '../font-registry.js';
@@ -165,6 +167,11 @@ class Runtime {
   private filterHost: AnyRecord | null = null;
   private readonly graded = new Map<AnyRecord, { id: string; signature: string }>();
   private gradingNotes: string[] = [];
+  private seekFailures: string[] = [];
+  private readonly scriptFailures: string[] = [];
+  /** Done when what the scripts fetched has been drawn. */
+  private settling: Promise<void> | null = null;
+  private held = false;
 
   constructor(private readonly plan: HfPlan) {
     this.timing = new TimingResolver({
@@ -193,7 +200,11 @@ class Runtime {
     this.built = true;
     const { plan } = this;
     g.__timelines = g.__timelines ?? {};
-    const report = (message: string): void => noteStylesheetProblem(message);
+    // A script that failed, or a handler that threw, is a note in `doctor` and a report on every frame (`--strict` fails on it).
+    const report = (message: string): void => {
+      noteStylesheetProblem(message);
+      this.scriptFailures.push(message);
+    };
     g.__hyperframes = {
       getVariables: () => ({ ...(plan.variables[plan.compositionId] ?? {}) }),
       assetUrl: (path: string) => (path.startsWith('/') || /^[a-z]+:/i.test(path) ? path : `${plan.baseDir}/${path}`),
@@ -237,11 +248,20 @@ class Runtime {
         }
       }
     }
+    this.afterScripts();
+    // A page that draws from what it fetched (`d3.json(url).then(...)`) is not done when its scripts return.
+    this.settling = whenFetchesSettle().then(() => this.afterScripts());
+  }
+
+  /** What follows the scripts, run again once what they fetched has been drawn. */
+  private afterScripts(): void {
+    const { plan } = this;
     const svgs = Array.from(doc().querySelectorAll('svg')) as AnyRecord[];
     applySvgRules(plan.svgRules, svgs);
     pinSvgFonts(svgs, (el) => g.getComputedStyle(el));
     this.root = doc().querySelector(`[data-composition-id="${attrValue(plan.compositionId)}"]`);
     this.timing.reset();
+    this.clocks.clear();
   }
 
   /** The variables of the composition `el` is in (the root's, outside any). */
@@ -252,6 +272,17 @@ class Runtime {
       if (id && variables[id]) return variables[id]!;
     }
     return variables[this.plan.compositionId] ?? {};
+  }
+
+  /** The frame waits for what the page fetched at load (once). */
+  holdForPage(): void {
+    if (this.settling === null || this.held) return;
+    this.held = true;
+    const handle = delayRender('HyperFrames page scripts');
+    void this.settling.then(
+      () => continueRender(handle),
+      () => continueRender(handle),
+    );
   }
 
   /**
@@ -291,7 +322,7 @@ class Runtime {
    * that measures (`getBoundingClientRect`, `getComputedStyle`) finds what it would in a browser. The document goes to
    * the frames' root on the first frame (`mount`).
    */
-  seconds(): number {
+  async seconds(): Promise<number> {
     if (this.plan.durationSeconds !== null) return this.plan.durationSeconds;
     if (!this.built) {
       const root = createSceneRoot({ viewport: { width: this.plan.width, height: this.plan.height }, fonts: () => getFonts(), time: () => 0 });
@@ -305,6 +336,7 @@ class Runtime {
       }
     }
     this.setup();
+    await this.settling;
     let end = timelineDuration((g.__timelines ?? {})[this.plan.compositionId]) ?? 0;
     for (const el of Array.from(doc().querySelectorAll('[data-start]')) as TimedElement[]) {
       const finish = this.timing.end(el);
@@ -371,7 +403,8 @@ class Runtime {
         el.removeAttribute(HIDDEN_ATTR);
       }
     }
-    seekTimelines(g.__timelines ?? {}, this.plan.compositionId, time, (id) => this.clockOf(id));
+    this.seekFailures = [];
+    seekTimelines(g.__timelines ?? {}, this.plan.compositionId, time, (id) => this.clockOf(id), false, (message) => this.seekFailures.push(message));
     for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) {
       const start = this.timing.start(el);
       const rate = rateSpecOf(el);
@@ -563,6 +596,8 @@ class Runtime {
     if (this.plan.usesThree) reportUnsupported('three.js', null, null, 'Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)');
     for (const note of this.plan.notes) reportUnsupported('HyperFrames', null, null, note);
     for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
+    for (const failure of this.seekFailures) reportUnsupported('HyperFrames', null, null, failure);
+    for (const failure of this.scriptFailures) reportUnsupported('HyperFrames', null, null, failure);
   }
 }
 
@@ -580,11 +615,16 @@ export function defineHyperframes(plan: HfPlan): void {
     }
   }
   const runtime = new Runtime(plan);
+  setRemoteFiles(plan.remoteData ?? {});
+  setRefusedFetchHandler((url) =>
+    noteStylesheetProblem(`fetch("${url}") was refused: the file is not cached. Run \`kinetograph fetch-deps <entry> --url ${url}\` once; a render never downloads it`),
+  );
 
   function HyperframesProject(): ReactNode {
     const frame = useCurrentFrame();
     const { fps, durationInFrames } = useVideoConfig();
     runtime.setup();
+    runtime.holdForPage();
     runtime.mount();
     // `frame / fps` is exact for a whole frame; a motion-blur sub-frame is fractional.
     runtime.seek(frame / fps, durationInFrames / fps, fps);
@@ -602,7 +642,7 @@ export function defineHyperframes(plan: HfPlan): void {
       height={plan.height}
       fps={plan.fps}
       durationInFrames={plan.durationSeconds === null ? 1 : frames(plan.durationSeconds)}
-      calculateMetadata={plan.durationSeconds === null ? () => ({ durationInFrames: frames(runtime.seconds()) }) : undefined}
+      calculateMetadata={plan.durationSeconds === null ? async () => ({ durationInFrames: frames(await runtime.seconds()) }) : undefined}
     />
   ));
 }
