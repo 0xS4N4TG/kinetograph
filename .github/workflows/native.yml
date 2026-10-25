@@ -202,9 +202,9 @@ jobs:
       # In dependency order. Never `npm run build --workspaces`: it would also build the site and the addon.
       - name: Typecheck (tsc builds)
         run: |
-          for p in scene compat react core audio cli studio; do npm run build -w "packages/$p"; done
+          for p in scene compat react core audio cli studio plugins/gsap plugins/p5-brush; do npm run build -w "packages/$p"; done
       # The tests open no GPU unless KINETOGRAPH_GPU_TESTS is set. Not blocking until a run has shown they pass here.
       - name: Test
         continue-on-error: true
         run: |
-          for p in scene compat react core audio cli studio; do npm test -w "packages/$p"; done
+          for p in scene compat react core audio cli studio plugins/gsap plugins/p5-brush; do npm test -w "packages/$p"; done

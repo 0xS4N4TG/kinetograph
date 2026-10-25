@@ -11,6 +11,8 @@
     "packages/core",
     "packages/audio",
     "packages/cli",
+    "packages/plugins/gsap",
+    "packages/plugins/p5-brush",
     "packages/studio/ui",
     "packages/studio"
   ],
