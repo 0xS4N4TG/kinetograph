@@ -31,6 +31,16 @@ export interface DoctorReport {
   issues: DoctorIssue[];
   /** Problems with the project's stylesheets that no frame shows (Tailwind that could not be built, a remote font). */
   notes?: string[];
+  /** Scene errors that fail a render outright (the same validation the render runs), by message; absent when none. */
+  renderErrors?: DoctorRenderError[];
+}
+
+/** A scene error that kills the render, on the frames where it happens. */
+export interface DoctorRenderError {
+  message: string;
+  /** Inclusive, ascending. */
+  ranges: [first: number, last: number][];
+  frames: number;
 }
 
 /** The most values and element paths an issue lists. */
@@ -127,6 +137,19 @@ export function summarize(
     cleanShare: total === 0 ? 1 : cleanFrames / total,
     issues,
   };
+}
+
+/** Scene errors grouped by message, the one on most frames first. `errors` must be in ascending frame order. */
+export function groupRenderErrors(errors: readonly { frame: number; message: string }[]): DoctorRenderError[] {
+  const byMessage = new Map<string, number[]>();
+  for (const { frame, message } of errors) {
+    const frames = byMessage.get(message);
+    if (!frames) byMessage.set(message, [frame]);
+    else if (frames[frames.length - 1] !== frame) frames.push(frame);
+  }
+  return [...byMessage]
+    .map(([message, frames]) => ({ message, ranges: toRanges(frames), frames: frames.length }))
+    .sort((a, b) => b.frames - a.frames || a.ranges[0]![0] - b.ranges[0]![0] || a.message.localeCompare(b.message));
 }
 
 /** `div transform: skew is not supported`: what an issue is, for a line of text. */

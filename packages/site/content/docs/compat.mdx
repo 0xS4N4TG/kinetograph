@@ -27,7 +27,7 @@ Use `--strict` in CI and for final renders, so you never ship a video with somet
 
 ### Check a project before you render
 
-- `kinetograph doctor <entry>` goes through every frame without using the GPU. It reports what the engine can't draw and on which frames. Run it before a long render. If the project imports a package Kinetograph doesn't support, such as `@remotion/three`, `doctor` lists each import and the file that has it, and still checks the frames it can.
+- `kinetograph doctor <entry>` goes through every frame without using the GPU. It reports what the engine can't draw and on which frames, and any scene the render would refuse (the same check the render runs, listed with its frames, exit code 1). Run it before a long render. If the project imports a package Kinetograph doesn't support, such as `@remotion/three`, `doctor` lists each import and the file that has it, and still checks the frames it can.
 - `kinetograph lint` adds one warning per problem, with rule `compat`. The frame still renders.
 - Both are also MCP tools. The `doctor` tool takes the same arguments, and `still`, `strip` and `render` take `strict`.
 
@@ -57,6 +57,7 @@ Plain HTML and SVG elements can sit next to Kinetograph's own elements in the sa
 - `staticFile` reads `public/` next to the entry. If there is none, it reads `public/` next to the nearest `package.json`, which is Remotion's rule when the entry is in `src/`.
 - Fonts load from their files, whether you add them with `new FontFace(...)` and `document.fonts.add(face)` or with an `@font-face` rule. One file is kept for each family, weight and style. If a font is split by `unicodeRange`, the part covering basic Latin is used. WOFF and WOFF2 files are unpacked.
 - HTML text can have an outline: `-webkit-text-stroke` (and its width and colour longhands) is drawn with the same miter joins as Chrome, and `paint-order: stroke fill` puts the stroke under the fill, as caption styles do. Both work with `text-shadow` (the shadow is stroked too), transforms, opacity and `background-clip: text`.
+- `transform-style: preserve-3d` is flattened where a browser flattens it. An element with `opacity` below 1, a `filter`, `backdrop-filter`, `clip-path`, `mask-image`, a `mix-blend-mode` other than `normal`, `isolation: isolate`, `contain: paint`, or an `overflow` other than `visible` or `clip` is drawn as a flat group with that effect, and its 3D children are painted into its plane in document order, as Chrome does (CSS Transforms 2, "grouping property values"). Its own `transform` and its parent's `perspective` still apply.
 - Kinetograph reads no fonts from your system, so a render looks the same on every machine. If your project loads no font, text is drawn in DM Sans, a font that ships with Kinetograph, and the warning and `doctor` say so (`font-family`, "font not loaded; drawn with the built-in fallback"). SVG `<text>` is covered too.
 
 ### GSAP
@@ -202,6 +203,7 @@ interface DoctorReport {
   cleanShare: number;           // 0..1
   issues: DoctorIssue[];        // most frames first
   notes?: string[];             // problems with the project's stylesheets that no frame shows (Tailwind that could not be built, …)
+  renderErrors?: { message: string; ranges: [first: number, last: number][]; frames: number }[];  // scene errors that fail a render; only when there are some
 }
 
 interface DoctorIssue {

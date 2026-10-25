@@ -125,6 +125,30 @@ describe('doctor <entry>', () => {
     expect((await cli('doctor', 'index.tsx')).code).not.toBe(0);
   });
 
+  it('reports a scene the render would refuse, by frames, and exits 1', async () => {
+    const refusal = 'invalid scene: layer "pill": a preserve3d group cannot have effects; put the group inside another group and give that one what it needs';
+    // The scene validation of the addon, refusing frames 3..5 and 9.
+    setNativeForTests(
+      fakeNative({
+        validateScene: (text: string) => {
+          const frame = Number((JSON.parse(text) as { id: string }).id.slice(1));
+          if ((frame >= 3 && frame <= 5) || frame === 9) throw new Error(refusal);
+          return { width: 4, height: 4, fps: 30, durationInFrames: 20, margin: 0 };
+        },
+      }).native,
+    );
+    seam.project = () => stubProject(() => []).source;
+    const r = await cli('doctor', 'index.tsx', '--json');
+    expect(r.code).toBe(1);
+    const report: DoctorReport = r.json;
+    expect(report.renderErrors).toEqual([{ message: refusal, ranges: [[3, 5], [9, 9]], frames: 4 }]);
+    const text = await cli('doctor', 'index.tsx');
+    expect(text.code).toBe(1);
+    expect(text.text).toContain('1 error: the scene is refused, so a render stops there');
+    expect(text.text).toContain(`1. ${refusal}`);
+    expect(text.text).toContain('frames 3..5, 9 (4 frames)');
+  });
+
   it('prints the report as text', async () => {
     seam.project = () => stubProject((f) => (f >= 4 && f <= 6 ? [skew] : [])).source;
     const r = await cli('doctor', 'index.tsx');

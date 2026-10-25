@@ -117,9 +117,42 @@ pub fn perspective_matrix(node: &Node, size: (f32, f32)) -> Option<Matrix> {
 /// Whether `node` keeps its children's 3D positions (`transform-style:
 /// preserve-3d`); otherwise they are flattened into its plane.
 pub fn preserves_3d(node: &Node) -> bool {
+    node.primary_styles().is_some_and(|s| used_preserve_3d(&s))
+}
+
+/// The used value of `transform-style` is `preserve-3d`: the computed value,
+/// unless the element has a grouping property, which forces it flat
+/// (CSS Transforms 2 "Grouping property values", the list Chrome uses):
+/// `opacity` below 1, a `filter` or `backdrop-filter`, a `clip-path`, a
+/// `mask-image`, a `mix-blend-mode` other than `normal`, `isolation:
+/// isolate`, `contain: paint`, and an `overflow` other than `visible` or
+/// `clip`. (A `filter` of `url()` references alone is not in the style; the
+/// painter checks the layer's effects for it.)
+pub fn used_preserve_3d(s: &style::properties::ComputedValues) -> bool {
+    use style::computed_values::isolation::T as Isolation;
+    use style::computed_values::mix_blend_mode::T as Blend;
+    use style::computed_values::overflow_x::T as Overflow;
     use style::computed_values::transform_style::T as TransformStyle;
-    node.primary_styles()
-        .is_some_and(|s| s.get_box().transform_style == TransformStyle::Preserve3d)
+    use style::properties::longhands::contain::computed_value::T as Contain;
+    use style::values::computed::basic_shape::ClipPath;
+    use style::values::computed::image::Image;
+    let b = s.get_box();
+    if b.transform_style != TransformStyle::Preserve3d {
+        return false;
+    }
+    let fx = s.get_effects();
+    let clipping = |o: Overflow| !matches!(o, Overflow::Visible | Overflow::Clip);
+    let grouping = fx.opacity < 1.0
+        || !fx.filter.0.is_empty()
+        || !fx.backdrop_filter.0.is_empty()
+        || fx.mix_blend_mode != Blend::Normal
+        || b.isolation == Isolation::Isolate
+        || b.contain.contains(Contain::PAINT)
+        || clipping(b.overflow_x)
+        || clipping(b.overflow_y)
+        || !matches!(s.get_svg().clip_path, ClipPath::None)
+        || s.get_svg().mask_image.0.iter().any(|i| !matches!(i, Image::None));
+    !grouping
 }
 
 /// `m` with its z dropped on the way in and out: what a flat (non
