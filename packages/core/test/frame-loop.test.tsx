@@ -387,6 +387,22 @@ describe('waiting', () => {
     expect((scene.layers[0] as TextLayer).text).toBe('loaded');
   });
 
+  it('holds frame 0 for a handle opened before any frame, as at module scope', async () => {
+    let ready = false;
+    const handle = delayRender('init');
+    setTimeout(() => {
+      ready = true;
+      continueRender(handle);
+    }, 5);
+    // A plain variable, not state: nothing renders again when it changes, so the first render has to come after it.
+    function Wasm() {
+      return <Text id="t" font="Inter" size={10}>{ready ? 'ready' : 'empty'}</Text>;
+    }
+    registerRoot(() => <Composition id="W" component={Wasm} width={10} height={10} fps={30} durationInFrames={5} />);
+    const { scene } = await createFrameRenderer('W').renderFrame(0);
+    expect((scene.layers[0] as TextLayer).text).toBe('ready');
+  });
+
   it('fails the frame when a handle is never continued', async () => {
     function Stuck() {
       useEffect(() => {

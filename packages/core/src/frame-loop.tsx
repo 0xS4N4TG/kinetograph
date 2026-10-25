@@ -140,6 +140,8 @@ class Renderer implements FrameRenderer {
     this.lastFrame = frame;
 
     await waitForFonts();
+    // A handle the project opened as it loaded (a WASM module's init) holds the first frame, as it holds every other.
+    if (fresh) await whenRenderIdle();
     let main!: RenderedTree;
     if (!replays) {
       const scene = this.scene!;
