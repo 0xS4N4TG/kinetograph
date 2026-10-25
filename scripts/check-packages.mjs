@@ -5,7 +5,7 @@ import fs from 'node:fs';
 
 const dirs = process.argv.slice(2).length
   ? process.argv.slice(2)
-  : ['crates/node', 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio', 'packages/plugins/gsap', 'packages/plugins/p5-brush'];
+  : ['crates/node', 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio', 'packages/plugins/gsap', 'packages/plugins/p5-brush', 'packages/plugins/anime', 'packages/plugins/motion'];
 let bad = 0;
 for (const dir of dirs) {
   const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, 'utf8'));

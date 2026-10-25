@@ -14,6 +14,7 @@
     "packages/plugins/gsap",
     "packages/plugins/p5-brush",
     "packages/plugins/motion",
+    "packages/plugins/anime",
     "packages/studio/ui",
     "packages/studio"
   ],

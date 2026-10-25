@@ -65,7 +65,7 @@ jobs:
       # In dependency order. Never `npm run build --workspaces`.
       - name: Build the TypeScript packages and the studio UI
         run: |
-          for p in scene compat react core audio cli plugins/gsap plugins/p5-brush; do npm run build -w "packages/$p"; done
+          for p in scene compat react core audio cli plugins/gsap plugins/p5-brush plugins/anime plugins/motion; do npm run build -w "packages/$p"; done
           npm run build -w @kinetographdev/studio-ui
           npm run build -w @kinetographdev/studio
 
@@ -88,6 +88,6 @@ jobs:
           # scene; compat (scene); react (compat); core (compat, native, react); audio (native); cli (all of those);
           # studio (core, native, cli); plugins (core, react and the library they wrap are peers).
           for d in crates/node/npm/*; do publish "$d"; done
-          for d in crates/node packages/scene packages/compat packages/react packages/core packages/audio packages/cli packages/studio packages/plugins/gsap packages/plugins/p5-brush; do
+          for d in crates/node packages/scene packages/compat packages/react packages/core packages/audio packages/cli packages/studio packages/plugins/gsap packages/plugins/p5-brush packages/plugins/anime packages/plugins/motion; do
             publish "$d"
           done
