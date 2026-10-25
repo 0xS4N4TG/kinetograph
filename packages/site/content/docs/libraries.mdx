@@ -79,7 +79,7 @@ const y = useSpringAt({ to: 120, stiffness: 60, damping: 8, delay: 10 });
 
 `MotionFrame` uses Motion's own `MotionGlobalConfig.useManualTiming` and `processFrame` (Motion 14.6 and later; on an older Motion it does nothing and says so). Nothing in Motion is patched.
 
-Checked: springs, tweens and `animate()` match Chrome stills (mean difference under 0.03), and a frame alone equals the frame in sequence at concurrency 1 and 4. A `useSpring` that follows a value that changes depends on the frames visited before, so drive such a spring with `useSpringAt` or `useMotionTime`. Bklit UI's line chart runs inside `MotionFrame` unchanged (0.46 against Chrome); its bar and pie colours are the known gap in [Known issues](/docs/known-issues/#svg-paint).
+Checked: springs, tweens and `animate()` match Chrome stills (mean difference under 0.03), and a frame alone equals the frame in sequence at concurrency 1 and 4. A `useSpring` that follows a value that changes depends on the frames visited before, so drive such a spring with `useSpringAt` or `useMotionTime`. Bklit UI's line chart runs inside `MotionFrame` unchanged (0.46 against Chrome), and so do its bar and pie charts (under 0.1 once their entry animation has played).
 
 ## p5.brush
 
@@ -164,7 +164,7 @@ visx is d3 scales and React shapes, so it works the same way.
 
 ### Bklit UI
 
-Bklit UI's charts (visx, d3 and Motion) run as they are, with their Tailwind classes. Wrap them in `<MotionFrame>` if the project also has to render under Remotion. Layout, animation timing and text match Chrome; colours of some charts do not yet, see [Known issues](/docs/known-issues/#svg-paint).
+Bklit UI's charts (visx, d3 and Motion) run as they are, with their Tailwind classes. Wrap them in `<MotionFrame>` if the project also has to render under Remotion. Layout, animation timing, text and colours match Chrome: the line, bar, pie and geo charts are under 0.15 once their entry animation has played.
 
 ### Paper.js
 

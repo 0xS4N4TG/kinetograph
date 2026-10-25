@@ -123,7 +123,7 @@ Third-party libraries run unchanged on the engine's DOM, as long as the frame is
 - **Motion**: vanilla `animate()` with `controls.time = seconds` on a paused animation, and `motion.div` with style values (under 0.4). Colours come from Motion's own mixing, which differs a little from the browser's. See [Libraries that run their own frame loop](#libraries-that-run-their-own-frame-loop).
 - **Matter.js** and **Rapier** (`@dimforge/rapier2d-compat`, WASM embedded): step the world from the frame number (under 0.2). A `delayRender` opened while the module loads holds frame 0 like any other frame.
 - **`@remotion/motion-blur`, `layout-utils` and `captions`** (under 1.1).
-- **Bklit UI** (visx, d3 and Motion charts): layout, animation timing and text match Chrome. Colours do not yet: see [Known issues](/docs/known-issues/#svg-paint).
+- **Bklit UI** (visx, d3 and Motion charts): layout, animation timing, text and colours (`var()`, `oklch()`, `color-mix()` in SVG paint) match Chrome. Line, bar, pie and geo charts are under 0.15 once their entry animation has played.
 
 Also available to libraries: `NodeList` and `HTMLCollection` as real classes, `HTMLElement` and `SVGElement` that tell the two apart, `compareDocumentPosition`, `document.defaultView`, `customElements`, `setAttributeNS` and its siblings, lookups of nodes appended to `document.body`, and SVG text `getBBox` and `getComputedTextLength` from the text engine.
 
