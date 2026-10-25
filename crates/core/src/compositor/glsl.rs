@@ -145,6 +145,7 @@ impl Compositor {
         // `UNPACK_FLIP_Y_WEBGL` has its rows turned over, one with `UNPACK_PREMULTIPLY_ALPHA_WEBGL` has its
         // colour multiplied by its alpha.
         let mut inputs = HashMap::new();
+        let mut slots: HashMap<String, usize> = HashMap::new();
         let mut n = 0;
         for (id, tex) in layers {
             let mut ways: Vec<(bool, bool)> = Vec::new();
@@ -154,21 +155,37 @@ impl Compositor {
                     ways.push(way);
                 }
             }
+            // A WebGPU recording asks for a layer with `copyExternalImageToTexture`, and says how in the same two flags.
+            if let Some(webgpu) = &content.webgpu {
+                for step in &webgpu.passes {
+                    if let crate::webgpu::Step::Upload(upload) = step
+                        && matches!(&upload.source, crate::webgpu::Source::Layer(layer) if layer == id)
+                    {
+                        let way = (upload.flip_y, upload.premultiply);
+                        if !ways.contains(&way) {
+                            ways.push(way);
+                        }
+                    }
+                }
+            }
             for (flip, premultiply) in ways {
                 let through = if flip {
                     matrix * Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, f64::from(size.1)])
                 } else {
                     matrix
                 };
-                inputs.insert(
-                    input_key(id, flip, premultiply),
-                    self.glsl_input(n, tex, size, through, premultiply),
-                );
+                let key = input_key(id, flip, premultiply);
+                inputs.insert(key.clone(), self.glsl_input(n, tex, size, through, premultiply));
+                slots.insert(key, n);
                 n += 1;
             }
         }
         if let Some(webgpu) = &content.webgpu {
-            self.webgpu_draw(content, webgpu, size);
+            let textures = slots
+                .iter()
+                .filter_map(|(key, n)| Some((key.clone(), self.glsl.inputs.get(*n)?.as_ref()?._texture.clone())))
+                .collect();
+            self.webgpu_draw(content, webgpu, size, base_dir, &textures);
         } else {
             self.glsl_draw(content, size, base_dir, &inputs)?;
         }
