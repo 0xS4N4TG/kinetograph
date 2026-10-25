@@ -14,6 +14,7 @@ Publishing Kinetograph: npm packages, the native CI matrix (native.yml), publish
 
 ## Open threads
 - [ ] Changelog: #12-#16 done (in #16); add hf-svg-workarounds if it changes behaviour
+- [ ] Before 0.2.0: chase the documented rare `--concurrency 2` render difference (known-issues 'Can look different'); determinism bug if real
 - [ ] Clean benchmark AFTER all compat work is merged (user, 2026-10-25), before 0.2.0: idle machine, bench lock, Haiku runner; launch film + showcase + site renders.json set, Kinetograph vs Remotion 4.0.531, 2+ runs each; refresh renders.json + README/site speed claims (public claim ~5x, papercut ~6x)
 - [ ] Bump to 0.2.0 (incl. packages/plugins/* in publish.yml), push, native.yml green, publish.yml dry run, real publish (confirm 0.2.0 with user first)
 - [ ] npm trusted publishing + delete NPM_TOKEN; GitHub release notes from CHANGELOG
