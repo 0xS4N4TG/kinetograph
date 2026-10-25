@@ -5,6 +5,7 @@ import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetograp
 import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
+import { resolveEntry } from './hyperframes/entry.js';
 import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
 import { native } from './native.js';
@@ -97,7 +98,8 @@ export function parseProps(text: string | undefined): Record<string, unknown> {
 }
 
 function requireEntry(entry: string): string {
-  const absolute = resolve(entry);
+  // A directory is its index.html (a HyperFrames project).
+  const absolute = resolveEntry(entry);
   if (!existsSync(absolute)) throw new CliError('ENTRY_NOT_FOUND', `no such file: ${entry}`);
   return absolute;
 }

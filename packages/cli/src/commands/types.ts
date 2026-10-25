@@ -37,7 +37,7 @@ export interface Command {
 
 export const ENTRY: PositionalSpec = {
   name: 'entry',
-  description: 'A project file (.tsx, .ts, .jsx, .js) or a .json scene',
+  description: 'A project file (.tsx, .ts, .jsx, .js), a .json scene, or a HyperFrames project (its index.html, or the directory holding it)',
 };
 
 export const OUTPUT_OPTION: OptionSpec = { name: 'output', short: 'o', type: 'string', description: 'Output file path' };
