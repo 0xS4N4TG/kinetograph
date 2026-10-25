@@ -7,14 +7,18 @@
 // time 0, then Motion's loop is run to the frame's time in a layout effect. Motion's springs and keyframes are
 // closed-form in the elapsed time, so the state at frame N is the same alone and in sequence.
 //
-// What this does not make pure: an animation that depends on the history of its inputs. A `useSpring` that follows a
-// value that changes, or `animate` props that change from frame to frame, start from the velocity they had, so they
-// give a different frame alone than in sequence. Drive those from the frame with `useMotionTime` + `useTransform`,
-// or with `springAt` below.
+// Kinetograph's own engine already runs requestAnimationFrame on the virtual clock and catches it up over skipped
+// frames, so Motion's loop gives the same frame alone and in sequence there with or without this package (checked:
+// the output is identical). What this package adds is the same behaviour under Remotion's real-time Chrome, an
+// explicit time base, and `useAnimateAt`, which does not depend on a frame loop at all.
+//
+// An animation that depends on the history of its inputs (a `useSpring` that follows a changing value) is only as
+// pure as the frames the renderer has visited. Drive those from the frame with `useMotionTime` + `useTransform`, or
+// with `useSpringAt`.
 
-import { Fragment, createElement, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { Fragment, createElement, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
-import { MotionGlobalConfig, frameData, motionValue, processFrame, spring, time, type MotionValue } from 'motion';
+import { MotionGlobalConfig, frameData, motionValue, processFrame, spring, time, type AnimationPlaybackControls, type MotionValue } from 'motion';
 
 export interface MotionFrameProps {
   children?: ReactNode;
@@ -49,8 +53,9 @@ export function MotionFrame({ children }: MotionFrameProps) {
     time.set(0);
   }
 
-  // Runs after the children's layout effects (they start their animations there), and on every frame.
-  useLayoutEffect(() => {
+  // A passive effect, because Motion starts a component's animations in its passive effect and a parent's passive
+  // effect runs after its children's. Runs on every frame.
+  useEffect(() => {
     processFrame(0);
     if (ms > 0) processFrame(ms);
   }, [ms]);
@@ -106,4 +111,38 @@ export function useSpringAt({ from = 0, to, stiffness = 100, damping = 10, mass 
   const t = Math.max(0, ((frame - delay) * 1000) / fps);
   const generator = spring({ keyframes: [from, to], stiffness, damping, mass });
   return generator.next(t).value as number;
+}
+
+/**
+ * `animate()` seeked to the frame: `start` is called once after mount (and again when `deps` change) and returns the
+ * controls of what it started; they are paused and `controls.time` is set to `frame / fps` seconds every frame. No
+ * frame loop is involved, so the state at frame N does not depend on how Motion was clocked before it.
+ *
+ * ```tsx
+ * const ref = useRef<HTMLDivElement>(null);
+ * useAnimateAt(() => animate(ref.current!, { x: [0, 400], rotate: 360 }, { duration: 1.5, ease: 'easeInOut' }));
+ * ```
+ */
+export function useAnimateAt(start: () => AnimationPlaybackControls, deps: readonly unknown[] = []): void {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const controls = useRef<AnimationPlaybackControls | null>(null);
+  const seconds = useRef(0);
+  seconds.current = frame / fps;
+
+  useLayoutEffect(() => {
+    const c = start();
+    c.pause();
+    c.time = seconds.current;
+    controls.current = c;
+    return () => {
+      c.stop();
+      controls.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  useLayoutEffect(() => {
+    if (controls.current) controls.current.time = frame / fps;
+  }, [frame, fps]);
 }
