@@ -269,13 +269,13 @@ describe('what a page fetches and plays from the web', () => {
     });
   });
 
-  it('notes a local media file that is not there, and a page that needs WebGPU', async () => {
+  it('notes a local media file that is not there, and not a page that uses WebGPU (it is drawn)', async () => {
     const dir = project({
       'index.html': `<html><body><div data-composition-id="m" data-duration="1"><video src="gone.mp4" data-start="0"></video></div>
         <script>if (navigator.gpu) { start(); }</script></body></html>`,
     });
     const { plan } = await buildPlan(join(dir, 'index.html'));
     expect(plan.notes.join('\n')).toContain('gone.mp4');
-    expect(plan.notes.join('\n')).toContain('WebGPU');
+    expect(plan.notes.join('\n')).not.toContain('WebGPU');
   });
 });

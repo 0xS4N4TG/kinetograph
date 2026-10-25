@@ -173,9 +173,6 @@ class Builder {
       }
     }
     if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
-    if (/\bnavigator\s*\.\s*gpu\b|getContext\(\s*['"]webgpu['"]/.test(code)) {
-      this.note(`${file}: the page uses WebGPU, which the engine does not have: what it draws with it is not drawn`);
-    }
     this.scanDataUrls(code, src === null ? null : normalizeUrl(src));
     this.scripts.push({ code, file, scope: src === null ? ctx.scope : null, sourceFile: src === null && ctx.scope !== null ? ctx.file : null });
   }
