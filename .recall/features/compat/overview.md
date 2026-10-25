@@ -16,7 +16,8 @@ What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL librar
 
 ## Open threads
 - [ ] Merge chore/hf-svg-workarounds after verdicts no worse; record final 29-comp numbers
-- [ ] Merge feat/plugins (gsap, p5-brush, motion, anime + site Libraries page)
+- [x] Plugins merged (#16, f0f68c5c): gsap, p5-brush, anime, motion + /docs/libraries; Bklit colours confirmed fixed by #14 (line/bar/pie/geo <=0.14 at f59)
+- [ ] Engine bug: anime.js `width: [0, 100]` on inline `width: 0` element draws nothing (Chrome draws); repro scratchpad/plugins-verify/anime/src/c.tsx (zero-size DOM mutation path?)
 - [ ] Real HyperFrames projects test: waiting on user OK for external code
 - [ ] Round 3 smoke test (LAST proactive round): Theatre.js, React Spring, ECharts, Rive, Tone.js, shadcn/Radix, icon sets, SplitType/Splitting, react-countup. Then fix from doctor warnings/user reports only.
 - [ ] Round 2 gaps: KaTeX vlist/table layout (crates/dom, M); accept+hide <math> (S); MathJax ~9% ex-unit scale (S); glyph fallback for missing symbols (crates/skia/render/src/text.rs:184, M); Code Hike lighter grammar fetch at render; Shiki rerun with mono font; rerun Mermaid + Vega SVG after #12
