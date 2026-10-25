@@ -87,6 +87,20 @@ describe('a null listener', () => {
   });
 });
 
+describe('customElements', () => {
+  it('remembers definitions, answers get and whenDefined, and refuses a bad or repeated name', async () => {
+    class A {}
+    const waiting = g.customElements.whenDefined('x-late');
+    g.customElements.define('x-one', A);
+    g.customElements.define('x-late', A);
+    expect(g.customElements.get('x-one')).toBe(A);
+    expect(g.customElements.get('x-none')).toBeUndefined();
+    expect(await waiting).toBe(A);
+    expect(() => g.customElements.define('x-one', A)).toThrow(/already been used/);
+    expect(() => g.customElements.define('nodash', A)).toThrow(/not a valid custom element name/);
+  });
+});
+
 describe('defaultView', () => {
   it('is the window, from the document and from an element\'s ownerDocument', () => {
     const el = g.document.createElement('div');

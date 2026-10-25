@@ -819,7 +819,8 @@ Once installed:
   `2026-01-01T00:00:00Z` plus `frame / fps` seconds, `performance.now()` `frame / fps * 1000`.
 - `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval` and `requestAnimationFrame` run on the virtual clock:
   callbacks fire, in due order, when `setVirtualFrame` moves the clock past their time; `requestAnimationFrame`
-  callbacks run once per frame with the virtual `performance.now()`. The shim keeps the real functions for itself.
+  callbacks run once per frame with the virtual `performance.now()`, after the frame has rendered (so a library that
+  draws in one, such as Motion's render step, shows that frame). The shim keeps the real functions for itself.
 - `crypto.getRandomValues()` and `crypto.randomUUID()` draw from the same seeded generator.
 - Nothing else is patched (`setImmediate`, promises and I/O are real).
 

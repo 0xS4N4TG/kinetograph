@@ -328,6 +328,28 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
 
 // ---- installing ----
 
+/** `customElements`: a registry that remembers definitions. Elements are not upgraded: a custom element is a plain element here. */
+class CustomElementRegistryShim {
+  private readonly defined = new Map<string, unknown>();
+  private readonly waiting = new Map<string, ((ctor: unknown) => void)[]>();
+  define(name: string, constructor: unknown): void {
+    if (!/^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(name)) throw Object.assign(new Error(`Failed to execute 'define' on 'CustomElementRegistry': "${name}" is not a valid custom element name`), { name: 'SyntaxError' });
+    if (this.defined.has(name)) throw Object.assign(new Error(`Failed to execute 'define' on 'CustomElementRegistry': the name "${name}" has already been used with this registry`), { name: 'NotSupportedError' });
+    this.defined.set(name, constructor);
+    for (const resolve of this.waiting.get(name) ?? []) resolve(constructor);
+    this.waiting.delete(name);
+  }
+  get(name: string): unknown {
+    return this.defined.get(name);
+  }
+  whenDefined(name: string): Promise<unknown> {
+    if (this.defined.has(name)) return Promise.resolve(this.defined.get(name));
+    return new Promise((resolve) => this.waiting.set(name, [...(this.waiting.get(name) ?? []), resolve]));
+  }
+  upgrade(): void {}
+}
+
+
 /** `el instanceof HTMLElement` is true for an HTML element only, `SVGElement` for an SVG one (anime.js picks attribute or style by it). */
 class HTMLElementShim extends DomElement {
   static [Symbol.hasInstance](value: unknown): boolean {
@@ -429,6 +451,7 @@ export function installDomGlobals(): void {
   define(g, 'NodeList', NodeList);
   define(g, 'HTMLCollection', HTMLCollection);
   define(g, 'DOMRect', class DOMRectGlobal { constructor(readonly x = 0, readonly y = 0, readonly width = 0, readonly height = 0) {} });
+  define(g, 'customElements', new CustomElementRegistryShim());
   define(g, 'ResizeObserver', ResizeObserverShim);
   define(g, 'IntersectionObserver', IntersectionObserverShim);
   define(g, 'MutationObserver', MutationObserverShim);
