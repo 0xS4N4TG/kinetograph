@@ -16,6 +16,7 @@ import {
   type CanvasCommand,
   type CanvasContextOptions,
   type CanvasPicture,
+  type DeviceInfo,
 } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
@@ -91,6 +92,26 @@ export type GlRecorder = WebGLContext | GPUCanvasContextShim;
 const glContexts = new WeakMap<object, GlRecorder>();
 /** Every context made, for `resetCanvasStates` (weakly: a canvas that is gone takes its context with it). */
 const live = new Set<WeakRef<CanvasContext2D | GlRecorder>>();
+
+let deviceInfo: DeviceInfo | null | undefined;
+
+/**
+ * The limits and features of the engine's own GPU device, which a page's `navigator.gpu` reports (`webgpuDeviceInfo` of
+ * the addon, asked once); null when the addon cannot say, and the recorder then reports the WebGPU defaults.
+ */
+export function webgpuDeviceInfo(): DeviceInfo | null {
+  if (deviceInfo !== undefined) return deviceInfo;
+  deviceInfo = null;
+  try {
+    if (hasAddonFunction('webgpuDeviceInfo')) {
+      const json = addonFunction('webgpuDeviceInfo')();
+      if (json !== null) deviceInfo = JSON.parse(json) as DeviceInfo;
+    }
+  } catch {
+    deviceInfo = null;
+  }
+  return deviceInfo;
+}
 
 /** The pixels of a canvas texture: the commands drawn on a transparent canvas, straight alpha. */
 export function rasterizeCanvas(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null {

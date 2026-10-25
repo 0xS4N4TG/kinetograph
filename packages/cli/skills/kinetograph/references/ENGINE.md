@@ -669,8 +669,8 @@ empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `r
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
 A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
-records the device (buffers, WGSL modules, bind group layouts, render pipelines, bind groups, command encoders with render
-passes into `getCurrentTexture()` or into a 2D texture, textures, views and samplers, `queue.writeBuffer`, `writeTexture`,
+records the device (buffers, WGSL modules, bind group layouts, render and compute pipelines, bind groups, command encoders with render
+and compute passes into `getCurrentTexture()` or into a 2D texture, textures, views and samplers, `queue.writeBuffer`, `writeTexture`,
 `copyExternalImageToTexture`, `submit`) and the canvas context writes the `webgpu` part of the
 `glsl` layer (`WebGpuContent`, `data-kg-webgl`). A buffer's bytes are shadowed on the JS side and snapshotted when a command
 buffer that draws from it is submitted, ids come from content, and the first submit after `resetState()` starts the drawing
@@ -691,9 +691,34 @@ ordered with the passes), decodes pictures (kept by file) and video frames (`Vid
 (kept by id), builds the buffers from the recording and replays the passes in a command buffer of its own, inside a
 validation error scope, into the Rgba8 drawing buffer that `glsl_blit.wgsl` places (a bgra8 canvas is the same colours; the
 buffer is flushed first because earlier glsl layers' place passes read it). The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (compute, storage
-textures, queries, bundles, depth, multisampling, readback, `rgba16float` canvas range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
-A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic. HyperFrames' runtime
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, multisampling, readback, `rgba16float` canvas range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
+
+WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
+layout ids); a compute pass is a `compute` step (`pipeline`, `bind`, `dispatch` commands) in the same log as the render
+passes, uploads and copies, so a frame replays them in the order the page submitted them, in one command buffer
+(`webgpu_compute` in `compositor/glsl/webgpu.rs`). A buffer is a shadow of its bytes until a pass writes it (a `storage`
+binding in the page's layout, or `var<storage, read_write>` / `texture_storage_2d<_, write | read_write>` in the WGSL of a
+`layout: 'auto'` pipeline: `writtenBindings`), then `device.promote` makes it a buffer the GPU writes: its first bytes become a
+`writeBuffer` step and from then on `writeBuffer`, `copyBufferToBuffer` and `clearBuffer` are steps too (`gpuBuffers`, ids
+`B<n>`), zeroed at replay like a texture. Each log step names what it reads and what it writes (a level or a buffer, whole or
+part). A step that writes all of a level or buffer drops the earlier steps it covers when nothing read them in between;
+the recording of a frame (`liveStepsFor`) is then walked back from the canvas's passes and keeps only the steps that write
+something it reads. A compute pass writes an unknown part of what it binds, so it never covers; a part-write reads what it
+leaves, so a page that wants its frame to be the same alone clears (a render pass `clear`, a whole write) what its kernels
+write at the start of the frame. A step that an earlier frame (not the first, which is the page's setup) made and that this
+frame's picture still depends on is reported in `WebGpuContent.impure`, once for each frame that reads it, as WebGPU state a
+page carries from frame to frame; the frame is then drawn from the replayed history in a sequence, and differs alone.
+`webgpu::validate_with` bounds-checks every buffer step, bind group entry (usage by layout, size, offset alignment,
+format against the layout's `sampleType` or storage format, one level for a storage texture), layout (storage formats and
+access, stages, counts against the limits) and dispatch (each dimension; at most 4096 dispatches and 2^26 workgroups in a
+frame), and `check_with` reads the workgroup size of each compute entry point with naga; the page side throws for the same.
+`device.limits` and `adapter.limits` are `webgpu::device_info` of the engine's device (the `webgpuDeviceInfo` function of
+the addon opens the GPU once), `float32-filterable` is requested of the adapter so that 32-bit float textures can be
+filtered where the hardware does, and a `requestDevice` for better limits is refused. A texture is made with
+`STORAGE_BINDING` only when the recording has a compute pipeline, a storage texture layout or a `texture_storage_` module,
+and only the usages its format allows. Atomics whose result depends on the order invocations run in are not made
+deterministic by the engine. HyperFrames' runtime
 (`core/src/hyperframes/runtime.tsx`) dispatches `hf-seek {time, waitUntil}` each frame and holds the frame on a
 `delayRender` until the page's promise settles; that is how the `shaders.iife.js` blocks (shaders.com on TypeGPU, which draw
 one full-screen triangle with a uniform buffer) are driven from the frame number. Measured against HyperFrames' own stills,

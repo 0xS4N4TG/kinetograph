@@ -494,3 +494,9 @@ export interface VideoOptions {
   encoder?: string
   export?: ExportOptions
 }
+
+/**
+ * The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
+ * (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
+ */
+export declare function webgpuDeviceInfo(): string | null

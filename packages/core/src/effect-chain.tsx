@@ -23,7 +23,7 @@
 // so the render that follows draws what it recorded. A rejection is reported for the frame and the stage is drawn without.
 
 import { useContext, useId, useReducer, useRef, type CSSProperties, type ReactNode } from 'react';
-import { canvasEnvironment, rasterizeCanvas } from '@kinetographdev/compat/shim';
+import { canvasEnvironment, rasterizeCanvas, webgpuDeviceInfo } from '@kinetographdev/compat/shim';
 import { Layer, TimelineContext } from '@kinetographdev/react';
 import {
   createCanvasContext,
@@ -71,7 +71,7 @@ export class RecordingCanvas {
 
   /** The recording device of a WebGPU effect (`gpuDevice` of `apply`): one for the canvas, made on first use. */
   gpuDevice(): GPUDeviceShim {
-    return (this.device ??= new GPUDeviceShim({ rasterize: rasterizeCanvas }));
+    return (this.device ??= new GPUDeviceShim({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }));
   }
 
   getContext(type: string, attributes?: Record<string, unknown>): CanvasContext2D | WebGLContext | GPUCanvasContextShim | null {

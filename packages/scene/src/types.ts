@@ -833,8 +833,12 @@ export interface WebGpuBindingLayout {
   binding: number;
   /** `GPUShaderStage` bits. */
   visibility: number;
-  type: 'uniform' | 'storage' | 'read-only-storage' | 'texture' | 'sampler';
+  type: 'uniform' | 'storage' | 'read-only-storage' | 'texture' | 'storage-texture' | 'sampler';
   dynamicOffset?: boolean;
+  /** Of a `storage-texture`: `write-only` when left out. */
+  access?: 'read-only' | 'read-write';
+  /** Of a `storage-texture`: the format the shader declares. */
+  format?: string;
   /** Of a `texture`: `float` when left out. */
   sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint';
   /** Of a `sampler`: `filtering` when left out. */
@@ -879,6 +883,13 @@ export interface WebGpuSampler {
   maxAnisotropy?: number;
 }
 
+/** A compute pipeline: `layout` is the ids of the bind group layouts, left out for `layout: 'auto'`. */
+export interface WebGpuComputePipeline {
+  layout?: string[];
+  module: string;
+  entryPoint?: string;
+}
+
 export type WebGpuCommand =
   | { c: 'pipeline'; id: string }
   | { c: 'bind'; index: number; group: string; offsets?: number[] }
@@ -897,6 +908,43 @@ export interface WebGpuPass {
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
   commands: WebGpuCommand[];
+}
+
+export type WebGpuComputeCommand =
+  | { c: 'pipeline'; id: string }
+  | { c: 'bind'; index: number; group: string; offsets?: number[] }
+  | { c: 'dispatch'; x: number; y: number; z: number };
+
+/** A compute pass: it writes the storage textures and storage buffers its bind groups hold. */
+export interface WebGpuCompute {
+  k: 'compute';
+  commands: WebGpuComputeCommand[];
+}
+
+/** `queue.writeBuffer` into a buffer the GPU writes (a key of `WebGpuContent.gpuBuffers`): `data` is a key of `blobs`. */
+export interface WebGpuBufferWrite {
+  k: 'writeBuffer';
+  buffer: string;
+  offset: number;
+  data: string;
+}
+
+/** `copyBufferToBuffer` between two buffers the GPU writes. */
+export interface WebGpuBufferCopy {
+  k: 'copyBuffer';
+  from: string;
+  fromOffset: number;
+  to: string;
+  toOffset: number;
+  size: number;
+}
+
+/** `clearBuffer` of a buffer the GPU writes. */
+export interface WebGpuBufferClear {
+  k: 'clearBuffer';
+  buffer: string;
+  offset: number;
+  size: number;
 }
 
 /** Where the pixels of an upload come from. A picture is decoded by the renderer, so a recording holds its path. */
@@ -936,7 +984,7 @@ export interface WebGpuCopy {
 }
 
 /** What a queue did to the drawing or to a texture, in the order it did it. */
-export type WebGpuStep = WebGpuPass | WebGpuUpload | WebGpuCopy;
+export type WebGpuStep = WebGpuPass | WebGpuUpload | WebGpuCopy | WebGpuCompute | WebGpuBufferWrite | WebGpuBufferCopy | WebGpuBufferClear;
 
 /**
  * What a WebGPU context drew in a frame: the steps in order, with everything they use by id. A buffer is the bytes it
@@ -948,18 +996,23 @@ export interface WebGpuContent {
   modules: Record<string, string>;
   layouts: Record<string, WebGpuBindingLayout[]>;
   pipelines: Record<string, WebGpuPipeline>;
-  /** Base64 bytes. */
+  /** Base64 bytes: a buffer as it was when a pass that only reads it was submitted. */
   buffers: Record<string, string>;
+  /** Buffers a compute pass writes, by id (`B<n>`): zeroed, and the steps that wrote them make their contents. */
+  gpuBuffers?: Record<string, { size: number }>;
+  computePipelines?: Record<string, WebGpuComputePipeline>;
   bindGroups: Record<string, WebGpuBindGroup>;
   /** The textures the steps and the bind groups use, by id. */
   textures?: Record<string, WebGpuTexture>;
   samplers?: Record<string, WebGpuSampler>;
   /** Base64 bytes written into textures, by id. */
   blobs?: Record<string, string>;
-  /** Render passes (into the canvas, or into a texture), uploads and copies, in the order the page submitted them. */
+  /** Render and compute passes, uploads and copies, in the order the page submitted them. */
   passes: WebGpuStep[];
   /** Calls the engine does not draw; the frame reports each. */
   notes?: string[];
+  /** What the frame reads that earlier frames made (state a page carries), so that the frame is not the same alone as in a sequence. */
+  impure?: string[];
 }
 
 export interface GlslLayer extends LayerBase, Partial<GlslContent> {
