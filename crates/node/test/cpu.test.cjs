@@ -265,6 +265,16 @@ test('decodeAudio resamples and keeps mono or stereo', () => {
   assert.ok(peak(surround.channels[0]) > 0.05);
 });
 
+test('decodeAudio reads an MP4 whose moov atom is at the end as well as one with faststart', () => {
+  const at = (name) => native.decodeAudio(`${media}/${name}`, 48000, repo);
+  const end = at('tone-moov-end.mp4');
+  const front = at('tone-faststart.mp4');
+  assert.equal(end.channels.length, 1);
+  assert.ok(Math.abs(end.channels[0].length - 48000) <= 2048, end.channels[0].length);
+  assert.ok(peak(end.channels[0]) > 0.03);
+  assert.deepEqual(end.channels[0], front.channels[0]);
+});
+
 test('decodeAudio returns null without an audio stream, and errors', () => {
   assert.equal(native.decodeAudio(`${media}/clip.mp4`, 48000, repo), null);
   rejects(() => native.decodeAudio(`${media}/nope.wav`, 48000, repo), 'IO', /nope\.wav/);

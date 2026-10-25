@@ -981,7 +981,7 @@ export function analyzeAudio(pcm: AudioPcm, options?: { scenes?: [number, number
 ```
 
 `renderAudio` builds one `OfflineAudioContext` for the range (time 0 = frame `first`), calls each `onFrame` callback in
-the range with `time = (frame - first) / fps`, plays each clip (decoded with `decodeAudioData`) with its trim, rate,
+the range with `time = (frame - first) / fps`, plays each clip (decoded with `decodeAudioData`, or by FFmpeg when that refuses the file, as it does an MP4 whose `moov` atom is at the end) with its trim, rate,
 loop and a gain stepped per frame, and returns the mix. Loudness follows ITU-R BS.1770-4 (K-weighting, gating) and
 true peak uses 4x oversampling.
 

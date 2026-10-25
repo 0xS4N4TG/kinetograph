@@ -13,6 +13,7 @@
 //! itself, so the scene's `filterGraph` gets the attributes as authored.
 
 mod assets;
+mod color;
 mod css;
 mod emit;
 mod filter;

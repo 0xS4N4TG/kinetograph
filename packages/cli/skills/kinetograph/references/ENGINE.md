@@ -454,6 +454,23 @@ What is drawn (stream 3, as built):
   (`transform-box: view-box` only), and `filter="url(#id)"` on any element, including a `<filter>` defined in another
   `<svg>` of the page. The group returned is `passThrough` (no clip, no isolation) unless something reaches outside
   the box, so a `mix-blend-mode` inside blends with what is behind the `<svg>`.
+- **The page's cascade reaches the SVG** (`serialize.rs`, `cascaded`): Stylo styles the elements inside an `<svg>` like
+  any others, so a rule that crosses from the HTML into it (`[data-composition-id="x"] .bar { fill: #5c5c5c }`,
+  `.chart circle { stroke: red }`, `div > svg rect[data-k]`) applies, and a class a script toggles between frames
+  restyles the shapes on the next frame. (`text-anchor`, `shape-rendering`, `paint-order`, `clip-rule` and
+  `dominant-baseline` are computed because `vendor/stylo` enables them in its Servo build.) Stylo does not read SVG presentation attributes, so a computed value that
+  differs from the parent's (from the initial one, for `opacity` and `display`) is the cascade's and is written on the
+  element as style, where it beats the attribute; one that equals the parent's is inheritance, which usvg does too, and
+  an attribute stands. Properties: `fill`, `stroke` and their `-width`, `-opacity`, `-linecap`, `-linejoin`,
+  `-miterlimit`, `-dasharray`, `-dashoffset`, `fill-opacity`, `fill-rule`, `font-family|size|weight|style`,
+  `letter-spacing`, `word-spacing`, `text-rendering`, `text-anchor`, `shape-rendering`, `paint-order`, `clip-rule`,
+  `dominant-baseline`, `visibility`, `opacity`, `display: none`, `mix-blend-mode`. The
+  root takes what the HTML around it passes down (`fill`, the font). Families go through `font-family` as Stylo
+  prints them (double quotes and all, escaped as XML); `@font-face` and Google families the page loaded are in the
+  request's fonts, so text in the `<svg>` finds them. A `fill`, `stroke`, `stop-color`, `flood-color` or
+  `lighting-color` usvg cannot read (`var(--x)`, `oklch()`, `oklab()`, `color-mix()`, `rgb(r g b / a)`, `rebeccapurple`)
+  goes through Stylo's colour parser, as an HTML colour does, and is written as a plain `rgb` (`svg/color.rs`); one
+  that cannot be resolved is an `Unsupported` item. Tests: `crates/dom/tests/svg_cascade.rs`.
 - **Filters** (`filterGraph`, `filter_graph`): all 17 primitives but `feImage`, which becomes a transparent flood and an
   `Unsupported` item. CSS filter functions on an element inside an `<svg>` are `Unsupported` (the box painter does
   them for HTML boxes).

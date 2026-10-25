@@ -75,6 +75,11 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 - `background-repeat: space` with thousands of gradient tiles still errors. The other repeats are drawn as one tile repeated by `feTile`.
 - Backdrop blur and glow are capped at 128 px. The `blur` effect takes up to 512.
 
+### SVG
+
+- A page rule reaches the shapes in an `<svg>` for fill, stroke, opacity, display, visibility, the font, `text-anchor`, `paint-order`, `shape-rendering` and `clip-rule`, but not for `transform`, `clip-path`, `mask` or `filter` on an element inside it: set those as attributes or inline style.
+- A rule that sets a property to its initial value on a shape with a presentation attribute for it (`.bar { fill: black }` over `fill="red"`) does not win: the value looks like inheritance.
+
 ### GSAP
 
 - A tween that plays by itself, without a `seek` on a paused timeline, does not advance. The render's clock is virtual and GSAP's ticker does not run between frames.
