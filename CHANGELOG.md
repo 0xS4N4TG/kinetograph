@@ -34,6 +34,8 @@ Everything here is on `main` and not yet published to npm.
 - SVG `fill`, `stroke` and `stop-color` of `var()`, `oklch()`, `oklab()`, `color-mix()` or `rgb(r g b / a)` were drawn black; they now draw in their colour, and a colour that cannot be read is reported. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
 - An MP4 whose moov atom is at the end decodes its audio. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
 - `document.getElementById` and `querySelector` find nodes appended to `<body>` outside the React root, and SVG `<text>` measures its real size in `getBBox` and `getComputedTextLength`. ([#12](https://github.com/0xS4N4TG/kinetograph/pull/12))
+- `transform-style: preserve-3d` on an element with `opacity`, a `filter`, `clip-path`, `mask`, `mix-blend-mode`, `isolation: isolate`, `contain: paint`, `backdrop-filter` or `overflow: hidden` failed the render with "a preserve3d group cannot have effects". Such an element is now flattened, as CSS Transforms 2 and Chrome do, and drawn as a flat group with its effect.
+- `kinetograph doctor` runs the scene validation a render runs on every frame, and lists a scene the render would refuse (with its frames, exit code 1). It used to report only what is unsupported, so a project that cannot render looked fine.
 
 ### Changed in behaviour
 
