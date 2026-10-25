@@ -1,0 +1,43 @@
+---
+title: Datamosh
+description: Smear one shot into the next, using the video's own motion.
+---
+
+A datamosh is what you see when a video loses its keyframe. The old picture stays on screen, and the next shot's movement pushes it around. Pixels smear and melt along the motion.
+
+Kinetograph does this as a built-in effect. You add one prop to `<Video>`. Nothing is baked into a clip, and every frame comes out the same on every render.
+
+```tsx
+import { Sequence, staticFile } from 'remotion';
+import { Video } from '@kinetographdev/core';
+
+<Sequence from={30}>
+  <Video
+    src={staticFile('pig.mp4')}
+    width={1920}
+    height={1080}
+    fit="cover"
+    datamosh={{ from: 0, to: 45, hold: { src: staticFile('clouds.mp4'), frame: 90 }, mix: 0.2 }}
+  />
+</Sequence>
+```
+
+Here the pig clip's motion drags the pixels of frame 90 of the clouds clip for 45 frames. After that the pig plays as it is.
+
+## Options
+
+| Option | What it does |
+|---|---|
+| `from`, `to` | The window, in frames of the Sequence the video is in. The window is `from` up to, but not including, `to`. At most 600 frames. |
+| `hold` | The picture that gets pushed around. `'previous'` (the default) is the clip's own frame just before `from`. `{ src, frame }` is a frame of another file. |
+| `mix` | From 0 to 1, default 0. At 0 the old picture only melts. Higher values let the new shot's detail show through on top of the old colours. |
+
+## How it works
+
+Video files store how each block of the picture moved since the last frame. These are motion vectors. Kinetograph reads them from the decoder and uses them to move the held picture, one frame at a time. With `mix` above 0 it also adds back the part of the new frame that motion alone can't explain, as a real decoder would.
+
+## Limits
+
+- It needs a codec that stores motion vectors: H.264 or MPEG-4. A clip in another codec is drawn without the effect, and you get a warning. With `--strict` the render stops.
+- A `<Video>` with CSS style or a `className` can't take `datamosh`. Use `width`, `height` and `fit`.
+- A frame is built from the start of the window. Rendering in order costs one step per frame, about 15 ms at 1080p. Jumping into the middle of a window costs one step for every frame since `from`. That is why a window is capped at 600 frames.

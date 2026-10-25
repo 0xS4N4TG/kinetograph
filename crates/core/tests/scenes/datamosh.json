@@ -1,0 +1,18 @@
+{
+  "width": 300,
+  "height": 120,
+  "fps": 24,
+  "durationInFrames": 24,
+  "background": "#14161d",
+  "layers": [
+    { "id": "mosh-previous", "type": "video", "src": "media/mosh-h264.mp4", "width": 96,
+      "datamosh": { "from": 6, "to": 20, "mix": 0.5 },
+      "transform": { "x": 2, "y": 10 } },
+    { "id": "mosh-other", "type": "video", "src": "media/mosh-h264.mp4", "width": 96,
+      "datamosh": { "from": 6, "to": 20, "hold": { "src": "media/mosh-mpeg4.mp4", "frame": 12 } },
+      "transform": { "x": 102, "y": 10 } },
+    { "id": "mosh-mpeg4", "type": "video", "src": "media/mosh-mpeg4.mp4", "width": 96,
+      "datamosh": { "from": 3, "to": 24, "mix": 1 },
+      "transform": { "x": 202, "y": 10 } }
+  ]
+}

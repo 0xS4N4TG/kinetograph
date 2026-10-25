@@ -129,3 +129,51 @@ fn a_video_and_a_gif_scene_share_one_renderer() {
         same(&got, &fresh(scene, frame), &format!("frame {frame}"));
     }
 }
+
+/// Frames around the datamosh windows of datamosh.json (6..20 and 3..24).
+const MOSH_FRAMES: [u32; 9] = [0, 2, 3, 6, 7, 12, 19, 20, 23];
+
+/// The datamosh scene with its windows left out: the clips as they play.
+fn without_datamosh() -> Scene {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/datamosh.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let plain = text.replace("\"datamosh\"", "\"unused\"");
+    Scene::from_json(&plain, path.parent().unwrap().to_path_buf()).unwrap()
+}
+
+#[test]
+fn a_datamosh_frame_is_the_same_whatever_was_rendered_before() {
+    let scene = load("tests/scenes/datamosh.json");
+    let reference: Vec<Frame> = MOSH_FRAMES.iter().map(|&f| fresh(&scene, f)).collect();
+    // Every frame of the window differs from the next.
+    assert!(reference[3].rgba != reference[4].rgba);
+    for cache in [false, true] {
+        let mut renderer = Renderer::new(scene.clone()).unwrap();
+        renderer.set_layer_cache(cache);
+        // In order (the state continues), backwards (it starts again), and jumping about; with a new
+        // scene each time, as the authoring layer hands them over.
+        let order: Vec<usize> = (0..MOSH_FRAMES.len())
+            .chain((0..MOSH_FRAMES.len()).rev())
+            .chain([5, 8, 3, 7, 4, 6, 0, 2, 1, 5, 6, 7])
+            .collect();
+        for (step, &i) in order.iter().enumerate() {
+            renderer.set_scene(scene.clone()).unwrap();
+            let got = renderer.render_frame(MOSH_FRAMES[i]).unwrap();
+            same(&got, &reference[i], &format!("step {step}, frame {}, cache {cache}", MOSH_FRAMES[i]));
+        }
+    }
+}
+
+#[test]
+fn a_datamosh_window_changes_only_its_own_frames() {
+    let mosh = load("tests/scenes/datamosh.json");
+    let plain = without_datamosh();
+    // Before every window and after the shorter ones the clips play as they would.
+    for frame in [0, 2] {
+        same(&fresh(&mosh, frame), &fresh(&plain, frame), &format!("before, frame {frame}"));
+    }
+    // Inside, the picture is not the clip's.
+    for frame in [7, 12, 19] {
+        assert!(fresh(&mosh, frame).rgba != fresh(&plain, frame).rgba, "frame {frame}");
+    }
+}

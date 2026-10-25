@@ -8,6 +8,9 @@
 #   offset.webm     48x28, 25 fps, 1.2 s, VP9, first picture at 0.48 s (not 0).
 #   with-audio.mp4  64x36, 24 fps, 1 s of H.264 and a 440 Hz stereo AAC track.
 #   tone-mono.wav   8 kHz mono 16-bit, 0.25 s of a 440 Hz sine.
+#   mosh-h264.mp4,
+#   mosh-mpeg4.mp4  96x54, 24 fps, 1 s, testsrc2 (it moves), one keyframe, no B-frames: the
+#                   motion vectors the datamosh tests read, from H.264 and MPEG-4 part 2.
 #   surround.wav    8 kHz six-channel 16-bit, 0.1 s (the front left carries a
 #                   440 Hz sine, the other five are silent).
 #   spinner.gif     32x24, five pictures with delays 0, 10, 40, 200 and 60 ms
@@ -41,5 +44,14 @@ ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "sine=frequency=440:sample_rate=8000:duration=0.1" \
   -af "pan=5.1|FL=c0|FR=0*c0|FC=0*c0|LFE=0*c0|BL=0*c0|BR=0*c0" \
   -c:a pcm_s16le surround.wav
+
+ffmpeg -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=size=96x54:rate=24:duration=1" \
+  -c:v libx264 -preset veryslow -crf 28 -pix_fmt yuv420p -g 24 -bf 0 \
+  -x264-params "open-gop=0:threads=1" -movflags +faststart -an mosh-h264.mp4
+
+ffmpeg -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=size=96x54:rate=24:duration=1" \
+  -c:v mpeg4 -q:v 6 -g 24 -bf 0 -pix_fmt yuv420p -an mosh-mpeg4.mp4
 
 python3 make_gif.py spinner.gif
