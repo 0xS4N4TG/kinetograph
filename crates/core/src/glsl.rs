@@ -131,6 +131,30 @@ pub enum GlslOp {
         target: Option<String>,
     },
     Draw(Box<GlslDraw>),
+    /// `blitFramebuffer`: a rectangle of one buffer copied over a rectangle of
+    /// another.
+    Blit(Box<GlslBlit>),
+}
+
+/// `blitFramebuffer(from..., to..., COLOR_BUFFER_BIT, filter)` between the
+/// drawing buffer and the target textures.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslBlit {
+    /// The target texture read; the drawing buffer without one.
+    pub src: Option<String>,
+    /// The target texture written; the drawing buffer without one.
+    pub target: Option<String>,
+    /// `x0, y0, x1, y1` of the source, y up from the bottom row. A reversed
+    /// pair of corners mirrors.
+    pub from: [i32; 4],
+    /// The same for the destination.
+    pub to: [i32; 4],
+    /// `LINEAR` rather than `NEAREST`.
+    #[serde(default)]
+    pub linear: bool,
+    /// `x, y, width, height` of the scissor test, if it was on.
+    pub scissor: Option<[i32; 4]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]

@@ -742,7 +742,22 @@ export interface GlslDraw {
   target?: string;
 }
 
-export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw);
+/** `blitFramebuffer` (COLOR_BUFFER_BIT): a rectangle of one buffer over a rectangle of another. */
+export interface GlslBlit {
+  /** The target texture read; the drawing buffer without one. */
+  src?: string;
+  /** The target texture written; the drawing buffer without one. */
+  target?: string;
+  /** `x0, y0, x1, y1` of the source, y up from the bottom row; reversed corners mirror. */
+  from: [number, number, number, number];
+  to: [number, number, number, number];
+  /** `LINEAR` rather than `NEAREST`. */
+  linear?: boolean;
+  /** `x, y, width, height` when the scissor test was on. */
+  scissor?: [number, number, number, number];
+}
+
+export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw) | ({ op: 'blit' } & GlslBlit);
 
 /** What a WebGL context did: the programs, data and calls of a `glsl` layer. */
 export interface GlslContent {

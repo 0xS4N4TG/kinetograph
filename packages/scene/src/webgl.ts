@@ -850,8 +850,39 @@ export class WebGLContext {
     throw new WebGLUnsupportedError('readPixels; the picture is drawn by the renderer, and the context cannot be read back');
   }
 
-  blitFramebuffer(): never {
-    throw new WebGLUnsupportedError('blitFramebuffer; a framebuffer cannot be copied or resolved');
+  /**
+   * Copies a rectangle of the read framebuffer over one of the draw framebuffer (the canvas, or a texture drawn in):
+   * the colour only, as depth and stencil buffers do not exist here.
+   */
+  blitFramebuffer(sx0: number, sy0: number, sx1: number, sy1: number, dx0: number, dy0: number, dx1: number, dy1: number, mask: number, filter: number): void {
+    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
+    if (mask & ~(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT)) return this.fail(GL.INVALID_VALUE);
+    if (filter !== GL.NEAREST && filter !== GL.LINEAR) return this.fail(GL.INVALID_ENUM);
+    const read = this.readFramebuffer;
+    const draw = this.drawFramebuffer;
+    if (read !== null && this.statusOf(read) !== GL.FRAMEBUFFER_COMPLETE) return this.fail(GL.INVALID_FRAMEBUFFER_OPERATION);
+    if (this.framebufferIncomplete()) return;
+    if (!(mask & GL.COLOR_BUFFER_BIT)) return;
+    const rects = [sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1].map(Number);
+    if (rects.some((v) => !Number.isFinite(v))) return this.fail(GL.INVALID_VALUE);
+    if ((read?.color ?? null) === (draw?.color ?? null)) return this.fail(GL.INVALID_OPERATION);
+    const source = read?.color ?? null;
+    if (source !== null && !source.blank && source.drawnAt !== source.version) {
+      throw new WebGLUnsupportedError('blitFramebuffer from a texture that holds uploaded pixels; draw into it, or sample it');
+    }
+    this.begin();
+    const src = source === null ? undefined : this.registerTarget(source);
+    const target = this.targetId();
+    const [fx0, fy0, fx1, fy1, tx0, ty0, tx1, ty1] = rects.map(Math.trunc);
+    this.ops.push({
+      op: 'blit',
+      ...(src === undefined ? {} : { src }),
+      ...(target === undefined ? {} : { target }),
+      from: [fx0!, fy0!, fx1!, fy1!],
+      to: [tx0!, ty0!, tx1!, ty1!],
+      ...(filter === GL.LINEAR ? { linear: true } : {}),
+      ...(this.caps.scissor ? { scissor: this.scissorBox ?? this.viewportNow() } : {}),
+    });
   }
 
   // ---- state ----
@@ -952,7 +983,9 @@ export class WebGLContext {
       return;
     }
     // Everything drawn to the canvas before it is gone with it; what went to textures stays, as later draws may read it.
-    this.ops = [...this.ops.filter((op) => op.target !== undefined), { op: 'clear', color: [...this.clearColorValue] }];
+    // (A blit that reads the canvas keeps them: the replay drops what no blit reads.)
+    const read = this.ops.some((op) => op.op === 'blit' && op.src === undefined);
+    this.ops = [...(read ? this.ops : this.ops.filter((op) => op.target !== undefined)), { op: 'clear', color: [...this.clearColorValue] }];
   }
 
   // ---- shaders and programs ----

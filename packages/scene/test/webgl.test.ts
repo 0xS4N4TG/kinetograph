@@ -87,6 +87,32 @@ describe('the recording WebGL context', () => {
     expect(() => gl.drawArrays(GL.LINES, 0, 2)).toThrow(/lines/);
   });
 
+  it('records blitFramebuffer between the canvas and a texture drawn in, keeping the canvas ops a blit reads', () => {
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    const texture = gl.createTexture();
+    gl.bindTexture(GL.TEXTURE_2D, texture);
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 8, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+    gl.clear(GL.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(0x8ca8, null);
+    gl.bindFramebuffer(0x8ca9, framebuffer);
+    gl.blitFramebuffer(0, 0, 8, 4, 8, 0, 0, 4, GL.COLOR_BUFFER_BIT, GL.LINEAR);
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    gl.bindFramebuffer(0x8ca9, null);
+    gl.clear(GL.COLOR_BUFFER_BIT);
+    const ops = gl.content().ops;
+    expect(ops.map((op) => op.op)).toEqual(['clear', 'blit', 'clear']);
+    expect(ops[1]).toMatchObject({ op: 'blit', from: [0, 0, 8, 4], to: [8, 0, 0, 4], linear: true });
+    expect((ops[1] as { target?: string }).target).toBeDefined();
+    expect((ops[1] as { src?: string }).src).toBeUndefined();
+    // Reading and writing the same buffer is refused, as GL refuses it.
+    gl.blitFramebuffer(0, 0, 1, 1, 0, 0, 1, 1, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+    expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+  });
+
   it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {
     const { gl } = setup({ attributes: { preserveDrawingBuffer: true } });
     gl.drawArrays(GL.TRIANGLES, 0, 3);
@@ -168,7 +194,6 @@ describe('the recording WebGL context', () => {
     expect(refused(() => gl.drawArrays(GL.LINES, 0, 2))).toMatch(/^unsupported:.*lines/);
     expect(refused(() => gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/^unsupported:.*renderbuffers/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
-    expect(refused(() => (gl as any).blitFramebuffer(0, 0, 1, 1, 0, 0, 1, 1, 0x4000, 0x2600))).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(GL.TEXTURE_CUBE_MAP, gl.createTexture()))).toMatch(/cube/);
     expect(refused(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 4))).toMatch(/instanced/);
   });

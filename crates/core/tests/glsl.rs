@@ -705,3 +705,78 @@ fn a_viewport_outside_its_target_is_refused() {
     ));
     assert!(error.contains("reaches outside the 8 x 8"), "{error}");
 }
+
+// ---- blitFramebuffer ----
+
+/// A draw of the quad with the program `program` into the `[x, y, w, h]` of the drawing buffer.
+fn draw_in(program: &str, viewport: [i32; 4], extra: &str) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "{program}", "mode": "triangles", "first": 0, "count": 6,
+            "attributes": {}, "viewport": {viewport:?}, {extra}}}"#,
+        quad_attributes()
+    )
+}
+
+/// A `blitFramebuffer` of `from` to `to`; the drawing buffer is `None`.
+fn blit_op(
+    src: Option<&str>,
+    target: Option<&str>,
+    from: [i32; 4],
+    to: [i32; 4],
+    linear: bool,
+) -> String {
+    let src = src.map_or(String::new(), |s| format!(r#", "src": "{s}""#));
+    let target = target.map_or(String::new(), |s| format!(r#", "target": "{s}""#));
+    format!(r#"{{"op": "blit", "from": {from:?}, "to": {to:?}, "linear": {linear}{src}{target}}}"#)
+}
+
+/// Red in the left half of the 16 x 16 drawing buffer, blue in its lower right quadrant.
+fn red_and_blue() -> Vec<String> {
+    vec![
+        draw_in("f", [0, 0, 8, 16], &fill([1.0, 0.0, 0.0, 1.0])),
+        draw_in("f", [8, 0, 8, 8], &fill([0.0, 0.0, 1.0, 1.0])),
+    ]
+}
+
+#[test]
+fn a_blit_copies_the_drawing_buffer_into_a_texture_as_it_was() {
+    // Copied, then the drawing buffer is cleared: the texture still has the picture, upright.
+    let mut all = red_and_blue();
+    all.push(blit_op(None, Some("t"), [0, 0, 16, 16], [0, 0, 16, 16], false));
+    all.push(r#"{"op": "clear", "color": [0, 0, 0, 1]}"#.into());
+    all.push(draw_in("s", [0, 0, 16, 16], &sampling("t")));
+    let frame = render(&layer_of(
+        &[("f", FILL), ("s", SHOW)],
+        &targets(&[("t", 16)]),
+        &ops(&all),
+    ));
+    assert_eq!(px(&frame, 3, 3), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 3, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 12), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 12, 3), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_blit_mirrors_and_stretches_by_its_rectangles() {
+    // The picture mirrored into the texture: red is then on its right, blue at its lower left.
+    // The texture's right half is shrunk by LINEAR into the buffer's lower left quadrant.
+    let mut all = red_and_blue();
+    all.push(blit_op(None, Some("t"), [0, 0, 16, 16], [16, 0, 0, 16], false));
+    all.push(r#"{"op": "clear", "color": [0, 1, 0, 1]}"#.into());
+    all.push(blit_op(Some("t"), None, [8, 0, 16, 16], [0, 0, 8, 8], true));
+    let frame = render(&layer_of(&[("f", FILL)], &targets(&[("t", 16)]), &ops(&all)));
+    near(px(&frame, 3, 12), [255, 0, 0, 255], 2);
+    near(px(&frame, 3, 9), [255, 0, 0, 255], 2);
+    assert_eq!(px(&frame, 12, 12), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 3, 3), [0, 255, 0, 255]);
+}
+
+#[test]
+fn a_blit_within_one_buffer_is_refused() {
+    let error = render_error(&layer_of(
+        &[("f", FILL)],
+        &targets(&[("t", 16)]),
+        &blit_op(Some("t"), Some("t"), [0, 0, 4, 4], [4, 4, 8, 8], false),
+    ));
+    assert!(error.contains("same buffer"), "{error}");
+}

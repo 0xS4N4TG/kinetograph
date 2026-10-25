@@ -27,7 +27,7 @@ use kurbo::Point;
 
 use super::*;
 use crate::glsl::{
-    self as gl, GlslAttribute, GlslBlend, GlslContent, GlslDraw, GlslMode, GlslOp, GlslSampler,
+    self as gl, GlslAttribute, GlslBlend, GlslBlit, GlslContent, GlslDraw, GlslMode, GlslOp, GlslSampler,
     GlslTexture, GlslType, Stage, Translated,
 };
 
@@ -77,6 +77,8 @@ pub(super) struct GlslGpu {
     samplers: HashMap<String, wgpu::Sampler>,
     target: Option<Target>,
     blit: Option<Blit>,
+    /// The pass behind `blitFramebuffer`.
+    copy: Option<Blit>,
     /// The pass that turns a group's child into a texture, and the textures
     /// it writes, by the child's place among those a group samples.
     input: Option<Blit>,
@@ -308,11 +310,28 @@ impl Compositor {
         }
 
         // Everything drawn to the drawing buffer before its last clear is gone
-        // with it. A target's draws stay: later draws may sample them.
-        let last_clear = content
-            .ops
-            .iter()
-            .rposition(|op| matches!(op, GlslOp::Clear { target: None, .. }));
+        // with it, unless a blit reads the drawing buffer in between. A
+        // target's draws stay: later draws may sample them.
+        let mut dead = vec![false; content.ops.len()];
+        let mut cleared = false;
+        for (i, op) in content.ops.iter().enumerate().rev() {
+            match op {
+                GlslOp::Clear { target: None, .. } => {
+                    dead[i] = cleared;
+                    cleared = true;
+                }
+                GlslOp::Draw(d) if d.target.is_none() => dead[i] = cleared,
+                GlslOp::Blit(b) => {
+                    if b.target.is_none() {
+                        dead[i] = cleared;
+                    }
+                    if b.src.is_none() && !dead[i] {
+                        cleared = false;
+                    }
+                }
+                _ => {}
+            }
+        }
         // What a target holds before its first pass.
         let blank = |target: Option<&str>| match target {
             None if !content.alpha => [0.0, 0.0, 0.0, 1.0],
@@ -327,8 +346,9 @@ impl Compositor {
             let (target, clear) = match op {
                 GlslOp::Clear { color, target } => (target.as_deref(), Some(*color)),
                 GlslOp::Draw(d) => (d.target.as_deref(), None),
+                GlslOp::Blit(b) => (b.target.as_deref(), None),
             };
-            if target.is_none() && last_clear.is_some_and(|c| i < c) {
+            if dead[i] {
                 continue;
             }
             if let Some(id) = target {
@@ -342,16 +362,19 @@ impl Compositor {
                     draws: Vec::new(),
                 });
             }
-            if let GlslOp::Draw(draw) = op
-                && let Some(p) = self.glsl_prepare(
+            let prepared = match op {
+                GlslOp::Draw(draw) => self.glsl_prepare(
                     content,
                     draw,
                     size,
                     (base_dir, inputs),
                     &mut buffers,
                     &mut targets,
-                )?
-            {
+                )?,
+                GlslOp::Blit(blit) => self.glsl_copy(content, blit, size, &mut targets)?,
+                GlslOp::Clear { .. } => None,
+            };
+            if let Some(p) = prepared {
                 passes.last_mut().expect("pushed above").draws.push(p);
             }
         }
@@ -1287,6 +1310,124 @@ impl Compositor {
         drop(pass);
         drop(encoder);
         target
+    }
+
+    /// `blitFramebuffer`: the source rectangle stretched over the destination
+    /// one by a pass of its own (`shaders/glsl_copy.wgsl`), as a draw that
+    /// replaces what it covers. `None` when it covers nothing.
+    fn glsl_copy<'c>(
+        &mut self,
+        content: &'c GlslContent,
+        blit: &'c GlslBlit,
+        size: (u32, u32),
+        targets: &mut HashMap<&'c str, Target>,
+    ) -> Result<Option<Prepared>> {
+        if blit.src == blit.target {
+            return Err(render_error(
+                "blitFramebuffer reads and writes the same buffer (WebGL refuses it with \
+                 INVALID_OPERATION)",
+            ));
+        }
+        let (source, source_size) = match blit.src.as_deref() {
+            Some(id) => {
+                let t = self.glsl_target(targets, content, id)?;
+                (t.view.clone(), t.size)
+            }
+            None => (
+                self.glsl.target.as_ref().expect("made by glsl_draw").view.clone(),
+                size,
+            ),
+        };
+        let dst_size = match blit.target.as_deref() {
+            Some(id) => self.glsl_target(targets, content, id)?.size,
+            None => size,
+        };
+        let top_down = blit.target.is_none();
+        let [dx0, dy0, dx1, dy1] = blit.to.map(i64::from);
+        let [sx0, sy0, sx1, sy1] = blit.from.map(i64::from);
+        if dx0 == dx1 || dy0 == dy1 || sx0 == sx1 || sy0 == sy1 {
+            return Ok(None);
+        }
+        // The destination's box, cut by the buffer and the scissor, in rows
+        // from the top.
+        let (w, h) = (i64::from(dst_size.0), i64::from(dst_size.1));
+        let (mut x0, mut x1) = (dx0.min(dx1).clamp(0, w), dx0.max(dx1).clamp(0, w));
+        let (mut y0, mut y1) = (dy0.min(dy1).clamp(0, h), dy0.max(dy1).clamp(0, h));
+        if let Some([sx, sy, sw, sh]) = blit.scissor.map(|r| r.map(i64::from)) {
+            x0 = x0.max(sx);
+            x1 = x1.min(sx + sw);
+            y0 = y0.max(sy);
+            y1 = y1.min(sy + sh);
+        }
+        if x1 <= x0 || y1 <= y0 {
+            return Ok(None);
+        }
+        let (top, bottom) = if top_down { (h - y1, h - y0) } else { (y0, y1) };
+        let src_top_down = blit.src.is_none();
+        let params: [f32; 16] = [
+            dst_size.1 as f32,
+            f32::from(u8::from(top_down)),
+            source_size.0 as f32,
+            source_size.1 as f32,
+            f32::from(u8::from(src_top_down)),
+            f32::from(u8::from(blit.linear)),
+            0.0,
+            0.0,
+            dx0 as f32,
+            dy0 as f32,
+            dx1 as f32,
+            dy1 as f32,
+            sx0 as f32,
+            sy0 as f32,
+            sx1 as f32,
+            sy1 as f32,
+        ];
+        let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
+        if self.glsl.copy.is_none() {
+            self.glsl.copy = Some(self.glsl_blit(
+                "glsl copy",
+                include_str!("../shaders/glsl_copy.wgsl"),
+                ("vs_copy", "fs_copy"),
+                wgpu::TextureFormat::Rgba8Unorm,
+            ));
+        }
+        let copy = self.glsl.copy.as_ref().expect("made above");
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("glsl copy"),
+                contents: &bytes,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("glsl copy"),
+            layout: &copy.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&source),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&copy.sampler),
+                },
+            ],
+        });
+        Ok(Some(Prepared {
+            pipeline: copy.pipeline.clone(),
+            bind_group,
+            viewport: [0.0, 0.0, dst_size.0 as f32, dst_size.1 as f32],
+            scissor: [x0 as u32, top as u32, (x1 - x0) as u32, (bottom - top) as u32],
+            blend_constant: wgpu::Color::TRANSPARENT,
+            vertex_buffers: Vec::new(),
+            indices: None,
+            vertices: (0, 3),
+            instances: (0, 1),
+        }))
     }
 
     /// The pipeline of a pass that draws one texture, read through a uniform
