@@ -2,6 +2,8 @@
 // starts and ends in the project's time, whether it is on screen at a time, and which local time each registered
 // timeline is seeked to. Written from the documented behaviour of HyperFrames' runtime (Apache-2.0).
 
+import { parseAutomation, sourceTimeAt, timeAtSourceTime, type RateSpec } from './automation.js';
+
 /** The two instants closer than this are one (HyperFrames' half-open windows would otherwise flicker on float sums). */
 const SAME_INSTANT = 1e-6;
 const TERMINAL_EPSILON = 1e-6;
@@ -74,10 +76,15 @@ export function isMedia(el: TimedElement): boolean {
   return t === 'video' || t === 'audio';
 }
 
-/** `data-playback-rate`, 0.1 to 10; 1 when absent or invalid. */
+/** `data-playback-rate` as the browser parses a rate (`"2x"` is 2), kept to 0.1..10; 1 when absent or not above 0 (parsers/mediaDuration.ts: readPlaybackRate). */
 export function playbackRateOf(el: TimedElement): number {
-  const rate = parseNumeric(el.getAttribute('data-playback-rate'));
-  return rate !== null && rate >= 0.1 && rate <= 10 ? rate : 1;
+  const authored = Number.parseFloat(el.getAttribute('data-playback-rate') ?? '');
+  return Number.isFinite(authored) && authored > 0 ? Math.max(0.1, Math.min(10, authored)) : 1;
+}
+
+/** The clip's speed: its `rate` lane in `data-automation` when it has one, else the constant (runtime/playbackRate.ts: readElementRateSpec). */
+export function rateSpecOf(el: TimedElement): RateSpec {
+  return parseAutomation(el.getAttribute('data-automation'))?.rate ?? playbackRateOf(el);
 }
 
 /** The offset into the source: `data-media-start` for media, `data-playback-start` (then `data-media-start`) for a composition host. */
@@ -121,11 +128,20 @@ export class TimingResolver {
     return this.env.byId(id) ?? this.env.byComposition(id);
   }
 
+  /**
+   * Where the host's local time 0 falls in the project: the host's start less its in-point (`data-playback-start`), so
+   * that what a host plays from its in-point has its children at the right time (parsers/mediaTiming.ts: compositionOriginSeconds).
+   */
+  private hostOrigin(el: TimedElement): number {
+    const host = this.compositionHost(el);
+    return host === null ? 0 : this.start(host) - sourceOffsetOf(host);
+  }
+
   /** Start in the composition's own time: `data-start` as written (a reference resolved), 0 without one. */
   localStart(el: TimedElement): number {
     const expression = parseStartExpression(el.getAttribute('data-start'));
     if (expression === null) return 0;
-    if (expression.kind === 'seconds') return expression.seconds;
+    if (expression.kind === 'seconds') return Math.max(0, expression.seconds);
     const target = this.findReference(expression.id, el);
     if (target === null || target === el || this.visiting.has(el)) return 0;
     this.visiting.add(el);
@@ -138,18 +154,50 @@ export class TimingResolver {
     }
   }
 
-  private hostOrigin(el: TimedElement): number {
-    const host = this.compositionHost(el);
-    return host === null ? 0 : this.start(host);
-  }
-
-  /** Start in the project's time: the host composition's start plus the local one. */
+  /**
+   * Start in the project's time: the host's origin plus the local start. A reference is clamped at the host's start when
+   * an in-point puts local 0 before 0 (runtime/startResolver.ts: computeStart). A media element whose
+   * `data-hf-media-start-basis` is `global` has a start that is already the project's.
+   */
   start(el: TimedElement): number {
     const known = this.starts.get(el);
     if (known !== undefined) return known;
-    const value = this.hostOrigin(el) + this.localStart(el);
+    const origin = this.hostOrigin(el);
+    const expression = parseStartExpression(el.getAttribute('data-start'));
+    let value: number;
+    if (expression !== null && expression.kind === 'seconds' && isMedia(el) && origin !== 0 && (el.getAttribute('data-hf-media-start-basis') ?? '').trim().toLowerCase() === 'global') {
+      value = expression.seconds;
+    } else if (expression !== null && expression.kind === 'ref') {
+      value = Math.max(Math.min(0, origin), origin + this.localStart(el));
+    } else {
+      value = origin + this.localStart(el);
+    }
     this.starts.set(el, value);
     return value;
+  }
+
+  /** `data-duration`, else `data-end` less the start: the length an author wrote, none of the natural ones. */
+  private authoredDuration(el: TimedElement): number | null {
+    const positive = (n: number | null): number | null => (n !== null && Number.isFinite(n) && n > 0 ? n : null);
+    const written = positive(parseNumeric(el.getAttribute('data-duration')));
+    if (written !== null) return written;
+    const end = parseNumeric(el.getAttribute('data-end'));
+    return end === null ? null : positive(end - this.localStart(el));
+  }
+
+  /**
+   * The windows of the hosts above `el` that start their composition part-way in (an in-point): what `el` plays is cut to
+   * them (parsers/mediaTiming.ts: cutToHostSlots; runtime/startResolver.ts: resolveHostSlotsForElement).
+   */
+  hostSlots(el: TimedElement): { start: number; end: number }[] {
+    const slots: { start: number; end: number }[] = [];
+    for (let node = el.parentElement; node !== null; node = node.parentElement) {
+      if (!node.hasAttribute('data-composition-id') || sourceOffsetOf(node) <= 0) continue;
+      const start = this.start(node);
+      const duration = this.authoredDuration(node);
+      slots.push({ start, end: duration !== null ? start + duration : Infinity });
+    }
+    return slots;
   }
 
   /** Length in seconds on the timeline, or null when the clip has none of its own (it runs to the end). */
@@ -163,7 +211,7 @@ export class TimingResolver {
     }
     if (value === null && isMedia(el)) {
       const natural = this.env.mediaDuration(el);
-      if (natural !== null) value = positive((natural - sourceOffsetOf(el)) / playbackRateOf(el));
+      if (natural !== null) value = positive(timeAtSourceTime(rateSpecOf(el), Math.max(0, natural - sourceOffsetOf(el))));
     }
     if (value === null && tag(el) === 'img' && el.hasAttribute('data-start')) value = IMAGE_SECONDS;
     if (value === null) {
@@ -204,6 +252,14 @@ export interface TimelineLike {
   duration?(): number;
 }
 
+/** Each in-point host cuts the span to its own window. */
+export function cutToSlots(span: { start: number; end: number }, slots: readonly { start: number; end: number }[]): { start: number; end: number } {
+  return slots.reduce((kept, slot) => {
+    const start = Math.max(kept.start, slot.start);
+    return { start, end: Math.max(start, Math.min(kept.end, slot.end)) };
+  }, span);
+}
+
 export function timelineDuration(timeline: TimelineLike | undefined): number | null {
   if (!timeline) return null;
   try {
@@ -219,7 +275,7 @@ export interface SceneClock {
   start: number;
   hiddenFrom: number;
   playbackStart: number;
-  rate: number;
+  rate: RateSpec;
 }
 
 /**
@@ -227,7 +283,7 @@ export interface SceneClock {
  * start (held at the host's end), scaled by the rate and shifted by the playback start, never past the timeline's end.
  */
 export function localTimelineTime(clock: SceneClock, time: number, duration: number | null): number {
-  const source = clock.playbackStart + clock.rate * Math.max(0, Math.min(time, clock.hiddenFrom) - clock.start);
+  const source = clock.playbackStart + sourceTimeAt(clock.rate, Math.max(0, Math.min(time, clock.hiddenFrom) - clock.start));
   const clamped = duration !== null && duration > 0 ? Math.min(duration, source) : source;
   return Math.max(0, clamped);
 }

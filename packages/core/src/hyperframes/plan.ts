@@ -5,7 +5,15 @@
 /** One node of the document: an element with its attributes, or text. Comments, `<script>`, `<style>` and `<link>` are not nodes. */
 export type HfNode =
   | { t: 'text'; text: string }
-  | { t: 'el'; tag: string; svg?: boolean; attrs: [name: string, value: string][]; children: HfNode[] };
+  | {
+      t: 'el';
+      tag: string;
+      svg?: boolean;
+      attrs: [name: string, value: string][];
+      children: HfNode[];
+      /** A `<template>`'s content: inert, outside the document, reached by a script as `template.content`. */
+      content?: HfNode[];
+    };
 
 /** A script, run in document order once the document is built. */
 export interface HfScript {
@@ -25,6 +33,8 @@ export interface HfStylesheet {
 
 /** A rule of the page's CSS whose selector reaches into an `<svg>` from outside it (`[data-composition-id="x"] .bar`). */
 export interface HfSvgRule {
+  /** The `@media` conditions the rule sits in: it applies where all of them hold for the composition's size. */
+  media?: string[];
   selector: string;
   declarations: [property: string, value: string][];
   /** `[ids, classes, types]` of the selector, for the cascade's order. */
@@ -37,6 +47,10 @@ export interface HfGoogleFont {
   family: string;
   /** Variants as the CSS API names them: `400`, `700`, `400i`. */
   variants: string[];
+  /** Other names the faces are registered under: the families a page names that HyperFrames draws in this one (`Arial` is Inter). */
+  as?: string[];
+  /** A family the page does not ask for by a link but names in its CSS: read from the font cache only (`fetch-deps` fills it), never downloaded while rendering. */
+  cacheOnly?: boolean;
 }
 
 export interface HfPlan {

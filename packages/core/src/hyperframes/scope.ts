@@ -3,6 +3,8 @@
 // (`gsap.to('.title', …)`, `tl.from('.title', …)`, `gsap.utils.toArray`) are looked up there too, and `var`s of the
 // script stay in the script. Two compositions can both have a `.title` and a `const tl`.
 
+import { Script } from 'node:vm';
+
 type AnyRecord = Record<string, any>;
 
 export interface ScopeEnv {
@@ -124,10 +126,14 @@ export function runScopedScript(code: string, file: string, env: ScopeEnv, repor
   }
 }
 
-/** Runs a page script in the global scope (its `var`s and functions are globals, its `const`s are its own). */
+/**
+ * Runs a page script as a classic script: in the global scope, where its `var`s and functions become globals and its
+ * top-level `const`, `let` and `class` go to the realm's global lexical scope, which every later script sees (a browser
+ * shares them between classic scripts the same way; `eval` would keep them to the one script).
+ */
 export function runGlobalScript(code: string, file: string, report: (message: string) => void): void {
   try {
-    (0, eval)(`${code}\n//# sourceURL=${file.replace(/\s/g, '%20')}`);
+    new Script(code, { filename: file }).runInThisContext();
   } catch (error) {
     const message = `${file}: script failed: ${error instanceof Error ? error.message : String(error)}`;
     if (!warned.has(message)) {
