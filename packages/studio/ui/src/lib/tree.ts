@@ -86,6 +86,40 @@ export function layerRows(layers: TimelineLayer[]): LayerRow[] {
   }));
 }
 
+export type SiblingItem<T> = { fold: false; layer: T } | { fold: true; key: string; label: string; layers: T[] };
+
+const foldKey = (layer: { component?: string; source?: SourceLocation }): string | null =>
+  layer.component !== undefined && layer.source
+    ? `${layer.component}@${layer.source.file}:${layer.source.line}:${layer.source.column}`
+    : null;
+
+/**
+ * Siblings in display order, with those one component drew from one JSX position folded into a single item
+ * ("MeltRim", 120 layers). Layers without a component or a source never fold; a fold sits where its first layer was.
+ */
+export function foldSiblings<T extends { id: string; component?: string; source?: SourceLocation }>(layers: T[]): SiblingItem<T>[] {
+  const groups = new Map<string, T[]>();
+  for (const layer of layers) {
+    const key = foldKey(layer);
+    if (key === null) continue;
+    const list = groups.get(key);
+    if (list) list.push(layer);
+    else groups.set(key, [layer]);
+  }
+  const out: SiblingItem<T>[] = [];
+  const done = new Set<string>();
+  for (const layer of layers) {
+    const key = foldKey(layer);
+    const group = key !== null ? groups.get(key) : undefined;
+    if (key === null || !group || group.length < 2) out.push({ fold: false, layer });
+    else if (!done.has(key)) {
+      done.add(key);
+      out.push({ fold: true, key: `fold:${group[0]!.id}`, label: layer.component!, layers: group });
+    }
+  }
+  return out;
+}
+
 /** Tailwind padding classes for nesting depth (written out so the class scanner finds them). */
 const INDENT = ['pl-2', 'pl-5', 'pl-8', 'pl-11', 'pl-14', 'pl-[68px]', 'pl-[80px]', 'pl-[92px]'];
 export function indent(depth: number): string {

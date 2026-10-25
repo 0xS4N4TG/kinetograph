@@ -23,6 +23,8 @@ interface InspectorPanelProps {
   selectedLayer: string | null;
   selectedLayers: string[];
   onSelectLayer(id: string | null, additive?: boolean): void;
+  /** Several layers at once (a folded group of identical siblings). */
+  onSelectLayers?(ids: string[]): void;
   /** The Agent tab. */
   agentTab: ReactNode;
   propValues: Record<string, unknown>;
@@ -47,6 +49,7 @@ export function InspectorPanel({
   selectedLayer,
   selectedLayers,
   onSelectLayer,
+  onSelectLayers,
   agentTab,
   propValues,
   propsEdited,
@@ -87,6 +90,7 @@ export function InspectorPanel({
           selected={selectedLayer}
           selectedLayers={selectedLayers}
           onSelect={onSelectLayer}
+          {...(onSelectLayers ? { onSelectMany: onSelectLayers } : {})}
           agent={project && comp ? { entry: project.entry, cwd: project.cwd, comp, timeline } : null}
         />
       </TabsContent>

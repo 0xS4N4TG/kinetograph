@@ -40,12 +40,7 @@ export function App({ api }: { api: StudioApi }) {
     setTab(WORKSPACE_TABS[next]);
   };
   const zoomTo = (zoom: Zoom) => setView({ zoom, pan: { x: 0, y: 0 } });
-  /** A layer picked on the canvas or the timeline: selected, and shown in the scene tree. */
-  const pickLayer = (id: string | null) => {
-    studio.selectLayer(id);
-    if (id !== null && tab !== 'agent') setTab('scene');
-  };
-  /** Layers picked in the preview: one, several in a box, or none. */
+  /** Layers picked in the preview or on the timeline: one, several, or none; shown in the scene tree. */
   const pickLayers = (ids: string[]) => {
     studio.selectLayers(ids);
     if (ids.length > 0 && tab !== 'agent') setTab('scene');
@@ -136,6 +131,7 @@ export function App({ api }: { api: StudioApi }) {
                   timeline={studio.timeline.state === 'ready' ? studio.timeline.data : null}
                   selectedLayer={studio.selectedLayer}
                   selectedLayers={studio.selectedLayers}
+                  onSelectLayers={pickLayers}
                   onSelectLayer={(id, additive) =>
                     id !== null && additive
                       ? studio.selectLayers(
@@ -169,7 +165,7 @@ export function App({ api }: { api: StudioApi }) {
               state={playerState}
               player={player}
               selectedLayers={studio.selectedLayers}
-              onSelectLayer={pickLayer}
+              onSelectLayers={pickLayers}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

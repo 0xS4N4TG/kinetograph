@@ -76,9 +76,8 @@ describe('picking layers in the preview', () => {
 describe('the Agent tab', () => {
   it('sends the words with the selection as context and shows the answer as it streams', async () => {
     const { server, user } = await start();
-    await screen.findAllByTestId('layer-row');
-    await user.click(screen.getByRole('tab', { name: 'Props' }));
-    await user.click(screen.getAllByTestId('layer-row').find((r) => r.getAttribute('title') === 'title (text)')!);
+    const tree = await screen.findByTestId('scene-tree');
+    await user.click(within(tree).getByTitle(/^title \(/));
     await user.click(screen.getByRole('tab', { name: 'Agent' }));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Coding agent' })).toHaveTextContent('Fake agent'));
 
