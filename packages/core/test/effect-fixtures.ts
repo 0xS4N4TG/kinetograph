@@ -174,7 +174,7 @@ export const gpuCompute = createEffect<object, object>({
   calculateKey: () => 'gpu-compute',
   setup: () => ({}),
   apply: ({ gpuDevice }) => {
-    (gpuDevice as any).createComputePipeline();
+    (gpuDevice as any).createQuerySet();
   },
   cleanup: () => undefined,
   schema: {},
