@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { familyFromModuleName } from '@kinetographdev/core/google-fonts';
@@ -154,6 +154,58 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   };
 }
 
+/** A package's `browser` map (object form) and the directory it sits in, found from a file inside the package; null when there is none. */
+const browserMaps = new Map<string, { root: string; map: Record<string, string | false> } | null>();
+function browserMapOf(dir: string): { root: string; map: Record<string, string | false> } | null {
+  const cached = browserMaps.get(dir);
+  if (cached !== undefined) return cached;
+  let found: { root: string; map: Record<string, string | false> } | null = null;
+  const file = join(dir, 'package.json');
+  if (existsSync(file)) {
+    try {
+      const json = JSON.parse(readFileSync(file, 'utf8')) as { browser?: unknown };
+      if (typeof json.browser === 'object' && json.browser !== null) found = { root: dir, map: json.browser as Record<string, string | false> };
+    } catch {
+      // A package.json that does not parse is no map.
+    }
+  } else if (dirname(dir) !== dir) {
+    found = browserMapOf(dirname(dir));
+  }
+  browserMaps.set(dir, found);
+  return found;
+}
+
+/**
+ * A package's `browser` map says which of its Node-only imports a browser leaves out (`"jsdom": false`) or swaps. The
+ * bundle runs on Node, so a map is not applied while its import resolves; but one that does not (Paper.js's optional
+ * `jsdom` and `canvas`, which a browser never has) is read as the package saying "not needed here": `false` bundles an
+ * empty module, a string its replacement. Only packages under `node_modules` are read.
+ */
+function browserFieldPlugin(): Plugin {
+  return {
+    name: 'kinetograph-browser-field',
+    setup(b) {
+      b.onResolve({ filter: /.*/ }, async (args) => {
+        if (args.pluginData?.kinetographBrowser || args.kind === 'entry-point' || !args.importer || !args.importer.includes(`${sep}node_modules${sep}`)) return undefined;
+        const found = browserMapOf(dirname(args.importer));
+        if (found === null) return undefined;
+        const tried = await b.resolve(args.path, { resolveDir: args.resolveDir, importer: args.importer, kind: args.kind, namespace: args.namespace, pluginData: { kinetographBrowser: true } });
+        if (tried.errors.length === 0) return tried;
+        const relative = args.path.startsWith('.') ? resolve(args.resolveDir, args.path) : null;
+        const spellings = relative === null ? [] : [relative, `${relative}.js`, `${relative}.json`, `${relative}${sep}index.js`];
+        for (const [key, to] of Object.entries(found.map)) {
+          const same = key.startsWith('.') ? spellings.includes(resolve(found.root, key)) : key === args.path;
+          if (!same) continue;
+          if (to === false) return { path: args.path, namespace: 'kinetograph-browser-empty' };
+          return b.resolve(to.startsWith('.') ? resolve(found.root, to) : to, { resolveDir: found.root, kind: args.kind, pluginData: { kinetographBrowser: true } });
+        }
+        return undefined;
+      });
+      b.onLoad({ filter: /.*/, namespace: 'kinetograph-browser-empty' }, () => ({ contents: 'module.exports = {};', loader: 'js' }));
+    },
+  };
+}
+
 /**
  * The project's entry file always runs: the synthetic entry imports it only for its side effects (`registerRoot`), and
  * a package.json with `"sideEffects": [...]` that leaves it out (as Remotion's templates do) would let esbuild drop it.
@@ -227,7 +279,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[]): Bui
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [entryPlugin(absolute), aliasPlugin(unsupported), cssPlugin()],
+    plugins: [entryPlugin(absolute), aliasPlugin(unsupported), browserFieldPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };
