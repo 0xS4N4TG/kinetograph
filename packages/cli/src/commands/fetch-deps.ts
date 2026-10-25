@@ -5,7 +5,7 @@ import { relative } from 'node:path';
 import { makeGoogleFont } from '@kinetographdev/core/google-fonts';
 import { CliError } from '../errors.js';
 import { isHyperframesEntry, resolveEntry } from '../hyperframes/entry.js';
-import { cdnCacheDir, fetchCdnScripts } from '../hyperframes/deps.js';
+import { cdnCacheDir, fetchCdnData, fetchCdnScripts, MAX_DATA_BYTES } from '../hyperframes/deps.js';
 import { buildPlan } from '../hyperframes/plan.js';
 import { ENTRY, type Command } from './types.js';
 
@@ -13,17 +13,28 @@ export const fetchDeps: Command = {
   name: 'fetch-deps',
   summary: 'Download the CDN scripts and Google Fonts a HyperFrames project loads, into the local cache',
   positionals: [ENTRY],
-  options: [{ name: 'allow-host', type: 'string', description: 'Also download from this host (comma-separated for several); by default only cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com and esm.sh' }],
+  options: [
+    { name: 'allow-host', type: 'string', description: 'Also download from this host (comma-separated for several); by default only cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com and esm.sh' },
+    { name: 'url', type: 'string', description: 'Also download this URL (comma-separated for several): a file the page fetches that the scan of its scripts did not find (`doctor` names the ones a render refused)' },
+    { name: 'max-media-mb', type: 'string', description: 'The most megabytes of one remote video or audio file to download (default 500)' },
+  ],
   project: false,
   async run(args, context) {
     const entry = resolveEntry(String(args.positionals.entry));
     if (!isHyperframesEntry(entry)) throw new CliError('INVALID_ARG', `${entry} is not an HTML file: fetch-deps is for HyperFrames projects`);
-    const { plan, scriptUrls, scriptIntegrity } = await buildPlan(entry, { discoverOnly: true });
-    context.progress(`${scriptUrls.length} script URL(s), ${plan.googleFonts.length} Google font famil${plan.googleFonts.length === 1 ? 'y' : 'ies'}`);
-    const scripts = await fetchCdnScripts(scriptUrls, plan.baseDir, {
-      integrity: scriptIntegrity,
-      allowHosts: String(args.options['allow-host'] ?? '').split(',').map((h) => h.trim()).filter(Boolean),
-    });
+    const allowHosts = String(args.options['allow-host'] ?? '').split(',').map((h) => h.trim()).filter(Boolean);
+    const { plan, scriptUrls, scriptIntegrity, dataUrls, mediaUrls } = await buildPlan(entry, { discoverOnly: true, allowHosts });
+    const extra = String(args.options.url ?? '').split(',').map((u) => u.trim()).filter(Boolean);
+    context.progress(
+      `${scriptUrls.length} script URL(s), ${dataUrls.length + extra.length} data URL(s), ${mediaUrls.length} remote media file(s), ${plan.googleFonts.length} Google font famil${plan.googleFonts.length === 1 ? 'y' : 'ies'}`,
+    );
+    const scripts = await fetchCdnScripts(scriptUrls, plan.baseDir, { integrity: scriptIntegrity, allowHosts });
+    const maxMedia = Number(args.options['max-media-mb'] ?? 500);
+    if (!Number.isFinite(maxMedia) || maxMedia <= 0) throw new CliError('INVALID_ARG', '--max-media-mb must be a positive number');
+    // Scripts, data, --url files and media are checked alike: the default CDNs plus --allow-host, never a host the page names.
+    const data = await fetchCdnData([...dataUrls, ...extra], { allowHosts, maxBytes: MAX_DATA_BYTES });
+    const media = await fetchCdnData(mediaUrls, { allowHosts, maxBytes: Math.round(maxMedia * 1024 * 1024) });
+    scripts.push(...data, ...media);
     const fonts: { family: string; status: 'ready' | 'failed'; error?: string }[] = [];
     for (const font of plan.googleFonts) {
       for (const style of ['normal', 'italic'] as const) {

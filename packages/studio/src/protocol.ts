@@ -4,10 +4,10 @@
 // binary frame codec, nothing that touches Node or the DOM.
 
 import type { CompositionInfo } from '@kinetographdev/core';
-import type { SequenceJson } from '@kinetographdev/scene';
-import type { InspectResult } from 'kinetograph';
+import type { LayerName, SequenceJson, SourceLocation } from '@kinetographdev/scene';
+import type { InspectLayer, InspectResult } from 'kinetograph';
 
-export type { CompositionInfo, InspectResult, SequenceJson };
+export type { CompositionInfo, InspectLayer, InspectResult, LayerName, SequenceJson, SourceLocation };
 
 /** `code` is one of the CLI's error codes (`INVALID_ARG`, `IO`, `RENDER`, …), or `NOT_FOUND` or `BUILD`. */
 export interface StudioError {
@@ -19,6 +19,8 @@ export interface StudioError {
 export interface ProjectInfo {
   /** The entry file, absolute. */
   entry: string;
+  /** The directory the studio was started in: paths shown to the user are relative to it. */
+  cwd: string;
   /** The `kinetograph` package version. */
   version: string;
   /** The build being served; 0 before the first good build. */
@@ -38,6 +40,12 @@ export interface TimelineData {
   layers: TimelineLayer[];
 }
 
+/** `GET /api/timeline/progress`: how far the sweep for the timeline has got; `total` is 0 before it starts. */
+export interface TimelineProgress {
+  done: number;
+  total: number;
+}
+
 export interface TimelineLayer {
   id: string;
   type: string;
@@ -45,6 +53,15 @@ export interface TimelineLayer {
   parent: string | null;
   /** Inclusive frame ranges in which the layer is in the tree, ascending and disjoint. */
   ranges: [first: number, last: number][];
+  /** What a person calls it (`Title · “Rewrote Remotion…”`); the id is a path for the studio's own use. */
+  label?: string;
+  /** The nearest user component that drew it. */
+  component?: string;
+  /** The JSX that made it. */
+  source?: SourceLocation;
+  /** Key of the innermost Sequence whose group the layer sits in; absent for layers outside every Sequence group (older
+   * servers never send it). Path ids repeat between Sequences, so `id` is only unique together with `sequence`. */
+  sequence?: string;
 }
 
 /** `POST /api/renders`. */
@@ -88,7 +105,7 @@ export interface RenderJob {
 // ---- WebSocket `/ws` ----
 
 /** Client → server, JSON text. */
-export type ClientMessage = FrameRequest;
+export type ClientMessage = FrameRequest | AgentClientMessage;
 
 export interface FrameRequest {
   type: 'frame';
@@ -108,7 +125,59 @@ export type ServerMessage =
   | { type: 'reload'; buildId: number }
   | { type: 'buildError'; error: StudioError }
   | { type: 'render'; job: RenderJob }
-  | { type: 'error'; requestId: number | null; error: StudioError };
+  | { type: 'error'; requestId: number | null; error: StudioError }
+  | { type: 'agent'; event: AgentEvent };
+
+// ---- the coding agent (ACP) ----
+
+/** `GET /api/agent`. */
+export interface AgentInfo {
+  /** The agents found on this machine (and the `--agent` command): the ones the panel offers. */
+  presets: AgentPreset[];
+  /** The command in use, or null when none is chosen. */
+  command: string | null;
+  /** The directory the agent works in and may read and write. */
+  cwd: string;
+  /** Why the agent is off, in plain words; absent when it is on. */
+  disabled?: string;
+}
+
+export interface AgentPreset {
+  id: string;
+  name: string;
+  command: string;
+}
+
+/** What the user says to the agent. `context` is the studio's description of what is selected. */
+export type AgentClientMessage =
+  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string } }
+  | { type: 'agent.cancel' }
+  /** The answer to a permission request; a null `optionId` denies it. */
+  | { type: 'agent.permission'; id: string; optionId: string | null }
+  /** Chooses the agent (one of `AgentInfo.presets`) and starts a new conversation. */
+  | { type: 'agent.select'; command: string | null }
+  | { type: 'agent.reset' };
+
+export type AgentStatus = 'idle' | 'starting' | 'ready' | 'busy';
+
+export interface AgentPermissionOption {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+/** Server → client: what the agent is doing. Text arrives in chunks to append. */
+export type AgentEvent =
+  | { kind: 'status'; status: AgentStatus; command: string | null; image: boolean }
+  | { kind: 'message'; text: string }
+  | { kind: 'thought'; text: string }
+  /** A tool call or file edit; the same `id` again updates it. `files` are relative to the project. */
+  | { kind: 'tool'; id: string; title: string; toolKind: string; status: string; files: string[] }
+  | { kind: 'permission'; id: string; title: string; files: string[]; options: AgentPermissionOption[] }
+  | { kind: 'permission_done'; id: string }
+  | { kind: 'done'; stopReason: string }
+  /** A problem in plain words. */
+  | { kind: 'error'; message: string };
 
 /**
  * A frame is one binary message: a 4-byte little-endian length `n`, then `n` bytes of UTF-8 JSON (`FrameHeader`), then

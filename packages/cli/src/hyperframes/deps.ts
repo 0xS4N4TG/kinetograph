@@ -9,7 +9,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { CliError } from '../errors.js';
 
 export interface CdnRef {
@@ -244,6 +244,60 @@ export async function fetchCdnScripts(urls: string[], projectDir: string, option
       if (integrity) verifyIntegrity(bytes, integrity, url);
       mkdirSync(dirname(file), { recursive: true });
       // Temporary names, so a reader never sees half a file; the hash goes last.
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, bytes);
+      renameSync(tmp, file);
+      writeFileSync(`${file}.url`, `${url}\n`);
+      writeFileSync(hashFile(file), `${sha256Hex(bytes)}\n`);
+      results.push({ url, file, status: 'fetched' });
+    } catch (error) {
+      results.push({ url, file, status: 'failed', error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return results;
+}
+
+// ---- data and media the page fetches ----
+
+/** The most bytes of one data file a page fetches (`d3.json(url)`), and of one remote video or audio. */
+export const MAX_DATA_BYTES = 50 * 1024 * 1024;
+export const MAX_MEDIA_BYTES = 500 * 1024 * 1024;
+
+/** Where a fetched data file or remote media file is cached: the URL's hash, with the URL's own extension. */
+export function dataCachePath(url: string): string {
+  let ext = '';
+  try {
+    ext = extname(new URL(url).pathname).toLowerCase();
+  } catch {
+    // a URL that does not parse is never cached
+  }
+  return join(cdnCacheDir(), `data-${createHash('sha256').update(url).digest('hex').slice(0, 24)}${/^\.[a-z0-9]{1,8}$/.test(ext) ? ext : '.bin'}`);
+}
+
+/** The cached file of `url` when it is there and its bytes are what was downloaded, else null (and why, in `reason`). */
+export function resolveCdnData(url: string): { file: string } | { error: string } {
+  const file = dataCachePath(url);
+  if (!existsSync(file)) return { error: `${url} is not cached: run \`kinetograph fetch-deps <entry>\` (a render never downloads it)` };
+  const checked = verifiedCache(file, url);
+  return checked.ok ? { file } : { error: checked.error };
+}
+
+/**
+ * Downloads what a page fetches or plays from the web into the cache (`fetch-deps`): https only, hosts allowed one by
+ * one, no redirect to another host, a size limit, and the hash recorded for the render to check. Same rules as a script.
+ */
+export async function fetchCdnData(urls: string[], options: FetchOptions = {}): Promise<FetchedDep[]> {
+  const allowed = new Set([...DEFAULT_ALLOWED_HOSTS, ...(options.allowHosts ?? [])]);
+  const results: FetchedDep[] = [];
+  for (const url of [...new Set(urls)]) {
+    const file = dataCachePath(url);
+    if (existsSync(file) && verifiedCache(file, url).ok) {
+      results.push({ url, file, status: 'cached' });
+      continue;
+    }
+    try {
+      const bytes = await download(url, options, allowed);
+      mkdirSync(dirname(file), { recursive: true });
       const tmp = `${file}.${process.pid}.tmp`;
       writeFileSync(tmp, bytes);
       renameSync(tmp, file);

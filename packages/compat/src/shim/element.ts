@@ -5,7 +5,7 @@
 
 import { attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
-import { isDomElement } from '../request/tags.js';
+import { isDomElement, isSvgTag } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { CANVAS_SOURCE, fontKey, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetographdev/scene';
@@ -24,6 +24,7 @@ import {
   resetCanvasOf,
 } from './canvas.js';
 import { isKnownCssProperty } from './css-names.js';
+import { collectionOf, nodeListOf, type HTMLCollection, type NodeList } from './lists.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
 import { parseHtmlFragment } from '../request/html.js';
 import { bodyHost, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
@@ -152,8 +153,29 @@ export interface CSSStyleDeclarationShim {
 }
 
 /** `getComputedStyle(el)`: values come from the engine's computed style for the island, read when asked for. */
+/** The text properties an SVG element inherits, with what the page says when nothing does. */
+const SVG_TEXT_DEFAULTS: Record<string, string> = { 'font-size': '16px', 'font-weight': '400', 'font-style': 'normal', 'font-family': 'serif', 'text-anchor': 'start' };
+
+/** An inherited text property of an SVG element from its own attribute or style, or an ancestor's, when the layout has no answer for it. */
+function svgTextProperty(host: HostElement, property: string, readback: Readback): string {
+  for (let h: HostElement | null = host; h !== null; h = readback.parent(h)) {
+    const props = propsWithOverlay(h);
+    const style = typeof props.style === 'object' && props.style !== null ? (props.style as Record<string, unknown>) : {};
+    const camel = property.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
+    const value = style[camel] ?? style[property] ?? props[camel] ?? props[property];
+    if (value !== undefined && value !== null && value !== '') {
+      return property === 'font-size' && /^[\d.]+$/.test(String(value)) ? `${value}px` : String(value);
+    }
+  }
+  return SVG_TEXT_DEFAULTS[property] ?? '';
+}
+
 export function computedStyleOf(host: HostElement, readback: Readback): CSSStyleDeclarationShim {
-  const read = (property: string): string => readback.computed(host, kebab(property)) ?? '';
+  const read = (property: string): string => {
+    const answer = readback.computed(host, kebab(property)) ?? '';
+    if (answer !== '' || !(kebab(property) in SVG_TEXT_DEFAULTS) || !(isSvgTag(host.type) || readback.parent(host)?.type === 'svg')) return answer;
+    return svgTextProperty(host, kebab(property), readback);
+  };
   const target = {
     getPropertyValue: read,
     getPropertyPriority: () => '',
@@ -230,8 +252,53 @@ export function isDomElementShim(value: unknown): value is DomElement {
   return value instanceof DomElement;
 }
 
+type Positioned = DomElement | DomText;
+
+const POSITION = { DISCONNECTED: 1, PRECEDING: 2, FOLLOWING: 4, CONTAINS: 8, CONTAINED_BY: 16, IMPLEMENTATION_SPECIFIC: 32 } as const;
+const detachedOrder = new WeakMap<object, number>();
+let detachedCount = 0;
+
+/** `a.compareDocumentPosition(b)`: where `b` is relative to `a`, as the DOM's bitmask. */
+function documentPosition(a: Positioned, b: unknown): number {
+  const document = (globalThis as { document?: unknown }).document;
+  if (b === document && b !== undefined) return POSITION.CONTAINS | POSITION.PRECEDING;
+  if (!(b instanceof DomElement) && !(b instanceof DomText)) throw new TypeError("Failed to execute 'compareDocumentPosition': parameter 1 is not of type 'Node'.");
+  if (a === b) return 0;
+  const chain = (n: Positioned): Positioned[] => {
+    const out: Positioned[] = [n];
+    for (let p = n.parentElement; p !== null; p = p.parentElement) out.push(p);
+    return out;
+  };
+  const up = chain(a);
+  const other = chain(b);
+  if (up.at(-1) !== other.at(-1)) {
+    // Two trees: which comes first is arbitrary but the same each time, and opposite when asked the other way round.
+    const order = (n: Positioned): number => {
+      const root = n.host as object;
+      if (!detachedOrder.has(root)) detachedOrder.set(root, detachedCount++);
+      return detachedOrder.get(root)!;
+    };
+    return POSITION.DISCONNECTED | POSITION.IMPLEMENTATION_SPECIFIC | (order(up.at(-1)!) < order(other.at(-1)!) ? POSITION.FOLLOWING : POSITION.PRECEDING);
+  }
+  if (up.includes(b)) return POSITION.CONTAINS | POSITION.PRECEDING;
+  if (other.includes(a)) return POSITION.CONTAINED_BY | POSITION.FOLLOWING;
+  // The two branches below their closest common ancestor: whichever sits first in that ancestor's children comes first.
+  let i = up.length - 1;
+  let j = other.length - 1;
+  while (i > 0 && j > 0 && up[i - 1] === other[j - 1]) {
+    i--;
+    j--;
+  }
+  const ancestor = up[i] as DomElement;
+  const kids = ancestor.childNodes;
+  return kids.indexOf(other[j - 1]!) < kids.indexOf(up[i - 1]!) ? POSITION.PRECEDING : POSITION.FOLLOWING;
+}
+
+const TEXT_TAGS = new Set(['text', 'tspan']);
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
+const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 
 export class DomElement {
   readonly nodeType = 1;
@@ -247,7 +314,8 @@ export class DomElement {
 
   // ---- identity ----
 
-  private get inSvg(): boolean {
+  get inSvg(): boolean {
+    if (isSvgTag(this.host.type)) return true;
     for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) if (h.type === 'svg') return true;
     return false;
   }
@@ -327,6 +395,22 @@ export class DomElement {
     this.readback.touch();
     recordAttribute(this.host, name, old);
   }
+  // The namespaced forms keep the qualified name as the attribute's name; `xlink:href` also answers as `href` (what <use> and <image> read).
+  setAttributeNS(_ns: string | null, qualifiedName: string, value: unknown): void {
+    this.setAttribute(qualifiedName, value);
+    if (qualifiedName === 'xlink:href' && this.getAttribute('href') === null) this.setAttribute('href', value);
+  }
+  getAttributeNS(ns: string | null, localName: string): string | null {
+    return this.getAttribute(ns === XLINK_NS ? `xlink:${localName}` : ns === XML_NS ? `xml:${localName}` : localName);
+  }
+  hasAttributeNS(ns: string | null, localName: string): boolean {
+    return this.getAttributeNS(ns, localName) !== null;
+  }
+  removeAttributeNS(ns: string | null, localName: string): void {
+    const name = ns === XLINK_NS ? `xlink:${localName}` : ns === XML_NS ? `xml:${localName}` : localName;
+    this.removeAttribute(name);
+    if (name === 'xlink:href') this.removeAttribute('href');
+  }
   toggleAttribute(name: string, force?: boolean): boolean {
     const want = force ?? !this.hasAttribute(name);
     if (want) this.setAttribute(name, '');
@@ -375,11 +459,11 @@ export class DomElement {
   private childHosts(): DomNode[] {
     return this.readback.childNodes(this.host);
   }
-  get childNodes(): (DomElement | DomText)[] {
-    return this.childHosts().map(domNodeFor);
+  get childNodes(): NodeList<DomElement | DomText> {
+    return nodeListOf(this.childHosts().map(domNodeFor));
   }
-  get children(): DomElement[] {
-    return this.childNodes.filter((n): n is DomElement => n instanceof DomElement);
+  get children(): HTMLCollection<DomElement> {
+    return collectionOf(this.childNodes.filter((n): n is DomElement => n instanceof DomElement));
   }
   get childElementCount(): number {
     return this.children.length;
@@ -448,9 +532,19 @@ export class DomElement {
   set innerText(value: string) {
     this.textContent = value;
   }
+  compareDocumentPosition(other: unknown): number {
+    return documentPosition(this, other);
+  }
   contains(other: unknown): boolean {
     const node = hostNodeOf(other);
     if (node === null) return false;
+    if (node === this.host) return true;
+    if (this.host === bodyHost) {
+      // Anything in the document except `html`, `head` and what hangs from `head`.
+      let top: DomNode = node;
+      for (let p = effectiveParentOf(top); p !== null; p = effectiveParentOf(top)) top = p;
+      return top !== htmlHost && top !== headHost && top !== bodyHost && isConnectedHost(node);
+    }
     for (let h: DomNode | null = node; h !== null; h = effectiveParentOf(h)) if (h === this.host) return true;
     return false;
   }
@@ -648,22 +742,26 @@ export class DomElement {
   querySelector(selector: string): DomElement | null {
     return this.wrap(queryAll(this.descendants(), selector, this.selectorContext(this.host), true)[0] ?? null);
   }
-  querySelectorAll(selector: string): DomElement[] {
-    return queryAll(this.descendants(), selector, this.selectorContext(this.host)).map((h) => domElementFor(h, this.readback));
+  querySelectorAll(selector: string): NodeList<DomElement> {
+    return nodeListOf(queryAll(this.descendants(), selector, this.selectorContext(this.host)).map((h) => domElementFor(h, this.readback)));
   }
-  getElementsByTagName(tag: string): DomElement[] {
-    return this.descendants()
-      .filter((h) => tag === '*' || h.type.toLowerCase() === tag.toLowerCase())
-      .map((h) => domElementFor(h, this.readback));
+  getElementsByTagName(tag: string): HTMLCollection<DomElement> {
+    return collectionOf(
+      this.descendants()
+        .filter((h) => tag === '*' || h.type.toLowerCase() === tag.toLowerCase())
+        .map((h) => domElementFor(h, this.readback)),
+    );
   }
-  getElementsByClassName(names: string): DomElement[] {
+  getElementsByClassName(names: string): HTMLCollection<DomElement> {
     const wanted = names.split(/\s+/).filter(Boolean);
-    return this.descendants()
-      .filter((h) => {
-        const have = (domElementFor(h, this.readback).getAttribute('class') ?? '').split(/\s+/);
-        return wanted.every((w) => have.includes(w));
-      })
-      .map((h) => domElementFor(h, this.readback));
+    return collectionOf(
+      this.descendants()
+        .filter((h) => {
+          const have = (domElementFor(h, this.readback).getAttribute('class') ?? '').split(/\s+/);
+          return wanted.every((w) => have.includes(w));
+        })
+        .map((h) => domElementFor(h, this.readback)),
+    );
   }
 
   // ---- layout ----
@@ -878,6 +976,10 @@ export class DomElement {
   }
   /** The element's box in its own user space, before its transform: geometry, or the union of its children's. */
   getBBox(): DOMRectShim {
+    if (TEXT_TAGS.has(this.host.type)) {
+      const box = this.textBBox();
+      if (box !== null) return box;
+    }
     const d = this.geometryPath();
     if (d !== null) {
       const b = pathMeasure().getBoundingBox(d);
@@ -943,7 +1045,42 @@ export class DomElement {
     return { baseVal: { numberOfItems: this.getAttribute('transform') === null ? 0 : 1, consolidate: () => ({ matrix }), getItem: () => ({ matrix }) } };
   }
   getComputedTextLength(): number {
+    if (TEXT_TAGS.has(this.host.type)) {
+      const advance = this.advanceOf(this.svgText());
+      if (advance > 0) return advance;
+    }
     return this.box()?.width ?? 0;
+  }
+  /** The box of an SVG `<text>`/`<tspan>` from the text engine: its advance wide, a line high, at `x`/`y` moved by `text-anchor`. */
+  private textBBox(): DOMRectShim | null {
+    const text = this.svgText();
+    if (text === '') return null;
+    const width = this.advanceOf(text);
+    if (width <= 0) return null;
+    const computed = (property: string): string => this.readback.computed(this.host, property) ?? '';
+    const size = parseFloat(computed('font-size')) || parseFloat(svgTextProperty(this.host, 'font-size', this.readback)) || 16;
+    let ascent = size * 0.8;
+    let height = size * 1.2;
+    if (hasAddonFunction('layoutText')) {
+      try {
+        const family = (computed('font-family') || svgTextProperty(this.host, 'font-family', this.readback)).split(',')[0]!.trim().replace(/^['"]|['"]$/g, '');
+        const weight = computed('font-weight') || svgTextProperty(this.host, 'font-weight', this.readback);
+        const style = computed('font-style') || svgTextProperty(this.host, 'font-style', this.readback);
+        const key = fontKey(family, weight === '' ? undefined : weight, style === 'italic' || style === 'oblique' ? 'italic' : undefined);
+        const line = addonFunction('layoutText')({ text, font: key, size, fonts: registeredFonts() }).lines?.[0];
+        if (line) {
+          ascent = line.baseline - line.top;
+          height = line.bottom - line.top;
+        }
+      } catch {
+        // The estimate above stands.
+      }
+    }
+    const x = this.numberList('x')[0] ?? 0;
+    const y = this.numberList('y')[0] ?? 0;
+    const anchor = svgTextProperty(this.host, 'text-anchor', this.readback);
+    const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
+    return new DOMRectShim(left, y - ascent, width, height);
   }
 
   // The characters of an SVG `<text>`: what it says with white space collapsed (SVG's default), and where each starts.
@@ -1157,6 +1294,9 @@ export class DomText {
   cloneNode(): DomText {
     return domTextFor(createHostText(this.host.text));
   }
+  compareDocumentPosition(other: unknown): number {
+    return documentPosition(this, other);
+  }
   contains(other: unknown): boolean {
     return other === this;
   }
@@ -1216,4 +1356,12 @@ export function setImagePictureReader(fn: (src: string) => CanvasPicture | null)
 }
 function imageSize(src: string): { width: number; height: number } | null {
   return imageSizeOf(src);
+}
+
+// `Node.DOCUMENT_POSITION_*`, on the constructors and on the instances.
+for (const cls of [DomElement, DomText]) {
+  for (const [name, bit] of Object.entries(POSITION)) {
+    Object.defineProperty(cls, `DOCUMENT_POSITION_${name}`, { value: bit });
+    Object.defineProperty(cls.prototype, `DOCUMENT_POSITION_${name}`, { value: bit });
+  }
 }

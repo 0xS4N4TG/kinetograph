@@ -14,7 +14,8 @@ import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { HfNode, HfPlan, HfScript, HfStylesheet, HfSvgRule } from '@kinetographdev/core/hyperframes';
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
-import { resolveCdnScript, verifyIntegrity } from './deps.js';
+import { DEFAULT_ALLOWED_HOSTS, resolveCdnData, resolveCdnScript, verifyIntegrity } from './deps.js';
+import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
   crossingRules,
   extractGoogleFontImports,
@@ -51,6 +52,8 @@ export interface PlanOptions {
   resolveScriptUrl?: typeof resolveCdnScript;
   /** Lists what the project loads (`fetch-deps`): a script that is not available is left out instead of failing the read. */
   discoverOnly?: boolean;
+  /** Hosts besides the CDNs whose URLs in a script count as files it fetches (`--allow-host`). */
+  allowHosts?: string[];
 }
 
 export interface BuiltPlan {
@@ -61,6 +64,10 @@ export interface BuiltPlan {
   scriptUrls: string[];
   /** The `integrity` attribute of each script URL's tag. */
   scriptIntegrity: Record<string, string>;
+  /** URLs of data files the page's scripts name (`d3.json("https://cdn.jsdelivr.net/...")`), on the allowed hosts: `fetch-deps` downloads these. */
+  dataUrls: string[];
+  /** URLs of remote `<video>`, `<audio>`, `<img>` and `<source>` files, which `fetch-deps` downloads too. */
+  mediaUrls: string[];
 }
 
 interface Context {
@@ -80,12 +87,18 @@ class Builder {
   private ruleOrder = 0;
   readonly scripts: HfScript[] = [];
   readonly fonts: GoogleFontRequest[] = [];
+  /** The font families the page's CSS names (`fonts.ts`). */
+  readonly fontUse = emptyUse();
   readonly variables: Record<string, Record<string, unknown>> = {};
   readonly mediaFiles = new Set<string>();
   readonly notes: string[] = [];
   readonly files = new Set<string>();
   readonly scriptUrls: string[] = [];
   readonly scriptIntegrity: Record<string, string> = {};
+  readonly dataUrls = new Set<string>();
+  readonly mediaUrls = new Set<string>();
+  /** Remote files found in the cache, by URL. */
+  readonly remoteData: Record<string, string> = {};
   usesThree = false;
 
   constructor(
@@ -160,7 +173,42 @@ class Builder {
       }
     }
     if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
+    if (/\bnavigator\s*\.\s*gpu\b|getContext\(\s*['"]webgpu['"]/.test(code)) {
+      this.note(`${file}: the page uses WebGPU, which the engine does not have: what it draws with it is not drawn`);
+    }
+    this.scanDataUrls(code, src === null ? null : normalizeUrl(src));
     this.scripts.push({ code, file, scope: src === null ? ctx.scope : null, sourceFile: src === null && ctx.scope !== null ? ctx.file : null });
+  }
+
+  /**
+   * The URLs a script names on the allowed hosts (the CDNs, and `--allow-host`): files it fetches. Scripts themselves are
+   * not among them. A file that is cached is served to `fetch()` of exactly that URL; one that is not is a note.
+   */
+  scanDataUrls(code: string, own: string | null): void {
+    const hosts = new Set([...DEFAULT_ALLOWED_HOSTS, ...(this.options.allowHosts ?? [])]);
+    for (const m of code.matchAll(/https:\/\/[^\s'"`<>)\\,;]+/g)) {
+      const url = m[0].replace(/[.]+$/, '');
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        continue;
+      }
+      if (!hosts.has(parsed.hostname) || url === own || this.scriptUrls.includes(url) || /\.(m?js|css|woff2?|ttf|otf)$/i.test(parsed.pathname) || parsed.pathname === '/') continue;
+      this.dataUrls.add(url);
+      this.useCached(url);
+    }
+  }
+
+  /** Records the cached file of a remote URL, or the note that says it is not cached. */
+  useCached(url: string): string | null {
+    const found = resolveCdnData(url);
+    if ('file' in found) {
+      this.remoteData[url] = found.file;
+      return found.file;
+    }
+    if (!this.options.discoverOnly) this.note(found.error);
+    return null;
   }
 
   /** The script's `integrity` attribute against the bytes about to run, wherever they came from. */
@@ -180,6 +228,7 @@ class Builder {
     let css = absolutizeUrls(taken.css, ctx.dir);
     css = ctx.scope === null ? rewriteDocumentSelectors(css) : scopeToComposition(css, ctx.scope, ctx.rootId);
     if (css.trim() === '') return;
+    noteCss(this.fontUse, css);
     this.stylesheets.push({ css, file });
     this.svgRules.push(...crossingRules(css, this.ruleOrder));
     // The next sheet's rules come after this one's: their order counts the blocks of the sheets so far.
@@ -243,7 +292,6 @@ class Builder {
       case 'title':
       case 'base':
       case 'noscript':
-      case 'template':
       case 'head':
         return null;
     }
@@ -253,19 +301,42 @@ class Builder {
       const name = a.prefix ? `${a.prefix}:${a.name}` : a.name;
       let value = a.value;
       if (FILE_ATTRIBUTES.has(name) || (name === 'href' && (svg || tag === 'use'))) value = this.asset(value, ctx);
-      else if (name === 'style') value = absolutizeUrls(value, ctx.dir);
+      else if (name === 'style') {
+        value = absolutizeUrls(value, ctx.dir);
+        noteInline(this.fontUse, value);
+      } else if (name === 'data-font-family') noteFamilyValue(this.fontUse, value);
       attrs.push([name, value]);
     }
-    if (MEDIA_TAGS.has(tag)) {
-      const src = attrs.find(([n]) => n === 'src')?.[1];
-      if (src && !isRemote(src) && existsSync(src.split(/[?#]/)[0]!)) this.mediaFiles.add(src.split(/[?#]/)[0]!);
+    if (MEDIA_TAGS.has(tag) || tag === 'source') {
+      const at = attrs.findIndex(([n]) => n === 'src');
+      const src = at < 0 ? undefined : attrs[at]![1];
+      if (src && /^(https?:)?\/\//i.test(src.trim())) {
+        // A remote file: played from the cache `fetch-deps` filled, else not played, and said so on every frame.
+        const url = normalizeUrl(src.trim());
+        this.mediaUrls.add(url);
+        const found = resolveCdnData(url);
+        if ('file' in found) {
+          attrs[at] = ['src', found.file];
+          this.mediaFiles.add(found.file);
+        } else if (!this.options.discoverOnly) {
+          this.note(`${tag === 'source' ? 'a <source>' : `<${tag}>`} of ${url} is not drawn: ${found.error}`);
+        }
+      } else if (src && !isRemote(src)) {
+        const file = src.split(/[?#]/)[0]!;
+        if (existsSync(file)) this.mediaFiles.add(file);
+        else if (!this.options.discoverOnly) this.note(`<${tag === 'source' ? 'source' : tag}> src="${src}" was not found beside ${ctx.file} or in ${this.root}: it is not drawn`);
+      }
     }
-    if (tag === 'source') {
-      const src = attrs.find(([n]) => n === 'src')?.[1];
-      if (src && !isRemote(src) && existsSync(src.split(/[?#]/)[0]!)) this.mediaFiles.add(src.split(/[?#]/)[0]!);
-    }
-    const content = tag === 'template' ? [] : childrenOf(el);
-    const node: HfNode = { t: 'el', tag, ...(svg ? { svg: true } : {}), attrs, children: await this.nodes(content, ctx, svg) };
+    // A page's `<template>` keeps its content apart from the document: its scripts and styles are not the page's.
+    const inert = tag === 'template' ? await this.nodes(childrenOf((el as PTemplate).content), ctx, svg) : null;
+    const node: HfNode = {
+      t: 'el',
+      tag,
+      ...(svg ? { svg: true } : {}),
+      attrs,
+      children: inert === null ? await this.nodes(childrenOf(el), ctx, svg) : [],
+      ...(inert !== null ? { content: inert } : {}),
+    };
     const src = attrOf(el, 'data-composition-src');
     if (src !== null) await this.mount(node, src, ctx);
     return node;
@@ -411,6 +482,9 @@ const positiveInt = (value: string | null): number | null => {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 };
 
+/** `//host/x` is `https://host/x`. */
+const normalizeUrl = (url: string): string => (url.startsWith('//') ? `https:${url}` : url);
+
 /** Reads the project whose entry file is `indexFile`. */
 export async function buildPlan(indexFile: string, options: PlanOptions = {}): Promise<BuiltPlan> {
   const file = resolve(indexFile);
@@ -422,6 +496,13 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   const head = childrenOf(html).filter(isElement).find((e) => e.tagName === 'head');
   const bodyEl = childrenOf(html).filter(isElement).find((e) => e.tagName === 'body');
   const ctx: Context = { file, dir: root, scope: null, rootId: null, stack: [file] };
+
+  // An index.html that is a fragment (no doctype, no `<html>`) is wrapped by HyperFrames in a document that resets margins
+  // and padding, clips the body, paints it black and sets Inter (producer/src/services/htmlCompiler.ts: ensureFullDocument).
+  const source = readFileSync(file, 'utf8').trim();
+  if (!/^<!DOCTYPE\s+html/i.test(source) && !/^<html/i.test(source)) {
+    builder.addCss('*{margin:0;padding:0;box-sizing:border-box}body{overflow:hidden;background:#000;font-family:"Inter",sans-serif}', file, ctx);
+  }
 
   // The head's styles, links and scripts come before the body's, in document order.
   for (const node of head ? childrenOf(head) : []) if (isElement(node)) await builder.element(node, ctx, false);
@@ -450,6 +531,15 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     fonts.set(request.family, set);
   }
 
+  // The families the CSS names that HyperFrames embeds (or maps an operating-system name to): read from the font cache.
+  finishUse(builder.fontUse);
+  const googleFonts = [...fonts].map(([family, variants]): HfPlan['googleFonts'][number] => ({ family, variants: [...variants] }));
+  for (const bundled of bundledUses(builder.fontUse, new Set(googleFonts.map((f) => f.family.toLowerCase())))) {
+    const existing = googleFonts.find((f) => f.family === bundled.family);
+    if (existing) existing.as = [...new Set([...(existing.as ?? []), ...bundled.as])];
+    else googleFonts.push({ family: bundled.family, variants: bundled.weights, as: bundled.as, cacheOnly: true });
+  }
+
   // The root's own variables: what `<html>` and the root element declare, under the values the root element gives.
   const rootId = attr('data-composition-id') ?? 'main';
   const declared: Record<string, unknown> = {};
@@ -475,11 +565,19 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     stylesheets: builder.stylesheets,
     scripts: builder.scripts,
     svgRules: builder.svgRules,
-    googleFonts: [...fonts].map(([family, variants]) => ({ family, variants: [...variants] })),
+    googleFonts,
     variables: builder.variables,
+    remoteData: builder.remoteData,
     mediaDurations,
     notes: builder.notes,
     usesThree: builder.usesThree,
   };
-  return { plan, files: [...builder.files], scriptUrls: [...new Set(builder.scriptUrls)], scriptIntegrity: builder.scriptIntegrity };
+  return {
+    plan,
+    files: [...builder.files],
+    scriptUrls: [...new Set(builder.scriptUrls)],
+    scriptIntegrity: builder.scriptIntegrity,
+    dataUrls: [...builder.dataUrls],
+    mediaUrls: [...builder.mediaUrls],
+  };
 }

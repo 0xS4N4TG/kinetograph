@@ -30,7 +30,7 @@ describe('project and compositions', () => {
   it('GET /api/project', async () => {
     const r = await api(studio, '/api/project');
     expect(r.status).toBe(200);
-    expect(r.json).toMatchObject({ entry, buildId: 1, buildError: null });
+    expect(r.json).toMatchObject({ entry, cwd: process.cwd(), buildId: 1, buildError: null });
     expect(r.json.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
@@ -124,10 +124,14 @@ describe('GET /api/inspect and /api/timeline', () => {
     // One entry per key, sorted by from, the layer of the first frame each shows on.
     expect(r.json.sequences.map((s: { key: string }) => s.key)).toEqual(['/intro@10+20', '/intro@10+20/inner@12+5', '/outro@50+10']);
     expect(r.json.sequences.map((s: { layer: string }) => s.layer)).toEqual(['$0', '$0', '$0']);
+    // A path id means whatever sits there, so `$0` in two Sequences is two layers, each saying which Sequence it is in;
+    // a name the author gave (`bg`) stays one layer, in the Sequence it began in (none: it began on frame 0).
     expect(r.json.layers).toEqual([
       { id: 'bg', type: 'shape', parent: null, ranges: [[0, 89]] },
-      { id: '$0', type: 'group', parent: null, ranges: [[10, 29], [50, 59]] },
-      { id: '$0.0', type: 'shape', parent: '$0', ranges: [[10, 29], [50, 59]] },
+      { id: '$0', type: 'group', parent: null, ranges: [[10, 29]], sequence: '/intro@10+20' },
+      { id: '$0.0', type: 'shape', parent: '$0', ranges: [[10, 29]], sequence: '/intro@10+20' },
+      { id: '$0', type: 'group', parent: null, ranges: [[50, 59]], sequence: '/outro@50+10' },
+      { id: '$0.0', type: 'shape', parent: '$0', ranges: [[50, 59]], sequence: '/outro@50+10' },
     ]);
   });
 
@@ -140,6 +144,24 @@ describe('GET /api/inspect and /api/timeline', () => {
     // The key is the props, not how they are written.
     const ab = await name(`/api/timeline?comp=Main&props=${encodeURIComponent('{"a":1,"b":2}')}`);
     expect(await name(`/api/timeline?comp=Main&props=${encodeURIComponent('{"b":2,"a":1}')}`)).toBe(ab);
+  });
+
+  it('timeline/progress reports how many frames the sweep has read', async () => {
+    const slow = encodeURIComponent('{"_frameMs":15}');
+    const progress = async () => (await api(studio, `/api/timeline/progress?comp=Main&props=${slow}`)).json;
+    expect(await progress()).toEqual({ done: 0, total: 0 });
+    const pending = api(studio, `/api/timeline?comp=Main&props=${slow}`);
+    let seen = { done: 0, total: 0 };
+    for (let i = 0; i < 200 && seen.done === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      seen = await progress();
+    }
+    expect(seen.total).toBe(90);
+    expect(seen.done).toBeGreaterThan(0);
+    expect((await pending).status).toBe(200);
+    expect(await progress()).toEqual({ done: 90, total: 90 });
+    expect((await api(studio, '/api/timeline/progress')).status).toBe(400);
+    expect((await api(studio, '/api/timeline/progress?comp=Nope')).status).toBe(404);
   });
 
   it('timeline of a composition without Sequences has none', async () => {

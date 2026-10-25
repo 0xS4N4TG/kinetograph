@@ -4,10 +4,11 @@
 
 <h1 align="center">kinetograph.</h1>
 
-<p align="center"><b>A blazingly fast programmatic video engine, made for agents, with no browser in it.</b></p>
+<p align="center"><b>A blazingly fast programmatic video engine, made for agents.</b></p>
 
 <p align="center">
   <a href="#rendered-with-kinetograph">Examples</a> ·
+  <a href="#the-editor">Editor</a> ·
   <a href="#projects-in-tsx">Get started</a> ·
   <a href="packages/cli/skills/kinetograph/references/ENGINE.md">The engine</a> ·
   <a href="packages/site/content/docs/guides/agents.mdx">Use with agents</a>
@@ -69,6 +70,24 @@ rendered by Kinetograph as they are. Same machine and settings as above.
   </tr>
 </table>
 
+## The editor
+
+<p align="center">
+  <img src="docs/readme/studio.webp" alt="Kinetograph studio: the showcase project at frame 292, with the text layer 'kinetograph render' selected in the preview, the Agent tab open beside it, and a timeline with one row per shot and audio clip" width="100%">
+</p>
+
+`kinetograph studio src/index.tsx` opens a local editor for a project. The engine draws its preview frames, so what you
+see is what renders.
+
+- **Timeline:** one row per shot and audio clip. Repeated components fold into one row, and clicking a bar jumps
+  there. "Show details" opens every layer.
+- **Readable layers:** each layer is named after its component and text, with the file and line it came from.
+- **Point and ask:** click a layer in the preview, or drag a box around several, then tell your coding agent what to
+  change. The agent gets the selection, the source locations and a picture of the area. It talks to the agent over
+  the Agent Client Protocol (ACP), with presets for Claude Code, Codex and Gemini (tested with Claude Code so far),
+  and asks you before the agent edits a file.
+- **Inspect and render:** props, the scene tree, each layer's resolved fields and renders, all in the same window.
+
 ## Status
 
 **Beta, version 0.1.0.** It works and renders real projects, but APIs can still change between versions and some
@@ -80,6 +99,9 @@ all 988 of its frames natively. What is left is listed under known issues on the
 - [The DOM engine](packages/cli/skills/kinetograph/references/ENGINE.md), and Remotion compatibility on the kinetograph site (`/docs/compat/`)
 - [Authoring contract](packages/cli/skills/kinetograph/references/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
 - [Scene format](packages/cli/skills/kinetograph/references/SCENE.md)
+- [Changelog](CHANGELOG.md): what changed since 0.1.0. On `main` now: GSAP with its free plugins (a paused timeline
+  seeked per frame), `<Video datamosh>` ([guide](packages/site/content/docs/guides/datamosh.mdx)), and a "Copy for
+  agent" button in the studio.
 
 ## Architecture
 

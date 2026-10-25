@@ -1,8 +1,8 @@
 // The default engine: the CLI's sources for the JS stage and the addon for the GPU stage. Runs inside a worker thread;
 // `native().Renderer` (the only call that opens a GPU device) is made on the first preview or render.
 
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import {
   frameRange,
   listCompositions,
@@ -12,11 +12,53 @@ import {
   type Source,
 } from 'kinetograph';
 import type { Engine, EngineOptions, FrameScene } from './engine.js';
-import type { InspectResult } from './protocol.js';
-import { stableStringify } from './util.js';
+import type { InspectLayer, InspectResult, LayerName, SequenceJson, SourceLocation } from './protocol.js';
+import { lookupName, stableStringify } from './util.js';
 
 /** Project compositions kept ready at once, each with its own frame renderer. */
 const MAX_SOURCES = 4;
+
+/** The real path of `path`, or `path` when it does not exist: macOS reports one file as `/var/...` and as `/private/var/...`. */
+function real(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+const relativeFiles = new Map<string, string>();
+
+/**
+ * `file` as esbuild reported it (relative to the entry's directory, or absolute), relative to `cwd`; absolute when it
+ * is outside `cwd`.
+ */
+export function relativeSource(source: SourceLocation, entryDir: string, cwd: string): SourceLocation {
+  const key = `${entryDir}\n${cwd}\n${source.file}`;
+  let file = relativeFiles.get(key);
+  if (file === undefined) {
+    const absolute = real(isAbsolute(source.file) ? source.file : resolve(real(entryDir), source.file));
+    const rel = relative(real(cwd), absolute);
+    file = rel === '' || rel.startsWith('..') || isAbsolute(rel) ? absolute : rel;
+    relativeFiles.set(key, file);
+  }
+  return { ...source, file };
+}
+
+const withSource = <T extends { source?: SourceLocation }>(item: T, entryDir: string): T =>
+  item.source === undefined ? item : { ...item, source: relativeSource(item.source, entryDir, process.cwd()) };
+
+/** `layers` and their children with the names of `names` laid over. */
+export function nameLayers(layers: InspectLayer[], names: Record<string, LayerName>): InspectLayer[] {
+  return layers.map((layer) => {
+    const name = lookupName(names, layer.id);
+    return {
+      ...layer,
+      ...(name !== undefined ? { label: name.label, ...(name.component !== undefined ? { component: name.component } : {}), ...(name.source !== undefined ? { source: name.source } : {}) } : {}),
+      ...(layer.children ? { children: nameLayers(layer.children, names) } : {}),
+    };
+  });
+}
 
 export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
   const sources = new Map<string, Promise<Source>>();
@@ -61,6 +103,8 @@ export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
       }
       try {
         const out = await source.frame(frame);
+        const entryDir = dirname(entry);
+        const names = out.names && Object.fromEntries(Object.entries(out.names).map(([id, name]) => [id, withSource(name, entryDir)]));
         return {
           sceneJson: out.sceneJson,
           frame,
@@ -69,7 +113,8 @@ export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
           height,
           fps,
           durationInFrames,
-          sequences: out.sequences ?? [],
+          sequences: (out.sequences ?? []).map((s: SequenceJson) => withSource(s, entryDir)),
+          ...(names ? { names } : {}),
           constant: source.kind === 'scene',
           jsMs: out.jsMs,
         };
@@ -93,7 +138,8 @@ export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
     },
 
     async inspect(scene) {
-      return JSON.parse(native().inspect(scene.sceneJson, scene.frame, scene.baseDir)) as InspectResult;
+      const result = JSON.parse(native().inspect(scene.sceneJson, scene.frame, scene.baseDir)) as InspectResult;
+      return scene.names ? { ...result, layers: nameLayers(result.layers, scene.names) } : result;
     },
 
     async render(spec, hooks) {

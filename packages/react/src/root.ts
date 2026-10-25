@@ -13,15 +13,19 @@ import {
   deliverObservations,
   domElementFor,
   hasObservers,
+  hostOf,
+  insertChild,
   isRecordingMutations,
   MAX_OBSERVER_DEPTH,
   recordMutation,
   registerReadbackRoot,
+  removeChild as removeHostChild,
   setRawParent,
   setWebViewport,
   unregisterReadbackRoot,
 } from '@kinetographdev/compat/shim';
 import { ELEMENT_NAMES, emit, type EmitOptions, type HostElement, type HostNode, type HostText, type RenderedTree } from './emit.js';
+import { originOf } from './origin.js';
 import { createReadback, hostMeta, MAX_MEASURE_PASSES, measureLoopError, type Container } from './readback.js';
 
 export type { EmitOptions, RenderedTree } from './emit.js';
@@ -85,11 +89,14 @@ const hostConfig = {
   getRootHostContext: (): HostContext => ROOT_CONTEXT,
   // A `kg-sequence` is transparent: what is inside it answers to the element it stands in.
   getChildHostContext: (parent: HostContext, type: string): HostContext => (type === 'kg-sequence' ? parent : type),
-  createInstance(type: string, props: Record<string, any>, _root: Container, hostContext: HostContext): HostElement {
+  createInstance(type: string, props: Record<string, any>, _root: Container, hostContext: HostContext, handle: unknown): HostElement {
     if (!(type in ELEMENT_NAMES) && !isDomElement(type)) {
       throw new Error(`Unknown element <${type}>: only the Kinetograph elements (Layer, Rect, Text, ...) and DOM elements (div, span, svg, ...) can be rendered`);
     }
     const element: HostElement = { kind: 'element', type, props, children: [] };
+    // Studio builds: the component and the JSX line it came from.
+    const origin = originOf(type, props, handle);
+    if (origin !== undefined) element.origin = origin;
     hostMeta.set(element, { container: _root });
     if (type === 'img' || type === 'video' || type === 'audio') _root.media.add(element);
     // A <Text> child that is an element is caught here, before it is attached, so the error names the element.
@@ -132,7 +139,10 @@ const hostConfig = {
     parent.children.push(child);
     changed(parent, [child], []);
   },
+  // A portal's container is the DOM element a ref gave (`createPortal(children, ref.current)`, `document.body`): its children are placed as a script places them.
   appendChildToContainer(container: Container, child: HostNode) {
+    const portal = hostOf(container);
+    if (portal !== null) return insertChild(portal, child, null);
     removeFrom(container.children, child);
     adopt(null, child);
     container.children.push(child);
@@ -143,6 +153,8 @@ const hostConfig = {
     changed(parent, [child], []);
   },
   insertInContainerBefore(container: Container, child: HostNode, before: HostNode) {
+    const portal = hostOf(container);
+    if (portal !== null) return insertChild(portal, child, before);
     adopt(null, child);
     insertInto(container.children, child, before);
   },
@@ -152,6 +164,7 @@ const hostConfig = {
     changed(parent, [], [child]);
   },
   removeChildFromContainer(container: Container, child: HostNode) {
+    if (hostOf(container) !== null) return removeHostChild(child);
     removeFrom(container.children, child);
     adopt(null, child);
   },
@@ -159,8 +172,10 @@ const hostConfig = {
   clearContainer(container: Container) {
     container.children = container.children.filter((n) => !hostMeta.has(n));
   },
-  commitUpdate(instance: HostElement, _type: string, _prev: unknown, next: Record<string, any>) {
+  commitUpdate(instance: HostElement, type: string, _prev: unknown, next: Record<string, any>, handle: unknown) {
     instance.props = next;
+    // A Sequence that was not showing when it was made had nothing inside it to be named by.
+    if (type === 'kg-sequence' && instance.origin !== undefined) instance.origin = originOf(type, next, handle) ?? instance.origin;
   },
   commitTextUpdate(node: HostText, _old: string, text: string) {
     node.text = text;

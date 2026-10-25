@@ -4,6 +4,8 @@
 
 import {
   ApiError,
+  type AgentClientMessage,
+  type AgentInfo,
   type CompositionInfo,
   type FrameArgs,
   type InspectResult,
@@ -16,15 +18,19 @@ import {
   type StudioError,
   type StudioSocket,
   type TimelineData,
+  type TimelineProgress,
 } from '../src/api';
 import { decodeFrameMessage, encodeFrameMessage } from '../../src/protocol';
 import type { FrameRequest } from '../../src/protocol';
 import { inspectFor, intro, introTimeline, outro } from './fixtures';
 
 export class MockServer implements StudioApi {
-  projectInfo: ProjectInfo = { entry: '/work/scene.tsx', version: '0.1.0', buildId: 1, buildError: null };
+  projectInfo: ProjectInfo = { entry: '/work/scene.tsx', cwd: '/work', version: '0.1.0', buildId: 1, buildError: null };
   comps: CompositionInfo[] = [intro, outro];
   jobs: RenderJob[] = [];
+  agent: AgentInfo = { presets: [{ id: 'fake', name: 'Fake agent', command: 'fake --acp' }], command: 'fake --acp', cwd: '/work' };
+  /** Everything the page sent for the agent. */
+  agentMessages: AgentClientMessage[] = [];
   /** When set, `compositions()` fails as the server does before the first good build. */
   noGoodBuild = false;
   startRenderError: ApiError | null = null;
@@ -75,7 +81,22 @@ export class MockServer implements StudioApi {
 
   async timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData> {
     this.timelineCalls.push({ comp, props });
+    if (this.timelineGate) await this.timelineGate;
+    if (this.timelineError) throw this.timelineError;
     return this.timelineFor(comp);
+  }
+
+  /** Held back by a test to keep `timeline()` loading. */
+  timelineGate: Promise<void> | null = null;
+  timelineError: ApiError | null = null;
+  progress: TimelineProgress = { done: 0, total: 0 };
+
+  async timelineProgress(): Promise<TimelineProgress> {
+    return this.progress;
+  }
+
+  async agentInfo(): Promise<AgentInfo> {
+    return this.agent;
   }
 
   async renders(): Promise<RenderJob[]> {
@@ -132,6 +153,10 @@ export class MockServer implements StudioApi {
         this.frameRequests.push(request);
         if (this.auto) queueMicrotask(() => this.respond(request.requestId));
         return request.requestId;
+      },
+      sendAgent: (message: AgentClientMessage) => {
+        this.agentMessages.push(message);
+        return true;
       },
       close: () => {
         if (this.handlers === handlers) this.handlers = null;

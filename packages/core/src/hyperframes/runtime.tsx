@@ -12,20 +12,25 @@
 // does not show.
 
 import { type ReactNode } from 'react';
-import { Audio } from '@kinetographdev/react';
+import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet } from '@kinetographdev/compat/dom';
+import { setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
+import { finishFontLoadsSync, getFonts } from '../font-registry.js';
 import { makeGoogleFont } from '../google-fonts.js';
 import { reportUnsupported } from '../unsupported.js';
 import type { HfNode, HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
 import { applySvgRules, pinSvgFonts } from './svg-style.js';
+import { laneGain, MAX_GAIN, parseAutomation, sourceTimeAt, type AutomationLane } from './automation.js';
+import { gradeFilter, normalizeGrade, type GradeFilter } from './grading.js';
 import {
+  cutToSlots,
   isMedia,
   parseNumeric,
-  playbackRateOf,
+  rateSpecOf,
   seekTimelines,
   sourceOffsetOf,
   timelineDuration,
@@ -96,7 +101,25 @@ function buildNode(node: HfNode, parent: AnyRecord): void {
     } else el.setAttribute(name, value);
   }
   for (const child of node.children) buildNode(child, el);
+  if (node.content !== undefined) defineTemplateContent(el, node.content);
   parent.appendChild(el);
+}
+
+/**
+ * `template.content`: the nodes of the template, kept out of the document. A browser's `DocumentFragment` has no
+ * counterpart in the DOM shim, so `content.cloneNode(true)` is an `hf-fragment` element with `display: contents`
+ * holding the clones, which lays out as its children do, and `content` itself is a detached holder with the nodes.
+ */
+function defineTemplateContent(template: AnyRecord, nodes: HfNode[]): void {
+  const holder = doc().createElement('div');
+  for (const child of nodes) buildNode(child, holder);
+  holder.cloneNode = (deep = true): AnyRecord => {
+    const fragment = doc().createElement('hf-fragment');
+    fragment.style.setProperty('display', 'contents');
+    for (const child of Array.from(holder.childNodes) as AnyRecord[]) fragment.appendChild(child.cloneNode(deep));
+    return fragment;
+  };
+  Object.defineProperty(template, 'content', { configurable: true, get: () => holder });
 }
 
 function applyAttrs(el: AnyRecord, attrs: [string, string][], extraClass: string): void {
@@ -113,18 +136,23 @@ function applyAttrs(el: AnyRecord, attrs: [string, string][], extraClass: string
 const attrValue = (value: string): string => value.replace(/["\\]/g, '\\$&');
 
 /** `family=Name:wght@400;700` axes as the weights to load in each style. */
-function fontRequests(plan: HfPlan): { family: string; style: 'normal' | 'italic'; weights: string[] }[] {
-  const out: { family: string; style: 'normal' | 'italic'; weights: string[] }[] = [];
+export function fontRequests(plan: HfPlan): { family: string; style: 'normal' | 'italic'; weights: string[]; as: string[]; cacheOnly: boolean }[] {
+  const out: { family: string; style: 'normal' | 'italic'; weights: string[]; as: string[]; cacheOnly: boolean }[] = [];
   for (const font of plan.googleFonts) {
     for (const style of ['normal', 'italic'] as const) {
       const weights = font.variants
         .filter((v) => (v.endsWith('i') ? 'italic' : 'normal') === style)
         .map((v) => v.replace(/i$/, ''));
-      if (weights.length > 0) out.push({ family: font.family, style, weights: [...new Set(weights)] });
+      if (weights.length > 0) out.push({ family: font.family, style, weights: [...new Set(weights)], as: font.as ?? [], cacheOnly: font.cacheOnly === true });
     }
   }
   return out;
 }
+
+/** The download of a family that is read from the cache only: a miss says what to run. */
+const cacheOnlyFetch = (family: string) => (): never => {
+  throw new Error(`the font ${family} is not in the font cache; run \`kinetograph fetch-deps\` on the project once (fonts are never downloaded while rendering)`);
+};
 
 class Runtime {
   private built = false;
@@ -135,6 +163,17 @@ class Runtime {
   private totalSeconds = 0;
   /** Why a page's own drawing failed (a rejected `hf-seek` promise or `__hf.buildReady` entry), reported with every frame. */
   private readonly failures = new Set<string>();
+  /** What `display` a `[data-hidden]` clip had before the runtime hid it (HyperFrames' displayBeforeHide). */
+  private readonly displayBeforeHide = new WeakMap<AnyRecord, string>();
+  /** The `<svg>` that holds the grading filters, and what each graded element has drawn. */
+  private filterHost: AnyRecord | null = null;
+  private readonly graded = new Map<AnyRecord, { id: string; signature: string }>();
+  private gradingNotes: string[] = [];
+  private seekFailures: string[] = [];
+  private readonly scriptFailures: string[] = [];
+  /** Done when what the scripts fetched has been drawn. */
+  private settling: Promise<void> | null = null;
+  private held = false;
 
   constructor(private readonly plan: HfPlan) {
     this.timing = new TimingResolver({
@@ -163,7 +202,11 @@ class Runtime {
     this.built = true;
     const { plan } = this;
     g.__timelines = g.__timelines ?? {};
-    const report = (message: string): void => noteStylesheetProblem(message);
+    // A script that failed, or a handler that threw, is a note in `doctor` and a report on every frame (`--strict` fails on it).
+    const report = (message: string): void => {
+      noteStylesheetProblem(message);
+      this.scriptFailures.push(message);
+    };
     g.__hyperframes = {
       getVariables: () => ({ ...(plan.variables[plan.compositionId] ?? {}) }),
       assetUrl: (path: string) => (path.startsWith('/') || /^[a-z]+:/i.test(path) ? path : `${plan.baseDir}/${path}`),
@@ -214,11 +257,41 @@ class Runtime {
         });
       }
     }
+    this.afterScripts();
+    // A page that draws from what it fetched (`d3.json(url).then(...)`) is not done when its scripts return.
+    this.settling = whenFetchesSettle().then(() => this.afterScripts());
+  }
+
+  /** What follows the scripts, run again once what they fetched has been drawn. */
+  private afterScripts(): void {
+    const { plan } = this;
     const svgs = Array.from(doc().querySelectorAll('svg')) as AnyRecord[];
     applySvgRules(plan.svgRules, svgs);
     pinSvgFonts(svgs, (el) => g.getComputedStyle(el));
     this.root = doc().querySelector(`[data-composition-id="${attrValue(plan.compositionId)}"]`);
     this.timing.reset();
+    this.clocks.clear();
+  }
+
+  /** The variables of the composition `el` is in (the root's, outside any). */
+  private variablesFor(el: AnyRecord): Record<string, unknown> {
+    const variables = this.plan.variables;
+    for (let p = el; p; p = p.parentElement) {
+      const id = p.getAttribute?.('data-composition-id');
+      if (id && variables[id]) return variables[id]!;
+    }
+    return variables[this.plan.compositionId] ?? {};
+  }
+
+  /** The frame waits for what the page fetched at load (once). */
+  holdForPage(): void {
+    if (this.settling === null || this.held) return;
+    this.held = true;
+    const handle = delayRender('HyperFrames page scripts');
+    void this.settling.then(
+      () => continueRender(handle),
+      () => continueRender(handle),
+    );
   }
 
   /**
@@ -227,13 +300,7 @@ class Runtime {
    */
   private bindVariables(): void {
     const variables = this.plan.variables;
-    const valuesOf = (el: AnyRecord): Record<string, unknown> => {
-      for (let p = el; p; p = p.parentElement) {
-        const id = p.getAttribute?.('data-composition-id');
-        if (id && variables[id]) return variables[id]!;
-      }
-      return variables[this.plan.compositionId] ?? {};
-    };
+    const valuesOf = (el: AnyRecord): Record<string, unknown> => this.variablesFor(el);
     const scalar = (v: unknown): string | null => (typeof v === 'string' || typeof v === 'number' ? String(v) : null);
     for (const el of Array.from(doc().querySelectorAll('[data-composition-id]')) as AnyRecord[]) {
       const values = variables[el.getAttribute('data-composition-id')] ?? {};
@@ -258,10 +325,27 @@ class Runtime {
     if (!this.html.isConnected) doc().body.appendChild(this.html);
   }
 
-  /** The project's length in seconds: `data-duration` of the root, else the longest timeline or clip. */
-  seconds(): number {
+  /**
+   * The project's length in seconds: `data-duration` of the root, else the longest timeline or clip. Without a
+   * `data-duration` the scripts run here, before any frame: in a root of their own that has layout, so that a script
+   * that measures (`getBoundingClientRect`, `getComputedStyle`) finds what it would in a browser. The document goes to
+   * the frames' root on the first frame (`mount`).
+   */
+  async seconds(): Promise<number> {
     if (this.plan.durationSeconds !== null) return this.plan.durationSeconds;
+    if (!this.built) {
+      const root = createSceneRoot({ viewport: { width: this.plan.width, height: this.plan.height }, fonts: () => getFonts(), time: () => 0 });
+      try {
+        // Text is not measured before its fonts are registered.
+        finishFontLoadsSync();
+        this.setup();
+        this.html.parentNode?.removeChild(this.html);
+      } finally {
+        root.unmount();
+      }
+    }
     this.setup();
+    await this.settling;
     let end = timelineDuration((g.__timelines ?? {})[this.plan.compositionId]) ?? 0;
     for (const el of Array.from(doc().querySelectorAll('[data-start]')) as TimedElement[]) {
       const finish = this.timing.end(el);
@@ -286,17 +370,38 @@ class Runtime {
         start,
         hiddenFrom: host.hasAttribute('data-start') && duration !== null ? start + duration : Infinity,
         playbackStart: sourceOffsetOf(host),
-        rate: playbackRateOf(host),
+        rate: rateSpecOf(host),
       };
     }
     this.clocks.set(id, clock);
     return clock;
   }
 
+  /** `display: none` for a clip with `data-hidden`, remembering the author's value (runtime/init.ts: hideByDisplay). */
+  private hideByDisplay(el: AnyRecord): void {
+    if (!this.displayBeforeHide.has(el)) this.displayBeforeHide.set(el, el.style.getPropertyValue('display'));
+    if (el.style.getPropertyValue('display') !== 'none') el.style.setProperty('display', 'none');
+  }
+
+  /** The author's `display` back once the flag is gone (runtime/init.ts: restoreDisplay). */
+  private restoreDisplay(el: AnyRecord): void {
+    const before = this.displayBeforeHide.get(el);
+    if (before === undefined) return;
+    this.displayBeforeHide.delete(el);
+    if (before !== '') el.style.setProperty('display', before);
+    else el.style.removeProperty('display');
+  }
+
   /** Brings the document to `time` seconds. */
   seek(time: number, total: number, fps: number): void {
     // Clips first: a hidden clip's contents stay hidden whatever a tween writes (the rule above is `!important`).
     for (const el of Array.from(doc().querySelectorAll('[data-start]')) as AnyRecord[]) {
+      // `data-hidden` takes the clip out of the picture and leaves the rest of the pass to a clip that is not (runtime/init.ts:3094).
+      if (el.hasAttribute('data-hidden')) {
+        this.hideByDisplay(el);
+        continue;
+      }
+      this.restoreDisplay(el);
       const visible = this.timing.visibleAt(el, time, total, this.root);
       const hidden = el.hasAttribute(HIDDEN_ATTR);
       if (!visible) {
@@ -307,16 +412,68 @@ class Runtime {
         el.removeAttribute(HIDDEN_ATTR);
       }
     }
-    seekTimelines(g.__timelines ?? {}, this.plan.compositionId, time, (id) => this.clockOf(id));
+    this.seekFailures = [];
+    seekTimelines(g.__timelines ?? {}, this.plan.compositionId, time, (id) => this.clockOf(id), false, (message) => this.seekFailures.push(message));
     this.announceSeek(time);
     for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) {
-      const clock: Record<string, number> = {
-        from: this.timing.start(el) * fps,
-        trimBefore: sourceOffsetOf(el) * fps,
-      };
-      const rate = playbackRateOf(el);
-      if (rate !== 1) clock.playbackRate = rate;
+      const start = this.timing.start(el);
+      const rate = rateSpecOf(el);
+      const clock: Record<string, number> = { from: start * fps, trimBefore: sourceOffsetOf(el) * fps };
+      if (typeof rate === 'number') {
+        if (rate !== 1) clock.playbackRate = rate;
+      } else {
+        // A speed ramp: the file's time is the integral of the rate over the clip's own time (frameSources.ts:142). The
+        // engine's clock is linear, so it is handed the frame at which a plain clip would show that time.
+        clock.frame = start * fps + sourceTimeAt(rate, Math.max(0, time - start)) * fps;
+      }
       el.setAttribute('data-kg-video', JSON.stringify(clock));
+    }
+    this.applyGrading();
+  }
+
+  /** The animated values a tween leaves on an element (`--hf-color-grading-intensity`, `-lut-intensity`, `-exposure`). */
+  private animatedGrade(el: AnyRecord): { intensity: number | null; lutIntensity: number | null; exposure: number | null } {
+    const read = (name: string, lo: number, hi: number): number | null => {
+      const text = String(el.style.getPropertyValue(name)).trim();
+      const n = Number(text);
+      return text !== '' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null;
+    };
+    return {
+      intensity: read('--hf-color-grading-intensity', 0, 1),
+      lutIntensity: read('--hf-color-grading-lut-intensity', 0, 1),
+      exposure: read('--hf-color-grading-exposure', -2, 2),
+    };
+  }
+
+  /**
+   * `data-color-grading` of a `<video>`, `<img>` or `<canvas>` as an SVG filter on the element (see `grading.ts`). The
+   * filter is rebuilt only when the grade changes, so a tween of `--hf-color-grading-exposure` is a filter per frame.
+   */
+  private applyGrading(): void {
+    this.gradingNotes = [];
+    for (const el of Array.from(doc().querySelectorAll('video[data-color-grading], img[data-color-grading], canvas[data-color-grading]')) as AnyRecord[]) {
+      const state = this.graded.get(el) ?? { id: `kg-hf-grade-${this.graded.size}`, signature: '' };
+      this.graded.set(el, state);
+      const grade = normalizeGrade(el.getAttribute('data-color-grading'), this.variablesFor(el), this.animatedGrade(el));
+      const filter: GradeFilter | null = grade === null ? null : gradeFilter(grade);
+      const authored = String(el.style.getPropertyValue('filter')).replace(/\s*url\(#kg-hf-grade-\d+\)/g, '').trim();
+      if (filter !== null) {
+        for (const name of filter.left) this.gradingNotes.push(`${name} is not drawn`);
+        for (const name of filter.approximated) this.gradingNotes.push(`${name} is approximated`);
+      }
+      let wanted = authored;
+      if (filter !== null && filter.steps.length > 0) {
+        const signature = JSON.stringify([filter.steps, filter.intensity]);
+        if (state.signature !== signature) {
+          this.buildFilter(state.id, filter);
+          state.signature = signature;
+        }
+        wanted = `${authored} url(#${state.id})`.trim();
+      } else state.signature = '';
+      if (String(el.style.getPropertyValue('filter')) !== wanted) {
+        if (wanted === '') el.style.removeProperty('filter');
+        else el.style.setProperty('filter', wanted);
+      }
     }
   }
 
@@ -341,6 +498,63 @@ class Runtime {
   }
 
   /** `<audio>` and the audible `<video>`s as `<Audio>` in a `<Sequence>` over their window. */
+  private buildFilter(id: string, filter: GradeFilter): void {
+    if (this.filterHost === null) {
+      this.filterHost = doc().createElementNS(SVG_NS, 'svg');
+      this.filterHost.setAttribute('width', '0');
+      this.filterHost.setAttribute('height', '0');
+      this.filterHost.style.setProperty('position', 'absolute');
+      this.html.appendChild(this.filterHost);
+    }
+    const host = this.filterHost;
+    for (const old of Array.from(host.children) as AnyRecord[]) if (old.getAttribute('id') === id) host.removeChild(old);
+    const make = (tag: string, attrs: Record<string, string>): AnyRecord => {
+      const node = doc().createElementNS(SVG_NS, tag);
+      for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
+      return node;
+    };
+    const fmt = (n: number): string => String(Number(n.toFixed(6)));
+    const root = make('filter', { id, x: '0', y: '0', width: '1', height: '1', 'color-interpolation-filters': 'sRGB' });
+    let previous = 'SourceGraphic';
+    filter.steps.forEach((step, i) => {
+      const result = `g${i}`;
+      if (step.kind === 'matrix') {
+        root.appendChild(make('feColorMatrix', { type: 'matrix', values: step.values.map(fmt).join(' '), in: previous, result }));
+      } else {
+        const transfer = make('feComponentTransfer', { in: previous, result });
+        for (const [tag, table] of [['feFuncR', step.r], ['feFuncG', step.g], ['feFuncB', step.b]] as const) {
+          transfer.appendChild(make(tag, { type: 'table', tableValues: table.map(fmt).join(' ') }));
+        }
+        root.appendChild(transfer);
+      }
+      previous = result;
+    });
+    if (filter.intensity < 1) {
+      root.appendChild(make('feComposite', { in: previous, in2: 'SourceGraphic', operator: 'arithmetic', k1: '0', k2: fmt(filter.intensity), k3: fmt(1 - filter.intensity), k4: '0' }));
+    }
+    host.appendChild(root);
+  }
+
+  /** The group a member `<audio>` belongs to: its `<hf-audio-group>` element (audioGroups.ts: resolveGroupElement), or null. */
+  private audioGroupOf(el: AnyRecord): AnyRecord | null {
+    const id = el.getAttribute('data-audio-group');
+    if (!id) return null;
+    const group = doc().getElementById(id);
+    return group && String(group.tagName).toLowerCase() === 'hf-audio-group' ? group : null;
+  }
+
+  /** Whether the clip or an ancestor has `data-hidden`, or its group does: the mix drops it (engine/mediaHidden.ts). */
+  private silencedByHidden(el: AnyRecord): boolean {
+    for (let node = el; node; node = node.parentElement) if (node.hasAttribute?.('data-hidden')) return true;
+    return this.audioGroupOf(el)?.hasAttribute('data-hidden') ?? false;
+  }
+
+  /**
+   * `<audio>` and the audible `<video>`s as `<Audio>` in a `<Sequence>` over their window. The window is the clip's,
+   * cut to the hosts that start their composition part-way in. The level is `data-volume` times the `volume` lane
+   * (capped at +12 dB), times the fades, times the group's `data-volume` and `volume` lane. A `rate` lane plays the file
+   * in quarter-second slices, each at the mean rate of its slice, as HyperFrames bakes it (engine/audioMixer.ts).
+   */
   sounds(fps: number, totalFrames: number): ReactNode[] {
     const out: ReactNode[] = [];
     const media = Array.from(doc().querySelectorAll('audio[data-start], video[data-start]')) as AnyRecord[];
@@ -350,30 +564,60 @@ class Runtime {
         const declared = el.getAttribute('data-has-audio');
         if (el.hasAttribute('muted') || (declared !== null && declared !== 'true')) return;
       }
+      if (this.silencedByHidden(el)) return;
       const src = this.mediaSource(el);
       if (src === null) return;
-      const start = this.timing.start(el);
+      const origin = this.timing.start(el);
       const duration = this.timing.duration(el);
-      const from = Math.max(0, Math.round(start * fps));
-      const length = duration === null ? totalFrames - from : Math.max(1, Math.round(duration * fps));
-      if (length <= 0 || from >= totalFrames) return;
-      const gain = Math.min(3.98, Math.max(0, parseNumeric(el.getAttribute('data-volume')) ?? 1));
-      const fadeIn = Math.max(0, parseNumeric(el.getAttribute('data-fade-in')) ?? 0) * fps;
-      const fadeOut = Math.max(0, parseNumeric(el.getAttribute('data-fade-out')) ?? 0) * fps;
+      const end = duration === null ? Infinity : origin + duration;
+      const cut = cutToSlots({ start: origin, end }, this.timing.hostSlots(el));
+      const from = Math.max(0, Math.round(cut.start * fps));
+      const to = Number.isFinite(cut.end) ? Math.max(from + 1, Math.round(cut.end * fps)) : totalFrames;
+      if (to <= from || from >= totalFrames) return;
+      const automation = parseAutomation(el.getAttribute('data-automation'));
+      const lane = automation?.volume ?? null;
+      const gain = Math.min(MAX_GAIN, Math.max(0, parseNumeric(el.getAttribute('data-volume')) ?? 1));
+      const fadeIn = Math.max(0, parseNumeric(el.getAttribute('data-fade-in')) ?? 0);
+      const fadeOut = Math.max(0, parseNumeric(el.getAttribute('data-fade-out')) ?? 0);
       // Fades that together exceed the clip are scaled to meet inside it.
-      const scale = fadeIn + fadeOut > length ? length / (fadeIn + fadeOut) : 1;
-      const volume = (frame: number): number => {
-        let v = gain;
-        if (fadeIn > 0) v *= Math.min(1, frame / (fadeIn * scale));
-        if (fadeOut > 0) v *= Math.min(1, (length - frame) / (fadeOut * scale));
+      const span = Number.isFinite(end) ? end - origin : Infinity;
+      const scale = Number.isFinite(span) && span > 0 && fadeIn + fadeOut > span ? span / (fadeIn + fadeOut) : 1;
+      const group = this.audioGroupOf(el);
+      const groupNumber = group === null ? 1 : Number.parseFloat(group.getAttribute('data-volume') ?? '');
+      const groupGain = Number.isFinite(groupNumber) ? groupNumber : 1;
+      const groupLane: AutomationLane | null = group === null ? null : (parseAutomation(group.getAttribute('data-automation'))?.volume ?? null);
+      const level = (frame: number): number => {
+        const t = frame / fps;
+        const local = t - origin;
+        let v = lane !== null ? laneGain(lane, gain, local) : gain;
+        if (fadeIn > 0) v *= Math.min(1, Math.max(0, local / (fadeIn * scale)));
+        if (fadeOut > 0 && Number.isFinite(span)) v *= Math.min(1, Math.max(0, (span - local) / (fadeOut * scale)));
+        if (group !== null) v *= groupLane !== null ? laneGain(groupLane, groupGain, t) : groupGain;
         return Math.max(0, v);
       };
+      const mediaStart = sourceOffsetOf(el);
+      const rate = rateSpecOf(el);
       const key = `${el.id || el.tagName.toLowerCase()}-${index}`;
-      out.push(
-        <Sequence key={key} layout="none" from={from} durationInFrames={length} name={`hf-${key}`}>
-          <Audio src={src} volume={volume} trimBefore={Math.round(sourceOffsetOf(el) * fps)} playbackRate={playbackRateOf(el)} />
-        </Sequence>,
-      );
+      // [first frame, end frame, file seconds at the first frame, rate] of each Sequence.
+      const parts: [number, number, number, number][] = [];
+      if (typeof rate === 'number') {
+        parts.push([from, to, mediaStart + rate * Math.max(0, from / fps - origin), rate]);
+      } else {
+        const slice = Math.max(1, Math.ceil(0.25 * fps));
+        for (let f = from; f < to; f += slice) {
+          const f1 = Math.min(to, f + slice);
+          const s0 = mediaStart + sourceTimeAt(rate, Math.max(0, f / fps - origin));
+          const s1 = mediaStart + sourceTimeAt(rate, Math.max(0, f1 / fps - origin));
+          parts.push([f, f1, s0, Math.max(0.01, (s1 - s0) / ((f1 - f) / fps))]);
+        }
+      }
+      parts.forEach(([f0, f1, seconds, partRate], i) => {
+        out.push(
+          <Sequence key={`${key}-${i}`} layout="none" from={f0} durationInFrames={f1 - f0} name={`hf-${key}-${i}`}>
+            <Audio src={src} volume={(frame: number) => level(f0 + frame)} trimBefore={Math.round(seconds * fps)} playbackRate={partRate} />
+          </Sequence>,
+        );
+      });
     });
     return out;
   }
@@ -383,6 +627,9 @@ class Runtime {
     if (this.plan.usesThree) reportUnsupported('three.js', null, null, 'Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)');
     for (const note of this.plan.notes) reportUnsupported('HyperFrames', null, null, note);
     for (const failure of this.failures) reportUnsupported('HyperFrames', 'script', failure, 'a script that draws by itself failed, so its canvas is not drawn');
+    for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
+    for (const failure of this.seekFailures) reportUnsupported('HyperFrames', null, null, failure);
+    for (const failure of this.scriptFailures) reportUnsupported('HyperFrames', null, null, failure);
   }
 }
 
@@ -391,17 +638,25 @@ export function defineHyperframes(plan: HfPlan): void {
   for (const sheet of plan.stylesheets) registerStylesheet(sheet.css, sheet.file);
   for (const request of fontRequests(plan)) {
     try {
-      makeGoogleFont(request.family).loadFont(request.style, { weights: request.weights });
+      makeGoogleFont(request.family, request.cacheOnly ? { fetch: cacheOnlyFetch(request.family) } : {}).loadFont(request.style, {
+        weights: request.weights,
+        ...(request.as.length > 0 ? { registerAs: request.as } : {}),
+      });
     } catch (error) {
       noteStylesheetProblem(`font ${request.family}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   const runtime = new Runtime(plan);
+  setRemoteFiles(plan.remoteData ?? {});
+  setRefusedFetchHandler((url) =>
+    noteStylesheetProblem(`fetch("${url}") was refused: the file is not cached. Run \`kinetograph fetch-deps <entry> --url ${url}\` once; a render never downloads it`),
+  );
 
   function HyperframesProject(): ReactNode {
     const frame = useCurrentFrame();
     const { fps, durationInFrames } = useVideoConfig();
     runtime.setup();
+    runtime.holdForPage();
     runtime.mount();
     // `frame / fps` is exact for a whole frame; a motion-blur sub-frame is fractional.
     runtime.seek(frame / fps, durationInFrames / fps, fps);
@@ -419,7 +674,7 @@ export function defineHyperframes(plan: HfPlan): void {
       height={plan.height}
       fps={plan.fps}
       durationInFrames={plan.durationSeconds === null ? 1 : frames(plan.durationSeconds)}
-      calculateMetadata={plan.durationSeconds === null ? () => ({ durationInFrames: frames(runtime.seconds()) }) : undefined}
+      calculateMetadata={plan.durationSeconds === null ? async () => ({ durationInFrames: frames(await runtime.seconds()) }) : undefined}
     />
   ));
 }

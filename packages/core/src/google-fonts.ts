@@ -72,6 +72,8 @@ export interface GoogleFontLoadOptions {
   /** Accepted for compatibility; the TrueType files hold the whole font, so subsets make no difference. */
   subsets?: string[];
   ignoreTooManyRequestsWarning?: boolean;
+  /** Other family names the same files are registered under (a page that names `Arial` gets the family a project maps it to). */
+  registerAs?: string[];
 }
 
 export interface GoogleFontLoadResult {
@@ -255,7 +257,8 @@ export function makeGoogleFont(familyName: string, options: FontDownloadOptions 
 
   const loadFont = (style: GoogleFontStyle = 'normal', loadOptions: GoogleFontLoadOptions = {}): GoogleFontLoadResult => {
     const weights = loadOptions.weights?.map(String);
-    const key = `${style}:${weights?.join(',') ?? '*'}`;
+    const names = [family, ...(loadOptions.registerAs ?? [])];
+    const key = `${style}:${weights?.join(',') ?? '*'}:${names.join(',')}`;
     let done = loaded.get(key);
     if (!done) {
       done = trackFontLoad(
@@ -263,13 +266,14 @@ export function makeGoogleFont(familyName: string, options: FontDownloadOptions 
           const faces = await faceList(family, style, weights, options);
           for (const face of faces) {
             const path = await fetchFileCached(face.url, options);
-            registerFont({ family, path, weight: Number(face.weight), style: face.style });
+            for (const name of names) registerFont({ family: name, path, weight: Number(face.weight), style: face.style });
           }
         })(),
         // `measureText` at module load cannot wait for the download above, so it does the same with the thread blocked.
         () => {
           for (const face of faceListSync(family, style, weights, options)) {
-            registerFont({ family, path: fetchFileCachedSync(face.url, options), weight: Number(face.weight), style: face.style });
+            const path = fetchFileCachedSync(face.url, options);
+            for (const name of names) registerFont({ family: name, path, weight: Number(face.weight), style: face.style });
           }
         },
       );

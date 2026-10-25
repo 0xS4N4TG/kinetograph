@@ -1859,6 +1859,7 @@ dependencies = [
  "blitz-html",
  "blitz-traits",
  "bytes",
+ "cssparser",
  "data-url",
  "euclid",
  "image",

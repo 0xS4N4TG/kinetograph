@@ -162,7 +162,9 @@ What the TypeScript side does around the addon, as built on `engine/runtime`. Co
   `layout` size, a `<Text>`'s `maxWidth` and measured height; a path or a group without a layout is 0 by 0; an animated
   size is its first value). Rust leaves a `{"type": "native", path, x, y, …}` layer where the box went; TypeScript
   replaces it with `emitNative`'s layers moved there (the layer's own `x`/`y` are an offset from the box, its anchor
-  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped.
+  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped. A
+  `<Layer>`, shape, canvas, 3D scene or video is an overlay (absolute, at the corner of its positioned ancestor, no room
+  in the flow); an `<Image>`, GIF, Lottie, `<GlslShader>` and text are in the flow, a replaced box of their own size.
 - **Top-level layers** of an island get `layoutItem: { position: 'absolute' }`, so a native flex parent does not
   place them again.
 - **`fonts`** is `getFonts()` as it is: keys are the scene's `fontKey`s (`Inter`, `Inter:800`, `Inter:400i`), not the
@@ -258,8 +260,9 @@ these on the global object where they are missing:
 - `crypto.getRandomValues` and `randomUUID` draw from the seeded `Math.random` generator.
 
 Time: `Date`, `performance.now`, timers and `requestAnimationFrame` were already driven by the frame
-(`core/src/determinism.ts`); `requestAnimationFrame` callbacks run once per frame with the frame time, before the frame
-renders. CSS `@keyframes` animations and transitions read `request.time`; nothing in TypeScript reads a wall clock.
+(`core/src/determinism.ts`); `requestAnimationFrame` callbacks run once per frame with the frame time, after the frame
+renders (the callbacks the render asked for, then what they set is in that frame's scene; what they ask for waits for the
+next frame). Motion-blur sub-frames run none. CSS `@keyframes` animations and transitions read `request.time`; nothing in TypeScript reads a wall clock.
 
 ### 10.5 doctor and the corpus harness
 
@@ -451,6 +454,23 @@ What is drawn (stream 3, as built):
   (`transform-box: view-box` only), and `filter="url(#id)"` on any element, including a `<filter>` defined in another
   `<svg>` of the page. The group returned is `passThrough` (no clip, no isolation) unless something reaches outside
   the box, so a `mix-blend-mode` inside blends with what is behind the `<svg>`.
+- **The page's cascade reaches the SVG** (`serialize.rs`, `cascaded`): Stylo styles the elements inside an `<svg>` like
+  any others, so a rule that crosses from the HTML into it (`[data-composition-id="x"] .bar { fill: #5c5c5c }`,
+  `.chart circle { stroke: red }`, `div > svg rect[data-k]`) applies, and a class a script toggles between frames
+  restyles the shapes on the next frame. (`text-anchor`, `shape-rendering`, `paint-order`, `clip-rule` and
+  `dominant-baseline` are computed because `vendor/stylo` enables them in its Servo build.) Stylo does not read SVG presentation attributes, so a computed value that
+  differs from the parent's (from the initial one, for `opacity` and `display`) is the cascade's and is written on the
+  element as style, where it beats the attribute; one that equals the parent's is inheritance, which usvg does too, and
+  an attribute stands. Properties: `fill`, `stroke` and their `-width`, `-opacity`, `-linecap`, `-linejoin`,
+  `-miterlimit`, `-dasharray`, `-dashoffset`, `fill-opacity`, `fill-rule`, `font-family|size|weight|style`,
+  `letter-spacing`, `word-spacing`, `text-rendering`, `text-anchor`, `shape-rendering`, `paint-order`, `clip-rule`,
+  `dominant-baseline`, `visibility`, `opacity`, `display: none`, `mix-blend-mode`. The
+  root takes what the HTML around it passes down (`fill`, the font). Families go through `font-family` as Stylo
+  prints them (double quotes and all, escaped as XML); `@font-face` and Google families the page loaded are in the
+  request's fonts, so text in the `<svg>` finds them. A `fill`, `stroke`, `stop-color`, `flood-color` or
+  `lighting-color` usvg cannot read (`var(--x)`, `oklch()`, `oklab()`, `color-mix()`, `rgb(r g b / a)`, `rebeccapurple`)
+  goes through Stylo's colour parser, as an HTML colour does, and is written as a plain `rgb` (`svg/color.rs`); one
+  that cannot be resolved is an `Unsupported` item. Tests: `crates/dom/tests/svg_cascade.rs`.
 - **Filters** (`filterGraph`, `filter_graph`): all 17 primitives but `feImage`, which becomes a transparent flood and an
   `Unsupported` item. CSS filter functions on an element inside an `<svg>` are `Unsupported` (the box painter does
   them for HTML boxes).
@@ -558,6 +578,10 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   once per document (`document.rs` does both). This Stylo is the Servo build: it drops `filter: url()`,
   `background-clip: text`, `-webkit-text-stroke`, `-webkit-text-fill-color` and `paint-order` as invalid. The shim
   writes the same value into a non-inherited custom property (`--kg-filter`, ...) that the painter reads back.
+  `-webkit-text-stroke` and `paint-order` inherit in CSS, so `paint/text_stroke.rs` takes the nearest ancestor's
+  declaration. The stroke is a `stroke` and `paintOrder` on the text layer (SCENE.md, "Text stroke"), drawn by Skia as the
+  glyph outlines stroked with a miter join (Chrome's, checked against Chrome for Testing); a text shadow of stroked
+  text is stroked too.
 - Fonts: a glyph run needs the font file. The painter matches a run's font bytes to a file of `request.fonts` (once per
   font), or to a path registered with `paint::register_font_path(blob_id, path)`.
 
@@ -628,7 +652,20 @@ program that draws into a texture is translated upside down (`flip_y`: the verte
 nothing. A frame starts every target zeroed (wgpu's lazy clear), so a target is a function of the frame's own ops.
 `crates/dom/tests/webgl.rs` runs four cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
 them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0, texture sampling 0.05 and two
-render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off. `renderCanvas` (the addon) keeps one renderer, so a call no longer
+render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off.
+Points, instancing and the copies between buffers are made of the same pieces (`tests/glsl.rs` pins each). A point is
+one instance of a six-vertex quad: its attributes advance for each instance (indexed points gather them in the order
+of the list first), and the vertex shader's wrapper places the quad after `main` ran, `gl_PointSize` pixels across in
+the viewport, clamped to 1..511, with `gl_PointCoord` as a varying at location 15; a point whose centre is outside
+the clip volume is dropped, as GL does, and culling does not apply. `gl_VertexID` is wgpu's `vertex_index` (which
+counts from the draw's `first`), or the instance index in a draw of points; `gl_InstanceID` is the instance index. An
+attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`. `blitFramebuffer` is an op of its
+own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle over the destination with `textureLoad`
+(NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
+(GL's bottom first) apart; the replay keeps a canvas draw that a blit reads even when a later clear would have
+dropped it. `texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
+then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
+empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
 A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
@@ -652,7 +689,7 @@ than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
 `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
-`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`, `-webkit-text-stroke`, `paint-order`,
+`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`,
 form controls, iframes, SVG pictures (`<img src=x.svg>`, `url(x.svg)`), `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list

@@ -71,6 +71,18 @@ export function measureLoopError(): Error {
   );
 }
 
+/** The properties scripts usually read together from one element (GSAP's probes, layout measurements, visibility checks). */
+const COMMON_PROPERTIES = [
+  'display', 'visibility', 'opacity', 'position', 'overflow', 'overflow-x', 'overflow-y', 'z-index', 'transform', 'transform-origin',
+  'transform-box', 'translate', 'rotate', 'scale', 'perspective', 'perspective-origin', 'transform-style', 'will-change', 'filter',
+  'width', 'height', 'top', 'left', 'right', 'bottom', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+  'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'border-top-width', 'border-right-width', 'border-bottom-width',
+  'border-left-width', 'box-sizing', 'color', 'background-color', 'background-image', 'font-family', 'font-size', 'font-weight',
+  'font-style', 'line-height', 'letter-spacing', 'text-align', 'text-transform', 'white-space', 'flex-direction', 'align-items',
+  'justify-content', 'pointer-events', 'clip-path', 'mask-image', 'fill', 'stroke', 'stroke-width', 'stroke-dasharray',
+  'stroke-dashoffset', 'cursor', 'content', 'vector-effect',
+];
+
 export function createReadback(container: Container, options: EmitOptions): Readback {
   let cachedGeneration = -1;
   let paths = new Map<HostElement, string>();
@@ -191,8 +203,12 @@ export function createReadback(container: Container, options: EmitOptions): Read
       if (hasAddonFunction('domComputedStyle')) {
         // One value per property asked for, "" for one the engine does not know.
         try {
-          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), [property]);
-          value = answer[0] !== undefined && answer[0] !== '' ? answer[0] : null;
+          // The engine styles the whole island for every call whatever the number of properties, and scripts read several
+          // properties of one element (GSAP reads a dozen): ask for the usual ones together and answer the rest from the cache.
+          const asked = [property, ...COMMON_PROPERTIES.filter((p) => p !== property && !island.computed.has(`${pathOf(host)}\0${p}`))];
+          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), asked);
+          asked.forEach((name, i) => island.computed.set(`${pathOf(host)}\0${name}`, answer[i] !== undefined && answer[i] !== '' ? answer[i]! : null));
+          value = island.computed.get(key) ?? null;
         } catch (error) {
           failed(host, 'a computed style', error);
           value = inlineValue(host, property);

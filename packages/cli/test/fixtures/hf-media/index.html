@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { margin: 0; background: #000; }
+      #stage { position: relative; width: 640px; height: 360px; overflow: hidden; }
+      #stage > * { position: absolute; }
+      video { top: 0; width: 100px; height: 100px; object-fit: fill; }
+      #ramp { left: 0; }
+      #solid { left: 110px; }
+      #plain { left: 220px; }
+      #hidden { left: 330px; top: 0; width: 100px; height: 100px; background: #f00; }
+      #shown { left: 440px; top: 0; height: 100px; width: 10px; background: #0f0; }
+      #stamp { left: 0; top: 120px; }
+      svg { left: 110px; top: 120px; width: 100px; height: 100px; }
+      @media (min-width: 600px) { [data-composition-id="main"] .bar { fill: #ff0; } }
+      @media (max-width: 100px) { [data-composition-id="main"] .bar { fill: #0ff; } }
+    </style>
+    <script>
+      const SHARED = 7;
+    </script>
+  </head>
+  <body>
+    <div id="stage" data-composition-id="main" data-width="640" data-height="360" data-start="0" data-duration="4">
+      <video id="ramp" src="ramp.mp4" muted data-start="0" data-duration="3"
+        data-automation='{"version":1,"lanes":[{"target":"rate","points":[{"t":0,"v":1},{"t":3,"v":2.5}]}]}'></video>
+      <video id="solid" src="solid.mp4" muted data-start="0" data-duration="3"
+        data-color-grading='{"adjust":{"exposure":-1}}'></video>
+      <video id="plain" src="solid.mp4" muted data-start="0" data-duration="3"></video>
+      <div id="hidden" data-start="0" data-duration="4" data-hidden></div>
+      <div id="shown" data-start="0" data-duration="4"></div>
+      <svg viewBox="0 0 100 100"><rect class="bar" x="0" y="0" width="100" height="100" /></svg>
+    </div>
+    <template id="stamp-template"><div id="stamp" style="position: absolute; left: 0; top: 120px; width: 100px; height: 100px; background: #00f"></div></template>
+    <script>
+      // A second classic script sees the first one's top-level const, as in a browser.
+      document.getElementById('shown').style.width = SHARED * 10 + 'px';
+      const stage = document.getElementById('stage');
+      stage.appendChild(document.getElementById('stamp-template').content.cloneNode(true));
+    </script>
+  </body>
+</html>

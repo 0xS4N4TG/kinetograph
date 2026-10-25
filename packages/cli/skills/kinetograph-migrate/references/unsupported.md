@@ -49,8 +49,8 @@ a `Skia.Paint()`. Pass shaders and filters as components instead. Replace what i
 - Canvas 2D: a pattern of a canvas used for a stroke or text draws transparent; `isPointInStroke` ignores caps, joins
   and dashes; `url()` filters are not drawn; shadow and filter images are capped at 50 megapixels per layer per frame.
   Use a plain `fillStyle`, or draw the pattern as repeated shapes.
-- WebGL: framebuffer rendering is limited (no renderbuffers, depth or stencil attachments, instancing, cube or float
-  textures, points and lines). `readPixels` is refused. Move to a fragment-shader-only effect, the `shader()` effect
+- WebGL: framebuffer rendering is limited (no renderbuffers, depth or stencil attachments, cube or float textures,
+  lines, instanced points). Points, instancing and `blitFramebuffer` work. `readPixels` is refused. Move to a fragment-shader-only effect, the `shader()` effect
   (WGSL, one pass, own layer only, `f32` uniforms), or redraw the look with gradients and the effects list.
 - Libraries built on WebGL (three.js, pixi): see `references/three.md` for 3D. Pixi has no equivalent: redraw it.
 

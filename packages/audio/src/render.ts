@@ -81,7 +81,7 @@ export async function renderAudio(options: {
     } else {
       buffer = decoded.get(path);
       if (!buffer) {
-        buffer = await decode(ctx, path);
+        buffer = await decode(ctx, path, options.baseDir, options.decodeAudio);
         decoded.set(path, buffer);
       }
     }
@@ -164,7 +164,17 @@ function pitchBuffer(ctx: OfflineAudioContext, buffer: AudioBuffer, tone: number
   return out;
 }
 
-async function decode(ctx: OfflineAudioContext, path: string): Promise<AudioBuffer> {
+/**
+ * An audio file as a buffer: `decodeAudioData` first, then FFmpeg (the addon's `decodeAudio`, which opens the file by
+ * path) for what node-web-audio-api's decoder refuses. It reads a stream, so an MP4 or MOV whose `moov` atom comes after
+ * the media data ("missing moov atom"; any ffmpeg or camera output without `-movflags +faststart`) is one of those.
+ */
+async function decode(
+  ctx: OfflineAudioContext,
+  path: string,
+  baseDir: string | undefined,
+  decoder: DecodeAudio | undefined,
+): Promise<AudioBuffer> {
   let bytes: Buffer;
   try {
     bytes = await readFile(path);
@@ -177,6 +187,13 @@ async function decode(ctx: OfflineAudioContext, path: string): Promise<AudioBuff
   try {
     return await ctx.decodeAudioData(arrayBuffer);
   } catch (error) {
+    let fallback: AudioBuffer | null = null;
+    try {
+      fallback = await decodeVideoSound(ctx, path, baseDir, decoder ?? addonDecodeAudio());
+    } catch {
+      // The addon could not do it either: the first error is the one to report.
+    }
+    if (fallback) return fallback;
     throw new Error(`cannot decode audio file ${path}: ${error instanceof Error ? error.message : String(error)}`, {
       cause: error,
     });

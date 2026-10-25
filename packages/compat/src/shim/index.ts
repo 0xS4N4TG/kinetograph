@@ -5,7 +5,7 @@ export { DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, is
 export type { CSSStyleDeclarationShim } from './element.js';
 export type { BoxInfo, HostElement, Overlay, Readback, Rect } from './host.js';
 export { overlayOf, propsWithOverlay, rawParentOf, setRawParent, effectiveParentOf, headHost, bodyHost } from './host.js';
-export { recordMutation, isRecordingMutations, setMutationSink } from './tree.js';
+export { recordMutation, isRecordingMutations, setMutationSink, insertChild, removeChild } from './tree.js';
 export type { HostMutation } from './tree.js';
 export { RangeShim } from './range.js';
 export {
@@ -20,7 +20,7 @@ export {
   MutationObserverShim,
 } from './observers.js';
 export { deliverMediaEvents } from './media-events.js';
-export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf } from './web.js';
+export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle } from './web.js';
 export { setPathMeasure } from './geometry.js';
 export { canvasEnvironment, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';

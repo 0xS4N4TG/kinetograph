@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   cdnCachePath,
+  dataCachePath,
+  fetchCdnData,
   fetchCdnScripts,
+  resolveCdnData,
   parseCdnUrl,
   resolveCdnScript,
   type FetchResponse,
@@ -168,5 +171,48 @@ describe('fetch-deps', () => {
     const [result] = await fetchCdnScripts([URL_OK], project, { integrity: { [URL_OK]: wrong }, fetchImpl: async () => ok('x') });
     expect(result!.status).toBe('failed');
     expect(result!.error).toContain('installed copy');
+  });
+});
+
+describe('data and media the page fetches', () => {
+  const DATA = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+
+  it('downloads a file on an allowed host once, records its hash, and a render reads it from the cache', async () => {
+    expect('error' in resolveCdnData(DATA)).toBe(true);
+    let calls = 0;
+    const [first] = await fetchCdnData([DATA], { fetchImpl: async () => (calls++, ok('{"objects":{}}')) });
+    expect(first).toMatchObject({ url: DATA, status: 'fetched', file: dataCachePath(DATA) });
+    expect(dataCachePath(DATA)).toMatch(/\.json$/);
+    expect(resolveCdnData(DATA)).toEqual({ file: dataCachePath(DATA) });
+    const [again] = await fetchCdnData([DATA], { fetchImpl: async () => (calls++, ok('x')) });
+    expect(again!.status).toBe('cached');
+    expect(calls).toBe(1);
+  });
+
+  it('refuses a host that is not allowed, a redirect off the list, http and a file over the limit', async () => {
+    const [other] = await fetchCdnData(['https://example.com/a.json'], { fetchImpl: async () => ok('{}') });
+    expect(other!.error).toContain('not an allowed host');
+    const [allowed] = await fetchCdnData(['https://example.com/a.json'], { allowHosts: ['example.com'], fetchImpl: async () => ok('{}') });
+    expect(allowed!.status).toBe('fetched');
+    const [hop] = await fetchCdnData([DATA], { fetchImpl: async () => redirect('https://evil.example/x') });
+    expect(hop!.error).toContain('evil.example');
+    const [plain] = await fetchCdnData(['http://cdn.jsdelivr.net/x.json'], { fetchImpl: async () => ok('{}') });
+    expect(plain!.error).toContain('https');
+    const [big] = await fetchCdnData([DATA], { maxBytes: 4, fetchImpl: async () => ok('0123456789') });
+    expect(big!.error).toContain('limit');
+  });
+
+  it('refuses a media host the page names unless the user allows it, and says which flag', async () => {
+    let calls = 0;
+    const [refused] = await fetchCdnData(['https://media.example.com/a.mp4'], { fetchImpl: async () => (calls++, ok('x')) });
+    expect(refused!.status).toBe('failed');
+    expect(refused!.error).toContain('--allow-host media.example.com');
+    expect(calls).toBe(0);
+  });
+
+  it('does not serve a cached file whose bytes changed', async () => {
+    await fetchCdnData([DATA], { fetchImpl: async () => ok('{"a":1}') });
+    writeFileSync(dataCachePath(DATA), '{"a":2}');
+    expect('error' in resolveCdnData(DATA) && (resolveCdnData(DATA) as { error: string }).error).toContain('does not match');
   });
 });

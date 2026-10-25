@@ -147,4 +147,22 @@ describe.skipIf(addon === null)('readback with the addon', () => {
     render(<Watch />).unmount();
     expect(sizes).toEqual([[100, 40, 110]]);
   });
+  it('answers the usual properties of an element from one native call', () => {
+    const real = addon!.domComputedStyle as (...a: unknown[]) => string[];
+    let calls = 0;
+    setDomAddon({ ...addon!, domComputedStyle: (...a: unknown[]) => (calls++, real(...a)) } as any);
+    const seen: string[] = [];
+    function Probe() {
+      const ref = useRef<any>(null);
+      useLayoutEffect(() => {
+        const cs = (globalThis as any).getComputedStyle(ref.current);
+        seen.push(cs.display, cs.opacity, cs.width, cs.paddingLeft, cs.position);
+      }, []);
+      return <div ref={ref} style={{ width: 80, padding: 4, opacity: 0.5 }} />;
+    }
+    render(<Probe />).unmount();
+    setDomAddon(addon);
+    expect(calls).toBe(1);
+    expect(seen).toEqual(['block', '0.5', '80px', '4px', 'static']);
+  });
 });

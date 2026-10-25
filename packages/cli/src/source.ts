@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetographdev/core';
-import type { AudioClipJson, SequenceJson, Unsupported } from '@kinetographdev/scene';
+import type { AudioClipJson, LayerName, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
 import { resolveEntry } from './hyperframes/entry.js';
@@ -36,6 +36,8 @@ export interface FrameOutput {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
+  /** Layer id to name and source; only in the studio's builds. */
+  names?: Record<string, LayerName>;
   /** What the engine cannot draw on this frame (kinetograph site, /docs/compat/); none for a scene file. */
   unsupported?: Unsupported[];
   /** ms spent in `renderFrame` and in `JSON.stringify` (0 for a scene file), for `bench`. */
@@ -230,7 +232,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const rendered = nowMs();
       const sceneJson = JSON.stringify(result.scene);
       const unsupported = [...result.unsupported, ...notes(sceneJson)];
-      return { sceneJson, audio: result.audio, sequences: result.sequences, unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
+      return { sceneJson, audio: result.audio, sequences: result.sequences, ...(result.names !== undefined ? { names: result.names } : {}), unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
     worker: { entry: absolute, comp: composition.id, props: options.props, bundleFile },
     notes: () => mod.stylesheetNotes(),

@@ -13,6 +13,7 @@ import { resolveProjectFile } from '../environment.js';
 import { OffscreenCanvasShim } from './canvas.js';
 import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, setPageViewport } from './host.js';
+import { collectionOf, HTMLCollection, NodeList, nodeListOf } from './lists.js';
 import { RangeShim } from './range.js';
 import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
@@ -105,7 +106,19 @@ function feature(name: string, value: string | undefined): boolean {
   }
 }
 
-class MediaQueryListShim extends EventTarget {
+/** A browser ignores a null listener (feature tests pass one); Node's EventTarget prints a warning for it. */
+class BrowserEventTarget extends EventTarget {
+  override addEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean): void {
+    if (listener === null || listener === undefined) return;
+    super.addEventListener(type, listener, options);
+  }
+  override removeEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean): void {
+    if (listener === null || listener === undefined) return;
+    super.removeEventListener(type, listener, options);
+  }
+}
+
+class MediaQueryListShim extends BrowserEventTarget {
   onchange: ((event: unknown) => void) | null = null;
   constructor(readonly media: string) {
     super();
@@ -166,7 +179,7 @@ function imagePicture(src: string): CanvasPicture | null {
 
 // ---- Image ----
 
-class ImageShim extends EventTarget {
+class ImageShim extends BrowserEventTarget {
   onload: ((event: unknown) => void) | null = null;
   onerror: ((event: unknown) => void) | null = null;
   crossOrigin: string | null = null;
@@ -279,11 +292,58 @@ class DOMExceptionLike extends Error {
 
 const REAL_FETCH = Symbol.for('kinetograph.realFetch');
 
+// Remote URLs a project has downloaded ahead of time (HyperFrames' `fetch-deps`): `fetch(url)` of exactly one of them reads
+// the cached file, so a frame stays a function of the project. Any other remote URL is refused, and `onRefused` hears of it.
+let remoteFiles = new Map<string, string>();
+let onRefused: ((url: string) => void) | null = null;
+
+/** The files `fetch(url)` answers from, by URL. */
+export function setRemoteFiles(files: Record<string, string>): void {
+  remoteFiles = new Map(Object.entries(files));
+}
+
+/** Called with the URL of each `fetch` of a remote file that is not in `setRemoteFiles`. */
+export function setRefusedFetchHandler(handler: ((url: string) => void) | null): void {
+  onRefused = handler;
+}
+
+let inFlight = 0;
+
+/**
+ * Resolves when no `fetch` is in flight and none starts for two turns of the event loop: the callbacks of what a page
+ * fetched at load (`d3.json(url).then(draw)`) have run, and what they started (another fetch) has finished.
+ */
+export async function whenFetchesSettle(): Promise<void> {
+  for (let quiet = 0; quiet < 2; ) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    quiet = inFlight === 0 ? quiet + 1 : 0;
+  }
+}
+
 function makeFetch(real: typeof fetch): typeof fetch {
+  const answer = makeAnswer(real);
+  return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    inFlight++;
+    try {
+      return await answer(input, init);
+    } finally {
+      inFlight--;
+    }
+  }) as typeof fetch;
+}
+
+function makeAnswer(real: typeof fetch): typeof fetch {
   return async function kinetographFetch(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
     if (/^(data|blob):/i.test(url)) return real(input, init);
-    if (REMOTE.test(url)) throw new TypeError(remoteMessage('fetch', url));
+    if (REMOTE.test(url)) {
+      const cached = remoteFiles.get(url);
+      if (cached !== undefined && existsSync(cached)) {
+        return new Response(await readFile(cached), { status: 200, headers: { 'content-type': MIME[extname(new URL(url).pathname).toLowerCase()] ?? 'application/octet-stream' } });
+      }
+      onRefused?.(url);
+      throw new TypeError(remoteMessage('fetch', url));
+    }
     const file = projectFileOf(url);
     if (file === null || !existsSync(file)) {
       throw new TypeError(`fetch("${url}") failed: no such file in the project (looked beside the entry and in public/)`);
@@ -303,10 +363,17 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
     out.push(found as DomElement);
     if (first) return out;
   }
+  // `body` next: it holds what a script appended to it outside any React root, as well as the roots' own top level.
+  const body = domElementFor(bodyHost);
+  for (const found of first ? [body.querySelector(selector)].filter((e) => e !== null) : body.querySelectorAll(selector)) {
+    if (!out.includes(found as DomElement)) out.push(found as DomElement);
+    if (first) return out;
+  }
   for (const readback of readbackRoots()) {
     const cx = selectorContextOf(readback);
     for (const host of queryAll(readback.descendants(), selector, cx, first)) {
-      out.push(domElementFor(host, readback));
+      const found = domElementFor(host, readback);
+      if (!out.includes(found)) out.push(found);
       if (first) return out;
     }
   }
@@ -314,6 +381,41 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
 }
 
 // ---- installing ----
+
+/** `customElements`: a registry that remembers definitions. Elements are not upgraded: a custom element is a plain element here. */
+class CustomElementRegistryShim {
+  private readonly defined = new Map<string, unknown>();
+  private readonly waiting = new Map<string, ((ctor: unknown) => void)[]>();
+  define(name: string, constructor: unknown): void {
+    if (!/^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(name)) throw Object.assign(new Error(`Failed to execute 'define' on 'CustomElementRegistry': "${name}" is not a valid custom element name`), { name: 'SyntaxError' });
+    if (this.defined.has(name)) throw Object.assign(new Error(`Failed to execute 'define' on 'CustomElementRegistry': the name "${name}" has already been used with this registry`), { name: 'NotSupportedError' });
+    this.defined.set(name, constructor);
+    for (const resolve of this.waiting.get(name) ?? []) resolve(constructor);
+    this.waiting.delete(name);
+  }
+  get(name: string): unknown {
+    return this.defined.get(name);
+  }
+  whenDefined(name: string): Promise<unknown> {
+    if (this.defined.has(name)) return Promise.resolve(this.defined.get(name));
+    return new Promise((resolve) => this.waiting.set(name, [...(this.waiting.get(name) ?? []), resolve]));
+  }
+  upgrade(): void {}
+}
+
+
+/** `el instanceof HTMLElement` is true for an HTML element only, `SVGElement` for an SVG one (anime.js picks attribute or style by it). */
+class HTMLElementShim extends DomElement {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return this === HTMLElementShim ? value instanceof DomElement && !value.inSvg : Function.prototype[Symbol.hasInstance].call(this, value);
+  }
+}
+class SVGElementShim extends DomElement {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return this === SVGElementShim ? value instanceof DomElement && value.inSvg : Function.prototype[Symbol.hasInstance].call(this, value);
+  }
+}
+
 
 class LocalStorage {
   private readonly map = new Map<string, string>();
@@ -401,10 +503,13 @@ export function installDomGlobals(): void {
   define(g, 'Path2D', Path2D);
   define(g, 'ImageData', ImageData);
   define(g, 'Element', DomElement);
-  define(g, 'HTMLElement', DomElement);
-  define(g, 'SVGElement', DomElement);
+  define(g, 'HTMLElement', HTMLElementShim);
+  define(g, 'SVGElement', SVGElementShim);
   define(g, 'Node', DomElement);
+  define(g, 'NodeList', NodeList);
+  define(g, 'HTMLCollection', HTMLCollection);
   define(g, 'DOMRect', class DOMRectGlobal { constructor(readonly x = 0, readonly y = 0, readonly width = 0, readonly height = 0) {} });
+  define(g, 'customElements', new CustomElementRegistryShim());
   define(g, 'ResizeObserver', ResizeObserverShim);
   define(g, 'IntersectionObserver', IntersectionObserverShim);
   define(g, 'MutationObserver', MutationObserverShim);
@@ -432,6 +537,7 @@ export function installDomGlobals(): void {
   const html = domElementFor(htmlHost);
   define(doc, 'documentElement', html);
   define(doc, 'body', domElementFor(bodyHost));
+  define(doc, 'defaultView', g);
   define(doc, 'head', domElementFor(headHost));
   define(doc, 'scrollingElement', html);
   // A node a script makes belongs to no tree until it is put in one (a canvas drawn on before then keeps what it drew).
@@ -443,12 +549,12 @@ export function installDomGlobals(): void {
   define(g, 'Text', DomText);
   define(doc, 'getElementById', (id: string) => documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
   define(doc, 'querySelector', (selector: string) => documentQuery(selector, true)[0] ?? null);
-  define(doc, 'querySelectorAll', (selector: string) => documentQuery(selector, false));
-  define(doc, 'getElementsByTagName', (tag: string) => documentQuery(tag, false));
-  define(doc, 'getElementsByClassName', (names: string) => documentQuery(String(names).split(/\s+/).filter(Boolean).map((n) => `.${n}`).join(''), false));
+  define(doc, 'querySelectorAll', (selector: string) => nodeListOf(documentQuery(selector, false)));
+  define(doc, 'getElementsByTagName', (tag: string) => collectionOf(documentQuery(tag, false)));
+  define(doc, 'getElementsByClassName', (names: string) => collectionOf(documentQuery(String(names).split(/\s+/).filter(Boolean).map((n) => `.${n}`).join(''), false)));
   define(doc, 'elementFromPoint', () => null);
   define(doc, 'hasFocus', () => true);
-  const listeners = new EventTarget();
+  const listeners = new BrowserEventTarget();
   define(doc, 'addEventListener', listeners.addEventListener.bind(listeners));
   define(doc, 'removeEventListener', listeners.removeEventListener.bind(listeners));
   define(doc, 'dispatchEvent', listeners.dispatchEvent.bind(listeners));
@@ -456,7 +562,7 @@ export function installDomGlobals(): void {
 
   // `window.addEventListener('resize' | 'load' | …)`: accepted, never fired (the window never changes size).
   if (typeof g.addEventListener !== 'function') {
-    const events = new EventTarget();
+    const events = new BrowserEventTarget();
     define(g, 'addEventListener', events.addEventListener.bind(events));
     define(g, 'removeEventListener', events.removeEventListener.bind(events));
     define(g, 'dispatchEvent', events.dispatchEvent.bind(events));

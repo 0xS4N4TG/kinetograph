@@ -1166,6 +1166,23 @@ pub struct TextLayer {
     /// The box of a layer with `runs`, in pixels.
     pub box_width: Option<Num>,
     pub box_height: Option<Num>,
+    /// An outline drawn around each glyph, centred on its edge (CSS `-webkit-text-stroke`). Only `color`, `width`,
+    /// `join` and `miterLimit` are used; the join defaults to `round`.
+    pub stroke: Option<Stroke>,
+    /// Whether the fill is drawn over the stroke or under it.
+    #[serde(default)]
+    pub paint_order: TextPaintOrder,
+}
+
+/// Which of a text's fill and stroke is drawn first (CSS `paint-order`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextPaintOrder {
+    /// The fill, then the stroke over it.
+    #[default]
+    FillStroke,
+    /// The stroke, then the fill over it.
+    StrokeFill,
 }
 
 /// A run of glyphs that share a font file and size, already positioned
