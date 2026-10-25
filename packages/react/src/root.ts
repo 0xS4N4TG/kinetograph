@@ -118,6 +118,7 @@ const hostConfig = {
   // The tree has changed: readback caches are stale. Layout effects run after this, so they measure the new tree.
   resetAfterCommit: (container: Container) => {
     container.generation++;
+    container.commits++;
   },
   preparePortalMount: () => {},
   detachDeletedInstance: () => {},
@@ -248,7 +249,7 @@ const MAX_SETTLE_PASSES = 100;
  * resolves later can update the tree seen by `snapshot`.
  */
 export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
-  const container: Container = { children: [], generation: 0, readback: null, measuredGenerations: new Set(), media: new Set() };
+  const container: Container = { children: [], generation: 0, commits: 0, readFailures: new Map(), readback: null, measuredGenerations: new Set(), media: new Set() };
   container.readback = createReadback(container, options);
   registerReadbackRoot(container.readback, { adoptPending: !options.ignoreDom });
   // `window.innerWidth`, `matchMedia` and `document.documentElement` report the composition's size.
@@ -275,6 +276,7 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
 
   function settle(): void {
     container.measuredGenerations.clear();
+    container.readFailures.clear();
     let observerRounds = 0;
     for (let pass = 0; ; pass += 1) {
       if (pass >= MAX_SETTLE_PASSES) {
@@ -302,7 +304,9 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
   }
 
   function tree(): RenderedTree {
-    return emit(container.children, options);
+    const tree = emit(container.children, options);
+    tree.unsupported.push(...container.readFailures.values());
+    return tree;
   }
 
   return {

@@ -139,6 +139,14 @@ class NodeFontFaceSet extends Set<NodeFontFace> {
     return true;
   }
 
+  // Faces are all loaded when added, so `loading`, `loadingdone` and `loadingerror` never fire: a listener (GSAP's
+  // SplitText re-splits on `loadingdone`) is accepted and never called.
+  addEventListener(): void {}
+  removeEventListener(): void {}
+  dispatchEvent(): boolean {
+    return true;
+  }
+
   async load(): Promise<NodeFontFace[]> {
     return [...this];
   }
