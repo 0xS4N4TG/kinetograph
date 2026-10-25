@@ -10,6 +10,7 @@ export interface StudioModule {
     host?: string;
     open?: boolean;
     props?: Record<string, unknown>;
+    agent?: string;
     log?: (message: string) => void;
   }): Promise<{ url: string; close(): Promise<void> }>;
 }
@@ -70,6 +71,7 @@ export const studio: Command = {
     { name: 'port', type: 'number', description: 'Port to listen on (default 3000; 0 picks a free one)' },
     { name: 'host', type: 'string', description: 'Address to listen on (default 127.0.0.1)' },
     { name: 'no-open', type: 'boolean', description: 'Do not open the browser' },
+    { name: 'agent', type: 'string', description: 'Command that starts your coding agent over ACP, for the chat panel (default: Claude Code, Codex or Gemini CLI, whichever is installed)' },
     { name: 'props', type: 'string', description: 'Input props as a JSON object, merged over each composition\'s defaultProps' },
   ],
   async run(args, context) {
@@ -79,6 +81,9 @@ export const studio: Command = {
     const host = args.options.host as string | undefined;
     if (host === '') throw new CliError('INVALID_ARG', '--host must not be empty');
 
+    const agent = args.options.agent as string | undefined;
+    if (agent === '') throw new CliError('INVALID_ARG', '--agent must not be empty');
+
     const { startStudio } = await hooks.load();
     const server = await startStudio({
       entry: String(args.positionals.entry),
@@ -86,6 +91,7 @@ export const studio: Command = {
       host,
       open: args.options['no-open'] !== true,
       props,
+      agent,
       log: context.progress,
     });
     context.announce({ url: server.url }, `kinetograph studio: ${server.url} (Ctrl-C to stop)`);

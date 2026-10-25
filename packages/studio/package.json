@@ -41,6 +41,7 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^2.0.2",
     "@kinetographdev/core": "0.1.0",
     "@kinetographdev/native": "0.1.0",
     "@kinetographdev/scene": "0.1.0",

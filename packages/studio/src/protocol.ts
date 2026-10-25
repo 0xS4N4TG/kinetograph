@@ -96,7 +96,7 @@ export interface RenderJob {
 // ---- WebSocket `/ws` ----
 
 /** Client → server, JSON text. */
-export type ClientMessage = FrameRequest;
+export type ClientMessage = FrameRequest | AgentClientMessage;
 
 export interface FrameRequest {
   type: 'frame';
@@ -116,7 +116,57 @@ export type ServerMessage =
   | { type: 'reload'; buildId: number }
   | { type: 'buildError'; error: StudioError }
   | { type: 'render'; job: RenderJob }
-  | { type: 'error'; requestId: number | null; error: StudioError };
+  | { type: 'error'; requestId: number | null; error: StudioError }
+  | { type: 'agent'; event: AgentEvent };
+
+// ---- the coding agent (ACP) ----
+
+/** `GET /api/agent`. */
+export interface AgentInfo {
+  /** The agents found on this machine (and the `--agent` command): the ones the panel offers. */
+  presets: AgentPreset[];
+  /** The command in use, or null when none is chosen. */
+  command: string | null;
+  /** The directory the agent works in and may read and write. */
+  cwd: string;
+}
+
+export interface AgentPreset {
+  id: string;
+  name: string;
+  command: string;
+}
+
+/** What the user says to the agent. `context` is the studio's description of what is selected. */
+export type AgentClientMessage =
+  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string } }
+  | { type: 'agent.cancel' }
+  /** The answer to a permission request; a null `optionId` denies it. */
+  | { type: 'agent.permission'; id: string; optionId: string | null }
+  /** Chooses the agent (one of `AgentInfo.presets`) and starts a new conversation. */
+  | { type: 'agent.select'; command: string | null }
+  | { type: 'agent.reset' };
+
+export type AgentStatus = 'idle' | 'starting' | 'ready' | 'busy';
+
+export interface AgentPermissionOption {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+/** Server → client: what the agent is doing. Text arrives in chunks to append. */
+export type AgentEvent =
+  | { kind: 'status'; status: AgentStatus; command: string | null; image: boolean }
+  | { kind: 'message'; text: string }
+  | { kind: 'thought'; text: string }
+  /** A tool call or file edit; the same `id` again updates it. `files` are relative to the project. */
+  | { kind: 'tool'; id: string; title: string; toolKind: string; status: string; files: string[] }
+  | { kind: 'permission'; id: string; title: string; files: string[]; options: AgentPermissionOption[] }
+  | { kind: 'permission_done'; id: string }
+  | { kind: 'done'; stopReason: string }
+  /** A problem in plain words. */
+  | { kind: 'error'; message: string };
 
 /**
  * A frame is one binary message: a 4-byte little-endian length `n`, then `n` bytes of UTF-8 JSON (`FrameHeader`), then

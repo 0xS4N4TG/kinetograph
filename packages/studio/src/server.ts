@@ -8,10 +8,15 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { cliVersion, CliError } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
+import { AgentBridge } from './agent-bridge.js';
+import { isInside } from './agent-fs.js';
+import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
 import { Project } from './project.js';
 import {
   encodeFrameMessage,
+  type AgentClientMessage,
+  type AgentInfo,
   type ClientMessage,
   type CompositionInfo,
   type FrameHeader,
@@ -105,6 +110,18 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const broadcast = (message: ServerMessage): void => {
     for (const ws of sockets) send(ws, message);
   };
+
+  // The coding agent works in the directory the studio was started in, or the entry's own when that is somewhere else.
+  const agentCwd = options.agentCwd ?? (isInside(process.cwd(), entry) ? process.cwd() : dirname(entry));
+  const agents = availableAgents(options.agent);
+  const bridge = new AgentBridge({
+    cwd: agentCwd,
+    allowed: agents.map((a) => a.command),
+    command: options.agent ?? agents[0]?.command ?? null,
+    emit: (event) => broadcast({ type: 'agent', event }),
+    hasViewer: () => sockets.size > 0,
+    version: cliVersion(),
+  });
 
   /** The composition `comp`, or `BUILD` before any good build and `NOT_FOUND` for an unknown id. */
   function known(comp: string): CompositionInfo {
@@ -207,6 +224,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
 
     if (method === 'GET' && path === '/api/project') {
       const info: ProjectInfo = { entry, cwd: process.cwd(), version: cliVersion(), buildId: project.buildId, buildError: project.buildError };
+      return json(res, 200, info);
+    }
+    if (method === 'GET' && path === '/api/agent') {
+      const info: AgentInfo = { presets: agents, command: bridge.currentCommand, cwd: agentCwd };
       return json(res, 200, info);
     }
     if (method === 'GET' && path === '/api/compositions') {
@@ -331,6 +352,34 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     }
   }
 
+  /** A message for the coding agent; a malformed one is answered with an error the panel shows. */
+  function agentMessage(message: AgentClientMessage): void {
+    const bad = (text: string): void => broadcast({ type: 'agent', event: { kind: 'error', message: text } });
+    switch (message.type) {
+      case 'agent.prompt':
+        if (typeof message.text !== 'string' || message.text.trim() === '') return bad('Write a message for the agent first.');
+        if (message.image !== undefined && (typeof message.image.data !== 'string' || typeof message.image.mimeType !== 'string')) {
+          return bad('The picture is not valid.');
+        }
+        void bridge.prompt(message.text, typeof message.context === 'string' ? message.context : '', message.image);
+        return;
+      case 'agent.cancel':
+        void bridge.cancel();
+        return;
+      case 'agent.permission':
+        bridge.answerPermission(String(message.id), typeof message.optionId === 'string' ? message.optionId : null);
+        return;
+      case 'agent.select':
+        void bridge.select(typeof message.command === 'string' ? message.command : null);
+        return;
+      case 'agent.reset':
+        void bridge.reset();
+        return;
+      default:
+        return bad('unknown agent message');
+    }
+  }
+
   wss.on('connection', (ws) => {
     sockets.add(ws);
     frameState.set(ws, { busy: false });
@@ -346,7 +395,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         } catch {
           throw invalid('the message is not valid JSON');
         }
-        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … } is understood');
+        if (isObject(parsed) && typeof parsed.type === 'string' && parsed.type.startsWith('agent.')) {
+          return agentMessage(parsed as unknown as AgentClientMessage);
+        }
+        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … } and "agent.…" messages are understood');
         if (typeof parsed.requestId !== 'number') throw invalid('requestId must be a number');
         message = parsed as unknown as FrameRequest;
       } catch (error) {
@@ -358,6 +410,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       else void serveFrame(ws, message);
     });
     send(ws, { type: 'hello', version: cliVersion(), buildId: project.buildId, buildError: project.buildError });
+    bridge.announce();
   });
 
   project.on('reload', (buildId) => broadcast({ type: 'reload', buildId }));
@@ -414,6 +467,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       closing ??= (async () => {
         for (const state of throttle.values()) if (state.timer) clearTimeout(state.timer);
         await queue.close();
+        await bridge.close();
         for (const ws of sockets) ws.terminate();
         wss.close();
         await new Promise<void>((done) => {

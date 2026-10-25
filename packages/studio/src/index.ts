@@ -21,6 +21,10 @@ export interface StudioOptions {
   /** The engine module the workers load (default: the real one, which drives the CLI and the addon). Tests name a
    * stub that opens no GPU; see `engine.ts`. */
   engine?: string;
+  /** The command that starts the coding agent the chat panel talks to (it must speak ACP on stdio), as `--agent`. */
+  agent?: string;
+  /** The directory the agent works in and may read and write; default the directory the studio was started in. */
+  agentCwd?: string;
   /** Receives one line for each build, build failure and warning. */
   log?: (message: string) => void;
 }
