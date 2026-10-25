@@ -725,7 +725,7 @@ export interface GlslBlend {
 
 export interface GlslDraw {
   program: string;
-  mode: 'triangles' | 'triangleStrip' | 'triangleFan';
+  mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan';
   first: number;
   count: number;
   indices?: { buffer: string; type: 'u8' | 'u16' | 'u32'; offset: number };

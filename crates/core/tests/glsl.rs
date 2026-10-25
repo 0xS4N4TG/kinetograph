@@ -58,13 +58,14 @@ fn draw(extra: &str) -> String {
 /// A layer with the fragment shaders `programs` (id and source), all with the
 /// quad's vertex shader.
 fn layer_of(programs: &[(&str, &str)], extra_content: &str, ops: &str) -> String {
-    layer_with_vertex(QUAD_VERTEX_ES1, programs, extra_content, ops)
+    layer_with_vertex(QUAD_VERTEX_ES1, programs, "", extra_content, ops)
 }
 
 /// `layer_of` with a vertex shader of its own.
 fn layer_with_vertex(
     vertex: &str,
     programs: &[(&str, &str)],
+    more_buffers: &str,
     extra_content: &str,
     ops: &str,
 ) -> String {
@@ -81,7 +82,7 @@ fn layer_with_vertex(
     format!(
         r#"{{"id": "g", "type": "glsl", "width": 16, "height": 16,
             "programs": {{{}}},
-            "buffers": {{"quad": "{}"}}
+            "buffers": {{"quad": "{}"{more_buffers}}}
             {extra_content}, "ops": [{ops}]}}"#,
         programs.join(", "),
         quad()
@@ -144,12 +145,84 @@ fn gl_vertex_id_counts_from_the_first_vertex_of_the_draw() {
             "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
         quad_attributes()
     );
-    let frame = render(&layer_with_vertex(vertex, &[("p", fragment)], "", &draw));
+    let frame = render(&layer_with_vertex(vertex, &[("p", fragment)], "", "", &draw));
     near(px(&frame, 0, 0), [96, 0, 0, 255], 14);
     near(px(&frame, 15, 15), [127, 0, 0, 255], 14);
     near(px(&frame, 15, 0), [159, 0, 0, 255], 14);
     // The first triangle is not drawn.
     near(px(&frame, 0, 15), [0, 0, 0, 255], 0);
+}
+
+/// A draw of `count` points from a buffer of `[x, y]` pairs.
+fn points_draw(first: u32, count: u32, extra: &str) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "p", "mode": "points", "first": {first}, "count": {count},
+            "attributes": {{"a_pos": {{"buffer": "pts", "size": 2, "type": "f32", "normalized": false,
+            "stride": 0, "offset": 0}}}}, "viewport": [0, 0, 16, 16]{extra}}}"#
+    )
+}
+
+fn points_buffer(points: &[[f32; 2]]) -> String {
+    b64(&points
+        .iter()
+        .flatten()
+        .flat_map(|f| f.to_le_bytes())
+        .collect::<Vec<u8>>())
+}
+
+#[test]
+fn points_are_squares_of_gl_point_size_with_a_point_coord() {
+    // Two points: (-0.5, 0.5) of 4 pixels, which covers x 2..6 and y 2..6 from
+    // the top; and (0.5, -0.5) of 6 pixels, which covers x 9..15 and y 9..15.
+    let vertex = "attribute vec2 a_pos; void main() { \
+        gl_PointSize = a_pos.x < 0.0 ? 4.0 : 6.0; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "precision mediump float; void main() { \
+        gl_FragColor = vec4(gl_PointCoord, 0.0, 1.0); }";
+    let buffer = points_buffer(&[[-0.5, 0.5], [0.5, -0.5]]);
+    let layer = layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "pts": "{buffer}""#),
+        "",
+        &points_draw(0, 2, ""),
+    );
+    let frame = render(&layer);
+    // Outside both points: nothing.
+    assert_eq!(px(&frame, 0, 0)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 8, 8)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 1, 3)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 6, 3)[..3], [0, 0, 0]);
+    // The first point: x 2..6, y 2..6; gl_PointCoord y counts down.
+    near(px(&frame, 2, 2), [32, 32, 0, 255], 3);
+    near(px(&frame, 5, 2), [223, 32, 0, 255], 3);
+    near(px(&frame, 2, 5), [32, 223, 0, 255], 3);
+    // The second: x 9..15, y 9..15.
+    near(px(&frame, 9, 9), [21, 21, 0, 255], 3);
+    near(px(&frame, 14, 14), [234, 234, 0, 255], 3);
+    assert_eq!(px(&frame, 8, 9)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 15, 9)[..3], [0, 0, 0]);
+}
+
+#[test]
+fn a_point_centred_outside_the_clip_volume_is_not_drawn_and_gl_vertex_id_is_its_index() {
+    // Point 1 is off to the right (its sprite would reach in); `first` starts
+    // at point 1 of three, so the ids drawn are 1 and 2.
+    let vertex = "attribute vec2 a_pos; varying float v_id; void main() { \
+        v_id = float(gl_VertexID); gl_PointSize = 4.0; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "precision mediump float; varying float v_id; void main() { \
+        gl_FragColor = vec4(v_id / 4.0, 0.0, 0.0, 1.0); }";
+    let buffer = points_buffer(&[[0.0, 0.0], [1.1, 0.0], [-0.5, 0.5]]);
+    let layer = layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "pts": "{buffer}""#),
+        "",
+        &points_draw(1, 2, ""),
+    );
+    let frame = render(&layer);
+    assert_eq!(px(&frame, 15, 8)[..3], [0, 0, 0], "the point centred at x = 1.1 draws nothing");
+    assert_eq!(px(&frame, 8, 8)[..3], [0, 0, 0], "point 0 is before `first`");
+    near(px(&frame, 3, 3), [127, 0, 0, 255], 2);
 }
 
 #[test]

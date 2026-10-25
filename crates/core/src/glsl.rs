@@ -136,6 +136,10 @@ pub enum GlslOp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GlslMode {
+    /// Each vertex a square sprite of `gl_PointSize` pixels, with
+    /// `gl_PointCoord` (drawn as two triangles for each point, one instance
+    /// each).
+    Points,
     Triangles,
     TriangleStrip,
     TriangleFan,
@@ -289,6 +293,14 @@ fn all_true() -> [bool; 4] {
 }
 
 // ---- source rewriting ----
+
+/// The largest point WebGL draws here (`ALIASED_POINT_SIZE_RANGE` is 1 to this):
+/// a larger `gl_PointSize` is drawn at this.
+pub const MAX_POINT_SIZE: f32 = 511.0;
+
+/// The location a point's `gl_PointCoord` travels at: the last of the 16
+/// a vertex stage can write.
+const POINT_COORD_LOCATION: u32 = 15;
 
 fn unsupported(what: impl std::fmt::Display) -> String {
     format!("unsupported: {what}")
@@ -480,6 +492,7 @@ struct Rewritten {
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
     uses_frag_coord: bool,
+    uses_point_coord: bool,
 }
 
 struct RewriteInput<'a> {
@@ -490,6 +503,15 @@ struct RewriteInput<'a> {
     varyings: &'a mut Varyings,
     /// The program draws into a texture, whose first row is GL's bottom one.
     flip_y: bool,
+    /// The program draws points: each is a quad of six vertices, one instance.
+    points: bool,
+}
+
+/// What a word of code is renamed by: the stage and how the program is drawn.
+#[derive(Clone, Copy)]
+struct Mode {
+    fragment: bool,
+    points: bool,
 }
 
 #[derive(Default)]
@@ -529,6 +551,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         attribute_locations,
         varyings,
         flip_y,
+        points,
     } = input;
     let src = strip_comments(src);
     let fragment = stage == ShaderStage::Fragment;
@@ -546,6 +569,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         attributes: Vec::new(),
         varyings: Vec::new(),
         uses_frag_coord: false,
+        uses_point_coord: false,
     };
     let mut body = String::new();
     let mut depth = 0i32;
@@ -587,6 +611,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                     next_varying: &mut next_varying,
                     has_out: &mut has_out,
                     uses_point_size: &mut uses_point_size,
+                    points,
                 },
             )?;
             let name = directive.trim_start();
@@ -597,7 +622,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                 body.push_str(&rewrite_directive(
                     &text,
                     &declared_samplers,
-                    fragment,
+                    Mode { fragment, points },
                     &mut r,
                 ));
             }
@@ -623,6 +648,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             next_varying: &mut next_varying,
             has_out: &mut has_out,
             uses_point_size: &mut uses_point_size,
+            points,
         },
     )?;
     // The text ended with the newline added to its last line.
@@ -636,6 +662,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     let mut members = String::new();
     if fragment {
         members.push_str("float _k_fbh; ");
+    } else if points {
+        // The viewport's size in pixels, which a point's size is in.
+        members.push_str("vec2 _k_vp; ");
     }
     for u in &r.uniforms {
         members.push_str(&u.ty);
@@ -705,8 +734,23 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
              gl_FragCoord.w); }} "
         ));
     }
-    if uses_point_size {
+    if uses_point_size || (points && !fragment) {
         prelude.push_str("float _k_PointSize; ");
+    }
+    if points && !fragment {
+        prelude.push_str(&format!(
+            "layout(location={POINT_COORD_LOCATION}) out vec2 _k_PointCoord; "
+        ));
+    }
+    if fragment && r.uses_point_coord {
+        if points {
+            prelude.push_str(&format!(
+                "layout(location={POINT_COORD_LOCATION}) in vec2 _k_PointCoord; "
+            ));
+        } else {
+            // Not a point: undefined in GL, zero here.
+            prelude.push_str("vec2 _k_PointCoord; ");
+        }
     }
 
     // `main` is renamed and wrapped.
@@ -744,7 +788,25 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             "for (int _k_i = 0; _k_i < {len}; _k_i++) {{ {name}[_k_i] = {from}; }} "
         ));
     }
+    if points && !fragment {
+        wrapper.push_str("_k_PointSize = 1.0; ");
+    }
     wrapper.push_str("_k_main(); ");
+    if points && !fragment {
+        // Corner `c` of the sprite's two triangles, then the sprite: `gl_PointSize`
+        // pixels across, centred on the point. GL clips a point by its centre.
+        wrapper.push_str(&format!(
+            "int _k_c = int(gl_VertexIndex) % 6; \
+             vec2 _k_q = vec2((_k_c == 1 || _k_c == 4 || _k_c == 5) ? 1.0 : -1.0, \
+             (_k_c >= 2 && _k_c != 4) ? 1.0 : -1.0); \
+             float _k_s = clamp(_k_PointSize, 1.0, {MAX_POINT_SIZE:?}); \
+             bool _k_in = abs(gl_Position.x) <= gl_Position.w && abs(gl_Position.y) <= gl_Position.w \
+             && abs(gl_Position.z) <= gl_Position.w; \
+             gl_Position.xy += _k_q * _k_s / _k_vp * gl_Position.w; \
+             if (!_k_in) {{ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }} \
+             _k_PointCoord = vec2(_k_q.x * 0.5 + 0.5, 0.5 - _k_q.y * 0.5); "
+        ));
+    }
     if !fragment {
         // GL's clip space is -w..w deep, wgpu's 0..w.
         wrapper.push_str("gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5; ");
@@ -767,11 +829,12 @@ struct Ctx<'a, 'b> {
     next_varying: &'b mut u32,
     has_out: &'b mut bool,
     uses_point_size: &'b mut bool,
+    points: bool,
 }
 
 /// A directive other than `#version` and `#extension`: its words go through
 /// the same renaming as code (`#define SAMPLE(uv) texture2D(tex, uv)`).
-fn rewrite_directive(text: &str, samplers: &[String], fragment: bool, r: &mut Rewritten) -> String {
+fn rewrite_directive(text: &str, samplers: &[String], mode: Mode, r: &mut Rewritten) -> String {
     let toks = tokenize(text);
     let mut out = String::new();
     let mut last = 0;
@@ -788,11 +851,14 @@ fn rewrite_directive(text: &str, samplers: &[String], fragment: bool, r: &mut Re
             word,
             toks.get(i.wrapping_sub(1)).map(|p| &text[p.start..p.end]),
             samplers,
-            fragment,
+            mode,
         ) {
             Some(new) => {
                 if word == "gl_FragCoord" {
                     r.uses_frag_coord = true;
+                }
+                if word == "gl_PointCoord" {
+                    r.uses_point_coord = true;
                 }
                 out.push_str(&new);
             }
@@ -804,7 +870,8 @@ fn rewrite_directive(text: &str, samplers: &[String], fragment: bool, r: &mut Re
 }
 
 /// What a word of code becomes, if it is renamed.
-fn rename(word: &str, prev: Option<&str>, samplers: &[String], fragment: bool) -> Option<String> {
+fn rename(word: &str, prev: Option<&str>, samplers: &[String], mode: Mode) -> Option<String> {
+    let Mode { fragment, points } = mode;
     if prev == Some(".") {
         return None;
     }
@@ -817,7 +884,10 @@ fn rename(word: &str, prev: Option<&str>, samplers: &[String], fragment: bool) -
         "gl_PointSize" => "_k_PointSize".into(),
         // wgpu's `vertex_index` counts from the draw's `first`, as GL's does,
         // and is the index itself in an indexed draw.
+        // A point is an instance of six vertices: its index is the instance's.
+        "gl_VertexID" if !fragment && points => "int(gl_InstanceIndex)".into(),
         "gl_VertexID" if !fragment => "int(gl_VertexIndex)".into(),
+        "gl_PointCoord" if fragment => "_k_PointCoord".into(),
         w if samplers.iter().any(|s| s == w) => format!("sampler2D(_k_t_{w}, _k_s_{w})"),
         _ => return None,
     })
@@ -895,9 +965,12 @@ fn rewrite_chunk(
                     k += 1;
                     continue;
                 }
-                if let Some(new) = rename(w, prev, samplers, fragment) {
+                if let Some(new) = rename(w, prev, samplers, Mode { fragment, points: ctx.points }) {
                     if w == "gl_FragCoord" {
                         r.uses_frag_coord = true;
+                    }
+                    if w == "gl_PointCoord" {
+                        r.uses_point_coord = true;
                     }
                     if w == "gl_PointSize" {
                         *ctx.uses_point_size = true;
@@ -1329,6 +1402,9 @@ pub struct Stage {
     pub uses_frag_coord: bool,
     /// The offset of the drawing buffer's height (the fragment stage's).
     pub fbh_offset: Option<u32>,
+    /// The offset of the viewport's width and height (the vertex stage of a
+    /// program that draws points).
+    pub vp_offset: Option<u32>,
 }
 
 impl std::fmt::Debug for Stage {
@@ -1395,6 +1471,7 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         })
         .collect();
     let mut fbh_offset = None;
+    let mut vp_offset = None;
     for (_, gv) in module.global_variables.iter() {
         let Some(binding) = &gv.binding else { continue };
         if gv.space != naga::AddressSpace::Uniform || binding.binding != block_binding {
@@ -1409,6 +1486,8 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
             let member = member_of(&module, &name, m.offset, m.ty)?;
             if name == "_k_fbh" {
                 fbh_offset = Some(m.offset);
+            } else if name == "_k_vp" {
+                vp_offset = Some(m.offset);
             } else if let Some(real) = name.strip_prefix("_k_b_") {
                 let mut member = member;
                 member.name = real.to_string();
@@ -1453,6 +1532,7 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         attributes: r.attributes,
         uses_frag_coord: r.uses_frag_coord,
         fbh_offset,
+        vp_offset,
     })
 }
 
@@ -1503,8 +1583,13 @@ fn member_of(
 
 /// Translates one program: both stages, with the vertex outputs and the
 /// fragment inputs matched by name. `flip_y` is for a program that draws into a
-/// texture rather than the drawing buffer (`compositor/glsl.rs`).
-pub fn translate(program: &GlslProgram, flip_y: bool) -> std::result::Result<Translated, String> {
+/// texture rather than the drawing buffer (`compositor/glsl.rs`); `points` for
+/// one drawn as points.
+pub fn translate(
+    program: &GlslProgram,
+    flip_y: bool,
+    points: bool,
+) -> std::result::Result<Translated, String> {
     let mut varyings = Varyings::default();
     let vr = rewrite(RewriteInput {
         src: &program.vertex,
@@ -1512,6 +1597,7 @@ pub fn translate(program: &GlslProgram, flip_y: bool) -> std::result::Result<Tra
         attribute_locations: &program.attributes,
         varyings: &mut varyings,
         flip_y,
+        points,
     })?;
     let fr = rewrite(RewriteInput {
         src: &program.fragment,
@@ -1519,6 +1605,7 @@ pub fn translate(program: &GlslProgram, flip_y: bool) -> std::result::Result<Tra
         attribute_locations: &BTreeMap::new(),
         varyings: &mut varyings,
         flip_y,
+        points,
     })?;
     Ok(Translated {
         vertex: parse_stage(ShaderStage::Vertex, vr)?,
@@ -1527,17 +1614,23 @@ pub fn translate(program: &GlslProgram, flip_y: bool) -> std::result::Result<Tra
 }
 
 /// The bytes of a stage's uniform block after `calls`, the uniform calls of a
-/// draw (`fbh` is the drawing buffer's height, for `gl_FragCoord`). What no
-/// call set is zero, as GL's default.
+/// draw (`fbh` is the drawing buffer's height, for `gl_FragCoord`, and
+/// `viewport` the viewport's size, for the size of a point). What no call set
+/// is zero, as GL's default.
 pub fn uniform_bytes(
     stage: &Stage,
     calls: &BTreeMap<String, Vec<GlslUniform>>,
     fbh: f32,
+    viewport: (f32, f32),
 ) -> std::result::Result<Vec<u8>, String> {
     let size = (stage.uniform_size.max(16) as usize).div_ceil(16) * 16;
     let mut bytes = vec![0u8; size];
     if let Some(at) = stage.fbh_offset {
         put(&mut bytes, at as usize, &fbh.to_le_bytes());
+    }
+    if let Some(at) = stage.vp_offset {
+        put(&mut bytes, at as usize, &viewport.0.to_le_bytes());
+        put(&mut bytes, at as usize + 4, &viewport.1.to_le_bytes());
     }
     for member in &stage.uniforms {
         for call in calls.get(&member.name).into_iter().flatten() {
@@ -1693,7 +1786,7 @@ pub fn next_level(rgba: &[u8], width: u32, height: u32) -> (Vec<u8>, u32, u32) {
 /// cannot read fails when it loads.
 pub fn validate(layer_id: &str, content: &GlslContent) -> Result<()> {
     for (id, program) in &content.programs {
-        translate(program, false)
+        translate(program, false, false)
             .map_err(|e| Error::Scene(format!("layer {layer_id:?}: glsl program {id:?}: {e}")))?;
     }
     Ok(())
@@ -1705,7 +1798,7 @@ mod tests {
 
     /// A program as the drawing buffer's.
     fn translate(program: &GlslProgram) -> std::result::Result<Translated, String> {
-        super::translate(program, false)
+        super::translate(program, false, false)
     }
 
     fn program(vertex: &str, fragment: &str) -> GlslProgram {
@@ -1761,7 +1854,7 @@ mod tests {
             "m".to_string(),
             vec![call(GlslUniformKind::Matrix, &[1.0, 2.0, 3.0, 4.0], 0)],
         );
-        let bytes = uniform_bytes(&t.fragment, &calls, 64.0).unwrap();
+        let bytes = uniform_bytes(&t.fragment, &calls, 64.0, (1.0, 1.0)).unwrap();
         // Four floats to a vec4, then the fifth in the next.
         assert_eq!(word(&bytes, at("w") + 12), 4.0);
         assert_eq!(word(&bytes, at("w") + 16), 5.0);
@@ -1784,7 +1877,7 @@ mod tests {
         let try_one = |name: &str, c: GlslUniform| {
             let mut calls = BTreeMap::new();
             calls.insert(name.to_string(), vec![c]);
-            uniform_bytes(&t.fragment, &calls, 1.0)
+            uniform_bytes(&t.fragment, &calls, 1.0, (1.0, 1.0))
         };
         let e = try_one("c", call(GlslUniformKind::Int, &[1.0, 2.0, 3.0], 0)).unwrap_err();
         assert!(e.contains("wrong kind"), "{e}");
@@ -1792,6 +1885,21 @@ mod tests {
         assert!(e.contains("2 element"), "{e}");
         let e = try_one("c", call(GlslUniformKind::Float, &[1.0, 2.0], 0)).unwrap_err();
         assert!(e.contains("multiple of 3"), "{e}");
+    }
+
+    #[test]
+    fn a_program_drawn_as_points_gets_the_viewport_and_a_point_coord() {
+        let p = program(
+            "attribute vec2 a_pos; void main() { gl_PointSize = 8.0; \
+             gl_Position = vec4(a_pos, 0.0, 1.0); }",
+            "precision mediump float; void main() { gl_FragColor = vec4(gl_PointCoord, 0.0, 1.0); }",
+        );
+        let t = super::translate(&p, false, true).unwrap();
+        assert!(t.vertex.vp_offset.is_some());
+        assert!(t.vertex.uniform_size > 0);
+        // As triangles the same shaders are valid, and gl_PointCoord is zero.
+        let t = super::translate(&p, false, false).unwrap();
+        assert!(t.vertex.vp_offset.is_none());
     }
 
     #[test]
@@ -1835,7 +1943,7 @@ mod tests {
              void main() { gl_FragColor = vec4(gl_FragCoord.xy / 8.0, v_uv); }",
         );
         for flip_y in [false, true] {
-            let t = super::translate(&p, flip_y).unwrap();
+            let t = super::translate(&p, flip_y, false).unwrap();
             assert!(t.fragment.uses_frag_coord, "{flip_y}");
         }
     }

@@ -78,6 +78,15 @@ describe('the recording WebGL context', () => {
     expect(gl.getError()).toBe(GL.NO_ERROR);
   });
 
+  it('records a points draw and reports the point size range', () => {
+    const { gl } = setup();
+    gl.drawArrays(GL.POINTS, 1, 2);
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    expect(gl.content().ops[0]).toMatchObject({ op: 'draw', mode: 'points', first: 1, count: 2 });
+    expect([...(gl.getParameter(0x846d) as Float32Array)]).toEqual([1, 511]);
+    expect(() => gl.drawArrays(GL.LINES, 0, 2)).toThrow(/lines/);
+  });
+
   it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {
     const { gl } = setup({ attributes: { preserveDrawingBuffer: true } });
     gl.drawArrays(GL.TRIANGLES, 0, 3);
@@ -156,7 +165,7 @@ describe('the recording WebGL context', () => {
     gl.enable(GL.DEPTH_TEST);
     expect(refused(() => gl.drawArrays(GL.TRIANGLES, 0, 3))).toMatch(/^unsupported:.*depth/);
     gl.disable(GL.DEPTH_TEST);
-    expect(refused(() => gl.drawArrays(GL.POINTS, 0, 3))).toMatch(/^unsupported:.*points/);
+    expect(refused(() => gl.drawArrays(GL.LINES, 0, 2))).toMatch(/^unsupported:.*lines/);
     expect(refused(() => gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/^unsupported:.*renderbuffers/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
     expect(refused(() => (gl as any).blitFramebuffer(0, 0, 1, 1, 0, 0, 1, 1, 0x4000, 0x2600))).toMatch(/^unsupported:/);

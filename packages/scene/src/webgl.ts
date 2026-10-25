@@ -105,6 +105,8 @@ export const GL = {
   CW: 0x900,
   CCW: 0x901,
   LINE_WIDTH: 0xb21,
+  ALIASED_POINT_SIZE_RANGE: 0x846d,
+  ALIASED_LINE_WIDTH_RANGE: 0x846e,
   CULL_FACE_MODE: 0xb45,
   FRONT_FACE: 0xb46,
   DEPTH_RANGE: 0xb70,
@@ -595,6 +597,9 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
 
+/** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
+const POINT_SIZE_MAX = 511;
+
 /** Formats of a texture that colour cannot be drawn into. */
 const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA, GL.DEPTH_COMPONENT]);
 
@@ -766,6 +771,10 @@ export class WebGLContext {
         return 16;
       case GL.MAX_VERTEX_TEXTURE_IMAGE_UNITS:
         return 0;
+      case GL.ALIASED_POINT_SIZE_RANGE:
+        return new Float32Array([1, POINT_SIZE_MAX]);
+      case GL.ALIASED_LINE_WIDTH_RANGE:
+        return new Float32Array([1, 1]);
       case GL.VIEWPORT:
         return new Int32Array(this.viewportNow());
       case GL.SCISSOR_BOX:
@@ -1686,12 +1695,12 @@ export class WebGLContext {
   }
 
   private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null): void {
-    const modes: Record<number, GlslDraw['mode']> = { [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan' };
+    const modes: Record<number, GlslDraw['mode']> = { [GL.POINTS]: 'points', [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan' };
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.fail(GL.INVALID_ENUM);
     const program = this.program;
     if (program === null) return this.fail(GL.INVALID_OPERATION);
     const named = modes[mode];
-    if (named === undefined) throw new WebGLUnsupportedError('drawing points and lines; draw triangles');
+    if (named === undefined) throw new WebGLUnsupportedError('drawing lines; draw triangles (points are drawn)');
     if (this.caps.depth) throw new WebGLUnsupportedError('drawing with the depth test on (disable(gl.DEPTH_TEST); a flat quad does not need it)');
     if (this.caps.stencil) throw new WebGLUnsupportedError('drawing with the stencil test on');
     if (this.framebufferIncomplete()) return;

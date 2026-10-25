@@ -403,9 +403,9 @@ impl Compositor {
                 match &p.indices {
                     Some((buffer, count)) => {
                         rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
-                        rpass.draw_indexed(0..*count, 0, 0..1);
+                        rpass.draw_indexed(0..*count, 0, p.instances.0..p.instances.1);
                     }
-                    None => rpass.draw(p.vertices.0..p.vertices.1, 0..1),
+                    None => rpass.draw(p.vertices.0..p.vertices.1, p.instances.0..p.instances.1),
                 }
             }
         }
@@ -501,7 +501,8 @@ impl Compositor {
             Some(id) => self.glsl_target(targets, content, id)?.size,
             None => size,
         };
-        let program = self.glsl_program(program_spec, flip)?;
+        let points = draw.mode == GlslMode::Points;
+        let program = self.glsl_program(program_spec, flip, points)?;
 
         // State.
         let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size, flip)?;
@@ -513,9 +514,19 @@ impl Compositor {
 
         // Vertex data.
         let vertex = &program.translated.vertex;
-        // Location, format, stride and the attribute's offset in the vertex.
-        let mut layouts: Vec<(u32, wgpu::VertexFormat, u64, u64)> = Vec::new();
+        // Location, format, stride, the attribute's offset in the vertex and
+        // how often it advances: a point is an instance of six vertices, so
+        // its attributes advance for each instance.
+        let step = if points {
+            wgpu::VertexStepMode::Instance
+        } else {
+            wgpu::VertexStepMode::Vertex
+        };
+        let mut layouts: Vec<(u32, wgpu::VertexFormat, u64, u64, wgpu::VertexStepMode)> =
+            Vec::new();
         let mut sources: Vec<(&str, u64, u64)> = Vec::new();
+        // Buffer, stride, offset and element size of each, for gathering.
+        let mut shapes: Vec<(&str, u64, u64, u64)> = Vec::new();
         let last = match &draw.indices {
             Some(indices) => {
                 let max = self.glsl_max_index(content, indices, draw, buffers)?;
@@ -566,8 +577,9 @@ impl Compositor {
             } else {
                 (0, offset)
             };
-            layouts.push((*location, format, stride, in_vertex));
+            layouts.push((*location, format, stride, in_vertex, step));
             sources.push((&a.buffer, bound_at, stride));
+            shapes.push((&a.buffer, stride, offset, element));
         }
 
         // The index list, expanded to triangles when the mode needs it.
@@ -576,6 +588,25 @@ impl Compositor {
             let bytes = glsl_buffer(content, &indices.buffer, buffers)?;
             let list = read_indices(bytes, indices.ty, indices.offset, draw.count)?;
             index_list = Some(list);
+        }
+        // Points from an index list: each attribute is gathered in the order
+        // of the list, one element for each point.
+        let mut instances = (draw.first, draw.first + draw.count);
+        let mut gathered: Vec<Option<Vec<u8>>> = vec![None; sources.len()];
+        if points && let Some(list) = index_list.take() {
+            for (k, (buffer, stride, offset, element)) in shapes.iter().enumerate() {
+                let bytes = glsl_buffer(content, buffer, buffers)?;
+                let mut out = Vec::with_capacity(list.len() * *element as usize);
+                for index in &list {
+                    let at = (offset + u64::from(*index) * stride) as usize;
+                    out.extend_from_slice(&bytes[at..at + *element as usize]);
+                }
+                gathered[k] = Some(out);
+                layouts[k].2 = *element;
+                layouts[k].3 = 0;
+                sources[k].1 = 0;
+            }
+            instances = (0, list.len() as u32);
         }
         if draw.mode == GlslMode::TriangleFan {
             let list = index_list
@@ -588,15 +619,19 @@ impl Compositor {
             index_list = Some(fan);
         }
         let topology = match draw.mode {
-            GlslMode::Triangles | GlslMode::TriangleFan => wgpu::PrimitiveTopology::TriangleList,
+            GlslMode::Points | GlslMode::Triangles | GlslMode::TriangleFan => {
+                wgpu::PrimitiveTopology::TriangleList
+            }
             GlslMode::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
         };
 
         // Uniform blocks.
         let fbh = size.1 as f32;
-        let vs_bytes = gl::uniform_bytes(vertex, &draw.uniforms, fbh).map_err(render_error)?;
+        let vs_bytes =
+            gl::uniform_bytes(vertex, &draw.uniforms, fbh, (vw, vh)).map_err(render_error)?;
         let fragment = &program.translated.fragment;
-        let fs_bytes = gl::uniform_bytes(fragment, &draw.uniforms, fbh).map_err(render_error)?;
+        let fs_bytes =
+            gl::uniform_bytes(fragment, &draw.uniforms, fbh, (vw, vh)).map_err(render_error)?;
 
         // Pipeline.
         let key = format!(
@@ -723,7 +758,18 @@ impl Compositor {
 
         // Vertex buffers: the recorded bytes, bound at each attribute's offset.
         let mut vertex_buffers = Vec::new();
-        for (buffer, offset, _) in sources {
+        for ((buffer, offset, _), gathered) in sources.into_iter().zip(gathered) {
+            if let Some(bytes) = gathered {
+                let gpu = self
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("glsl gathered vertices"),
+                        contents: &bytes,
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                vertex_buffers.push((gpu, 0));
+                continue;
+            }
             let entry = buffers.get_mut(buffer).expect("read above");
             let gpu = entry.1.get_or_insert_with(|| {
                 self.device
@@ -764,7 +810,13 @@ impl Compositor {
             blend_constant,
             vertex_buffers,
             indices,
-            vertices: (draw.first, draw.first + draw.count),
+            // A point is a quad of six vertices.
+            vertices: if points {
+                (0, 6)
+            } else {
+                (draw.first, draw.first + draw.count)
+            },
+            instances: if points { instances } else { (0, 1) },
         }))
     }
 
@@ -783,15 +835,20 @@ impl Compositor {
     }
 
     /// The program, translated and compiled the first time it is drawn.
-    fn glsl_program(&mut self, spec: &gl::GlslProgram, flip_y: bool) -> Result<Arc<Program>> {
+    fn glsl_program(
+        &mut self,
+        spec: &gl::GlslProgram,
+        flip_y: bool,
+        points: bool,
+    ) -> Result<Arc<Program>> {
         let key = format!(
-            "{}\u{0}{}\u{0}{:?}\u{0}{flip_y}",
+            "{}\u{0}{}\u{0}{:?}\u{0}{flip_y}\u{0}{points}",
             spec.vertex, spec.fragment, spec.attributes
         );
         if let Some(p) = self.glsl.programs.get(&key) {
             return Ok(p.clone());
         }
-        let translated = gl::translate(spec, flip_y).map_err(render_error)?;
+        let translated = gl::translate(spec, flip_y, points).map_err(render_error)?;
         if !translated.vertex.samplers.is_empty() {
             return Err(render_error(
                 "unsupported: a texture read in the vertex shader (vertex texture fetch)",
@@ -860,14 +917,14 @@ impl Compositor {
     fn glsl_pipeline(
         &self,
         program: &Program,
-        layouts: &[(u32, wgpu::VertexFormat, u64, u64)],
+        layouts: &[(u32, wgpu::VertexFormat, u64, u64, wgpu::VertexStepMode)],
         topology: wgpu::PrimitiveTopology,
         indexed: bool,
         draw: &GlslDraw,
     ) -> Result<wgpu::RenderPipeline> {
         let attributes: Vec<[wgpu::VertexAttribute; 1]> = layouts
             .iter()
-            .map(|(location, format, _, offset)| {
+            .map(|(location, format, _, offset, _)| {
                 [wgpu::VertexAttribute {
                     format: *format,
                     offset: *offset,
@@ -878,15 +935,16 @@ impl Compositor {
         let buffers: Vec<Option<wgpu::VertexBufferLayout>> = layouts
             .iter()
             .zip(&attributes)
-            .map(|((_, _, stride, _), attribute)| {
+            .map(|((_, _, stride, _, step_mode), attribute)| {
                 Some(wgpu::VertexBufferLayout {
                     array_stride: *stride,
-                    step_mode: wgpu::VertexStepMode::Vertex,
+                    step_mode: *step_mode,
                     attributes: attribute,
                 })
             })
             .collect();
-        let cull_mode = match &draw.cull {
+        // Culling is for polygons: a point is not culled.
+        let cull_mode = match draw.cull.as_ref().filter(|_| draw.mode != GlslMode::Points) {
             None => None,
             Some(c) => match c.face.as_str() {
                 "FRONT" => Some(wgpu::Face::Front),
@@ -1401,6 +1459,7 @@ struct Prepared {
     vertex_buffers: Vec<(wgpu::Buffer, u64)>,
     indices: Option<(wgpu::Buffer, u32)>,
     vertices: (u32, u32),
+    instances: (u32, u32),
 }
 
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
