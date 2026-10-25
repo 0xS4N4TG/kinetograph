@@ -14,18 +14,24 @@
 // it. An effect whose picture depends on what earlier frames left in its state would differ; one that is a function of
 // its params and of what the frame brings (a shader, a filter) is the same.
 //
-// `webgpu` effects are not run: the picture is drawn without them and the frame reports it (`--strict` fails).
+// A `webgpu` effect runs the same way over a recording canvas: its device is a recording one, the picture of the layer
+// before it is a source for `queue.copyExternalImageToTexture`, and the passes it submits are the `webgpu` part of the
+// group's `glsl` pass.
 
 import { useId, type CSSProperties, type ReactNode } from 'react';
-import { canvasEnvironment } from '@kinetographdev/compat/shim';
+import { canvasEnvironment, rasterizeCanvas } from '@kinetographdev/compat/shim';
 import { Layer } from '@kinetographdev/react';
 import {
   createCanvasContext,
+  createGpuCanvasContext,
   createWebGLContext,
+  GPUDeviceShim,
   layerPicture,
   type CanvasContext2D,
   type CanvasPass,
+  type GPUCanvasContextShim,
   type GlslPass,
+  WebGpuUnsupportedError,
   type WebGLContext,
 } from '@kinetographdev/scene';
 import type { EffectDescriptor, EffectsOutputSize, EffectsProp } from './effects.js';
@@ -42,11 +48,6 @@ export function enabledEffects(effects: EffectsProp | undefined): EffectDescript
   return (effects ?? []).filter((effect) => !isDisabled(effect));
 }
 
-/** Thrown by a context request for WebGPU, which has no recording. The chain catches it and draws without the stage. */
-class BackendUnsupported extends Error {
-  override name = 'BackendUnsupported';
-}
-
 const GL_TYPE = /^(experimental-)?webgl2?$/;
 
 /**
@@ -54,16 +55,27 @@ const GL_TYPE = /^(experimental-)?webgl2?$/;
  * browser: `2d` records commands, `webgl2` (or `webgl`) records the GL calls.
  */
 export class RecordingCanvas {
-  private context: CanvasContext2D | WebGLContext | null = null;
+  private context: CanvasContext2D | WebGLContext | GPUCanvasContextShim | null = null;
   private kind: string | null = null;
+  private device: GPUDeviceShim | null = null;
 
   constructor(
     public width: number,
     public height: number,
   ) {}
 
-  getContext(type: string, attributes?: Record<string, unknown>): CanvasContext2D | WebGLContext | null {
-    if (type === 'webgpu') throw new BackendUnsupported('a WebGPU context');
+  /** The recording device of a WebGPU effect (`gpuDevice` of `apply`): one for the canvas, made on first use. */
+  gpuDevice(): GPUDeviceShim {
+    return (this.device ??= new GPUDeviceShim({ rasterize: rasterizeCanvas }));
+  }
+
+  getContext(type: string, attributes?: Record<string, unknown>): CanvasContext2D | WebGLContext | GPUCanvasContextShim | null {
+    if (type === 'webgpu') {
+      if (this.context !== null) return this.kind === 'webgpu' ? this.context : null;
+      this.context = createGpuCanvasContext({ size: () => ({ width: this.width, height: this.height }), canvas: this });
+      this.kind = 'webgpu';
+      return this.context;
+    }
     const gl = GL_TYPE.test(type);
     if (type !== '2d' && !gl) return null;
     const kind = gl ? (type.endsWith('2') ? 'webgl2' : 'webgl') : '2d';
@@ -91,6 +103,7 @@ export class RecordingCanvas {
     const { width, height } = this;
     if (this.context === null) return { glsl: { width, height } };
     if (this.kind === '2d') return { canvas: { width, height, commands: (this.context as CanvasContext2D).commands } };
+    if (this.kind === 'webgpu') return { glsl: { width, height, ...(this.context as GPUCanvasContextShim).content() } };
     return { glsl: { width, height, ...(this.context as WebGLContext).content() } };
   }
 }
@@ -104,7 +117,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
   return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
 }
 
-/** Runs one effect on a fresh canvas and returns the pass it drew, or null for a stage that asked for WebGPU. */
+/** Runs one effect on a fresh canvas and returns the pass it drew, or null when it used a WebGPU call that is not drawn. */
 function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number): Pass | null {
   const { definition, params } = effect;
   if (typeof definition?.apply !== 'function' || typeof definition.setup !== 'function' || typeof definition.cleanup !== 'function') {
@@ -115,12 +128,12 @@ function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, widt
     const state = definition.setup(target);
     try {
       // Every picture here is a canvas as the DOM holds it (row 0 on top), which is what `flipSourceY` says to a WebGL effect.
-      definition.apply({ source: source as never, target, state, params, width, height, gpuDevice: null, flipSourceY: true });
+      definition.apply({ source: source as never, target, state, params, width, height, gpuDevice: definition.backend === 'webgpu' ? target.gpuDevice() : null, flipSourceY: definition.backend !== 'webgpu' });
     } finally {
       definition.cleanup(state);
     }
   } catch (error) {
-    if (error instanceof BackendUnsupported) return null;
+    if (error instanceof WebGpuUnsupportedError) return null;
     throw error;
   }
   return target.pass();
@@ -198,12 +211,9 @@ function runPaint(
       context.drawElementImage(elementImage, 0, 0);
     }
   } catch (error) {
-    if (!(error instanceof BackendUnsupported)) throw error;
-    warnOnce(
-      `${component}.paint.webgpu`,
-      `${component} draws without onInit and onPaint: they ask for ${error.message}, and Kinetograph has no WebGPU. A '2d', 'webgl2' or 'webgl' context works.`,
-    );
-    reportUnsupported(component.replace(/^<|>$/g, ''), 'onPaint', 'webgpu', 'onInit and onPaint draw on a WebGPU context; the children are drawn without them');
+    if (!(error instanceof WebGpuUnsupportedError)) throw error;
+    warnOnce(`${component}.paint.webgpu`, `${component} draws without onInit and onPaint: ${error.message}`);
+    reportUnsupported(component.replace(/^<|>$/g, ''), 'onPaint', 'webgpu', 'onInit and onPaint make a WebGPU call that is not drawn; the children are drawn without them');
     return null;
   } finally {
     cleanup?.();
@@ -254,17 +264,12 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
   const height = effectsOutputSize?.height ?? Math.ceil(cssHeight * pixelDensity);
 
   const enabled = enabledEffects(effects);
-  const runnable = enabled.filter((effect) => effect.definition.backend !== 'webgpu');
-  const skipped = enabled.filter((effect) => effect.definition.backend === 'webgpu');
+  const runnable = enabled;
   const reportSkipped = (labels: string[], what: string): void => {
     const names = labels.join(', ');
-    warnOnce(
-      `${component}.effects.webgpu`,
-      `${component} draws without ${what} (${names}): it draws on a WebGPU device, which Kinetograph does not have. Effects with the 'webgl2' or '2d' backend run.`,
-    );
-    reportUnsupported(component.replace(/^<|>$/g, ''), 'effects', names, 'a WebGPU effect draws on a browser GPU device; the picture is drawn without it');
+    warnOnce(`${component}.effects.webgpu`, `${component} draws without ${what} (${names}): it makes a WebGPU call that is not drawn (see /docs/known-issues/, "WebGPU").`);
+    reportUnsupported(component.replace(/^<|>$/g, ''), 'effects', names, 'a WebGPU effect makes a call that is not drawn; the picture is drawn without it');
   };
-  if (skipped.length > 0) reportSkipped(skipped.map((effect) => effect.definition.label), 'its WebGPU effects');
 
   const active = runnable.length > 0 || paint !== undefined;
 

@@ -120,7 +120,19 @@ export const shaded = createEffect<{ mult?: [number, number, number]; invert?: b
   },
 });
 
-/** WebGPU: declared, never run. */
+const GPU_WGSL = `
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var smp: sampler;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  var p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+  return vec4f(p[i], 0, 1);
+}
+@fragment fn fs(@builtin(position) at: vec4f) -> @location(0) vec4f {
+  let c = textureSample(src, smp, at.xy / vec2f(textureDimensions(src)));
+  return vec4f(c.bgr, c.a);
+}`;
+
+/** WebGPU: the layer before it is copied into a texture and sampled by a pipeline that swaps red and blue. */
 export const gpu = createEffect<object, object>({
   type: 'test/gpu',
   label: 'Gpu',
@@ -128,8 +140,41 @@ export const gpu = createEffect<object, object>({
   backend: 'webgpu',
   calculateKey: () => 'gpu',
   setup: () => ({}),
-  apply: () => {
-    throw new Error('a WebGPU effect must not run');
+  apply: ({ source, target, gpuDevice, width, height }) => {
+    const device = gpuDevice as any;
+    const context = target.getContext('webgpu');
+    context.configure({ device, format: 'rgba8unorm', alphaMode: 'premultiplied' });
+    const texture = device.createTexture({ size: [width, height], format: 'rgba8unorm', usage: 4 | 2 | 16 });
+    device.queue.copyExternalImageToTexture({ source }, { texture }, [width, height]);
+    const module = device.createShaderModule({ code: GPU_WGSL });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module }, fragment: { module, targets: [{ format: 'rgba8unorm' }] } });
+    const group = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: texture.createView() }, { binding: 1, resource: device.createSampler() }],
+    });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+  },
+  cleanup: () => undefined,
+  schema: {},
+  validateParams: () => undefined,
+});
+
+/** WebGPU that asks for something that is not drawn. */
+export const gpuCompute = createEffect<object, object>({
+  type: 'test/gpu-compute',
+  label: 'GpuCompute',
+  documentationLink: null,
+  backend: 'webgpu',
+  calculateKey: () => 'gpu-compute',
+  setup: () => ({}),
+  apply: ({ gpuDevice }) => {
+    (gpuDevice as any).createComputePipeline();
   },
   cleanup: () => undefined,
   schema: {},

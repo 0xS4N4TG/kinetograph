@@ -12,7 +12,7 @@ import { croppedStyle, Sequenced, splitCrop, splitTiming, type CropProps, type S
 
 /** The message a project shows, or Remotion throws, where `<HtmlInCanvas>` cannot run its canvas program. */
 export const HTML_IN_CANVAS_UNSUPPORTED_MESSAGE =
-  'HTML in Canvas needs a browser canvas that can draw an element (Chrome 149 or newer with Canvas Draw Element enabled), and Kinetograph has none: <HtmlInCanvas> draws its onPaint, onInit and effects on recording canvases instead, which run 2D and WebGL contexts (not WebGPU).';
+  'HTML in Canvas needs a browser canvas that can draw an element (Chrome 149 or newer with Canvas Draw Element enabled), and Kinetograph has none: <HtmlInCanvas> draws its onPaint, onInit and effects on recording canvases instead, which run 2D, WebGL and WebGPU contexts.';
 
 /** Always true: the element is drawn as a layer and its picture is handed to `onPaint` (a recording canvas, not Chrome's). */
 export function isHtmlInCanvasSupported(): boolean {
