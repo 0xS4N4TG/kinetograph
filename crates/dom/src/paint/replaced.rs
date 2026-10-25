@@ -188,7 +188,7 @@ impl<'a> Painter<'a> {
     }
 
     /// A WebGPU canvas's recording (`data-kg-webgl` with a `webgpu` part): what the page did that is not drawn, and
-    /// the WGSL naga refuses, are reported, and a recording with a module that is wrong draws nothing.
+    /// the WGSL naga refuses, are reported, and a recording with a module that is wrong, or a texture out of range, draws nothing.
     fn webgpu_report(&mut self, node: &'a Node, drawn: &mut Value) {
         let Some(part) = drawn.get("webgpu").cloned() else {
             return;
@@ -208,7 +208,12 @@ impl<'a> Painter<'a> {
         for problem in &problems {
             self.report(node, "webgpu", problem, "a WGSL module that is not valid; the canvas draws nothing");
         }
-        if !problems.is_empty() {
+        // The sizes, levels and origins of textures, uploads and copies: a recording that is out of range draws nothing.
+        let invalid = kinetograph_core::webgpu::validate(&recording, 8192).err();
+        if let Some(problem) = &invalid {
+            self.report(node, "webgpu", problem, "a texture, upload or copy that is out of range; the canvas draws nothing");
+        }
+        if !problems.is_empty() || invalid.is_some() {
             drawn["webgpu"] = json!({});
         }
     }

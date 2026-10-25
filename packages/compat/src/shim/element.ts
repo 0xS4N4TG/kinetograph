@@ -8,7 +8,7 @@ import { cssPropertyName, styleToCss } from '../request/style.js';
 import { isDomElement, isSvgTag } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
-import { CANVAS_SOURCE, fontKey, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetographdev/scene';
+import { CANVAS_SOURCE, VIDEO_FRAME, fontKey, type CanvasContext2D, type CanvasPicture, type VideoFrameSource, type WebGLContext } from '@kinetographdev/scene';
 import type { GlRecorder } from './canvas.js';
 import {
   bitmapSide,
@@ -945,6 +945,17 @@ export class DomElement {
   toBlob(callback: (blob: Blob | null) => void): void {
     refuseGlPicture(this.host);
     callback(canvasToBlob(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height }));
+  }
+  /**
+   * What `queue.copyExternalImageToTexture` reads of a `<video>`: its file and the instant `currentTime` names, so that the
+   * frame is the one for the time the page set (the renderer reads the picture at that time, not at a clock).
+   */
+  [VIDEO_FRAME](): VideoFrameSource | null {
+    if (this.host.type !== 'video') return null;
+    const file = projectFileOf(this.src);
+    const size = this.media();
+    if (file === null || size === null) return null;
+    return { src: file, time: Number.isFinite(this.currentTime) && this.currentTime > 0 ? this.currentTime : 0, width: size.width, height: size.height };
   }
   /** What `drawImage` reads of this element: a canvas's commands, an image's file. */
   [CANVAS_SOURCE](): CanvasPicture | null {

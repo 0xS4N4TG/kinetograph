@@ -8,7 +8,8 @@ import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupporte
 import { resetWarnings } from '../src/warn.js';
 import { renderDom, useFakeDom } from './dom-harness.js';
 import { bindQuad, useProgram } from '../src/gl-recording.js';
-import { filtered, gpu, shaded, tinted } from './effect-fixtures.js';
+import { GPUDeviceShim } from '@kinetographdev/scene';
+import { filtered, gpu, gpuCompute, shaded, tinted } from './effect-fixtures.js';
 import { renderAt } from './scene-harness.js';
 
 useFakeDom();
@@ -299,25 +300,70 @@ describe('<HtmlInCanvas> onPaint and onInit', () => {
 });
 
 describe('WebGPU', () => {
-  it('is not run: a WebGPU effect is warned about once, reported for --strict, and the picture is drawn without it', () => {
-    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[gpu({}), shaded()]} />);
+  it('runs: the layer before it is an upload from a layer, and the pass is the `webgpu` part of a glsl pass', () => {
+    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[gpu({})]} />);
+    const [group] = chainOf(tree.layers);
+    expect(group!.glsl).toMatchObject({ width: 8, height: 8 });
+    const webgpu = (group!.glsl as { webgpu?: { passes: { k: string; source?: unknown }[]; textures: object } }).webgpu!;
+    expect(webgpu.passes.map((p) => p.k)).toEqual(['upload', 'render']);
+    expect(webgpu.passes[0]!.source).toEqual({ layer: expect.stringMatching(/-src$/) });
+    expect(Object.keys(webgpu.textures)).toHaveLength(1);
+    expect(warn).not.toHaveBeenCalled();
+    expect(reportedUnsupported()).toEqual([]);
+  });
+
+  it('stacks with the other backends in order', () => {
+    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[shaded(), gpu({})]} />);
+    expect(chainOf(tree.layers)).toHaveLength(2);
+  });
+
+  it('a WebGPU call that is not drawn is warned about once and reported, and the picture is drawn without the effect', () => {
+    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[gpuCompute({}), shaded()]} />);
     expect(chainOf(tree.layers)).toHaveLength(1);
-    renderDom(<Solid width={8} height={8} effects={[gpu({})]} />);
+    renderDom(<Solid width={8} height={8} effects={[gpuCompute({})]} />);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]![0]).toMatch(/draws without its WebGPU effects \(Gpu\)/);
-    expect(reportedUnsupported()).toEqual([
-      expect.objectContaining({ element: 'Solid', property: 'effects', value: 'Gpu' }),
-    ]);
+    expect(warn.mock.calls[0]![0]).toMatch(/draws without a WebGPU effect \(GpuCompute\)/);
+    expect(reportedUnsupported()).toEqual([expect.objectContaining({ element: 'Solid', property: 'effects', value: 'GpuCompute' })]);
   });
 
-  it('draws the plain box when the only effect is WebGPU', () => {
-    const tree = renderDom(<Solid width={8} height={8} effects={[gpu({})]} />);
-    expect(chainOf(tree.layers)).toEqual([]);
-  });
-
-  it('is reported for onPaint that asks for a WebGPU context, and the children are drawn as they are', () => {
+  it('runs onPaint that asks for a WebGPU context', () => {
     const tree = renderDom(
-      <HtmlInCanvas width={4} height={4} onPaint={({ canvas }) => canvas.getContext('webgpu')}>
+      <HtmlInCanvas width={4} height={4} onPaint={({ canvas }) => { canvas.getContext('webgpu'); }}>
+        x
+      </HtmlInCanvas>,
+    );
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(reportedUnsupported()).toEqual([]);
+  });
+
+  it('runs an async onPaint that asks for a WebGPU context', () => {
+    const tree = renderDom(
+      <HtmlInCanvas
+        width={4}
+        height={4}
+        onPaint={async ({ canvas }) => {
+          canvas.getContext('webgpu');
+          await Promise.resolve();
+        }}
+      >
+        x
+      </HtmlInCanvas>,
+    );
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(reportedUnsupported()).toEqual([]);
+  });
+
+  it('is reported when onPaint makes a WebGPU call that is not drawn, and the children are drawn as they are', () => {
+    const tree = renderDom(
+      <HtmlInCanvas
+        width={4}
+        height={4}
+        onPaint={({ canvas }) => {
+          const ctx = canvas.getContext('webgpu');
+          ctx.configure({ device: new GPUDeviceShim(), format: 'rgba8unorm' });
+          ctx.getConfiguration().device.createQuerySet();
+        }}
+      >
         x
       </HtmlInCanvas>,
     );
@@ -331,7 +377,7 @@ describe('WebGPU', () => {
     const { createFrameRenderer } = await import('../src/frame-loop.js');
     resetCompositions();
     registerRoot(() => (
-      <Composition id="Gpu" component={() => <Solid width={8} height={8} effects={[gpu({})]} />} width={32} height={32} fps={30} durationInFrames={2} />
+      <Composition id="Gpu" component={() => <Solid width={8} height={8} effects={[gpuCompute({})]} />} width={32} height={32} fps={30} durationInFrames={2} />
     ));
     const renderer = createFrameRenderer('Gpu');
     const frame = await renderer.renderFrame(0);
