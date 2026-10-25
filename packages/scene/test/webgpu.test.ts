@@ -74,9 +74,9 @@ describe('the recording WebGPU context', () => {
 
   it('says what it does not draw: the call throws and the frame reports it', async () => {
     const { context, device } = await page(0);
-    expect(() => (device as GPUDeviceShim).createTexture()).toThrow(WebGpuUnsupportedError);
+    expect(() => (device as GPUDeviceShim).createQuerySet()).toThrow(WebGpuUnsupportedError);
     expect(() => device.createComputePipeline()).toThrow(/^unsupported:/);
-    expect(context.content().webgpu!.notes).toEqual(['device.createTexture', 'compute pipelines']);
+    expect(context.content().webgpu!.notes).toEqual(['query sets', 'compute pipelines']);
     expect(context.drawn).toBe(true);
   });
 
