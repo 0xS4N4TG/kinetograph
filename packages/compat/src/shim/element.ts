@@ -23,6 +23,7 @@ import {
   resetCanvasOf,
 } from './canvas.js';
 import { isKnownCssProperty } from './css-names.js';
+import { collectionOf, nodeListOf, type HTMLCollection, type NodeList } from './lists.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
 import { parseHtmlFragment } from '../request/html.js';
 import { bodyHost, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
@@ -374,11 +375,11 @@ export class DomElement {
   private childHosts(): DomNode[] {
     return this.readback.childNodes(this.host);
   }
-  get childNodes(): (DomElement | DomText)[] {
-    return this.childHosts().map(domNodeFor);
+  get childNodes(): NodeList<DomElement | DomText> {
+    return nodeListOf(this.childHosts().map(domNodeFor));
   }
-  get children(): DomElement[] {
-    return this.childNodes.filter((n): n is DomElement => n instanceof DomElement);
+  get children(): HTMLCollection<DomElement> {
+    return collectionOf(this.childNodes.filter((n): n is DomElement => n instanceof DomElement));
   }
   get childElementCount(): number {
     return this.children.length;
@@ -647,22 +648,26 @@ export class DomElement {
   querySelector(selector: string): DomElement | null {
     return this.wrap(queryAll(this.descendants(), selector, this.selectorContext(this.host), true)[0] ?? null);
   }
-  querySelectorAll(selector: string): DomElement[] {
-    return queryAll(this.descendants(), selector, this.selectorContext(this.host)).map((h) => domElementFor(h, this.readback));
+  querySelectorAll(selector: string): NodeList<DomElement> {
+    return nodeListOf(queryAll(this.descendants(), selector, this.selectorContext(this.host)).map((h) => domElementFor(h, this.readback)));
   }
-  getElementsByTagName(tag: string): DomElement[] {
-    return this.descendants()
-      .filter((h) => tag === '*' || h.type.toLowerCase() === tag.toLowerCase())
-      .map((h) => domElementFor(h, this.readback));
+  getElementsByTagName(tag: string): HTMLCollection<DomElement> {
+    return collectionOf(
+      this.descendants()
+        .filter((h) => tag === '*' || h.type.toLowerCase() === tag.toLowerCase())
+        .map((h) => domElementFor(h, this.readback)),
+    );
   }
-  getElementsByClassName(names: string): DomElement[] {
+  getElementsByClassName(names: string): HTMLCollection<DomElement> {
     const wanted = names.split(/\s+/).filter(Boolean);
-    return this.descendants()
-      .filter((h) => {
-        const have = (domElementFor(h, this.readback).getAttribute('class') ?? '').split(/\s+/);
-        return wanted.every((w) => have.includes(w));
-      })
-      .map((h) => domElementFor(h, this.readback));
+    return collectionOf(
+      this.descendants()
+        .filter((h) => {
+          const have = (domElementFor(h, this.readback).getAttribute('class') ?? '').split(/\s+/);
+          return wanted.every((w) => have.includes(w));
+        })
+        .map((h) => domElementFor(h, this.readback)),
+    );
   }
 
   // ---- layout ----
