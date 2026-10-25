@@ -13,6 +13,7 @@
     "packages/cli",
     "packages/plugins/gsap",
     "packages/plugins/p5-brush",
+    "packages/plugins/motion",
     "packages/studio/ui",
     "packages/studio"
   ],
