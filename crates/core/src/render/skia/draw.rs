@@ -749,6 +749,28 @@ impl Translator {
         Some(r)
     }
 
+    /// The box of the glyph outlines in text-box space, which reaches past the text box when the line box is shorter than
+    /// the font (`line-height: 1` under a descender); `None` for no glyphs. A layer sized to the box alone would cut that.
+    fn text_ink(&mut self, laid: &crate::text::LaidOutText) -> Option<Rect> {
+        let mut ink: Option<Rect> = None;
+        for run in &laid.runs {
+            let Some(tf) = self.typeface(run) else { continue };
+            let tf_id = tf.unique_id();
+            let f = text_font(tf, run);
+            for g in &run.glyphs {
+                let key = (tf_id, run.font_size.to_bits(), run.skew.to_bits(), run.embolden > 0.0, g.id as u16);
+                let Some(outline) = self.glyph_paths.entry(key).or_insert_with(|| f.get_path(g.id as u16)).clone() else { continue };
+                let o = outline.bounds();
+                let r = Rect::new(g.x + o.left, g.y + o.top, g.x + o.right, g.y + o.bottom);
+                ink = Some(match ink {
+                    None => r,
+                    Some(a) => Rect::new(a.left.min(r.left), a.top.min(r.top), a.right.max(r.right), a.bottom.max(r.bottom)),
+                });
+            }
+        }
+        ink
+    }
+
     fn content_bounds(&mut self, layer: &ResolvedLayer, scale: f64) -> Option<Rect> {
         let _ = scale;
         match &layer.kind {
@@ -763,11 +785,15 @@ impl Translator {
             }
             ResolvedKind::Text { size, chars, text, font, line_height, max_width, align, runs, box_size, .. } => {
                 let b = self.layer_box(layer)?;
+                let laid = self.text.layout_layer(text, font, *size, *line_height, *max_width, *align, runs, *box_size);
                 let g = *size * 1.0;
                 let mut b = Rect::new(b.left - g, b.top - g, b.right + g, b.bottom + g);
+                if let Some(ink) = self.text_ink(&laid) {
+                    // A pixel more for the anti-aliased edge, as the box has.
+                    b = Rect::new(b.left.min(ink.left - 1.0), b.top.min(ink.top - 1.0), b.right.max(ink.right + 1.0), b.bottom.max(ink.bottom + 1.0));
+                }
                 if chars.iter().any(Option::is_some) {
                     // A styled character moves, scales and turns about its centre: its glyph box goes through that.
-                    let laid = self.text.layout_layer(text, font, *size, *line_height, *max_width, *align, runs, *box_size);
                     let centres = laid.char_centres();
                     for glyph in laid.runs.iter().flat_map(|run| &run.glyphs) {
                         let Some(style) = crate::render::char_style(chars, glyph.char_index) else { continue };
@@ -1582,16 +1608,8 @@ impl Translator {
                 self.stats.approx("variable-font coordinates (normalised back to design values, avar ignored)");
             }
             let tf_id = tf.unique_id();
-            let mut f = Font::from_typeface(tf, run.font_size);
-            f.set_subpixel(true);
-            f.set_hinting(skia_safe::FontHinting::None);
-            f.set_edging(skia_safe::font::Edging::AntiAlias);
-            f.set_linear_metrics(true);
-            if run.skew != 0.0 {
-                f.set_skew_x(-run.skew.to_radians().tan());
-            }
+            let f = text_font(tf, run);
             if run.embolden > 0.0 {
-                f.set_embolden(true);
                 self.stats.approx("synthetic bold (Skia's own amount)");
             }
             // Glyphs go in as outlines, one path a run. Graphite's glyph atlas gives a glyph the sampling coordinates of
@@ -1698,6 +1716,22 @@ fn effect_name(e: &ResolvedEffect) -> &'static str {
         ResolvedEffect::FilterGraph(_) => "filterGraph",
         ResolvedEffect::Shader(_) => "shader",
     }
+}
+
+/// The font a run's glyphs are drawn with (and their outlines taken from).
+fn text_font(tf: Typeface, run: &crate::text::LaidOutRun) -> Font {
+    let mut f = Font::from_typeface(tf, run.font_size);
+    f.set_subpixel(true);
+    f.set_hinting(skia_safe::FontHinting::None);
+    f.set_edging(skia_safe::font::Edging::AntiAlias);
+    f.set_linear_metrics(true);
+    if run.skew != 0.0 {
+        f.set_skew_x(-run.skew.to_radians().tan());
+    }
+    if run.embolden > 0.0 {
+        f.set_embolden(true);
+    }
+    f
 }
 
 fn blends_outside(layer: &ResolvedLayer) -> bool {
