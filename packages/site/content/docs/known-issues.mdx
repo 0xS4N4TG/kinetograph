@@ -29,7 +29,8 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 ### HyperFrames projects
 
-- **Three.js and WebGL.** Not drawn. A page that loads Three.js is reported on every frame. Shaders (`shaders.iife`) that need WebGL are drawn without the effect.
+- **Three.js.** Not drawn. A page that loads Three.js is reported on every frame.
+- **WebGPU.** Shader blocks that use `shaders.iife.js` (`aurora`, `blob`, `ripples`, `swirl` and the like) are drawn natively. See [WebGPU](#webgpu).
 - **Import maps and ES modules that import.** Not run. They are reported.
 - **Scripts share no top-level `const`.** Each `<script>` runs on its own, so a `const` in one is not visible in the next (a `var` or `window.x` is). Scripts of a mounted composition are wrapped in a function, as in HyperFrames.
 - **Selectors that reach into an `<svg>` from outside it.** The engine styles an `<svg>` on its own, so the loader writes the matching rules onto the shapes as inline style once the scripts have run. A class added to a shape later, by a tween or a script, is not restyled. The `font-family` of the page's text is written on the `<svg>` the same way.
@@ -52,6 +53,15 @@ A framebuffer texture starts every frame blank. A frame that only draws into fra
 - Not supported: renderbuffers; depth and stencil attachments; `COLOR_ATTACHMENT1` and up; a texture level above 0 as a target; targets that are not RGBA or that hold uploaded pixels; `generateMipmap` and `texSubImage2D` on a texture drawn into; points and lines; instancing; cube, 3D and float textures; and multisampled edges.
 - `readPixels` is refused by design.
 - `blitFramebuffer` is reported as unsupported.
+
+### WebGPU
+
+A canvas's `getContext('webgpu')` records, and the render passes it submits are drawn on the engine's own device. Drawn: buffers (uniform, storage, vertex, index), WGSL modules, bind group layouts, render pipelines (blend, topology, culling, vertex buffers, `layout: 'auto'`), bind groups, render passes into the canvas, `draw`, `drawIndexed`, viewport, scissor, `writeBuffer`, `copyBufferToBuffer`.
+
+- Not supported, and reported on every frame (`--strict` fails): textures and samplers (so images and video in a shader), compute pipelines, query sets, render bundles, indirect draws, depth and stencil, multisampling, a render pass that is not into the canvas, and reading a buffer back (`mapAsync`).
+- The canvas is drawn as 8-bit `rgba8unorm`; `rgba16float` and a display-p3 `colorSpace` are reported and drawn in sRGB without extended range.
+- A WGSL module naga refuses is reported and the canvas draws nothing; one that wgpu refuses later is a warning on stderr and a transparent canvas.
+- `shaders.iife.js` effects that read pictures (the ones that take an image or another layer as input) need textures and are reported.
 
 ### WGSL `shader()`
 

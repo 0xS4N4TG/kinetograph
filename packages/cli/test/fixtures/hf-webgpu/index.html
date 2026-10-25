@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <body>
+    <!-- A WebGPU page in HyperFrames' protocol: it redraws on `hf-seek` with the time it is given. The red channel is the time. -->
+    <div data-composition-id="main" data-start="0" data-duration="1" data-width="64" data-height="36" data-no-timeline style="position: relative; width: 64px; height: 36px; background: #000">
+      <canvas id="c" width="64" height="36" style="display: block"></canvas>
+    </div>
+    <script>
+      const WGSL = `
+        struct U { time: f32 }
+        @group(0) @binding(0) var<uniform> u: U;
+        @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+          var p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+          return vec4f(p[i], 0, 1);
+        }
+        @fragment fn fs() -> @location(0) vec4f { return vec4f(u.time, 0.0, 1.0 - u.time, 1.0); }`;
+      const ready = (async () => {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        const context = document.getElementById('c').getContext('webgpu');
+        const format = navigator.gpu.getPreferredCanvasFormat();
+        context.configure({ device, format, alphaMode: 'premultiplied' });
+        const buffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        const module = device.createShaderModule({ code: WGSL });
+        const pipeline = device.createRenderPipeline({
+          layout: 'auto',
+          vertex: { module },
+          fragment: { module, targets: [{ format }] },
+        });
+        const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer } }] });
+        return (time) => {
+          device.queue.writeBuffer(buffer, 0, new Float32Array([time, 0, 0, 0]));
+          const encoder = device.createCommandEncoder();
+          const pass = encoder.beginRenderPass({
+            colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', clearValue: { r: 0, g: 0, b: 0, a: 0 }, storeOp: 'store' }],
+          });
+          pass.setPipeline(pipeline);
+          pass.setBindGroup(0, group);
+          pass.draw(3);
+          pass.end();
+          device.queue.submit([encoder.finish()]);
+        };
+      })();
+      window.addEventListener('hf-seek', (e) => {
+        const drawn = ready.then((draw) => draw(e.detail.time));
+        if (typeof e.detail.waitUntil === 'function') e.detail.waitUntil(drawn);
+      });
+    </script>
+  </body>
+</html>
