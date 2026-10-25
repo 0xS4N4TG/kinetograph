@@ -207,6 +207,29 @@ describe('timeline', () => {
     expect(labelOf(layers[1]!)).toHaveClass('pl-5');
   });
 
+  it('shows the progress of reading the timeline, never an empty list, until the rows arrive', async () => {
+    const server = new MockServer();
+    let open!: () => void;
+    server.timelineGate = new Promise<void>((resolve) => (open = resolve));
+    server.progress = { done: 300, total: 1521 };
+    await start(server);
+    expect(await screen.findByText('Reading the timeline: frame 300 of 1521')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-loading')).toBeInTheDocument();
+    expect(screen.queryByText('No Sequences')).not.toBeInTheDocument();
+    expect(screen.queryByText('No layers')).not.toBeInTheDocument();
+    open();
+    expect(await screen.findAllByTestId('sequence-row')).toHaveLength(3);
+    expect(screen.queryByTestId('timeline-loading')).not.toBeInTheDocument();
+  });
+
+  it('shows the error, not an empty list, when the timeline cannot be read', async () => {
+    const server = new MockServer();
+    server.timelineError = new ApiError('PROJECT_ERROR', 'the composition threw at frame 12', 500);
+    await start(server);
+    expect(await screen.findByTestId('timeline-error')).toHaveTextContent('Could not read the timeline: the composition threw at frame 12');
+    expect(screen.queryByText('No Sequences')).not.toBeInTheDocument();
+  });
+
   it('moves the playhead and asks for preview-quality frames while the ruler is dragged, full quality on release', async () => {
     const { server } = await start();
     const ruler = screen.getByTestId('timeline-ruler');
@@ -623,6 +646,28 @@ describe('project panel', () => {
     await user.type(within(list).getByRole('searchbox', { name: 'Search project' }), 'zzz');
     expect(within(list).getByText('No matches.')).toBeInTheDocument();
     expect(within(list).getByText('0 of 2 compositions')).toBeInTheDocument();
+  });
+});
+
+describe('copy for agent', () => {
+  it('opens an editable message about the selected layer and copies what the user made of it', async () => {
+    const { user } = await start();
+    expect(screen.queryByRole('button', { name: 'Copy for agent' })).not.toBeInTheDocument();
+    const titleRow = (await screen.findAllByTestId('layer-row')).find((r) => r.getAttribute('title') === 'title (text)')!;
+    await user.click(titleRow);
+    await user.click(await screen.findByRole('button', { name: 'Copy for agent' }));
+
+    const box = (await screen.findByRole('textbox', { name: 'Message for the agent' })) as HTMLTextAreaElement;
+    expect(box.value).toContain('In scene.tsx, composition `Intro`, frame 0 (00:00:00):');
+    expect(box.value).toContain('change the text layer `title`, text "Hello"');
+    expect(box.selectionStart).toBe(box.value.length);
+
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await user.type(box, 'make it red');
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\nChange: make it red$/));
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
   });
 });
 

@@ -30,7 +30,7 @@ describe('project and compositions', () => {
   it('GET /api/project', async () => {
     const r = await api(studio, '/api/project');
     expect(r.status).toBe(200);
-    expect(r.json).toMatchObject({ entry, buildId: 1, buildError: null });
+    expect(r.json).toMatchObject({ entry, cwd: process.cwd(), buildId: 1, buildError: null });
     expect(r.json.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
@@ -140,6 +140,24 @@ describe('GET /api/inspect and /api/timeline', () => {
     // The key is the props, not how they are written.
     const ab = await name(`/api/timeline?comp=Main&props=${encodeURIComponent('{"a":1,"b":2}')}`);
     expect(await name(`/api/timeline?comp=Main&props=${encodeURIComponent('{"b":2,"a":1}')}`)).toBe(ab);
+  });
+
+  it('timeline/progress reports how many frames the sweep has read', async () => {
+    const slow = encodeURIComponent('{"_frameMs":15}');
+    const progress = async () => (await api(studio, `/api/timeline/progress?comp=Main&props=${slow}`)).json;
+    expect(await progress()).toEqual({ done: 0, total: 0 });
+    const pending = api(studio, `/api/timeline?comp=Main&props=${slow}`);
+    let seen = { done: 0, total: 0 };
+    for (let i = 0; i < 200 && seen.done === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      seen = await progress();
+    }
+    expect(seen.total).toBe(90);
+    expect(seen.done).toBeGreaterThan(0);
+    expect((await pending).status).toBe(200);
+    expect(await progress()).toEqual({ done: 90, total: 90 });
+    expect((await api(studio, '/api/timeline/progress')).status).toBe(400);
+    expect((await api(studio, '/api/timeline/progress?comp=Nope')).status).toBe(404);
   });
 
   it('timeline of a composition without Sequences has none', async () => {

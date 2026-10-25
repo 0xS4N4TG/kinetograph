@@ -16,6 +16,7 @@ describe('createApi HTTP', () => {
     await api.compositions();
     await api.inspect('Intro', 12, { title: 'A&B' });
     await api.timeline('Intro');
+    await api.timelineProgress('Intro');
     await api.renders();
     await api.startRender({ comp: 'Intro', range: '0..9' });
     await api.cancelRender('7');
@@ -26,11 +27,12 @@ describe('createApi HTTP', () => {
       'GET http://localhost:3000/api/compositions',
       `GET http://localhost:3000/api/inspect?comp=Intro&frame=12&props=${encodeURIComponent('{"title":"A&B"}')}`,
       'GET http://localhost:3000/api/timeline?comp=Intro',
+      'GET http://localhost:3000/api/timeline/progress?comp=Intro',
       'GET http://localhost:3000/api/renders',
       'POST http://localhost:3000/api/renders',
       'DELETE http://localhost:3000/api/renders/7',
     ]);
-    expect(JSON.parse(fetchMock.mock.calls[5]![1]!.body as string)).toEqual({ comp: 'Intro', range: '0..9' });
+    expect(JSON.parse(fetchMock.mock.calls[6]![1]!.body as string)).toEqual({ comp: 'Intro', range: '0..9' });
   });
 
   it('turns an error body into an ApiError with the server code and the status', async () => {

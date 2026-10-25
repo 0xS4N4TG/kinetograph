@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 
-import type { CompositionInfo, TimelineData } from '@/api';
+import type { CompositionInfo } from '@/api';
 import { PanelHeader } from '@/components/shell/panel-header';
-import { Bar, EmptyRow, LABEL_WIDTH, Row, SectionLabel } from '@/components/timeline/timeline-row';
+import { Bar, EmptyRow, LABEL_WIDTH, Row, SectionLabel, TimelineNotice } from '@/components/timeline/timeline-row';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { formatTimecode } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
 import type { Player, PlayerState } from '@/lib/player';
+import type { TimelineStatus } from '@/studio';
 import { cn } from '@/lib/utils';
 import { layerRows, sequenceRows } from '@/lib/tree';
 import { useElementSize } from '@/lib/use-element-size';
@@ -23,7 +24,7 @@ const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
 interface TimelineProps {
   comp: CompositionInfo | null;
-  data: TimelineData | null;
+  status: TimelineStatus;
   state: PlayerState;
   player: Player;
   selectedLayer: string | null;
@@ -34,7 +35,7 @@ interface TimelineProps {
  * The timeline: a ruler in frames, one row per Sequence nested under its parent, then a row per layer, and the playhead
  * across them. Pressing and dragging in the ruler or a lane scrubs; a row's click selects its layer.
  */
-export function Timeline({ comp, data, state, player, selectedLayer, onSelectLayer }: TimelineProps) {
+export function Timeline({ comp, status, state, player, selectedLayer, onSelectLayer }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -50,6 +51,7 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
   const pxPerFrame = fit * zoom;
   const laneWidth = duration * pxPerFrame;
 
+  const data = status.state === 'ready' ? status.data : null;
   const allSequences = useMemo(() => sequenceRows(data?.sequences ?? []), [data]);
   const allLayers = useMemo(() => layerRows(data?.layers ?? []), [data]);
 
@@ -241,56 +243,72 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
               </div>
             </div>
 
-            <SectionLabel>Sequences</SectionLabel>
-            {sequences.length === 0 && <EmptyRow>No Sequences</EmptyRow>}
-            {sequences.map(({ row, number }) => {
-              const colors = layerColors('sequence');
-              return (
-                <Row
-                  key={row.key}
-                  data-testid="sequence-row"
-                  index={number}
-                  swatch={colors.swatch}
-                  label={row.label}
-                  title={`${row.label}: frames ${row.from}..${row.end - 1}`}
-                  depth={row.depth}
-                  selected={row.layer !== null && row.layer === selectedLayer}
-                  onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
-                  laneWidth={laneWidth}
-                >
-                  <Bar from={row.from} to={row.end} pxPerFrame={pxPerFrame} className={cn('border', colors.bar)}>
-                    {row.label}
-                  </Bar>
-                </Row>
-              );
-            })}
+            {status.state === 'loading' && (
+              <TimelineNotice testId="timeline-loading" progress={status.total > 0 ? status.done / status.total : null}>
+                {status.total > 0
+                  ? `Reading the timeline: frame ${status.done} of ${status.total}`
+                  : 'Reading the timeline...'}
+              </TimelineNotice>
+            )}
+            {status.state === 'error' && (
+              <TimelineNotice testId="timeline-error" error>
+                {`Could not read the timeline: ${status.error.message}`}
+              </TimelineNotice>
+            )}
+            {status.state === 'ready' && (
+              <>
+                <SectionLabel>Sequences</SectionLabel>
+                {sequences.length === 0 && <EmptyRow>No Sequences</EmptyRow>}
+                {sequences.map(({ row, number }) => {
+                  const colors = layerColors('sequence');
+                  return (
+                    <Row
+                      key={row.key}
+                      data-testid="sequence-row"
+                      index={number}
+                      swatch={colors.swatch}
+                      label={row.label}
+                      title={`${row.label}: frames ${row.from}..${row.end - 1}`}
+                      depth={row.depth}
+                      selected={row.layer !== null && row.layer === selectedLayer}
+                      onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
+                      laneWidth={laneWidth}
+                    >
+                      <Bar from={row.from} to={row.end} pxPerFrame={pxPerFrame} className={cn('border', colors.bar)}>
+                        {row.label}
+                      </Bar>
+                    </Row>
+                  );
+                })}
 
-            <SectionLabel>Layers</SectionLabel>
-            {layers.length === 0 && <EmptyRow>No layers</EmptyRow>}
-            {layers.map(({ row, number }) => {
-              const colors = layerColors(row.type);
-              return (
-                <Row
-                  key={row.id}
-                  data-testid="layer-row"
-                  index={number}
-                  swatch={colors.swatch}
-                  label={row.id}
-                  badge={row.type}
-                  title={`${row.id} (${row.type})`}
-                  depth={row.depth}
-                  selected={row.id === selectedLayer}
-                  onSelect={() => onSelectLayer(row.id)}
-                  laneWidth={laneWidth}
-                >
-                  {row.ranges.map(([first, last]) => (
-                    <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className={cn('border shadow-xs', colors.bar)}>
-                      {row.id}
-                    </Bar>
-                  ))}
-                </Row>
-              );
-            })}
+                <SectionLabel>Layers</SectionLabel>
+                {layers.length === 0 && <EmptyRow>No layers</EmptyRow>}
+                {layers.map(({ row, number }) => {
+                  const colors = layerColors(row.type);
+                  return (
+                    <Row
+                      key={row.id}
+                      data-testid="layer-row"
+                      index={number}
+                      swatch={colors.swatch}
+                      label={row.id}
+                      badge={row.type}
+                      title={`${row.id} (${row.type})`}
+                      depth={row.depth}
+                      selected={row.id === selectedLayer}
+                      onSelect={() => onSelectLayer(row.id)}
+                      laneWidth={laneWidth}
+                    >
+                      {row.ranges.map(([first, last]) => (
+                        <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className={cn('border shadow-xs', colors.bar)}>
+                          {row.id}
+                        </Bar>
+                      ))}
+                    </Row>
+                  );
+                })}
+              </>
+            )}
 
             {/* Playhead */}
             <div
