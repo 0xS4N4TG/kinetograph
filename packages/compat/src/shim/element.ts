@@ -230,6 +230,48 @@ export function isDomElementShim(value: unknown): value is DomElement {
   return value instanceof DomElement;
 }
 
+type Positioned = DomElement | DomText;
+
+const POSITION = { DISCONNECTED: 1, PRECEDING: 2, FOLLOWING: 4, CONTAINS: 8, CONTAINED_BY: 16, IMPLEMENTATION_SPECIFIC: 32 } as const;
+const detachedOrder = new WeakMap<object, number>();
+let detachedCount = 0;
+
+/** `a.compareDocumentPosition(b)`: where `b` is relative to `a`, as the DOM's bitmask. */
+function documentPosition(a: Positioned, b: unknown): number {
+  const document = (globalThis as { document?: unknown }).document;
+  if (b === document && b !== undefined) return POSITION.CONTAINS | POSITION.PRECEDING;
+  if (!(b instanceof DomElement) && !(b instanceof DomText)) throw new TypeError("Failed to execute 'compareDocumentPosition': parameter 1 is not of type 'Node'.");
+  if (a === b) return 0;
+  const chain = (n: Positioned): Positioned[] => {
+    const out: Positioned[] = [n];
+    for (let p = n.parentElement; p !== null; p = p.parentElement) out.push(p);
+    return out;
+  };
+  const up = chain(a);
+  const other = chain(b);
+  if (up.at(-1) !== other.at(-1)) {
+    // Two trees: which comes first is arbitrary but the same each time, and opposite when asked the other way round.
+    const order = (n: Positioned): number => {
+      const root = n.host as object;
+      if (!detachedOrder.has(root)) detachedOrder.set(root, detachedCount++);
+      return detachedOrder.get(root)!;
+    };
+    return POSITION.DISCONNECTED | POSITION.IMPLEMENTATION_SPECIFIC | (order(up.at(-1)!) < order(other.at(-1)!) ? POSITION.FOLLOWING : POSITION.PRECEDING);
+  }
+  if (up.includes(b)) return POSITION.CONTAINS | POSITION.PRECEDING;
+  if (other.includes(a)) return POSITION.CONTAINED_BY | POSITION.FOLLOWING;
+  // The two branches below their closest common ancestor: whichever sits first in that ancestor's children comes first.
+  let i = up.length - 1;
+  let j = other.length - 1;
+  while (i > 0 && j > 0 && up[i - 1] === other[j - 1]) {
+    i--;
+    j--;
+  }
+  const ancestor = up[i] as DomElement;
+  const kids = ancestor.childNodes;
+  return kids.indexOf(other[j - 1]!) < kids.indexOf(up[i - 1]!) ? POSITION.PRECEDING : POSITION.FOLLOWING;
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
 
@@ -448,6 +490,9 @@ export class DomElement {
   }
   set innerText(value: string) {
     this.textContent = value;
+  }
+  compareDocumentPosition(other: unknown): number {
+    return documentPosition(this, other);
   }
   contains(other: unknown): boolean {
     const node = hostNodeOf(other);
@@ -1162,6 +1207,9 @@ export class DomText {
   cloneNode(): DomText {
     return domTextFor(createHostText(this.host.text));
   }
+  compareDocumentPosition(other: unknown): number {
+    return documentPosition(this, other);
+  }
   contains(other: unknown): boolean {
     return other === this;
   }
@@ -1221,4 +1269,12 @@ export function setImagePictureReader(fn: (src: string) => CanvasPicture | null)
 }
 function imageSize(src: string): { width: number; height: number } | null {
   return imageSizeOf(src);
+}
+
+// `Node.DOCUMENT_POSITION_*`, on the constructors and on the instances.
+for (const cls of [DomElement, DomText]) {
+  for (const [name, bit] of Object.entries(POSITION)) {
+    Object.defineProperty(cls, `DOCUMENT_POSITION_${name}`, { value: bit });
+    Object.defineProperty(cls.prototype, `DOCUMENT_POSITION_${name}`, { value: bit });
+  }
 }

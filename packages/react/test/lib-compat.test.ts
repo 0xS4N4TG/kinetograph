@@ -32,6 +32,42 @@ describe('NodeList and HTMLCollection', () => {
   });
 });
 
+describe('compareDocumentPosition', () => {
+  const make = (tag: string, ...kids: any[]) => {
+    const el = g.document.createElement(tag);
+    el.append(...kids);
+    return el;
+  };
+  it('answers the DOM bitmask for ancestors, descendants and siblings', () => {
+    const a = make('i');
+    const b = make('b');
+    const text = g.document.createTextNode('t');
+    const c = make('p', text);
+    const root = make('div', a, make('section', b), c);
+    expect(a.compareDocumentPosition(a)).toBe(0);
+    expect(a.compareDocumentPosition(b)).toBe(4);
+    expect(b.compareDocumentPosition(a)).toBe(2);
+    expect(a.compareDocumentPosition(c)).toBe(4);
+    expect(root.compareDocumentPosition(b)).toBe(4 | 16);
+    expect(b.compareDocumentPosition(root)).toBe(2 | 8);
+    expect(text.compareDocumentPosition(a)).toBe(2);
+    expect(a.compareDocumentPosition(text)).toBe(4);
+    expect(c.compareDocumentPosition(text)).toBe(4 | 16);
+    expect(text.compareDocumentPosition(c)).toBe(2 | 8);
+    expect(g.Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
+  });
+  it('says disconnected for nodes in different trees, consistently', () => {
+    const x = make('div');
+    const y = make('div');
+    const xy = x.compareDocumentPosition(y);
+    const yx = y.compareDocumentPosition(x);
+    expect(xy & 1).toBe(1);
+    expect(xy & 32).toBe(32);
+    expect(xy & (2 | 4)).not.toBe(yx & (2 | 4));
+    expect(x.compareDocumentPosition(y)).toBe(xy);
+  });
+});
+
 describe('HTMLElement and SVGElement', () => {
   it('tell an HTML element from an SVG one', () => {
     const div = g.document.createElement('div');
