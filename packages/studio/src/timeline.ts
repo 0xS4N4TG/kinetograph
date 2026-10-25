@@ -1,10 +1,18 @@
 import type { Engine } from './engine.js';
-import type { SequenceJson, TimelineData, TimelineLayer } from './protocol.js';
+import type { LayerName, SequenceJson, TimelineData, TimelineLayer } from './protocol.js';
 
 interface SceneLayer {
   id: string;
   type: string;
   children?: SceneLayer[];
+}
+
+/** What a frame knows of a layer's name that the layers seen on earlier frames did not. */
+function nameLayer(layer: TimelineLayer, name: LayerName | undefined): void {
+  if (name === undefined) return;
+  layer.label ??= name.label;
+  if (name.component !== undefined) layer.component ??= name.component;
+  if (name.source !== undefined) layer.source ??= name.source;
 }
 
 /** How many frames the sweep reads between two progress reports. */
@@ -26,17 +34,20 @@ export async function sweepTimeline(
   const sequences = new Map<string, { entry: SequenceJson; order: number }>();
   const layers = new Map<string, TimelineLayer>();
 
-  const walk = (list: SceneLayer[], parent: string | null, frame: number): void => {
+  const walk = (list: SceneLayer[], parent: string | null, frame: number, names: Record<string, LayerName> | undefined): void => {
     for (const layer of list) {
       const known = layers.get(layer.id);
       if (!known) {
-        layers.set(layer.id, { id: layer.id, type: layer.type, parent, ranges: [[frame, frame]] });
+        const added: TimelineLayer = { id: layer.id, type: layer.type, parent, ranges: [[frame, frame]] };
+        nameLayer(added, names?.[layer.id]);
+        layers.set(layer.id, added);
       } else {
+        nameLayer(known, names?.[layer.id]);
         const last = known.ranges[known.ranges.length - 1]!;
         if (last[1] >= frame - 1) last[1] = Math.max(last[1], frame);
         else known.ranges.push([frame, frame]);
       }
-      if (layer.children) walk(layer.children, layer.id, frame);
+      if (layer.children) walk(layer.children, layer.id, frame, names);
     }
   };
 
@@ -46,9 +57,13 @@ export async function sweepTimeline(
       const known = sequences.get(entry.key);
       if (!known) sequences.set(entry.key, { entry: { ...entry }, order: sequences.size });
       // The layer of the first frame the Sequence shows on.
-      else if (known.entry.layer === null && entry.layer !== null) known.entry.layer = entry.layer;
+      else {
+        if (known.entry.layer === null && entry.layer !== null) known.entry.layer = entry.layer;
+        // A Sequence that is not showing has no children to name it by; a later frame may.
+        if (entry.label !== undefined && (known.entry.label === undefined || known.entry.label === 'Sequence')) known.entry.label = entry.label;
+      }
     }
-    walk((JSON.parse(scene.sceneJson) as { layers: SceneLayer[] }).layers, null, frame);
+    walk((JSON.parse(scene.sceneJson) as { layers: SceneLayer[] }).layers, null, frame, scene.names);
     if (onProgress && ((frame + 1) % PROGRESS_EVERY === 0 || frame + 1 === durationInFrames)) onProgress(frame + 1, durationInFrames);
     if (scene.constant) {
       // A scene file is one scene: every layer is there for the whole composition.

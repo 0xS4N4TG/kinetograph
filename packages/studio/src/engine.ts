@@ -3,7 +3,7 @@
 // project, the renderer and the addon goes through this interface. The default engine (`real-engine.ts`) drives the
 // CLI's source and the addon; tests name a stub module in `StudioOptions.engine`, which opens no GPU.
 
-import type { CompositionInfo, InspectResult, SequenceJson } from './protocol.js';
+import type { CompositionInfo, InspectResult, LayerName, SequenceJson } from './protocol.js';
 
 export interface EngineOptions {
   /** The project entry, absolute: a project file or a `.json` scene. */
@@ -25,6 +25,8 @@ export interface FrameScene {
   durationInFrames: number;
   /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
+  /** Layer id to its name, component and source; absent for a `.json` scene. Sources are relative to the studio's cwd. */
+  names?: Record<string, LayerName>;
   /** A `.json` scene: every frame is the same scene. */
   constant: boolean;
   /** ms spent in the JS stage. */
