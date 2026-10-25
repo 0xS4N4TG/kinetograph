@@ -39,7 +39,8 @@ export interface EffectDefinition<P, S = unknown> {
   /** Two descriptors of one definition with the same key are the same effect. */
   readonly calculateKey: (params: P) => string;
   readonly setup: (target: EffectCanvas) => S;
-  readonly apply: (params: EffectApplyParams<P, S>) => void;
+  /** May be `async`: the frame waits for the promise, and a rejection is reported for the frame. */
+  readonly apply: (params: EffectApplyParams<P, S>) => void | Promise<void>;
   readonly cleanup: (state: S) => void;
   readonly schema: InteractivitySchema;
   /** Throws when mandatory params are missing or invalid. `createEffect`'s factory calls it first. */
