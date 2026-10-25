@@ -260,8 +260,9 @@ these on the global object where they are missing:
 - `crypto.getRandomValues` and `randomUUID` draw from the seeded `Math.random` generator.
 
 Time: `Date`, `performance.now`, timers and `requestAnimationFrame` were already driven by the frame
-(`core/src/determinism.ts`); `requestAnimationFrame` callbacks run once per frame with the frame time, before the frame
-renders. CSS `@keyframes` animations and transitions read `request.time`; nothing in TypeScript reads a wall clock.
+(`core/src/determinism.ts`); `requestAnimationFrame` callbacks run once per frame with the frame time, after the frame
+renders (the callbacks the render asked for, then what they set is in that frame's scene; what they ask for waits for the
+next frame). Motion-blur sub-frames run none. CSS `@keyframes` animations and transitions read `request.time`; nothing in TypeScript reads a wall clock.
 
 ### 10.5 doctor and the corpus harness
 

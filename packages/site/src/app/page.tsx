@@ -8,7 +8,7 @@ import { Start } from '@/sections/static';
 
 const FOOTER_COLUMNS = [
   { title: 'Site', links: [{ label: 'Why', href: '#why' }, { label: 'The engine', href: '#engine' }, { label: 'Agents', href: '#agents' }, { label: 'The film', href: '#film' }, { label: 'Get started', href: '#start' }] },
-  { title: 'Docs', links: [{ label: 'README', href: `${GITHUB}#readme` }, { label: 'DOM engine', href: doc('packages/cli/skills/kinetograph/references/ENGINE.md') }, { label: 'Remotion compat', href: '/docs/compat/' }, { label: 'Known issues', href: '/docs/known-issues/' }] },
+  { title: 'Docs', links: [{ label: 'README', href: `${GITHUB}#readme` }, { label: 'DOM engine', href: doc('packages/cli/skills/kinetograph/references/ENGINE.md') }, { label: 'Remotion compat', href: '/docs/compat/' }, { label: 'Known issues', href: '/docs/known-issues/' }, { label: 'Changelog', href: '/docs/changelog/' }] },
   { title: 'Project', links: [{ label: 'GitHub', href: GITHUB }, { label: 'Licence', href: doc('LICENSE.md') }, { label: 'Commercial licence', href: doc('COMMERCIAL.md') }, { label: 'llms.txt', href: '/llms.txt' }] },
 ];
 
@@ -26,7 +26,7 @@ export default function Page() {
       <HalftoneWordmarkFooter
         wordmark="kinetograph"
         label="Kinetograph"
-        meta="A video engine with no browser in it · Rust and TypeScript"
+        meta="A programmatic video engine · Rust and TypeScript"
         columns={FOOTER_COLUMNS}
         preset="cobalt"
         palette={{ background: '#2238c4', ink: '#f7f4ec', warm: '#ffcd3c' }}

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { StudioError } from './protocol.js';
+import type { LayerName, StudioError } from './protocol.js';
 
 /** A failure with a studio error code (`INVALID_ARG`, `NOT_FOUND`, `BUILD`, …). */
 export class StudioFailure extends Error {
@@ -35,11 +35,29 @@ export function httpError(error: unknown): { status: number; error: StudioError 
     case 'NOT_FOUND':
     case 'COMPOSITION_NOT_FOUND':
       return { status: 404, error: { code: 'NOT_FOUND', message } };
+    case 'FORBIDDEN':
+      return { status: 403, error: { code, message } };
     case 'BUILD':
       return { status: 409, error: { code, message } };
     default:
       return { status: 500, error: { code, message } };
   }
+}
+
+/**
+ * The name of layer `id`. The addon adds layers of its own under an element's path (`$0.1.border.top`, `$0.1.shadow2`,
+ * `$0.1.svg.3`): they are named after the element, with what the id adds.
+ */
+export function lookupName(names: Record<string, LayerName> | undefined, id: string): LayerName | undefined {
+  if (names === undefined) return undefined;
+  const known = names[id];
+  if (known !== undefined) return known;
+  const parts = id.split('.');
+  for (let n = parts.length - 1; n > 0; n--) {
+    const base = names[parts.slice(0, n).join('.')];
+    if (base !== undefined) return { ...base, label: `${base.label} \u00b7 ${parts.slice(n).join(' ')}` };
+  }
+  return undefined;
 }
 
 /** `JSON.stringify` with object keys sorted, so equal props are equal keys. */

@@ -33,6 +33,7 @@ installCanvasStubs();
 beforeEach(() => {
   draws.length = 0;
   decode.delay = () => 0;
+  window.localStorage.clear();
 });
 
 afterEach(() => {

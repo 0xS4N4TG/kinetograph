@@ -1,9 +1,11 @@
 // The message the studio writes for a coding agent: which layer to change, where it is, and what it looks like now. The
-// user edits it before copying. The engine does not know the source line of an element, so none is given.
+// user edits it before copying. A project the studio built tells the layer's name, component and source line; a `.json`
+// scene does not, and its generated ids are only a place in the tree.
 
 import type { CompositionInfo, SequenceJson, TimelineLayer } from '@/api';
 import { formatNumber, formatTimecode } from '@/lib/format';
 import type { InspectLayer } from '@/lib/inspect';
+import { fullSource } from '@/lib/names';
 
 export interface AgentMessageInput {
   /** The entry file, absolute, and the directory the studio was started in. */
@@ -46,7 +48,7 @@ export function sequenceOf(
   return best;
 }
 
-function currentValues(layer: InspectLayer): string[] {
+export function currentValues(layer: InspectLayer): string[] {
   const t = layer.transform;
   const out: string[] = [];
   if (layer.text?.font) out.push(`font ${layer.text.font} ${formatNumber(layer.text.size)}`);
@@ -59,17 +61,23 @@ function currentValues(layer: InspectLayer): string[] {
   return out;
 }
 
-const quoted = (text: string) => JSON.stringify(text.length > 80 ? `${text.slice(0, 77)}...` : text);
+export const quoted =(text: string) => JSON.stringify(text.length > 80 ? `${text.slice(0, 77)}...` : text);
 
 /** The request, ending in `Change: ` for the user to finish. */
 export function buildAgentMessage({ entry, cwd, comp, frame, layer, timeline }: AgentMessageInput): string {
   const lines = [`In ${relativePath(entry, cwd)}, composition \`${comp.id}\`, frame ${frame} (${formatTimecode(frame, comp.fps)}):`];
 
-  let what = `change the ${layer.type} layer \`${layer.id}\``;
+  // A label that is only the id adds nothing to the id.
+  const named = layer.label !== undefined && layer.label !== layer.id;
+  let what = named ? `change the ${layer.type} layer ${quoted(layer.label!)}` : `change the ${layer.type} layer \`${layer.id}\``;
+  if (named && !layer.id.startsWith('$')) what += ` (id \`${layer.id}\`)`;
+  if (layer.component !== undefined) what += `, drawn by component \`${layer.component}\``;
+  if (layer.source) what += ` (JSX at ${fullSource(layer.source)})`;
   if (layer.text?.text) what += `, text ${quoted(layer.text.text)}`;
   const sequence = sequenceOf(layer.id, frame, timeline);
   if (sequence) {
-    what += `, inside Sequence ${quoted(sequence.name ?? 'Sequence')} (frames ${sequence.from} to ${sequence.from + sequence.durationInFrames - 1})`;
+    const where = sequence.source ? `, JSX at ${fullSource(sequence.source)}` : '';
+    what += `, inside Sequence ${quoted(sequence.label ?? sequence.name ?? 'Sequence')} (frames ${sequence.from} to ${sequence.from + sequence.durationInFrames - 1}${where})`;
   }
   const rect = layer.bounds ?? layer.box;
   if (rect) {
@@ -79,7 +87,7 @@ export function buildAgentMessage({ entry, cwd, comp, frame, layer, timeline }: 
 
   const values = currentValues(layer);
   if (values.length > 0) lines.push(`It looks like this now: ${values.join(', ')}.`);
-  if (layer.id.startsWith('$')) {
+  if (layer.id.startsWith('$') && !layer.source) {
     lines.push('The layer id comes from its place in the tree, so find it by its text, size and position.');
   }
   lines.push('', 'Change: ');

@@ -78,6 +78,9 @@ export async function api<T = any>(server: StudioServer, path: string, init: Req
 
 export type Received = { kind: 'json'; message: ServerMessage; at: number } | { kind: 'frame'; header: FrameHeader; image: Uint8Array; at: number };
 
+/** The secret in the address the studio opened. */
+export const tokenOf = (server: StudioServer): string | null => new URL(server.url).searchParams.get('token');
+
 /** A WebSocket to the studio that keeps every message it receives. */
 export class Client {
   readonly received: Received[] = [];
@@ -89,8 +92,10 @@ export class Client {
     });
   }
 
-  static async connect(server: StudioServer, options: WebSocket.ClientOptions = {}): Promise<Client> {
-    const ws = new WebSocket(new URL('/ws', server.url).href.replace(/^http/, 'ws'), options);
+  static async connect(server: StudioServer, options: WebSocket.ClientOptions = {}, token: string | null = tokenOf(server)): Promise<Client> {
+    const address = new URL('/ws', server.url);
+    if (token !== null) address.searchParams.set('token', token);
+    const ws = new WebSocket(address.href.replace(/^http/, 'ws'), options);
     const client = new Client(ws);
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => resolve());
