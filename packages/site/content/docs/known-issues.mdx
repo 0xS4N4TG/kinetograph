@@ -27,6 +27,16 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 `@remotion/webcodecs` is Remotion's wrapper around the browser's WebCodecs API, which encodes and decodes video and audio frames. Its encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. They need a video decoder and encoder in the addon, which is not built. Normal `<Video>` and `<Audio>` are not affected.
 
+### HyperFrames projects
+
+- **Three.js and WebGL.** Not drawn. A page that loads Three.js is reported on every frame. Shaders (`shaders.iife`) that need WebGL are drawn without the effect.
+- **Import maps and ES modules that import.** Not run. They are reported.
+- **Scripts share no top-level `const`.** Each `<script>` runs on its own, so a `const` in one is not visible in the next (a `var` or `window.x` is). Scripts of a mounted composition are wrapped in a function, as in HyperFrames.
+- **Selectors that reach into an `<svg>` from outside it.** The engine styles an `<svg>` on its own, so the loader writes the matching rules onto the shapes as inline style once the scripts have run. A class added to a shape later, by a tween or a script, is not restyled. The `font-family` of the page's text is written on the `<svg>` the same way.
+- **Timing.** The start of a `<video>` inside a composition is the host's start plus its own; the host's `data-playback-start` and `data-playback-rate` move its timeline, not the media inside. `data-start` references stay inside one composition. `data-hidden`, audio lanes (`data-automation`), `data-color-grading`, audio effects and speed ramps are ignored.
+- **CSS.** `html` and `body` rules apply to two wrapper elements. `@media` rules are not applied to selectors that reach into an `<svg>`.
+- **Layout read at load.** A page whose length is not declared (`data-duration`) runs its scripts before any layout exists, so a script that measures sees nothing.
+
 ### Canvas 2D
 
 - A pattern of a canvas, used for a stroke or for text, is drawn transparent.
