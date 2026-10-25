@@ -2,8 +2,9 @@
 
 ## Stack
 - Language: Rust (core renderer: crates/core, CLI: crates/cli, N-API addon: crates/node) and TypeScript (npm workspaces under packages/: scene, react, core, audio, cli; contract in packages/cli/skills/kinetograph/references/AUTHORING.md)
-- Planned crates: wgpu, vello, parley/swash/fontique, taffy, usvg/vello_svg, ffmpeg-next, web-audio-api-rs, rmcp (see docs/HANDOFF.md §4)
-- Repo: github.com/0xS4N4TG/kinetograph (private, to be public), branch main
+- Render backend: Skia (Graphite on Metal/Vulkan/D3D12, CPU fallback) is the default since 2026-10-23; Vello kept as fallback (KINETOGRAPH_BACKEND=vello). DOM islands via vendored blitz-dom/stylo/taffy.
+- npm: CLI `kinetograph`, libraries `@kinetographdev/*` (0.1.0 published 2026-10-24). Site kinetograph.dev on Vercel (packages/site, auto-deploy from main).
+- Repo: github.com/0xS4N4TG/kinetograph (public), branch main; PRs merge after native.yml CI is green on macOS/Linux/Windows + smoke
 - Licence: PolyForm Small Business 1.0.0 (LICENSE.md); commercial licence for larger companies (COMMERCIAL.md)
 
 ## Entry points
@@ -16,7 +17,9 @@
 - Branches `feat/<work>`, phase in the PR title, merge commits, no session links in commits/PRs (HANDOFF §8).
 - Coding happens in Claude Code cloud sessions; the M4 does rendering, goldens, benchmarks and ideation.
 - docs/reference/ (third-party reference video and stills) was deleted 2026-10-25; do not bring it back.
-- Subagents: Sonnet 5.5 at high effort (global env CLAUDE_CODE_SUBAGENT_MODEL + project .claude/settings.json). Ask before using Opus. Don't stop/relaunch running agents without asking.
+- Subagents: Sonnet 5.5 medium implements, Haiku 5.5 helpers run renders/benchmarks/test material; ask before using Opus. Give each agent one scoped task, its own worktree, a shared CARGO_TARGET_DIR (disk is tight) and NAPI_RS_NATIVE_LIBRARY_PATH to test its addon without touching crates/node/*.node.
+- Determinism checks: lossless render (--encoder libx264 --crf 0 --pixel-format yuv444p) + ffmpeg framemd5.
+- Memory: .recall/ (this) is the primary memory base since 2026-10-25.
 - Speed claims need a benchmark; rendering is a pure function of (project, frame).
 
 ## Machine
