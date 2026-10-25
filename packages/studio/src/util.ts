@@ -35,6 +35,8 @@ export function httpError(error: unknown): { status: number; error: StudioError 
     case 'NOT_FOUND':
     case 'COMPOSITION_NOT_FOUND':
       return { status: 404, error: { code: 'NOT_FOUND', message } };
+    case 'FORBIDDEN':
+      return { status: 403, error: { code, message } };
     case 'BUILD':
       return { status: 409, error: { code, message } };
     default:

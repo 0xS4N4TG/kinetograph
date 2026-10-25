@@ -129,6 +129,8 @@ export interface AgentInfo {
   command: string | null;
   /** The directory the agent works in and may read and write. */
   cwd: string;
+  /** Why the agent is off, in plain words; absent when it is on. */
+  disabled?: string;
 }
 
 export interface AgentPreset {

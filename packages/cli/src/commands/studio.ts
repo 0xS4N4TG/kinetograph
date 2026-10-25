@@ -11,6 +11,7 @@ export interface StudioModule {
     open?: boolean;
     props?: Record<string, unknown>;
     agent?: string;
+    allowRemoteAgent?: boolean;
     log?: (message: string) => void;
   }): Promise<{ url: string; close(): Promise<void> }>;
 }
@@ -72,6 +73,7 @@ export const studio: Command = {
     { name: 'host', type: 'string', description: 'Address to listen on (default 127.0.0.1)' },
     { name: 'no-open', type: 'boolean', description: 'Do not open the browser' },
     { name: 'agent', type: 'string', description: 'Command that starts your coding agent over ACP, for the chat panel (default: Claude Code, Codex or Gemini CLI, whichever is installed)' },
+    { name: 'allow-remote-agent', type: 'boolean', description: 'Keep the coding agent on when --host lets other computers reach the studio (off by default then)' },
     { name: 'props', type: 'string', description: 'Input props as a JSON object, merged over each composition\'s defaultProps' },
   ],
   async run(args, context) {
@@ -92,6 +94,7 @@ export const studio: Command = {
       open: args.options['no-open'] !== true,
       props,
       agent,
+      allowRemoteAgent: args.options['allow-remote-agent'] === true,
       log: context.progress,
     });
     context.announce({ url: server.url }, `kinetograph studio: ${server.url} (Ctrl-C to stop)`);

@@ -6,7 +6,7 @@ import { AgentBridge } from '../src/agent-bridge.js';
 import { isInside, readTextFile, resolveInside, writeTextFile } from '../src/agent-fs.js';
 import { availableAgents, onPath } from '../src/agent-presets.js';
 import type { AgentEvent } from '../src/protocol.js';
-import { api, cleanup, Client, start, stopAll, tempDir, writeProject } from './helpers.js';
+import { api, cleanup, Client, start, stopAll, tempDir, tokenOf, writeProject } from './helpers.js';
 
 // Starting a studio starts workers, which is slow on a busy machine.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -237,7 +237,7 @@ describe('the agent over the studio server', () => {
   it('offers the agents on GET /api/agent and runs a prompt sent on the WebSocket', async () => {
     const { dir, entry } = writeProject('agent');
     const server = await start(entry, { agent: command, agentCwd: dir });
-    const info = await api(server, '/api/agent');
+    const info = await api(server, '/api/agent', { headers: { 'X-Studio-Token': tokenOf(server)! } });
     expect(info.json).toMatchObject({ command, cwd: dir });
     expect(info.json.presets[0]).toMatchObject({ id: 'custom', command });
 
@@ -257,5 +257,67 @@ describe('the agent over the studio server', () => {
     client.send({ type: 'agent.select', command: 'touch /tmp/pwned' });
     await client.waitForMessage('agent', (m) => m.event.kind === 'error');
     client.close();
+  });
+});
+
+describe('who may reach the agent', () => {
+  const connect = async (server: Awaited<ReturnType<typeof start>>, options = {}, token?: string | null) => Client.connect(server, options, token);
+
+  it('refuses a WebSocket without the token, with a wrong one, or from another origin', async () => {
+    const { dir, entry } = writeProject('auth');
+    const server = await start(entry, { agent: command, agentCwd: dir });
+    expect(tokenOf(server)).toMatch(/^[0-9a-f]{64}$/);
+    await expect(connect(server, {}, null)).rejects.toThrow();
+    await expect(connect(server, {}, 'wrong')).rejects.toThrow();
+    await expect(connect(server, { headers: { Origin: 'http://evil.example' } })).rejects.toThrow();
+    (await connect(server, { headers: { Origin: new URL(server.url).origin } })).close();
+  });
+
+  it('refuses /api/agent without the token', async () => {
+    const { dir, entry } = writeProject('auth2');
+    const server = await start(entry, { agent: command, agentCwd: dir });
+    expect((await api(server, '/api/agent')).status).toBe(403);
+    expect((await api(server, '/api/agent', { headers: { 'X-Studio-Token': 'nope' } })).status).toBe(403);
+    expect((await api(server, '/api/agent', { headers: { 'X-Studio-Token': tokenOf(server)! } })).status).toBe(200);
+  });
+
+  it('turns the agent off on an address other computers can reach, unless asked', async () => {
+    const { dir, entry } = writeProject('remote');
+    const off = await start(entry, { agent: command, agentCwd: dir, host: '0.0.0.0' });
+    const headers = { 'X-Studio-Token': tokenOf(off)!, Host: 'localhost' };
+    const info = await api(off, '/api/agent', { headers });
+    expect(info.json.presets).toEqual([]);
+    expect(info.json.disabled).toMatch(/--allow-remote-agent/);
+    const client = await Client.connect(off);
+    client.send({ type: 'agent.prompt', text: 'hi', context: '' });
+    const error: any = await client.waitForMessage('agent', (m) => m.event.kind === 'error');
+    expect(error.message.event.message).toMatch(/off/);
+    client.close();
+
+    const { dir: dir2, entry: entry2 } = writeProject('remote2');
+    const on = await start(entry2, { agent: command, agentCwd: dir2, host: '0.0.0.0', allowRemoteAgent: true });
+    const onInfo = await api(on, '/api/agent', { headers: { 'X-Studio-Token': tokenOf(on)! } });
+    expect(onInfo.json.disabled).toBeUndefined();
+    expect(onInfo.json.presets[0].command).toBe(command);
+  });
+
+  it('lets only the window that began the conversation answer, cancel or reset it', async () => {
+    const { dir, entry } = writeProject('owner');
+    const server = await start(entry, { agent: command, agentCwd: dir });
+    const first = await Client.connect(server);
+    const second = await Client.connect(server);
+    first.send({ type: 'agent.prompt', text: 'hello', context: '' });
+    await first.waitForMessage('agent', (m) => m.event.kind === 'done');
+    // what the agent said went to the first window only
+    expect(second.messages('agent').some((m: any) => m.event.kind === 'message')).toBe(false);
+    second.send({ type: 'agent.prompt', text: 'steal', context: '' });
+    const refused: any = await second.waitForMessage('agent', (m) => m.event.kind === 'error');
+    expect(refused.message.event.message).toMatch(/Another studio window/);
+    second.send({ type: 'agent.reset' });
+    second.send({ type: 'agent.cancel' });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(first.messages('agent').some((m: any) => m.event.kind === 'error')).toBe(false);
+    first.close();
+    second.close();
   });
 });
