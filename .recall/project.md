@@ -15,7 +15,7 @@
 - One Conventional Commit per logical change; push only when asked.
 - Branches `feat/<work>`, phase in the PR title, merge commits, no session links in commits/PRs (HANDOFF §8).
 - Coding happens in Claude Code cloud sessions; the M4 does rendering, goldens, benchmarks and ideation.
-- docs/reference/rajz-reference.mp4 is third-party and gitignored (local only).
+- docs/reference/ (third-party reference video and stills) was deleted 2026-10-25; do not bring it back.
 - Subagents: Sonnet 5.5 at high effort (global env CLAUDE_CODE_SUBAGENT_MODEL + project .claude/settings.json). Ask before using Opus. Don't stop/relaunch running agents without asking.
 - Speed claims need a benchmark; rendering is a pure function of (project, frame).
 

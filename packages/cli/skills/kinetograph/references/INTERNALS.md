@@ -160,5 +160,3 @@ against PNGs in `crates/core/tests/golden/` made on an Apple M4; regenerate them
 `UPDATE_GOLDEN=1 cargo test --test golden` after checking the difference by eye. The example images are regenerated with
 `cargo run -p kinetograph-core --example gen_test_image` and `--example gen_papercut_assets`.
 
-`docs/reference/rajz-reference.mp4` is not in the repo. It is a third-party video and must be placed there locally
-to run the reference comparisons.

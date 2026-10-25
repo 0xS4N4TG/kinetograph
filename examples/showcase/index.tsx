@@ -1,5 +1,5 @@
 // Kinetograph, shown by Kinetograph: a showcase video in the structure and
-// pacing of docs/reference/rajz-reference.mp4, made with nothing but the
+// pacing of a reference reel, made with nothing but the
 // engine's own elements and effects (no photos, no DOM, no browser). Each shot
 // is timed to a voiceover line (public/vo); the clock is in common.tsx.
 //

@@ -1,5 +1,4 @@
-// A rebuild of five seconds of the reference video (docs/reference/, about
-// 20.5 to 25.5 s of rajz-reference.mp4): a cluster of photo cards in 3D, an
+// A rebuild of five seconds of a reference video: a cluster of photo cards in 3D, an
 // arc of cards with "gets" and "better" angled around it, "you … create" with
 // a row of small cards receding between the words, and a whip transition that
 // smears everything over an orange-pink glow.
