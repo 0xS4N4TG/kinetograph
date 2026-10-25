@@ -13,10 +13,13 @@ import {
   deliverObservations,
   domElementFor,
   hasObservers,
+  hostOf,
+  insertChild,
   isRecordingMutations,
   MAX_OBSERVER_DEPTH,
   recordMutation,
   registerReadbackRoot,
+  removeChild as removeHostChild,
   setRawParent,
   setWebViewport,
   unregisterReadbackRoot,
@@ -132,7 +135,10 @@ const hostConfig = {
     parent.children.push(child);
     changed(parent, [child], []);
   },
+  // A portal's container is the DOM element a ref gave (`createPortal(children, ref.current)`, `document.body`): its children are placed as a script places them.
   appendChildToContainer(container: Container, child: HostNode) {
+    const portal = hostOf(container);
+    if (portal !== null) return insertChild(portal, child, null);
     removeFrom(container.children, child);
     adopt(null, child);
     container.children.push(child);
@@ -143,6 +149,8 @@ const hostConfig = {
     changed(parent, [child], []);
   },
   insertInContainerBefore(container: Container, child: HostNode, before: HostNode) {
+    const portal = hostOf(container);
+    if (portal !== null) return insertChild(portal, child, before);
     adopt(null, child);
     insertInto(container.children, child, before);
   },
@@ -152,6 +160,7 @@ const hostConfig = {
     changed(parent, [], [child]);
   },
   removeChildFromContainer(container: Container, child: HostNode) {
+    if (hostOf(container) !== null) return removeHostChild(child);
     removeFrom(container.children, child);
     adopt(null, child);
   },
