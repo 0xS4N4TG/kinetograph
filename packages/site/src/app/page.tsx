@@ -26,7 +26,7 @@ export default function Page() {
       <HalftoneWordmarkFooter
         wordmark="kinetograph"
         label="Kinetograph"
-        meta="A video engine with no browser in it · Rust and TypeScript"
+        meta="A programmatic video engine · Rust and TypeScript"
         columns={FOOTER_COLUMNS}
         preset="cobalt"
         palette={{ background: '#2238c4', ink: '#f7f4ec', warm: '#ffcd3c' }}
