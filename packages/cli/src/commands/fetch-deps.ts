@@ -29,18 +29,11 @@ export const fetchDeps: Command = {
       `${scriptUrls.length} script URL(s), ${dataUrls.length + extra.length} data URL(s), ${mediaUrls.length} remote media file(s), ${plan.googleFonts.length} Google font famil${plan.googleFonts.length === 1 ? 'y' : 'ies'}`,
     );
     const scripts = await fetchCdnScripts(scriptUrls, plan.baseDir, { integrity: scriptIntegrity, allowHosts });
-    const hostOf = (u: string): string[] => {
-      try {
-        return [new URL(u).hostname];
-      } catch {
-        return [];
-      }
-    };
     const maxMedia = Number(args.options['max-media-mb'] ?? 500);
     if (!Number.isFinite(maxMedia) || maxMedia <= 0) throw new CliError('INVALID_ARG', '--max-media-mb must be a positive number');
-    // A URL named with --url, and the file of a media element of the page, are the author's own choice of host.
-    const data = await fetchCdnData([...dataUrls, ...extra], { allowHosts: [...allowHosts, ...extra.flatMap(hostOf)], maxBytes: MAX_DATA_BYTES });
-    const media = await fetchCdnData(mediaUrls, { allowHosts: [...allowHosts, ...mediaUrls.flatMap(hostOf)], maxBytes: Math.round(maxMedia * 1024 * 1024) });
+    // Scripts, data, --url files and media are checked alike: the default CDNs plus --allow-host, never a host the page names.
+    const data = await fetchCdnData([...dataUrls, ...extra], { allowHosts, maxBytes: MAX_DATA_BYTES });
+    const media = await fetchCdnData(mediaUrls, { allowHosts, maxBytes: Math.round(maxMedia * 1024 * 1024) });
     scripts.push(...data, ...media);
     const fonts: { family: string; status: 'ready' | 'failed'; error?: string }[] = [];
     for (const font of plan.googleFonts) {

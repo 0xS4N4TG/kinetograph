@@ -202,6 +202,14 @@ describe('data and media the page fetches', () => {
     expect(big!.error).toContain('limit');
   });
 
+  it('refuses a media host the page names unless the user allows it, and says which flag', async () => {
+    let calls = 0;
+    const [refused] = await fetchCdnData(['https://media.example.com/a.mp4'], { fetchImpl: async () => (calls++, ok('x')) });
+    expect(refused!.status).toBe('failed');
+    expect(refused!.error).toContain('--allow-host media.example.com');
+    expect(calls).toBe(0);
+  });
+
   it('does not serve a cached file whose bytes changed', async () => {
     await fetchCdnData([DATA], { fetchImpl: async () => ok('{"a":1}') });
     writeFileSync(dataCachePath(DATA), '{"a":2}');
