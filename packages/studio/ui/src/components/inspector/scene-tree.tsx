@@ -16,13 +16,15 @@ interface SceneTreeProps {
   inspect: InspectResult | null;
   frame: number;
   selected: string | null;
-  onSelect(id: string): void;
+  /** Every selected layer: all are highlighted; `selected` is the one whose details show. */
+  selectedLayers?: string[];
+  onSelect(id: string, additive?: boolean): void;
   /** What the "Copy for agent" message needs besides the layer; null before the project is known. */
   agent: Omit<AgentMessageInput, 'frame' | 'layer'> | null;
 }
 
 /** The layers of the current frame (topmost first) and the selected layer's resolved fields. */
-export function SceneTree({ inspect, frame, selected, onSelect, agent }: SceneTreeProps) {
+export function SceneTree({ inspect, frame, selected, selectedLayers = selected === null ? [] : [selected], onSelect, agent }: SceneTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   if (inspect === null) return <p className="text-muted-foreground p-3 text-xs">Scene not loaded.</p>;
   const layer = selected === null ? null : findLayer(inspect.layers, selected);
@@ -65,7 +67,7 @@ export function SceneTree({ inspect, frame, selected, onSelect, agent }: SceneTr
       </div>
 
       <ScrollArea className="h-2/5 shrink-0">
-        <Layers layers={inspect.layers} selected={selected} onSelect={onSelect} collapsed={collapsed} onToggle={toggle} />
+        <Layers layers={inspect.layers} selected={selectedLayers} onSelect={onSelect} collapsed={collapsed} onToggle={toggle} />
       </ScrollArea>
 
       <Separator />
@@ -103,8 +105,8 @@ function Layers({
   onToggle,
 }: {
   layers: InspectLayer[];
-  selected: string | null;
-  onSelect(id: string): void;
+  selected: string[];
+  onSelect(id: string, additive: boolean): void;
   collapsed: Set<string>;
   onToggle(id: string): void;
 }) {
@@ -112,7 +114,7 @@ function Layers({
   return (
     <ul className="flex flex-col p-1 text-xs" role="tree">
       {[...layers].reverse().map((layer) => {
-        const isSelected = layer.id === selected;
+        const isSelected = selected.includes(layer.id);
         const children = layer.children ?? [];
         const isCollapsed = collapsed.has(layer.id);
         const { swatch } = layerColors(layer.type);
@@ -133,7 +135,7 @@ function Layers({
               )}
               <button
                 type="button"
-                onClick={() => onSelect(layer.id)}
+                onClick={(event) => onSelect(layer.id, event.shiftKey)}
                 className={cn(
                   'hover:bg-white/[0.05] focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-xs px-2 py-1 text-left outline-none transition-colors focus-visible:ring-2',
                   isSelected && 'bg-nle-blue/25 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
