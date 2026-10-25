@@ -33,9 +33,9 @@ export const runCli: Runner = (argv) =>
     child.on('close', (code) => resolve({ stdout, stderr, code }));
   });
 
-/** The commands that are tools: all but `mcp` itself and `studio`, which serves until it is stopped. */
+/** The commands that are tools: all but `mcp` itself, `studio`, which serves until it is stopped, and `fetch-deps`, which downloads (a person runs it). */
 export function toolCommands(): Command[] {
-  return commands.filter((c) => c.name !== 'mcp' && c.name !== 'studio');
+  return commands.filter((c) => c.name !== 'mcp' && c.name !== 'studio' && c.name !== 'fetch-deps');
 }
 
 /** `audio analyze` → `audio_analyze`. */
