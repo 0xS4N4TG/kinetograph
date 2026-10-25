@@ -811,10 +811,6 @@ over six frames, min of interleaved runs, two series run at different loads):**
 Goal: stop redoing what did not change between frames. What was found, measured on the M4 with `KINETOGRAPH_PROFILE`
 (per-frame stage rows; `n_*` are the DOM island thread's stages, `cache_hits`/`cache_misses` the layer cache's):
 
-- **The launch film is GPU-bound, not CPU-bound.** At one worker the process uses about 1.1 cores (user 30 s over a
-  28 s wall); frames 100-300 and 800-1000 (27% of the frames) are most of the GPU time. At four workers the wall stays
-  at 30-36 s while user CPU triples (95-130 s, 500k involuntary context switches): the workers share one GPU and four
-  performance cores. So CPU savings show as 3-12% of wall, not more.
 - **The island documents** were thrown away every frame (`IslandCache` was emptied at each pass). Passes in sequence
   now carry them over (`IslandCache::resolve`: pass `n+1` after `n` keeps the islands `n` rendered, any other number
   empties the cache; `compat/dom`'s `breakSamplePasses` skips a number when a frame does not follow the one before).
