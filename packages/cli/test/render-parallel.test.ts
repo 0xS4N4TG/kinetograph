@@ -180,7 +180,7 @@ describe.skipIf(!ready)('render --concurrency', () => {
     // The fades are in the frames at all: each frame of the first one differs from the last.
     expect(new Set(seq.video.slice(55, 86)).size).toBeGreaterThan(20);
     // Chunks of 60, then of 24 frames with every running chunk open to splitting, so starts fall in many places.
-    for (const env of [{}, { KINETOGRAPH_CHUNK: '24', KINETOGRAPH_MINSPLIT: '2' }]) {
+    for (const env of [{}, { KINETOGRAPH_CHUNK: '24', KINETOGRAPH_MINSPLIT: '2' }] as Record<string, string>[]) {
       render('fade-par.mp4', ['--concurrency', '3'], 'fades.tsx', env);
       expect(decoded('fade-par.mp4').video).toEqual(seq.video);
     }
@@ -196,7 +196,7 @@ describe.skipIf(!ready)('render --concurrency', () => {
     expect(seq[8]).toBe(seq[0]);
     expect(seq[16]).toBe(seq[0]);
     expect(seq[4]).not.toBe(seq[0]);
-    for (const env of [{}, { KINETOGRAPH_CHUNK: '4', KINETOGRAPH_MINSPLIT: '2' }, { KINETOGRAPH_CHUNK: '6', KINETOGRAPH_MINSPLIT: '2' }]) {
+    for (const env of [{}, { KINETOGRAPH_CHUNK: '4', KINETOGRAPH_MINSPLIT: '2' }, { KINETOGRAPH_CHUNK: '6', KINETOGRAPH_MINSPLIT: '2' }] as Record<string, string>[]) {
       render('cards-par.mp4', ['--concurrency', '3', ...lossless], 'cards.tsx', env);
       expect(decoded('cards-par.mp4').video).toEqual(seq);
     }

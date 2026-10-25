@@ -4,5 +4,7 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  // A Remotion project the engine renders through its `remotion` alias; the package itself is not installed here.
+  "exclude": ["test/fixtures/seq-media"]
 }
