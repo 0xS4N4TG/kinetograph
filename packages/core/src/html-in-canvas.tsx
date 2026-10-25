@@ -2,7 +2,7 @@
 // child, the canvas shows it, `onPaint` / `onInit` / `effects` may change what is shown. Kinetograph has no browser
 // canvas, but the program runs all the same on recording canvases (effect-chain.tsx): the children are drawn as a layer,
 // `elementImage` is the picture of that layer, and what `onPaint` draws with it on a 2D, WebGL or WebGL 2 context
-// replaces the picture. `onInit` runs before `onPaint` for every frame, and the cleanup it returns after it. A WebGPU
+// replaces the picture. `onInit` runs before `onPaint` for every frame, and the cleanup it returns after it; any of them may be `async`, and the frame waits. A WebGPU
 // context is not run (the children are shown, and the frame reports it). So `isHtmlInCanvasSupported()` is true;
 // `isHtmlInCanvasNestingSupported()` (an `<HtmlInCanvas>` inside another) is false, as that is not tried.
 

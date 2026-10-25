@@ -1,5 +1,5 @@
 // @kinetographdev/gsap on the real addon and the built CLI: a frame is the same alone, in sequence and at any
-// concurrency, the timeline moves, onUpdate runs on a seek, and a tween outside the timeline is warned about.
+// concurrency, the timeline moves, onUpdate runs on a seek, and a tween outside the timeline plays on the frame's clock.
 // Needs the built addon, `npm run build` (the CLI's and this package's dist), a GPU and ffmpeg; skipped where one is missing.
 
 import { spawnSync } from 'node:child_process';
@@ -85,25 +85,113 @@ registerRoot(() => (
 ));
 `;
 
-const STRAY = `
-import { useRef } from 'react';
-import { AbsoluteFill, Composition, registerRoot } from 'remotion';
+// Tweens that play by themselves, with no paused timeline: GSAP's root clock follows the frame (packages/core/src/gsap-clock.ts).
+// `Auto` makes one from the mount and one from an effect that runs at frame 30; `Seeked` is the same animation as a paused
+// timeline seeked to the frame, the second tween placed at 1 s. Both start at the same instant, so they are the same frames.
+const AUTO = `
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { AbsoluteFill, Composition, registerRoot, useCurrentFrame, useVideoConfig } from 'remotion';
 import { gsap } from 'gsap';
-import { useGsapTimeline } from '@kinetographdev/gsap';
 
-const Stray = () => {
-  const box = useRef<HTMLDivElement>(null);
-  useGsapTimeline((tl) => {
-    tl.to(box.current, { x: 50, duration: 0.5 });
-    gsap.to(box.current, { y: 30, duration: 0.5 });
-  });
+const boxes = (a: React.Ref<HTMLDivElement>, b: React.Ref<HTMLDivElement>) => (
+  <AbsoluteFill style={{ background: '#fff' }}>
+    <div ref={a} style={{ position: 'absolute', left: 10, top: 10, width: 30, height: 30, background: '#2238c4' }} />
+    <div ref={b} style={{ position: 'absolute', left: 10, top: 50, width: 30, height: 30, background: '#2a9d8f' }} />
+  </AbsoluteFill>
+);
+
+const Auto = () => {
+  const a = useRef<HTMLDivElement>(null);
+  const b = useRef<HTMLDivElement>(null);
+  const frame = useCurrentFrame();
+  useEffect(() => {
+    const tween = gsap.to(a.current, { x: 100, rotation: 45, duration: 1, ease: 'power2.out' });
+    return () => { tween.kill(); };
+  }, []);
+  const late = frame >= 30;
+  useEffect(() => {
+    if (!late) return;
+    const tween = gsap.to(b.current, { x: 100, duration: 1, ease: 'none' });
+    return () => { tween.kill(); };
+  }, [late]);
+  return boxes(a, b);
+};
+
+const Seeked = () => {
+  const a = useRef<HTMLDivElement>(null);
+  const b = useRef<HTMLDivElement>(null);
+  const tl = useRef<gsap.core.Timeline | null>(null);
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  useLayoutEffect(() => {
+    const t = gsap.timeline({ paused: true });
+    t.to(a.current, { x: 100, rotation: 45, duration: 1, ease: 'power2.out' }, 0);
+    t.to(b.current, { x: 100, duration: 1, ease: 'none' }, 30 / fps);
+    tl.current = t;
+    return () => { t.kill(); };
+  }, [fps]);
+  useLayoutEffect(() => { tl.current?.seek(frame / fps, false); }, [frame, fps]);
+  return boxes(a, b);
+};
+
+const common = { width: 160, height: 90, fps: 30, durationInFrames: 60 };
+registerRoot(() => (
+  <>
+    <Composition id="Auto" component={Auto} {...common} />
+    <Composition id="Seeked" component={Seeked} {...common} />
+  </>
+));
+`;
+
+// Flip on a paused timeline seeked to the frame (getState, change the layout, Flip.from), checked against Chrome by hand:
+// mean difference 0 at frames 0, 15, 30, 45 and 59 of a 900x420 version.
+const FLIP = `
+import React, { useLayoutEffect, useRef } from 'react';
+import { AbsoluteFill, Composition, registerRoot, useCurrentFrame, useVideoConfig } from 'remotion';
+import gsap from 'gsap';
+import { Flip } from 'gsap/Flip';
+
+gsap.registerPlugin(Flip);
+
+// Flip on a paused timeline seeked to the frame: getState, change the layout, Flip.from.
+const F: React.FC = () => {
+  const root = useRef<HTMLDivElement>(null);
+  const tl = useRef<gsap.core.Timeline | null>(null);
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  useLayoutEffect(() => {
+    const items = gsap.utils.toArray<HTMLElement>('.item', root.current!);
+    const state = Flip.getState(items);
+    // The change: a row of small boxes becomes a column of bigger ones, in another order.
+    root.current!.style.flexDirection = 'column';
+    root.current!.style.alignItems = 'flex-end';
+    items.forEach((el, i) => {
+      el.style.width = (60 + i * 20) + 'px';
+      el.style.height = '30px';
+    });
+    items.reverse().forEach((el) => root.current!.appendChild(el));
+    const t = Flip.from(state, { duration: 1, ease: 'none', absolute: false });
+    t.pause(0);
+    tl.current = t;
+    return () => {
+      t.kill();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    tl.current?.seek(frame / fps, false);
+  }, [frame, fps]);
+  const box = (c: string, w: number) => <div className="item" style={{ width: w, height: 40, background: c, marginRight: 6 }} />;
   return (
-    <AbsoluteFill style={{ background: '#fff' }}>
-      <div ref={box} style={{ position: 'absolute', left: 10, top: 20, width: 30, height: 30, background: '#e63946' }} />
+    <AbsoluteFill style={{ background: 'white' }}>
+      <div ref={root} style={{ position: 'absolute', left: 10, top: 10, width: 280, display: 'flex', flexDirection: 'row', gap: 10 }}>
+        {box('#e0261b', 40)}
+        {box('#2238c4', 60)}
+        {box('#2a9d8f', 30)}
+      </div>
     </AbsoluteFill>
   );
 };
-registerRoot(() => <Composition id="Stray" component={Stray} width={160} height={90} fps={30} durationInFrames={10} />);
+registerRoot(() => <Composition id="Flip" component={F} width={320} height={180} fps={30} durationInFrames={30} />);
 `;
 
 // Inside this package's node_modules, which is ignored, so that `gsap` and `@kinetographdev/gsap` resolve from the workspace.
@@ -113,7 +201,8 @@ beforeAll(() => {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
   writeFileSync(join(dir, 'timeline.tsx'), TIMELINE);
-  writeFileSync(join(dir, 'stray.tsx'), STRAY);
+  writeFileSync(join(dir, 'auto.tsx'), AUTO);
+  writeFileSync(join(dir, 'flip.tsx'), FLIP);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -152,11 +241,41 @@ describe.skipIf(!ready)('@kinetographdev/gsap', () => {
     });
   }
 
-  it('warns once about a tween that is not on the timeline and not paused', () => {
-    const run = render('stray.tsx', 'Stray', 'stray.mp4');
-    expect(run.status, run.log).toBe(0);
-    const warnings = run.log.split('\n').filter((l) => l.includes('useGsapTimeline: 1 tween'));
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('tl.to(...)');
+  it('Auto: tweens that play by themselves move, and are the same alone, at any concurrency, and as a paused timeline seeked', () => {
+    const one = render('auto.tsx', 'Auto', 'Auto-c1.mp4', ['--concurrency', '1']);
+    expect(one.status, one.log).toBe(0);
+    const four = render('auto.tsx', 'Auto', 'Auto-c4.mp4', ['--concurrency', '4']);
+    expect(four.status, four.log).toBe(0);
+    const seq = frames('Auto-c1.mp4');
+    expect(seq).toHaveLength(60);
+    expect(frames('Auto-c4.mp4')).toEqual(seq);
+    // The mount tween moves (frames 0..29 differ), the late one starts at 30 and the frame before it has not moved.
+    expect(new Set(seq.slice(0, 30)).size).toBeGreaterThan(15);
+    expect(new Set(seq.slice(30)).size).toBeGreaterThan(15);
+    // A frame alone is the frame in sequence, before, at and after the frame the effect runs at.
+    for (const f of [1, 29, 30, 31, 45, 59]) {
+      const alone = render('auto.tsx', 'Auto', `Auto-f${f}.mp4`, ['--range', `${f}..=${f}`]);
+      expect(alone.status, alone.log).toBe(0);
+      expect(frames(`Auto-f${f}.mp4`), `frame ${f}`).toEqual([seq[f]]);
+    }
+    const seeked = render('auto.tsx', 'Seeked', 'Seeked-c1.mp4', ['--concurrency', '1']);
+    expect(seeked.status, seeked.log).toBe(0);
+    expect(frames('Seeked-c1.mp4')).toEqual(seq);
+  });
+
+  it('Flip: a paused timeline from Flip.from moves, and a frame alone or at concurrency 4 is the frame in sequence', () => {
+    const one = render('flip.tsx', 'Flip', 'Flip-c1.mp4', ['--concurrency', '1']);
+    expect(one.status, one.log).toBe(0);
+    const four = render('flip.tsx', 'Flip', 'Flip-c4.mp4', ['--concurrency', '4']);
+    expect(four.status, four.log).toBe(0);
+    const seq = frames('Flip-c1.mp4');
+    expect(seq).toHaveLength(30);
+    expect(frames('Flip-c4.mp4')).toEqual(seq);
+    expect(new Set(seq).size).toBeGreaterThan(15);
+    for (const f of [0, 14, 29]) {
+      const alone = render('flip.tsx', 'Flip', `Flip-f${f}.mp4`, ['--range', `${f}..=${f}`]);
+      expect(alone.status, alone.log).toBe(0);
+      expect(frames(`Flip-f${f}.mp4`)).toEqual([seq[f]]);
+    }
   });
 });

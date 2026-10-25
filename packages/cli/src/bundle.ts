@@ -155,6 +155,39 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   };
 }
 
+/**
+ * Tells the engine which GSAP the project imported. GSAP's ES module keeps its instance to itself (its browser build
+ * puts it on `window.gsap`, which an `import` never runs), and the engine drives GSAP's clock from the frame's time
+ * (packages/core/src/gsap-clock.ts). Nothing of GSAP changes: `import 'gsap'` resolves to a module that re-exports
+ * GSAP's own and records the instance.
+ */
+function gsapPlugin(): Plugin {
+  return {
+    name: 'kinetograph-gsap',
+    setup(b) {
+      b.onResolve({ filter: /^gsap(\/all)?$/ }, async (args) => {
+        if (args.pluginData?.kinetographGsap || (args.kind !== 'import-statement' && args.kind !== 'dynamic-import')) return undefined;
+        const real = await b.resolve(args.path, { resolveDir: args.resolveDir, importer: args.importer, kind: args.kind, pluginData: { kinetographGsap: true } });
+        if (real.errors.length > 0 || real.external) return undefined;
+        return { path: real.path, namespace: 'kinetograph-gsap' };
+      });
+      b.onLoad({ filter: /.*/, namespace: 'kinetograph-gsap' }, (args) => {
+        const from = JSON.stringify(args.path);
+        return {
+          contents: [
+            `import { gsap as instance } from ${from};`,
+            `export * from ${from};`,
+            `export { default } from ${from};`,
+            `globalThis[Symbol.for('kinetograph.gsap')] = instance;`,
+          ].join('\n'),
+          resolveDir: dirname(args.path),
+          loader: 'js',
+        };
+      });
+    },
+  };
+}
+
 /** A package's `browser` map (object form) and the directory it sits in, found from a file inside the package; null when there is none. */
 const browserMaps = new Map<string, { root: string; map: Record<string, string | false> } | null>();
 function browserMapOf(dir: string): { root: string; map: Record<string, string | false> } | null {
@@ -321,7 +354,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), hyperframesPlugin(), aliasPlugin(unsupported), browserFieldPlugin(), cssPlugin()],
+    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), hyperframesPlugin(), aliasPlugin(unsupported), gsapPlugin(), browserFieldPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };

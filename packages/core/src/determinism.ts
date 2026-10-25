@@ -13,6 +13,8 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
+import { setGsapTime } from './gsap-clock.js';
+
 /**
  * The real functions, captured when this module is first evaluated (before `installDeterminism`). Bound to the global
  * object: a browser's timers throw "Illegal invocation" when called as methods of another object.
@@ -225,6 +227,8 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   }
   fireTimersUpTo(target);
   virtualMs = target;
+  // GSAP's root timeline moves to the frame's time before the frame renders, so a tween made while it renders starts there.
+  setGsapTime(frame / fps);
   if (options.deferAnimationFrames !== true) runAnimationFrames();
 }
 

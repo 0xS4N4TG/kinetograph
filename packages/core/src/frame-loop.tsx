@@ -35,6 +35,7 @@ import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
+import { gsapIsLoaded, setGsapTime } from './gsap-clock.js';
 import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
 
 export interface FrameResult {
@@ -155,9 +156,19 @@ class Renderer implements FrameRenderer {
         setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
         await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
       }
-      // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
-      // by their time (Motion) shows the same as in a render of every frame.
-      stepAnimationFrames(was + 1, frame, config.fps);
+      if (gsapIsLoaded()) {
+        // GSAP's tweens are made by effects, which a frame's render runs: an effect that starts a tween at frame 30 has
+        // to run at 30 for a frame after it to show the tween where a render of every frame has it. So a jump renders
+        // the frames it skips, with the clock on each, and reads nothing from them.
+        for (let at = was + 1; at < frame; at++) {
+          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
+          await this.settle(scene, () => this.update(scene, this.element(component, config, at)), true, false);
+        }
+      } else {
+        // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
+        // by their time (Motion) shows the same as in a render of every frame.
+        stepAnimationFrames(was + 1, frame, config.fps);
+      }
       setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
@@ -292,8 +303,10 @@ class Renderer implements FrameRenderer {
     );
   }
 
-  /** Renders, then waits until nothing is pending and returns the tree as it stands. */
-  private async settle(scene: SceneRoot, render: () => void, animationFrames = true): Promise<RenderedTree> {
+  /** Renders, then waits until nothing is pending and returns the tree as it stands (`read` false: no tree, a frame that is only played through). */
+  private async settle(scene: SceneRoot, render: () => void, animationFrames: boolean, read: false): Promise<null>;
+  private async settle(scene: SceneRoot, render: () => void, animationFrames?: boolean): Promise<RenderedTree>;
+  private async settle(scene: SceneRoot, render: () => void, animationFrames = true, read = true): Promise<RenderedTree | null> {
     try {
       render();
     } catch (error) {
@@ -311,9 +324,11 @@ class Renderer implements FrameRenderer {
     // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
     if (animationFrames) {
       runAnimationFrames();
+      // GSAP renders what the frame's own render made (a `from()` is drawn lazily, on the next tick) at the frame's time.
+      setGsapTime(virtualNow() / 1000);
       await tick();
     }
-    const tree = scene.snapshot();
+    const tree = read ? scene.snapshot() : null;
     const failure = renderFailure();
     if (failure) throw failure;
     return tree;
