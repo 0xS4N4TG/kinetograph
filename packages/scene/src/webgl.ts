@@ -271,6 +271,7 @@ export const GL2 = {
   DRAW_FRAMEBUFFER: 0x8ca9,
   DRAW_FRAMEBUFFER_BINDING: 0x8ca6,
   READ_FRAMEBUFFER_BINDING: 0x8caa,
+  VERTEX_ARRAY_BINDING: 0x85b5,
   TEXTURE_3D: 0x806f,
   TEXTURE_2D_ARRAY: 0x8c1a,
   UNIFORM_BUFFER: 0x8a11,
@@ -781,6 +782,10 @@ export class WebGLContext {
         return this.arrayBuffer;
       case GL.ELEMENT_ARRAY_BUFFER_BINDING:
         return this.vao.element;
+      case GL2.VERTEX_ARRAY_BINDING:
+        if (this.version === 2) return this.vao === this.defaultVao ? null : this.vao;
+        this.fail(GL.INVALID_ENUM);
+        return null;
       case GL.TEXTURE_BINDING_2D:
         return this.units.get(this.activeUnit) ?? null;
       case GL.FRAMEBUFFER_BINDING:

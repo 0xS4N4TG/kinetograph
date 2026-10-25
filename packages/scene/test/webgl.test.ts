@@ -67,6 +67,17 @@ describe('the recording WebGL context', () => {
     expect(gl.content().ops).toHaveLength(2);
   });
 
+  it('getParameter(VERTEX_ARRAY_BINDING) is the bound vertex array or null', () => {
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    expect(gl.getParameter(0x85b5)).toBeNull();
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    expect(gl.getParameter(0x85b5)).toBe(vao);
+    gl.bindVertexArray(null);
+    expect(gl.getParameter(0x85b5)).toBeNull();
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+  });
+
   it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {
     const { gl } = setup({ attributes: { preserveDrawingBuffer: true } });
     gl.drawArrays(GL.TRIANGLES, 0, 3);
