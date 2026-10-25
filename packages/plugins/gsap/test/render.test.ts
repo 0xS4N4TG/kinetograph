@@ -143,6 +143,57 @@ registerRoot(() => (
 ));
 `;
 
+// Flip on a paused timeline seeked to the frame (getState, change the layout, Flip.from), checked against Chrome by hand:
+// mean difference 0 at frames 0, 15, 30, 45 and 59 of a 900x420 version.
+const FLIP = `
+import React, { useLayoutEffect, useRef } from 'react';
+import { AbsoluteFill, Composition, registerRoot, useCurrentFrame, useVideoConfig } from 'remotion';
+import gsap from 'gsap';
+import { Flip } from 'gsap/Flip';
+
+gsap.registerPlugin(Flip);
+
+// Flip on a paused timeline seeked to the frame: getState, change the layout, Flip.from.
+const F: React.FC = () => {
+  const root = useRef<HTMLDivElement>(null);
+  const tl = useRef<gsap.core.Timeline | null>(null);
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  useLayoutEffect(() => {
+    const items = gsap.utils.toArray<HTMLElement>('.item', root.current!);
+    const state = Flip.getState(items);
+    // The change: a row of small boxes becomes a column of bigger ones, in another order.
+    root.current!.style.flexDirection = 'column';
+    root.current!.style.alignItems = 'flex-end';
+    items.forEach((el, i) => {
+      el.style.width = (60 + i * 20) + 'px';
+      el.style.height = '30px';
+    });
+    items.reverse().forEach((el) => root.current!.appendChild(el));
+    const t = Flip.from(state, { duration: 1, ease: 'none', absolute: false });
+    t.pause(0);
+    tl.current = t;
+    return () => {
+      t.kill();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    tl.current?.seek(frame / fps, false);
+  }, [frame, fps]);
+  const box = (c: string, w: number) => <div className="item" style={{ width: w, height: 40, background: c, marginRight: 6 }} />;
+  return (
+    <AbsoluteFill style={{ background: 'white' }}>
+      <div ref={root} style={{ position: 'absolute', left: 10, top: 10, width: 280, display: 'flex', flexDirection: 'row', gap: 10 }}>
+        {box('#e0261b', 40)}
+        {box('#2238c4', 60)}
+        {box('#2a9d8f', 30)}
+      </div>
+    </AbsoluteFill>
+  );
+};
+registerRoot(() => <Composition id="Flip" component={F} width={320} height={180} fps={30} durationInFrames={30} />);
+`;
+
 // Inside this package's node_modules, which is ignored, so that `gsap` and `@kinetographdev/gsap` resolve from the workspace.
 const dir = join(here, '..', 'node_modules', '.cache', 'render-test');
 beforeAll(() => {
@@ -151,6 +202,7 @@ beforeAll(() => {
   writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
   writeFileSync(join(dir, 'timeline.tsx'), TIMELINE);
   writeFileSync(join(dir, 'auto.tsx'), AUTO);
+  writeFileSync(join(dir, 'flip.tsx'), FLIP);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -209,5 +261,21 @@ describe.skipIf(!ready)('@kinetographdev/gsap', () => {
     const seeked = render('auto.tsx', 'Seeked', 'Seeked-c1.mp4', ['--concurrency', '1']);
     expect(seeked.status, seeked.log).toBe(0);
     expect(frames('Seeked-c1.mp4')).toEqual(seq);
+  });
+
+  it('Flip: a paused timeline from Flip.from moves, and a frame alone or at concurrency 4 is the frame in sequence', () => {
+    const one = render('flip.tsx', 'Flip', 'Flip-c1.mp4', ['--concurrency', '1']);
+    expect(one.status, one.log).toBe(0);
+    const four = render('flip.tsx', 'Flip', 'Flip-c4.mp4', ['--concurrency', '4']);
+    expect(four.status, four.log).toBe(0);
+    const seq = frames('Flip-c1.mp4');
+    expect(seq).toHaveLength(30);
+    expect(frames('Flip-c4.mp4')).toEqual(seq);
+    expect(new Set(seq).size).toBeGreaterThan(15);
+    for (const f of [0, 14, 29]) {
+      const alone = render('flip.tsx', 'Flip', `Flip-f${f}.mp4`, ['--range', `${f}..=${f}`]);
+      expect(alone.status, alone.log).toBe(0);
+      expect(frames(`Flip-f${f}.mp4`)).toEqual([seq[f]]);
+    }
   });
 });
