@@ -17,6 +17,10 @@ Everything here is on `main` and not yet published to npm.
 - WebGL: points (`gl_PointSize`, up to 511 px), instancing (divisor 1), `blitFramebuffer`, `texSubImage2D` into framebuffer textures and `gl_VertexID`. p5.brush's standalone build draws as it does in Chrome, and all 14 HyperFrames WebGL shader transitions draw. ([#9](https://github.com/0xS4N4TG/kinetograph/pull/9))
 - Studio: a "Copy for agent" button that copies a change request for a coding agent, and a timeline that shows it is loading instead of staying empty. ([#6](https://github.com/0xS4N4TG/kinetograph/pull/6))
 - Studio: readable layer names (component, text, and the file and line each came from); a simpler timeline with one row per Sequence, repeated components folded and a "Show details" toggle; and an Agent tab that chats with your coding agent over ACP about a layer or area you select in the preview. The studio now needs the per-launch `?token=` link it prints, and the agent is off on non-loopback hosts unless `--allow-remote-agent` is passed.
+- HyperFrames projects render as they are: `kinetograph render|still|doctor|studio <index.html|dir>`, with nested compositions, GSAP timelines seeked as HyperFrames seeks them, `data-hidden`, `data-color-grading`, speed ramps and volume lanes, HyperFrames' 18 embedded fonts, and `kinetograph fetch-deps` to cache the CDN scripts, data and media a page uses (a render never touches the network). See `/docs/compat/#hyperframes-projects`. ([#13](https://github.com/0xS4N4TG/kinetograph/pull/13))
+- WebGPU on a canvas: buffers, WGSL shaders, render pipelines and draws, replayed on the engine's own GPU device, so HyperFrames' shader backgrounds (aurora, blob, ripples, swirl) draw. Textures, samplers and compute are reported, not drawn. ([#15](https://github.com/0xS4N4TG/kinetograph/pull/15))
+- Plugins for libraries that run their own clock or randomness: `@kinetographdev/gsap`, `@kinetographdev/p5-brush`, `@kinetographdev/anime` and `@kinetographdev/motion`. Each is a thin wrapper that seeks the library to the frame; the libraries are peer dependencies, unchanged. See `/docs/libraries/`.
+- Library support: Recharts, d3-selection, anime.js, Motion's `animate()`, Paper.js and Bklit UI now render, and Rapier draws its first frame. The DOM gained `NodeList`/`HTMLCollection`, `compareDocumentPosition`, `document.defaultView`, `customElements` and the `*AttributeNS` methods. ([#12](https://github.com/0xS4N4TG/kinetograph/pull/12))
 
 ### Fixed
 
@@ -25,6 +29,10 @@ Everything here is on `main` and not yet published to npm.
 - SVG `<text>` inherits font family, size, weight and style from the HTML around the `<svg>`. ([#4](https://github.com/0xS4N4TG/kinetograph/pull/4))
 - Text with a glow, shadow, opacity or rotation keeps its descenders and the edge of its glow instead of being cut at the line box. ([#8](https://github.com/0xS4N4TG/kinetograph/pull/8))
 - `getComputedStyle` and `getBoundingClientRect` on an element inside an `AbsoluteFill` that has a background no longer fail with "no element at path". ([#7](https://github.com/0xS4N4TG/kinetograph/pull/7))
+- Page CSS styles SVG content: class, descendant and attribute selectors reach `fill`, `stroke`, fonts, `text-anchor`, `paint-order` and the other presentation properties. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
+- SVG `fill`, `stroke` and `stop-color` of `var()`, `oklch()`, `oklab()`, `color-mix()` or `rgb(r g b / a)` were drawn black; they now draw in their colour, and a colour that cannot be read is reported. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
+- An MP4 whose moov atom is at the end decodes its audio. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
+- `document.getElementById` and `querySelector` find nodes appended to `<body>` outside the React root, and SVG `<text>` measures its real size in `getBBox` and `getComputedTextLength`. ([#12](https://github.com/0xS4N4TG/kinetograph/pull/12))
 
 ### Changed in behaviour
 
@@ -32,13 +40,8 @@ Everything here is on `main` and not yet published to npm.
 - The `AbsoluteFill` background is written as a hex colour (`#rrggbb`) in scene JSON and `inspect` output. A named colour no longer fails the render.
 - Text with a glow, shadow, opacity or rotation renders slightly differently at its edges (the descender and glow fix above). Re-approve snapshot tests that cover such text. ([#8](https://github.com/0xS4N4TG/kinetograph/pull/8))
 - A WebGL canvas starts each frame empty. `preserveDrawingBuffer` no longer carries one frame's drawing into the next, since every frame must render on its own. ([#9](https://github.com/0xS4N4TG/kinetograph/pull/9))
-
-## In progress (not released)
-
-Work on branches, with no release date. None of it is in 0.2.0 unless it is listed above.
-
-- HyperFrames HTML projects.
-- Library support: d3-selection, Recharts, anime.js, Motion, Paper.js and Bklit UI.
+- `requestAnimationFrame` callbacks run after the frame renders, and a jump to a later frame runs them through the frames it skips, so libraries with their own frame loop (Motion) give the same frame alone and in sequence. ([#12](https://github.com/0xS4N4TG/kinetograph/pull/12))
+- The bundler reads a package's `browser` map, for imports that would not resolve otherwise. ([#12](https://github.com/0xS4N4TG/kinetograph/pull/12))
 
 ## 0.1.0 (2026-10-23)
 

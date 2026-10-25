@@ -1,0 +1,203 @@
+---
+title: Libraries
+description: How to use GSAP, anime.js, Motion, p5.brush, d3, charts and physics engines in a Kinetograph project, with the small plugins that make the animation libraries frame-pure.
+---
+
+Every snippet on this page is from a composition that was rendered with Kinetograph and, where a Chrome reference exists, compared with it. The list of what runs, and the numbers, are in the [Libraries section of the compatibility page](/docs/compat/#libraries). This page is about how to write the code.
+
+The rule for all of them is the one the engine has: a frame is a function of the frame number. Make the library show what a frame number says, and a frame rendered alone, in order or in parallel comes out the same.
+
+Four plugins do that for the animation libraries. They are small, optional, and the library is a peer dependency that they use as it is.
+
+## GSAP
+
+```sh
+npm install @kinetographdev/gsap gsap
+```
+
+`useGsapTimeline(build)` builds a paused timeline inside `gsap.context` and seeks it to `frame / fps` every frame, with events on, so `onUpdate` and `onComplete` run. The returned ref scopes string selectors.
+
+```tsx
+import { useGsapTimeline } from '@kinetographdev/gsap';
+
+const scope = useGsapTimeline((tl) => {
+  tl.fromTo('.box', { y: 120, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, ease: 'back.out(1.7)' }, 0.1);
+});
+return <div ref={scope}>{/* elements with className="box" */}</div>;
+```
+
+Put every tween on `tl`. A `gsap.to(...)` in the build function plays on GSAP's own ticker, which a render does not run, so the plugin warns about it once. `gsap.set` is fine. `<GsapTimeline build={...}>` is the same thing as a component.
+
+Checked: three ports of the GSAP test compositions render byte for byte like the hand-written Remotion pattern, and match the Remotion stills (mean difference 0.00 to 0.08). The plain pattern without the plugin is described in [the compatibility page](/docs/compat/#gsap).
+
+## anime.js
+
+```sh
+npm install @kinetographdev/anime animejs
+```
+
+`useAnimeTimeline(build)` makes `createTimeline({ autoplay: false })` inside `createScope` and seeks it to `frame / fps * 1000` milliseconds.
+
+```tsx
+import { useAnimeTimeline } from '@kinetographdev/anime';
+
+const scope = useAnimeTimeline((tl) => {
+  tl.add('.a', { translateX: [0, 700], rotate: 360, ease: 'outExpo', duration: 900 }, 0)
+    .add('.dot', { translateX: [0, 900], ease: 'inOutSine', duration: 1500 }, 0);
+});
+return <div ref={scope}>{/* elements with className="a" and "dot" */}</div>;
+```
+
+An `animate(...)` in the build function that is not on the timeline is warned about. Checked against Chrome: mean difference under 0.02 at frames 0, 30 and 59.
+
+One thing to know: a `width` tween that starts from `0` on an element whose inline style is `width: 0` shows nothing in Kinetograph yet (Chrome shows it). Start from a small number, or tween `scaleX`.
+
+## Motion
+
+```sh
+npm install @kinetographdev/motion motion
+```
+
+The engine already runs `requestAnimationFrame` on the frame's clock and catches it up over skipped frames, so Motion's own loop gives the same frame in a still, in order and in parallel. The plugin makes that explicit, keeps the same project right under Remotion, and adds a way that does not use a frame loop at all.
+
+```tsx
+import { MotionFrame, useAnimateAt, useMotionTime, useSpringAt } from '@kinetographdev/motion';
+
+// motion components: Motion's loop is run to the frame's time, from time 0
+<MotionFrame>
+  <motion.div initial={{ x: 0 }} animate={{ x: 400 }} transition={{ type: 'spring', stiffness: 60, damping: 8 }} />
+</MotionFrame>
+
+// animate(): paused, controls.time = frame / fps
+const ref = useRef<HTMLDivElement>(null);
+useAnimateAt(() => animate(ref.current!, { x: [0, 400], rotate: 360 }, { duration: 1.5, ease: 'easeInOut' }));
+
+// no frame loop: a MotionValue and a spring that are functions of the frame
+const x = useTransform(useMotionTime(), [0, 1500], [0, 400]);
+const y = useSpringAt({ to: 120, stiffness: 60, damping: 8, delay: 10 });
+```
+
+`MotionFrame` uses Motion's own `MotionGlobalConfig.useManualTiming` and `processFrame` (Motion 14.6 and later; on an older Motion it does nothing and says so). Nothing in Motion is patched.
+
+Checked: springs, tweens and `animate()` match Chrome stills (mean difference under 0.03), and a frame alone equals the frame in sequence at concurrency 1 and 4. A `useSpring` that follows a value that changes depends on the frames visited before, so drive such a spring with `useSpringAt` or `useMotionTime`. Bklit UI's line chart runs inside `MotionFrame` unchanged (0.46 against Chrome), and so do its bar and pie charts (under 0.1 once their entry animation has played).
+
+## p5.brush
+
+```sh
+npm install @kinetographdev/p5-brush p5.brush
+```
+
+p5.brush keeps state between calls (seed, brush, fill, hatch, transform). `<BrushCanvas>` loads the canvas with `brush.load`, then every frame clears it, seeds the random and noise generators, draws inside `push`/`pop`, and flushes.
+
+```tsx
+import { BrushCanvas } from '@kinetographdev/p5-brush';
+
+<BrushCanvas seed={7} background="#f4efe6" origin="top-left" draw={(brush, frame, { width }) => {
+  brush.set('HB', '#2f2a26', 1.4);
+  brush.line(120, 140, 120 + frame * 10, 260);
+  brush.fill('#d7a86e', 160);
+  brush.circle(420, 360, 60 + frame * 3);
+}} />
+```
+
+p5.brush's origin is the middle of the canvas, with y pointing down. `origin="top-left"` moves it to the corner. The canvas is the composition's size unless you pass `width` and `height`. It needs the WebGL support of the engine.
+
+Checked against Chrome stills: mean difference 0.00 to 0.10 for strokes, fills and hatching, and a frame alone equals the frame in sequence at concurrency 1 and 4.
+
+## Libraries without a plugin
+
+These need only the habit above: compute from the frame, and keep the library's own timers and transitions out.
+
+### d3
+
+Use d3 for scales, shapes and layouts, and let React draw the SVG. Avoid `d3-transition` and `d3-timer`: interpolate by the frame number instead.
+
+```tsx
+const x = d3.scaleLinear().domain([0, 59]).range([90, 760]);
+const y = d3.scaleLinear().domain([0, 1]).range([600, 140]);
+const line = d3.line<[number, number]>().x((d) => x(d[0])).y((d) => y(d[1])).curve(d3.curveCatmullRom);
+// <path d={line(SERIES.slice(0, frame + 1).map((v, i) => [i, v])) ?? ''} />
+```
+
+`d3-selection` that appends into a ref in a layout effect also works.
+
+### rough.js
+
+Pass a `seed` to every shape, so the sketch does not change between frames.
+
+```tsx
+const rc = rough.svg(svg);
+svg.appendChild(rc.rectangle(80, 100, 420 * g, 220, { roughness: 1.6, fill: 'rgba(29,78,137,0.35)', fillStyle: 'hachure', seed: 7 }));
+```
+
+`rough.canvas(canvas)` takes the same options.
+
+### Chart.js
+
+Turn the animation off and update the chart from the frame.
+
+```tsx
+const chart = new Chart(canvas, { type: 'line', data, options: { animation: false, responsive: false, devicePixelRatio: 1 } });
+chart.data.datasets[0].data = valuesUpTo(frame);
+chart.update('none');
+```
+
+Load a font before the chart, or it uses the built-in one.
+
+### Recharts
+
+Set `isAnimationActive={false}` on every series, pass a fixed `width` and `height`, and slice the data by frame.
+
+```tsx
+<LineChart width={1280} height={720} data={rows.slice(0, Math.floor(frame / 5) + 1)}>
+  <Line type="monotone" dataKey="value" stroke="#1d4e89" isAnimationActive={false} />
+</LineChart>
+```
+
+### visx
+
+visx is d3 scales and React shapes, so it works the same way.
+
+```tsx
+<LinePath data={SERIES.slice(0, frame + 1)} x={(d) => x(d.x)} y={(d) => y(d.y)} stroke="#1d4e89" strokeWidth={5} curve={curveMonotoneX} />
+```
+
+### Bklit UI
+
+Bklit UI's charts (visx, d3 and Motion) run as they are, with their Tailwind classes. Wrap them in `<MotionFrame>` if the project also has to render under Remotion. Layout, animation timing, text and colours match Chrome: the line, bar, pie and geo charts are under 0.15 once their entry animation has played.
+
+### Paper.js
+
+Make one `PaperScope` on the canvas, then clear and redraw in every frame.
+
+```tsx
+const scope = new paper.PaperScope();
+scope.setup(canvas);
+scope.project.activeLayer.removeChildren();
+new scope.Path.Circle({ center: [640, 360], radius: 220, strokeColor: '#1d4e89', dashArray: [10, 12] });
+```
+
+### Matter.js and Rapier
+
+Step the world from the start to the frame, with a seeded generator for the starting positions. The cost grows with the frame number, since each frame replays every step before it. For a long simulation, keep the step cheap or bake the positions into data first.
+
+```tsx
+const engine = Engine.create({ gravity: { x: 0, y: 1, scale: 0.001 } });
+World.add(engine.world, bodies);
+for (let s = 0; s < frame; s += 1) Engine.update(engine, 1000 / 30);
+const drawn = Composite.allBodies(engine.world);
+```
+
+Rapier (`@dimforge/rapier2d-compat`) works the same way. Open a `delayRender` while its WASM loads.
+
+### Remotion packages
+
+`@remotion/motion-blur` (`Trail`, `CameraMotionBlur`), `@remotion/layout-utils` (`measureText`, `fitText`, `fillTextBox`) and `@remotion/captions` (`createTikTokStyleCaptions`) are used as in Remotion.
+
+```tsx
+<Trail layers={10} lagInFrames={0.6} trailOpacity={0.5}>{children}</Trail>
+```
+
+## Plugin setup
+
+All four plugins have `react` and `@kinetographdev/core` as peer dependencies, are written in TypeScript, and import from `remotion`, which Kinetograph's bundler maps to its own package and which Remotion resolves as usual.

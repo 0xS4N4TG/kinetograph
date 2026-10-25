@@ -211,7 +211,7 @@ describe('data-color-grading', () => {
     const f = gradeFilter(normalizeGrade({ adjust } as unknown as string)!)!;
     expect(f.steps).toHaveLength(1);
     expect(f.approximated).toEqual([]);
-    const full = { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, temperature: 0, tint: 0, vibrance: 0, saturation: 0, ...adjust };
+    const full = { highlights: 0, shadows: 0, vibrance: 0, ...adjust };
     for (const c of samples) {
       const got = applyMatrix((f.steps[0] as Extract<GradeStep, { kind: 'matrix' }>).values, c);
       const want = shaderPrimary(c, full);
@@ -225,7 +225,7 @@ describe('data-color-grading', () => {
     expect(f.approximated).toContain('adjust.shadows/highlights');
     const step = f.steps[0] as Extract<GradeStep, { kind: 'tables' }>;
     expect(step.r).toHaveLength(32);
-    const full = { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, temperature: 0, tint: 0, vibrance: 0, saturation: 0, ...adjust };
+    const full = Object.assign({ exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, temperature: 0, tint: 0, vibrance: 0, saturation: 0 }, adjust);
     for (const g of [0, 0.25, 0.5, 1]) {
       const i = g * 31;
       const interp = (t: number[]): number => t[Math.floor(i)]! + ((t[Math.min(31, Math.ceil(i))]! - t[Math.floor(i)]!) * (i - Math.floor(i)));
