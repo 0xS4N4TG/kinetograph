@@ -395,3 +395,60 @@ fn svg_text_whose_families_are_all_unloaded_is_reported_when_another_font_is_loa
     assert!(family_notes(&svg("'DM Sans'")).is_empty());
     assert!(family_notes(&svg("\"DM Sans\", Arial")).is_empty());
 }
+
+/// An `<svg><text>` in a div that sets `div_style`; the text has `attrs`
+/// besides its position. Two fonts are registered.
+fn svg_text_layers(div_style: &str, attrs: Value) -> kinetograph_dom::request::IslandOutput {
+    let mut a = json!({ "x": "10", "y": "60" });
+    a.as_object_mut()
+        .unwrap()
+        .extend(attrs.as_object().unwrap().clone());
+    let label = el_attrs("text", "$0.0.0", a, "", vec![text("Hello")]);
+    let svg = el_attrs(
+        "svg",
+        "$0.0",
+        json!({ "width": "300", "height": "100", "viewBox": "0 0 300 100" }),
+        "",
+        vec![label],
+    );
+    painted(
+        el("div", "$0", div_style, vec![svg]),
+        json!({ "DM Sans": dm_sans(), "Archivo": archivo_black() }),
+    )
+}
+
+fn layers_json(out: &kinetograph_dom::request::IslandOutput) -> String {
+    out.layers.iter().map(|l| l.to_string()).collect()
+}
+
+#[test]
+fn svg_text_inherits_its_font_from_the_html_around_it() {
+    let inherited = svg_text_layers("font-family: DM Sans; font-size: 40px", json!({}));
+    let explicit = svg_text_layers("", json!({ "font-family": "DM Sans", "font-size": "40" }));
+    let other = svg_text_layers("", json!({ "font-family": "Archivo", "font-size": "40" }));
+    assert_ne!(layers_json(&explicit), layers_json(&other));
+    assert_eq!(layers_json(&inherited), layers_json(&explicit));
+    assert!(
+        family_notes(&inherited).is_empty(),
+        "{:?}",
+        inherited.unsupported
+    );
+
+    // The text's own family still wins over the inherited one.
+    let own = svg_text_layers(
+        "font-family: DM Sans; font-size: 40px",
+        json!({ "font-family": "Archivo" }),
+    );
+    assert_eq!(layers_json(&own), layers_json(&other));
+
+    // Weight is inherited too.
+    let w = svg_text_layers(
+        "font-family: DM Sans; font-size: 40px; font-weight: 700",
+        json!({}),
+    );
+    let w_explicit = svg_text_layers(
+        "",
+        json!({ "font-family": "DM Sans", "font-size": "40", "font-weight": "700" }),
+    );
+    assert_eq!(layers_json(&w), layers_json(&w_explicit));
+}

@@ -194,6 +194,13 @@ fn paint_serialized(
         } else {
             // A text that names no family is set in the default one.
             let mut stacks = crate::fonts::families_in_xml(&serialized.xml);
+            // The family the root took from the HTML is every text's default,
+            // so it counts only when no text names a family of its own.
+            if stacks.len() > 1
+                && let Some(inherited) = &serialized.inherited_family
+            {
+                stacks.retain(|s| s != inherited);
+            }
             if stacks.is_empty() {
                 stacks.push(String::new());
             }

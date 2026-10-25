@@ -25,6 +25,7 @@ use std::collections::{BTreeSet, HashSet};
 use blitz_dom::util::ToColorColor;
 use blitz_dom::{BaseDocument, NodeData, NodeId};
 use kurbo::{Affine, BezPath, Shape};
+use style_traits::ToCss;
 
 use super::css;
 
@@ -52,6 +53,9 @@ pub struct Serialized {
     pub notes: Vec<Note>,
     /// The root says `overflow: visible`.
     pub overflow_visible: bool,
+    /// The `font-family` the root took from the HTML around it, when the
+    /// `<svg>` sets none of its own.
+    pub inherited_family: Option<String>,
 }
 
 /// Elements that are not drawn where they are met.
@@ -234,7 +238,7 @@ pub fn serialize(doc: &BaseDocument, node: NodeId, size: [f64; 2]) -> Serialized
         counter: 0,
         reference,
     };
-    let (root_attrs, overflow_visible) = w.root(node, size);
+    let (root_attrs, overflow_visible, inherited_family) = w.root(node, size);
     let body = std::mem::take(&mut w.out);
     // Elements outside the subtree that it refers to (and what they refer to).
     let mut defs = String::new();
@@ -270,6 +274,7 @@ pub fn serialize(doc: &BaseDocument, node: NodeId, size: [f64; 2]) -> Serialized
         filters: w.filters,
         notes: w.notes,
         overflow_visible,
+        inherited_family,
     }
 }
 
@@ -333,6 +338,33 @@ pub fn computed_color(doc: &BaseDocument, mut id: NodeId) -> String {
         }
     }
     "#000000".to_string()
+}
+
+/// The computed `font-family`, `font-size`, `font-weight` and `font-style` of
+/// the node as SVG attributes: Stylo cascaded them from the HTML around the
+/// `<svg>`, and text inside it inherits them like any element's.
+fn computed_font(doc: &BaseDocument, id: NodeId) -> Attrs {
+    let Some(style) = doc.get_node(id).and_then(|n| n.primary_styles()) else {
+        return Vec::new();
+    };
+    let font = style.get_font();
+    let font_style = font.font_style.to_css_string();
+    vec![
+        ("font-family".into(), font.font_family.to_css_string()),
+        (
+            "font-size".into(),
+            format!("{}", font.font_size.computed_size().px()),
+        ),
+        ("font-weight".into(), format!("{}", font.font_weight.value())),
+        (
+            "font-style".into(),
+            font_style
+                .split_whitespace()
+                .next()
+                .unwrap_or("normal")
+                .to_string(),
+        ),
+    ]
 }
 
 fn rgba(c: [f32; 4]) -> String {
@@ -414,11 +446,21 @@ impl Writer<'_> {
 
     /// The root: its attributes (the box and what its content inherits) and
     /// whether it says `overflow: visible`; its content goes to `out`.
-    fn root(&mut self, id: NodeId, size: [f64; 2]) -> (String, bool) {
+    fn root(&mut self, id: NodeId, size: [f64; 2]) -> (String, bool, Option<String>) {
         let Some((tag, mut attrs, mut decls)) = self.read(id) else {
-            return (String::new(), false);
+            return (String::new(), false, None);
         };
         let overflow = take(&mut attrs, &mut decls, "overflow");
+        // What the svg does not set itself, its text inherits from the HTML.
+        let mut inherited_family = None;
+        for (n, v) in computed_font(self.doc, id) {
+            if !attrs.iter().chain(decls.iter()).any(|(a, _)| *a == n) {
+                if n == "font-family" {
+                    inherited_family = Some(v.clone());
+                }
+                attrs.push((n, v));
+            }
+        }
         let mut out = String::new();
         let mut put = |n: &str, v: &str| {
             out.push_str(&format!(" {n}=\""));
@@ -443,7 +485,11 @@ impl Writer<'_> {
         put("width", &size[0].to_string());
         put("height", &size[1].to_string());
         self.children(id, &tag);
-        (out, overflow.is_some_and(|o| o == "visible" || o == "auto"))
+        (
+            out,
+            overflow.is_some_and(|o| o == "visible" || o == "auto"),
+            inherited_family,
+        )
     }
 
     fn open(&mut self, tag: &str, attrs: &Attrs) {
