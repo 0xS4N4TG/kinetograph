@@ -14,7 +14,7 @@ import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { HfNode, HfPlan, HfScript, HfStylesheet, HfSvgRule } from '@kinetographdev/core/hyperframes';
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
-import { resolveCdnScript } from './deps.js';
+import { resolveCdnScript, verifyIntegrity } from './deps.js';
 import {
   crossingRules,
   extractGoogleFontImports,
@@ -140,11 +140,13 @@ class Builder {
           return;
         }
         code = this.read(found.file);
+        this.checkIntegrity(el, found.file, url);
         file = url;
       } else {
         const path = this.asset(src, ctx);
         if (!existsSync(path)) throw new CliError('SCRIPT_NOT_FOUND', `${ctx.file}: <script src="${src}"> was not found beside ${ctx.file} or in ${this.root}`);
         code = this.read(path);
+        this.checkIntegrity(el, path, path);
         file = path;
       }
     } else {
@@ -159,6 +161,12 @@ class Builder {
     }
     if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
     this.scripts.push({ code, file, scope: src === null ? ctx.scope : null, sourceFile: src === null && ctx.scope !== null ? ctx.file : null });
+  }
+
+  /** The script's `integrity` attribute against the bytes about to run, wherever they came from. */
+  checkIntegrity(el: PElement, file: string, label: string): void {
+    const integrity = attrOf(el, 'integrity');
+    if (integrity && !this.options.discoverOnly) verifyIntegrity(readFileSync(file), integrity, label);
   }
 
   style(el: PElement, ctx: Context): void {

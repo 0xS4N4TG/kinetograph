@@ -216,15 +216,31 @@ export async function fetchCdnScripts(urls: string[], projectDir: string, option
   const results: FetchedDep[] = [];
   for (const raw of [...new Set(urls)]) {
     const url = normalizeScriptUrl(raw);
+    const integrity = options.integrity?.[raw] ?? options.integrity?.[url];
     const found = resolveCdnScript(url, projectDir);
     if ('file' in found) {
-      results.push({ url, file: found.file, status: found.via === 'node_modules' ? 'installed' : 'cached' });
-      continue;
+      // Whatever resolved is checked against the page's integrity attribute every time: a page that adds or changes
+      // it must not get the bytes it was not written for. A cached copy that fails is downloaded again, once.
+      let mismatch: string | null = null;
+      if (integrity) {
+        try {
+          verifyIntegrity(readFileSync(found.file), integrity, url);
+        } catch (error) {
+          mismatch = error instanceof Error ? error.message : String(error);
+        }
+      }
+      if (mismatch === null) {
+        results.push({ url, file: found.file, status: found.via === 'node_modules' ? 'installed' : 'cached' });
+        continue;
+      }
+      if (found.via === 'node_modules') {
+        results.push({ url, file: found.file, status: 'failed', error: `the installed copy ${found.file}: ${mismatch}` });
+        continue;
+      }
     }
     const file = cdnCachePath(url);
     try {
       const bytes = await download(url, options, allowed);
-      const integrity = options.integrity?.[raw] ?? options.integrity?.[url];
       if (integrity) verifyIntegrity(bytes, integrity, url);
       mkdirSync(dirname(file), { recursive: true });
       // Temporary names, so a reader never sees half a file; the hash goes last.

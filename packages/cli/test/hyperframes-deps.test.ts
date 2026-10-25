@@ -145,4 +145,28 @@ describe('fetch-deps', () => {
     expect(again!.status).toBe('fetched');
     expect('file' in resolveCdnScript(URL_OK, project)).toBe(true);
   });
+
+  it('checks the page\'s integrity against a copy already cached: downloads again once, else refuses', async () => {
+    await fetchCdnScripts([URL_OK], project, { fetchImpl: async () => ok('var a=1;') });
+    const want = `sha256-${createHash('sha256').update('var b=2;').digest('base64')}`;
+    // The cached bytes do not match: fetched again, and the new bytes do.
+    const [again] = await fetchCdnScripts([URL_OK], project, { integrity: { [URL_OK]: want }, fetchImpl: async () => ok('var b=2;') });
+    expect(again!.status).toBe('fetched');
+    // Neither the cached nor the downloaded bytes match: refused.
+    const wrong = `sha256-${createHash('sha256').update('other').digest('base64')}`;
+    const [refused] = await fetchCdnScripts([URL_OK], project, { integrity: { [URL_OK]: wrong }, fetchImpl: async () => ok('var b=2;') });
+    expect(refused!.status).toBe('failed');
+    expect(refused!.error).toContain('integrity');
+  });
+
+  it('refuses an installed copy that does not match the page\'s integrity', async () => {
+    const pkg = join(dir, 'node_modules', 'somelib');
+    mkdirSync(join(pkg, 'dist'), { recursive: true });
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'somelib', version: '1.0.0' }));
+    writeFileSync(join(pkg, 'dist', 'lib.min.js'), 'var a=1;');
+    const wrong = `sha256-${createHash('sha256').update('other').digest('base64')}`;
+    const [result] = await fetchCdnScripts([URL_OK], project, { integrity: { [URL_OK]: wrong }, fetchImpl: async () => ok('x') });
+    expect(result!.status).toBe('failed');
+    expect(result!.error).toContain('installed copy');
+  });
 });
