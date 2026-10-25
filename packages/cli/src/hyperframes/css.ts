@@ -131,6 +131,8 @@ export function extractGoogleFontImports(css: string): { css: string; fonts: Goo
 }
 
 export interface CrossingRule {
+  /** The `@media` conditions the rule is inside (all must hold), outermost first. */
+  media?: string[];
   selector: string;
   declarations: [string, string][];
   specificity: [number, number, number];
@@ -160,22 +162,30 @@ export function crossingRules(css: string, first: number): CrossingRule[] {
   }
   const out: CrossingRule[] = [];
   let order = first;
-  root.each((node) => {
-    if (node.type !== 'rule') {
-      order++;
-      return;
-    }
-    const declarations: [string, string][] = [];
-    node.each((child) => {
-      if (child.type === 'decl') declarations.push([child.prop, child.value]);
-    });
-    for (const selector of node.selectors) {
-      const text = selector.trim();
-      if (/\s|>|\+|~/.test(text) && !text.includes('::') && declarations.length > 0) {
-        out.push({ selector: text, declarations, specificity: specificityOf(text), order });
+  const walk = (container: postcss.Root | postcss.AtRule, media: string[]): void => {
+    container.each((node) => {
+      if (node.type === 'atrule' && (node as AtRule).name.toLowerCase() === 'media' && (node as AtRule).nodes) {
+        // The rules of an `@media` count where the query holds; the runtime asks `matchMedia` of the composition's size.
+        walk(node as AtRule, [...media, (node as AtRule).params.trim()]);
+        return;
       }
-    }
-    order++;
-  });
+      if (node.type !== 'rule') {
+        order++;
+        return;
+      }
+      const declarations: [string, string][] = [];
+      node.each((child) => {
+        if (child.type === 'decl') declarations.push([child.prop, child.value]);
+      });
+      for (const selector of (node as Rule).selectors) {
+        const text = selector.trim();
+        if (/\s|>|\+|~/.test(text) && !text.includes('::') && declarations.length > 0) {
+          out.push({ ...(media.length > 0 ? { media } : {}), selector: text, declarations, specificity: specificityOf(text), order });
+        }
+      }
+      order++;
+    });
+  };
+  walk(root, []);
   return out;
 }

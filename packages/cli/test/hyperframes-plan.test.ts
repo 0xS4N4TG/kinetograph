@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { HfNode } from '@kinetographdev/core/hyperframes';
 import { buildPlan } from '../src/hyperframes/plan.js';
-import { parseGoogleFontsUrl, rewriteDocumentSelectors, scopeToComposition } from '../src/hyperframes/css.js';
+import { crossingRules, parseGoogleFontsUrl, rewriteDocumentSelectors, scopeToComposition } from '../src/hyperframes/css.js';
+import { FONT_ALIASES, parseFamilyList } from '../src/hyperframes/fonts.js';
 import { resolveEntry } from '../src/hyperframes/entry.js';
 
 const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hf-nyt');
@@ -154,6 +155,71 @@ describe('CSS rewriting', () => {
       { family: 'Libre Baskerville', variants: ['400', '700'] },
       { family: 'Inter', variants: ['400', '700i'] },
       { family: 'Roboto', variants: ['400'] },
+    ]);
+  });
+});
+
+describe('fonts HyperFrames embeds', () => {
+  const page = (head: string, body = '') =>
+    `<!doctype html><html><head>${head}</head><body><div data-composition-id="m" data-duration="1" ${body}></div></body></html>`;
+
+  it('reads the family lists of a font-family value', () => {
+    expect(parseFamilyList(`'Helvetica Neue', "Segoe UI", -apple-system, sans-serif`)).toEqual(['Helvetica Neue', 'Segoe UI', '-apple-system', 'sans-serif']);
+    expect(FONT_ALIASES.arial).toBe('inter');
+    expect(FONT_ALIASES.consolas).toBe('jetbrains-mono');
+    expect(FONT_ALIASES['jetbrains mono']).toBe('jetbrains-mono');
+  });
+
+  it('loads the bundled family a stylesheet, an inline style or a variable names, from the cache only, and maps the aliases', async () => {
+    const dir = project({
+      'index.html': page(
+        `<style>:root { --ui: Consolas, monospace } .a { font-family: "Inter", sans-serif } .b { font-family: var(--ui) } .c { font-family: Georgia }</style>`,
+        `style="font-family: Arial"`,
+      ),
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    const byFamily = Object.fromEntries(plan.googleFonts.map((f) => [f.family, f]));
+    expect(byFamily.Inter).toMatchObject({ variants: ['400', '700', '900'], as: ['Arial'], cacheOnly: true });
+    expect(byFamily['JetBrains Mono']).toMatchObject({ variants: ['400', '700'], as: ['Consolas'], cacheOnly: true });
+    expect(byFamily['EB Garamond']).toMatchObject({ as: ['Georgia'] });
+  });
+
+  it('leaves a family the page loads or declares itself', async () => {
+    const dir = project({
+      'index.html': page(
+        `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300">
+         <style>@font-face { font-family: Inter; src: url(a.woff2) } .a { font-family: Inter } .b { font-family: Roboto }</style>`,
+      ),
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    expect(plan.googleFonts).toEqual([{ family: 'Roboto', variants: ['300'] }]);
+  });
+
+  it('gives a fragment index.html the document HyperFrames wraps it in: Inter, black, margins reset', async () => {
+    const dir = project({ 'index.html': '<div data-composition-id="m" data-duration="1"><p>hi</p></div>' });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    expect(plan.stylesheets[0]!.css).toContain('font-family:"Inter",sans-serif');
+    expect(plan.googleFonts.map((f) => f.family)).toEqual(['Inter']);
+  });
+});
+
+describe('page features', () => {
+  it('keeps a page <template> out of the document and gives its content to a script', async () => {
+    const dir = project({
+      'index.html': `<html><body><div data-composition-id="m" data-duration="1"></div><template id="t"><b class="x">hi</b></template></body></html>`,
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    const template = find(plan.body, (n) => n.tag === 'template')!;
+    expect(template.children).toEqual([]);
+    expect(template.content).toMatchObject([{ t: 'el', tag: 'b' }]);
+  });
+
+  it('reads the svg-crossing rules inside @media with their conditions', () => {
+    const rules = crossingRules('.a .b { fill: red } @media (min-width: 600px) { [data-composition-id="x"] .bar { fill: blue } } @media print { .c .d { fill: green } }', 0);
+    expect(rules.map((r) => [r.selector, r.media ?? []])).toEqual([
+      ['.a .b', []],
+      ['[data-composition-id="x"] .bar', ['(min-width: 600px)']],
+      ['.c .d', ['print']],
     ]);
   });
 });

@@ -15,6 +15,7 @@ import type { HfNode, HfPlan, HfScript, HfStylesheet, HfSvgRule } from '@kinetog
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
 import { resolveCdnScript, verifyIntegrity } from './deps.js';
+import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
   crossingRules,
   extractGoogleFontImports,
@@ -80,6 +81,8 @@ class Builder {
   private ruleOrder = 0;
   readonly scripts: HfScript[] = [];
   readonly fonts: GoogleFontRequest[] = [];
+  /** The font families the page's CSS names (`fonts.ts`). */
+  readonly fontUse = emptyUse();
   readonly variables: Record<string, Record<string, unknown>> = {};
   readonly mediaFiles = new Set<string>();
   readonly notes: string[] = [];
@@ -180,6 +183,7 @@ class Builder {
     let css = absolutizeUrls(taken.css, ctx.dir);
     css = ctx.scope === null ? rewriteDocumentSelectors(css) : scopeToComposition(css, ctx.scope, ctx.rootId);
     if (css.trim() === '') return;
+    noteCss(this.fontUse, css);
     this.stylesheets.push({ css, file });
     this.svgRules.push(...crossingRules(css, this.ruleOrder));
     // The next sheet's rules come after this one's: their order counts the blocks of the sheets so far.
@@ -243,7 +247,6 @@ class Builder {
       case 'title':
       case 'base':
       case 'noscript':
-      case 'template':
       case 'head':
         return null;
     }
@@ -253,7 +256,10 @@ class Builder {
       const name = a.prefix ? `${a.prefix}:${a.name}` : a.name;
       let value = a.value;
       if (FILE_ATTRIBUTES.has(name) || (name === 'href' && (svg || tag === 'use'))) value = this.asset(value, ctx);
-      else if (name === 'style') value = absolutizeUrls(value, ctx.dir);
+      else if (name === 'style') {
+        value = absolutizeUrls(value, ctx.dir);
+        noteInline(this.fontUse, value);
+      } else if (name === 'data-font-family') noteFamilyValue(this.fontUse, value);
       attrs.push([name, value]);
     }
     if (MEDIA_TAGS.has(tag)) {
@@ -264,8 +270,16 @@ class Builder {
       const src = attrs.find(([n]) => n === 'src')?.[1];
       if (src && !isRemote(src) && existsSync(src.split(/[?#]/)[0]!)) this.mediaFiles.add(src.split(/[?#]/)[0]!);
     }
-    const content = tag === 'template' ? [] : childrenOf(el);
-    const node: HfNode = { t: 'el', tag, ...(svg ? { svg: true } : {}), attrs, children: await this.nodes(content, ctx, svg) };
+    // A page's `<template>` keeps its content apart from the document: its scripts and styles are not the page's.
+    const inert = tag === 'template' ? await this.nodes(childrenOf((el as PTemplate).content), ctx, svg) : null;
+    const node: HfNode = {
+      t: 'el',
+      tag,
+      ...(svg ? { svg: true } : {}),
+      attrs,
+      children: inert === null ? await this.nodes(childrenOf(el), ctx, svg) : [],
+      ...(inert !== null ? { content: inert } : {}),
+    };
     const src = attrOf(el, 'data-composition-src');
     if (src !== null) await this.mount(node, src, ctx);
     return node;
@@ -423,6 +437,13 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   const bodyEl = childrenOf(html).filter(isElement).find((e) => e.tagName === 'body');
   const ctx: Context = { file, dir: root, scope: null, rootId: null, stack: [file] };
 
+  // An index.html that is a fragment (no doctype, no `<html>`) is wrapped by HyperFrames in a document that resets margins
+  // and padding, clips the body, paints it black and sets Inter (producer/src/services/htmlCompiler.ts: ensureFullDocument).
+  const source = readFileSync(file, 'utf8').trim();
+  if (!/^<!DOCTYPE\s+html/i.test(source) && !/^<html/i.test(source)) {
+    builder.addCss('*{margin:0;padding:0;box-sizing:border-box}body{overflow:hidden;background:#000;font-family:"Inter",sans-serif}', file, ctx);
+  }
+
   // The head's styles, links and scripts come before the body's, in document order.
   for (const node of head ? childrenOf(head) : []) if (isElement(node)) await builder.element(node, ctx, false);
   const body = await builder.nodes(bodyEl ? childrenOf(bodyEl) : [], ctx, false);
@@ -450,6 +471,15 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     fonts.set(request.family, set);
   }
 
+  // The families the CSS names that HyperFrames embeds (or maps an operating-system name to): read from the font cache.
+  finishUse(builder.fontUse);
+  const googleFonts = [...fonts].map(([family, variants]): HfPlan['googleFonts'][number] => ({ family, variants: [...variants] }));
+  for (const bundled of bundledUses(builder.fontUse, new Set(googleFonts.map((f) => f.family.toLowerCase())))) {
+    const existing = googleFonts.find((f) => f.family === bundled.family);
+    if (existing) existing.as = [...new Set([...(existing.as ?? []), ...bundled.as])];
+    else googleFonts.push({ family: bundled.family, variants: bundled.weights, as: bundled.as, cacheOnly: true });
+  }
+
   // The root's own variables: what `<html>` and the root element declare, under the values the root element gives.
   const rootId = attr('data-composition-id') ?? 'main';
   const declared: Record<string, unknown> = {};
@@ -475,7 +505,7 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     stylesheets: builder.stylesheets,
     scripts: builder.scripts,
     svgRules: builder.svgRules,
-    googleFonts: [...fonts].map(([family, variants]) => ({ family, variants: [...variants] })),
+    googleFonts,
     variables: builder.variables,
     mediaDurations,
     notes: builder.notes,

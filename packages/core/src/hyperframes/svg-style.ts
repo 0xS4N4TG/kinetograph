@@ -20,7 +20,9 @@ const byCascade = (a: HfSvgRule, b: HfSvgRule): number =>
 /** Applies `rules` to the shapes inside every `<svg>` of the document; returns how many properties it wrote. */
 export function applySvgRules(rules: readonly HfSvgRule[], svgs: readonly AnyRecord[]): number {
   if (rules.length === 0) return 0;
-  const sorted = [...rules].sort(byCascade);
+  const query = (globalThis as { matchMedia?: (q: string) => { matches: boolean } }).matchMedia;
+  const holds = (rule: HfSvgRule): boolean => (rule.media ?? []).every((q) => (typeof query === 'function' ? query(q).matches : true));
+  const sorted = rules.filter(holds).sort(byCascade);
   let written = 0;
   for (const svg of svgs) {
     const svgHost = hostOf(svg);
