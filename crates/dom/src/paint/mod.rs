@@ -26,6 +26,7 @@ mod ellipsis;
 mod fonts;
 mod geom;
 mod gradient;
+mod grade;
 mod images;
 mod mat;
 mod opt;
@@ -651,6 +652,10 @@ impl<'a> Painter<'a> {
                 .kg_value(node, "--kg-filter")
                 .is_some_and(|f| f != "none")
         {
+            return true;
+        }
+        // A graded picture (HyperFrames' `data-color-grading`) is a group, so the grade covers all of it.
+        if node.is_element() && attr(node, grade::GRADE_ATTR).is_some() {
             return true;
         }
         node.primary_styles().is_some_and(|s| {

@@ -1,5 +1,5 @@
 //! 3D colour lookup tables from Adobe/Resolve `.cube` files, for the `lut`
-//! effect. Parsing is plain Rust; `compositor.rs` uploads the table and
+//! and `colorGrade` effects. Parsing is plain Rust; `compositor.rs` uploads the table and
 //! `shaders/lut.wgsl` applies it.
 
 use std::path::Path;
@@ -128,6 +128,25 @@ impl Lut {
         })
     }
 
+    /// The identity table of `size` points per axis.
+    pub fn identity(size: u32) -> Lut {
+        let step = 1.0 / (size - 1) as f32;
+        let mut rgb = Vec::with_capacity((size * size * size) as usize);
+        for b in 0..size {
+            for g in 0..size {
+                for r in 0..size {
+                    rgb.push([r as f32 * step, g as f32 * step, b as f32 * step]);
+                }
+            }
+        }
+        Lut {
+            size,
+            domain_min: [0.0; 3],
+            domain_max: [1.0; 3],
+            rgb,
+        }
+    }
+
     /// The table as the RGBA32F texels the GPU reads (alpha 1), red varying
     /// fastest like the file.
     pub fn rgba(&self) -> Vec<f32> {
@@ -147,12 +166,18 @@ fn triple(words: &[&str]) -> Option<[f32; 3]> {
     Some([parse(r)?, parse(g)?, parse(b)?])
 }
 
-/// Every `lut` effect in the scene as (layer id, `src`), in order of use.
+/// Every `lut` effect (and the table of every `colorGrade`) in the scene as (layer id, `src`), in order of use.
 fn sources(layers: &[Layer], out: &mut Vec<(String, String)>) {
     walk_layers(layers, &mut |layer| {
         for effect in &layer.effects {
-            if let Effect::Lut { src, .. } = effect {
-                out.push((layer.id.clone(), src.clone()));
+            match effect {
+                Effect::Lut { src, .. } => out.push((layer.id.clone(), src.clone())),
+                Effect::ColorGrade(grade) => {
+                    if let Some(src) = grade.lut_src() {
+                        out.push((layer.id.clone(), src.to_string()));
+                    }
+                }
+                _ => {}
             }
         }
     });

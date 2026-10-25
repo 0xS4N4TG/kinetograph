@@ -1821,6 +1821,7 @@ fn effect_name(e: &ResolvedEffect) -> &'static str {
         ResolvedEffect::Displace(_) => "displace",
         ResolvedEffect::CornerPin(_) => "cornerPin",
         ResolvedEffect::FilterGraph(_) => "filterGraph",
+        ResolvedEffect::ColorGrade(_) => "colorGrade",
         ResolvedEffect::Shader(_) => "shader",
     }
 }
