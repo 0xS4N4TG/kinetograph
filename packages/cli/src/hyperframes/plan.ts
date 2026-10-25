@@ -9,12 +9,13 @@
 //   - paths in the files resolve from the project root, or from the file that names them.
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { HfNode, HfPlan, HfScript, HfStylesheet, HfSvgRule } from '@kinetographdev/core/hyperframes';
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
-import { DEFAULT_ALLOWED_HOSTS, resolveCdnData, resolveCdnScript, verifyIntegrity } from './deps.js';
+import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, verifyIntegrity } from './deps.js';
+import { pickSrcset, remoteImage, rewriteCssImages, type RemoteImage } from './images.js';
 import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
   crossingRules,
@@ -68,6 +69,8 @@ export interface BuiltPlan {
   dataUrls: string[];
   /** URLs of remote `<video>`, `<audio>`, `<img>` and `<source>` files, which `fetch-deps` downloads too. */
   mediaUrls: string[];
+  /** URLs of remote pictures (`<img>`, CSS `url()`, SVG `<image>`, `<video poster>`), which `fetch-deps` downloads too. */
+  imageUrls: string[];
 }
 
 interface Context {
@@ -97,6 +100,7 @@ class Builder {
   readonly scriptIntegrity: Record<string, string> = {};
   readonly dataUrls = new Set<string>();
   readonly mediaUrls = new Set<string>();
+  readonly imageUrls = new Set<string>();
   /** Remote files found in the cache, by URL. */
   readonly remoteData: Record<string, string> = {};
   usesThree = false;
@@ -104,6 +108,8 @@ class Builder {
   constructor(
     readonly root: string,
     readonly options: PlanOptions,
+    /** The entry file, named in the notes that say how to download a picture. */
+    readonly entry: string = '<entry>',
   ) {}
 
   note(text: string): void {
@@ -214,6 +220,40 @@ class Builder {
     if (integrity && !this.options.discoverOnly) verifyIntegrity(readFileSync(file), integrity, label);
   }
 
+  /**
+   * The cached file of a remote picture, or null: the URL is then left as written, and a note says how to fix it. The cache
+   * is read through its hash (`resolveCdnData`), so a file that was changed is not drawn.
+   */
+  localImage(image: NonNullable<RemoteImage>, what: string): string | null {
+    if ('refused' in image) {
+      if (!this.options.discoverOnly) this.note(`${what} ${image.refused} is not downloaded: only https pictures are`);
+      return null;
+    }
+    this.imageUrls.add(image.url);
+    const found = resolveCdnData(image.url);
+    if ('file' in found) return found.file;
+    if (this.options.discoverOnly) return null;
+    if (existsSync(dataCachePath(image.url))) {
+      this.note(`${what} ${image.url} is drawn without the picture: ${found.error}`);
+      return null;
+    }
+    // The host is pasted into a command to copy: only a plain hostname is (punycode is ASCII), and a URL that does not parse gets none.
+    let host = '';
+    try {
+      host = new URL(image.url).hostname;
+    } catch {
+      // no host to suggest
+    }
+    const allow = host === '' || DEFAULT_ALLOWED_HOSTS.includes(host) || !/^[a-z0-9.-]+$/i.test(host) ? '' : ` --allow-host ${host}`;
+    this.note(`${what} ${image.url} is not cached, and a render reads no network, so it is drawn without the picture: run \`kinetograph fetch-deps ${this.entry}${allow}\``);
+    return null;
+  }
+
+  /** CSS text or the declarations of a `style` attribute, with the remote pictures it names read from the cache. */
+  localizeCss(css: string): string {
+    return rewriteCssImages(css, (image) => this.localImage(image, 'the CSS picture'));
+  }
+
   style(el: PElement, ctx: Context): void {
     this.addCss(textOf(el), ctx.file, ctx);
   }
@@ -222,7 +262,7 @@ class Builder {
   addCss(text: string, file: string, ctx: Context): void {
     const taken = extractGoogleFontImports(text);
     this.fonts.push(...taken.fonts);
-    let css = absolutizeUrls(taken.css, ctx.dir);
+    let css = this.localizeCss(absolutizeUrls(taken.css, ctx.dir));
     css = ctx.scope === null ? rewriteDocumentSelectors(css) : scopeToComposition(css, ctx.scope, ctx.rootId);
     if (css.trim() === '') return;
     noteCss(this.fontUse, css);
@@ -299,11 +339,12 @@ class Builder {
       let value = a.value;
       if (FILE_ATTRIBUTES.has(name) || (name === 'href' && (svg || tag === 'use'))) value = this.asset(value, ctx);
       else if (name === 'style') {
-        value = absolutizeUrls(value, ctx.dir);
+        value = this.localizeCss(absolutizeUrls(value, ctx.dir));
         noteInline(this.fontUse, value);
       } else if (name === 'data-font-family') noteFamilyValue(this.fontUse, value);
       attrs.push([name, value]);
     }
+    this.localizePictures(tag, attrs);
     if (MEDIA_TAGS.has(tag) || tag === 'source') {
       const at = attrs.findIndex(([n]) => n === 'src');
       const src = at < 0 ? undefined : attrs[at]![1];
@@ -337,6 +378,43 @@ class Builder {
     const src = attrOf(el, 'data-composition-src');
     if (src !== null) await this.mount(node, src, ctx);
     return node;
+  }
+
+  /** The remote pictures of an element's attributes: `<img src|srcset>`, `<video poster>`, SVG `<image href>`. */
+  localizePictures(tag: string, attrs: [string, string][]): void {
+    const set = (name: string, value: string): void => {
+      const at = attrs.findIndex(([n]) => n === name);
+      if (at >= 0) attrs[at] = [name, value];
+      else attrs.push([name, value]);
+    };
+    const get = (name: string): string | undefined => attrs.find(([n]) => n === name)?.[1];
+    if (tag === 'img') {
+      // A `srcset` is drawn as the browser would choose, so its candidate stands in for the `src`.
+      const candidate = pickSrcset(get('srcset') ?? '');
+      const chosen = candidate === null ? null : remoteImage(candidate);
+      const src = get('src');
+      const own = src === undefined ? null : remoteImage(src);
+      const image = chosen ?? own;
+      if (image !== null) {
+        const file = this.localImage(image, '<img>');
+        if (file !== null) set('src', file);
+      }
+    } else if (tag === 'video') {
+      const poster = get('poster');
+      const image = poster === undefined ? null : remoteImage(poster);
+      if (image !== null) {
+        const file = this.localImage(image, '<video poster>');
+        if (file !== null) set('poster', file);
+      }
+    } else if (tag === 'image') {
+      for (const name of ['href', 'xlink:href']) {
+        const value = get(name);
+        const image = value === undefined ? null : remoteImage(value);
+        if (image === null) continue;
+        const file = this.localImage(image, 'the SVG <image>');
+        if (file !== null) set(name, file);
+      }
+    }
   }
 
   /** A host with `data-composition-src`: the file's content becomes the host's children. */
@@ -486,7 +564,7 @@ const normalizeUrl = (url: string): string => (url.startsWith('//') ? `https:${u
 export async function buildPlan(indexFile: string, options: PlanOptions = {}): Promise<BuiltPlan> {
   const file = resolve(indexFile);
   const root = dirname(file);
-  const builder = new Builder(root, options);
+  const builder = new Builder(root, options, relative(process.cwd(), file) || file);
   const doc = parse(builder.read(file));
   const html = childrenOf(doc).find(isElement);
   if (html === undefined) throw new CliError('PROJECT_ERROR', `${file} has no <html> element`);
@@ -576,5 +654,6 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     scriptIntegrity: builder.scriptIntegrity,
     dataUrls: [...builder.dataUrls],
     mediaUrls: [...builder.mediaUrls],
+    imageUrls: [...builder.imageUrls],
   };
 }
