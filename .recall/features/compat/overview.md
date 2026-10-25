@@ -15,7 +15,9 @@ What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL librar
 - Real HyperFrames projects test (Haiku): BLOCKED by auto-mode classifier (external code: npx hyperframes init, repo clone, community repos). Asked user to approve / pick safer scope.
 
 ## Open threads
-- [ ] Merge chore/hf-svg-workarounds after verdicts no worse; record final 29-comp numbers
+- [x] #17 merged: pinSvgFonts removed. HF 29 comps now MATCH 17 / CLOSE 6 / DIFF 5 / FAIL 1 (code-slice-hero f59 depth test). Results scratchpad/hf-final.
+- [ ] SVG cascade gap (keeps applySvgRules alive): SVG elements created by scripts after a fetch are not styled by page CSS (us-map-flow arcs/dots draw black without the TS workaround); an @media rule's fill does not reach an SVG shape. Fix in crates/dom, then delete svg-style.ts/svgRules.
+- [ ] HF still DIFFERENT: mk-clone-wall-transition (inline-block nowrap wrap), code-typing (?), weight-wave (variable-font advances), transitions-destruction (canvas gradient premul), three-orbiting-cards (preserve-3d)
 - [x] Plugins merged (#16, f0f68c5c): gsap, p5-brush, anime, motion + /docs/libraries; Bklit colours confirmed fixed by #14 (line/bar/pie/geo <=0.14 at f59)
 - [ ] Engine bug: anime.js `width: [0, 100]` on inline `width: 0` element draws nothing (Chrome draws); repro scratchpad/plugins-verify/anime/src/c.tsx (zero-size DOM mutation path?)
 - [ ] Real HyperFrames projects test: waiting on user OK for external code
