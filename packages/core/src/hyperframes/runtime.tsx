@@ -23,7 +23,7 @@ import { makeGoogleFont } from '../google-fonts.js';
 import { reportUnsupported } from '../unsupported.js';
 import type { HfNode, HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
-import { applySvgRules, pinSvgFonts } from './svg-style.js';
+import { applySvgRules } from './svg-style.js';
 import { laneGain, MAX_GAIN, parseAutomation, sourceTimeAt, type AutomationLane } from './automation.js';
 import { gradeFilter, normalizeGrade, type GradeFilter } from './grading.js';
 import {
@@ -267,7 +267,6 @@ class Runtime {
     const { plan } = this;
     const svgs = Array.from(doc().querySelectorAll('svg')) as AnyRecord[];
     applySvgRules(plan.svgRules, svgs);
-    pinSvgFonts(svgs, (el) => g.getComputedStyle(el));
     this.root = doc().querySelector(`[data-composition-id="${attrValue(plan.compositionId)}"]`);
     this.timing.reset();
     this.clocks.clear();

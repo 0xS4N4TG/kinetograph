@@ -1,7 +1,9 @@
-// The engine styles an `<svg>`'s subtree on its own: a rule whose selector needs an element above the `<svg>`
-// (`[data-composition-id="x"] .bar { fill: … }`, which is how HyperFrames scopes every composition's CSS) does not reach
-// the shapes inside. This writes what such rules say onto the shapes as inline style, once the scripts have built them,
-// so a chart reads as it does in a browser. It goes when the SVG painter takes its styles from the page's cascade.
+// The engine's SVG painter takes its styles from the page's cascade (`serialize.rs`, `cascaded`), but that does not
+// reach every shape: a rule whose selector needs an element above the `<svg>` (`[data-composition-id="x"] .bar { … }`,
+// which is how HyperFrames scopes every composition's CSS) is lost on shapes a script builds after a fetch (us-map-flow's
+// arcs and dots draw black without it), and the cascade never reads `transform`, `clip-path`, `mask` or `filter`. So
+// such rules are also written onto the shapes as inline style here, once the scripts have built them. It goes when the
+// cascade covers both.
 //
 // A rule is written onto an element only if it matches there in the whole page and not in the `<svg>` alone (what
 // the engine already matches is left to it), never over a property the element's own style or a script has set, and in
@@ -50,16 +52,4 @@ export function applySvgRules(rules: readonly HfSvgRule[], svgs: readonly AnyRec
     }
   }
   return written;
-}
-
-/**
- * The `font-family` the page's text around an `<svg>` gives it, written on the `<svg>` itself: the engine's own
- * inheritance does not find a font loaded from a stylesheet's `@font-face` or Google Fonts for the text inside.
- */
-export function pinSvgFonts(svgs: readonly AnyRecord[], computed: (element: AnyRecord) => AnyRecord): void {
-  for (const svg of svgs) {
-    if (svg.style.getPropertyValue('font-family') !== '') continue;
-    const family = computed(svg).getPropertyValue('font-family');
-    if (typeof family === 'string' && family !== '') svg.style.setProperty('font-family', family.replace(/&quot;|"/g, "'"));
-  }
 }
