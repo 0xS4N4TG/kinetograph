@@ -32,7 +32,7 @@ Each item says what doesn't work and what you see instead. For what does work, s
 - **Three.js.** Not drawn. A page that loads Three.js is reported on every frame.
 - **WebGPU.** Shader blocks that use `shaders.iife.js` (`aurora`, `blob`, `ripples`, `swirl` and the like) are drawn natively. See [WebGPU](#webgpu).
 - **Import maps and ES modules that import.** Not run. They are reported.
-- **Selectors that reach into an `<svg>` from outside it.** The engine styles an `<svg>` on its own, so the loader writes the matching rules onto the shapes as inline style once the scripts have run. A class added to a shape later, by a tween or a script, is not restyled. The `font-family` of the page's text is written on the `<svg>` the same way.
+- **Selectors that reach into an `<svg>` from outside it.** The engine styles an `<svg>` on its own, so the loader writes the matching rules onto the shapes as inline style once the scripts have run. A class added to a shape later, by a tween or a script, is not restyled.
 - **Timing.** `data-start` references stay inside one composition. Audio effects (`data-fx-chain`) and `fx.*` automation lanes are ignored. A `rate` lane on audio is played in quarter-second slices at constant rates.
 - **Colour grading.** `lut`, `hueCurves`, `secondaries`, `details` (vignette, grain) and `effects` are not drawn (the engine has `lut` and `grain` effects, but a DOM node cannot take an effect; `feImage` is not supported, so a vignette cannot be a filter). `shadows`, `highlights`, `wheels` and `vibrance` are approximated.
 - **CSS.** `html` and `body` rules apply to two wrapper elements.
