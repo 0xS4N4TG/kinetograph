@@ -34,14 +34,14 @@ Each item says what doesn't work and what you see instead. For what does work, s
 - **Import maps and ES modules that import.** Not run. They are reported.
 - **Selectors that reach into an `<svg>` from outside it.** The engine styles an `<svg>` on its own, so the loader writes the matching rules onto the shapes as inline style once the scripts have run. A class added to a shape later, by a tween or a script, is not restyled.
 - **Timing.** `data-start` references stay inside one composition. Audio effects (`data-fx-chain`) and `fx.*` automation lanes are ignored. A `rate` lane on audio is played in quarter-second slices at constant rates.
-- **Colour grading.** `lut`, `hueCurves`, `secondaries`, `details` (vignette, grain) and `effects` are not drawn (the engine has `lut` and `grain` effects, but a DOM node cannot take an effect; `feImage` is not supported, so a vignette cannot be a filter). `shadows`, `highlights`, `wheels` and `vibrance` are approximated.
+- **Colour grading.** Every control of `data-color-grading` is drawn by the same shader maths as HyperFrames' own (see the compat page). Not drawn, and reported on every frame: the `effects` list (blur, pixelate, chroma bleed, tape damage, film artifacts, halftone, two-ink print, ascii, dither, bloom, mono screen, scanlines, chromatic aberration, CRT curvature, digital glitch, engraving, crosshatch, kuwahara). A `.cube` file that is missing or unreadable drops the `lut` and says so. The grain's noise comes from the same hash as HyperFrames' shader, so it matches on a GPU whose `sin` agrees with Chrome's (Metal does).
 - **CSS.** `html` and `body` rules apply to two wrapper elements.
 - **`white-space: nowrap` around inline-blocks.** In an absolutely positioned box without a width, inline-block children that do not fit wrap to a new line instead of staying on one (`mk-clone-wall-transition`). The layout is the engine's.
 - **Canvas 2D gradients** interpolate in premultiplied colour, as CSS gradients do. A canvas gradient from `rgba(0,0,0,0)` to an opaque colour, drawn by a browser in straight alpha, passes through dark shades; here it does not (`transitions-destruction`).
 - **WebGL instanced drawing** (`drawArraysInstanced`) is not supported (`code-slice-hero`); the failed seek is reported on every frame.
 - **`offset-path`** motion is not drawn.
 - **Variable-font advance widths.** Text in a variable font that sets `font-variation-settings` per element measures about 13% wider than in Chrome for `Recursive` (`weight-wave`), so a line fitted by `measureText` wraps.
-- **Slow load.** Scripts that read many computed styles run slowly because the engine restyles the whole island for every element asked about; `claude-exchange` takes about 20 s before frame 0.
+- **Slow load.** A page that reads thousands of computed styles used to restyle the whole island for every element asked about. The addon now keeps the island of the last readback and edits it when the tree changes, so `claude-exchange` takes about 1.7 s before frame 0 (it took 12.5 s before; 20 s on a debug build). A page that rewrites many styles between reads still restyles what changed each time.
 
 ### Canvas 2D
 

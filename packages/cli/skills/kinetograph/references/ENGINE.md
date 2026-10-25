@@ -911,3 +911,22 @@ through `paint_context` (`paint_atomic`) into `pos` before it looks at `inline_l
 without a context is painted only from the lines. Reproduce: a `div` with text `ab` and a `span` with
 `display: inline-block; transform: scale(0.5)` gives `["$0.0.text","$0.0.1","$0.0.1~2"]`. The end card of the launch film
 (`kinetograph.` with a scaled full stop, frames 1386-1520) has it.
+
+## 13. HyperFrames colour grade and readback caching
+
+**`colorGrade` effect.** A DOM element can carry a per-element colour pass. `data-kg-grade` (JSON, written by
+`core/src/hyperframes/grading.ts` from `data-color-grading`) makes the element a stacking-context group; the painter
+(`paint/grade.rs`) pushes `{"type": "colorGrade", ..., "box": <content box>}` first on the group's effects.
+`crates/core/src/grade.rs` normalises it and builds the 1024 x 3 RGBA8 table of curves, hue curves and secondaries the way
+HyperFrames does (8-bit rounding included); `shaders/color_grade.wgsl` is HyperFrames' fragment shader in one pass: primary grade, wheels, RGB
+curves, hue curves, secondaries, `.cube` LUT (3D texture, shared with the `lut` effect's upload), the mix by `intensity`, grain, vignette. The
+vignette and grain are laid out on `box` in layer space, with HyperFrames' bottom-up `gl_FragCoord`. The grain seed is
+`hash(element id | src | tag:index) + floor(time * 60)`, computed in TS, so a frame does not depend on the frames before it. A
+layer with this effect leaves Skia's path (`own_gaps`) for the wgpu compositor. A LUT path is resolved by the painter against the project
+(unreadable files drop the `lut` and report). Measured against HyperFrames' Chrome stills (`hf-grade` chart, 3 frames): basic 0.027, tonal 0.028, curves 0.022, hue curves
+0.029, secondaries 0.019, LUT 0.114, vignette + grain 0.024 mean levels, 0 % of pixels more than 16 off. The `effects` list is not drawn.
+
+**Readback caching.** `domComputedStyle` and `domLayoutBoxes` (`crates/node/src/dom.rs`, `with_readback_island`) keep the island of
+the last call per island thread: the same request text is answered from the kept document (no parse, no restyle); a changed
+one is edited to the new tree through `IslandCache` (`changes`/`apply`), as motion-blur samples are. `claude-exchange` frame 0:
+12.5 s before, 1.7 s after (release build), same pixels.
