@@ -74,6 +74,9 @@ pub struct GlslContent {
     pub textures: BTreeMap<String, GlslTexture>,
     #[serde(default)]
     pub ops: Vec<GlslOp>,
+    /// What a WebGPU context drew (`crate::webgpu`); the fields above are empty then.
+    #[serde(default)]
+    pub webgpu: Option<crate::webgpu::WebGpuContent>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

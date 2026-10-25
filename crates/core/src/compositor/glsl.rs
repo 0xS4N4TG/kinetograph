@@ -26,6 +26,8 @@ use base64::Engine as _;
 use kurbo::Point;
 
 use super::*;
+mod webgpu;
+
 use crate::glsl::{
     self as gl, GlslAttribute, GlslBlend, GlslContent, GlslDraw, GlslMode, GlslOp, GlslSampler,
     GlslTexture, GlslType, Stage, Translated,
@@ -83,6 +85,8 @@ pub(super) struct GlslGpu {
     inputs: Vec<Option<Target>>,
     /// What a texture that is not complete samples as: opaque black.
     black: Option<Arc<Uploaded>>,
+    /// The modules, layouts and pipelines of WebGPU layers.
+    webgpu: webgpu::WebGpuCache,
 }
 
 /// What a group's child is called among the pictures a pass samples: the way the texture reads it is part of the name.
@@ -159,7 +163,11 @@ impl Compositor {
                 n += 1;
             }
         }
-        self.glsl_draw(content, size, base_dir, &inputs)?;
+        if let Some(webgpu) = &content.webgpu {
+            self.webgpu_draw(content, webgpu, size);
+        } else {
+            self.glsl_draw(content, size, base_dir, &inputs)?;
+        }
         let rt = self.glsl.target.as_ref().expect("made by glsl_draw");
         let view = rt.view.clone();
         Ok(self.glsl_place(&view, (width, height), matrix, content))
@@ -275,15 +283,8 @@ impl Compositor {
         target.view.clone()
     }
 
-    /// Records the draws into the drawing buffer. `inputs` are the views of
-    /// a group's children, by id.
-    fn glsl_draw(
-        &mut self,
-        content: &GlslContent,
-        size: (u32, u32),
-        base_dir: &Path,
-        inputs: &HashMap<String, wgpu::TextureView>,
-    ) -> Result<()> {
+    /// The drawing buffer, made when there is none of `size`.
+    fn drawing_buffer(&mut self, size: (u32, u32)) {
         if self.glsl.target.as_ref().is_none_or(|t| t.size != size) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("glsl drawing buffer"),
@@ -306,6 +307,18 @@ impl Compositor {
                 _texture: texture,
             });
         }
+    }
+
+    /// Records the draws into the drawing buffer. `inputs` are the views of
+    /// a group's children, by id.
+    fn glsl_draw(
+        &mut self,
+        content: &GlslContent,
+        size: (u32, u32),
+        base_dir: &Path,
+        inputs: &HashMap<String, wgpu::TextureView>,
+    ) -> Result<()> {
+        self.drawing_buffer(size);
 
         // Everything drawn to the drawing buffer before its last clear is gone
         // with it. A target's draws stay: later draws may sample them.
