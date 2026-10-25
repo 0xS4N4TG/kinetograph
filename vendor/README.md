@@ -40,8 +40,9 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/layout/table.rs`: `auto_columns` implements the automatic table layout algorithm; captions are laid out as blocks above or below the grid.
 - `src/layout/table.rs`, `src/layout/mod.rs`: a cell's `height` is its border box's and a minimum for its row. Not done: percentage widths on `<col>`.
 - `src/mutator.rs`: a `style` change no longer adds `restyle_subtree()` on the element and its parent.
+- `src/layout/inline.rs`: an inline box measured in `ComputeSize` mode that comes back without baselines is laid out in `PerformLayout` mode to get them, because taffy's size-only cache hit keeps no baselines.
 
-Drop when Blitz answers container queries and restyles a `style` change on its own element.
+Drop when Blitz answers container queries and restyles a `style` change on its own element, and when taffy's measure cache keeps baselines.
 
 ## rive (rive-rs and the C++ it builds)
 

@@ -835,6 +835,19 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   are rendered for the samples (JS 40 ms, `start_frame` 20 ms). Samples of an island often differ only in a transform;
   `request::delta` (comparing every layer with the first sample's) is about as costly as the island's resolve there.
 
+**A third edit-path bug: baselines lost to taffy's cache** (fixed). Launch film frames 180 and 181 drew the caption word
+`screenshotting` differently when frame 179 had been drawn just before (a document edited) than when the render started
+at 180 (a document built). Only the SVG doodle beside the word changed between frames (a `stroke-dashoffset` on a path);
+the word's own box did not. The edit restyles the `<svg>` and clears the layout caches of its ancestors, but the cache
+of the sibling inline-block that holds the text stays. Taffy's size-only cache (`ComputeSize` entries) keeps a box's
+size and drops its baselines, so when the parent's inline layout measured that sibling again it got a hit with no
+baseline, put the box on the line as if it had none, and the line, the flex row round it (`align-items: baseline`) and
+everything under it came out 5 px taller (the box sat on the baseline by its bottom edge, and the line's own descent
+came below it). A fresh document has empty caches, so
+the first measure computes the baseline and nothing is wrong. Fix: `layout/inline.rs` in the vendored `blitz-dom`
+(`vendor/README.md`): an inline box measured with no baselines is laid out in `PerformLayout` mode, which the cache
+keeps whole. Test: `an_edited_svg_beside_text_leaves_the_line_as_fresh` (`crates/dom/tests/samples.rs`).
+
 **An element painted twice** (not fixed): an inline-block with a stacking context (a `transform`, say) in a line of text
 is painted twice, as `$0.0.1` and `$0.0.1~2`, identical layers, so its antialiased edge is drawn at double alpha and it
 costs double. Cause: `Painter::walk` (`paint/mod.rs`, the children loop) paints a child with `is_sc` (or `positioned`)
