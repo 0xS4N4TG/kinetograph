@@ -16,6 +16,7 @@ Publishing Kinetograph: npm packages, the native CI matrix (native.yml), publish
 ## Open threads
 - [ ] Update docs/changelog-0.2 with #8 + #9 entries, drop text-stroke from unsupported lists, PR + merge
 - [ ] Merge remaining 0.2.0 work: studio-agentic (+timeline), hyperframes-html (+more), lib-compat, plugins, svg-cascade, webgpu (each verified: tests, launch film framemd5, determinism)
+- [ ] Clean benchmark AFTER all compat work is merged (user, 2026-10-25), before 0.2.0: idle machine (no agents/cargo; scratchpad/final/bench.sh acquire), Haiku runner; launch film + showcase + site renders.json set, Kinetograph vs Remotion 4.0.531 same M4, 2+ runs each; refresh renders.json render_median + README/site speed claims (current public claim ~5x, papercut ~6x; old launch baseline 1521 f 183.6 s in scratchpad/final/baseline.txt)
 - [ ] Bump to 0.2.0, push, native.yml green, publish.yml dry run, real publish (user authorized a release earlier; confirm 0.2.0 before publishing)
 - [ ] npm trusted publishing + delete NPM_TOKEN; GitHub release notes from CHANGELOG
 - [ ] Reddit/X: reply drafted for "does it build an editable After Effects file" (no; AE .jsx export idea parked)
