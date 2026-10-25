@@ -118,6 +118,63 @@ const wave = createEffect<{ amount: number }, WaveState>({
   },
 });
 
+// A WebGPU effect: the picture is copied into a texture and a pipeline of its own samples it with a vertical wave. The
+// device and the canvas are recording ones, so the pass is replayed on the engine's device with this WGSL.
+const WAVE_WGSL = `
+struct Params { amount: f32 }
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var smp: sampler;
+@group(0) @binding(2) var<uniform> params: Params;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  var p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+  return vec4f(p[i], 0, 1);
+}
+@fragment fn fs(@builtin(position) at: vec4f) -> @location(0) vec4f {
+  var uv = at.xy / vec2f(textureDimensions(src));
+  uv.x += sin(uv.y * 12.0) * 0.03 * params.amount;
+  return textureSample(src, smp, uv);
+}`;
+
+const waveGpu = createEffect<{ amount: number }, object>({
+  type: 'example/wave-gpu',
+  label: 'WaveGpu',
+  documentationLink: null,
+  backend: 'webgpu',
+  calculateKey: (p) => `wave-gpu-${p.amount}`,
+  setup: () => ({}),
+  apply: ({ source, target, params, gpuDevice, width, height }) => {
+    const device = gpuDevice as GPUDevice;
+    const context = target.getContext('webgpu') as GPUCanvasContext;
+    context.configure({ device, format: 'rgba8unorm', alphaMode: 'premultiplied' });
+    const texture = device.createTexture({ size: [width, height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+    device.queue.copyExternalImageToTexture({ source: source as unknown as ImageBitmap }, { texture }, [width, height]);
+    const uniforms = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(uniforms, 0, new Float32Array([params.amount, 0, 0, 0]));
+    const module = device.createShaderModule({ code: WAVE_WGSL });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module }, fragment: { module, targets: [{ format: 'rgba8unorm' }] } });
+    const group = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: texture.createView() },
+        { binding: 1, resource: device.createSampler({ magFilter: 'linear', minFilter: 'linear' }) },
+        { binding: 2, resource: { buffer: uniforms } },
+      ],
+    });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+  },
+  cleanup: () => undefined,
+  schema: {},
+  validateParams: (p) => {
+    if (typeof p.amount !== 'number') throw new Error('amount is required');
+  },
+});
+
 const W = 320;
 const H = 180;
 const Backdrop: React.FC<{ children: React.ReactNode }> = ({ children }) => <AbsoluteFill style={{ background: '#20242c' }}>{children}</AbsoluteFill>;
@@ -148,6 +205,17 @@ const ChainDemo: React.FC = () => (
   <Backdrop>
     <div style={{ position: 'absolute', left: 10, top: 10 }}>
       <CanvasImage src={staticFile('checker.png')} width={192} height={144} effects={[wave({ amount: 1 }), tint({ color: '#ff3366' }), filter({ filter: 'invert(1)' })]} />
+    </div>
+  </Backdrop>
+);
+
+const GpuDemo: React.FC = () => (
+  <Backdrop>
+    <div style={{ position: 'absolute', left: 10, top: 10 }}>
+      <CanvasImage src={staticFile('checker.png')} width={192} height={144} effects={[waveGpu({ amount: 1 })]} />
+    </div>
+    <div style={{ position: 'absolute', left: 220, top: 10 }}>
+      <CanvasImage src={staticFile('checker.png')} width={64} height={64} />
     </div>
   </Backdrop>
 );
@@ -196,6 +264,7 @@ registerRoot(() => (
     <Composition id="fx-image" component={ImageDemo} width={W} height={H} fps={30} durationInFrames={30} />
     <Composition id="fx-chain" component={ChainDemo} width={W} height={H} fps={30} durationInFrames={30} />
     <Composition id="fx-size" component={SizeDemo} width={W} height={H} fps={30} durationInFrames={30} />
+    <Composition id="fx-webgpu" component={GpuDemo} width={W} height={H} fps={30} durationInFrames={30} />
     <Composition id="fx-html" component={HtmlDemo} width={W} height={H} fps={30} durationInFrames={30} />
   </>
 ));

@@ -8,9 +8,9 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, type CanvasPicture } from '@kinetographdev/scene';
+import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveProjectFile } from '../environment.js';
-import { OffscreenCanvasShim } from './canvas.js';
+import { OffscreenCanvasShim, rasterizeCanvas } from './canvas.js';
 import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, setPageViewport } from './host.js';
 import { collectionOf, HTMLCollection, NodeList, nodeListOf } from './lists.js';
@@ -288,6 +288,43 @@ class DOMExceptionLike extends Error {
   override name = 'EncodingError';
 }
 
+// ---- ImageBitmap ----
+
+/** What `createImageBitmap` makes: a picture fixed at the time of the call, which `drawImage` and `copyExternalImageToTexture` read. */
+class ImageBitmapShim {
+  readonly width: number;
+  readonly height: number;
+  private closed = false;
+  constructor(private readonly picture: CanvasPicture) {
+    this.width = picture.width;
+    this.height = picture.height;
+  }
+  close(): void {
+    this.closed = true;
+  }
+  [CANVAS_SOURCE](): CanvasPicture | null {
+    return this.closed ? null : this.picture;
+  }
+}
+
+/** `createImageBitmap(source)` for an image, a canvas, `ImageData`, another bitmap or a `Blob` that holds an image file. */
+async function createImageBitmapShim(source: unknown, ...rest: unknown[]): Promise<ImageBitmapShim> {
+  if (typeof rest[0] === 'number') throw new DOMExceptionLike('createImageBitmap with a crop rectangle is not available: crop with the rectangle of drawImage or copyExternalImageToTexture');
+  const options = (rest.length === 1 ? rest[0] : undefined) as { imageOrientation?: string; resizeWidth?: number; resizeHeight?: number } | undefined;
+  if (options?.imageOrientation === 'flipY') throw new DOMExceptionLike("createImageBitmap with imageOrientation 'flipY' is not available: copyExternalImageToTexture takes flipY");
+  if (options?.resizeWidth !== undefined || options?.resizeHeight !== undefined) throw new DOMExceptionLike('createImageBitmap with resizeWidth or resizeHeight is not available');
+  let picture: CanvasPicture | null;
+  if (typeof Blob !== 'undefined' && source instanceof Blob) {
+    const bytes = Buffer.from(await source.arrayBuffer());
+    picture = imagePicture(`data:${source.type || 'image/png'};base64,${bytes.toString('base64')}`);
+    if (picture === null) throw new DOMExceptionLike('The source image could not be decoded.');
+  } else {
+    picture = pictureOf(source);
+    if (picture === null) throw new TypeError('createImageBitmap: the source is not an image, a canvas, ImageData, an ImageBitmap or a Blob of an image file');
+  }
+  return new ImageBitmapShim(picture);
+}
+
 // ---- fetch ----
 
 const REAL_FETCH = Symbol.for('kinetograph.realFetch');
@@ -497,11 +534,13 @@ export function installDomGlobals(): void {
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
   for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
-  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu(), configurable: true, enumerable: false });
+  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
   define(g, 'Path2D', Path2D);
   define(g, 'ImageData', ImageData);
+  define(g, 'ImageBitmap', ImageBitmapShim);
+  define(g, 'createImageBitmap', createImageBitmapShim);
   define(g, 'Element', DomElement);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);
