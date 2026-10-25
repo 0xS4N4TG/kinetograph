@@ -224,6 +224,9 @@ pub struct GlslAttribute {
     pub stride: u32,
     #[serde(default)]
     pub offset: u32,
+    /// `vertexAttribDivisor`: 0 advances for each vertex, 1 for each instance.
+    #[serde(default)]
+    pub divisor: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -313,6 +316,9 @@ pub struct GlslDraw {
     pub mode: GlslMode,
     pub first: u32,
     pub count: u32,
+    /// `drawArraysInstanced` and `drawElementsInstanced`: how many instances.
+    #[serde(default = "one")]
+    pub instances: u32,
     /// `drawElements`: the vertices come from these indices.
     pub indices: Option<GlslIndices>,
     /// By the vertex shader's attribute names.
@@ -335,6 +341,10 @@ pub struct GlslDraw {
     /// The target texture the draw renders to; the drawing buffer without
     /// one.
     pub target: Option<String>,
+}
+
+fn one() -> u32 {
+    1
 }
 
 fn all_true() -> [bool; 4] {
@@ -936,6 +946,8 @@ fn rename(word: &str, prev: Option<&str>, samplers: &[String], mode: Mode) -> Op
         // A point is an instance of six vertices: its index is the instance's.
         "gl_VertexID" if !fragment && points => "int(gl_InstanceIndex)".into(),
         "gl_VertexID" if !fragment => "int(gl_VertexIndex)".into(),
+        "gl_InstanceID" if !fragment && points => "0".into(),
+        "gl_InstanceID" if !fragment => "int(gl_InstanceIndex)".into(),
         "gl_PointCoord" if fragment => "_k_PointCoord".into(),
         w if samplers.iter().any(|s| s == w) => format!("sampler2D(_k_t_{w}, _k_s_{w})"),
         _ => return None,

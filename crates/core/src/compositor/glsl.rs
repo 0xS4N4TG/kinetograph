@@ -572,7 +572,13 @@ impl Compositor {
         let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size, flip)?;
         let (vw, vh) = (viewport[2], viewport[3]);
         check_vertex_range(draw.first, draw.count)?;
-        if vw == 0.0 || vh == 0.0 || scissor[2] == 0 || scissor[3] == 0 || draw.count == 0 {
+        if vw == 0.0
+            || vh == 0.0
+            || scissor[2] == 0
+            || scissor[3] == 0
+            || draw.count == 0
+            || draw.instances == 0
+        {
             return Ok(None);
         }
 
@@ -605,6 +611,16 @@ impl Compositor {
                      WebGL, and only attributes with a buffer are drawn"
                 ))
             })?;
+            if a.divisor > 1 {
+                return Err(render_error(format!(
+                    "unsupported: vertexAttribDivisor({}) of the attribute `{name}`; 0 and 1 are \
+                     drawn",
+                    a.divisor
+                )));
+            }
+            // An attribute with a divisor advances for each instance; a
+            // point's attributes all do, as it is an instance itself.
+            let per_instance = a.divisor == 1 && !points;
             let (format, element) = vertex_format(a, name, *components)?;
             let stride = if a.stride == 0 {
                 element
@@ -624,7 +640,12 @@ impl Compositor {
                 )));
             }
             let bytes = glsl_buffer(content, &a.buffer, buffers)?.len() as u64;
-            let needs = u64::from(a.offset) + (last - 1) * stride + element;
+            let reads = if per_instance {
+                u64::from(draw.instances)
+            } else {
+                last
+            };
+            let needs = u64::from(a.offset) + (reads - 1) * stride + element;
             if needs > bytes {
                 return Err(render_error(format!(
                     "the draw reads {needs} bytes of the attribute `{name}`'s buffer, which holds {bytes} \
@@ -640,6 +661,11 @@ impl Compositor {
                 (offset, 0)
             } else {
                 (0, offset)
+            };
+            let step = if per_instance {
+                wgpu::VertexStepMode::Instance
+            } else {
+                step
             };
             layouts.push((*location, format, stride, in_vertex, step));
             sources.push((&a.buffer, bound_at, stride));
@@ -880,7 +906,11 @@ impl Compositor {
             } else {
                 (draw.first, draw.first + draw.count)
             },
-            instances: if points { instances } else { (0, 1) },
+            instances: if points {
+                instances
+            } else {
+                (0, draw.instances)
+            },
         }))
     }
 

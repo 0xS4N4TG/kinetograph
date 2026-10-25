@@ -844,3 +844,36 @@ fn an_upload_honours_flip_y_and_premultiply_and_keeps_its_place_among_draws() {
     // The draw covers what is right of x = 2, over the uploads' black.
     assert_eq!(px(&frame, 5, 15), [255, 255, 0, 255]);
 }
+
+// ---- instancing ----
+
+#[test]
+fn instanced_draws_advance_attributes_with_a_divisor_per_instance_and_count_gl_instance_id() {
+    let vertex = "#version 300 es\nin vec2 a_pos; in vec2 a_off; out float v_i; \
+        void main() { v_i = float(gl_InstanceID); \
+        gl_Position = vec4(a_pos * 0.25 + a_off, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision mediump float; in float v_i; out vec4 o; \
+        void main() { o = vec4(1.0 - v_i, v_i, 0.0, 1.0); }";
+    let offsets = points_buffer(&[[-0.5, -0.5], [0.5, 0.5]]);
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "instances": 2,
+            "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
+        quad_attributes().replacen(
+            "}}",
+            r#"}, "a_off": {"buffer": "off", "size": 2, "type": "f32", "divisor": 1}}"#,
+            1
+        )
+    );
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "off": "{offsets}""#),
+        "",
+        &draw,
+    ));
+    // Instance 0 at the lower left (2 pixels each way from (4, 4) up), instance 1 at the upper right.
+    assert_eq!(px(&frame, 4, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 4), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 4, 4)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 12, 12)[..3], [0, 0, 0]);
+}

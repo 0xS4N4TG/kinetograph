@@ -113,6 +113,21 @@ describe('the recording WebGL context', () => {
     expect(gl.getError()).toBe(GL.INVALID_OPERATION);
   });
 
+  it('records instanced draws with the attributes that advance per instance', () => {
+    const { gl, program } = setup();
+    const at = gl.getAttribLocation(program, gl.getActiveAttrib(program, 0)!.name);
+    gl.vertexAttribDivisor(at, 1);
+    gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 5);
+    gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 0);
+    gl.vertexAttribDivisor(at, 2);
+    expect(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 2)).toThrow(/vertexAttribDivisor\(2/);
+    const ops = gl.content().ops;
+    expect(ops).toHaveLength(1);
+    const draw = ops[0] as { instances?: number; attributes: Record<string, { divisor?: number }> };
+    expect(draw.instances).toBe(5);
+    expect(Object.values(draw.attributes)[0]!.divisor).toBe(1);
+  });
+
   it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {
     const { gl } = setup({ attributes: { preserveDrawingBuffer: true } });
     gl.drawArrays(GL.TRIANGLES, 0, 3);
@@ -195,7 +210,7 @@ describe('the recording WebGL context', () => {
     expect(refused(() => gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/^unsupported:.*renderbuffers/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(GL.TEXTURE_CUBE_MAP, gl.createTexture()))).toMatch(/cube/);
-    expect(refused(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 4))).toMatch(/instanced/);
+    expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
   });
 
   describe('framebuffers', () => {

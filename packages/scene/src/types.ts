@@ -695,6 +695,8 @@ export interface GlslAttribute {
   normalized?: boolean;
   stride?: number;
   offset?: number;
+  /** `vertexAttribDivisor`: 1 advances for each instance (default 0, for each vertex). */
+  divisor?: number;
 }
 
 export interface GlslUniform {
@@ -728,6 +730,8 @@ export interface GlslDraw {
   mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan';
   first: number;
   count: number;
+  /** `drawArraysInstanced` and `drawElementsInstanced`: how many instances (default 1). */
+  instances?: number;
   indices?: { buffer: string; type: 'u8' | 'u16' | 'u32'; offset: number };
   attributes: Record<string, GlslAttribute>;
   uniforms: Record<string, GlslUniform[]>;

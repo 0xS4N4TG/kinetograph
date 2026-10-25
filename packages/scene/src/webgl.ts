@@ -1733,12 +1733,14 @@ export class WebGLContext {
     if (buffers.length !== 1 || (buffers[0] !== GL.BACK && buffers[0] !== GL.COLOR_ATTACHMENT0)) throw new WebGLUnsupportedError('several colour outputs');
   }
   drawArraysInstanced(mode: number, first: number, count: number, instances: number): void {
-    if (instances !== 1) throw new WebGLUnsupportedError('instanced drawing');
-    this.drawArrays(mode, first, count);
+    if (!(first >= 0 && count >= 0 && instances >= 0)) return this.fail(GL.INVALID_VALUE);
+    this.draw(mode, first, count, null, instances);
   }
   drawElementsInstanced(mode: number, count: number, type: number, offset: number, instances: number): void {
-    if (instances !== 1) throw new WebGLUnsupportedError('instanced drawing');
-    this.drawElements(mode, count, type, offset);
+    if (!(count >= 0 && offset >= 0 && instances >= 0)) return this.fail(GL.INVALID_VALUE);
+    const ty = this.indexType(type);
+    if (ty === null) return this.fail(GL.INVALID_ENUM);
+    this.draw(mode, 0, count, { type: ty, offset }, instances);
   }
 
   // ---- drawing ----
@@ -1749,12 +1751,15 @@ export class WebGLContext {
   }
   drawElements(mode: number, count: number, type: number, offset: number): void {
     if (!(count >= 0 && offset >= 0)) return this.fail(GL.INVALID_VALUE);
-    const ty = type === GL.UNSIGNED_BYTE ? 'u8' : type === GL.UNSIGNED_SHORT ? 'u16' : type === GL.UNSIGNED_INT && (this.version === 2 || true) ? 'u32' : null;
+    const ty = this.indexType(type);
     if (ty === null) return this.fail(GL.INVALID_ENUM);
     this.draw(mode, 0, count, { type: ty, offset });
   }
+  private indexType(type: number): 'u8' | 'u16' | 'u32' | null {
+    return type === GL.UNSIGNED_BYTE ? 'u8' : type === GL.UNSIGNED_SHORT ? 'u16' : type === GL.UNSIGNED_INT ? 'u32' : null;
+  }
 
-  private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null): void {
+  private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null, instances = 1): void {
     const modes: Record<number, GlslDraw['mode']> = { [GL.POINTS]: 'points', [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan' };
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.fail(GL.INVALID_ENUM);
     const program = this.program;
@@ -1764,6 +1769,8 @@ export class WebGLContext {
     if (this.caps.depth) throw new WebGLUnsupportedError('drawing with the depth test on (disable(gl.DEPTH_TEST); a flat quad does not need it)');
     if (this.caps.stencil) throw new WebGLUnsupportedError('drawing with the stencil test on');
     if (this.framebufferIncomplete()) return;
+    if (instances === 0) return;
+    if (named === 'points' && instances !== 1) throw new WebGLUnsupportedError('instanced points; draw the points with one drawArrays');
     this.begin();
 
     // The program, by what it is made of.
@@ -1779,6 +1786,7 @@ export class WebGLContext {
       mode: named,
       first,
       count,
+      ...(instances === 1 ? {} : { instances }),
       attributes: {},
       uniforms: {},
       units: {},
@@ -1792,10 +1800,11 @@ export class WebGLContext {
         if (a?.constant) throw new WebGLUnsupportedError(`the attribute "${d.name}" is read as a constant (vertexAttrib4f); give it a buffer`);
         continue;
       }
-      if (a.divisor !== 0) throw new WebGLUnsupportedError('instanced attributes (vertexAttribDivisor)');
+      if (a.divisor > 1) throw new WebGLUnsupportedError(`vertexAttribDivisor(${a.divisor}, ...) of the attribute "${d.name}"; use 0 or 1`);
+      if (a.divisor === 1 && named === 'points') throw new WebGLUnsupportedError('instanced attributes of points');
       const type = ({ [GL.FLOAT]: 'f32', [GL.UNSIGNED_BYTE]: 'u8', [GL.BYTE]: 'i8', [GL.UNSIGNED_SHORT]: 'u16', [GL.SHORT]: 'i16' } as Record<number, GlslDraw['attributes'][string]['type']>)[a.type];
       if (type === undefined) throw new WebGLUnsupportedError(`the attribute "${d.name}" has type 0x${a.type.toString(16)}; use FLOAT, or a normalised byte or short`);
-      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, stride: a.stride, offset: a.offset };
+      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, stride: a.stride, offset: a.offset, ...(a.divisor === 1 ? { divisor: 1 } : {}) };
     }
     if (indexed !== null) {
       const element = this.vao.element;
