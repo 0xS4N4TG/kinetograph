@@ -8,5 +8,8 @@ export type { TimelineState, VideoConfig } from './timeline.js';
 export { createSceneRoot } from './root.js';
 export { finishIslands } from './emit.js';
 export type { RenderedTree, SceneRoot } from './root.js';
+export type { LayerNames } from './emit.js';
+export { JSX_SOURCES_KEY } from './origin.js';
+export { layerLabel, sequenceLabel, snippet } from './labels.js';
 
 export * from './elements.js';

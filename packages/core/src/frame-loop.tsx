@@ -11,7 +11,7 @@
 
 import type { ReactNode } from 'react';
 import { resetCanvasStates } from '@kinetographdev/compat/shim';
-import { createSceneRoot, finishIslands, TimelineContext, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
+import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
   attachMotionChanges,
   collectMotionLayers,
@@ -42,6 +42,8 @@ export interface FrameResult {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the frame's tree, showing or not (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
+  /** Layer id to name and source; studio builds only. */
+  names?: LayerNames;
   /** Empty when the engine draws everything in the frame; otherwise what it leaves out or approximates (kinetograph site, /docs/compat/). */
   unsupported: Unsupported[];
 }
@@ -227,7 +229,7 @@ class Renderer implements FrameRenderer {
     // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
-    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, unsupported: [...main.unsupported, ...reported] };
+    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported] };
   }
 
   /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */

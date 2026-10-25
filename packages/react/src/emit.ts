@@ -16,6 +16,8 @@ import {
 } from '@kinetographdev/compat/dom';
 import { canvasEnvironment, headHost, propsWithOverlay, withCanvasCommands } from '@kinetographdev/compat/shim';
 import { gatherShaderInputs } from './shader-groups.js';
+import { layerLabel, sequenceLabel } from './labels.js';
+import { studioBuild, type Origin } from './origin.js';
 import {
   createCanvasContext,
   glslShader,
@@ -23,6 +25,7 @@ import {
   unsupportedFilters,
   type AudioClipJson,
   type CameraJson,
+  type LayerName,
   type CharStyle,
   type Camera3DJson,
   type Light3DJson,
@@ -42,6 +45,8 @@ export interface HostElement {
   type: string;
   props: Record<string, any>;
   children: HostNode[];
+  /** Studio builds only: the component and JSX line it came from. */
+  origin?: Origin;
 }
 /** The text a string or number child becomes; only `<Text>` may hold one. */
 export interface HostText {
@@ -56,6 +61,8 @@ export interface RenderedTree {
   audio: AudioClipJson[];
   /** Every `<Sequence>` in the tree, showing or not, in tree order (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
+  /** Layer id to name and source; studio builds only. */
+  names?: LayerNames;
   /** What DOM elements in the tree ask for that compat mode cannot draw natively (kinetograph site, /docs/compat/). */
   unsupported: Unsupported[];
   /** The least scene `margin` the DOM islands need for their blurs (packages/cli/skills/kinetograph/references/ENGINE.md §2); absent when none does. */
@@ -238,6 +245,7 @@ export function domFillOf(element: HostElement, insideDom = false): HostElement 
     },
     // The layer mapping's own background rectangle is the style's `backgroundColor` here.
     children: fill.background ? element.children.slice(1) : element.children,
+    ...(element.origin !== undefined ? { origin: element.origin } : {}),
   };
 }
 
@@ -259,7 +267,7 @@ function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next
       out.push(child);
     } else if (child.type === 'kg-sequence') {
       const { sequence, wrapped } = child.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
-      const record: SequenceJson = { ...sequence, layer: null };
+      const record: SequenceJson = { ...sequence, layer: null, ...sequenceNames(sequence.name, child.origin) };
       sequences?.push(record);
       const first = place.next;
       const inner = flattenDomChildren(child.children, parentPath, place, sequences);
@@ -275,6 +283,97 @@ function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next
       out.push(isDomElement(node.type) ? flattenDomElement(node, path, sequences) : node);
     }
   }
+  return out;
+}
+
+/** `label`, `component` and `source` of a Sequence's record: studio builds only (otherwise `origin` is absent and so is all of it). */
+function sequenceNames(name: string | null, origin: Origin | undefined): Pick<SequenceJson, 'label' | 'component' | 'source'> {
+  if (origin === undefined) return {};
+  return {
+    label: sequenceLabel(name, origin.child),
+    ...(origin.component !== undefined ? { component: origin.component } : {}),
+    ...(origin.source !== undefined ? { source: origin.source } : {}),
+  };
+}
+
+/** The tags whose text is part of the text of the element around them. */
+const INLINE = new Set(['span', 'b', 'i', 'em', 'strong', 'a', 'br', 'small', 'code', 'sup', 'sub', 'mark', 'u', 's']);
+
+/** The text of an element that holds only text and inline elements; undefined when it holds anything else. */
+function plainText(element: HostElement): string | undefined {
+  let out = '';
+  for (const child of element.children) {
+    if (child.kind === 'text') {
+      out += child.text;
+    } else if (INLINE.has(child.type)) {
+      const inner = plainText(child);
+      if (inner === undefined) return undefined;
+      out += inner;
+    } else {
+      return undefined;
+    }
+  }
+  return out;
+}
+
+/** Layer id → name for a host tree. */
+export type LayerNames = Record<string, LayerName>;
+
+/**
+ * The names the studio shows for the layers `roots` emit (studio builds only: it needs the origins the reconciler
+ * recorded). Layers get their ids by the index path, `<Sequence>` transparent; each is under its path id and, when it
+ * has one, its explicit id.
+ */
+export function collectNames(roots: HostNode[]): LayerNames {
+  const out: LayerNames = {};
+  const walk = (
+    nodes: HostNode[],
+    parentPath: string,
+    place: { next: number },
+    insideDom: boolean,
+    parentComponent: string | undefined,
+    group: { name: string | undefined },
+  ): void => {
+    for (const node of nodes) {
+      if (node.kind === 'text') continue;
+      if (node.type === 'kg-sequence') {
+        const { sequence, wrapped } = node.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
+        const name = wrapped ? sequenceNames(sequence.name, node.origin).label : undefined;
+        walk(node.children, parentPath, place, insideDom, parentComponent, { name });
+        continue;
+      }
+      const path = `${parentPath}${parentPath === '' ? '$' : '.'}${place.next++}`;
+      const dom = isDomElement(node.type) ? node : domFillOf(node, insideDom);
+      const effective = dom ?? node;
+      const explicit = typeof effective.props.id === 'string' && effective.props.id !== '' && !effective.props.id.startsWith('$') ? effective.props.id : undefined;
+      const component = node.origin?.component;
+      let text: string | undefined;
+      if (node.type === 'kg-text') text = node.children.map((c) => (c.kind === 'text' ? c.text : '')).join('');
+      else if (dom !== null && node.type !== 'kg-layer') text = plainText(effective);
+      const src = typeof effective.props.src === 'string' ? effective.props.src : undefined;
+      const label = layerLabel({
+        type: node.type,
+        ...(group.name !== undefined ? { sequenceName: group.name } : {}),
+        ...(explicit !== undefined ? { id: explicit } : {}),
+        ...(typeof effective.props.className === 'string' ? { className: effective.props.className } : {}),
+        ...(text !== undefined ? { text } : {}),
+        ...(src !== undefined ? { src } : {}),
+        // The first element a component draws is the component; the rest of what it draws is told apart by tag.
+        ...(component !== undefined && component !== parentComponent ? { component } : {}),
+        ...(component !== undefined ? { owner: component } : {}),
+      });
+      group.name = undefined;
+      const name: LayerName = {
+        label,
+        ...(component !== undefined ? { component } : {}),
+        ...(node.origin?.source !== undefined ? { source: node.origin.source } : {}),
+      };
+      out[path] = name;
+      if (explicit !== undefined) out[explicit] = name;
+      walk(effective.children, path, { next: 0 }, insideDom || dom !== null, component ?? parentComponent, { name: undefined });
+    }
+  };
+  walk(roots, '', { next: 0 }, false, undefined, { name: undefined });
   return out;
 }
 
@@ -392,7 +491,7 @@ class Emitter {
       }
       if (node.type === 'kg-sequence') {
         const { sequence, wrapped } = node.props as { sequence: Omit<SequenceJson, 'layer'>; wrapped: boolean };
-        const record: SequenceJson = { ...sequence, layer: null };
+        const record: SequenceJson = { ...sequence, layer: null, ...sequenceNames(sequence.name, node.origin) };
         this.sequences.push(record);
         const before = out.length;
         this.collect(node.children, parentPath, parentName, out, place);
@@ -735,6 +834,7 @@ export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
     camera: emitter.cameras[0] ?? null,
     audio: emitter.audio,
     sequences: emitter.sequences,
+    ...(studioBuild() ? { names: collectNames(roots) } : {}),
     unsupported: emitter.unsupported,
     ...(emitter.margin > 0 ? { margin: emitter.margin } : {}),
     ...(emitter.blendSpace !== null ? { blendSpace: emitter.blendSpace } : {}),
