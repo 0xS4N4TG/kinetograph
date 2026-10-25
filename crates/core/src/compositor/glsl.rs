@@ -27,7 +27,7 @@ use kurbo::Point;
 
 use super::*;
 use crate::glsl::{
-    self as gl, GlslAttribute, GlslBlend, GlslContent, GlslDraw, GlslMode, GlslOp, GlslSampler,
+    self as gl, GlslAttribute, GlslBlend, GlslBlit, GlslContent, GlslDraw, GlslMode, GlslOp, GlslSampler,
     GlslTexture, GlslType, Stage, Translated,
 };
 
@@ -61,6 +61,8 @@ struct Pass<'c> {
     target: Option<&'c str>,
     clear: Option<[f64; 4]>,
     draws: Vec<Prepared>,
+    /// A `texSubImage2D` instead of draws: x, y, width, height and the bytes.
+    upload: Option<([u32; 4], Vec<u8>)>,
 }
 
 struct Blit {
@@ -77,6 +79,8 @@ pub(super) struct GlslGpu {
     samplers: HashMap<String, wgpu::Sampler>,
     target: Option<Target>,
     blit: Option<Blit>,
+    /// The pass behind `blitFramebuffer`.
+    copy: Option<Blit>,
     /// The pass that turns a group's child into a texture, and the textures
     /// it writes, by the child's place among those a group samples.
     input: Option<Blit>,
@@ -308,11 +312,28 @@ impl Compositor {
         }
 
         // Everything drawn to the drawing buffer before its last clear is gone
-        // with it. A target's draws stay: later draws may sample them.
-        let last_clear = content
-            .ops
-            .iter()
-            .rposition(|op| matches!(op, GlslOp::Clear { target: None, .. }));
+        // with it, unless a blit reads the drawing buffer in between. A
+        // target's draws stay: later draws may sample them.
+        let mut dead = vec![false; content.ops.len()];
+        let mut cleared = false;
+        for (i, op) in content.ops.iter().enumerate().rev() {
+            match op {
+                GlslOp::Clear { target: None, .. } => {
+                    dead[i] = cleared;
+                    cleared = true;
+                }
+                GlslOp::Draw(d) if d.target.is_none() => dead[i] = cleared,
+                GlslOp::Blit(b) => {
+                    if b.target.is_none() {
+                        dead[i] = cleared;
+                    }
+                    if b.src.is_none() && !dead[i] {
+                        cleared = false;
+                    }
+                }
+                _ => {}
+            }
+        }
         // What a target holds before its first pass.
         let blank = |target: Option<&str>| match target {
             None if !content.alpha => [0.0, 0.0, 0.0, 1.0],
@@ -327,31 +348,46 @@ impl Compositor {
             let (target, clear) = match op {
                 GlslOp::Clear { color, target } => (target.as_deref(), Some(*color)),
                 GlslOp::Draw(d) => (d.target.as_deref(), None),
+                GlslOp::Blit(b) => (b.target.as_deref(), None),
+                GlslOp::Upload(u) => (Some(u.target.as_str()), None),
             };
-            if target.is_none() && last_clear.is_some_and(|c| i < c) {
+            if dead[i] {
                 continue;
             }
             if let Some(id) = target {
                 self.glsl_target(&mut targets, content, id)?;
             }
-            if clear.is_some() || passes.last().is_none_or(|p| p.target != target) {
+            let upload = match op {
+                GlslOp::Upload(u) => Some(Self::glsl_upload(u, self.glsl_target(&mut targets, content, &u.target)?.size)?),
+                _ => None,
+            };
+            if clear.is_some()
+                || upload.is_some()
+                || passes
+                    .last()
+                    .is_none_or(|p| p.target != target || p.upload.is_some())
+            {
                 let first = started.insert(target);
                 passes.push(Pass {
                     target,
                     clear: clear.or_else(|| first.then(|| blank(target))),
                     draws: Vec::new(),
+                    upload,
                 });
             }
-            if let GlslOp::Draw(draw) = op
-                && let Some(p) = self.glsl_prepare(
+            let prepared = match op {
+                GlslOp::Draw(draw) => self.glsl_prepare(
                     content,
                     draw,
                     size,
                     (base_dir, inputs),
                     &mut buffers,
                     &mut targets,
-                )?
-            {
+                )?,
+                GlslOp::Blit(blit) => self.glsl_copy(content, blit, size, &mut targets)?,
+                GlslOp::Clear { .. } | GlslOp::Upload(_) => None,
+            };
+            if let Some(p) = prepared {
                 passes.last_mut().expect("pushed above").draws.push(p);
             }
         }
@@ -361,11 +397,38 @@ impl Compositor {
                 target: None,
                 clear: Some(blank(None)),
                 draws: Vec::new(),
+                upload: None,
             });
         }
 
         let canvas = self.glsl.target.as_ref().expect("made above");
         for pass in &passes {
+            if let Some(([x, y, w, h], bytes)) = &pass.upload {
+                let id = pass.target.expect("an upload names its target");
+                // The passes before it run first: a queue write lands before whatever is
+                // submitted after it, so what is recorded is sent now.
+                self.submit();
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &targets[id]._texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d { x: *x, y: *y, z: 0 },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    bytes,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(w * 4),
+                        rows_per_image: Some(*h),
+                    },
+                    wgpu::Extent3d {
+                        width: *w,
+                        height: *h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                continue;
+            }
             let (view, name) = match pass.target {
                 None => (&canvas.view, "glsl"),
                 Some(id) => (&targets[id].view, "glsl target"),
@@ -403,9 +466,9 @@ impl Compositor {
                 match &p.indices {
                     Some((buffer, count)) => {
                         rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
-                        rpass.draw_indexed(0..*count, 0, 0..1);
+                        rpass.draw_indexed(0..*count, 0, p.instances.0..p.instances.1);
                     }
-                    None => rpass.draw(p.vertices.0..p.vertices.1, 0..1),
+                    None => rpass.draw(p.vertices.0..p.vertices.1, p.instances.0..p.instances.1),
                 }
             }
         }
@@ -464,7 +527,8 @@ impl Compositor {
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
             targets.insert(
@@ -501,21 +565,38 @@ impl Compositor {
             Some(id) => self.glsl_target(targets, content, id)?.size,
             None => size,
         };
-        let program = self.glsl_program(program_spec, flip)?;
+        let points = draw.mode == GlslMode::Points;
+        let program = self.glsl_program(program_spec, flip, points)?;
 
         // State.
         let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size, flip)?;
         let (vw, vh) = (viewport[2], viewport[3]);
         check_vertex_range(draw.first, draw.count)?;
-        if vw == 0.0 || vh == 0.0 || scissor[2] == 0 || scissor[3] == 0 || draw.count == 0 {
+        if vw == 0.0
+            || vh == 0.0
+            || scissor[2] == 0
+            || scissor[3] == 0
+            || draw.count == 0
+            || draw.instances == 0
+        {
             return Ok(None);
         }
 
         // Vertex data.
         let vertex = &program.translated.vertex;
-        // Location, format, stride and the attribute's offset in the vertex.
-        let mut layouts: Vec<(u32, wgpu::VertexFormat, u64, u64)> = Vec::new();
+        // Location, format, stride, the attribute's offset in the vertex and
+        // how often it advances: a point is an instance of six vertices, so
+        // its attributes advance for each instance.
+        let step = if points {
+            wgpu::VertexStepMode::Instance
+        } else {
+            wgpu::VertexStepMode::Vertex
+        };
+        let mut layouts: Vec<(u32, wgpu::VertexFormat, u64, u64, wgpu::VertexStepMode)> =
+            Vec::new();
         let mut sources: Vec<(&str, u64, u64)> = Vec::new();
+        // Buffer, stride, offset and element size of each, for gathering.
+        let mut shapes: Vec<(&str, u64, u64, u64)> = Vec::new();
         let last = match &draw.indices {
             Some(indices) => {
                 let max = self.glsl_max_index(content, indices, draw, buffers)?;
@@ -530,6 +611,16 @@ impl Compositor {
                      WebGL, and only attributes with a buffer are drawn"
                 ))
             })?;
+            if a.divisor > 1 {
+                return Err(render_error(format!(
+                    "unsupported: vertexAttribDivisor({}) of the attribute `{name}`; 0 and 1 are \
+                     drawn",
+                    a.divisor
+                )));
+            }
+            // An attribute with a divisor advances for each instance; a
+            // point's attributes all do, as it is an instance itself.
+            let per_instance = a.divisor == 1 && !points;
             let (format, element) = vertex_format(a, name, *components)?;
             let stride = if a.stride == 0 {
                 element
@@ -549,7 +640,12 @@ impl Compositor {
                 )));
             }
             let bytes = glsl_buffer(content, &a.buffer, buffers)?.len() as u64;
-            let needs = u64::from(a.offset) + (last - 1) * stride + element;
+            let reads = if per_instance {
+                u64::from(draw.instances)
+            } else {
+                last
+            };
+            let needs = u64::from(a.offset) + (reads - 1) * stride + element;
             if needs > bytes {
                 return Err(render_error(format!(
                     "the draw reads {needs} bytes of the attribute `{name}`'s buffer, which holds {bytes} \
@@ -566,8 +662,14 @@ impl Compositor {
             } else {
                 (0, offset)
             };
-            layouts.push((*location, format, stride, in_vertex));
+            let step = if per_instance {
+                wgpu::VertexStepMode::Instance
+            } else {
+                step
+            };
+            layouts.push((*location, format, stride, in_vertex, step));
             sources.push((&a.buffer, bound_at, stride));
+            shapes.push((&a.buffer, stride, offset, element));
         }
 
         // The index list, expanded to triangles when the mode needs it.
@@ -576,6 +678,25 @@ impl Compositor {
             let bytes = glsl_buffer(content, &indices.buffer, buffers)?;
             let list = read_indices(bytes, indices.ty, indices.offset, draw.count)?;
             index_list = Some(list);
+        }
+        // Points from an index list: each attribute is gathered in the order
+        // of the list, one element for each point.
+        let mut instances = (draw.first, draw.first + draw.count);
+        let mut gathered: Vec<Option<Vec<u8>>> = vec![None; sources.len()];
+        if points && let Some(list) = index_list.take() {
+            for (k, (buffer, stride, offset, element)) in shapes.iter().enumerate() {
+                let bytes = glsl_buffer(content, buffer, buffers)?;
+                let mut out = Vec::with_capacity(list.len() * *element as usize);
+                for index in &list {
+                    let at = (offset + u64::from(*index) * stride) as usize;
+                    out.extend_from_slice(&bytes[at..at + *element as usize]);
+                }
+                gathered[k] = Some(out);
+                layouts[k].2 = *element;
+                layouts[k].3 = 0;
+                sources[k].1 = 0;
+            }
+            instances = (0, list.len() as u32);
         }
         if draw.mode == GlslMode::TriangleFan {
             let list = index_list
@@ -588,15 +709,19 @@ impl Compositor {
             index_list = Some(fan);
         }
         let topology = match draw.mode {
-            GlslMode::Triangles | GlslMode::TriangleFan => wgpu::PrimitiveTopology::TriangleList,
+            GlslMode::Points | GlslMode::Triangles | GlslMode::TriangleFan => {
+                wgpu::PrimitiveTopology::TriangleList
+            }
             GlslMode::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
         };
 
         // Uniform blocks.
         let fbh = size.1 as f32;
-        let vs_bytes = gl::uniform_bytes(vertex, &draw.uniforms, fbh).map_err(render_error)?;
+        let vs_bytes =
+            gl::uniform_bytes(vertex, &draw.uniforms, fbh, (vw, vh)).map_err(render_error)?;
         let fragment = &program.translated.fragment;
-        let fs_bytes = gl::uniform_bytes(fragment, &draw.uniforms, fbh).map_err(render_error)?;
+        let fs_bytes =
+            gl::uniform_bytes(fragment, &draw.uniforms, fbh, (vw, vh)).map_err(render_error)?;
 
         // Pipeline.
         let key = format!(
@@ -723,7 +848,18 @@ impl Compositor {
 
         // Vertex buffers: the recorded bytes, bound at each attribute's offset.
         let mut vertex_buffers = Vec::new();
-        for (buffer, offset, _) in sources {
+        for ((buffer, offset, _), gathered) in sources.into_iter().zip(gathered) {
+            if let Some(bytes) = gathered {
+                let gpu = self
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("glsl gathered vertices"),
+                        contents: &bytes,
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                vertex_buffers.push((gpu, 0));
+                continue;
+            }
             let entry = buffers.get_mut(buffer).expect("read above");
             let gpu = entry.1.get_or_insert_with(|| {
                 self.device
@@ -764,7 +900,17 @@ impl Compositor {
             blend_constant,
             vertex_buffers,
             indices,
-            vertices: (draw.first, draw.first + draw.count),
+            // A point is a quad of six vertices.
+            vertices: if points {
+                (0, 6)
+            } else {
+                (draw.first, draw.first + draw.count)
+            },
+            instances: if points {
+                instances
+            } else {
+                (0, draw.instances)
+            },
         }))
     }
 
@@ -783,15 +929,20 @@ impl Compositor {
     }
 
     /// The program, translated and compiled the first time it is drawn.
-    fn glsl_program(&mut self, spec: &gl::GlslProgram, flip_y: bool) -> Result<Arc<Program>> {
+    fn glsl_program(
+        &mut self,
+        spec: &gl::GlslProgram,
+        flip_y: bool,
+        points: bool,
+    ) -> Result<Arc<Program>> {
         let key = format!(
-            "{}\u{0}{}\u{0}{:?}\u{0}{flip_y}",
+            "{}\u{0}{}\u{0}{:?}\u{0}{flip_y}\u{0}{points}",
             spec.vertex, spec.fragment, spec.attributes
         );
         if let Some(p) = self.glsl.programs.get(&key) {
             return Ok(p.clone());
         }
-        let translated = gl::translate(spec, flip_y).map_err(render_error)?;
+        let translated = gl::translate(spec, flip_y, points).map_err(render_error)?;
         if !translated.vertex.samplers.is_empty() {
             return Err(render_error(
                 "unsupported: a texture read in the vertex shader (vertex texture fetch)",
@@ -860,14 +1011,14 @@ impl Compositor {
     fn glsl_pipeline(
         &self,
         program: &Program,
-        layouts: &[(u32, wgpu::VertexFormat, u64, u64)],
+        layouts: &[(u32, wgpu::VertexFormat, u64, u64, wgpu::VertexStepMode)],
         topology: wgpu::PrimitiveTopology,
         indexed: bool,
         draw: &GlslDraw,
     ) -> Result<wgpu::RenderPipeline> {
         let attributes: Vec<[wgpu::VertexAttribute; 1]> = layouts
             .iter()
-            .map(|(location, format, _, offset)| {
+            .map(|(location, format, _, offset, _)| {
                 [wgpu::VertexAttribute {
                     format: *format,
                     offset: *offset,
@@ -878,15 +1029,16 @@ impl Compositor {
         let buffers: Vec<Option<wgpu::VertexBufferLayout>> = layouts
             .iter()
             .zip(&attributes)
-            .map(|((_, _, stride, _), attribute)| {
+            .map(|((_, _, stride, _, step_mode), attribute)| {
                 Some(wgpu::VertexBufferLayout {
                     array_stride: *stride,
-                    step_mode: wgpu::VertexStepMode::Vertex,
+                    step_mode: *step_mode,
                     attributes: attribute,
                 })
             })
             .collect();
-        let cull_mode = match &draw.cull {
+        // Culling is for polygons: a point is not culled.
+        let cull_mode = match draw.cull.as_ref().filter(|_| draw.mode != GlslMode::Points) {
             None => None,
             Some(c) => match c.face.as_str() {
                 "FRONT" => Some(wgpu::Face::Front),
@@ -1231,6 +1383,164 @@ impl Compositor {
         target
     }
 
+    /// The pixels of a `texSubImage2D` as the texture holds them (rows turned
+    /// over, colour premultiplied, as the upload flags say), with where they
+    /// go. `size` is the target's.
+    fn glsl_upload(upload: &gl::GlslUpload, size: (u32, u32)) -> Result<([u32; 4], Vec<u8>)> {
+        let (w, h) = (upload.width, upload.height);
+        let fits = |at: u32, extent: u32, limit: u32| {
+            at.checked_add(extent).is_some_and(|end| end <= limit)
+        };
+        if w == 0 || h == 0 || !fits(upload.x, w, size.0) || !fits(upload.y, h, size.1) {
+            return Err(render_error(format!(
+                "a texSubImage2D of {w} x {h} at ({}, {}) does not fit the {} x {} texture",
+                upload.x, upload.y, size.0, size.1
+            )));
+        }
+        let mut rgba = base64::engine::general_purpose::STANDARD
+            .decode(&upload.pixels)
+            .map_err(|e| render_error(format!("a texSubImage2D's pixels are not base64: {e}")))?;
+        if rgba.len() != w as usize * h as usize * 4 {
+            return Err(render_error(format!(
+                "a texSubImage2D of {w} x {h} needs {} bytes of RGBA, got {}",
+                w as usize * h as usize * 4,
+                rgba.len()
+            )));
+        }
+        if upload.flip_y {
+            let row = w as usize * 4;
+            rgba = rgba.chunks(row).rev().flatten().copied().collect();
+        }
+        if upload.premultiply {
+            let (pixels, _) = rgba.as_chunks_mut::<4>();
+            for px in pixels {
+                let a = u32::from(px[3]);
+                for c in &mut px[..3] {
+                    *c = ((u32::from(*c) * a + 127) / 255) as u8;
+                }
+            }
+        }
+        Ok(([upload.x, upload.y, w, h], rgba))
+    }
+
+    /// `blitFramebuffer`: the source rectangle stretched over the destination
+    /// one by a pass of its own (`shaders/glsl_copy.wgsl`), as a draw that
+    /// replaces what it covers. `None` when it covers nothing.
+    fn glsl_copy<'c>(
+        &mut self,
+        content: &'c GlslContent,
+        blit: &'c GlslBlit,
+        size: (u32, u32),
+        targets: &mut HashMap<&'c str, Target>,
+    ) -> Result<Option<Prepared>> {
+        if blit.src == blit.target {
+            return Err(render_error(
+                "blitFramebuffer reads and writes the same buffer (WebGL refuses it with \
+                 INVALID_OPERATION)",
+            ));
+        }
+        let (source, source_size) = match blit.src.as_deref() {
+            Some(id) => {
+                let t = self.glsl_target(targets, content, id)?;
+                (t.view.clone(), t.size)
+            }
+            None => (
+                self.glsl.target.as_ref().expect("made by glsl_draw").view.clone(),
+                size,
+            ),
+        };
+        let dst_size = match blit.target.as_deref() {
+            Some(id) => self.glsl_target(targets, content, id)?.size,
+            None => size,
+        };
+        let top_down = blit.target.is_none();
+        let [dx0, dy0, dx1, dy1] = blit.to.map(i64::from);
+        let [sx0, sy0, sx1, sy1] = blit.from.map(i64::from);
+        if dx0 == dx1 || dy0 == dy1 || sx0 == sx1 || sy0 == sy1 {
+            return Ok(None);
+        }
+        // The destination's box, cut by the buffer and the scissor, in rows
+        // from the top.
+        let (w, h) = (i64::from(dst_size.0), i64::from(dst_size.1));
+        let (mut x0, mut x1) = (dx0.min(dx1).clamp(0, w), dx0.max(dx1).clamp(0, w));
+        let (mut y0, mut y1) = (dy0.min(dy1).clamp(0, h), dy0.max(dy1).clamp(0, h));
+        if let Some([sx, sy, sw, sh]) = blit.scissor.map(|r| r.map(i64::from)) {
+            x0 = x0.max(sx);
+            x1 = x1.min(sx + sw);
+            y0 = y0.max(sy);
+            y1 = y1.min(sy + sh);
+        }
+        if x1 <= x0 || y1 <= y0 {
+            return Ok(None);
+        }
+        let (top, bottom) = if top_down { (h - y1, h - y0) } else { (y0, y1) };
+        let src_top_down = blit.src.is_none();
+        let params: [f32; 16] = [
+            dst_size.1 as f32,
+            f32::from(u8::from(top_down)),
+            source_size.0 as f32,
+            source_size.1 as f32,
+            f32::from(u8::from(src_top_down)),
+            f32::from(u8::from(blit.linear)),
+            0.0,
+            0.0,
+            dx0 as f32,
+            dy0 as f32,
+            dx1 as f32,
+            dy1 as f32,
+            sx0 as f32,
+            sy0 as f32,
+            sx1 as f32,
+            sy1 as f32,
+        ];
+        let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
+        if self.glsl.copy.is_none() {
+            self.glsl.copy = Some(self.glsl_blit(
+                "glsl copy",
+                include_str!("../shaders/glsl_copy.wgsl"),
+                ("vs_copy", "fs_copy"),
+                wgpu::TextureFormat::Rgba8Unorm,
+            ));
+        }
+        let copy = self.glsl.copy.as_ref().expect("made above");
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("glsl copy"),
+                contents: &bytes,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("glsl copy"),
+            layout: &copy.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&source),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&copy.sampler),
+                },
+            ],
+        });
+        Ok(Some(Prepared {
+            pipeline: copy.pipeline.clone(),
+            bind_group,
+            viewport: [0.0, 0.0, dst_size.0 as f32, dst_size.1 as f32],
+            scissor: [x0 as u32, top as u32, (x1 - x0) as u32, (bottom - top) as u32],
+            blend_constant: wgpu::Color::TRANSPARENT,
+            vertex_buffers: Vec::new(),
+            indices: None,
+            vertices: (0, 3),
+            instances: (0, 1),
+        }))
+    }
+
     /// The pipeline of a pass that draws one texture, read through a uniform
     /// block and a bilinear sampler, into a `format` target.
     fn glsl_blit(
@@ -1401,6 +1711,7 @@ struct Prepared {
     vertex_buffers: Vec<(wgpu::Buffer, u64)>,
     indices: Option<(wgpu::Buffer, u32)>,
     vertices: (u32, u32),
+    instances: (u32, u32),
 }
 
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {

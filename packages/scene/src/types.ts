@@ -700,6 +700,8 @@ export interface GlslAttribute {
   normalized?: boolean;
   stride?: number;
   offset?: number;
+  /** `vertexAttribDivisor`: 1 advances for each instance (default 0, for each vertex). */
+  divisor?: number;
 }
 
 export interface GlslUniform {
@@ -730,9 +732,11 @@ export interface GlslBlend {
 
 export interface GlslDraw {
   program: string;
-  mode: 'triangles' | 'triangleStrip' | 'triangleFan';
+  mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan';
   first: number;
   count: number;
+  /** `drawArraysInstanced` and `drawElementsInstanced`: how many instances (default 1). */
+  instances?: number;
   indices?: { buffer: string; type: 'u8' | 'u16' | 'u32'; offset: number };
   attributes: Record<string, GlslAttribute>;
   uniforms: Record<string, GlslUniform[]>;
@@ -747,7 +751,36 @@ export interface GlslDraw {
   target?: string;
 }
 
-export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw);
+/** `blitFramebuffer` (COLOR_BUFFER_BIT): a rectangle of one buffer over a rectangle of another. */
+export interface GlslBlit {
+  /** The target texture read; the drawing buffer without one. */
+  src?: string;
+  /** The target texture written; the drawing buffer without one. */
+  target?: string;
+  /** `x0, y0, x1, y1` of the source, y up from the bottom row; reversed corners mirror. */
+  from: [number, number, number, number];
+  to: [number, number, number, number];
+  /** `LINEAR` rather than `NEAREST`. */
+  linear?: boolean;
+  /** `x, y, width, height` when the scissor test was on. */
+  scissor?: [number, number, number, number];
+}
+
+/** `texSubImage2D` into a texture a framebuffer draws in: pixels over a rectangle of what the ops before it left. */
+export interface GlslUpload {
+  /** The target texture written. */
+  target: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Base64 RGBA8, straight alpha. */
+  pixels: string;
+  flipY?: boolean;
+  premultiply?: boolean;
+}
+
+export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw) | ({ op: 'blit' } & GlslBlit) | ({ op: 'upload' } & GlslUpload);
 
 /** What a WebGL context did: the programs, data and calls of a `glsl` layer. */
 export interface GlslContent {

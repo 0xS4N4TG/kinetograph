@@ -491,12 +491,14 @@ Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fra
 | `programs` | `{}` | By id: `vertex` and `fragment` (GLSL ES 100, or 300 es with `#version 300 es`) and the `attributes` (name to location) the link gave the vertex shader. |
 | `buffers` | `{}` | By id: base64 bytes. |
 | `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL) or `pixels` (base64 straight-alpha RGBA8 with `width` and `height`), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded) and `mipmaps` (`generateMipmap` was called). `target: true` with `width` and `height` and no pixels is a framebuffer's texture (below). |
-| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a) of the drawing buffer throws away every draw to the drawing buffer before it. A `draw` runs one program. Both take an optional `target`, the id of a target texture to go to instead of the drawing buffer. |
+| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a) of the drawing buffer throws away every draw to the drawing buffer before it (unless a `blit` reads the drawing buffer in between). A `draw` runs one program. Both take an optional `target`, the id of a target texture to go to instead of the drawing buffer. A `blit` (`blitFramebuffer`) copies `from` `[x0, y0, x1, y1]` of `src` (a target texture, or the drawing buffer without one) over `to` of `target` (same), `linear` for `LINEAR`, with the `scissor` if the test was on; reversed corners mirror. An `upload` (`texSubImage2D`) writes `pixels` (base64 straight-alpha RGBA8, `width` x `height`, `flipY` and `premultiply` as the unpack flags were) at `x`, `y` of a target texture, in order with the draws. |
 | `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
 
-A `draw` carries `program`, `mode` (`triangles`, `triangleStrip`, `triangleFan`), `first` and `count`, `indices`
+A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `triangleFan`), `first` and `count`,
+`instances` (default 1), `indices`
 (`drawElements`: `buffer`, `type` `u8`, `u16` or `u32`, byte `offset`), `attributes` by the shader's names (`buffer`,
-`size`, `type` `f32`, or `u8`, `i8`, `u16`, `i16` with `normalized`, byte `stride` and `offset`), `uniforms` by name
+`size`, `type` `f32`, or `u8`, `i8`, `u16`, `i16` with `normalized`, byte `stride` and `offset`, and `divisor` 1 for an
+attribute that advances for each instance), `uniforms` by name
 (a list of calls: `kind` `f`, `i` or `m` for column-major matrices, `value`, and `index` for an element of an array),
 `units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
 to, as the GL names), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
@@ -524,9 +526,14 @@ How it is drawn:
   a `target` that is not a target texture.
 - Rendering is a pure function of the recording and the files it names; nothing reads a clock.
 
+Points (`mode: "points"`): each is a square of `gl_PointSize` pixels (1 to 511, the `ALIASED_POINT_SIZE_RANGE`)
+centred on the vertex, with `gl_PointCoord` (y down) in the fragment shader; a point whose centre is outside the clip
+volume is not drawn, and culling does not apply. `gl_VertexID` is the vertex's number (counting from `first`), and the
+point's number in a draw of points; `gl_InstanceID` the instance's. Instanced points are not drawn.
+
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
-renderbuffers, depth and stencil attachments, the depth and stencil tests, `readPixels`, points and lines, instanced
-drawing, integer and constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures,
+renderbuffers, depth and stencil attachments, the depth and stencil tests, `readPixels`, lines, instanced points, a
+`vertexAttribDivisor` above 1, integer and constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures,
 texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, several colour outputs (so
 one colour attachment), a framebuffer texture that is not RGBA or holds uploaded pixels, a texture read in the vertex
 shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
