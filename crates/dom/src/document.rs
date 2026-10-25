@@ -601,6 +601,11 @@ impl IslandCache {
         }
     }
 
+    /// The kept document of the island at `path`, if there is one.
+    pub fn peek(&self, path: &str) -> Option<&Resolved> {
+        self.kept.get(path).map(|k| &k.resolved)
+    }
+
     /// How many renders edited a kept document, and how many built one.
     pub fn counts(&self) -> (u64, u64) {
         (self.edited, self.built)

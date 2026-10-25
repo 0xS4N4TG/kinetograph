@@ -627,6 +627,7 @@ impl Walk<'_> {
                 | ResolvedEffect::DotMatrix(_)
                 | ResolvedEffect::CornerPin(_)
                 | ResolvedEffect::FilterGraph(_)
+                | ResolvedEffect::ColorGrade(_)
                 | ResolvedEffect::Shader(_) => b,
             };
         }
@@ -791,6 +792,7 @@ fn effect_name(effect: &Effect) -> &'static str {
         Effect::Displace { .. } => "displace",
         Effect::CornerPin { .. } => "cornerPin",
         Effect::FilterGraph(_) => "filterGraph",
+        Effect::ColorGrade(_) => "colorGrade",
         Effect::Shader(_) => "shader",
     }
 }

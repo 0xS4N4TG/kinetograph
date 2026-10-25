@@ -1,30 +1,35 @@
 // `data-color-grading` on a `<video>`, `<img>` or `<canvas>`: HyperFrames' colour grade (Apache-2.0,
 // heygen-com/hyperframes; packages/core/src/colorGrading.ts for the contract and the presets, runtime/colorGrading.ts for
-// the shader the numbers go through), lowered here to an SVG filter the DOM engine draws natively, with no browser.
+// the shader the numbers go through). This module reads the attribute the way HyperFrames does and writes the grade of
+// one frame as the `colorGrade` effect (`crates/core/src/grade.rs`), which one GPU pass applies: the whole shader, with
+// no browser. The runtime writes it as the element's `data-kg-grade` attribute.
 //
-// What is drawn, and how exactly:
-//   - `adjust.exposure`, `contrast`, `blacks`, `whites`, `temperature`, `tint`, `saturation`: exact. In the shader they are
-//     one affine map of the colour followed by a mix with its luma, so they are one `feColorMatrix` in sRGB.
-//   - `adjust.shadows`, `highlights` and the three `wheels`: the shader weights them by the pixel's luma. A filter has no
-//     luma-weighted add, so they are drawn as one curve per channel, taking the channel for the luma (exact for greys).
-//   - `adjust.vibrance`: weighted by the pixel's saturation and skin tones in the shader; drawn as a saturation of the
-//     weight a mid-saturated pixel gets (0.64).
-//   - `curves` (master, red, green, blue): exact up to the 32 values a filter table holds.
-//   - `intensity`: the mix of the grade with the source, as `feComposite`.
-// What is not drawn (reported, per frame): `lut` (the engine has a `.cube` look-up effect, but a DOM node cannot reach it),
-// `hueCurves`, `secondaries`, `details` (vignette, grain) and `effects` (blur, bloom, halftone, scanlines, ...).
+// What is drawn, against HyperFrames' own shader: `adjust` (all ten controls), `wheels`, `curves`, `hueCurves`,
+// `secondaries`, `lut` (a `.cube` file of the project), `intensity`, `details.vignette` and `details.grain` (seeded by the
+// element and the frame, so a frame is the same alone or in a sequence). What is not drawn is reported per frame: the
+// `effects` the engine has no pass for (see `EFFECTS_DRAWN`).
 
 export interface Grade {
   intensity: number;
   adjust: Record<(typeof ADJUST_KEYS)[number], number>;
   wheels: Record<'shadows' | 'midtones' | 'highlights', { hue: number; amount: number; level: number }>;
   curves: Record<'master' | 'red' | 'green' | 'blue', [number, number][]>;
-  details: { vignette: number; grain: number };
-  /** The effects that are on (above 0.0001), by name. */
-  effects: string[];
+  hueCurves: Record<'hueVsHue' | 'hueVsSaturation' | 'hueVsLuma', [number, number][]>;
+  /** The enabled secondaries, at most four, as the shader reads them. */
+  secondaries: Secondary[];
+  details: Record<(typeof DETAIL_KEYS)[number], number>;
+  /** The effects that are on (above 0.0001), with their strength. */
+  effects: Record<string, number>;
   lut: { src: string; intensity: number } | null;
-  hueCurves: boolean;
-  secondaries: boolean;
+}
+
+export interface Secondary {
+  key: {
+    hue: { center: number; range: number; softness: number };
+    saturation: { min: number; max: number; softness: number };
+    luma: { min: number; max: number; softness: number };
+  };
+  correction: { hueShift: number; saturation: number; luma: number; temperature: number; tint: number };
 }
 
 const ADJUST_KEYS = ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'temperature', 'tint', 'vibrance', 'saturation'] as const;
@@ -35,6 +40,14 @@ const LIMITS: Record<AdjustKey, [number, number]> = {
   temperature: [-1, 1], tint: [-1, 1], vibrance: [-1, 1], saturation: [-1, 1],
 };
 const ZERO: Adjust = { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, temperature: 0, tint: 0, vibrance: 0, saturation: 0 };
+const DETAIL_KEYS = ['vignette', 'vignetteMidpoint', 'vignetteRoundness', 'vignetteFeather', 'grain', 'grainSize', 'grainRoughness'] as const;
+type DetailKey = (typeof DETAIL_KEYS)[number];
+const DETAIL_DEFAULTS: Record<DetailKey, number> = { vignette: 0, vignetteMidpoint: 0.5, vignetteRoundness: 0, vignetteFeather: 0.65, grain: 0, grainSize: 0.25, grainRoughness: 0.5 };
+const DETAIL_LIMITS: Record<DetailKey, [number, number]> = {
+  vignette: [0, 1], vignetteMidpoint: [0, 1], vignetteRoundness: [-1, 1], vignetteFeather: [0, 1], grain: [0, 1], grainSize: [0, 1], grainRoughness: [0, 1],
+};
+const MAX_CURVE_POINTS = 16;
+const MAX_SECONDARIES = 4;
 
 interface Preset {
   adjust: Partial<Adjust>;
@@ -79,15 +92,23 @@ const EFFECT_KEYS = [
   'monoScreen', 'scanlines', 'chromaticAberration', 'crtCurvature', 'digitalGlitch', 'engraving', 'crosshatch', 'kuwahara',
 ];
 
+/** The effects of HyperFrames' list that the engine draws. */
+export const EFFECTS_DRAWN: readonly string[] = [];
+
 const isRecord = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-const num = (v: unknown, lo: number, hi: number): number => {
+/** colorGrading.ts: readLimitedValue. */
+const limited = (v: unknown, lo: number, hi: number): number => {
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? clamp(n, lo, hi) : 0;
 };
 const unit = (v: unknown, fallback: number): number => {
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? clamp(n, 0, 1) : fallback;
+};
+const wrapDegrees = (v: unknown, fallback = 0): number => {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? ((n % 360) + 360) % 360 : fallback;
 };
 
 const VARIABLE_REF = /^\$(?:\{([A-Za-z0-9_.:-]+)\}|([A-Za-z0-9_.:-]+))$/;
@@ -114,22 +135,67 @@ function resolveVariables(raw: unknown, variables: Record<string, unknown>): unk
   return raw;
 }
 
+const identityCurve = (): [number, number][] => [[0, 0], [1, 1]];
+
+/** colorGrading.ts: normalizeCurve. */
 function normalizeCurve(value: unknown): [number, number][] {
-  const identity: [number, number][] = [[0, 0], [1, 1]];
-  if (!Array.isArray(value) || value.length < 2) return identity;
+  if (!Array.isArray(value) || value.length < 2) return identityCurve();
   const points: [number, number][] = [];
   for (const p of value) {
-    if (!Array.isArray(p) || p.length !== 2) return identity;
+    if (!Array.isArray(p) || p.length !== 2) return identityCurve();
     const x = Number(p[0]);
     const y = Number(p[1]);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return identity;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return identityCurve();
     points.push([clamp(x, 0, 1), clamp(y, 0, 1)]);
   }
   points.sort((a, b) => a[0] - b[0]);
-  if (points.some((p, i) => i > 0 && p[0] === points[i - 1]![0])) return identity;
+  if (points.some((p, i) => i > 0 && p[0] === points[i - 1]![0])) return identityCurve();
   if (points[0]![0] > 0) points.unshift([0, 0]);
   if (points[points.length - 1]![0] < 1) points.push([1, 1]);
-  return points.length > 16 ? identity : points;
+  return points.length > MAX_CURVE_POINTS ? identityCurve() : points;
+}
+
+/** colorGrading.ts: normalizeHueCurve. */
+function normalizeHueCurve(value: unknown, lo: number, hi: number): [number, number][] {
+  if (!Array.isArray(value) || value.length < 3 || value.length > MAX_CURVE_POINTS) return [];
+  const points: [number, number][] = [];
+  for (const p of value) {
+    if (!Array.isArray(p) || p.length !== 2) return [];
+    const hue = Number(p[0]);
+    const delta = Number(p[1]);
+    if (!Number.isFinite(hue) || !Number.isFinite(delta)) return [];
+    points.push([wrapDegrees(hue), clamp(delta, lo, hi)]);
+  }
+  points.sort((a, b) => a[0] - b[0]);
+  return points.some((p, i) => i > 0 && p[0] === points[i - 1]![0]) ? [] : points;
+}
+
+/** colorGrading.ts: normalizeSecondary. */
+function normalizeSecondary(value: unknown): (Secondary & { enabled: boolean }) | null {
+  if (!isRecord(value) || !isRecord(value.key) || !isRecord(value.correction)) return null;
+  const soft = (v: unknown): Secondary['key']['saturation'] => {
+    const r = isRecord(v) ? v : {};
+    const first = limited(r.min ?? 0, 0, 1);
+    const second = limited(r.max ?? 1, 0, 1);
+    return { min: Math.min(first, second), max: Math.max(first, second), softness: limited(r.softness ?? 0.05, 0, 0.5) };
+  };
+  const hueSource = isRecord(value.key.hue) ? value.key.hue : {};
+  const range = limited(hueSource.range ?? 180, 0, 180);
+  return {
+    enabled: value.enabled !== false,
+    key: {
+      hue: { center: wrapDegrees(hueSource.center, 0), range, softness: limited(hueSource.softness ?? 0, 0, 180 - range) },
+      saturation: soft(value.key.saturation),
+      luma: soft(value.key.luma),
+    },
+    correction: {
+      hueShift: limited(value.correction.hueShift ?? 0, -180, 180),
+      saturation: limited(value.correction.saturation ?? 0, -1, 1),
+      luma: limited(value.correction.luma ?? 0, -1, 1),
+      temperature: limited(value.correction.temperature ?? 0, -1, 1),
+      tint: limited(value.correction.tint ?? 0, -1, 1),
+    },
+  };
 }
 
 /**
@@ -159,203 +225,106 @@ export function normalizeGrade(
   const adjust = { ...ZERO };
   for (const key of ADJUST_KEYS) {
     const [lo, hi] = LIMITS[key];
-    adjust[key] = num(rawAdjust[key] ?? preset?.adjust[key] ?? 0, lo, hi);
+    adjust[key] = limited(rawAdjust[key] ?? preset?.adjust[key] ?? 0, lo, hi);
   }
   if (overrides.exposure != null) adjust.exposure = clamp(overrides.exposure, -2, 2);
   const rawWheels = isRecord(value.wheels) ? value.wheels : {};
   const wheel = (name: string): Grade['wheels']['shadows'] => {
     const w = isRecord(rawWheels[name]) ? rawWheels[name] : {};
-    const hue = Number(w.hue);
-    return { hue: Number.isFinite(hue) ? ((hue % 360) + 360) % 360 : 0, amount: num(w.amount ?? 0, 0, 1), level: num(w.level ?? 0, -1, 1) };
+    return { hue: wrapDegrees(w.hue, 0), amount: limited(w.amount ?? 0, 0, 1), level: limited(w.level ?? 0, -1, 1) };
   };
   const rawCurves = isRecord(value.curves) ? value.curves : {};
+  const rawHueCurves = isRecord(value.hueCurves) ? value.hueCurves : {};
   const rawDetails = isRecord(value.details) ? value.details : {};
+  const presetDetails: Partial<Record<DetailKey, number>> = { vignette: preset?.vignette ?? 0, grain: preset?.grain ?? 0 };
+  const details = { ...DETAIL_DEFAULTS };
+  for (const key of DETAIL_KEYS) {
+    const [lo, hi] = DETAIL_LIMITS[key];
+    details[key] = limited(rawDetails[key] ?? presetDetails[key] ?? DETAIL_DEFAULTS[key], lo, hi);
+  }
   const rawEffects = isRecord(value.effects) ? value.effects : {};
+  const effects: Record<string, number> = {};
+  for (const key of EFFECT_KEYS) {
+    const strength = limited(rawEffects[key] ?? (preset?.effects?.includes(key) ? 1 : 0), 0, key === 'bloom' ? 3 : 1);
+    if (strength > 0.0001) effects[key] = strength;
+  }
   const lutRaw = value.lut;
   const lutSrc = typeof lutRaw === 'string' ? lutRaw.trim() : isRecord(lutRaw) && typeof lutRaw.src === 'string' ? lutRaw.src.trim() : '';
   const lutIntensity = overrides.lutIntensity ?? (isRecord(lutRaw) ? unit(lutRaw.intensity, 1) : 1);
-  const effects = EFFECT_KEYS.filter((key) => (num(rawEffects[key] ?? 0, 0, key === 'bloom' ? 3 : 1) || (preset?.effects?.includes(key) ? 1 : 0)) > 0.0001);
-  const hueCurveActive = isRecord(value.hueCurves) && Object.values(value.hueCurves).some((c) => Array.isArray(c) && c.some((p) => Array.isArray(p) && Math.abs(Number(p[1])) > 0.0001));
-  const secondaryActive =
-    Array.isArray(value.secondaries) && value.secondaries.some((s) => isRecord(s) && s.enabled !== false && isRecord(s.correction) && Object.values(s.correction).some((v) => Math.abs(Number(v)) > 0.0001));
+  const secondaries: Secondary[] = [];
+  if (Array.isArray(value.secondaries)) {
+    for (const candidate of value.secondaries.slice(0, MAX_SECONDARIES)) {
+      const secondary = normalizeSecondary(candidate);
+      if (secondary?.enabled) secondaries.push({ key: secondary.key, correction: secondary.correction });
+    }
+  }
   return {
     intensity: overrides.intensity != null ? clamp(overrides.intensity, 0, 1) : unit(value.intensity, preset?.intensity ?? 1),
     adjust,
     wheels: { shadows: wheel('shadows'), midtones: wheel('midtones'), highlights: wheel('highlights') },
     curves: { master: normalizeCurve(rawCurves.master), red: normalizeCurve(rawCurves.red), green: normalizeCurve(rawCurves.green), blue: normalizeCurve(rawCurves.blue) },
-    details: { vignette: unit(rawDetails.vignette ?? preset?.vignette ?? 0, 0), grain: unit(rawDetails.grain ?? preset?.grain ?? 0, 0) },
+    hueCurves: {
+      hueVsHue: normalizeHueCurve(rawHueCurves.hueVsHue, -180, 180),
+      hueVsSaturation: normalizeHueCurve(rawHueCurves.hueVsSaturation, -1, 1),
+      hueVsLuma: normalizeHueCurve(rawHueCurves.hueVsLuma, -1, 1),
+    },
+    secondaries,
+    details,
     effects,
     lut: lutSrc === '' ? null : { src: lutSrc, intensity: lutIntensity },
-    hueCurves: hueCurveActive,
-    secondaries: secondaryActive,
   };
 }
 
-// ---- curves ----
+const FLAT = 0.0001;
 
-/** The shape-preserving cubic through a curve's points, at `x` (colorGradingCurves.ts: pointSlopes, interpolateCurveSegment). */
-export function curveFunction(points: readonly [number, number][]): (x: number) => number {
-  const n = points.length;
-  const spans: number[] = [];
-  const slopes: number[] = [];
-  for (let i = 1; i < n; i++) {
-    spans.push(points[i]![0] - points[i - 1]![0]);
-    slopes.push((points[i]![1] - points[i - 1]![1]) / spans[i - 1]!);
+/** colorGrading.ts: isHfColorGradingActive. A grade that is not active leaves the picture as it is. */
+export function isGradeActive(grade: Grade): boolean {
+  if (grade.details.vignette > FLAT || grade.details.grain > FLAT || Object.keys(grade.effects).length > 0) return true;
+  if (grade.intensity === 0) return false;
+  if (grade.lut && grade.lut.intensity !== 0) return true;
+  return (
+    ADJUST_KEYS.some((key) => Math.abs(grade.adjust[key]) > FLAT) ||
+    Object.values(grade.wheels).some((w) => Math.abs(w.amount) > FLAT || Math.abs(w.level) > FLAT) ||
+    Object.values(grade.curves).some((c) => c.some(([x, y]) => Math.abs(x - y) > FLAT)) ||
+    Object.values(grade.hueCurves).some((c) => c.some(([, d]) => Math.abs(d) > FLAT)) ||
+    grade.secondaries.some((s) => Object.values(s.correction).some((v) => Math.abs(v) > FLAT))
+  );
+}
+
+/** The runtime's `hashStringSeed` (FNV-1a, modulo 10000). */
+export function seedOf(key: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
   }
-  const endpoint = (s0: number, s1: number, m0: number, m1: number): number => {
-    const slope = ((2 * s0 + s1) * m0 - s0 * m1) / (s0 + s1);
-    if (Math.sign(slope) !== Math.sign(m0)) return 0;
-    if (Math.sign(m0) !== Math.sign(m1) && Math.abs(slope) > 3 * Math.abs(m0)) return 3 * m0;
-    return slope;
-  };
-  const tangents = new Array<number>(n);
-  if (n === 2) {
-    tangents[0] = tangents[1] = slopes[0]!;
-  } else {
-    tangents[0] = endpoint(spans[0]!, spans[1]!, slopes[0]!, slopes[1]!);
-    tangents[n - 1] = endpoint(spans[n - 2]!, spans[n - 3]!, slopes[n - 2]!, slopes[n - 3]!);
-    for (let i = 1; i < n - 1; i++) {
-      const before = slopes[i - 1]!;
-      const after = slopes[i]!;
-      if (before === 0 || after === 0 || Math.sign(before) !== Math.sign(after)) {
-        tangents[i] = 0;
-        continue;
-      }
-      const bw = 2 * spans[i]! + spans[i - 1]!;
-      const aw = spans[i]! + 2 * spans[i - 1]!;
-      tangents[i] = (bw + aw) / (bw / before + aw / after);
-    }
-  }
-  return (x) => {
-    let seg = 0;
-    while (seg < n - 2 && x > points[seg + 1]![0]) seg++;
-    const a = points[seg]!;
-    const b = points[seg + 1]!;
-    const span = b[0] - a[0];
-    const t = clamp((x - a[0]) / span, 0, 1);
-    const t2 = t * t;
-    const t3 = t2 * t;
-    const y = (2 * t3 - 3 * t2 + 1) * a[1] + (t3 - 2 * t2 + t) * span * tangents[seg]! + (-2 * t3 + 3 * t2) * b[1] + (t3 - t2) * span * tangents[seg + 1]!;
-    return clamp(y, 0, 1);
-  };
+  return (hash >>> 0) % 10000;
 }
 
-const isIdentityCurve = (p: readonly [number, number][]): boolean => p.every(([x, y]) => Math.abs(x - y) <= 0.0001);
-
-// ---- the filter ----
-
-export type GradeStep =
-  | { kind: 'matrix'; values: number[] }
-  | { kind: 'tables'; r: number[]; g: number[]; b: number[] };
-
-export interface GradeFilter {
-  steps: GradeStep[];
-  /** The mix of the grade with the source (1: all grade). */
-  intensity: number;
-  /** What was asked for and is not drawn. */
-  left: string[];
-  /** What is drawn by approximation. */
-  approximated: string[];
-}
-
-const LUMA = [0.2126, 0.7152, 0.0722];
-const TABLE_SIZE = 32;
-const smoothstep = (lo: number, hi: number, x: number): number => {
-  const t = clamp((x - lo) / (hi - lo), 0, 1);
-  return t * t * (3 - 2 * t);
-};
-/** The vibrance weight of a mid-saturated, non-skin pixel: (1 - 0.72 * 0.5). */
-const VIBRANCE_WEIGHT = 0.64;
-
-/** hsvToRgb of (h, 1, 1) less its luma, scaled so the largest channel is 1 (the shader's wheelDirection). */
-function wheelDirection(hueDegrees: number): number[] {
-  const h = hueDegrees / 360;
-  const bands = [0, 2 / 3, 1 / 3].map((o) => Math.abs((((h + o) % 1) + 1) % 1 * 6 - 3));
-  const rgb = bands.map((b) => clamp(b - 1, 0, 1));
-  const l = LUMA[0]! * rgb[0]! + LUMA[1]! * rgb[1]! + LUMA[2]! * rgb[2]!;
-  const d = rgb.map((c) => c - l);
-  const m = Math.max(...d.map(Math.abs), 0.0001);
-  return d.map((c) => c / m);
-}
-
-/** The filter that draws a grade, or null when the grade changes nothing that can be drawn. */
-export function gradeFilter(grade: Grade): GradeFilter | null {
-  const a = grade.adjust;
-  const left: string[] = [];
-  const approximated: string[] = [];
-  if (grade.lut && grade.lut.intensity > 0) left.push('lut');
-  if (grade.hueCurves) left.push('hueCurves');
-  if (grade.secondaries) left.push('secondaries');
-  if (grade.details.vignette > 0.0001) left.push('details.vignette');
-  if (grade.details.grain > 0.0001) left.push('details.grain');
-  for (const e of grade.effects) left.push(`effects.${e}`);
-
-  const bp = clamp(a.blacks * 0.18, -0.18, 0.18);
-  const wp = clamp(1 - a.whites * 0.18, 0.82, 1.18);
-  const k = 1 / Math.max(wp - bp, 0.2);
-  const cf = Math.max(0, 1 + a.contrast);
-  const s = 2 ** a.exposure;
-  const off = [a.temperature * 0.08 + a.tint * 0.04, -a.tint * 0.08, -(a.temperature * 0.08 - a.tint * 0.04)];
-  const q = Math.max(0, 1 + a.vibrance * VIBRANCE_WEIGHT) * Math.max(0, 1 + a.saturation);
-  if (Math.abs(a.vibrance) > 0.0001) approximated.push('adjust.vibrance');
-  // out = S_q * v, S_q = q * I + (1 - q) * 1 luma^T
-  const sat = [0, 1, 2].map((r) => [0, 1, 2].map((c) => (r === c ? q : 0) + (1 - q) * LUMA[c]!));
-
-  const toneStage = a.shadows !== 0 || a.highlights !== 0;
-  const wheelsOn = (['shadows', 'midtones', 'highlights'] as const).some((z) => grade.wheels[z].amount > 0.0001 || Math.abs(grade.wheels[z].level) > 0.0001);
-  const curvesOn = (['master', 'red', 'green', 'blue'] as const).some((c) => !isIdentityCurve(grade.curves[c]));
-  const steps: GradeStep[] = [];
-
-  const matrix = (m: number[][], t: number[]): GradeStep => ({
-    kind: 'matrix',
-    values: [...m[0]!, 0, t[0]!, ...m[1]!, 0, t[1]!, ...m[2]!, 0, t[2]!, 0, 0, 0, 1, 0],
+/**
+ * The `colorGrade` effect of the grade (the attribute the DOM painter reads; it adds the `type` and the picture's box),
+ * or null when the grade changes nothing. `seed` is the grain's: the element's seed plus the whole 60ths of a second of
+ * the time, as the runtime's shader gets it.
+ */
+export function gradeAttribute(grade: Grade, seed: number): string | null {
+  if (!isGradeActive(grade)) return null;
+  const d = grade.details;
+  return JSON.stringify({
+    intensity: grade.intensity,
+    adjust: grade.adjust,
+    wheels: grade.wheels,
+    curves: grade.curves,
+    hueCurves: grade.hueCurves,
+    secondaries: grade.secondaries,
+    lut: grade.lut,
+    vignette: { amount: d.vignette, midpoint: d.vignetteMidpoint, roundness: d.vignetteRoundness, feather: d.vignetteFeather },
+    grain: { amount: d.grain, size: d.grainSize, roughness: d.grainRoughness, seed },
   });
-  const needSat = Math.abs(q - 1) > 1e-9;
-  if (!toneStage) {
-    // Everything before the saturation is one affine map per channel: fold the saturation into it (exact).
-    const aa = s * k * cf;
-    const b = [0, 1, 2].map((c) => ((-bp * k + off[c]!) - 0.5) * cf + 0.5);
-    const identity = Math.abs(aa - 1) < 1e-9 && b.every((v) => Math.abs(v) < 1e-9) && !needSat;
-    if (!identity) {
-      const m = sat.map((row) => row.map((v) => v * aa));
-      const t = sat.map((row) => row[0]! * b[0]! + row[1]! * b[1]! + row[2]! * b[2]!);
-      steps.push(matrix(m, t));
-    }
-  } else {
-    approximated.push('adjust.shadows/highlights');
-    const table = (c: number): number[] =>
-      Array.from({ length: TABLE_SIZE }, (_, i) => {
-        let v = (i / (TABLE_SIZE - 1)) * s;
-        v += a.shadows * 0.35 * (1 - smoothstep(0, 0.65, v)) + a.highlights * 0.35 * smoothstep(0.35, 1, v);
-        v = (v - bp) * k + off[c]!;
-        return clamp((v - 0.5) * cf + 0.5, 0, 1);
-      });
-    steps.push({ kind: 'tables', r: table(0), g: table(1), b: table(2) });
-    if (needSat) steps.push(matrix(sat, [0, 0, 0]));
-  }
+}
 
-  if (wheelsOn || curvesOn) {
-    if (wheelsOn) approximated.push('wheels');
-    const master = curveFunction(grade.curves.master);
-    const channel = [curveFunction(grade.curves.red), curveFunction(grade.curves.green), curveFunction(grade.curves.blue)];
-    const dirs = (['shadows', 'midtones', 'highlights'] as const).map((z) => wheelDirection(grade.wheels[z].hue));
-    const table = (c: number): number[] =>
-      Array.from({ length: TABLE_SIZE }, (_, i) => {
-        let v = i / (TABLE_SIZE - 1);
-        if (wheelsOn) {
-          const sh = 1 - smoothstep(0, 0.6, v);
-          const hl = smoothstep(0.4, 1, v);
-          const mid = Math.max(0, 1 - sh - hl);
-          const total = Math.max(sh + mid + hl, 0.0001);
-          const w = [sh / total, mid / total, hl / total];
-          (['shadows', 'midtones', 'highlights'] as const).forEach((z, zi) => {
-            v += dirs[zi]![c]! * grade.wheels[z].amount * w[zi]! * 0.18 + grade.wheels[z].level * w[zi]! * 0.25;
-          });
-        }
-        return curvesOn ? channel[c]!(master(clamp(v, 0, 1))) : clamp(v, 0, 1);
-      });
-    steps.push({ kind: 'tables', r: table(0), g: table(1), b: table(2) });
-  }
-  if (steps.length === 0) return left.length > 0 ? { steps, intensity: grade.intensity, left, approximated } : null;
-  return { steps, intensity: grade.intensity, left, approximated };
+/** What the grade asks for and is not drawn: the effects of its `effects` list the engine has no pass for. */
+export function gradeNotDrawn(grade: Grade): string[] {
+  return Object.keys(grade.effects)
+    .filter((name) => !EFFECTS_DRAWN.includes(name))
+    .map((name) => `effects.${name}`);
 }

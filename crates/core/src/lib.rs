@@ -14,6 +14,7 @@ pub mod error;
 pub mod filter;
 pub mod gif;
 pub mod glsl;
+pub mod grade;
 #[cfg(test)]
 mod hash;
 pub mod inspect;

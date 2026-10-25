@@ -15,5 +15,5 @@ export type { SceneClock, StartExpression, TimedElement, TimelineLike, TimingEnv
 export { cutToSlots, playbackRateOf, rateSpecOf, sourceOffsetOf } from './timing.js';
 export { parseAutomation, rateAt, sampleLane, sourceTimeAt, timeAtSourceTime, laneGain } from './automation.js';
 export type { Automation, AutomationLane, RateSpec } from './automation.js';
-export { normalizeGrade, gradeFilter, curveFunction, PRESETS as GRADING_PRESETS } from './grading.js';
-export type { Grade, GradeFilter, GradeStep } from './grading.js';
+export { normalizeGrade, gradeAttribute, gradeNotDrawn, isGradeActive, seedOf, EFFECTS_DRAWN, PRESETS as GRADING_PRESETS } from './grading.js';
+export type { Grade, Secondary } from './grading.js';

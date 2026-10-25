@@ -146,10 +146,6 @@ fn parse_island(request_json: &str, what: &str) -> std::result::Result<IslandReq
         .map_err(|e| (Code::InvalidArg, format!("invalid {what} request: {e}")))
 }
 
-fn resolve_island(request: &IslandRequest) -> std::result::Result<IslandDocument, Failure> {
-    document::resolve(request).map_err(|e| (Code::Render, e.to_string()))
-}
-
 thread_local! {
     /// The islands of the motion-blur sample pass in progress (`IslandCache`).
     static SAMPLES: std::cell::RefCell<IslandCache> = std::cell::RefCell::new(IslandCache::default());
@@ -272,15 +268,63 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
     })
 }
 
+/// The island the readback calls (`domLayoutBoxes`, `domComputedStyle`) last read. A page that reads thousands of
+/// styles asks about one tree again and again, and the tree changes between some of the reads (a script writes a
+/// style); building and styling the whole island for every call cost about 17 ms each. The same request is answered
+/// from the document as it is, with no parse and no restyle; a changed one edits that document to the new tree, as a
+/// motion-blur sample does (`IslandCache`), so only what changed is restyled.
+struct Readback {
+    cache: IslandCache,
+    /// The request the kept document shows (its text) and the island's path.
+    last: Option<(String, String)>,
+    pass: u64,
+}
+
+thread_local! {
+    static READBACK: std::cell::RefCell<Readback> = std::cell::RefCell::new(Readback {
+        cache: IslandCache::default(),
+        last: None,
+        pass: 0,
+    });
+}
+
+/// Runs `read` on the island of `json`, kept from the last readback when the tree is the same or close to it.
+fn with_readback_island<T>(
+    json: &str,
+    what: &str,
+    read: impl FnOnce(&IslandDocument) -> std::result::Result<T, Failure>,
+) -> std::result::Result<T, Failure> {
+    READBACK.with(|state| {
+        let state = &mut *state.borrow_mut();
+        if let Some((text, path)) = &state.last
+            && text == json
+            && let Some(kept) = state.cache.peek(path)
+        {
+            return read(&kept.island);
+        }
+        let request = parse_island(json, what)?;
+        state.pass += 1;
+        let resolved = state
+            .cache
+            .resolve(&request, Some(state.pass))
+            .map_err(|e| (Code::Render, e.to_string()))?;
+        let answer = read(&resolved.island);
+        let path = request.path.clone();
+        state.cache.keep(request, resolved);
+        state.last = Some((json.to_string(), path));
+        answer
+    })
+}
+
 /// The boxes of every element of the island (`getBoundingClientRect`,
 /// `offsetWidth`, `clientWidth`, `scrollHeight`): `{ [path]: ElementBox }`.
 pub fn dom_layout_boxes(request_json: &str) -> Result<String> {
     let json = request_json.to_string();
     on_island_thread(move || {
-        let request = parse_island(&json, "domLayoutBoxes")?;
-        let island = resolve_island(&request)?;
-        serde_json::to_string(&readback::layout_boxes(&island))
-            .map_err(|e| (Code::Render, format!("cannot write the boxes: {e}")))
+        with_readback_island(&json, "domLayoutBoxes", |island| {
+            serde_json::to_string(&readback::layout_boxes(island))
+                .map_err(|e| (Code::Render, format!("cannot write the boxes: {e}")))
+        })
     })
 }
 
@@ -297,13 +341,13 @@ pub fn dom_computed_style(
         properties.to_vec(),
     );
     on_island_thread(move || {
-        let request = parse_island(&json, "domComputedStyle")?;
-        let island = resolve_island(&request)?;
-        readback::computed_style(&island, &path, &properties).ok_or_else(|| {
-            (
-                Code::InvalidArg,
-                format!("no element at path {path:?} in the island"),
-            )
+        with_readback_island(&json, "domComputedStyle", |island| {
+            readback::computed_style(island, &path, &properties).ok_or_else(|| {
+                (
+                    Code::InvalidArg,
+                    format!("no element at path {path:?} in the island"),
+                )
+            })
         })
     })
 }
