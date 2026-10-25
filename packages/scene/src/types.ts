@@ -791,6 +791,91 @@ export interface GlslContent {
   buffers: Record<string, string>;
   textures: Record<string, GlslTexture>;
   ops: GlslOp[];
+  /** What a WebGPU context did (the other fields are empty then). */
+  webgpu?: WebGpuContent;
+}
+
+// ---- webgpu (packages/cli/skills/kinetograph/references/SCENE.md, "glsl") ----
+
+export interface WebGpuVertexAttribute {
+  format: string;
+  offset: number;
+  location: number;
+}
+
+export interface WebGpuVertexLayout {
+  stride: number;
+  stepMode?: 'vertex' | 'instance';
+  attributes: WebGpuVertexAttribute[];
+}
+
+export interface WebGpuBlendComponent {
+  operation?: string;
+  srcFactor?: string;
+  dstFactor?: string;
+}
+
+export interface WebGpuTarget {
+  format: string;
+  blend?: { color: WebGpuBlendComponent; alpha: WebGpuBlendComponent };
+  writeMask?: number;
+}
+
+export interface WebGpuPipeline {
+  /** The ids of the bind group layouts (`WebGpuContent.layouts`); omitted for `layout: 'auto'`. */
+  layout?: string[];
+  vertex: { module: string; entryPoint?: string; buffers: WebGpuVertexLayout[] };
+  fragment?: { module: string; entryPoint?: string; targets: (WebGpuTarget | null)[] };
+  primitive: { topology: string; stripIndexFormat?: string; frontFace: string; cullMode: string };
+}
+
+export interface WebGpuBindingLayout {
+  binding: number;
+  /** `GPUShaderStage` bits. */
+  visibility: number;
+  type: 'uniform' | 'storage' | 'read-only-storage';
+  dynamicOffset?: boolean;
+}
+
+export interface WebGpuBindGroup {
+  /** An id of `WebGpuContent.layouts`, or `auto:<pipeline>:<index>` for a layout a pipeline made. */
+  layout: string;
+  entries: { binding: number; buffer: string; offset: number; size: number }[];
+}
+
+export type WebGpuCommand =
+  | { c: 'pipeline'; id: string }
+  | { c: 'bind'; index: number; group: string; offsets?: number[] }
+  | { c: 'vertex'; slot: number; buffer: string; offset: number; size?: number }
+  | { c: 'index'; buffer: string; format: string; offset: number; size?: number }
+  | { c: 'draw'; vertices: number; instances: number; first: number; firstInstance: number }
+  | { c: 'drawIndexed'; indices: number; instances: number; first: number; base: number; firstInstance: number }
+  | { c: 'viewport'; x: number; y: number; width: number; height: number; minDepth: number; maxDepth: number }
+  | { c: 'scissor'; x: number; y: number; width: number; height: number }
+  | { c: 'blend'; color: [number, number, number, number] };
+
+export interface WebGpuPass {
+  /** The clear colour, or null for `loadOp: 'load'`. */
+  clear: [number, number, number, number] | null;
+  commands: WebGpuCommand[];
+}
+
+/**
+ * What a WebGPU context drew in a frame: the passes in order, with everything they use by id. A buffer is the bytes it
+ * held when the command buffer that draws from it was submitted; ids are made from content, so a frame does not depend
+ * on which frames were drawn before it.
+ */
+export interface WebGpuContent {
+  /** WGSL, by id. */
+  modules: Record<string, string>;
+  layouts: Record<string, WebGpuBindingLayout[]>;
+  pipelines: Record<string, WebGpuPipeline>;
+  /** Base64 bytes. */
+  buffers: Record<string, string>;
+  bindGroups: Record<string, WebGpuBindGroup>;
+  passes: WebGpuPass[];
+  /** Calls the engine does not draw; the frame reports each. */
+  notes?: string[];
 }
 
 export interface GlslLayer extends LayerBase, Partial<GlslContent> {

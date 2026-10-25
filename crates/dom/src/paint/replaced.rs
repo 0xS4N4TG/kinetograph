@@ -187,6 +187,32 @@ impl<'a> Painter<'a> {
         vec![layer]
     }
 
+    /// A WebGPU canvas's recording (`data-kg-webgl` with a `webgpu` part): what the page did that is not drawn, and
+    /// the WGSL naga refuses, are reported, and a recording with a module that is wrong draws nothing.
+    fn webgpu_report(&mut self, node: &'a Node, drawn: &mut Value) {
+        let Some(part) = drawn.get("webgpu").cloned() else {
+            return;
+        };
+        let recording = match serde_json::from_value::<kinetograph_core::webgpu::WebGpuContent>(part) {
+            Ok(r) => r,
+            Err(e) => {
+                self.report(node, "webgpu", "recording", &format!("the WebGPU recording is not readable: {e}"));
+                drawn["webgpu"] = json!({});
+                return;
+            }
+        };
+        for note in &recording.notes {
+            self.report(node, "webgpu", note, "WebGPU call that is not drawn (the canvas is drawn without it)");
+        }
+        let problems = kinetograph_core::webgpu::check(&recording);
+        for problem in &problems {
+            self.report(node, "webgpu", problem, "a WGSL module that is not valid; the canvas draws nothing");
+        }
+        if !problems.is_empty() {
+            drawn["webgpu"] = json!({});
+        }
+    }
+
     /// What a `<canvas>`'s context drew: the 2D commands the TS side puts in
     /// `data-kg-canvas` (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), as one canvas layer the size
     /// of the canvas's bitmap (`width` and `height`, 300 x 150 without them),
@@ -221,6 +247,10 @@ impl<'a> Painter<'a> {
         let (width, height) = (side("width", 300.0), side("height", 150.0));
         if !(width > 0.0 && height > 0.0) {
             return Vec::new();
+        }
+        let mut drawn = drawn;
+        if kind == "glsl" && drawn.get("webgpu").is_some() {
+            self.webgpu_report(node, &mut drawn);
         }
         if kind == "canvas" {
             let mut urls = Vec::new();

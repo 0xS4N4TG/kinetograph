@@ -164,14 +164,20 @@ describe('canvas and the clock', () => {
     expect(() => ctx.drawImage(new g.Image(), 0, 0)).toThrow(/not a picture/);
   });
 
-  it('has WebGL contexts that record, one kind of context to a canvas, and says unsupported for WebGPU', () => {
+  it('has WebGL contexts that record, one kind of context to a canvas, and WebGPU contexts that record too', () => {
     const canvas = g.document.createElement('canvas');
     const gl = canvas.getContext('webgl');
     expect(gl).toBeInstanceOf(g.WebGLRenderingContext);
     expect(canvas.getContext('webgl')).toBe(gl);
     expect(canvas.getContext('2d')).toBeNull();
     expect(canvas.getContext('bitmaprenderer')).toBeNull();
-    expect(() => g.document.createElement('canvas').getContext('webgpu')).toThrow(/^unsupported:.*WebGPU/);
+    const gpuCanvas = g.document.createElement('canvas');
+    const gpu = gpuCanvas.getContext('webgpu');
+    expect(gpu).not.toBeNull();
+    expect(gpuCanvas.getContext('webgpu')).toBe(gpu);
+    expect(gpuCanvas.getContext('webgl')).toBeNull();
+    expect(canvas.getContext('webgpu')).toBeNull();
+    expect(typeof g.navigator.gpu.requestAdapter).toBe('function');
     expect(() => canvas.toDataURL()).toThrow(/^unsupported:/);
   });
 

@@ -35,6 +35,7 @@ pub mod turbulence;
 pub mod uniforms;
 pub mod video;
 pub mod warp;
+pub mod webgpu;
 
 #[cfg(test)]
 mod tests;

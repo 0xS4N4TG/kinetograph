@@ -8,7 +8,9 @@ import {
   CANVAS_SOURCE,
   CanvasContext2D,
   createCanvasContext,
+  createGpuCanvasContext,
   createWebGLContext,
+  type GPUCanvasContextShim,
   WebGLContext,
   WebGLUnsupportedError,
   type CanvasCommand,
@@ -84,9 +86,11 @@ export { DEFAULT_HEIGHT, DEFAULT_WIDTH };
 
 const contexts = new WeakMap<object, CanvasContext2D>();
 /** The WebGL contexts of canvases in the tree (packages/cli/skills/kinetograph/references/SCENE.md, "glsl"). */
-const glContexts = new WeakMap<object, WebGLContext>();
+/** A WebGL or WebGPU context: what a canvas that is drawn by the GPU holds. */
+export type GlRecorder = WebGLContext | GPUCanvasContextShim;
+const glContexts = new WeakMap<object, GlRecorder>();
 /** Every context made, for `resetCanvasStates` (weakly: a canvas that is gone takes its context with it). */
-const live = new Set<WeakRef<CanvasContext2D | WebGLContext>>();
+const live = new Set<WeakRef<CanvasContext2D | GlRecorder>>();
 
 /** The pixels of a canvas texture: the commands drawn on a transparent canvas, straight alpha. */
 function rasterizeCanvas(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null {
@@ -131,20 +135,29 @@ export function glContentOf(host: object): ReturnType<WebGLContext['content']> |
  * The 2D context of the canvas whose host element is `host`, made on first use. `size` is the canvas's bitmap size,
  * read when it matters (it changes with `canvas.width`). WebGL and the other kinds of context are not available.
  */
-export function contextOfHost(host: object, type: string, size: () => { width: number; height: number }, canvas: unknown, attributes?: unknown): CanvasContext2D | WebGLContext | null {
+export function contextOfHost(host: object, type: string, size: () => { width: number; height: number }, canvas: unknown, attributes?: unknown): CanvasContext2D | GlRecorder | null {
   return contextFor(contexts, glContexts, host, type, size, canvas, attributes);
 }
 
 function contextFor(
   store: WeakMap<object, CanvasContext2D>,
-  glStore: WeakMap<object, WebGLContext>,
+  glStore: WeakMap<object, GlRecorder>,
   key: object,
   type: string,
   size: () => { width: number; height: number },
   canvas: unknown,
   attributes?: unknown,
-): CanvasContext2D | WebGLContext | null {
-  if (type === 'webgpu') throw new WebGLUnsupportedError('canvas.getContext("webgpu"); WebGPU has no native port, use "webgl", "webgl2" or "2d"');
+): CanvasContext2D | GlRecorder | null {
+  if (type === 'webgpu') {
+    if (store.has(key)) return null;
+    let gpu = glStore.get(key);
+    if (gpu === undefined) {
+      gpu = createGpuCanvasContext({ size, canvas });
+      glStore.set(key, gpu);
+      live.add(new WeakRef(gpu));
+    }
+    return gpu instanceof WebGLContext ? null : gpu;
+  }
   if (WEBGL_TYPE.test(type)) {
     // A canvas has one kind of context for good, as in a browser.
     if (store.has(key)) return null;
@@ -153,7 +166,7 @@ function contextFor(
       gl = newGlContext(type, size, canvas, attributes);
       glStore.set(key, gl);
     }
-    return gl;
+    return gl instanceof WebGLContext ? gl : null;
   }
   if (type !== '2d') return null;
   if (glStore.has(key)) return null;
@@ -223,7 +236,7 @@ export class CanvasSurface {
   private widthValue: number;
   private heightValue: number;
   private readonly store = new WeakMap<object, CanvasContext2D>();
-  private readonly glStore = new WeakMap<object, WebGLContext>();
+  private readonly glStore = new WeakMap<object, GlRecorder>();
   constructor(width: number = DEFAULT_WIDTH, height: number = DEFAULT_HEIGHT) {
     this.widthValue = Math.max(0, Math.floor(Number(width)) || 0);
     this.heightValue = Math.max(0, Math.floor(Number(height)) || 0);
@@ -245,7 +258,7 @@ export class CanvasSurface {
     this.heightValue = Math.max(0, Math.floor(Number(value)) || 0);
     this.context?.reset();
   }
-  getContext(type: string, attributes?: unknown): CanvasContext2D | WebGLContext | null {
+  getContext(type: string, attributes?: unknown): CanvasContext2D | GlRecorder | null {
     return contextFor(this.store, this.glStore, this, type, () => ({ width: this.widthValue, height: this.heightValue }), this, attributes);
   }
   private refuseGl(): void {

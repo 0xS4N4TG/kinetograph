@@ -50,12 +50,12 @@ const g = globalThis as AnyRecord;
 const doc = (): AnyRecord => g.document;
 
 /**
- * The rules every HyperFrames page gets before its own: what a browser's default stylesheet says of `<body>` (the
+ * The rules every HyperFrames page gets before its own: what a browser's default stylesheet says of `<body>`, except its 8px margin (HyperFrames renders pages flush) (the
  * wrapper elements stand in for `<html>` and `<body>`, which fill the picture so that a background on either paints it; `:where` gives it no specificity, so any rule of the page wins), and the hidden clips' contents.
  */
 const baseCss = (plan: HfPlan): string => `
 :where(.kg-hf-html) { display: block; width: ${plan.width}px; height: ${plan.height}px; }
-:where(.kg-hf-body) { display: block; margin: 8px; min-height: 100%; }
+:where(.kg-hf-body) { display: block; margin: 0; min-height: 100%; }
 [${HIDDEN_ATTR}], [${HIDDEN_ATTR}] * { visibility: hidden !important; }
 `;
 
@@ -161,6 +161,8 @@ class Runtime {
   private readonly timing: TimingResolver;
   private readonly clocks = new Map<string, SceneClock | null>();
   private totalSeconds = 0;
+  /** Why a page's own drawing failed (a rejected `hf-seek` promise or `__hf.buildReady` entry), reported with every frame. */
+  private readonly failures = new Set<string>();
   /** What `display` a `[data-hidden]` clip had before the runtime hid it (HyperFrames' displayBeforeHide). */
   private readonly displayBeforeHide = new WeakMap<AnyRecord, string>();
   /** The `<svg>` that holds the grading filters, and what each graded element has drawn. */
@@ -246,6 +248,13 @@ class Runtime {
         } catch (error) {
           report(`${type} handler failed: ${error instanceof Error ? error.message : String(error)}`);
         }
+      }
+    }
+    for (const [name, ready] of Object.entries((g.__hf?.buildReady ?? {}) as Record<string, unknown>)) {
+      if (ready && typeof (ready as Promise<unknown>).then === 'function') {
+        (ready as Promise<unknown>).then(undefined, (error: unknown) => {
+          this.failures.add(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+        });
       }
     }
     this.afterScripts();
@@ -405,6 +414,7 @@ class Runtime {
     }
     this.seekFailures = [];
     seekTimelines(g.__timelines ?? {}, this.plan.compositionId, time, (id) => this.clockOf(id), false, (message) => this.seekFailures.push(message));
+    this.announceSeek(time);
     for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) {
       const start = this.timing.start(el);
       const rate = rateSpecOf(el);
@@ -467,6 +477,27 @@ class Runtime {
     }
   }
 
+  /**
+   * HyperFrames' `hf-seek` event: pages that draw by themselves (the WebGPU shader blocks) redraw for `detail.time`, and
+   * hand `detail.waitUntil` the promise of their drawing. The frame waits for it as for a `delayRender`.
+   */
+  private announceSeek(time: number): void {
+    const waits: Promise<unknown>[] = [];
+    const detail = { time, waitUntil: (promise: Promise<unknown>) => void waits.push(Promise.resolve(promise)) };
+    try {
+      g.dispatchEvent(new CustomEvent('hf-seek', { detail }));
+    } catch (error) {
+      noteStylesheetProblem(`hf-seek handler failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (waits.length === 0) return;
+    const handle = delayRender('hf-seek');
+    Promise.allSettled(waits).then((results) => {
+      for (const r of results) if (r.status === 'rejected') this.failures.add(`hf-seek: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+      continueRender(handle);
+    });
+  }
+
+  /** `<audio>` and the audible `<video>`s as `<Audio>` in a `<Sequence>` over their window. */
   private buildFilter(id: string, filter: GradeFilter): void {
     if (this.filterHost === null) {
       this.filterHost = doc().createElementNS(SVG_NS, 'svg');
@@ -595,6 +626,7 @@ class Runtime {
   reportUnsupported(): void {
     if (this.plan.usesThree) reportUnsupported('three.js', null, null, 'Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)');
     for (const note of this.plan.notes) reportUnsupported('HyperFrames', null, null, note);
+    for (const failure of this.failures) reportUnsupported('HyperFrames', 'script', failure, 'a script that draws by itself failed, so its canvas is not drawn');
     for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
     for (const failure of this.seekFailures) reportUnsupported('HyperFrames', null, null, failure);
     for (const failure of this.scriptFailures) reportUnsupported('HyperFrames', null, null, failure);

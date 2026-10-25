@@ -668,6 +668,24 @@ then `write_texture`s, so it lands between the draws around it. A frame is a fun
 empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
+A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
+records the device (buffers, WGSL modules, bind group layouts, render pipelines, bind groups, command encoders with render
+passes into `getCurrentTexture()`, `queue.writeBuffer`, `submit`) and the canvas context writes the `webgpu` part of the
+`glsl` layer (`WebGpuContent`, `data-kg-webgl`). A buffer's bytes are shadowed on the JS side and snapshotted when a command
+buffer that draws from it is submitted, ids come from content, and the first submit after `resetState()` starts the drawing
+afresh, so a frame is the same whichever frames were drawn before it. `compositor/glsl/webgpu.rs` makes the pipelines
+(kept by id), builds the buffers from the recording and replays the passes in a command buffer of its own, inside a
+validation error scope, into the Rgba8 drawing buffer that `glsl_blit.wgsl` places (a bgra8 canvas is the same colours; the
+buffer is flushed first because earlier glsl layers' place passes read it). The dom painter reads every module with naga
+(`webgpu::check`) and reports a module that is wrong, and each call the recorder does not draw (textures, samplers, compute,
+queries, bundles, `rgba16float` range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic. HyperFrames' runtime
+(`core/src/hyperframes/runtime.tsx`) dispatches `hf-seek {time, waitUntil}` each frame and holds the frame on a
+`delayRender` until the page's promise settles; that is how the `shaders.iife.js` blocks (shaders.com on TypeGPU, which draw
+one full-screen triangle with a uniform buffer) are driven from the frame number. Measured against HyperFrames' own stills,
+`ripples` and `swirl` are identical at 0, 25, 50, 75 and 100 % of the run (mean absolute difference 0.0, 0 % of pixels more
+than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
+
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
 `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
