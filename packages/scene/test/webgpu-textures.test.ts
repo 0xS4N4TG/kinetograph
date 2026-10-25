@@ -72,16 +72,18 @@ describe('createTexture, createView and createSampler', () => {
     expect(make({ usage: -4 })).toThrow(/usage/);
   });
 
-  it('says what is not drawn: formats, dimensions, layers, multisampling, storage', async () => {
+  it('says what is not drawn: formats, dimensions, layers, multisampling', async () => {
     const { device, context } = await setup();
     expect(() => texture(device, { format: 'depth24plus' })).toThrow(WebGpuUnsupportedError);
-    expect(() => texture(device, { format: 'rgba32float' })).toThrow(/^unsupported: a texture of format rgba32float/);
+    expect(() => texture(device, { format: 'bc1-rgba-unorm' })).toThrow(/^unsupported: a texture of format bc1-rgba-unorm/);
+    expect(() => texture(device, { format: 'rgba32float' })).not.toThrow();
     expect(() => texture(device, { dimension: '3d' })).toThrow(/3d texture/);
     expect(() => texture(device, { size: [8, 4, 2] })).toThrow(/array layer/);
     expect(() => texture(device, { sampleCount: 4 })).toThrow(/multisampled/);
     expect(() => texture(device, { viewFormats: ['rgba8unorm-srgb'] })).toThrow(/viewFormats/);
-    expect(() => texture(device, { usage: GPU_TEXTURE_USAGE.STORAGE_BINDING })).toThrow(/STORAGE_BINDING/);
-    expect(context.content().webgpu!.notes).toHaveLength(7);
+    expect(() => texture(device, { usage: GPU_TEXTURE_USAGE.STORAGE_BINDING })).not.toThrow();
+    expect(() => texture(device, { usage: GPU_TEXTURE_USAGE.STORAGE_BINDING, format: 'rgba8unorm-srgb' })).toThrow(/STORAGE_BINDING/);
+    expect(context.content().webgpu!.notes).toHaveLength(6);
   });
 
   it('holds all the levels of all the textures to a cap', async () => {
@@ -488,7 +490,7 @@ describe('render passes into textures and sampling them', () => {
   it('says what a layout may not hold', async () => {
     const { device } = await setup();
     const layout = (entry: object) => () => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 2, ...entry }] as never });
-    expect(layout({ storageTexture: {} })).toThrow(WebGpuUnsupportedError);
+    expect(layout({ storageTexture: { format: 'rgba8unorm', viewDimension: '2d-array' } })).toThrow(WebGpuUnsupportedError);
     expect(layout({ externalTexture: {} })).toThrow(WebGpuUnsupportedError);
     expect(layout({ texture: { viewDimension: '2d-array' } })).toThrow(/view dimension/);
     expect(layout({ texture: { multisampled: true } })).toThrow(/multisampled/);
