@@ -380,3 +380,78 @@ fn made_nodes_keep_their_layer_ids_across_edits() {
     assert!(ids[1..].windows(2).all(|w| w[0] == w[1]), "{ids:?}");
     assert!(ids[0].iter().any(|id| id.contains('!')), "{:?}", ids[0]);
 }
+
+/// A caption: a flex line aligned on baselines, holding a plain word and a word that carries a doodle (an SVG with
+/// paths) beside its text. Frame to frame only the doodle's attributes change. Restyling the SVG has to leave the
+/// line sized as a fresh build sizes it.
+#[test]
+fn an_edited_svg_beside_text_leaves_the_line_as_fresh() {
+    let caption = |draw: f64| {
+        let petals: Vec<Value> = (0..3)
+            .map(|i| {
+                el_attrs(
+                    "path",
+                    &format!("$0.0.1.1.{i}"),
+                    json!({
+                        "d": format!("M0 0 Q{} 4 10 {}", i, 3 * i),
+                        "fill": "none",
+                        "stroke": "#f8c",
+                        "stroke-width": "2",
+                        "pathLength": "1",
+                        "stroke-dasharray": "1 1",
+                        "stroke-dashoffset": format!("{}", 1.0 - draw * (i as f64 + 1.0) / 3.0),
+                    }),
+                    "",
+                    vec![],
+                )
+            })
+            .collect();
+        let word = el(
+            "span",
+            "$0.0.1",
+            "position: relative; display: inline-block; margin: 0 22px",
+            vec![
+                el(
+                    "span",
+                    "$0.0.1.0",
+                    "display: inline-block; font-family: Inter; font-weight: 800; font-size: 171px; line-height: 1; white-space: nowrap",
+                    vec![text("screenshotting")],
+                ),
+                el_attrs(
+                    "svg",
+                    "$0.0.1.1",
+                    json!({ "width": "60", "height": "60", "viewBox": "-30 -30 60 60" }),
+                    "position: absolute; right: -52px; top: -30px; overflow: visible",
+                    petals,
+                ),
+            ],
+        );
+        let plain = el(
+            "span",
+            "$0.0.0",
+            "display: inline-block; margin: 0 18px; white-space: nowrap; font-size: 90px",
+            vec![text("the")],
+        );
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0",
+            vec![el(
+                "div",
+                "$0.0",
+                "position: absolute; bottom: 100px; width: 960px; display: flex; flex-wrap: wrap; align-items: baseline",
+                vec![plain, word],
+            )],
+        ))
+    };
+    let mut cache = IslandCache::default();
+    let mut fresh = IslandCache::default();
+    for (frame, draw) in [0.0, 0.2, 0.4, 0.6, 1.0].into_iter().enumerate() {
+        let s = caption(draw);
+        assert_eq!(
+            drawn(&mut cache, &s, Some(frame as u64 + 1)),
+            drawn(&mut fresh, &s, None),
+            "frame {frame}"
+        );
+    }
+}

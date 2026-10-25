@@ -437,7 +437,26 @@ impl LayoutPassState<'_> {
                 ibox.height = 0.0;
                 ibox.baseline = None;
             } else {
-                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
+                let mut output =
+                    self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
+                // A measurement taken from taffy's cache keeps only the box's size, not its
+                // baselines, so a cached box would sit on the line as if it had none (and a
+                // document that was edited, whose boxes are cached, would differ from one built
+                // afresh, whose boxes are not). Lay the box out for real to get them: the result
+                // is cached in full.
+                if exports_baseline
+                    && box_inputs.run_mode == RunMode::ComputeSize
+                    && output.baselines.first.is_none()
+                    && output.baselines.last.is_none()
+                {
+                    output = self.compute_child_layout(
+                        taffy::NodeId::from(ibox.id),
+                        LayoutInput {
+                            run_mode: RunMode::PerformLayout,
+                            ..box_inputs
+                        },
+                    );
+                }
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.baseline = if exports_baseline {
                     output
