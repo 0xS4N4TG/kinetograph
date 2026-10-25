@@ -1138,4 +1138,27 @@ export interface SequenceJson {
   parent: string | null;
   /** Id of the group its children are in on this frame; null when not showing or with `layout="none"`. */
   layer: string | null;
+  /** Studio builds only: the name a person would give it (`name`, else the first user component inside, else `Sequence`). */
+  label?: string;
+  /** Studio builds only: the nearest user component whose render wrote the `<Sequence>`. */
+  component?: string;
+  /** Studio builds only: the `<Sequence>` JSX. */
+  source?: SourceLocation;
+}
+
+/** Where a piece of JSX is in the project; studio builds only. */
+export interface SourceLocation {
+  /** Relative to the directory the studio was started in; absolute when outside it. */
+  file: string;
+  /** 1-based. */
+  line: number;
+  /** 1-based. */
+  column: number;
+}
+
+/** What the studio shows for a layer instead of its path id; studio builds only. */
+export interface LayerName {
+  label: string;
+  component?: string;
+  source?: SourceLocation;
 }

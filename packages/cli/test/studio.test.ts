@@ -45,7 +45,7 @@ describe('kinetograph studio', () => {
     const { started, closed } = stubStudio();
     const r = await cli('studio', 'src/index.tsx');
     expect(r.code).toBe(0);
-    expect(started).toEqual([{ entry: 'src/index.tsx', port: undefined, host: undefined, open: true, props: undefined, log: expect.any(Function) }]);
+    expect(started).toEqual([{ entry: 'src/index.tsx', port: undefined, host: undefined, open: true, props: undefined, agent: undefined, allowRemoteAgent: false, log: expect.any(Function) }]);
     // Said once, when it started; nothing more when it stops.
     expect(r.out).toBe('kinetograph studio: http://127.0.0.1:4321/ (Ctrl-C to stop)\n');
     expect(closed).toHaveBeenCalledOnce();
@@ -55,7 +55,7 @@ describe('kinetograph studio', () => {
     const { started } = stubStudio();
     const r = await cli('studio', 'a.tsx', '--port', '4000', '--host', '0.0.0.0', '--no-open', '--props', '{"title":"Hi"}');
     expect(r.code).toBe(0);
-    expect(started).toEqual([{ entry: 'a.tsx', port: 4000, host: '0.0.0.0', open: false, props: { title: 'Hi' }, log: expect.any(Function) }]);
+    expect(started).toEqual([{ entry: 'a.tsx', port: 4000, host: '0.0.0.0', open: false, props: { title: 'Hi' }, agent: undefined, allowRemoteAgent: false, log: expect.any(Function) }]);
   });
 
   it('prints the URL as JSON with --json', async () => {
