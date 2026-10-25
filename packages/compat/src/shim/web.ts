@@ -292,11 +292,58 @@ class DOMExceptionLike extends Error {
 
 const REAL_FETCH = Symbol.for('kinetograph.realFetch');
 
+// Remote URLs a project has downloaded ahead of time (HyperFrames' `fetch-deps`): `fetch(url)` of exactly one of them reads
+// the cached file, so a frame stays a function of the project. Any other remote URL is refused, and `onRefused` hears of it.
+let remoteFiles = new Map<string, string>();
+let onRefused: ((url: string) => void) | null = null;
+
+/** The files `fetch(url)` answers from, by URL. */
+export function setRemoteFiles(files: Record<string, string>): void {
+  remoteFiles = new Map(Object.entries(files));
+}
+
+/** Called with the URL of each `fetch` of a remote file that is not in `setRemoteFiles`. */
+export function setRefusedFetchHandler(handler: ((url: string) => void) | null): void {
+  onRefused = handler;
+}
+
+let inFlight = 0;
+
+/**
+ * Resolves when no `fetch` is in flight and none starts for two turns of the event loop: the callbacks of what a page
+ * fetched at load (`d3.json(url).then(draw)`) have run, and what they started (another fetch) has finished.
+ */
+export async function whenFetchesSettle(): Promise<void> {
+  for (let quiet = 0; quiet < 2; ) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    quiet = inFlight === 0 ? quiet + 1 : 0;
+  }
+}
+
 function makeFetch(real: typeof fetch): typeof fetch {
+  const answer = makeAnswer(real);
+  return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    inFlight++;
+    try {
+      return await answer(input, init);
+    } finally {
+      inFlight--;
+    }
+  }) as typeof fetch;
+}
+
+function makeAnswer(real: typeof fetch): typeof fetch {
   return async function kinetographFetch(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
     if (/^(data|blob):/i.test(url)) return real(input, init);
-    if (REMOTE.test(url)) throw new TypeError(remoteMessage('fetch', url));
+    if (REMOTE.test(url)) {
+      const cached = remoteFiles.get(url);
+      if (cached !== undefined && existsSync(cached)) {
+        return new Response(await readFile(cached), { status: 200, headers: { 'content-type': MIME[extname(new URL(url).pathname).toLowerCase()] ?? 'application/octet-stream' } });
+      }
+      onRefused?.(url);
+      throw new TypeError(remoteMessage('fetch', url));
+    }
     const file = projectFileOf(url);
     if (file === null || !existsSync(file)) {
       throw new TypeError(`fetch("${url}") failed: no such file in the project (looked beside the entry and in public/)`);

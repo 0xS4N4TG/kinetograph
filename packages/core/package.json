@@ -114,6 +114,10 @@
       "types": "./dist/timeline-utils/audio-waveform-worker.d.ts",
       "default": "./dist/timeline-utils/audio-waveform-worker.js"
     },
+    "./hyperframes": {
+      "types": "./dist/hyperframes/index.d.ts",
+      "default": "./dist/hyperframes/index.js"
+    },
     "./media-parser": {
       "types": "./dist/media-parser/index.d.ts",
       "default": "./dist/media-parser/index.js"

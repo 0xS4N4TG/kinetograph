@@ -6,6 +6,7 @@ import { build, context, type BuildOptions, type Message, type Plugin } from 'es
 import { familyFromModuleName } from '@kinetographdev/core/google-fonts';
 import { cssPlugin } from './css.js';
 import { CliError } from './errors.js';
+import { HYPERFRAMES_PREFIX, hyperframesPlugin, isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
 
 /** The package directory of the CLI: the bundle's `@kinetographdev/*` imports resolve from here, so one copy of each. */
 const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -262,7 +263,8 @@ export function syntheticEntry(entry: string, dev = false): string {
     ...(dev ? [`import 'react/jsx-dev-runtime';`] : []),
     `import '@kinetographdev/core/determinism/install';`,
     `import '@kinetographdev/core/web/install';`,
-    `import ${JSON.stringify(entry)};`,
+    // An HTML entry is a HyperFrames project: the plugin turns it into a module that defines the composition.
+    `import ${JSON.stringify(isHyperframesEntry(entry) ? `${HYPERFRAMES_PREFIX}${entry}` : entry)};`,
     `export * from '@kinetographdev/core';`,
     // Text measurement goes through the CLI's own addon: a bundle under node_modules/.cache cannot always find it.
     `export { setLayoutText } from '@kinetographdev/core/layout-utils';`,
@@ -319,7 +321,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), aliasPlugin(unsupported), browserFieldPlugin(), cssPlugin()],
+    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), hyperframesPlugin(), aliasPlugin(unsupported), browserFieldPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };
@@ -338,7 +340,7 @@ function bundleFailure(errors: Message[], fallback: unknown): CliError {
  * package does not fail the bundle: it is listed there (package and importing file) and bundled as a stub.
  */
 export async function bundleProject(entry: string, options: { unsupported?: UnsupportedImport[] } = {}): Promise<BundleResult> {
-  const absolute = resolve(entry);
+  const absolute = resolveEntry(entry);
   let result;
   try {
     result = await build(bundleOptions(absolute, options.unsupported));
@@ -372,7 +374,7 @@ export async function watchProject(
   entry: string,
   onBuild: (build: ProjectBuild) => void,
 ): Promise<{ dispose(): Promise<void> }> {
-  const options = bundleOptions(resolve(entry), undefined, true);
+  const options = bundleOptions(resolveEntry(entry), undefined, true);
   const notify: Plugin = {
     name: 'kinetograph-notify',
     setup(b) {
