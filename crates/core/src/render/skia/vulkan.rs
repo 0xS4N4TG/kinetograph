@@ -93,8 +93,11 @@ impl Native {
             let physical = d.raw_physical_device();
             let properties = instance.get_physical_device_properties(physical);
             // Skia asks for the functions of every version it is allowed to use; the loader gives a device only the
-            // ones up to the version the instance was made for.
-            let api = shared.instance_api_version().min(properties.api_version);
+            // ones up to the version the instance was made for. `instance_api_version()` is the loader's version, not
+            // that one: wgpu-hal creates its VkInstance with at most Vulkan 1.3 (Instance::init), so on a 1.4 loader
+            // Skia would ask for 1.4 functions the device never gets and fail to start (issue #1). If wgpu-hal raises
+            // its cap, raise this one with it.
+            let api = shared.instance_api_version().min(properties.api_version).min(vk::API_VERSION_1_3);
             let instance_extensions: Vec<&str> = shared.extensions().iter().filter_map(|e| e.to_str().ok()).collect();
             let device_extensions: Vec<&str> = d.enabled_device_extensions().iter().filter_map(|e| e.to_str().ok()).collect();
             let resolver = |of: gpu::vk::GetProcOf| -> *const c_void {
