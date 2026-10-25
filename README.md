@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="#rendered-with-kinetograph">Examples</a> ·
+  <a href="#the-editor">Editor</a> ·
   <a href="#projects-in-tsx">Get started</a> ·
   <a href="packages/cli/skills/kinetograph/references/ENGINE.md">The engine</a> ·
   <a href="packages/site/content/docs/guides/agents.mdx">Use with agents</a>
@@ -68,6 +69,24 @@ rendered by Kinetograph as they are. Same machine and settings as above.
     <td width="33%"><img src="docs/readme/papercut-10-war.gif" alt="Tape & Code ep. 10: The War Skill"><br><b>Ep. 10: The War Skill</b><br><sub>850 frames · 1080×1920 · 28 s of video<br><b>rendered in 75 s</b></sub></td>
   </tr>
 </table>
+
+## The editor
+
+<p align="center">
+  <img src="docs/readme/studio.webp" alt="Kinetograph studio: the showcase project at frame 292, with the text layer 'kinetograph render' selected in the preview, the Agent tab open beside it, and a timeline with one row per shot and audio clip" width="100%">
+</p>
+
+`kinetograph studio src/index.tsx` opens a local editor for a project. The engine draws its preview frames, so what you
+see is what renders.
+
+- **Timeline:** one row per shot and audio clip. Repeated components fold into one row, and clicking a bar jumps
+  there. "Show details" opens every layer.
+- **Readable layers:** each layer is named after its component and text, with the file and line it came from.
+- **Point and ask:** click a layer in the preview, or drag a box around several, then tell your coding agent what to
+  change. The agent gets the selection, the source locations and a picture of the area. It talks to the agent over
+  the Agent Client Protocol (ACP), with presets for Claude Code, Codex and Gemini (tested with Claude Code so far),
+  and asks you before the agent edits a file.
+- **Inspect and render:** props, the scene tree, each layer's resolved fields and renders, all in the same window.
 
 ## Status
 

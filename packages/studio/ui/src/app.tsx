@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { StudioApi } from '@/api';
+import { AgentPanel } from '@/components/agent/agent-panel';
 import { InspectorPanel } from '@/components/inspector/inspector-panel';
 import { ProjectPanel } from '@/components/project/project-panel';
 import { MenuBar } from '@/components/shell/menu-bar';
@@ -11,6 +12,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Transport } from '@/components/viewer/transport';
 import { Viewer, type View, type Zoom } from '@/components/viewer/viewer';
+import { useChat } from '@/lib/use-chat';
 import { useTransportKeys } from '@/lib/use-transport-keys';
 import { useStudio } from '@/studio';
 
@@ -25,6 +27,7 @@ const WORKSPACE_TABS: Record<Workspace, string> = {
 export function App({ api }: { api: StudioApi }) {
   const studio = useStudio(api);
   const { player, playerState, comp } = studio;
+  const chat = useChat(studio);
   const [tab, setTab] = useState('scene');
   const [workspace, setWorkspace] = useState<Workspace>('Default');
   const [tool, setTool] = useState<Tool>('select');
@@ -37,10 +40,10 @@ export function App({ api }: { api: StudioApi }) {
     setTab(WORKSPACE_TABS[next]);
   };
   const zoomTo = (zoom: Zoom) => setView({ zoom, pan: { x: 0, y: 0 } });
-  /** A layer picked on the canvas or the timeline: selected, and shown in the scene tree. */
-  const pickLayer = (id: string | null) => {
-    studio.selectLayer(id);
-    if (id !== null) setTab('scene');
+  /** Layers picked in the preview or on the timeline: one, several, or none; shown in the scene tree. */
+  const pickLayers = (ids: string[]) => {
+    studio.selectLayers(ids);
+    if (ids.length > 0 && tab !== 'agent') setTab('scene');
   };
 
   useTransportKeys(player, {
@@ -103,7 +106,7 @@ export function App({ api }: { api: StudioApi }) {
                     buildError={studio.buildError}
                     frameError={playerState.error}
                     inspect={studio.inspect}
-                    selectedLayer={studio.selectedLayer}
+                    selectedLayers={studio.selectedLayers}
                     compositions={studio.compositions}
                     onSelectComp={studio.selectComp}
                     tool={tool}
@@ -111,7 +114,7 @@ export function App({ api }: { api: StudioApi }) {
                     onViewChange={setView}
                     safeZones={safeZones}
                     onSafeZonesChange={setSafeZones}
-                    onSelectLayer={pickLayer}
+                    onSelectLayers={pickLayers}
                   />
                   <Transport comp={comp} player={player} state={playerState} />
                 </div>
@@ -127,7 +130,22 @@ export function App({ api }: { api: StudioApi }) {
                   project={studio.project}
                   timeline={studio.timeline.state === 'ready' ? studio.timeline.data : null}
                   selectedLayer={studio.selectedLayer}
-                  onSelectLayer={studio.selectLayer}
+                  selectedLayers={studio.selectedLayers}
+                  onSelectLayers={pickLayers}
+                  onSelectLayer={(id, additive) =>
+                    id !== null && additive
+                      ? studio.selectLayers(
+                          studio.selectedLayers.includes(id) ? studio.selectedLayers.filter((l) => l !== id) : [...studio.selectedLayers, id],
+                        )
+                      : studio.selectLayer(id)
+                  }
+                  agentTab={
+                    <AgentPanel
+                      studio={{ ...studio, frame: playerState.frame }}
+                      chat={chat}
+                      timeline={studio.timeline.state === 'ready' ? studio.timeline.data : null}
+                    />
+                  }
                   propValues={studio.propValues}
                   propsEdited={studio.propsOverride !== undefined}
                   onChangeProps={studio.setPropValues}
@@ -146,8 +164,8 @@ export function App({ api }: { api: StudioApi }) {
               status={studio.timeline}
               state={playerState}
               player={player}
-              selectedLayer={studio.selectedLayer}
-              onSelectLayer={pickLayer}
+              selectedLayers={studio.selectedLayers}
+              onSelectLayers={pickLayers}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

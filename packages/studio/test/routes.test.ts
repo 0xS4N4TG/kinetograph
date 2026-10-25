@@ -124,10 +124,14 @@ describe('GET /api/inspect and /api/timeline', () => {
     // One entry per key, sorted by from, the layer of the first frame each shows on.
     expect(r.json.sequences.map((s: { key: string }) => s.key)).toEqual(['/intro@10+20', '/intro@10+20/inner@12+5', '/outro@50+10']);
     expect(r.json.sequences.map((s: { layer: string }) => s.layer)).toEqual(['$0', '$0', '$0']);
+    // A path id means whatever sits there, so `$0` in two Sequences is two layers, each saying which Sequence it is in;
+    // a name the author gave (`bg`) stays one layer, in the Sequence it began in (none: it began on frame 0).
     expect(r.json.layers).toEqual([
       { id: 'bg', type: 'shape', parent: null, ranges: [[0, 89]] },
-      { id: '$0', type: 'group', parent: null, ranges: [[10, 29], [50, 59]] },
-      { id: '$0.0', type: 'shape', parent: '$0', ranges: [[10, 29], [50, 59]] },
+      { id: '$0', type: 'group', parent: null, ranges: [[10, 29]], sequence: '/intro@10+20' },
+      { id: '$0.0', type: 'shape', parent: '$0', ranges: [[10, 29]], sequence: '/intro@10+20' },
+      { id: '$0', type: 'group', parent: null, ranges: [[50, 59]], sequence: '/outro@50+10' },
+      { id: '$0.0', type: 'shape', parent: '$0', ranges: [[50, 59]], sequence: '/outro@50+10' },
     ]);
   });
 
