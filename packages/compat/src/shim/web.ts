@@ -316,10 +316,17 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
     out.push(found as DomElement);
     if (first) return out;
   }
+  // `body` next: it holds what a script appended to it outside any React root, as well as the roots' own top level.
+  const body = domElementFor(bodyHost);
+  for (const found of first ? [body.querySelector(selector)].filter((e) => e !== null) : body.querySelectorAll(selector)) {
+    if (!out.includes(found as DomElement)) out.push(found as DomElement);
+    if (first) return out;
+  }
   for (const readback of readbackRoots()) {
     const cx = selectorContextOf(readback);
     for (const host of queryAll(readback.descendants(), selector, cx, first)) {
-      out.push(domElementFor(host, readback));
+      const found = domElementFor(host, readback);
+      if (!out.includes(found)) out.push(found);
       if (first) return out;
     }
   }

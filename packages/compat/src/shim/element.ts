@@ -152,8 +152,29 @@ export interface CSSStyleDeclarationShim {
 }
 
 /** `getComputedStyle(el)`: values come from the engine's computed style for the island, read when asked for. */
+/** The text properties an SVG element inherits, with what the page says when nothing does. */
+const SVG_TEXT_DEFAULTS: Record<string, string> = { 'font-size': '16px', 'font-weight': '400', 'font-style': 'normal', 'font-family': 'serif', 'text-anchor': 'start' };
+
+/** An inherited text property of an SVG element from its own attribute or style, or an ancestor's, when the layout has no answer for it. */
+function svgTextProperty(host: HostElement, property: string, readback: Readback): string {
+  for (let h: HostElement | null = host; h !== null; h = readback.parent(h)) {
+    const props = propsWithOverlay(h);
+    const style = typeof props.style === 'object' && props.style !== null ? (props.style as Record<string, unknown>) : {};
+    const camel = property.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
+    const value = style[camel] ?? style[property] ?? props[camel] ?? props[property];
+    if (value !== undefined && value !== null && value !== '') {
+      return property === 'font-size' && /^[\d.]+$/.test(String(value)) ? `${value}px` : String(value);
+    }
+  }
+  return SVG_TEXT_DEFAULTS[property] ?? '';
+}
+
 export function computedStyleOf(host: HostElement, readback: Readback): CSSStyleDeclarationShim {
-  const read = (property: string): string => readback.computed(host, kebab(property)) ?? '';
+  const read = (property: string): string => {
+    const answer = readback.computed(host, kebab(property)) ?? '';
+    if (answer !== '' || !(kebab(property) in SVG_TEXT_DEFAULTS) || !(isSvgTag(host.type) || readback.parent(host)?.type === 'svg')) return answer;
+    return svgTextProperty(host, kebab(property), readback);
+  };
   const target = {
     getPropertyValue: read,
     getPropertyPriority: () => '',
@@ -272,8 +293,11 @@ function documentPosition(a: Positioned, b: unknown): number {
   return kids.indexOf(other[j - 1]!) < kids.indexOf(up[i - 1]!) ? POSITION.PRECEDING : POSITION.FOLLOWING;
 }
 
+const TEXT_TAGS = new Set(['text', 'tspan']);
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
+const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 
 export class DomElement {
   readonly nodeType = 1;
@@ -369,6 +393,22 @@ export class DomElement {
     overlayOf(this.host, true)!.attrs.set(name, null);
     this.readback.touch();
     recordAttribute(this.host, name, old);
+  }
+  // The namespaced forms keep the qualified name as the attribute's name; `xlink:href` also answers as `href` (what <use> and <image> read).
+  setAttributeNS(_ns: string | null, qualifiedName: string, value: unknown): void {
+    this.setAttribute(qualifiedName, value);
+    if (qualifiedName === 'xlink:href' && this.getAttribute('href') === null) this.setAttribute('href', value);
+  }
+  getAttributeNS(ns: string | null, localName: string): string | null {
+    return this.getAttribute(ns === XLINK_NS ? `xlink:${localName}` : ns === XML_NS ? `xml:${localName}` : localName);
+  }
+  hasAttributeNS(ns: string | null, localName: string): boolean {
+    return this.getAttributeNS(ns, localName) !== null;
+  }
+  removeAttributeNS(ns: string | null, localName: string): void {
+    const name = ns === XLINK_NS ? `xlink:${localName}` : ns === XML_NS ? `xml:${localName}` : localName;
+    this.removeAttribute(name);
+    if (name === 'xlink:href') this.removeAttribute('href');
   }
   toggleAttribute(name: string, force?: boolean): boolean {
     const want = force ?? !this.hasAttribute(name);
@@ -497,6 +537,13 @@ export class DomElement {
   contains(other: unknown): boolean {
     const node = hostNodeOf(other);
     if (node === null) return false;
+    if (node === this.host) return true;
+    if (this.host === bodyHost) {
+      // Anything in the document except `html`, `head` and what hangs from `head`.
+      let top: DomNode = node;
+      for (let p = effectiveParentOf(top); p !== null; p = effectiveParentOf(top)) top = p;
+      return top !== htmlHost && top !== headHost && top !== bodyHost && isConnectedHost(node);
+    }
     for (let h: DomNode | null = node; h !== null; h = effectiveParentOf(h)) if (h === this.host) return true;
     return false;
   }
@@ -928,6 +975,10 @@ export class DomElement {
   }
   /** The element's box in its own user space, before its transform: geometry, or the union of its children's. */
   getBBox(): DOMRectShim {
+    if (TEXT_TAGS.has(this.host.type)) {
+      const box = this.textBBox();
+      if (box !== null) return box;
+    }
     const d = this.geometryPath();
     if (d !== null) {
       const b = pathMeasure().getBoundingBox(d);
@@ -993,7 +1044,42 @@ export class DomElement {
     return { baseVal: { numberOfItems: this.getAttribute('transform') === null ? 0 : 1, consolidate: () => ({ matrix }), getItem: () => ({ matrix }) } };
   }
   getComputedTextLength(): number {
+    if (TEXT_TAGS.has(this.host.type)) {
+      const advance = this.advanceOf(this.svgText());
+      if (advance > 0) return advance;
+    }
     return this.box()?.width ?? 0;
+  }
+  /** The box of an SVG `<text>`/`<tspan>` from the text engine: its advance wide, a line high, at `x`/`y` moved by `text-anchor`. */
+  private textBBox(): DOMRectShim | null {
+    const text = this.svgText();
+    if (text === '') return null;
+    const width = this.advanceOf(text);
+    if (width <= 0) return null;
+    const computed = (property: string): string => this.readback.computed(this.host, property) ?? '';
+    const size = parseFloat(computed('font-size')) || parseFloat(svgTextProperty(this.host, 'font-size', this.readback)) || 16;
+    let ascent = size * 0.8;
+    let height = size * 1.2;
+    if (hasAddonFunction('layoutText')) {
+      try {
+        const family = (computed('font-family') || svgTextProperty(this.host, 'font-family', this.readback)).split(',')[0]!.trim().replace(/^['"]|['"]$/g, '');
+        const weight = computed('font-weight') || svgTextProperty(this.host, 'font-weight', this.readback);
+        const style = computed('font-style') || svgTextProperty(this.host, 'font-style', this.readback);
+        const key = fontKey(family, weight === '' ? undefined : weight, style === 'italic' || style === 'oblique' ? 'italic' : undefined);
+        const line = addonFunction('layoutText')({ text, font: key, size, fonts: registeredFonts() }).lines?.[0];
+        if (line) {
+          ascent = line.baseline - line.top;
+          height = line.bottom - line.top;
+        }
+      } catch {
+        // The estimate above stands.
+      }
+    }
+    const x = this.numberList('x')[0] ?? 0;
+    const y = this.numberList('y')[0] ?? 0;
+    const anchor = svgTextProperty(this.host, 'text-anchor', this.readback);
+    const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
+    return new DOMRectShim(left, y - ascent, width, height);
   }
 
   // The characters of an SVG `<text>`: what it says with white space collapsed (SVG's default), and where each starts.
