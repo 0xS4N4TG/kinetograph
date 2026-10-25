@@ -37,11 +37,13 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 ### WebGL
 
-A framebuffer texture starts every frame blank. A frame that only draws into framebuffers still clears the canvas, where a browser would keep the last picture. Each item below needs new GPU work.
+Every frame starts with an empty canvas and blank framebuffer textures, also for a context made with `preserveDrawingBuffer`, because a frame is a function of its own number. A frame that draws nothing draws nothing, where a browser would keep the last picture. Each item below needs new GPU work.
 
-- Not supported: renderbuffers; depth and stencil attachments; `COLOR_ATTACHMENT1` and up; a texture level above 0 as a target; targets that are not RGBA or that hold uploaded pixels; `generateMipmap` and `texSubImage2D` on a texture drawn into; points and lines; instancing; cube, 3D and float textures; and multisampled edges.
+- Not supported: renderbuffers; depth and stencil attachments; `COLOR_ATTACHMENT1` and up; a texture level above 0 as a target; targets that are not RGBA or that hold uploaded pixels; `generateMipmap` on a texture drawn into; `LINES`, `LINE_STRIP` and `LINE_LOOP`; instanced points; a `vertexAttribDivisor` above 1; cube, 3D and float textures; and multisampled edges.
 - `readPixels` is refused by design.
-- `blitFramebuffer` is reported as unsupported.
+- Points are drawn as squares of `gl_PointSize` pixels with `gl_PointCoord`, at most 511 pixels across (`ALIASED_POINT_SIZE_RANGE` is 1 to 511). `gl_VertexID` in a vertex shader that draws points is the point's index, but with `drawElements` it is the position in the index list, not the index.
+- `blitFramebuffer` copies the colour only, as there is no depth or stencil buffer, and refuses to read and write one buffer.
+- `texSubImage2D` into a texture a framebuffer drew in is supported from a canvas, `ImageData` or an array of pixels; from an image file it is not.
 
 ### WGSL `shader()`
 

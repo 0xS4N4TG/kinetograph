@@ -628,7 +628,20 @@ program that draws into a texture is translated upside down (`flip_y`: the verte
 nothing. A frame starts every target zeroed (wgpu's lazy clear), so a target is a function of the frame's own ops.
 `crates/dom/tests/webgl.rs` runs four cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
 them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0, texture sampling 0.05 and two
-render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off. `renderCanvas` (the addon) keeps one renderer, so a call no longer
+render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off.
+Points, instancing and the copies between buffers are made of the same pieces (`tests/glsl.rs` pins each). A point is
+one instance of a six-vertex quad: its attributes advance for each instance (indexed points gather them in the order
+of the list first), and the vertex shader's wrapper places the quad after `main` ran, `gl_PointSize` pixels across in
+the viewport, clamped to 1..511, with `gl_PointCoord` as a varying at location 15; a point whose centre is outside
+the clip volume is dropped, as GL does, and culling does not apply. `gl_VertexID` is wgpu's `vertex_index` (which
+counts from the draw's `first`), or the instance index in a draw of points; `gl_InstanceID` is the instance index. An
+attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`. `blitFramebuffer` is an op of its
+own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle over the destination with `textureLoad`
+(NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
+(GL's bottom first) apart; the replay keeps a canvas draw that a blit reads even when a later clear would have
+dropped it. `texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
+then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
+empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
