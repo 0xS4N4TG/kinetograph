@@ -4,8 +4,8 @@ import { createWebGLContext, glslShader, GL, GL2, layerPicture, WebGLUnsupported
 const VERTEX = 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
 const FRAGMENT = 'precision mediump float; varying vec2 v; uniform float t; uniform vec2 r[2]; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v) * t; }';
 
-function setup(): { gl: WebGLContext; program: ReturnType<WebGLContext['createProgram']> } {
-  const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+function setup(options: { attributes?: { preserveDrawingBuffer?: boolean } } = {}): { gl: WebGLContext; program: ReturnType<WebGLContext['createProgram']> } {
+  const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), ...options });
   const program = gl.createProgram();
   for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
     const shader = gl.createShader(type)!;
@@ -57,11 +57,83 @@ describe('the recording WebGL context', () => {
     expect(gl.content().ops).toHaveLength(1);
   });
 
-  it('starts a fresh drawing buffer on the first draw after resetState, and keeps the picture if nothing draws', () => {
+  it('starts a fresh drawing buffer after resetState, so a frame that draws nothing draws nothing', () => {
     const { gl } = setup();
     gl.drawArrays(GL.TRIANGLES, 0, 3);
     gl.resetState();
-    expect(gl.content().ops).toHaveLength(1);
+    expect(gl.drawn).toBe(false);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    expect(gl.content().ops).toHaveLength(2);
+  });
+
+  it('getParameter(VERTEX_ARRAY_BINDING) is the bound vertex array or null', () => {
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    expect(gl.getParameter(0x85b5)).toBeNull();
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    expect(gl.getParameter(0x85b5)).toBe(vao);
+    gl.bindVertexArray(null);
+    expect(gl.getParameter(0x85b5)).toBeNull();
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+  });
+
+  it('records a points draw and reports the point size range', () => {
+    const { gl } = setup();
+    gl.drawArrays(GL.POINTS, 1, 2);
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    expect(gl.content().ops[0]).toMatchObject({ op: 'draw', mode: 'points', first: 1, count: 2 });
+    expect([...(gl.getParameter(0x846d) as Float32Array)]).toEqual([1, 511]);
+    expect(() => gl.drawArrays(GL.LINES, 0, 2)).toThrow(/lines/);
+  });
+
+  it('records blitFramebuffer between the canvas and a texture drawn in, keeping the canvas ops a blit reads', () => {
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    const texture = gl.createTexture();
+    gl.bindTexture(GL.TEXTURE_2D, texture);
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 8, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+    gl.clear(GL.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(0x8ca8, null);
+    gl.bindFramebuffer(0x8ca9, framebuffer);
+    gl.blitFramebuffer(0, 0, 8, 4, 8, 0, 0, 4, GL.COLOR_BUFFER_BIT, GL.LINEAR);
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    gl.bindFramebuffer(0x8ca9, null);
+    gl.clear(GL.COLOR_BUFFER_BIT);
+    const ops = gl.content().ops;
+    expect(ops.map((op) => op.op)).toEqual(['clear', 'blit', 'clear']);
+    expect(ops[1]).toMatchObject({ op: 'blit', from: [0, 0, 8, 4], to: [8, 0, 0, 4], linear: true });
+    expect((ops[1] as { target?: string }).target).toBeDefined();
+    expect((ops[1] as { src?: string }).src).toBeUndefined();
+    // Reading and writing the same buffer is refused, as GL refuses it.
+    gl.blitFramebuffer(0, 0, 1, 1, 0, 0, 1, 1, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+    expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+  });
+
+  it('records instanced draws with the attributes that advance per instance', () => {
+    const { gl, program } = setup();
+    const at = gl.getAttribLocation(program, gl.getActiveAttrib(program, 0)!.name);
+    gl.vertexAttribDivisor(at, 1);
+    gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 5);
+    gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 0);
+    gl.vertexAttribDivisor(at, 2);
+    expect(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 2)).toThrow(/vertexAttribDivisor\(2/);
+    const ops = gl.content().ops;
+    expect(ops).toHaveLength(1);
+    const draw = ops[0] as { instances?: number; attributes: Record<string, { divisor?: number }> };
+    expect(draw.instances).toBe(5);
+    expect(Object.values(draw.attributes)[0]!.divisor).toBe(1);
+  });
+
+  it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {
+    const { gl } = setup({ attributes: { preserveDrawingBuffer: true } });
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    expect(gl.content().ops).toHaveLength(2);
+    gl.resetState();
     gl.drawArrays(GL.TRIANGLES, 0, 3);
     expect(gl.content().ops).toHaveLength(1);
   });
@@ -134,12 +206,11 @@ describe('the recording WebGL context', () => {
     gl.enable(GL.DEPTH_TEST);
     expect(refused(() => gl.drawArrays(GL.TRIANGLES, 0, 3))).toMatch(/^unsupported:.*depth/);
     gl.disable(GL.DEPTH_TEST);
-    expect(refused(() => gl.drawArrays(GL.POINTS, 0, 3))).toMatch(/^unsupported:.*points/);
+    expect(refused(() => gl.drawArrays(GL.LINES, 0, 2))).toMatch(/^unsupported:.*lines/);
     expect(refused(() => gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/^unsupported:.*renderbuffers/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
-    expect(refused(() => (gl as any).blitFramebuffer(0, 0, 1, 1, 0, 0, 1, 1, 0x4000, 0x2600))).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(GL.TEXTURE_CUBE_MAP, gl.createTexture()))).toMatch(/cube/);
-    expect(refused(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 4))).toMatch(/instanced/);
+    expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
   });
 
   describe('framebuffers', () => {
@@ -334,12 +405,26 @@ describe('the recording WebGL context', () => {
       expect(refused(() => gl.clear(GL.COLOR_BUFFER_BIT))).toMatch(/RGBA/);
       expect(framebuffer.color).toBe(texture);
 
-      // Once drawn in, a texture is not edited from the page.
+      // Once drawn in, a texture is not mipmapped from the page.
       specify(GL.RGBA, null);
       gl.drawArrays(GL.TRIANGLES, 0, 3);
       gl.bindTexture(GL.TEXTURE_2D, texture);
       expect(refused(() => gl.generateMipmap(GL.TEXTURE_2D))).toMatch(/generateMipmap/);
-      expect(refused(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4)))).toMatch(/texSubImage2D/);
+    });
+
+    it('records texSubImage2D into a texture drawn in as an upload after the draws, at the offset', () => {
+      const { gl } = setup();
+      const { texture } = attach(gl, 4, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 1, 1, 2, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 3, 1, 2, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(8));
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      const ops = gl.content().ops;
+      expect(ops.map((op) => op.op)).toEqual(['draw', 'upload']);
+      expect(ops[1]).toMatchObject({ op: 'upload', x: 1, y: 1, width: 2, height: 1, flipY: true });
+      expect((ops[1] as { target: string }).target).toBe((ops[0] as { target: string }).target);
     });
   });
 
