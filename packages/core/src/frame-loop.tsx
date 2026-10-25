@@ -33,7 +33,7 @@ import {
 } from '@kinetographdev/compat/dom';
 import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, virtualNow } from './determinism.js';
+import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
 
@@ -137,6 +137,8 @@ class Renderer implements FrameRenderer {
       this.trailFrom = this.trailTo = -1;
     }
     const fresh = this.lastFrame < 0;
+    // The frame the clock stood at before this one (frame 0 for a scene that has just started).
+    const was = fresh ? 0 : this.lastFrame;
     this.lastFrame = frame;
 
     await waitForFonts();
@@ -151,6 +153,9 @@ class Renderer implements FrameRenderer {
         setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
         await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
       }
+      // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
+      // by their time (Motion) shows the same as in a render of every frame.
+      stepAnimationFrames(was + 1, frame, config.fps);
       setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
@@ -252,7 +257,7 @@ class Renderer implements FrameRenderer {
       subFrameLayers: () => this.subFrameLayers,
     });
     this.lastFrame = -1;
-    resetVirtualClock();
+    resetVirtualClock({ keepAnimationFrames: true });
   }
 
   private openPass(): void {

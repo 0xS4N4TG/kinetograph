@@ -498,7 +498,7 @@ describe('the determinism shim in a render', () => {
     function Raf() {
       const frame = useCurrentFrame();
       useEffect(() => {
-        requestAnimationFrame((t) => {
+        (globalThis as any).requestAnimationFrame((t: number) => {
           drawn = `${frame}@${Math.round(t)}`;
         });
       });
@@ -511,6 +511,34 @@ describe('the determinism shim in a render', () => {
     expect(drawn).toBe('3@100');
     await r.renderFrame(4);
     expect(drawn).toBe('4@133');
+  });
+
+  it('gives a loop in requestAnimationFrame the frames a jump skips, so a frame is the same alone and in sequence', async () => {
+    installDeterminism();
+    let seen: number[] = [];
+    function Loop() {
+      useEffect(() => {
+        const g = globalThis as any;
+        let id = 0;
+        const tick = (t: number) => {
+          seen.push(Math.round(t));
+          id = g.requestAnimationFrame(tick);
+        };
+        id = g.requestAnimationFrame(tick);
+        // A loop that cleans up when it unmounts, as a loop should: starting a scene over does not carry it along.
+        return () => g.cancelAnimationFrame(id);
+      }, []);
+      return <Text id="c" font="Inter" size={10}>x</Text>;
+    }
+    registerRoot(() => <Composition id="J" component={Loop} width={10} height={10} fps={30} durationInFrames={90} />);
+    const sequence = createFrameRenderer('J');
+    for (let f = 0; f <= 5; f++) await sequence.renderFrame(f);
+    const inSequence = seen;
+    seen = [];
+    sequence.dispose();
+    await createFrameRenderer('J').renderFrame(5);
+    expect(seen).toEqual(inSequence);
+    expect(seen).toEqual([0, 33, 67, 100, 133, 167]);
   });
 });
 
