@@ -32,7 +32,7 @@ use kurbo::{Affine, BezPath, Shape};
 use style::properties::{LonghandId, PropertyDeclarationId};
 use style_traits::ToCss;
 
-use super::css;
+use super::{color, css};
 
 /// A reason something is not drawn as Chrome would.
 #[derive(Clone, Debug)]
@@ -130,10 +130,11 @@ const ROOT_INHERITED: [&str; 31] = [
 
 /// The presentation properties read from the cascade: CSS name, Stylo's id,
 /// whether the property inherits, and its initial value as Stylo prints it.
-const CASCADED: [(&str, LonghandId, bool, &str); 22] = [
+const CASCADED: [(&str, LonghandId, bool, &str); 27] = [
     ("fill", LonghandId::Fill, true, "rgb(0, 0, 0)"),
     ("fill-opacity", LonghandId::FillOpacity, true, "1"),
     ("fill-rule", LonghandId::FillRule, true, "nonzero"),
+    ("clip-rule", LonghandId::ClipRule, true, "nonzero"),
     ("stroke", LonghandId::Stroke, true, "none"),
     ("stroke-width", LonghandId::StrokeWidth, true, "1px"),
     ("stroke-opacity", LonghandId::StrokeOpacity, true, "1"),
@@ -159,6 +160,15 @@ const CASCADED: [(&str, LonghandId, bool, &str); 22] = [
     ("letter-spacing", LonghandId::LetterSpacing, true, "normal"),
     ("word-spacing", LonghandId::WordSpacing, true, "0px"),
     ("text-rendering", LonghandId::TextRendering, true, "auto"),
+    ("text-anchor", LonghandId::TextAnchor, true, "start"),
+    ("shape-rendering", LonghandId::ShapeRendering, true, "auto"),
+    ("paint-order", LonghandId::PaintOrder, true, "normal"),
+    (
+        "dominant-baseline",
+        LonghandId::DominantBaseline,
+        true,
+        "auto",
+    ),
     ("visibility", LonghandId::Visibility, true, "visible"),
     ("opacity", LonghandId::Opacity, false, "1"),
     ("display", LonghandId::Display, false, "inline"),
@@ -491,6 +501,18 @@ impl Writer<'_> {
         computed_color(self.doc, id)
     }
 
+    /// A colour usvg cannot read, resolved by Stylo (`color::resolve`); one that
+    /// cannot be is noted, not left to be drawn black without a word.
+    fn resolve_color(&mut self, id: NodeId, tag: &str, name: &str, value: &mut String) {
+        match color::resolve(self.doc, id, value) {
+            Ok(resolved) => *value = resolved.into_owned(),
+            Err(reason) if !reason.is_empty() => {
+                self.note(tag, name, value, &reason);
+            }
+            Err(_) => {}
+        }
+    }
+
     fn note(&mut self, element: &str, property: &str, value: &str, reason: &str) {
         self.notes.push(Note {
             element: element.to_string(),
@@ -521,9 +543,12 @@ impl Writer<'_> {
             }
         }
         let color = self.current_color(id);
-        for (_, v) in attrs.iter_mut().chain(decls.iter_mut()) {
+        for (n, v) in attrs.iter_mut().chain(decls.iter_mut()) {
             if v.contains("currentColor") {
                 *v = v.replace("currentColor", &color);
+            }
+            if color::COLOR_PROPERTIES.contains(&n.as_str()) {
+                self.resolve_color(id, &tag, n, v);
             }
             scan_refs(v, &mut self.refs);
         }
@@ -549,6 +574,15 @@ impl Writer<'_> {
             }
             if v.eq_ignore_ascii_case("currentcolor") {
                 v = color.clone();
+            }
+            if color::COLOR_PROPERTIES.contains(&n.as_str()) {
+                let tag = self
+                    .doc
+                    .get_node(id)
+                    .and_then(|x| x.element_data())
+                    .map(|e| e.name.local.to_string())
+                    .unwrap_or_default();
+                self.resolve_color(id, &tag, &n, &mut v);
             }
             scan_refs(&v, &mut self.refs);
             decls.push((n, v));

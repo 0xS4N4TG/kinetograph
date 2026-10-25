@@ -238,3 +238,98 @@ fn a_font_face_family_the_html_sets_reaches_the_svg_text_however_it_is_quoted() 
     on_text["root"]["children"][0]["children"][2]["style"] = json!("font-family: \"Display Face\"");
     assert_eq!(glyphs(&on_text), display);
 }
+
+#[test]
+fn colours_usvg_cannot_read_are_resolved_like_html_ones() {
+    let fill_of = |sheet: &str, div_style: &str, fill: &str| {
+        let req = page(
+            sheet,
+            json!({ "class": "c" }),
+            div_style,
+            json!({ "fill": fill }),
+            json!({}),
+        );
+        rect_fill(&req)
+    };
+    // Attributes.
+    assert_eq!(fill_of("", "", "rebeccapurple"), "#663399ff");
+    assert_eq!(fill_of("", "", "rgb(18 52 86)"), "#123456ff");
+    assert_eq!(fill_of("", "", "oklch(1 0 0)"), "#ffffffff");
+    assert_eq!(fill_of("", "", "oklab(0 0 0)"), "#000000ff");
+    assert_eq!(
+        fill_of("", "", "color-mix(in srgb, #ff0000 50%, #0000ff 50%)"),
+        "#800080ff"
+    );
+    assert!(fill_of("", "", "rgb(0 0 0 / 0.5)").starts_with("#000000"));
+    // Custom properties, with and without a fallback, set on the HTML around.
+    assert_eq!(fill_of("", "--c: #123456", "var(--c)"), "#123456ff");
+    assert_eq!(fill_of("", "", "var(--nope, #654321)"), "#654321ff");
+    assert_eq!(
+        fill_of(".c { --c: oklch(1 0 0) }", "", "var(--c)"),
+        "#ffffffff"
+    );
+    // From a rule, where Stylo computes them.
+    assert_eq!(
+        fill_of(".c rect { fill: oklch(1 0 0) }", "", "red"),
+        "#ffffffff"
+    );
+    assert_eq!(
+        fill_of(".c rect { fill: var(--c) }", "--c: rebeccapurple", "red"),
+        "#663399ff"
+    );
+    // One that cannot be resolved is reported, not drawn black without a word.
+    let req = page(
+        "",
+        json!({}),
+        "",
+        json!({ "fill": "var(--missing)" }),
+        json!({}),
+    );
+    let out = paint(&req);
+    assert!(
+        out.unsupported
+            .iter()
+            .any(|u| u.property.as_deref() == Some("fill")),
+        "{:?}",
+        out.unsupported
+    );
+}
+
+#[test]
+fn text_anchor_and_the_other_svg_only_properties_cascade_too() {
+    let fonts = json!({ "DM Sans": dm_sans() });
+    // `text-anchor` from a rule is the attribute on the text.
+    let rule = page(
+        ".chart text { text-anchor: end }",
+        json!({ "class": "chart" }),
+        "",
+        json!({}),
+        fonts.clone(),
+    );
+    let mut attr = page("", json!({}), "", json!({}), fonts.clone());
+    attr["root"]["children"][0]["children"][2]["attrs"]["text-anchor"] = json!("end");
+    let plain = page("", json!({}), "", json!({}), fonts.clone());
+    assert_eq!(json_of(&paint(&rule)), json_of(&paint(&attr)));
+    assert_ne!(json_of(&paint(&rule)), json_of(&paint(&plain)));
+
+    // What the HTML around the svg sets is inherited into it.
+    let inherited = page("", json!({}), "text-anchor: end", json!({}), fonts.clone());
+    assert_eq!(json_of(&paint(&inherited)), json_of(&paint(&attr)));
+
+    // The same for `paint-order` and `shape-rendering`, which change the picture.
+    let stroked = json!({ "stroke": "#ff0000", "stroke-width": "10" });
+    let rule = page(
+        ".chart rect { paint-order: stroke; shape-rendering: crispEdges }",
+        json!({ "class": "chart" }),
+        "",
+        stroked.clone(),
+        fonts.clone(),
+    );
+    let mut own = stroked.clone();
+    own["paint-order"] = json!("stroke");
+    own["shape-rendering"] = json!("crispEdges");
+    let attr = page("", json!({}), "", own, fonts.clone());
+    let plain = page("", json!({}), "", stroked, fonts);
+    assert_eq!(json_of(&paint(&rule)), json_of(&paint(&attr)));
+    assert_ne!(json_of(&paint(&rule)), json_of(&paint(&plain)));
+}

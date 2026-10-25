@@ -21,6 +21,8 @@ serde_json = { version = "1.0.154", features = ["unbounded_depth"] }
 # Same versions as blitz-dom, so the types are the same ones.
 style = { package = "stylo", version = "0.22.0" }
 style_traits = { package = "stylo_traits", version = "0.22.0" }
+# The parser Stylo reads colours with (the SVG painter resolves colours usvg cannot read).
+cssparser = "0.38.0"
 kurbo = "0.13.1"
 # Fonts: the Parley context Blitz lays text out with.
 parley = { version = "0.12.0", default-features = false, features = ["std"] }
