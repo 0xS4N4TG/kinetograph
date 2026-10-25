@@ -16,13 +16,14 @@ import {
   type StudioError,
   type StudioSocket,
   type TimelineData,
+  type TimelineProgress,
 } from '../src/api';
 import { decodeFrameMessage, encodeFrameMessage } from '../../src/protocol';
 import type { FrameRequest } from '../../src/protocol';
 import { inspectFor, intro, introTimeline, outro } from './fixtures';
 
 export class MockServer implements StudioApi {
-  projectInfo: ProjectInfo = { entry: '/work/scene.tsx', version: '0.1.0', buildId: 1, buildError: null };
+  projectInfo: ProjectInfo = { entry: '/work/scene.tsx', cwd: '/work', version: '0.1.0', buildId: 1, buildError: null };
   comps: CompositionInfo[] = [intro, outro];
   jobs: RenderJob[] = [];
   /** When set, `compositions()` fails as the server does before the first good build. */
@@ -75,7 +76,18 @@ export class MockServer implements StudioApi {
 
   async timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData> {
     this.timelineCalls.push({ comp, props });
+    if (this.timelineGate) await this.timelineGate;
+    if (this.timelineError) throw this.timelineError;
     return this.timelineFor(comp);
+  }
+
+  /** Held back by a test to keep `timeline()` loading. */
+  timelineGate: Promise<void> | null = null;
+  timelineError: ApiError | null = null;
+  progress: TimelineProgress = { done: 0, total: 0 };
+
+  async timelineProgress(): Promise<TimelineProgress> {
+    return this.progress;
   }
 
   async renders(): Promise<RenderJob[]> {

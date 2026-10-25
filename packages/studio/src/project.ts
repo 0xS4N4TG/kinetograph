@@ -5,7 +5,7 @@ import { cacheDir, isSceneFile, watchProject, type ProjectBuild } from 'kinetogr
 import type { Call } from './worker-client.js';
 import { WorkerClient } from './worker-client.js';
 import type { WorkerRole } from './engine.js';
-import type { CompositionInfo, StudioError, TimelineData } from './protocol.js';
+import type { CompositionInfo, StudioError, TimelineData, TimelineProgress } from './protocol.js';
 import { StudioFailure, stableStringify, toStudioError } from './util.js';
 
 export interface ProjectEvents {
@@ -43,6 +43,7 @@ export class Project extends EventEmitter<ProjectEvents> {
   /** Builds are applied one at a time, in order. */
   private applying: Promise<void> = Promise.resolve();
   private readonly timelines = new Map<string, Promise<TimelineData>>();
+  private readonly timelineProgress = new Map<string, TimelineProgress>();
   private closed = false;
   /** The code of the build being served, so that a rebuild of identical code is not a reload. */
   private servedCode: string | null = null;
@@ -100,18 +101,32 @@ export class Project extends EventEmitter<ProjectEvents> {
   /** The timeline of a composition, computed once per (build, composition, props) in a worker of its own. */
   timeline(comp: string, props: Record<string, unknown>): Promise<TimelineData> {
     const current = this.serving();
-    const key = `${current.buildId}\n${comp}\n${stableStringify(props)}`;
+    const key = this.timelineKey(current, comp, props);
     let timeline = this.timelines.get(key);
     if (!timeline) {
-      timeline = this.sweep(current, comp, props);
+      timeline = this.sweep(current, key, comp, props);
       this.timelines.set(key, timeline);
-      timeline.catch(() => this.timelines.delete(key));
+      timeline.catch(() => {
+        this.timelines.delete(key);
+        this.timelineProgress.delete(key);
+      });
     }
     return timeline;
   }
 
-  private async sweep(current: Current, comp: string, props: Record<string, unknown>): Promise<TimelineData> {
+  /** How far the timeline of this composition has got: `total` is 0 when no sweep has started for it. */
+  timelineProgressOf(comp: string, props: Record<string, unknown>): TimelineProgress {
+    return this.timelineProgress.get(this.timelineKey(this.serving(), comp, props)) ?? { done: 0, total: 0 };
+  }
+
+  private timelineKey(current: Current, comp: string, props: Record<string, unknown>): string {
+    return `${current.buildId}\n${comp}\n${stableStringify(props)}`;
+  }
+
+  private async sweep(current: Current, key: string, comp: string, props: Record<string, unknown>): Promise<TimelineData> {
     const worker = this.spawn('timeline', current.bundleFile);
+    this.timelineProgress.set(key, { done: 0, total: 0 });
+    worker.onProgress = (done, total) => this.timelineProgress.set(key, { done, total });
     try {
       return await worker.call<TimelineData>({ op: 'timeline', comp, props });
     } finally {
@@ -158,6 +173,7 @@ export class Project extends EventEmitter<ProjectEvents> {
     this.buildId = buildId;
     this.buildError = null;
     for (const key of this.timelines.keys()) if (!key.startsWith(`${buildId}\n`)) this.timelines.delete(key);
+    for (const key of this.timelineProgress.keys()) if (!key.startsWith(`${buildId}\n`)) this.timelineProgress.delete(key);
     this.options.log?.(`build ${buildId} ready`);
     this.emit('reload', buildId);
     void old?.worker.close();

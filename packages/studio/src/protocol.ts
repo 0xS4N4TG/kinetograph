@@ -19,6 +19,8 @@ export interface StudioError {
 export interface ProjectInfo {
   /** The entry file, absolute. */
   entry: string;
+  /** The directory the studio was started in: paths shown to the user are relative to it. */
+  cwd: string;
   /** The `kinetograph` package version. */
   version: string;
   /** The build being served; 0 before the first good build. */
@@ -36,6 +38,12 @@ export interface TimelineData {
    * the Sequence shows on. */
   sequences: SequenceJson[];
   layers: TimelineLayer[];
+}
+
+/** `GET /api/timeline/progress`: how far the sweep for the timeline has got; `total` is 0 before it starts. */
+export interface TimelineProgress {
+  done: number;
+  total: number;
 }
 
 export interface TimelineLayer {
