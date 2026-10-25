@@ -1,0 +1,11 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "paths": {
+      "remotion": ["../../core/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

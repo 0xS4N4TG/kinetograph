@@ -97,10 +97,6 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 - An SVG shape's `getBoundingClientRect` is worked out from its `getBBox`, its transforms and the `<svg>`'s `viewBox`, not from layout. Strokes and filters are not in it.
 - More in [GSAP](/docs/compat/#gsap).
 
-### SVG paint
-
-- An SVG `fill`, `stroke` or gradient `stop-color` of `var(--x)`, `oklch()`, `oklab()`, `color-mix()`, `rgb(r g b / a)` or a name such as `rebeccapurple` is drawn black, with no warning. HTML backgrounds and text colours accept all of these. SVG goes through usvg (`crates/dom/src/paint/svg/mod.rs`), which parses none of them. This is what keeps Bklit UI's charts grey and black.
-
 ### Libraries
 
 - A rendered frame is only as frame-pure as the library: Motion's `animate()` that plays by itself is (see [Libraries](/docs/compat/#libraries-that-run-their-own-frame-loop)), but one that reads the wall clock or a real `Date` outside the virtual one is not.

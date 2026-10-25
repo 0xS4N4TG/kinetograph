@@ -34,7 +34,9 @@ describe('seeking a GSAP timeline as HyperFrames does', () => {
   it('does not run the callback of a zero-length tween twice', () => {
     let runs = 0;
     const tl = gsap.timeline({ paused: true });
-    tl.call(() => runs++, [], 1);
+    tl.call(() => {
+      runs++;
+    }, [], 1);
     seekTimelines({ main: tl as never }, 'main', 1, () => null);
     expect(runs).toBe(1);
   });
