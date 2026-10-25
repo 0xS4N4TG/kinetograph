@@ -17,10 +17,14 @@
 // A `webgpu` effect runs the same way over a recording canvas: its device is a recording one, the picture of the layer
 // before it is a source for `queue.copyExternalImageToTexture`, and the passes it submits are the `webgpu` part of the
 // group's `glsl` pass.
+//
+// A stage may be `async` (an effect's `apply`, `onInit`, `onPaint`): the frame is held with `delayRender` until the
+// promise settles, the way the HyperFrames runtime holds it for `hf-seek`, and the stage's result is kept for the frame
+// so the render that follows draws what it recorded. A rejection is reported for the frame and the stage is drawn without.
 
-import { useId, type CSSProperties, type ReactNode } from 'react';
+import { useContext, useId, useReducer, useRef, type CSSProperties, type ReactNode } from 'react';
 import { canvasEnvironment, rasterizeCanvas } from '@kinetographdev/compat/shim';
-import { Layer } from '@kinetographdev/react';
+import { Layer, TimelineContext } from '@kinetographdev/react';
 import {
   createCanvasContext,
   createGpuCanvasContext,
@@ -34,6 +38,7 @@ import {
   WebGpuUnsupportedError,
   type WebGLContext,
 } from '@kinetographdev/scene';
+import { continueRender, delayRender } from './assets.js';
 import type { EffectDescriptor, EffectsOutputSize, EffectsProp } from './effects.js';
 import { reportUnsupported } from './unsupported.js';
 import { warnOnce } from './warn.js';
@@ -117,8 +122,18 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
   return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
 }
 
-/** Runs one effect on a fresh canvas and returns the pass it drew, or null when it used a WebGPU call that is not drawn. */
-function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number): Pass | null {
+/** What a stage drew: its pass, a request for WebGPU (drawn without), or the message of a promise that rejected (drawn without). */
+type Outcome = { pass: Pass } | { webgpu: true } | { failed: string };
+/** A stage whose function returned a promise: what it has recorded so far, and its outcome once the promise settles. */
+type Pending = { pending: Promise<Outcome>; partial: Pass };
+
+function outcomeOfError(error: unknown): Outcome {
+  if (error instanceof WebGpuUnsupportedError) return { webgpu: true };
+  return { failed: error instanceof Error ? error.message : String(error) };
+}
+
+/** Runs one effect on a fresh canvas. */
+function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number): Outcome | Pending {
   const { definition, params } = effect;
   if (typeof definition?.apply !== 'function' || typeof definition.setup !== 'function' || typeof definition.cleanup !== 'function') {
     throw new TypeError('An item of `effects` is not an effect: make one with an effect function such as the ones createEffect() returns.');
@@ -126,17 +141,27 @@ function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, widt
   const target = new RecordingCanvas(width, height);
   try {
     const state = definition.setup(target);
+    let result: unknown;
     try {
       // Every picture here is a canvas as the DOM holds it (row 0 on top), which is what `flipSourceY` says to a WebGL effect.
-      definition.apply({ source: source as never, target, state, params, width, height, gpuDevice: definition.backend === 'webgpu' ? target.gpuDevice() : null, flipSourceY: definition.backend !== 'webgpu' });
-    } finally {
+      result = definition.apply({ source: source as never, target, state, params, width, height, gpuDevice: definition.backend === 'webgpu' ? target.gpuDevice() : null, flipSourceY: definition.backend !== 'webgpu' });
+    } catch (error) {
       definition.cleanup(state);
+      throw error;
     }
+    if (isThenable(result)) {
+      const pending = Promise.resolve(result)
+        .then((): Outcome => ({ pass: target.pass() }), outcomeOfError)
+        .finally(() => definition.cleanup(state))
+        .catch(outcomeOfError);
+      return { partial: target.pass(), pending };
+    }
+    definition.cleanup(state);
   } catch (error) {
-    if (error instanceof WebGpuUnsupportedError) return null;
+    if (error instanceof WebGpuUnsupportedError) return { webgpu: true };
     throw error;
   }
-  return target.pass();
+  return { pass: target.pass() };
 }
 
 /** The `HtmlInCanvas` stage that runs before the effects: `onInit`, then `onPaint`. */
@@ -166,59 +191,61 @@ function elementOf(width: number, height: number): unknown {
 /**
  * Runs `onInit` and then `onPaint` of an `<HtmlInCanvas>` on a fresh canvas, handing them the picture of the element,
  * and returns the pass they drew; then the cleanup `onInit` returned is called, as it is when the element goes. With
- * no `onPaint` the picture is drawn on a 2D context, as Remotion's default does. Null when a stage asks for WebGPU.
- *
- * A browser runs these between frames, here it is part of the frame: a function that is `async` records what it draws
- * before its first `await`, and a promise it returns is not waited for.
+ * no `onPaint` the picture is drawn on a 2D context, as Remotion's default does. A stage that asks for WebGPU is
+ * `webgpu`. A browser runs these between frames, here they are part of the frame: when one returns a promise, `onPaint`
+ * waits for `onInit`'s, the cleanup for `onPaint`'s, and the frame for them all (the caller holds it).
  */
 function runPaint(
-  component: string,
   stage: PaintStage,
   picture: EffectSource,
   size: { width: number; height: number; cssWidth: number; cssHeight: number; pixelDensity: number },
-): Pass | null {
+): Outcome | Pending {
   const canvas = new RecordingCanvas(size.width, size.height);
   // The picture of the element is closed by `onPaint` in a browser; here there is nothing to release.
   const elementImage = Object.assign(picture, { close: () => undefined });
   const params: PaintParams = { canvas, element: elementOf(size.cssWidth, size.cssHeight), elementImage, pixelDensity: size.pixelDensity };
-  const later = (name: string, result: PromiseLike<unknown>): void => {
-    warnOnce(
-      `${component}.async.${name}`,
-      `${component} ${name} returned a promise: a frame is drawn from what ${name} did before its first await, and the rest is not waited for.`,
-    );
-    result.then(undefined, (error) => console.warn(`${component} ${name} failed after the frame was read: ${error instanceof Error ? error.message : String(error)}`));
-  };
   let cleanup: (() => void) | undefined;
+  const keepCleanup = (result: unknown): void => {
+    if (typeof result !== 'function') throw new Error('HtmlInCanvas: when `onInit` is provided, it must return a cleanup function, or a Promise that resolves to one.');
+    cleanup = result as () => void;
+  };
+  const paint = (): unknown => {
+    if (stage.onPaint !== undefined) return stage.onPaint(params);
+    const context = canvas.getContext('2d') as CanvasContext2D | null;
+    if (context === null) throw new Error('Failed to acquire 2D context for <HtmlInCanvas> canvas');
+    context.reset();
+    context.drawElementImage(elementImage, 0, 0);
+    return undefined;
+  };
+  const later = (work: Promise<unknown>): Pending => ({
+    partial: canvas.pass(),
+    pending: work
+      .then((): Outcome => ({ pass: canvas.pass() }), outcomeOfError)
+      .finally(() => cleanup?.())
+      .catch(outcomeOfError),
+  });
   try {
     if (stage.onInit !== undefined) {
-      const result = stage.onInit(params);
-      if (isThenable(result)) {
-        later('onInit', result);
-        result.then((done) => (typeof done === 'function' ? done() : undefined), () => undefined);
-      } else if (typeof result === 'function') {
-        cleanup = result;
-      } else {
-        throw new Error('HtmlInCanvas: when `onInit` is provided, it must return a cleanup function, or a Promise that resolves to one.');
+      const init = stage.onInit(params) as unknown;
+      if (isThenable(init)) {
+        return later(
+          Promise.resolve(init).then((done) => {
+            keepCleanup(done);
+            return paint();
+          }),
+        );
       }
+      keepCleanup(init);
     }
-    if (stage.onPaint !== undefined) {
-      const result = stage.onPaint(params);
-      if (isThenable(result)) later('onPaint', result);
-    } else {
-      const context = canvas.getContext('2d') as CanvasContext2D | null;
-      if (context === null) throw new Error('Failed to acquire 2D context for <HtmlInCanvas> canvas');
-      context.reset();
-      context.drawElementImage(elementImage, 0, 0);
-    }
+    const result = paint();
+    if (isThenable(result)) return later(Promise.resolve(result));
   } catch (error) {
-    if (!(error instanceof WebGpuUnsupportedError)) throw error;
-    warnOnce(`${component}.paint.webgpu`, `${component} draws without onInit and onPaint: ${error.message}`);
-    reportUnsupported(component.replace(/^<|>$/g, ''), 'onPaint', 'webgpu', 'onInit and onPaint make a WebGPU call that is not drawn; the children are drawn without them');
-    return null;
-  } finally {
     cleanup?.();
+    if (error instanceof WebGpuUnsupportedError) return { webgpu: true };
+    throw error;
   }
-  return canvas.pass();
+  cleanup?.();
+  return { pass: canvas.pass() };
 }
 
 export interface EffectChainOptions {
@@ -273,6 +300,33 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
 
   const active = runnable.length > 0 || paint !== undefined;
 
+  // The outcome of each async stage of the frame being rendered, kept so the render that follows the promise's settling
+  // draws it instead of running the stage again. A new frame (or other effects, or size) starts empty.
+  const timeline = useContext(TimelineContext);
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  const kept = useRef<{ key: string; stages: Map<number, Outcome | Pending> } | null>(null);
+  const key = `${timeline?.frame ?? 0}|${runnable.map((effect) => effect.effectKey).join(',')}|${width}x${height}|${pixelDensity}`;
+  if (kept.current === null || kept.current.key !== key) kept.current = { key, stages: new Map() };
+  const stages = kept.current.stages;
+  const outcomeOf = (stage: number, what: string, run: () => Outcome | Pending): Outcome => {
+    const known = stages.get(stage);
+    if (known !== undefined) return 'pending' in known ? { pass: known.partial } : known;
+    const result = run();
+    if (!('pending' in result)) return result;
+    stages.set(stage, result);
+    const handle = delayRender(`${component} ${what}`);
+    void result.pending.then((outcome) => {
+      stages.set(stage, outcome);
+      rerender();
+      continueRender(handle);
+    });
+    return { pass: result.partial };
+  };
+  const reportFailed = (message: string, what: string, property: string): void => {
+    warnOnce(`${component}.async.${what}`, `${component} ${what} rejected: ${message}. The picture is drawn without it.`);
+    reportUnsupported(component.replace(/^<|>$/g, ''), property, 'async', `${what} returned a promise that rejected (${message}); the picture is drawn without it`);
+  };
+
   const render = (source: ReactNode): ReactNode => {
     const sourceId = `${base}-src`;
     let node: ReactNode = <Layer id={sourceId}>{source}</Layer>;
@@ -288,17 +342,19 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
       before = id;
     };
     if (paint !== undefined) {
-      const painted = runPaint(component, paint, layerPicture(before, width, height), { width, height, cssWidth, cssHeight, pixelDensity });
-      if (painted !== null) stack(painted);
+      const outcome = outcomeOf(0, 'onInit/onPaint', () => runPaint(paint, layerPicture(before, width, height), { width, height, cssWidth, cssHeight, pixelDensity }));
+      if ('pass' in outcome) stack(outcome.pass);
+      else if ('webgpu' in outcome) {
+        warnOnce(`${component}.paint.webgpu`, `${component} draws without onInit and onPaint: they make a WebGPU call that is not drawn (see /docs/known-issues/, "WebGPU").`);
+        reportUnsupported(component.replace(/^<|>$/g, ''), 'onPaint', 'webgpu', 'onInit and onPaint make a WebGPU call that is not drawn; the children are drawn without them');
+      } else reportFailed(outcome.failed, 'onInit/onPaint', 'onPaint');
     }
-    for (const effect of runnable) {
-      const pass = runEffect(effect, layerPicture(before, width, height), width, height);
-      if (pass === null) {
-        reportSkipped([effect.definition.label], 'a WebGPU effect');
-        continue;
-      }
-      stack(pass);
-    }
+    runnable.forEach((effect, index) => {
+      const outcome = outcomeOf(index + 1, `effect "${effect.definition.label}"`, () => runEffect(effect, layerPicture(before, width, height), width, height));
+      if ('pass' in outcome) stack(outcome.pass);
+      else if ('webgpu' in outcome) reportSkipped([effect.definition.label], 'a WebGPU effect');
+      else reportFailed(outcome.failed, `effect "${effect.definition.label}"`, 'effects');
+    });
     return node;
   };
   return { active, width, height, render };

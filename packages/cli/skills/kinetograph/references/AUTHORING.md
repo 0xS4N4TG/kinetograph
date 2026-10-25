@@ -721,8 +721,9 @@ Mapping onto the engine:
     in pixels, `element` has the size of the element (`clientWidth`, `getBoundingClientRect()`), `pixelDensity` is the
     prop. For every frame `onInit` runs first, then `onPaint` (with no `onPaint` the picture is drawn on a 2D context,
     as Remotion's default does), then the cleanup `onInit` returned (it must return one, as in Remotion). What follows
-    is the effect chain over what `onPaint` drew. A function that is `async` records what it draws before its first
-    `await`; the rest is not waited for (a warning once). A `webgpu` context runs (a call that is not drawn shows the children
+    is the effect chain over what `onPaint` drew. An `async` `apply`, `onInit` or `onPaint` holds the frame until its
+    promise settles (`delayRender`), so what it draws after an `await` is in the frame; a rejection is reported for the
+    frame and the picture is drawn without that stage. A `webgpu` context runs (a call that is not drawn shows the children
     and is reported as unsupported). `isHtmlInCanvasSupported()` is true; `isHtmlInCanvasNestingSupported()` is false (an
     `<HtmlInCanvas>` in the children of another is not tried).
   - `<IFrame>` is the `iframe` element, which the CSS engine reports as unsupported (`--strict` fails on it).
@@ -1366,6 +1367,9 @@ interface DatamoshOptions {
 
 ### 11.9 GSAP
 
-GSAP (core and the free plugins) runs on the page's HTML and SVG. Build a paused timeline in a layout effect and
-`seek(frame / fps)` it in a second one; a tween that plays by itself does not advance, since the render's clock is
-virtual. What works and the gaps are on the site at `/docs/compat/#gsap`.
+GSAP (core and the free plugins, `Flip` too) runs on the page's HTML and SVG. Build a paused timeline in a layout
+effect and `seek(frame / fps)` it in a second one. A tween that plays by itself (`gsap.to` in a `useEffect`) works
+as well: GSAP's root clock is moved with the frame, and a jump to a later frame renders the frames it skips so a
+tween an effect makes at frame 30 starts there. Stop such a tween in the effect's cleanup. `ScrollTrigger` and
+`Draggable` need scrolling and dragging, which a render does not have. What works and the gaps are on the site at
+`/docs/compat/#gsap`.

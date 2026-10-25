@@ -336,6 +336,23 @@ describe('WebGPU', () => {
     expect(reportedUnsupported()).toEqual([]);
   });
 
+  it('runs an async onPaint that asks for a WebGPU context', () => {
+    const tree = renderDom(
+      <HtmlInCanvas
+        width={4}
+        height={4}
+        onPaint={async ({ canvas }) => {
+          canvas.getContext('webgpu');
+          await Promise.resolve();
+        }}
+      >
+        x
+      </HtmlInCanvas>,
+    );
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(reportedUnsupported()).toEqual([]);
+  });
+
   it('is reported when onPaint makes a WebGPU call that is not drawn, and the children are drawn as they are', () => {
     const tree = renderDom(
       <HtmlInCanvas

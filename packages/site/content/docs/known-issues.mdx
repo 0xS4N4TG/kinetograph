@@ -20,7 +20,7 @@ Each item says what doesn't work and what you see instead. For what does work, s
 - A `webgpu` effect, `onInit` or `onPaint` that makes a call listed under WebGPU below as not drawn is drawn without the effect (or without `onPaint`) and reported.
 - State an effect keeps from `setup` does not carry to the next frame. Each frame runs `setup`, `apply` and `cleanup` again.
 - `getImageData` of the source is not supported.
-- In an `async` `onPaint` or `onInit`, the part after the first `await` does not run.
+- An `async` `apply`, `onInit` or `onPaint` holds the frame until its promise settles (as `delayRender` does), so what it draws after an `await` is in the frame, the same alone as in a sequence. `onPaint` waits for `onInit`, and the cleanup `onInit` returns runs after `onPaint`. A rejection is reported for that frame and the picture is drawn without the stage. The stage runs once per frame; promises that wait on a timer need real time, not `setTimeout`, which the render's virtual clock does not advance.
 - An `<HtmlInCanvas>` inside another is not supported.
 
 ### Video and audio encoding and decoding in your own code
@@ -32,13 +32,14 @@ Each item says what doesn't work and what you see instead. For what does work, s
 - **Three.js.** Not drawn. A page that loads Three.js is reported on every frame.
 - **WebGPU.** Shader blocks that use `shaders.iife.js` (`aurora`, `blob`, `ripples`, `swirl` and the like) are drawn natively. See [WebGPU](#webgpu).
 - **Import maps and ES modules that import.** Not run. They are reported.
-- **Selectors that reach into an `<svg>` from outside it.** The engine styles an `<svg>` on its own, so the loader writes the matching rules onto the shapes as inline style once the scripts have run. A class added to a shape later, by a tween or a script, is not restyled.
+- **Selectors that reach into an `<svg>` from outside it.** The engine applies the page's CSS cascade to an `<svg>`, including rules that match through an ancestor. Two things it does not reach, so the loader still writes those rules onto the shapes as inline style once the scripts have run: shapes that a script builds after a fetch, and `transform`, `clip-path`, `mask` and `filter` (the cascade never reads them). Rules inside `@media` are written when the media query holds for the composition's size. A class added to a shape later, by a tween or a script, is not restyled.
 - **Timing.** `data-start` references stay inside one composition. Audio effects (`data-fx-chain`) and `fx.*` automation lanes are ignored. A `rate` lane on audio is played in quarter-second slices at constant rates.
+- **Remote pictures set by a script.** `fetch-deps` finds the `https` pictures in the markup and the CSS (`<img>`, `srcset`, `poster`, SVG `<image>`, `url()`), not one a script assigns at run time. Such a picture is reported on every frame and not drawn; put it in the markup or the CSS.
 - **Colour grading.** `lut`, `hueCurves`, `secondaries`, `details` (vignette, grain) and `effects` are not drawn (the engine has `lut` and `grain` effects, but a DOM node cannot take an effect; `feImage` is not supported, so a vignette cannot be a filter). `shadows`, `highlights`, `wheels` and `vibrance` are approximated.
 - **CSS.** `html` and `body` rules apply to two wrapper elements.
 - **`white-space: nowrap` around inline-blocks.** In an absolutely positioned box without a width, inline-block children that do not fit wrap to a new line instead of staying on one (`mk-clone-wall-transition`). The layout is the engine's.
 - **Canvas 2D gradients** interpolate in premultiplied colour, as CSS gradients do. A canvas gradient from `rgba(0,0,0,0)` to an opaque colour, drawn by a browser in straight alpha, passes through dark shades; here it does not (`transitions-destruction`).
-- **WebGL instanced drawing** (`drawArraysInstanced`) is not supported (`code-slice-hero`); the failed seek is reported on every frame.
+- **WebGL depth test.** Instanced drawing works, but `code-slice-hero` draws its instanced quads with the depth test on, and a draw with `DEPTH_TEST` enabled is not supported (see [WebGL](#webgl)). Its seek fails at frame 24 of `doctor`'s 240 with `unsupported: drawing with the depth test on`, and the failure is reported on every frame.
 - **`offset-path`** motion is not drawn.
 - **Variable-font advance widths.** Text in a variable font that sets `font-variation-settings` per element measures about 13% wider than in Chrome for `Recursive` (`weight-wave`), so a line fitted by `measureText` wraps.
 - **Slow load.** Scripts that read many computed styles run slowly because the engine restyles the whole island for every element asked about; `claude-exchange` takes about 20 s before frame 0.
@@ -99,8 +100,9 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### GSAP
 
-- A tween that plays by itself, without a `seek` on a paused timeline, does not advance. The render's clock is virtual and GSAP's ticker does not run between frames.
-- `Flip`, `ScrollTrigger` and `Draggable` are not tested. `ScrollTrigger` has nothing to scroll in a render.
+- GSAP's root clock follows the frame, so a `gsap.to` that plays by itself advances ([GSAP](/docs/compat/#gsap)). A jump to a later frame (a still, a worker starting at frame 600) renders the frames it skips, without reading them, so the effects that make tweens at an intermediate frame run there. That costs one React render per skipped frame in a project that imports `gsap`, also when it only seeks paused timelines.
+- Motion-blur sub-frames do not move GSAP's clock: a tween that plays by itself is at the frame's own state in every sub-frame. A paused timeline you seek yourself is blurred as usual.
+- `ScrollTrigger` and `Draggable` respond to scrolling and dragging, which a render does not have, so they do not apply. `Flip` works.
 - An SVG shape's `getBoundingClientRect` is worked out from its `getBBox`, its transforms and the `<svg>`'s `viewBox`, not from layout. Strokes and filters are not in it.
 - More in [GSAP](/docs/compat/#gsap).
 
