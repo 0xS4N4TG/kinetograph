@@ -237,8 +237,14 @@ class Builder {
       this.note(`${what} ${image.url} is drawn without the picture: ${found.error}`);
       return null;
     }
-    const host = new URL(image.url).hostname;
-    const allow = DEFAULT_ALLOWED_HOSTS.includes(host) ? '' : ` --allow-host ${host}`;
+    // The host is pasted into a command to copy: only a plain hostname is (punycode is ASCII), and a URL that does not parse gets none.
+    let host = '';
+    try {
+      host = new URL(image.url).hostname;
+    } catch {
+      // no host to suggest
+    }
+    const allow = host === '' || DEFAULT_ALLOWED_HOSTS.includes(host) || !/^[a-z0-9.-]+$/i.test(host) ? '' : ` --allow-host ${host}`;
     this.note(`${what} ${image.url} is not cached, and a render reads no network, so it is drawn without the picture: run \`kinetograph fetch-deps ${this.entry}${allow}\``);
     return null;
   }

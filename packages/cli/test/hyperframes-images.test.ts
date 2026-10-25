@@ -210,4 +210,15 @@ describe('the render reads the pictures from the cache', () => {
       expect(notes.find((n) => n.includes(IMG))).toContain('--allow-host img.example.com');
     });
   });
+
+  it('suggests no --allow-host for a hostname that is not plain ASCII, and a URL that does not parse does not stop the plan', async () => {
+    await withCache(async () => {
+      const odd = 'https://exa$(touch x).example.com/p.png';
+      const bad = 'https://bad host/p.png';
+      const dir = project({ 'index.html': `<!doctype html><html><body><div data-composition-id="m" data-duration="1"><img src="${odd}"><img src="${bad}"></div></body></html>` });
+      const notes = (await buildPlan(join(dir, 'index.html'))).plan.notes.join('\n');
+      expect(notes).toContain('kinetograph fetch-deps');
+      expect(notes).not.toContain('--allow-host');
+    });
+  });
 });
