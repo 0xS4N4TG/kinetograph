@@ -58,12 +58,22 @@ fn draw(extra: &str) -> String {
 /// A layer with the fragment shaders `programs` (id and source), all with the
 /// quad's vertex shader.
 fn layer_of(programs: &[(&str, &str)], extra_content: &str, ops: &str) -> String {
+    layer_with_vertex(QUAD_VERTEX_ES1, programs, extra_content, ops)
+}
+
+/// `layer_of` with a vertex shader of its own.
+fn layer_with_vertex(
+    vertex: &str,
+    programs: &[(&str, &str)],
+    extra_content: &str,
+    ops: &str,
+) -> String {
     let programs: Vec<String> = programs
         .iter()
         .map(|(id, fragment)| {
             format!(
                 r#""{id}": {{"vertex": {}, "fragment": {}, "attributes": {{"a_pos": 0}}}}"#,
-                serde_json::to_string(QUAD_VERTEX_ES1).unwrap(),
+                serde_json::to_string(vertex).unwrap(),
                 serde_json::to_string(fragment).unwrap(),
             )
         })
@@ -120,6 +130,26 @@ fn gl_frag_coord_counts_up_from_the_bottom_row() {
     near(px(&frame, 0, 15), [8, 8, 0, 255], 6);
     near(px(&frame, 15, 15), [248, 8, 0, 255], 6);
     near(px(&frame, 0, 0), [8, 248, 0, 255], 6);
+}
+
+#[test]
+fn gl_vertex_id_counts_from_the_first_vertex_of_the_draw() {
+    // The quad's second triangle is vertices 3, 4, 5: (-1,1), (1,-1), (1,1).
+    let vertex = "#version 300 es\nin vec2 a_pos; out float v_id; \
+        void main() { v_id = float(gl_VertexID); gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision mediump float; in float v_id; out vec4 o; \
+        void main() { o = vec4(v_id / 8.0, 0.0, 0.0, 1.0); }";
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 3, "count": 3,
+            "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
+        quad_attributes()
+    );
+    let frame = render(&layer_with_vertex(vertex, &[("p", fragment)], "", &draw));
+    near(px(&frame, 0, 0), [96, 0, 0, 255], 14);
+    near(px(&frame, 15, 15), [127, 0, 0, 255], 14);
+    near(px(&frame, 15, 0), [159, 0, 0, 255], 14);
+    // The first triangle is not drawn.
+    near(px(&frame, 0, 15), [0, 0, 0, 255], 0);
 }
 
 #[test]

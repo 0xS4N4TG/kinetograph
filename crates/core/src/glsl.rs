@@ -815,6 +815,9 @@ fn rename(word: &str, prev: Option<&str>, samplers: &[String], fragment: bool) -
         "gl_FragColor" if fragment => "_k_FragColor".into(),
         "gl_FragCoord" if fragment => "_k_FragCoord()".into(),
         "gl_PointSize" => "_k_PointSize".into(),
+        // wgpu's `vertex_index` counts from the draw's `first`, as GL's does,
+        // and is the index itself in an indexed draw.
+        "gl_VertexID" if !fragment => "int(gl_VertexIndex)".into(),
         w if samplers.iter().any(|s| s == w) => format!("sampler2D(_k_t_{w}, _k_s_{w})"),
         _ => return None,
     })
