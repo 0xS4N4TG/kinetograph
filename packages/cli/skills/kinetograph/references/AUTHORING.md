@@ -1355,3 +1355,9 @@ interface DatamoshOptions {
   first time it enters a window, then one per frame (about 15 ms at 1080p with `mix`, 7 ms without, plus the decode),
   so the window is capped at 600 frames.
 - `examples/datamosh/` is a composition with a transition mosh, a self mosh and a `mix` comparison.
+
+### 11.9 GSAP
+
+GSAP (core and the free plugins) runs on the page's HTML and SVG. Build a paused timeline in a layout effect and
+`seek(frame / fps)` it in a second one; a tween that plays by itself does not advance, since the render's clock is
+virtual. What works and the gaps are on the site at `/docs/compat/#gsap`.

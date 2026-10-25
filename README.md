@@ -80,6 +80,9 @@ all 988 of its frames natively. What is left is listed under known issues on the
 - [The DOM engine](packages/cli/skills/kinetograph/references/ENGINE.md), and Remotion compatibility on the kinetograph site (`/docs/compat/`)
 - [Authoring contract](packages/cli/skills/kinetograph/references/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
 - [Scene format](packages/cli/skills/kinetograph/references/SCENE.md)
+- [Changelog](CHANGELOG.md): what changed since 0.1.0. On `main` now: GSAP with its free plugins (a paused timeline
+  seeked per frame), `<Video datamosh>` ([guide](packages/site/content/docs/guides/datamosh.mdx)), and a "Copy for
+  agent" button in the studio.
 
 ## Architecture
 
