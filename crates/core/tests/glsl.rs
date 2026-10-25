@@ -58,12 +58,23 @@ fn draw(extra: &str) -> String {
 /// A layer with the fragment shaders `programs` (id and source), all with the
 /// quad's vertex shader.
 fn layer_of(programs: &[(&str, &str)], extra_content: &str, ops: &str) -> String {
+    layer_with_vertex(QUAD_VERTEX_ES1, programs, "", extra_content, ops)
+}
+
+/// `layer_of` with a vertex shader of its own.
+fn layer_with_vertex(
+    vertex: &str,
+    programs: &[(&str, &str)],
+    more_buffers: &str,
+    extra_content: &str,
+    ops: &str,
+) -> String {
     let programs: Vec<String> = programs
         .iter()
         .map(|(id, fragment)| {
             format!(
                 r#""{id}": {{"vertex": {}, "fragment": {}, "attributes": {{"a_pos": 0}}}}"#,
-                serde_json::to_string(QUAD_VERTEX_ES1).unwrap(),
+                serde_json::to_string(vertex).unwrap(),
                 serde_json::to_string(fragment).unwrap(),
             )
         })
@@ -71,7 +82,7 @@ fn layer_of(programs: &[(&str, &str)], extra_content: &str, ops: &str) -> String
     format!(
         r#"{{"id": "g", "type": "glsl", "width": 16, "height": 16,
             "programs": {{{}}},
-            "buffers": {{"quad": "{}"}}
+            "buffers": {{"quad": "{}"{more_buffers}}}
             {extra_content}, "ops": [{ops}]}}"#,
         programs.join(", "),
         quad()
@@ -120,6 +131,98 @@ fn gl_frag_coord_counts_up_from_the_bottom_row() {
     near(px(&frame, 0, 15), [8, 8, 0, 255], 6);
     near(px(&frame, 15, 15), [248, 8, 0, 255], 6);
     near(px(&frame, 0, 0), [8, 248, 0, 255], 6);
+}
+
+#[test]
+fn gl_vertex_id_counts_from_the_first_vertex_of_the_draw() {
+    // The quad's second triangle is vertices 3, 4, 5: (-1,1), (1,-1), (1,1).
+    let vertex = "#version 300 es\nin vec2 a_pos; out float v_id; \
+        void main() { v_id = float(gl_VertexID); gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision mediump float; in float v_id; out vec4 o; \
+        void main() { o = vec4(v_id / 8.0, 0.0, 0.0, 1.0); }";
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 3, "count": 3,
+            "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
+        quad_attributes()
+    );
+    let frame = render(&layer_with_vertex(vertex, &[("p", fragment)], "", "", &draw));
+    near(px(&frame, 0, 0), [96, 0, 0, 255], 14);
+    near(px(&frame, 15, 15), [127, 0, 0, 255], 14);
+    near(px(&frame, 15, 0), [159, 0, 0, 255], 14);
+    // The first triangle is not drawn.
+    near(px(&frame, 0, 15), [0, 0, 0, 255], 0);
+}
+
+/// A draw of `count` points from a buffer of `[x, y]` pairs.
+fn points_draw(first: u32, count: u32, extra: &str) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "p", "mode": "points", "first": {first}, "count": {count},
+            "attributes": {{"a_pos": {{"buffer": "pts", "size": 2, "type": "f32", "normalized": false,
+            "stride": 0, "offset": 0}}}}, "viewport": [0, 0, 16, 16]{extra}}}"#
+    )
+}
+
+fn points_buffer(points: &[[f32; 2]]) -> String {
+    b64(&points
+        .iter()
+        .flatten()
+        .flat_map(|f| f.to_le_bytes())
+        .collect::<Vec<u8>>())
+}
+
+#[test]
+fn points_are_squares_of_gl_point_size_with_a_point_coord() {
+    // Two points: (-0.5, 0.5) of 4 pixels, which covers x 2..6 and y 2..6 from
+    // the top; and (0.5, -0.5) of 6 pixels, which covers x 9..15 and y 9..15.
+    let vertex = "attribute vec2 a_pos; void main() { \
+        gl_PointSize = a_pos.x < 0.0 ? 4.0 : 6.0; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "precision mediump float; void main() { \
+        gl_FragColor = vec4(gl_PointCoord, 0.0, 1.0); }";
+    let buffer = points_buffer(&[[-0.5, 0.5], [0.5, -0.5]]);
+    let layer = layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "pts": "{buffer}""#),
+        "",
+        &points_draw(0, 2, ""),
+    );
+    let frame = render(&layer);
+    // Outside both points: nothing.
+    assert_eq!(px(&frame, 0, 0)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 8, 8)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 1, 3)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 6, 3)[..3], [0, 0, 0]);
+    // The first point: x 2..6, y 2..6; gl_PointCoord y counts down.
+    near(px(&frame, 2, 2), [32, 32, 0, 255], 3);
+    near(px(&frame, 5, 2), [223, 32, 0, 255], 3);
+    near(px(&frame, 2, 5), [32, 223, 0, 255], 3);
+    // The second: x 9..15, y 9..15.
+    near(px(&frame, 9, 9), [21, 21, 0, 255], 3);
+    near(px(&frame, 14, 14), [234, 234, 0, 255], 3);
+    assert_eq!(px(&frame, 8, 9)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 15, 9)[..3], [0, 0, 0]);
+}
+
+#[test]
+fn a_point_centred_outside_the_clip_volume_is_not_drawn_and_gl_vertex_id_is_its_index() {
+    // Point 1 is off to the right (its sprite would reach in); `first` starts
+    // at point 1 of three, so the ids drawn are 1 and 2.
+    let vertex = "attribute vec2 a_pos; varying float v_id; void main() { \
+        v_id = float(gl_VertexID); gl_PointSize = 4.0; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "precision mediump float; varying float v_id; void main() { \
+        gl_FragColor = vec4(v_id / 4.0, 0.0, 0.0, 1.0); }";
+    let buffer = points_buffer(&[[0.0, 0.0], [1.1, 0.0], [-0.5, 0.5]]);
+    let layer = layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "pts": "{buffer}""#),
+        "",
+        &points_draw(1, 2, ""),
+    );
+    let frame = render(&layer);
+    assert_eq!(px(&frame, 15, 8)[..3], [0, 0, 0], "the point centred at x = 1.1 draws nothing");
+    assert_eq!(px(&frame, 8, 8)[..3], [0, 0, 0], "point 0 is before `first`");
+    near(px(&frame, 3, 3), [127, 0, 0, 255], 2);
 }
 
 #[test]
@@ -601,4 +704,176 @@ fn a_viewport_outside_its_target_is_refused() {
         &draw_with("f", Some(("rt", 16)), ""),
     ));
     assert!(error.contains("reaches outside the 8 x 8"), "{error}");
+}
+
+// ---- blitFramebuffer ----
+
+/// A draw of the quad with the program `program` into the `[x, y, w, h]` of the drawing buffer.
+fn draw_in(program: &str, viewport: [i32; 4], extra: &str) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "{program}", "mode": "triangles", "first": 0, "count": 6,
+            "attributes": {}, "viewport": {viewport:?}, {extra}}}"#,
+        quad_attributes()
+    )
+}
+
+/// A `blitFramebuffer` of `from` to `to`; the drawing buffer is `None`.
+fn blit_op(
+    src: Option<&str>,
+    target: Option<&str>,
+    from: [i32; 4],
+    to: [i32; 4],
+    linear: bool,
+) -> String {
+    let src = src.map_or(String::new(), |s| format!(r#", "src": "{s}""#));
+    let target = target.map_or(String::new(), |s| format!(r#", "target": "{s}""#));
+    format!(r#"{{"op": "blit", "from": {from:?}, "to": {to:?}, "linear": {linear}{src}{target}}}"#)
+}
+
+/// Red in the left half of the 16 x 16 drawing buffer, blue in its lower right quadrant.
+fn red_and_blue() -> Vec<String> {
+    vec![
+        draw_in("f", [0, 0, 8, 16], &fill([1.0, 0.0, 0.0, 1.0])),
+        draw_in("f", [8, 0, 8, 8], &fill([0.0, 0.0, 1.0, 1.0])),
+    ]
+}
+
+#[test]
+fn a_blit_copies_the_drawing_buffer_into_a_texture_as_it_was() {
+    // Copied, then the drawing buffer is cleared: the texture still has the picture, upright.
+    let mut all = red_and_blue();
+    all.push(blit_op(None, Some("t"), [0, 0, 16, 16], [0, 0, 16, 16], false));
+    all.push(r#"{"op": "clear", "color": [0, 0, 0, 1]}"#.into());
+    all.push(draw_in("s", [0, 0, 16, 16], &sampling("t")));
+    let frame = render(&layer_of(
+        &[("f", FILL), ("s", SHOW)],
+        &targets(&[("t", 16)]),
+        &ops(&all),
+    ));
+    assert_eq!(px(&frame, 3, 3), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 3, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 12), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 12, 3), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_blit_mirrors_and_stretches_by_its_rectangles() {
+    // The picture mirrored into the texture: red is then on its right, blue at its lower left.
+    // The texture's right half is shrunk by LINEAR into the buffer's lower left quadrant.
+    let mut all = red_and_blue();
+    all.push(blit_op(None, Some("t"), [0, 0, 16, 16], [16, 0, 0, 16], false));
+    all.push(r#"{"op": "clear", "color": [0, 1, 0, 1]}"#.into());
+    all.push(blit_op(Some("t"), None, [8, 0, 16, 16], [0, 0, 8, 8], true));
+    let frame = render(&layer_of(&[("f", FILL)], &targets(&[("t", 16)]), &ops(&all)));
+    near(px(&frame, 3, 12), [255, 0, 0, 255], 2);
+    near(px(&frame, 3, 9), [255, 0, 0, 255], 2);
+    assert_eq!(px(&frame, 12, 12), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 3, 3), [0, 255, 0, 255]);
+}
+
+#[test]
+fn a_blit_within_one_buffer_is_refused() {
+    let error = render_error(&layer_of(
+        &[("f", FILL)],
+        &targets(&[("t", 16)]),
+        &blit_op(Some("t"), Some("t"), [0, 0, 4, 4], [4, 4, 8, 8], false),
+    ));
+    assert!(error.contains("same buffer"), "{error}");
+}
+
+// ---- texSubImage2D into a target ----
+
+fn upload_op(target: &str, at: [u32; 2], size: [u32; 2], rgba: &[u8], flags: &str) -> String {
+    format!(
+        r#"{{"op": "upload", "target": "{target}", "x": {}, "y": {}, "width": {}, "height": {},
+            "pixels": "{}"{flags}}}"#,
+        at[0],
+        at[1],
+        size[0],
+        size[1],
+        b64(rgba)
+    )
+}
+
+#[test]
+fn an_upload_writes_pixels_over_what_the_target_holds_at_its_offset() {
+    // Blue everywhere, a 2 x 2 red patch at (2, 3), then a draw over it that keeps the
+    // blue: the patch is after the clear and before the second draw.
+    let red = [255u8, 0, 0, 255].repeat(4);
+    let mut all = vec![
+        r#"{"op": "clear", "color": [0, 0, 1, 1], "target": "t"}"#.to_string(),
+        upload_op("t", [2, 3], [2, 2], &red, ""),
+    ];
+    all.push(draw_in("s", [0, 0, 16, 16], &sampling("t")));
+    let frame = render(&layer_of(&[("s", SHOW)], &targets(&[("t", 16)]), &ops(&all)));
+    // GL's rows 3 and 4 of the texture are the canvas's rows 12 and 11.
+    assert_eq!(px(&frame, 2, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 3, 11), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 4, 12), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 2, 10), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 0, 0), [0, 0, 255, 255]);
+}
+
+#[test]
+fn an_upload_honours_flip_y_and_premultiply_and_keeps_its_place_among_draws() {
+    // A 1 x 2 patch, red above green, flipped; half-transparent white premultiplied elsewhere.
+    let patch = [255u8, 0, 0, 255, 0, 255, 0, 255];
+    let all = vec![
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "target": "t"}"#.to_string(),
+        upload_op("t", [0, 0], [1, 2], &patch, r#", "flipY": true"#),
+        upload_op("t", [1, 0], [1, 1], &[255, 255, 255, 128], r#", "premultiply": true"#),
+        // Drawn after the uploads, over the lower half only.
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(r#""scissor": [2, 0, 14, 16], {}"#, fill([1.0, 1.0, 0.0, 1.0])),
+        )
+        .replace(r#""viewport""#, r#""target": "t", "viewport""#),
+        draw_in("s", [0, 0, 16, 16], &sampling("t")),
+    ];
+    let frame = render(&layer_of(
+        &[("f", FILL), ("s", SHOW)],
+        &targets(&[("t", 16)]),
+        &ops(&all),
+    ));
+    // Flipped: the green row is the texture's row 0 (canvas row 15), the red one row 1.
+    assert_eq!(px(&frame, 0, 15), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 0, 14), [255, 0, 0, 255]);
+    // Half-transparent white, placed over black in linear light.
+    near(px(&frame, 1, 15), [188, 188, 188, 255], 3);
+    // The draw covers what is right of x = 2, over the uploads' black.
+    assert_eq!(px(&frame, 5, 15), [255, 255, 0, 255]);
+}
+
+// ---- instancing ----
+
+#[test]
+fn instanced_draws_advance_attributes_with_a_divisor_per_instance_and_count_gl_instance_id() {
+    let vertex = "#version 300 es\nin vec2 a_pos; in vec2 a_off; out float v_i; \
+        void main() { v_i = float(gl_InstanceID); \
+        gl_Position = vec4(a_pos * 0.25 + a_off, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision mediump float; in float v_i; out vec4 o; \
+        void main() { o = vec4(1.0 - v_i, v_i, 0.0, 1.0); }";
+    let offsets = points_buffer(&[[-0.5, -0.5], [0.5, 0.5]]);
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "instances": 2,
+            "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
+        quad_attributes().replacen(
+            "}}",
+            r#"}, "a_off": {"buffer": "off", "size": 2, "type": "f32", "divisor": 1}}"#,
+            1
+        )
+    );
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "off": "{offsets}""#),
+        "",
+        &draw,
+    ));
+    // Instance 0 at the lower left (2 pixels each way from (4, 4) up), instance 1 at the upper right.
+    assert_eq!(px(&frame, 4, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 4), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 4, 4)[..3], [0, 0, 0]);
+    assert_eq!(px(&frame, 12, 12)[..3], [0, 0, 0]);
 }

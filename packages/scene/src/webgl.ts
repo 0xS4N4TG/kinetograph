@@ -105,6 +105,8 @@ export const GL = {
   CW: 0x900,
   CCW: 0x901,
   LINE_WIDTH: 0xb21,
+  ALIASED_POINT_SIZE_RANGE: 0x846d,
+  ALIASED_LINE_WIDTH_RANGE: 0x846e,
   CULL_FACE_MODE: 0xb45,
   FRONT_FACE: 0xb46,
   DEPTH_RANGE: 0xb70,
@@ -271,6 +273,7 @@ export const GL2 = {
   DRAW_FRAMEBUFFER: 0x8ca9,
   DRAW_FRAMEBUFFER_BINDING: 0x8ca6,
   READ_FRAMEBUFFER_BINDING: 0x8caa,
+  VERTEX_ARRAY_BINDING: 0x85b5,
   TEXTURE_3D: 0x806f,
   TEXTURE_2D_ARRAY: 0x8c1a,
   UNIFORM_BUFFER: 0x8a11,
@@ -594,15 +597,17 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
 
+/** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
+const POINT_SIZE_MAX = 511;
+
 /** Formats of a texture that colour cannot be drawn into. */
 const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA, GL.DEPTH_COMPONENT]);
 
 /**
  * `WebGLRenderingContext` (and, with `version: 2`, the `WebGL2RenderingContext` calls shader pages use) as a recorder.
  * `content()` is what the `glsl` layer is made of. A context keeps its objects (programs, buffers, textures) and its
- * state between frames as a browser's does; the drawing buffer is a browser's too: the first draw or clear after
- * `resetState()` (the frame loop calls it before a frame) starts it afresh, unless the context was made with
- * `preserveDrawingBuffer`.
+ * state between frames as a browser's does; the drawing buffer is emptied by `resetState()` (the frame loop calls it
+ * before a frame), also when the context was made with `preserveDrawingBuffer`.
  */
 export class WebGLContext {
   readonly canvas: unknown;
@@ -677,11 +682,15 @@ export class WebGLContext {
   }
 
   /**
-   * The frame loop calls this before each frame: the drawing buffer a browser presented is cleared, so the next draw
-   * starts a new one. A frame that draws nothing keeps the picture, as the canvas of a page does.
+   * The frame loop calls this before each frame: the drawing buffer is emptied, so a frame is what its own draws
+   * make, whichever frame was rendered before (a frame is a function of its number, and the frames of one render
+   * may be made in any order or by different processes). It holds with `preserveDrawingBuffer` too, which in a page
+   * keeps the picture from one presented frame to the next; here each frame is a new context's first. A frame that
+   * draws nothing draws nothing.
    */
   resetState(): void {
-    if (!this.attributes.preserveDrawingBuffer) this.stale = true;
+    this.stale = true;
+    this.ops = [];
   }
 
   /** Empties the drawing buffer (`canvas.width` was set). */
@@ -762,6 +771,10 @@ export class WebGLContext {
         return 16;
       case GL.MAX_VERTEX_TEXTURE_IMAGE_UNITS:
         return 0;
+      case GL.ALIASED_POINT_SIZE_RANGE:
+        return new Float32Array([1, POINT_SIZE_MAX]);
+      case GL.ALIASED_LINE_WIDTH_RANGE:
+        return new Float32Array([1, 1]);
       case GL.VIEWPORT:
         return new Int32Array(this.viewportNow());
       case GL.SCISSOR_BOX:
@@ -778,6 +791,10 @@ export class WebGLContext {
         return this.arrayBuffer;
       case GL.ELEMENT_ARRAY_BUFFER_BINDING:
         return this.vao.element;
+      case GL2.VERTEX_ARRAY_BINDING:
+        if (this.version === 2) return this.vao === this.defaultVao ? null : this.vao;
+        this.fail(GL.INVALID_ENUM);
+        return null;
       case GL.TEXTURE_BINDING_2D:
         return this.units.get(this.activeUnit) ?? null;
       case GL.FRAMEBUFFER_BINDING:
@@ -833,8 +850,39 @@ export class WebGLContext {
     throw new WebGLUnsupportedError('readPixels; the picture is drawn by the renderer, and the context cannot be read back');
   }
 
-  blitFramebuffer(): never {
-    throw new WebGLUnsupportedError('blitFramebuffer; a framebuffer cannot be copied or resolved');
+  /**
+   * Copies a rectangle of the read framebuffer over one of the draw framebuffer (the canvas, or a texture drawn in):
+   * the colour only, as depth and stencil buffers do not exist here.
+   */
+  blitFramebuffer(sx0: number, sy0: number, sx1: number, sy1: number, dx0: number, dy0: number, dx1: number, dy1: number, mask: number, filter: number): void {
+    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
+    if (mask & ~(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT)) return this.fail(GL.INVALID_VALUE);
+    if (filter !== GL.NEAREST && filter !== GL.LINEAR) return this.fail(GL.INVALID_ENUM);
+    const read = this.readFramebuffer;
+    const draw = this.drawFramebuffer;
+    if (read !== null && this.statusOf(read) !== GL.FRAMEBUFFER_COMPLETE) return this.fail(GL.INVALID_FRAMEBUFFER_OPERATION);
+    if (this.framebufferIncomplete()) return;
+    if (!(mask & GL.COLOR_BUFFER_BIT)) return;
+    const rects = [sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1].map(Number);
+    if (rects.some((v) => !Number.isFinite(v))) return this.fail(GL.INVALID_VALUE);
+    if ((read?.color ?? null) === (draw?.color ?? null)) return this.fail(GL.INVALID_OPERATION);
+    const source = read?.color ?? null;
+    if (source !== null && !source.blank && source.drawnAt !== source.version) {
+      throw new WebGLUnsupportedError('blitFramebuffer from a texture that holds uploaded pixels; draw into it, or sample it');
+    }
+    this.begin();
+    const src = source === null ? undefined : this.registerTarget(source);
+    const target = this.targetId();
+    const [fx0, fy0, fx1, fy1, tx0, ty0, tx1, ty1] = rects.map(Math.trunc);
+    this.ops.push({
+      op: 'blit',
+      ...(src === undefined ? {} : { src }),
+      ...(target === undefined ? {} : { target }),
+      from: [fx0!, fy0!, fx1!, fy1!],
+      to: [tx0!, ty0!, tx1!, ty1!],
+      ...(filter === GL.LINEAR ? { linear: true } : {}),
+      ...(this.caps.scissor ? { scissor: this.scissorBox ?? this.viewportNow() } : {}),
+    });
   }
 
   // ---- state ----
@@ -935,7 +983,9 @@ export class WebGLContext {
       return;
     }
     // Everything drawn to the canvas before it is gone with it; what went to textures stays, as later draws may read it.
-    this.ops = [...this.ops.filter((op) => op.target !== undefined), { op: 'clear', color: [...this.clearColorValue] }];
+    // (A blit that reads the canvas keeps them: the replay drops what no blit reads.)
+    const read = this.ops.some((op) => op.op === 'blit' && op.src === undefined);
+    this.ops = [...(read ? this.ops : this.ops.filter((op) => op.target !== undefined)), { op: 'clear', color: [...this.clearColorValue] }];
   }
 
   // ---- shaders and programs ----
@@ -1465,8 +1515,10 @@ export class WebGLContext {
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, ...rest: unknown[]): void {
     const texture = this.bound(target);
     if (texture === null) return;
-    if (level !== 0 || texture.pixels === null) throw new WebGLUnsupportedError('texSubImage2D into a texture from an image file, or above level 0');
-    if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('texSubImage2D into a texture a framebuffer drew in');
+    if (level !== 0) throw new WebGLUnsupportedError('texSubImage2D above level 0; call generateMipmap');
+    // A texture a framebuffer draws in is written by an op, after what was drawn before; any other is edited here.
+    const drawnIn = texture.drawnAt === texture.version;
+    if (!drawnIn && texture.pixels === null) throw new WebGLUnsupportedError('texSubImage2D into a texture made from an image file or a layer; upload the whole picture with texImage2D');
     let width: number;
     let height: number;
     let format: number;
@@ -1479,14 +1531,39 @@ export class WebGLContext {
       pixels = this.rgbaOf(width, height, format, source as ArrayBufferView);
     } else {
       const picture = pictureOf(rest[2]);
-      if (picture === null || picture.source.kind !== 'pixels') throw new WebGLUnsupportedError('texSubImage2D from anything but pixels');
+      if (picture === null) throw new WebGLUnsupportedError('texSubImage2D from this source; use a canvas, ImageData or an array of pixels');
+      const s = picture.source;
+      if (s.kind === 'pixels') {
+        pixels = new Uint8Array(Buffer.from(s.data, 'base64'));
+      } else if (s.kind === 'canvas') {
+        const drawn = this.options.rasterize?.(s) ?? null;
+        if (drawn === null) throw new WebGLUnsupportedError('texSubImage2D from a canvas here (the pixels of a canvas need the addon)');
+        pixels = drawn;
+      } else {
+        throw new WebGLUnsupportedError('texSubImage2D from an image file or a layer; upload the whole picture with texImage2D');
+      }
       width = picture.width;
       height = picture.height;
-      pixels = new Uint8Array(Buffer.from(picture.source.data, 'base64'));
     }
     if (xoffset < 0 || yoffset < 0 || xoffset + width > texture.width || yoffset + height > texture.height) return this.fail(GL.INVALID_VALUE);
+    if (drawnIn) {
+      this.begin();
+      this.ops.push({
+        op: 'upload',
+        target: this.registerTarget(texture),
+        x: xoffset,
+        y: yoffset,
+        width,
+        height,
+        pixels: toBase64(pixels),
+        ...(this.flipY ? { flipY: true } : {}),
+        ...(this.premultiply ? { premultiply: true } : {}),
+      });
+      return;
+    }
+    const held = texture.pixels!;
     for (let y = 0; y < height; y += 1) {
-      texture.pixels.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
+      held.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
     }
     texture.blank = false;
     texture.version += 1;
@@ -1656,12 +1733,14 @@ export class WebGLContext {
     if (buffers.length !== 1 || (buffers[0] !== GL.BACK && buffers[0] !== GL.COLOR_ATTACHMENT0)) throw new WebGLUnsupportedError('several colour outputs');
   }
   drawArraysInstanced(mode: number, first: number, count: number, instances: number): void {
-    if (instances !== 1) throw new WebGLUnsupportedError('instanced drawing');
-    this.drawArrays(mode, first, count);
+    if (!(first >= 0 && count >= 0 && instances >= 0)) return this.fail(GL.INVALID_VALUE);
+    this.draw(mode, first, count, null, instances);
   }
   drawElementsInstanced(mode: number, count: number, type: number, offset: number, instances: number): void {
-    if (instances !== 1) throw new WebGLUnsupportedError('instanced drawing');
-    this.drawElements(mode, count, type, offset);
+    if (!(count >= 0 && offset >= 0 && instances >= 0)) return this.fail(GL.INVALID_VALUE);
+    const ty = this.indexType(type);
+    if (ty === null) return this.fail(GL.INVALID_ENUM);
+    this.draw(mode, 0, count, { type: ty, offset }, instances);
   }
 
   // ---- drawing ----
@@ -1672,21 +1751,26 @@ export class WebGLContext {
   }
   drawElements(mode: number, count: number, type: number, offset: number): void {
     if (!(count >= 0 && offset >= 0)) return this.fail(GL.INVALID_VALUE);
-    const ty = type === GL.UNSIGNED_BYTE ? 'u8' : type === GL.UNSIGNED_SHORT ? 'u16' : type === GL.UNSIGNED_INT && (this.version === 2 || true) ? 'u32' : null;
+    const ty = this.indexType(type);
     if (ty === null) return this.fail(GL.INVALID_ENUM);
     this.draw(mode, 0, count, { type: ty, offset });
   }
+  private indexType(type: number): 'u8' | 'u16' | 'u32' | null {
+    return type === GL.UNSIGNED_BYTE ? 'u8' : type === GL.UNSIGNED_SHORT ? 'u16' : type === GL.UNSIGNED_INT ? 'u32' : null;
+  }
 
-  private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null): void {
-    const modes: Record<number, GlslDraw['mode']> = { [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan' };
+  private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null, instances = 1): void {
+    const modes: Record<number, GlslDraw['mode']> = { [GL.POINTS]: 'points', [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan' };
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.fail(GL.INVALID_ENUM);
     const program = this.program;
     if (program === null) return this.fail(GL.INVALID_OPERATION);
     const named = modes[mode];
-    if (named === undefined) throw new WebGLUnsupportedError('drawing points and lines; draw triangles');
+    if (named === undefined) throw new WebGLUnsupportedError('drawing lines; draw triangles (points are drawn)');
     if (this.caps.depth) throw new WebGLUnsupportedError('drawing with the depth test on (disable(gl.DEPTH_TEST); a flat quad does not need it)');
     if (this.caps.stencil) throw new WebGLUnsupportedError('drawing with the stencil test on');
     if (this.framebufferIncomplete()) return;
+    if (instances === 0) return;
+    if (named === 'points' && instances !== 1) throw new WebGLUnsupportedError('instanced points; draw the points with one drawArrays');
     this.begin();
 
     // The program, by what it is made of.
@@ -1702,6 +1786,7 @@ export class WebGLContext {
       mode: named,
       first,
       count,
+      ...(instances === 1 ? {} : { instances }),
       attributes: {},
       uniforms: {},
       units: {},
@@ -1715,10 +1800,11 @@ export class WebGLContext {
         if (a?.constant) throw new WebGLUnsupportedError(`the attribute "${d.name}" is read as a constant (vertexAttrib4f); give it a buffer`);
         continue;
       }
-      if (a.divisor !== 0) throw new WebGLUnsupportedError('instanced attributes (vertexAttribDivisor)');
+      if (a.divisor > 1) throw new WebGLUnsupportedError(`vertexAttribDivisor(${a.divisor}, ...) of the attribute "${d.name}"; use 0 or 1`);
+      if (a.divisor === 1 && named === 'points') throw new WebGLUnsupportedError('instanced attributes of points');
       const type = ({ [GL.FLOAT]: 'f32', [GL.UNSIGNED_BYTE]: 'u8', [GL.BYTE]: 'i8', [GL.UNSIGNED_SHORT]: 'u16', [GL.SHORT]: 'i16' } as Record<number, GlslDraw['attributes'][string]['type']>)[a.type];
       if (type === undefined) throw new WebGLUnsupportedError(`the attribute "${d.name}" has type 0x${a.type.toString(16)}; use FLOAT, or a normalised byte or short`);
-      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, stride: a.stride, offset: a.offset };
+      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, stride: a.stride, offset: a.offset, ...(a.divisor === 1 ? { divisor: 1 } : {}) };
     }
     if (indexed !== null) {
       const element = this.vao.element;

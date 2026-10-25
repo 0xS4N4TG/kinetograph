@@ -8,18 +8,22 @@
 What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL libraries, and benchmarks against Remotion/HyperFrames.
 
 ## Current state
-- vs Remotion: papercut ep 13 Kinetograph 22.9 s vs Remotion 131 s (22 Oct quiet machine) = ~6x. 25 Oct rerun gave Remotion ~16 min (busy machine, untrusted). Launch film can't render in Remotion (uses Kinetograph-only 3D).
-- vs HyperFrames (heygen-com/hyperframes @7bc363c, Apache-2.0): its NYT Graph example ported to TSX (/private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/vs-hf/kg/index.tsx): Kinetograph ~2.8-3.0 s vs HyperFrames 9.0 s (4 workers) = ~3x. Earlier port render lacked SVG labels (old addon; fixed by PR #3) and labels were serif (PR #4). Port's headline weight wrong (should be bold). Not a drop-in: HyperFrames = HTML + GSAP scripts.
-- GSAP: crashes ("no element at path $0.2 in the island") with the standard paused-timeline + seek(frame/fps) pattern; repro /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/gsaptest/index.tsx. Sonnet medium agent on feat/gsap; Haiku building Remotion/Chrome references in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/gsap-corpus (g01-g08, frames 0,10,20,30,45,59).
-- datamosh: Sonnet medium agent merging feat/datamosh into merge/datamosh (Skia path check, launch film unchanged).
-- p5.brush (MIT): needs WebGL2; Kinetograph has a native WebGL port (packages/scene/src/webgl.ts) with gaps (no depth/stencil attachments, renderbuffers, float textures, instancing, points/lines, readPixels refused, framebuffers blank each frame). Haiku agent testing the standalone build in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/p5brush for a gap list.
+- GSAP: MERGED (PR #7). Root cause of the "$0.2" crash was an off-by-one in packages/react/src/readback.ts (paths counted AbsoluteFill's dropped background rect). 8-case corpus matches Remotion (mean <=0.14 levels, text <=1.13). Plugins TextPlugin/SplitText/DrawSVG/MotionPath/CustomEase checked; Flip loads untested. Gap: a tween not on a paused seeked timeline stays frozen, no warning yet.
+- WebGL: MERGED (PR #9): gl_VertexID, per-frame fresh ops (preserveDrawingBuffer no longer carries frames: behaviour change), POINTS via instanced quads (max 511), blitFramebuffer, texSubImage2D into FBO textures, instancing (divisor 1). p5.brush standalone strokes/hatch/fill match Chrome (mean <=0.1). All 14 HyperFrames WebGL shader transitions draw. Still unsupported: lines, depth/stencil, renderbuffers, readPixels, divisor>1.
+- Library smoke test (main before GSAP merge): works = d3 via React, rough.js, visx, Matter, Motion static, @remotion/motion-blur/layout-utils/captions, Chart.js, Rapier (f0 blank). Broken = d3-selection (compareDocumentPosition), anime.js + Motion animate() (NodeList), Paper.js (bundler ignores browser map; defaultView), Recharts (SVG silently dropped; measure loop). Fix agent on feat/lib-compat (+ Bklit UI: visx+d3+motion, MIT; user marked d3-selection and Recharts must-fix).
+- HyperFrames loader on feat/hyperframes-html (tip 3f03f8dc, not merged): `kinetograph render <index.html|dir>`, data-* contract, nested comps, __timelines seek, <video>/<audio> -> native, `fetch-deps` (https + CDN allowlist + SRI + sha256 cache re-check). NYT chart vs HyperFrames mean ~0.15. 30-comp comparison: MATCH 11, CLOSE 6, DIFFERENT 10, FAILED 2 of 29 (scratchpad/hf-compare/RESULTS.md). Causes: fonts (11), CDN data fetch (2 maps), transition offsets (3), WebGPU shaders black + silent doctor, offset-path, remote video, canvas +1.7 levels.
+- In flight: feat/hyperframes-more (data-hidden, colour grading, speed ramps, audio lanes, fonts, claude-exchange 40 s first frame, + the comparison causes); feat/webgpu (WebGPU shim for shaders.iife backgrounds aurora/blob/ripples/swirl); feat/plugins (@kinetographdev/gsap, p5-brush, anime, motion as thin peer-dep glue + site Libraries page); 3 Haiku smoke tests (Shiki/Code Hike/flubber, Mermaid/KaTeX/MathJax, Observable Plot/Vega-Lite) in scratchpad/libsmoke/round2-{a,b,c}.
 
 ## Open threads
-- [ ] Review + merge feat/gsap (then compat.mdx lists GSAP), ship in 0.1.2
-- [ ] Review + merge merge/datamosh
-- [ ] p5.brush gap list -> scoped WebGL gap tasks (Sonnet medium) so it runs as-is; optional @kinetographdev/p5 adapter later
-- [ ] Re-run HyperFrames comparison on published 0.1.1 with bold headline; parity images
-- [ ] HyperFrames drop-in (HTML entry + script runtime + their data-* contract): est 2-4 weeks; product decision pending
+- [ ] Merge feat/hyperframes-html after hyperframes-more lands its fixes; re-run hf-compare for before/after totals
+- [ ] Merge feat/lib-compat (re-test Recharts on current main; bundler browser-map change must be tested on papercut corpus + examples: could break existing projects)
+- [ ] Merge feat/webgpu; WebGPU failure must warn per frame (currently silent black)
+- [ ] Plugins: GSAP + p5.brush first, anime + Motion after lib-compat; then next queue: smoke-test Theatre.js, React Spring, ECharts, Rive, Tone.js, then a 2nd Sonnet plugin agent for Theatre.js + React Spring (Rive/Tone wait on test)
+- [ ] Round 3 smoke test is the LAST proactive round (after lib-compat merges): Theatre.js, React Spring, ECharts, Rive, Tone.js + shadcn/Radix UI, icon sets (Lucide/Phosphor/Heroicons/Simple Icons), SplitType/Splitting, react-countup. Then stop testing libraries; fix from doctor warnings and user reports.
+- [ ] Round 2 gaps not in lib-compat: KaTeX vlist/table layout (crates/dom, M); accept+hide <math> (S); MathJax ~9% ex-unit scale (S); glyph fallback for missing symbols, arrows draw as tofu (crates/skia/render/src/text.rs:184, M); Code Hike lighter grammar fetch at render (recipe or fetch-deps); Shiki rerun with mono font override. Sent to lib-compat: setAttributeNS, document-wide lookups, SVG text measure, getComputedStyle fontSize.
+- [ ] Add a HyperFrames section to kinetograph-migrate skill (Three.js blocks -> translate via references/three.md)
+- [ ] MapLibre GL / animated maps: parked, user wants to discuss (likely a translate recipe via d3-geo)
+- [ ] GSAP: warn on tweens not attached to the seeked timeline
 
 ## Key files
 - `packages/compat/src/shim/` (3.4k-line DOM shim: element.ts, tree.ts, canvas.ts)
@@ -27,4 +31,5 @@ What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL librar
 - `packages/site/content/docs/compat.mdx:36` ("What works")
 
 ## Recent sessions
+- 2026-10-25-pipeline-expansion — GSAP + WebGL merged; HyperFrames loader 11/29 match; lib-compat, plugins, WebGPU, HF extras in flight
 - 2026-10-25-release-and-fixes — GSAP crashes today (feat/gsap in progress); datamosh merge in progress; p5.brush gap test running; HyperFrames ~3x

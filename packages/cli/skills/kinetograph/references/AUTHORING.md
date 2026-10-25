@@ -574,7 +574,10 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   vertex arrays, `vertexAttribPointer`, the `uniform*` calls, `texImage2D` from an image, a canvas, `ImageData` or an
   array, `texParameteri`, `generateMipmap`, `activeTexture`, `pixelStorei` (flip and premultiply), `viewport`,
   `scissor`, `enable` (`BLEND`, `CULL_FACE`, `SCISSOR_TEST`), `blendFunc` and the rest of blending, `colorMask`,
-  `clearColor`, `clear`, `drawArrays` and `drawElements` of triangles. `getShaderParameter(COMPILE_STATUS)` is true:
+  `clearColor`, `clear`, `drawArrays` and `drawElements` of triangles and of points (`gl_PointSize` pixels, 1 to 511, with
+  `gl_PointCoord`), `gl_VertexID`, and in WebGL 2 `drawArraysInstanced`, `drawElementsInstanced`,
+  `vertexAttribDivisor(i, 1)` (`gl_InstanceID`) and `blitFramebuffer` of the colour between the canvas and a texture
+  drawn in (`NEAREST` or `LINEAR`, mirrored by reversed corners). `getShaderParameter(COMPILE_STATUS)` is true:
   a shader naga cannot read fails when the scene loads, naming the line. `getExtension('OES_standard_derivatives')`
   answers (derivatives always work); other extensions return `null`.
 - **Framebuffers** (multi-pass shaders: render to a texture, then sample it; ping-pong; blur passes):
@@ -588,14 +591,15 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   draw or clear sets `INVALID_FRAMEBUFFER_OPERATION`. A draw that samples the texture it draws into sets
   `INVALID_OPERATION` and draws nothing. A render is a function of its own frame: every framebuffer texture starts a
   frame transparent black, so a pass reading what an earlier frame left reads black. A texture drawn into cannot be
-  given `generateMipmap` or `texSubImage2D`; sample it with `LINEAR` or `NEAREST` (a mipmapped minification filter
+  given `generateMipmap`; `texSubImage2D` of a canvas, `ImageData` or an array of pixels patches it in order with the
+  draws; sample it with `LINEAR` or `NEAREST` (a mipmapped minification filter
   without levels is incomplete, and reads black).
-- The drawing buffer is a browser's: the first draw or clear after a frame starts it afresh, and a frame that draws
-  nothing keeps the picture. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
+- The drawing buffer is emptied before every frame (a frame is a function of its own calls, so the frames can be made
+  in any order), `preserveDrawingBuffer` or not, and a frame that draws nothing draws nothing. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  renderbuffers and depth and stencil attachments, depth and stencil tests, `readPixels`, points and lines,
-  instancing, cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
+  renderbuffers and depth and stencil attachments, depth and stencil tests, `readPixels`, lines, instanced points,
+  cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
   Enabling the depth test is accepted but
   the first draw with it on throws, because a flat quad does not need it and a scene that does is drawn wrongly
   without it.
