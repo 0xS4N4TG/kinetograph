@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   cutToSlots,
-  curveFunction,
-  gradeFilter,
+  gradeAttribute,
+  gradeNotDrawn,
   laneGain,
   localTimelineTime,
   normalizeGrade,
@@ -10,10 +10,10 @@ import {
   rateAt,
   rateSpecOf,
   sampleLane,
+  seedOf,
   sourceTimeAt,
   timeAtSourceTime,
   TimingResolver,
-  type GradeStep,
   type TimedElement,
 } from '../src/hyperframes/index.js';
 
@@ -170,32 +170,7 @@ describe('media inside a composition with an in-point', () => {
   });
 });
 
-/** The shader's primary grade (runtime/colorGrading.ts: applyPrimaryGrade) for one colour, written out, as the reference. */
-function shaderPrimary(c: number[], a: Record<string, number>): number[] {
-  const luma = (v: number[]): number => 0.2126 * v[0]! + 0.7152 * v[1]! + 0.0722 * v[2]!;
-  const smooth = (lo: number, hi: number, x: number): number => {
-    const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
-    return t * t * (3 - 2 * t);
-  };
-  let v = c.map((x) => x * 2 ** a.exposure!);
-  const y = luma(v);
-  v = v.map((x) => x + a.shadows! * 0.35 * (1 - smooth(0, 0.65, y)) + a.highlights! * 0.35 * smooth(0.35, 1, y));
-  const bp = Math.min(0.18, Math.max(-0.18, a.blacks! * 0.18));
-  const wp = Math.min(1.18, Math.max(0.82, 1 - a.whites! * 0.18));
-  v = v.map((x) => (x - bp) / Math.max(wp - bp, 0.2));
-  v = [v[0]! + a.temperature! * 0.08 + a.tint! * 0.04, v[1]! - a.tint! * 0.08, v[2]! - (a.temperature! * 0.08 - a.tint! * 0.04)];
-  v = v.map((x) => (x - 0.5) * Math.max(0, 1 + a.contrast!) + 0.5);
-  const l = luma(v);
-  v = v.map((x) => l + (x - l) * Math.max(0, 1 + a.saturation!));
-  return v.map((x) => Math.min(1, Math.max(0, x)));
-}
-
-const applyMatrix = (m: number[], c: number[]): number[] =>
-  [0, 1, 2].map((r) => Math.min(1, Math.max(0, m[r * 5]! * c[0]! + m[r * 5 + 1]! * c[1]! + m[r * 5 + 2]! * c[2]! + m[r * 5 + 4]!)));
-
 describe('data-color-grading', () => {
-  const samples = [[0.1, 0.2, 0.3], [0.8, 0.5, 0.2], [0.5, 0.5, 0.5], [1, 0.9, 0.1], [0, 0, 0]];
-
   it('reads a preset name, JSON, a variable and the animated values', () => {
     expect(normalizeGrade('warm-daylight')!.adjust.temperature).toBe(0.18);
     expect(normalizeGrade('{"adjust":{"exposure":5}}')!.adjust.exposure).toBe(2);
@@ -206,50 +181,58 @@ describe('data-color-grading', () => {
     expect(normalizeGrade('{"preset":"neutral","intensity":0.4}', {}, { intensity: 0.9, exposure: 1 })).toMatchObject({ intensity: 0.9, adjust: { exposure: 1 } });
   });
 
-  it('is exactly one colour matrix when nothing is luma-weighted', () => {
-    const adjust = { exposure: 0.3, contrast: 0.2, whites: 0.1, blacks: -0.2, temperature: 0.25, tint: -0.1, saturation: 0.4 };
-    const f = gradeFilter(normalizeGrade({ adjust } as unknown as string)!)!;
-    expect(f.steps).toHaveLength(1);
-    expect(f.approximated).toEqual([]);
-    const full = { highlights: 0, shadows: 0, vibrance: 0, ...adjust };
-    for (const c of samples) {
-      const got = applyMatrix((f.steps[0] as Extract<GradeStep, { kind: 'matrix' }>).values, c);
-      const want = shaderPrimary(c, full);
-      got.forEach((v, i) => expect(v).toBeCloseTo(want[i]!, 9));
-    }
+  it('normalises the advanced controls the way HyperFrames does', () => {
+    const g = normalizeGrade(
+      JSON.stringify({
+        curves: { master: [[0.25, 0.2], [0.75, 0.8]], red: [[0, 0], [0.5, 0.5], [0.5, 0.6], [1, 1]] },
+        hueCurves: { hueVsHue: [[400, 90], [120, 300], [240, -10]], hueVsLuma: [[0, 0.5], [90, 0.5]] },
+        secondaries: [
+          { key: { hue: { center: -30, range: 90, softness: 200 }, saturation: { min: 0.9, max: 0.1 } }, correction: { hueShift: 500, tint: 0.3 } },
+          { enabled: false, key: {}, correction: { luma: 1 } },
+          { key: {} },
+        ],
+        wheels: { shadows: { hue: -90, amount: 2, level: -3 } },
+        details: { vignette: 0.4, grainSize: 3 },
+      }),
+    )!;
+    // The ends of a curve are added; a curve with a repeated input is the identity.
+    expect(g.curves.master).toEqual([[0, 0], [0.25, 0.2], [0.75, 0.8], [1, 1]]);
+    expect(g.curves.red).toEqual([[0, 0], [1, 1]]);
+    // A hue curve is sorted, wrapped and clamped; fewer than three points is none.
+    expect(g.hueCurves.hueVsHue).toEqual([[40, 90], [120, 180], [240, -10]]);
+    expect(g.hueCurves.hueVsLuma).toEqual([]);
+    // Only the enabled secondaries with a key and a correction are kept, within their limits.
+    expect(g.secondaries).toHaveLength(1);
+    expect(g.secondaries[0]).toEqual({
+      key: { hue: { center: 330, range: 90, softness: 90 }, saturation: { min: 0.1, max: 0.9, softness: 0.05 }, luma: { min: 0, max: 1, softness: 0.05 } },
+      correction: { hueShift: 180, saturation: 0, luma: 0, temperature: 0, tint: 0.3 },
+    });
+    expect(g.wheels.shadows).toEqual({ hue: 270, amount: 1, level: -1 });
+    expect(g.details).toMatchObject({ vignette: 0.4, vignetteMidpoint: 0.5, vignetteFeather: 0.65, grainSize: 1, grainRoughness: 0.5 });
   });
 
-  it('draws shadows and highlights as per-channel tables, exact for greys, and says so', () => {
-    const adjust = { shadows: 0.3, highlights: -0.2, contrast: 0.1 };
-    const f = gradeFilter(normalizeGrade({ adjust } as unknown as string)!)!;
-    expect(f.approximated).toContain('adjust.shadows/highlights');
-    const step = f.steps[0] as Extract<GradeStep, { kind: 'tables' }>;
-    expect(step.r).toHaveLength(32);
-    const full = Object.assign({ exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, temperature: 0, tint: 0, vibrance: 0, saturation: 0 }, adjust);
-    for (const g of [0, 0.25, 0.5, 1]) {
-      const i = g * 31;
-      const interp = (t: number[]): number => t[Math.floor(i)]! + ((t[Math.min(31, Math.ceil(i))]! - t[Math.floor(i)]!) * (i - Math.floor(i)));
-      expect(interp(step.g)).toBeCloseTo(shaderPrimary([g, g, g], full)[1]!, 2);
-    }
+  it('writes the grade of a frame as the attribute the painter reads, and nothing for a grade that changes nothing', () => {
+    expect(gradeAttribute(normalizeGrade('neutral')!, 0)).toBeNull();
+    expect(gradeAttribute(normalizeGrade('{"adjust":{"exposure":0.5},"intensity":0}')!, 0)).toBeNull();
+    const attr = JSON.parse(gradeAttribute(normalizeGrade('{"adjust":{"exposure":0.5},"details":{"grain":0.2},"lut":"look.cube"}')!, 1234)!);
+    expect(attr.adjust.exposure).toBe(0.5);
+    expect(attr.grain).toEqual({ amount: 0.2, size: 0.25, roughness: 0.5, seed: 1234 });
+    expect(attr.lut).toEqual({ src: 'look.cube', intensity: 1 });
+    expect(attr.vignette.amount).toBe(0);
+    // A vignette alone is a grade, even at intensity 0.
+    expect(gradeAttribute(normalizeGrade('{"intensity":0,"details":{"vignette":0.3}}')!, 0)).not.toBeNull();
   });
 
-  it('applies a curve through its points', () => {
-    const f = curveFunction([[0, 0], [0.5, 0.7], [1, 1]]);
-    expect(f(0)).toBe(0);
-    expect(f(0.5)).toBeCloseTo(0.7, 12);
-    expect(f(1)).toBe(1);
-    expect(f(0.25)).toBeGreaterThan(0.25);
-    const g = gradeFilter(normalizeGrade('{"curves":{"master":[[0,0],[0.5,0.7],[1,1]]}}')!)!;
-    const t = (g.steps[0] as Extract<GradeStep, { kind: 'tables' }>).g;
-    expect(t[0]).toBe(0);
-    expect(t[31]).toBe(1);
-    expect(t[16]!).toBeGreaterThan(0.5);
+  it('seeds the grain like HyperFrames (FNV-1a modulo 10000)', () => {
+    expect(seedOf('')).toBe(2166136261 % 10000);
+    expect(seedOf('clip')).toBe(seedOf('clip'));
+    expect(seedOf('clip')).not.toBe(seedOf('clop'));
+    expect(seedOf('a')).toBe(Number(BigInt.asUintN(32, (2166136261n ^ 97n) * 16777619n) % 10000n));
   });
 
-  it('mixes the grade with the source by intensity and lists what it cannot draw', () => {
-    const f = gradeFilter(normalizeGrade('{"preset":"night-lift","intensity":0.5,"lut":{"src":"a.cube"},"effects":{"halftone":0.5}}')!)!;
-    expect(f.intensity).toBe(0.5);
-    expect(f.left).toEqual(expect.arrayContaining(['lut', 'details.vignette', 'effects.halftone']));
-    expect(gradeFilter(normalizeGrade('neutral')!)).toBeNull();
+  it('lists what it cannot draw', () => {
+    const g = normalizeGrade('{"preset":"vhs-playback","effects":{"halftone":0.5}}')!;
+    expect(gradeNotDrawn(g)).toEqual(expect.arrayContaining(['effects.halftone', 'effects.scanlines']));
+    expect(gradeNotDrawn(normalizeGrade('{"adjust":{"exposure":1}}')!)).toEqual([]);
   });
 });

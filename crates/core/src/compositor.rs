@@ -103,6 +103,7 @@ use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
+use crate::grade::{self, ResolvedColorGrade};
 use crate::lut::Lut;
 use crate::mesh;
 use crate::pass_timer::{self, PassTime, PassTimer, Stamp};
@@ -299,6 +300,13 @@ pub struct Compositor {
     warp: wgpu::RenderPipeline,
     /// On `filtered_layout` and then `turbulence_layout`.
     displace: wgpu::RenderPipeline,
+    /// On the shared layout and then `grade_layout`.
+    color_grade: wgpu::RenderPipeline,
+    /// For `colorGrade`, at bind group 1: the table of curves and secondaries, and the look-up table.
+    grade_layout: wgpu::BindGroupLayout,
+    /// What the pass reads when a grade has no look-up table (2 x 2 x 2) or no curves (1024 x 3 zeros).
+    grade_lut: LutTexture,
+    grade_table: wgpu::TextureView,
     /// On the shared layout and then `turbulence_layout`.
     noise: wgpu::RenderPipeline,
     /// The passes of `filterGraph`, made the first time one is drawn.
@@ -405,6 +413,11 @@ impl Compositor {
         let halftone_shader =
             shader_module(device, "halftone", include_str!("shaders/halftone.wgsl"));
         let lut_shader = shader_module(device, "lut", include_str!("shaders/lut.wgsl"));
+        let color_grade_shader = shader_module(
+            device,
+            "colour grade",
+            include_str!("shaders/color_grade.wgsl"),
+        );
         let warp_shader = shader_module(device, "warp", include_str!("shaders/warp.wgsl"));
         let displace_shader =
             shader_module(device, "displace", include_str!("shaders/displace.wgsl"));
@@ -494,6 +507,20 @@ impl Compositor {
             "fs_displace",
             LINEAR_FORMAT,
         );
+        let grade_layout = grade_bind_group_layout(device);
+        let color_grade = fullscreen_pipeline(
+            device,
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("colour grade"),
+                bind_group_layouts: &[Some(&layout), Some(&grade_layout)],
+                immediate_size: 0,
+            }),
+            &color_grade_shader,
+            "fs_grade",
+            LINEAR_FORMAT,
+        );
+        let grade_lut = upload_lut(device, queue, &Lut::identity(2));
+        let grade_table = grade_table_texture(device, queue, &[]);
         let noise_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("noise"),
@@ -580,6 +607,10 @@ impl Compositor {
             dot_matrix: pipeline(&dot_matrix_shader, "fs_dot_matrix", LINEAR_FORMAT),
             warp,
             displace,
+            color_grade,
+            grade_layout,
+            grade_lut,
+            grade_table,
             noise,
             filter: None,
             glsl: glsl::GlslGpu::default(),
@@ -645,6 +676,7 @@ impl Compositor {
             (&c.displace, "displace"),
             (&c.noise, "noise"),
             (&c.lut, "lut"),
+            (&c.color_grade, "colour grade"),
         ]
         .into_iter()
         .map(|(pipeline, name)| (pipeline.clone(), name))
@@ -1284,6 +1316,9 @@ impl Compositor {
                 ResolvedEffect::FilterGraph(ref graph) => {
                     src = self.filter_graph(src, layer_matrix, layer_box, graph);
                 }
+                ResolvedEffect::ColorGrade(ref grade) => {
+                    src = self.color_grade(src, layer_matrix, layer_box, grade);
+                }
                 ResolvedEffect::Shader(ref shader) => src = self.custom_shader(src, shader),
             }
         }
@@ -1732,6 +1767,63 @@ impl Compositor {
             self.turbulence_tables.insert(key, bind_group);
         }
         key
+    }
+
+    /// Grades `src` with HyperFrames' colour grade in one pass (`shaders/color_grade.wgsl`). The vignette and the
+    /// grain are laid out on the grade's `rect`, or on the layer's box. `src` goes back to the pool; the result is
+    /// a new texture. A look-up table the compositor was not given is skipped.
+    fn color_grade(
+        &mut self,
+        src: Tex,
+        layer_matrix: Affine,
+        layer_box: Option<Rect>,
+        grade: &ResolvedColorGrade,
+    ) -> Tex {
+        if src.bounds.is_empty() {
+            return src;
+        }
+        let rect = grade
+            .rect
+            .or_else(|| layer_box.map(|b| [b.x0, b.y0, b.width(), b.height()]))
+            .unwrap_or([0.0, 0.0, f64::from(self.canvas.0), f64::from(self.canvas.1)]);
+        let table = (!grade.advanced.is_empty())
+            .then(|| grade_table_texture(&self.device, &self.queue, &grade.advanced));
+        let lut = grade
+            .lut
+            .as_ref()
+            .and_then(|(key, amount)| self.luts.get(key).map(|l| (l, *amount)));
+        let (lut_texture, lut_amount) = match lut {
+            Some((l, amount)) => (l, amount),
+            None => (&self.grade_lut, 0.0),
+        };
+        let values = grade_values(grade, layer_matrix, rect, lut.is_some(), lut_texture, lut_amount);
+        let extra = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("colour grade"),
+            layout: &self.grade_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        table.as_ref().unwrap_or(&self.grade_table),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&lut_texture.view),
+                },
+            ],
+        });
+        let target = self.target(src.bounds);
+        self.run_pass_with(
+            &self.color_grade,
+            src.input(),
+            src.input(),
+            &floats(&values),
+            Some(&extra),
+            &target,
+        );
+        self.release(src);
+        target
     }
 
     /// Grades `src` through the table loaded for `key`, faded in by `amount`.
@@ -2802,6 +2894,123 @@ fn turbulence_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout 
             count: None,
         }],
     })
+}
+
+/// The bind group of the `colorGrade` pass at group 1: the 1024 x 3 table of curves and secondaries, and the
+/// look-up table as a 3D texture (both read with `textureLoad`).
+fn grade_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let texture = |binding, view_dimension| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            view_dimension,
+            multisampled: false,
+        },
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("colour grade"),
+        entries: &[
+            texture(0, wgpu::TextureViewDimension::D2),
+            texture(1, wgpu::TextureViewDimension::D3),
+        ],
+    })
+}
+
+/// The table of curves and secondaries (`grade::ResolvedColorGrade::advanced`) as an Rgba8 texture; zeros when empty.
+fn grade_table_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &[u8],
+) -> wgpu::TextureView {
+    let zeros;
+    let data = if data.is_empty() {
+        zeros = vec![0u8; grade::CURVE_SIZE * grade::TABLE_ROWS * 4];
+        &zeros
+    } else {
+        data
+    };
+    device
+        .create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("colour grade table"),
+                size: wgpu::Extent3d {
+                    width: grade::CURVE_SIZE as u32,
+                    height: grade::TABLE_ROWS as u32,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            data,
+        )
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// A colour grade as `shaders/color_grade.wgsl` reads it: the inverse of the layer matrix and the intensities, the
+/// graded box, the ten primary controls, the three wheels, the flags, the look-up table's domain, the vignette
+/// and the grain, each a `vec4`.
+fn grade_values(
+    grade: &ResolvedColorGrade,
+    layer_matrix: Affine,
+    rect: [f64; 4],
+    has_lut: bool,
+    lut: &LutTexture,
+    lut_amount: f32,
+) -> Vec<f32> {
+    let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
+        layer_matrix.inverse().as_coeffs()
+    } else {
+        [0.0; 6]
+    };
+    let a = &grade.adjust;
+    let mut v = vec![
+        inverse[0] as f32,
+        inverse[1] as f32,
+        inverse[2] as f32,
+        inverse[3] as f32,
+        inverse[4] as f32,
+        inverse[5] as f32,
+        grade.intensity,
+        lut_amount,
+        rect[0] as f32,
+        rect[1] as f32,
+        rect[2] as f32,
+        rect[3] as f32,
+        a[0],
+        a[1],
+        a[2],
+        a[3],
+        a[4],
+        a[5],
+        a[6],
+        a[7],
+        a[8],
+        a[9],
+        lut.size,
+        f32::from(u8::from(has_lut)),
+    ];
+    for w in &grade.wheels {
+        v.extend([w[0], w[1], w[2], 0.0]);
+    }
+    v.extend([
+        f32::from(u8::from(grade.rgb_curves)),
+        f32::from(u8::from(grade.hue_curves)),
+        grade.secondaries as f32,
+        0.0,
+    ]);
+    v.extend([lut.domain_min[0], lut.domain_min[1], lut.domain_min[2], 0.0]);
+    v.extend([lut.domain_max[0], lut.domain_max[1], lut.domain_max[2], 0.0]);
+    v.extend(grade.vignette);
+    v.extend(grade.grain);
+    v
 }
 
 /// Uploads a table as an Rgba32Float 3D texture: x is the red index, y green

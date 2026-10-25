@@ -53,6 +53,11 @@ impl<'a> Painter<'a> {
         // `url()` references come from the mirror property; the ones before
         // the first function go first, the rest last.
         let (lead_urls, tail_urls) = self.filter_urls(node);
+        // The grade comes first: HyperFrames draws the picture graded on a canvas, and the element's own `filter`
+        // acts on that canvas.
+        if let Some(grade) = self.color_grade_effect(node, &geom) {
+            effects.push(grade);
+        }
         for u in &lead_urls {
             self.url_filter(node, u, &geom, id, &mut effects);
         }

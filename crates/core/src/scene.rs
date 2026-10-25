@@ -555,6 +555,8 @@ pub enum Effect {
     },
     /// An SVG `<filter>`: a graph of primitives. See `filter.rs`.
     FilterGraph(crate::filter::FilterGraph),
+    /// HyperFrames' colour grade in one pass (`data-color-grading`): see `grade.rs`.
+    ColorGrade(Box<crate::grade::ColorGrade>),
     /// The user's own fragment shader.
     Shader(ShaderEffect),
 }
@@ -806,6 +808,8 @@ impl Effect {
             | Effect::Dither { .. } => 0.0,
             // Dots stay inside their cells, which only sample the layer.
             Effect::Halftone { .. } | Effect::DotMatrix { .. } => 0.0,
+            // Recolours pixels in place.
+            Effect::ColorGrade(_) => 0.0,
             // A pixel is read from up to half of `scale` layer units away.
             Effect::Displace { scale, .. } => {
                 scale.max().abs().max(scale.min().abs()) / 2.0 * layer_scale
@@ -1899,6 +1903,7 @@ impl Scene {
                     Effect::FilterGraph(graph) => {
                         graph.validate(&layer.id, layer.kind.has_box())?
                     }
+                    Effect::ColorGrade(grade) => grade.validate(&layer.id)?,
                     Effect::CornerPin { .. } if !layer.kind.has_box() => {
                         return Err(Error::Scene(format!(
                             "layer {:?}: cornerPin needs a box, and a group without a layout has none; pin a \

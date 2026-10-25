@@ -25,7 +25,7 @@ import type { HfNode, HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
 import { applySvgRules } from './svg-style.js';
 import { laneGain, MAX_GAIN, parseAutomation, sourceTimeAt, type AutomationLane } from './automation.js';
-import { gradeFilter, normalizeGrade, type GradeFilter } from './grading.js';
+import { gradeAttribute, gradeNotDrawn, normalizeGrade, seedOf } from './grading.js';
 import {
   cutToSlots,
   isMedia,
@@ -165,9 +165,7 @@ class Runtime {
   private readonly failures = new Set<string>();
   /** What `display` a `[data-hidden]` clip had before the runtime hid it (HyperFrames' displayBeforeHide). */
   private readonly displayBeforeHide = new WeakMap<AnyRecord, string>();
-  /** The `<svg>` that holds the grading filters, and what each graded element has drawn. */
-  private filterHost: AnyRecord | null = null;
-  private readonly graded = new Map<AnyRecord, { id: string; signature: string }>();
+  /** What the grades of the frame ask for and are not drawn. */
   private gradingNotes: string[] = [];
   private seekFailures: string[] = [];
   private readonly scriptFailures: string[] = [];
@@ -427,7 +425,7 @@ class Runtime {
       }
       el.setAttribute('data-kg-video', JSON.stringify(clock));
     }
-    this.applyGrading();
+    this.applyGrading(time);
   }
 
   /** The animated values a tween leaves on an element (`--hf-color-grading-intensity`, `-lut-intensity`, `-exposure`). */
@@ -445,34 +443,22 @@ class Runtime {
   }
 
   /**
-   * `data-color-grading` of a `<video>`, `<img>` or `<canvas>` as an SVG filter on the element (see `grading.ts`). The
-   * filter is rebuilt only when the grade changes, so a tween of `--hf-color-grading-exposure` is a filter per frame.
+   * `data-color-grading` of a `<video>`, `<img>` or `<canvas>` as the `data-kg-grade` attribute the DOM painter turns into a
+   * `colorGrade` effect on the element (see `grading.ts`). The grain is seeded as HyperFrames seeds it: by the element
+   * (its id, else its `src`, else its place among its siblings) and the whole 60ths of a second of the time, so a frame
+   * is the same alone or in a sequence.
    */
-  private applyGrading(): void {
+  private applyGrading(time: number): void {
     this.gradingNotes = [];
     for (const el of Array.from(doc().querySelectorAll('video[data-color-grading], img[data-color-grading], canvas[data-color-grading]')) as AnyRecord[]) {
-      const state = this.graded.get(el) ?? { id: `kg-hf-grade-${this.graded.size}`, signature: '' };
-      this.graded.set(el, state);
       const grade = normalizeGrade(el.getAttribute('data-color-grading'), this.variablesFor(el), this.animatedGrade(el));
-      const filter: GradeFilter | null = grade === null ? null : gradeFilter(grade);
-      const authored = String(el.style.getPropertyValue('filter')).replace(/\s*url\(#kg-hf-grade-\d+\)/g, '').trim();
-      if (filter !== null) {
-        for (const name of filter.left) this.gradingNotes.push(`${name} is not drawn`);
-        for (const name of filter.approximated) this.gradingNotes.push(`${name} is approximated`);
-      }
-      let wanted = authored;
-      if (filter !== null && filter.steps.length > 0) {
-        const signature = JSON.stringify([filter.steps, filter.intensity]);
-        if (state.signature !== signature) {
-          this.buildFilter(state.id, filter);
-          state.signature = signature;
-        }
-        wanted = `${authored} url(#${state.id})`.trim();
-      } else state.signature = '';
-      if (String(el.style.getPropertyValue('filter')) !== wanted) {
-        if (wanted === '') el.style.removeProperty('filter');
-        else el.style.setProperty('filter', wanted);
-      }
+      const siblings = Array.from(el.parentNode?.children ?? []);
+      const key = el.id || el.getAttribute('src') || `${String(el.tagName).toUpperCase()}:${siblings.indexOf(el)}`;
+      const wanted = grade === null ? null : gradeAttribute(grade, seedOf(key) + Math.floor(Math.max(0, time) * 60));
+      if (grade !== null) for (const name of gradeNotDrawn(grade)) this.gradingNotes.push(`${name} is not drawn`);
+      if (wanted === null) {
+        if (el.hasAttribute('data-kg-grade')) el.removeAttribute('data-kg-grade');
+      } else if (el.getAttribute('data-kg-grade') !== wanted) el.setAttribute('data-kg-grade', wanted);
     }
   }
 
@@ -494,44 +480,6 @@ class Runtime {
       for (const r of results) if (r.status === 'rejected') this.failures.add(`hf-seek: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
       continueRender(handle);
     });
-  }
-
-  /** `<audio>` and the audible `<video>`s as `<Audio>` in a `<Sequence>` over their window. */
-  private buildFilter(id: string, filter: GradeFilter): void {
-    if (this.filterHost === null) {
-      this.filterHost = doc().createElementNS(SVG_NS, 'svg');
-      this.filterHost.setAttribute('width', '0');
-      this.filterHost.setAttribute('height', '0');
-      this.filterHost.style.setProperty('position', 'absolute');
-      this.html.appendChild(this.filterHost);
-    }
-    const host = this.filterHost;
-    for (const old of Array.from(host.children) as AnyRecord[]) if (old.getAttribute('id') === id) host.removeChild(old);
-    const make = (tag: string, attrs: Record<string, string>): AnyRecord => {
-      const node = doc().createElementNS(SVG_NS, tag);
-      for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
-      return node;
-    };
-    const fmt = (n: number): string => String(Number(n.toFixed(6)));
-    const root = make('filter', { id, x: '0', y: '0', width: '1', height: '1', 'color-interpolation-filters': 'sRGB' });
-    let previous = 'SourceGraphic';
-    filter.steps.forEach((step, i) => {
-      const result = `g${i}`;
-      if (step.kind === 'matrix') {
-        root.appendChild(make('feColorMatrix', { type: 'matrix', values: step.values.map(fmt).join(' '), in: previous, result }));
-      } else {
-        const transfer = make('feComponentTransfer', { in: previous, result });
-        for (const [tag, table] of [['feFuncR', step.r], ['feFuncG', step.g], ['feFuncB', step.b]] as const) {
-          transfer.appendChild(make(tag, { type: 'table', tableValues: table.map(fmt).join(' ') }));
-        }
-        root.appendChild(transfer);
-      }
-      previous = result;
-    });
-    if (filter.intensity < 1) {
-      root.appendChild(make('feComposite', { in: previous, in2: 'SourceGraphic', operator: 'arithmetic', k1: '0', k2: fmt(filter.intensity), k3: fmt(1 - filter.intensity), k4: '0' }));
-    }
-    host.appendChild(root);
   }
 
   /** The group a member `<audio>` belongs to: its `<hf-audio-group>` element (audioGroups.ts: resolveGroupElement), or null. */
