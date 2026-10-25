@@ -7,6 +7,7 @@ import type { Tool } from '@/components/shell/tool-bar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { fitSize, stepZoom } from '@/lib/format';
 import { findLayer, hitTest } from '@/lib/inspect';
+import { boxResult, boxSelect, clickSelection, layerRect, rectFrom, type Rect } from '@/lib/selection';
 import { useElementSize } from '@/lib/use-element-size';
 import { cn } from '@/lib/utils';
 
@@ -28,7 +29,8 @@ interface ViewerProps {
   /** The last frame request that failed. */
   frameError: StudioError | null;
   inspect?: InspectResult | null;
-  selectedLayer?: string | null;
+  /** The layers picked: outlined on the frame, the first with its handles. */
+  selectedLayers?: string[];
   compositions?: CompositionInfo[];
   onSelectComp?(id: string): void;
   tool: Tool;
@@ -36,7 +38,8 @@ interface ViewerProps {
   onViewChange(view: View): void;
   safeZones: boolean;
   onSafeZonesChange(on: boolean): void;
-  onSelectLayer(id: string | null): void;
+  /** A click picked one layer (shift: added), or a dragged box picked the layers inside it. */
+  onSelectLayers(ids: string[]): void;
 }
 
 /** The frames the server renders, drawn on a canvas that scales to fit, over a checkerboard for transparency. */
@@ -47,7 +50,7 @@ export function Viewer({
   buildError,
   frameError,
   inspect = null,
-  selectedLayer = null,
+  selectedLayers = [],
   compositions = [],
   onSelectComp,
   tool,
@@ -55,7 +58,7 @@ export function Viewer({
   onViewChange,
   safeZones,
   onSafeZonesChange,
-  onSelectLayer,
+  onSelectLayers,
 }: ViewerProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -67,6 +70,11 @@ export function Viewer({
   const dragFrom = useRef<{ x: number; y: number; pan: View['pan'] } | null>(null);
   const [frameMs, setFrameMs] = useState<number | null>(null);
   const [showGuides, setShowGuides] = useState(true);
+  /** A drag with the select tool: where it began and whether it has gone far enough to be a box and not a click. */
+  const boxFrom = useRef<{ x: number; y: number; px: number; py: number; moved: boolean } | null>(null);
+  const [marquee, setMarquee] = useState<Rect | null>(null);
+  /** The click that ends a box drag must not also pick a layer. */
+  const swallowClick = useRef(false);
 
   const draw = useCallback(async (frame: ReceivedFrame) => {
     const ticket = ++drawn.current;
@@ -94,8 +102,18 @@ export function Viewer({
   const scaleRatio = comp && shown && comp.width > 0 ? shown.width / comp.width : 1;
   const scalePct = Math.round(scaleRatio * 100);
 
-  const activeLayer = inspect && selectedLayer ? findLayer(inspect.layers, selectedLayer) : null;
+  const activeLayer = inspect && selectedLayers[0] ? findLayer(inspect.layers, selectedLayers[0]) : null;
   const layerBounds = activeLayer?.bounds ?? activeLayer?.box ?? null;
+  const otherRects: Rect[] = [];
+  if (inspect) {
+    for (const id of selectedLayers.slice(1)) {
+      const rect = (() => {
+        const found = findLayer(inspect.layers, id);
+        return found ? layerRect(found) : null;
+      })();
+      if (rect) otherRects.push(rect);
+    }
+  }
 
   /** The composition pixel under the pointer, or null off the frame. */
   const pixelAt = (event: MouseEvent<HTMLElement>) => {
@@ -106,27 +124,61 @@ export function Viewer({
     return x >= 0 && y >= 0 && x < comp.width && y < comp.height ? { x, y } : null;
   };
 
+  /** The composition pixel under the pointer, kept to the frame (a drag may leave it). */
+  const clampedPixelAt = (event: MouseEvent<HTMLElement>) => {
+    const rect = frameRef.current?.getBoundingClientRect();
+    if (!comp || !rect || rect.width === 0 || rect.height === 0) return null;
+    const x = ((event.clientX - rect.left) / rect.width) * comp.width;
+    const y = ((event.clientY - rect.top) / rect.height) * comp.height;
+    return { x: Math.min(comp.width, Math.max(0, x)), y: Math.min(comp.height, Math.max(0, y)) };
+  };
+
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (tool === 'select' && comp && !buildError && event.button === 0) {
+      const at = clampedPixelAt(event);
+      boxFrom.current = at ? { ...at, px: event.clientX, py: event.clientY, moved: false } : null;
+      return;
+    }
     if (tool !== 'hand' || !comp || buildError) return;
     dragFrom.current = { x: event.clientX, y: event.clientY, pan: view.pan };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const box = boxFrom.current;
+    if (box) {
+      if (!box.moved && Math.hypot(event.clientX - box.px, event.clientY - box.py) < 4) return;
+      box.moved = true;
+      const at = clampedPixelAt(event);
+      if (at) setMarquee(rectFrom(box, at));
+      return;
+    }
     const from = dragFrom.current;
     if (!from) return;
     onViewChange({ zoom, pan: { x: from.pan.x + event.clientX - from.x, y: from.pan.y + event.clientY - from.y } });
   };
-  const onPointerUp = () => {
+  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     dragFrom.current = null;
+    const box = boxFrom.current;
+    boxFrom.current = null;
+    if (box?.moved) {
+      const at = clampedPixelAt(event);
+      swallowClick.current = true;
+      setMarquee(null);
+      if (at && inspect) onSelectLayers(boxResult(selectedLayers, boxSelect(inspect.layers, rectFrom(box, at)), event.shiftKey));
+    }
   };
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (swallowClick.current) {
+      swallowClick.current = false;
+      return;
+    }
     if (!comp || buildError) return;
     if (tool === 'zoom') {
       onViewChange({ zoom: stepZoom(scaleRatio, event.altKey ? -1 : 1), pan: view.pan });
     } else if (tool === 'select' && inspect) {
       const point = pixelAt(event);
-      onSelectLayer((point && hitTest(inspect.layers, point.x, point.y)?.id) ?? null);
+      onSelectLayers(clickSelection(selectedLayers, (point && hitTest(inspect.layers, point.x, point.y)?.id) ?? null, event.shiftKey));
     }
   };
 
@@ -266,6 +318,28 @@ export function Viewer({
                   {activeLayer.id}
                 </span>
               </div>
+            )}
+
+            {/* The other selected layers: an outline each */}
+            {showGuides &&
+              otherRects.map((rect, index) => (
+                <div
+                  key={index}
+                  data-testid="selection-outline"
+                  className="pointer-events-none absolute border border-rose-500/90"
+                  aria-hidden="true"
+                  style={{ left: rect.x * scaleRatio, top: rect.y * scaleRatio, width: Math.max(2, rect.width * scaleRatio), height: Math.max(2, rect.height * scaleRatio) }}
+                />
+              ))}
+
+            {/* The box being dragged */}
+            {marquee && (
+              <div
+                data-testid="marquee"
+                className="pointer-events-none absolute border border-dashed border-sky-300 bg-sky-400/10"
+                aria-hidden="true"
+                style={{ left: marquee.x * scaleRatio, top: marquee.y * scaleRatio, width: marquee.width * scaleRatio, height: marquee.height * scaleRatio }}
+              />
             )}
 
             {/* Anchor Point Reticle */}

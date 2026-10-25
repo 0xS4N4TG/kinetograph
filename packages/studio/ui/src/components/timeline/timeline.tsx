@@ -28,7 +28,8 @@ interface TimelineProps {
   status: TimelineStatus;
   state: PlayerState;
   player: Player;
-  selectedLayer: string | null;
+  /** The layers picked anywhere in the studio. */
+  selectedLayers: string[];
   onSelectLayer(id: string): void;
 }
 
@@ -36,7 +37,7 @@ interface TimelineProps {
  * The timeline: a ruler in frames, one row per Sequence nested under its parent, then a row per layer, and the playhead
  * across them. Pressing and dragging in the ruler or a lane scrubs; a row's click selects its layer.
  */
-export function Timeline({ comp, status, state, player, selectedLayer, onSelectLayer }: TimelineProps) {
+export function Timeline({ comp, status, state, player, selectedLayers, onSelectLayer }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -279,7 +280,7 @@ export function Timeline({ comp, status, state, player, selectedLayer, onSelectL
                       detail={secondLine(row)}
                       title={`${row.label}: frames ${row.from}..${row.end - 1}${row.source ? `\n${row.component ? `component ${row.component}\n` : ''}${fullSource(row.source)}` : ''}`}
                       depth={row.depth}
-                      selected={row.layer !== null && row.layer === selectedLayer}
+                      selected={row.layer !== null && selectedLayers.includes(row.layer)}
                       onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
                       laneWidth={laneWidth}
                     >
@@ -305,7 +306,7 @@ export function Timeline({ comp, status, state, player, selectedLayer, onSelectL
                       badge={row.type}
                       title={tooltip(row.label, row.type, row)}
                       depth={row.depth}
-                      selected={row.id === selectedLayer}
+                      selected={selectedLayers.includes(row.id)}
                       onSelect={() => onSelectLayer(row.id)}
                       laneWidth={laneWidth}
                     >

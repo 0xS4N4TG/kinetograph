@@ -48,7 +48,7 @@ export function sequenceOf(
   return best;
 }
 
-function currentValues(layer: InspectLayer): string[] {
+export function currentValues(layer: InspectLayer): string[] {
   const t = layer.transform;
   const out: string[] = [];
   if (layer.text?.font) out.push(`font ${layer.text.font} ${formatNumber(layer.text.size)}`);
@@ -61,7 +61,7 @@ function currentValues(layer: InspectLayer): string[] {
   return out;
 }
 
-const quoted = (text: string) => JSON.stringify(text.length > 80 ? `${text.slice(0, 77)}...` : text);
+export const quoted =(text: string) => JSON.stringify(text.length > 80 ? `${text.slice(0, 77)}...` : text);
 
 /** The request, ending in `Change: ` for the user to finish. */
 export function buildAgentMessage({ entry, cwd, comp, frame, layer, timeline }: AgentMessageInput): string {
