@@ -19,6 +19,8 @@ What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL librar
 - [ ] Merge feat/lib-compat (re-test Recharts on current main; bundler browser-map change must be tested on papercut corpus + examples: could break existing projects)
 - [ ] Merge feat/webgpu; WebGPU failure must warn per frame (currently silent black)
 - [ ] Plugins: GSAP + p5.brush first, anime + Motion after lib-compat; then next queue: smoke-test Theatre.js, React Spring, ECharts, Rive, Tone.js, then a 2nd Sonnet plugin agent for Theatre.js + React Spring (Rive/Tone wait on test)
+- [ ] Round 3 smoke test is the LAST proactive round (after lib-compat merges): Theatre.js, React Spring, ECharts, Rive, Tone.js + shadcn/Radix UI, icon sets (Lucide/Phosphor/Heroicons/Simple Icons), SplitType/Splitting, react-countup. Then stop testing libraries; fix from doctor warnings and user reports.
+- [ ] Round 2 gaps not in lib-compat: KaTeX vlist/table layout (crates/dom, M); accept+hide <math> (S); MathJax ~9% ex-unit scale (S); glyph fallback for missing symbols, arrows draw as tofu (crates/skia/render/src/text.rs:184, M); Code Hike lighter grammar fetch at render (recipe or fetch-deps); Shiki rerun with mono font override. Sent to lib-compat: setAttributeNS, document-wide lookups, SVG text measure, getComputedStyle fontSize.
 - [ ] Add a HyperFrames section to kinetograph-migrate skill (Three.js blocks -> translate via references/three.md)
 - [ ] MapLibre GL / animated maps: parked, user wants to discuss (likely a translate recipe via d3-geo)
 - [ ] GSAP: warn on tweens not attached to the seeked timeline
