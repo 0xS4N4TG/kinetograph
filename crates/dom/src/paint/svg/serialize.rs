@@ -3,6 +3,10 @@
 //! The source is the subtree's attributes, with these changes:
 //!
 //! - the root is `size` big (its box), and keeps its `viewBox`;
+//! - the presentation properties the page's CSS cascade gives an element
+//!   (`[data-composition-id] .bar { fill: ... }`, `.chart circle { stroke: red }`:
+//!   rules whose selectors cross from the HTML into the `<svg>`) are written on
+//!   it as style, where they beat the attribute (`cascaded`);
 //! - `currentColor` is the element's computed `color`, which Stylo cascaded
 //!   from the HTML around it;
 //! - names the HTML parser lowercased (`lineargradient`, `viewbox`) are
@@ -25,6 +29,7 @@ use std::collections::{BTreeSet, HashSet};
 use blitz_dom::util::ToColorColor;
 use blitz_dom::{BaseDocument, NodeData, NodeId};
 use kurbo::{Affine, BezPath, Shape};
+use style::properties::{LonghandId, PropertyDeclarationId};
 use style_traits::ToCss;
 
 use super::css;
@@ -121,6 +126,43 @@ const ROOT_INHERITED: [&str; 31] = [
     "dominant-baseline",
     "color",
     "marker",
+];
+
+/// The presentation properties read from the cascade: CSS name, Stylo's id,
+/// whether the property inherits, and its initial value as Stylo prints it.
+const CASCADED: [(&str, LonghandId, bool, &str); 22] = [
+    ("fill", LonghandId::Fill, true, "rgb(0, 0, 0)"),
+    ("fill-opacity", LonghandId::FillOpacity, true, "1"),
+    ("fill-rule", LonghandId::FillRule, true, "nonzero"),
+    ("stroke", LonghandId::Stroke, true, "none"),
+    ("stroke-width", LonghandId::StrokeWidth, true, "1px"),
+    ("stroke-opacity", LonghandId::StrokeOpacity, true, "1"),
+    ("stroke-linecap", LonghandId::StrokeLinecap, true, "butt"),
+    ("stroke-linejoin", LonghandId::StrokeLinejoin, true, "miter"),
+    ("stroke-miterlimit", LonghandId::StrokeMiterlimit, true, "4"),
+    (
+        "stroke-dasharray",
+        LonghandId::StrokeDasharray,
+        true,
+        "none",
+    ),
+    (
+        "stroke-dashoffset",
+        LonghandId::StrokeDashoffset,
+        true,
+        "0px",
+    ),
+    ("font-family", LonghandId::FontFamily, true, ""),
+    ("font-size", LonghandId::FontSize, true, ""),
+    ("font-weight", LonghandId::FontWeight, true, ""),
+    ("font-style", LonghandId::FontStyle, true, ""),
+    ("letter-spacing", LonghandId::LetterSpacing, true, "normal"),
+    ("word-spacing", LonghandId::WordSpacing, true, "0px"),
+    ("text-rendering", LonghandId::TextRendering, true, "auto"),
+    ("visibility", LonghandId::Visibility, true, "visible"),
+    ("opacity", LonghandId::Opacity, false, "1"),
+    ("display", LonghandId::Display, false, "inline"),
+    ("mix-blend-mode", LonghandId::MixBlendMode, false, "normal"),
 ];
 
 pub fn canonical_tag(tag: &str) -> String {
@@ -355,7 +397,10 @@ fn computed_font(doc: &BaseDocument, id: NodeId) -> Attrs {
             "font-size".into(),
             format!("{}", font.font_size.computed_size().px()),
         ),
-        ("font-weight".into(), format!("{}", font.font_weight.value())),
+        (
+            "font-weight".into(),
+            format!("{}", font.font_weight.value()),
+        ),
         (
             "font-style".into(),
             font_style
@@ -365,6 +410,55 @@ fn computed_font(doc: &BaseDocument, id: NodeId) -> Attrs {
                 .to_string(),
         ),
     ]
+}
+
+/// The presentation properties the cascade gave the element beyond what its
+/// attributes say, as declarations. Stylo does not read SVG presentation
+/// attributes, so a value that differs from the parent's (or the initial one,
+/// for properties that do not inherit) came from a rule or the `style`
+/// attribute; one that equals the parent's is inheritance, which usvg does too.
+///
+/// Each is `(name, value, set_here)`: `set_here` is false for what the root
+/// merely inherits from the HTML around it (its own attribute wins over that).
+/// The root's font is `computed_font`'s.
+fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, bool)> {
+    let Some(node) = doc.get_node(id) else {
+        return Vec::new();
+    };
+    let Some(style) = node.primary_styles() else {
+        return Vec::new();
+    };
+    let parent = node.parent.and_then(|p| doc.get_node(p));
+    let parent_style = parent.and_then(|p| p.primary_styles());
+    let string = |s: &style::properties::ComputedValues, l: LonghandId| {
+        s.computed_value_to_string(PropertyDeclarationId::Longhand(l))
+    };
+    let mut out = Vec::new();
+    for (name, longhand, inherits, initial) in CASCADED {
+        let font = name.starts_with("font-");
+        if root && (font || !inherits) {
+            continue;
+        }
+        let value = string(&style, longhand);
+        let inherited = match (&parent_style, inherits) {
+            (Some(p), true) => Some(string(p, longhand)),
+            _ => None,
+        };
+        let differs = match &inherited {
+            Some(p) => value != *p,
+            None => value != initial,
+        };
+        // A root also takes what the HTML around it passes down, as nothing
+        // above it in the source says it.
+        let from_html = root && !differs && value != initial;
+        if name == "display" && value != "none" {
+            continue;
+        }
+        if differs || from_html {
+            out.push((name.to_string(), value, differs));
+        }
+    }
+    out
 }
 
 fn rgba(c: [f32; 4]) -> String {
@@ -444,6 +538,23 @@ impl Writer<'_> {
         Some((tag, attrs, decls))
     }
 
+    /// Adds what the page's cascade gives the element to its declarations
+    /// (`cascaded`).
+    fn cascade(&mut self, id: NodeId, root: bool, attrs: &Attrs, decls: &mut Attrs) {
+        let color = self.current_color(id);
+        for (n, mut v, set_here) in cascaded(self.doc, id, root) {
+            let own = decls.iter().any(|(d, _)| *d == n);
+            if own || (!set_here && attrs.iter().any(|(a, _)| *a == n)) {
+                continue;
+            }
+            if v.eq_ignore_ascii_case("currentcolor") {
+                v = color.clone();
+            }
+            scan_refs(&v, &mut self.refs);
+            decls.push((n, v));
+        }
+    }
+
     /// The root: its attributes (the box and what its content inherits) and
     /// whether it says `overflow: visible`; its content goes to `out`.
     fn root(&mut self, id: NodeId, size: [f64; 2]) -> (String, bool, Option<String>) {
@@ -451,6 +562,7 @@ impl Writer<'_> {
             return (String::new(), false, None);
         };
         let overflow = take(&mut attrs, &mut decls, "overflow");
+        self.cascade(id, true, &attrs, &mut decls);
         // What the svg does not set itself, its text inherits from the HTML.
         let mut inherited_family = None;
         for (n, v) in computed_font(self.doc, id) {
@@ -622,6 +734,7 @@ impl Writer<'_> {
         let Some((tag, mut attrs, mut decls)) = self.read(id) else {
             return;
         };
+        self.cascade(id, false, &attrs, &mut decls);
         let filter = take(&mut attrs, &mut decls, "filter");
         if let Some(scale) = path_length_scale(&tag, &attrs) {
             rescale_dashes(&mut attrs, &mut decls, scale);
