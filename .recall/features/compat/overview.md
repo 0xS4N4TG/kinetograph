@@ -8,22 +8,23 @@
 What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL libraries, and benchmarks against Remotion/HyperFrames.
 
 ## Current state
-- GSAP: MERGED (PR #7). Root cause of the "$0.2" crash was an off-by-one in packages/react/src/readback.ts (paths counted AbsoluteFill's dropped background rect). 8-case corpus matches Remotion (mean <=0.14 levels, text <=1.13). Plugins TextPlugin/SplitText/DrawSVG/MotionPath/CustomEase checked; Flip loads untested. Gap: a tween not on a paused seeked timeline stays frozen, no warning yet.
-- WebGL: MERGED (PR #9): gl_VertexID, per-frame fresh ops (preserveDrawingBuffer no longer carries frames: behaviour change), POINTS via instanced quads (max 511), blitFramebuffer, texSubImage2D into FBO textures, instancing (divisor 1). p5.brush standalone strokes/hatch/fill match Chrome (mean <=0.1). All 14 HyperFrames WebGL shader transitions draw. Still unsupported: lines, depth/stencil, renderbuffers, readPixels, divisor>1.
-- Library smoke test (main before GSAP merge): works = d3 via React, rough.js, visx, Matter, Motion static, @remotion/motion-blur/layout-utils/captions, Chart.js, Rapier (f0 blank). Broken = d3-selection (compareDocumentPosition), anime.js + Motion animate() (NodeList), Paper.js (bundler ignores browser map; defaultView), Recharts (SVG silently dropped; measure loop). Fix agent on feat/lib-compat (+ Bklit UI: visx+d3+motion, MIT; user marked d3-selection and Recharts must-fix).
-- HyperFrames loader on feat/hyperframes-html (tip 3f03f8dc, not merged): `kinetograph render <index.html|dir>`, data-* contract, nested comps, __timelines seek, <video>/<audio> -> native, `fetch-deps` (https + CDN allowlist + SRI + sha256 cache re-check). NYT chart vs HyperFrames mean ~0.15. 30-comp comparison: MATCH 11, CLOSE 6, DIFFERENT 10, FAILED 2 of 29 (scratchpad/hf-compare/RESULTS.md). Causes: fonts (11), CDN data fetch (2 maps), transition offsets (3), WebGPU shaders black + silent doctor, offset-path, remote video, canvas +1.7 levels.
-- In flight: feat/hyperframes-more (data-hidden, colour grading, speed ramps, audio lanes, fonts, claude-exchange 40 s first frame, + the comparison causes); feat/webgpu (WebGPU shim for shaders.iife backgrounds aurora/blob/ripples/swirl); feat/plugins (@kinetographdev/gsap, p5-brush, anime, motion as thin peer-dep glue + site Libraries page); 3 Haiku smoke tests (Shiki/Code Hike/flubber, Mermaid/KaTeX/MathJax, Observable Plot/Vega-Lite) in scratchpad/libsmoke/round2-{a,b,c}.
+- main 4a2a1511 (2026-10-25): merged #12 lib-compat (Recharts 0.14-0.28, d3-selection, anime 0.02, Motion animate 0.38, Paper.js, Rapier f0, customElements, *AttributeNS, Mermaid DOM gaps; rAF runs after the frame and catches up on jumps), #13 HyperFrames loader+extras (29 comps: 15 MATCH / 6 CLOSE / 8 DIFF / 0 FAIL, was 11/6/10/2), #14 svg-cascade (page CSS styles SVG; var()/oklch/color-mix in SVG paint, fixes Bklit colours), #15 WebGPU (shaders.iife blocks; ripples/swirl pixel-identical to HF).
+- Launch film lossless framemd5 identical to pre-merge main after every merge and on final main with the new addon.
+- Round 2 smoke tests done: Plot, Vega canvas, Shiki, Code Hike, flubber, MathJax work (2-4x faster than Chrome); Mermaid, KaTeX broken (see open threads).
+- In flight: chore/hf-svg-workarounds (Sonnet agent: delete svg-style.ts/pinSvgFonts/svgRules now covered by Rust, rerun 29-comp compare into scratchpad/hf-final); feat/plugins (gsap, p5-brush done; motion, anime, Libraries page in progress).
+- Real HyperFrames projects test (Haiku): BLOCKED by auto-mode classifier (external code: npx hyperframes init, repo clone, community repos). Asked user to approve / pick safer scope.
 
 ## Open threads
-- [ ] Merge feat/hyperframes-html after hyperframes-more lands its fixes; re-run hf-compare for before/after totals
-- [ ] Merge feat/lib-compat (re-test Recharts on current main; bundler browser-map change must be tested on papercut corpus + examples: could break existing projects)
-- [ ] Merge feat/webgpu; WebGPU failure must warn per frame (currently silent black)
-- [ ] Plugins: GSAP + p5.brush first, anime + Motion after lib-compat; then next queue: smoke-test Theatre.js, React Spring, ECharts, Rive, Tone.js, then a 2nd Sonnet plugin agent for Theatre.js + React Spring (Rive/Tone wait on test)
-- [ ] Round 3 smoke test is the LAST proactive round (after lib-compat merges): Theatre.js, React Spring, ECharts, Rive, Tone.js + shadcn/Radix UI, icon sets (Lucide/Phosphor/Heroicons/Simple Icons), SplitType/Splitting, react-countup. Then stop testing libraries; fix from doctor warnings and user reports.
-- [ ] Round 2 gaps not in lib-compat: KaTeX vlist/table layout (crates/dom, M); accept+hide <math> (S); MathJax ~9% ex-unit scale (S); glyph fallback for missing symbols, arrows draw as tofu (crates/skia/render/src/text.rs:184, M); Code Hike lighter grammar fetch at render (recipe or fetch-deps); Shiki rerun with mono font override. Sent to lib-compat: setAttributeNS, document-wide lookups, SVG text measure, getComputedStyle fontSize.
-- [ ] Add a HyperFrames section to kinetograph-migrate skill (Three.js blocks -> translate via references/three.md)
-- [ ] MapLibre GL / animated maps: parked, user wants to discuss (likely a translate recipe via d3-geo)
+- [ ] Merge chore/hf-svg-workarounds after verdicts no worse; record final 29-comp numbers
+- [ ] Merge feat/plugins (gsap, p5-brush, motion, anime + site Libraries page)
+- [ ] Real HyperFrames projects test: waiting on user OK for external code
+- [ ] Round 3 smoke test (LAST proactive round): Theatre.js, React Spring, ECharts, Rive, Tone.js, shadcn/Radix, icon sets, SplitType/Splitting, react-countup. Then fix from doctor warnings/user reports only.
+- [ ] Round 2 gaps: KaTeX vlist/table layout (crates/dom, M); accept+hide <math> (S); MathJax ~9% ex-unit scale (S); glyph fallback for missing symbols (crates/skia/render/src/text.rs:184, M); Code Hike lighter grammar fetch at render; Shiki rerun with mono font; rerun Mermaid + Vega SVG after #12
+- [ ] HF Rust gaps: inline-block wrap in nowrap abs box; canvas gradient premul interpolation (draw.rs:1864, one flag); drawArraysInstanced; offset-path; variable-font advances ~13% wide; LUT/grain on DOM; batched computed styles; WebGPU textures/samplers/compute
+- [ ] Motion colour mixing via WAAPI element.animate (now throws, JS fallback)
+- [ ] MapLibre GL / animated maps: parked, user wants to discuss
 - [ ] GSAP: warn on tweens not attached to the seeked timeline
+- [ ] Studio selection tag shows raw path ($0.0.2.3.0), not the layer name
 
 ## Key files
 - `packages/compat/src/shim/` (3.4k-line DOM shim: element.ts, tree.ts, canvas.ts)
