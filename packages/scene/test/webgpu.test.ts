@@ -47,11 +47,13 @@ describe('the recording WebGPU context', () => {
     expect(Object.values(webgpu.modules)).toEqual([WGSL]);
     expect(webgpu.passes).toHaveLength(1);
     const [pass] = webgpu.passes;
-    expect(pass!.clear).toEqual([0, 0, 0, 0]);
-    expect(pass!.commands.map((c) => c.c)).toEqual(['pipeline', 'bind', 'draw']);
-    const bind = pass!.commands[1]!;
+    if (pass?.k !== 'render') throw new Error('not a render pass');
+    expect(pass.clear).toEqual([0, 0, 0, 0]);
+    expect(pass.commands.map((c) => c.c)).toEqual(['pipeline', 'bind', 'draw']);
+    const bind = pass.commands[1]!;
     if (bind.c !== 'bind') throw new Error('not a bind');
     const entry = webgpu.bindGroups[bind.group]!.entries[0]!;
+    if (!('buffer' in entry)) throw new Error('not a buffer entry');
     expect(Buffer.from(webgpu.buffers[entry.buffer]!, 'base64').readFloatLE(0)).toBeCloseTo(0.5);
     expect(Object.values(webgpu.pipelines)[0]).toMatchObject({ primitive: { topology: 'triangle-list' }, fragment: { targets: [{ format: 'rgba8unorm' }] } });
   });
