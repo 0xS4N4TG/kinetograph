@@ -44,6 +44,7 @@ These packages and APIs are supported. Gaps are listed in [Known issues](/docs/k
 - `toneFrequency` on `<Audio>` and `<Video>`, from 0.01 to 2. It changes the pitch and keeps the length.
 - `@remotion/media-parser` and `@remotion/webcodecs`: partly supported.
 - `@remotion/skia` and `@remotion/rive`: run through optional add-ons, with gaps.
+- GSAP (core, free plugins): a paused timeline that you seek to the frame's time. See [GSAP](#gsap).
 
 Plain HTML and SVG elements can sit next to Kinetograph's own elements in the same tree. You don't switch compatibility on.
 
@@ -54,6 +55,31 @@ Plain HTML and SVG elements can sit next to Kinetograph's own elements in the sa
 - `staticFile` reads `public/` next to the entry. If there is none, it reads `public/` next to the nearest `package.json`, which is Remotion's rule when the entry is in `src/`.
 - Fonts load from their files, whether you add them with `new FontFace(...)` and `document.fonts.add(face)` or with an `@font-face` rule. One file is kept for each family, weight and style. If a font is split by `unicodeRange`, the part covering basic Latin is used. WOFF and WOFF2 files are unpacked.
 - Kinetograph reads no fonts from your system, so a render looks the same on every machine. If your project loads no font, text is drawn in DM Sans, a font that ships with Kinetograph, and the warning and `doctor` say so (`font-family`, "font not loaded; drawn with the built-in fallback"). SVG `<text>` is covered too.
+
+### GSAP
+
+GSAP (core and the free plugins) works on the page's elements and SVG. Build a paused timeline in a layout effect and seek it to the frame, which is the pattern Remotion documents:
+
+```tsx
+const frame = useCurrentFrame();
+const { fps } = useVideoConfig();
+const tl = useRef<gsap.core.Timeline>(null);
+useLayoutEffect(() => {
+  const t = gsap.timeline({ paused: true });
+  t.to(box.current, { x: 600, rotation: 45, backgroundColor: '#e0261b', duration: 1 });
+  tl.current = t;
+  return () => { t.kill(); };
+}, []);
+useLayoutEffect(() => { tl.current?.seek(frame / fps); }, [frame, fps]);
+```
+
+- Tweens of `x`, `y`, `rotation`, `scale`, `skew`, `opacity`, colours, `width`, `height`, `borderRadius`, `boxShadow`, `filter`, `clipPath`, `letterSpacing` and the rest of the CSS the engine draws. Units such as `x: '50%'` are measured on the page.
+- SVG: `attr` (`cx`, `r`, `d`), `strokeDashoffset`, `fill`, and transforms (GSAP writes the `transform` attribute).
+- `TextPlugin`, `SplitText`, `DrawSVGPlugin`, `MotionPathPlugin` and `CustomEase`. `onUpdate` callbacks that write `textContent` work when you seek with `suppressEvents` set to `false`.
+- A frame renders the same by itself as in a full render, since a seek does not depend on time.
+- GSAP's own clock is the render's virtual one. A tween that plays by itself, without a seek, does not advance. Seek a paused timeline instead.
+- A read of the layout that the engine can't answer is a warning, and GSAP gets the element's own style.
+- Not tested: `Flip`, `ScrollTrigger` and `Draggable`. They load, but nothing scrolls or is dragged in a render.
 
 ## Layout of HTML content
 
