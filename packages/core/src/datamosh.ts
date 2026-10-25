@@ -1,7 +1,7 @@
 // `<Video datamosh>` needs the clip's decoder to export motion vectors (crates/core/src/datamosh.rs). The engine draws a
 // clip in any other codec plain; this tells the frame so, and `--strict` then stops the render.
 
-import { setDatamoshCheck } from '@kinetograph/react';
+import { setDatamoshCheck } from '@kinetographdev/react';
 import { probeMedia } from './media-utils.js';
 import { reportUnsupported } from './unsupported.js';
 

@@ -17,7 +17,7 @@
 
 import React from 'react';
 import { Composition, Sequence, registerRoot, staticFile } from 'remotion';
-import { Rect, Video } from '@kinetograph/core';
+import { Rect, Video } from '@kinetographdev/core';
 
 const WIDTH = 1920;
 const HEIGHT = 1080;

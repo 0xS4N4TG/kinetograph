@@ -637,7 +637,7 @@ function videoNeedsCss(props: VideoProps): boolean {
 let datamoshCheck: ((src: string) => void) | null = null;
 
 /**
- * `@kinetograph/core` sets this: called with the `src` of every `<Video datamosh>` that renders, so that a codec that
+ * `@kinetographdev/core` sets this: called with the `src` of every `<Video datamosh>` that renders, so that a codec that
  * exports no motion vectors is reported as unsupported (the header is read there, with the addon; this package has no
  * addon).
  */
