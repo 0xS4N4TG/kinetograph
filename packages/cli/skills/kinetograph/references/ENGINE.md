@@ -162,7 +162,9 @@ What the TypeScript side does around the addon, as built on `engine/runtime`. Co
   `layout` size, a `<Text>`'s `maxWidth` and measured height; a path or a group without a layout is 0 by 0; an animated
   size is its first value). Rust leaves a `{"type": "native", path, x, y, …}` layer where the box went; TypeScript
   replaces it with `emitNative`'s layers moved there (the layer's own `x`/`y` are an offset from the box, its anchor
-  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped.
+  shifts it, as before), at any depth. A native element that makes no layer (`<Camera>`, `<Audio>`) is dropped. A
+  `<Layer>`, shape, canvas, 3D scene or video is an overlay (absolute, at the corner of its positioned ancestor, no room
+  in the flow); an `<Image>`, GIF, Lottie, `<GlslShader>` and text are in the flow, a replaced box of their own size.
 - **Top-level layers** of an island get `layoutItem: { position: 'absolute' }`, so a native flex parent does not
   place them again.
 - **`fonts`** is `getFonts()` as it is: keys are the scene's `fontKey`s (`Inter`, `Inter:800`, `Inter:400i`), not the
@@ -558,6 +560,10 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   once per document (`document.rs` does both). This Stylo is the Servo build: it drops `filter: url()`,
   `background-clip: text`, `-webkit-text-stroke`, `-webkit-text-fill-color` and `paint-order` as invalid. The shim
   writes the same value into a non-inherited custom property (`--kg-filter`, ...) that the painter reads back.
+  `-webkit-text-stroke` and `paint-order` inherit in CSS, so `paint/text_stroke.rs` takes the nearest ancestor's
+  declaration. The stroke is a `stroke` and `paintOrder` on the text layer (SCENE.md, "Text stroke"), drawn by Skia as the
+  glyph outlines stroked with a miter join (Chrome's, checked against Chrome for Testing); a text shadow of stroked
+  text is stroked too.
 - Fonts: a glyph run needs the font file. The painter matches a run's font bytes to a file of `request.fonts` (once per
   font), or to a path registered with `paint::register_font_path(blob_id, path)`.
 
@@ -628,13 +634,26 @@ program that draws into a texture is translated upside down (`flip_y`: the verte
 nothing. A frame starts every target zeroed (wgpu's lazy clear), so a target is a function of the frame's own ops.
 `crates/dom/tests/webgl.rs` runs four cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
 them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0, texture sampling 0.05 and two
-render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off. `renderCanvas` (the addon) keeps one renderer, so a call no longer
+render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off.
+Points, instancing and the copies between buffers are made of the same pieces (`tests/glsl.rs` pins each). A point is
+one instance of a six-vertex quad: its attributes advance for each instance (indexed points gather them in the order
+of the list first), and the vertex shader's wrapper places the quad after `main` ran, `gl_PointSize` pixels across in
+the viewport, clamped to 1..511, with `gl_PointCoord` as a varying at location 15; a point whose centre is outside
+the clip volume is dropped, as GL does, and culling does not apply. `gl_VertexID` is wgpu's `vertex_index` (which
+counts from the draw's `first`), or the instance index in a draw of points; `gl_InstanceID` is the instance index. An
+attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`. `blitFramebuffer` is an op of its
+own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle over the destination with `textureLoad`
+(NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
+(GL's bottom first) apart; the replay keeps a canvas draw that a blit reads even when a later clear would have
+dropped it. `texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
+then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
+empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
 `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
-`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`, `-webkit-text-stroke`, `paint-order`,
+`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`,
 form controls, iframes, SVG pictures (`<img src=x.svg>`, `url(x.svg)`), `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list

@@ -477,7 +477,7 @@ export default function HalftoneWordmarkFooter({
         ))}
       </div>
       <div className="hwf-rule">
-        <span className="text-white/60 lowercase">A programmatic video engine with no browser in it</span>
+        <span className="text-white/60 lowercase">A programmatic video engine · Rust and TypeScript</span>
         {backToTop ? (
           <button type="button" className="hwf-up" onClick={toTop}>
             Back to top ↑

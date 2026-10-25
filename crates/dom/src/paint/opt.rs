@@ -129,6 +129,7 @@ const LEAF_KEYS: &[&str] = &[
     "shape",
     "fill",
     "stroke",
+    "paintOrder",
     "color",
     "runs",
     "boxWidth",

@@ -39,12 +39,14 @@ These packages and APIs are supported. Gaps are listed in [Known issues](/docs/k
 
 - `@remotion/transitions`: all 19 presentations and `useTransitionProgress`.
 - `@remotion/light-leaks`, `@remotion/starburst`, `@remotion/sfx`, `zod-types`, `timeline-utils`, and `canvas` (Canvas 2D).
+- `<canvas>` with a `webgl` or `webgl2` context, on the GPU with no browser: fragment shaders, framebuffers, points with `gl_PointSize`, instancing, `blitFramebuffer`, `texSubImage2D` and `gl_VertexID`. p5.brush's standalone build draws as it does in Chrome (its strokes, hatching and fills each differ by under 0.1 of 255 levels on average from Chrome). Lines, renderbuffers and depth testing are not drawn: see [Known issues](/docs/known-issues/).
 - `@remotion/media-utils` audio: `getAudioData`, `useAudioData`, `useWindowedAudioData`, `getAudioDurationInSeconds`, `visualizeAudio` and `getWaveformPortion`. `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
 - `<Audio>` and `<Video>` from `@remotion/media`.
 - `toneFrequency` on `<Audio>` and `<Video>`, from 0.01 to 2. It changes the pitch and keeps the length.
 - `@remotion/media-parser` and `@remotion/webcodecs`: partly supported.
 - `@remotion/skia` and `@remotion/rive`: run through optional add-ons, with gaps.
 - GSAP (core, free plugins): a paused timeline that you seek to the frame's time. See [GSAP](#gsap).
+- `<Video datamosh>` is Kinetograph's own prop, not part of Remotion. See the [Datamosh guide](/docs/guides/datamosh/).
 
 Plain HTML and SVG elements can sit next to Kinetograph's own elements in the same tree. You don't switch compatibility on.
 
@@ -54,6 +56,7 @@ Plain HTML and SVG elements can sit next to Kinetograph's own elements in the sa
 - The entry file runs even when `package.json` has a `"sideEffects"` list that leaves it out, as Remotion's templates do.
 - `staticFile` reads `public/` next to the entry. If there is none, it reads `public/` next to the nearest `package.json`, which is Remotion's rule when the entry is in `src/`.
 - Fonts load from their files, whether you add them with `new FontFace(...)` and `document.fonts.add(face)` or with an `@font-face` rule. One file is kept for each family, weight and style. If a font is split by `unicodeRange`, the part covering basic Latin is used. WOFF and WOFF2 files are unpacked.
+- HTML text can have an outline: `-webkit-text-stroke` (and its width and colour longhands) is drawn with the same miter joins as Chrome, and `paint-order: stroke fill` puts the stroke under the fill, as caption styles do. Both work with `text-shadow` (the shadow is stroked too), transforms, opacity and `background-clip: text`.
 - Kinetograph reads no fonts from your system, so a render looks the same on every machine. If your project loads no font, text is drawn in DM Sans, a font that ships with Kinetograph, and the warning and `doctor` say so (`font-family`, "font not loaded; drawn with the built-in fallback"). SVG `<text>` is covered too.
 
 ### GSAP
@@ -88,7 +91,7 @@ CSS lays out HTML content the same way a browser would, with a few rules to know
 - A group of HTML elements is laid out as a box the size of the composition, as Remotion's root `div` is.
 - An `<AbsoluteFill>` or `<Sequence>` around HTML is an absolutely positioned column flex `div`, as in Remotion.
 - HTML inside a Kinetograph layer is laid out in the composition's box. It does not know the layer's own size.
-- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0.
+- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0. A `<GlslShader>` in the flow takes its `width` and `height` as a box, like an `<Image>`, and takes up that room.
 - Styles are read on every frame, so animation comes from your component re-rendering, as in Remotion. CSS `@keyframes` follow the frame's time.
 - A layer made from an HTML node takes its `id` attribute as its layer id if that is a valid id. Otherwise it gets where the node sits in the page, such as `$0.2`.
 

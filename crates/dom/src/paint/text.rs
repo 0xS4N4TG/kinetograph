@@ -14,6 +14,7 @@ use style::values::specified::box_::DisplayOutside;
 use style_traits::ToCss;
 
 use super::geom::Rect;
+use super::text_stroke::TextStroke;
 use super::util::{Layer, current_color, hex_of, num, num4, resolve_color, rgba, shift};
 use super::{Origin, Painter, Phases};
 
@@ -23,6 +24,9 @@ use super::{Origin, Painter, Phases};
 struct TextPaint {
     color: [f32; 4],
     shadows: Vec<TextShadow>,
+    stroke: Option<TextStroke>,
+    /// `paint-order`: the stroke goes under the fill.
+    stroke_first: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -144,6 +148,9 @@ impl<'a> Painter<'a> {
                             continue;
                         }
                         let mut paint = self.text_paint(&style);
+                        paint.stroke = self.text_stroke_of(brush_node);
+                        paint.stroke_first =
+                            paint.stroke.is_some() && self.stroke_first(brush_node);
                         if let Some(c) = self
                             .kg_value(brush_node, "--kg-text-fill-color")
                             .and_then(|fill| super::util::parse_css_color(&fill))
@@ -330,29 +337,61 @@ impl<'a> Painter<'a> {
         size: (f64, f64),
     ) -> Vec<Value> {
         let mut out = Vec::new();
-        let make =
-            |p: &mut Self, suffix: &str, color: [f32; 4], dx: f64, dy: f64, blur: f64| -> Value {
-                let id = p.layer_id(node, suffix);
-                let mut layer = Layer::new(&id, "text")
-                    .set("color", Value::String(hex_of(color)))
-                    .set("boxWidth", num(size.0))
-                    .set("boxHeight", num(size.1))
-                    .set("runs", Value::Array(batch.runs.clone()))
-                    .at(content.0 + dx, content.1 + dy);
-                if blur > 0.0 {
-                    layer = layer.set("effects", json!([{ "type": "blur", "radius": num(blur) }]));
+        // A shadow of stroked text is stroked too, in the shadow's colour.
+        let make = |p: &mut Self,
+                    suffix: &str,
+                    color: [f32; 4],
+                    stroke: Option<[f32; 4]>,
+                    dx: f64,
+                    dy: f64,
+                    blur: f64|
+         -> Value {
+            let id = p.layer_id(node, suffix);
+            let mut layer = Layer::new(&id, "text")
+                .set("color", Value::String(hex_of(color)))
+                .set("boxWidth", num(size.0))
+                .set("boxHeight", num(size.1))
+                .set("runs", Value::Array(batch.runs.clone()))
+                .at(content.0 + dx, content.1 + dy);
+            if let (Some(st), Some(c)) = (batch.paint.stroke, stroke) {
+                layer = layer.set(
+                    "stroke",
+                    json!({ "color": hex_of(c), "width": num(st.width), "join": "miter" }),
+                );
+                if batch.paint.stroke_first {
+                    layer = layer.set("paintOrder", json!("strokeFill"));
                 }
-                layer.build()
-            };
+            }
+            if blur > 0.0 {
+                layer = layer.set("effects", json!([{ "type": "blur", "radius": num(blur) }]));
+            }
+            layer.build()
+        };
         for (i, s) in batch.paint.shadows.iter().enumerate().rev() {
             if s.color[3] <= 0.0 {
                 continue;
             }
             let id = format!("shadow{i}");
-            out.push(make(self, &id, s.color, s.dx, s.dy, s.blur / 2.0));
+            out.push(make(
+                self,
+                &id,
+                s.color,
+                Some(s.color),
+                s.dx,
+                s.dy,
+                s.blur / 2.0,
+            ));
             self.note_reach(s.dx.abs().max(s.dy.abs()) + 3.0 * s.blur / 2.0);
         }
-        out.push(make(self, "text", batch.paint.color, 0.0, 0.0, 0.0));
+        out.push(make(
+            self,
+            "text",
+            batch.paint.color,
+            batch.paint.stroke.map(|s| s.color),
+            0.0,
+            0.0,
+            0.0,
+        ));
         out
     }
 
@@ -371,7 +410,12 @@ impl<'a> Painter<'a> {
                 color: rgba(&resolve_color(&s.color, &current)),
             })
             .collect();
-        TextPaint { color, shadows }
+        TextPaint {
+            color,
+            shadows,
+            stroke: None,
+            stroke_first: false,
+        }
     }
 
     /// The decoration lines that apply to text whose style is `node`'s: its
