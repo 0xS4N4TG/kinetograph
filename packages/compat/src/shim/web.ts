@@ -444,6 +444,7 @@ export function installDomGlobals(): void {
   const html = domElementFor(htmlHost);
   define(doc, 'documentElement', html);
   define(doc, 'body', domElementFor(bodyHost));
+  define(doc, 'defaultView', g);
   define(doc, 'head', domElementFor(headHost));
   define(doc, 'scrollingElement', html);
   // A node a script makes belongs to no tree until it is put in one (a canvas drawn on before then keeps what it drew).

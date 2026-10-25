@@ -68,6 +68,14 @@ describe('compareDocumentPosition', () => {
   });
 });
 
+describe('defaultView', () => {
+  it('is the window, from the document and from an element\'s ownerDocument', () => {
+    const el = g.document.createElement('div');
+    expect(g.document.defaultView).toBe(g.window);
+    expect(el.ownerDocument.defaultView.getComputedStyle).toBe(g.getComputedStyle);
+  });
+});
+
 describe('HTMLElement and SVGElement', () => {
   it('tell an HTML element from an SVG one', () => {
     const div = g.document.createElement('div');
