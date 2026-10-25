@@ -5,7 +5,7 @@
 
 import { attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
-import { isDomElement } from '../request/tags.js';
+import { isDomElement, isSvgTag } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { CANVAS_SOURCE, fontKey, type CanvasContext2D, type CanvasPicture, type WebGLContext } from '@kinetographdev/scene';
@@ -247,7 +247,8 @@ export class DomElement {
 
   // ---- identity ----
 
-  private get inSvg(): boolean {
+  get inSvg(): boolean {
+    if (isSvgTag(this.host.type)) return true;
     for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) if (h.type === 'svg') return true;
     return false;
   }

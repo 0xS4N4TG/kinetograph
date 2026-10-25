@@ -31,3 +31,16 @@ describe('NodeList and HTMLCollection', () => {
     expect(Array.from(root.children).length).toBe(2);
   });
 });
+
+describe('HTMLElement and SVGElement', () => {
+  it('tell an HTML element from an SVG one', () => {
+    const div = g.document.createElement('div');
+    const rect = g.document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    const svg = g.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    expect(div instanceof g.HTMLElement).toBe(true);
+    expect(div instanceof g.SVGElement).toBe(false);
+    expect(svg instanceof g.SVGElement).toBe(true);
+    expect(rect instanceof g.HTMLElement).toBe(false);
+    expect(rect instanceof g.Element).toBe(true);
+  });
+});

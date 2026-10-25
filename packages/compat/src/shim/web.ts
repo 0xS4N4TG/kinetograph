@@ -316,6 +316,19 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
 
 // ---- installing ----
 
+/** `el instanceof HTMLElement` is true for an HTML element only, `SVGElement` for an SVG one (anime.js picks attribute or style by it). */
+class HTMLElementShim extends DomElement {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return this === HTMLElementShim ? value instanceof DomElement && !value.inSvg : Function.prototype[Symbol.hasInstance].call(this, value);
+  }
+}
+class SVGElementShim extends DomElement {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return this === SVGElementShim ? value instanceof DomElement && value.inSvg : Function.prototype[Symbol.hasInstance].call(this, value);
+  }
+}
+
+
 class LocalStorage {
   private readonly map = new Map<string, string>();
   get length(): number { return this.map.size; }
@@ -398,8 +411,8 @@ export function installDomGlobals(): void {
   define(g, 'Path2D', Path2D);
   define(g, 'ImageData', ImageData);
   define(g, 'Element', DomElement);
-  define(g, 'HTMLElement', DomElement);
-  define(g, 'SVGElement', DomElement);
+  define(g, 'HTMLElement', HTMLElementShim);
+  define(g, 'SVGElement', SVGElementShim);
   define(g, 'Node', DomElement);
   define(g, 'NodeList', NodeList);
   define(g, 'HTMLCollection', HTMLCollection);
