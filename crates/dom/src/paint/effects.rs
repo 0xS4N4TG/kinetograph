@@ -4,7 +4,6 @@
 use blitz_dom::{Node, NodeId};
 use serde_json::{Value, json};
 use style::computed_values::backface_visibility::T as Backface;
-use style::computed_values::transform_style::T as TransformStyle;
 use style::values::computed::{Perspective, Rotate, Scale, Translate};
 
 use super::background::blend_name;
@@ -13,7 +12,7 @@ use super::geom::{BoxGeom, Region};
 use super::mat::Mat4;
 use super::util::{Layer, current_color, hex, lp, num, num_exact, num4, resolve_color, shift};
 use super::{Origin, Painter};
-use crate::transform::{Matrix, local_transform};
+use crate::transform::{Matrix, local_transform, used_preserve_3d};
 
 impl<'a> Painter<'a> {
     /// The group of a stacking context: its children (in its own frame, the
@@ -40,9 +39,7 @@ impl<'a> Painter<'a> {
         if let Some(t) = transform {
             group = group.set("transform", t);
         }
-        if preserve3d {
-            group = group.set("preserve3d", json!(true));
-        }
+        // `preserve3d` is set below, once the effects are known.
 
         // ---- opacity, blend ----
         let mut opacity = f64::from(fx.opacity);
@@ -67,7 +64,8 @@ impl<'a> Painter<'a> {
         for u in &tail_urls {
             self.url_filter(node, u, &geom, id, &mut effects);
         }
-        if !effects.is_empty() {
+        let has_effects = !effects.is_empty();
+        if has_effects {
             group = group.set("effects", Value::Array(effects));
         }
 
@@ -84,6 +82,14 @@ impl<'a> Painter<'a> {
         // ---- opacity and blend go last ----
         if opacity < 1.0 {
             group = group.set("opacity", num4(opacity.max(0.0)));
+        }
+        // A grouping property (an effect, a clip, a mask, opacity, a blend)
+        // flattens the group: its 3D children are drawn into its plane, as a
+        // browser does, instead of the scene refusing a preserve3d group
+        // that has them. `used_preserve_3d` has the ones in the style; the
+        // effects and the opacity of a `url()` or `opacity()` filter are here.
+        if preserve3d && !has_effects && opacity >= 1.0 {
+            group = group.set("preserve3d", json!(true));
         }
         if blend != "normal" {
             group = group.set("blendMode", json!(blend));
@@ -230,7 +236,7 @@ impl<'a> Painter<'a> {
 
         // The parent's perspective is part of this element's matrix.
         let persp = self.parent_perspective(node, at);
-        let preserve3d = b.transform_style == TransformStyle::Preserve3d;
+        let preserve3d = used_preserve_3d(style);
         let backface_hidden = b.backface_visibility == Backface::Hidden;
 
         if !any && persp.is_none() {

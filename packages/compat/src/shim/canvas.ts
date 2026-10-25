@@ -93,7 +93,7 @@ const glContexts = new WeakMap<object, GlRecorder>();
 const live = new Set<WeakRef<CanvasContext2D | GlRecorder>>();
 
 /** The pixels of a canvas texture: the commands drawn on a transparent canvas, straight alpha. */
-function rasterizeCanvas(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null {
+export function rasterizeCanvas(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null {
   if (!hasAddonFunction('renderCanvas')) return null;
   return renderCanvas(source.commands, source, 'rgba');
 }

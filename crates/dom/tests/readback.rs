@@ -193,6 +193,11 @@ fn flat_parent_flattens_but_preserve_3d_keeps_depth() {
     // Flat: 100 * cos60 * cos60 = 25 tall. Preserve-3d: 100 * |cos120| = 50 tall.
     assert!(close(flat.height, 25.0), "{flat:?}");
     assert!(close(deep.height, 50.0), "{deep:?}");
+    // A grouping property forces it flat, as in a browser.
+    for grouping in ["opacity: .5", "filter: blur(1px)", "overflow: hidden", "isolation: isolate"] {
+        let forced = make(&format!("transform-style: preserve-3d; {grouping}"));
+        assert!(close(forced.height, 25.0), "{grouping}: {forced:?}");
+    }
 }
 
 #[test]

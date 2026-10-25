@@ -2557,6 +2557,18 @@ fn validate_shader_group(group: &Layer, g: &GroupLayer, glsl: &GlslLayer) -> Res
             ));
         }
     }
+    if let Some(webgpu) = &glsl.recording.0.webgpu {
+        for step in &webgpu.passes {
+            if let crate::webgpu::Step::Upload(upload) = step
+                && let crate::webgpu::Source::Layer(child) = &upload.source
+                && !g.children.iter().any(|c| &c.id == child)
+            {
+                return bad(&format!(
+                    "uploads the layer {child:?} into a WebGPU texture, which is not one of its children"
+                ));
+            }
+        }
+    }
     Ok(())
 }
 

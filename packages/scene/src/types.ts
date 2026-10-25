@@ -833,14 +833,50 @@ export interface WebGpuBindingLayout {
   binding: number;
   /** `GPUShaderStage` bits. */
   visibility: number;
-  type: 'uniform' | 'storage' | 'read-only-storage';
+  type: 'uniform' | 'storage' | 'read-only-storage' | 'texture' | 'sampler';
   dynamicOffset?: boolean;
+  /** Of a `texture`: `float` when left out. */
+  sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint';
+  /** Of a `sampler`: `filtering` when left out. */
+  samplerType?: 'filtering' | 'non-filtering';
 }
+
+/** `levels` mip levels of a texture, from `baseMip`. */
+export interface WebGpuTextureView {
+  id: string;
+  baseMip: number;
+  mips: number;
+}
+
+export type WebGpuBindEntry =
+  | { binding: number; buffer: string; offset: number; size: number }
+  | { binding: number; texture: WebGpuTextureView }
+  | { binding: number; sampler: string };
 
 export interface WebGpuBindGroup {
   /** An id of `WebGpuContent.layouts`, or `auto:<pipeline>:<index>` for a layout a pipeline made. */
   layout: string;
-  entries: { binding: number; buffer: string; offset: number; size: number }[];
+  entries: WebGpuBindEntry[];
+}
+
+/** A 2D texture. The recording never holds its contents: the steps that wrote it do. */
+export interface WebGpuTexture {
+  width: number;
+  height: number;
+  mips: number;
+  format: string;
+}
+
+export interface WebGpuSampler {
+  addressModeU?: string;
+  addressModeV?: string;
+  addressModeW?: string;
+  magFilter?: string;
+  minFilter?: string;
+  mipmapFilter?: string;
+  lodMinClamp?: number;
+  lodMaxClamp?: number;
+  maxAnisotropy?: number;
 }
 
 export type WebGpuCommand =
@@ -855,13 +891,55 @@ export type WebGpuCommand =
   | { c: 'blend'; color: [number, number, number, number] };
 
 export interface WebGpuPass {
+  k: 'render';
+  /** A level of the texture drawn into; the canvas when left out. */
+  target?: { texture: string; mip: number };
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
   commands: WebGpuCommand[];
 }
 
+/** Where the pixels of an upload come from. A picture is decoded by the renderer, so a recording holds its path. */
+export type WebGpuSource =
+  /** Bytes in the texture's format, tightly packed: a key of `WebGpuContent.blobs`. */
+  | { raw: string }
+  /** Straight RGBA8 of `width` by `height`: a key of `blobs`. */
+  | { pixels: { id: string; width: number; height: number } }
+  | { src: string }
+  /** The frame of a video file `time` seconds after its first picture. */
+  | { video: { src: string; time: number } }
+  /** A child of the shader group (or effect) the recording belongs to. */
+  | { layer: string };
+
+/** `writeTexture`, `copyBufferToTexture`, `copyExternalImageToTexture`: `width` by `height` texels of `source` (from `sx`, `sy`) at `x`, `y`. */
+export interface WebGpuUpload {
+  k: 'upload';
+  texture: string;
+  mip?: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  source: WebGpuSource;
+  sx?: number;
+  sy?: number;
+  flipY?: boolean;
+  premultiply?: boolean;
+}
+
+export interface WebGpuCopy {
+  k: 'copy';
+  from: { texture: string; mip?: number; x: number; y: number };
+  to: { texture: string; mip?: number; x: number; y: number };
+  width: number;
+  height: number;
+}
+
+/** What a queue did to the drawing or to a texture, in the order it did it. */
+export type WebGpuStep = WebGpuPass | WebGpuUpload | WebGpuCopy;
+
 /**
- * What a WebGPU context drew in a frame: the passes in order, with everything they use by id. A buffer is the bytes it
+ * What a WebGPU context drew in a frame: the steps in order, with everything they use by id. A buffer is the bytes it
  * held when the command buffer that draws from it was submitted; ids are made from content, so a frame does not depend
  * on which frames were drawn before it.
  */
@@ -873,7 +951,13 @@ export interface WebGpuContent {
   /** Base64 bytes. */
   buffers: Record<string, string>;
   bindGroups: Record<string, WebGpuBindGroup>;
-  passes: WebGpuPass[];
+  /** The textures the steps and the bind groups use, by id. */
+  textures?: Record<string, WebGpuTexture>;
+  samplers?: Record<string, WebGpuSampler>;
+  /** Base64 bytes written into textures, by id. */
+  blobs?: Record<string, string>;
+  /** Render passes (into the canvas, or into a texture), uploads and copies, in the order the page submitted them. */
+  passes: WebGpuStep[];
   /** Calls the engine does not draw; the frame reports each. */
   notes?: string[];
 }

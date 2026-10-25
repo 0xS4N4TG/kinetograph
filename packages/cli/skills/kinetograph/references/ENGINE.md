@@ -670,15 +670,29 @@ opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
 
 A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
 records the device (buffers, WGSL modules, bind group layouts, render pipelines, bind groups, command encoders with render
-passes into `getCurrentTexture()`, `queue.writeBuffer`, `submit`) and the canvas context writes the `webgpu` part of the
+passes into `getCurrentTexture()` or into a 2D texture, textures, views and samplers, `queue.writeBuffer`, `writeTexture`,
+`copyExternalImageToTexture`, `submit`) and the canvas context writes the `webgpu` part of the
 `glsl` layer (`WebGpuContent`, `data-kg-webgl`). A buffer's bytes are shadowed on the JS side and snapshotted when a command
 buffer that draws from it is submitted, ids come from content, and the first submit after `resetState()` starts the drawing
-afresh, so a frame is the same whichever frames were drawn before it. `compositor/glsl/webgpu.rs` makes the pipelines
+afresh, so a frame is the same whichever frames were drawn before it.
+
+A texture is never shadowed: it is the steps that wrote it (a render pass into it, an upload, a copy), in the order the queue
+ran them, kept on the device across frames in one log with the canvas's own passes. A step that writes a whole level drops
+the earlier steps of that level that nothing read in between, so the log of a page that redraws its textures each frame is
+one frame long and a frame is the same alone and in a sequence (a texture drawn with `loadOp: 'load'` each frame is the
+exception). Each step carries its own tables; the canvas's recording is the union, with texture ids `t<n>` from creation
+order and data (`blobs`) by content hash. Pictures are not decoded on the JS side: an upload names a file, a video file and
+time (`VIDEO_FRAME` on the `<video>`, read at `currentTime`), a layer of the shader group, or pixels of an `ImageData` or a
+rasterised canvas. `webgpu::validate` (core) bounds-checks every texture size, level, origin and rectangle and the frame's
+texture memory (512 MiB, 4096 steps) before anything is made; the JS side checks the same at the call. `compositor/glsl/webgpu.rs`
+makes textures from the table, replays steps in order into one command buffer (an upload is a staging buffer copy, so it is
+ordered with the passes), decodes pictures (kept by file) and video frames (`VideoDecoder::picture` at
+`VideoInfo::media_time`, the same pictures a video layer shows), copies a layer from the group's input texture, and makes the pipelines
 (kept by id), builds the buffers from the recording and replays the passes in a command buffer of its own, inside a
 validation error scope, into the Rgba8 drawing buffer that `glsl_blit.wgsl` places (a bgra8 canvas is the same colours; the
 buffer is flushed first because earlier glsl layers' place passes read it). The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, and each call the recorder does not draw (textures, samplers, compute,
-queries, bundles, `rgba16float` range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (compute, storage
+textures, queries, bundles, depth, multisampling, readback, `rgba16float` canvas range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic. HyperFrames' runtime
 (`core/src/hyperframes/runtime.tsx`) dispatches `hf-seek {time, waitUntil}` each frame and holds the frame on a
 `delayRender` until the page's promise settles; that is how the `shaders.iife.js` blocks (shaders.com on TypeGPU, which draw

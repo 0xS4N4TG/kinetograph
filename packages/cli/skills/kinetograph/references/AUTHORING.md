@@ -499,7 +499,7 @@ Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `cr
 - A command with either costs GPU passes of its own (drawn alone, blurred, drawn again as a picture), so a canvas with
   hundreds of shadowed shapes is slower than one without, and one frame may not make more than 50 million pixels of
   such pictures per canvas layer (SCENE.md, "canvas"). `getContext('webgl')` and
-`'webgl2'` return a recording WebGL context (§6.7); `'webgpu'` throws `unsupported:`; another context type returns `null`.
+`'webgl2'` return a recording WebGL context (§6.7); `'webgpu'` returns a recording WebGPU context (ENGINE.md, "WebGPU"); another context type returns `null`.
 
 - **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family
   (the first of the list that has a face), then the nearest weight and the right style of it; a family with no face
@@ -707,7 +707,9 @@ Mapping onto the engine:
     source is not available. **State:** a frame is a function of the frame, so `setup(target)`, `apply` and
     `cleanup(state)` run in that order for every frame on a canvas that starts empty; Remotion keeps `setup`'s state from
     frame to frame, which differs only for an effect whose picture depends on what earlier frames left in it. A
-    `webgpu` effect is not run: the picture is drawn without it, with a warning once and an unsupported item, so
+    `webgpu` effect runs on a recording device (`gpuDevice`) and canvas: copy the picture with
+    `queue.copyExternalImageToTexture({ source }, ...)` into an `rgba8unorm` texture and sample it. One that makes a call that
+    is not drawn (compute, storage textures, ...) is drawn without, with a warning once and an unsupported item, so
     `--strict` fails.
   - `<Solid width height color>` is a box of that size and colour; `<CanvasImage src width height fit>` the picture
     fitted into it (an image layer when nothing needs CSS, an `img` with the `object-fit` and crop when it does). With
@@ -721,8 +723,8 @@ Mapping onto the engine:
     as Remotion's default does), then the cleanup `onInit` returned (it must return one, as in Remotion). What follows
     is the effect chain over what `onPaint` drew. An `async` `apply`, `onInit` or `onPaint` holds the frame until its
     promise settles (`delayRender`), so what it draws after an `await` is in the frame; a rejection is reported for the
-    frame and the picture is drawn without that stage. A `webgpu` context is not run (the children are shown,
-    reported as unsupported). `isHtmlInCanvasSupported()` is true; `isHtmlInCanvasNestingSupported()` is false (an
+    frame and the picture is drawn without that stage. A `webgpu` context runs (a call that is not drawn shows the children
+    and is reported as unsupported). `isHtmlInCanvasSupported()` is true; `isHtmlInCanvasNestingSupported()` is false (an
     `<HtmlInCanvas>` in the children of another is not tried).
   - `<IFrame>` is the `iframe` element, which the CSS engine reports as unsupported (`--strict` fails on it).
   - `<Artifact>` draws nothing and records its file (`getArtifacts()`); `kinetograph render` writes the ones recorded
