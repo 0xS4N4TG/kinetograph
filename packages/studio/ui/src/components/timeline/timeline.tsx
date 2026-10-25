@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { formatTimecode } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
+import { fullSource, secondLine, tooltip } from '@/lib/names';
 import type { Player, PlayerState } from '@/lib/player';
 import type { TimelineStatus } from '@/studio';
 import { cn } from '@/lib/utils';
@@ -61,14 +62,21 @@ export function Timeline({ comp, status, state, player, selectedLayer, onSelectL
     () =>
       allSequences
         .map((row, index) => ({ row, number: index + 1 }))
-        .filter(({ row }) => !q || row.label.toLowerCase().includes(q)),
+        .filter(({ row }) => !q || row.label.toLowerCase().includes(q) || (row.component ?? '').toLowerCase().includes(q)),
     [allSequences, q],
   );
   const layers = useMemo(
     () =>
       allLayers
         .map((row, index) => ({ row, number: index + 1 }))
-        .filter(({ row }) => !q || row.id.toLowerCase().includes(q) || row.type.toLowerCase().includes(q)),
+        .filter(
+          ({ row }) =>
+            !q ||
+            row.label.toLowerCase().includes(q) ||
+            row.id.toLowerCase().includes(q) ||
+            row.type.toLowerCase().includes(q) ||
+            (row.component ?? '').toLowerCase().includes(q),
+        ),
     [allLayers, q],
   );
 
@@ -268,7 +276,8 @@ export function Timeline({ comp, status, state, player, selectedLayer, onSelectL
                       index={number}
                       swatch={colors.swatch}
                       label={row.label}
-                      title={`${row.label}: frames ${row.from}..${row.end - 1}`}
+                      detail={secondLine(row)}
+                      title={`${row.label}: frames ${row.from}..${row.end - 1}${row.source ? `\n${row.component ? `component ${row.component}\n` : ''}${fullSource(row.source)}` : ''}`}
                       depth={row.depth}
                       selected={row.layer !== null && row.layer === selectedLayer}
                       onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
@@ -291,9 +300,10 @@ export function Timeline({ comp, status, state, player, selectedLayer, onSelectL
                       data-testid="layer-row"
                       index={number}
                       swatch={colors.swatch}
-                      label={row.id}
+                      label={row.label}
+                      detail={secondLine(row)}
                       badge={row.type}
-                      title={`${row.id} (${row.type})`}
+                      title={tooltip(row.label, row.type, row)}
                       depth={row.depth}
                       selected={row.id === selectedLayer}
                       onSelect={() => onSelectLayer(row.id)}
@@ -301,7 +311,7 @@ export function Timeline({ comp, status, state, player, selectedLayer, onSelectL
                     >
                       {row.ranges.map(([first, last]) => (
                         <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className={cn('border shadow-xs', colors.bar)}>
-                          {row.id}
+                          {row.label}
                         </Bar>
                       ))}
                     </Row>

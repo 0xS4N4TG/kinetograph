@@ -63,14 +63,22 @@ describe.skipIf(!addon)('the default engine (no GPU)', () => {
     const timeline = await api(server, '/api/timeline?comp=Main');
     expect(timeline.status).toBe(200);
     expect(timeline.json).toMatchObject({ comp: 'Main', fps: 30, durationInFrames: 20 });
-    expect(timeline.json.sequences).toEqual([
-      { key: '/Sequence@0+8', name: null, from: 0, durationInFrames: 8, parent: null, layer: expect.any(String) },
-      { key: '/intro@5+10', name: 'intro', from: 5, durationInFrames: 10, parent: null, layer: expect.any(String) },
-      { key: '/intro@5+10/inner@7+3', name: 'inner', from: 7, durationInFrames: 3, parent: '/intro@5+10', layer: expect.any(String) },
-      { key: '/second@8+8', name: 'second', from: 8, durationInFrames: 8, parent: null, layer: expect.any(String) },
+    const at = (needle: string) => SOURCE.slice(0, SOURCE.indexOf(needle)).split('\n').length;
+    // A Sequence a library component makes (`<Series>`) is where the project wrote that component.
+    const here = { file: expect.stringMatching(/index\.tsx$/), column: expect.any(Number) };
+    expect(timeline.json.sequences).toMatchObject([
+      { key: '/Sequence@0+8', name: null, from: 0, durationInFrames: 8, parent: null, layer: expect.any(String), label: 'Sequence', component: 'Main', source: { ...here, line: at('<Series>') } },
+      { key: '/intro@5+10', name: 'intro', from: 5, durationInFrames: 10, parent: null, layer: expect.any(String), label: 'intro', component: 'Main', source: { ...here, line: at('<Sequence name="intro"') } },
+      { key: '/intro@5+10/inner@7+3', name: 'inner', from: 7, durationInFrames: 3, parent: '/intro@5+10', layer: expect.any(String), label: 'inner' },
+      { key: '/second@8+8', name: 'second', from: 8, durationInFrames: 8, parent: null, layer: expect.any(String), label: 'second' },
     ]);
     const layer = (id: string) => timeline.json.layers.find((l: { id: string }) => l.id === id);
-    expect(layer('bg')).toEqual({ id: 'bg', type: 'shape', parent: null, ranges: [[0, 19]] });
+    expect(layer('bg')).toEqual({
+      id: 'bg', type: 'shape', parent: null, ranges: [[0, 19]],
+      label: 'bg', component: 'Main', source: { ...here, line: at('<Rect id="bg"') },
+    });
+    // The Dot component drew the layer, on its own line; a Sequence's group is named after the Sequence.
+    expect(layer('dot')).toMatchObject({ label: 'dot', component: 'Dot', source: { line: at('const Dot') } });
     expect(layer('dot')).toMatchObject({ parent: expect.any(String), ranges: [[5, 14]] });
     expect(layer('tag')).toMatchObject({ type: 'group', ranges: [[7, 9]] });
     expect(layer('s1').ranges).toEqual([[0, 7]]);
@@ -79,6 +87,8 @@ describe.skipIf(!addon)('the default engine (no GPU)', () => {
     const inspected = await api(server, '/api/inspect?comp=Main&frame=8');
     expect(inspected.status).toBe(200);
     expect(inspected.json).toMatchObject({ width: 64, height: 36, fps: 30, frame: 8 });
+    // The inspect has the same names as the timeline.
+    expect(inspected.json.layers.find((l: { id: string }) => l.id === 'bg')).toMatchObject({ label: 'bg', component: 'Main' });
     const names = JSON.stringify(inspected.json.layers);
     for (const id of ['bg', 'dot', 'tag', 's2']) expect(names).toContain(`"id":"${id}"`);
     expect(names).not.toContain('"id":"s1"');

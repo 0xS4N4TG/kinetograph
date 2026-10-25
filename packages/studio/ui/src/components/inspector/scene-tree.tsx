@@ -10,6 +10,7 @@ import { buildAgentMessage, type AgentMessageInput } from '@/lib/agent-message';
 import { formatNumber } from '@/lib/format';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { layerColors } from '@/lib/layer-colors';
+import { displayName, fullSource, secondLine, tooltip } from '@/lib/names';
 import { cn } from '@/lib/utils';
 
 interface SceneTreeProps {
@@ -72,7 +73,7 @@ export function SceneTree({ inspect, frame, selected, onSelect, agent }: SceneTr
 
       {/* Properties header */}
       <div className="bg-secondary/50 flex h-7 shrink-0 items-center border-b px-2.5 text-[11px]">
-        <span className="truncate font-medium">{layer ? `Properties: ${layer.id}` : 'Effect Controls & Transform'}</span>
+        <span className="truncate font-medium">{layer ? `Properties: ${displayName(layer)}` : 'Effect Controls & Transform'}</span>
         {layer && agent && (
           <span className="ml-auto pl-2">
             <CopyForAgent message={buildAgentMessage({ ...agent, frame: inspect.frame, layer })} />
@@ -122,7 +123,7 @@ function Layers({
               {children.length > 0 ? (
                 <button
                   type="button"
-                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${layer.id}`}
+                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${displayName(layer)}`}
                   onClick={() => onToggle(layer.id)}
                   className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex size-5 shrink-0 items-center justify-center rounded-xs outline-none focus-visible:ring-2"
                 >
@@ -134,13 +135,17 @@ function Layers({
               <button
                 type="button"
                 onClick={() => onSelect(layer.id)}
+                title={tooltip(displayName(layer), layer.type, layer)}
                 className={cn(
                   'hover:bg-white/[0.05] focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-xs px-2 py-1 text-left outline-none transition-colors focus-visible:ring-2',
                   isSelected && 'bg-nle-blue/25 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
                 )}
               >
                 <span className={cn('size-2 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
-                <span className="truncate font-medium">{layer.id}</span>
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate font-medium">{displayName(layer)}</span>
+                  {secondLine(layer) && <span className="text-muted-foreground/70 truncate text-[10px]">{secondLine(layer)}</span>}
+                </span>
                 <Badge variant="outline" className="ml-auto rounded-xs px-1 py-0 font-mono text-[9px]">
                   {layer.type}
                 </Badge>
@@ -188,7 +193,10 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
   return (
     <div data-testid="layer-details" className="flex flex-col gap-3 p-2.5 font-mono text-[11px]">
       <Section title="Layer Identity">
-        <Field name="id">{layer.id}</Field>
+        <Field name="name">{displayName(layer)}</Field>
+        {layer.component !== undefined && <Field name="component">{layer.component}</Field>}
+        {layer.source && <Field name="source">{fullSource(layer.source)}</Field>}
+        {!layer.id.startsWith('$') && layer.id !== displayName(layer) && <Field name="id">{layer.id}</Field>}
         <Field name="type">
           <Badge variant="secondary" className="rounded-xs px-1.5 py-0 text-[10px]">
             {layer.type}

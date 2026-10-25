@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/app';
-import { ApiError } from '../src/api';
+import { ApiError, type TimelineData } from '../src/api';
 import { decode, draws } from './canvas';
 import { intro, job, outro } from './fixtures';
 import { MockServer } from './mock-server';
@@ -205,6 +205,28 @@ describe('timeline', () => {
     const layers = screen.getAllByTestId('layer-row');
     expect(layers.map((r) => r.getAttribute('title'))).toEqual(['title-group (group)', 'title (text)', 'bg (shape)']);
     expect(labelOf(layers[1]!)).toHaveClass('pl-5');
+  });
+
+  it('shows labels with the component and source line, and no generated id, when the server names the layers', async () => {
+    const source = { file: 'examples/showcase/shots-a.tsx', line: 212, column: 7 };
+    class Named extends MockServer {
+      override timelineFor(comp: string): TimelineData {
+        const data = super.timelineFor(comp);
+        return {
+          ...data,
+          sequences: data.sequences.map((s) => (s.name === null ? { ...s, label: 'Opening', component: 'Main', source } : s)),
+          layers: data.layers.map((l) => (l.id === 'title' ? { ...l, id: '$0.1', label: 'Title \u00b7 \u201cHello\u201d', component: 'Title', source } : l)),
+        };
+      }
+    }
+    await start(new Named());
+    const sequences = await screen.findAllByTestId('sequence-row');
+    expect(sequences[2]).toHaveAttribute('title', 'Opening: frames 80..119\ncomponent Main\nexamples/showcase/shots-a.tsx:212:7');
+    expect(within(sequences[2]!).getAllByText('Opening').length).toBeGreaterThan(0);
+    const row = screen.getAllByTestId('layer-row').find((r) => r.getAttribute('title')?.startsWith('Title'))!;
+    expect(row).toHaveTextContent('Title \u00b7 \u201cHello\u201d');
+    expect(row).toHaveTextContent('Title \u00b7 shots-a.tsx:212');
+    expect(row).not.toHaveTextContent('$0.1');
   });
 
   it('shows the progress of reading the timeline, never an empty list, until the rows arrive', async () => {
