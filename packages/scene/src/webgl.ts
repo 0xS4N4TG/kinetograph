@@ -600,9 +600,8 @@ const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALP
 /**
  * `WebGLRenderingContext` (and, with `version: 2`, the `WebGL2RenderingContext` calls shader pages use) as a recorder.
  * `content()` is what the `glsl` layer is made of. A context keeps its objects (programs, buffers, textures) and its
- * state between frames as a browser's does; the drawing buffer is a browser's too: the first draw or clear after
- * `resetState()` (the frame loop calls it before a frame) starts it afresh, unless the context was made with
- * `preserveDrawingBuffer`.
+ * state between frames as a browser's does; the drawing buffer is emptied by `resetState()` (the frame loop calls it
+ * before a frame), also when the context was made with `preserveDrawingBuffer`.
  */
 export class WebGLContext {
   readonly canvas: unknown;
@@ -677,11 +676,15 @@ export class WebGLContext {
   }
 
   /**
-   * The frame loop calls this before each frame: the drawing buffer a browser presented is cleared, so the next draw
-   * starts a new one. A frame that draws nothing keeps the picture, as the canvas of a page does.
+   * The frame loop calls this before each frame: the drawing buffer is emptied, so a frame is what its own draws
+   * make, whichever frame was rendered before (a frame is a function of its number, and the frames of one render
+   * may be made in any order or by different processes). It holds with `preserveDrawingBuffer` too, which in a page
+   * keeps the picture from one presented frame to the next; here each frame is a new context's first. A frame that
+   * draws nothing draws nothing.
    */
   resetState(): void {
-    if (!this.attributes.preserveDrawingBuffer) this.stale = true;
+    this.stale = true;
+    this.ops = [];
   }
 
   /** Empties the drawing buffer (`canvas.width` was set). */

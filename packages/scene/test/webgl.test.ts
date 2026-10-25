@@ -4,8 +4,8 @@ import { createWebGLContext, glslShader, GL, GL2, layerPicture, WebGLUnsupported
 const VERTEX = 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
 const FRAGMENT = 'precision mediump float; varying vec2 v; uniform float t; uniform vec2 r[2]; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v) * t; }';
 
-function setup(): { gl: WebGLContext; program: ReturnType<WebGLContext['createProgram']> } {
-  const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+function setup(options: { attributes?: { preserveDrawingBuffer?: boolean } } = {}): { gl: WebGLContext; program: ReturnType<WebGLContext['createProgram']> } {
+  const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), ...options });
   const program = gl.createProgram();
   for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
     const shader = gl.createShader(type)!;
@@ -57,11 +57,22 @@ describe('the recording WebGL context', () => {
     expect(gl.content().ops).toHaveLength(1);
   });
 
-  it('starts a fresh drawing buffer on the first draw after resetState, and keeps the picture if nothing draws', () => {
+  it('starts a fresh drawing buffer after resetState, so a frame that draws nothing draws nothing', () => {
     const { gl } = setup();
     gl.drawArrays(GL.TRIANGLES, 0, 3);
     gl.resetState();
-    expect(gl.content().ops).toHaveLength(1);
+    expect(gl.drawn).toBe(false);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    expect(gl.content().ops).toHaveLength(2);
+  });
+
+  it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {
+    const { gl } = setup({ attributes: { preserveDrawingBuffer: true } });
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    expect(gl.content().ops).toHaveLength(2);
+    gl.resetState();
     gl.drawArrays(GL.TRIANGLES, 0, 3);
     expect(gl.content().ops).toHaveLength(1);
   });
