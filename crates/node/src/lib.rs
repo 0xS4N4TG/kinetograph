@@ -325,6 +325,13 @@ pub fn render_canvas(request_json: String) -> Result<Buffer> {
     canvas::render_canvas(&request_json)
 }
 
+/// The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
+/// (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
+#[napi]
+pub fn webgpu_device_info() -> Option<String> {
+    kinetograph_core::webgpu_device_info()
+}
+
 #[napi(object)]
 pub struct RendererOptions {
     /// Default true.

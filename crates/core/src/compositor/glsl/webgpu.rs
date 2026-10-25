@@ -1,6 +1,6 @@
-//! WebGPU layers (`crate::webgpu`): the steps a page submitted run on the device with the page's own WGSL, and the
-//! passes into its canvas land in the same Rgba8 drawing buffer a WebGL layer draws into (`glsl_place` then puts it on
-//! the canvas).
+//! WebGPU layers (`crate::webgpu`): the steps a page submitted (render and compute passes, uploads and copies) run on
+//! the device with the page's own WGSL, and the passes into its canvas land in the same Rgba8 drawing buffer a WebGL
+//! layer draws into (`glsl_place` then puts it on the canvas).
 //!
 //! The recording is replayed in a command buffer of its own, submitted inside a validation error scope, so a page's
 //! mistake (a module naga refuses, a bind group that does not fit its layout, a draw wgpu rejects) is a warning on
@@ -9,7 +9,8 @@
 //!
 //! Modules, bind group layouts, pipelines and samplers are kept by their ids, which the page side makes from their
 //! content; buffers and textures are made again for each frame, from the bytes and the uploads the recording holds. A
-//! texture is a function of the steps that wrote it, in order: an upload goes through a staging buffer inside the
+//! buffer a compute pass writes is zeroed and, like a texture, a function of the steps that wrote it. A texture is a
+//! function of the steps that wrote it, in order: an upload goes through a staging buffer inside the
 //! command buffer (not `queue.write_texture`, which would run before every pass of the frame), so a pass that samples
 //! a texture sees what the page had written when it submitted. Pictures are decoded (and video frames read) here, so a
 //! recording holds a path or a time, not pixels. Every size, level and origin was checked by `crate::webgpu::validate`
@@ -54,6 +55,7 @@ pub(super) struct WebGpuCache {
     /// By the pipeline's id and whether it draws into the canvas (a canvas is drawn as rgba8unorm whatever it is
     /// configured with) or into a texture.
     pipelines: HashMap<String, wgpu::RenderPipeline>,
+    compute: HashMap<String, wgpu::ComputePipeline>,
     samplers: HashMap<String, wgpu::Sampler>,
     /// Pictures by file (or `data:` URL), kept across frames.
     pictures: HashMap<String, Arc<Picture>>,
@@ -67,9 +69,12 @@ type Fail<T> = std::result::Result<T, String>;
 /// What a frame's steps work on: the resources made from the recording.
 struct Resources<'r> {
     buffers: HashMap<&'r str, wgpu::Buffer>,
+    /// The buffers the GPU writes, zeroed.
+    gpu_buffers: HashMap<&'r str, wgpu::Buffer>,
     textures: HashMap<&'r str, wgpu::Texture>,
     samplers: HashMap<&'r str, wgpu::Sampler>,
     pipelines: HashMap<(&'r str, bool), wgpu::RenderPipeline>,
+    compute: HashMap<&'r str, wgpu::ComputePipeline>,
     groups: HashMap<&'r str, wgpu::BindGroup>,
 }
 
@@ -117,16 +122,23 @@ impl Compositor {
         base_dir: &Path,
         layers: &HashMap<String, wgpu::Texture>,
     ) -> Fail<()> {
-        let problems = wg::check(recording);
+        let limits = wg::device_limits(&self.device);
+        let problems = wg::check_with(recording, &limits);
         if let Some(first) = problems.first() {
             return Err(first.clone());
         }
-        wg::validate(recording, self.device.limits().max_texture_dimension_2d)?;
-        if recording.passes.iter().map(|s| if let Step::Render(p) = s { p.commands.len() } else { 1 }).sum::<usize>() > MAX_COMMANDS {
+        wg::validate_with(recording, &limits)?;
+        let commands = |s: &Step| match s {
+            Step::Render(p) => p.commands.len(),
+            Step::Compute(p) => p.commands.len(),
+            _ => 1,
+        };
+        if recording.passes.iter().map(commands).sum::<usize>() > MAX_COMMANDS {
             return Err(format!("more than {MAX_COMMANDS} commands in a frame"));
         }
-        if self.glsl.webgpu.pipelines.len() > MAX_CACHED || self.glsl.webgpu.modules.len() > MAX_CACHED {
+        if self.glsl.webgpu.pipelines.len() > MAX_CACHED || self.glsl.webgpu.compute.len() > MAX_CACHED || self.glsl.webgpu.modules.len() > MAX_CACHED {
             self.glsl.webgpu.pipelines.clear();
+            self.glsl.webgpu.compute.clear();
             self.glsl.webgpu.modules.clear();
             self.glsl.webgpu.layouts.clear();
         }
@@ -160,9 +172,11 @@ impl Compositor {
         let device = self.device.clone();
         let mut res = Resources {
             buffers: HashMap::new(),
+            gpu_buffers: HashMap::new(),
             textures: HashMap::new(),
             samplers: HashMap::new(),
             pipelines: HashMap::new(),
+            compute: HashMap::new(),
             groups: HashMap::new(),
         };
         // Buffers, from the bytes of the recording.
@@ -184,8 +198,39 @@ impl Compositor {
                 }),
             );
         }
-        // Textures: empty (zero), the steps fill them.
+        // Buffers the GPU writes: zeroed, the steps fill them.
+        for (id, b) in &recording.gpu_buffers {
+            res.gpu_buffers.insert(
+                id,
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("webgpu gpu buffer"),
+                    size: b.size.max(4).div_ceil(4) * 4,
+                    usage: wgpu::BufferUsages::UNIFORM
+                        | wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::VERTEX
+                        | wgpu::BufferUsages::INDEX
+                        | wgpu::BufferUsages::COPY_SRC
+                        | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+            );
+        }
+        // Textures: empty (zero), the steps fill them. A storage binding only where the recording has one, and only
+        // where the format has it.
+        let storage = !recording.compute_pipelines.is_empty()
+            || recording.layouts.values().flatten().any(|l| l.ty == "storage-texture")
+            || recording.modules.values().any(|m| m.contains("texture_storage_"));
         for (id, t) in &recording.textures {
+            let format = texture_format(&t.format)?;
+            let mut usage = wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST;
+            if storage {
+                usage |= wgpu::TextureUsages::STORAGE_BINDING;
+            }
+            // A format keeps to the usages it has (rgba32float cannot be blended, rgba8unorm-srgb is not a storage format).
+            usage &= format.guaranteed_format_features(device.features()).allowed_usages;
             res.textures.insert(
                 id,
                 device.create_texture(&wgpu::TextureDescriptor {
@@ -198,11 +243,8 @@ impl Compositor {
                     mip_level_count: t.mips,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: texture_format(&t.format)?,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::COPY_SRC
-                        | wgpu::TextureUsages::COPY_DST,
+                    format,
+                    usage,
                     view_formats: &[],
                 }),
             );
@@ -224,13 +266,26 @@ impl Compositor {
                 }
             }
         }
+        for step in &recording.passes {
+            let Step::Compute(pass) = step else { continue };
+            for command in &pass.commands {
+                if let wg::ComputeCommand::Pipeline { id } = command
+                    && !res.compute.contains_key(id.as_str())
+                {
+                    let pipeline = self.webgpu_compute_pipeline(recording, id)?;
+                    res.compute.insert(id, pipeline);
+                }
+            }
+        }
         // Bind groups, as the passes bind them.
         for step in &recording.passes {
-            let Step::Render(pass) = step else { continue };
-            for command in &pass.commands {
-                if let Command::Bind { group, .. } = command
-                    && !res.groups.contains_key(group.as_str())
-                {
+            let groups: Vec<&String> = match step {
+                Step::Render(pass) => pass.commands.iter().filter_map(|c| if let Command::Bind { group, .. } = c { Some(group) } else { None }).collect(),
+                Step::Compute(pass) => pass.commands.iter().filter_map(|c| if let wg::ComputeCommand::Bind { group, .. } = c { Some(group) } else { None }).collect(),
+                _ => continue,
+            };
+            for group in groups {
+                if !res.groups.contains_key(group.as_str()) {
                     let made = self.webgpu_bind_group(recording, group, &res)?;
                     res.groups.insert(group, made);
                 }
@@ -249,6 +304,32 @@ impl Compositor {
         for step in &recording.passes {
             match step {
                 Step::Render(pass) => self.webgpu_pass(&mut encoder, recording, &res, pass, &canvas_view, size)?,
+                Step::Compute(pass) => webgpu_compute(&mut encoder, &res, pass)?,
+                Step::WriteBuffer(w) => {
+                    let buffer = res.gpu_buffers.get(w.buffer.as_str()).ok_or("a write into a buffer that was not made")?;
+                    let bytes = decode_blob(recording.blobs.get(&w.data).ok_or("data that is not in the recording")?)?;
+                    if !bytes.is_empty() {
+                        let staging = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("webgpu buffer write"),
+                            contents: &bytes,
+                            usage: wgpu::BufferUsages::COPY_SRC,
+                        });
+                        encoder.copy_buffer_to_buffer(&staging, 0, buffer, w.offset, bytes.len() as u64);
+                    }
+                }
+                Step::CopyBuffer(c) => {
+                    let from = res.gpu_buffers.get(c.from.as_str()).ok_or("a copy from a buffer that was not made")?;
+                    let to = res.gpu_buffers.get(c.to.as_str()).ok_or("a copy into a buffer that was not made")?;
+                    if c.size > 0 {
+                        encoder.copy_buffer_to_buffer(from, c.from_offset, to, c.to_offset, c.size);
+                    }
+                }
+                Step::ClearBuffer(c) => {
+                    let buffer = res.gpu_buffers.get(c.buffer.as_str()).ok_or("a clear of a buffer that was not made")?;
+                    if c.size > 0 {
+                        encoder.clear_buffer(buffer, c.offset, Some(c.size));
+                    }
+                }
                 Step::Upload(upload) => self.webgpu_upload(&mut encoder, recording, &res, upload, size, base_dir, layers)?,
                 Step::Copy(copy) => {
                     let from = res.textures.get(copy.from.texture.as_str()).ok_or("a copy from a texture that was not made")?;
@@ -319,11 +400,11 @@ impl Compositor {
                     rp.set_bind_group(*index, group, offsets);
                 }
                 Command::Vertex { slot, buffer, offset, size } => {
-                    let b = buffer_of(&res.buffers, buffer)?;
+                    let b = buffer_in(res, buffer)?;
                     rp.set_vertex_buffer(*slot, slice(b, *offset, *size, 4)?);
                 }
                 Command::Index { buffer, format, offset, size } => {
-                    let b = buffer_of(&res.buffers, buffer)?;
+                    let b = buffer_in(res, buffer)?;
                     let format = match format.as_str() {
                         "uint16" => wgpu::IndexFormat::Uint16,
                         "uint32" => wgpu::IndexFormat::Uint32,
@@ -576,6 +657,16 @@ impl Compositor {
                 "uniform" => buffer_binding(wgpu::BufferBindingType::Uniform, e.dynamic_offset),
                 "storage" => buffer_binding(wgpu::BufferBindingType::Storage { read_only: false }, e.dynamic_offset),
                 "read-only-storage" => buffer_binding(wgpu::BufferBindingType::Storage { read_only: true }, e.dynamic_offset),
+                "storage-texture" => wgpu::BindingType::StorageTexture {
+                    access: match e.access.as_deref().unwrap_or("write-only") {
+                        "write-only" => wgpu::StorageTextureAccess::WriteOnly,
+                        "read-only" => wgpu::StorageTextureAccess::ReadOnly,
+                        "read-write" => wgpu::StorageTextureAccess::ReadWrite,
+                        other => return Err(format!("storage texture access {other}")),
+                    },
+                    format: texture_format(e.format.as_deref().ok_or("a storage texture without a format")?)?,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
                 "texture" => wgpu::BindingType::Texture {
                     sample_type: match e.sample_type.as_deref().unwrap_or("float") {
                         "float" => wgpu::TextureSampleType::Float { filterable: true },
@@ -739,6 +830,36 @@ impl Compositor {
         Ok(pipeline)
     }
 
+    fn webgpu_compute_pipeline(&mut self, recording: &WebGpuContent, id: &str) -> Fail<wgpu::ComputePipeline> {
+        if let Some(p) = self.glsl.webgpu.compute.get(id) {
+            return Ok(p.clone());
+        }
+        let spec = recording.compute_pipelines.get(id).ok_or_else(|| format!("compute pipeline {id} is not in the recording"))?;
+        let module = self.webgpu_module(recording, &spec.module)?;
+        let layout = match &spec.layout {
+            Some(ids) => {
+                let layouts: Vec<wgpu::BindGroupLayout> = ids.iter().map(|l| self.webgpu_layout(recording, l)).collect::<Fail<_>>()?;
+                let refs: Vec<Option<&wgpu::BindGroupLayout>> = layouts.iter().map(Some).collect();
+                Some(self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("webgpu compute"),
+                    bind_group_layouts: &refs,
+                    immediate_size: 0,
+                }))
+            }
+            None => None,
+        };
+        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("webgpu compute"),
+            layout: layout.as_ref(),
+            module: &module,
+            entry_point: spec.entry_point.as_deref(),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        self.glsl.webgpu.compute.insert(id.to_string(), pipeline.clone());
+        Ok(pipeline)
+    }
+
     fn webgpu_bind_group(&mut self, recording: &WebGpuContent, id: &str, res: &Resources<'_>) -> Fail<wgpu::BindGroup> {
         let spec = recording.bind_groups.get(id).ok_or_else(|| format!("bind group {id} is not in the recording"))?;
         let layout = if let Some(rest) = spec.layout.strip_prefix("auto:") {
@@ -747,7 +868,10 @@ impl Compositor {
             // The layout is the pipeline's whichever target it draws into.
             match res.pipelines.get(&(pipeline, true)).or_else(|| res.pipelines.get(&(pipeline, false))) {
                 Some(p) => p.get_bind_group_layout(index),
-                None => return Err(format!("the bind group {id} uses the layout of a pipeline no pass sets")),
+                None => match res.compute.get(pipeline) {
+                    Some(p) => p.get_bind_group_layout(index),
+                    None => return Err(format!("the bind group {id} uses the layout of a pipeline no pass sets")),
+                },
             }
         } else {
             self.webgpu_layout(recording, &spec.layout)?
@@ -772,7 +896,7 @@ impl Compositor {
         for (e, view) in spec.entries.iter().zip(&views) {
             let resource = if let Some(buffer) = &e.buffer {
                 wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: buffer_of(&res.buffers, buffer)?,
+                    buffer: buffer_in(res, buffer)?,
                     offset: e.offset,
                     size: NonZeroU64::new(e.size),
                 })
@@ -794,6 +918,34 @@ impl Compositor {
             entries: &entries,
         }))
     }
+}
+
+/// One compute pass: the pipeline, the bind groups and the dispatches, in order.
+fn webgpu_compute(encoder: &mut wgpu::CommandEncoder, res: &Resources<'_>, pass: &wg::ComputePass) -> Fail<()> {
+    let mut cp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("webgpu compute"),
+        timestamp_writes: None,
+    });
+    let mut has_pipeline = false;
+    for command in &pass.commands {
+        match command {
+            wg::ComputeCommand::Pipeline { id } => {
+                cp.set_pipeline(res.compute.get(id.as_str()).ok_or("a compute pipeline that was not made")?);
+                has_pipeline = true;
+            }
+            wg::ComputeCommand::Bind { index, group, offsets } => {
+                let group = res.groups.get(group.as_str()).ok_or("a bind group that was not made")?;
+                cp.set_bind_group(*index, group, offsets);
+            }
+            wg::ComputeCommand::Dispatch { x, y, z } => {
+                if !has_pipeline {
+                    return Err("dispatchWorkgroups before setPipeline".into());
+                }
+                cp.dispatch_workgroups(*x, *y, *z);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn buffer_binding(ty: wgpu::BufferBindingType, has_dynamic_offset: bool) -> wgpu::BindingType {
@@ -834,12 +986,37 @@ fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
     use wgpu::TextureFormat as F;
     Ok(match name {
         "r8unorm" => F::R8Unorm,
+        "r8uint" => F::R8Uint,
+        "r8sint" => F::R8Sint,
         "rg8unorm" => F::Rg8Unorm,
+        "rg8uint" => F::Rg8Uint,
+        "rg8sint" => F::Rg8Sint,
         "rgba8unorm" => F::Rgba8Unorm,
         "rgba8unorm-srgb" => F::Rgba8UnormSrgb,
+        "rgba8snorm" => F::Rgba8Snorm,
+        "rgba8uint" => F::Rgba8Uint,
+        "rgba8sint" => F::Rgba8Sint,
         "bgra8unorm" => F::Bgra8Unorm,
         "bgra8unorm-srgb" => F::Bgra8UnormSrgb,
+        "rgb10a2unorm" => F::Rgb10a2Unorm,
+        "r16uint" => F::R16Uint,
+        "r16sint" => F::R16Sint,
+        "r16float" => F::R16Float,
+        "rg16uint" => F::Rg16Uint,
+        "rg16sint" => F::Rg16Sint,
+        "rg16float" => F::Rg16Float,
+        "rgba16uint" => F::Rgba16Uint,
+        "rgba16sint" => F::Rgba16Sint,
         "rgba16float" => F::Rgba16Float,
+        "r32uint" => F::R32Uint,
+        "r32sint" => F::R32Sint,
+        "r32float" => F::R32Float,
+        "rg32uint" => F::Rg32Uint,
+        "rg32sint" => F::Rg32Sint,
+        "rg32float" => F::Rg32Float,
+        "rgba32uint" => F::Rgba32Uint,
+        "rgba32sint" => F::Rgba32Sint,
+        "rgba32float" => F::Rgba32Float,
         other => return Err(format!("a texture of format {other}")),
     })
 }
@@ -928,8 +1105,9 @@ fn pad_rows(bytes: &[u8], row: usize, height: usize) -> Fail<(Vec<u8>, u32)> {
     Ok((out, u32::try_from(padded).map_err(|_| "a row is too long")?))
 }
 
-fn buffer_of<'a>(buffers: &'a HashMap<&str, wgpu::Buffer>, id: &str) -> Fail<&'a wgpu::Buffer> {
-    buffers.get(id).ok_or_else(|| format!("buffer {id} is not in the recording"))
+/// A buffer of the recording, whether the page's bytes made it or the GPU writes it.
+fn buffer_in<'a>(res: &'a Resources<'_>, id: &str) -> Fail<&'a wgpu::Buffer> {
+    res.buffers.get(id).or_else(|| res.gpu_buffers.get(id)).ok_or_else(|| format!("buffer {id} is not in the recording"))
 }
 
 /// A range of a buffer to bind. wgpu panics on an empty slice, so it is refused here, with offsets that are not
@@ -1154,7 +1332,7 @@ mod tests {
         assert_eq!(texture_format("bgra8unorm-srgb"), Ok(wgpu::TextureFormat::Bgra8UnormSrgb));
         assert_eq!(texture_format("rgba16float"), Ok(wgpu::TextureFormat::Rgba16Float));
         assert!(texture_format("depth24plus").is_err());
-        for name in ["r8unorm", "rg8unorm", "rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb", "rgba16float"] {
+        for name in wg::TEXTURE_FORMATS.replace(" and ", ", ").split(", ") {
             assert!(wg::texel_bytes(name).is_some() && texture_format(name).is_ok(), "{name}");
         }
     }

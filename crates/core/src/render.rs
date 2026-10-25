@@ -2275,15 +2275,28 @@ async fn new_gpu() -> Option<(wgpu::Instance, wgpu::Device, wgpu::Queue)> {
     None
 }
 
+/// The limits and WebGPU features of the device a render opens, as `navigator.gpu` reports them (`webgpu::device_info`),
+/// as JSON; none when there is no GPU. The device is opened once to read them and dropped.
+pub fn webgpu_device_info() -> Option<String> {
+    static INFO: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    INFO.get_or_init(|| {
+        let (_instance, device, _queue) = pollster::block_on(new_gpu())?;
+        Some(crate::webgpu::device_info(&device).to_string())
+    })
+    .clone()
+}
+
 /// The GPU device: the default adapter, default limits, `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
-/// `TIMESTAMP_QUERY` when there, for `set_pass_timing`.
+/// `TIMESTAMP_QUERY` when there, for `set_pass_timing`, and `FLOAT32_FILTERABLE` when there, so that a WebGPU page may
+/// filter 32-bit float textures.
 async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Queue)> {
     let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, None)
         .await
         .ok()?;
     let wanted = wgpu::Features::CLEAR_TEXTURE
         | wgpu::Features::PIPELINE_CACHE
-        | wgpu::Features::TIMESTAMP_QUERY;
+        | wgpu::Features::TIMESTAMP_QUERY
+        | wgpu::Features::FLOAT32_FILTERABLE;
     adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: None,

@@ -204,14 +204,24 @@ impl<'a> Painter<'a> {
         for note in &recording.notes {
             self.report(node, "webgpu", note, "WebGPU call that is not drawn (the canvas is drawn without it)");
         }
-        let problems = kinetograph_core::webgpu::check(&recording);
+        for state in &recording.impure {
+            self.report(node, "webgpu", state, "WebGPU state a page carries from frame to frame (the frame is drawn from the passes that made it)");
+        }
+        // The painter has no device: the limits are the WebGPU defaults (the renderer checks again with the device's own),
+        // and a 32-bit float texture may be bound as filterable, which only the device can say.
+        let limits = kinetograph_core::webgpu::Limits {
+            float32_filterable: true,
+            ..Default::default()
+        };
+        let problems = kinetograph_core::webgpu::check_with(&recording, &limits);
         for problem in &problems {
             self.report(node, "webgpu", problem, "a WGSL module that is not valid; the canvas draws nothing");
         }
-        // The sizes, levels and origins of textures, uploads and copies: a recording that is out of range draws nothing.
-        let invalid = kinetograph_core::webgpu::validate(&recording, 8192).err();
+        // The sizes, levels and origins of textures, buffers, uploads and copies, the bindings and the dispatches: a
+        // recording that is out of range draws nothing.
+        let invalid = kinetograph_core::webgpu::validate_with(&recording, &limits).err();
         if let Some(problem) = &invalid {
-            self.report(node, "webgpu", problem, "a texture, upload or copy that is out of range; the canvas draws nothing");
+            self.report(node, "webgpu", problem, "a texture, buffer, binding, dispatch, upload or copy that is out of range; the canvas draws nothing");
         }
         if !problems.is_empty() || invalid.is_some() {
             drawn["webgpu"] = json!({});
