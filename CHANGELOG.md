@@ -1,0 +1,45 @@
+# Changelog
+
+All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Kinetograph is in beta, so APIs can still change between versions.
+
+## 0.2.0 (unreleased)
+
+Everything here is on `main` and not yet published to npm.
+
+### Added
+
+- `<Video datamosh>`: smear one shot into the next, using the video's own motion vectors. See the Datamosh guide on the site at `/docs/guides/datamosh/`. ([#5](https://github.com/0xS4N4TG/kinetograph/pull/5))
+- GSAP support, including the free plugins (SplitText, MotionPath, DrawSVG, TextPlugin, Flip). Build a paused timeline and seek it to each frame. See `/docs/compat/#gsap`. ([#7](https://github.com/0xS4N4TG/kinetograph/pull/7))
+- Studio: a "Copy for agent" button that copies a change request for a coding agent, and a timeline that shows it is loading instead of staying empty. ([#6](https://github.com/0xS4N4TG/kinetograph/pull/6))
+
+### Fixed
+
+- Machines with a Vulkan 1.4 driver no longer fall back to the CPU. ([#1](https://github.com/0xS4N4TG/kinetograph/issues/1), [#2](https://github.com/0xS4N4TG/kinetograph/pull/2))
+- A frame renders the same when the document was edited between frames: an inline box now sits on its baseline in an edited document as it does in a fresh one. ([#3](https://github.com/0xS4N4TG/kinetograph/pull/3))
+- SVG `<text>` inherits font family, size, weight and style from the HTML around the `<svg>`. ([#4](https://github.com/0xS4N4TG/kinetograph/pull/4))
+- `getComputedStyle` and `getBoundingClientRect` on an element inside an `AbsoluteFill` that has a background no longer fail with "no element at path". ([#7](https://github.com/0xS4N4TG/kinetograph/pull/7))
+
+### Changed in behaviour
+
+- A DOM measurement the engine cannot answer (a `getComputedStyle` or `getBoundingClientRect` lookup) is now a warning, and the script gets the element's own style. The render goes on. `--strict` still makes it an error.
+- The `AbsoluteFill` background is written as a hex colour (`#rrggbb`) in scene JSON and `inspect` output. A named colour no longer fails the render.
+
+## In progress (not released)
+
+Work on branches, with no release date. None of it is in 0.2.0 unless it is listed above.
+
+- Agentic studio: readable layer names, and selecting an element and chatting about it with your coding agent over ACP.
+- HyperFrames HTML projects.
+- WebGL additions for p5.brush: points, instancing and `blitFramebuffer`.
+- Library support: d3-selection, Recharts, anime.js, Motion, Paper.js and Bklit UI.
+
+## 0.1.0 (2026-10-23)
+
+First public release, in beta.
+
+- The renderer: a Rust GPU compositor (wgpu, Skia) loaded into Node as an N-API addon, with effects, a 2.5D camera, motion blur and a layer cache.
+- Remotion compatibility: `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation, drawn by a native DOM engine for CSS, SVG, Canvas 2D and WebGL fragment shaders.
+- An own 3D layer (glTF, PBR) and Lottie.
+- Audio through Web Audio, mixed into the render.
+- The `kinetograph` CLI (`still`, `strip`, `render`, `inspect`), an MCP server, the studio and an agent skill.
