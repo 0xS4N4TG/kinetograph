@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/app';
-import { ApiError } from '../src/api';
+import { ApiError, type TimelineData } from '../src/api';
 import { decode, draws } from './canvas';
 import { intro, job, outro } from './fixtures';
 import { MockServer } from './mock-server';
@@ -16,6 +16,11 @@ async function start(server = new MockServer()) {
 }
 
 const counter = () => screen.getByTestId('frame-counter');
+/** Picks a layer by clicking it in the scene tree (its tooltip starts `id (type)`). */
+async function pickInTree(user: ReturnType<typeof userEvent.setup>, id: string) {
+  const tree = await screen.findByTestId('scene-tree');
+  await user.click(within(tree).getByTitle(new RegExp(`^${id} \\(`)));
+}
 const compButton = (name: string) => within(screen.getByTestId('composition-list')).getByRole('button', { name: new RegExp(`^${name}`) });
 
 describe('composition list', () => {
@@ -189,22 +194,107 @@ describe('transport', () => {
 });
 
 describe('timeline', () => {
-  it('has a row per Sequence nested under its parent, labelled by name, and layer rows below', async () => {
-    await start();
-    const sequences = await screen.findAllByTestId('sequence-row');
-    expect(sequences.map((r) => r.getAttribute('title'))).toEqual([
-      'Scene: frames 0..149',
-      'Title card: frames 10..69',
-      'Sequence: frames 80..119',
+  it('starts with the Sequences only, collapsed; a chevron opens a Sequence to its child Sequences and components', async () => {
+    const { user } = await start();
+    const first = await screen.findAllByTestId('sequence-row');
+    expect(first.map((r) => r.getAttribute('data-testid'))).toEqual(['sequence-row']);
+    expect(first[0]).toHaveTextContent('Scene');
+    expect(screen.queryAllByTestId('component-row')).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Expand Scene' }));
+    const rows = screen.getAllByTestId(/sequence-row|component-row/);
+    expect(rows.map((r) => r.querySelector('[data-testid="row-select"]')!.getAttribute('title'))).toEqual([
+      'Scene\nframes 0..149',
+      'Title card\nframes 10..69',
+      'Sequence\nframes 80..119',
+      'bg\nframes 0..149',
     ]);
     const labelOf = (row: HTMLElement) => row.firstElementChild as HTMLElement;
-    expect(labelOf(sequences[0]!)).toHaveClass('pl-2');
-    expect(labelOf(sequences[1]!)).toHaveClass('pl-5');
-    expect(labelOf(sequences[2]!)).toHaveClass('pl-5');
+    expect(labelOf(rows[0]!)).toHaveClass('pl-2');
+    expect(labelOf(rows[1]!)).toHaveClass('pl-5');
+    expect(labelOf(rows[3]!)).toHaveClass('pl-5');
 
-    const layers = screen.getAllByTestId('layer-row');
-    expect(layers.map((r) => r.getAttribute('title'))).toEqual(['title-group (group)', 'title (text)', 'bg (shape)']);
-    expect(labelOf(layers[1]!)).toHaveClass('pl-5');
+    await user.click(screen.getByRole('button', { name: 'Expand Title card' }));
+    expect(screen.getAllByTestId('component-row').map((r) => r.querySelector('[data-testid="row-select"]')!.textContent)).toContain('title-group');
+  });
+
+  it('plain names by default; Show details adds kind tags and the pieces, and is remembered', async () => {
+    const { user } = await start();
+    await user.click(await screen.findByRole('button', { name: 'Expand Scene' }));
+    const timeline = screen.getByTestId('timeline');
+    expect(within(timeline).queryByText('shape')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getByRole('button', { name: 'Show details' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(timeline).getByText('shape')).toBeInTheDocument();
+    expect(window.localStorage.getItem('kinetograph.studio.timeline.details')).toBe('1');
+    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(window.localStorage.getItem('kinetograph.studio.timeline.details')).toBe('0');
+  });
+
+  it('a click on a row seeks to its first visible frame and selects its layers', async () => {
+    const { user } = await start();
+    await user.click(await screen.findByRole('button', { name: 'Expand Scene' }));
+    const card = screen.getAllByTestId('sequence-row')[1]!;
+    await user.click(within(card).getByTestId('row-select'));
+    expect(counter()).toHaveTextContent('10 / 150');
+    expect(within(card).getByTestId('row-select')).toHaveAttribute('aria-pressed', 'true');
+    // Already inside the bar: the playhead stays.
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    expect(counter()).toHaveTextContent('12 / 150');
+    await user.click(within(card).getByTestId('row-select'));
+    expect(counter()).toHaveTextContent('12 / 150');
+  });
+
+  it('shows labels with the component and source line, and no generated id, when the server names the layers', async () => {
+    const source = { file: 'examples/showcase/shots-a.tsx', line: 212, column: 7 };
+    class Named extends MockServer {
+      override timelineFor(comp: string): TimelineData {
+        const data = super.timelineFor(comp);
+        return {
+          ...data,
+          sequences: data.sequences.map((s) => (s.name === null ? { ...s, label: 'Opening', component: 'Main', source } : s)),
+          layers: data.layers.map((l) => (l.id === 'title' ? { ...l, id: '$0.1', label: 'Title \u00b7 \u201cHello\u201d', component: 'Title', source } : l)),
+        };
+      }
+    }
+    const { user } = await start(new Named());
+    await user.click(await screen.findByRole('button', { name: 'Expand Scene' }));
+    const sequences = screen.getAllByTestId('sequence-row');
+    const opening = within(sequences[2]!).getByTestId('row-select');
+    expect(opening).toHaveAttribute('title', 'Opening \u00b7 Main \u00b7 examples/showcase/shots-a.tsx:212:7\nframes 80..119');
+    expect(opening).toHaveTextContent('Opening');
+    await user.click(screen.getByRole('button', { name: 'Expand Title card' }));
+    await user.click(screen.getByRole('button', { name: 'Expand title-group' }));
+    const row = screen.getAllByTestId('component-row').find((r) => r.textContent?.includes('Hello'))!;
+    // Simple view: the name only. Details: the component and the file.
+    expect(row).toHaveTextContent('Title \u00b7 \u201cHello\u201d');
+    expect(row).not.toHaveTextContent('shots-a.tsx');
+    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.getAllByTestId('component-row').find((r) => r.textContent?.includes('Hello'))).toHaveTextContent('Title \u00b7 shots-a.tsx:212');
+    expect(row).not.toHaveTextContent('$0.1');
+  });
+
+  it('shows the progress of reading the timeline, never an empty list, until the rows arrive', async () => {
+    const server = new MockServer();
+    let open!: () => void;
+    server.timelineGate = new Promise<void>((resolve) => (open = resolve));
+    server.progress = { done: 300, total: 1521 };
+    await start(server);
+    expect(await screen.findByText('Reading the timeline: frame 300 of 1521')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-loading')).toBeInTheDocument();
+    expect(screen.queryByText('No Sequences')).not.toBeInTheDocument();
+    expect(screen.queryByText('No layers')).not.toBeInTheDocument();
+    open();
+    expect(await screen.findAllByTestId('sequence-row')).toHaveLength(1);
+    expect(screen.queryByTestId('timeline-loading')).not.toBeInTheDocument();
+  });
+
+  it('shows the error, not an empty list, when the timeline cannot be read', async () => {
+    const server = new MockServer();
+    server.timelineError = new ApiError('PROJECT_ERROR', 'the composition threw at frame 12', 500);
+    await start(server);
+    expect(await screen.findByTestId('timeline-error')).toHaveTextContent('Could not read the timeline: the composition threw at frame 12');
+    expect(screen.queryByText('No Sequences')).not.toBeInTheDocument();
   });
 
   it('moves the playhead and asks for preview-quality frames while the ruler is dragged, full quality on release', async () => {
@@ -242,24 +332,26 @@ describe('timeline', () => {
 
   it('selects the layer of a clicked row in the scene tree and shows its resolved fields', async () => {
     const { user } = await start();
-    await screen.findAllByTestId('layer-row');
+    await user.click(await screen.findByRole('button', { name: 'Expand Scene' }));
     await user.click(screen.getByRole('tab', { name: 'Props' }));
 
-    const titleRow = screen.getAllByTestId('layer-row').find((r) => r.getAttribute('title') === 'title (text)')!;
-    await user.click(titleRow);
-
-    // clicking selects the layer in the scene tree, which comes to the front
+    // a Sequence row selects its group in the scene tree, which comes to the front
+    await user.click(within(screen.getAllByTestId('sequence-row')[1]!).getByTestId('row-select'));
     const tree = await screen.findByTestId('scene-tree');
+    await waitFor(() => expect(within(screen.getByTestId('layer-details')).getByText('title-group')).toBeInTheDocument());
+
+    // with details on, the pieces are rows too
+    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    await user.click(screen.getByRole('button', { name: 'Expand Title card' }));
+    await user.click(screen.getByRole('button', { name: 'Expand title-group' }));
+    const titleRow = screen.getAllByTestId('component-row').find((r) => r.textContent?.startsWith('title') && !r.textContent.startsWith('title-group'))!;
+    await user.click(within(titleRow).getByTestId('row-select'));
     const selected = within(tree).getAllByRole('treeitem').filter((i) => i.getAttribute('aria-selected') === 'true');
     expect(selected.map((i) => i.firstElementChild!.textContent)).toEqual(['titletext']);
     const details = await within(tree).findByTestId('layer-details');
     expect(details).toHaveTextContent('Inter 64');
     expect(details).toHaveTextContent('dropShadow');
-    expect(titleRow).toHaveAttribute('aria-pressed', 'true');
-
-    const group = screen.getAllByTestId('sequence-row')[1]!;
-    await user.click(group);
-    await waitFor(() => expect(within(screen.getByTestId('layer-details')).getByText('title-group')).toBeInTheDocument());
+    expect(within(titleRow).getByTestId('row-select')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows the scene tree of the current frame with the topmost layer first, children nested', async () => {
@@ -626,15 +718,36 @@ describe('project panel', () => {
   });
 });
 
+describe('copy for agent', () => {
+  it('opens an editable message about the selected layer and copies what the user made of it', async () => {
+    const { user } = await start();
+    expect(screen.queryByRole('button', { name: 'Copy for agent' })).not.toBeInTheDocument();
+    await pickInTree(user, 'title');
+    await user.click(await screen.findByRole('button', { name: 'Copy for agent' }));
+
+    const box = (await screen.findByRole('textbox', { name: 'Message for the agent' })) as HTMLTextAreaElement;
+    expect(box.value).toContain('In scene.tsx, composition `Intro`, frame 0 (00:00:00):');
+    expect(box.value).toContain('change the text layer `title`, text "Hello"');
+    expect(box.selectionStart).toBe(box.value.length);
+
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await user.type(box, 'make it red');
+    await user.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\nChange: make it red$/));
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+});
+
 describe('timeline controls', () => {
   it('scrubs from any lane, not only the ruler', async () => {
     const { server } = await start();
-    await screen.findAllByTestId('layer-row');
+    await screen.findAllByTestId('sequence-row');
     const ruler = screen.getByTestId('timeline-ruler');
     vi.spyOn(ruler, 'getBoundingClientRect').mockReturnValue({
       left: 100, top: 0, right: 1600, bottom: 28, width: 1500, height: 28, x: 100, y: 0, toJSON: () => ({}),
     });
-    const lane = screen.getAllByTestId('layer-row')[1]!.querySelector('[data-lane]')!;
+    const lane = screen.getAllByTestId('sequence-row')[0]!.querySelector('[data-lane]')!;
     fireEvent.pointerDown(lane, { clientX: 400, pointerId: 1 });
     expect(counter()).toHaveTextContent('30 / 150');
     fireEvent.pointerUp(lane, { pointerId: 1 });
@@ -643,7 +756,7 @@ describe('timeline controls', () => {
 
   it('zooms the time axis with the wheel while Ctrl or Cmd is held', async () => {
     await start();
-    await screen.findAllByTestId('layer-row');
+    await screen.findAllByTestId('sequence-row');
     fireEvent.wheel(screen.getByTestId('timeline-ruler'), { deltaY: -100 });
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1');
     fireEvent.wheel(screen.getByTestId('timeline-ruler'), { ctrlKey: true, deltaY: -100 });
@@ -652,13 +765,14 @@ describe('timeline controls', () => {
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1.5625');
   });
 
-  it('keeps row numbers while the search narrows the rows', async () => {
+  it('a search opens the way to what matches and hides the rest', async () => {
     const { user } = await start();
-    await screen.findAllByTestId('layer-row');
+    await screen.findAllByTestId('sequence-row');
     await user.type(screen.getByRole('searchbox', { name: 'Search timeline' }), 'bg');
-    const rows = screen.getAllByTestId('layer-row');
-    expect(rows).toHaveLength(1);
-    expect(within(rows[0]!).getByText('3')).toBeInTheDocument();
+    const rows = screen.getAllByTestId(/sequence-row|component-row/);
+    expect(rows.map((r) => r.querySelector('[data-testid="row-select"]')!.textContent)).toEqual(['Scene', 'bg']);
+    await user.clear(screen.getByRole('searchbox', { name: 'Search timeline' }));
+    expect(screen.getAllByTestId(/sequence-row|component-row/)).toHaveLength(1);
   });
 });
 
@@ -676,8 +790,7 @@ describe('scene tree', () => {
   it('collapses a property section', async () => {
     const { user } = await start();
     const tree = await screen.findByTestId('scene-tree');
-    await screen.findAllByTestId('layer-row');
-    await user.click(screen.getAllByTestId('layer-row').find((r) => r.getAttribute('title') === 'bg (shape)')!);
+    await pickInTree(user, 'bg');
     const details = await within(tree).findByTestId('layer-details');
     expect(within(details).getByText('anchor')).toBeInTheDocument();
     await user.click(within(details).getByRole('button', { name: 'Layer Transform' }));

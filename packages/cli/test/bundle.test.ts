@@ -350,4 +350,33 @@ describe('bundleProject', () => {
       ['@remotion/player', 'other.ts'],
     ]);
   });
+
+  it('reads a package\'s browser map for an import that does not resolve: false is an empty module, a string its replacement', async () => {
+    const dir = project({
+      'index.ts': `import { v } from 'lib';\nexport const x = v;`,
+      'node_modules/lib/package.json': JSON.stringify({
+        name: 'lib',
+        main: 'index.js',
+        browser: { './node-only.js': false, 'missing-pkg': false, 'nope/sub': false, './other.js': './browser.js', 'gone': './browser.js' },
+      }),
+      'node_modules/lib/index.js': `const a = require('missing-pkg');\nconst b = require('./node-only.js');\nconst c = require('gone');\nexports.v = [typeof a, typeof b, c.tag].join();`,
+      'node_modules/lib/node-only.js': `module.exports = 'real';`,
+      'node_modules/lib/browser.js': `module.exports = { tag: 'browser' };`,
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    // `./node-only.js` exists, so it is bundled as it is; the missing ones are stubbed or replaced.
+    expect(code).toMatch(/module\.exports = ["']real["']/);
+    expect(code).toMatch(/tag: ["']browser["']/);
+    expect(code).toContain('kinetograph-browser-empty');
+  });
+
+  it('still fails for an import that is not in the map', async () => {
+    const dir = project({
+      'index.ts': `import { v } from 'lib';\nexport const x = v;`,
+      'node_modules/lib/package.json': JSON.stringify({ name: 'lib', main: 'index.js', browser: { other: false } }),
+      'node_modules/lib/index.js': `exports.v = require('not-installed');`,
+    });
+    await expect(bundleProject(join(dir, 'index.ts'))).rejects.toMatchObject({ code: 'BUNDLE_FAILED' });
+  });
 });

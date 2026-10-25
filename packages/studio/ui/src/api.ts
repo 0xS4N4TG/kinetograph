@@ -3,6 +3,11 @@
 
 import { decodeFrameMessage } from '../../src/protocol.ts';
 import type {
+  AgentClientMessage,
+  AgentEvent,
+  AgentInfo,
+  AgentPermissionOption,
+  AgentStatus,
   ClientMessage,
   CompositionInfo,
   FrameHeader,
@@ -14,9 +19,15 @@ import type {
   ServerMessage,
   StudioError,
   TimelineData,
+  TimelineProgress,
 } from '../../src/protocol.ts';
 
 export type {
+  AgentClientMessage,
+  AgentEvent,
+  AgentInfo,
+  AgentPermissionOption,
+  AgentStatus,
   CompositionInfo,
   FrameHeader,
   InspectResult,
@@ -26,6 +37,7 @@ export type {
   ServerMessage,
   StudioError,
   TimelineData,
+  TimelineProgress,
 };
 export type { SequenceJson } from '../../src/protocol.ts';
 export type { RenderStatus, TimelineLayer } from '../../src/protocol.ts';
@@ -61,6 +73,8 @@ export interface SocketHandlers {
 export interface StudioSocket {
   /** Sends a frame request and returns its `requestId`; -1 when the socket is not open (nothing was sent). */
   requestFrame(args: FrameArgs): number;
+  /** Sends a message for the coding agent; false when the socket is not open. */
+  sendAgent(message: AgentClientMessage): boolean;
   close(): void;
 }
 
@@ -69,6 +83,10 @@ export interface StudioApi {
   compositions(): Promise<CompositionInfo[]>;
   inspect(comp: string, frame: number, props?: Record<string, unknown>): Promise<InspectResult>;
   timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData>;
+  /** How far the sweep that `timeline` waits for has got. */
+  timelineProgress(comp: string, props?: Record<string, unknown>): Promise<TimelineProgress>;
+  /** The coding agents on offer. */
+  agentInfo(): Promise<AgentInfo>;
   renders(): Promise<RenderJob[]>;
   startRender(request: RenderRequest): Promise<RenderJob>;
   cancelRender(id: string): Promise<RenderJob>;
@@ -83,6 +101,22 @@ export interface ApiOptions {
   WebSocket?: typeof WebSocket;
   /** Delay before reconnecting, ms. */
   reconnectDelay?: number;
+  /** The secret from the address the studio opened (`?token=`); default read from the page's address. */
+  token?: string;
+}
+
+/** The token in the page's address, kept for the tab so that a reload without it still works. */
+function pageToken(): string | null {
+  try {
+    const found = new URLSearchParams(window.location.search).get('token');
+    if (found) {
+      sessionStorage.setItem('studio-token', found);
+      return found;
+    }
+    return sessionStorage.getItem('studio-token');
+  } catch {
+    return null;
+  }
 }
 
 function query(params: Record<string, string | number | undefined>): string {
@@ -101,6 +135,7 @@ export function createApi(options: ApiOptions = {}): StudioApi {
   const baseUrl = (options.baseUrl ?? '').replace(/\/$/, '');
   const doFetch = options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const reconnectDelay = options.reconnectDelay ?? 1000;
+  const token = options.token ?? pageToken();
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let response: Response;
@@ -123,9 +158,10 @@ export function createApi(options: ApiOptions = {}): StudioApi {
   }
 
   function webSocketUrl(): string {
-    if (baseUrl !== '') return `${baseUrl.replace(/^http/, 'ws')}/ws`;
+    const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+    if (baseUrl !== '') return `${baseUrl.replace(/^http/, 'ws')}/ws${suffix}`;
     const { protocol, host } = window.location;
-    return `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}/ws`;
+    return `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}/ws${suffix}`;
   }
 
   return {
@@ -134,6 +170,9 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     inspect: (comp, frame, props) =>
       request<InspectResult>(`/api/inspect${query({ comp, frame, props: propsParam(props) })}`),
     timeline: (comp, props) => request<TimelineData>(`/api/timeline${query({ comp, props: propsParam(props) })}`),
+    timelineProgress: (comp, props) =>
+      request<TimelineProgress>(`/api/timeline/progress${query({ comp, props: propsParam(props) })}`),
+    agentInfo: () => request<AgentInfo>('/api/agent', { headers: token ? { 'X-Studio-Token': token } : {} }),
     renders: () => request<RenderJob[]>('/api/renders'),
     startRender: (body) =>
       request<RenderJob>('/api/renders', {
@@ -177,6 +216,11 @@ export function createApi(options: ApiOptions = {}): StudioApi {
           const message: ClientMessage = { type: 'frame', requestId, ...args };
           socket.send(JSON.stringify(message));
           return requestId;
+        },
+        sendAgent(message) {
+          if (socket === null || socket.readyState !== 1) return false;
+          socket.send(JSON.stringify(message));
+          return true;
         },
         close() {
           closed = true;

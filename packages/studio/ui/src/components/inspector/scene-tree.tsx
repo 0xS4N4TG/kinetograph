@@ -2,23 +2,33 @@ import { useState, type ReactNode } from 'react';
 import { ChevronDownIcon, LayersIcon, SparklesIcon } from 'lucide-react';
 
 import type { InspectResult } from '@/api';
+import { CopyForAgent } from '@/components/inspector/agent-copy';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { buildAgentMessage, type AgentMessageInput } from '@/lib/agent-message';
 import { formatNumber } from '@/lib/format';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { layerColors } from '@/lib/layer-colors';
+import { displayName, fullSource, secondLine, tooltip } from '@/lib/names';
+import { foldSiblings } from '@/lib/tree';
 import { cn } from '@/lib/utils';
 
 interface SceneTreeProps {
   inspect: InspectResult | null;
   frame: number;
   selected: string | null;
-  onSelect(id: string): void;
+  /** Every selected layer: all are highlighted; `selected` is the one whose details show. */
+  selectedLayers?: string[];
+  onSelect(id: string, additive?: boolean): void;
+  /** Picks several layers at once (a folded group); without it a fold picks its first layer. */
+  onSelectMany?(ids: string[]): void;
+  /** What the "Copy for agent" message needs besides the layer; null before the project is known. */
+  agent: Omit<AgentMessageInput, 'frame' | 'layer'> | null;
 }
 
 /** The layers of the current frame (topmost first) and the selected layer's resolved fields. */
-export function SceneTree({ inspect, frame, selected, onSelect }: SceneTreeProps) {
+export function SceneTree({ inspect, frame, selected, selectedLayers = selected === null ? [] : [selected], onSelect, onSelectMany, agent }: SceneTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   if (inspect === null) return <p className="text-muted-foreground p-3 text-xs">Scene not loaded.</p>;
   const layer = selected === null ? null : findLayer(inspect.layers, selected);
@@ -61,14 +71,19 @@ export function SceneTree({ inspect, frame, selected, onSelect }: SceneTreeProps
       </div>
 
       <ScrollArea className="h-2/5 shrink-0">
-        <Layers layers={inspect.layers} selected={selected} onSelect={onSelect} collapsed={collapsed} onToggle={toggle} />
+        <Layers layers={inspect.layers} selected={selectedLayers} onSelect={onSelect} collapsed={collapsed} onToggle={toggle} {...(onSelectMany ? { onSelectMany } : {})} />
       </ScrollArea>
 
       <Separator />
 
       {/* Properties header */}
       <div className="bg-secondary/50 flex h-7 shrink-0 items-center border-b px-2.5 text-[11px]">
-        <span className="truncate font-medium">{layer ? `Properties: ${layer.id}` : 'Effect Controls & Transform'}</span>
+        <span className="truncate font-medium">{layer ? `Properties: ${displayName(layer)}` : 'Effect Controls & Transform'}</span>
+        {layer && agent && (
+          <span className="ml-auto pl-2">
+            <CopyForAgent message={buildAgentMessage({ ...agent, frame: inspect.frame, layer })} />
+          </span>
+        )}
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
@@ -92,18 +107,68 @@ function Layers({
   onSelect,
   collapsed,
   onToggle,
+  onSelectMany,
+  fold = true,
 }: {
   layers: InspectLayer[];
-  selected: string | null;
-  onSelect(id: string): void;
+  selected: string[];
+  onSelect(id: string, additive: boolean): void;
+  /** Layers and folds are open or closed by id; a fold (`fold:...`) is closed unless its id is in this set. */
   collapsed: Set<string>;
   onToggle(id: string): void;
+  onSelectMany?(ids: string[]): void;
+  /** False for the members of an open fold, already in display order. */
+  fold?: boolean;
 }) {
   if (layers.length === 0) return <p className="text-muted-foreground p-3 text-xs">No layers at this frame.</p>;
+  const ordered = fold ? [...layers].reverse() : layers;
+  const items = fold ? foldSiblings(ordered) : ordered.map((layer) => ({ fold: false as const, layer }));
   return (
     <ul className="flex flex-col p-1 text-xs" role="tree">
-      {[...layers].reverse().map((layer) => {
-        const isSelected = layer.id === selected;
+      {items.map((item) => {
+        if (item.fold) {
+          const open = collapsed.has(item.key);
+          const ids = item.layers.map((l) => l.id);
+          const all = ids.every((id) => selected.includes(id));
+          const { swatch } = layerColors(item.layers[0]!.type);
+          const name = `${item.label} ×${item.layers.length}`;
+          return (
+            <li key={item.key} role="treeitem" aria-selected={all} aria-expanded={open} data-testid="scene-fold">
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  aria-label={`${open ? 'Collapse' : 'Expand'} ${name}`}
+                  onClick={() => onToggle(item.key)}
+                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex size-5 shrink-0 items-center justify-center rounded-xs outline-none focus-visible:ring-2"
+                >
+                  <ChevronDownIcon className={cn('size-3 transition-transform', !open && '-rotate-90')} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (onSelectMany ? onSelectMany(ids) : onSelect(ids[0]!, false))}
+                  title={tooltip(name, 'folded', item.layers[0]!)}
+                  className={cn(
+                    'hover:bg-white/[0.05] focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-xs px-2 py-1 text-left outline-none transition-colors focus-visible:ring-2',
+                    all && 'bg-nle-blue/25 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
+                  )}
+                >
+                  <span className={cn('size-2 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    <span className="truncate font-medium">{name}</span>
+                    {secondLine(item.layers[0]!) && <span className="text-muted-foreground/70 truncate text-[10px]">{secondLine(item.layers[0]!)}</span>}
+                  </span>
+                </button>
+              </div>
+              {open && (
+                <div className="border-border ml-3 border-l pl-1">
+                  <Layers layers={item.layers} selected={selected} onSelect={onSelect} collapsed={collapsed} onToggle={onToggle} {...(onSelectMany ? { onSelectMany } : {})} fold={false} />
+                </div>
+              )}
+            </li>
+          );
+        }
+        const layer = item.layer;
+        const isSelected = selected.includes(layer.id);
         const children = layer.children ?? [];
         const isCollapsed = collapsed.has(layer.id);
         const { swatch } = layerColors(layer.type);
@@ -113,7 +178,7 @@ function Layers({
               {children.length > 0 ? (
                 <button
                   type="button"
-                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${layer.id}`}
+                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${displayName(layer)}`}
                   onClick={() => onToggle(layer.id)}
                   className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex size-5 shrink-0 items-center justify-center rounded-xs outline-none focus-visible:ring-2"
                 >
@@ -124,14 +189,18 @@ function Layers({
               )}
               <button
                 type="button"
-                onClick={() => onSelect(layer.id)}
+                onClick={(event) => onSelect(layer.id, event.shiftKey)}
+                title={tooltip(displayName(layer), layer.type, layer)}
                 className={cn(
                   'hover:bg-white/[0.05] focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-xs px-2 py-1 text-left outline-none transition-colors focus-visible:ring-2',
                   isSelected && 'bg-nle-blue/25 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
                 )}
               >
                 <span className={cn('size-2 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
-                <span className="truncate font-medium">{layer.id}</span>
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate font-medium">{displayName(layer)}</span>
+                  {secondLine(layer) && <span className="text-muted-foreground/70 truncate text-[10px]">{secondLine(layer)}</span>}
+                </span>
                 <Badge variant="outline" className="ml-auto rounded-xs px-1 py-0 font-mono text-[9px]">
                   {layer.type}
                 </Badge>
@@ -139,7 +208,7 @@ function Layers({
             </div>
             {children.length > 0 && !isCollapsed && (
               <div className="border-border ml-3 border-l pl-1">
-                <Layers layers={children} selected={selected} onSelect={onSelect} collapsed={collapsed} onToggle={onToggle} />
+                <Layers layers={children} selected={selected} onSelect={onSelect} collapsed={collapsed} onToggle={onToggle} {...(onSelectMany ? { onSelectMany } : {})} />
               </div>
             )}
           </li>
@@ -179,7 +248,10 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
   return (
     <div data-testid="layer-details" className="flex flex-col gap-3 p-2.5 font-mono text-[11px]">
       <Section title="Layer Identity">
-        <Field name="id">{layer.id}</Field>
+        <Field name="name">{displayName(layer)}</Field>
+        {layer.component !== undefined && <Field name="component">{layer.component}</Field>}
+        {layer.source && <Field name="source">{fullSource(layer.source)}</Field>}
+        {!layer.id.startsWith('$') && layer.id !== displayName(layer) && <Field name="id">{layer.id}</Field>}
         <Field name="type">
           <Badge variant="secondary" className="rounded-xs px-1.5 py-0 text-[10px]">
             {layer.type}

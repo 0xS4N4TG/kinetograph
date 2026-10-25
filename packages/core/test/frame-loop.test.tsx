@@ -387,6 +387,22 @@ describe('waiting', () => {
     expect((scene.layers[0] as TextLayer).text).toBe('loaded');
   });
 
+  it('holds frame 0 for a handle opened before any frame, as at module scope', async () => {
+    let ready = false;
+    const handle = delayRender('init');
+    setTimeout(() => {
+      ready = true;
+      continueRender(handle);
+    }, 5);
+    // A plain variable, not state: nothing renders again when it changes, so the first render has to come after it.
+    function Wasm() {
+      return <Text id="t" font="Inter" size={10}>{ready ? 'ready' : 'empty'}</Text>;
+    }
+    registerRoot(() => <Composition id="W" component={Wasm} width={10} height={10} fps={30} durationInFrames={5} />);
+    const { scene } = await createFrameRenderer('W').renderFrame(0);
+    expect((scene.layers[0] as TextLayer).text).toBe('ready');
+  });
+
   it('fails the frame when a handle is never continued', async () => {
     function Stuck() {
       useEffect(() => {
@@ -474,6 +490,55 @@ describe('the determinism shim in a render', () => {
     expect(second[0]!.split(' ')[0]).toBe('00:00:01.500');
     expect(second[0]!.split(' ')[2]).toBe(first[3]!.split(' ')[2]);
     expect(second[1]).toBe(first[1]);
+  });
+
+  it('runs requestAnimationFrame callbacks after the frame renders, so what they set is in that frame', async () => {
+    installDeterminism();
+    let drawn = '';
+    function Raf() {
+      const frame = useCurrentFrame();
+      useEffect(() => {
+        (globalThis as any).requestAnimationFrame((t: number) => {
+          drawn = `${frame}@${Math.round(t)}`;
+        });
+      });
+      return <Text id="c" font="Inter" size={10}>{`f${frame}`}</Text>;
+    }
+    registerRoot(() => <Composition id="R" component={Raf} width={10} height={10} fps={30} durationInFrames={90} />);
+    const r = createFrameRenderer('R');
+    await r.renderFrame(3);
+    // Not at the start of frame 4, and in a frame rendered alone as well as in a sequence.
+    expect(drawn).toBe('3@100');
+    await r.renderFrame(4);
+    expect(drawn).toBe('4@133');
+  });
+
+  it('gives a loop in requestAnimationFrame the frames a jump skips, so a frame is the same alone and in sequence', async () => {
+    installDeterminism();
+    let seen: number[] = [];
+    function Loop() {
+      useEffect(() => {
+        const g = globalThis as any;
+        let id = 0;
+        const tick = (t: number) => {
+          seen.push(Math.round(t));
+          id = g.requestAnimationFrame(tick);
+        };
+        id = g.requestAnimationFrame(tick);
+        // A loop that cleans up when it unmounts, as a loop should: starting a scene over does not carry it along.
+        return () => g.cancelAnimationFrame(id);
+      }, []);
+      return <Text id="c" font="Inter" size={10}>x</Text>;
+    }
+    registerRoot(() => <Composition id="J" component={Loop} width={10} height={10} fps={30} durationInFrames={90} />);
+    const sequence = createFrameRenderer('J');
+    for (let f = 0; f <= 5; f++) await sequence.renderFrame(f);
+    const inSequence = seen;
+    seen = [];
+    sequence.dispose();
+    await createFrameRenderer('J').renderFrame(5);
+    expect(seen).toEqual(inSequence);
+    expect(seen).toEqual([0, 33, 67, 100, 133, 167]);
   });
 });
 

@@ -1,4 +1,6 @@
-import type { CompositionInfo, InspectResult, RenderJob, RenderRequest } from '@/api';
+import type { ReactNode } from 'react';
+
+import type { CompositionInfo, InspectResult, ProjectInfo, RenderJob, RenderRequest, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
@@ -15,8 +17,16 @@ interface InspectorPanelProps {
   comp: CompositionInfo | null;
   frame: number;
   inspect: InspectResult | null;
+  project: ProjectInfo | null;
+  /** The timeline once read, to name the Sequence a layer is in. */
+  timeline: TimelineData | null;
   selectedLayer: string | null;
-  onSelectLayer(id: string | null): void;
+  selectedLayers: string[];
+  onSelectLayer(id: string | null, additive?: boolean): void;
+  /** Several layers at once (a folded group of identical siblings). */
+  onSelectLayers?(ids: string[]): void;
+  /** The Agent tab. */
+  agentTab: ReactNode;
   propValues: Record<string, unknown>;
   /** Whether the props differ from the composition's defaults. */
   propsEdited: boolean;
@@ -34,8 +44,13 @@ export function InspectorPanel({
   comp,
   frame,
   inspect,
+  project,
+  timeline,
   selectedLayer,
+  selectedLayers,
   onSelectLayer,
+  onSelectLayers,
+  agentTab,
   propValues,
   propsEdited,
   onChangeProps,
@@ -58,6 +73,9 @@ export function InspectorPanel({
             <TabsTrigger value="props" className={TAB_CLASS}>
               Props
             </TabsTrigger>
+            <TabsTrigger value="agent" className={TAB_CLASS}>
+              Agent
+            </TabsTrigger>
             <TabsTrigger value="renders" className={TAB_CLASS}>
               Renders
               {activeRenders > 0 && <Badge className="ml-1 px-1.5 py-0 text-[9px]">{activeRenders}</Badge>}
@@ -66,10 +84,21 @@ export function InspectorPanel({
         }
       />
       <TabsContent value="scene" className="min-h-0">
-        <SceneTree inspect={inspect} frame={frame} selected={selectedLayer} onSelect={onSelectLayer} />
+        <SceneTree
+          inspect={inspect}
+          frame={frame}
+          selected={selectedLayer}
+          selectedLayers={selectedLayers}
+          onSelect={onSelectLayer}
+          {...(onSelectLayers ? { onSelectMany: onSelectLayers } : {})}
+          agent={project && comp ? { entry: project.entry, cwd: project.cwd, comp, timeline } : null}
+        />
       </TabsContent>
       <TabsContent value="props" className="min-h-0">
         <PropsPanel comp={comp} values={propValues} edited={propsEdited} onChange={onChangeProps} onReset={onResetProps} />
+      </TabsContent>
+      <TabsContent value="agent" className="min-h-0">
+        {agentTab}
       </TabsContent>
       <TabsContent value="renders" className="min-h-0">
         <RenderQueue

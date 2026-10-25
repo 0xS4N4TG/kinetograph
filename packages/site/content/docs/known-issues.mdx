@@ -52,11 +52,13 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 ### WebGL
 
-A framebuffer texture starts every frame blank. A frame that only draws into framebuffers still clears the canvas, where a browser would keep the last picture. Each item below needs new GPU work.
+Every frame starts with an empty canvas and blank framebuffer textures, also for a context made with `preserveDrawingBuffer`, because a frame is a function of its own number. A frame that draws nothing draws nothing, where a browser would keep the last picture. Each item below needs new GPU work.
 
-- Not supported: renderbuffers; depth and stencil attachments; `COLOR_ATTACHMENT1` and up; a texture level above 0 as a target; targets that are not RGBA or that hold uploaded pixels; `generateMipmap` and `texSubImage2D` on a texture drawn into; points and lines; instancing; cube, 3D and float textures; and multisampled edges.
+- Not supported: renderbuffers; depth and stencil attachments; `COLOR_ATTACHMENT1` and up; a texture level above 0 as a target; targets that are not RGBA or that hold uploaded pixels; `generateMipmap` on a texture drawn into; `LINES`, `LINE_STRIP` and `LINE_LOOP`; instanced points; a `vertexAttribDivisor` above 1; cube, 3D and float textures; and multisampled edges.
 - `readPixels` is refused by design.
-- `blitFramebuffer` is reported as unsupported.
+- Points are drawn as squares of `gl_PointSize` pixels with `gl_PointCoord`, at most 511 pixels across (`ALIASED_POINT_SIZE_RANGE` is 1 to 511). `gl_VertexID` in a vertex shader that draws points is the point's index, but with `drawElements` it is the position in the index list, not the index.
+- `blitFramebuffer` copies the colour only, as there is no depth or stencil buffer, and refuses to read and write one buffer.
+- `texSubImage2D` into a texture a framebuffer drew in is supported from a canvas, `ImageData` or an array of pixels; from an image file it is not.
 
 ### WGSL `shader()`
 
@@ -79,6 +81,16 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 - `Flip`, `ScrollTrigger` and `Draggable` are not tested. `ScrollTrigger` has nothing to scroll in a render.
 - An SVG shape's `getBoundingClientRect` is worked out from its `getBBox`, its transforms and the `<svg>`'s `viewBox`, not from layout. Strokes and filters are not in it.
 - More in [GSAP](/docs/compat/#gsap).
+
+### SVG paint
+
+- An SVG `fill`, `stroke` or gradient `stop-color` of `var(--x)`, `oklch()`, `oklab()`, `color-mix()`, `rgb(r g b / a)` or a name such as `rebeccapurple` is drawn black, with no warning. HTML backgrounds and text colours accept all of these. SVG goes through usvg (`crates/dom/src/paint/svg/mod.rs`), which parses none of them. This is what keeps Bklit UI's charts grey and black.
+
+### Libraries
+
+- A rendered frame is only as frame-pure as the library: Motion's `animate()` that plays by itself is (see [Libraries](/docs/compat/#libraries-that-run-their-own-frame-loop)), but one that reads the wall clock or a real `Date` outside the virtual one is not.
+- Motion picks the Web Animations API when `element.animate` exists. The engine's `animate()` throws, so Motion falls back to its own JavaScript animation, whose colour mixing differs slightly from the browser's.
+- Chart.js, Recharts and the rest measure text only with the fonts you registered. With none, text is measured and drawn in the built-in font.
 
 ### `@remotion/skia` and `@shopify/react-native-skia`
 

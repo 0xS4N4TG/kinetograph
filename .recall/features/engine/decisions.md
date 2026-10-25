@@ -8,3 +8,4 @@
 
 ## 2026-10-25
 **Call:** Removed ENGINE.md §12 "launch is GPU-bound, 4 workers 30-36 s" note: measured before Skia.
+- 2026-10-25: scale-out rendering (chunked render + concat, parallel CPU encode, Lambda/Cloud Run) parked for later; plan in overview.

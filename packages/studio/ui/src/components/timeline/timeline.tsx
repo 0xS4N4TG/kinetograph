@@ -1,16 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 
-import type { CompositionInfo, TimelineData } from '@/api';
+import type { CompositionInfo } from '@/api';
 import { PanelHeader } from '@/components/shell/panel-header';
-import { Bar, EmptyRow, LABEL_WIDTH, Row, SectionLabel } from '@/components/timeline/timeline-row';
+import { Bar, EmptyRow, LABEL_WIDTH, ROW_HEIGHT, Row, TimelineNotice } from '@/components/timeline/timeline-row';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { formatTimecode } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
+import { fullSource, secondLine } from '@/lib/names';
 import type { Player, PlayerState } from '@/lib/player';
+import type { TimelineStatus } from '@/studio';
 import { cn } from '@/lib/utils';
-import { layerRows, sequenceRows } from '@/lib/tree';
+import { buildTimeline, seekTarget, visibleRows, type TimelineNode } from '@/lib/timeline-model';
 import { useElementSize } from '@/lib/use-element-size';
 
 const MIN_TICK_SPACING = 64;
@@ -23,18 +25,47 @@ const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
 interface TimelineProps {
   comp: CompositionInfo | null;
-  data: TimelineData | null;
+  status: TimelineStatus;
   state: PlayerState;
   player: Player;
-  selectedLayer: string | null;
-  onSelectLayer(id: string): void;
+  /** The layers picked anywhere in the studio. */
+  selectedLayers: string[];
+  /** A row was clicked: the layers it stands for (all the pieces of a folded row). */
+  onSelectLayers(ids: string[]): void;
+}
+
+const DETAILS_KEY = 'kinetograph.studio.timeline.details';
+function readDetails(): boolean {
+  try {
+    return window.localStorage.getItem(DETAILS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function writeDetails(on: boolean): void {
+  try {
+    window.localStorage.setItem(DETAILS_KEY, on ? '1' : '0');
+  } catch {
+    // No storage: the choice lasts until reload.
+  }
+}
+
+/** The hover text of a row or bar: name, component and where it is written. */
+function nodeTitle(node: TimelineNode): string {
+  let head = node.label;
+  if (node.count > 1) head += ` ×${node.count}`;
+  if (node.component && node.component !== node.label) head += ` · ${node.component}`;
+  if (node.source) head += ` · ${fullSource(node.source)}`;
+  const first = node.bars[0]?.[0];
+  const last = node.bars[node.bars.length - 1]?.[1];
+  return first !== undefined && last !== undefined ? `${head}\nframes ${first}..${last}` : head;
 }
 
 /**
  * The timeline: a ruler in frames, one row per Sequence nested under its parent, then a row per layer, and the playhead
  * across them. Pressing and dragging in the ruler or a lane scrubs; a row's click selects its layer.
  */
-export function Timeline({ comp, data, state, player, selectedLayer, onSelectLayer }: TimelineProps) {
+export function Timeline({ comp, status, state, player, selectedLayers, onSelectLayers }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -50,25 +81,42 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
   const pxPerFrame = fit * zoom;
   const laneWidth = duration * pxPerFrame;
 
-  const allSequences = useMemo(() => sequenceRows(data?.sequences ?? []), [data]);
-  const allLayers = useMemo(() => layerRows(data?.layers ?? []), [data]);
-
-  // Row numbers count the whole list, so a row keeps its number while the filter narrows it.
+  const data = status.state === 'ready' ? status.data : null;
+  // Grouped once per payload: the tree does not depend on what is open or searched.
+  const model = useMemo(() => (data ? buildTimeline(data.sequences, data.layers, data.fps) : null), [data]);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [details, setDetails] = useState(readDetails);
+  /** The row last clicked: a Sequence's group id is a path other Sequences share, so rows are told apart by this. */
+  const [clicked, setClicked] = useState<string | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
   const q = filter.trim().toLowerCase();
-  const sequences = useMemo(
-    () =>
-      allSequences
-        .map((row, index) => ({ row, number: index + 1 }))
-        .filter(({ row }) => !q || row.label.toLowerCase().includes(q)),
-    [allSequences, q],
-  );
-  const layers = useMemo(
-    () =>
-      allLayers
-        .map((row, index) => ({ row, number: index + 1 }))
-        .filter(({ row }) => !q || row.id.toLowerCase().includes(q) || row.type.toLowerCase().includes(q)),
-    [allLayers, q],
-  );
+  const rows = useMemo(() => (model ? visibleRows(model.roots, expanded, q, details) : []), [model, expanded, q, details]);
+  const toggle = (id: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleDetails = () =>
+    setDetails((on) => {
+      writeDetails(!on);
+      return !on;
+    });
+  /** A click on a row's name: the playhead goes to where the item first shows (unless it is on it already). */
+  const pick = (node: TimelineNode, seek: boolean) => {
+    if (seek) {
+      const target = seekTarget(node, state.frame);
+      if (target !== null) player.seek(target);
+    }
+    setClicked(node.id);
+    onSelectLayers(node.layerIds);
+  };
+
+  // Only the rows in (or near) view are drawn; before the scroller is measured, all of them.
+  const viewport = size.height;
+  const firstRow = viewport > 0 ? Math.max(0, Math.floor(Math.max(0, scrollTop - 36) / ROW_HEIGHT) - 8) : 0;
+  const lastRow = viewport > 0 ? Math.min(rows.length, firstRow + Math.ceil(viewport / ROW_HEIGHT) + 16) : rows.length;
 
   const tickStep = STEPS.find((step) => step * pxPerFrame >= MIN_TICK_SPACING) ?? STEPS[STEPS.length - 1]!;
   const ticks: number[] = [];
@@ -170,6 +218,16 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
           />
         </div>
 
+        <Button
+          variant={details ? 'secondary' : 'ghost'}
+          size="sm"
+          aria-pressed={details}
+          onClick={toggleDetails}
+          className="h-6 px-2 text-[11px]"
+        >
+          Show details
+        </Button>
+
         <div className="ml-auto flex w-64 items-center gap-1.5">
           <Button
             variant="ghost"
@@ -202,7 +260,11 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
         </div>
       </PanelHeader>
 
-      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto bg-[#141417]">
+      <div
+        ref={scrollerRef}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        className="relative min-h-0 flex-1 overflow-auto bg-[#141417]"
+      >
         {comp === null ? (
           <p className="text-muted-foreground p-6 text-center text-xs">No composition selected.</p>
         ) : (
@@ -220,9 +282,7 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
                 className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r px-2.5 text-[10px] font-medium tracking-wider"
                 style={{ width: LABEL_WIDTH }}
               >
-                <span className="w-4 text-center opacity-60">#</span>
-                <span>Layer Name</span>
-                <span className="ml-auto opacity-60">Type</span>
+                <span>Name</span>
               </div>
               <div
                 ref={rulerRef}
@@ -241,61 +301,77 @@ export function Timeline({ comp, data, state, player, selectedLayer, onSelectLay
               </div>
             </div>
 
-            <SectionLabel>Sequences</SectionLabel>
-            {sequences.length === 0 && <EmptyRow>No Sequences</EmptyRow>}
-            {sequences.map(({ row, number }) => {
-              const colors = layerColors('sequence');
-              return (
-                <Row
-                  key={row.key}
-                  data-testid="sequence-row"
-                  index={number}
-                  swatch={colors.swatch}
-                  label={row.label}
-                  title={`${row.label}: frames ${row.from}..${row.end - 1}`}
-                  depth={row.depth}
-                  selected={row.layer !== null && row.layer === selectedLayer}
-                  onSelect={row.layer !== null ? () => onSelectLayer(row.layer!) : undefined}
-                  laneWidth={laneWidth}
-                >
-                  <Bar from={row.from} to={row.end} pxPerFrame={pxPerFrame} className={cn('border', colors.bar)}>
-                    {row.label}
-                  </Bar>
-                </Row>
-              );
-            })}
-
-            <SectionLabel>Layers</SectionLabel>
-            {layers.length === 0 && <EmptyRow>No layers</EmptyRow>}
-            {layers.map(({ row, number }) => {
-              const colors = layerColors(row.type);
-              return (
-                <Row
-                  key={row.id}
-                  data-testid="layer-row"
-                  index={number}
-                  swatch={colors.swatch}
-                  label={row.id}
-                  badge={row.type}
-                  title={`${row.id} (${row.type})`}
-                  depth={row.depth}
-                  selected={row.id === selectedLayer}
-                  onSelect={() => onSelectLayer(row.id)}
-                  laneWidth={laneWidth}
-                >
-                  {row.ranges.map(([first, last]) => (
-                    <Bar key={first} from={first} to={last + 1} pxPerFrame={pxPerFrame} className={cn('border shadow-xs', colors.bar)}>
-                      {row.id}
-                    </Bar>
-                  ))}
-                </Row>
-              );
-            })}
+            {status.state === 'loading' && (
+              <TimelineNotice testId="timeline-loading" progress={status.total > 0 ? status.done / status.total : null}>
+                {status.total > 0
+                  ? `Reading the timeline: frame ${status.done} of ${status.total}`
+                  : 'Reading the timeline...'}
+              </TimelineNotice>
+            )}
+            {status.state === 'error' && (
+              <TimelineNotice testId="timeline-error" error>
+                {`Could not read the timeline: ${status.error.message}`}
+              </TimelineNotice>
+            )}
+            {status.state === 'ready' && rows.length === 0 && <EmptyRow>{q ? 'Nothing matches the search.' : 'No Sequences'}</EmptyRow>}
+            {status.state === 'ready' && rows.length > 0 && (
+              <>
+                <div aria-hidden="true" style={{ height: firstRow * ROW_HEIGHT }} />
+                {rows.slice(firstRow, lastRow).map(({ node, depth, expandable, expanded: open }) => {
+                  const isSequence = node.kind === 'sequence';
+                  const colors = layerColors(isSequence ? 'sequence' : node.type ?? 'group');
+                  const current = node.bars.some(([a, b]) => state.frame >= a && state.frame <= b);
+                  const selected =
+                    selectedLayers.length > 0 &&
+                    (clicked === node.id || (!isSequence && current && node.layerIds.some((id) => selectedLayers.includes(id))));
+                  const title = nodeTitle(node);
+                  return (
+                    <Row
+                      key={node.id}
+                      data-testid={isSequence ? 'sequence-row' : 'component-row'}
+                      swatch={colors.swatch}
+                      label={node.label}
+                      count={node.count}
+                      {...(details && secondLine(node) ? { detail: secondLine(node)! } : {})}
+                      {...(details && node.type ? { badge: node.type } : {})}
+                      title={title}
+                      depth={depth}
+                      expanded={expandable ? open : undefined}
+                      onToggle={() => toggle(node.id)}
+                      selected={selected}
+                      current={current}
+                      onSelect={() => pick(node, true)}
+                      laneWidth={laneWidth}
+                    >
+                      {node.bars.map(([a, b]) => (
+                        <Bar
+                          key={a}
+                          from={a}
+                          to={b + 1}
+                          pxPerFrame={pxPerFrame}
+                          title={title}
+                          onClick={() => pick(node, false)}
+                          className={cn(
+                            'border',
+                            colors.bar,
+                            !isSequence && 'opacity-80',
+                            current && 'opacity-100 ring-2 ring-white/60',
+                          )}
+                        >
+                          {node.count > 1 ? `${node.label} ×${node.count}` : node.label}
+                        </Bar>
+                      ))}
+                    </Row>
+                  );
+                })}
+                <div aria-hidden="true" style={{ height: (rows.length - lastRow) * ROW_HEIGHT }} />
+              </>
+            )}
 
             {/* Playhead */}
             <div
               data-testid="playhead"
-              className="pointer-events-none absolute inset-y-0 z-30 w-px bg-nle-blue shadow-[0_0_8px_rgba(38,128,235,0.8)]"
+              className="pointer-events-none absolute inset-y-0 z-30 w-0.5 bg-nle-blue shadow-[0_0_10px_rgba(38,128,235,0.9)]"
               style={{ left: LABEL_WIDTH + state.frame * pxPerFrame }}
             >
               <div className="absolute top-0 -left-[6px] h-[13px] w-[13px] bg-nle-blue [clip-path:polygon(0_0,100%_0,100%_58%,50%_100%,0_58%)]" />

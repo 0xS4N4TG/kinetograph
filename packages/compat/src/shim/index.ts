@@ -5,7 +5,7 @@ export { DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, is
 export type { CSSStyleDeclarationShim } from './element.js';
 export type { BoxInfo, HostElement, Overlay, Readback, Rect } from './host.js';
 export { overlayOf, propsWithOverlay, rawParentOf, setRawParent, effectiveParentOf, headHost, bodyHost } from './host.js';
-export { recordMutation, isRecordingMutations, setMutationSink } from './tree.js';
+export { recordMutation, isRecordingMutations, setMutationSink, insertChild, removeChild } from './tree.js';
 export type { HostMutation } from './tree.js';
 export { RangeShim } from './range.js';
 export {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { fitSize, formatDuration, formatTimecode, jobEta, jobPercent, parseTimecode, stepZoom } from '../src/lib/format';
+import { buildAgentMessage, relativePath, sequenceOf } from '../src/lib/agent-message';
 import { findLayer, hitTest, type InspectLayer } from '../src/lib/inspect';
+import { displayName, fullSource, secondLine, tooltip } from '../src/lib/names';
 import { layerRows, sequenceRows } from '../src/lib/tree';
 import { inspectFor, intro, introTimeline, job, layer } from './fixtures';
 
@@ -137,5 +139,120 @@ describe('hitTest', () => {
   it('falls back to the box without bounds, and skips a layer with neither', () => {
     expect(hitTest([shape('boxed', null, { box: rect(0, 0, 10, 10) })], 5, 5)?.id).toBe('boxed');
     expect(hitTest([shape('nowhere', null)], 5, 5)).toBeNull();
+  });
+});
+
+describe('agent message', () => {
+  const comp = { id: 'Intro', fps: 30 };
+  const title = layer('title', 'text', {
+    transform: { x: 0, y: 0, scale: 1.2, rotation: 0, anchorX: 0, anchorY: 0, rotateX: 0, rotateY: 0, z: 0 },
+    box: { x: 100.4, y: 200, width: 300, height: 80 },
+    bounds: null,
+    effects: ['dropShadow'],
+    opacity: 0.5,
+    text: { text: 'Hello', font: 'Inter', size: 64, width: 200, height: 80, maxWidth: null, lines: [] },
+  });
+  const base = { entry: '/repo/examples/launch/index.tsx', cwd: '/repo', comp, frame: 126, layer: title, timeline: introTimeline };
+
+  it('writes the path from the start directory, or as it is from elsewhere', () => {
+    expect(relativePath('/repo/a/b.tsx', '/repo')).toBe('a/b.tsx');
+    expect(relativePath('/repo/a/b.tsx', '/repo/')).toBe('a/b.tsx');
+    expect(relativePath('/other/b.tsx', '/repo')).toBe('/other/b.tsx');
+    expect(relativePath('/repository/b.tsx', '/repo')).toBe('/repository/b.tsx');
+  });
+
+  it('finds the innermost Sequence showing at the frame whose group holds the layer', () => {
+    expect(sequenceOf('title', 30, introTimeline)?.name).toBe('Title card');
+    // the same layer outside the Sequence's frames, and a layer in no Sequence's group
+    expect(sequenceOf('title', 100, introTimeline)).toBeNull();
+    expect(sequenceOf('title-group', 30, introTimeline)?.name).toBe('Title card');
+    expect(sequenceOf('bg', 30, introTimeline)?.name).toBe('Scene');
+    expect(sequenceOf('title', 30, null)).toBeNull();
+  });
+
+  it('names the layer, its Sequence, place and current values, and ends where the user types', () => {
+    const message = buildAgentMessage({ ...base, frame: 30 });
+    expect(message).toBe(
+      [
+        'In examples/launch/index.tsx, composition `Intro`, frame 30 (00:01:00):',
+        'change the text layer `title`, text "Hello", inside Sequence "Title card" (frames 10 to 69), at 100,200, 300\u00d780.',
+        'It looks like this now: font Inter 64, opacity 0.5, scale 1.2, effects dropShadow.',
+        '',
+        'Change: ',
+      ].join('\n'),
+    );
+  });
+
+  it('leaves out the text and the font of a text layer that has none at this frame', () => {
+    const empty = layer('$0.1', 'text', { text: { text: '', font: '', size: 1, width: 0, height: 66, maxWidth: null, lines: [] } });
+    const message = buildAgentMessage({ ...base, layer: empty, timeline: null });
+    expect(message).toContain('change the text layer `$0.1`, at 0,0, 100\u00d750.');
+    expect(message).not.toContain('font');
+  });
+
+  it('leaves out what it does not know, and says how to find a layer whose id is its place in the tree', () => {
+    const plain = layer('$0.3', 'shape', { box: null, bounds: null });
+    const message = buildAgentMessage({ ...base, layer: plain, timeline: null });
+    expect(message).toContain('change the shape layer `$0.3`.');
+    expect(message).not.toContain('Sequence');
+    expect(message).not.toContain('It looks like');
+    expect(message).toContain('find it by its text, size and position');
+  });
+});
+
+describe('names', () => {
+  const source = { file: 'examples/showcase/shots-a.tsx', line: 212, column: 7 };
+
+  it('shows the label, else a chosen id, else the kind of layer, never a path id', () => {
+    expect(displayName({ id: '$0.1.2', type: 'text', label: 'Title · “Hi”' })).toBe('Title · “Hi”');
+    expect(displayName({ id: 'bg', type: 'shape' })).toBe('bg');
+    expect(displayName({ id: '$0.1.2', type: 'shape' })).toBe('Shape');
+    expect(displayName({ id: '$3', type: 'scene3d' })).toBe('Scene3d');
+  });
+
+  it('writes the second line and the tooltip from the component and source', () => {
+    expect(secondLine({ component: 'Title', source })).toBe('Title · shots-a.tsx:212');
+    expect(secondLine({ source })).toBe('shots-a.tsx:212');
+    expect(secondLine({})).toBeUndefined();
+    expect(fullSource(source)).toBe('examples/showcase/shots-a.tsx:212:7');
+    expect(tooltip('Title', 'text', { component: 'Title', source })).toBe('Title (text)\ncomponent Title\nexamples/showcase/shots-a.tsx:212:7');
+    expect(tooltip('bg', 'shape', {})).toBe('bg (shape)');
+  });
+
+  it('puts labels, components and sources into the timeline rows', () => {
+    const sequences = sequenceRows([
+      { key: 'a', name: null, label: 'Opening', component: 'Main', source, from: 0, durationInFrames: 30, parent: null, layer: null },
+      { key: 'b', name: null, from: 30, durationInFrames: 30, parent: null, layer: null },
+    ]);
+    expect(sequences.map((r) => r.label)).toEqual(['Opening', 'Sequence']);
+    expect(sequences[0]).toMatchObject({ component: 'Main', source });
+    const layers = layerRows([{ id: '$0.0', type: 'text', parent: null, ranges: [[0, 9]], label: 'Title · “Hi”', component: 'Title', source }]);
+    expect(layers[0]).toMatchObject({ id: '$0.0', label: 'Title · “Hi”', component: 'Title', source });
+  });
+
+  it('tells the agent the name, component and JSX line instead of a place in the tree', () => {
+    const named = layer('$0.1.2', 'text', {
+      label: 'Title · “Hello”',
+      component: 'Title',
+      source,
+      box: { x: 0, y: 0, width: 10, height: 10 },
+      bounds: null,
+      text: { text: 'Hello', font: 'Inter', size: 64, width: 200, height: 80, maxWidth: null, lines: [] },
+    });
+    const sequence = { key: 's', name: null, label: 'Opening', source: { file: 'examples/showcase/index.tsx', line: 42, column: 5 }, from: 0, durationInFrames: 93, parent: null, layer: '$0' };
+    const timeline = { sequences: [sequence], layers: [{ id: '$0', type: 'group', parent: null, ranges: [[0, 92]] as [number, number][] }, { id: '$0.1.2', type: 'text', parent: '$0', ranges: [[0, 92]] as [number, number][] }] };
+    const message = buildAgentMessage({ entry: '/repo/examples/showcase/index.tsx', cwd: '/repo', comp: { id: 'Showcase', fps: 25 }, frame: 10, layer: named, timeline });
+    expect(message).toContain('change the text layer "Title \u00b7 \u201cHello\u201d", drawn by component `Title` (JSX at examples/showcase/shots-a.tsx:212:7), text "Hello"');
+    expect(message).toContain('inside Sequence "Opening" (frames 0 to 92, JSX at examples/showcase/index.tsx:42:5)');
+    expect(message).not.toContain('$0.1.2');
+    expect(message).not.toContain('find it by');
+  });
+
+  it('keeps an explicit id next to the label', () => {
+    const message = buildAgentMessage({
+      entry: '/repo/index.tsx', cwd: '/repo', comp: { id: 'C', fps: 30 }, frame: 0, timeline: null,
+      layer: layer('hero', 'shape', { label: 'Hero card', box: null, bounds: null }),
+    });
+    expect(message).toContain('change the shape layer "Hero card" (id `hero`).');
   });
 });

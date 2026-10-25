@@ -1,6 +1,7 @@
 // The studio server (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5): HTTP routes, the WebSocket, and the pieces they sit on. The project and
 // the renderer live in worker threads (`project.ts`, `render-queue.ts`); this thread only routes.
 
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -8,10 +9,15 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { cliVersion, CliError } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
+import { AgentBridge } from './agent-bridge.js';
+import { isInside } from './agent-fs.js';
+import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
 import { Project } from './project.js';
 import {
   encodeFrameMessage,
+  type AgentClientMessage,
+  type AgentInfo,
   type ClientMessage,
   type CompositionInfo,
   type FrameHeader,
@@ -104,6 +110,36 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   };
   const broadcast = (message: ServerMessage): void => {
     for (const ws of sockets) send(ws, message);
+  };
+
+  // The coding agent works in the directory the studio was started in, or the entry's own when that is somewhere else.
+  const agentCwd = options.agentCwd ?? (isInside(process.cwd(), entry) ? process.cwd() : dirname(entry));
+  const agents = availableAgents(options.agent);
+  // Whoever reaches the agent can have it edit files and run tools, so: a secret in the URL the studio opens, the same
+  // origin, one window that owns the conversation, and no agent at all on an address other computers can reach.
+  const token = randomBytes(32).toString('hex');
+  const agentOff =
+    !loopback && options.allowRemoteAgent !== true
+      ? 'The coding agent is off because the studio can be reached from other computers. Start it with --allow-remote-agent if you really want it on.'
+      : null;
+  let owner: WebSocket | null = null;
+  const bridge = new AgentBridge({
+    cwd: agentCwd,
+    allowed: agents.map((a) => a.command),
+    command: options.agent ?? agents[0]?.command ?? null,
+    // The state of the agent goes to every window; what it says and asks goes to the window that owns the conversation.
+    emit: (event) => {
+      if (event.kind === 'status') broadcast({ type: 'agent', event });
+      else if (owner) send(owner, { type: 'agent', event });
+    },
+    hasViewer: () => owner !== null && owner.readyState === owner.OPEN,
+    version: cliVersion(),
+  });
+  const tokenOk = (given: string | null | undefined): boolean => {
+    if (!given) return false;
+    const a = Buffer.from(given);
+    const b = Buffer.from(token);
+    return a.length === b.length && timingSafeEqual(a, b);
   };
 
   /** The composition `comp`, or `BUILD` before any good build and `NOT_FOUND` for an unknown id. */
@@ -206,7 +242,16 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const q = url.searchParams;
 
     if (method === 'GET' && path === '/api/project') {
-      const info: ProjectInfo = { entry, version: cliVersion(), buildId: project.buildId, buildError: project.buildError };
+      const info: ProjectInfo = { entry, cwd: process.cwd(), version: cliVersion(), buildId: project.buildId, buildError: project.buildError };
+      return json(res, 200, info);
+    }
+    if (method === 'GET' && path === '/api/agent') {
+      if (!tokenOk(req.headers['x-studio-token'] as string | undefined)) {
+        throw new StudioFailure('FORBIDDEN', 'the agent needs the studio token from the address the studio opened');
+      }
+      const info: AgentInfo = agentOff
+        ? { presets: [], command: null, cwd: agentCwd, disabled: agentOff }
+        : { presets: agents, command: bridge.currentCommand, cwd: agentCwd };
       return json(res, 200, info);
     }
     if (method === 'GET' && path === '/api/compositions') {
@@ -245,6 +290,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       if (comp === '') throw invalid('comp is required');
       known(comp);
       return json(res, 200, await project.timeline(comp, { ...baseProps, ...queryProps(q.get('props')) }));
+    }
+    if (method === 'GET' && path === '/api/timeline/progress') {
+      const comp = q.get('comp') ?? '';
+      if (comp === '') throw invalid('comp is required');
+      known(comp);
+      return json(res, 200, project.timelineProgressOf(comp, { ...baseProps, ...queryProps(q.get('props')) }));
     }
     if (method === 'GET' && path === '/api/renders') return json(res, 200, queue.list());
     if (method === 'POST' && path === '/api/renders') return json(res, 201, await createRender(await readBody(req)));
@@ -299,7 +350,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const wss = new WebSocketServer({ noServer: true });
   http.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://studio.invalid');
-    if (url.pathname !== '/ws' || !allowed(req)) {
+    if (url.pathname !== '/ws' || !allowed(req) || !tokenOk(url.searchParams.get('token'))) {
       socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
@@ -325,10 +376,53 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     }
   }
 
+  /** A message for the coding agent; a malformed one is answered with an error the panel shows. */
+  function agentMessage(ws: WebSocket, message: AgentClientMessage): void {
+    const bad = (text: string): void => send(ws, { type: 'agent', event: { kind: 'error', message: text } });
+    if (agentOff) return bad(agentOff);
+    const mine = owner === ws;
+    if (owner && owner.readyState === owner.OPEN && !mine) {
+      return bad('Another studio window is using the agent. Close it first, or use that window.');
+    }
+    // The first prompt or choice claims the conversation; answers and cancels need an owner, and it must be this window.
+    if (message.type === 'agent.prompt' || message.type === 'agent.select') owner = ws;
+    else if (!mine) return;
+    switch (message.type) {
+      case 'agent.prompt':
+        if (typeof message.text !== 'string' || message.text.trim() === '') return bad('Write a message for the agent first.');
+        if (message.image !== undefined && (typeof message.image.data !== 'string' || typeof message.image.mimeType !== 'string')) {
+          return bad('The picture is not valid.');
+        }
+        void bridge.prompt(message.text, typeof message.context === 'string' ? message.context : '', message.image);
+        return;
+      case 'agent.cancel':
+        void bridge.cancel();
+        return;
+      case 'agent.permission':
+        bridge.answerPermission(String(message.id), typeof message.optionId === 'string' ? message.optionId : null);
+        return;
+      case 'agent.select':
+        void bridge.select(typeof message.command === 'string' ? message.command : null);
+        return;
+      case 'agent.reset':
+        void bridge.reset();
+        return;
+      default:
+        return bad('unknown agent message');
+    }
+  }
+
   wss.on('connection', (ws) => {
     sockets.add(ws);
     frameState.set(ws, { busy: false });
-    ws.on('close', () => sockets.delete(ws));
+    ws.on('close', () => {
+      sockets.delete(ws);
+      // The conversation belongs to the window that began it: when that goes, the agent stops.
+      if (owner === ws) {
+        owner = null;
+        void bridge.reset();
+      }
+    });
     ws.on('error', () => ws.terminate());
     ws.on('message', (data, isBinary) => {
       let message: ClientMessage | undefined;
@@ -340,7 +434,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         } catch {
           throw invalid('the message is not valid JSON');
         }
-        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … } is understood');
+        if (isObject(parsed) && typeof parsed.type === 'string' && parsed.type.startsWith('agent.')) {
+          return agentMessage(ws, parsed as unknown as AgentClientMessage);
+        }
+        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … } and "agent.…" messages are understood');
         if (typeof parsed.requestId !== 'number') throw invalid('requestId must be a number');
         message = parsed as unknown as FrameRequest;
       } catch (error) {
@@ -352,6 +449,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       else void serveFrame(ws, message);
     });
     send(ws, { type: 'hello', version: cliVersion(), buildId: project.buildId, buildError: project.buildError });
+    bridge.announce();
   });
 
   project.on('reload', (buildId) => broadcast({ type: 'reload', buildId }));
@@ -389,7 +487,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     });
     http.listen(options.port ?? 3000, host, resolveListening);
   });
-  const url = `http://${displayHost(host)}:${(http.address() as AddressInfo).port}/`;
+  const url = `http://${displayHost(host)}:${(http.address() as AddressInfo).port}/?token=${token}`;
 
   try {
     await project.start();
@@ -408,6 +506,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       closing ??= (async () => {
         for (const state of throttle.values()) if (state.timer) clearTimeout(state.timer);
         await queue.close();
+        await bridge.close();
         for (const ws of sockets) ws.terminate();
         wss.close();
         await new Promise<void>((done) => {

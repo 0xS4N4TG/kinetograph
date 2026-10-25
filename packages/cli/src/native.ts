@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import type * as NativeApi from '@kinetographdev/native';
+import type { SourceLocation } from '@kinetographdev/scene';
 import { CliError } from './errors.js';
 
 export type Native = typeof NativeApi;
@@ -57,6 +58,10 @@ export interface InspectLayer {
   /** video, gif: the source time in seconds at the inspected frame (AUTHORING.md §11.1). */
   media?: { time: number };
   children?: InspectLayer[];
+  /** The studio adds these (never the addon): what a person calls the layer, the component that drew it, the JSX that made it. */
+  label?: string;
+  component?: string;
+  source?: SourceLocation;
 }
 
 export interface InspectResult {

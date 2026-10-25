@@ -99,32 +99,6 @@ impl<'a> Painter<'a> {
                 "a picture marker is not drawn",
             );
         }
-        for (name, what) in [
-            (
-                "--kg-text-stroke",
-                "-webkit-text-stroke is not drawn (text is filled only)",
-            ),
-            (
-                "--kg-webkit-text-stroke",
-                "-webkit-text-stroke is not drawn (text is filled only)",
-            ),
-            (
-                "--kg-webkit-text-stroke-width",
-                "-webkit-text-stroke is not drawn (text is filled only)",
-            ),
-            (
-                "--kg-paint-order",
-                "paint-order of text is not drawn (fill is always first)",
-            ),
-        ] {
-            if let Some(v) = self.kg_value(node, name)
-                && v != "normal"
-                && v != "0"
-                && v != "0px"
-            {
-                self.report(node, &name.replace("--kg-", ""), v, what);
-            }
-        }
         // Blurs past the limit of the blur effect are clamped.
         if style.get_effects().filter.0.iter().any(
             |f| matches!(f, style::values::generics::effects::Filter::Blur(r) if r.0.px() > 512.0),

@@ -63,6 +63,32 @@ impl LaidOutText {
             .collect()
     }
 
+    /// Where the glyphs can ink, as `[left, top, right, bottom]` in text-box space: each glyph's advance across and its
+    /// line's ascent above the baseline to its descent below. This reaches past the text box when the line box is
+    /// shorter than the font (`line-height: 1` under a descender), and a layer sized to the box alone would cut it.
+    /// `None` for no glyphs.
+    pub fn ink_extent(&self) -> Option<[f32; 4]> {
+        let mut out: Option<[f32; 4]> = None;
+        for run in &self.runs {
+            let Some(line) = self.lines.get(run.line) else { continue };
+            // A synthetic italic leans the top of the glyph right by its height times the tangent.
+            let lean = if run.skew > 0.0 { line.ascent * run.skew.to_radians().tan() } else { 0.0 };
+            for g in &run.glyphs {
+                let r = [
+                    g.x - run.embolden,
+                    g.y - line.ascent,
+                    g.x + g.advance + run.embolden + lean,
+                    g.y + line.descent,
+                ];
+                out = Some(match out {
+                    None => r,
+                    Some(o) => [o[0].min(r[0]), o[1].min(r[1]), o[2].max(r[2]), o[3].max(r[3])],
+                });
+            }
+        }
+        out
+    }
+
     /// The text box (`packages/cli/skills/kinetograph/references/SCENE.md`, "Clip paths"): `max_width`, or the
     /// widest line without one, by the height.
     pub fn box_size(&self, max_width: Option<f32>) -> (f64, f64) {
