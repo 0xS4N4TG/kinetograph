@@ -19,7 +19,7 @@ The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islan
 ## Open threads
 - [ ] Clean the 8 crates/core clippy lints
 - [ ] CLI should log which backend/device it uses (GPU Skia vs CPU Skia vs Vello)
-- [ ] Audio test off-by-one (squareA 11917 vs 11918); cli test tsc errors fixed in #22; scene test tsc errors (test/webgpu.test.ts:50-55) still on main
+- [ ] Audio test off-by-one (squareA 11917 vs 11918); cli test tsc errors fixed in #22; scene test tsc errors fixed in #25
 - [ ] 45 Skia "non-invertible transform" warnings on papercut ep 13 (unchecked)
 - [ ] Profile why launch film does not scale with workers
 - [ ] FUTURE (user asked 2026-10-25 to park it): scale-out rendering pipeline, in this order:
