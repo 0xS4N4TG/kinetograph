@@ -8,3 +8,4 @@
 
 ## 2026-10-25
 **Call:** 0.1.1 = Vulkan cap + island determinism + SVG font (+ datamosh if merged in time); GSAP goes to 0.1.2.
+- 2026-10-25: next release is 0.2.0, not 0.1.1 or 0.1.5: several features plus output changes; pre-1.0 minor bump is the convention.

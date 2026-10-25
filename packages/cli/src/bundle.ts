@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { familyFromModuleName } from '@kinetographdev/core/google-fonts';
@@ -154,6 +154,94 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   };
 }
 
+/** A package's `browser` map (object form) and the directory it sits in, found from a file inside the package; null when there is none. */
+const browserMaps = new Map<string, { root: string; map: Record<string, string | false> } | null>();
+function browserMapOf(dir: string): { root: string; map: Record<string, string | false> } | null {
+  const cached = browserMaps.get(dir);
+  if (cached !== undefined) return cached;
+  let found: { root: string; map: Record<string, string | false> } | null = null;
+  const file = join(dir, 'package.json');
+  if (existsSync(file)) {
+    try {
+      const json = JSON.parse(readFileSync(file, 'utf8')) as { browser?: unknown };
+      if (typeof json.browser === 'object' && json.browser !== null) found = { root: dir, map: json.browser as Record<string, string | false> };
+    } catch {
+      // A package.json that does not parse is no map.
+    }
+  } else if (dirname(dir) !== dir) {
+    found = browserMapOf(dirname(dir));
+  }
+  browserMaps.set(dir, found);
+  return found;
+}
+
+/**
+ * A package's `browser` map says which of its Node-only imports a browser leaves out (`"jsdom": false`) or swaps. The
+ * bundle runs on Node, so a map is not applied while its import resolves; but one that does not (Paper.js's optional
+ * `jsdom` and `canvas`, which a browser never has) is read as the package saying "not needed here": `false` bundles an
+ * empty module, a string its replacement. Only packages under `node_modules` are read.
+ */
+function browserFieldPlugin(): Plugin {
+  return {
+    name: 'kinetograph-browser-field',
+    setup(b) {
+      b.onResolve({ filter: /.*/ }, async (args) => {
+        if (args.pluginData?.kinetographBrowser || args.kind === 'entry-point' || !args.importer || !args.importer.includes(`${sep}node_modules${sep}`)) return undefined;
+        const found = browserMapOf(dirname(args.importer));
+        if (found === null) return undefined;
+        const tried = await b.resolve(args.path, { resolveDir: args.resolveDir, importer: args.importer, kind: args.kind, namespace: args.namespace, pluginData: { kinetographBrowser: true } });
+        if (tried.errors.length === 0) return tried;
+        const relative = args.path.startsWith('.') ? resolve(args.resolveDir, args.path) : null;
+        const spellings = relative === null ? [] : [relative, `${relative}.js`, `${relative}.json`, `${relative}${sep}index.js`];
+        for (const [key, to] of Object.entries(found.map)) {
+          const same = key.startsWith('.') ? spellings.includes(resolve(found.root, key)) : key === args.path;
+          if (!same) continue;
+          if (to === false) return { path: args.path, namespace: 'kinetograph-browser-empty' };
+          return b.resolve(to.startsWith('.') ? resolve(found.root, to) : to, { resolveDir: found.root, kind: args.kind, pluginData: { kinetographBrowser: true } });
+        }
+        return undefined;
+      });
+      b.onLoad({ filter: /.*/, namespace: 'kinetograph-browser-empty' }, () => ({ contents: 'module.exports = {};', loader: 'js' }));
+    },
+  };
+}
+
+/**
+ * The studio's `jsxDEV`: React 19 ignores the `__source` esbuild's dev transform passes, so this records it, keyed by
+ * the element's props object, for the reconciler to read back when it makes the host element (`origin.ts` in
+ * `@kinetographdev/react`, which shares the key). Only the studio's bundles use it; a render's bundle has no `__source`
+ * and no shim, so it is unchanged.
+ */
+const JSX_DEV_SHIM = `
+import * as real from 'react/jsx-dev-runtime';
+const sources = (globalThis[Symbol.for('kinetograph.jsxSources')] ??= new WeakMap());
+export const Fragment = real.Fragment;
+export function jsxDEV(type, config, key, isStatic, source, self) {
+  const element = real.jsxDEV
+    ? real.jsxDEV(type, config, key, isStatic, source, self)
+    : (isStatic ? real.jsxs : real.jsx)(type, config, key);
+  if (source && element && typeof element.props === 'object' && element.props !== null) sources.set(element.props, source);
+  return element;
+}
+`;
+
+function jsxDevPlugin(): Plugin {
+  return {
+    name: 'kinetograph-jsx-dev',
+    setup(b) {
+      b.onResolve({ filter: /^react\/jsx-dev-runtime$/ }, (args) => {
+        if (args.pluginData?.kinetographJsxDev === 'real') return undefined;
+        // The shim's own import is React's.
+        if (args.namespace === 'kinetograph-jsx-dev') {
+          return b.resolve(args.path, { resolveDir: CLI_DIR, kind: args.kind, pluginData: { kinetograph: true, kinetographJsxDev: 'real' } });
+        }
+        return { path: 'jsx-dev-runtime', namespace: 'kinetograph-jsx-dev' };
+      });
+      b.onLoad({ filter: /.*/, namespace: 'kinetograph-jsx-dev' }, () => ({ contents: JSX_DEV_SHIM, resolveDir: CLI_DIR, loader: 'js' }));
+    },
+  };
+}
+
 /**
  * The project's entry file always runs: the synthetic entry imports it only for its side effects (`registerRoot`), and
  * a package.json with `"sideEffects": [...]` that leaves it out (as Remotion's templates do) would let esbuild drop it.
@@ -168,8 +256,10 @@ function entryPlugin(absolute: string): Plugin {
 }
 
 /** The synthetic entry (packages/cli/skills/kinetograph/references/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
-export function syntheticEntry(entry: string): string {
+export function syntheticEntry(entry: string, dev = false): string {
   return [
+    // The studio's JSX shim makes its table of source locations before the project runs.
+    ...(dev ? [`import 'react/jsx-dev-runtime';`] : []),
     `import '@kinetographdev/core/determinism/install';`,
     `import '@kinetographdev/core/web/install';`,
     `import ${JSON.stringify(entry)};`,
@@ -206,10 +296,10 @@ export interface BundleResult {
 }
 
 /** The esbuild options that bundle the project at `absolute` (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
-function bundleOptions(absolute: string, unsupported?: UnsupportedImport[]): BuildOptions {
+function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev = false): BuildOptions {
   return {
     stdin: {
-      contents: syntheticEntry(absolute),
+      contents: syntheticEntry(absolute, dev),
       resolveDir: dirname(absolute),
       sourcefile: 'kinetograph-entry.ts',
       loader: 'ts',
@@ -222,12 +312,14 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[]): Bui
     platform: 'node',
     target: 'node22',
     jsx: 'automatic',
+    // The studio's builds record where each element's JSX is (see `JSX_DEV_SHIM`).
+    jsxDev: dev,
     sourcemap: 'inline',
     logLevel: 'silent',
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [entryPlugin(absolute), aliasPlugin(unsupported), cssPlugin()],
+    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), aliasPlugin(unsupported), browserFieldPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };
@@ -280,7 +372,7 @@ export async function watchProject(
   entry: string,
   onBuild: (build: ProjectBuild) => void,
 ): Promise<{ dispose(): Promise<void> }> {
-  const options = bundleOptions(resolve(entry));
+  const options = bundleOptions(resolve(entry), undefined, true);
   const notify: Plugin = {
     name: 'kinetograph-notify',
     setup(b) {

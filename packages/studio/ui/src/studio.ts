@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 
 import {
   ApiError,
+  type AgentClientMessage,
+  type AgentEvent,
   type CompositionInfo,
   type InspectResult,
   type ProjectInfo,
@@ -16,7 +18,9 @@ import {
   type StudioSocket,
   type TimelineData,
 } from '@/api';
+import { findLayer } from '@/lib/inspect';
 import { Player, type PlayerState } from '@/lib/player';
+import { layerName, remapSelection } from '@/lib/selection';
 
 function toStudioError(error: unknown): StudioError {
   if (error instanceof ApiError) return { code: error.code, message: error.message };
@@ -68,8 +72,18 @@ export interface Studio {
 
   timeline: TimelineStatus;
   inspect: InspectResult | null;
+  /** The layers picked in the preview, the scene tree or the timeline, in the order they were picked. */
+  selectedLayers: string[];
+  /** The first of `selectedLayers`, the one the details are shown for. */
   selectedLayer: string | null;
   selectLayer(id: string | null): void;
+  selectLayers(ids: string[]): void;
+
+  /** Calls `listener` with each event of the coding agent, and returns how to stop. */
+  onAgentEvent(listener: (event: AgentEvent) => void): () => void;
+  /** Sends a message to the coding agent; false when the connection is down. */
+  sendAgent(message: AgentClientMessage): boolean;
+  agentInfo(): ReturnType<StudioApi['agentInfo']>;
 
   renders: RenderJob[];
   startRender(request: Omit<RenderRequest, 'comp' | 'props'>): Promise<RenderJob>;
@@ -90,7 +104,16 @@ export function useStudio(api: StudioApi): Studio {
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
   const [timeline, setTimeline] = useState<TimelineStatus>({ state: 'loading', done: 0, total: 0 });
   const [inspect, setInspect] = useState<InspectResult | null>(null);
-  const [selectedLayer, selectLayer] = useState<string | null>(null);
+  const [selectedLayers, setSelectedLayers] = useState<string[]>([]);
+  const selectedLayer = selectedLayers[0] ?? null;
+  const selectLayer = useCallback((id: string | null) => setSelectedLayers(id === null ? [] : [id]), []);
+  const selectLayers = useCallback((ids: string[]) => setSelectedLayers(ids), []);
+  /** The names the selected layers had, to find them again when the project is rebuilt and their ids moved. */
+  const selectedNames = useRef(new Map<string, string>());
+  const selectedRef = useRef<string[]>([]);
+  selectedRef.current = selectedLayers;
+  const rebuilt = useRef(false);
+  const agentListeners = useRef(new Set<(event: AgentEvent) => void>());
   const [renders, setRenders] = useState<RenderJob[]>([]);
   /** Bumped by every `reload`: what the timeline and the scene tree show is from the old build. */
   const [reloads, setReloads] = useState(0);
@@ -141,6 +164,7 @@ export function useStudio(api: StudioApi): Studio {
 
   /** Fetches everything again from the server; the selection and the props stay. */
   const refresh = useCallback(() => {
+    rebuilt.current = true;
     setReloads((n) => n + 1);
     void loadCompositions();
     api.project().then(setProject, () => {});
@@ -175,6 +199,9 @@ export function useStudio(api: StudioApi): Studio {
           break;
         case 'render':
           setRenders((jobs) => upsertJob(jobs, message.job));
+          break;
+        case 'agent':
+          for (const listener of agentListeners.current) listener(message.event);
           break;
         case 'error':
           player.handleError(message.requestId, message.error);
@@ -239,7 +266,7 @@ export function useStudio(api: StudioApi): Studio {
 
   const selectComp = useCallback((id: string) => {
     setCompId(id);
-    selectLayer(null);
+    setSelectedLayers([]);
   }, []);
 
   // `comp` is a new object after each refetch; the player only acts when what it shows changed.
@@ -285,7 +312,20 @@ export function useStudio(api: StudioApi): Studio {
     let cancelled = false;
     const timer = setTimeout(() => {
       api.inspect(comp.id, frame, propsOverride).then(
-        (data) => !cancelled && setInspect(data),
+        (data) => {
+          if (cancelled) return;
+          setInspect(data);
+          // After a rebuild the ids may have moved: find the selected layers again by the names they had.
+          if (rebuilt.current) {
+            rebuilt.current = false;
+            const next = remapSelection(selectedRef.current, selectedNames.current, data.layers);
+            if (next.join('\0') !== selectedRef.current.join('\0')) setSelectedLayers(next);
+          }
+          for (const id of selectedRef.current) {
+            const found = findLayer(data.layers, id);
+            if (found) selectedNames.current.set(id, layerName(found));
+          }
+        },
         () => !cancelled && setInspect(null),
       );
     }, INSPECT_DELAY_MS);
@@ -294,6 +334,17 @@ export function useStudio(api: StudioApi): Studio {
       clearTimeout(timer);
     };
   }, [api, comp?.id, frame, moving, overrideKey, reloads]);
+
+  // ---- the coding agent ----
+
+  const onAgentEvent = useCallback((listener: (event: AgentEvent) => void) => {
+    agentListeners.current.add(listener);
+    return () => {
+      agentListeners.current.delete(listener);
+    };
+  }, []);
+  const agentInfo = useCallback(() => api.agentInfo(), [api]);
+  const sendAgent = useCallback((message: AgentClientMessage) => socketRef.current?.sendAgent(message) ?? false, []);
 
   // ---- renders ----
 
@@ -335,8 +386,13 @@ export function useStudio(api: StudioApi): Studio {
     resetProps,
     timeline,
     inspect,
+    selectedLayers,
     selectedLayer,
     selectLayer,
+    selectLayers,
+    onAgentEvent,
+    sendAgent,
+    agentInfo,
     renders,
     startRender,
     cancelRender,

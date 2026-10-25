@@ -39,12 +39,14 @@ These packages and APIs are supported. Gaps are listed in [Known issues](/docs/k
 
 - `@remotion/transitions`: all 19 presentations and `useTransitionProgress`.
 - `@remotion/light-leaks`, `@remotion/starburst`, `@remotion/sfx`, `zod-types`, `timeline-utils`, and `canvas` (Canvas 2D).
+- `<canvas>` with a `webgl` or `webgl2` context, on the GPU with no browser: fragment shaders, framebuffers, points with `gl_PointSize`, instancing, `blitFramebuffer`, `texSubImage2D` and `gl_VertexID`. p5.brush's standalone build draws as it does in Chrome (its strokes, hatching and fills each differ by under 0.1 of 255 levels on average from Chrome). Lines, renderbuffers and depth testing are not drawn: see [Known issues](/docs/known-issues/).
 - `@remotion/media-utils` audio: `getAudioData`, `useAudioData`, `useWindowedAudioData`, `getAudioDurationInSeconds`, `visualizeAudio` and `getWaveformPortion`. `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
 - `<Audio>` and `<Video>` from `@remotion/media`.
 - `toneFrequency` on `<Audio>` and `<Video>`, from 0.01 to 2. It changes the pitch and keeps the length.
 - `@remotion/media-parser` and `@remotion/webcodecs`: partly supported.
 - `@remotion/skia` and `@remotion/rive`: run through optional add-ons, with gaps.
 - GSAP (core, free plugins): a paused timeline that you seek to the frame's time. See [GSAP](#gsap).
+- `<Video datamosh>` is Kinetograph's own prop, not part of Remotion. See the [Datamosh guide](/docs/guides/datamosh/).
 
 Plain HTML and SVG elements can sit next to Kinetograph's own elements in the same tree. You don't switch compatibility on.
 
@@ -54,6 +56,7 @@ Plain HTML and SVG elements can sit next to Kinetograph's own elements in the sa
 - The entry file runs even when `package.json` has a `"sideEffects"` list that leaves it out, as Remotion's templates do.
 - `staticFile` reads `public/` next to the entry. If there is none, it reads `public/` next to the nearest `package.json`, which is Remotion's rule when the entry is in `src/`.
 - Fonts load from their files, whether you add them with `new FontFace(...)` and `document.fonts.add(face)` or with an `@font-face` rule. One file is kept for each family, weight and style. If a font is split by `unicodeRange`, the part covering basic Latin is used. WOFF and WOFF2 files are unpacked.
+- HTML text can have an outline: `-webkit-text-stroke` (and its width and colour longhands) is drawn with the same miter joins as Chrome, and `paint-order: stroke fill` puts the stroke under the fill, as caption styles do. Both work with `text-shadow` (the shadow is stroked too), transforms, opacity and `background-clip: text`.
 - Kinetograph reads no fonts from your system, so a render looks the same on every machine. If your project loads no font, text is drawn in DM Sans, a font that ships with Kinetograph, and the warning and `doctor` say so (`font-family`, "font not loaded; drawn with the built-in fallback"). SVG `<text>` is covered too.
 
 ### GSAP
@@ -81,6 +84,31 @@ useLayoutEffect(() => { tl.current?.seek(frame / fps); }, [frame, fps]);
 - A read of the layout that the engine can't answer is a warning, and GSAP gets the element's own style.
 - Not tested: `Flip`, `ScrollTrigger` and `Draggable`. They load, but nothing scrolls or is dragged in a render.
 
+## Libraries
+
+Third-party libraries run unchanged on the engine's DOM, as long as the frame is what a seek or the frame number says. Checked against Chrome stills at frames 0, 30 and 59 (mean per-channel difference, 0 to 255, in brackets).
+
+- **d3** (scale, shape, selection): d3 makes the paths and React draws them, or `d3-selection` appends to a ref, including `join()` and `order()` (under 0.2).
+- **rough.js**: the SVG and Canvas 2D generators (under 0.5).
+- **Paper.js**: `paper-full` on a canvas (under 0.2). The bundle reads a package's `browser` map for imports that don't resolve (Paper.js drops `jsdom` and `canvas` there).
+- **Chart.js**: line charts on a canvas (under 1.4). Load a font before the chart, or it uses the built-in one.
+- **Recharts**: SVG charts with `isAnimationActive={false}` (under 0.3). Pass a fixed `width` and `height`. Recharts draws its marks through `createPortal`, which places children into the element a ref gave and into `document.body`.
+- **visx**: shapes, scales and axes (under 0.5).
+- **anime.js** v4: build a paused timeline and `seek(ms)` it to the frame (under 0.03).
+- **Motion**: vanilla `animate()` with `controls.time = seconds` on a paused animation, and `motion.div` with style values (under 0.4). Colours come from Motion's own mixing, which differs a little from the browser's. See [Libraries that run their own frame loop](#libraries-that-run-their-own-frame-loop).
+- **Matter.js** and **Rapier** (`@dimforge/rapier2d-compat`, WASM embedded): step the world from the frame number (under 0.2). A `delayRender` opened while the module loads holds frame 0 like any other frame.
+- **`@remotion/motion-blur`, `layout-utils` and `captions`** (under 1.1).
+- **Bklit UI** (visx, d3 and Motion charts): layout, animation timing and text match Chrome. Colours do not yet: see [Known issues](/docs/known-issues/#svg-paint).
+
+Also available to libraries: `NodeList` and `HTMLCollection` as real classes, `HTMLElement` and `SVGElement` that tell the two apart, `compareDocumentPosition`, `document.defaultView`, `customElements`, `setAttributeNS` and its siblings, lookups of nodes appended to `document.body`, and SVG text `getBBox` and `getComputedTextLength` from the text engine.
+
+### Libraries that run their own frame loop
+
+`requestAnimationFrame` callbacks run once per frame with the frame's time, after the frame has rendered. A jump to a frame (a still, or a worker starting at frame 600) runs them through the frames it skips without rendering those, so a library that advances by the time between frames, such as Motion's mount animations, shows the same pixels in a still as in a render of every frame. Two limits:
+
+- Motion's frame loop clamps each step to 40 ms, so below 25 fps its animations run a little slow.
+- A scene that starts over (going back a frame) keeps the callbacks already asked for, because the library's own state outlives it. A loop of your own should cancel its `requestAnimationFrame` in the effect's cleanup.
+
 ## Layout of HTML content
 
 CSS lays out HTML content the same way a browser would, with a few rules to know:
@@ -88,7 +116,7 @@ CSS lays out HTML content the same way a browser would, with a few rules to know
 - A group of HTML elements is laid out as a box the size of the composition, as Remotion's root `div` is.
 - An `<AbsoluteFill>` or `<Sequence>` around HTML is an absolutely positioned column flex `div`, as in Remotion.
 - HTML inside a Kinetograph layer is laid out in the composition's box. It does not know the layer's own size.
-- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0.
+- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0. A `<GlslShader>` in the flow takes its `width` and `height` as a box, like an `<Image>`, and takes up that room.
 - Styles are read on every frame, so animation comes from your component re-rendering, as in Remotion. CSS `@keyframes` follow the frame's time.
 - A layer made from an HTML node takes its `id` attribute as its layer id if that is a valid id. Otherwise it gets where the node sits in the page, such as `$0.2`.
 
