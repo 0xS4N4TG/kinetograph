@@ -757,7 +757,21 @@ export interface GlslBlit {
   scissor?: [number, number, number, number];
 }
 
-export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw) | ({ op: 'blit' } & GlslBlit);
+/** `texSubImage2D` into a texture a framebuffer draws in: pixels over a rectangle of what the ops before it left. */
+export interface GlslUpload {
+  /** The target texture written. */
+  target: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Base64 RGBA8, straight alpha. */
+  pixels: string;
+  flipY?: boolean;
+  premultiply?: boolean;
+}
+
+export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw) | ({ op: 'blit' } & GlslBlit) | ({ op: 'upload' } & GlslUpload);
 
 /** What a WebGL context did: the programs, data and calls of a `glsl` layer. */
 export interface GlslContent {

@@ -390,12 +390,26 @@ describe('the recording WebGL context', () => {
       expect(refused(() => gl.clear(GL.COLOR_BUFFER_BIT))).toMatch(/RGBA/);
       expect(framebuffer.color).toBe(texture);
 
-      // Once drawn in, a texture is not edited from the page.
+      // Once drawn in, a texture is not mipmapped from the page.
       specify(GL.RGBA, null);
       gl.drawArrays(GL.TRIANGLES, 0, 3);
       gl.bindTexture(GL.TEXTURE_2D, texture);
       expect(refused(() => gl.generateMipmap(GL.TEXTURE_2D))).toMatch(/generateMipmap/);
-      expect(refused(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4)))).toMatch(/texSubImage2D/);
+    });
+
+    it('records texSubImage2D into a texture drawn in as an upload after the draws, at the offset', () => {
+      const { gl } = setup();
+      const { texture } = attach(gl, 4, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 1, 1, 2, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 3, 1, 2, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(8));
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      const ops = gl.content().ops;
+      expect(ops.map((op) => op.op)).toEqual(['draw', 'upload']);
+      expect(ops[1]).toMatchObject({ op: 'upload', x: 1, y: 1, width: 2, height: 1, flipY: true });
+      expect((ops[1] as { target: string }).target).toBe((ops[0] as { target: string }).target);
     });
   });
 

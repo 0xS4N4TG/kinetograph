@@ -134,6 +134,31 @@ pub enum GlslOp {
     /// `blitFramebuffer`: a rectangle of one buffer copied over a rectangle of
     /// another.
     Blit(Box<GlslBlit>),
+    /// `texSubImage2D` into a target texture: pixels written over a rectangle
+    /// of what the ops before it left there.
+    Upload(Box<GlslUpload>),
+}
+
+/// `texSubImage2D(TEXTURE_2D, 0, x, y, ...)` of a texture a framebuffer
+/// draws in. The rows count as the texture's do: the first is GL's bottom
+/// one.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslUpload {
+    /// The target texture written.
+    pub target: String,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    /// Base64 RGBA8, straight alpha, `width * height * 4` bytes.
+    pub pixels: String,
+    /// `UNPACK_FLIP_Y_WEBGL` was set.
+    #[serde(default)]
+    pub flip_y: bool,
+    /// `UNPACK_PREMULTIPLY_ALPHA_WEBGL` was set.
+    #[serde(default)]
+    pub premultiply: bool,
 }
 
 /// `blitFramebuffer(from..., to..., COLOR_BUFFER_BIT, filter)` between the

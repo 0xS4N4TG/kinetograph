@@ -1515,8 +1515,10 @@ export class WebGLContext {
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, ...rest: unknown[]): void {
     const texture = this.bound(target);
     if (texture === null) return;
-    if (level !== 0 || texture.pixels === null) throw new WebGLUnsupportedError('texSubImage2D into a texture from an image file, or above level 0');
-    if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('texSubImage2D into a texture a framebuffer drew in');
+    if (level !== 0) throw new WebGLUnsupportedError('texSubImage2D above level 0; call generateMipmap');
+    // A texture a framebuffer draws in is written by an op, after what was drawn before; any other is edited here.
+    const drawnIn = texture.drawnAt === texture.version;
+    if (!drawnIn && texture.pixels === null) throw new WebGLUnsupportedError('texSubImage2D into a texture made from an image file or a layer; upload the whole picture with texImage2D');
     let width: number;
     let height: number;
     let format: number;
@@ -1529,14 +1531,39 @@ export class WebGLContext {
       pixels = this.rgbaOf(width, height, format, source as ArrayBufferView);
     } else {
       const picture = pictureOf(rest[2]);
-      if (picture === null || picture.source.kind !== 'pixels') throw new WebGLUnsupportedError('texSubImage2D from anything but pixels');
+      if (picture === null) throw new WebGLUnsupportedError('texSubImage2D from this source; use a canvas, ImageData or an array of pixels');
+      const s = picture.source;
+      if (s.kind === 'pixels') {
+        pixels = new Uint8Array(Buffer.from(s.data, 'base64'));
+      } else if (s.kind === 'canvas') {
+        const drawn = this.options.rasterize?.(s) ?? null;
+        if (drawn === null) throw new WebGLUnsupportedError('texSubImage2D from a canvas here (the pixels of a canvas need the addon)');
+        pixels = drawn;
+      } else {
+        throw new WebGLUnsupportedError('texSubImage2D from an image file or a layer; upload the whole picture with texImage2D');
+      }
       width = picture.width;
       height = picture.height;
-      pixels = new Uint8Array(Buffer.from(picture.source.data, 'base64'));
     }
     if (xoffset < 0 || yoffset < 0 || xoffset + width > texture.width || yoffset + height > texture.height) return this.fail(GL.INVALID_VALUE);
+    if (drawnIn) {
+      this.begin();
+      this.ops.push({
+        op: 'upload',
+        target: this.registerTarget(texture),
+        x: xoffset,
+        y: yoffset,
+        width,
+        height,
+        pixels: toBase64(pixels),
+        ...(this.flipY ? { flipY: true } : {}),
+        ...(this.premultiply ? { premultiply: true } : {}),
+      });
+      return;
+    }
+    const held = texture.pixels!;
     for (let y = 0; y < height; y += 1) {
-      texture.pixels.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
+      held.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
     }
     texture.blank = false;
     texture.version += 1;

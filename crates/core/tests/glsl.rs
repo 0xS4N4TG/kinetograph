@@ -780,3 +780,67 @@ fn a_blit_within_one_buffer_is_refused() {
     ));
     assert!(error.contains("same buffer"), "{error}");
 }
+
+// ---- texSubImage2D into a target ----
+
+fn upload_op(target: &str, at: [u32; 2], size: [u32; 2], rgba: &[u8], flags: &str) -> String {
+    format!(
+        r#"{{"op": "upload", "target": "{target}", "x": {}, "y": {}, "width": {}, "height": {},
+            "pixels": "{}"{flags}}}"#,
+        at[0],
+        at[1],
+        size[0],
+        size[1],
+        b64(rgba)
+    )
+}
+
+#[test]
+fn an_upload_writes_pixels_over_what_the_target_holds_at_its_offset() {
+    // Blue everywhere, a 2 x 2 red patch at (2, 3), then a draw over it that keeps the
+    // blue: the patch is after the clear and before the second draw.
+    let red = [255u8, 0, 0, 255].repeat(4);
+    let mut all = vec![
+        r#"{"op": "clear", "color": [0, 0, 1, 1], "target": "t"}"#.to_string(),
+        upload_op("t", [2, 3], [2, 2], &red, ""),
+    ];
+    all.push(draw_in("s", [0, 0, 16, 16], &sampling("t")));
+    let frame = render(&layer_of(&[("s", SHOW)], &targets(&[("t", 16)]), &ops(&all)));
+    // GL's rows 3 and 4 of the texture are the canvas's rows 12 and 11.
+    assert_eq!(px(&frame, 2, 12), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 3, 11), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 4, 12), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 2, 10), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 0, 0), [0, 0, 255, 255]);
+}
+
+#[test]
+fn an_upload_honours_flip_y_and_premultiply_and_keeps_its_place_among_draws() {
+    // A 1 x 2 patch, red above green, flipped; half-transparent white premultiplied elsewhere.
+    let patch = [255u8, 0, 0, 255, 0, 255, 0, 255];
+    let all = vec![
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "target": "t"}"#.to_string(),
+        upload_op("t", [0, 0], [1, 2], &patch, r#", "flipY": true"#),
+        upload_op("t", [1, 0], [1, 1], &[255, 255, 255, 128], r#", "premultiply": true"#),
+        // Drawn after the uploads, over the lower half only.
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(r#""scissor": [2, 0, 14, 16], {}"#, fill([1.0, 1.0, 0.0, 1.0])),
+        )
+        .replace(r#""viewport""#, r#""target": "t", "viewport""#),
+        draw_in("s", [0, 0, 16, 16], &sampling("t")),
+    ];
+    let frame = render(&layer_of(
+        &[("f", FILL), ("s", SHOW)],
+        &targets(&[("t", 16)]),
+        &ops(&all),
+    ));
+    // Flipped: the green row is the texture's row 0 (canvas row 15), the red one row 1.
+    assert_eq!(px(&frame, 0, 15), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 0, 14), [255, 0, 0, 255]);
+    // Half-transparent white, placed over black in linear light.
+    near(px(&frame, 1, 15), [188, 188, 188, 255], 3);
+    // The draw covers what is right of x = 2, over the uploads' black.
+    assert_eq!(px(&frame, 5, 15), [255, 255, 0, 255]);
+}

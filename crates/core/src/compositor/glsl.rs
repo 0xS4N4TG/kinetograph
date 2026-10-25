@@ -61,6 +61,8 @@ struct Pass<'c> {
     target: Option<&'c str>,
     clear: Option<[f64; 4]>,
     draws: Vec<Prepared>,
+    /// A `texSubImage2D` instead of draws: x, y, width, height and the bytes.
+    upload: Option<([u32; 4], Vec<u8>)>,
 }
 
 struct Blit {
@@ -347,6 +349,7 @@ impl Compositor {
                 GlslOp::Clear { color, target } => (target.as_deref(), Some(*color)),
                 GlslOp::Draw(d) => (d.target.as_deref(), None),
                 GlslOp::Blit(b) => (b.target.as_deref(), None),
+                GlslOp::Upload(u) => (Some(u.target.as_str()), None),
             };
             if dead[i] {
                 continue;
@@ -354,12 +357,22 @@ impl Compositor {
             if let Some(id) = target {
                 self.glsl_target(&mut targets, content, id)?;
             }
-            if clear.is_some() || passes.last().is_none_or(|p| p.target != target) {
+            let upload = match op {
+                GlslOp::Upload(u) => Some(Self::glsl_upload(u, self.glsl_target(&mut targets, content, &u.target)?.size)?),
+                _ => None,
+            };
+            if clear.is_some()
+                || upload.is_some()
+                || passes
+                    .last()
+                    .is_none_or(|p| p.target != target || p.upload.is_some())
+            {
                 let first = started.insert(target);
                 passes.push(Pass {
                     target,
                     clear: clear.or_else(|| first.then(|| blank(target))),
                     draws: Vec::new(),
+                    upload,
                 });
             }
             let prepared = match op {
@@ -372,7 +385,7 @@ impl Compositor {
                     &mut targets,
                 )?,
                 GlslOp::Blit(blit) => self.glsl_copy(content, blit, size, &mut targets)?,
-                GlslOp::Clear { .. } => None,
+                GlslOp::Clear { .. } | GlslOp::Upload(_) => None,
             };
             if let Some(p) = prepared {
                 passes.last_mut().expect("pushed above").draws.push(p);
@@ -384,11 +397,38 @@ impl Compositor {
                 target: None,
                 clear: Some(blank(None)),
                 draws: Vec::new(),
+                upload: None,
             });
         }
 
         let canvas = self.glsl.target.as_ref().expect("made above");
         for pass in &passes {
+            if let Some(([x, y, w, h], bytes)) = &pass.upload {
+                let id = pass.target.expect("an upload names its target");
+                // The passes before it run first: a queue write lands before whatever is
+                // submitted after it, so what is recorded is sent now.
+                self.submit();
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &targets[id]._texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d { x: *x, y: *y, z: 0 },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    bytes,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(w * 4),
+                        rows_per_image: Some(*h),
+                    },
+                    wgpu::Extent3d {
+                        width: *w,
+                        height: *h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                continue;
+            }
             let (view, name) = match pass.target {
                 None => (&canvas.view, "glsl"),
                 Some(id) => (&targets[id].view, "glsl target"),
@@ -487,7 +527,8 @@ impl Compositor {
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
             targets.insert(
@@ -1310,6 +1351,46 @@ impl Compositor {
         drop(pass);
         drop(encoder);
         target
+    }
+
+    /// The pixels of a `texSubImage2D` as the texture holds them (rows turned
+    /// over, colour premultiplied, as the upload flags say), with where they
+    /// go. `size` is the target's.
+    fn glsl_upload(upload: &gl::GlslUpload, size: (u32, u32)) -> Result<([u32; 4], Vec<u8>)> {
+        let (w, h) = (upload.width, upload.height);
+        let fits = |at: u32, extent: u32, limit: u32| {
+            at.checked_add(extent).is_some_and(|end| end <= limit)
+        };
+        if w == 0 || h == 0 || !fits(upload.x, w, size.0) || !fits(upload.y, h, size.1) {
+            return Err(render_error(format!(
+                "a texSubImage2D of {w} x {h} at ({}, {}) does not fit the {} x {} texture",
+                upload.x, upload.y, size.0, size.1
+            )));
+        }
+        let mut rgba = base64::engine::general_purpose::STANDARD
+            .decode(&upload.pixels)
+            .map_err(|e| render_error(format!("a texSubImage2D's pixels are not base64: {e}")))?;
+        if rgba.len() != w as usize * h as usize * 4 {
+            return Err(render_error(format!(
+                "a texSubImage2D of {w} x {h} needs {} bytes of RGBA, got {}",
+                w as usize * h as usize * 4,
+                rgba.len()
+            )));
+        }
+        if upload.flip_y {
+            let row = w as usize * 4;
+            rgba = rgba.chunks(row).rev().flatten().copied().collect();
+        }
+        if upload.premultiply {
+            let (pixels, _) = rgba.as_chunks_mut::<4>();
+            for px in pixels {
+                let a = u32::from(px[3]);
+                for c in &mut px[..3] {
+                    *c = ((u32::from(*c) * a + 127) / 255) as u8;
+                }
+            }
+        }
+        Ok(([upload.x, upload.y, w, h], rgba))
     }
 
     /// `blitFramebuffer`: the source rectangle stretched over the destination
