@@ -26,6 +26,7 @@ Everything here is on `main` and not yet published to npm.
 
 ### Fixed
 
+- Scene colours take any CSS colour, not only hex: the 148 names (`white`), `rgb()`, `hsl()`, `hwb()`, `lab()`, `oklch()`, `color()`, with commas or spaces. `background: 'white'` was rejected with `colour "white" must start with '#'`. ([#30](https://github.com/0xS4N4TG/kinetograph/issues/30))
 - Machines with a Vulkan 1.4 driver no longer fall back to the CPU. ([#1](https://github.com/0xS4N4TG/kinetograph/issues/1), [#2](https://github.com/0xS4N4TG/kinetograph/pull/2))
 - A frame renders the same when the document was edited between frames: an inline box now sits on its baseline in an edited document as it does in a fresh one. ([#3](https://github.com/0xS4N4TG/kinetograph/pull/3))
 - SVG `<text>` inherits font family, size, weight and style from the HTML around the `<svg>`. ([#4](https://github.com/0xS4N4TG/kinetograph/pull/4))
