@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import type * as NativeApi from '@kinetographdev/native';
@@ -27,7 +27,16 @@ export function bundledFfmpeg(): string | undefined {
     const nativeDir = path.dirname(require.resolve('@kinetographdev/native/package.json'));
     const pkg = createRequire(path.join(nativeDir, 'package.json')).resolve(`@kinetographdev/native-${name}/package.json`);
     const binary = path.join(path.dirname(pkg), 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-    return existsSync(binary) ? binary : undefined;
+    if (!existsSync(binary)) return undefined;
+    // A package unpacked by a tool that drops the executable bit would fail with EACCES at the first render.
+    if (process.platform !== 'win32') {
+      try {
+        chmodSync(binary, 0o755);
+      } catch {
+        // Read-only install: it either has the bit already or the spawn reports it.
+      }
+    }
+    return binary;
   } catch {
     return undefined;
   }

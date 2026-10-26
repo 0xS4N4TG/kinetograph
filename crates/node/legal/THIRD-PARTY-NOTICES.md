@@ -25,6 +25,13 @@ encoding is the user's to arrange.
 VP8 and VP9 encoding and decoding use Google's libvpx 1.15.0, built from source (<https://github.com/webmproject/libvpx>,
 tag `v1.15.0`). Its licence and patent grant are in the libvpx `LICENSE` and `PATENTS` files at that tag.
 
+## The separate GPL ffmpeg program (`bin/ffmpeg`)
+
+Not part of the addon and not linked into it: `bin/ffmpeg` is a stand-alone FFmpeg 9.0.1 executable built with
+`--enable-gpl` and libx264 (GPL-2.0+), libx265 (GPL-2.0+) and libvpx (BSD-3-Clause). The addon runs it as a child
+process for H.264 and H.265 encoding. Its licence, sources and build script are described in `FFMPEG-LICENSE.md`; the
+GPL text is `COPYING.GPLv2`.
+
 ## Others
 
 The addon also links Skia (BSD-3-Clause), wgpu, Vello and the other Rust crates listed in `Cargo.lock` of the repository,

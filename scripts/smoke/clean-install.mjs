@@ -74,6 +74,26 @@ console.log(lines.join('\n'));
 if (process.env.GITHUB_STEP_SUMMARY) {
   fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Clean install, ${platform}\n\n${lines.map((l) => `- ${l}`).join('\n')}\n`);
 }
-const ok = run.status === 0 && fs.existsSync(out) && fs.statSync(out).size > 0 && Number(result.frames) === 30;
+let ok = run.status === 0 && fs.existsSync(out) && fs.statSync(out).size > 0 && Number(result.frames) === 30;
+
+// libx264 is not in the addon's LGPL ffmpeg: it comes from the GPL bin/ffmpeg of the platform package, as a child process.
+const x264Out = path.join(project, 'out-x264.mp4');
+const x264 = spawnSync(
+  process.execPath,
+  [path.join(project, 'node_modules/kinetograph/dist/cli.js'), 'render', 'index.tsx', '--comp', 'box', '-o', x264Out, '--encoder', 'libx264', '--json'],
+  { cwd: project, encoding: 'utf8' },
+);
+let x264Result = {};
+try {
+  x264Result = JSON.parse(x264.stdout);
+} catch {
+  console.error(`libx264 render printed no JSON.\n${tail(x264.stderr)}`);
+}
+const x264Ok = x264.status === 0 && fs.existsSync(x264Out) && fs.statSync(x264Out).size > 0 && Number(x264Result.frames) === 30 && x264Result.encoder === 'libx264';
+console.log(`libx264 (bundled ffmpeg): ${x264Ok ? 'ok' : 'FAILED'}`);
+if (process.env.GITHUB_STEP_SUMMARY) {
+  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `- libx264 by the bundled ffmpeg: ${x264Ok ? 'ok' : 'FAILED'}\n`);
+}
+ok = ok && x264Ok;
 fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(ok ? 0 : 1);

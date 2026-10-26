@@ -27,6 +27,8 @@ phase0/fframes/compare/
 
 # Node addon build output
 *.node
+# The GPL ffmpeg program built into each platform package (scripts/build-ffmpeg-gpl.sh)
+crates/node/npm/*/bin/
 
 # Licensed overlay packs, rebuilt by examples/launch/tools/assets.sh: local only
 examples/launch/public/fx/

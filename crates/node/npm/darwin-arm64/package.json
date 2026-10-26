@@ -9,7 +9,10 @@
     "kinetograph.darwin-arm64.node",
     "COPYING.LGPLv2.1",
     "OPENH264-LICENSE",
-    "THIRD-PARTY-NOTICES.md"
+    "THIRD-PARTY-NOTICES.md",
+    "bin/",
+    "FFMPEG-LICENSE.md",
+    "COPYING.GPLv2"
   ],
   "description": "Node-API addon exposing the Kinetograph renderer",
   "keywords": [
@@ -21,7 +24,7 @@
     "headless"
   ],
   "homepage": "https://github.com/0xS4N4TG/kinetograph#readme",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "SEE LICENSE IN LICENSE.md",
   "engines": {
     "node": ">=22"
   },
