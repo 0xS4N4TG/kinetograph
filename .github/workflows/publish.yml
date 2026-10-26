@@ -42,6 +42,22 @@ jobs:
 
       - run: npm ci
 
+      # The artifacts end up in the packages this job publishes with NPM_TOKEN, so only those of a native.yml run that
+      # built this very commit on main are used. No artifact binary is run in this job; native.yml smoke-tests them.
+      - name: Check the native run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.native_run_id }}
+        run: |
+          set -e
+          run=$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,event,headBranch,headSha,conclusion)
+          echo "$run"
+          test "$(echo "$run" | jq -r .workflowName)" = native
+          test "$(echo "$run" | jq -r .event)" = push
+          test "$(echo "$run" | jq -r .headBranch)" = main
+          test "$(echo "$run" | jq -r .headSha)" = "$GITHUB_SHA"
+          test "$(echo "$run" | jq -r .conclusion)" = success
+
       - uses: actions/download-artifact@v4
         with:
           pattern: bindings-*
@@ -59,7 +75,13 @@ jobs:
           npx napi artifacts --output-dir artifacts
           # The GPL ffmpeg program of each platform (bin/ffmpeg, bin/SOURCES.txt) rides in the same artifact; artifacts
           # lose the executable bit.
-          for a in artifacts/bindings-*; do cp -R "$a"/npm/. npm/; done
+          # Only the expected files are taken from each artifact, by name.
+          for p in darwin-arm64 linux-x64-gnu win32-x64-msvc; do
+            a=artifacts/bindings-$p/npm/$p/bin
+            mkdir -p "npm/$p/bin"
+            exe=ffmpeg; if [ "$p" = win32-x64-msvc ]; then exe=ffmpeg.exe; fi
+            cp "$a/$exe" "$a/SOURCES.txt" "npm/$p/bin/"
+          done
           chmod +x npm/darwin-arm64/bin/ffmpeg npm/linux-x64-gnu/bin/ffmpeg
           npm run legal
           npx napi pre-publish -t npm --skip-optional-publish --no-gh-release
@@ -80,7 +102,6 @@ jobs:
           # Each platform package carries the GPL ffmpeg program and the notice that goes with it.
           for d in crates/node/npm/*; do ls "$d"/bin/ffmpeg* "$d"/bin/SOURCES.txt "$d"/FFMPEG-LICENSE.md "$d"/COPYING.GPLv2; done
           test -x crates/node/npm/linux-x64-gnu/bin/ffmpeg
-          crates/node/npm/linux-x64-gnu/bin/ffmpeg -hide_banner -encoders | grep libx264
           du -sh crates/node/npm/*/bin
           test -f packages/studio/ui/dist/index.html
 
