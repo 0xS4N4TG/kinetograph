@@ -11,7 +11,8 @@
     "OPENH264-LICENSE",
     "THIRD-PARTY-NOTICES.md",
     "OFL-NOTO.txt",
-    "bin/",
+    "bin/ffmpeg",
+    "bin/SOURCES.txt",
     "FFMPEG-LICENSE.md",
     "COPYING.GPLv2"
   ],
