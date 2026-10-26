@@ -96,6 +96,10 @@ pub struct InspectText {
     pub height: f64,
     pub max_width: Option<f64>,
     pub lines: Vec<InspectLine>,
+    /// Characters no font (the layer's, then the bundled fallbacks) has a glyph for; they are drawn as the font's
+    /// missing-glyph box. Absent when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub missing_chars: Vec<char>,
 }
 
 /// Where in its file a video or GIF layer is.
@@ -355,6 +359,7 @@ impl Walk<'_> {
                     width: finite(f64::from(laid_out.width)),
                     height: finite(f64::from(laid_out.height)),
                     max_width: max_width.map(|w| finite(f64::from(w))),
+                    missing_chars: laid_out.missing_chars(text),
                     lines: laid_out
                         .lines
                         .iter()
@@ -1073,6 +1078,18 @@ mod tests {
         let b = title.layer_box.unwrap();
         assert_eq!((b.width, b.height), (300.0, text.height));
         assert!(text.width <= 300.0 && text.width > 0.0);
+    }
+
+    #[test]
+    fn text_reports_the_characters_no_font_has() {
+        let s = scene(json!([
+            { "id": "arrow", "type": "text", "text": "Germany \u{2192} Austria", "font": "DM Sans", "size": 32, "color": "#ffffff" },
+            { "id": "gap", "type": "text", "text": "a\u{378}b\u{378}", "font": "DM Sans", "size": 32, "color": "#ffffff" },
+        ]));
+        let result = inspect(&s, 0).unwrap();
+        // The arrow comes from a bundled fallback font; U+0378 is in none.
+        assert!(result.layers[0].text.as_ref().unwrap().missing_chars.is_empty());
+        assert_eq!(result.layers[1].text.as_ref().unwrap().missing_chars, ['\u{378}']);
     }
 
     #[test]

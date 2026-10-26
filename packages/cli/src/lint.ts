@@ -234,7 +234,8 @@ export function lintScene(scene: SceneJson, baseDir: string, exists: (path: stri
     // A text layer of glyph runs (the DOM painter's) names font files in its runs, not a registered key.
     const runs = (layer as { runs?: { src: string }[] }).runs;
     if (layer.type === 'text' && Array.isArray(runs) && runs.length > 0) {
-      for (const run of runs) asset(layer.id, 'font', run.src);
+      // `builtin:<name>` is a fallback font the engine ships (crates/core/src/fallback_fonts.rs), not a file.
+      for (const run of runs) if (!run.src.startsWith('builtin:')) asset(layer.id, 'font', run.src);
     } else if (layer.type === 'text' && !(layer.font in fonts)) {
       findings.push({
         rule: 'missing-font',

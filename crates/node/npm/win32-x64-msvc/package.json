@@ -9,7 +9,8 @@
     "kinetograph.win32-x64-msvc.node",
     "COPYING.LGPLv2.1",
     "OPENH264-LICENSE",
-    "THIRD-PARTY-NOTICES.md"
+    "THIRD-PARTY-NOTICES.md",
+    "OFL-NOTO.txt"
   ],
   "description": "Node-API addon exposing the Kinetograph renderer",
   "keywords": [

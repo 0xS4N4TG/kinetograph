@@ -1985,7 +1985,8 @@ impl Scene {
                 LayerKind::Text(t) if !t.runs.is_empty() => {
                     for run in &t.runs {
                         let path = self.base_dir.join(&run.src);
-                        if !path.is_file() {
+                        let bundled = crate::fallback_fonts::face(&run.src).is_some();
+                        if !bundled && !path.is_file() {
                             return Err(Error::Scene(format!(
                                 "layer {:?}: glyph run font {} is not a file",
                                 layer.id,

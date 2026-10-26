@@ -62,7 +62,7 @@ Render a frame of it with `npx kinetograph still scene.json 15 -o out/card-15.pn
 | `camera` | object | The viewpoint for 3D transforms. See [3D transforms and the camera](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first. The last layer is on top. |
 
-Paths in the scene, such as font files, image files and video files, are relative to the scene file. Only the fonts listed in `fonts` exist. There is no fallback to a system font.
+Paths in the scene, such as font files, image files and video files, are relative to the scene file. Only the fonts listed in `fonts` exist. There is no fallback to a system font; a character a font lacks falls back only to the symbol fonts that ship with Kinetograph.
 
 ## Animated numbers
 
@@ -123,7 +123,7 @@ A text layer names a font from `fonts`:
   "size": 64, "color": "#ffffff", "lineHeight": 1.2, "maxWidth": 600 }
 ```
 
-`\n` starts a new line. `maxWidth` sets the wrap width. `align` is `left`, `center` or `right`. There is one font per layer, with no fallback and no bidi.
+`\n` starts a new line. `maxWidth` sets the wrap width. `align` is `left`, `center` or `right`. There is one font per layer and no bidi. A character that font lacks falls back to the symbol fonts that ship with Kinetograph (arrows, check marks, maths signs, monochrome emoji); one that none has is drawn as a box, and `inspect` lists it as `missingChars`.
 
 An image layer draws a PNG or JPEG file:
 

@@ -35,6 +35,10 @@ impl<'a> Painter<'a> {
     /// The path of the file `font` was read from, if the request lists it.
     pub fn font_path(&self, font: &FontData) -> Option<String> {
         let blob_id = font.data.id();
+        // A bundled fallback font has no file: the glyph run names it `builtin:<name>`.
+        if let Some(builtin) = kinetograph_core::fallback_fonts::name_of_blob(blob_id) {
+            return Some(builtin);
+        }
         if let Some(p) = registered().lock().unwrap().get(&blob_id) {
             return Some(p.clone());
         }
