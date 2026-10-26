@@ -531,7 +531,7 @@ impl Translator {
             let mut p = Paint::default();
             p.set_blend_mode(SkBlend::DstIn);
             let layer_box = self.layer_box(layer);
-            p.set_shader(gradient_shader_for(&mask.gradient, layer_box, self.linear()));
+            p.set_shader(gradient_shader_for(&mask.gradient, layer_box, self.linear(), true));
             if mask.mode == MaskMode::Luminance {
                 p.set_color_filter(skia_safe::luma_color_filter::new());
                 self.stats.approx("luminance mask via sRGB luma");
@@ -1368,7 +1368,7 @@ impl Translator {
                 p.set_color4f(Color4f::new(c.r, c.g, c.b, c.a * a), None);
             }
             ResolvedPaint::Gradient(g) => {
-                p.set_shader(gradient_shader_for(g, layer_box, self.linear()));
+                p.set_shader(gradient_shader_for(g, layer_box, self.linear(), true));
             }
             ResolvedPaint::Image(i) => {
                 let Some(img) = self.image(&i.src) else {
@@ -1862,7 +1862,9 @@ fn is_matte_source(layers: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
 /// A gradient as a Skia shader, following `render::gradient_brush_in`: the span between the first and last stop is
 /// what repeats, and a gradient with no extent is its last stop's colour.
 /// `linear`: the surface holds linear light, but stops blend in sRGB-encoded values (as CSS does).
-fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bool) -> Option<Shader> {
+/// `premul`: stops blend in premultiplied alpha (CSS gradients, CSS Images 4); canvas 2D gradients blend unpremultiplied
+/// (HTML canvas spec, and Chrome and Firefox), so a stop of `transparent black` darkens the colour next to it.
+fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bool, premul: bool) -> Option<Shader> {
     let last = g.stops[g.stops.len() - 1];
     let solid = || Some(skia_safe::shaders::color(Color::from_argb(last.1.a, last.1.r, last.1.g, last.1.b)));
     let (lo, hi) = match g.extend {
@@ -1934,7 +1936,8 @@ fn gradient_shader_for(g: &ResolvedGradient, layer_box: Option<Rect>, linear: bo
     }
     let lm = mat(local);
     let lm = if local == Affine::IDENTITY { None } else { Some(&lm) };
-    let mut interp = gradient_shader::Interpolation::from(gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL);
+    let flags = if premul { gradient_shader::Flags::INTERPOLATE_COLORS_IN_PREMUL } else { gradient_shader::Flags::empty() };
+    let mut interp = gradient_shader::Interpolation::from(flags);
     if linear {
         interp.color_space = gradient_shader::interpolation::ColorSpace::SRGB;
     }
@@ -2146,7 +2149,7 @@ impl Translator {
         canvas.concat(&mat(matrix));
         let mut p = Paint::default();
         let layer_box = self.layer_box(layer);
-        p.set_shader(gradient_shader_for(&mask.gradient, layer_box, self.linear()));
+        p.set_shader(gradient_shader_for(&mask.gradient, layer_box, self.linear(), true));
         canvas.draw_paint(&p);
         self.stats.draws += 1;
         canvas.restore();

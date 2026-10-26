@@ -28,6 +28,7 @@ Everything here is on `main` and not yet published to npm.
 
 ### Fixed
 
+- Canvas 2D gradients blend their stops without premultiplying alpha, as Chrome does: a gradient from transparent green to opaque red keeps its green in the middle. CSS gradients still blend premultiplied. HyperFrames' `transitions-destruction` now draws as in Chrome.
 - `kinetograph doctor` counted frames twice in its summary ("nothing unsupported in 0 of 10 frames; with unsupported content: 10"). It now says "10 of 10 frames (100.0%) have unsupported content; 0 are clean", or "all N frames are clean".
 - Machines with a Vulkan 1.4 driver no longer fall back to the CPU. ([#1](https://github.com/0xS4N4TG/kinetograph/issues/1), [#2](https://github.com/0xS4N4TG/kinetograph/pull/2))
 - A frame renders the same when the document was edited between frames: an inline box now sits on its baseline in an edited document as it does in a fresh one. ([#3](https://github.com/0xS4N4TG/kinetograph/pull/3))

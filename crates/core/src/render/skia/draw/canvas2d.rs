@@ -284,7 +284,7 @@ impl Translator {
                 return None;
             }
             let g = ResolvedGradient { geometry, stops: stops.to_vec(), extend: Extend::Pad, units: Units::User, transform: Affine::IDENTITY };
-            gradient_shader_for(&g, None, linear)
+            gradient_shader_for(&g, None, linear, false)
         };
         let shader = match paint {
             CanvasPaint::Color { color } => {
