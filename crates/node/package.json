@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/native",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Node-API addon exposing the Kinetograph renderer",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {

@@ -1,6 +1,6 @@
 {
   "name": "kinetograph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agent CLI and MCP server for the Kinetograph video engine",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {
@@ -41,11 +41,11 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetographdev/audio": "0.1.0",
-    "@kinetographdev/compat": "0.1.0",
-    "@kinetographdev/core": "0.1.0",
-    "@kinetographdev/native": "0.1.0",
-    "@kinetographdev/scene": "0.1.0",
+    "@kinetographdev/audio": "0.2.0",
+    "@kinetographdev/compat": "0.2.0",
+    "@kinetographdev/core": "0.2.0",
+    "@kinetographdev/native": "0.2.0",
+    "@kinetographdev/scene": "0.2.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "esbuild": "0.28.2",
     "parse5": "8.0.1",
