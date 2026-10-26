@@ -59,8 +59,10 @@ export function formatReport(report: DoctorReport): string {
   }
   lines.push(
     `${report.comp}: frames ${report.first}..${report.last} (${plural(report.frames, 'frame')})`,
-    `nothing unsupported in ${report.cleanFrames} of ${report.frames} frames (${percent(report.cleanShare)}); ` +
-      `with unsupported content: ${report.unsupportedFrames}`,
+    report.unsupportedFrames === 0
+      ? `all ${plural(report.frames, 'frame')} are clean (nothing unsupported)`
+      : `${report.unsupportedFrames} of ${plural(report.frames, 'frame')} (${percent(1 - report.cleanShare)}) have unsupported content; ` +
+          `${report.cleanFrames} are clean`,
   );
   if (report.issues.length === 0) {
     lines.push(NOTHING_LEFT_OUT);
