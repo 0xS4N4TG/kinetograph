@@ -6,7 +6,8 @@
 // behaviour; the timing, the overlap arithmetic and the error messages are
 // checked against what the published package does (test/fixtures/transitions.json).
 
-import { Children, isValidElement, useId, type ReactElement, type ReactNode } from 'react';
+import { isValidElement, useId, type ReactElement, type ReactNode } from 'react';
+import { flattenChildren } from '../flatten-children.js';
 import { interpolate } from '../interpolate.js';
 import type { EasingFunction } from '../easing.js';
 import { measureSpring, spring, type SpringConfig } from '../spring.js';
@@ -181,7 +182,7 @@ function describe(child: unknown): string {
 function TransitionSeriesImpl({ children }: { children?: ReactNode }): ReactNode {
   const { fps } = useVideoConfig();
   const series = useId().replace(/[^A-Za-z0-9]/g, '');
-  const items = Children.toArray(children) as ReactNode[];
+  const items = flattenChildren(children);
 
   const scenes: ReactNode[] = [];
   const overlays: ReactNode[] = [];
