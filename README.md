@@ -59,14 +59,15 @@ three runs.
 
 ### Papercut explainers
 
-Three episodes of *Tape & Code*, the papercut explainer series of the Tiny Agent channel, written for Remotion and
-rendered by Kinetograph as they are. Same machine and settings as above.
+Three reels made with [papercut-explainer](https://github.com/0xS4N4TG/papercut-explainer), my Remotion library and
+agent skills for cut-paper explainer reels, rendered by Kinetograph without changes. Times are the fastest of
+three runs with `--concurrency 4` on the same Apple M4.
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/readme/papercut-13-mods.gif" alt="Tape & Code ep. 13: Mods"><br><b>Ep. 13: Mods</b><br><sub>988 frames · 1080×1920 · 33 s of video<br><b>rendered in 23 s</b></sub></td>
-    <td width="33%"><img src="docs/readme/papercut-12-mirofish.gif" alt="Tape & Code ep. 12: Mirofish"><br><b>Ep. 12: Mirofish</b><br><sub>879 frames · 1080×1920 · 29 s of video<br><b>rendered in 32 s</b></sub></td>
-    <td width="33%"><img src="docs/readme/papercut-10-war.gif" alt="Tape & Code ep. 10: The War Skill"><br><b>Ep. 10: The War Skill</b><br><sub>850 frames · 1080×1920 · 28 s of video<br><b>rendered in 75 s</b></sub></td>
+    <td width="33%"><img src="docs/readme/papercut-13-mods.gif" alt="Papercut explainer ep. 13: Mods"><br><b>Ep. 13: Mods</b><br><sub>988 frames · 1080×1920 · 33 s of video<br><b>rendered in 24 s</b></sub></td>
+    <td width="33%"><img src="docs/readme/papercut-12-mirofish.gif" alt="Papercut explainer ep. 12: Mirofish"><br><b>Ep. 12: Mirofish</b><br><sub>879 frames · 1080×1920 · 29 s of video<br><b>rendered in 31 s</b></sub></td>
+    <td width="33%"><img src="docs/readme/papercut-10-war.gif" alt="Papercut explainer ep. 10: The War Skill"><br><b>Ep. 10: The War Skill</b><br><sub>850 frames · 1080×1920 · 28 s of video<br><b>rendered in 55 s</b></sub></td>
   </tr>
 </table>
 
