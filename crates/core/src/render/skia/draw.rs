@@ -77,6 +77,7 @@ pub struct Translator {
     mosh_videos: HashMap<String, crate::video::VideoDecoder>,
     mosh_states: HashMap<String, Option<crate::datamosh::MoshState>>,
     gif_pics: HashMap<(String, usize), Option<Image>>,
+    #[allow(clippy::type_complexity)]
     lottie_last: HashMap<(String, u32, u32), ((u64, bool), Image)>,
     /// Effect classes to leave out (SKIA_SKIP=blur,shadow,inset,color,filtergraph,mask,matte,backdrop), to see where the GPU time goes.
     skip: Vec<String>,
@@ -740,13 +741,8 @@ impl Translator {
                     // A tile repeats over the whole filter region, not just where the layer draws.
                     if fg.nodes.iter().any(|n| matches!(n.op, FeOp::Tile)) {
                         let content = kurbo::Rect::new(content.left as f64, content.top as f64, content.right as f64, content.bottom as f64);
-                        match fg.plan(Some(content)) {
-                            Some(p) => {
-                                let reg = p.region;
-                                r = Rect::new(r.left.min(reg.x0 as f32), r.top.min(reg.y0 as f32), r.right.max(reg.x1 as f32), r.bottom.max(reg.y1 as f32));
-                            }
-                            None => return None,
-                        }
+                        let reg = fg.plan(Some(content))?.region;
+                        r = Rect::new(r.left.min(reg.x0 as f32), r.top.min(reg.y0 as f32), r.right.max(reg.x1 as f32), r.bottom.max(reg.y1 as f32));
                     }
                 }
                 ResolvedEffect::InsetShadow(_) | ResolvedEffect::ColorMatrix(_) | ResolvedEffect::GradientMap(_) | ResolvedEffect::Grain(_) | ResolvedEffect::BackdropBlur { .. } => {}
@@ -1287,6 +1283,7 @@ impl Translator {
         p
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_shape(
         &mut self,
         canvas: &Canvas,
@@ -2035,7 +2032,7 @@ impl Translator {
             p.set_blend_mode(comp.blend);
             canvas.save();
             canvas.reset_matrix();
-            canvas.draw_image_rect(&image, Some((&src, skia_safe::canvas::SrcRectConstraint::Strict)), dst, &p);
+            canvas.draw_image_rect(image, Some((&src, skia_safe::canvas::SrcRectConstraint::Strict)), dst, &p);
             canvas.restore();
             self.stats.draws += 1;
         } else if image.is_none() {

@@ -306,7 +306,7 @@ impl Translator {
             }
             CanvasPaint::Pattern { source, repeat_x, repeat_y, m } => {
                 let img = self.canvas_picture(source);
-                img.map(|img| {
+                img.and_then(|img| {
                     // Outside a pattern that does not repeat the canvas draws nothing.
                     let tile = |r: bool| if r { TileMode::Repeat } else { TileMode::Decal };
                     let local = mat(m.map_or(Affine::IDENTITY, Affine::new));
@@ -316,7 +316,6 @@ impl Translator {
                         &local,
                     )
                 })
-                .flatten()
             }
         };
         match shader {
