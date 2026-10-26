@@ -21,7 +21,7 @@ The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islan
 - [ ] CLI should log which backend/device it uses (GPU Skia vs CPU Skia vs Vello)
 - [ ] Audio test off-by-one (squareA 11917 vs 11918); cli test tsc errors fixed in #22; scene test tsc errors fixed in #25
 - [ ] 45 Skia "non-invertible transform" warnings on papercut ep 13 (unchecked)
-- [ ] Profile why launch film does not scale with workers
+- [ ] Profile why launch film does not scale with workers (~40 fps at c1-c4, far under the VT ~218 fps cap, so the encoder is likely NOT the limit; suspects: shared GPU, a main-thread step in frame prep). Run after the 0.2.0 fix agents finish; the concurrency work itself is targeted for 0.2.5 or 0.3.0 (user, 2026-10-26)
 - [ ] FUTURE (user asked 2026-10-25 to park it): scale-out rendering pipeline, in this order:
   1. Chunked rendering: split frames into ranges, render + encode each range separately (machine/container/Lambda), join losslessly with ffmpeg concat (same encoder settings, keyframe at each chunk start), mix audio once. Deterministic frames mean seams cannot drift.
   2. Local parallel CPU encode: libx264 per chunk instead of one VideoToolbox session (VT caps ~218 fps and does not scale with sessions; Linux/Windows have no VT).
