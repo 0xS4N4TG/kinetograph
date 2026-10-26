@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/motion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Motion for Kinetograph: ties Motion's frame loop to the frame, so animations resolve to the same state alone or in sequence",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {
@@ -36,7 +36,7 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "peerDependencies": {
-    "@kinetographdev/core": "^0.1.0",
+    "@kinetographdev/core": "^0.2.0",
     "motion": "^12.0.0 || ^14.0.0",
     "react": "^19.3.0"
   },

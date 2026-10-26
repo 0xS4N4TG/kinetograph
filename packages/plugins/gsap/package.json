@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/gsap",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "GSAP for Kinetograph: a paused timeline seeked to the frame, so a frame looks the same alone or in sequence",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {
@@ -35,7 +35,7 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "peerDependencies": {
-    "@kinetographdev/core": "^0.1.0",
+    "@kinetographdev/core": "^0.2.0",
     "gsap": "^3.12.0",
     "react": "^19.3.0"
   },

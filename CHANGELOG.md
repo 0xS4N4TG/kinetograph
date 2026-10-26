@@ -3,9 +3,7 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
-## 0.2.0 (unreleased)
-
-Everything here is on `main` and not yet published to npm.
+## 0.2.0 (2026-10-27)
 
 ### Added
 

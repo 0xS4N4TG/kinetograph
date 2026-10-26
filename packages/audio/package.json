@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/audio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Web Audio synthesis and mixing for Kinetograph, through node-web-audio-api",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {
@@ -36,8 +36,8 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetographdev/native": "0.1.0",
-    "@kinetographdev/scene": "0.1.0",
+    "@kinetographdev/native": "0.2.0",
+    "@kinetographdev/scene": "0.2.0",
     "node-web-audio-api": "2.2.0"
   },
   "engines": {
