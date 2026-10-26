@@ -31,18 +31,6 @@ export interface HfStylesheet {
   file: string;
 }
 
-/** A rule of the page's CSS whose selector reaches into an `<svg>` from outside it (`[data-composition-id="x"] .bar`). */
-export interface HfSvgRule {
-  /** The `@media` conditions the rule sits in: it applies where all of them hold for the composition's size. */
-  media?: string[];
-  selector: string;
-  declarations: [property: string, value: string][];
-  /** `[ids, classes, types]` of the selector, for the cascade's order. */
-  specificity: [number, number, number];
-  /** Position in the page's CSS, for rules of equal specificity. */
-  order: number;
-}
-
 export interface HfGoogleFont {
   family: string;
   /** Variants as the CSS API names them: `400`, `700`, `400i`. */
@@ -72,8 +60,6 @@ export interface HfPlan {
   /** Stylesheets in the order the document has them: `<style>`, `<link rel=stylesheet>`, those of mounted compositions (already scoped). */
   stylesheets: HfStylesheet[];
   scripts: HfScript[];
-  /** The rules the engine's SVG painter cannot match by itself (see `svg-style.ts`). */
-  svgRules: HfSvgRule[];
   googleFonts: HfGoogleFont[];
   /** The declared defaults and the host's values of each composition's variables (`getVariables()`), by composition id. */
   variables: Record<string, Record<string, unknown>>;

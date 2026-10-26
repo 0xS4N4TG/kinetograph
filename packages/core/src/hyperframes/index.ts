@@ -1,7 +1,7 @@
 // `@kinetographdev/core/hyperframes`: the runtime of a HyperFrames HTML project (the CLI's loader makes the plan).
 
 export { defineHyperframes, styleDeclarations } from './runtime.js';
-export type { HfNode, HfPlan, HfScript, HfStylesheet, HfGoogleFont, HfSvgRule } from './plan.js';
+export type { HfNode, HfPlan, HfScript, HfStylesheet, HfGoogleFont } from './plan.js';
 export {
   TimingResolver,
   isClipVisibleAt,
