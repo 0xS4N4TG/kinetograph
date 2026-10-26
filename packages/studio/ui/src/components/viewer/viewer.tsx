@@ -6,6 +6,7 @@ import { PanelHeader } from '@/components/shell/panel-header';
 import type { Tool } from '@/components/shell/tool-bar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { fitSize, stepZoom } from '@/lib/format';
+import { displayName } from '@/lib/names';
 import { findLayer, hitTest } from '@/lib/inspect';
 import { boxResult, boxSelect, clickSelection, layerRect, rectFrom, type Rect } from '@/lib/selection';
 import { useElementSize } from '@/lib/use-element-size';
@@ -314,8 +315,12 @@ export function Viewer({
                 <span className="absolute -bottom-1 -right-1 size-2 border border-white bg-rose-500" />
 
                 {/* Layer label pill */}
-                <span className="absolute -top-5 left-0 rounded-xs bg-rose-500 px-1.5 py-0.5 font-mono text-[9px] leading-none font-medium text-white shadow">
-                  {activeLayer.id}
+                <span
+                  className="pointer-events-auto absolute -top-5 left-0 rounded-xs bg-rose-500 px-1.5 py-0.5 font-mono text-[9px] leading-none font-medium text-white shadow"
+                  title={activeLayer.id}
+                  data-testid="selection-label"
+                >
+                  {displayName(activeLayer)}
                 </span>
               </div>
             )}
