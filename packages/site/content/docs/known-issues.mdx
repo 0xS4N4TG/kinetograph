@@ -23,6 +23,11 @@ Each item says what doesn't work and what you see instead. For what does work, s
 - An `async` `apply`, `onInit` or `onPaint` holds the frame until its promise settles (as `delayRender` does), so what it draws after an `await` is in the frame, the same alone as in a sequence. `onPaint` waits for `onInit`, and the cleanup `onInit` returns runs after `onPaint`. A rejection is reported for that frame and the picture is drawn without the stage. The stage runs once per frame; promises that wait on a timer need real time, not `setTimeout`, which the render's virtual clock does not advance.
 - An `<HtmlInCanvas>` inside another is not supported.
 
+### Libraries
+
+- Mermaid 12 draws nothing: `mermaid.render` throws inside the library (`Cannot read properties of null (reading 'firstChild')`) and the diagram is left empty. `doctor` does not catch it yet. Render the diagram to SVG ahead of time and use the file.
+- `monospace` text falls back to a proportional face, so code blocks (Shiki, Code Hike) look wider than in Chrome unless the project loads a monospace font, for example with `@remotion/google-fonts/JetBrainsMono`.
+
 ### Video and audio encoding and decoding in your own code
 
 `@remotion/webcodecs` is Remotion's wrapper around the browser's WebCodecs API, which encodes and decodes video and audio frames. Its encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. They need a video decoder and encoder in the addon, which is not built. Normal `<Video>` and `<Audio>` are not affected.

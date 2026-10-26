@@ -20,6 +20,8 @@ Publishing Kinetograph: npm packages, the native CI matrix (native.yml), publish
 - [ ] Bump to 0.2.0 (incl. packages/plugins/* in publish.yml), push, native.yml green, publish.yml dry run, real publish (confirm 0.2.0 with user first)
 - [ ] npm trusted publishing + delete NPM_TOKEN; GitHub release notes from CHANGELOG
 
+- [ ] 0.2.0 = what is on main now (2026-10-27, user). Deferred to a 0.2.x patch (e.g. 0.2.3): determinism default (0.2.0 ships it as documented in known-issues #26), monospace fallback font (Shiki/Code Hike), SVG gradients interpolated premultiplied (canvas fixed in #39; browsers interpolate SVG gradients unpremultiplied too), Mermaid blank + doctor misses it (documented in known-issues). Worker-scaling profile and concurrency work: 0.2.5 or 0.3.0. #27/#28 Windows paths wait for monkeyhut (fix/windows-paths).
+
 ## Key files
 - `.github/workflows/publish.yml` (inputs native_run_id, dry_run, tag; NPM_TOKEN secret)
 - `.github/workflows/native.yml` (push on all branches; builds 3 platforms + smoke)
