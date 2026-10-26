@@ -12,6 +12,7 @@ use std::ffi::c_int;
 use std::path::Path;
 use std::sync::{Mutex, Once, OnceLock};
 
+use crate::external::{self, ExternalEncoder};
 use ffmpeg::codec::{self, Flags as CodecFlags};
 use ffmpeg::format::{self, Pixel};
 use ffmpeg::software::scaling::{self, Flags as ScaleFlags};
@@ -56,12 +57,18 @@ const PROBED: [&str; 3] = ["h264_mf", "h264_nvenc", "h264_amf"];
 
 /// Whether the linked ffmpeg has an encoder called `name`. The hardware ones of `PROBED` also have to open (ffmpeg
 /// lists h264_nvenc on a machine with no NVIDIA GPU), so they count only if a small test encoder opens.
-pub fn has_encoder(name: &str) -> bool {
+pub fn has_linked_encoder(name: &str) -> bool {
     init();
     if encoder::find_by_name(name).is_none() {
         return false;
     }
     !PROBED.contains(&name) || opens(name)
+}
+
+/// Whether an encoder called `name` is available: in the linked ffmpeg, or in the separate ffmpeg program
+/// (`external`) that carries the GPL ones (libx264, libx265).
+pub fn has_encoder(name: &str) -> bool {
+    has_linked_encoder(name) || external::has_encoder(name)
 }
 
 /// Whether encoder `name` opens for a small yuv420p picture; asked once for each name.
@@ -226,7 +233,12 @@ impl Codec {
 
     /// The codec an ffmpeg encoder writes, if it is one of these.
     fn of_encoder(name: &str) -> Option<Codec> {
-        let id = encoder::find_by_name(name)?.id();
+        // The ones only the external ffmpeg has are not known to the linked one.
+        let id = match name {
+            "libx264" => codec::Id::H264,
+            "libx265" => codec::Id::HEVC,
+            _ => encoder::find_by_name(name)?.id(),
+        };
         [
             Codec::H264,
             Codec::H265,
@@ -328,7 +340,7 @@ impl Pix {
         }
     }
 
-    fn is_yuv(self) -> bool {
+    pub(crate) fn is_yuv(self) -> bool {
         self != Pix::Rgb8
     }
 
@@ -340,7 +352,7 @@ impl Pix {
     }
 
     /// Bytes in a row of each plane, and the rows in it, for a `w` x `h` picture (`w` and `h` even).
-    fn planes(self, w: usize, h: usize) -> Vec<(usize, usize)> {
+    pub(crate) fn planes(self, w: usize, h: usize) -> Vec<(usize, usize)> {
         match self {
             Pix::Yuv420p => vec![(w, h), (w / 2, h / 2), (w / 2, h / 2)],
             Pix::Yuv422p => vec![(w, h), (w / 2, h), (w / 2, h)],
@@ -865,6 +877,64 @@ pub fn rgba_to_planes(rgba: &[u8], width: u32, height: u32, pix: Pix) -> Result<
     })
 }
 
+/// Whether `settings` is written by the separate ffmpeg program rather than the linked one: its encoder is not linked.
+pub fn is_external(settings: &Resolved) -> bool {
+    !has_linked_encoder(&settings.encoder) && external::has_encoder(&settings.encoder)
+}
+
+/// A video file being written, by the linked ffmpeg (`VideoEncoder`) or, for encoders it lacks, the external one.
+pub enum FrameEncoder {
+    Linked(Box<VideoEncoder>),
+    External(Box<ExternalEncoder>),
+}
+
+impl FrameEncoder {
+    /// Opens `path`; see `VideoEncoder::create`.
+    pub fn create(
+        path: &Path,
+        width: u32,
+        height: u32,
+        fps: f64,
+        settings: &Resolved,
+    ) -> Result<FrameEncoder, String> {
+        if is_external(settings) {
+            ExternalEncoder::create(path, width, height, fps, settings)
+                .map(|e| FrameEncoder::External(Box::new(e)))
+        } else {
+            VideoEncoder::create(path, width, height, fps, settings)
+                .map(|e| FrameEncoder::Linked(Box::new(e)))
+        }
+    }
+
+    pub fn push(&mut self, rgba: &[u8]) -> Result<(), String> {
+        match self {
+            FrameEncoder::Linked(e) => e.push(rgba),
+            FrameEncoder::External(e) => e.push(rgba),
+        }
+    }
+
+    pub fn push_yuv(&mut self, planes: &[u8]) -> Result<(), String> {
+        match self {
+            FrameEncoder::Linked(e) => e.push_yuv(planes),
+            FrameEncoder::External(e) => e.push_yuv(planes),
+        }
+    }
+
+    pub fn push_repeat(&mut self) -> Result<(), String> {
+        match self {
+            FrameEncoder::Linked(e) => e.push_repeat(),
+            FrameEncoder::External(e) => e.push_repeat(),
+        }
+    }
+
+    pub fn finish(self) -> Result<u32, String> {
+        match self {
+            FrameEncoder::Linked(e) => e.finish(),
+            FrameEncoder::External(e) => e.finish(),
+        }
+    }
+}
+
 /// An open output file taking RGBA frames, one after another.
 pub struct VideoEncoder {
     output: format::context::Output,
@@ -940,7 +1010,9 @@ fn encoder_options(
             Quality::Default => video.set_bit_rate(default_bits),
             Quality::Bitrate(bits) => video.set_bit_rate(bits),
             // Only VideoToolbox maps a CRF to a quality; the others (openh264, Media Foundation, NVENC) take a bit rate.
-            Quality::Crf(_) if !is_videotoolbox(&settings.encoder) => video.set_bit_rate(default_bits),
+            Quality::Crf(_) if !is_videotoolbox(&settings.encoder) => {
+                video.set_bit_rate(default_bits)
+            }
             Quality::Crf(crf) => {
                 // SAFETY: `video` is a live, not yet opened context; these two fields are what ffmpeg's `-q:v` sets.
                 unsafe {
@@ -1627,6 +1699,41 @@ mod tests {
             select_encoder(None, true, only(&["libopenh264", "h264_videotoolbox"])).unwrap(),
             "h264_videotoolbox"
         );
+    }
+
+    #[test]
+    fn an_encoder_only_the_external_ffmpeg_has_is_chosen_like_a_linked_one() {
+        // `has` does not say where an encoder lives: libx264 beats libopenh264 whether it is linked or external,
+        // VideoToolbox still wins on macOS, and h265 and the explicit names resolve without being linked.
+        let external = |name: &str| matches!(name, "libx264" | "libx265" | "libopenh264" | "aac");
+        assert_eq!(select_encoder(None, false, external).unwrap(), "libx264");
+        let path = Path::new("out.mp4");
+        let plan = |settings: Settings, macos: bool, has: &dyn Fn(&str) -> bool| {
+            resolve(&settings, path, macos, has).unwrap()
+        };
+        let h265 = Settings {
+            codec: Some(Codec::H265),
+            ..Settings::default()
+        };
+        assert_eq!(plan(h265, true, &external).encoder, "libx265");
+        let named = Settings {
+            encoder: Some("libx265".into()),
+            ..Settings::default()
+        };
+        assert_eq!(plan(named, false, &external).codec, Codec::H265);
+        let with_vt = |name: &str| external(name) || name == VIDEOTOOLBOX;
+        assert_eq!(
+            plan(Settings::default(), true, &with_vt).encoder,
+            VIDEOTOOLBOX
+        );
+        let yuv444 = Settings {
+            pixel_format: Some("yuv444p".into()),
+            ..Settings::default()
+        };
+        assert_eq!(plan(yuv444, true, &with_vt).encoder, "libx264");
+        // Neither linked nor external: the existing error.
+        let msg = select_encoder(Some("libx264"), false, |_| false).unwrap_err();
+        assert!(msg.contains("\"libx264\""), "{msg}");
     }
 
     #[test]
