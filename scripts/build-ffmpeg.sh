@@ -13,11 +13,15 @@
 #   macOS    VideoToolbox (the system's) and libopenh264 (BSD, built here from source)
 #   Linux    libopenh264, and NVENC (the NVIDIA driver's library, loaded at run time, nothing linked)
 #   Windows  Media Foundation (h264_mf, system DLLs) and NVENC
+# VP8 and VP9 come from libvpx (BSD-3-Clause, built here from source) on macOS and Linux. Windows has no libvpx yet:
+# libvpx builds there only through its Visual Studio project generator, not through this MSYS2 script.
+# x264 is offered another way, as a separate GPL ffmpeg program (scripts/build-ffmpeg-gpl.sh); nothing GPL is linked.
 # The script ends by checking ffmpeg's own licence line.
 set -euo pipefail
 
 FFMPEG_REF=n9.0.1             # ffmpeg-sys-next 9.0.x targets ffmpeg 9.0
 OPENH264_REF=v2.6.0           # BSD-2-Clause
+LIBVPX_REF=v1.15.0            # BSD-3-Clause
 NVCODEC_REF=n13.0.19.1        # ffnvcodec headers, MIT; ffmpeg 9.0 wants API 13.0
 
 PREFIX=${1:?usage: build-ffmpeg.sh PREFIX}
@@ -68,6 +72,17 @@ if [ "$OS" = macos ] || [ "$OS" = linux ]; then
   # openh264.pc names the GNU C++ runtime; macOS has libc++.
   if [ "$OS" = macos ]; then sed -i '' 's/-lstdc++/-lc++/g' "$PREFIX/lib/pkgconfig/openh264.pc"; fi
   CONFIG+=(--enable-libopenh264 --pkg-config-flags=--static)
+
+  # libvpx: static, from source. x86 needs nasm (or yasm), which libvpx's configure finds itself.
+  if [ ! -f "$PREFIX/lib/libvpx.a" ]; then
+    clone https://github.com/webmproject/libvpx "$LIBVPX_REF" "$WORK/libvpx"
+    (cd "$WORK/libvpx" && ./configure --prefix="$PREFIX" --enable-pic --enable-static --disable-shared \
+        --enable-vp9-highbitdepth --disable-examples --disable-tools --disable-docs --disable-unit-tests \
+        >"$WORK/libvpx-configure.log" 2>&1 || { tail -30 "$WORK/libvpx-configure.log"; exit 1; }
+      make -j"$JOBS" >"$WORK/libvpx-make.log" 2>&1 || { tail -30 "$WORK/libvpx-make.log"; exit 1; }
+      make install >/dev/null)
+  fi
+  CONFIG+=(--enable-libvpx)
 fi
 
 case "$OS" in

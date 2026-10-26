@@ -20,6 +20,11 @@ The software H.264 encoder is Cisco's OpenH264 2.6.0, built from source (`OPENH2
 covers only the binaries Cisco itself distributes; this build is compiled from source, so any patent licence for H.264
 encoding is the user's to arrange.
 
+## libvpx (BSD-3-Clause), macOS and Linux builds
+
+VP8 and VP9 encoding and decoding use Google's libvpx 1.15.0, built from source (<https://github.com/webmproject/libvpx>,
+tag `v1.15.0`). Its licence and patent grant are in the libvpx `LICENSE` and `PATENTS` files at that tag.
+
 ## Others
 
 The addon also links Skia (BSD-3-Clause), wgpu, Vello and the other Rust crates listed in `Cargo.lock` of the repository,

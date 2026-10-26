@@ -15,7 +15,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   # The ffmpeg that scripts/build-ffmpeg.sh builds, and its cache key part.
-  FFMPEG_CACHE_VERSION: v2
+  FFMPEG_CACHE_VERSION: v3
 
 jobs:
   build:
@@ -52,7 +52,7 @@ jobs:
 
       # Build dependencies. Skia needs no source build: rust-skia publishes graphite + vulkan (Linux, Windows) and
       # graphite + metal (macOS) binaries. dotlottie's ThorVG is compiled with clang++, ffmpeg-sys-next's bindings with
-      # libclang, openh264 (x86) with nasm.
+      # libclang, openh264 and libvpx (x86) with nasm.
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
