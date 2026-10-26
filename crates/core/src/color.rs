@@ -33,20 +33,25 @@ impl Color {
         [lin(self.r) * a, lin(self.g) * a, lin(self.b) * a, a]
     }
 
-    /// Parses `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or `transparent`.
+    /// Parses a CSS colour: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` (read here), or anything else CSS Color
+    /// writes in an absolute colour: the 148 names, `transparent`, `rgb()`/`rgba()`, `hsl()`/`hsla()`, `hwb()`,
+    /// `lab()`, `lch()`, `oklab()`, `oklch()` and `color()`, with commas or spaces (`csscolorparser`). A scene has
+    /// no parent element, so `currentColor` has nothing to take and is an error. Colours outside sRGB are clamped
+    /// into it. `color-mix()` and relative colours are not read.
     pub fn parse(s: &str) -> Result<Color, String> {
         let s = s.trim();
-        if s.eq_ignore_ascii_case("transparent") {
-            return Ok(Color {
-                r: 0,
-                g: 0,
-                b: 0,
-                a: 0,
-            });
+        if !s.starts_with('#') {
+            if s.eq_ignore_ascii_case("currentcolor") {
+                return Err(
+                    "colour \"currentColor\" has no element to take its colour from in a scene".to_string(),
+                );
+            }
+            let [r, g, b, a] = csscolorparser::parse(s)
+                .map_err(|e| format!("colour {s:?} is not a CSS colour ({e})"))?
+                .to_rgba8();
+            return Ok(Color { r, g, b, a });
         }
-        let hex = s
-            .strip_prefix('#')
-            .ok_or_else(|| format!("colour {s:?} must start with '#'"))?;
+        let hex = &s[1..];
         if !hex.is_ascii() {
             return Err(format!("colour {s:?} has non-hex characters"));
         }
@@ -254,6 +259,96 @@ mod tests {
         assert!((half[0] - 0.2158605 * a).abs() < 1e-6);
         // Below the sRGB knee the curve is linear: 10 / 255 / 12.92.
         assert!((rgba("#0a0a0a")[0] - 10.0 / 255.0 / 12.92).abs() < 1e-9);
+    }
+
+    fn rgba8(s: &str) -> [u8; 4] {
+        let c = Color::parse(s).unwrap_or_else(|e| panic!("{s}: {e}"));
+        [c.r, c.g, c.b, c.a]
+    }
+
+    #[test]
+    fn parses_hex_forms() {
+        assert_eq!(rgba8("#fff"), [255, 255, 255, 255]);
+        assert_eq!(rgba8("#f008"), [255, 0, 0, 136]);
+        assert_eq!(rgba8("#336699"), [0x33, 0x66, 0x99, 255]);
+        assert_eq!(rgba8("#33669980"), [0x33, 0x66, 0x99, 0x80]);
+    }
+
+    #[test]
+    fn parses_every_named_colour() {
+        // Spot checks, then the whole table: 148 names, each a real colour (not an error).
+        assert_eq!(rgba8("white"), [255, 255, 255, 255]);
+        assert_eq!(rgba8("White"), [255, 255, 255, 255]);
+        assert_eq!(rgba8("rebeccapurple"), [0x66, 0x33, 0x99, 255]);
+        assert_eq!(rgba8("grey"), [128, 128, 128, 255]);
+        assert_eq!(rgba8("lightgoldenrodyellow"), [0xfa, 0xfa, 0xd2, 255]);
+        assert_eq!(rgba8("transparent"), [0, 0, 0, 0]);
+        let names = "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet \
+            brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue \
+            darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange \
+            darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise \
+            darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia \
+            gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory \
+            khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan \
+            lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue \
+            lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon \
+            mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue \
+            mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin \
+            navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen \
+            paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red \
+            rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue \
+            slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white \
+            whitesmoke yellow yellowgreen";
+        assert_eq!(names.split_whitespace().count(), 148);
+        for name in names.split_whitespace() {
+            assert_eq!(rgba8(name)[3], 255, "{name}");
+        }
+    }
+
+    #[test]
+    fn parses_functional_forms_with_commas_or_spaces() {
+        let red = [255, 0, 0, 255];
+        for s in [
+            "rgb(255, 0, 0)",
+            "rgb(255 0 0)",
+            "rgba(255,0,0,1)",
+            "rgb(255 0 0 / 100%)",
+            "rgb(100%, 0%, 0%)",
+            "hsl(0, 100%, 50%)",
+            "hsl(0 100% 50%)",
+            "hsla(0, 100%, 50%, 1)",
+            "hsl(0deg 100% 50% / 1)",
+            "hwb(0 0% 0%)",
+            "lab(54.29% 80.8 69.89)",
+            "oklch(62.8% 0.2577 29.23)",
+            "oklab(62.8% 0.2249 0.1258)",
+            "color(srgb 1 0 0)",
+        ] {
+            let got = rgba8(s);
+            assert!(
+                got.iter().zip(red).all(|(a, b)| a.abs_diff(b) <= 1),
+                "{s}: {got:?}"
+            );
+        }
+        assert_eq!(rgba8("rgba(0, 0, 255, 0.5)"), [0, 0, 255, 128]);
+        assert_eq!(rgba8("rgb(0 0 255 / 50%)"), [0, 0, 255, 128]);
+        assert_eq!(rgba8("hsla(240, 100%, 50%, 0.5)"), [0, 0, 255, 128]);
+        assert_eq!(rgba8("  RGB(1 2 3)  "), [1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn rejects_what_is_not_a_colour() {
+        assert!(Color::parse("notacolour").unwrap_err().contains("not a CSS colour"));
+        assert!(Color::parse("rgb(1, 2)").is_err());
+        assert!(Color::parse("").is_err());
+        assert!(Color::parse("currentColor").unwrap_err().contains("currentColor"));
+        assert!(Color::parse("#12").unwrap_err().contains("hex digits"));
+    }
+
+    #[test]
+    fn color_mix_is_an_error() {
+        // `color-mix()` is not read here (documented in SCENE.md). The DOM path (Stylo) mixes before a colour reaches the scene.
+        assert!(Color::parse("color-mix(in srgb, red, blue)").is_err());
     }
 
     /// `matrix` applied to a straight colour, with no clamping.
@@ -465,7 +560,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_colours() {
-        assert!(Color::parse("red").is_err());
+        assert!(Color::parse("redd").is_err());
         assert!(Color::parse("#12").is_err());
         assert!(Color::parse("#12345").is_err());
         assert!(Color::parse("#gg0000").is_err());

@@ -45,7 +45,7 @@ Any property typed `number` below accepts either a constant or a keyframe list:
 - Loading a scene rejects an unparsable path `d`, a non-positive text `size`, and a negative width, height, `maxWidth`
   or stroke width, at any keyframe.
 
-Colours are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or `transparent`, in sRGB with straight alpha.
+Colours are any absolute CSS colour, in sRGB with straight alpha: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, the 148 named colours (`white`, `rebeccapurple`), `transparent`, and `rgb()`/`rgba()`, `hsl()`/`hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()` and `color()` with commas or spaces (`rgb(255 0 0 / 50%)`). Colours outside sRGB are clamped into it. `currentColor`, `color-mix()` and relative colours are not read here (a React/DOM project resolves them before the scene).
 
 ## Layers
 

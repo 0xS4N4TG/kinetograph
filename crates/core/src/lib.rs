@@ -32,6 +32,7 @@ pub mod reuse;
 pub mod scene;
 pub mod scene3d;
 pub mod shader;
+pub mod svg_picture;
 pub mod text;
 pub mod turbulence;
 pub mod uniforms;

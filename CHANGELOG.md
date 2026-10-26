@@ -27,6 +27,8 @@ Everything here is on `main` and not yet published to npm.
 
 ### Fixed
 
+- SVG files draw as pictures: `<Img src={staticFile('shape.svg')}>`, `<img src>`, `background-image: url(x.svg)` and `image` layers. The picture is sized from the file's `width`, `height` and `viewBox` (300 x 150 with none) and painted at the size it is drawn at, so it is sharp at any scale. Text inside such a picture is left out and warned about, as a browser sets it in none of the page's fonts. A file that cannot be read is reported by `doctor`. ([#30](https://github.com/0xS4N4TG/kinetograph/issues/30))
+- Scene colours take any CSS colour, not only hex: the 148 names (`white`), `rgb()`, `hsl()`, `hwb()`, `lab()`, `oklch()`, `color()`, with commas or spaces. `background: 'white'` was rejected with `colour "white" must start with '#'`. ([#30](https://github.com/0xS4N4TG/kinetograph/issues/30))
 - An element that starts at `width: 0` (or any zero length) and is animated wider by a script, such as anime.js `width: [0, 100]`, now draws. `element.style` gave `0` back where a browser gives `0px`, so anime.js wrote a unitless `55.5` that CSS drops. Zero lengths now read back as `0px`.
 - `<TransitionSeries>` and `<Series>` accept children wrapped in a `React.Fragment`, nested ones too, so a `.map()` can emit a Transition and Sequence pair as Remotion allows. ([#31](https://github.com/0xS4N4TG/kinetograph/issues/31))
 - Machines with a Vulkan 1.4 driver no longer fall back to the CPU. ([#1](https://github.com/0xS4N4TG/kinetograph/issues/1), [#2](https://github.com/0xS4N4TG/kinetograph/pull/2))

@@ -3074,7 +3074,7 @@ mod tests {
                 r#"[{"type": "dropShadow", "blur": "wide"}]"#,
                 "did not match",
             ),
-            (r#"[{"type": "insetShadow", "color": "red"}]"#, "red"),
+            (r#"[{"type": "insetShadow", "color": "reddish"}]"#, "reddish"),
             (r#"[{"type": "innerGlow"}]"#, "innerGlow"),
         ] {
             let msg = error(&format!(r#""effects": {effects},"#));
@@ -3213,8 +3213,8 @@ mod tests {
         assert_eq!(scene.margin(), 24 + 48);
         let msg = error(r#""effects": [{"type": "glow"}],"#);
         assert!(msg.contains("radius"), "{msg}");
-        let msg = error(r#""effects": [{"type": "glow", "radius": 4, "color": "gold"}],"#);
-        assert!(msg.contains("gold"), "{msg}");
+        let msg = error(r#""effects": [{"type": "glow", "radius": 4, "color": "goldish"}],"#);
+        assert!(msg.contains("goldish"), "{msg}");
     }
 
     #[test]
@@ -4323,6 +4323,35 @@ mod tests {
     }
 
     #[test]
+    fn named_and_functional_css_colours_work_in_every_colour_field() {
+        let json = r##"{"width": 200, "height": 100, "fps": 30, "durationInFrames": 10,
+            "background": "white",
+            "layers": [{"id": "box", "type": "shape",
+              "shape": {"kind": "rect", "width": 100, "height": 50},
+              "fill": {"type": "linear", "x0": 0, "y0": 0, "x1": 100, "y1": 0,
+                       "stops": [{"offset": 0, "color": "tomato"}, {"offset": 1, "color": "hsl(240 100% 50% / 50%)"}]},
+              "stroke": {"color": "rgb(0 128 0)", "width": 2},
+              "effects": [{"type": "dropShadow", "color": "rgba(0, 0, 0, 0.25)"}]}]}"##;
+        let scene = Scene::from_json(json, PathBuf::new()).unwrap();
+        assert_eq!(scene.background, Color::parse("#ffffff").unwrap());
+        let LayerKind::Shape(shape) = &scene.layers[0].kind else {
+            panic!("not a shape");
+        };
+        assert_eq!(shape.stroke.as_ref().unwrap().color, Color::parse("#008000").unwrap());
+        let Some(Paint::Gradient(g)) = &shape.fill else {
+            panic!("not a gradient");
+        };
+        let stops = &g.stops;
+        assert_eq!(stops[0].color, Color::parse("#ff6347").unwrap());
+        assert_eq!(stops[1].color, Color::parse("#0000ff80").unwrap());
+        let text = text_scene(r#""rebeccapurple""#).unwrap();
+        let LayerKind::Text(t) = &text.layers[0].kind else {
+            panic!("not text");
+        };
+        assert!(matches!(t.color, Paint::Solid(c) if c == Color::parse("#663399").unwrap()));
+    }
+
+    #[test]
     fn rejects_bad_paints_with_a_clear_message() {
         let cases = [
             ("42".to_string(), "colour string"),
@@ -5114,10 +5143,10 @@ mod tests {
         // An empty list, and lists longer and shorter than the text, are fine.
         chars_scene("[]").unwrap();
         chars_scene(r#"[null, null, null, null, {"x": 1}]"#).unwrap();
-        let bad = chars_scene(r#"[{"color": "red"}]"#)
+        let bad = chars_scene(r#"[{"color": "reddish"}]"#)
             .unwrap_err()
             .to_string();
-        assert!(bad.contains("red") || bad.contains("colour"), "{bad}");
+        assert!(bad.contains("reddish") || bad.contains("colour"), "{bad}");
         let bad = chars_scene(r#"["x"]"#).unwrap_err().to_string();
         assert!(bad.contains("invalid type"), "{bad}");
     }
@@ -5585,11 +5614,16 @@ fn percent_decode(s: &str) -> Vec<u8> {
 }
 
 /// The pixel size of the image `src` (a file relative to `base_dir`, or a
-/// `data:` URL), from its header.
+/// `data:` URL), from its header. An SVG picture has no pixels: its natural
+/// size (`svg_picture`), rounded up.
 pub(crate) fn image_dimensions(
     base_dir: &Path,
     src: &str,
 ) -> std::result::Result<(u32, u32), String> {
+    if crate::svg_picture::is_svg(src) {
+        let (w, h) = crate::svg_picture::natural_size(base_dir, src)?;
+        return Ok((w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32));
+    }
     if let Some(bytes) = data_uri_bytes(src) {
         return image::ImageReader::new(std::io::Cursor::new(bytes))
             .with_guessed_format()
