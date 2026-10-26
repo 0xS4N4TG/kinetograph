@@ -154,7 +154,7 @@ describe('doctor <entry>', () => {
     const r = await cli('doctor', 'index.tsx');
     expect(r.code).toBe(0);
     expect(r.text).toContain('Main: frames 0..19 (20 frames)');
-    expect(r.text).toContain('nothing unsupported in 17 of 20 frames (85.0%); with unsupported content: 3');
+    expect(r.text).toContain('3 of 20 frames (15.0%) have unsupported content; 17 are clean');
     expect(r.text).toContain('1. div transform: skew is not supported');
     expect(r.text).toContain('frames 4..6 (3 frames)');
     expect(r.text).toContain('values skewX(10deg)');
@@ -226,9 +226,15 @@ describe('formatReport', () => {
     comp: 'Main', first: 0, last: 9, frames: 10, cleanFrames: 10, unsupportedFrames: 0, cleanShare: 1, issues: [],
   };
 
+  it('counts frames once when every frame has unsupported content', () => {
+    const text = formatReport({ ...base, cleanFrames: 0, unsupportedFrames: 10, cleanShare: 0 });
+    expect(text).toContain('10 of 10 frames (100.0%) have unsupported content; 0 are clean');
+    expect(text).not.toContain('nothing unsupported in');
+  });
+
   it('says so when nothing is unsupported', () => {
     expect(formatReport(base)).toBe(
-      'Main: frames 0..9 (10 frames)\nnothing unsupported in 10 of 10 frames (100.0%); with unsupported content: 0\n' +
+      'Main: frames 0..9 (10 frames)\nall 10 frames are clean (nothing unsupported)\n' +
         'nothing is left out: every frame is drawn in full by the engine',
     );
   });

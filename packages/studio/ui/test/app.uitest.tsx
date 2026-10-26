@@ -616,6 +616,9 @@ describe('viewer', () => {
     // Composition pixel (50, 25): on the title, which is inside its group and so on top of it.
     fireEvent.click(frame, { clientX: 150, clientY: 75 });
     expect(await screen.findByText('Properties: title')).toBeInTheDocument();
+    // The pill on the outline shows the layer's name (never a generated `$0.1.2` path), with the id as its tooltip.
+    expect(screen.getByTestId('selection-label')).toHaveTextContent('title');
+    expect(screen.getByTestId('selection-label')).toHaveAttribute('title', 'title');
     fireEvent.click(frame, { clientX: 1500, clientY: 75 });
     expect(await screen.findByText('Select a layer to see its resolved fields.')).toBeInTheDocument();
   });

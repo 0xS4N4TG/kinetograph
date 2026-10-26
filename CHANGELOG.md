@@ -9,6 +9,7 @@ Everything here is on `main` and not yet published to npm.
 
 ### Added
 
+- `kinetograph render` and `still` print which renderer draws (`renderer: Skia GPU (Metal)`, `Skia CPU (no GPU found)` or `Skia CPU (KINETOGRAPH_SKIA_CPU=1)`), and `doctor` with no entry lists it too. The addon's `Renderer` has a `backend()` method for it.
 - `libx264` and `libx265` in the npm packages. The platform packages (`@kinetographdev/native-<platform>`) now carry a separate GPL `ffmpeg` program in `bin/` (x264, x265 and libvpx; the addon itself still links only an LGPL ffmpeg), and the addon runs it as a child process for the encoders it lacks. H.264 now defaults to libx264 where there is no hardware encoder, ahead of libopenh264. `KINETOGRAPH_FFMPEG` points at another ffmpeg. The addon's ffmpeg also gained libvpx (VP8, VP9) on macOS and Linux. See `/docs/ffmpeg-license/`.
 - `<Video datamosh>`: smear one shot into the next, using the video's own motion vectors. See the Datamosh guide on the site at `/docs/guides/datamosh/`. ([#5](https://github.com/0xS4N4TG/kinetograph/pull/5))
 - GSAP support, including the free plugins (SplitText, MotionPath, DrawSVG, TextPlugin, Flip). Build a paused timeline and seek it to each frame. See `/docs/compat/#gsap`. ([#7](https://github.com/0xS4N4TG/kinetograph/pull/7))
@@ -27,6 +28,8 @@ Everything here is on `main` and not yet published to npm.
 
 ### Fixed
 
+- Canvas 2D gradients blend their stops without premultiplying alpha, as Chrome does: a gradient from transparent green to opaque red keeps its green in the middle. CSS gradients still blend premultiplied. HyperFrames' `transitions-destruction` now draws as in Chrome.
+- `kinetograph doctor` counted frames twice in its summary ("nothing unsupported in 0 of 10 frames; with unsupported content: 10"). It now says "10 of 10 frames (100.0%) have unsupported content; 0 are clean", or "all N frames are clean".
 - SVG files draw as pictures: `<Img src={staticFile('shape.svg')}>`, `<img src>`, `background-image: url(x.svg)` and `image` layers. The picture is sized from the file's `width`, `height` and `viewBox` (300 x 150 with none) and painted at the size it is drawn at, so it is sharp at any scale. Text inside such a picture is left out and warned about, as a browser sets it in none of the page's fonts. A file that cannot be read is reported by `doctor`. ([#30](https://github.com/0xS4N4TG/kinetograph/issues/30))
 - Scene colours take any CSS colour, not only hex: the 148 names (`white`), `rgb()`, `hsl()`, `hwb()`, `lab()`, `oklch()`, `color()`, with commas or spaces. `background: 'white'` was rejected with `colour "white" must start with '#'`. ([#30](https://github.com/0xS4N4TG/kinetograph/issues/30))
 - An element that starts at `width: 0` (or any zero length) and is animated wider by a script, such as anime.js `width: [0, 100]`, now draws. `element.style` gave `0` back where a browser gives `0px`, so anime.js wrote a unitless `55.5` that CSS drops. Zero lengths now read back as `0px`.

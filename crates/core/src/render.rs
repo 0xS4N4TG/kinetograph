@@ -462,10 +462,8 @@ impl Renderer {
     /// With frame reuse on, a frame equal to the one started just before it
     /// is not drawn (`set_frame_reuse`, `PendingFrame::is_repeat`).
     pub fn start_frame(&mut self, frame: u32) -> Result<PendingFrame> {
-        if crate::profile::passes() {
-            if !self.compositor.is_timing_passes() {
-                self.compositor.set_pass_timing(true);
-            }
+        if crate::profile::passes() && !self.compositor.is_timing_passes() {
+            self.compositor.set_pass_timing(true);
         }
         let timer = crate::profile::start();
         let resolved = self.scene.resolve_with_text(frame, &mut self.text)?;

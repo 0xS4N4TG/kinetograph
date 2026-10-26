@@ -77,6 +77,9 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
     }
   }
   class Renderer {
+    backend(): string {
+      return 'Skia GPU (Metal)';
+    }
     still(scene: string, frame: number, baseDir?: string | null): Buffer {
       calls.still.push({ scene: JSON.parse(scene), frame, baseDir });
       return solidPng(4, 4, [frame % 256, 0, 0, 255]);

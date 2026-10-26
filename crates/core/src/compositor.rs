@@ -928,6 +928,7 @@ impl Compositor {
 
     /// Skia's output in a scene that blends in sRGB: premultiplied, sRGB-encoded Rgba8 that drew the box `area` of the canvas from the
     /// texture's top left corner (a scene that blends in sRGB).
+    #[allow(clippy::wrong_self_convention)]
     pub(crate) fn from_skia_srgb(&mut self, skia_output: &wgpu::TextureView, area: PixelRect, region: PixelRect) -> Tex {
         let target = self.target(region);
         let input = Input {
@@ -941,6 +942,7 @@ impl Compositor {
 
     /// The whole canvas texture from `skia_output`, a texture of its size that Skia drew (`render/skia.rs`): premultiplied,
     /// and either Rgba8 holding sRGB-encoded values or, if `linear`, Rgba16Float in linear light.
+    #[allow(clippy::wrong_self_convention)]
     pub(crate) fn from_skia(&mut self, skia_output: &wgpu::TextureView, linear: bool) -> Tex {
         let target = self.target_full(self.whole());
         let input = Input {

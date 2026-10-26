@@ -91,6 +91,21 @@ fn a_linear_gradient_runs_between_its_stops() {
     assert!(left < 40 && right > 215, "{left} {right}");
 }
 
+/// Canvas 2D gradients blend their stops without premultiplying alpha (HTML canvas spec; Chrome and Firefox do), unlike
+/// CSS gradients (CSS Images 4): half way from transparent green to opaque red is a half-transparent (0.5, 0.5, 0), so
+/// some green is left over black. Premultiplied, it would be (0.5, 0, 0) at half alpha, with no green at all.
+#[test]
+fn a_gradient_between_two_alphas_blends_unpremultiplied() {
+    let frame = render(
+        r##"[{"op": "fill", "path": "M0 0H16V16H0Z",
+              "paint": {"type": "linear", "x0": 0, "y0": 0, "x1": 16, "y1": 0,
+                        "stops": [[0, "#00ff0000"], [1, "#ff0000ff"]]}}]"##,
+    );
+    let mid = px(&frame, 8, 8);
+    assert!(mid[1] > 40, "green is left at the middle: {mid:?}");
+    assert!(mid[0] > 40, "{mid:?}");
+}
+
 #[test]
 fn text_draws_with_the_scenes_font() {
     let frame = render(

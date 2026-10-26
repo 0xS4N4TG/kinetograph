@@ -745,6 +745,12 @@ impl Renderer {
         })
     }
 
+    /// Which renderer draws: "Skia GPU (Metal)", "Skia CPU (no GPU found)" or "Skia CPU (KINETOGRAPH_SKIA_CPU=1)".
+    #[napi]
+    pub fn backend(&self) -> Result<String> {
+        Ok(self.shared.lock().backend_description())
+    }
+
     /// One frame as a PNG.
     #[napi]
     pub fn still(
