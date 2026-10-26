@@ -14,8 +14,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The ffmpeg that scripts/build-ffmpeg.sh builds, and its cache key part.
-  FFMPEG_CACHE_VERSION: v2
+  # The ffmpegs that scripts/build-ffmpeg.sh (LGPL, linked into the addon) and scripts/build-ffmpeg-gpl.sh (GPL, the
+  # separate bin/ffmpeg program) build, and their cache key part.
+  FFMPEG_CACHE_VERSION: v4
 
 jobs:
   build:
@@ -52,16 +53,16 @@ jobs:
 
       # Build dependencies. Skia needs no source build: rust-skia publishes graphite + vulkan (Linux, Windows) and
       # graphite + metal (macOS) binaries. dotlottie's ThorVG is compiled with clang++, ffmpeg-sys-next's bindings with
-      # libclang, openh264 (x86) with nasm.
+      # libclang, openh264 and libvpx (x86) with nasm.
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libclang-dev pkg-config nasm make git
+          sudo apt-get install -y --no-install-recommends clang libclang-dev pkg-config nasm make git cmake
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install pkgconf
+        run: brew install pkgconf cmake
 
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows'
@@ -76,6 +77,11 @@ jobs:
             git
             pkgconf
             nasm
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-make
 
       - name: Cache ffmpeg
         id: ffmpeg-cache
@@ -100,6 +106,40 @@ jobs:
         run: |
           rm -f /usr/bin/link.exe
           scripts/build-ffmpeg.sh "$(cygpath -u "$RUNNER_TEMP")/ffmpeg"
+
+      # The GPL ffmpeg program that ships in the platform package as bin/ffmpeg, for libx264 and libx265. A separate
+      # executable the addon runs as a child process; never linked. It builds with gcc (MinGW-w64 on Windows).
+      - name: Cache the GPL ffmpeg
+        id: ffmpeg-gpl-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ffmpeg-gpl
+          key: ffmpeg-gpl-${{ env.FFMPEG_CACHE_VERSION }}-${{ matrix.platform }}-${{ hashFiles('scripts/build-ffmpeg-gpl.sh') }}
+
+      - name: Build the GPL ffmpeg (macOS, Linux)
+        if: runner.os != 'Windows' && steps.ffmpeg-gpl-cache.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg-gpl.sh "$RUNNER_TEMP/ffmpeg-gpl"
+
+      - name: Build the GPL ffmpeg (Windows)
+        if: runner.os == 'Windows' && steps.ffmpeg-gpl-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: scripts/build-ffmpeg-gpl.sh "$(cygpath -u "$RUNNER_TEMP")/ffmpeg-gpl"
+
+      # Into the platform package, where npm packs it from (ignored by the repository) and where the CLI looks for it.
+      - name: Place the GPL ffmpeg in the platform package
+        shell: bash
+        run: |
+          d=crates/node/npm/${{ matrix.platform }}/bin
+          mkdir -p "$d"
+          cp "$RUNNER_TEMP"/ffmpeg-gpl/bin/ffmpeg* "$d/"
+          cp "$RUNNER_TEMP/ffmpeg-gpl/SOURCES.txt" "$d/SOURCES.txt"
+          ls -l "$d"
+          "$d"/ffmpeg* -hide_banner -version | head -3
+          "$d"/ffmpeg* -hide_banner -encoders | grep -E 'libx264|libx265|libvpx'
+          "$d"/ffmpeg* -hide_banner -encoders | grep libx264
+          # Raw pictures in on a pipe, an H.264 file out: how the addon uses it.
+          head -c 115200 /dev/zero | "$d"/ffmpeg* -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 160x120 -framerate 30 -i pipe:0 -c:v libx264 -f mp4 "$RUNNER_TEMP/probe.mp4"
+          test -s "$RUNNER_TEMP/probe.mp4"
 
       - run: npm ci
 
@@ -130,7 +170,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: bindings-${{ matrix.platform }}
-          path: crates/node/kinetograph.${{ matrix.platform }}.node
+          path: |
+            crates/node/kinetograph.${{ matrix.platform }}.node
+            crates/node/npm/${{ matrix.platform }}/bin
           if-no-files-found: error
 
   smoke:
@@ -172,6 +214,11 @@ jobs:
         with:
           name: bindings-${{ matrix.platform }}
           path: crates/node
+
+      # Artifacts lose the executable bit.
+      - name: Make bin/ffmpeg executable
+        if: runner.os != 'Windows'
+        run: chmod +x crates/node/npm/${{ matrix.platform }}/bin/ffmpeg
 
       - run: npm ci
 

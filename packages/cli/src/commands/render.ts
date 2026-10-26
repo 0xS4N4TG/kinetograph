@@ -70,7 +70,7 @@ export const render: Command = {
   options: [
     OUTPUT_OPTION,
     { name: 'range', type: 'string', description: 'Frames to render: 10..40 (10 to 39) or 10..=40 (10 to 40); default all' },
-    { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: h264_videotoolbox / hevc_videotoolbox / prores_videotoolbox on macOS when ffmpeg has them and they can do what is asked, else libx264, libx265, prores_ks, libvpx-vp9)' },
+    { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: h264_videotoolbox / hevc_videotoolbox / prores_videotoolbox on macOS when ffmpeg has them and they can do what is asked, else libx264, libx265, prores_ks, libvpx-vp9). libx264 and libx265 come from the ffmpeg program bundled in the platform package, or the one KINETOGRAPH_FFMPEG names' },
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look (the same as --scale 0.5)' },
     ...EXPORT_FLAGS,
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
