@@ -6,7 +6,8 @@
 //! - the presentation properties the page's CSS cascade gives an element
 //!   (`[data-composition-id] .bar { fill: ... }`, `.chart circle { stroke: red }`:
 //!   rules whose selectors cross from the HTML into the `<svg>`) are written on
-//!   it as style, where they beat the attribute (`cascaded`);
+//!   it as style, where they beat the attribute (`cascaded`), `transform`,
+//!   `filter`, `clip-path` and `mask` among them;
 //! - `currentColor` is the element's computed `color`, which Stylo cascaded
 //!   from the HTML around it;
 //! - names the HTML parser lowercased (`lineargradient`, `viewbox`) are
@@ -128,9 +129,12 @@ const ROOT_INHERITED: [&str; 31] = [
     "marker",
 ];
 
+/// The `CASCADED` properties read from the rules' declarations (`declared`).
+const DECLARED: [&str; 2] = ["clip-path", "mask"];
+
 /// The presentation properties read from the cascade: CSS name, Stylo's id,
 /// whether the property inherits, and its initial value as Stylo prints it.
-const CASCADED: [(&str, LonghandId, bool, &str); 27] = [
+const CASCADED: [(&str, LonghandId, bool, &str); 35] = [
     ("fill", LonghandId::Fill, true, "rgb(0, 0, 0)"),
     ("fill-opacity", LonghandId::FillOpacity, true, "1"),
     ("fill-rule", LonghandId::FillRule, true, "nonzero"),
@@ -173,6 +177,19 @@ const CASCADED: [(&str, LonghandId, bool, &str); 27] = [
     ("opacity", LonghandId::Opacity, false, "1"),
     ("display", LonghandId::Display, false, "inline"),
     ("mix-blend-mode", LonghandId::MixBlendMode, false, "normal"),
+    ("transform", LonghandId::Transform, false, "none"),
+    (
+        "transform-origin",
+        LonghandId::TransformOrigin,
+        false,
+        "50% 50% 0px",
+    ),
+    ("translate", LonghandId::Translate, false, "none"),
+    ("rotate", LonghandId::Rotate, false, "none"),
+    ("scale", LonghandId::Scale, false, "none"),
+    ("filter", LonghandId::Filter, false, "none"),
+    ("clip-path", LonghandId::ClipPath, false, "none"),
+    ("mask", LonghandId::MaskImage, false, "none"),
 ];
 
 pub fn canonical_tag(tag: &str) -> String {
@@ -449,7 +466,20 @@ fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, 
         if root && (font || !inherits) {
             continue;
         }
-        let value = string(&style, longhand);
+        let value = if name == "filter" {
+            // `shim.rs` mirrors a `filter` that has a `url()` (Stylo drops it).
+            let v = doc.resolved_style_value(id, "--kg-filter");
+            let v = v.trim();
+            if v.is_empty() || v == "initial" {
+                initial.to_string()
+            } else {
+                v.to_string()
+            }
+        } else if DECLARED.contains(&name) {
+            declared(doc, &style, longhand).unwrap_or_else(|| initial.to_string())
+        } else {
+            string(&style, longhand)
+        };
         let inherited = match (&parent_style, inherits) {
             (Some(p), true) => Some(string(p, longhand)),
             _ => None,
@@ -468,6 +498,56 @@ fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, 
             out.push((name.to_string(), value, differs));
         }
     }
+    out
+}
+
+/// What the cascade declared for `longhand` on the node, as CSS text, or
+/// `None` when no rule declares it. The Servo build of Stylo does not keep a
+/// `url()` in a computed `filter`, `clip-path` or `mask-image`, so these are
+/// read from the matched rules instead: the winning declaration, by the rule
+/// tree's order (most specific and last first, `!important` where it sits).
+fn declared(doc: &BaseDocument, style: &style::properties::ComputedValues, longhand: LonghandId) -> Option<String> {
+    let guard = doc.guard().read();
+    for node in style.rules.as_ref()?.self_and_ancestors() {
+        let Some(source) = node.style_source() else {
+            continue;
+        };
+        let block = source.read(&guard);
+        for (declaration, importance) in block.declaration_importance_iter().rev() {
+            if importance != node.importance() {
+                continue;
+            }
+            if declaration.id() != PropertyDeclarationId::Longhand(longhand) {
+                continue;
+            }
+            let mut text = String::new();
+            declaration.to_css(&mut text).ok()?;
+            return Some(match text.as_str() {
+                "initial" | "unset" | "inherit" | "revert" | "revert-layer" => "none".to_string(),
+                _ => text,
+            });
+        }
+    }
+    None
+}
+
+/// Stylo resolves a `url(#id)` against the page's address; the reference is
+/// to an element of this document, so only the fragment is kept.
+fn fragment_urls(value: &str) -> String {
+    let mut out = String::new();
+    let mut rest = value;
+    while let Some(i) = rest.find("url(") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 4..];
+        let end = after.find(')').unwrap_or(after.len());
+        let inner = after[..end].trim().trim_matches(['"', '\'']);
+        match inner.rfind('#') {
+            Some(h) => out.push_str(&format!("url(#{})", &inner[h + 1..])),
+            None => out.push_str(&rest[i..i + 4 + end]),
+        }
+        rest = after.get(end + 1..).unwrap_or("");
+    }
+    out.push_str(rest);
     out
 }
 
@@ -574,6 +654,9 @@ impl Writer<'_> {
             }
             if v.eq_ignore_ascii_case("currentcolor") {
                 v = color.clone();
+            }
+            if matches!(n.as_str(), "filter" | "clip-path" | "mask") {
+                v = fragment_urls(&v);
             }
             if color::COLOR_PROPERTIES.contains(&n.as_str()) {
                 let tag = self
