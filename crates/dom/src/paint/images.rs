@@ -55,7 +55,9 @@ impl<'a> Painter<'a> {
         if let Some(rest) = s.strip_prefix("data:") {
             return self.data_source(rest);
         }
-        let path = if let Ok(u) = url::Url::parse(s) {
+        let path = if crate::net::drive_path(s).is_some() {
+            self.resolve_relative(s)
+        } else if let Ok(u) = url::Url::parse(s) {
             match u.scheme() {
                 "file" => u.to_file_path().ok(),
                 "http" | "https" => {
