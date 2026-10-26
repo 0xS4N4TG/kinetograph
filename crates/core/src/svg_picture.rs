@@ -13,10 +13,16 @@ use resvg::{tiny_skia, usvg};
 /// Largest side, in pixels, an SVG picture is painted at.
 pub const MAX_SIDE: f64 = 4096.0;
 
+/// The most bytes an `.svgz` may inflate to.
+const MAX_SVGZ_BYTES: u64 = 64 << 20;
+
 /// Whether `src` (a file name or a `data:` URL) is an SVG picture.
 pub fn is_svg(src: &str) -> bool {
     if let Some(rest) = src.strip_prefix("data:") {
-        return rest.trim_start().to_ascii_lowercase().starts_with("image/svg+xml");
+        return rest
+            .trim_start()
+            .to_ascii_lowercase()
+            .starts_with("image/svg+xml");
     }
     let lower = src.to_ascii_lowercase();
     lower.ends_with(".svg") || lower.ends_with(".svgz")
@@ -39,7 +45,8 @@ fn options() -> usvg::Options<'static> {
 /// The file `src` names (relative to `base_dir`), or the bytes of a `data:` URL.
 pub fn read(base_dir: &Path, src: &str) -> Result<Vec<u8>, String> {
     if src.starts_with("data:") {
-        return crate::scene::data_uri_bytes(src).ok_or_else(|| "a malformed data: URL".to_string());
+        return crate::scene::data_uri_bytes(src)
+            .ok_or_else(|| "a malformed data: URL".to_string());
     }
     let path = base_dir.join(src);
     std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))
@@ -55,7 +62,8 @@ pub struct Picture {
 impl Picture {
     pub fn parse(bytes: &[u8]) -> Result<Picture, String> {
         let bytes = with_default_size(bytes);
-        let tree = usvg::Tree::from_data(&bytes, &options()).map_err(|e| format!("cannot read the SVG: {e}"))?;
+        let tree = usvg::Tree::from_data(&bytes, &options())
+            .map_err(|e| format!("cannot read the SVG: {e}"))?;
         let text = bytes.windows(5).any(|w| w == b"<text");
         Ok(Picture { tree, text })
     }
@@ -76,10 +84,22 @@ impl Picture {
     }
 
     /// Paints the picture over a `width` x `height` pixel canvas (stretched to fill it), as straight-alpha RGBA.
+    /// Cut down to `MAX_SIDE` a side (keeping the shape) whatever the caller asks, since a file's natural size can be
+    /// anything.
     pub fn paint(&self, width: u32, height: u32) -> Option<Vec<u8>> {
+        let down = (MAX_SIDE / f64::from(width.max(height))).min(1.0);
+        let (width, height) = if down < 1.0 {
+            (
+                ((f64::from(width) * down).round() as u32).max(1),
+                ((f64::from(height) * down).round() as u32).max(1),
+            )
+        } else {
+            (width, height)
+        };
         let mut pixmap = tiny_skia::Pixmap::new(width, height)?;
         let (nw, nh) = self.size();
-        let scale = tiny_skia::Transform::from_scale(width as f32 / nw as f32, height as f32 / nh as f32);
+        let scale =
+            tiny_skia::Transform::from_scale(width as f32 / nw as f32, height as f32 / nh as f32);
         resvg::render(&self.tree, scale, &mut pixmap.as_mut());
         let mut rgba = pixmap.take();
         for px in rgba.chunks_exact_mut(4) {
@@ -98,10 +118,22 @@ impl Picture {
 /// `bytes`, with `width="300"` and `height="150"` put on a root `<svg>` that has no `viewBox` and leaves them out (usvg
 /// would size such a file to its content; CSS sizes it 300 x 150 and draws it unscaled).
 fn with_default_size(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
-    let text = if bytes.starts_with(&[0x1f, 0x8b]) {
-        match usvg::decompress_svgz(bytes).ok().and_then(|b| String::from_utf8(b).ok()) {
+    let gz = bytes.starts_with(&[0x1f, 0x8b]);
+    let text = if gz {
+        // Inflated here with a limit, and handed on inflated so that usvg never inflates it (a small `.svgz` can
+        // inflate to gigabytes). Too big or unreadable: nothing, which usvg then fails to read.
+        let mut out = Vec::new();
+        let read = std::io::Read::read_to_end(
+            &mut std::io::Read::take(flate2::read::GzDecoder::new(bytes), MAX_SVGZ_BYTES + 1),
+            &mut out,
+        );
+        match read
+            .ok()
+            .filter(|_| out.len() as u64 <= MAX_SVGZ_BYTES)
+            .and_then(|_| String::from_utf8(out).ok())
+        {
             Some(t) => t,
-            None => return bytes.into(),
+            None => return Vec::new().into(),
         }
     } else {
         match std::str::from_utf8(bytes) {
@@ -109,13 +141,23 @@ fn with_default_size(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
             Err(_) => return bytes.into(),
         }
     };
-    let options = usvg::roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
+    let unchanged = |text: &str| -> std::borrow::Cow<'_, [u8]> {
+        if gz {
+            text.as_bytes().to_vec().into()
+        } else {
+            bytes.into()
+        }
+    };
+    let options = usvg::roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..Default::default()
+    };
     let Ok(doc) = usvg::roxmltree::Document::parse_with_options(&text, options) else {
-        return bytes.into();
+        return unchanged(&text);
     };
     let root = doc.root_element();
     if root.attribute("viewBox").is_some() || root.tag_name().name() != "svg" {
-        return bytes.into();
+        return unchanged(&text);
     }
     let mut add = String::new();
     if root.attribute("width").is_none() {
@@ -126,9 +168,11 @@ fn with_default_size(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     }
     let start = root.range().start;
     if add.is_empty() || text.get(start..start + 4) != Some("<svg") {
-        return bytes.into();
+        return unchanged(&text);
     }
-    format!("{}{add}{}", &text[..start + 4], &text[start + 4..]).into_bytes().into()
+    format!("{}{add}{}", &text[..start + 4], &text[start + 4..])
+        .into_bytes()
+        .into()
 }
 
 /// The natural size of the SVG `src`.
@@ -145,7 +189,10 @@ pub fn pixels(natural: (f64, f64), scale: (f64, f64), stretch: f64) -> Option<(u
         return None;
     }
     let down = (MAX_SIDE / w.max(h)).min(1.0);
-    Some(((w * down).ceil().max(1.0) as u32, (h * down).ceil().max(1.0) as u32))
+    Some((
+        (w * down).ceil().max(1.0) as u32,
+        (h * down).ceil().max(1.0) as u32,
+    ))
 }
 
 #[cfg(test)]
@@ -166,11 +213,20 @@ mod tests {
         let size = |svg: &str| Picture::parse(svg.as_bytes()).unwrap().size();
         assert_eq!(size(RECT), (200.0, 100.0));
         // A viewBox alone gives the size.
-        assert_eq!(size(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"/>"#), (40.0, 20.0));
+        assert_eq!(
+            size(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"/>"#),
+            (40.0, 20.0)
+        );
         // One side given: the other follows the viewBox's shape.
-        assert_eq!(size(r#"<svg xmlns="http://www.w3.org/2000/svg" width="80" viewBox="0 0 40 20"/>"#), (80.0, 40.0));
+        assert_eq!(
+            size(r#"<svg xmlns="http://www.w3.org/2000/svg" width="80" viewBox="0 0 40 20"/>"#),
+            (80.0, 40.0)
+        );
         // Neither: 300 x 150.
-        assert_eq!(size(r#"<svg xmlns="http://www.w3.org/2000/svg"><circle r="5"/></svg>"#), (300.0, 150.0));
+        assert_eq!(
+            size(r#"<svg xmlns="http://www.w3.org/2000/svg"><circle r="5"/></svg>"#),
+            (300.0, 150.0)
+        );
     }
 
     #[test]
@@ -194,7 +250,12 @@ mod tests {
         let rgba = Picture::parse(svg.as_bytes()).unwrap().paint(2, 2).unwrap();
         assert!(rgba[3].abs_diff(128) <= 1);
         // Straight: the colour is still #3366ff (within rounding), not halved.
-        assert!(rgba[0].abs_diff(0x33) <= 2 && rgba[1].abs_diff(0x66) <= 2 && rgba[2].abs_diff(0xff) <= 2, "{rgba:?}");
+        assert!(
+            rgba[0].abs_diff(0x33) <= 2
+                && rgba[1].abs_diff(0x66) <= 2
+                && rgba[2].abs_diff(0xff) <= 2,
+            "{rgba:?}"
+        );
     }
 
     #[test]
@@ -202,12 +263,19 @@ mod tests {
         // Drawn at 2x the natural size on a 1.5x transform: 3x the natural pixels.
         assert_eq!(pixels((200.0, 100.0), (2.0, 2.0), 1.5), Some((600, 300)));
         assert_eq!(pixels((200.0, 100.0), (0.0, 1.0), 1.0), None);
-        assert_eq!(pixels((200.0, 100.0), (1000.0, 1000.0), 1.0), Some((4096, 2048)));
+        assert_eq!(
+            pixels((200.0, 100.0), (1000.0, 1000.0), 1.0),
+            Some((4096, 2048))
+        );
     }
 
     #[test]
     fn rejects_what_is_not_an_svg_and_flags_text() {
-        assert!(Picture::parse(b"not svg").unwrap_err().contains("cannot read the SVG"));
+        assert!(
+            Picture::parse(b"not svg")
+                .unwrap_err()
+                .contains("cannot read the SVG")
+        );
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><text>hi</text></svg>"#;
         assert!(Picture::parse(svg.as_bytes()).unwrap().has_text());
         assert!(!Picture::parse(RECT.as_bytes()).unwrap().has_text());
@@ -216,7 +284,71 @@ mod tests {
     #[test]
     fn reads_data_urls_and_files() {
         let url = format!("data:image/svg+xml;utf8,{}", RECT.replace('#', "%23"));
-        assert_eq!(natural_size(Path::new("/nowhere"), &url).unwrap(), (200.0, 100.0));
-        assert!(natural_size(Path::new("/nowhere"), "missing.svg").unwrap_err().contains("cannot read"));
+        assert_eq!(
+            natural_size(Path::new("/nowhere"), &url).unwrap(),
+            (200.0, 100.0)
+        );
+        assert!(
+            natural_size(Path::new("/nowhere"), "missing.svg")
+                .unwrap_err()
+                .contains("cannot read")
+        );
+    }
+}
+
+#[cfg(test)]
+mod limits {
+    use super::*;
+
+    fn dir_with(name: &str, file: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kinetograph-svg-limits-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(file), bytes).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_huge_natural_size_is_painted_at_most_max_side_a_side() {
+        let dir = dir_with("huge", "big.svg", br#"<svg xmlns="http://www.w3.org/2000/svg" width="100000" height="50000"><rect width="100%" height="100%" fill="red"/></svg>"#);
+        let pic = Picture::open(&dir, "big.svg").unwrap();
+        assert_eq!(pic.size(), (100000.0, 50000.0));
+        let rgba = pic.paint(100000, 50000).unwrap();
+        assert_eq!(rgba.len(), 4096 * 2048 * 4);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn an_svgz_that_inflates_past_the_limit_is_refused() {
+        use std::io::Write;
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        gz.write_all(br#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><!--"#)
+            .unwrap();
+        let chunk = vec![b' '; 1 << 20];
+        for _ in 0..(MAX_SVGZ_BYTES >> 20) + 1 {
+            gz.write_all(&chunk).unwrap();
+        }
+        gz.write_all(b"--></svg>").unwrap();
+        let dir = dir_with("bomb", "bomb.svgz", &gz.finish().unwrap());
+        assert!(Picture::open(&dir, "bomb.svgz").is_err());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_small_svgz_still_reads() {
+        use std::io::Write;
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>"#,
+        )
+        .unwrap();
+        let dir = dir_with("small", "s.svgz", &gz.finish().unwrap());
+        assert_eq!(
+            Picture::open(&dir, "s.svgz").unwrap().size(),
+            (300.0, 150.0)
+        );
+        std::fs::remove_dir_all(dir).ok();
     }
 }
