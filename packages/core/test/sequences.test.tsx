@@ -155,6 +155,37 @@ describe('Series', () => {
   });
 });
 
+describe('Series with fragments', () => {
+  it('flattens fragments, nested ones too, and still rejects other children', () => {
+    const node = (
+      <Series>
+        <Series.Sequence name="one" durationInFrames={10} />
+        {['a', 'b'].map((n) => (
+          <Fragment key={n}>
+            <Fragment>
+              <Series.Sequence name={n} durationInFrames={5} />
+            </Fragment>
+          </Fragment>
+        ))}
+      </Series>
+    );
+    expect(sequencesAt(node, 0).map((s) => [s.name, s.from])).toEqual([
+      ['one', 0],
+      ['a', 10],
+      ['b', 15],
+    ]);
+    expect(() =>
+      renderAt(
+        <Series>
+          <Fragment>
+            <div />
+          </Fragment>
+        </Series>,
+      ),
+    ).toThrow(/only accepts a list of <Series.Sequence/);
+  });
+});
+
 describe('Loop', () => {
   const make = () => (
     <Loop durationInFrames={30}>
@@ -202,6 +233,68 @@ describe('TransitionSeries', () => {
     expect(during.every((s) => s.layer !== null)).toBe(true);
     expect(sequencesAt(make(), 5).map((s) => s.layer !== null)).toEqual([true, false]);
     expect(sequencesAt(make(), 60).map((s) => s.layer !== null)).toEqual([false, true]);
+  });
+
+  const T = () => <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 10 })} />;
+  const S = ({ id }: { id: string }) => (
+    <TransitionSeries.Sequence name={id} durationInFrames={30}>
+      <R id={id} />
+    </TransitionSeries.Sequence>
+  );
+  const spans = (node: ReactNode) => sequencesAt(node, 0).map((s) => [s.name, s.from]);
+
+  it('flattens fragments from .map() as if the pairs were written out', () => {
+    const flat = (
+      <TransitionSeries>
+        {S({ id: "A" })}
+        {T()}
+        {S({ id: "B" })}
+        {T()}
+        {S({ id: "C" })}
+      </TransitionSeries>
+    );
+    const fragments = (
+      <TransitionSeries>
+        {S({ id: "A" })}
+        {['B', 'C'].map((l) => (
+          <Fragment key={l}>
+            {T()}
+            {S({ id: l })}
+          </Fragment>
+        ))}
+      </TransitionSeries>
+    );
+    expect(spans(fragments)).toEqual([['A', 0], ['B', 20], ['C', 40]]);
+    expect(spans(fragments)).toEqual(spans(flat));
+    expect(sequencesAt(fragments, 55).map((s) => s.layer !== null)).toEqual([false, false, true]);
+  });
+
+  it('flattens nested fragments', () => {
+    const node = (
+      <TransitionSeries>
+        <>
+          {S({ id: "A" })}
+          <>
+            {T()}
+            {S({ id: "B" })}
+          </>
+        </>
+      </TransitionSeries>
+    );
+    expect(spans(node)).toEqual([['A', 0], ['B', 20]]);
+  });
+
+  it('still rejects another child, inside a fragment too', () => {
+    expect(() =>
+      renderAt(
+        <TransitionSeries>
+          <>
+            {S({ id: "A" })}
+            <div />
+          </>
+        </TransitionSeries>,
+      ),
+    ).toThrow(/only accepts a list of <TransitionSeries.Sequence \/>/);
   });
 });
 

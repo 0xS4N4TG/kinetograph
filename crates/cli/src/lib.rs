@@ -3,4 +3,5 @@
 //! themselves are in `main.rs`.
 
 pub mod encode;
+pub mod external;
 pub mod render;

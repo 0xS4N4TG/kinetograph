@@ -5,11 +5,11 @@
 // the motion-blur sub-frames agree with them on time.
 
 import {
-  Children,
   isValidElement,
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { flattenChildren } from './flatten-children.js';
 import { Layer, SequenceHost, TimelineContext, useTimeline, type TimelineState, type VideoConfig } from '@kinetographdev/react';
 
 /** The frame, relative to the enclosing Sequences (fractional on a motion-blur sub-frame). */
@@ -187,7 +187,7 @@ function SeriesSequence({ children }: SeriesSequenceProps): ReactNode {
 function SeriesImpl({ children }: { children?: ReactNode }): ReactNode {
   let startFrame = 0;
   const items: ReactNode[] = [];
-  Children.forEach(children, (child, index) => {
+  flattenChildren(children).forEach((child, index) => {
     if (child === null || child === undefined || typeof child === 'boolean') return;
     if (!isValidElement(child) || child.type !== SeriesSequence) {
       const got = isValidElement(child)
