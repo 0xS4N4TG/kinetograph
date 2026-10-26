@@ -11,6 +11,7 @@ pub mod color;
 pub mod compositor;
 pub mod dom_layout;
 pub mod error;
+pub mod fallback_fonts;
 pub mod filter;
 pub mod gif;
 pub mod glsl;

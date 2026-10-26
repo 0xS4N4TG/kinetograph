@@ -6,5 +6,5 @@
   },
   "include": ["src", "test"],
   // A Remotion project the engine renders through its `remotion` alias; the package itself is not installed here.
-  "exclude": ["test/fixtures/seq-media"]
+  "exclude": ["test/fixtures/seq-media", "test/fixtures/svg-script"]
 }

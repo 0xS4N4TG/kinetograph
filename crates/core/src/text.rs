@@ -89,6 +89,19 @@ impl LaidOutText {
         out
     }
 
+    /// The characters of `text` (the string this was laid out from) that no font had a glyph for, each once: the
+    /// glyphs drawn as the font's missing-glyph box. Spaces and other invisible characters are not counted.
+    pub fn missing_chars(&self, text: &str) -> Vec<char> {
+        crate::fallback_fonts::missing_chars(
+            text,
+            self.runs
+                .iter()
+                .flat_map(|run| &run.glyphs)
+                .filter(|g| g.id == 0)
+                .map(|g| g.char_index as usize),
+        )
+    }
+
     /// The text box (`packages/cli/skills/kinetograph/references/SCENE.md`, "Clip paths"): `max_width`, or the
     /// widest line without one, by the height.
     pub fn box_size(&self, max_width: Option<f32>) -> (f64, f64) {
@@ -179,6 +192,7 @@ impl TextEngine {
             }),
             source_cache: SourceCache::default(),
         };
+        let mut project = Vec::new();
         for (name, file) in fonts {
             let path = base_dir.join(file);
             let data = std::fs::read(&path).map_err(|source| Error::Io {
@@ -200,7 +214,13 @@ impl TextEngine {
                     path.display()
                 )));
             }
+            for (id, _) in registered {
+                if !project.contains(&id) {
+                    project.push(id);
+                }
+            }
         }
+        crate::fallback_fonts::register(&mut font_cx.collection, &project);
         Ok(TextEngine {
             font_cx,
             layout_cx: LayoutContext::new(),
@@ -211,6 +231,9 @@ impl TextEngine {
 
     /// The font file a glyph run names, read once.
     fn run_font(&mut self, src: &str, index: u32) -> Option<FontData> {
+        if let Some(face) = crate::fallback_fonts::face(src) {
+            return Some(FontData::new(face.blob.clone(), index));
+        }
         let base_dir = &self.base_dir;
         self.run_fonts
             .entry((src.to_string(), index))
@@ -383,6 +406,60 @@ mod tests {
         )]);
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         TextEngine::new(&fonts, &root).unwrap()
+    }
+
+    /// The `builtin:` name of the font a code point's glyph was drawn in, if it is a bundled one.
+    fn font_of(t: &LaidOutText, char_index: u32) -> Option<String> {
+        let run = t
+            .runs
+            .iter()
+            .find(|r| r.glyphs.iter().any(|g| g.char_index == char_index))?;
+        crate::fallback_fonts::name_of_blob(run.font.data.id())
+    }
+
+    #[test]
+    fn a_character_the_font_lacks_falls_back_to_the_bundled_symbols() {
+        let mut e = engine();
+        let text = "Germany \u{2192} Austria \u{2713} \u{21D2} \u{1F600}";
+        let t = e.layout(text, "DM Sans", 40.0, None, None, TextAlign::Left);
+        let index = |c: char| text.chars().position(|x| x == c).unwrap() as u32;
+        // The arrow is in Noto Sans Math only, the check mark in Noto Sans Symbols 2 first, the emoji in Noto Emoji.
+        assert_eq!(font_of(&t, index('\u{2192}')).as_deref(), Some("builtin:NotoSansMath"));
+        assert_eq!(font_of(&t, index('\u{2713}')).as_deref(), Some("builtin:NotoSansSymbols2"));
+        assert_eq!(font_of(&t, index('\u{21D2}')).as_deref(), Some("builtin:NotoSansMath"));
+        assert_eq!(font_of(&t, index('\u{1F600}')).as_deref(), Some("builtin:NotoEmoji"));
+        // The letters stay in the project's font, and nothing is missing.
+        assert_eq!(font_of(&t, 0), None);
+        assert!(t.missing_chars(text).is_empty(), "{:?}", t.missing_chars(text));
+        assert!(t.runs.iter().flat_map(|r| &r.glyphs).all(|g| g.id != 0));
+    }
+
+    #[test]
+    fn plain_text_never_leaves_the_project_font() {
+        let mut e = engine();
+        let t = e.layout("Hello, World 123", "DM Sans", 40.0, None, None, TextAlign::Left);
+        assert!(
+            t.runs
+                .iter()
+                .all(|r| crate::fallback_fonts::name_of_blob(r.font.data.id()).is_none())
+        );
+    }
+
+    #[test]
+    fn a_code_point_no_font_has_is_reported() {
+        let mut e = engine();
+        // U+0378 is unassigned; U+E000 is private use.
+        let text = "a\u{378}b\u{E000}\u{378}";
+        let t = e.layout(text, "DM Sans", 40.0, None, None, TextAlign::Left);
+        assert_eq!(t.missing_chars(text), ['\u{378}', '\u{E000}']);
+    }
+
+    #[test]
+    fn a_glyph_run_can_name_a_bundled_font() {
+        let mut e = engine();
+        let font = e.run_font("builtin:NotoSansMath", 0).expect("bundled font");
+        assert_eq!(font.data.id(), crate::fallback_fonts::faces()[1].blob.id());
+        assert!(e.run_font("builtin:Nope", 0).is_none());
     }
 
     fn glyph_count(t: &LaidOutText) -> usize {

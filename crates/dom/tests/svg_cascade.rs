@@ -333,3 +333,112 @@ fn text_anchor_and_the_other_svg_only_properties_cascade_too() {
     assert_eq!(json_of(&paint(&rule)), json_of(&paint(&attr)));
     assert_ne!(json_of(&paint(&rule)), json_of(&paint(&plain)));
 }
+
+/// The `d` of the rect (the first shape) as the layers have it.
+fn rect_path(req: &Value) -> String {
+    shapes(&paint(req))[0]["shape"]["d"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn rules_inside_media_queries_reach_the_shapes() {
+    // The composition is 1000 px wide.
+    let sheet = r#"
+        @media (min-width: 600px) { .chart .bar { fill: #112233 } }
+        @media (max-width: 600px) { .chart .bar { fill: #ff0000 } }
+        @media (min-width: 600px) { .chart circle { stroke: #445566 } }
+    "#;
+    let req = page(
+        sheet,
+        json!({ "class": "chart" }),
+        "",
+        json!({ "class": "bar" }),
+        json!({}),
+    );
+    let s = shapes(&paint(&req));
+    assert_eq!(s[0]["fill"], "#112233ff");
+    assert_eq!(s[1]["stroke"]["color"], "#445566ff");
+}
+
+#[test]
+fn transform_from_the_cascade_moves_the_shape() {
+    let plain = rect_path(&page("", json!({}), "", json!({}), json!({})));
+    assert!(plain.starts_with("M 10 10"), "{plain}");
+    let sheet = ".chart .bar { transform: translate(100px, 20px) }";
+    let req = page(
+        sheet,
+        json!({ "class": "chart" }),
+        "",
+        json!({ "class": "bar" }),
+        json!({}),
+    );
+    let moved = rect_path(&req);
+    assert!(moved.starts_with("M 110 30"), "{moved}");
+    // The separate transform properties and the origin too.
+    let sheet = ".chart .bar { rotate: 90deg; transform-origin: 50px 50px }";
+    let req = page(
+        sheet,
+        json!({ "class": "chart" }),
+        "",
+        json!({ "class": "bar" }),
+        json!({}),
+    );
+    assert_ne!(rect_path(&req), plain);
+}
+
+/// A rect inside `<svg>` with a filter, a clip path and a mask defined in it.
+fn defs_page(sheet: &str) -> Value {
+    let blur = el_attrs(
+        "feGaussianBlur",
+        "$0.0.0.0",
+        json!({ "stdDeviation": "3" }),
+        "",
+        vec![],
+    );
+    let filter = el_attrs("filter", "$0.0.0", json!({ "id": "f" }), "", vec![blur]);
+    let clip_rect = el_attrs(
+        "rect",
+        "$0.0.1.0",
+        json!({ "x": "0", "y": "0", "width": "40", "height": "100" }),
+        "",
+        vec![],
+    );
+    let clip = el_attrs("clipPath", "$0.0.1", json!({ "id": "c" }), "", vec![clip_rect]);
+    let defs = el("defs", "$0.0.2", "", vec![filter, clip]);
+    let rect = el_attrs(
+        "rect",
+        "$0.0.3",
+        json!({ "x": "10", "y": "10", "width": "80", "height": "40", "class": "bar" }),
+        "",
+        vec![],
+    );
+    let svg = el_attrs(
+        "svg",
+        "$0.0",
+        json!({ "width": "200", "height": "100", "viewBox": "0 0 200 100" }),
+        "",
+        vec![defs, rect],
+    );
+    let root = el_attrs("div", "$0", json!({ "class": "chart" }), "", vec![svg]);
+    let mut req = request(root);
+    req["stylesheets"] = json!([sheet]);
+    req
+}
+
+#[test]
+fn filter_from_the_cascade_applies() {
+    let plain = json_of(&paint(&defs_page("")));
+    assert!(!plain.contains("filterGraph"), "{plain}");
+    let filtered = json_of(&paint(&defs_page(".chart .bar { filter: url(#f) }")));
+    assert!(filtered.contains("filterGraph"), "{filtered}");
+}
+
+#[test]
+fn clip_path_from_the_cascade_applies() {
+    let plain = json_of(&paint(&defs_page("")));
+    let clipped = json_of(&paint(&defs_page(".chart .bar { clip-path: url(#c) }")));
+    assert_ne!(clipped, plain);
+    assert!(clipped.contains("M 0 0 L 40 0 L 40 100 L 0 100 Z"), "{clipped}");
+}

@@ -124,6 +124,8 @@ impl<'a> Painter<'a> {
             f64::from(layout.height()) / scale,
         );
         let mut batch: Option<Batch> = None;
+        // The characters no font had a glyph for, by the font-family they were set in.
+        let mut missing: std::collections::BTreeMap<String, Vec<char>> = Default::default();
         let mut decor_lines: Vec<(Decor, Rect, f64, bool)> = Vec::new(); // under / through lines, flushed with the batch
 
         let clamp_line = self.clamp_line(node);
@@ -171,7 +173,21 @@ impl<'a> Painter<'a> {
                         if let Some(reason) =
                             crate::fonts::unloaded_reason(&family, &self.req.fonts)
                         {
-                            self.report(node, "font-family", family, reason);
+                            self.report(node, "font-family", &family, reason);
+                        }
+                        for cluster in run.visual_clusters() {
+                            if cluster.glyphs().any(|g| g.id == 0) {
+                                let range = cluster.text_range();
+                                let gone = ild.text.get(range).unwrap_or_default();
+                                let seen = missing.entry(family.clone()).or_default();
+                                for c in gone.chars() {
+                                    if !kinetograph_core::fallback_fonts::is_invisible(c)
+                                        && !seen.contains(&c)
+                                    {
+                                        seen.push(c);
+                                    }
+                                }
+                            }
                         }
                         let synth = run.synthesis();
                         let mut glyphs: Vec<Value> = Vec::new();
@@ -316,6 +332,13 @@ impl<'a> Painter<'a> {
         if let Some(b) = batch.take() {
             let layers = self.text_layers(node, &b, content, size);
             ph.inline.extend(layers);
+        }
+        for (family, chars) in missing {
+            let reason = format!(
+                "no glyph for {} in the font-family list or the bundled fallback fonts; drawn as the font's missing-glyph box",
+                kinetograph_core::fallback_fonts::describe(&chars)
+            );
+            self.report(node, "font-family", family, &reason);
         }
         // Decoration lines.
         for (n, (d, r, _t, _through)) in decor_lines.into_iter().enumerate() {

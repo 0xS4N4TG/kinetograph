@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=400, height=200" />
+    <style>
+      html, body { margin: 0; width: 400px; height: 200px; background: #fff; }
+      #p { position: relative; width: 400px; height: 200px; }
+      #p .arc { fill: none; stroke: orange; stroke-width: 8; }
+      #p .dot { fill: #00aa00; }
+      #p .glow { fill: #0000ff; filter: url(#f); }
+      #p .rot { fill: #aa00aa; transform: translate(100px, 0); }
+      #p .clipped { fill: #00aaaa; clip-path: url(#c); }
+      @media (min-width: 100px) { #p .wide { fill: #ff00ff; } }
+      @media (max-width: 10px) { #p .narrow { fill: #ff0000; } }
+    </style>
+  </head>
+  <body>
+    <div id="p" data-composition-id="p" data-width="400" data-height="200" data-start="0" data-duration="2">
+      <svg id="s" width="400" height="200" viewBox="0 0 400 200">
+        <defs><filter id="f"><feGaussianBlur stdDeviation="3" /></filter><clipPath id="c"><rect x="220" y="100" width="30" height="40" /></clipPath></defs>
+        <rect class="wide" x="300" y="5" width="30" height="30" />
+        <rect class="narrow" x="340" y="5" width="30" height="30" />
+      </svg>
+      <script>
+        window.__timelines = window.__timelines || {};
+        const NS = 'http://www.w3.org/2000/svg';
+        Promise.resolve().then(() => {
+          const svg = document.getElementById('s');
+          const mk = (tag, cls, attrs) => {
+            const e = document.createElementNS(NS, tag);
+            e.setAttribute('class', cls);
+            for (const k in attrs) e.setAttribute(k, attrs[k]);
+            svg.appendChild(e);
+          };
+          mk('path', 'arc', { d: 'M10 80 Q 100 0 190 80' });
+          mk('circle', 'dot', { cx: 40, cy: 30, r: 15 });
+          mk('rect', 'glow', { x: 120, y: 100, width: 40, height: 40 });
+          mk('rect', 'rot', { x: 0, y: 150, width: 40, height: 40 });
+          mk('rect', 'clipped', { x: 220, y: 100, width: 60, height: 40 });
+          mk('rect', 'wide', { x: 260, y: 150, width: 30, height: 30 });
+          mk('rect', 'narrow', { x: 300, y: 150, width: 30, height: 30 });
+        });
+      </script>
+    </div>
+  </body>
+</html>

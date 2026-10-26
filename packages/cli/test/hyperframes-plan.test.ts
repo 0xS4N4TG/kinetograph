@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { HfNode } from '@kinetographdev/core/hyperframes';
 import { buildPlan } from '../src/hyperframes/plan.js';
-import { crossingRules, parseGoogleFontsUrl, rewriteDocumentSelectors, scopeToComposition } from '../src/hyperframes/css.js';
+import { parseGoogleFontsUrl, rewriteDocumentSelectors, scopeToComposition } from '../src/hyperframes/css.js';
 import { FONT_ALIASES, parseFamilyList } from '../src/hyperframes/fonts.js';
 import { resolveEntry } from '../src/hyperframes/entry.js';
 
@@ -58,7 +58,6 @@ describe('the HyperFrames sample project', () => {
     expect(css).toContain('.kg-hf-body');
     // The scripts: the library, the page's own, the composition's (scoped to it).
     expect(plan.scripts.map((s) => s.scope)).toEqual([null, 'nyt-chart', null]);
-    expect(plan.svgRules.some((r) => r.selector.includes('.bar'))).toBe(true);
   });
 
   it('fails clearly, naming the URL and fetch-deps, when a script is not available', async () => {
@@ -212,15 +211,6 @@ describe('page features', () => {
     const template = find(plan.body, (n) => n.tag === 'template')!;
     expect(template.children).toEqual([]);
     expect(template.content).toMatchObject([{ t: 'el', tag: 'b' }]);
-  });
-
-  it('reads the svg-crossing rules inside @media with their conditions', () => {
-    const rules = crossingRules('.a .b { fill: red } @media (min-width: 600px) { [data-composition-id="x"] .bar { fill: blue } } @media print { .c .d { fill: green } }', 0);
-    expect(rules.map((r) => [r.selector, r.media ?? []])).toEqual([
-      ['.a .b', []],
-      ['[data-composition-id="x"] .bar', ['(min-width: 600px)']],
-      ['.c .d', ['print']],
-    ]);
   });
 });
 

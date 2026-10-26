@@ -20,6 +20,16 @@ The software H.264 encoder is Cisco's OpenH264 2.6.0, built from source (`OPENH2
 covers only the binaries Cisco itself distributes; this build is compiled from source, so any patent licence for H.264
 encoding is the user's to arrange.
 
+## Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (SIL Open Font License 1.1)
+
+Text falls back to these fonts for a character its own font lacks (an arrow, a check mark, a maths sign, an emoji). They
+are embedded in the addon as WOFF2 files, converted from the TrueType originals without other changes. The copyright
+notices and the licence are in `OFL-NOTO.txt`:
+
+- Noto Sans Symbols 2: Copyright 2022 The Noto Project Authors (<https://github.com/notofonts/symbols>)
+- Noto Sans Math: Copyright 2022 Google LLC. All Rights Reserved.
+- Noto Emoji: Copyright 2013-2026 Google LLC
+
 ## libvpx (BSD-3-Clause), macOS and Linux builds
 
 VP8 and VP9 encoding and decoding use Google's libvpx 1.15.0, built from source (<https://github.com/webmproject/libvpx>,

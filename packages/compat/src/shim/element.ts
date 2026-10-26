@@ -83,15 +83,30 @@ const kebab = (name: string): string => cssPropertyName(name);
  */
 const written = (property: string, value: string): string => (/^(translate|rotate|scale)$/.test(property) && value.trim() === 'none' ? '' : value);
 
+/**
+ * Properties whose value is a length (or a list of them): CSSOM gives a bare `0` back as `0px` (`<div style="width:0">`
+ * reads `style.width === '0px'`), and a library that animates the property (anime.js) takes its unit from that read.
+ */
+const LENGTH_PROPERTY =
+  /^(?:(?:min-|max-)?(?:width|height)|top|right|bottom|left|inset(?:-(?:block|inline)(?:-start|-end)?)?|margin(?:-[a-z]+)*|padding(?:-[a-z]+)*|border(?:-(?:top|right|bottom|left))?-width|border(?:-(?:top|bottom)-(?:left|right))?-radius|gap|row-gap|column-gap|font-size|letter-spacing|word-spacing|text-indent|flex-basis|outline-(?:width|offset))$/;
+
+function serialized(property: string, value: string): string {
+  if (!LENGTH_PROPERTY.test(property) || value.includes('(')) return value;
+  return value
+    .split(/\s+/)
+    .map((token) => (/^[-+]?0+(?:\.0*)?$/.test(token) ? '0px' : token))
+    .join(' ');
+}
+
 /** `element.style`: the inline style as React gave it, with what a script wrote on top. Properties read as camelCase. */
 function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDeclarationShim {
   const read = (property: string): string => {
     const overlay = overlayOf(host, false)?.style.get(property);
-    if (overlay !== undefined) return overlay;
+    if (overlay !== undefined) return serialized(property, overlay);
     const style = host.props.style;
     if (typeof style !== 'object' || style === null) return '';
     for (const [key, value] of Object.entries(style as Record<string, unknown>)) {
-      if (cssPropertyName(key) === property) return styleToCss({ [key]: value }).replace(/^[^:]*:\s*/, '');
+      if (cssPropertyName(key) === property) return serialized(property, styleToCss({ [key]: value }).replace(/^[^:]*:\s*/, ''));
     }
     return '';
   };
