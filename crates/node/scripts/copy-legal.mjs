@@ -25,6 +25,8 @@ for (const dir of fs.readdirSync(path.join(root, 'npm'))) {
   fs.writeFileSync(path.join(target, 'LICENSE.md'), note + polyform);
   const file = path.join(target, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
-  pkg.files = [...new Set([...pkg.files, ...legal, 'bin/'])];
+  // napi pre-publish wants every `files` entry to be a file, so the ffmpeg program and its sources are named, not `bin/`.
+  const bin = [dir.startsWith('win32') ? 'bin/ffmpeg.exe' : 'bin/ffmpeg', 'bin/SOURCES.txt'];
+  pkg.files = [...new Set([...pkg.files.filter((f) => f !== 'bin/'), ...legal, ...bin])];
   fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
 }
