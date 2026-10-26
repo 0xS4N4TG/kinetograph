@@ -22,6 +22,8 @@ Publishing Kinetograph: npm packages, the native CI matrix (native.yml), publish
 
 - [ ] 0.2.0 = what is on main now (2026-10-27, user). Deferred to a 0.2.x patch (e.g. 0.2.3): determinism default (0.2.0 ships it as documented in known-issues #26), monospace fallback font (Shiki/Code Hike), SVG gradients interpolated premultiplied (canvas fixed in #39; browsers interpolate SVG gradients unpremultiplied too), Mermaid blank + doctor misses it (documented in known-issues). Worker-scaling profile and concurrency work: 0.2.5 or 0.3.0. #27/#28 Windows paths wait for monkeyhut (fix/windows-paths).
 
+- [ ] ROADMAP (2026-10-27): 0.2.x patch = determinism default, monospace fallback, SVG gradients, Mermaid; 0.2.5 or 0.3.0 = worker scaling (profile first); 0.3.0 = motion tracking v1 (pure-Rust Lucas-Kanade on imageproc + template matching, 1-4 points -> position/scale/rotation/corner pin, `kinetograph track` -> .track.json + `useTrack()`, ~1-2 weeks; details in engine overview); later = tracking studio UI (v2) and the opt-in ONNX plugin (CoTracker / SAM 2).
+
 ## Key files
 - `.github/workflows/publish.yml` (inputs native_run_id, dry_run, tag; NPM_TOKEN secret)
 - `.github/workflows/native.yml` (push on all branches; builds 3 platforms + smoke)
