@@ -10,6 +10,7 @@ use usvg::fontdb::{self, Database, Language};
 /// `family:weight[i]`, see `fonts::parse_key`), built once per distinct set. Each font is
 /// registered under the family name of its key as well as the one in its own
 /// tables, and the generic families (`sans-serif`, ...) resolve to the first.
+/// The bundled symbol fonts come last, as the fallback for characters the others lack.
 pub fn database(fonts: &BTreeMap<String, String>) -> Arc<Database> {
     type Cache = Mutex<HashMap<BTreeMap<String, String>, Arc<Database>>>;
     static CACHE: OnceLock<Cache> = OnceLock::new();
@@ -47,6 +48,11 @@ fn build(fonts: &BTreeMap<String, String>) -> Database {
             };
             db.push_face_info(info);
         }
+    }
+    // After the project's fonts: usvg falls back, character by character, to the
+    // first face of the database that has the glyph.
+    for face in kinetograph_core::fallback_fonts::faces() {
+        db.load_font_data(face.data.to_vec());
     }
     if let Some(family) = first {
         db.set_serif_family(family.clone());

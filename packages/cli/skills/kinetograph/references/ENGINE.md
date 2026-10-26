@@ -584,6 +584,11 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   text is stroked too.
 - Fonts: a glyph run needs the font file. The painter matches a run's font bytes to a file of `request.fonts` (once per
   font), or to a path registered with `paint::register_font_path(blob_id, path)`.
+- Fallback fonts: a character the stack lacks falls back to Noto Sans Symbols 2, Noto Sans Math and Noto Emoji, embedded
+  in `kinetograph-core` (`fallback_fonts.rs`, `crates/core/fonts/`, WOFF2). They are registered in every Parley
+  collection (`fonts::font_context`, `TextEngine::new`) as the fallback of the common scripts, after the project's own
+  families, and in the SVG font database. A glyph run names one `builtin:<name>` instead of a file. A glyph id 0 left
+  after fallback is reported by the painter (`font-family`, "no glyph for U+XXXX ...") and by `inspect` (`missingChars`).
 
 ### Paint order
 

@@ -41,6 +41,8 @@ Everything here is on `main` and not yet published to npm.
 - `transform-style: preserve-3d` on an element with `opacity`, a `filter`, `clip-path`, `mask`, `mix-blend-mode`, `isolation: isolate`, `contain: paint`, `backdrop-filter` or `overflow: hidden` failed the render with "a preserve3d group cannot have effects". Such an element is now flattened, as CSS Transforms 2 and Chrome do, and drawn as a flat group with its effect.
 - `kinetograph doctor` runs the scene validation a render runs on every frame, and lists a scene the render would refuse (with its frames, exit code 1). It used to report only what is unsupported, so a project that cannot render looked fine.
 
+- A character the font lacks (`→`, `✓`, `≈`, an emoji) is no longer drawn as a box. Text falls back, one character at a time, to the rest of the `font-family` list and then to Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (monochrome), which ship inside the native addon (about 1.1 MB, SIL OFL). This covers HTML text, SVG `<text>`, text layers, Text3D and canvas `fillText`. A character no font has (CJK, for one) is still drawn as a box, but `doctor` and `--strict` now report it with its code point and the font list (`font-family`, "no glyph for U+2192 ..."); `inspect` lists it as `missingChars`. ([#32](https://github.com/0xS4N4TG/kinetograph/issues/32))
+
 ### Changed in behaviour
 
 - A DOM measurement the engine cannot answer (a `getComputedStyle` or `getBoundingClientRect` lookup) is now a warning, and the script gets the element's own style. The render goes on. `--strict` still makes it an error.

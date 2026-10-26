@@ -452,3 +452,96 @@ fn svg_text_inherits_its_font_from_the_html_around_it() {
     );
     assert_eq!(layers_json(&w), layers_json(&w_explicit));
 }
+
+// ---- characters the font lacks ----
+
+fn glyph_notes(
+    out: &kinetograph_dom::request::IslandOutput,
+) -> Vec<&kinetograph_dom::request::Unsupported> {
+    out.unsupported
+        .iter()
+        .filter(|u| u.reason.starts_with("no glyph for"))
+        .collect()
+}
+
+fn all_layers(out: &kinetograph_dom::request::IslandOutput) -> String {
+    out.layers.iter().map(|l| l.to_string()).collect()
+}
+
+#[test]
+fn a_character_the_font_lacks_is_drawn_in_a_bundled_fallback_font() {
+    let root = el(
+        "div",
+        "$0",
+        "font-size: 40px; font-family: 'DM Sans'",
+        vec![text("Germany \u{2192} Austria")],
+    );
+    let out = painted(root, json!({ "DM Sans": dm_sans() }));
+    // The letters are in the project's file, the arrow in the bundled Noto Sans Math.
+    let layers = all_layers(&out);
+    assert!(layers.contains("builtin:NotoSansMath"), "{layers}");
+    assert!(layers.contains("DMSans-Medium.ttf"), "{layers}");
+    assert!(glyph_notes(&out).is_empty(), "{:?}", out.unsupported);
+
+    // The built-in fallback font (no project font) falls back the same way.
+    let root = el("div", "$0", "font-size: 40px", vec![text("A \u{2192} B")]);
+    let out = painted(root, fallback_only());
+    assert!(all_layers(&out).contains("builtin:NotoSansMath"));
+    assert!(glyph_notes(&out).is_empty(), "{:?}", out.unsupported);
+}
+
+#[test]
+fn a_character_no_font_has_is_reported_with_its_code_point_and_the_font_list() {
+    // U+0378 is unassigned: no bundled font has it either.
+    let root = el(
+        "div",
+        "$0",
+        "font-size: 40px; font-family: 'DM Sans', sans-serif",
+        vec![text("a\u{378}b")],
+    );
+    let out = painted(root, json!({ "DM Sans": dm_sans() }));
+    let notes = glyph_notes(&out);
+    assert_eq!(notes.len(), 1, "{:?}", out.unsupported);
+    assert_eq!(notes[0].property.as_deref(), Some("font-family"));
+    assert!(notes[0].reason.contains("U+0378"), "{}", notes[0].reason);
+    assert!(notes[0].value.as_deref().unwrap().contains("DM Sans"));
+
+    // Spaces and other characters that are not drawn are not gaps.
+    let root = el(
+        "div",
+        "$0",
+        "font-size: 40px; font-family: 'DM Sans'",
+        vec![text("a\u{200B}b\u{FE0F} c")],
+    );
+    let out = painted(root, json!({ "DM Sans": dm_sans() }));
+    assert!(glyph_notes(&out).is_empty(), "{:?}", out.unsupported);
+}
+
+#[test]
+fn svg_text_falls_back_to_the_bundled_fonts() {
+    let with = |s: &str| {
+        let label = el_attrs(
+            "text",
+            "$0.0.0",
+            json!({ "x": "10", "y": "60", "font-size": "40", "font-family": "DM Sans" }),
+            "",
+            vec![text(s)],
+        );
+        let svg = el_attrs(
+            "svg",
+            "$0.0",
+            json!({ "width": "300", "height": "100", "viewBox": "0 0 300 100" }),
+            "",
+            vec![label],
+        );
+        painted(
+            el("div", "$0", "", vec![svg]),
+            json!({ "DM Sans": dm_sans() }),
+        )
+    };
+    // U+0378 gets the missing-glyph box of the first font, U+2192 the arrow of a bundled one.
+    assert_ne!(
+        layers_json(&with("\u{2192}")),
+        layers_json(&with("\u{378}"))
+    );
+}

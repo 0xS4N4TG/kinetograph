@@ -568,6 +568,14 @@ fn glyph_text_matches_golden() {
 }
 
 #[test]
+fn glyph_fallback_matches_golden() {
+    // Characters DM Sans lacks (an arrow, a check mark, a star, a maths sign, a snowman, an emoji) are drawn in the
+    // bundled fallback fonts. The last line has an unassigned code point that no font has: the missing-glyph box.
+    let frame = render_still(scene("tests/scenes/glyph-fallback.json"), 0).unwrap();
+    check("glyph-fallback", &frame);
+}
+
+#[test]
 fn origin_and_align_match_golden() {
     // Frame 15 of 30: the rotations, scale and tilt are half way. Covers a
     // rect turning and shrinking about its centre (its outline stays put), an

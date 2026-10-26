@@ -6,7 +6,9 @@
 //! in Parley's collection under the key's family name, weight and style, which
 //! is what CSS font matching (`font-family` stack, `font-weight`, `font-style`)
 //! selects on. Generic families (`sans-serif`, `serif`, ...) and anything the
-//! stack does not name fall back to the registered families, in key order.
+//! stack does not name fall back to the registered families, in key order. A
+//! character none of them has falls back to the symbol fonts the engine bundles
+//! (`kinetograph_core::fallback_fonts`).
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -203,6 +205,9 @@ pub fn font_context(
         ctx.collection
             .append_generic_families(generic, order.iter().copied());
     }
+    // After the project's fonts and the generics built from them: a character
+    // none of them has falls back to the bundled symbol fonts.
+    kinetograph_core::fallback_fonts::register(&mut ctx.collection, &proportional_first);
     Ok(ctx)
 }
 
