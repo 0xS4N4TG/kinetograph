@@ -2,7 +2,7 @@
 
 ## Stack
 - Language: Rust (core renderer: crates/core, CLI: crates/cli, N-API addon: crates/node) and TypeScript (npm workspaces under packages/: scene, react, core, audio, cli; contract in packages/cli/skills/kinetograph/references/AUTHORING.md)
-- Render backend: Skia (Graphite on Metal/Vulkan/D3D12, CPU fallback) is the default since 2026-10-23; Vello kept as fallback (KINETOGRAPH_BACKEND=vello). DOM islands via vendored blitz-dom/stylo/taffy.
+- Render backend: Skia (Graphite on Metal/Vulkan/D3D12, CPU fallback) is the only renderer (Vello is gone); `KINETOGRAPH_SKIA_CPU=1` forces the CPU. `render`, `still` and `doctor` print which one runs. DOM islands via vendored blitz-dom/stylo/taffy.
 - npm: CLI `kinetograph`, libraries `@kinetographdev/*` (0.1.0 published 2026-10-24). Site kinetograph.dev on Vercel (packages/site, auto-deploy from main).
 - Repo: github.com/0xS4N4TG/kinetograph (public), branch main; PRs merge after native.yml CI is green on macOS/Linux/Windows + smoke
 - Licence: PolyForm Small Business 1.0.0 (LICENSE.md); commercial licence for larger companies (COMMERCIAL.md)

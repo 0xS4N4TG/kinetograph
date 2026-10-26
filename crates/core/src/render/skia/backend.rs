@@ -56,6 +56,8 @@ pub(in super::super) struct SkiaBackend {
     /// The frame's recorder; `None` when Skia draws on the CPU, into raster surfaces that are uploaded to the textures
     /// the GPU path would have drawn into.
     rec: Option<Rc<RefCell<graphite::Recorder>>>,
+    /// `KINETOGRAPH_SKIA_CPU` was set when the backend started.
+    cpu_forced: bool,
     tr: Translator,
     /// Frames take the targets in turn, so that a frame is not drawn into the texture the one before is still being
     /// read from.
@@ -157,7 +159,7 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
         std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
     });
     let inner = Inner { gpu, tr: None, tr_frame: u64::MAX, frame: 0 };
-    Ok(SkiaBackend { _device: device.clone(), inner: Some(inner), rec, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
+    Ok(SkiaBackend { _device: device.clone(), inner: Some(inner), rec, cpu_forced: forced, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
 }
 
 /// Tells, once per process, that Skia draws on the CPU.
@@ -192,7 +194,26 @@ fn json_map(m: &std::collections::BTreeMap<String, u32>) -> String {
     format!("{{{}}}", items.join(","))
 }
 
+impl SkiaBackend {
+    /// Which renderer draws: "Skia GPU (Metal)", "Skia CPU (no GPU found)" or "Skia CPU (KINETOGRAPH_SKIA_CPU=1)".
+    pub(in super::super) fn describe(&self) -> String {
+        if self.rec.is_some() {
+            let api = if cfg!(target_os = "macos") { "Metal" } else { "Vulkan" };
+            format!("Skia GPU ({api})")
+        } else if self.cpu_forced {
+            "Skia CPU (KINETOGRAPH_SKIA_CPU=1)".to_string()
+        } else {
+            "Skia CPU (no GPU found)".to_string()
+        }
+    }
+}
+
 impl Renderer {
+    /// Which renderer draws the 2D layers, for `kinetograph render`, `still` and `doctor` to say.
+    pub fn backend_description(&self) -> String {
+        self.skia.as_ref().map_or_else(|| "Skia".to_string(), |sk| sk.describe())
+    }
+
     /// Drops what Skia read from files (pictures, videos, fonts), so that the next frame reads them again.
     pub(in super::super) fn skia_forget_files(&mut self) {
         if let Some(sk) = &mut self.skia {

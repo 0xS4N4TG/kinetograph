@@ -13,6 +13,8 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
 export declare class Renderer {
   /** Opens the GPU and builds the pipelines, once. */
   constructor(options?: RendererOptions | undefined | null)
+  /** Which renderer draws: "Skia GPU (Metal)", "Skia CPU (no GPU found)" or "Skia CPU (KINETOGRAPH_SKIA_CPU=1)". */
+  backend(): string
   /** One frame as a PNG. */
   still(sceneJson: string, frame: number, baseDir?: string | undefined | null): Buffer
   /**

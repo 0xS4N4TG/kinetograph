@@ -37,7 +37,11 @@ export const still: Command = {
     } finally {
       restoreReact();
     }
-    const drawer = new FrameDrawer(source, { renderer: newRenderer, progress: context.progress, strict: args.options.strict === true });
+    const drawer = new FrameDrawer(source, { renderer: () => {
+        const renderer = newRenderer();
+        context.progress(`renderer: ${renderer.backend()}`);
+        return renderer;
+      }, progress: context.progress, strict: args.options.strict === true });
     try {
       const frame = checkFrame(args.positionals.frame as number, source.composition.durationInFrames);
       const started = nowMs();
@@ -95,6 +99,7 @@ export const render: Command = {
       const started = nowMs();
       const renderer = newRenderer();
       stage('renderer made (GPU init)');
+      context.progress(`renderer: ${renderer.backend()}`);
       ensureParentDir(output);
       const summary = await renderSource(source, renderer, {
         output,

@@ -7,7 +7,7 @@ import type { UnsupportedImport } from '../bundle.js';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
 import { frameRange, type Source } from '../source.js';
-import { ENTRY, openFromArgs, type Command, type Context } from './types.js';
+import { ENTRY, newRenderer, openFromArgs, type Command, type Context } from './types.js';
 
 /**
  * Runs the JS stage for `first..=last`, in order, and reads each frame's unsupported items. Each frame's scene is also
@@ -95,10 +95,19 @@ function installReport(): { data: object; text: string } {
   } catch (error) {
     addon = { loaded: false, error: error instanceof CliError ? error.message : String(error) };
   }
-  const data = { node: process.version, platform: `${process.platform}-${process.arch}`, addon };
+  let renderer: string | null = null;
+  if (addon.loaded) {
+    try {
+      renderer = newRenderer().backend();
+    } catch {
+      // No renderer could start (no GPU and no CPU fallback): said below.
+    }
+  }
+  const data = { node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer };
   const text = [
     `node ${data.node} on ${data.platform}`,
     addon.loaded ? `addon: loaded, version ${addon.version}` : `addon: NOT loaded: ${addon.error}`,
+    addon.loaded ? `renderer: ${renderer ?? 'could not start'}` : 'renderer: unknown (no addon)',
     'kinetograph doctor <entry> reports what a project holds that the engine cannot draw',
   ].join('\n');
   return { data, text };
