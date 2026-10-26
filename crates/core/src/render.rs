@@ -2356,6 +2356,23 @@ fn image_sources(scene: &Scene) -> Vec<String> {
 /// Decodes the image file `src`, relative to `base_dir`.
 fn read_image(base_dir: &Path, src: &str) -> Result<ImageData> {
     let path = base_dir.join(src);
+    // An SVG picture is painted at the size it is drawn at (`svg_picture`); here it is checked and painted at its
+    // natural size.
+    if crate::svg_picture::is_svg(src) {
+        let picture = crate::svg_picture::Picture::open(base_dir, src)
+            .map_err(|e| Error::Render(format!("cannot decode {}: {e}", path.display())))?;
+        let (width, height) = crate::scene::image_dimensions(base_dir, src).map_err(Error::Render)?;
+        let rgba = picture
+            .paint(width, height)
+            .ok_or_else(|| Error::Render(format!("cannot paint {}", path.display())))?;
+        return Ok(ImageData {
+            data: Blob::from(rgba),
+            format: ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::Alpha,
+            width,
+            height,
+        });
+    }
     // A `data:` URL is decoded from memory, with no file.
     let decoded = if let Some(bytes) = crate::scene::data_uri_bytes(src) {
         image::load_from_memory(&bytes)

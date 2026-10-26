@@ -79,6 +79,9 @@ pub struct Translator {
     gif_pics: HashMap<(String, usize), Option<Image>>,
     #[allow(clippy::type_complexity)]
     lottie_last: HashMap<(String, u32, u32), ((u64, bool), Image)>,
+    /// SVG pictures, parsed once per file (`None`: it could not be read), and painted once per size they are drawn at.
+    svg_files: HashMap<String, Option<Rc<crate::svg_picture::Picture>>>,
+    svg_pics: HashMap<(String, u32, u32), Option<Image>>,
     /// Effect classes to leave out (SKIA_SKIP=blur,shadow,inset,color,filtergraph,mask,matte,backdrop), to see where the GPU time goes.
     skip: Vec<String>,
     /// The renderer that draws the fallback layers: set by `draw_scene` for the length of the call only.
@@ -192,6 +195,8 @@ impl Translator {
             mosh_states: HashMap::new(),
             gif_pics: HashMap::new(),
             lottie_last: HashMap::new(),
+            svg_files: HashMap::new(),
+            svg_pics: HashMap::new(),
             skip: std::env::var("SKIA_SKIP").unwrap_or_default().split(',').map(str::to_string).collect(),
             host: std::ptr::null_mut(),
             rec: None,
@@ -238,6 +243,8 @@ impl Translator {
         self.mosh_states.clear();
         self.gif_pics.clear();
         self.lottie_last.clear();
+        self.svg_files.clear();
+        self.svg_pics.clear();
         self.fonts_key.clear();
     }
 
@@ -1318,7 +1325,7 @@ impl Translator {
         };
         if let Some(f) = fill {
             let mut p = Self::base_paint(comp);
-            self.set_paint(&mut p, f, layer_box);
+            self.set_paint(canvas, &mut p, f, layer_box);
             draw(canvas, &p);
             self.stats.draws += 1;
         }
@@ -1357,7 +1364,7 @@ impl Translator {
         }
     }
 
-    fn set_paint(&mut self, p: &mut Paint, paint: &ResolvedPaint, layer_box: Option<Rect>) {
+    fn set_paint(&mut self, canvas: &Canvas, p: &mut Paint, paint: &ResolvedPaint, layer_box: Option<Rect>) {
         match paint {
             ResolvedPaint::Solid(c) => {
                 let c = color4(*c);
@@ -1368,7 +1375,13 @@ impl Translator {
                 p.set_shader(gradient_shader_for(g, layer_box, self.linear(), true));
             }
             ResolvedPaint::Image(i) => {
-                let Some(img) = self.image(&i.src) else {
+                let img = if crate::svg_picture::is_svg(&i.src) {
+                    let (w, h) = (i.width, i.height);
+                    self.svg_image(canvas, &i.src, |n| (w / n.0, h / n.1))
+                } else {
+                    self.image(&i.src)
+                };
+                let Some(img) = img else {
                     self.stats.no("image paint (file)");
                     return;
                 };
@@ -1384,7 +1397,15 @@ impl Translator {
         if let Some(i) = self.images.get(src) {
             return i.clone();
         }
-        let decoded = if let Some(bytes) = data_uri_bytes(src) {
+        let decoded = if crate::svg_picture::is_svg(src) {
+            // Where the size it is drawn at is not known (a canvas's `drawImage`): at its natural size. `draw_image` and
+            // image paints paint it for the size they draw it at (`svg_image`).
+            self.svg_file(src).and_then(|pic| {
+                let (w, h) = pic.size();
+                let (w, h) = (w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32);
+                image::RgbaImage::from_raw(w, h, pic.paint(w, h)?).map(image::DynamicImage::ImageRgba8)
+            })
+        } else if let Some(bytes) = data_uri_bytes(src) {
             image::load_from_memory(&bytes).ok()
         } else {
             image::open(self.base_dir.join(src)).ok()
@@ -1403,7 +1424,60 @@ impl Translator {
         img
     }
 
+    /// The SVG picture `src`, parsed once. A file that cannot be read is reported each time it is used.
+    fn svg_file(&mut self, src: &str) -> Option<Rc<crate::svg_picture::Picture>> {
+        if !self.svg_files.contains_key(src) {
+            let pic = crate::svg_picture::Picture::open(&self.base_dir, src).ok().map(Rc::new);
+            self.svg_files.insert(src.to_string(), pic);
+        }
+        let pic = self.svg_files.get(src).cloned().flatten();
+        match &pic {
+            Some(p) if p.has_text() => self.stats.approx("SVG picture text (left out: a picture sets text in no fonts)"),
+            Some(_) => {}
+            None => self.stats.no("SVG picture (the file cannot be read)"),
+        }
+        pic
+    }
+
+    /// The SVG picture `src` painted for being drawn `scale` layer units per natural pixel on each axis, under the
+    /// canvas's matrix: one painted pixel to each drawn one, sharp at any scale. Painted once per size.
+    fn svg_image(&mut self, canvas: &Canvas, src: &str, scale: impl Fn((f64, f64)) -> (f64, f64)) -> Option<Image> {
+        let pic = self.svg_file(src)?;
+        let natural = pic.size();
+        let m = canvas.local_to_device_as_3x3();
+        let dev = Affine::new([m.scale_x() as f64, m.skew_y() as f64, m.skew_x() as f64, m.scale_y() as f64, m.translate_x() as f64, m.translate_y() as f64]);
+        let (pw, ph) = crate::svg_picture::pixels(natural, scale(natural), crate::bounds::max_stretch(dev))?;
+        let key = (src.to_string(), pw, ph);
+        if let Some(img) = self.svg_pics.get(&key) {
+            return img.clone();
+        }
+        let img = pic.paint(pw, ph).and_then(|rgba| self.rgba_image(&rgba, pw, ph));
+        if self.svg_pics.len() >= 48 {
+            self.svg_pics.clear();
+        }
+        self.svg_pics.insert(key, img.clone());
+        if img.is_none() {
+            self.stats.no("SVG picture (cannot be painted)");
+        }
+        img
+    }
+
     fn draw_image(&mut self, canvas: &Canvas, src: &str, size: (f64, f64), fit: Fit, comp: Comp) {
+        if crate::svg_picture::is_svg(src) {
+            let (sx, sy) = (size.0, size.1);
+            let img = self.svg_image(canvas, src, |n| {
+                let (kx, ky) = (sx / n.0, sy / n.1);
+                match fit {
+                    Fit::Fill => (kx, ky),
+                    Fit::Contain => (kx.min(ky), kx.min(ky)),
+                    Fit::Cover => (kx.max(ky), kx.max(ky)),
+                }
+            });
+            if let Some(img) = img {
+                self.draw_picture(canvas, &img, size, fit, comp);
+            }
+            return;
+        }
         let Some(img) = self.image(src) else {
             self.stats.no("image (file)");
             return;
@@ -1679,7 +1753,7 @@ impl Translator {
         let styled = chars.iter().any(Option::is_some);
         let centres = if styled { laid.char_centres() } else { BTreeMap::new() };
         let mut paint = Self::base_paint(comp);
-        self.set_paint(&mut paint, color, text_box);
+        self.set_paint(canvas, &mut paint, color, text_box);
         let stroke_paint = stroke.as_ref().map(|st| Self::text_stroke_paint(st, comp));
         let stroke_first = *paint_order == TextPaintOrder::StrokeFill;
         // The fill and the stroke of a path, in the order `paint-order` gives.
@@ -1736,8 +1810,8 @@ impl Translator {
                     let mut own = Self::base_paint(comp);
                     own.set_alpha_f(own.alpha_f() * style.opacity);
                     match style.color {
-                        Some(c) => self.set_paint(&mut own, &ResolvedPaint::Solid(c), text_box),
-                        None => self.set_paint(&mut own, color, text_box),
+                        Some(c) => self.set_paint(canvas, &mut own, &ResolvedPaint::Solid(c), text_box),
+                        None => self.set_paint(canvas, &mut own, color, text_box),
                     }
                     canvas.save();
                     canvas.concat(&mat(crate::render::char_matrix(style, centre)));

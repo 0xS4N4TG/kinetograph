@@ -5,13 +5,16 @@ use std::path::{Path, PathBuf};
 use base64::Engine as _;
 use style::url::ComputedUrl;
 
+use kinetograph_core::svg_picture;
+
 use super::Painter;
 
 /// What a picture URL turned out to be.
 pub enum Source {
-    /// A raster picture the scene can draw: the file's path and its size.
+    /// A picture the scene can draw: the file's path and its natural size. An SVG file is one (it is painted at
+    /// the size it is drawn at, `kinetograph_core::svg_picture`).
     Raster { path: String, w: f64, h: f64 },
-    /// Something the scene cannot draw (an SVG picture, a remote URL), and why.
+    /// Something the scene cannot draw (a remote URL, a file that is no picture), and why.
     Unsupported(String),
 }
 
@@ -73,7 +76,14 @@ impl<'a> Painter<'a> {
         };
         let lower = path.to_string_lossy().to_lowercase();
         if lower.ends_with(".svg") || lower.ends_with(".svgz") {
-            return Source::Unsupported("an SVG picture is not drawn yet".to_string());
+            return match svg_picture::natural_size(Path::new(""), &path.to_string_lossy()) {
+                Ok((w, h)) => Source::Raster {
+                    path: path.to_string_lossy().into_owned(),
+                    w,
+                    h,
+                },
+                Err(e) => Source::Unsupported(format!("cannot read {}: {e}", path.display())),
+            };
         }
         match image::image_dimensions(&path) {
             Ok((w, h)) => Source::Raster {
@@ -96,7 +106,11 @@ impl<'a> Painter<'a> {
         match mime {
             "image/png" | "image/jpeg" | "image/jpg" | "image/gif" | "image/webp" => {}
             "image/svg+xml" => {
-                return Source::Unsupported("an SVG picture is not drawn yet".to_string());
+                let src = format!("data:{rest}");
+                return match svg_picture::natural_size(Path::new(""), &src) {
+                    Ok((w, h)) => Source::Raster { path: src, w, h },
+                    Err(e) => Source::Unsupported(format!("cannot read a data: SVG picture: {e}")),
+                };
             }
             other => {
                 return Source::Unsupported(format!("the picture type {other:?} is not drawn"));
