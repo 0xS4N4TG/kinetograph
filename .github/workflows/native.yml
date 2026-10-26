@@ -3,8 +3,9 @@
 name: native
 
 on:
+  # main only: a branch is built through its pull request, so a push to one does not build twice.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
