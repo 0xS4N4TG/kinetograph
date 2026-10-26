@@ -9,6 +9,7 @@ Everything here is on `main` and not yet published to npm.
 
 ### Added
 
+- `libx264` and `libx265` in the npm packages. The platform packages (`@kinetographdev/native-<platform>`) now carry a separate GPL `ffmpeg` program in `bin/` (x264, x265 and libvpx; the addon itself still links only an LGPL ffmpeg), and the addon runs it as a child process for the encoders it lacks. H.264 now defaults to libx264 where there is no hardware encoder, ahead of libopenh264. `KINETOGRAPH_FFMPEG` points at another ffmpeg. The addon's ffmpeg also gained libvpx (VP8, VP9) on macOS and Linux. See `/docs/ffmpeg-license/`.
 - `<Video datamosh>`: smear one shot into the next, using the video's own motion vectors. See the Datamosh guide on the site at `/docs/guides/datamosh/`. ([#5](https://github.com/0xS4N4TG/kinetograph/pull/5))
 - GSAP support, including the free plugins (SplitText, MotionPath, DrawSVG, TextPlugin, Flip). Build a paused timeline and seek it to each frame. See `/docs/compat/#gsap`. ([#7](https://github.com/0xS4N4TG/kinetograph/pull/7))
 - HTML text outlines: `-webkit-text-stroke` and `paint-order: stroke fill`, drawn with Chrome's miter joins, and working with `text-shadow`, transforms, opacity and `background-clip: text`. ([#8](https://github.com/0xS4N4TG/kinetograph/pull/8))

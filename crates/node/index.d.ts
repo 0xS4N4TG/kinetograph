@@ -315,6 +315,12 @@ export interface RenderSummary {
  */
 export declare function resolveExport(output: string, options?: ExportOptions | undefined | null): ExportPlan
 
+/**
+ * Tells the encoder where the separate GPL `ffmpeg` program is (the platform package's `bin/ffmpeg`), which has the
+ * encoders the linked LGPL ffmpeg lacks (libx264, libx265). `KINETOGRAPH_FFMPEG` takes precedence. `null` forgets it.
+ */
+export declare function setFfmpegPath(path?: string | undefined | null): void
+
 export interface RgbaFrame {
   width: number
   height: number

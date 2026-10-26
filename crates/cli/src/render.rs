@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use kinetograph_core::{Frame, PendingFrame, Renderer, Scene};
 
-use crate::encode::{self, AudioPcm, Resolved, Settings, VideoEncoder};
+use crate::encode::{self, AudioPcm, FrameEncoder, Resolved, Settings};
 
 /// How many finished frames may wait for the encoder. With two, the GPU
 /// renders and reads back frame N+1 while frame N is being encoded, and
@@ -333,7 +333,7 @@ impl FrameSink {
         let (open_tx, open_rx) = mpsc::sync_channel::<Result<(), String>>(1);
         let (path, resolved) = (partial.clone(), settings.clone());
         let thread = thread::spawn(move || -> Result<u32, String> {
-            let mut encoder = match VideoEncoder::create(&path, width, height, fps, &resolved) {
+            let mut encoder = match FrameEncoder::create(&path, width, height, fps, &resolved) {
                 Ok(encoder) => {
                     let _ = open_tx.send(Ok(()));
                     encoder
