@@ -23,7 +23,6 @@ import { makeGoogleFont } from '../google-fonts.js';
 import { reportUnsupported } from '../unsupported.js';
 import type { HfNode, HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
-import { applySvgRules } from './svg-style.js';
 import { laneGain, MAX_GAIN, parseAutomation, sourceTimeAt, type AutomationLane } from './automation.js';
 import { gradeAttribute, gradeNotDrawn, normalizeGrade, seedOf } from './grading.js';
 import {
@@ -263,8 +262,6 @@ class Runtime {
   /** What follows the scripts, run again once what they fetched has been drawn. */
   private afterScripts(): void {
     const { plan } = this;
-    const svgs = Array.from(doc().querySelectorAll('svg')) as AnyRecord[];
-    applySvgRules(plan.svgRules, svgs);
     this.root = doc().querySelector(`[data-composition-id="${attrValue(plan.compositionId)}"]`);
     this.timing.reset();
     this.clocks.clear();

@@ -1,0 +1,16 @@
+{
+  "width": 640,
+  "height": 360,
+  "fps": 30,
+  "durationInFrames": 10,
+  "background": "#222222",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    { "id": "arrow", "type": "text", "text": "Germany → Austria", "font": "DM Sans", "size": 64, "color": "#ffffff",
+      "transform": { "x": 40, "y": 40 } },
+    { "id": "symbols", "type": "text", "text": "✓ ★ ⇒ ≈ ☃ 😀", "font": "DM Sans", "size": 56, "color": "#ffcc66",
+      "transform": { "x": 40, "y": 150 } },
+    { "id": "gap", "type": "text", "text": "gap: a͸b", "font": "DM Sans", "size": 40, "color": "#ff99aa",
+      "transform": { "x": 40, "y": 260 } }
+  ]
+}

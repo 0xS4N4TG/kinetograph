@@ -30,6 +30,8 @@ Everything here is on `main` and not yet published to npm.
 
 - Canvas 2D gradients blend their stops without premultiplying alpha, as Chrome does: a gradient from transparent green to opaque red keeps its green in the middle. CSS gradients still blend premultiplied. HyperFrames' `transitions-destruction` now draws as in Chrome.
 - `kinetograph doctor` counted frames twice in its summary ("nothing unsupported in 0 of 10 frames; with unsupported content: 10"). It now says "10 of 10 frames (100.0%) have unsupported content; 0 are clean", or "all N frames are clean".
+- An element that starts at `width: 0` (or any zero length) and is animated wider by a script, such as anime.js `width: [0, 100]`, now draws. `element.style` gave `0` back where a browser gives `0px`, so anime.js wrote a unitless `55.5` that CSS drops. Zero lengths now read back as `0px`.
+>>>>>>> 74c0fb19a09b9a6de3cf4e96466661842597bd4f
 - `<TransitionSeries>` and `<Series>` accept children wrapped in a `React.Fragment`, nested ones too, so a `.map()` can emit a Transition and Sequence pair as Remotion allows. ([#31](https://github.com/0xS4N4TG/kinetograph/issues/31))
 - Machines with a Vulkan 1.4 driver no longer fall back to the CPU. ([#1](https://github.com/0xS4N4TG/kinetograph/issues/1), [#2](https://github.com/0xS4N4TG/kinetograph/pull/2))
 - A frame renders the same when the document was edited between frames: an inline box now sits on its baseline in an edited document as it does in a fresh one. ([#3](https://github.com/0xS4N4TG/kinetograph/pull/3))
@@ -38,10 +40,13 @@ Everything here is on `main` and not yet published to npm.
 - `getComputedStyle` and `getBoundingClientRect` on an element inside an `AbsoluteFill` that has a background no longer fail with "no element at path". ([#7](https://github.com/0xS4N4TG/kinetograph/pull/7))
 - Page CSS styles SVG content: class, descendant and attribute selectors reach `fill`, `stroke`, fonts, `text-anchor`, `paint-order` and the other presentation properties. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
 - SVG `fill`, `stroke` and `stop-color` of `var()`, `oklch()`, `oklab()`, `color-mix()` or `rgb(r g b / a)` were drawn black; they now draw in their colour, and a colour that cannot be read is reported. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
+- Page CSS gives SVG shapes `transform` (with `rotate`, `scale`, `translate` and `transform-origin`), `filter: url(#id)`, `clip-path: url(#id)` and `mask: url(#id)`, with shapes a script adds and rules inside `@media` styled through the same cascade. HyperFrames no longer re-applies such rules in TypeScript.
 - An MP4 whose moov atom is at the end decodes its audio. ([#14](https://github.com/0xS4N4TG/kinetograph/pull/14))
 - `document.getElementById` and `querySelector` find nodes appended to `<body>` outside the React root, and SVG `<text>` measures its real size in `getBBox` and `getComputedTextLength`. ([#12](https://github.com/0xS4N4TG/kinetograph/pull/12))
 - `transform-style: preserve-3d` on an element with `opacity`, a `filter`, `clip-path`, `mask`, `mix-blend-mode`, `isolation: isolate`, `contain: paint`, `backdrop-filter` or `overflow: hidden` failed the render with "a preserve3d group cannot have effects". Such an element is now flattened, as CSS Transforms 2 and Chrome do, and drawn as a flat group with its effect.
 - `kinetograph doctor` runs the scene validation a render runs on every frame, and lists a scene the render would refuse (with its frames, exit code 1). It used to report only what is unsupported, so a project that cannot render looked fine.
+
+- A character the font lacks (`→`, `✓`, `≈`, an emoji) is no longer drawn as a box. Text falls back, one character at a time, to the rest of the `font-family` list and then to Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (monochrome), which ship inside the native addon (about 1.1 MB, SIL OFL). This covers HTML text, SVG `<text>`, text layers, Text3D and canvas `fillText`. A character no font has (CJK, for one) is still drawn as a box, but `doctor` and `--strict` now report it with its code point and the font list (`font-family`, "no glyph for U+2192 ..."); `inspect` lists it as `missingChars`. ([#32](https://github.com/0xS4N4TG/kinetograph/issues/32))
 
 ### Changed in behaviour
 

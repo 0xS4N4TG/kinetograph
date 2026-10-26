@@ -11,14 +11,13 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
-import type { HfNode, HfPlan, HfScript, HfStylesheet, HfSvgRule } from '@kinetographdev/core/hyperframes';
+import type { HfNode, HfPlan, HfScript, HfStylesheet } from '@kinetographdev/core/hyperframes';
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
 import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, verifyIntegrity } from './deps.js';
 import { pickSrcset, remoteImage, rewriteCssImages, type RemoteImage } from './images.js';
 import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
-  crossingRules,
   extractGoogleFontImports,
   parseGoogleFontsUrl,
   rewriteDocumentSelectors,
@@ -86,8 +85,6 @@ interface Context {
 
 class Builder {
   readonly stylesheets: HfStylesheet[] = [];
-  readonly svgRules: HfSvgRule[] = [];
-  private ruleOrder = 0;
   readonly scripts: HfScript[] = [];
   readonly fonts: GoogleFontRequest[] = [];
   /** The font families the page's CSS names (`fonts.ts`). */
@@ -267,9 +264,6 @@ class Builder {
     if (css.trim() === '') return;
     noteCss(this.fontUse, css);
     this.stylesheets.push({ css, file });
-    this.svgRules.push(...crossingRules(css, this.ruleOrder));
-    // The next sheet's rules come after this one's: their order counts the blocks of the sheets so far.
-    this.ruleOrder += css.split('{').length + 1;
   }
 
   async link(el: PElement, ctx: Context): Promise<void> {
@@ -639,7 +633,6 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     body,
     stylesheets: builder.stylesheets,
     scripts: builder.scripts,
-    svgRules: builder.svgRules,
     googleFonts,
     variables: builder.variables,
     remoteData: builder.remoteData,
