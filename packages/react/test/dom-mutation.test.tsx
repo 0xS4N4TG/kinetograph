@@ -206,6 +206,43 @@ describe('a script putting nodes into the tree', () => {
   });
 });
 
+describe('element.style reads like the CSSOM', () => {
+  it('gives a zero length back with its unit, so a library animating from 0 keeps px', () => {
+    // anime.js takes the unit of `width: [0, 100]` from the value it reads; a bare `0` made it write `55.5` (invalid CSS).
+    let seen: Record<string, string> = {};
+    function Probe() {
+      const ref = useRef<any>(null);
+      useLayoutEffect(() => {
+        const s = ref.current.style;
+        seen = { width: s.width, height: s.height, margin: s.margin, opacity: s.opacity, lineHeight: s.lineHeight, before: s.top };
+        s.top = '0';
+        s.setProperty('left', '0px');
+        s.padding = '0 4px 0 0';
+        seen.top = s.top;
+        seen.left = s.left;
+        seen.padding = s.padding;
+        s.width = '55.5px';
+        seen.grown = s.width;
+      }, []);
+      return <div ref={ref} style={{ width: 0, height: '0', margin: 0, opacity: 0, lineHeight: 0 }} />;
+    }
+    const { root } = render(<Probe />);
+    root.unmount();
+    expect(seen).toMatchObject({
+      width: '0px',
+      height: '0px',
+      margin: '0px',
+      opacity: '0',
+      lineHeight: '0',
+      before: '',
+      top: '0px',
+      left: '0px',
+      padding: '0px 4px 0px 0px',
+      grown: '55.5px',
+    });
+  });
+});
+
 describe('React and a script sharing a parent', () => {
   it('place React’s own insertions right around a node a library added', () => {
     let add!: (items: string[]) => void;
