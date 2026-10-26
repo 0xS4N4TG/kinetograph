@@ -455,3 +455,61 @@ fn an_edited_svg_beside_text_leaves_the_line_as_fresh() {
         );
     }
 }
+
+/// Every rect shape in `layers`, as its width and height.
+fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
+    match layers {
+        Value::Array(list) => list.iter().for_each(|l| rects(l, out)),
+        Value::Object(layer) => {
+            if let Some(shape) = layer.get("shape")
+                && let (Some(w), Some(h)) = (shape["width"].as_f64(), shape["height"].as_f64())
+            {
+                out.push((w, h));
+            }
+            if let Some(children) = layer.get("children") {
+                rects(children, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn an_element_that_starts_with_no_size_or_no_paint_is_drawn_once_it_grows() {
+    // Each bar starts at zero width, zero height, `display: none` or `opacity: 0` and gets its size by pass 3.
+    let frame = |width: f64, height: f64, shown: bool| {
+        let bar = |i: usize, style: String| el("div", &format!("$0.{i}"), &style, vec![]);
+        let base = "position: absolute; left: 4px; background: #264653;";
+        let display = if shown { "block" } else { "none" };
+        let alpha = if shown { 1 } else { 0 };
+        let bars = vec![
+            bar(0, format!("{base} top: 0px; width: {width}px; height: 8px")),
+            bar(1, format!("{base} top: 10px; width: 40px; height: {height}px")),
+            bar(2, format!("{base} top: 20px; width: 60px; height: 8px; display: {display}")),
+            bar(3, format!("{base} top: 30px; width: 70px; height: 8px; opacity: {alpha}")),
+        ];
+        request(el("div", "$0", "position: absolute; inset: 0", bars))
+    };
+    let mut cache = IslandCache::default();
+    let mut fresh = IslandCache::default();
+    let mut seen = vec![];
+    for (pass, (width, height, shown)) in [(0.0, 0.0, false), (25.0, 4.0, false), (50.0, 8.0, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let s = frame(width, height, shown);
+        let edited = drawn(&mut cache, &s, Some(pass as u64 + 1));
+        assert_eq!(edited, drawn(&mut fresh, &s, None), "pass {pass}");
+        let mut boxes = vec![];
+        rects(&serde_json::from_str(&edited).unwrap(), &mut boxes);
+        seen.push(boxes);
+    }
+    let has = |boxes: &[(f64, f64)], w: f64, h: f64| {
+        boxes.iter().any(|b| (b.0 - w).abs() < 0.01 && (b.1 - h).abs() < 0.01)
+    };
+    assert!(!has(&seen[0], 0.0, 8.0) && !has(&seen[0], 40.0, 0.0), "{:?}", seen[0]);
+    assert!(has(&seen[1], 25.0, 8.0) && has(&seen[1], 40.0, 4.0), "{:?}", seen[1]);
+    assert!(!has(&seen[1], 60.0, 8.0), "display: none draws nothing: {:?}", seen[1]);
+    assert!(has(&seen[2], 50.0, 8.0) && has(&seen[2], 40.0, 8.0), "{:?}", seen[2]);
+    assert!(has(&seen[2], 60.0, 8.0) && has(&seen[2], 70.0, 8.0), "{:?}", seen[2]);
+}

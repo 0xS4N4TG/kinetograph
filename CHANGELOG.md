@@ -27,6 +27,7 @@ Everything here is on `main` and not yet published to npm.
 
 ### Fixed
 
+- An element that starts at `width: 0` (or any zero length) and is animated wider by a script, such as anime.js `width: [0, 100]`, now draws. `element.style` gave `0` back where a browser gives `0px`, so anime.js wrote a unitless `55.5` that CSS drops. Zero lengths now read back as `0px`.
 - `<TransitionSeries>` and `<Series>` accept children wrapped in a `React.Fragment`, nested ones too, so a `.map()` can emit a Transition and Sequence pair as Remotion allows. ([#31](https://github.com/0xS4N4TG/kinetograph/issues/31))
 - Machines with a Vulkan 1.4 driver no longer fall back to the CPU. ([#1](https://github.com/0xS4N4TG/kinetograph/issues/1), [#2](https://github.com/0xS4N4TG/kinetograph/pull/2))
 - A frame renders the same when the document was edited between frames: an inline box now sits on its baseline in an edited document as it does in a fresh one. ([#3](https://github.com/0xS4N4TG/kinetograph/pull/3))
