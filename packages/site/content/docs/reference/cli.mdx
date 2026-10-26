@@ -73,7 +73,7 @@ npx kinetograph render <entry> -o <output.mp4> [options]
 | `--draft` | Half size, for a quick look. The same as `--scale 0.5`. |
 | `--scale <n>` | Output size multiplier, above 0 and at most 8. `0.5` renders 1080p as 540p, and `2` renders it as 4K. Each side rounds down to an even number. |
 | `--concurrency <n>` | Frames drawn at once, in worker threads. The default is half the cores, at most 4. `1` draws every frame in the main thread. A `.json` scene is drawn whole. |
-| `--encoder <name>` | The ffmpeg encoder to use, in place of the default. |
+| `--encoder <name>` | The ffmpeg encoder to use, in place of the default. `libx264` and `libx265` run in a separate ffmpeg program, the one bundled in the platform package or the one `KINETOGRAPH_FFMPEG` names. See [FFmpeg licence](/docs/ffmpeg-license/). |
 | `--codec <name>` | `h264` (default), `h265`, `prores`, `vp9` or `gif`. A `.webm` path defaults to `vp9`, and a `.gif` path to `gif`. |
 | `--crf <n>` | Constant quality. Lower is better. For h264 and h265 the range is 0 to 51, and for vp9 it is 0 to 63. Not with `--video-bitrate`. |
 | `--video-bitrate <rate>` | A bit rate, such as `8M` or `2500k`. Not with `--crf`. |
@@ -262,7 +262,7 @@ npx kinetograph mcp
 
 The `render` options that set the codec and quality follow Remotion's names. These are the defaults, unless a flag changes them:
 
-- H.264 uses `crf 18` with the software encoder. With the VideoToolbox encoder on macOS, it uses a bit rate of 0.2 bits per pixel per frame.
+- H.264 uses `crf 18` with the software encoder (libx264; libopenh264 and the hardware encoders get a bit rate instead). With the VideoToolbox encoder on macOS, it uses a bit rate of 0.2 bits per pixel per frame.
 - VP9 uses `crf 30`, and H.265 uses `crf 28`.
 - The audio bit rate is 96 kbit/s per channel. The encoder choice for each codec is in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 9.
 

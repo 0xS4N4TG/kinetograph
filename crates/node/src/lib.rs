@@ -520,6 +520,13 @@ fn channels(audio: &AudioPcm) -> Vec<&[f32]> {
     audio.channels.iter().map(|c| &**c).collect()
 }
 
+/// Tells the encoder where the separate GPL `ffmpeg` program is (the platform package's `bin/ffmpeg`), which has the
+/// encoders the linked LGPL ffmpeg lacks (libx264, libx265). `KINETOGRAPH_FFMPEG` takes precedence. `null` forgets it.
+#[napi]
+pub fn set_ffmpeg_path(path: Option<String>) {
+    kinetograph_cli::external::set_path(path.filter(|p| !p.is_empty()).map(std::path::PathBuf::from));
+}
+
 /// The planes (Y, U, V for `yuv420p`, the default; rows packed) the encoder
 /// would make of a straight-alpha RGBA8 frame, converted on the calling
 /// thread. A render worker converts its own frames so that one encoder thread

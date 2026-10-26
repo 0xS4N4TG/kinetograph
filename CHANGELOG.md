@@ -9,6 +9,7 @@ Everything here is on `main` and not yet published to npm.
 
 ### Added
 
+- `libx264` and `libx265` in the npm packages. The platform packages (`@kinetographdev/native-<platform>`) now carry a separate GPL `ffmpeg` program in `bin/` (x264, x265 and libvpx; the addon itself still links only an LGPL ffmpeg), and the addon runs it as a child process for the encoders it lacks. H.264 now defaults to libx264 where there is no hardware encoder, ahead of libopenh264. `KINETOGRAPH_FFMPEG` points at another ffmpeg. The addon's ffmpeg also gained libvpx (VP8, VP9) on macOS and Linux. See `/docs/ffmpeg-license/`.
 - `<Video datamosh>`: smear one shot into the next, using the video's own motion vectors. See the Datamosh guide on the site at `/docs/guides/datamosh/`. ([#5](https://github.com/0xS4N4TG/kinetograph/pull/5))
 - GSAP support, including the free plugins (SplitText, MotionPath, DrawSVG, TextPlugin, Flip). Build a paused timeline and seek it to each frame. See `/docs/compat/#gsap`. ([#7](https://github.com/0xS4N4TG/kinetograph/pull/7))
 - HTML text outlines: `-webkit-text-stroke` and `paint-order: stroke fill`, drawn with Chrome's miter joins, and working with `text-shadow`, transforms, opacity and `background-clip: text`. ([#8](https://github.com/0xS4N4TG/kinetograph/pull/8))
@@ -26,6 +27,7 @@ Everything here is on `main` and not yet published to npm.
 
 ### Fixed
 
+- `<TransitionSeries>` and `<Series>` accept children wrapped in a `React.Fragment`, nested ones too, so a `.map()` can emit a Transition and Sequence pair as Remotion allows. ([#31](https://github.com/0xS4N4TG/kinetograph/issues/31))
 - Machines with a Vulkan 1.4 driver no longer fall back to the CPU. ([#1](https://github.com/0xS4N4TG/kinetograph/issues/1), [#2](https://github.com/0xS4N4TG/kinetograph/pull/2))
 - A frame renders the same when the document was edited between frames: an inline box now sits on its baseline in an edited document as it does in a fresh one. ([#3](https://github.com/0xS4N4TG/kinetograph/pull/3))
 - SVG `<text>` inherits font family, size, weight and style from the HTML around the `<svg>`. ([#4](https://github.com/0xS4N4TG/kinetograph/pull/4))
