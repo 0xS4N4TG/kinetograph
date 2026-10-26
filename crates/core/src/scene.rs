@@ -5613,11 +5613,16 @@ fn percent_decode(s: &str) -> Vec<u8> {
 }
 
 /// The pixel size of the image `src` (a file relative to `base_dir`, or a
-/// `data:` URL), from its header.
+/// `data:` URL), from its header. An SVG picture has no pixels: its natural
+/// size (`svg_picture`), rounded up.
 pub(crate) fn image_dimensions(
     base_dir: &Path,
     src: &str,
 ) -> std::result::Result<(u32, u32), String> {
+    if crate::svg_picture::is_svg(src) {
+        let (w, h) = crate::svg_picture::natural_size(base_dir, src)?;
+        return Ok((w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32));
+    }
     if let Some(bytes) = data_uri_bytes(src) {
         return image::ImageReader::new(std::io::Cursor::new(bytes))
             .with_guessed_format()

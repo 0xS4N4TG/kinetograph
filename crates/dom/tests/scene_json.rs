@@ -460,6 +460,69 @@ fn a_border_image_with_a_tiny_tile_stretches_instead_of_allocating() {
     assert!(flat(&out.layers).len() < 1000);
 }
 
+#[test]
+fn an_svg_file_is_a_picture_at_its_natural_size() {
+    let svg = paintkit::repo_root()
+        .join("crates/dom/tests/assets/shape.svg")
+        .canonicalize()
+        .unwrap();
+    let out = paint(
+        &format!(r#"<img id="i" src="file://{}" style="width:200px;height:100px">"#, svg.display()),
+        400,
+        200,
+    );
+    let l = find(&out.layers, "i.img");
+    assert_eq!(l["type"], "image");
+    assert!(l["src"].as_str().unwrap().ends_with("shape.svg"));
+    // 200 x 100 at a height of 100: the width follows the viewBox.
+    assert_eq!(
+        (l["width"].as_f64(), l["height"].as_f64()),
+        (Some(200.0), Some(100.0))
+    );
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+}
+
+#[test]
+fn an_svg_background_is_an_image_paint() {
+    let svg = paintkit::repo_root()
+        .join("crates/dom/tests/assets/shape.svg")
+        .canonicalize()
+        .unwrap();
+    let out = paint(
+        &format!(
+            r#"<div id="a" style="width:100px;height:80px;background:url(file://{}) no-repeat"></div>"#,
+            svg.display()
+        ),
+        200,
+        100,
+    );
+    let text = serde_json::to_string(&out.layers).unwrap();
+    assert!(text.contains("shape.svg"), "{text}");
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+}
+
+#[test]
+fn an_svg_that_cannot_be_read_is_reported_not_dropped_silently() {
+    let dir = std::env::temp_dir().join(format!("kg-dom-bad-svg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bad = dir.join("bad.svg");
+    std::fs::write(&bad, "this is not an svg").unwrap();
+    let out = paint(
+        &format!(
+            r#"<img id="i" src="file://{}" style="width:50px;height:50px">"#,
+            bad.display()
+        ),
+        200,
+        100,
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        out.unsupported.iter().any(|u| u.reason.contains("cannot read the SVG")),
+        "{:?}",
+        out.unsupported
+    );
+}
+
 /// Layer counts for a busy page (280 before the layer-merging pass, 200
 /// after): 60 cards, each a transformed stacking
 /// context holding a box with a background, border and radius and a line of
