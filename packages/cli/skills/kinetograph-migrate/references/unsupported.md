@@ -32,17 +32,19 @@ placeholder box with a label is a fine default when you have no screenshot: say 
 
 ## @remotion/rive
 
-`<RemotionRiveCanvas src={staticFile('a.riv')} stateMachine="...">` plays. Not supported: `onLoad`, `assetLoader`,
-`effects`, `ref` getters. A state machine starts with its inputs at their defaults and they cannot be set. Only
-pictures embedded in the file work. If an input drives the look, pick the artboard or animation that shows the wanted
-state and say so.
+`<RemotionRiveCanvas src={staticFile('a.riv')} stateMachine="...">` plays, with `onLoad`, `assetLoader`, `effects` and the
+`ref` getters (`getRenderer()` is `null`). Set state machine inputs with `stateMachineInputs` (an object, or
+`(frame) => ({ ... })`): this replaces code that sets inputs on the runtime's objects. Put referenced pictures and fonts
+beside the `.riv` (`name-id.ext`, as the Rive editor exports them) or give them with `assetLoader`; an asset on Rive's CDN
+is not fetched.
 
 ## @remotion/skia and @shopify/react-native-skia
 
-Needs the optional addon: `npm install @kinetographdev/skia`. Drawing is CPU only. Not drawn (reported): `Atlas`, `Patch`,
-`Glyphs`, `TextBlob`, `Picture`, `ImageSVG`. Not supported: Reanimated values (use `useCurrentFrame()`), `FitBox`,
-`Skia.Surface`, `Skia.Offscreen`, `Skia.Image/Data/SVG/Typeface` factories, `useVideo`, animated images, shaders set on
-a `Skia.Paint()`. Pass shaders and filters as components instead. Replace what is left with Canvas 2D or SVG.
+Needs the optional addon: `npm install @kinetographdev/skia`. Drawing is CPU only. Reanimated shared values work but live
+for one frame: compute them from `useCurrentFrame()` (`useDerivedValue(() => frame * 2)`); `withTiming`, `withSpring` and
+the other clock animations jump to their end value and are reported, so replace them with `interpolate`/`spring` on the
+frame. `FitBox`, surfaces, `Skia.Data`/`Image`/`Typeface`/`FontMgr`, animated images, paragraph measurement, shaders set on
+a `Skia.Paint()` and SVG text are drawn. Not supported: `useVideo`, `makeImageFromView`, `Skia.SVG.MakeFromData`.
 
 ## Canvas 2D, WebGL, shaders
 

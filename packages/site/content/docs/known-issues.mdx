@@ -123,17 +123,19 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### `@remotion/skia` and `@shopify/react-native-skia`
 
-- `Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture` and `ImageSVG` are drawn. Text inside an SVG is not.
-- Not supported: Reanimated values, `FitBox`, `Skia.Surface` and `Skia.Offscreen`, the `Skia.Image`, `Skia.Data` and `Skia.Typeface` factories, `useVideo`, animated images, paragraph measurement, and shaders or filters set on a `Skia.Paint()` object.
-- Drawing is on the CPU only.
+- Text inside an SVG is drawn with your registered fonts. A family that is not registered is drawn in the built-in fallback font and reported. Characters the font lacks are not drawn.
+- Reanimated values live for one frame, so drive them from `useCurrentFrame()`. `withTiming`, `withSpring` and the other clock animations jump to their end value and are reported.
+- Not supported: `useVideo`, `makeImageFromView`, `Skia.SVG.MakeFromData`, and touch handling.
+- Drawing is on the CPU only. Skia's GPU path was measured and kept out: no prebuilt Skia has the GPU backend and the text and SVG modules together, and GPU pixels differ by machine.
+- An offscreen surface is drawn on the CPU too, so it looks the same on every machine.
 - PNGs of drawn frames are kept under `~/.cache/kinetograph/skia`, the newest 400 to 600 of them.
 - More in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 7.7.
 
 ### `@remotion/rive`
 
-- Not supported: `onLoad`, `assetLoader`, `effects` and the `ref` getters.
-- A state machine starts with its inputs at their defaults, and you can't set them.
-- Only pictures embedded in the file are supported.
+- Set state machine inputs with the `stateMachineInputs` prop, as an object or as a function of the frame.
+- A referenced picture or font is read from beside the `.riv` file or given by `assetLoader`. An asset on Rive's CDN is not fetched; it is reported and drawn without.
+- `getRenderer()` on the `ref` returns `null`.
 - More in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 7.6.
 
 ## Can look different
