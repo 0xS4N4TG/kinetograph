@@ -44,7 +44,8 @@ Needs the optional addon: `npm install @kinetographdev/skia`. Drawing is CPU onl
 for one frame: compute them from `useCurrentFrame()` (`useDerivedValue(() => frame * 2)`); `withTiming`, `withSpring` and
 the other clock animations jump to their end value and are reported, so replace them with `interpolate`/`spring` on the
 frame. `FitBox`, surfaces, `Skia.Data`/`Image`/`Typeface`/`FontMgr`, animated images, paragraph measurement, shaders set on
-a `Skia.Paint()` and SVG text are drawn. Not supported: `useVideo`, `makeImageFromView`, `Skia.SVG.MakeFromData`.
+a `Skia.Paint()`, SVG text and `useVideo` (frames only: add an `<Audio>` for its sound) are drawn. Not supported:
+`makeImageFromView`, `Skia.SVG.MakeFromData`.
 
 ## Canvas 2D, WebGL, shaders
 

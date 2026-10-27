@@ -45,7 +45,7 @@ These packages and APIs are supported. Gaps are listed in [Known issues](/docs/k
 - `onVideoFrame` on `<Video>`, `<OffthreadVideo>` and `<Html5Video>`: the frame the video shows is handed to your code as a canvas image source. `ctx.drawImage(frame, ...)` in all three forms, then `getImageData` reads its pixels (grayscale, a matte's alpha). `drawImage` of a `<video>` element works too. See [Video pixels](/docs/known-issues/#video-pixels) for the limits.
 - `toneFrequency` on `<Audio>` and `<Video>`, from 0.01 to 2. It changes the pitch and keeps the length.
 - `@remotion/media-parser` and `@remotion/webcodecs`: partly supported.
-- `@remotion/skia` (and `@shopify/react-native-skia`, with Reanimated shared values driven by the frame) runs on real Skia in an optional add-on, on the CPU; `useVideo` is not supported yet. `@remotion/rive` plays with Rive's own runtime, with state machine inputs (`stateMachineInputs`), `onLoad`, `assetLoader`, `effects` and referenced assets. See [Known issues](/docs/known-issues/).
+- `@remotion/skia` (and `@shopify/react-native-skia`, with Reanimated shared values driven by the frame) runs on real Skia in an optional add-on, on the CPU, `useVideo` included (without its sound). `@remotion/rive` plays with Rive's own runtime, with state machine inputs (`stateMachineInputs`), `onLoad`, `assetLoader`, `effects` and referenced assets. See [Known issues](/docs/known-issues/).
 - GSAP (core, free plugins, `Flip`): a paused timeline that you seek to the frame's time, or a tween that plays by itself. See [GSAP](#gsap).
 - `<Video datamosh>` is Kinetograph's own prop, not part of Remotion. See the [Datamosh guide](/docs/guides/datamosh/).
 

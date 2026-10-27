@@ -1017,9 +1017,15 @@ recorded again by Skia's own recorder and drawn once, whatever paints are declar
 DOM: an SVG with a size of its own is fitted whole and centred into `width` by `height`, one sized by percentages is laid
 out in them. An SVG has no system fonts, so its `<text>` is left out and reported (a warning; `--strict` fails).
 
+- **Video.** `useVideo(source, { paused, looping, seek, playbackSpeed })` gives `currentFrame` (a shared value of the
+  picture the file shows at the frame's time, times `playbackSpeed`, from `seek` ms, looping unless `looping: false`;
+  `seek` while `paused`), `currentTime` (ms), `duration` (ms), `framerate`, `size` and `rotation`. The picture is decoded
+  by the engine's video decoder on the CPU (`readCanvasPicture`, as `onVideoFrame` frames are read). Its sound is not
+  played (a `volume` above 0 is reported): add an `<Audio>` of the file.
+
 Not provided (an import of one fails the bundle, naming the export): `makeImageFromView` and
-`Skia.Image.MakeImageFromViewTag` (there are no React Native views), `Skia.SVG.MakeFromData`, `useVideo` (it waits on video
-frames as pictures, `onVideoFrame`), touch handling, and Reanimated's `Animated` components.
+`Skia.Image.MakeImageFromViewTag` (there are no React Native views), `Skia.SVG.MakeFromData`, touch handling, and
+Reanimated's `Animated` components.
 
 **Why the CPU.** Drawing `@remotion/skia` through the main renderer's Skia (Graphite on Metal) was measured and not done:
 skia-safe 0.153.3 publishes no prebuilt Skia with `graphite`, `metal`, `textlayout` and `svg` together (the main renderer's
