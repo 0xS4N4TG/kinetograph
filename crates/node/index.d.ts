@@ -483,8 +483,38 @@ export interface TextLine {
   end: number
 }
 
-/** Tracks the points through the video at `path` (resolved against `baseDir`) and returns the track file's JSON. */
+/**
+ * Tracks the points through the video at `path` (resolved against `baseDir`), detecting more first and making the
+ * plane tracks after when asked, and returns the track file's JSON.
+ */
 export declare function track(path: string, request: TrackRequest, baseDir?: string | undefined | null): string
+
+/** Blender's Detect Features; every setting defaults to the operator's. */
+export interface TrackDetect {
+  /** Px from the frame edge where nothing is detected (16). */
+  margin?: number
+  /** Harris threshold, Blender's units (0.5). */
+  threshold?: number
+  /** Px between features, at least (120). */
+  minDistance?: number
+  /** Keep only features inside one of these polygons (flat x, y lists in video pixels). */
+  inside?: Array<Array<number>>
+  /** Keep only features outside all of these polygons. */
+  outside?: Array<Array<number>>
+}
+
+/** A plane track made from point tracks. */
+export interface TrackPlane {
+  /** Default `plane1`, `plane2`, ... in order. */
+  name?: string
+  /** Names of the point tracks it follows (at least 4); default every track. */
+  tracks?: Array<string>
+  /**
+   * Its corners at the frame the points are placed at: x, y of top-left, top-right, bottom-right, bottom-left in
+   * video pixels. Default: the bounding box of the tracks' patterns, as Blender makes a new plane.
+   */
+  corners?: Array<number>
+}
 
 /** A point to track, in video pixels of the first frame tracked (y down, (0, 0) the top-left corner). */
 export interface TrackPoint {
@@ -496,7 +526,11 @@ export interface TrackPoint {
 
 /** What to track and how; every setting defaults to Blender's for a new track. */
 export interface TrackRequest {
+  /** Points placed by hand; may be empty when `detect` is given. */
   points: Array<TrackPoint>
+  /** Place more points with Detect Features at the frame the points are placed at. */
+  detect?: TrackDetect
+  planes?: Array<TrackPlane>
   /** `loc` (default), `locrot`, `locscale`, `locrotscale`, `affine`, `perspective`. */
   model?: string
   /** Pattern square, px (21). */

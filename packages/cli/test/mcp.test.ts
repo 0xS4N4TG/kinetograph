@@ -46,6 +46,13 @@ describe('the tool list', () => {
       expect.arrayContaining(['entry', 'range', 'scenes', 'comp', 'props']),
     );
     for (const t of tools) expect(t.description).toBeTruthy();
+
+    // track: Detect Features and plane tracks; the repeatable options are lists.
+    const track = by.track!.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
+    expect(track.required).toEqual(['video']);
+    expect(track.properties.detect!.type).toBe('boolean');
+    expect(track.properties['detect-threshold']!.type).toBe('number');
+    for (const name of ['point', 'plane', 'plane-corners', 'detect-inside', 'detect-outside']) expect(track.properties[name]!.type).toBe('array');
   });
 
   it('gives doctor the compat report\'s arguments, the entry optional', async () => {
