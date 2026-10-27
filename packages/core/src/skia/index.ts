@@ -16,6 +16,7 @@ export {
   useVectorInterpolation,
 } from './animation.js';
 export { drawAsImage, drawAsPicture, SkSurface } from './surface.js';
+export { useVideo, type UseVideoOptions, type UseVideoResult } from './video.js';
 export { AlphaType, ColorType, SkAnimatedImage, SkData, SkFontMgr, SkTypefaceFontProvider, type ImageInfo } from './data.js';
 export { SkRuntimeShaderBuilder } from './factories.js';
 export { isSharedValue, makeMutable, type SharedValue } from './shared-value.js';

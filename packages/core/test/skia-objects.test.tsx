@@ -3,6 +3,8 @@
 // measurement, paints with shaders and filters, and the text of an SVG. Skipped when `@kinetographdev/skia` is not built.
 
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -26,6 +28,7 @@ import {
   Text,
   useAnimatedImageValue,
   useClock,
+  useVideo,
   usePathInterpolation,
 } from '../src/skia/index.js';
 import { renderNodes } from '../src/skia/host.js';
@@ -280,6 +283,36 @@ describe.skipIf(!hasSkiaAddon())('drawn by Skia', () => {
     const fallback = draw(<ImageSVG svg={svg('Nope Sans')} x={0} y={0} width={64} height={48} />);
     expect(inked(fallback.picture)).toBeGreaterThan(80);
     expect(reportedUnsupported().map((u) => u.reason).join()).toContain('Nope Sans');
+  });
+
+  const CLIP = fileURLToPath(new URL('../../../crates/core/tests/scenes/media/clip.mp4', import.meta.url)); // 64 x 36, 24 fps, 2 s
+  const hasVideoRead = (() => {
+    try {
+      return typeof (createRequire(import.meta.url)('@kinetographdev/native') as Record<string, unknown>).readCanvasPicture === 'function';
+    } catch {
+      return false;
+    }
+  })();
+
+  it.skipIf(!hasVideoRead)('draws useVideo frames for the time of the frame, looping, with the size and duration of the file', () => {
+    const seen: { duration: number; size: unknown; time: number }[] = [];
+    function Player({ speed = 1, looping }: { speed?: number; looping?: boolean }) {
+      const video = useVideo(CLIP, { playbackSpeed: speed, looping });
+      seen.push({ duration: video.duration, size: video.size, time: video.currentTime.value });
+      return <Image image={video.currentFrame} x={0} y={0} width={64} height={48} fit="fill" />;
+    }
+    const at = (frame: number, props: { speed?: number; looping?: boolean } = {}) => draw(<Player {...props} />, frame);
+    const first = at(0);
+    expect(inked(first.picture)).toBeGreaterThan(1000);
+    expect(seen[0]).toMatchObject({ size: { width: 64, height: 36 }, time: 0 });
+    expect(seen[0]!.duration).toBeCloseTo(2000, -2);
+    expect(at(30).src).not.toBe(first.src);
+    expect(at(30).src).toBe(at(30).src);
+    // 2 s at 30 fps is 60 frames: frame 60 loops to the start; without looping it holds the last picture.
+    expect(at(60).src).toBe(first.src);
+    expect(at(60, { looping: false }).src).not.toBe(first.src);
+    // Twice the speed: frame 15 shows what frame 30 does.
+    expect(at(15, { speed: 2 }).src).toBe(at(30).src);
   });
 
   it('interpolates paths between those of an output range', () => {
