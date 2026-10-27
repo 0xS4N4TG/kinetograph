@@ -65,3 +65,13 @@ Upstream: `rive-app/rive-rs` at `3d26aa1c3865260e5ef9751ad0172dcc197ff8eb`, with
 - `rive-rs/src/ffi.cpp`, `src/ffi.rs`, `src/scene.rs`: new `Scene::view_transform` for any fit and alignment.
 
 Drop when a rive-rs release builds. Then replace this directory with a dependency on it.
+
+## libmv (with Ceres and Eigen)
+
+Blender's motion tracker, as Blender 4.5 LTS ships it (tag `v4.5.9`, commit `8bf95cbd38d1456c94e9d751f3804eea4d5b137b`). Built by `crates/libmv-sys` with the `cc` crate; no CMake.
+
+- `libmv/`: `intern/libmv/libmv/{autotrack,base,image,logging,multiview,numeric,tracking}` without `*_test.cc`. Licence: MIT (`libmv/LICENSE`, from the standalone libmv repository; every file carries the same notice). Blender's C API around it (`intern/libmv/intern/*`, `libmv-capi.h`) is GPL-2.0-or-later and is **not** copied; `crates/libmv-sys/csrc/kt_libmv.cc` is our own C API over the same C++ classes.
+- `ceres/`: `extern/ceres` (Ceres Solver 2.2.0, identical to upstream's tag), without the CUDA `.cc` files, tests, benchmarks and the template generator scripts, plus `internal/ceres/miniglog` from upstream 2.2.0 (Blender links real glog instead). Licence: BSD-3-Clause (`ceres/LICENSE`); `include/ceres/internal/fixed_array.h` and `memory.h` come from Abseil under Apache-2.0, whose text is in the same LICENSE file. `config/ceres/internal/config.h` and `export.h` are ours (CMake generates them upstream): no sparse back ends, no LAPACK, no CUDA, static linking.
+- `eigen/Eigen`: `extern/Eigen3/Eigen` (Eigen 3.4.0). Licence: MPL-2.0 (`eigen/COPYING.MPL2`, from upstream 3.4.0); the MKL/LAPACKE glue headers (not used) and `Geometry/AlignedBox.h` also carry BSD notices (`eigen/COPYING.BSD`), and `EigenSolver.h`/`RealSchur.h` are JAMA-derived public domain. Built with `EIGEN_MPL2_ONLY`, so a non-MPL-2.0 header fails the build.
+
+Not changed. To update, copy the same directories from a newer Blender LTS tag, rerun the tracker's repeatability test (`cargo test --release -p kinetograph-track`; a changed golden needs `KT_UPDATE_GOLDENS=1` and a reason) and the Blender parity script against that Blender (`node scripts/track-parity/compare.mjs`).

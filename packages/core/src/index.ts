@@ -114,6 +114,8 @@ export type { RemotionEnvironment } from './environment.js';
 
 export { getStaticFiles, watchStaticFile, prefetch } from './static-files.js';
 export type { PrefetchOptions, StaticFile } from './static-files.js';
+export { readTrackFile, trackAt, useTrack } from './track.js';
+export type { TrackFile, TrackFileFrame, TrackPointXY, TrackValue } from './track.js';
 export { MediaPlaybackError } from './media-error.js';
 export { Config, Experimental } from './legacy.js';
 export { Interactive, Track } from './interactive.js';

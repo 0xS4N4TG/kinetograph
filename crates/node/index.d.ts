@@ -491,6 +491,43 @@ export interface TextLine {
   end: number
 }
 
+/** Tracks the points through the video at `path` (resolved against `baseDir`) and returns the track file's JSON. */
+export declare function track(path: string, request: TrackRequest, baseDir?: string | undefined | null): string
+
+/** A point to track, in video pixels of the first frame tracked (y down, (0, 0) the top-left corner). */
+export interface TrackPoint {
+  /** Default `p1`, `p2`, ... in order. */
+  name?: string
+  x: number
+  y: number
+}
+
+/** What to track and how; every setting defaults to Blender's for a new track. */
+export interface TrackRequest {
+  points: Array<TrackPoint>
+  /** `loc` (default), `locrot`, `locscale`, `locrotscale`, `affine`, `perspective`. */
+  model?: string
+  /** Pattern square, px (21). */
+  pattern?: number
+  /** Search square, px (71). */
+  search?: number
+  /** Minimum correlation (0.75). */
+  minCorrelation?: number
+  /** Px the pattern keeps from the frame edge (0). */
+  margin?: number
+  normalize?: boolean
+  /** Brute-force pre-pass (on). */
+  brute?: boolean
+  /** `keyframe` (default) or `previous`. */
+  match?: string
+  /** First frame (0). */
+  from?: number
+  /** Last frame (the clip's last). */
+  to?: number
+  /** Place the points at `to` and track back to `from`. */
+  backwards?: boolean
+}
+
 /**
  * Parses and validates scene JSON; asset paths resolve against `baseDir`
  * (default: the current directory).

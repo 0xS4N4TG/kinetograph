@@ -3,7 +3,7 @@
 //! is specified in `packages/cli/skills/kinetograph/references/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
-//! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `riveFrame`,
+//! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `riveFrame`, `track`,
 //! `version`) never open a device; `new Renderer()` does, once, and every scene given to it afterwards reuses that
 //! setup.
 //!
@@ -19,6 +19,7 @@ mod media;
 mod preview;
 mod rive;
 pub mod streams;
+pub mod track;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

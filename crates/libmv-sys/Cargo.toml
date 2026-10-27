@@ -1,0 +1,12 @@
+[package]
+name = "libmv-sys"
+description = "Blender's motion tracker (libmv's AutoTrack, Ceres, Eigen) built statically, behind a small C API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+links = "kt_libmv"
+
+[build-dependencies]
+cc = { version = "1.8.0", features = ["parallel"] }
+
