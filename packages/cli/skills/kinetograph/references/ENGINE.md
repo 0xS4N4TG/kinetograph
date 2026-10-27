@@ -991,3 +991,20 @@ layer with this effect leaves Skia's path (`own_gaps`) for the wgpu compositor. 
 the last call per island thread: the same request text is answered from the kept document (no parse, no restyle); a changed
 one is edited to the new tree through `IslandCache` (`changes`/`apply`), as motion-blur samples are. `claude-exchange` frame 0:
 12.5 s before, 1.7 s after (release build), same pixels.
+
+## 14. Motion tracking (`crates/libmv-sys`, `crates/track`)
+
+Blender's tracker, not a new one: libmv's `AutoTrack` with Ceres and Eigen, copied unchanged from Blender 4.5 LTS
+(`vendor/libmv`, vendor/README.md) and built by the `cc` crate into the addon (about 1.2 MB). Blender's own C API around
+libmv is GPL and not used; `crates/libmv-sys/csrc/kt_libmv.{h,cc}` is ours (MIT-clean), and `kinetograph-track` drives it
+the way Blender's `tracking_auto.cc` drives libmv (reimplemented from that behaviour): markers placed with Blender's
+pattern and search squares, frames handed over bottom row first as Blender's image buffers are, grayscale from the 8-bit
+RGB of the search region only, keyframe or previous-frame matching, the margin check before each step, a failed step
+ending the track. Frames come from `kinetograph_core::video::VideoDecoder`, the render's own decode path, with a small
+LRU (the keyframe stays; backwards runs decode forwards in chunks of up to 16 frames, one seek each).
+
+It is precomputed: `kinetograph track` writes `<video>.track.json`, and `useTrack()` (packages/core/src/track.ts) only
+reads it, so a frame is still a pure function of (project, frame). Repeatable bit for bit on a platform
+(`crates/track/tests/golden.rs`, a golden per platform); not bit-equal across platforms. Parity against Blender run
+headless: `scripts/track-parity/`.
+

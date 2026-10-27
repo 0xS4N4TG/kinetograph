@@ -211,6 +211,11 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   redraw the whole frame each time (never build on earlier frames). A plain HTML page is the exception (below). AUTHORING.md §6.5 to §6.7. `preserve-3d` with effects is flattened (ENGINE.md).
 - **`<Video datamosh>`** smears one shot into the next with the video's motion vectors. AUTHORING.md §11.8,
   `/docs/guides/datamosh/`.
+- **Motion tracking.** `kinetograph track public/clip.mp4 --point x,y` (video pixels of the first frame, y down; find
+  the point in a still) runs Blender's tracker once and writes `clip.mp4.track.json`; in a component
+  `const { x, y, rotation, scale, corners } = useTrack('clip.mp4.track.json')` (from `@kinetographdev/core`) pins
+  anything to it. Check the `lost` frame it prints; use `--model locrotscale` for rotation and scale. AUTHORING.md
+  §11.12, `/docs/guides/motion-tracking/`.
 
 ## Habits that save iterations
 

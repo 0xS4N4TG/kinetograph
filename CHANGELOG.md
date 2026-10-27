@@ -5,6 +5,10 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+### Added
+
+- Motion tracking with Blender's tracker. `kinetograph track <video> --point x,y [--point ...]` follows points through a video with libmv, as Blender 4.5's "Track Markers" does (its six motion models, pattern and search sizes, keyframe or previous-frame matching, backwards tracking, the margin check and where a track is lost), and writes `<video>.track.json`. `useTrack(file, trackName?)` in `@kinetographdev/core` returns `{ x, y, scale, rotation, corners }` for the current frame. Tracking happens before a render, never during one. Against Blender run on the same clips the same frames are tracked and lost, and markers agree to within 0.0002 px. The addon now includes libmv (MIT), Ceres Solver (BSD-3-Clause, with Apache-2.0 parts from Abseil), miniglog (BSD-3-Clause) and Eigen (MPL-2.0); their licences are in the platform packages.
+
 ### Fixed
 
 - `monospace` and `ui-monospace` text is set in a bundled JetBrains Mono (Regular, SIL OFL 1.1, 92 KB) when the project registers no fixed-pitch font, so code blocks (Shiki, Code Hike) line up instead of falling back to a proportional face. A registered monospace font still wins.

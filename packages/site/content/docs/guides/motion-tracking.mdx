@@ -1,0 +1,93 @@
+---
+title: Motion tracking
+description: Pin text, pictures or effects to something that moves in a video, with Blender's tracker.
+---
+
+Kinetograph tracks points through a video with the same tracker Blender uses (libmv). You run it once, before
+rendering. It writes a small JSON file of positions, and your composition reads it with `useTrack()`. Rendering never
+tracks, so every frame comes out the same on every render.
+
+## Track a point
+
+Find the point in a still of the first frame (for example with `ffmpeg -i clip.mp4 -frames:v 1 first.png`), then:
+
+```sh
+npx kinetograph track public/clip.mp4 --point 980,800
+```
+
+This writes `public/clip.mp4.track.json`. Give `--point` again for more points, and `name=x,y` to name one:
+
+```sh
+npx kinetograph track public/clip.mp4 --point anvil=980,800 --point sign=1690,640
+```
+
+Points are in the video's own pixels: x to the right and y **down**, with 0,0 at the top-left corner of the frame.
+That is where the point is in the still.
+
+## Use it in a composition
+
+```tsx
+import { useTrack } from '@kinetographdev/core';
+import { AbsoluteFill, OffthreadVideo, staticFile } from 'remotion';
+
+const Label = () => {
+  const { x, y, rotation, scale } = useTrack('clip.mp4.track.json', 'sign');
+  return (
+    <div style={{ position: 'absolute', left: x, top: y, transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})` }}>
+      Look here
+    </div>
+  );
+};
+
+export const Shot = () => (
+  <AbsoluteFill>
+    <OffthreadVideo src={staticFile('clip.mp4')} />
+    <Label />
+  </AbsoluteFill>
+);
+```
+
+`useTrack` returns:
+
+| Field | What it is |
+|---|---|
+| `x`, `y` | The tracked point, in video pixels. |
+| `rotation` | Degrees the pattern has turned clockwise since the first frame. It keeps counting past 180. |
+| `scale` | How much bigger the pattern is than in the first frame. |
+| `corners` | The pattern's four corners (top-left, top-right, bottom-right, bottom-left), for a corner pin. |
+| `frame`, `tracked` | The clip frame the value comes from, and whether that is the current frame or a held one. |
+
+The clip is taken to start at frame 0 of the Sequence. If the composition runs at another frame rate than the clip,
+frames are matched by time. Before the first tracked frame the first position is used; after the last one, or after a
+track is lost, the last position holds.
+
+The positions are the video's pixels. If you draw the video smaller, larger or moved, apply the same scale and offset
+to them.
+
+## Options
+
+All defaults are Blender's defaults for a new track.
+
+| Option | Default | What it does |
+|---|---|---|
+| `--model` | `loc` | What the pattern may do: `loc` (move), `locrot`, `locscale`, `locrotscale`, `affine`, `perspective`. Pick one with rotation or scale for `rotation` and `scale` to change. |
+| `--pattern`, `--search` | 21, 71 | Size in pixels of the pattern square around the point, and of the area searched for it in the next frame. Fast motion needs a bigger search area. |
+| `--match` | `keyframe` | `keyframe` compares every frame with the first. `previous` compares with the frame before, which follows a changing look but can drift. |
+| `--min-correlation` | 0.75 | A worse match stops the track. Lower it for grainy footage. |
+| `--margin` | 0 | Pixels the pattern keeps from the frame edge. |
+| `--from`, `--to` | the whole clip | The frames to track. |
+| `--backwards` | off | Place the points at `--to` and track towards the start. |
+| `-o` | `<video>.track.json` | Where to write the file. |
+
+## When a track is lost
+
+A track stops where Blender's would: when the best match is below the minimum correlation, falls outside the search
+area, or the pattern reaches the edge of the frame. The command prints the frame, and the file lists it in `lost`. The
+position holds from there. Try a bigger pattern, a bigger search area, a lower `--min-correlation`, or a point with more
+texture.
+
+## The same as Blender
+
+Kinetograph drives libmv the way Blender's "Track Markers" does, with Blender's defaults. Tracked in Blender on the same
+clip with the same settings, the same frames are tracked and lost, and the positions agree to within 0.0002 of a
+pixel, the rounding Blender's own marker storage adds. `scripts/track-parity/` in the repository runs that comparison.

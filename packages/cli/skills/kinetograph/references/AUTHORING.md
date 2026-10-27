@@ -1008,6 +1008,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` (frame ranges `a..b`, as `--range`; each scene is reported in both units: `fromFrame`/`toFrame` and `from`/`to` in seconds) |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
+| `track <video> --point x,y [--point ...] [--model M] [--pattern N --search N] [--match keyframe\|previous] [--from F --to F] [--backwards] [-o out.json]` | tracks points with Blender's tracker and writes `<video>.track.json` for `useTrack()` (§11.12); takes a video, not an entry |
 | `doctor [entry] [--range]` | without an entry, the install report (it lists the renderer; `render` and `still` print `renderer: Skia GPU (Metal)`, `Skia CPU (no GPU found)` or `Skia CPU (KINETOGRAPH_SKIA_CPU=1)` as progress); with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (the Remotion compatibility docs, `/docs/compat/`) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
@@ -1161,6 +1162,14 @@ export function decodeAudio(path: string, sampleRate: number, baseDir?: string):
 /** What a glTF or GLB model uses that the 3D layer does not read (SCENE.md, "scene3d", "glTF"), one entry for each
  *  kind of thing; empty for a file that uses nothing of the kind. `IO`/render error for a file that cannot be read. */
 export function modelUnsupported(src: string, baseDir?: string): { feature: string; reason: string }[];
+/** Tracks points through a video with Blender's tracker and returns the `.track.json` text (§11.12). Every field but
+ *  `points` defaults to Blender's for a new track. `IO` for a missing file, `INVALID_ARG` for anything else wrong.
+ *  CPU only; `kinetograph track` calls it, a render never does. */
+export function track(path: string, request: {
+  points: { name?: string; x: number; y: number }[];
+  model?: string; pattern?: number; search?: number; minCorrelation?: number; margin?: number;
+  normalize?: boolean; brute?: boolean; match?: string; from?: number; to?: number; backwards?: boolean;
+}, baseDir?: string): string;
 
 // ---- GPU ----
 export interface PreviewOptions {
@@ -1421,3 +1430,79 @@ found by scanning its bundle, downloaded the same way and locked in the same fil
 fetched once, added to the lock and noted. Three.js is unsupported and reported. Full list:
 `/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
 
+### 11.12 Motion tracking (`kinetograph track`, `useTrack`)
+
+Blender's tracker, run ahead of time. `kinetograph track` follows points through a video with libmv, the tracker
+Blender's "Track Markers" uses (built into the addon from Blender 4.5 LTS's copy, `vendor/libmv`), and writes
+`<video>.track.json`. A component reads it with `useTrack()`. Tracking never runs during a render: the render only reads
+the file, so it stays a pure function of the frame.
+
+```sh
+kinetograph track public/clip.mp4 --point 980,800 --point sign=1690,640 [--model loc] [--pattern 21 --search 71] \
+  [--match keyframe|previous] [--min-correlation 0.75] [--margin 0] [--from F --to F] [--backwards] [-o out.json]
+```
+
+- `--point x,y` (repeat for more; `name=x,y` names it, default `p1`, `p2`, ...) is in **video pixels of the first frame
+  tracked, y down, (0, 0) the top-left corner of the frame** (the centre of the top-left pixel is (0.5, 0.5)): where
+  the point is in a still of that frame, as CSS `left`/`top` would place it. Blender's normalised marker position
+  `(u, v)` (v up) is `(u * width, (1 - v) * height)`.
+- The settings are Blender's for a new track, and its defaults: `--model loc|locrot|locscale|locrotscale|affine|perspective`
+  (default `loc`), `--pattern 21` and `--search 71` (square sizes in px), `--match keyframe` (each frame is matched
+  against the placed marker's pattern; `previous` matches the frame before, which drifts but follows a changing
+  look), `--min-correlation 0.75`, `--margin 0`, brute-force pre-pass on, normalisation off.
+- `--from` / `--to` bound the frames (default the whole clip); the points are placed at `--from`, or at `--to` with
+  `--backwards`, which tracks towards frame 0.
+- A track stops where Blender's would: the match falls under the minimum correlation or out of the search area, or the
+  pattern reaches the frame edge (the margin check). That frame is listed in `lost`.
+- Frames are decoded by the renderer's own ffmpeg path, so frame `n` is the picture a `<Video>` shows at `n / fps` of
+  the clip. Grayscale is Blender's (0.2126 R + 0.7152 G + 0.0722 B of the 8-bit values).
+
+The file:
+
+```ts
+interface TrackFile {
+  version: 1;
+  clip: { width: number; height: number; fps: number; frames: number };
+  tracks: {
+    name: string;
+    model: string;
+    frames: { frame: number; center: [x, y]; corners: [[x, y], [x, y], [x, y], [x, y]]; correlation: number }[];
+    lost: number[]; // the frame where the track stopped before the end of the range, if it did
+  }[];
+}
+```
+
+`frames` is in increasing frame order whichever way it was tracked. `corners` is the pattern quad, top-left, top-right,
+bottom-right, bottom-left, in the same video pixels; `correlation` is 1 at the placed frame.
+
+```tsx
+import { useTrack } from '@kinetographdev/core';
+import { OffthreadVideo, staticFile } from 'remotion';
+
+const Label = () => {
+  const { x, y, rotation, scale } = useTrack('clip.mp4.track.json', 'sign'); // a public/ name, or a staticFile() path
+  return <div style={{ position: 'absolute', left: x, top: y, transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})` }}>Hi</div>;
+};
+
+// <OffthreadVideo src={staticFile('clip.mp4')} /> and <Label /> in the same Sequence, the video at its own size.
+```
+
+- `useTrack(file, trackName?)` returns `{ x, y, scale, rotation, corners, frame, tracked }` for `useCurrentFrame()`.
+  No track name: the first track.
+- The composition frame `f` is the clip frame `floor(f * clip.fps / fps)` (the clip starts at frame 0 of the Sequence,
+  as a `<Video>` without trims does). The value is that frame's marker; before the first marker it is the first, after
+  the last (and after the track is lost) the last one holds. `tracked` is false when the value is held.
+- `scale` is the square root of the pattern quad's area over the first frame's; `rotation` is the degrees the quad's
+  horizontal edges have turned clockwise since the first frame, unwrapped (it can pass 180). Both are 1 and 0 with
+  `--model loc`. `corners` is a corner pin.
+- Coordinates are the video's pixels: a video drawn at another size or position needs the same scale and offset
+  applied to them.
+- The file is read with `staticFile()` rules and read again when it changes on disk (the studio picks up a new track).
+  `trackAt(file, clipFrame, trackName?)` and `readTrackFile(file)` are the same reads outside a component.
+
+Parity with Blender (`node scripts/track-parity/compare.mjs`: Blender run headless on the same clips, points and
+settings, all six models, both matches, backwards): the same frames are tracked and lost, and every marker agrees to
+within 2e-4 px, the f32 rounding of Blender's normalised marker coordinates (many are equal). That needs the marker
+placed through the same f32 steps as Blender's, and the same decoded pixels (they are: Blender's frames and ours were
+compared byte for byte). Repeatability: the same inputs give the same bits on a platform (`crates/track/tests/golden.rs`,
+a golden per platform); platforms are not bit-equal with each other.
