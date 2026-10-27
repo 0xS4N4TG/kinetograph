@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveProjectFile } from '../environment.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
-import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
+import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
+import { AttrShim, NamedNodeMapShim } from './attributes.js';
+import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, setPageViewport } from './host.js';
 import { collectionOf, HTMLCollection, NodeList, nodeListOf } from './lists.js';
 import { RangeShim } from './range.js';
@@ -561,7 +563,21 @@ export function installDomGlobals(): void {
   define(g, 'Element', DomElement);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);
-  define(g, 'Node', DomElement);
+  define(g, 'Node', DomNodeBase);
+  define(g, 'DocumentFragment', DomFragment);
+  define(g, 'HTMLTemplateElement', HTMLTemplateElementShim);
+  define(g, 'HTMLFormElement', HTMLFormElementShim);
+  define(g, 'NamedNodeMap', NamedNodeMapShim);
+  define(g, 'Attr', AttrShim);
+  define(g, 'NodeFilter', NodeFilterShim);
+  define(g, 'NodeIterator', NodeIteratorShim);
+  define(g, 'TreeWalker', TreeWalkerShim);
+  define(g, 'DOMParser', DOMParserShim);
+  define(g, 'Document', class DocumentGlobal extends DocumentShim {
+    static [Symbol.hasInstance](value: unknown): boolean {
+      return value === (globalThis as { document?: unknown }).document || value instanceof DocumentShim;
+    }
+  });
   define(g, 'NodeList', NodeList);
   define(g, 'HTMLCollection', HTMLCollection);
   define(g, 'DOMRect', class DOMRectGlobal { constructor(readonly x = 0, readonly y = 0, readonly width = 0, readonly height = 0) {} });
@@ -606,10 +622,15 @@ export function installDomGlobals(): void {
   define(g, 'CSSRule', CSSRuleShim);
   define(g, 'CSSStyleDeclaration', CSSStyleDeclarationShim);
   define(g, 'Text', DomText);
-  define(doc, 'getElementById', (id: string) => documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
+  installDocumentMembers(doc, define);
+  define(doc, 'getElementById', function (this: unknown, id: string) {
+    return this instanceof DocumentShim ? this.getElementById(id) : (documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
+  });
   define(doc, 'querySelector', (selector: string) => documentQuery(selector, true)[0] ?? null);
   define(doc, 'querySelectorAll', (selector: string) => nodeListOf(documentQuery(selector, false)));
-  define(doc, 'getElementsByTagName', (tag: string) => collectionOf(documentQuery(tag, false)));
+  define(doc, 'getElementsByTagName', function (this: unknown, tag: string) {
+    return this instanceof DocumentShim ? this.getElementsByTagName(tag) : collectionOf(documentQuery(tag, false));
+  });
   define(doc, 'getElementsByClassName', (names: string) => collectionOf(documentQuery(String(names).split(/\s+/).filter(Boolean).map((n) => `.${n}`).join(''), false)));
   define(doc, 'elementFromPoint', () => null);
   define(doc, 'hasFocus', () => true);
