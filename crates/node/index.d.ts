@@ -352,6 +352,12 @@ export declare function rgbaToYuv(rgba: Buffer, width: number, height: number, p
  */
 export declare function riveFrame(requestJson: string): string
 
+/**
+ * The JSON path of each key in a scene file that the format does not read
+ * (`layers[0].opacty`): serde skips such a key, so it is said here instead.
+ */
+export declare function sceneUnknownKeys(sceneJson: string): Array<string>
+
 /** Reads every packet of a file, without decoding, and totals them per stream: the "slow" fields of `parseMedia`. */
 export declare function scanStreams(path: string, baseDir?: string | undefined | null): Array<StreamScan>
 

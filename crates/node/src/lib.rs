@@ -85,6 +85,13 @@ pub fn validate_scene(scene_json: String, base_dir: Option<String>) -> Result<Sc
     })
 }
 
+/// The JSON path of each key in a scene file that the format does not read
+/// (`layers[0].opacty`): serde skips such a key, so it is said here instead.
+#[napi]
+pub fn scene_unknown_keys(scene_json: String) -> Vec<String> {
+    kinetograph_core::scene_keys::unknown_keys(&scene_json)
+}
+
 /// Fails with `IO` for the first file the scene names that is not there. It
 /// reads the JSON rather than the loaded scene, so a file-valued field a
 /// later phase adds (any layer's `src`) is covered without a change here.

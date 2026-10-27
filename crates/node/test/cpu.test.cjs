@@ -93,6 +93,15 @@ test('validateScene takes a data: URL as the picture itself, not a file to look 
   assert.equal(info.width, 8);
 });
 
+test('sceneUnknownKeys names each key the format does not read by its JSON path', () => {
+  assert.deepEqual(native.sceneUnknownKeys(scene()), []);
+  assert.deepEqual(native.sceneUnknownKeys(scene({ bogusTop: 1 })), ['bogusTop']);
+  const typo = JSON.parse(scene());
+  typo.layers[0].opacty = 0.5;
+  typo.layers[0].effects[0].blurr = 2;
+  assert.deepEqual(native.sceneUnknownKeys(JSON.stringify(typo)), ['layers[0].effects[0].blurr', 'layers[0].opacty']);
+});
+
 test('inspect returns the resolved scene as JSON', () => {
   const result = JSON.parse(native.inspect(scene(), 15, repo));
   assert.equal(result.frame, 15);

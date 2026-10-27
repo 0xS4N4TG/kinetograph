@@ -30,6 +30,7 @@ pub mod render;
 pub mod resolve;
 pub mod reuse;
 pub mod scene;
+pub mod scene_keys;
 pub mod scene3d;
 pub mod shader;
 pub mod svg_picture;
