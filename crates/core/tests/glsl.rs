@@ -893,7 +893,11 @@ fn depth_state(func: &str, mask: bool, near: f64, far: f64) -> String {
 /// A draw of the quad at clip depth `z` (window depth `(z + 1) / 2`) in `color`, with `state`.
 fn z_draw(z: f64, color: [f64; 4], state: &str) -> String {
     let uniforms = uniforms(&[("u_z", "f", &[z]), ("u_color", "f", &color)]);
-    draw(&if state.is_empty() { uniforms } else { format!("{uniforms}, {state}") })
+    draw(&if state.is_empty() {
+        uniforms
+    } else {
+        format!("{uniforms}, {state}")
+    })
 }
 
 fn z_layer(extra_content: &str, draws: &[String]) -> Frame {
@@ -920,7 +924,11 @@ fn the_depth_test_keeps_the_nearer_draw_in_any_order() {
     assert_eq!(centre(&b), [255, 0, 0, 255]);
     let c = z_layer(
         "",
-        &[z_draw(0.0, RED, &less), z_draw(0.5, GREEN, &less), z_draw(-0.9, BLUE, &less)],
+        &[
+            z_draw(0.0, RED, &less),
+            z_draw(0.5, GREEN, &less),
+            z_draw(-0.9, BLUE, &less),
+        ],
     );
     assert_eq!(centre(&c), [0, 0, 255, 255]);
     // The same draws with no depth test are painter's order.
@@ -950,7 +958,11 @@ fn each_depth_function_passes_the_draws_it_should() {
                     z_draw(z, GREEN, &depth_state(func, true, 0.0, 1.0)),
                 ],
             );
-            let want = if pass { [0, 255, 0, 255] } else { [255, 0, 0, 255] };
+            let want = if pass {
+                [0, 255, 0, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
             assert_eq!(centre(&frame), want, "{func} at z = {z}");
         }
     }
@@ -1033,7 +1045,10 @@ fn a_polygon_offset_pulls_a_coplanar_draw_through() {
     assert_eq!(centre(&plain), [255, 0, 0, 255]);
     let pulled = z_layer(
         "",
-        &[z_draw(0.0, RED, &less), z_draw(0.0, GREEN, &format!("{less}, {offset}"))],
+        &[
+            z_draw(0.0, RED, &less),
+            z_draw(0.0, GREEN, &format!("{less}, {offset}")),
+        ],
     );
     assert_eq!(centre(&pulled), [0, 255, 0, 255]);
 }
@@ -1066,4 +1081,51 @@ fn a_target_has_a_depth_buffer_of_its_own() {
         ],
     );
     near(px(&frame, 8, 8), [0, 0, 255, 255], 2);
+}
+
+#[test]
+fn a_program_with_ten_attributes_draws() {
+    // Each attribute is a vertex buffer of its own to the GPU, and a device allows eight by default; the engine's
+    // device asks for more. Ten attributes all read the quad; the colour sums nine of them.
+    let names: Vec<String> = (0..10).map(|i| format!("a{i}")).collect();
+    let declarations: String = names
+        .iter()
+        .map(|n| format!("attribute vec2 {n}; "))
+        .collect();
+    let sum: String = names[1..]
+        .iter()
+        .map(|n| format!("{n}.x"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let vertex = format!(
+        "{declarations}varying float v_sum; void main() {{ v_sum = {sum}; gl_Position = vec4(a0, 0.0, 1.0); }}"
+    );
+    let fragment = "precision mediump float; varying float v_sum; \
+        void main() { gl_FragColor = vec4(0.5 + v_sum / 18.0, 0.0, 0.0, 1.0); }";
+    let locations: Vec<String> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| format!(r#""{n}": {i}"#))
+        .collect();
+    let attributes: Vec<String> = names
+        .iter()
+        .map(|n| format!(r#""{n}": {{"buffer": "quad", "size": 2, "type": "f32", "normalized": false, "stride": 0, "offset": 0}}"#))
+        .collect();
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6,
+            "attributes": {{{}}}, "viewport": [0, 0, 16, 16]}}"#,
+        attributes.join(", ")
+    );
+    let layer = format!(
+        r#"{{"id": "g", "type": "glsl", "width": 16, "height": 16,
+            "programs": {{"p": {{"vertex": {}, "fragment": {}, "attributes": {{{}}}}}}},
+            "buffers": {{"quad": "{}"}}, "ops": [{draw}]}}"#,
+        serde_json::to_string(&vertex).unwrap(),
+        serde_json::to_string(fragment).unwrap(),
+        locations.join(", "),
+        quad()
+    );
+    let frame = render(&layer);
+    near(px(&frame, 15, 8), [250, 0, 0, 255], 12);
+    near(px(&frame, 0, 8), [5, 0, 0, 255], 12);
 }

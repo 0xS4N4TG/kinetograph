@@ -8,6 +8,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 ### Added
 
 - WebGL depth test: `enable(gl.DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and `polygonOffset` are drawn, on the canvas (the `depth` context attribute) and on a framebuffer with a depth renderbuffer (`renderbufferStorage`, `framebufferRenderbuffer`). The HyperFrames composition `code-slice-hero` now renders all 240 frames in `doctor`. A colour or stencil renderbuffer, a depth texture and the stencil test are still reported. See `/docs/known-issues/#webgl`.
+- The GPU device allows up to 16 vertex buffers (it was 8), so a `glsl` draw with more than 8 attributes draws. WebGPU pages still see `maxVertexBuffers` 8 on every machine.
 
 ## 0.2.0 (2026-10-27)
 

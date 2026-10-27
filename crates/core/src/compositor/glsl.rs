@@ -407,8 +407,8 @@ impl Compositor {
             };
             // A pass has the depth buffer attached, or not: a draw that tests
             // depth and one that does not (or a copy) go in passes of their own.
-            let uses_depth = depth_clear.is_some()
-                || matches!(op, GlslOp::Draw(d) if d.depth.is_some());
+            let uses_depth =
+                depth_clear.is_some() || matches!(op, GlslOp::Draw(d) if d.depth.is_some());
             let is_clear = matches!(op, GlslOp::Clear { .. });
             if dead[i] {
                 continue;
