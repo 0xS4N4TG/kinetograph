@@ -61,7 +61,16 @@ fn main() {
         .include(ceres_internal.join("miniglog"))
         .include(vendor.join("eigen"));
     if build.get_compiler().is_like_msvc() {
-        build.define("_USE_MATH_DEFINES", None).define("NOMINMAX", None).flag("/EHsc").flag("/bigobj");
+        // NOGDI: <windows.h> (Ceres's wall_time.cc) would otherwise define ERROR, which miniglog declares.
+        build
+            .define("_USE_MATH_DEFINES", None)
+            .define("NOMINMAX", None)
+            .define("NOGDI", None)
+            .define("WIN32_LEAN_AND_MEAN", None)
+            .define("_CRT_SECURE_NO_WARNINGS", None)
+            .flag("/EHsc")
+            .flag("/bigobj")
+            .flag("/utf-8");
     }
 
     build.file(manifest.join("csrc/kt_libmv.cc"));

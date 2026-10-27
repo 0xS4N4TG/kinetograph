@@ -1,8 +1,9 @@
 /* Kinetograph's C API over libmv's AutoTrack (libmv/autotrack, MIT). Written for Kinetograph; Blender's own C API
  * (intern/libmv/intern, GPL) is not used.
  *
- * Coordinates are frame pixels, origin at the top-left pixel's centre is (0, 0), y down: row 0 of the buffer the
- * frame callback returns is y = 0. */
+ * Coordinates are libmv's frame pixels: (0, 0) is the centre of the pixel in row 0, column 0 of the image the region
+ * callback reads, and y grows with the row. The caller picks which way up row 0 is (Kinetograph hands rows over bottom
+ * first, as Blender's image buffers are, so its tracks match Blender's). */
 #ifndef KT_LIBMV_H
 #define KT_LIBMV_H
 
@@ -20,9 +21,10 @@ enum {
   KT_MOTION_PERSPECTIVE = 5,
 };
 
-/* Hands the tracker a whole frame as grayscale floats, `width * height`, row-major from the top. The pointer only has
- * to stay valid until the callback is called again or the tracking call returns. Returns 0 when there is no frame. */
-typedef int (*kt_frame_fn)(void *user, int frame, const float **pixels);
+/* Fills `out` (`width * height` floats, row-major, already zero) with the grayscale pixels of frame `frame` in the
+ * rectangle whose top-left pixel is (x, y). The rectangle can reach outside the frame; those pixels stay zero. Returns
+ * 0 when there is no such frame. */
+typedef int (*kt_region_fn)(void *user, int frame, int x, int y, int width, int height, float *out);
 
 typedef struct kt_marker {
   int frame;
@@ -56,11 +58,11 @@ typedef struct kt_tracker kt_tracker;
  * fixed 50 iterations and sigma 0.9 Blender always passes. */
 void kt_track_options_default(kt_track_options *options);
 
-kt_tracker *kt_tracker_new(int width, int height, int num_frames, kt_frame_fn frame_fn, void *user);
+kt_tracker *kt_tracker_new(int width, int height, int num_frames, kt_region_fn region_fn, void *user);
 void kt_tracker_free(kt_tracker *tracker);
 
-/* Stores a marker (a placed one, or a successful tracking result) for prediction and as a reference pattern. */
-void kt_tracker_add_marker(kt_tracker *tracker, const kt_marker *marker);
+/* Stores a marker for prediction and as a reference pattern: a placed one (`tracked` 0) or a tracking result (1). */
+void kt_tracker_add_marker(kt_tracker *tracker, const kt_marker *marker, int tracked);
 
 /* Tracks `marker` into marker->frame: on entry it holds the guess (the previous frame's marker moved to the new frame
  * number, reference_frame set); on return, the tracked position. Returns 1 when the result is usable. */

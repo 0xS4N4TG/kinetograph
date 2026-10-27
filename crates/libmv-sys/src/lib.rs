@@ -1,7 +1,7 @@
 //! Raw bindings to csrc/kt_libmv.h: Blender's motion tracker (libmv's AutoTrack over Ceres and Eigen).
 //!
-//! Spike crate: the C API, built statically. Coordinates are frame pixels, y down, (0, 0) the centre of the top-left
-//! pixel.
+//! The C API, built statically. Coordinates are libmv's frame pixels: (0, 0) is the centre of the pixel in row 0,
+//! column 0 of what the region callback reads, y grows with the row. `kinetograph-track` is the safe API over this.
 
 #![allow(non_camel_case_types)]
 
@@ -14,8 +14,17 @@ pub const KT_MOTION_LOC_ROT_SCALE: c_int = 3;
 pub const KT_MOTION_AFFINE: c_int = 4;
 pub const KT_MOTION_PERSPECTIVE: c_int = 5;
 
-/// Hands over frame `frame` as `width * height` grayscale floats, row-major from the top. Returns 0 when missing.
-pub type kt_frame_fn = unsafe extern "C" fn(user: *mut c_void, frame: c_int, pixels: *mut *const f32) -> c_int;
+/// Fills `out` (`width * height` floats, row-major, already zero) with frame `frame`'s grayscale pixels in the
+/// rectangle whose top-left pixel is (`x`, `y`); pixels outside the frame stay zero. Returns 0 when there is no frame.
+pub type kt_region_fn = unsafe extern "C" fn(
+    user: *mut c_void,
+    frame: c_int,
+    x: c_int,
+    y: c_int,
+    width: c_int,
+    height: c_int,
+    out: *mut f32,
+) -> c_int;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -60,11 +69,11 @@ unsafe extern "C" {
         width: c_int,
         height: c_int,
         num_frames: c_int,
-        frame_fn: kt_frame_fn,
+        region_fn: kt_region_fn,
         user: *mut c_void,
     ) -> *mut kt_tracker;
     pub fn kt_tracker_free(tracker: *mut kt_tracker);
-    pub fn kt_tracker_add_marker(tracker: *mut kt_tracker, marker: *const kt_marker);
+    pub fn kt_tracker_add_marker(tracker: *mut kt_tracker, marker: *const kt_marker, tracked: c_int);
     pub fn kt_tracker_track(
         tracker: *mut kt_tracker,
         options: *const kt_track_options,

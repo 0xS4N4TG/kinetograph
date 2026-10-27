@@ -2,7 +2,6 @@
 
 #include "kt_libmv.h"
 
-#include <algorithm>
 #include <new>
 
 #include "libmv/autotrack/autotrack.h"
@@ -20,20 +19,17 @@ using mv::FrameAccessor;
 using mv::Marker;
 using mv::Region;
 
-// One clip of grayscale frames, fetched from the caller. A requested region is cut out of the frame; the part outside
-// the frame is zero, as in Blender's accessor.
+// One clip of grayscale frames, read from the caller one region at a time. The part of a region outside the frame is
+// zero, as in Blender's accessor.
 class CallbackAccessor : public FrameAccessor {
  public:
-  CallbackAccessor(int width, int height, int num_frames, kt_frame_fn fn, void *user)
+  CallbackAccessor(int width, int height, int num_frames, kt_region_fn fn, void *user)
       : width_(width), height_(height), num_frames_(num_frames), fn_(fn), user_(user) {}
 
   Key GetImage(int clip, int frame, InputMode input_mode, int downscale, const Region *region,
                const Transform *transform, FloatImage *destination) override {
     // AutoTrack asks for MONO, no downscale and no transform (no disabled channels).
     if (clip != 0 || input_mode != MONO || downscale != 0 || transform != nullptr) return nullptr;
-    const float *pixels = nullptr;
-    if (!fn_(user_, frame, &pixels) || pixels == nullptr) return nullptr;
-
     int min_x = 0, min_y = 0, w = width_, h = height_;
     if (region != nullptr) {
       min_x = int(region->min(0));
@@ -44,12 +40,7 @@ class CallbackAccessor : public FrameAccessor {
     if (w <= 0 || h <= 0) return nullptr;
     destination->Resize(h, w, 1);
     destination->Fill(0.0f);
-    const int x0 = std::max(min_x, 0), y0 = std::max(min_y, 0);
-    const int x1 = std::min(min_x + w, width_), y1 = std::min(min_y + h, height_);
-    for (int y = y0; y < y1; ++y) {
-      const float *row = pixels + size_t(y) * size_t(width_);
-      for (int x = x0; x < x1; ++x) (*destination)(y - min_y, x - min_x, 0) = row[x];
-    }
+    if (!fn_(user_, frame, min_x, min_y, w, h, destination->Data())) return nullptr;
     return this;  // Any non-null key; the image is owned by `destination`.
   }
 
@@ -68,7 +59,7 @@ class CallbackAccessor : public FrameAccessor {
 
  private:
   int width_, height_, num_frames_;
-  kt_frame_fn fn_;
+  kt_region_fn fn_;
   void *user_;
 };
 
@@ -127,7 +118,7 @@ TrackRegionOptions::Mode ToMode(int motion_model) {
 struct kt_tracker {
   CallbackAccessor accessor;
   mv::AutoTrack autotrack;
-  kt_tracker(int w, int h, int n, kt_frame_fn fn, void *user) : accessor(w, h, n, fn, user), autotrack(&accessor) {}
+  kt_tracker(int w, int h, int n, kt_region_fn fn, void *user) : accessor(w, h, n, fn, user), autotrack(&accessor) {}
 };
 
 extern "C" {
@@ -142,9 +133,9 @@ void kt_track_options_default(kt_track_options *o) {
   o->sigma = 0.9;
 }
 
-kt_tracker *kt_tracker_new(int width, int height, int num_frames, kt_frame_fn frame_fn, void *user) {
+kt_tracker *kt_tracker_new(int width, int height, int num_frames, kt_region_fn region_fn, void *user) {
   try {
-    return new kt_tracker(width, height, num_frames, frame_fn, user);
+    return new kt_tracker(width, height, num_frames, region_fn, user);
   } catch (...) {
     return nullptr;
   }
@@ -152,9 +143,9 @@ kt_tracker *kt_tracker_new(int width, int height, int num_frames, kt_frame_fn fr
 
 void kt_tracker_free(kt_tracker *tracker) { delete tracker; }
 
-void kt_tracker_add_marker(kt_tracker *tracker, const kt_marker *marker) {
+void kt_tracker_add_marker(kt_tracker *tracker, const kt_marker *marker, int tracked) {
   try {
-    tracker->autotrack.AddMarker(ToMarker(*marker, Marker::MANUAL));
+    tracker->autotrack.AddMarker(ToMarker(*marker, tracked ? Marker::TRACKED : Marker::MANUAL));
   } catch (...) {
   }
 }

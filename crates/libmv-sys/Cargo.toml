@@ -10,5 +10,3 @@ links = "kt_libmv"
 [build-dependencies]
 cc = { version = "1.8.0", features = ["parallel"] }
 
-[dev-dependencies]
-image = { version = "0.25.10", default-features = false, features = ["png"] }
