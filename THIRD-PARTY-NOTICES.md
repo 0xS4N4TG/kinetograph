@@ -8,7 +8,7 @@ presets of HyperFrames' colour grading runtime (`packages/core/src/colorGrading.
 `packages/parsers/src/colorGradingContract.ts`), rewritten in WGSL, Rust and TypeScript. Copyright HeyGen and the HyperFrames
 contributors, https://github.com/heygen-com/hyperframes, licensed under the Apache License, Version 2.0
 (http://www.apache.org/licenses/LICENSE-2.0). The ports are changed from the original: the shader is WGSL on the engine's GPU
-passes, the effects read the layer's texture instead of a video element, and the half-size bloom runs at full size.
+passes, and the effects read the layer's texture instead of a video element.
 
 The audio effects (`packages/audio/src/hf-fx/`: `chain.ts`, `automation.ts`, `graph.ts`, `worklets.ts`) port the effect
 registry with its parameters and ranges, the chain and automation readers, the lane scheduler, the Web Audio graph builders,

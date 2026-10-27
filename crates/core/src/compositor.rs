@@ -1928,24 +1928,49 @@ impl Compositor {
         previous.expect("at least one round")
     }
 
-    /// The bloom effect: what is above the threshold, blurred (HyperFrames does it at half size; this at full size
-    /// with the step doubled, the same reach).
+    /// The bloom effect: what is above the threshold, blurred, at half size as HyperFrames does it (a texel is two
+    /// canvas pixels a side; the colour grade reads it back with a bilinear filter). The step is in canvas pixels.
     fn grade_bloom(&mut self, src: &Tex, radius: f32, scale: f32, bounds: [f32; 4]) -> Tex {
         let step = radius * scale / 2.0;
-        let horizontal = self.grade_prepass(
-            0,
-            src,
-            src,
-            prepass_params(bounds, [1.0, 0.0, step, 1.0], [0.0; 4], 0.0),
+        let horizontal = self.half_target(src.bounds);
+        let vertical = self.half_target(src.bounds);
+        let params = prepass_params(bounds, [1.0, 0.0, step, 1.0], [0.0; 4], 0.0);
+        self.run_pass(
+            &self.grade_blur,
+            src.input(),
+            src.input(),
+            &floats(&params),
+            &horizontal,
         );
-        let vertical = self.grade_prepass(
-            0,
-            &horizontal,
-            &horizontal,
-            prepass_params(bounds, [0.0, 1.0, step, 2.0], [1.0, 0.0, 0.0, 0.0], 0.0),
+        let params = prepass_params(bounds, [0.0, 1.0, step, 2.0], [1.0, 0.0, 0.0, 0.0], 0.0);
+        self.run_pass(
+            &self.grade_blur,
+            horizontal.input(),
+            horizontal.input(),
+            &floats(&params),
+            &vertical,
         );
         self.release(horizontal);
         vertical
+    }
+
+    /// A texture at half the size of `region` (rounded up), whose texel (0, 0) covers the region's top left 2 x 2
+    /// canvas pixels. Its `bounds` are its own texels from the origin, which is what a pass over it draws.
+    fn half_target(&mut self, region: PixelRect) -> Tex {
+        let region = region.intersect(self.whole());
+        let size = [
+            region.width().max(1).div_ceil(2),
+            region.height().max(1).div_ceil(2),
+        ];
+        let mut tex = self.acquire_sized(size);
+        tex.origin = [region.x0, region.y0];
+        tex.bounds = PixelRect::new(
+            region.x0,
+            region.y0,
+            region.x0 + size[0] as i32,
+            region.y0 + size[1] as i32,
+        );
+        tex
     }
 
     /// The Kuwahara effect: the moments along each row, then the four quadrants weighed by how flat they are.
