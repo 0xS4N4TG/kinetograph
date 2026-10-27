@@ -11,8 +11,13 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `doctor`, `render` and `still` report the errors a page's own scripts raise and survive: `console.error` calls, uncaught exceptions and unhandled promise rejections, once per message per frame, with the frames they were seen on. A library that catches its own failure (Mermaid) no longer passes as clean. `--strict` fails on them.
 - A constructable `CSSStyleSheet` (`insertRule`, `replaceSync`, `cssRules`, `rule.style`), as scripts that build CSS text use it.
 
+- The DOM a sanitizer needs: `DOMParser` (`text/html` and the XML types, including `image/svg+xml`), `document.implementation.createHTMLDocument` and `createDocument`, `document.createNodeIterator` and `createTreeWalker` (the iterator moves on when the node it stands on is removed, as sanitizers rely on), `NodeFilter`, `DocumentFragment` (also `document.createDocumentFragment`), `<template>` with `.content`, `Element.attributes` (`NamedNodeMap`, `Attr`, `getAttributeNode`, `removeAttributeNode`), `Node` with `nodeType`, `nodeName` and `ownerDocument` on text nodes too, `HTMLTemplateElement` and `HTMLFormElement`. DOMPurify finds its document through them. Mermaid 12 renders flowcharts, sequence diagrams, class diagrams and pie charts when its labels are SVG text (`mermaid.initialize({ htmlLabels: false })`); see `/docs/known-issues/` for HTML labels.
+
 ### Fixed
 
+- Mermaid's `calculateTextDimensions` threw `svg element not in render tree`: SVG text is now measured with the built-in fallback font when its family is not registered, and `getBoundingClientRect` of an SVG shape in an `<svg>` that has no layout box answers in the SVG's own units.
+- `outerHTML` and `innerHTML` wrote SVG attributes such as `viewBox` and `markerUnits` in lower case below the `<svg>` element, wrote a `style` given as text as nothing, and an element inside `<foreignObject>` reported the SVG namespace (and parsed `<br>` as an unclosed element).
+- Nodes made by `innerHTML` or `insertAdjacentHTML` below the first level had no parent (`parentNode` was null).
 - `document.querySelector('body')`, `querySelectorAll('html')` and `getElementsByTagName('body')` find `html`, `head` and `body` themselves; they returned nothing, which broke `d3.select('body')`.
 
 ## 0.2.0 (2026-10-27)
