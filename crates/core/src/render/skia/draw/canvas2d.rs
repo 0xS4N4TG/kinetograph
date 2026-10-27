@@ -283,8 +283,8 @@ impl Translator {
             if stops.is_empty() {
                 return None;
             }
-            let g = ResolvedGradient { geometry, stops: stops.to_vec(), extend: Extend::Pad, units: Units::User, transform: Affine::IDENTITY };
-            gradient_shader_for(&g, None, linear, false)
+            let g = ResolvedGradient { geometry, stops: stops.to_vec(), extend: Extend::Pad, units: Units::User, transform: Affine::IDENTITY, unpremultiplied: true };
+            gradient_shader_for(&g, None, linear)
         };
         let shader = match paint {
             CanvasPaint::Color { color } => {

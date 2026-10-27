@@ -10,6 +10,11 @@ const SAMPLE: &str = "Hamburgefonstiv Quickly";
 
 /// The width of `SAMPLE` set in `style`, with `fonts` registered.
 fn width(fonts: Value, style: &str) -> f64 {
+    width_of(fonts, style, SAMPLE)
+}
+
+/// The width of `sample` set in `style`, with `fonts` registered.
+fn width_of(fonts: Value, style: &str, sample: &str) -> f64 {
     let root = el(
         "div",
         "$0",
@@ -18,7 +23,7 @@ fn width(fonts: Value, style: &str) -> f64 {
             "span",
             "$0.0",
             &format!("display: inline-block; font-size: 40px; white-space: nowrap; {style}"),
-            vec![text(SAMPLE)],
+            vec![text(sample)],
         )],
     );
     let mut req = request(root);
@@ -163,7 +168,25 @@ fn family_stack_and_names() {
         ),
         archivo
     );
-    assert_eq!(width(fonts, "font-family: monospace"), archivo);
+    // No fixed-pitch font registered: `monospace` is the bundled JetBrains
+    // Mono (the same advance as the registered one at any weight), not a
+    // proportional face.
+    // Uneven letters tell a fixed-pitch face from a proportional one.
+    let uneven = "iiiiiiiiWWWWWWWW";
+    let mono = |style: &str| width_of(fonts.clone(), style, uneven);
+    let reference = width_of(json!({ "X": jetbrains_mono() }), "font-family: X", uneven);
+    assert_ne!(
+        reference,
+        width_of(fonts.clone(), "font-family: Archivo", uneven)
+    );
+    assert_eq!(mono("font-family: monospace"), reference);
+    assert_eq!(mono("font-family: ui-monospace, monospace"), reference);
+    assert_eq!(
+        mono("font-family: Missing, monospace; font-weight: 800"),
+        reference
+    );
+    // Other generic families are unchanged.
+    assert_eq!(width(fonts, "font-family: cursive"), archivo);
 }
 
 #[test]
@@ -544,4 +567,42 @@ fn svg_text_falls_back_to_the_bundled_fonts() {
         layers_json(&with("\u{2192}")),
         layers_json(&with("\u{378}"))
     );
+}
+
+/// `Hello` in an `<svg><text>` with the given `font-family`, `fonts` registered.
+fn svg_text_in(family: &str, fonts: Value) -> String {
+    let label = el_attrs(
+        "text",
+        "$0.0.0",
+        json!({ "x": "10", "y": "60", "font-size": "40", "font-family": family }),
+        "",
+        vec![text("Hello")],
+    );
+    let svg = el_attrs(
+        "svg",
+        "$0.0",
+        json!({ "width": "300", "height": "100", "viewBox": "0 0 300 100" }),
+        "",
+        vec![label],
+    );
+    layers_json(&painted(el("div", "$0", "", vec![svg]), fonts))
+}
+
+#[test]
+fn svg_text_monospace_is_a_fixed_pitch_font_as_in_html() {
+    // A registered fixed-pitch font is what `monospace` draws, as for HTML text.
+    // (The SVG font database reads TrueType files, so unpack the WOFF2 fixture first.)
+    let ttf = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("jetbrains-mono-700.ttf");
+    let woff2 = std::fs::read(jetbrains_mono()).unwrap();
+    std::fs::write(&ttf, blitz_dom::decode_font_bytes(&woff2).as_ref()).unwrap();
+    let with_mono = json!({ "DM Sans": dm_sans(), "Code": ttf.to_string_lossy() });
+    assert_eq!(
+        svg_text_in("monospace", with_mono.clone()),
+        svg_text_in("Code", with_mono)
+    );
+    // With none, it is the bundled JetBrains Mono, not the first registered font.
+    let proportional = json!({ "DM Sans": dm_sans(), "Archivo": archivo_black() });
+    let mono = svg_text_in("monospace", proportional.clone());
+    assert_ne!(mono, svg_text_in("DM Sans", proportional.clone()));
+    assert_ne!(mono, svg_text_in("Archivo", proportional));
 }
