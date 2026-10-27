@@ -14,7 +14,7 @@
 import { type ReactNode } from 'react';
 import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet } from '@kinetographdev/compat/dom';
-import { setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
+import { hostOf, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
@@ -50,12 +50,10 @@ const g = globalThis as AnyRecord;
 const doc = (): AnyRecord => g.document;
 
 /**
- * The rules every HyperFrames page gets before its own: what a browser's default stylesheet says of `<body>`, except its 8px margin (HyperFrames renders pages flush) (the
- * wrapper elements stand in for `<html>` and `<body>`, which fill the picture so that a background on either paints it; `:where` gives it no specificity, so any rule of the page wins), and the hidden clips' contents.
+ * The rule every HyperFrames page gets before its own: the hidden clips' contents. The page's `<html>` and `<body>` are
+ * the island document's own (`setPageDocument`), with no margin, as HyperFrames renders pages flush.
  */
-const baseCss = (plan: HfPlan): string => `
-:where(.kg-hf-html) { display: block; width: ${plan.width}px; height: ${plan.height}px; }
-:where(.kg-hf-body) { display: block; margin: 0; min-height: 100%; }
+const baseCss = `
 [${HIDDEN_ATTR}], [${HIDDEN_ATTR}] * { visibility: hidden !important; }
 `;
 
@@ -122,14 +120,11 @@ function defineTemplateContent(template: AnyRecord, nodes: HfNode[]): void {
   Object.defineProperty(template, 'content', { configurable: true, get: () => holder });
 }
 
-function applyAttrs(el: AnyRecord, attrs: [string, string][], extraClass: string): void {
-  let classes = extraClass;
+function applyAttrs(el: AnyRecord, attrs: [string, string][]): void {
   for (const [name, value] of attrs) {
-    if (name === 'class') classes = `${extraClass} ${value}`;
-    else if (name === 'style') for (const [property, v] of styleDeclarations(value)) el.style.setProperty(property, v);
+    if (name === 'style') for (const [property, v] of styleDeclarations(value)) el.style.setProperty(property, v);
     else el.setAttribute(name, value);
   }
-  el.setAttribute('class', classes);
 }
 
 /** A string's quotes and backslashes escaped for an attribute selector. */
@@ -157,6 +152,8 @@ const cacheOnlyFetch = (family: string) => (): never => {
 class Runtime {
   private built = false;
   private html!: AnyRecord;
+  /** The shim's `document.body`, the top level of the frames' root, which the page's `<html>` hangs from. */
+  private top!: AnyRecord;
   private root: TimedElement | null = null;
   private readonly timing: TimingResolver;
   private readonly clocks = new Map<string, SceneClock | null>();
@@ -209,12 +206,16 @@ class Runtime {
       getVariables: () => ({ ...(plan.variables[plan.compositionId] ?? {}) }),
       assetUrl: (path: string) => (path.startsWith('/') || /^[a-z]+:/i.test(path) ? path : `${plan.baseDir}/${path}`),
     };
-    this.html = doc().createElement('div');
-    applyAttrs(this.html, plan.htmlAttrs, 'kg-hf-html');
-    const body = doc().createElement('div');
-    applyAttrs(body, plan.bodyAttrs, 'kg-hf-body');
+    // The page's own `<html>` and `<body>`: `document.documentElement` and `document.body` from here on, `:root`, and
+    // laid out as the island document's (crates/dom document.rs), so the page's rules for them apply as in a browser.
+    this.top = doc().body;
+    this.html = doc().createElement('html');
+    applyAttrs(this.html, plan.htmlAttrs);
+    const body = doc().createElement('body');
+    applyAttrs(body, plan.bodyAttrs);
     this.html.appendChild(body);
     for (const node of plan.body) buildNode(node, body);
+    setPageDocument(hostOf(this.html), hostOf(body));
     this.mount();
     this.bindVariables();
 
@@ -317,7 +318,7 @@ class Runtime {
 
   /** Puts the document in the scene's body (a render that starts the scene again has a new one). */
   mount(): void {
-    if (!this.html.isConnected) doc().body.appendChild(this.html);
+    if (!this.html.isConnected) this.top.appendChild(this.html);
   }
 
   /**
@@ -334,7 +335,7 @@ class Runtime {
         // Text is not measured before its fonts are registered.
         finishFontLoadsSync();
         this.setup();
-        this.html.parentNode?.removeChild(this.html);
+        if (this.html.isConnected) this.top.removeChild(this.html);
       } finally {
         root.unmount();
       }
@@ -630,7 +631,7 @@ function effectsOf(el: AnyRecord | null): string | null {
 }
 
 export function defineHyperframes(plan: HfPlan): void {
-  registerStylesheet(baseCss(plan), 'hyperframes');
+  registerStylesheet(baseCss, 'hyperframes');
   for (const sheet of plan.stylesheets) registerStylesheet(sheet.css, sheet.file);
   for (const request of fontRequests(plan)) {
     try {

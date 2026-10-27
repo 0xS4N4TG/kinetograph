@@ -23,7 +23,6 @@ import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline 
 import {
   extractGoogleFontImports,
   parseGoogleFontsUrl,
-  rewriteDocumentSelectors,
   scopeToComposition,
   type GoogleFontRequest,
 } from './css.js';
@@ -304,7 +303,8 @@ class Builder {
     const taken = extractGoogleFontImports(text);
     this.fonts.push(...taken.fonts);
     let css = this.localizeCss(absolutizeUrls(taken.css, ctx.dir));
-    css = ctx.scope === null ? rewriteDocumentSelectors(css) : scopeToComposition(css, ctx.scope, ctx.rootId);
+    // The page's own rules stay as written: its `html` and `body` are the document's (core hyperframes/runtime.tsx).
+    if (ctx.scope !== null) css = scopeToComposition(css, ctx.scope, ctx.rootId);
     if (css.trim() === '') return;
     noteCss(this.fontUse, css);
     this.stylesheets.push({ css, file });
