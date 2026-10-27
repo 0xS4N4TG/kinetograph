@@ -28,11 +28,21 @@ pub struct Plane {
 }
 
 /// A piece of plane `item` to paint: the part of its flat space where every
-/// `cut` (`a, b, c`: the half plane `a u + b v + c >= 0`) holds.
+/// cut holds.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Piece {
     pub item: usize,
-    pub cuts: Vec<DVec3>,
+    pub cuts: Vec<Cut>,
+}
+
+/// A half plane of a layer's flat space: `a u + b v + c >= 0` for `line`
+/// `(a, b, c)`, or `> 0` when `strict`. A plane cut in two keeps the line in
+/// one piece only (the piece in front of the cutting plane), so a point on it
+/// is drawn once.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Cut {
+    pub line: DVec3,
+    pub strict: bool,
 }
 
 /// The pieces of `planes`, back to front as seen from `eye` (homogeneous: a
@@ -80,7 +90,10 @@ pub fn paint_order(planes: &[Plane], eye: DVec4) -> Vec<Piece> {
             item,
             cuts: cuts
                 .into_iter()
-                .map(|c| flat_line(planes[item].to_world, c))
+                .map(|(c, strict)| Cut {
+                    line: flat_line(planes[item].to_world, c),
+                    strict,
+                })
                 .collect(),
         }
     }));
@@ -126,11 +139,12 @@ fn splitter(points: &[DVec3]) -> Option<Splitter> {
 }
 
 /// A piece in 3D while the tree is built: its points, and the cuts made so
-/// far as 4D planes (`(n, d)` scaled by the side kept: `n . p + d >= 0`).
+/// far as 4D planes (`(n, d)` scaled by the side kept: `n . p + d >= 0`, or
+/// `> 0` when strict).
 struct Poly {
     item: usize,
     points: Vec<DVec3>,
-    cuts: Vec<DVec4>,
+    cuts: Vec<(DVec4, bool)>,
 }
 
 struct Node {
@@ -196,7 +210,7 @@ fn split(poly: Poly, dist: &[f64], s: Splitter) -> (Option<Poly>, Option<Poly>) 
     let part = |points: Vec<DVec3>, side: f64| {
         (points.len() >= 3).then(|| {
             let mut cuts = poly.cuts.clone();
-            cuts.push(plane * side);
+            cuts.push((plane * side, side < 0.0));
             Poly {
                 item: poly.item,
                 points,
@@ -210,7 +224,7 @@ fn split(poly: Poly, dist: &[f64], s: Splitter) -> (Option<Poly>, Option<Poly>) 
 /// Back to front from `eye`: the side of each node's plane away from the eye,
 /// the node's own polygons, then the side towards it. Each polygon's item
 /// and its cuts in 3D.
-fn walk(node: &Node, eye: DVec4, out: &mut Vec<(usize, Vec<DVec4>)>) {
+fn walk(node: &Node, eye: DVec4, out: &mut Vec<(usize, Vec<(DVec4, bool)>)>) {
     let s = node.splitter;
     let eye_in_front = s.n.dot(eye.truncate()) + s.d * eye.w >= 0.0;
     let (far, near) = if eye_in_front {
@@ -299,7 +313,10 @@ mod tests {
         let pieces = paint_order(&planes, ORTHO);
         assert_eq!(items(&pieces), [1, 0, 1]);
         assert!(pieces[1].cuts.is_empty());
-        let (back, front) = (&pieces[0].cuts, &pieces[2].cuts);
+        let line = |p: &Piece| p.cuts.iter().map(|c| c.line).collect::<Vec<_>>();
+        let (back, front) = (&line(&pieces[0]), &line(&pieces[2]));
+        // The line itself is in the piece in front only.
+        assert!(!pieces[2].cuts[0].strict && pieces[0].cuts[0].strict);
         assert_eq!((back.len(), front.len()), (1, 1));
         // The line u = 50 of the turned plane, each piece keeping one side.
         for cut in [back[0], front[0]] {
@@ -331,5 +348,63 @@ mod tests {
         let flat = DMat4::from_scale(DVec3::new(1.0, 0.0, 1.0));
         let pieces = paint_order(&[plane(turned(0.0, 10.0)), plane(flat)], ORTHO);
         assert_eq!(items(&pieces), [1, 0]);
+    }
+
+    /// The pieces of each plane hold every point of it exactly once, points
+    /// on a cut included (`Cut::strict`).
+    fn each_point_once(planes: &[Plane], pieces: &[Piece], us: &[f64]) {
+        let keeps = |c: &Cut, u: f64, v: f64| {
+            let d = c.line.dot(DVec3::new(u, v, 1.0));
+            if c.strict { d > 0.0 } else { d >= 0.0 }
+        };
+        for item in 0..planes.len() {
+            for &u in us {
+                for v in [0.0, 50.0, 100.0] {
+                    let n = pieces
+                        .iter()
+                        .filter(|p| p.item == item && p.cuts.iter().all(|c| keeps(c, u, v)))
+                        .count();
+                    assert_eq!(n, 1, "plane {item} at ({u}, {v}) is in {n} pieces");
+                }
+            }
+        }
+    }
+
+    /// A star of 20 cards turned about one vertical axis: they meet only
+    /// along it, so none is cut more than once.
+    #[test]
+    fn a_star_of_cards_meets_along_its_axis() {
+        let planes: Vec<Plane> = (0..20)
+            .map(|i| plane(turned(f64::from(i) * 9.0, 0.0)))
+            .collect();
+        let pieces = paint_order(&planes, DVec4::new(50.0, 50.0, 900.0, 1.0));
+        assert!(pieces.iter().all(|p| p.cuts.len() <= 1));
+        each_point_once(
+            &planes,
+            &pieces,
+            &[0.0, 25.0, 49.999, 50.0, 50.001, 75.0, 100.0],
+        );
+    }
+
+    /// A card lying flat, crossed by 20 standing cards side by side: its
+    /// pieces collect a cut from each card on their way down the tree, more
+    /// than a warp takes at once.
+    #[test]
+    fn a_comb_of_cards_cuts_one_plane_many_times() {
+        let flat = DMat4::from_translation(DVec3::new(0.0, 50.0, -50.0))
+            * DMat4::from_rotation_x(90f64.to_radians());
+        let mut planes: Vec<Plane> = (0..20)
+            .map(|i| {
+                let dx = f64::from(i) * 5.0 - 47.5;
+                plane(DMat4::from_translation(DVec3::new(dx, 0.0, 0.0)) * turned(90.0, 0.0))
+            })
+            .collect();
+        planes.push(plane(flat));
+        let pieces = paint_order(&planes, DVec4::new(50.0, -300.0, 900.0, 1.0));
+        let most = pieces.iter().map(|p| p.cuts.len()).max().unwrap();
+        assert!(most > 16, "{most} cuts at most");
+        // The flat card is cut where each standing one crosses it, u = 2.5 + 5 i.
+        let us: Vec<f64> = (0..=40).map(|k| f64::from(k) * 2.5).collect();
+        each_point_once(&planes, &pieces, &us);
     }
 }

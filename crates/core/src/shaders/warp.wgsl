@@ -16,8 +16,9 @@
 //
 //            With cuts (a piece of a plane that another crosses, `bsp.rs`),
 //            only the texels q.xy / q.z that every cut keeps are drawn: a
-//            cut (a, b, c) keeps a u + b v + c >= 0. Pieces cut by the same
-//            line the two ways cover every pixel along it once, without
+//            cut (a, b, c, strict) keeps a u + b v + c >= 0, or > 0 when
+//            strict is 1. Pieces cut by the same line the two ways (one of
+//            them strict) cover every pixel along it once, without
 //            anti-aliasing, so they leave no seam.
 
 const MAX_CUTS: u32 = 16u;
@@ -52,7 +53,8 @@ fn fs_warp(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     }
     let texel = q.xy / q.z;
     for (var i = 0u; i < min(params.count.x, MAX_CUTS); i += 1u) {
-        if dot(params.cuts[i].xyz, vec3<f32>(texel, 1.0)) < 0.0 {
+        let d = dot(params.cuts[i].xyz, vec3<f32>(texel, 1.0));
+        if d < 0.0 || (params.cuts[i].w > 0.5 && d <= 0.0) {
             return vec4<f32>(0.0);
         }
     }

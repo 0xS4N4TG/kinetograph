@@ -1384,7 +1384,7 @@ impl Translator {
                     let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), |c| {
                         c.draw_rect(cell, &fill);
                     });
-                    p.set_shader(shader);
+                    set_tile_shader(p, shader);
                 }
                 None => {
                     p.set_shader(gradient_shader_for(g, layer_box, self.linear()));
@@ -1408,7 +1408,7 @@ impl Translator {
                     let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), |c| {
                         c.draw_image_rect_with_sampling_options(&img, None, cell, sampling, &Paint::default());
                     });
-                    p.set_shader(shader);
+                    set_tile_shader(p, shader);
                     return;
                 }
                 let tile = |r: bool| if r { TileMode::Repeat } else { TileMode::Clamp };
@@ -2264,9 +2264,24 @@ impl Translator {
     }
 }
 
+/// `shader` as `p`'s paint, or nothing painted when there is none (a tile of no size).
+fn set_tile_shader(p: &mut Paint, shader: Option<skia_safe::Shader>) {
+    match shader {
+        Some(shader) => {
+            p.set_shader(shader);
+        }
+        None => {
+            p.set_alpha_f(0.0);
+        }
+    }
+}
+
 /// A shader of what `draw` paints in `cell` (a tile at the origin), moved to `at` and repeated every cell plus `space`
 /// along the axes that `repeat` (once along the others): a picture shader, which keeps a fractional period exact.
 fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
+    if cell.is_empty() {
+        return None;
+    }
     let mut recorder = skia_safe::PictureRecorder::new();
     draw(recorder.begin_recording(cell, false));
     let picture = recorder.finish_recording_as_picture(Some(&cell))?;

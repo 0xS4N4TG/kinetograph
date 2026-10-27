@@ -16,7 +16,7 @@ use crate::box_shadow::BoxShadow;
 use crate::bsp;
 use crate::cache::{self, Inputs, LayerCache};
 use crate::canvas;
-use crate::compositor::{BLEND_SLOTS, BlendLayer, Compositor, Readback, Tex};
+use crate::compositor::{BLEND_SLOTS, BlendLayer, Compositor, MAX_WARP_CUTS, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::gif::{Gif, Gifs, gif_sources, open_gif};
 use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
@@ -887,8 +887,10 @@ impl Renderer {
         below: Option<&Tex>,
     ) -> Result<Tex> {
         let mut left = vec![0usize; items.len()];
+        let mut most_cuts = vec![0usize; items.len()];
         for piece in pieces {
             left[piece.item] += 1;
+            most_cuts[piece.item] = most_cuts[piece.item].max(piece.cuts.len());
         }
         for piece in pieces {
             let item = &items[piece.item];
@@ -915,14 +917,34 @@ impl Renderer {
             if let Some(Some(f)) = &flat[piece.item] {
                 // The cuts are lines of the layer's flat space, and the flat
                 // picture is drawn `shift` from where it belongs.
-                let cuts: Vec<DVec3> = piece
+                let cuts: Vec<bsp::Cut> = piece
                     .cuts
                     .iter()
-                    .map(|l| DVec3::new(l.x, l.y, l.z - l.x * f.shift.0 - l.y * f.shift.1))
+                    .map(|c| bsp::Cut {
+                        line: DVec3::new(
+                            c.line.x,
+                            c.line.y,
+                            c.line.z - c.line.x * f.shift.0 - c.line.y * f.shift.1,
+                        ),
+                        strict: c.strict,
+                    })
                     .collect();
-                let cut = self.timed(Stage::Composite, |s| {
-                    s.compositor.warp_cut(&f.tex, f.h, &cuts)
-                });
+                // A piece takes its cuts in the warp, where each pixel samples
+                // the plane. When a piece of the layer has more than one warp
+                // takes, all its pieces are cut before the warp instead, at
+                // texel centres, so that they still share their edges.
+                let cut = if most_cuts[piece.item] <= MAX_WARP_CUTS {
+                    self.timed(Stage::Composite, |s| {
+                        s.compositor.warp_cut(&f.tex, f.h, &cuts)
+                    })
+                } else {
+                    self.timed(Stage::Composite, |s| {
+                        let kept = s.compositor.cut(&f.tex, &cuts);
+                        let warped = s.compositor.warp_cut(&kept, f.h, &[]);
+                        s.compositor.release(kept);
+                        warped
+                    })
+                };
                 let opacity = item.layer.opacity * item.opacity;
                 let mut pending = vec![Pending::new(
                     Waiting::Loose(cut),

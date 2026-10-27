@@ -507,6 +507,45 @@ close_case!(preserve_3d_crossing, 480, 200, 1.5, {
         .to_string()
 });
 
+// A card lying flat, crossed by 20 standing cards side by side: pieces of the
+// flat card collect more cuts than one warp takes, and are cut before the warp.
+close_case!(preserve_3d_comb, 360, 260, 1.5, {
+    let standing: String = (0..20)
+        .map(|i| {
+            format!(
+                r#"<div style="position:absolute;left:{}px;top:0;width:100px;height:120px;background:hsl({},70%,55%);transform:rotateY(90deg)"></div>"#,
+                i * 8,
+                i * 18
+            )
+        })
+        .collect();
+    format!(
+        r#"<div style="position:absolute;left:0;top:0;width:360px;height:260px;perspective:700px">
+<div style="position:absolute;left:70px;top:70px;width:240px;height:120px;transform-style:preserve-3d;transform:rotateX(-35deg) rotateY(25deg)">
+{standing}<div style="position:absolute;left:20px;top:10px;width:200px;height:100px;background:rgba(40,40,40,.9);transform:rotateX(90deg)"></div>
+</div></div>"#
+    )
+});
+
+// A star of 20 cards turned about one vertical axis: each crosses all the
+// others along the axis.
+close_case!(preserve_3d_star, 320, 240, 1.5, {
+    let cards: String = (0..20)
+        .map(|i| {
+            format!(
+                r#"<div style="position:absolute;left:0;top:0;width:160px;height:140px;background:hsl({},65%,55%);transform:rotateY({}deg)"></div>"#,
+                i * 18,
+                i * 9
+            )
+        })
+        .collect();
+    format!(
+        r#"<div style="position:absolute;left:0;top:0;width:320px;height:240px;perspective:600px">
+<div style="position:absolute;left:80px;top:50px;width:160px;height:140px;transform-style:preserve-3d;transform:rotateX(-20deg) rotateY(10deg)">
+{cards}</div></div>"#
+    )
+});
+
 // Parallel cards in a turned stack, where the middle of the farther card is
 // nearer the eye than the middle of the nearer one: ordered by their planes.
 close_case!(preserve_3d_tilted_stack, 480, 270, 1.0, {
