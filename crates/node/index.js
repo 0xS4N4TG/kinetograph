@@ -791,6 +791,7 @@ module.exports.modelUnsupported = nativeBinding.modelUnsupported
 module.exports.parseRange = nativeBinding.parseRange
 module.exports.probeMedia = nativeBinding.probeMedia
 module.exports.probeStreams = nativeBinding.probeStreams
+module.exports.readCanvasPicture = nativeBinding.readCanvasPicture
 module.exports.renderCanvas = nativeBinding.renderCanvas
 module.exports.renderDomIsland = nativeBinding.renderDomIsland
 module.exports.resolveExport = nativeBinding.resolveExport

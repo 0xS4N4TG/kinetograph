@@ -21,6 +21,12 @@ export interface DomAddon {
   layoutText?(request: unknown): { width: number; height: number; lines?: { top: number; bottom: number; baseline: number }[] };
   /** A canvas's commands drawn on a transparent canvas: `{ width, height, commands, fonts, baseDir, format }` as JSON in, straight-alpha RGBA (`format: "rgba"`) or a PNG out. Needs the GPU. */
   renderCanvas?(requestJson: string): Uint8Array;
+  /**
+   * The pixels of part of a canvas that holds one plain `drawImage` of a picture file or a video frame, read on the CPU
+   * (`{ width, height, commands, baseDir, rect }` as JSON in, straight-alpha RGBA of `rect` out; null for any other
+   * canvas). Does not open the GPU.
+   */
+  readCanvasPicture?(requestJson: string): Uint8Array | null;
   /** The engine device's `{ features, limits }` as JSON, for `navigator.gpu`; null without a GPU. Opens the GPU once. */
   webgpuDeviceInfo?(): string | null;
   /** A Rive file played to a time, as a canvas's commands: `{ src, baseDir, artboard, animation, stateMachine, time, width, height, fit, alignment }` as JSON in, the commands as a JSON array out. */

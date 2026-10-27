@@ -334,6 +334,15 @@ pub fn render_canvas(request_json: String) -> Result<Buffer> {
     canvas::render_canvas(&request_json)
 }
 
+/// The pixels of part of a canvas that holds one decoded picture, read on the CPU
+/// (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"): `{ width, height, commands, baseDir, rect: { x, y,
+/// width, height } }` as JSON in; straight-alpha RGBA of `rect` out when the commands are one plain `drawImage` of a
+/// picture file or a video frame, `null` when only `renderCanvas` can draw them. Does not open the GPU.
+#[napi]
+pub fn read_canvas_picture(request_json: String) -> Result<Option<Buffer>> {
+    canvas::read_canvas_picture(&request_json)
+}
+
 /// The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
 /// (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
 #[napi]

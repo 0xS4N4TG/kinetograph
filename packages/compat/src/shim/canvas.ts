@@ -51,6 +51,8 @@ export function canvasEnvironment(fonts: () => Record<string, string> = () => fo
       }
     },
     readPixels(commands, size, rect) {
+      const fast = readPicture(commands, size, rect);
+      if (fast !== null) return fast;
       const rgba = renderCanvas(commands, size, 'rgba');
       const out = new Uint8ClampedArray(rect.width * rect.height * 4);
       // Pixels outside the canvas are transparent black.
@@ -65,6 +67,32 @@ export function canvasEnvironment(fonts: () => Record<string, string> = () => fo
       return out;
     },
   };
+}
+
+/**
+ * The pixels of `rect` when `commands` are one plain `drawImage` of a picture file or a video frame, read on the CPU
+ * from the decoder's cache (the addon's `readCanvasPicture`: no GPU, so it can run for every frame); null for any other
+ * canvas, or an addon without the call, which the renderer then draws.
+ */
+function readPicture(
+  commands: CanvasCommand[],
+  size: { width: number; height: number },
+  rect: { x: number; y: number; width: number; height: number },
+): Uint8ClampedArray | null {
+  if (!(rect.width > 0 && rect.height > 0 && size.width > 0 && size.height > 0)) return null;
+  // Only a picture file or a video frame is read here: look before the commands are serialised.
+  const draws = commands.filter((c) => !(c.op === 'fill' && c.blend === 'clear'));
+  const draw = draws[0];
+  if (draws.length !== 1 || draw?.op !== 'image' || (draw.source.kind !== 'src' && draw.source.kind !== 'video')) return null;
+  if (!hasAddonFunction('readCanvasPicture')) return null;
+  const request = { width: size.width, height: size.height, commands, baseDir: getDomEnvironment().baseDir, rect };
+  try {
+    const rgba = addonFunction('readCanvasPicture')(JSON.stringify(request));
+    return rgba === null ? null : new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.byteLength);
+  } catch {
+    // A picture that cannot be read is the renderer's to report (it draws the canvas without it and says so).
+    return null;
+  }
 }
 
 /** What the addon draws of `commands` on a transparent canvas: straight-alpha RGBA, or a PNG. */
@@ -115,6 +143,8 @@ export function webgpuDeviceInfo(): DeviceInfo | null {
 
 /** The pixels of a canvas texture: the commands drawn on a transparent canvas, straight alpha. */
 export function rasterizeCanvas(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null {
+  const fast = readPicture(source.commands, source, { x: 0, y: 0, width: source.width, height: source.height });
+  if (fast !== null) return new Uint8Array(fast.buffer, fast.byteOffset, fast.byteLength);
   if (!hasAddonFunction('renderCanvas')) return null;
   return renderCanvas(source.commands, source, 'rgba');
 }

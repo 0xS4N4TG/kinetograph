@@ -593,6 +593,12 @@ export type CanvasSource =
   | { kind: 'src'; src: string }
   /** Straight-alpha RGBA8, base64: an `ImageData`. */
   | { kind: 'pixels'; width: number; height: number; data: string }
+  /**
+   * A picture of a video file: what a `<video>` shows, or a `<Video>` clip shows at a scene frame, at `time` seconds
+   * after the file's first picture (SCENE.md "video", rule 5); `end` is where the clip ends, in seconds after the
+   * first picture (the stream's end when omitted). This is what `onVideoFrame` hands a project to `drawImage`.
+   */
+  | { kind: 'video'; src: string; time: number; end?: number }
   /** Another canvas, drawn as a whole. */
   | { kind: 'canvas'; width: number; height: number; commands: CanvasCommand[] }
   /**

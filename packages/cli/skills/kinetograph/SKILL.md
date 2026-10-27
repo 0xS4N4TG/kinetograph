@@ -157,7 +157,7 @@ the same list is in the result under `compat.leftOut`. Pass `--strict` to `still
 before a long render. Refs to DOM elements answer `getBoundingClientRect` and
 friends from the same CSS engine, `useLayoutEffect` measure-then-render code settles within the frame, and `fetch`,
 `new Image()` and `matchMedia` work for project files and the composition's size, and `<canvas>` with
-`getContext('2d')` is drawn natively (paths, gradients, text, shadows, filters, `drawImage`, `getImageData`), and so
+`getContext('2d')` is drawn natively (paths, gradients, text, shadows, filters, `drawImage`, `getImageData`; `<Video onVideoFrame>` hands the frame to `drawImage` and `getImageData` reads its pixels), and so
 are `webgl`/`webgl2` contexts; there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native
 element for the same drawing. In a component, a canvas you draw to in a frame starts that frame empty; one you don't touch
 keeps its pixels. Draw the whole frame from the frame number every time, never on top of what an earlier frame drew.
