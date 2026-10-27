@@ -310,6 +310,7 @@ export class KeyframeEffectShim extends AnimationEffectShim {
   set target(value: unknown) {
     const before = this.host();
     this.targetElement = value;
+    changed();
     touch(before);
     touch(this.host());
   }
@@ -399,9 +400,35 @@ export class AnimationPlaybackEventShim {
   readonly timelineTime: number | null;
 }
 
-/** Every animation made, in the order made (the composite order of the API's animations). */
+/** Every animation that may be relevant (made, or played again since it went idle). */
 const all = new Set<AnimationShim>();
 let sequence = 0;
+/** The animations of each element, in composite order (the order they were made), rebuilt when `all` or a target changes. */
+let byHost = new Map<HostElement, AnimationShim[]>();
+let stale = true;
+const changed = (): void => {
+  stale = true;
+};
+function track(animation: AnimationShim): void {
+  if (!all.has(animation)) {
+    all.add(animation);
+    changed();
+  }
+}
+function animationsByHost(): Map<HostElement, AnimationShim[]> {
+  if (!stale) return byHost;
+  byHost = new Map();
+  for (const animation of all) {
+    const host = animation.host();
+    if (host === null) continue;
+    let list = byHost.get(host);
+    if (list === undefined) byHost.set(host, (list = []));
+    list.push(animation);
+  }
+  for (const list of byHost.values()) list.sort((a, b) => a.order - b.order);
+  stale = false;
+  return byHost;
+}
 /** Events to dispatch at the next tick, in the order they were queued. */
 let queued: Array<{ animation: AnimationShim; event: AnimationPlaybackEventShim }> = [];
 
@@ -453,7 +480,7 @@ export class AnimationShim {
     handled(this.readyD.promise);
     handled(this.finishedD.promise);
     this.effect = effect;
-    all.add(this);
+    track(this);
   }
 
   // ---- properties ----
@@ -471,6 +498,7 @@ export class AnimationShim {
     if (effect !== null && effect.animation !== null) effect.animation.effect = null;
     this.effectValue = effect;
     if (effect !== null) effect.animation = this;
+    changed();
     this.updateFinishedState(false, false);
   }
   get timeline(): AnimationTimelineShim | null {
@@ -493,7 +521,7 @@ export class AnimationShim {
     const previous = this.currentTime;
     this.applyPendingRate();
     this.start = time;
-    all.add(this);
+    track(this);
     if (time !== null) {
       if (this.rate !== 0) this.hold = null;
     } else {
@@ -518,7 +546,7 @@ export class AnimationShim {
       return;
     }
     this.silentlySetCurrentTime(Number(value));
-    all.add(this);
+    track(this);
     if (this.task?.kind === 'pause') {
       this.hold = Number(value);
       this.applyPendingRate();
@@ -575,7 +603,7 @@ export class AnimationShim {
       }
     }
     if (seek !== null) this.hold = seek;
-    all.add(this);
+    track(this);
     const hadPlay = this.task?.kind === 'play';
     if (!hadPlay) this.newReady();
     this.task = { kind: 'pause', at: this.timelineTime() };
@@ -586,7 +614,7 @@ export class AnimationShim {
     const rate = this.effectiveRate();
     if (rate === 0 || (rate > 0 && this.endTime() === Infinity)) throw domError('Cannot finish this animation', 'InvalidStateError');
     this.applyPendingRate();
-    all.add(this);
+    track(this);
     const limit = this.rate > 0 ? this.endTime() : 0;
     this.silentlySetCurrentTime(limit);
     const timelineTime = this.timelineTime();
@@ -740,7 +768,7 @@ export class AnimationShim {
       this.start = null;
       this.hold = seek;
     }
-    all.add(this);
+    track(this);
     if (this.hold !== null) this.start = null;
     if (this.task !== null) {
       this.task = null;
@@ -849,7 +877,12 @@ export function tickAnimations(): void {
   queued = [];
   for (const { animation, event } of events) animation.dispatchEvent(event);
   // An idle animation (cancelled, or never played) does nothing until it is played again, which puts it back.
-  for (const animation of all) if (animation.playState === 'idle') all.delete(animation);
+  for (const animation of all) {
+    if (animation.playState === 'idle') {
+      all.delete(animation);
+      changed();
+    }
+  }
 }
 
 /**
@@ -876,6 +909,7 @@ export function animationsPending(): boolean {
 /** Forgets every animation (a new render). */
 export function resetAnimations(): void {
   all.clear();
+  changed();
   queued = [];
 }
 
@@ -902,14 +936,16 @@ export function animationsOf(host: HostElement | null, subtree = false): Animati
 
 /**
  * The style the animations on `host` give it now, as CSS property to value (kebab-case), or null when none applies.
- * `upTo` stops before that animation (what `commitStyles` reads, which includes it, passes the one after).
+ * `upTo` is the last animation counted (`commitStyles` commits the stack up to its own animation).
  */
 export function animatedStyleOf(host: HostElement, upTo?: AnimationShim): Map<string, string> | null {
   if (all.size === 0) return null;
+  const list = animationsByHost().get(host);
+  if (list === undefined) return null;
   let out: Map<string, string> | null = null;
-  for (const animation of all) {
+  for (const animation of list) {
     const effect = animation.effect as KeyframeEffectShim | null;
-    if (effect === null || effect.host() !== host || effect.pseudoElement !== null) continue;
+    if (effect === null || effect.pseudoElement !== null) continue;
     if (animation.playState === 'idle') continue;
     const timing = effect.computed(animation.currentTime, animation.playbackRate);
     if (timing.progress === null) continue;
