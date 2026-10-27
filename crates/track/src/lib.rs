@@ -12,7 +12,8 @@
 //! What follows Blender (4.5, `tracking_auto.cc` and `tracking_util.cc`, as behaviour; none of its GPL code is used):
 //!
 //! - a new marker's pattern is the square `pattern_size` px wide around the point, its search area the square
-//!   `search_size` px wide (defaults 21 and 71);
+//!   `search_size` px wide (defaults 21 and 71), placed through Blender's f32 normalised coordinates, so libmv starts
+//!   from the same bits as in Blender;
 //! - grayscale is 0.2126 R + 0.7152 G + 0.0722 B of the 8-bit values over 255, computed for the search region only;
 //! - each frame, every live track is tracked from its last marker one frame on (or back); the pattern matched is the
 //!   keyframe's (the placed marker, Blender's default "Keyframe" match) or the previous frame's;
@@ -291,20 +292,30 @@ impl Drop for Tracker<'_> {
     }
 }
 
-/// A new marker at `point` (video pixels), as Blender makes one: pattern and search squares around it, corners in
-/// Blender's order (its bottom-left, bottom-right, top-right, top-left, v up).
-fn place(point: &Point, frame: u32, track: usize, options: &Options, height: u32) -> RawMarker {
-    let x = (point.x - 0.5) as f32;
-    let y = (f64::from(height) - 0.5 - point.y) as f32;
-    let p = options.pattern_size as f32 / 2.0;
-    let s = options.search_size as f32 / 2.0;
+/// A new marker at `point` (video pixels), as Blender makes one and hands it to libmv: the position kept as a
+/// normalised f32 (v up), the pattern and search squares as f32 offsets from it in normalised units, each turned into
+/// libmv's pixels as `n * size - 0.5` in f32. The float steps are Blender's, so the tracker starts from the same bits.
+/// Corners in Blender's order (its bottom-left, bottom-right, top-right, top-left, v up).
+fn place(point: &Point, frame: u32, track: usize, options: &Options, width: u32, height: u32) -> RawMarker {
+    let (w, h) = (width as f32, height as f32);
+    let pos = [(point.x / f64::from(width)) as f32, (1.0 - point.y / f64::from(height)) as f32];
+    let pattern = [options.pattern_size as f32 / 2.0 / w, options.pattern_size as f32 / 2.0 / h];
+    let search = [options.search_size as f32 / 2.0 / w, options.search_size as f32 / 2.0 / h];
+    // Unfused, as Blender's build computes it (a fused multiply-add moves Blender parity from 1e-4 px to 1e-2).
+    let px = |n: f32, size: f32| n * size - 0.5;
+    let at = |offset: [f32; 2]| [px(offset[0] + pos[0], w), px(offset[1] + pos[1], h)];
     RawMarker {
         frame: frame as c_int,
         track: track as c_int,
-        center: [x, y],
-        patch: [[x - p, y - p], [x + p, y - p], [x + p, y + p], [x - p, y + p]],
-        search_min: [x - s, y - s],
-        search_max: [x + s, y + s],
+        center: [px(pos[0], w), px(pos[1], h)],
+        patch: [
+            at([-pattern[0], -pattern[1]]),
+            at([pattern[0], -pattern[1]]),
+            at([pattern[0], pattern[1]]),
+            at([-pattern[0], pattern[1]]),
+        ],
+        search_min: at([-search[0], -search[1]]),
+        search_max: at([search[0], search[1]]),
         reference_frame: frame as c_int,
     }
 }
@@ -381,7 +392,7 @@ pub fn track_points(
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            let m = place(p, start, i, options, height);
+            let m = place(p, start, i, options, width, height);
             Live { current: m, frames: vec![to_video(&m, start, 1.0, height)], lost: Vec::new(), live: true }
         })
         .collect();

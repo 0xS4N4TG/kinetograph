@@ -111,8 +111,11 @@ fn the_corners_start_as_blenders_pattern_square() {
     let options = Options { pattern_size: 21, ..Options::default() };
     let paths = track_points(&mut frames, &[point(60.0, 50.0)], &options, Range { from: 0, to: 0, backwards: false }).unwrap();
     let first = paths[0].frames[0];
-    assert_eq!(first.center, [60.0, 50.0]);
-    assert_eq!(first.corners, [[49.5, 39.5], [70.5, 39.5], [70.5, 60.5], [49.5, 60.5]]);
+    // Within the f32 rounding of Blender's normalised coordinates.
+    let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4;
+    assert!(near(first.center, [60.0, 50.0]), "{:?}", first.center);
+    let want = [[49.5, 39.5], [70.5, 39.5], [70.5, 60.5], [49.5, 60.5]];
+    assert!(first.corners.iter().zip(want).all(|(&a, b)| near(a, b)), "{:?}", first.corners);
 }
 
 #[test]
