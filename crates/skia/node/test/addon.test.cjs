@@ -56,3 +56,25 @@ test('svgSize answers the size an SVG declares and fails on one that does not pa
   assert.deepEqual(size, { width: 30, height: 12 });
   assert.throws(() => skia.svgSize(JSON.stringify({ svg: 'nope' })), /could not be parsed/);
 });
+
+test('data is kept by its content: a picture made from it has a size, pixels and a PNG', () => {
+  const pixels = Buffer.from([255, 0, 0, 255, 0, 0, 255, 255, 0, 255, 0, 255, 255, 255, 255, 255]);
+  const id = skia.putData(pixels);
+  assert.equal(skia.putData(Buffer.from(pixels)), id);
+  const image = { pixels: id, width: 2, height: 2 };
+  assert.deepEqual(JSON.parse(skia.imageCall(JSON.stringify({ image, call: 'size' }))), { width: 2, height: 2 });
+  assert.deepEqual([...skia.imageBytes(JSON.stringify({ image, format: 'rgba' }))], [...pixels]);
+  const png = skia.imageBytes(JSON.stringify({ image, format: 'png' }));
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  const decoded = { data: skia.putData(png) };
+  assert.deepEqual([...skia.imageBytes(JSON.stringify({ image: decoded, format: 'rgba' }))], [...pixels]);
+});
+
+test('measureParagraph answers the sizes and lines of a paragraph at a width', () => {
+  const font = join(__dirname, '../../../../assets/fonts/DMSans-Medium.ttf');
+  const text = [{ type: 'addText', text: 'a few words to wrap' }];
+  const paragraph = { fonts: [{ family: 'DM Sans', file: font }], style: { textStyle: { fontSize: 16 } }, ops: text };
+  const measure = (width) => JSON.parse(skia.measureParagraph(JSON.stringify({ paragraph, width })));
+  assert.equal(measure(1000).lines.length, 1);
+  assert.ok(measure(40).lines.length > 2);
+});

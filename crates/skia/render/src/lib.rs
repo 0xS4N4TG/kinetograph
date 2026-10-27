@@ -23,9 +23,10 @@ use std::fmt;
 pub use assets::Assets;
 pub use compound::svg_size;
 pub use declare::{EffectInfo, compile_effect};
+pub use draw::{image_bytes, image_call};
 pub use paths::path_call;
 pub use render::render;
-pub use text::{FontMetrics, TextMeasure, measure_text};
+pub use text::{FontMetrics, TextMeasure, measure_paragraph, measure_text};
 pub use value::Props;
 
 #[derive(Debug)]

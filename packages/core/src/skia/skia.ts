@@ -1,8 +1,47 @@
 // The `Skia` factory of RN-Skia (`Skia.Path.Make()`, `Skia.Color('red')`, ...), as far as drawing from a render needs it.
 
+import { getFallbackFont, getFonts } from '../font-registry.js';
+import { reportUnsupported } from '../unsupported.js';
 import { skiaAddon } from './addon.js';
-import { parseSvg, registeredFont, SkFont, SkMatrix, SkParagraphBuilder, SkPaint, SkPath, SkPictureRecorder, SkRuntimeEffect, SkTextBlob, type SkRSXform, type SkParagraphStyle, type SkRRect, type SkRect } from './objects.js';
+import {
+  AnimatedImageFactory,
+  DataFactory,
+  FontMgrFactory,
+  ImageFactory,
+  SkTypefaceFontProvider,
+  TypefaceFactory,
+  TypefaceFontProviderFactory,
+} from './data.js';
+import { ColorFilterFactory, ImageFilterFactory, MaskFilterFactory, PathEffectFactory, ShaderFactory, SkRuntimeShaderBuilder } from './factories.js';
+import {
+  parseSvg,
+  registeredFont,
+  SkFont,
+  SkMatrix,
+  SkParagraphBuilder,
+  SkPaint,
+  SkPath,
+  SkPictureRecorder,
+  SkRuntimeEffect,
+  SkTextBlob,
+  SkTypeface,
+  type SkRSXform,
+  type SkParagraphStyle,
+  type SkRRect,
+  type SkRect,
+} from './objects.js';
+import { SurfaceFactory } from './surface.js';
 import { toColor } from './values.js';
+
+/** The font a `Skia.Font()` without a typeface uses: the first registered font, else the fallback (no system fonts). */
+function defaultFace(): { file: string } {
+  const file = Object.values(getFonts())[0] ?? getFallbackFont();
+  if (file === undefined || file === null) {
+    throw new Error('Skia.Font() needs a font: there are no system fonts, so register one with loadFont() or use useFont()');
+  }
+  reportUnsupported('SkiaCanvas', 'Skia.Font', null, 'a font without a typeface is the system default in RN-Skia; there are no system fonts, so the first registered font (or the fallback) is used');
+  return { file };
+}
 
 export const Skia = {
   /** A colour as four floats from 0 to 1, from a CSS colour string, `0xAARRGGBB`, or floats. */
@@ -28,11 +67,8 @@ export const Skia = {
       }
     },
   },
-  /** A font from a registered family: `Skia.Font(Skia.FontMgr.System().matchFamilyStyle(...), size)` is `matchFont`. */
-  Font: (font: SkFont | null, size = 14): SkFont => {
-    if (font === null) throw new Error('Skia.Font() needs a font: there are no system fonts, so use matchFont() or useFont()');
-    return new SkFont(font.file, size);
-  },
+  /** A font of a typeface (`Skia.Typeface.*`, `Skia.FontMgr.System().matchFamilyStyle(...)`) or of another font, at `size`. */
+  Font: (typeface?: SkTypeface | SkFont | null, size = 14): SkFont => new SkFont(typeface ? typeface.face : defaultFace(), size),
   /** An `SkRSXform`: the matrix `[scos -ssin tx; ssin scos ty]`. */
   RSXform: (scos: number, ssin: number, tx: number, ty: number): SkRSXform => ({ scos, ssin, tx, ty }),
   /** An `SkRSXform` that scales by `scale`, rotates by `radians` about (px, py) and then translates by (tx, ty). */
@@ -53,9 +89,24 @@ export const Skia = {
     /** The parsed SVG, or null if it does not parse. */
     MakeFromString: (svg: string) => parseSvg(svg),
   },
+  /** With a `Skia.TypefaceFontProvider`, the paragraph's families are the provider's; else the registered fonts. */
   ParagraphBuilder: {
-    Make: (style: SkParagraphStyle = {}): SkParagraphBuilder => new SkParagraphBuilder(style),
+    Make: (style: SkParagraphStyle = {}, fontProvider?: SkTypefaceFontProvider | null): SkParagraphBuilder =>
+      new SkParagraphBuilder(style, fontProvider ? () => fontProvider.paragraphFonts() : undefined),
   },
+  Shader: ShaderFactory,
+  ColorFilter: ColorFilterFactory,
+  ImageFilter: ImageFilterFactory,
+  MaskFilter: MaskFilterFactory,
+  PathEffect: PathEffectFactory,
+  RuntimeShaderBuilder: (effect: SkRuntimeEffect): SkRuntimeShaderBuilder => new SkRuntimeShaderBuilder(effect),
+  Data: DataFactory,
+  Image: ImageFactory,
+  AnimatedImage: AnimatedImageFactory,
+  Typeface: TypefaceFactory,
+  FontMgr: FontMgrFactory,
+  TypefaceFontProvider: TypefaceFontProviderFactory,
+  Surface: SurfaceFactory,
 };
 
 export { registeredFont };

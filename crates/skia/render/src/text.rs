@@ -11,8 +11,9 @@ use skia_safe::textlayout::{
     FontCollection, ParagraphBuilder, ParagraphStyle, TextAlign, TextDecoration, TextStyle,
     TypefaceFontProvider,
 };
+use skia_safe::textlayout::{Paragraph, RectHeightStyle, RectWidthStyle};
 use skia_safe::{
-    Font, FontMgr, FontStyle, Paint, Point, RSXform, TextBlob,
+    Canvas, Font, FontMgr, FontStyle, Paint, Point, RSXform, TextBlob, Typeface,
     font_style::{Slant, Weight, Width},
 };
 
@@ -26,12 +27,20 @@ pub fn font_of(ctx: &mut Ctx, v: &Value) -> Result<Font, Error> {
     font_in(ctx.assets, &ctx.base_dir, v)
 }
 
-fn font_in(assets: &mut Assets, base: &FsPath, v: &Value) -> Result<Font, Error> {
-    let p = Props(v);
+/// The typeface of a font or a typeface object: `{ file }` (a font file) or `{ data }` (font bytes kept with `putData`).
+pub fn typeface_in(assets: &mut Assets, base: &FsPath, p: Props) -> Result<Typeface, Error> {
+    if let Some(id) = p.str("data") {
+        return assets.data_typeface(id);
+    }
     let file = p.str("file").ok_or_else(|| {
         Error("a font needs a file: register it and use useFont or matchFont".into())
     })?;
-    let typeface = assets.typeface(&base.join(file))?;
+    assets.typeface(&base.join(file))
+}
+
+fn font_in(assets: &mut Assets, base: &FsPath, v: &Value) -> Result<Font, Error> {
+    let p = Props(v);
+    let typeface = typeface_in(assets, base, p)?;
     let mut font = Font::new(typeface, p.f32_or("size", 14.0)?);
     if let Some(on) = p.bool("embolden") {
         font.set_embolden(on);
@@ -162,20 +171,25 @@ fn text_style(p: Props, families_of: &[String]) -> Result<TextStyle, Error> {
     Ok(style)
 }
 
-fn draw_paragraph(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
-    let Some(held) = n.props.props("paragraph") else {
-        return Ok(());
-    };
+/// The paragraph of `Skia.ParagraphBuilder` (`{ fonts, style, ops }`), built and laid out `width` wide.
+fn build_paragraph(
+    assets: &mut Assets,
+    base: &FsPath,
+    held: Props,
+    width: f32,
+) -> Result<Paragraph, Error> {
     let mut provider = TypefaceFontProvider::new();
     let mut families = Vec::new();
     for font in held.array("fonts").map(Vec::as_slice).unwrap_or_default() {
         let f = Props(font);
-        let (Some(file), Some(family)) = (f.str("file"), f.str("family")) else {
+        let Some(family) = f.str("family") else {
             return err("a paragraph font needs a family and a file");
         };
-        let typeface = ctx.assets.typeface(&ctx.file(file))?;
+        let typeface = typeface_in(assets, base, f)?;
         provider.register_typeface(typeface, Some(family));
-        families.push(family.to_string());
+        if !families.iter().any(|known| known == family) {
+            families.push(family.to_string());
+        }
     }
     let mut collection = FontCollection::new();
     let manager: FontMgr = provider.into();
@@ -196,6 +210,9 @@ fn draw_paragraph(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
     }
     if let Some(lines) = style_props.f32("maxLines")? {
         style.set_max_lines(lines as usize);
+    }
+    if let Some(ellipsis) = style_props.str("ellipsis") {
+        style.set_ellipsis(ellipsis);
     }
     if let Some(text) = style_props.props("textStyle") {
         style.set_text_style(&text_style(text, &families)?);
@@ -224,16 +241,119 @@ fn draw_paragraph(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
         }
     }
     let mut paragraph = builder.build();
-    paragraph.layout(
-        n.props
-            .f32("width")?
-            .ok_or_else(|| Error("Paragraph needs a width".into()))?,
-    );
-    paragraph.paint(
-        ctx.canvas,
-        Point::new(n.props.f32_or("x", 0.0)?, n.props.f32_or("y", 0.0)?),
-    );
+    paragraph.layout(width);
+    Ok(paragraph)
+}
+
+fn draw_paragraph(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
+    let Some(held) = n.props.props("paragraph") else {
+        return Ok(());
+    };
+    let width = n
+        .props
+        .f32("width")?
+        .ok_or_else(|| Error("Paragraph needs a width".into()))?;
+    let at = Point::new(n.props.f32_or("x", 0.0)?, n.props.f32_or("y", 0.0)?);
+    paint_paragraph(ctx, held, width, at, ctx.canvas)
+}
+
+/// Lays out the paragraph `held` `width` wide and paints it at `at` on `canvas` (the node, or a recorded
+/// `paragraph.paint(canvas, x, y)`).
+pub fn paint_paragraph(
+    ctx: &mut Ctx,
+    held: Props,
+    width: f32,
+    at: Point,
+    canvas: &Canvas,
+) -> Result<(), Error> {
+    let paragraph = build_paragraph(ctx.assets, &ctx.base_dir, held, width)?;
+    paragraph.paint(canvas, at);
     Ok(())
+}
+
+/// What `SkParagraph` answers after `layout(width)`: its sizes, its lines and, for `ranges`, the boxes of each range
+/// of UTF-16 offsets, and for `points`, the glyph position at each point.
+pub fn measure_paragraph(
+    assets: &mut Assets,
+    base: &FsPath,
+    request: &Value,
+) -> Result<Value, Error> {
+    let r = Props(request);
+    let held = r
+        .props("paragraph")
+        .ok_or_else(|| Error("measureParagraph needs a paragraph".into()))?;
+    let width = r.f32("width")?.unwrap_or(f32::INFINITY);
+    let paragraph = build_paragraph(assets, base, held, width)?;
+    let lines: Vec<Value> = paragraph
+        .get_line_metrics()
+        .iter()
+        .map(|l| {
+            serde_json::json!({
+                "startIndex": l.start_index,
+                "endIndex": l.end_index,
+                "endExcludingWhitespaces": l.end_excluding_whitespaces,
+                "endIncludingNewline": l.end_including_newline,
+                "isHardBreak": l.hard_break,
+                "ascent": l.ascent,
+                "descent": l.descent,
+                "height": l.height,
+                "width": l.width,
+                "left": l.left,
+                "baseline": l.baseline,
+                "lineNumber": l.line_number,
+            })
+        })
+        .collect();
+    let rect = |r: &skia_safe::Rect| serde_json::json!({ "x": r.left, "y": r.top, "width": r.width(), "height": r.height() });
+    let mut ranges = Vec::new();
+    for range in r.array("ranges").map(Vec::as_slice).unwrap_or_default() {
+        let pair = crate::value::floats(range).unwrap_or_default();
+        let (start, end) = match pair.as_slice() {
+            [s, e] => (s.max(0.0) as usize, e.max(0.0) as usize),
+            _ => return err("a range is [start, end]"),
+        };
+        let boxes: Vec<Value> = paragraph
+            .get_rects_for_range(start..end, RectHeightStyle::Tight, RectWidthStyle::Tight)
+            .iter()
+            .map(|b| {
+                let mut v = rect(&b.rect);
+                v["direction"] = Value::from(match b.direct {
+                    skia_safe::textlayout::TextDirection::RTL => "rtl",
+                    _ => "ltr",
+                });
+                v
+            })
+            .collect();
+        ranges.push(Value::from(boxes));
+    }
+    let mut points = Vec::new();
+    for point in r.array("points").map(Vec::as_slice).unwrap_or_default() {
+        let at = crate::value::point(point).ok_or_else(|| Error("a point is { x, y }".into()))?;
+        let found = paragraph.get_glyph_position_at_coordinate(at);
+        points.push(serde_json::json!({
+            "position": found.position,
+            "affinity": if matches!(found.affinity, skia_safe::textlayout::Affinity::Upstream) { "upstream" } else { "downstream" },
+        }));
+    }
+    let placeholders: Vec<Value> = paragraph
+        .get_rects_for_placeholders()
+        .iter()
+        .map(|b| rect(&b.rect))
+        .collect();
+    Ok(serde_json::json!({
+        "height": paragraph.height(),
+        "maxWidth": paragraph.max_width(),
+        "longestLine": paragraph.longest_line(),
+        "minIntrinsicWidth": paragraph.min_intrinsic_width(),
+        "maxIntrinsicWidth": paragraph.max_intrinsic_width(),
+        "alphabeticBaseline": paragraph.alphabetic_baseline(),
+        "ideographicBaseline": paragraph.ideographic_baseline(),
+        "didExceedMaxLines": paragraph.did_exceed_max_lines(),
+        "lines": lines,
+        "ranges": ranges,
+        "points": points,
+        "placeholders": placeholders,
+    }))
 }
 
 // ---- measuring ----

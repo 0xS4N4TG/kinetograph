@@ -187,6 +187,51 @@ pub fn image_size(request_json: String) -> Result<String> {
     Ok(json!({ "width": image.width(), "height": image.height() }).to_string())
 }
 
+/// Keeps `bytes` (an encoded picture, a font, raw pixels) and answers the name a tree uses for them: content-addressed,
+/// so the same bytes always get the same name.
+#[napi]
+pub fn put_data(bytes: napi::bindgen_prelude::Buffer) -> String {
+    ASSETS.with(|assets| assets.borrow_mut().put_data(&bytes))
+}
+
+/// `{ paragraph, width, ranges?, points? }` in; what `SkParagraph` answers after `layout(width)` out: `height`,
+/// `maxWidth`, `longestLine`, the intrinsic widths, the baselines, `didExceedMaxLines`, `lines` (the line metrics),
+/// `ranges` (the boxes of each `[start, end]`) and `points` (the glyph position at each `{ x, y }`).
+#[napi]
+pub fn measure_paragraph(request_json: String) -> Result<String> {
+    let request = parse(&request_json, "measureParagraph")?;
+    let base = PathBuf::from(request["baseDir"].as_str().unwrap_or_default());
+    let measured = ASSETS
+        .with(|assets| {
+            kinetograph_skia::measure_paragraph(&mut assets.borrow_mut(), &base, &request)
+        })
+        .map_err(failed)?;
+    Ok(measured.to_string())
+}
+
+/// `{ image, baseDir, call }` in; for `call` `size`, the picture's `{ width, height }`, and for `frames`, an animated
+/// picture's `{ count, durations }` out.
+#[napi]
+pub fn image_call(request_json: String) -> Result<String> {
+    let request = parse(&request_json, "imageCall")?;
+    let base = PathBuf::from(request["baseDir"].as_str().unwrap_or_default());
+    ASSETS
+        .with(|assets| kinetograph_skia::image_call(&mut assets.borrow_mut(), base, &request))
+        .map(|v| v.to_string())
+        .map_err(failed)
+}
+
+/// `{ image, baseDir, format }` in; the picture's bytes out: `rgba` (straight alpha, row after row) or `png`.
+#[napi]
+pub fn image_bytes(request_json: String) -> Result<napi::bindgen_prelude::Buffer> {
+    let request = parse(&request_json, "imageBytes")?;
+    let base = PathBuf::from(request["baseDir"].as_str().unwrap_or_default());
+    ASSETS
+        .with(|assets| kinetograph_skia::image_bytes(&mut assets.borrow_mut(), base, &request))
+        .map(Into::into)
+        .map_err(failed)
+}
+
 /// `{ svg }` in; the SVG's own `{ width, height }` out (what `Skia.SVG.MakeFromString(...).width()` reports), or an
 /// error when it does not parse.
 #[napi]

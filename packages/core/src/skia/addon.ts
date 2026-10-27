@@ -13,6 +13,10 @@ export interface SkiaAddon {
   pathCall(requestJson: string): string;
   imageSize(requestJson: string): string;
   svgSize(requestJson: string): string;
+  putData(bytes: Buffer): string;
+  measureParagraph(requestJson: string): string;
+  imageCall(requestJson: string): string;
+  imageBytes(requestJson: string): Buffer;
 }
 
 let override: SkiaAddon | null = null;
