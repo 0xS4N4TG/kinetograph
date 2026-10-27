@@ -786,5 +786,7 @@ module.exports.measureParagraph = nativeBinding.measureParagraph
 module.exports.measureText = nativeBinding.measureText
 module.exports.pathCall = nativeBinding.pathCall
 module.exports.putData = nativeBinding.putData
+module.exports.putFrameData = nativeBinding.putFrameData
 module.exports.renderSkia = nativeBinding.renderSkia
+module.exports.skiaKept = nativeBinding.skiaKept
 module.exports.svgSize = nativeBinding.svgSize

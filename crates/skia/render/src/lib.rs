@@ -20,7 +20,7 @@ mod value;
 
 use std::fmt;
 
-pub use assets::Assets;
+pub use assets::{Assets, DATA_BUDGET, FRAME_KEEP};
 pub use compound::svg_size;
 pub use declare::{EffectInfo, compile_effect};
 pub use draw::{image_bytes, image_call};

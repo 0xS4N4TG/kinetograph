@@ -3,9 +3,12 @@
 //!
 //! Bytes a project hands over itself (`Skia.Data.fromBytes`, an encoded picture,
 //! a font made from data) are put here once with [`Assets::put_data`] and named
-//! by the hash of their content, so a tree carries the name, not the bytes.
+//! by the hash of their content, so a tree carries the name, not the bytes. They
+//! are kept up to [`DATA_BUDGET`] bytes, the least recently used dropped first.
+//! A video's pictures ([`Assets::put_frame_data`]) live for a frame: only the
+//! last [`FRAME_KEEP`] are kept.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -27,13 +30,24 @@ pub struct Assets {
     typefaces: HashMap<PathBuf, Held<Typeface>>,
     images: HashMap<PathBuf, Held<Image>>,
     effects: HashMap<String, RuntimeEffect>,
-    /// What `put_data` was given, by the hash of the bytes.
-    data: HashMap<String, Data>,
+    /// What `put_data` was given, by the hash of the bytes, with when it was last used.
+    data: HashMap<String, (Data, u64)>,
+    data_bytes: usize,
+    clock: u64,
+    /// What `put_frame_data` was given, newest last.
+    frames: VecDeque<(String, Data)>,
+    /// `DATA_BUDGET` unless set (`set_data_budget`).
+    budget: Option<usize>,
     data_typefaces: HashMap<String, Typeface>,
     data_images: HashMap<String, Image>,
     /// The frames of animated pictures (a file or data), decoded once.
     animations: HashMap<String, Held<Animation>>,
 }
+
+/// The most bytes `put_data` keeps.
+pub const DATA_BUDGET: usize = 1 << 30;
+/// The frame pictures `put_frame_data` keeps.
+pub const FRAME_KEEP: usize = 16;
 
 /// The frames of an animated picture and how long each is shown, in milliseconds.
 #[derive(Clone)]
@@ -90,18 +104,85 @@ impl Assets {
     /// Keeps `bytes` and answers the name a tree uses for them.
     pub fn put_data(&mut self, bytes: &[u8]) -> String {
         let id = data_id(bytes);
-        self.data
-            .entry(id.clone())
-            .or_insert_with(|| Data::new_copy(bytes));
+        self.clock += 1;
+        let now = self.clock;
+        if let Some(held) = self.data.get_mut(&id) {
+            held.1 = now;
+            return id;
+        }
+        self.data.insert(id.clone(), (Data::new_copy(bytes), now));
+        self.data_bytes += bytes.len();
+        // Past the budget the least recently used go, never the bytes just kept.
+        while self.data_bytes > self.budget.unwrap_or(DATA_BUDGET) && self.data.len() > 1 {
+            let Some(oldest) = self
+                .data
+                .iter()
+                .filter(|(key, _)| **key != id)
+                .min_by_key(|(_, (_, used))| *used)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            if let Some((data, _)) = self.data.remove(&oldest) {
+                self.data_bytes -= data.len();
+            }
+            self.data_typefaces.remove(&oldest);
+            self.data_images.remove(&oldest);
+        }
+        id
+    }
+
+    /// Keeps a picture's bytes for the frame being drawn (a video's): only the last `FRAME_KEEP` stay.
+    pub fn put_frame_data(&mut self, bytes: &[u8]) -> String {
+        let id = format!("frame:{}", data_id(bytes));
+        if let Some(at) = self.frames.iter().position(|(key, _)| *key == id) {
+            let held = self.frames.remove(at).expect("found above");
+            self.frames.push_back(held);
+            return id;
+        }
+        self.frames.push_back((id.clone(), Data::new_copy(bytes)));
+        while self.frames.len() > FRAME_KEEP {
+            self.frames.pop_front();
+        }
         id
     }
 
     /// The bytes put under `id`.
-    pub fn data(&self, id: &str) -> Result<Data, Error> {
-        self.data
-            .get(id)
-            .cloned()
-            .ok_or_else(|| Error(format!("no data is kept as {id:?}: make it with Skia.Data")))
+    pub fn data(&mut self, id: &str) -> Result<Data, Error> {
+        if id.starts_with("frame:") {
+            return self
+                .frames
+                .iter()
+                .find(|(key, _)| key == id)
+                .map(|(_, data)| data.clone())
+                .ok_or_else(|| {
+                    Error(format!(
+                        "the video picture {id:?} is no longer kept: a picture lives for its frame"
+                    ))
+                });
+        }
+        self.clock += 1;
+        let now = self.clock;
+        match self.data.get_mut(id) {
+            Some(held) => {
+                held.1 = now;
+                Ok(held.0.clone())
+            }
+            None => Err(Error(format!(
+                "no data is kept as {id:?}: make it with Skia.Data (data past {} MB, least recently used first, is dropped)",
+                DATA_BUDGET >> 20
+            ))),
+        }
+    }
+
+    /// Keeps at most `bytes` of `put_data`'s bytes from now on (tests; the default is `DATA_BUDGET`).
+    pub fn set_data_budget(&mut self, bytes: usize) {
+        self.budget = Some(bytes);
+    }
+
+    /// What is kept: the bytes of `put_data`, how many pieces, and how many frame pictures.
+    pub fn kept(&self) -> (usize, usize, usize) {
+        (self.data_bytes, self.data.len(), self.frames.len())
     }
 
     /// The typeface in the font bytes put under `id`.

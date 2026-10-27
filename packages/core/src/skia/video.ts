@@ -38,8 +38,22 @@ interface Probe {
   rotation?: number;
 }
 
+/** The pictures read last, by file and time: a frame reads `currentFrame` as often as it likes for one decode. */
+const recent = new Map<string, SkImage | null>();
+/** Fewer than the addon keeps (`FRAME_KEEP`, 16), so a kept picture's bytes are always still there. */
+const RECENT = 4;
+
 /** The picture of `src` at `time` seconds, straight-alpha RGBA read on the CPU, as an `SkImage`. */
 function pictureAt(src: string, time: number, size: { width: number; height: number }): SkImage | null {
+  const key = `${src}\u0000${time}`;
+  if (recent.has(key)) return recent.get(key)!;
+  const picture = readPicture(src, time, size);
+  recent.set(key, picture);
+  while (recent.size > RECENT) recent.delete(recent.keys().next().value!);
+  return picture;
+}
+
+function readPicture(src: string, time: number, size: { width: number; height: number }): SkImage | null {
   const { width, height } = size;
   const request = {
     width,
@@ -50,7 +64,8 @@ function pictureAt(src: string, time: number, size: { width: number; height: num
   };
   const rgba = addonFunction('readCanvasPicture')(JSON.stringify(request));
   if (rgba === null) return null;
-  const id = skiaAddon().putData(Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength));
+  // A picture lives for its frame: the addon keeps only the last few, so a long video does not fill memory.
+  const id = skiaAddon().putFrameData(Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength));
   return new SkImage({ pixels: id, width, height, colorType: 'rgba8888', alphaType: 'unpremul' }, size);
 }
 

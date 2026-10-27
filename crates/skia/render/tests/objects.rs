@@ -397,3 +397,30 @@ fn a_paint_object_carries_its_shader_and_filters() {
     assert!(px(&out, 1, 16)[0] > 230);
     assert!(px(&out, 30, 16)[2] > 230);
 }
+
+#[test]
+fn kept_data_is_bounded_by_bytes_and_video_pictures_by_count() {
+    let mut assets = Assets::default();
+    assets.set_data_budget(1000);
+    let first = assets.put_data(&[1u8; 400]);
+    let second = assets.put_data(&[2u8; 400]);
+    // Using the first makes the second the least recently used.
+    assets.data(&first).unwrap();
+    assets.put_data(&[3u8; 400]);
+    assert_eq!(assets.kept().0, 800);
+    assert!(assets.data(&first).is_ok());
+    assert!(
+        assets
+            .data(&second)
+            .unwrap_err()
+            .to_string()
+            .contains("no data is kept")
+    );
+
+    let ids: Vec<String> = (0..100u8)
+        .map(|i| assets.put_frame_data(&[i; 64]))
+        .collect();
+    assert_eq!(assets.kept().2, kinetograph_skia::FRAME_KEEP);
+    assert!(assets.data(&ids[99]).is_ok());
+    assert!(assets.data(&ids[0]).is_err());
+}

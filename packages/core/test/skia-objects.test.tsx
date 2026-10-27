@@ -32,6 +32,7 @@ import {
   usePathInterpolation,
 } from '../src/skia/index.js';
 import { renderNodes } from '../src/skia/host.js';
+import { skiaAddon } from '../src/skia/addon.js';
 import { interpolate, useDerivedValue, useSharedValue, withTiming } from '../src/skia/reanimated.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { renderDom } from './dom-harness.js';
@@ -313,6 +314,22 @@ describe.skipIf(!hasSkiaAddon())('drawn by Skia', () => {
     expect(at(60, { looping: false }).src).not.toBe(first.src);
     // Twice the speed: frame 15 shows what frame 30 does.
     expect(at(15, { speed: 2 }).src).toBe(at(30).src);
+  });
+
+  it.skipIf(!hasVideoRead)('keeps a bounded number of video pictures however many frames are drawn, and decodes once per frame', () => {
+    const kept = () => JSON.parse(skiaAddon().skiaKept!()) as { dataBytes: number; data: number; frames: number };
+    const before = kept();
+    function Player() {
+      const video = useVideo(CLIP);
+      // Read several times in the frame: one picture.
+      void video.currentFrame.value;
+      void video.currentFrame.value;
+      return <Image image={video.currentFrame} x={0} y={0} width={64} height={48} fit="fill" />;
+    }
+    for (let frame = 0; frame < 120; frame += 1) draw(<Player />, frame);
+    const after = kept();
+    expect(after.frames).toBeLessThanOrEqual(16);
+    expect(after.dataBytes).toBe(before.dataBytes);
   });
 
   it('interpolates paths between those of an output range', () => {

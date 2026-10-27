@@ -47,10 +47,19 @@ export declare function pathCall(requestJson: string): string
 export declare function putData(bytes: Buffer): string
 
 /**
+ * Keeps a picture's bytes for the frame being drawn (a video's, `useVideo`): only the last few are kept, so a long
+ * video does not fill memory.
+ */
+export declare function putFrameData(bytes: Buffer): string
+
+/**
  * `{ width, height, nodes, baseDir, outDir }` in; the nodes drawn into a PNG file under `outDir` named by its pixels'
  * hash, and `{ path, width, height, unsupported }` out. A frame is a pure function of the tree and the files it names.
  */
 export declare function renderSkia(requestJson: string): string
+
+/** `{ dataBytes, data, frames }`: what the addon keeps of what was put in it. */
+export declare function skiaKept(): string
 
 /**
  * `{ svg }` in; the SVG's own `{ width, height }` out (what `Skia.SVG.MakeFromString(...).width()` reports), or an

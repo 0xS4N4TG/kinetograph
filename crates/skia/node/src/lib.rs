@@ -194,6 +194,20 @@ pub fn put_data(bytes: napi::bindgen_prelude::Buffer) -> String {
     ASSETS.with(|assets| assets.borrow_mut().put_data(&bytes))
 }
 
+/// Keeps a picture's bytes for the frame being drawn (a video's, `useVideo`): only the last few are kept, so a long
+/// video does not fill memory.
+#[napi]
+pub fn put_frame_data(bytes: napi::bindgen_prelude::Buffer) -> String {
+    ASSETS.with(|assets| assets.borrow_mut().put_frame_data(&bytes))
+}
+
+/// `{ dataBytes, data, frames }`: what the addon keeps of what was put in it.
+#[napi]
+pub fn skia_kept() -> String {
+    let (bytes, pieces, frames) = ASSETS.with(|assets| assets.borrow().kept());
+    json!({ "dataBytes": bytes, "data": pieces, "frames": frames }).to_string()
+}
+
 /// `{ paragraph, width, ranges?, points? }` in; what `SkParagraph` answers after `layout(width)` out: `height`,
 /// `maxWidth`, `longestLine`, the intrinsic widths, the baselines, `didExceedMaxLines`, `lines` (the line metrics),
 /// `ranges` (the boxes of each `[start, end]`) and `points` (the glyph position at each `{ x, y }`).

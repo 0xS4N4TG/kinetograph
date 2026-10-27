@@ -14,6 +14,8 @@ export interface SkiaAddon {
   imageSize(requestJson: string): string;
   svgSize(requestJson: string): string;
   putData(bytes: Buffer): string;
+  putFrameData(bytes: Buffer): string;
+  skiaKept?(): string;
   measureParagraph(requestJson: string): string;
   imageCall(requestJson: string): string;
   imageBytes(requestJson: string): Buffer;
