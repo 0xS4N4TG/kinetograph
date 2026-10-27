@@ -191,6 +191,12 @@ export const effectCatalog: EffectInfo[] = [
         default: 1,
         description: 'Clamped to 0..1. Cross-fades from the original layer (0) to the graded one (1).',
       },
+      {
+        name: 'interpolation',
+        type: "'trilinear' | 'tetrahedral'",
+        default: 'trilinear',
+        description: 'How a colour between two grid points is blended. Tetrahedral (as DaVinci Resolve, OpenColorIO and ffmpeg lut3d=interp=tetrahedral) uses four of the cell\'s corners and keeps greys on a straight table grey.',
+      },
     ],
   },
   {

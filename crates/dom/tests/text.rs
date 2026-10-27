@@ -204,3 +204,36 @@ fn hidden_attribute_hides() {
     let island = resolve(&request(root));
     assert_eq!(bounds(&island, "$0").3, 0.0);
 }
+
+/// A `white-space: nowrap` box holding only inline-blocks keeps them on one
+/// line, also in an absolutely positioned box without a width, where it is
+/// sized shrink-to-fit.
+#[test]
+fn nowrap_keeps_inline_blocks_on_one_line() {
+    let tiles = |base: &str| {
+        let tile = |i: usize| {
+            el(
+                "span",
+                &format!("$0.{i}"),
+                "display: inline-block; width: 400px; height: 20px; margin-right: 20px",
+                vec![],
+            )
+        };
+        let root = el("div", "$0", base, vec![tile(0), tile(1), tile(2)]);
+        let island = resolve(&request(root));
+        (bounds(&island, "$0"), bounds(&island, "$0.2"))
+    };
+    for (name, style) in [
+        ("abs", "position: absolute; left: 0; top: 0; white-space: nowrap"),
+        ("block", "white-space: nowrap"),
+        ("wrap", "position: absolute; left: 0; top: 0"),
+    ] {
+        let (row, last) = tiles(style);
+        if name == "wrap" {
+            assert!(last.1 > 0.0, "{name}: without nowrap the third tile wraps {last:?}");
+        } else {
+            assert_eq!(last.1, 0.0, "{name}: tile 3 wrapped {last:?}");
+            assert!(row.3 < 30.0, "{name}: row is more than one line {row:?}");
+        }
+    }
+}

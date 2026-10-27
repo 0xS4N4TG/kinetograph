@@ -102,7 +102,7 @@ describe('mounting compositions', () => {
     expect(plan.notes.join('\n')).toContain('none.html');
   });
 
-  it('notes what it cannot run: an import map, Three.js', async () => {
+  it('notes Three.js, and reads an import map', async () => {
     const dir = project({
       'index.html': `<html><body><div data-composition-id="m" data-duration="1"></div>
         <script type="importmap">{"imports":{}}</script>
@@ -110,8 +110,27 @@ describe('mounting compositions', () => {
     });
     const { plan } = await buildPlan(join(dir, 'index.html'), { resolveScriptUrl: (url) => ({ ...fakeScript(url) }) });
     expect(plan.usesThree).toBe(true);
-    expect(plan.notes.join('\n')).toContain('import maps');
+    expect(plan.notes.join('\n')).not.toContain('import maps');
     expect(plan.notes.join('\n')).toContain('Three.js');
+  });
+});
+
+describe('a page without the root attributes', () => {
+  const noteOf = async (html: string): Promise<string> => {
+    const dir = project({ 'index.html': html });
+    return (await buildPlan(join(dir, 'index.html'))).plan.notes.join('\n');
+  };
+
+  it('names what is missing and the one-line fix', async () => {
+    const note = await noteOf('<html><body><div id="root"><h1>hi</h1></div></body></html>');
+    expect(note).toContain('data-composition-id, data-width, data-height, data-duration');
+    expect(note).toContain('<div id="root" data-composition-id="main" data-width="1920" data-height="1080" data-duration="10">');
+    expect(note).toContain('1920x1080');
+  });
+
+  it('names only the size a root lacks, and nothing when it is complete', async () => {
+    expect(await noteOf('<html><body><div data-composition-id="m" data-duration="2" data-width="800"></div></body></html>')).toContain('lacks data-height,');
+    expect(await noteOf('<html><body><div data-composition-id="m" data-duration="2" data-width="800" data-height="600"></div></body></html>')).toBe('');
   });
 });
 

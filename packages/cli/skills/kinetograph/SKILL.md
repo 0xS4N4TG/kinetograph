@@ -158,15 +158,18 @@ friends from the same CSS engine, `useLayoutEffect` measure-then-render code set
 `new Image()` and `matchMedia` work for project files and the composition's size, and `<canvas>` with
 `getContext('2d')` is drawn natively (paths, gradients, text, shadows, filters, `drawImage`, `getImageData`), and so
 are `webgl`/`webgl2` contexts; there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native
-element for the same drawing. In a component, draw the whole frame from the frame number every time (`clearRect`
-first), never on top of what an earlier frame drew: a still, or a worker that starts mid-way, does not have the earlier
-frames' pixels (until 0.2.x clears the canvas for you, such code renders differently alone than in a full render).
+element for the same drawing. In a component, a canvas you draw to in a frame starts that frame empty; one you don't touch
+keeps its pixels. Draw the whole frame from the frame number every time, never on top of what an earlier frame drew.
 
 `kinetograph doctor src/index.tsx` runs the JS stage for every frame (no GPU) and reports:
 
 - how many frames have nothing unsupported (`cleanFrames`, `unsupportedFrames`, `cleanShare`);
 - each **issue**, grouped by element, property and reason, the one on the most frames first: `values` it was seen with,
   the element `paths` (`$0.2 <div>`, the host-tree position) and the inclusive frame `ranges`.
+
+An error the page's own scripts raise and survive (`console.error`, an uncaught exception, an unhandled promise
+rejection) is an issue too, `page script console.error` and so on, with the message in `values`: a library that catches
+its own failure (Mermaid) draws nothing and says so only this way. `--strict` fails on it.
 
 `--range 0..90` limits the frames, `--comp` and `--props` choose the composition and its props. A `stylesheets:` note
 in the report says a stylesheet could not be used (Tailwind that could not be built, a remote font).
@@ -188,7 +191,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 - **Scene colours** take any CSS colour (`white`, `rgb()`, `hsl()`, `oklch()`, ...), not only hex. SCENE.md, top.
 - **Missing glyphs.** A character the font lacks falls back per character to bundled Noto Symbols 2, Math and Emoji
   (monochrome). CJK is not bundled: load a font. A character no font has is reported by `doctor`, `--strict` and
-  `inspect` (`missingChars`). `monospace` is proportional unless you load a mono font. ENGINE.md "Fallback fonts".
+  `inspect` (`missingChars`). `monospace` is the bundled JetBrains Mono (Regular) unless you load a mono font. ENGINE.md "Fallback fonts".
 - **`<Series>` / `<TransitionSeries>`** accept Fragment-wrapped children, so `.map()` can emit pairs. AUTHORING.md §7.1.
 - **`renderer:` line.** `render`, `still` and `doctor` print `Skia GPU (Metal)` or `Skia CPU (...)`; CPU means slow.
 - **GSAP** (core, free plugins, Flip): seek a paused timeline to `frame / fps`, or let `gsap.to` play by itself.
@@ -196,11 +199,12 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 - **Plugins** `@kinetographdev/gsap`, `p5-brush`, `anime`, `motion`: seek a library with its own clock to the frame.
   AUTHORING.md §11.10, `/docs/libraries/`.
 - **Libraries that render:** Recharts, d3-selection, anime.js, Motion `animate()`, Paper.js, Bklit, rough.js, Chart.js,
-  Plot, Vega; Shiki is close (needs a mono font); Mermaid is broken (pre-render to SVG). AUTHORING.md §11.10.
-- **HyperFrames projects** render as they are: `render|still|doctor|studio <index.html|dir>`; run
-  `kinetograph fetch-deps <entry>` first for CDN scripts and media. AUTHORING.md §11.11, `/docs/compat/#hyperframes-projects`.
+  Plot, Vega, Shiki (code falls back to a bundled JetBrains Mono); Mermaid draws with `htmlLabels: false` (HTML labels draw nothing). AUTHORING.md §11.10.
+- **HyperFrames projects** render as they are: `render|still|doctor|studio <index.html|dir>`; the
+  run downloads CDN scripts, ES modules, media and pictures first and pins them in `kinetograph.lock.json` (no need to run
+  `fetch-deps` first; `--offline` never downloads; `fetch-deps --update` refreshes the lock). AUTHORING.md §11.11, `/docs/compat/#hyperframes-projects`.
 - **A plain HTML page** (no React) renders the same way: give the root element `data-composition-id`, `data-width`,
-  `data-height` and `data-duration` (seconds; 30 fps), or it renders at 1920x1080 for 1 s. Scripts run as in a browser;
+  `data-height` and `data-duration` (seconds; 30 fps), or it renders at 1920x1080 for 1 s; `doctor`, `render` and `still` warn when they are missing. Scripts run as in a browser;
   `requestAnimationFrame` gets each frame's time (frame 45 is 1500 ms). A page's canvas keeps its pixels from frame to
   frame (trails work) and a single frame replays the calls before it, so a still matches the same frame of a render.
 - **Canvas.** `<Canvas width height draw>` or `<canvas>` + `getContext('2d'|'webgl'|'webgl2'|'webgpu')`; in a component,

@@ -215,3 +215,201 @@ describe('@font-face in a stylesheet', () => {
     expect(getFonts()['My Face:700i']).toBe(join(dir, 'public', 'Face.ttf'));
   });
 });
+
+describe('document queries match html, head and body themselves', () => {
+  it('finds them by type selector, as d3.select("body") needs', () => {
+    expect(g.document.querySelector('body')).toBe(g.document.body);
+    expect(g.document.querySelector('html')).toBe(g.document.documentElement);
+    expect(g.document.querySelector('head')).toBe(g.document.head);
+    expect(g.document.querySelectorAll('body')).toHaveLength(1);
+    expect(g.document.getElementsByTagName('body')[0]).toBe(g.document.body);
+  });
+
+  it('lets a script append to the body it selected and find the result', () => {
+    const div = g.document.createElement('div');
+    div.setAttribute('id', 'dg-select');
+    g.document.querySelector('body').appendChild(div);
+    expect(g.document.querySelector('body').querySelector('#dg-select')).toBe(div);
+    div.remove();
+  });
+});
+
+describe('a constructable CSSStyleSheet', () => {
+  it('builds CSS text with insertRule, replaceSync and rule.style', () => {
+    const sheet = new g.CSSStyleSheet();
+    const at = sheet.insertRule(':root { --font: Arial }', sheet.cssRules.length);
+    expect(at).toBe(0);
+    const rule = sheet.cssRules[sheet.insertRule('.a .label {}', sheet.cssRules.length)];
+    rule.style.setProperty('font-size', '12px');
+    expect([...sheet.cssRules].map((r: any) => r.cssText)).toEqual([':root { --font: Arial; }', '.a .label { font-size: 12px; }']);
+    sheet.replaceSync('p { color: red } @media (min-width: 1px) { p { color: blue } }');
+    expect(sheet.cssRules).toHaveLength(2);
+    expect(sheet.cssRules[0].style.getPropertyValue('color')).toBe('red');
+    expect(() => sheet.insertRule('not a rule', 0)).toThrow();
+  });
+});
+
+describe('documents a sanitizer needs (DOMPurify finds its document through them)', () => {
+  it('has a document that is a document, with an implementation and walkers', () => {
+    expect(g.document.nodeType).toBe(9);
+    expect(g.document instanceof g.Document).toBe(true);
+    const doc = g.document.implementation.createHTMLDocument('t');
+    expect(doc.nodeType).toBe(9);
+    expect(doc.documentElement.outerHTML).toBe('<html><head><title>t</title></head><body></body></html>');
+    expect(doc.body.ownerDocument).toBe(doc);
+    expect(doc.documentElement.parentNode).toBe(doc);
+    expect(g.document.createElement('div').ownerDocument).toBe(g.document);
+    expect(g.Node.ELEMENT_NODE).toBe(1);
+    expect(g.NodeFilter.SHOW_TEXT).toBe(4);
+  });
+
+  it('parses text/html into html, head and body, the way a browser splits it', () => {
+    const doc = new g.DOMParser().parseFromString('<style>a{}</style>  <div id="x" style="color:red"><b>hi</b></div>tail', 'text/html');
+    expect(doc.head.innerHTML).toBe('<style>a{}</style>');
+    expect(doc.body.innerHTML).toBe('<div id="x" style="color:red"><b>hi</b></div>tail');
+    expect(doc.body.firstChild.parentNode).toBe(doc.body);
+    expect(doc.body.parentNode).toBe(doc.documentElement);
+    expect(g.document.getElementsByTagName.call(doc, 'body')[0]).toBe(doc.body);
+    const explicit = new g.DOMParser().parseFromString('<!doctype html><html lang="en"><head><title>x</title></head><body class="b"><p>p</p></body></html>', 'text/html');
+    expect([explicit.doctype.name, explicit.documentElement.getAttribute('lang'), explicit.head.innerHTML, explicit.body.className]).toEqual(['html', 'en', '<title>x</title>', 'b']);
+    expect(() => new g.DOMParser().parseFromString('x', 'text/plain')).toThrow(TypeError);
+  });
+
+  it('parses image/svg+xml into a document whose root is the svg', () => {
+    const doc = new g.DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><g><rect width="1" height="1"/></g></svg>', 'image/svg+xml');
+    expect(doc.documentElement.nodeName).toBe('svg');
+    expect(doc.documentElement.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    expect(doc.body).toBeNull();
+    expect(doc.querySelectorAll('rect')).toHaveLength(1);
+    expect(doc.documentElement.getAttribute('viewBox')).toBe('0 0 2 2');
+  });
+
+  it('puts what is inside foreignObject in the HTML namespace', () => {
+    const doc = new g.DOMParser().parseFromString('<svg><foreignObject><div><br>x</div></foreignObject></svg>', 'text/html');
+    const div = doc.querySelector('div');
+    expect([div.namespaceURI, div.nodeName, div.parentNode.namespaceURI]).toEqual(['http://www.w3.org/1999/xhtml', 'DIV', 'http://www.w3.org/2000/svg']);
+    expect(div.childNodes).toHaveLength(2);
+  });
+
+  it('gives an element one attributes map, of Attr nodes', () => {
+    const el = g.document.createElement('div');
+    el.setAttribute('id', 'a');
+    el.setAttribute('xlink:href', '#z');
+    const map = el.attributes;
+    expect(el.attributes).toBe(map);
+    expect(map.length).toBe(2);
+    expect([map[0].name, map[0].value, map[1].namespaceURI]).toEqual(['id', 'a', 'http://www.w3.org/1999/xlink']);
+    expect(el.getAttributeNode('id').value).toBe('a');
+    el.removeAttributeNode(el.getAttributeNode('id'));
+    expect(el.hasAttribute('id')).toBe(false);
+    expect(() => el.removeAttributeNode(el.getAttributeNode('id') ?? { name: 'id' })).toThrow();
+    expect(el.attributes.getNamedItem('xlink:href').value).toBe('#z');
+  });
+
+  it('gives childNodes once per element, and tells form and template elements by tag', () => {
+    const form = g.document.createElement('form');
+    expect(form.childNodes).toBe(form.childNodes);
+    expect(form instanceof g.HTMLFormElement).toBe(true);
+    expect(form instanceof g.HTMLTemplateElement).toBe(false);
+    expect(g.document.createElement('template') instanceof g.HTMLTemplateElement).toBe(true);
+  });
+
+  it('moves a fragment’s children into the node it is inserted into', () => {
+    const fragment = g.document.createDocumentFragment();
+    expect(fragment.nodeType).toBe(11);
+    expect(fragment instanceof g.DocumentFragment).toBe(true);
+    fragment.append(g.document.createElement('i'), 'text', g.document.createElement('b'));
+    expect(fragment.firstChild.parentNode).toBe(fragment);
+    const host = g.document.createElement('div');
+    host.appendChild(fragment);
+    expect(host.innerHTML).toBe('<i></i>text<b></b>');
+    expect(fragment.childNodes).toHaveLength(0);
+    const again = new g.DocumentFragment();
+    again.appendChild(host.firstChild);
+    host.insertBefore(again, host.lastChild);
+    expect(host.innerHTML).toBe('text<i></i><b></b>');
+  });
+
+  it('keeps a template’s markup in its content, a fragment of an inert document', () => {
+    const template = g.document.createElement('template');
+    template.innerHTML = '<p>one</p><p>two</p>';
+    expect(template.childNodes).toHaveLength(0);
+    expect(template.content.nodeType).toBe(11);
+    expect(template.content.childNodes).toHaveLength(2);
+    expect(template.innerHTML).toBe('<p>one</p><p>two</p>');
+    expect(template.content.ownerDocument).not.toBe(g.document);
+    expect(template.content.ownerDocument.nodeType).toBe(9);
+    expect(template.cloneNode(true).content.childNodes).toHaveLength(2);
+    expect(g.document.createElement('div').content).toBeUndefined();
+    const doc = new g.DOMParser().parseFromString('<p>x</p><template><b>t</b></template>', 'text/html');
+    expect(doc.querySelector('template').content.firstChild.nodeName).toBe('B');
+    expect(doc.body.innerHTML).toBe('<p>x</p><template><b>t</b></template>');
+  });
+
+  it('iterates nodes in tree order, root first, and carries on when the current node is removed', () => {
+    const doc = new g.DOMParser().parseFromString('<div><p>a</p><section><i>b</i></section><u>c</u></div>', 'text/html');
+    const names = (it: any): string[] => {
+      const out: string[] = [];
+      for (let n = it.nextNode(); n; n = it.nextNode()) out.push(n.nodeName);
+      return out;
+    };
+    expect(names(doc.createNodeIterator(doc.body, g.NodeFilter.SHOW_ELEMENT, null))).toEqual(['BODY', 'DIV', 'P', 'SECTION', 'I', 'U']);
+    expect(names(doc.createNodeIterator(doc.body, g.NodeFilter.SHOW_TEXT, null))).toEqual(['#text', '#text', '#text']);
+    // Hoisting a node's children and removing it (what a sanitizer does with a tag it keeps the content of).
+    const walker = doc.createNodeIterator(doc.body, g.NodeFilter.SHOW_ELEMENT, null);
+    const seen: string[] = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      seen.push(n.nodeName);
+      if (n.nodeName === 'SECTION') {
+        const parent = n.parentNode;
+        for (const child of [...n.childNodes].reverse()) parent.insertBefore(child, n.nextSibling);
+        parent.removeChild(n);
+      }
+    }
+    expect(seen).toEqual(['BODY', 'DIV', 'P', 'SECTION', 'I', 'U']);
+    expect(doc.body.innerHTML).toBe('<div><p>a</p><i>b</i><u>c</u></div>');
+    const only = doc.createNodeIterator(doc.body, g.NodeFilter.SHOW_ELEMENT, (n: any) => (n.nodeName === 'I' ? g.NodeFilter.FILTER_ACCEPT : g.NodeFilter.FILTER_SKIP));
+    expect(names(only)).toEqual(['I']);
+  });
+
+  it('walks a tree with a TreeWalker', () => {
+    const doc = new g.DOMParser().parseFromString('<div><p>a</p><section><i>b</i></section><u>c</u></div>', 'text/html');
+    const walker = doc.createTreeWalker(doc.body, g.NodeFilter.SHOW_ELEMENT, null);
+    expect(walker.firstChild().nodeName).toBe('DIV');
+    expect(walker.firstChild().nodeName).toBe('P');
+    expect(walker.nextSibling().nodeName).toBe('SECTION');
+    expect(walker.nextNode().nodeName).toBe('I');
+    expect(walker.parentNode().nodeName).toBe('SECTION');
+    expect(walker.nextSibling().nodeName).toBe('U');
+    expect(walker.nextNode()).toBeNull();
+    expect(walker.previousNode().nodeName).toBe('I');
+    expect(walker.lastChild()).toBeNull();
+  });
+
+  it('reads text nodes as nodes (nodeType, nodeName, no children) for a walker', () => {
+    const text = g.document.createTextNode('hi');
+    expect([text.nodeType, text.nodeName, text.hasChildNodes(), text.firstChild, text.ownerDocument === g.document]).toEqual([3, '#text', false, null, true]);
+    expect(text instanceof g.Node).toBe(true);
+  });
+});
+
+describe('markup of SVG written by a script', () => {
+  it('keeps the case of attribute names below the svg element, and HTML below foreignObject', () => {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = g.document.createElementNS(ns, 'svg');
+    const marker = g.document.createElementNS(ns, 'marker');
+    marker.setAttribute('viewBox', '0 0 10 10');
+    marker.setAttribute('markerUnits', 'userSpaceOnUse');
+    svg.appendChild(marker);
+    const object = g.document.createElementNS(ns, 'foreignObject');
+    const div = g.document.createElement('div');
+    div.className = 'label';
+    div.style.setProperty('color', 'red');
+    object.appendChild(div);
+    svg.appendChild(object);
+    expect(svg.innerHTML).toBe('<marker viewBox="0 0 10 10" markerUnits="userSpaceOnUse"></marker><foreignObject><div class="label" style="color: red"></div></foreignObject>');
+    const parsed = new g.DOMParser().parseFromString(svg.outerHTML, 'text/html');
+    expect(parsed.querySelector('marker').getAttribute('viewBox')).toBe('0 0 10 10');
+    expect(parsed.querySelector('div').getAttribute('class')).toBe('label');
+  });
+});

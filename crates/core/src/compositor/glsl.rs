@@ -48,6 +48,9 @@ struct Uploaded {
     mipmapped: bool,
 }
 
+/// The format of the depth buffer of a target.
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
 /// What draws go to: the drawing buffer, or a framebuffer's texture.
 struct Target {
     size: (u32, u32),
@@ -62,6 +65,10 @@ struct Pass<'c> {
     /// The id of a target texture; the drawing buffer without one.
     target: Option<&'c str>,
     clear: Option<[f64; 4]>,
+    /// The pass has the target's depth buffer attached (it holds draws with
+    /// the depth test, or clears depth); `Some` clears it to that value first.
+    depth: bool,
+    depth_clear: Option<f32>,
     draws: Vec<Prepared>,
     /// A `texSubImage2D` instead of draws: x, y, width, height and the bytes.
     upload: Option<([u32; 4], Vec<u8>)>,
@@ -344,13 +351,26 @@ impl Compositor {
         // Everything drawn to the drawing buffer before its last clear is gone
         // with it, unless a blit reads the drawing buffer in between. A
         // target's draws stay: later draws may sample them.
+        // A clear of the colour alone leaves the depth buffer, which the draws
+        // before it wrote and a later one may test against; so it ends them only
+        // when nothing drawn to the drawing buffer used depth.
+        let canvas_depth = content
+            .ops
+            .iter()
+            .any(|op| matches!(op, GlslOp::Draw(d) if d.target.is_none() && d.depth.is_some()));
         let mut dead = vec![false; content.ops.len()];
         let mut cleared = false;
         for (i, op) in content.ops.iter().enumerate().rev() {
             match op {
-                GlslOp::Clear { target: None, .. } => {
+                GlslOp::Clear {
+                    target: None,
+                    color,
+                    depth,
+                } => {
                     dead[i] = cleared;
-                    cleared = true;
+                    if color.is_some() && (depth.is_some() || !canvas_depth) {
+                        cleared = true;
+                    }
                 }
                 GlslOp::Draw(d) if d.target.is_none() => dead[i] = cleared,
                 GlslOp::Blit(b) => {
@@ -376,11 +396,20 @@ impl Compositor {
         let mut started: HashSet<Option<&str>> = HashSet::new();
         for (i, op) in content.ops.iter().enumerate() {
             let (target, clear) = match op {
-                GlslOp::Clear { color, target } => (target.as_deref(), Some(*color)),
+                GlslOp::Clear { color, target, .. } => (target.as_deref(), *color),
                 GlslOp::Draw(d) => (d.target.as_deref(), None),
                 GlslOp::Blit(b) => (b.target.as_deref(), None),
                 GlslOp::Upload(u) => (Some(u.target.as_str()), None),
             };
+            let depth_clear = match op {
+                GlslOp::Clear { depth, .. } => depth.map(|d| d.clamp(0.0, 1.0) as f32),
+                _ => None,
+            };
+            // A pass has the depth buffer attached, or not: a draw that tests
+            // depth and one that does not (or a copy) go in passes of their own.
+            let uses_depth =
+                depth_clear.is_some() || matches!(op, GlslOp::Draw(d) if d.depth.is_some());
+            let is_clear = matches!(op, GlslOp::Clear { .. });
             if dead[i] {
                 continue;
             }
@@ -391,16 +420,18 @@ impl Compositor {
                 GlslOp::Upload(u) => Some(Self::glsl_upload(u, self.glsl_target(&mut targets, content, &u.target)?.size)?),
                 _ => None,
             };
-            if clear.is_some()
+            if is_clear
                 || upload.is_some()
-                || passes
-                    .last()
-                    .is_none_or(|p| p.target != target || p.upload.is_some())
+                || passes.last().is_none_or(|p| {
+                    p.target != target || p.upload.is_some() || p.depth != uses_depth
+                })
             {
                 let first = started.insert(target);
                 passes.push(Pass {
                     target,
                     clear: clear.or_else(|| first.then(|| blank(target))),
+                    depth: uses_depth,
+                    depth_clear,
                     draws: Vec::new(),
                     upload,
                 });
@@ -426,12 +457,18 @@ impl Compositor {
             passes.push(Pass {
                 target: None,
                 clear: Some(blank(None)),
+                depth: false,
+                depth_clear: None,
                 draws: Vec::new(),
                 upload: None,
             });
         }
 
         let canvas = self.glsl.target.as_ref().expect("made above");
+        // The depth buffers of the targets that test depth, made when a pass
+        // first needs one: 1 everywhere, as a new buffer is.
+        let mut depth_buffers: HashMap<Option<&str>, (wgpu::Texture, wgpu::TextureView)> =
+            HashMap::new();
         for pass in &passes {
             if let Some(([x, y, w, h], bytes)) = &pass.upload {
                 let id = pass.target.expect("an upload names its target");
@@ -463,6 +500,42 @@ impl Compositor {
                 None => (&canvas.view, "glsl"),
                 Some(id) => (&targets[id].view, "glsl target"),
             };
+            let mut depth_load = pass.depth_clear.map(wgpu::LoadOp::Clear);
+            if pass.depth && !depth_buffers.contains_key(&pass.target) {
+                let (width, height) = match pass.target {
+                    None => canvas.size,
+                    Some(id) => targets[id].size,
+                };
+                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("glsl depth"),
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                });
+                let depth_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                depth_buffers.insert(pass.target, (texture, depth_view));
+                depth_load.get_or_insert(wgpu::LoadOp::Clear(1.0));
+            }
+            let depth_attachment = if pass.depth {
+                Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_buffers[&pass.target].1,
+                    depth_ops: Some(wgpu::Operations {
+                        load: depth_load.unwrap_or(wgpu::LoadOp::Load),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                })
+            } else {
+                None
+            };
             let stamp = self.stamp(name, view);
             let mut encoder = self.encoder();
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -479,6 +552,7 @@ impl Compositor {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
+                depth_stencil_attachment: depth_attachment,
                 timestamp_writes: pass_timer::writes(&stamp),
                 ..Default::default()
             });
@@ -486,7 +560,7 @@ impl Compositor {
                 rpass.set_pipeline(&p.pipeline);
                 rpass.set_bind_group(0, &p.bind_group, &[]);
                 let [x, y, w, h] = p.viewport;
-                rpass.set_viewport(x, y, w, h, 0.0, 1.0);
+                rpass.set_viewport(x, y, w, h, p.depth_range.0, p.depth_range.1);
                 let [sx, sy, sw, sh] = p.scissor;
                 rpass.set_scissor_rect(sx, sy, sw, sh);
                 rpass.set_blend_constant(p.blend_constant);
@@ -755,12 +829,15 @@ impl Compositor {
 
         // Pipeline.
         let key = format!(
-            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}",
+            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}",
             Arc::as_ptr(&program),
             index_list.is_some() && topology == wgpu::PrimitiveTopology::TriangleStrip,
             draw.blend.as_ref().map(blend_key),
             draw.color_mask,
             draw.cull,
+            draw.depth.as_ref().map(|d| (&d.func, d.mask)),
+            draw.polygon_offset
+                .map(|o| (o.factor.to_bits(), o.units.to_bits())),
         );
         let pipeline = match self.glsl.pipelines.get(&key) {
             Some(p) => p.clone(),
@@ -928,6 +1005,10 @@ impl Compositor {
             viewport,
             scissor,
             blend_constant,
+            depth_range: draw
+                .depth
+                .as_ref()
+                .map_or((0.0, 1.0), |d| (d.near as f32, d.far as f32)),
             vertex_buffers,
             indices,
             // A point is a quad of six vertices.
@@ -1099,6 +1180,28 @@ impl Compositor {
             }
         }
         let blend = draw.blend.as_ref().map(blend_state).transpose()?;
+        let depth_stencil = draw
+            .depth
+            .as_ref()
+            .map(|d| -> Result<wgpu::DepthStencilState> {
+                // `polygonOffset(factor, units)` is `factor * slope + units * r`:
+                // the slope scale and the constant bias of the pipeline.
+                let (constant, slope_scale) = draw
+                    .polygon_offset
+                    .map_or((0, 0.0), |o| (o.units as i32, o.factor as f32));
+                Ok(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(d.mask),
+                    depth_compare: Some(compare_function(&d.func)?),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant,
+                        slope_scale,
+                        clamp: 0.0,
+                    },
+                })
+            })
+            .transpose()?;
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let pipeline = self
             .device
@@ -1130,7 +1233,7 @@ impl Compositor {
                     cull_mode,
                     ..Default::default()
                 },
-                depth_stencil: None,
+                depth_stencil,
                 multisample: wgpu::MultisampleState::default(),
                 multiview_mask: None,
                 cache: None,
@@ -1564,6 +1667,7 @@ impl Compositor {
             viewport: [0.0, 0.0, dst_size.0 as f32, dst_size.1 as f32],
             scissor: [x0 as u32, top as u32, (x1 - x0) as u32, (bottom - top) as u32],
             blend_constant: wgpu::Color::TRANSPARENT,
+            depth_range: (0.0, 1.0),
             vertex_buffers: Vec::new(),
             indices: None,
             vertices: (0, 3),
@@ -1737,6 +1841,8 @@ struct Prepared {
     viewport: [f32; 4],
     scissor: [u32; 4],
     blend_constant: wgpu::Color,
+    /// `depthRange`: where clip depth -1 and 1 land.
+    depth_range: (f32, f32),
     /// Buffer and the byte offset to bind it at, in slot order.
     vertex_buffers: Vec<(wgpu::Buffer, u64)>,
     indices: Option<(wgpu::Buffer, u32)>,
@@ -1853,6 +1959,24 @@ fn min_filter(name: &str) -> (wgpu::FilterMode, wgpu::MipmapFilterMode, bool) {
         "NEAREST_MIPMAP_LINEAR" => (Nearest, wgpu::MipmapFilterMode::Linear, true),
         _ => (Linear, wgpu::MipmapFilterMode::Linear, true),
     }
+}
+
+fn compare_function(name: &str) -> Result<wgpu::CompareFunction> {
+    Ok(match name {
+        "NEVER" => wgpu::CompareFunction::Never,
+        "LESS" => wgpu::CompareFunction::Less,
+        "EQUAL" => wgpu::CompareFunction::Equal,
+        "LEQUAL" => wgpu::CompareFunction::LessEqual,
+        "GREATER" => wgpu::CompareFunction::Greater,
+        "NOTEQUAL" => wgpu::CompareFunction::NotEqual,
+        "GEQUAL" => wgpu::CompareFunction::GreaterEqual,
+        "ALWAYS" => wgpu::CompareFunction::Always,
+        other => {
+            return Err(render_error(format!(
+                "depthFunc({other}) is not a depth function"
+            )));
+        }
+    })
 }
 
 fn blend_key(b: &GlslBlend) -> String {

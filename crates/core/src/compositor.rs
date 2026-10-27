@@ -114,8 +114,8 @@ use crate::resolve::{
     ResolvedShadow, ResolvedTurbulence,
 };
 use crate::scene::{
-    BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, MAX_GRADIENT_MAP_STOPS,
-    MatteMode, NoiseChannels,
+    BlendMode, DitherMode, DotOrder, DotShape, HalftoneShape, LutInterpolation,
+    MAX_GRADIENT_MAP_STOPS, MatteMode, NoiseChannels,
 };
 use crate::turbulence::{self, Tables};
 use crate::uniforms::{Block, Uniforms};
@@ -230,7 +230,8 @@ const MESH_SAMPLES: u32 = 4;
 /// A LUT on the GPU.
 struct LutTexture {
     view: wgpu::TextureView,
-    /// What `Params` in `shaders/lut.wgsl` holds besides the amount: points
+    /// What `Params` in `shaders/lut.wgsl` holds besides the amount and the
+    /// interpolation: points
     /// per axis and the input domain.
     size: f32,
     domain_min: [f32; 3],
@@ -1310,8 +1311,9 @@ impl Compositor {
                 ResolvedEffect::Lut {
                     src: ref key,
                     amount,
+                    interpolation,
                 } if amount > 0.0 => {
-                    src = self.lut(src, key, amount);
+                    src = self.lut(src, key, amount, interpolation);
                 }
                 ResolvedEffect::Lut { .. } => {}
                 ResolvedEffect::Grain(grain) if grain.amount > 0.0 => {
@@ -1987,7 +1989,7 @@ impl Compositor {
     /// Grades `src` through the table loaded for `key`, faded in by `amount`.
     /// `src` goes back to the pool; the result is a new texture. A table the
     /// compositor was not given at creation is skipped.
-    fn lut(&mut self, src: Tex, key: &str, amount: f32) -> Tex {
+    fn lut(&mut self, src: Tex, key: &str, amount: f32, interpolation: LutInterpolation) -> Tex {
         if !self.luts.contains_key(key) || src.bounds.is_empty() {
             return src;
         }
@@ -1995,7 +1997,10 @@ impl Compositor {
         let lut = &self.luts[key];
         let [rx, ry, rz] = lut.domain_min;
         let [sx, sy, sz] = lut.domain_max;
-        let params = floats(&[rx, ry, rz, 0.0, sx, sy, sz, 0.0, lut.size, amount, 0.0, 0.0]);
+        let tetrahedral = f32::from(u8::from(interpolation == LutInterpolation::Tetrahedral));
+        let params = floats(&[
+            rx, ry, rz, 0.0, sx, sy, sz, 0.0, lut.size, amount, tetrahedral, 0.0,
+        ]);
         let uniform = self.uniform(&params);
         let place = self.place_buffer(&target, src.input(), src.input());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {

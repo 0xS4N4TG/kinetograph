@@ -111,6 +111,11 @@ describe('effect helpers', () => {
     expect(gradientMap({ stops, amount: ramp })).toEqual({ type: 'gradientMap', stops, amount: ramp });
     expect(lut({ src: 'looks/thermal.cube' })).toEqual({ type: 'lut', src: 'looks/thermal.cube' });
     expect(lut({ src: 'a.cube', amount: 0.5 })).toEqual({ type: 'lut', src: 'a.cube', amount: 0.5 });
+    expect(lut({ src: 'a.cube', interpolation: 'tetrahedral' })).toEqual({
+      type: 'lut',
+      src: 'a.cube',
+      interpolation: 'tetrahedral',
+    });
   });
 
   it('build colorGrade', () => {

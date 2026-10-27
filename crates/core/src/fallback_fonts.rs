@@ -79,18 +79,57 @@ pub fn faces() -> &'static [Face] {
     })
 }
 
+/// JetBrains Mono Regular (SIL OFL 1.1, `fonts/OFL.txt`): what `monospace` and `ui-monospace` are set in when the
+/// project registered no fixed-pitch font. Not one of [`faces`]: it is no fallback for a missing character, so it is
+/// registered only as that generic family (`register_monospace`). Unpacked on first use.
+pub fn monospace_face() -> &'static Face {
+    static FACE: OnceLock<Face> = OnceLock::new();
+    FACE.get_or_init(|| {
+        let data = Arc::new(
+            wuff::decompress_woff2(include_bytes!("../fonts/JetBrainsMono-Regular.woff2"))
+                .unwrap_or_else(|e| panic!("bundled font JetBrainsMono: {e:?}")),
+        );
+        Face {
+            name: "JetBrainsMono",
+            family: "Kinetograph Fallback Monospace",
+            blob: Blob::new(data.clone()),
+            data,
+        }
+    })
+}
+
+/// Every bundled font: the fallbacks, then the monospace one.
+fn all() -> impl Iterator<Item = &'static Face> {
+    faces().iter().chain(std::iter::once(monospace_face()))
+}
+
 /// The face a `builtin:` glyph-run `src` names.
 pub fn face(src: &str) -> Option<&'static Face> {
     let name = src.strip_prefix(BUILTIN_PREFIX)?;
-    faces().iter().find(|f| f.name == name)
+    all().find(|f| f.name == name)
 }
 
 /// The `builtin:` name of the face whose blob has this id.
 pub fn name_of_blob(blob_id: u64) -> Option<String> {
-    faces()
-        .iter()
+    all()
         .find(|f| f.blob.id() == blob_id)
         .map(|f| format!("{BUILTIN_PREFIX}{}", f.name))
+}
+
+/// Adds the bundled monospace font to `collection` and returns its family, for the caller to put in the `monospace`
+/// generic family.
+pub fn register_monospace(collection: &mut Collection) -> Option<FamilyId> {
+    let face = monospace_face();
+    collection
+        .register_fonts(
+            face.blob.clone(),
+            Some(FontInfoOverride {
+                family_name: Some(face.family),
+                ..Default::default()
+            }),
+        )
+        .first()
+        .map(|(id, _)| *id)
 }
 
 /// Adds the fallback fonts to `collection`, as the fallback of the common scripts and as the emoji family. `project`
@@ -182,6 +221,13 @@ mod tests {
                 Some(format!("builtin:{}", f.name))
             );
         }
+        let mono = monospace_face();
+        assert!(mono.data.starts_with(&[0, 1, 0, 0]));
+        assert!(face("builtin:JetBrainsMono").is_some());
+        assert_eq!(
+            name_of_blob(mono.blob.id()),
+            Some("builtin:JetBrainsMono".to_string())
+        );
         assert!(face("builtin:Nope").is_none());
         assert!(face("DMSans.ttf").is_none());
     }

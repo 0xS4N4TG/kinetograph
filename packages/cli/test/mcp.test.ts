@@ -34,7 +34,7 @@ describe('the tool list', () => {
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
 
     const still = by.still!.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
-    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'dev-react', 'entry', 'frame', 'output', 'props', 'strict']);
+    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'dev-react', 'entry', 'frame', 'offline', 'output', 'props', 'strict']);
     expect(still.properties.frame!.type).toBe('number');
     // The output of an image tool is optional (a temp file is used), a video's is not.
     expect(still.required.sort()).toEqual(['entry', 'frame']);
@@ -55,7 +55,7 @@ describe('the tool list', () => {
       properties: Record<string, { type: string }>;
       required?: string[];
     };
-    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'entry', 'props', 'range']);
+    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'entry', 'offline', 'props', 'range']);
     expect(doctor.properties.range!.type).toBe('string');
     expect(doctor.required ?? []).toEqual([]);
   });
