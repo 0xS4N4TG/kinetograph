@@ -199,7 +199,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 - **Plugins** `@kinetographdev/gsap`, `p5-brush`, `anime`, `motion`: seek a library with its own clock to the frame.
   AUTHORING.md §11.10, `/docs/libraries/`.
 - **Libraries that render:** Recharts, d3-selection, anime.js, Motion `animate()`, Paper.js, Bklit, rough.js, Chart.js,
-  Plot, Vega; Shiki is close (needs a mono font); Mermaid is broken (pre-render to SVG). AUTHORING.md §11.10.
+  Plot, Vega, Shiki (code falls back to a bundled JetBrains Mono); Mermaid draws with `htmlLabels: false` (HTML labels draw nothing). AUTHORING.md §11.10.
 - **HyperFrames projects** render as they are: `render|still|doctor|studio <index.html|dir>`; the
   run downloads CDN scripts, ES modules, media and pictures first and pins them in `kinetograph.lock.json` (no need to run
   `fetch-deps` first; `--offline` never downloads; `fetch-deps --update` refreshes the lock). AUTHORING.md §11.11, `/docs/compat/#hyperframes-projects`.
