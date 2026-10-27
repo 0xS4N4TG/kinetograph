@@ -24,6 +24,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `outerHTML` and `innerHTML` wrote SVG attributes such as `viewBox` and `markerUnits` in lower case below the `<svg>` element, wrote a `style` given as text as nothing, and an element inside `<foreignObject>` reported the SVG namespace (and parsed `<br>` as an unclosed element).
 - Nodes made by `innerHTML` or `insertAdjacentHTML` below the first level had no parent (`parentNode` was null).
 - `document.querySelector('body')`, `querySelectorAll('html')` and `getElementsByTagName('body')` find `html`, `head` and `body` themselves; they returned nothing, which broke `d3.select('body')`.
+- `lut` effect: `interpolation: 'trilinear' | 'tetrahedral'` (default `'trilinear'`). Tetrahedral blends four table points chosen from the six-tetrahedra split of the cell, as DaVinci Resolve, OpenColorIO and ffmpeg's `lut3d=interp=tetrahedral` do.
 
 ## 0.2.0 (2026-10-27)
 
