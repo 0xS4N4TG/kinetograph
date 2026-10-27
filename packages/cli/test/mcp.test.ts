@@ -23,7 +23,7 @@ describe('the tool list', () => {
     const client = await connect(async () => ({ stdout: '{}', stderr: '', code: 0 }));
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'inspect', 'lint', 'onion', 'render', 'snapshot', 'still', 'strip'],
+      ['audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'inspect', 'lint', 'onion', 'render', 'snapshot', 'still', 'strip', 'track'],
     );
     expect(toolCommands().map(toolName).sort()).toEqual(tools.map((t) => t.name).sort());
   });

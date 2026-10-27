@@ -1579,6 +1579,10 @@ load error naming the layer.
   the canvas plus the margin. Pinning a corner far out stretches the layer's pixels, not new ones, and a layer that
   hangs off the canvas is cut at the texture's edge before it is pinned.
 - Magnified parts are resampled (soft) and minified parts can alias, since there are no mipmaps.
+- **From a motion track.** `useTrack()`'s `corners` (AUTHORING.md §11.12) are top-left, top-right, bottom-right,
+  bottom-left in the video's pixels, the same order as these fields: on a layer whose space is the video's (drawn at its
+  own size from the canvas origin), they are the four points as they are. The scene has no tracking layer or field;
+  a track only ever reaches it as plain numbers like these.
 
 ### backdropBlur
 

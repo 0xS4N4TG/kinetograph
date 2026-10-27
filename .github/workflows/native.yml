@@ -157,6 +157,23 @@ jobs:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
 
+      # Blender's tracker (libmv, Ceres and Eigen, crates/libmv-sys) is C++ that the cc crate builds into the addon: GCC
+      # on Linux, MSVC on Windows, clang on macOS. The tests track synthetic pictures, and real footage against the
+      # platform's golden (crates/track/tests/goldens; a platform without one prints what it got). Same target and
+      # features as the addon build, so the Rust dependencies are reused.
+      - name: Test the tracker (macOS, Linux)
+        if: runner.os != 'Windows'
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track --features kinetograph-track/ffmpeg-static -- --nocapture
+
+      - name: Test the tracker (Windows)
+        if: runner.os == 'Windows'
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track --features kinetograph-track/ffmpeg-static -- --nocapture
+
       - name: Libraries the addon links
         shell: bash
         run: |
