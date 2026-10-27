@@ -623,7 +623,7 @@ container stay inside its clip. The canvas takes the root's (or the body's) back
 |---|---|
 | box background colour, solid uniform opaque border | one `shape` with `fill` and `stroke` (centre line) |
 | background colour / images, `background-blend-mode` | shapes per layer; a `group` (isolated) when a layer blends |
-| `background-size/position/repeat/clip/origin` | `Paint::Image` fill (tiles repeat in the image sampler); one shape per tile for `space`, gradients tiles (up to 150) |
+| `background-size/position/repeat/clip/origin` | `Paint::Image` fill (tiles repeat in the image sampler); one shape per tile for `space` and gradient tiles up to 150; past that one shape whose paint repeats one tile (a gradient's `tile`, a picture's `spaceX`/`spaceY`: a Skia picture shader, as Chrome tiles a gradient) |
 | gradients (linear, radial incl. ellipse, conic, repeating, hints) | scene gradients; an ellipse is a circle with `transform` |
 | `background-clip: text` | the layers get a `matte` whose source is white glyph runs |
 | `box-shadow` outer / inset | a blurred shape of the shadow colour, cut with `clip` to outside the border box / inside the padding box |
@@ -774,8 +774,9 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 
 ### Known gaps and findings
 
-- Gradient tiles and `space` tiles are one layer each, limited to 150; a CSS grid made of `linear-gradient` tiles over a
-  big box is reported. A tile pattern needs a pattern paint of a rendered tile.
+- Gradient tiles and `space` tiles are one layer each up to 150. Past that the tile is drawn once and the paint repeats
+  it (`Gradient.tile`, `ImagePaint.spaceX`/`spaceY`), at any fractional period: `background_space_many_tiles` is 3.3
+  mean levels from Chrome (`space` 0.5 to 5.8 by quarter, `round` 1.1, a 10 px picture 6.1, Chrome's sharper downscale).
 - `blendSpace: srgb` converts at every composite (a power function per pixel in the blend pass); blurs and colour filters
   stay in linear light, so a blurred translucent shape is not exactly Chrome's.
 - Synthetic bold is a stroke of a 48th of the size; Chrome's is a little heavier.

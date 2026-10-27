@@ -947,6 +947,35 @@ pub struct Gradient {
     /// gradients blend premultiplied, the default).
     #[serde(default)]
     pub unpremultiplied: bool,
+    /// Paint the gradient in one tile and repeat the tile (CSS's
+    /// `background-repeat` of a gradient): its coordinates are then the
+    /// tile's, (0, 0) at its corner.
+    #[serde(default)]
+    pub tile: Option<Tile>,
+}
+
+/// A tile of a gradient paint: `width` x `height` with its top-left corner at
+/// (`x`, `y`) in the painted layer's space, repeated every `width + spaceX`
+/// (and `height + spaceY`) in the directions that repeat; in the others there
+/// is the one tile. `{ "x": 10, "y": 10, "width": 12, "height": 12,
+/// "spaceY": 0.5, "repeatX": true, "repeatY": true }`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tile {
+    #[serde(default = "zero")]
+    pub x: Num,
+    #[serde(default = "zero")]
+    pub y: Num,
+    pub width: Num,
+    pub height: Num,
+    #[serde(default = "zero")]
+    pub space_x: Num,
+    #[serde(default = "zero")]
+    pub space_y: Num,
+    #[serde(default)]
+    pub repeat_x: bool,
+    #[serde(default)]
+    pub repeat_y: bool,
 }
 
 /// The space a gradient's coordinates are in.
@@ -1025,8 +1054,9 @@ pub enum Paint {
 
 /// A picture as a paint: drawn `width` x `height` with its top-left corner at
 /// (`x`, `y`) in the painted layer's space, and repeated across the plane in
-/// the directions that repeat; in the others its edge pixels are held (so cut
-/// the shape to the tile). `{ "type": "image", "src": "tile.png", "width": 64,
+/// the directions that repeat, `spaceX` (`spaceY`) apart; in the others its
+/// edge pixels are held (so cut the shape to the tile), or, with a space,
+/// there is the one copy. `{ "type": "image", "src": "tile.png", "width": 64,
 /// "height": 64, "repeatX": true, "repeatY": true }`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1042,6 +1072,10 @@ pub struct ImagePaint {
     pub repeat_x: bool,
     #[serde(default)]
     pub repeat_y: bool,
+    #[serde(default = "zero")]
+    pub space_x: Num,
+    #[serde(default = "zero")]
+    pub space_y: Num,
 }
 
 impl<'de> Deserialize<'de> for Paint {

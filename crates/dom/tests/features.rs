@@ -486,3 +486,16 @@ close_case!(inline_block_stacking_context, 320, 120, 1.0, {
 <div style="font-size:40px"><span style="display:inline-block;transform:scale(0.5);background:rgba(0,120,255,.5)">ab</span> <span style="display:inline-block;position:relative;left:10px;opacity:.6;background:#f80">cd</span></div>"#
         .to_string()
 });
+
+// `background-repeat: space` and `round` with thousands of gradient tiles,
+// and `space` with thousands of picture tiles: one shape whose paint repeats
+// the tile at its exact period.
+close_case!(background_space_many_tiles, 640, 420, 4.0, {
+    format!(
+        r#"<div style="position:absolute;left:10px;top:10px;width:300px;height:200px;background-image:linear-gradient(red,blue);background-size:12px 12px;background-repeat:space"></div>
+<div style="position:absolute;left:330px;top:10px;width:300px;height:200px;background-image:linear-gradient(90deg,#fc0,#063);background-size:13px 9px;background-repeat:space"></div>
+<div style="position:absolute;left:10px;top:220px;width:300px;height:190px;background-image:radial-gradient(#000 40%,transparent 41%);background-size:11px 11px;background-repeat:round"></div>
+<div style="position:absolute;left:330px;top:220px;width:300px;height:190px;background:url({}) 0 0 / 10px 10px space"></div>"#,
+        asset("tile.png")
+    )
+});

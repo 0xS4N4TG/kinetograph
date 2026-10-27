@@ -13,9 +13,14 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `drawImage` of a `<video>` element (the frame at its `currentTime`; HyperFrames pages set it from the timeline) on Canvas 2D, and the canvas source `{ "kind": "video" }` in a `canvas` layer (SCENE.md, "canvas").
 - `getImageData` and `texImage2D` of a canvas that holds one plain `drawImage` of a picture file or a video frame are answered on the CPU from the decoder's cache (the addon's `readCanvasPicture`), with no GPU: 0.7 ms against 3.3 ms for a held 1080p frame, and 39 ms against 101 ms for the first call. Anything else is drawn by the renderer as before.
 
+### Changed
+
+- Scene: a gradient paint has `tile` (paint it in one tile and repeat it, with gaps), and an image paint has `spaceX` and `spaceY`.
+
 ### Fixed
 
 - A `display: inline-block` element that is also a stacking context (a `transform`, `opacity`, `position: relative`, ...) is drawn once. It came out as two identical layers (`$0.0.1` and `$0.0.1~2`), so its anti-aliased edges and translucent fills were doubled.
+- `background-repeat: space` and `round` with any number of tiles: past 150 tiles of a gradient or a picture the tile is drawn once and the paint repeats it at its exact period, gaps included, as Chrome's pattern shader does. `space` with thousands of gradient tiles used to warn and draw nothing, and `round` drifted by up to a tile.
 - An `<svg>` with a `<foreignObject>` that holds a block element (`<div>`, `<p>`) is drawn: the whole `<svg>` used to go missing, with nothing for `doctor` to say. The HTML in a `<foreignObject>` is laid out as a block box of the object's `width` and `height` (the attributes, or CSS), painted by the HTML painter (text, backgrounds, borders, flex, nested SVG), cut to the box by its `overflow`, and carried through the SVG's `viewBox`, transforms, opacity and clip. What cannot be drawn is reported by `doctor` per frame (a percentage size, HTML in a clip path), and the shapes beside it are drawn. Mermaid 12's default HTML labels draw as a result: flowchart, class, state and ER diagrams.
 - An inline element that holds a block (`<span><p>text</p></span>`) paints its text; the painter left it out, in HTML and in a `<foreignObject>`.
 - `display: table-cell` on an element that is no table part, and `display: table` on one with no table parts, are a block as wide as its content (or the `width` given), as the anonymous table boxes of CSS 2.2 section 17.2.1 make them; they used to fill the line, or hold nothing. Libraries centre labels with them.

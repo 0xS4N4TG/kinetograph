@@ -554,6 +554,22 @@ pub struct ResolvedImagePaint {
     pub height: f64,
     pub repeat_x: bool,
     pub repeat_y: bool,
+    /// The gap between copies along a direction that repeats.
+    pub space_x: f64,
+    pub space_y: f64,
+}
+
+/// `scene::Tile` at one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedTile {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub space_x: f64,
+    pub space_y: f64,
+    pub repeat_x: bool,
+    pub repeat_y: bool,
 }
 
 /// A gradient at one frame, in the space of whatever it paints.
@@ -571,6 +587,8 @@ pub struct ResolvedGradient {
     pub transform: Affine,
     /// Stops blend without premultiplying alpha (`Gradient::unpremultiplied`).
     pub unpremultiplied: bool,
+    /// Painted in one tile, repeated (`Gradient::tile`).
+    pub tile: Option<ResolvedTile>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1328,6 +1346,8 @@ fn resolve_paint(paint: &Paint, f: f64) -> ResolvedPaint {
             height: i.height.at(f).max(0.0),
             repeat_x: i.repeat_x,
             repeat_y: i.repeat_y,
+            space_x: i.space_x.at(f).max(0.0),
+            space_y: i.space_y.at(f).max(0.0),
         }),
     }
 }
@@ -1428,6 +1448,16 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         units: g.units,
         transform: g.transform.map_or(Affine::IDENTITY, Affine::new),
         unpremultiplied: g.unpremultiplied,
+        tile: g.tile.as_ref().map(|t| ResolvedTile {
+            x: t.x.at(f),
+            y: t.y.at(f),
+            width: t.width.at(f).max(0.0),
+            height: t.height.at(f).max(0.0),
+            space_x: t.space_x.at(f).max(0.0),
+            space_y: t.space_y.at(f).max(0.0),
+            repeat_x: t.repeat_x,
+            repeat_y: t.repeat_y,
+        }),
     }
 }
 

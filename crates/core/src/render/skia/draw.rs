@@ -1371,9 +1371,22 @@ impl Translator {
                 let a = p.alpha_f();
                 p.set_color4f(Color4f::new(c.r, c.g, c.b, c.a * a), None);
             }
-            ResolvedPaint::Gradient(g) => {
-                p.set_shader(gradient_shader_for(g, layer_box, self.linear()));
-            }
+            ResolvedPaint::Gradient(g) => match &g.tile {
+                Some(t) => {
+                    // The gradient in one tile, repeated with the gaps: a picture shader, as Chrome tiles a gradient.
+                    let cell = Rect::from_wh(t.width as f32, t.height as f32);
+                    let mut fill = Paint::default();
+                    fill.set_anti_alias(true);
+                    fill.set_shader(gradient_shader_for(g, Some(cell), self.linear()));
+                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), |c| {
+                        c.draw_rect(cell, &fill);
+                    });
+                    p.set_shader(shader);
+                }
+                None => {
+                    p.set_shader(gradient_shader_for(g, layer_box, self.linear()));
+                }
+            },
             ResolvedPaint::Image(i) => {
                 let img = if crate::svg_picture::is_svg(&i.src) {
                     let (w, h) = (i.width, i.height);
@@ -1385,10 +1398,20 @@ impl Translator {
                     self.stats.no("image paint (file)");
                     return;
                 };
+                let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
+                if (i.repeat_x && i.space_x > 0.0) || (i.repeat_y && i.space_y > 0.0) {
+                    // Copies apart: the picture in one tile, repeated with the gaps.
+                    let cell = Rect::from_wh(i.width as f32, i.height as f32);
+                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), |c| {
+                        c.draw_image_rect_with_sampling_options(&img, None, cell, sampling, &Paint::default());
+                    });
+                    p.set_shader(shader);
+                    return;
+                }
                 let tile = |r: bool| if r { TileMode::Repeat } else { TileMode::Clamp };
                 let local = Matrix::translate((i.x as f32, i.y as f32))
                     * Matrix::scale((i.width as f32 / img.width() as f32, i.height as f32 / img.height() as f32));
-                p.set_shader(img.to_shader((tile(i.repeat_x), tile(i.repeat_y)), SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), &local));
+                p.set_shader(img.to_shader((tile(i.repeat_x), tile(i.repeat_y)), sampling, &local));
             }
         }
     }
@@ -2236,4 +2259,16 @@ impl Translator {
     pub fn raster_pop(&mut self, canvas: &Canvas) {
         canvas.restore();
     }
+}
+
+/// A shader of what `draw` paints in `cell` (a tile at the origin), moved to `at` and repeated every cell plus `space`
+/// along the axes that `repeat` (once along the others): a picture shader, which keeps a fractional period exact.
+fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
+    let mut recorder = skia_safe::PictureRecorder::new();
+    draw(recorder.begin_recording(cell, false));
+    let picture = recorder.finish_recording_as_picture(Some(&cell))?;
+    let period = Rect::from_wh(cell.width() + space.0 as f32, cell.height() + space.1 as f32);
+    let mode = |r: bool| if r { TileMode::Repeat } else { TileMode::Decal };
+    let local = Matrix::translate((at.0 as f32, at.1 as f32));
+    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), skia_safe::FilterMode::Linear, &local, &period))
 }

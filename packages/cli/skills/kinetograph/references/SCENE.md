@@ -1742,6 +1742,7 @@ Common fields:
 | `units` | `user` | What the coordinates are measured in. `user`: pixels of the painted layer. `box`: fractions of the painted layer's box, see [Box units](#box-units). |
 | `transform` | none | A matrix `[a, b, c, d, e, f]` (SVG's `matrix()`, so `x' = a x + c y + e`) that takes the gradient's space (after `units`) to the painted layer's: SVG's `gradientTransform`. A non-uniform matrix turns a circle into an ellipse and skews a line's perpendiculars. |
 | `unpremultiplied` | `false` | Blend the stops without premultiplying alpha, as SVG and canvas gradients do (the DOM painter sets it for SVG `<linearGradient>` and `<radialGradient>`): a stop fading to `#0000ff00` darkens the red next to it through purple. |
+| `tile` | none | Paint the gradient in one tile and repeat the tile, which is CSS `background-repeat` of a gradient: `{ "x", "y", "width", "height", "spaceX", "spaceY", "repeatX", "repeatY" }`. The tile is `width` x `height` with its top-left corner at (`x`, `y`) (default 0) in the painted layer's space, and the gradient's coordinates are the tile's: (0, 0) at its corner, `box` units fractions of the tile. It repeats every `width + spaceX` (`height + spaceY`; the spaces default to 0) along the axes with `repeatX` / `repeatY`; along the others there is the one tile. Any number of tiles costs one shape: the tile is drawn once and repeated by the paint, at any fractional period. The DOM painter writes it for `background-repeat` (`repeat`, `round` and `space`) with more than 150 tiles of a gradient. |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
@@ -2155,8 +2156,9 @@ A shape's `fill` and a text layer's `color` can be a picture, once or tiled, whi
 ```
 
 The picture is drawn `width` x `height` with its top-left corner at (`x`, `y`) in the painted layer's space, bilinearly
-resampled. It repeats along the axes with `repeatX` / `repeatY`; along an axis that does not repeat its edge pixels are
-held, so cut the shape to the tile (a shape no taller than the tile for `repeat-x`). `src` is a PNG, JPEG or GIF
+resampled. It repeats along the axes with `repeatX` / `repeatY`, `spaceX` / `spaceY` pixels apart (default 0, which is
+`background-repeat: space`); along an axis that does not repeat its edge pixels are held, so cut the shape to the tile
+(a shape no taller than the tile for `repeat-x`). With a space there is the one copy along such an axis. `src` is a PNG, JPEG or GIF
 file, or a `data:` URL, which is decoded from memory (an `image` layer's `src` can be one too).
 
 ### Blend space
