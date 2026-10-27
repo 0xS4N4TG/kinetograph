@@ -1045,8 +1045,9 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 
 The blur is a Gaussian, run in linear light on premultiplied colour. Large radii are blurred at reduced resolution, but
 never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. Whatever the radius, a blur keeps
-no texture larger than the canvas but the smallest of its reduced images, so a wide blur costs about what a narrow one
-does (`kinetograph bench`: 128, 256, 512 and 1000 px on a 1920 x 1080 canvas, see ENGINE.md). In tests (`tests/blur.rs`) the
+no texture larger than the canvas but the smallest of its reduced images, so a wide blur needs about the memory of a
+narrow one: on a 1920 x 1080 canvas a frame with a blur, glow, backdrop blur or drop shadow of 128, 256, 512 or 1000
+px takes 3 to 14 ms on an M4 (`cargo run --release --example blur_bench`). In tests (`tests/blur.rs`) the
 measured standard deviation is within 5% of `radius` for radii from 2 to 512, and a small layer's blur follows its
 position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to know:
 
