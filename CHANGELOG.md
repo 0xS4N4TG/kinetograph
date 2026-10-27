@@ -15,6 +15,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- A `display: inline-block` element that is also a stacking context (a `transform`, `opacity`, `position: relative`, ...) is drawn once. It came out as two identical layers (`$0.0.1` and `$0.0.1~2`), so its anti-aliased edges and translucent fills were doubled.
 - An `<svg>` with a `<foreignObject>` that holds a block element (`<div>`, `<p>`) is drawn: the whole `<svg>` used to go missing, with nothing for `doctor` to say. The HTML in a `<foreignObject>` is laid out as a block box of the object's `width` and `height` (the attributes, or CSS), painted by the HTML painter (text, backgrounds, borders, flex, nested SVG), cut to the box by its `overflow`, and carried through the SVG's `viewBox`, transforms, opacity and clip. What cannot be drawn is reported by `doctor` per frame (a percentage size, HTML in a clip path), and the shapes beside it are drawn. Mermaid 12's default HTML labels draw as a result: flowchart, class, state and ER diagrams.
 - An inline element that holds a block (`<span><p>text</p></span>`) paints its text; the painter left it out, in HTML and in a `<foreignObject>`.
 - `display: table-cell` on an element that is no table part, and `display: table` on one with no table parts, are a block as wide as its content (or the `width` given), as the anonymous table boxes of CSS 2.2 section 17.2.1 make them; they used to fill the line, or hold nothing. Libraries centre labels with them.

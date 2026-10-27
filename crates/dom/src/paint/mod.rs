@@ -553,9 +553,20 @@ impl<'a> Painter<'a> {
             // An inline that holds a block (`<span><p>..</p></span>`) is laid out as a block.
             let inline_level =
                 display.outside() == DisplayOutside::Inline && !child.is_or_contains_block();
+            // An atomic inline box of this box's lines (not floated, not out
+            // of flow) is painted from the lines (`paint_inline_root`), a
+            // stacking context or positioned one too: not again here.
+            let out_of_flow = matches!(position, Position::Absolute | Position::Fixed);
+            let in_line = node.flags.is_inline_root()
+                && inline_level
+                && !parent_flex
+                && !floated
+                && !out_of_flow;
             drop(style);
 
-            if is_sc {
+            if in_line && (is_sc || positioned) {
+                // Painted by `paint_inline_root` above.
+            } else if is_sc {
                 // z-index 0 / auto contexts (non-zero ones were hoisted).
                 let layers = self.paint_context(child, at);
                 pos.extend(layers);

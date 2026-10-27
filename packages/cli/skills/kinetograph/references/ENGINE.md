@@ -964,14 +964,13 @@ the first measure computes the baseline and nothing is wrong. Fix: `layout/inlin
 (`vendor/README.md`): an inline box measured with no baselines is laid out in `PerformLayout` mode, which the cache
 keeps whole. Test: `an_edited_svg_beside_text_leaves_the_line_as_fresh` (`crates/dom/tests/samples.rs`).
 
-**An element painted twice** (not fixed): an inline-block with a stacking context (a `transform`, say) in a line of text
-is painted twice, as `$0.0.1` and `$0.0.1~2`, identical layers, so its antialiased edge is drawn at double alpha and it
-costs double. Cause: `Painter::walk` (`paint/mod.rs`, the children loop) paints a child with `is_sc` (or `positioned`)
-through `paint_context` (`paint_atomic`) into `pos` before it looks at `inline_level`, and `paint_inline_root`
-(`paint/text.rs`, the `InlineBox` arm) paints the same box again into `pos` while walking the lines. A line-level box
-without a context is painted only from the lines. Reproduce: a `div` with text `ab` and a `span` with
-`display: inline-block; transform: scale(0.5)` gives `["$0.0.text","$0.0.1","$0.0.1~2"]`. The end card of the launch film
-(`kinetograph.` with a scaled full stop, frames 1386-1520) has it.
+**An element painted twice** (fixed): an inline-block with a stacking context (a `transform`, say) in a line of text
+was painted twice, as `$0.0.1` and `$0.0.1~2`, identical layers, so its antialiased edge was drawn at double alpha.
+`Painter::walk` (`paint/mod.rs`, the children loop) painted a child with `is_sc` (or `positioned`) before it looked at
+`inline_level`, and `paint_inline_root` (`paint/text.rs`, the `InlineBox` arm) painted the same box again while
+walking the lines. `walk` now leaves an atomic inline-level box of an inline root (not floated, not out of flow) to the
+lines, context or not. Test: `inline_block_stacking_context` (`crates/dom/tests/features.rs`, 0.9 mean levels from
+Chrome).
 
 ## 13. HyperFrames colour grade and readback caching
 

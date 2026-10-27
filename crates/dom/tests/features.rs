@@ -455,3 +455,34 @@ document.getAnimations().forEach(a => {{ a.pause(); a.currentTime = 500; }});
         out.unsupported
     );
 }
+
+/// A case compared with Chrome more closely than `case!`: the mean difference
+/// must be under `$mean` (of 255).
+macro_rules! close_case {
+    ($name:ident, $w:expr, $h:expr, $mean:expr, $body:expr) => {
+        #[test]
+        fn $name() {
+            let body: String = $body;
+            let (out, frame, diff) = compare(stringify!($name), &body, $w, $h);
+            println!(
+                "{}: layers {}; unsupported {:?}; diff {:?}",
+                stringify!($name),
+                paintkit::count_layers(&out.layers),
+                out.unsupported,
+                diff
+            );
+            paintkit::check_golden(stringify!($name), &frame);
+            assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+            if let Some(d) = diff {
+                assert!(d.mean < $mean, "{}: {d:?}", stringify!($name));
+            }
+        }
+    };
+}
+
+// An inline-block that is a stacking context is painted once, from its line.
+close_case!(inline_block_stacking_context, 320, 120, 1.0, {
+    r#"<div style="font-size:40px">ab</div>
+<div style="font-size:40px"><span style="display:inline-block;transform:scale(0.5);background:rgba(0,120,255,.5)">ab</span> <span style="display:inline-block;position:relative;left:10px;opacity:.6;background:#f80">cd</span></div>"#
+        .to_string()
+});
