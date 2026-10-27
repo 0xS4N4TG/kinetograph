@@ -199,7 +199,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 - **Plugins** `@kinetographdev/gsap`, `p5-brush`, `anime`, `motion`: seek a library with its own clock to the frame.
   AUTHORING.md §11.10, `/docs/libraries/`.
 - **Libraries that render:** Recharts, d3-selection, anime.js, Motion `animate()`, Paper.js, Bklit, rough.js, Chart.js,
-  Plot, Vega; Shiki is close (needs a mono font); Mermaid is broken (pre-render to SVG). AUTHORING.md §11.10.
+  Plot, Vega; Shiki is close (needs a mono font); Mermaid draws with `htmlLabels: false` (HTML labels draw nothing). AUTHORING.md §11.10.
 - **HyperFrames projects** render as they are: `render|still|doctor|studio <index.html|dir>`; run
   `kinetograph fetch-deps <entry>` first for CDN scripts and media. AUTHORING.md §11.11, `/docs/compat/#hyperframes-projects`.
 - **A plain HTML page** (no React) renders the same way: give the root element `data-composition-id`, `data-width`,
