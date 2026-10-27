@@ -1006,8 +1006,11 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
 - `glow` counts `3 * radius`, and `chromaticAberration` counts `|amount|`.
-- `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge).
-- `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
+- `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge); with
+  `edgeMode: "mirror"` it counts nothing.
+- `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`.
+- A radius or a shadow's `blur` counts at most 128 (`3 * 128` past the edge): a wider blur is drawn as wide, but what
+  lies further than that past the canvas edge is not drawn for it. (An inset shadow stays inside its
   layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
   a point as a positive one does.)
 - `shader` counts its `padding`: it is how far you say the shader paints past the layer (or reads from), and nothing
@@ -1038,10 +1041,12 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 
 | Field | Meaning |
 |---|---|
-| `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..512. |
+| `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..16384. |
 
 The blur is a Gaussian, run in linear light on premultiplied colour. Large radii are blurred at reduced resolution, but
-never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. In tests (`tests/blur.rs`) the
+never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. Whatever the radius, a blur keeps
+no texture larger than the canvas but the smallest of its reduced images, so a wide blur costs about what a narrow one
+does (`kinetograph bench`: 128, 256, 512 and 1000 px on a 1920 x 1080 canvas, see ENGINE.md). In tests (`tests/blur.rs`) the
 measured standard deviation is within 5% of `radius` for radii from 2 to 512, and a small layer's blur follows its
 position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to know:
 
@@ -1063,15 +1068,15 @@ edges.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `radius` | required | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..128; below 1 the effect does nothing. |
+| `radius` | required | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..16384; below 1 the effect does nothing. |
 | `color` | none | Colours the halo. Without it the halo has the layer's own colours; with it the halo is this colour, scaled by the blurred layer's alpha (so the colour's own alpha dims it too). Not animated. |
 | `intensity` | `1` | Animatable. Multiplies the halo, clamped to 0..4. At 0 the effect does nothing. |
 
 The blur runs in linear light on premultiplied colour, so the halo is physically a light falloff. Where
 `intensity` pushes the halo past fully opaque it is capped at alpha 1 with its colour kept (so it saturates rather than
 shifting hue). The halo is made from the layer as it is after the effects before it, and opacity fades layer and halo
-together. The halo reaches about three radii past the layer's edge, which the [margin](#canvas-margin) allows for, so
-the glow of a layer that hangs off the canvas still falls on it.
+together. The halo reaches about three radii past the layer's edge, which the [margin](#canvas-margin) allows for (up to
+a radius of 128), so the glow of a layer that hangs off the canvas still falls on it.
 
 ### chromaticAberration
 
@@ -1106,7 +1111,7 @@ unchanged.
 | Field | Default | Meaning |
 |---|---|---|
 | `x`, `y` | `0` | Offset of the shadow in canvas pixels (positive is right and down). Not scaled by the layer's `scale` or rotated with it. Fractions are fine and move the shadow smoothly. |
-| `blur` | `0` | Blur of the shadow, in canvas pixels. The same scale as the `blur` effect: roughly the standard deviation of the Gaussian. Clamped to 0..128. CSS `box-shadow` takes the full width, which is about twice this, so `0 8px 24px` is `blur: 12`. |
+| `blur` | `0` | Blur of the shadow, in canvas pixels. The same scale as the `blur` effect: roughly the standard deviation of the Gaussian. Clamped to 0..16384. CSS `box-shadow` takes the full width, which is about twice this, so `0 8px 24px` is `blur: 12`. |
 | `spread` | `0` | Grows the shadow by this many pixels on every side before it is blurred. Negative shrinks it. Clamped to -128..128. |
 | `color` | `#000000` | The shadow colour, with straight alpha (so `#00000080` is a half-strength black). Not animated. |
 
@@ -1599,7 +1604,8 @@ top of it.
 
 | Field | Meaning |
 |---|---|
-| `radius` | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..128; below 1 it does nothing. Required. |
+| `radius` | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..16384; below 1 it does nothing. Required. |
+| `edgeMode` | `canvas` (the default): the backdrop is the canvas around the layer, as below. `mirror`: only the backdrop inside the layer's box is blurred, mirrored past the box's edges, which is how a browser draws CSS `backdrop-filter` (the DOM painter writes it). A mirrored blur reads nothing outside the box, so it needs no margin. |
 
 - **The backdrop** is the canvas as it is when the layer is reached: the background and every layer below it. Inside a
   group it is the backdrop of the group with the group's earlier children drawn over it (normal blend, full opacity),
@@ -1615,7 +1621,8 @@ top of it.
 - A matte source (see [Track mattes](#track-mattes)) with a `backdropBlur` blurs the backdrop of the layer it mattes.
 - The backdrop is blurred as the canvas plus the [margin](#canvas-margin): at the canvas edge it blurs in the
   background colour and whatever hangs past the edge up to the margin, and past that nothing (transparent). The
-  margin counts `3 * radius`, so the edge of the canvas is blurred from real pixels.
+  margin counts `3 * radius` up to a radius of 128, so the edge of the canvas is blurred from real pixels; a wider blur
+  at the edge blurs in some transparency. With `edgeMode: "mirror"` none of this applies: the box is all it reads.
 - Cost: one extra full-canvas blur per frosted layer per frame, plus one canvas-sized copy when the layer is inside a
   group.
 

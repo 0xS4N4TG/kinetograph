@@ -256,6 +256,9 @@ export interface BlurEffect {
 export interface BackdropBlurEffect {
   type: 'backdropBlur';
   radius: Num;
+  /** `mirror`: read only the backdrop inside the layer's box, mirrored past its edges, as a browser's
+   *  `backdrop-filter` does. Default `canvas`: the canvas around the layer. */
+  edgeMode?: 'canvas' | 'mirror';
 }
 export interface GlowEffect {
   type: 'glow';

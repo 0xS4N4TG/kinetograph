@@ -110,7 +110,8 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### CSS
 
-- Backdrop blur and glow are capped at 128 px. The `blur` effect takes up to 512.
+- A `box-shadow` blur above about 200 px is a true Gaussian here; Chrome approximates very wide box shadows and draws them fainter. `filter: blur()`, `drop-shadow()` and `backdrop-filter: blur()` match Chrome up to its own limit of 532 px, and past it, as Chrome draws them 532 px wide.
+- A margin makes room for at most `3 * 128` px past the canvas edge for a scene `glow`, shadow or canvas-mode `backdropBlur`: a wider one is drawn as wide, but content further off the canvas than that does not reach in. CSS `backdrop-filter` reads only its own box, so it needs no margin.
 
 ### SVG
 

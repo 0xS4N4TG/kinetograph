@@ -15,12 +15,16 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Changed
 
+- Blurs take any radius: `blur`, `backdropBlur`, `glow` and a shadow's `blur` are clamped at 16384 instead of 512 (blur) and 128 (the others). A blur keeps no texture larger than the canvas but its smallest reduced image, so a 1000 px blur costs about what a 128 px one does. The canvas margin still makes room for a radius of at most 128.
+- Scene: `backdropBlur` has `edgeMode` (`canvas`, the default, or `mirror`, which reads only the layer's box, mirrored).
 - Scene: a gradient paint has `tile` (paint it in one tile and repeat it, with gaps), and an image paint has `spaceX` and `spaceY`.
 
 ### Fixed
 
 - A `display: inline-block` element that is also a stacking context (a `transform`, `opacity`, `position: relative`, ...) is drawn once. It came out as two identical layers (`$0.0.1` and `$0.0.1~2`), so its anti-aliased edges and translucent fills were doubled.
 - `background-repeat: space` and `round` with any number of tiles: past 150 tiles of a gradient or a picture the tile is drawn once and the paint repeats it at its exact period, gaps included, as Chrome's pattern shader does. `space` with thousands of gradient tiles used to warn and draw nothing, and `round` drifted by up to a tile.
+- `backdrop-filter: blur()` reads only the backdrop inside the element's border box, mirrored past its edges, as Chrome does; it used to blur in what lay around the box.
+- `filter: drop-shadow()` blurs by its blur length as the standard deviation, as Chrome does (it used half, as for `box-shadow`). `blur()`, `drop-shadow()` and `backdrop-filter` past 532 px are drawn 532 px wide, Chrome's own limit.
 - An `<svg>` with a `<foreignObject>` that holds a block element (`<div>`, `<p>`) is drawn: the whole `<svg>` used to go missing, with nothing for `doctor` to say. The HTML in a `<foreignObject>` is laid out as a block box of the object's `width` and `height` (the attributes, or CSS), painted by the HTML painter (text, backgrounds, borders, flex, nested SVG), cut to the box by its `overflow`, and carried through the SVG's `viewBox`, transforms, opacity and clip. What cannot be drawn is reported by `doctor` per frame (a percentage size, HTML in a clip path), and the shapes beside it are drawn. Mermaid 12's default HTML labels draw as a result: flowchart, class, state and ER diagrams.
 - An inline element that holds a block (`<span><p>text</p></span>`) paints its text; the painter left it out, in HTML and in a `<foreignObject>`.
 - `display: table-cell` on an element that is no table part, and `display: table` on one with no table parts, are a block as wide as its content (or the `width` given), as the anonymous table boxes of CSS 2.2 section 17.2.1 make them; they used to fill the line, or hold nothing. Libraries centre labels with them.

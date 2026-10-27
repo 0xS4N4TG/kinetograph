@@ -1284,9 +1284,9 @@ impl Compositor {
                     src = self.blur_layer(src, radius);
                 }
                 ResolvedEffect::Blur { .. } => {}
-                ResolvedEffect::BackdropBlur { radius } if radius >= blur::MIN_RADIUS => {
+                ResolvedEffect::BackdropBlur { radius, mirror } if radius >= blur::MIN_RADIUS => {
                     if let Some(backdrop) = backdrop {
-                        src = self.backdrop_blur(src, radius, backdrop, coverage);
+                        src = self.backdrop_blur(src, radius, backdrop, coverage, mirror);
                     }
                 }
                 ResolvedEffect::BackdropBlur { .. } => {}
@@ -1368,43 +1368,82 @@ impl Compositor {
             radius,
             src.bounds,
             dst.bounds,
+            None,
         );
         self.release(src);
         dst
     }
 
     /// Puts the blurred `backdrop` under `src`, kept to where `coverage`'s
-    /// alpha is (`src`'s own alpha if none). `src` goes back to the pool; the
-    /// result is a new texture.
+    /// alpha is (`src`'s own alpha if none). With `mirror`, only the backdrop
+    /// inside that box is read, mirrored past its edges. `src` goes back to
+    /// the pool; the result is a new texture.
     fn backdrop_blur(
         &mut self,
         src: Tex,
         radius: f32,
         backdrop: &Tex,
         coverage: Option<&Tex>,
+        mirror: bool,
     ) -> Tex {
         // The blurred backdrop is kept to the box of what keeps it, and
         // is only worked out there.
         let frost = coverage.map_or(src.bounds, |t| t.bounds);
+        let frost = if mirror {
+            frost.intersect(backdrop.bounds)
+        } else {
+            frost
+        };
         if frost.is_empty() {
             // Nothing of it is kept: `src` over nothing is `src`.
             return src;
         }
         let blurred = self.target(frost);
-        let size = (self.width, self.height);
-        self.blur.run(
-            &self.device,
-            self.pending
-                .get_mut()
-                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
-            self.uniforms.get_mut(),
-            backdrop.input(),
-            blurred.input(),
-            size,
-            radius,
-            backdrop.bounds,
-            blurred.bounds,
-        );
+        let encoder = self
+            .pending
+            .get_mut()
+            .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
+        if mirror {
+            // The blur gets a canvas of its own: the box, with room for the
+            // blur's reach on every side, all of it the box mirrored. Canvas
+            // pixel `c` is pixel `c + shift` of it.
+            let room = (3.0 * f64::from(radius)).ceil() as i32 + 2;
+            let shift = [room - frost.x0, room - frost.y0];
+            let size = (
+                frost.width() + 2 * room as u32,
+                frost.height() + 2 * room as u32,
+            );
+            fn moved(mut i: Input<'_>, shift: [i32; 2]) -> Input<'_> {
+                i.origin = [i.origin[0] + shift[0], i.origin[1] + shift[1]];
+                i
+            }
+            let inner = frost.translate(shift[0], shift[1]);
+            self.blur.run(
+                &self.device,
+                encoder,
+                self.uniforms.get_mut(),
+                moved(backdrop.input(), shift),
+                moved(blurred.input(), shift),
+                size,
+                radius,
+                PixelRect::whole(size.0, size.1),
+                inner,
+                Some(inner),
+            );
+        } else {
+            self.blur.run(
+                &self.device,
+                encoder,
+                self.uniforms.get_mut(),
+                backdrop.input(),
+                blurred.input(),
+                (self.width, self.height),
+                radius,
+                backdrop.bounds,
+                blurred.bounds,
+                None,
+            );
+        }
         // The matte pass with opacity 1 and alpha mode multiplies its first
         // input by the alpha of its second. `src` is blended over the result
         // in place, so the texture holds its box as well as the frost.
@@ -1438,6 +1477,7 @@ impl Compositor {
             glow.radius,
             src.bounds,
             halo.bounds,
+            None,
         );
         let target = self.target(src.bounds.union(halo.bounds));
         self.run_pass(
@@ -2293,6 +2333,7 @@ impl Compositor {
                 blur,
                 input,
                 target.bounds,
+                None,
             );
             if let Some(done) = current.replace(target) {
                 self.release(done);

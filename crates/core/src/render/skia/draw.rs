@@ -877,9 +877,12 @@ impl Translator {
                         filter = image_filters::blur((sg, sg), TileMode::Decal, filter.take(), None);
                     }
                 }
-                ResolvedEffect::BackdropBlur { radius } => {
+                ResolvedEffect::BackdropBlur { radius, mirror } => {
                     let sg = radius / s;
-                    backdrop = image_filters::blur((sg, sg), TileMode::Clamp, None, None);
+                    // Mirrored: only the backdrop inside the layer's box, mirrored past its edges.
+                    let input = if *mirror { self.layer_box(layer).and_then(|b| image_filters::crop(b, TileMode::Mirror, None)) } else { None };
+                    let tile = if *mirror { TileMode::Decal } else { TileMode::Clamp };
+                    backdrop = image_filters::blur((sg, sg), tile, input, None);
                 }
                 ResolvedEffect::DropShadow(sh) => {
                     let sg = sh.blur / s;

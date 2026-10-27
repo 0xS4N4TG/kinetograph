@@ -499,3 +499,27 @@ close_case!(background_space_many_tiles, 640, 420, 4.0, {
         asset("tile.png")
     )
 });
+
+// `backdrop-filter` reads only the backdrop inside the element's box,
+// mirrored past its edges, as Chrome does: the box beside the black half
+// stays white, the strip is mirrored at the box's left edge, and a blur of
+// 300 px (wider than the old limit of 128) frosts a box at the canvas edge.
+close_case!(backdrop_mirrored, 640, 320, 1.0, {
+    r#"<div style="position:absolute;left:0;top:0;width:320px;height:320px;background:#000"></div>
+<div style="position:absolute;left:470px;top:0;width:20px;height:320px;background:#c00"></div>
+<div style="position:absolute;left:330px;top:20px;width:100px;height:100px;backdrop-filter:blur(20px)"></div>
+<div style="position:absolute;left:200px;top:140px;width:240px;height:80px;backdrop-filter:blur(20px)"></div>
+<div style="position:absolute;left:470px;top:20px;width:150px;height:150px;backdrop-filter:blur(12px)"></div>
+<div style="position:absolute;left:0;top:240px;width:640px;height:80px;background:linear-gradient(90deg,#fc0,#06c)"></div>
+<div style="position:absolute;left:0;top:250px;width:400px;height:70px;backdrop-filter:blur(300px)"></div>"#
+        .to_string()
+});
+
+// Blurs wider than the old limits (128 for a shadow, 512 for a blur): a
+// drop shadow of 300 px and a blur of 600 px.
+close_case!(large_blurs, 640, 320, 2.0, {
+    r#"<div style="position:absolute;inset:0;background:linear-gradient(90deg,#f00,#00f)"></div>
+<div style="position:absolute;left:60px;top:60px;width:200px;height:200px;background:#fff;filter:drop-shadow(0 0 600px #0f0)"></div>
+<div style="position:absolute;left:380px;top:60px;width:200px;height:200px;background:#ff0;filter:blur(600px)"></div>"#
+        .to_string()
+});
