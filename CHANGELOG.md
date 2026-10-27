@@ -12,6 +12,13 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `<canvas>` a frame draws on, on the React path, starts that frame empty, as the docs say (one nobody draws on in a frame keeps its pixels, so a canvas drawn once in `useEffect(..., [])` still shows). It kept its pixels from the frame before, so `still 45` (or a render worker that starts mid-way) drew a different picture from frame 45 of a full render. A plain HTML page still keeps its canvas between frames.
 ### Added
 
+- A plain HTML page whose root element lacks `data-composition-id`, `data-width`, `data-height` or `data-duration` now gets a warning from `doctor`, `render` and `still` that names what is missing and shows the one-line fix (`--strict` fails on it, as on other unsupported content).
+- `doctor`, `render` and `still` report the errors a page's own scripts raise and survive: `console.error` calls, uncaught exceptions and unhandled promise rejections, once per message per frame, with the frames they were seen on. A library that catches its own failure (Mermaid) no longer passes as clean. `--strict` fails on them.
+- A constructable `CSSStyleSheet` (`insertRule`, `replaceSync`, `cssRules`, `rule.style`), as scripts that build CSS text use it.
+
+### Fixed
+
+- `document.querySelector('body')`, `querySelectorAll('html')` and `getElementsByTagName('body')` find `html`, `head` and `body` themselves; they returned nothing, which broke `d3.select('body')`.
 - CSS Motion Path: `offset-path` (`path()`, `circle()`, `ellipse()`, `inset()`, `polygon()` and `ray()`), `offset-distance` (lengths and percentages of the path; a closed path wraps, an open one stops at its end), `offset-rotate` (`auto`, `reverse`, angles), `offset-anchor` and `offset-position` now move and turn the element, so GSAP tweens of `offsetDistance` animate. The offset transform sits between `translate`/`rotate`/`scale` and `transform`. Not followed, and reported: `url()` paths, `shape()` and a lone `<coord-box>`; rounded `inset()` corners and `ray(... contain)` are approximated.
 
 ### Fixed

@@ -3,6 +3,8 @@
 // `FontFace` and `document.fonts` for projects that load their own font files.
 import { installDeterminism } from './determinism.js';
 import { installFontFace } from './font-face.js';
+import { installPageErrors } from './page-errors.js';
 
 installDeterminism();
 installFontFace();
+installPageErrors();
