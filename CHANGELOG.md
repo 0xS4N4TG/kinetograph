@@ -9,6 +9,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 - `monospace` and `ui-monospace` text is set in a bundled JetBrains Mono (Regular, SIL OFL 1.1, 92 KB) when the project registers no fixed-pitch font, so code blocks (Shiki, Code Hike) line up instead of falling back to a proportional face. A registered monospace font still wins.
 - SVG `<linearGradient>` and `<radialGradient>` blend their stops without premultiplying alpha, as Chrome does: a stop going from opaque red to `rgba(0,0,255,0)` passes through purple and fades out, where it used to fade to clear red. CSS gradients still blend premultiplied.
+- A `<canvas>` a frame draws on, on the React path, starts that frame empty, as the docs say (one nobody draws on in a frame keeps its pixels, so a canvas drawn once in `useEffect(..., [])` still shows). It kept its pixels from the frame before, so `still 45` (or a render worker that starts mid-way) drew a different picture from frame 45 of a full render. A plain HTML page still keeps its canvas between frames.
 
 ## 0.2.0 (2026-10-27)
 
