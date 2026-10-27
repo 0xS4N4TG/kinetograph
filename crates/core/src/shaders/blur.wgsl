@@ -17,11 +17,12 @@
 struct Params {
     // x: sigma in texels, yz: origin (pad: where the source starts in the
     // target; down, gauss, up: where the target's texel 0 is, against the
-    // input's, see each pass)
+    // input's, see each pass), w: pad: how many times the canvas is shrunk
     a: vec4<f32>,
-    // xy: up: twice the input's size; zw: gauss axis
+    // xy: up: the input's size times the enlarging; zw: gauss axis, pad: the
+    // source's texel at the corner of its box c
     b: vec4<f32>,
-    // pad: xy: the canvas pixel of the source's texel (0, 0), zw: its size
+    // pad: the box of the canvas the source holds: its corner, its size
     c: vec4<i32>,
     // pad: a box of the canvas (x0, y0, x1, y1) the source is read in,
     // mirrored past its edges; none when it is empty
@@ -52,18 +53,28 @@ fn mirrored(x: i32, lo: i32, hi: i32) -> i32 {
 
 @fragment
 fn fs_pad(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    // The canvas pixel that this texel of the padded image stands for, and
-    // the texel of the source that is.
-    var c = vec2<i32>(p.xy) - vec2<i32>(params.a.yz);
+    // The canvas pixels that this texel of the padded image stands for (a
+    // square of a.w x a.w of them when the canvas is shrunk), each mirrored
+    // into the box d when there is one, and the texels of the source that
+    // are: the box c of the canvas is the source's, its corner at the
+    // source's texel b.zw.
+    let s = max(i32(params.a.w), 1);
+    let base = (vec2<i32>(p.xy) - vec2<i32>(params.a.yz)) * s;
     let m = params.d;
-    if m.z > m.x && m.w > m.y {
-        c = vec2<i32>(mirrored(c.x, m.x, m.z), mirrored(c.y, m.y, m.w));
+    var sum = vec4<f32>(0.0);
+    for (var j = 0; j < s; j += 1) {
+        for (var i = 0; i < s; i += 1) {
+            var c = base + vec2<i32>(i, j);
+            if m.z > m.x && m.w > m.y {
+                c = vec2<i32>(mirrored(c.x, m.x, m.z), mirrored(c.y, m.y, m.w));
+            }
+            let q = c - params.c.xy;
+            if all(q >= vec2<i32>(0)) && all(q < params.c.zw) {
+                sum += textureLoad(tex, q + vec2<i32>(params.b.zw), 0);
+            }
+        }
     }
-    let q = c - params.c.xy;
-    if any(q < vec2<i32>(0)) || any(q >= params.c.zw) {
-        return vec4<f32>(0.0);
-    }
-    return textureLoad(tex, q, 0);
+    return sum / f32(s * s);
 }
 
 @fragment

@@ -15,7 +15,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Changed
 
-- Blurs take any radius: `blur`, `backdropBlur`, `glow` and a shadow's `blur` are clamped at 16384 instead of 512 (blur) and 128 (the others). A blur keeps no texture larger than the canvas but its smallest reduced image, so a 1000 px blur needs about the memory of a 128 px one (22 MB on 1080p, where it used to be 579 MB). The canvas margin still makes room for a radius of at most 128.
+- Blurs take any radius: `blur`, `backdropBlur`, `glow` and a shadow's `blur` are clamped at 16384 instead of 512 (blur) and 128 (the others). Each image of a blur's pyramid holds only what the blur draws in it, so a 1000 px blur needs about the memory of a 128 px one (22 MB on 1080p, where it used to be 579 MB), and no blur texture is larger than the device allows (8192 px a side): a mirrored backdrop blur whose canvas, the box and three radii each way, would be larger is drawn shrunk and enlarged after. The canvas margin still makes room for a radius of at most 128.
 - Scene: `backdropBlur` has `edgeMode` (`canvas`, the default, or `mirror`, which reads only the layer's box, mirrored).
 - Scene: a gradient paint has `tile` (paint it in one tile and repeat it, with gaps), and an image paint has `spaceX` and `spaceY`.
 

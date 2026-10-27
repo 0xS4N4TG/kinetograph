@@ -1368,7 +1368,6 @@ impl Compositor {
             radius,
             src.bounds,
             dst.bounds,
-            None,
         );
         self.release(src);
         dst
@@ -1389,11 +1388,6 @@ impl Compositor {
         // The blurred backdrop is kept to the box of what keeps it, and
         // is only worked out there.
         let frost = coverage.map_or(src.bounds, |t| t.bounds);
-        let frost = if mirror {
-            frost.intersect(backdrop.bounds)
-        } else {
-            frost
-        };
         if frost.is_empty() {
             // Nothing of it is kept: `src` over nothing is `src`.
             return src;
@@ -1404,31 +1398,17 @@ impl Compositor {
             .get_mut()
             .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
         if mirror {
-            // The blur gets a canvas of its own: the box, with room for the
-            // blur's reach on every side, all of it the box mirrored. Canvas
-            // pixel `c` is pixel `c + shift` of it.
-            let room = (3.0 * f64::from(radius)).ceil() as i32 + 2;
-            let shift = [room - frost.x0, room - frost.y0];
-            let size = (
-                frost.width() + 2 * room as u32,
-                frost.height() + 2 * room as u32,
-            );
-            fn moved(mut i: Input<'_>, shift: [i32; 2]) -> Input<'_> {
-                i.origin = [i.origin[0] + shift[0], i.origin[1] + shift[1]];
-                i
-            }
-            let inner = frost.translate(shift[0], shift[1]);
-            self.blur.run(
+            // Mirrored at the box itself; past what the backdrop holds it is
+            // transparent.
+            self.blur.run_mirrored(
                 &self.device,
                 encoder,
                 self.uniforms.get_mut(),
-                moved(backdrop.input(), shift),
-                moved(blurred.input(), shift),
-                size,
+                backdrop.input(),
+                backdrop.bounds,
+                blurred.input(),
+                frost,
                 radius,
-                PixelRect::whole(size.0, size.1),
-                inner,
-                Some(inner),
             );
         } else {
             self.blur.run(
@@ -1441,7 +1421,6 @@ impl Compositor {
                 radius,
                 backdrop.bounds,
                 blurred.bounds,
-                None,
             );
         }
         // The matte pass with opacity 1 and alpha mode multiplies its first
@@ -1477,7 +1456,6 @@ impl Compositor {
             glow.radius,
             src.bounds,
             halo.bounds,
-            None,
         );
         let target = self.target(src.bounds.union(halo.bounds));
         self.run_pass(
@@ -2350,7 +2328,6 @@ impl Compositor {
                 blur,
                 input,
                 target.bounds,
-                None,
             );
             if let Some(done) = current.replace(target) {
                 self.release(done);

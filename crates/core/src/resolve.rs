@@ -627,8 +627,8 @@ pub enum ResolvedGradientGeometry {
 /// Largest radius of a blur (the `blur`, `backdropBlur` and `glow` effects, a
 /// shadow's blur); bigger values are clamped. Only to keep the numbers of a
 /// blur's textures in range: a blur this wide spreads anything on a canvas of
-/// at most `MAX_SIDE` pixels to much less than a level, and a blur keeps no
-/// texture bigger than the canvas at any radius (`blur.rs`).
+/// at most `MAX_SIDE` pixels to much less than a level, and no texture of a
+/// blur is larger than `MAX_SIDE` at any radius (`blur.rs`).
 pub const MAX_BLUR_RADIUS: f64 = 16384.0;
 
 /// Largest glow intensity; bigger values are clamped.

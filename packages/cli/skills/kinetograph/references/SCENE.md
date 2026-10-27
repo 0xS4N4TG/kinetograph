@@ -1044,12 +1044,13 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 | `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..16384. |
 
 The blur is a Gaussian, run in linear light on premultiplied colour. Large radii are blurred at reduced resolution, but
-never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. Whatever the radius, a blur keeps
-no texture larger than the canvas but the smallest of its reduced images, so a wide blur needs about the memory of a
-narrow one: on a 1920 x 1080 canvas a frame with a blur, glow, backdrop blur or drop shadow of 128, 256, 512 or 1000
-px takes 3 to 14 ms on an M4 (`cargo run --release --example blur_bench`). In tests (`tests/blur.rs`) the
-measured standard deviation is within 5% of `radius` for radii from 2 to 512, and a small layer's blur follows its
-position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to know:
+never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. Whatever the radius, each image
+of the reduced chain holds only what the blur draws in it, so a wide blur needs about the memory of a narrow one, and no
+blur texture is larger than 8192 pixels a side: on a 1920 x 1080 canvas a frame with a blur, glow, backdrop blur or drop
+shadow of 128, 256, 512 or 1000 px takes 3 to 14 ms on an M4 (`cargo run --release --example blur_bench`). In tests
+(`tests/blur.rs`) the measured standard deviation is within 5% of `radius` for radii from 2 to 512, and a small layer's
+blur follows its position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to
+know:
 
 - It does not scale with the layer's `scale` or a parent group's `scale`; the radius is always in canvas pixels.
 - Radii below 1 do nothing.
@@ -1606,7 +1607,7 @@ top of it.
 | Field | Meaning |
 |---|---|
 | `radius` | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..16384; below 1 it does nothing. Required. |
-| `edgeMode` | `canvas` (the default): the backdrop is the canvas around the layer, as below. `mirror`: only the backdrop inside the layer's box is blurred, mirrored past the box's edges, which is how a browser draws CSS `backdrop-filter` (the DOM painter writes it). A mirrored blur reads nothing outside the box, so it needs no margin. |
+| `edgeMode` | `canvas` (the default): the backdrop is the canvas around the layer, as below. `mirror`: only the backdrop inside the layer's box is blurred, mirrored past the box's edges, which is how a browser draws CSS `backdrop-filter` (the DOM painter writes it). A mirrored blur reads nothing outside the box, so it needs no margin; where the backdrop has nothing it is transparent. The box is the layer's bounding box on the canvas, so a layer turned or skewed mirrors at that box, not at its own edges. When the box and three radii each way would be more than 8192 pixels, the blur is drawn on that canvas shrunk by a power of two and enlarged into the box. |
 
 - **The backdrop** is the canvas as it is when the layer is reached: the background and every layer below it. Inside a
   group it is the backdrop of the group with the group's earlier children drawn over it (normal blend, full opacity),
