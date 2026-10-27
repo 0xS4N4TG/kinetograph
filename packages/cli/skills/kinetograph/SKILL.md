@@ -156,8 +156,10 @@ the same list is in the result under `compat.leftOut`. Pass `--strict` to `still
 before a long render. Refs to DOM elements answer `getBoundingClientRect` and
 friends from the same CSS engine, `useLayoutEffect` measure-then-render code settles within the frame, and `fetch`,
 `new Image()` and `matchMedia` work for project files and the composition's size, and `<canvas>` with
-`getContext('2d')` is drawn natively (paths, gradients, text, `drawImage`, `getImageData`; no shadows and no WebGL);
-there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native element for the same drawing.
+`getContext('2d')` is drawn natively (paths, gradients, text, shadows, filters, `drawImage`, `getImageData`), and so
+are `webgl`/`webgl2` contexts; there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native
+element for the same drawing. A canvas starts empty on every frame: draw the whole frame from the frame number, never
+on top of what an earlier frame drew.
 
 `kinetograph doctor src/index.tsx` runs the JS stage for every frame (no GPU) and reports:
 
