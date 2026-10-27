@@ -825,8 +825,9 @@ impl Effect {
             | Effect::Dither { .. } => 0.0,
             // Dots stay inside their cells, which only sample the layer.
             Effect::Halftone { .. } | Effect::DotMatrix { .. } => 0.0,
-            // Recolours pixels in place.
-            Effect::ColorGrade(_) => 0.0,
+            // Recolours pixels in place, except the CRT warp: it reads the box at up to `curvature` times its size from
+            // where it draws, so the part of a box that hangs off the canvas is pulled into it.
+            Effect::ColorGrade(grade) => grade.reach() * layer_scale,
             // A pixel is read from up to half of `scale` layer units away.
             Effect::Displace { scale, .. } => {
                 scale.max().abs().max(scale.min().abs()) / 2.0 * layer_scale
@@ -3893,6 +3894,22 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn color_grade_counts_the_crt_warp_on_its_box_in_the_margin() {
+        // The warp moves a point by up to curvature / 2 of the box's larger side: 0.5 / 2 * 1600 = 400.
+        let scene = effects_of(
+            r#"[{"type": "colorGrade", "box": [0, 0, 1600, 900], "effects": {"crtCurvature": 0.5}}]"#,
+        );
+        assert_eq!(scene.margin(), 400);
+        // Nothing to read past the canvas without the warp, or without a box.
+        let scene = effects_of(
+            r#"[{"type": "colorGrade", "box": [0, 0, 1600, 900], "effects": {"bloom": 0.5}}]"#,
+        );
+        assert_eq!(scene.margin(), 0);
+        let scene = effects_of(r#"[{"type": "colorGrade", "effects": {"crtCurvature": 0.5}}]"#);
+        assert_eq!(scene.margin(), 0);
     }
 
     #[test]
