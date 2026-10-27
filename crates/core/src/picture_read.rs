@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use peniko::Blob;
+
 use crate::canvas::{CanvasBlend, CanvasOp, CanvasSource, ImageOp};
 use crate::video::{self, VideoDecoder};
 
@@ -28,7 +30,7 @@ pub struct ReadRect {
 struct Picture {
     width: u32,
     height: u32,
-    rgba: Arc<Vec<u8>>,
+    rgba: Blob<u8>,
 }
 
 /// A file's identity: a changed file is read again.
@@ -125,9 +127,20 @@ impl PictureReader {
         let cols = taps(x0, x1, dx, dw, sx, sw, picture.width, draw.smooth);
         let rows = taps(y0, y1, dy, dh, sy, sh, picture.height, draw.smooth);
         let stride = picture.width as usize * 4;
-        let rgba = picture.rgba.as_slice();
+        let rgba = picture.rgba.data();
+        // At 1:1 each row is the picture's own row: copied whole.
+        let run = cols
+            .iter()
+            .enumerate()
+            .all(|(i, c)| c.t == 0.0 && c.a == cols[0].a + i);
         for (row_index, row) in rows.iter().enumerate() {
             let oy = (y0 - rect.y) as usize + row_index;
+            if run && row.t == 0.0 {
+                let at = (oy * rect.width as usize + (x0 - rect.x) as usize) * 4;
+                let from = row.a * stride + cols[0].a * 4;
+                out[at..at + cols.len() * 4].copy_from_slice(&rgba[from..from + cols.len() * 4]);
+                continue;
+            }
             for (col_index, col) in cols.iter().enumerate() {
                 let ox = (x0 - rect.x) as usize + col_index;
                 let at = (oy * rect.width as usize + ox) * 4;
@@ -163,7 +176,7 @@ impl PictureReader {
                 let picture = Arc::new(Picture {
                     width,
                     height,
-                    rgba: Arc::new(decoded.into_raw()),
+                    rgba: Blob::from(decoded.into_raw()),
                 });
                 if self.images.len() >= MAX_IMAGES {
                     self.images.clear();
@@ -197,11 +210,11 @@ impl PictureReader {
                 let image = decoder
                     .picture(at.ts)
                     .map_err(|e| format!("video {src:?} at {:.3} s: {e}", at.seconds))?;
-                // The bytes are the decoder's own (shared with its cache); a copy is made only to hold them here.
+                // The bytes are the decoder's own (shared with its cache), not copied.
                 Ok(Some(Arc::new(Picture {
                     width: image.width,
                     height: image.height,
-                    rgba: Arc::new(image.data.data().to_vec()),
+                    rgba: image.data,
                 })))
             }
             CanvasSource::Pixels { .. }
@@ -545,6 +558,36 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(a, c);
+    }
+
+    /// The alpha of a matte video (`matte-4444.mkv`: ProRes 4444, a disc of radius 10 whose centre is at x = 8 + 4n on
+    /// frame n of 12 fps, y = 18) comes through the decoder, so a project can read a matte's alpha per frame.
+    #[test]
+    fn a_matte_video_keeps_its_alpha() {
+        let alpha_at = |frame: u32| {
+            let time = f64::from(frame) / 12.0;
+            let commands = ops(&format!(
+                r#"[{{"op":"image","source":{{"kind":"video","src":"matte-4444.mkv","time":{time}}},"dx":0,"dy":0,"dw":64,"dh":36}}]"#
+            ));
+            let rect = ReadRect {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 36,
+            };
+            let rgba = PictureReader::default()
+                .read(&media(""), &commands, (64, 36), rect)
+                .unwrap()
+                .unwrap();
+            move |x: usize, y: usize| rgba[(y * 64 + x) * 4 + 3]
+        };
+        for frame in [0_u32, 5, 11] {
+            let alpha = alpha_at(frame);
+            let centre = 8 + 4 * frame as usize;
+            assert_eq!(alpha(centre, 18), 255, "frame {frame}: inside the disc");
+            assert_eq!(alpha(centre, 2), 0, "frame {frame}: above the disc");
+            assert_eq!(alpha((centre + 24) % 64, 18), 0, "frame {frame}: far from the disc");
+        }
     }
 
     #[test]
