@@ -214,8 +214,10 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 - **Motion tracking.** `kinetograph track public/clip.mp4 --point x,y` (video pixels of the first frame, y down; find
   the point in a still) runs Blender's tracker once and writes `clip.mp4.track.json`; in a component
   `const { x, y, rotation, scale, corners } = useTrack('clip.mp4.track.json')` (from `@kinetographdev/core`) pins
-  anything to it. Check the `lost` frame it prints; use `--model locrotscale` for rotation and scale. AUTHORING.md
-  §11.12, `/docs/guides/motion-tracking/`.
+  anything to it. Check the `lost` frame it prints; use `--model locrotscale` for rotation and scale. `--detect` finds
+  points itself (Blender's Detect Features); `--plane p1,p2,p3,p4` makes a plane track from 4+ points on a flat
+  surface, and `cornerPin(usePlaneTrack(file).pin)` pins a picture to it. AUTHORING.md §11.12,
+  `/docs/guides/motion-tracking/`.
 
 ## Habits that save iterations
 
