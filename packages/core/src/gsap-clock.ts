@@ -16,6 +16,8 @@
 // module does not set `window.gsap`; see `gsapPlugin` in packages/cli/src/bundle.ts). It does nothing for a project that
 // does not use GSAP. A paused timeline that the project seeks itself is not on the root's clock and is not touched.
 
+import { warnOnce } from './warn.js';
+
 /** Where a bundled `import 'gsap'` leaves the instance it imported. */
 export const GSAP_REGISTRY = Symbol.for('kinetograph.gsap');
 
@@ -74,6 +76,25 @@ export function setGsapTime(seconds: number): void {
   if (seconds !== rootTime) before = g.globalTimeline.getChildren(false, true, true);
   rootTime = seconds;
   g.updateRoot(seconds);
+  warnAboutRootClock(g);
+}
+
+/**
+ * Says once when something plays on GSAP's root clock (a `gsap.to` or `delayedCall` that is not on a paused timeline the
+ * project seeks). It renders here the same alone and in sequence, but not in the renderers the project may also go
+ * to: Remotion's moves it by the wall clock as frames are captured, HyperFrames' seeks only the timelines registered
+ * on `window.__timelines`, so there it depends on how each worker got to its frames.
+ */
+function warnAboutRootClock(g: Gsap): void {
+  const playing = g.globalTimeline.getChildren(false, true, true).filter((a) => !a.paused() && a.timeScale() !== 0);
+  if (playing.length === 0) return;
+  warnOnce(
+    'gsap-root-clock',
+    `GSAP: ${playing.length === 1 ? 'a tween plays' : `${playing.length} tweens play`} on GSAP's root clock, not on a paused timeline ` +
+      'seeked to the frame. Kinetograph moves that clock with the frame, so a frame renders the same alone and in sequence, ' +
+      'but a Remotion render moves it by the wall clock and a HyperFrames render does not move it at all: put the tween on ' +
+      'a paused timeline seeked to frame / fps (or registered on window.__timelines) to render the same there.',
+  );
 }
 
 /** The animations a motion-blur sample moved, with the total time each had at the frame (restored by `endGsapSamples`). */

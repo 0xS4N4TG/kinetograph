@@ -1,8 +1,8 @@
 // GSAP's root clock follows the virtual frame clock: a `gsap.to` that plays by itself (not on a paused timeline the
 // project seeks) is where a render of every frame has it, in a frame rendered alone and after a jump. See ../src/gsap-clock.ts.
 import { createRequire } from 'node:module';
-import { useEffect, useRef } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Layer, Rect } from '@kinetographdev/react';
 import { motionSubFrames, type GroupLayer, type ShapeLayer } from '@kinetographdev/scene';
 import { resetRenderState } from '../src/assets.js';
@@ -10,7 +10,8 @@ import { Composition, registerRoot, resetCompositions } from '../src/composition
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
 import { GSAP_REGISTRY, setGsapTime } from '../src/gsap-clock.js';
-import { useCurrentFrame } from '../src/timeline.js';
+import { useCurrentFrame, useVideoConfig } from '../src/timeline.js';
+import { resetWarnings } from '../src/warn.js';
 
 const loaded = createRequire(import.meta.url)('gsap') as { gsap?: typeof import('gsap').gsap; default?: typeof import('gsap').gsap };
 const gsap = (loaded.gsap ?? loaded.default ?? loaded) as typeof import('gsap').gsap;
@@ -214,6 +215,48 @@ describe('motion blur of a tween on the root clock', () => {
       expect((await alone.renderFrame(f)).scene.layers, `frame ${f}`).toEqual(all[f]);
       alone.dispose();
     }
+  });
+});
+
+describe('the warning about the root clock', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    resetWarnings();
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => warn.mockRestore());
+  const said = () => warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("GSAP's root clock"));
+
+  it('is given once for tweens that play by themselves', async () => {
+    registerRoot(() => <Composition id="B" component={Boxes} width={10} height={10} fps={30} durationInFrames={60} />);
+    const r = createFrameRenderer('B');
+    for (const f of [0, 1, 30, 31]) await r.renderFrame(f);
+    expect(said()).toHaveLength(1);
+    expect(said()[0]).toContain('paused timeline');
+  });
+
+  it('is not given for a paused timeline seeked to the frame', async () => {
+    function Seeked() {
+      const frame = useCurrentFrame();
+      const { fps } = useVideoConfig();
+      const o = useRef({ x: 0 });
+      const tl = useRef<ReturnType<typeof gsap.timeline> | null>(null);
+      useLayoutEffect(() => {
+        const t = gsap.timeline({ paused: true }).to(o.current, { x: 100, duration: 1 });
+        tl.current = t;
+        return () => {
+          t.kill();
+        };
+      }, []);
+      useLayoutEffect(() => {
+        tl.current?.seek(frame / fps, false);
+      }, [frame, fps]);
+      return <Rect id="s" width={10} height={10} fill="#fff" x={o.current.x} />;
+    }
+    registerRoot(() => <Composition id="S" component={Seeked} width={10} height={10} fps={30} durationInFrames={60} />);
+    const r = createFrameRenderer('S');
+    for (const f of [0, 1, 30]) await r.renderFrame(f);
+    expect(said()).toEqual([]);
   });
 });
 
