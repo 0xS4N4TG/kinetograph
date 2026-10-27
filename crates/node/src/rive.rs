@@ -26,7 +26,14 @@ struct Cached {
     modified: Option<SystemTime>,
     /// The assets the request gave, by name and a hash of their bytes.
     given: Vec<(String, u64)>,
+    /// The files beside it that were looked for (referenced assets), and when each was changed (`None`: absent), so
+    /// adding, replacing or removing one reads the file again.
+    beside: Vec<(PathBuf, Option<SystemTime>)>,
     riv: Arc<Riv>,
+}
+
+fn stamp(path: &PathBuf) -> Option<SystemTime> {
+    fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 static FILES: Mutex<Option<HashMap<PathBuf, Cached>>> = Mutex::new(None);
@@ -146,14 +153,16 @@ fn open(path: &PathBuf, given: &[(String, Vec<u8>)]) -> Result<Arc<Riv>> {
     let key: Vec<(String, u64)> = given.iter().map(|(n, b)| (n.clone(), hash(b))).collect();
     let mut files = FILES.lock().unwrap_or_else(|e| e.into_inner());
     let files = files.get_or_insert_with(HashMap::new);
-    if let Some(cached) = files
-        .get(path)
-        .filter(|c| c.modified == modified && c.given == key)
-    {
+    if let Some(cached) = files.get(path).filter(|c| {
+        c.modified == modified
+            && c.given == key
+            && c.beside.iter().all(|(file, when)| stamp(file) == *when)
+    }) {
         return Ok(cached.riv.clone());
     }
     let bytes = fs::read(path).map_err(io)?;
     let folder = path.parent().map(PathBuf::from).unwrap_or_default();
+    let mut beside = Vec::new();
     let mut load = |request: &AssetRequest<'_>| -> Option<Vec<u8>> {
         for name in [request.unique_filename, request.name] {
             if let Some((_, bytes)) = given.iter().find(|(n, _)| n == name) {
@@ -169,10 +178,17 @@ fn open(path: &PathBuf, given: &[(String, Vec<u8>)]) -> Result<Arc<Riv>> {
         } else {
             format!("{}.{}", request.name, request.extension)
         };
-        [request.unique_filename.to_string(), own]
-            .iter()
-            .filter(|n| !n.is_empty() && !n.contains('/') && !n.contains('\\'))
-            .find_map(|n| fs::read(folder.join(n)).ok())
+        for name in [request.unique_filename.to_string(), own] {
+            if name.is_empty() || name.contains('/') || name.contains('\\') {
+                continue;
+            }
+            let file = folder.join(&name);
+            beside.push((file.clone(), stamp(&file)));
+            if let Ok(bytes) = fs::read(&file) {
+                return Some(bytes);
+            }
+        }
+        None
     };
     let riv = Arc::new(
         Riv::open_with(&bytes, &mut load)
@@ -183,6 +199,7 @@ fn open(path: &PathBuf, given: &[(String, Vec<u8>)]) -> Result<Arc<Riv>> {
         Cached {
             modified,
             given: key,
+            beside,
             riv: riv.clone(),
         },
     );

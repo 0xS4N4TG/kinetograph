@@ -123,6 +123,8 @@ describe('RemotionRiveCanvas', () => {
     // Beside the file, by the name the Rive editor exports it under.
     const dir = mkdtempSync(join(tmpdir(), 'kinetograph-rive-'));
     copyFileSync(join(import.meta.dirname, 'fixtures/media/walle.riv'), join(dir, 'walle.riv'));
+    // Read once with no pictures beside it: adding them later is seen (the file is read again).
+    expect(images(commandsAt(0, { src: join(dir, 'walle.riv') }))).toBe(0);
     writeFileSync(join(dir, 'walle-370.png'), png);
     writeFileSync(join(dir, 'eve-317.png'), png);
     clearReportedUnsupported();
