@@ -1240,10 +1240,15 @@ export class DomElement extends DomNodeBase {
     if (file === null || size === null) return null;
     return { src: file, time: Number.isFinite(this.currentTime) && this.currentTime > 0 ? this.currentTime : 0, width: size.width, height: size.height };
   }
-  /** What `drawImage` reads of this element: a canvas's commands, an image's file. */
+  /** What `drawImage` reads of this element: a canvas's commands, an image's file, a video's frame. */
   [CANVAS_SOURCE](): CanvasPicture | null {
     if (this.host.type === 'canvas') return canvasPictureOf(this.host, { width: this.width, height: this.height });
     if (this.host.type === 'img') return pictureOfImage(this.src);
+    if (this.host.type === 'video') {
+      // The frame at `currentTime`, as the renderer's decoder gives it.
+      const frame = this[VIDEO_FRAME]();
+      return frame === null ? null : { source: { kind: 'video', src: frame.src, time: frame.time }, width: frame.width, height: frame.height };
+    }
     return null;
   }
 

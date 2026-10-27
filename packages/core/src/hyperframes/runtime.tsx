@@ -421,6 +421,9 @@ class Runtime {
         clock.frame = start * fps + sourceTimeAt(rate, Math.max(0, time - start)) * fps;
       }
       el.setAttribute('data-kg-video', JSON.stringify(clock));
+      // The file's time at this instant, as a browser's seek leaves it: `drawImage(video)` reads the frame it names.
+      const into = Math.max(0, time - start);
+      el.currentTime = sourceOffsetOf(el) + (typeof rate === 'number' ? into * rate : sourceTimeAt(rate, into));
     }
     this.applyGrading(time);
   }

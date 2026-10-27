@@ -8,7 +8,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createElement, Fragment, type ReactNode } from 'react';
+import { createElement, Fragment, useEffect, type ReactNode } from 'react';
+import { resolveRemoteAsset } from '@kinetographdev/compat/dom';
 import type {
   AudioClipJson,
   BlendMode,
@@ -38,6 +39,7 @@ import type {
   Vec3,
 } from '@kinetographdev/scene';
 import { useTimeline, type TimelineState } from './timeline.js';
+import type { VideoClipTime, VideoFramePicture } from '@kinetographdev/scene';
 
 export interface CommonProps {
   id?: string;
@@ -579,9 +581,45 @@ export interface VideoProps extends CommonProps {
   pauseWhenBuffering?: boolean;
   acceptableTimeShiftInSeconds?: number;
   onError?: (error: Error) => void;
+  /**
+   * Remotion's (v4.0.190+): called once for each composition frame the video is shown in, with the frame it shows
+   * there, decoded by the engine's own decoder. The frame is a `CanvasImageSource` (`ctx.drawImage(frame, ...)`,
+   * `createPattern`, WebGL's `texImage2D`); a canvas that it was drawn on reads back with `getImageData`. The call
+   * happens after the frame's effects have run, so a canvas ref is set; it is a function of the frame number, not of
+   * time.
+   */
+  onVideoFrame?: (frame: VideoFramePicture) => void;
   showInTimeline?: boolean;
   name?: string;
   delayRenderTimeoutInMilliseconds?: number;
+}
+
+/** What the video shows at one composition frame, for `onVideoFrame`. */
+export interface VideoFrameRequest {
+  /** The file, as the layer names it. */
+  src: string;
+  clip: VideoClipTime;
+}
+
+let videoFrameDelivery: ((request: VideoFrameRequest, callback: (frame: VideoFramePicture) => void) => void) | null = null;
+
+/**
+ * `@kinetographdev/core` sets this: it reads the file's size and duration (this package has no addon), makes the frame
+ * and calls `callback` with it once the frame's effects have all run.
+ */
+export function setVideoFrameDelivery(fn: typeof videoFrameDelivery): void {
+  videoFrameDelivery = fn;
+}
+
+/** Renders nothing; hands the frame to `onVideoFrame` once per composition frame (a re-render of the same frame does not). */
+function VideoFrameTap(props: { request: VideoFrameRequest; onVideoFrame: (frame: VideoFramePicture) => void }): ReactNode {
+  const { request, onVideoFrame } = props;
+  const key = JSON.stringify(request);
+  useEffect(() => {
+    videoFrameDelivery?.(request, onVideoFrame);
+    // The key is the whole request; the callback is the project's latest, read when the frame is delivered.
+  }, [key]);
+  return null;
 }
 
 /** `10` and `'10px'` are 10; anything else (a percentage, `auto`) is null. */
@@ -714,6 +752,25 @@ export function Video(props: VideoProps): ReactNode {
     video: true,
     ...toneOf(label, props.toneFrequency),
   };
+  // The frame `onVideoFrame` gets: what a video layer with these fields shows at this composition frame.
+  const tap =
+    props.onVideoFrame === undefined
+      ? null
+      : createElement(VideoFrameTap, {
+          request: {
+            src: resolveRemoteAsset(src) ?? src,
+            clip: {
+              frame: timeline.absoluteFrame,
+              fps: timeline.config.fps,
+              start: from,
+              trimBefore: trimBefore ?? 0,
+              trimAfter: trimAfter ?? null,
+              playbackRate: rated ?? 1,
+              loop: props.loop ?? false,
+            },
+          },
+          onVideoFrame: props.onVideoFrame,
+        });
   if (videoNeedsCss(props)) {
     // A replaced element of the DOM engine, whose pixels are the decoded frame: its style is CSS. The clock is on the
     // element (`data-kg-video`); the sound is a clip of its own.
@@ -728,10 +785,11 @@ export function Video(props: VideoProps): ReactNode {
       null,
       createElement('kg-audio', { id: props.id, clip: sound }),
       createElement('video', { id: props.id, className: props.className, src, style: props.style, 'data-kg-video': JSON.stringify(clock) }),
+      tap,
     );
   }
   // `emit` reads the common props and the layer's fields from here; `volume`, `muted` and the ignored props stay behind.
-  return createElement('kg-video', {
+  const layer = createElement('kg-video', {
     ...props,
     ...boxOf(props),
     from,
@@ -743,6 +801,7 @@ export function Video(props: VideoProps): ReactNode {
     frame: timeline.frozen ? timeline.absoluteFrame : undefined,
     sound,
   });
+  return tap === null ? layer : createElement(Fragment, null, layer, tap);
 }
 
 /** The same element as `<Video>`: every frame is decoded off the main thread anyway. */

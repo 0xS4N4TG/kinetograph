@@ -262,6 +262,14 @@ export declare function probeMedia(path: string, baseDir?: string | undefined | 
 export declare function probeStreams(path: string, baseDir?: string | undefined | null): MediaStreams
 
 /**
+ * The pixels of part of a canvas that holds one decoded picture, read on the CPU
+ * (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"): `{ width, height, commands, baseDir, rect: { x, y,
+ * width, height } }` as JSON in; straight-alpha RGBA of `rect` out when the commands are one plain `drawImage` of a
+ * picture file or a video frame, `null` when only `renderCanvas` can draw them. Does not open the GPU.
+ */
+export declare function readCanvasPicture(requestJson: string): Buffer | null
+
+/**
  * A Canvas 2D context's commands drawn on a transparent canvas (packages/cli/skills/kinetograph/references/SCENE.md,
  * "canvas"): `{ width, height, commands, fonts, baseDir, format }` as JSON in,
  * straight-alpha RGBA (`format: "rgba"`, the default) or a PNG out. For

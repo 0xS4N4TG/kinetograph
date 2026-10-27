@@ -24,6 +24,7 @@ pub mod lottie;
 pub mod lut;
 pub mod mesh;
 pub mod pass_timer;
+pub mod picture_read;
 pub mod pool;
 pub mod profile;
 pub mod render;
