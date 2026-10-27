@@ -856,6 +856,11 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             prev_state: None,
             done: false,
         };
+        // The root style's wrap mode holds until a text atom sets its own, so an
+        // inline box ahead of any text obeys `white-space: nowrap`.
+        if let Some(root) = this.layout.data.styles.first() {
+            this.state.line.text_wrap_mode = root.text_wrap_mode;
+        }
         this.reset_line();
         this
     }
