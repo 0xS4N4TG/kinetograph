@@ -317,12 +317,12 @@ const TEXT_TAGS = new Set(['text', 'tspan']);
 
 /**
  * The registered font that measures text asking for `key`: that one, else the built-in fallback, else whichever is
- * registered, as the painter draws text whose family is not loaded. Null when no font is registered at all.
+ * registered, as the painter draws text whose family is not loaded. With no font registered the key goes to the text engine as it is.
  */
-function measuringFont(key: string, fonts: Record<string, string>): string | null {
+function measuringFont(key: string, fonts: Record<string, string>): string {
   if (key in fonts) return key;
   if ('Kinetograph Fallback' in fonts) return 'Kinetograph Fallback';
-  return Object.keys(fonts)[0] ?? null;
+  return Object.keys(fonts)[0] ?? key;
 }
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -368,6 +368,12 @@ export class DomNodeBase {
   static readonly DOCUMENT_NODE = 9;
   static readonly DOCUMENT_TYPE_NODE = 10;
   static readonly DOCUMENT_FRAGMENT_NODE = 11;
+  static readonly DOCUMENT_POSITION_DISCONNECTED = 1;
+  static readonly DOCUMENT_POSITION_PRECEDING = 2;
+  static readonly DOCUMENT_POSITION_FOLLOWING = 4;
+  static readonly DOCUMENT_POSITION_CONTAINS = 8;
+  static readonly DOCUMENT_POSITION_CONTAINED_BY = 16;
+  static readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 32;
   get nodeType(): number {
     const host = (this as unknown as { host: DomNode }).host;
     return host.kind === 'text' ? 3 : host.type === FRAGMENT ? 11 : 1;
@@ -1231,7 +1237,7 @@ export class DomElement extends DomNodeBase {
         const key = fontKey(family, weight === '' ? undefined : weight, style === 'italic' || style === 'oblique' ? 'italic' : undefined);
         const fonts = registeredFonts();
         const font = measuringFont(key, fonts);
-        const line = font === null ? undefined : addonFunction('layoutText')({ text, font, size, fonts }).lines?.[0];
+        const line = addonFunction('layoutText')({ text, font, size, fonts }).lines?.[0];
         if (line) {
           ascent = line.baseline - line.top;
           height = line.bottom - line.top;
@@ -1268,7 +1274,6 @@ export class DomElement extends DomNodeBase {
         const padded = /^\s|\s$/.test(text);
         const fonts = registeredFonts();
         const font = measuringFont(key, fonts);
-        if (font === null) throw new Error('no font is registered');
         const layout = (t: string): number => addonFunction('layoutText')({ text: t, font, size, fonts }).width;
         width = padded ? layout(`|${text}|`) - layout('||') : layout(text);
       } catch {
