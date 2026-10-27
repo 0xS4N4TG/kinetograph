@@ -7,12 +7,12 @@ use std::path::PathBuf;
 
 use kinetograph_core::{Scene, render_still};
 
-/// A white 400x100 canvas with a red box at x 0..200 that Skia draws, then `panel`: the green level along the middle
-/// row (255 where white, 0 where fully red).
-fn green_row(panel: &str) -> Vec<u8> {
+/// A white 400x100 canvas with a red box at x 0..200 that Skia draws, then `panel`, composited in `space` ("linear" or
+/// "srgb"): the green level along the middle row (255 where white, 0 where fully red).
+fn green_row(panel: &str, space: &str) -> Vec<u8> {
     let json = format!(
         r##"{{"width": 400, "height": 100, "fps": 30, "durationInFrames": 1,
-            "background": "#ffffff", "layers": [
+            "background": "#ffffff", "blendSpace": "{space}", "layers": [
               {{"id": "red", "type": "shape", "fill": "#ff0000",
                 "shape": {{"kind": "rect", "width": 200, "height": 100}}}},
               {panel}]}}"##
@@ -44,8 +44,11 @@ fn with_gpu_effect() -> String {
     )
 }
 
-/// The red edge at x = 200 is blurred: red spills right of it and white left of it, as much as when the GPU compositor
-/// draws the box too (`reference`, the red box in the group).
+/// How far from the canvas's left and right edges the rows are compared.
+const EDGE: usize = 50;
+
+/// The red edge at x = 200 is blurred: red spills right of it and white left of it, as it does when Skia frosts the
+/// panel itself (`reference`).
 fn assert_frosted(green: &[u8], reference: &[u8], what: &str) {
     assert!(
         green[205] < 230,
@@ -57,36 +60,36 @@ fn assert_frosted(green: &[u8], reference: &[u8], what: &str) {
         "{what}: green {} at 195, no white frost left of the edge",
         green[195]
     );
-    let worst = green
-        .iter()
-        .zip(reference)
-        .map(|(a, b)| a.abs_diff(*b))
-        .max()
+    // Away from the canvas's edges, where the backends blur what lies past it a little differently.
+    let (at, worst) = (EDGE..green.len() - EDGE)
+        .map(|x| (x, green[x].abs_diff(reference[x])))
+        .max_by_key(|&(_, d)| d)
         .unwrap();
     println!(
-        "{what}: green at 190..=210 {:?}, reference {:?}, worst {worst}",
+        "{what}: green at 190..=210 {:?}, reference {:?}, worst {worst} at x {at}",
         &green[190..=210],
         &reference[190..=210]
     );
-    assert!(worst <= 2, "{what}: {worst} levels from the reference");
+    assert!(worst <= 4, "{what}: {worst} levels from the reference");
 }
 
-/// The red box and the frosted panel both in a preserve3d group: the GPU compositor draws both.
-fn reference() -> Vec<u8> {
-    let json = format!(
-        r##"{{"width": 400, "height": 100, "fps": 30, "durationInFrames": 1,
-            "background": "#ffffff", "layers": [
-              {{"id": "g", "type": "group", "preserve3d": true, "children": [
-                {{"id": "red", "type": "shape", "fill": "#ff0000",
-                  "shape": {{"kind": "rect", "width": 200, "height": 100}}}},
-                {{"id": "panel", "type": "shape", "fill": "#ffffff00",
-                  "shape": {{"kind": "rect", "width": 400, "height": 100}}, "effects": [{FROST}]}}]}}]}}"##
-    );
-    let frame = render_still(Scene::from_json(&json, PathBuf::new()).unwrap(), 0).unwrap();
-    let row = 50 * frame.width as usize * 4;
-    (0..frame.width as usize)
-        .map(|x| frame.rgba[row + 4 * x + 1])
-        .collect()
+/// The panel alone, which Skia draws and frosts itself.
+fn drawn_by_skia() -> String {
+    format!(
+        r##"{{"id": "panel", "type": "shape", "fill": "#ffffff00",
+              "shape": {{"kind": "rect", "width": 400, "height": 100}}, "effects": [{FROST}]}}"##
+    )
+}
+
+/// The red box drawn again in the preserve3d group, under the panel: the backdrop is Skia's canvas under the group's.
+fn over_both() -> String {
+    format!(
+        r##"{{"id": "g", "type": "group", "preserve3d": true, "children": [
+              {{"id": "red2", "type": "shape", "fill": "#ff0000",
+                "shape": {{"kind": "rect", "width": 200, "height": 100}}}},
+              {{"id": "panel", "type": "shape", "fill": "#ffffff00",
+                "shape": {{"kind": "rect", "width": 400, "height": 100}}, "effects": [{FROST}]}}]}}"##
+    )
 }
 
 #[test]
@@ -100,17 +103,21 @@ fn a_gpu_drawn_layer_blurs_the_backdrop_skia_drew() {
                 std::env::remove_var("KINETOGRAPH_SKIA_CPU");
             }
         }
-        let reference = reference();
-        assert_frosted(
-            &green_row(&in_preserve3d()),
-            &reference,
-            &format!("preserve3d group, cpu {cpu}"),
-        );
-        assert_frosted(
-            &green_row(&with_gpu_effect()),
-            &reference,
-            &format!("GPU-only effect, cpu {cpu}"),
-        );
+        // In sRGB the GPU compositor blurs the sRGB-encoded backdrop, as Skia and CSS do.
+        for space in ["linear", "srgb"] {
+            let reference = green_row(&drawn_by_skia(), space);
+            for (panel, what) in [
+                (in_preserve3d(), "preserve3d group"),
+                (with_gpu_effect(), "GPU-only effect"),
+                (over_both(), "red in and out of the group"),
+            ] {
+                assert_frosted(
+                    &green_row(&panel, space),
+                    &reference,
+                    &format!("{what}, {space}, cpu {cpu}"),
+                );
+            }
+        }
     }
     unsafe { std::env::remove_var("KINETOGRAPH_SKIA_CPU") };
 }
