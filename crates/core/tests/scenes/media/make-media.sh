@@ -54,4 +54,10 @@ ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "testsrc2=size=96x54:rate=24:duration=1" \
   -c:v mpeg4 -q:v 6 -g 24 -bf 0 -pix_fmt yuv420p -an mosh-mpeg4.mp4
 
+# A matte: ProRes 4444 with an alpha channel (in Matroska, since the repo ignores .mov files), a disc 10 px in radius that moves 4 px right each of its 12 frames (grey
+# colour, so the picture is the alpha). The pixels `onVideoFrame` projects read back (picture_read.rs).
+ffmpeg -hide_banner -loglevel error -y \
+  -f lavfi -i "nullsrc=s=64x36:r=12:d=1,format=yuva444p,geq=lum=128:cb=128:cr=128:a='if(lt(hypot(X-8-4*N\,Y-18)\,10)\,255\,0)'" \
+  -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le matte-4444.mkv
+
 python3 make_gif.py spinner.gif

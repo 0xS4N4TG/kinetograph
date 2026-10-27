@@ -1621,9 +1621,9 @@ export class WebGLContext {
       const s = picture.source;
       if (s.kind === 'pixels') {
         pixels = new Uint8Array(Buffer.from(s.data, 'base64'));
-      } else if (s.kind === 'canvas') {
-        const drawn = this.options.rasterize?.(s) ?? null;
-        if (drawn === null) throw new WebGLUnsupportedError('texSubImage2D from a canvas here (the pixels of a canvas need the addon)');
+      } else if (s.kind === 'canvas' || s.kind === 'video') {
+        const drawn = this.rasterized(s, picture.width, picture.height);
+        if (drawn === null) throw new WebGLUnsupportedError(`texSubImage2D from a ${s.kind} here (its pixels need the addon)`);
         pixels = drawn;
       } else {
         throw new WebGLUnsupportedError('texSubImage2D from an image file or a layer; upload the whole picture with texImage2D');
@@ -1665,6 +1665,12 @@ export class WebGLContext {
     texture.version += 1;
   }
 
+  /** The pixels of a canvas, or of a video frame (drawn 1:1 on a canvas of its size), through the addon. */
+  private rasterized(source: Extract<CanvasSource, { kind: 'canvas' | 'video' }>, width: number, height: number): Uint8Array | null {
+    if (source.kind === 'canvas') return this.options.rasterize?.(source) ?? null;
+    return this.options.rasterize?.({ kind: 'canvas', width, height, commands: [{ op: 'image', source, dx: 0, dy: 0, dw: width, dh: height }] }) ?? null;
+  }
+
   private uploadPicture(texture: WebGLTexture, source: unknown): void {
     const layer = (source as { [LAYER_SOURCE]?: () => { id: string; width: number; height: number } } | null | undefined)?.[LAYER_SOURCE]?.();
     if (layer !== undefined) {
@@ -1689,8 +1695,8 @@ export class WebGLContext {
     } else if (s.kind === 'layer') {
       throw new WebGLUnsupportedError('a texture from a layer picture outside layerPicture()');
     } else {
-      const pixels = this.options.rasterize?.(s) ?? null;
-      if (pixels === null) throw new WebGLUnsupportedError('a texture from a canvas here (the pixels of a canvas need the addon)');
+      const pixels = this.rasterized(s, picture.width, picture.height);
+      if (pixels === null) throw new WebGLUnsupportedError(`a texture from a ${s.kind} here (its pixels need the addon)`);
       texture.src = null;
       texture.pixels = pixels;
     }

@@ -42,6 +42,7 @@ These packages and APIs are supported. Gaps are listed in [Known issues](/docs/k
 - `<canvas>` with a `webgl` or `webgl2` context, on the GPU with no browser: fragment shaders, framebuffers, points with `gl_PointSize`, instancing, `blitFramebuffer`, `texSubImage2D` and `gl_VertexID`. p5.brush's standalone build draws as it does in Chrome (its strokes, hatching and fills each differ by under 0.1 of 255 levels on average from Chrome). Depth testing (with `polygonOffset` and depth renderbuffers) is drawn. Lines, colour renderbuffers and the stencil test are not: see [Known issues](/docs/known-issues/).
 - `@remotion/media-utils` audio: `getAudioData`, `useAudioData`, `useWindowedAudioData`, `getAudioDurationInSeconds`, `visualizeAudio` and `getWaveformPortion`. `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
 - `<Audio>` and `<Video>` from `@remotion/media`.
+- `onVideoFrame` on `<Video>`, `<OffthreadVideo>` and `<Html5Video>`: the frame the video shows is handed to your code as a canvas image source. `ctx.drawImage(frame, ...)` in all three forms, then `getImageData` reads its pixels (grayscale, a matte's alpha). `drawImage` of a `<video>` element works too. See [Video pixels](/docs/known-issues/#video-pixels) for the limits.
 - `toneFrequency` on `<Audio>` and `<Video>`, from 0.01 to 2. It changes the pitch and keeps the length.
 - `@remotion/media-parser` and `@remotion/webcodecs`: partly supported.
 - `@remotion/skia` and `@remotion/rive`: run through optional add-ons, with gaps.
