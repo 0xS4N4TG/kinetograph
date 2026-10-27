@@ -3,6 +3,12 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Fixed
+
+- A script's writes to an element's classes and data attributes reach the page: `svgElement.className.baseVal = 'on'`, `classList.replace()`, `classList.value` and `element.dataset.key = 'x'` (and `delete element.dataset.key`) were lost, so a selector that read them never matched. A class or attribute added to an SVG shape between frames already restyled it; tests now cover that for a class added, removed or toggled, `setAttribute`, the `style` attribute, a sibling's class, `:nth-child` after a node is inserted, and a rule inside `@media`.
+
 ## 0.2.0 (2026-10-27)
 
 ### Added
