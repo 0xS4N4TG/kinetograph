@@ -115,7 +115,7 @@ fn file_cache() -> &'static Mutex<BTreeMap<Key, Arc<Vec<u8>>>> {
     CACHE.get_or_init(Mutex::default)
 }
 
-fn font_bytes(path: &str) -> Result<Arc<Vec<u8>>, String> {
+pub(crate) fn font_bytes(path: &str) -> Result<Arc<Vec<u8>>, String> {
     let meta = std::fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
     let key = (path.to_string(), meta.len(), meta.modified().ok());
     if let Ok(cache) = file_cache().lock()
