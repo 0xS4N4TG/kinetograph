@@ -316,6 +316,14 @@ fn chromatic_aberration_matches_golden() {
 }
 
 #[test]
+fn grade_effects_match_golden() {
+    // Halftone, Kuwahara, bloom with blur and scanlines, and glitch with CRT, channel split and tape damage: four
+    // tiles of one picture, each through HyperFrames' look effects (the `colorGrade` effect's `effects`).
+    let frame = render_still(scene("tests/scenes/grade-effects.json"), 0).unwrap();
+    check("grade-effects", &frame);
+}
+
+#[test]
 fn shader_matches_golden() {
     // Frame 15 of 30: halfway through the keyframed uniforms, 0.5 s in. Covers
     // one shader on two layers with different uniforms (a ripple on a

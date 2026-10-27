@@ -307,6 +307,12 @@ pub struct Compositor {
     /// What the pass reads when a grade has no look-up table (2 x 2 x 2) or no curves (1024 x 3 zeros).
     grade_lut: LutTexture,
     grade_table: wgpu::TextureView,
+    /// The passes the look effects read (`shaders/grade_prepass.wgsl`), on the shared layout.
+    grade_blur: wgpu::RenderPipeline,
+    grade_moments: wgpu::RenderPipeline,
+    grade_kuwahara: wgpu::RenderPipeline,
+    /// A 1 x 1 texture for the effect textures a grade does not use.
+    grade_blank: Tex,
     /// On the shared layout and then `turbulence_layout`.
     noise: wgpu::RenderPipeline,
     /// The passes of `filterGraph`, made the first time one is drawn.
@@ -417,6 +423,11 @@ impl Compositor {
             device,
             "colour grade",
             include_str!("shaders/color_grade.wgsl"),
+        );
+        let grade_prepass_shader = shader_module(
+            device,
+            "colour grade passes",
+            include_str!("shaders/grade_prepass.wgsl"),
         );
         let warp_shader = shader_module(device, "warp", include_str!("shaders/warp.wgsl"));
         let displace_shader =
@@ -611,6 +622,10 @@ impl Compositor {
             grade_layout,
             grade_lut,
             grade_table,
+            grade_blur: pipeline(&grade_prepass_shader, "fs_blur", LINEAR_FORMAT),
+            grade_moments: pipeline(&grade_prepass_shader, "fs_moments", LINEAR_FORMAT),
+            grade_kuwahara: pipeline(&grade_prepass_shader, "fs_kuwahara", LINEAR_FORMAT),
+            grade_blank: new_texture(device, 1, 1),
             noise,
             filter: None,
             glsl: glsl::GlslGpu::default(),
@@ -677,6 +692,9 @@ impl Compositor {
             (&c.noise, "noise"),
             (&c.lut, "lut"),
             (&c.color_grade, "colour grade"),
+            (&c.grade_blur, "colour grade blur"),
+            (&c.grade_moments, "colour grade moments"),
+            (&c.grade_kuwahara, "colour grade kuwahara"),
         ]
         .into_iter()
         .map(|(pipeline, name)| (pipeline.clone(), name))
@@ -1771,7 +1789,8 @@ impl Compositor {
         key
     }
 
-    /// Grades `src` with HyperFrames' colour grade in one pass (`shaders/color_grade.wgsl`). The vignette and the
+    /// Grades `src` with HyperFrames' colour grade in one pass (`shaders/color_grade.wgsl`), after the passes its
+    /// blur, bloom and Kuwahara effects read from (`shaders/grade_prepass.wgsl`). The vignette and the
     /// grain are laid out on the grade's `rect`, or on the layer's box. `src` goes back to the pool; the result is
     /// a new texture. A look-up table the compositor was not given is skipped.
     fn color_grade(
@@ -1788,6 +1807,26 @@ impl Compositor {
             .rect
             .or_else(|| layer_box.map(|b| [b.x0, b.y0, b.width(), b.height()]))
             .unwrap_or([0.0, 0.0, f64::from(self.canvas.0), f64::from(self.canvas.1)]);
+        // The passes: canvas pixels per layer pixel scales their radii.
+        let det = layer_matrix.determinant().abs().sqrt() as f32;
+        let scale = if det.is_finite() && det > 0.0 { det } else { 1.0 };
+        let b = src.bounds;
+        let bounds = [b.x0 as f32, b.y0 as f32, b.x1 as f32, b.y1 as f32];
+        let fx = &grade.effects;
+        let blur = (fx[EFFECT_BLUR] > 0.0).then(|| self.grade_blur(&src, fx[EFFECT_BLUR], scale, bounds));
+        let kuwahara = (fx[EFFECT_KUWAHARA] > 0.0)
+            .then(|| self.grade_kuwahara(&src, blur.as_ref(), fx, scale, bounds));
+        let bloom = (fx[EFFECT_BLOOM] > 0.0)
+            .then(|| self.grade_bloom(&src, fx[EFFECT_BLOOM_RADIUS], scale, bounds));
+        let place = |t: &Option<Tex>| {
+            t.as_ref().map_or([0.0; 4], |t| {
+                [t.origin[0] as f32, t.origin[1] as f32, t.size[0] as f32, t.size[1] as f32]
+            })
+        };
+        let extras = GradeExtras {
+            places: [place(&blur), place(&kuwahara), place(&bloom)],
+            ready: [blur.is_some(), bloom.is_some(), kuwahara.is_some()],
+        };
         let table = (!grade.advanced.is_empty())
             .then(|| grade_table_texture(&self.device, &self.queue, &grade.advanced));
         let lut = grade
@@ -1798,21 +1837,35 @@ impl Compositor {
             Some((l, amount)) => (l, amount),
             None => (&self.grade_lut, 0.0),
         };
-        let values = grade_values(grade, layer_matrix, rect, lut.is_some(), lut_texture, lut_amount);
+        let values = grade_values(
+            grade,
+            layer_matrix,
+            rect,
+            lut.is_some(),
+            lut_texture,
+            lut_amount,
+            &extras,
+        );
+        let view_of = |t: &Option<Tex>| match t {
+            Some(t) => t.view.clone(),
+            None => self.grade_blank.view.clone(),
+        };
+        let (blur_view, kuwahara_view, bloom_view) = (view_of(&blur), view_of(&kuwahara), view_of(&bloom));
+        fn entry(binding: u32, view: &wgpu::TextureView) -> wgpu::BindGroupEntry<'_> {
+            wgpu::BindGroupEntry {
+                binding,
+                resource: wgpu::BindingResource::TextureView(view),
+            }
+        }
         let extra = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("colour grade"),
             layout: &self.grade_layout,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        table.as_ref().unwrap_or(&self.grade_table),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&lut_texture.view),
-                },
+                entry(0, table.as_ref().unwrap_or(&self.grade_table)),
+                entry(1, &lut_texture.view),
+                entry(2, &blur_view),
+                entry(3, &kuwahara_view),
+                entry(4, &bloom_view),
             ],
         });
         let target = self.target(src.bounds);
@@ -1825,7 +1878,110 @@ impl Compositor {
             &target,
         );
         self.release(src);
+        for t in [blur, kuwahara, bloom].into_iter().flatten() {
+            self.release(t);
+        }
         target
+    }
+
+    /// One pass of `shaders/grade_prepass.wgsl` over `a`'s bounds: `which` 0 is the blur and bloom, 1 the
+    /// Kuwahara moments, 2 its resolve. `params` are the shader's four `vec4`.
+    fn grade_prepass(&mut self, which: u8, a: &Tex, b: &Tex, params: [f32; 16]) -> Tex {
+        let target = self.target(a.bounds);
+        let pipeline = match which {
+            0 => &self.grade_blur,
+            1 => &self.grade_moments,
+            _ => &self.grade_kuwahara,
+        };
+        self.run_pass(pipeline, a.input(), b.input(), &floats(&params), &target);
+        target
+    }
+
+    /// The blur effect: HyperFrames' Gaussian, two rounds of a horizontal and a vertical pass (three above 0.55).
+    fn grade_blur(&mut self, src: &Tex, amount: f32, scale: f32, bounds: [f32; 4]) -> Tex {
+        let radius = (0.75 + amount.powf(1.35) * 32.0) * scale;
+        let rounds = if amount > 0.55 { 3 } else { 2 };
+        let mut previous: Option<Tex> = None;
+        for _ in 0..rounds {
+            let raw = if previous.is_none() { 0.0 } else { 1.0 };
+            let input = previous.as_ref().unwrap_or(src);
+            let horizontal = self.grade_prepass(
+                0,
+                input,
+                input,
+                prepass_params(bounds, [1.0, 0.0, radius / 12.0, 0.0], [raw, 0.0, 0.0, 0.0], 0.0),
+            );
+            if let Some(t) = previous.take() {
+                self.release(t);
+            }
+            let vertical = self.grade_prepass(
+                0,
+                &horizontal,
+                &horizontal,
+                prepass_params(bounds, [0.0, 1.0, radius / 12.0, 0.0], [1.0, 0.0, 0.0, 0.0], 0.0),
+            );
+            self.release(horizontal);
+            previous = Some(vertical);
+        }
+        previous.expect("at least one round")
+    }
+
+    /// The bloom effect: what is above the threshold, blurred (HyperFrames does it at half size; this at full size
+    /// with the step doubled, the same reach).
+    fn grade_bloom(&mut self, src: &Tex, radius: f32, scale: f32, bounds: [f32; 4]) -> Tex {
+        let step = radius * scale / 2.0;
+        let horizontal = self.grade_prepass(
+            0,
+            src,
+            src,
+            prepass_params(bounds, [1.0, 0.0, step, 1.0], [0.0; 4], 0.0),
+        );
+        let vertical = self.grade_prepass(
+            0,
+            &horizontal,
+            &horizontal,
+            prepass_params(bounds, [0.0, 1.0, step, 2.0], [1.0, 0.0, 0.0, 0.0], 0.0),
+        );
+        self.release(horizontal);
+        vertical
+    }
+
+    /// The Kuwahara effect: the moments along each row, then the four quadrants weighed by how flat they are.
+    fn grade_kuwahara(
+        &mut self,
+        src: &Tex,
+        blur: Option<&Tex>,
+        fx: &[f32; grade::EFFECT_SLOTS],
+        scale: f32,
+        bounds: [f32; 4],
+    ) -> Tex {
+        let radius = ((2.0 + 14.0 * fx[EFFECT_KUWAHARA + 1].clamp(0.0, 1.0) + 0.5).floor() * scale)
+            .round()
+            .clamp(1.0, 64.0);
+        let moments = self.grade_prepass(
+            1,
+            src,
+            blur.unwrap_or(src),
+            prepass_params(
+                bounds,
+                [0.0; 4],
+                [0.0, radius, 0.0, 0.0],
+                blur.map_or(0.0, |_| fx[EFFECT_BLUR]),
+            ),
+        );
+        let output = self.grade_prepass(
+            2,
+            &moments,
+            &moments,
+            prepass_params(
+                bounds,
+                [0.0; 4],
+                [0.0, radius, fx[EFFECT_KUWAHARA + 2], fx[EFFECT_KUWAHARA + 3]],
+                0.0,
+            ),
+        );
+        self.release(moments);
+        output
     }
 
     /// Grades `src` through the table loaded for `key`, faded in by `amount`.
@@ -2916,6 +3072,9 @@ fn grade_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         entries: &[
             texture(0, wgpu::TextureViewDimension::D2),
             texture(1, wgpu::TextureViewDimension::D3),
+            texture(2, wgpu::TextureViewDimension::D2),
+            texture(3, wgpu::TextureViewDimension::D2),
+            texture(4, wgpu::TextureViewDimension::D2),
         ],
     })
 }
@@ -2958,7 +3117,8 @@ fn grade_table_texture(
 
 /// A colour grade as `shaders/color_grade.wgsl` reads it: the inverse of the layer matrix and the intensities, the
 /// graded box, the ten primary controls, the three wheels, the flags, the look-up table's domain, the vignette
-/// and the grain, each a `vec4`.
+/// and the grain, then the layer matrix, the time, the places of the effect textures, which are on, the palette and
+/// the 64 effect controls, each a `vec4`.
 fn grade_values(
     grade: &ResolvedColorGrade,
     layer_matrix: Affine,
@@ -2966,6 +3126,7 @@ fn grade_values(
     has_lut: bool,
     lut: &LutTexture,
     lut_amount: f32,
+    extras: &GradeExtras,
 ) -> Vec<f32> {
     let inverse = if layer_matrix.determinant().abs() > f64::EPSILON {
         layer_matrix.inverse().as_coeffs()
@@ -3012,6 +3173,42 @@ fn grade_values(
     v.extend([lut.domain_max[0], lut.domain_max[1], lut.domain_max[2], 0.0]);
     v.extend(grade.vignette);
     v.extend(grade.grain);
+    let m = layer_matrix.as_coeffs();
+    v.extend([m[0] as f32, m[1] as f32, m[2] as f32, m[3] as f32]);
+    v.extend([m[4] as f32, m[5] as f32, grade.time, grade.palette_len as f32]);
+    for place in extras.places {
+        v.extend(place);
+    }
+    v.extend(extras.ready.map(|r| f32::from(u8::from(r))));
+    v.push(0.0);
+    for color in grade.palette {
+        v.extend([color[0], color[1], color[2], 0.0]);
+    }
+    v.extend(grade.effects);
+    v
+}
+
+/// The textures the look effects made for a grade: where each sits on the canvas (origin, size), and whether the blur,
+/// bloom and Kuwahara passes ran.
+struct GradeExtras {
+    places: [[f32; 4]; 3],
+    ready: [bool; 3],
+}
+
+/// Where the controls of the grade's effects sit in `grade::EFFECT_KEYS`.
+const EFFECT_BLUR: usize = 0;
+const EFFECT_BLOOM: usize = 20;
+const EFFECT_BLOOM_RADIUS: usize = 21;
+const EFFECT_KUWAHARA: usize = 60;
+
+/// The uniforms of `shaders/grade_prepass.wgsl`: the layer's bounds, the pass (direction, step, kind), the flags and
+/// the share of the blur texture the Kuwahara pass reads.
+fn prepass_params(bounds: [f32; 4], pass: [f32; 4], flags: [f32; 4], mix_blur: f32) -> [f32; 16] {
+    let mut v = [0.0; 16];
+    v[0..4].copy_from_slice(&bounds);
+    v[4..8].copy_from_slice(&pass);
+    v[8..12].copy_from_slice(&flags);
+    v[12] = mix_blur;
     v
 }
 

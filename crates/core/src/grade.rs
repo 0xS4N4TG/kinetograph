@@ -24,6 +24,83 @@ pub const MAX_CURVE_POINTS: usize = 16;
 /// Texels one secondary takes in row 2.
 const SECONDARY_TEXELS: usize = 5;
 
+/// Floats the shader reads the effect controls in: 64, sixteen `vec4`.
+pub const EFFECT_SLOTS: usize = 64;
+
+/// The palette colours the shader holds.
+pub const PALETTE_SLOTS: usize = 6;
+const EFFECT_PALETTE: [&str; 2] = ["#000000", "#ffffff"];
+const ART_PALETTE: [&str; 2] = ["#1a1a1a", "#f5f5dc"];
+
+/// The controls of `effects`, in the order the shader reads them: name, default, lowest, highest. HyperFrames'
+/// `COLOR_GRADING_EFFECT_KEYS` with its `EFFECT_DEFAULTS` and limits.
+pub const EFFECT_KEYS: [(&str, f64, f64, f64); EFFECT_SLOTS] = [
+    ("blur", 0.0, 0.0, 1.0),
+    ("pixelate", 0.0, 0.0, 1.0),
+    ("chromaBleed", 0.0, 0.0, 1.0),
+    ("tapeDamage", 0.0, 0.0, 1.0),
+    ("tapeTracking", 0.0, 0.0, 1.0),
+    ("tapeNoise", 1.0, 0.0, 1.0),
+    ("tapeSpeed", 0.5, 0.0, 1.0),
+    ("filmArtifacts", 0.0, 0.0, 1.0),
+    ("halftone", 0.0, 0.0, 1.0),
+    ("halftoneSize", 0.0, 0.0, 1.0),
+    ("twoInkPrint", 0.0, 0.0, 1.0),
+    ("twoInkPrintSize", 0.0, 0.0, 1.0),
+    ("ascii", 0.0, 0.0, 1.0),
+    ("asciiSize", 5.0 / 76.0, 0.0, 1.0),
+    ("asciiInvert", 0.0, 0.0, 1.0),
+    ("asciiStyle", 0.0, 0.0, 7.0),
+    ("asciiColor", 1.0, 0.0, 1.0),
+    ("asciiRotation", 0.0, 0.0, 1.0),
+    ("dither", 0.0, 0.0, 1.0),
+    ("ditherSize", 0.0, 0.0, 1.0),
+    ("bloom", 0.0, 0.0, 3.0),
+    ("bloomRadius", 8.0, 1.0, 100.0),
+    ("monoScreen", 0.0, 0.0, 1.0),
+    ("monoScreenSize", 0.0, 0.0, 1.0),
+    ("monoScreenAngle", 0.0, 0.0, 1.0),
+    ("monoScreenSpread", 0.0, 0.0, 1.0),
+    ("monoScreenShape", 0.0, 0.0, 4.0),
+    ("monoScreenInvert", 0.0, 0.0, 1.0),
+    ("scanlines", 0.0, 0.0, 1.0),
+    ("scanlineCount", 0.0, 0.0, 1.0),
+    ("scanlineSoftness", 0.0, 0.0, 1.0),
+    ("chromaticAberration", 0.0, 0.0, 1.0),
+    ("chromaticAngle", 0.0, 0.0, 1.0),
+    ("crtCurvature", 0.0, 0.0, 1.0),
+    ("digitalGlitch", 0.0, 0.0, 1.0),
+    ("digitalGlitchColorSplit", 0.0, 0.0, 1.0),
+    ("digitalGlitchLineTear", 0.0, 0.0, 1.0),
+    ("digitalGlitchPixelate", 0.0, 0.0, 1.0),
+    ("digitalGlitchBlockAmount", 0.0, 0.0, 1.0),
+    ("digitalGlitchBlockDisplacement", 0.0, 0.0, 1.0),
+    ("digitalGlitchBlockOpacity", 0.0, 0.0, 1.0),
+    ("digitalGlitchSpeed", 0.0, 0.0, 1.0),
+    ("engraving", 0.0, 0.0, 1.0),
+    ("engravingSpacing", 7.0 / 17.0, 0.0, 1.0),
+    ("engravingMinThickness", 0.2, 0.0, 1.0),
+    ("engravingMaxThickness", 3.2 / 7.0, 0.0, 1.0),
+    ("engravingAngle", 0.25, 0.0, 1.0),
+    ("engravingContrast", 7.0 / 15.0, 0.0, 1.0),
+    ("engravingSharpness", 0.59, 0.0, 1.0),
+    ("engravingWave", 0.2, 0.0, 1.0),
+    ("engravingWaveFrequency", 2.0 / 9.0, 0.0, 1.0),
+    ("crosshatch", 0.0, 0.0, 1.0),
+    ("crosshatchSpacing", 7.0 / 25.0, 0.0, 1.0),
+    ("crosshatchThickness", 0.25, 0.0, 1.0),
+    ("crosshatchAngle", 0.25, 0.0, 1.0),
+    ("crosshatchContrast", 1.0 / 3.0, 0.0, 1.0),
+    ("crosshatchEdges", 0.5, 0.0, 1.0),
+    ("crosshatchLineWeight", 0.0, 0.0, 1.0),
+    ("crosshatchWave", 0.33, 0.0, 1.0),
+    ("crosshatchWaveFrequency", 2.0 / 9.0, 0.0, 1.0),
+    ("kuwahara", 0.0, 0.0, 1.0),
+    ("kuwaharaRadius", 1.0 / 7.0, 0.0, 1.0),
+    ("kuwaharaSharpness", 5.0 / 16.0, 0.0, 1.0),
+    ("kuwaharaSaturation", 0.5, 0.0, 1.0),
+];
+
 /// The `colorGrade` effect as the scene spells it.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -42,6 +119,14 @@ pub struct ColorGrade {
     pub lut: Option<GradeLut>,
     pub vignette: Vignette,
     pub grain: GradeGrain,
+    /// The look effects: any of the [`EFFECT_KEYS`] by name (`halftone: 0.9, halftoneSize: 0.4`), the controls left out
+    /// at their default. The effect itself is the control that bears its name, 0 for off.
+    pub effects: std::collections::BTreeMap<String, f64>,
+    /// Two to six `#rrggbb` colours the palette effects (ascii, dither, monoScreen, engraving, crosshatch) draw with,
+    /// darkest first. The default is black and white, or dark ink on paper for engraving and crosshatch.
+    pub palette: Option<Vec<String>>,
+    /// The seconds the time-varying effects (tape, glitch, crosshatch's wave) run at; the frame's time when absent.
+    pub time: Option<f64>,
     /// The graded picture's box in the layer's space, `[x, y, width, height]`: the vignette and the grain are laid out on
     /// it. The DOM painter writes the element's content box.
     #[serde(rename = "box")]
@@ -60,6 +145,9 @@ impl Default for ColorGrade {
             lut: None,
             vignette: Vignette::default(),
             grain: GradeGrain::default(),
+            effects: Default::default(),
+            palette: None,
+            time: None,
             rect: None,
         }
     }
@@ -243,6 +331,26 @@ impl ColorGrade {
         if self.secondaries.len() > MAX_SECONDARIES {
             return fail(format!("holds at most {MAX_SECONDARIES} secondaries"));
         }
+        if let Some(name) = self
+            .effects
+            .keys()
+            .find(|k| !EFFECT_KEYS.iter().any(|(key, ..)| key == k))
+        {
+            return fail(format!(
+                "has no effect control {name:?}; the controls are {}",
+                EFFECT_KEYS.map(|k| k.0).join(", ")
+            ));
+        }
+        if let Some(colors) = &self.palette
+            && !(2..=PALETTE_SLOTS).contains(&colors.len())
+        {
+            return fail(format!("palette needs 2 to {PALETTE_SLOTS} colours"));
+        }
+        if let Some(colors) = &self.palette
+            && let Some(bad) = colors.iter().find(|c| parse_hex(c).is_none())
+        {
+            return fail(format!("palette colour {bad:?} is not #rrggbb"));
+        }
         for (name, curve) in [
             ("master", &self.curves.master),
             ("red", &self.curves.red),
@@ -281,9 +389,25 @@ pub struct ResolvedColorGrade {
     pub vignette: [f32; 4],
     /// Amount, size, roughness, seed.
     pub grain: [f32; 4],
+    /// The effect controls, in the order of [`EFFECT_KEYS`], clamped, the missing ones at their defaults.
+    pub effects: [f32; EFFECT_SLOTS],
+    /// The palette colours (sRGB, 0..=1), the last repeated to fill the slots; how many the palette has; the seconds.
+    pub palette: [[f32; 3]; PALETTE_SLOTS],
+    pub palette_len: u32,
+    pub time: f32,
     pub rect: Option<[f64; 4]>,
     /// The `CURVE_SIZE` x `TABLE_ROWS` RGBA8 table, or empty when the grade has no curves, hue curves or secondaries.
     pub advanced: Vec<u8>,
+}
+
+/// `#rrggbb` as sRGB floats.
+fn parse_hex(text: &str) -> Option<[f32; 3]> {
+    let hex = text.strip_prefix('#')?;
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let channel = |i: usize| f32::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0)) / 255.0;
+    Some([channel(0), channel(2), channel(4)])
 }
 
 fn unit(v: f64) -> f64 {
@@ -409,8 +533,35 @@ fn curve_is_identity(points: &[[f64; 2]]) -> bool {
 }
 
 impl ColorGrade {
-    /// The grade as the compositor takes it.
-    pub fn resolve(&self) -> ResolvedColorGrade {
+    /// The grade as the compositor takes it; `time` is the frame's time in seconds, for the effects that run on it.
+    pub fn resolve(&self, time: f64) -> ResolvedColorGrade {
+        let mut effects = [0.0f32; EFFECT_SLOTS];
+        for (slot, (key, default, lo, hi)) in effects.iter_mut().zip(EFFECT_KEYS) {
+            *slot = self
+                .effects
+                .get(key)
+                .map_or(default, |v| limited(*v, lo, hi)) as f32;
+        }
+        let art = EFFECT_KEYS
+            .iter()
+            .zip(&effects)
+            .any(|((k, ..), v)| (*k == "engraving" || *k == "crosshatch") && *v > 0.0);
+        let defaults: &[&str] = if art { &ART_PALETTE } else { &EFFECT_PALETTE };
+        let custom: Option<Vec<[f32; 3]>> = self
+            .palette
+            .as_ref()
+            .filter(|p| (2..=PALETTE_SLOTS).contains(&p.len()))
+            .and_then(|p| p.iter().map(|c| parse_hex(c)).collect());
+        let colors = custom.unwrap_or_else(|| {
+            defaults
+                .iter()
+                .map(|c| parse_hex(c).unwrap_or_default())
+                .collect()
+        });
+        let last = colors[colors.len() - 1];
+        let mut palette = [last; PALETTE_SLOTS];
+        palette[..colors.len()].copy_from_slice(&colors);
+        let palette_len = colors.len() as u32;
         let a = &self.adjust;
         let adjust = [
             limited(a.exposure, -2.0, 2.0),
@@ -491,6 +642,10 @@ impl ColorGrade {
                 // A whole number in f32: HyperFrames' uniform is the same.
                 if g.seed.is_finite() { g.seed as f32 } else { 0.0 },
             ],
+            effects,
+            palette,
+            palette_len,
+            time: self.time.filter(|t| t.is_finite()).unwrap_or(time) as f32,
             rect: self.rect.filter(|r| r.iter().all(|v| v.is_finite())),
             advanced,
         }
@@ -593,7 +748,7 @@ mod tests {
     #[test]
     fn a_default_grade_has_no_table() {
         let grade: ColorGrade = serde_json::from_str("{}").unwrap();
-        let r = grade.resolve();
+        let r = grade.resolve(0.0);
         assert_eq!(r.intensity, 1.0);
         assert!(!r.rgb_curves && !r.hue_curves && r.secondaries == 0);
         assert!(r.advanced.is_empty());
@@ -607,7 +762,7 @@ mod tests {
             r#"{"curves": {"master": [[0, 0], [0.5, 0.7], [1, 1]]}}"#,
         )
         .unwrap();
-        let r = grade.resolve();
+        let r = grade.resolve(0.0);
         assert!(r.rgb_curves);
         // The unset channels are straight ramps: byte(i / 1023).
         for i in [0, 1, 100, 511, 1022, 1023] {
@@ -628,7 +783,7 @@ mod tests {
             r#"{"hueCurves": {"hueVsSaturation": [[0, 0.5], [120, 0.5], [240, 0.5]]}}"#,
         )
         .unwrap();
-        let r = grade.resolve();
+        let r = grade.resolve(0.0);
         assert!(r.hue_curves);
         let t = texel(&r.advanced, 1, 300);
         // hue vs hue has no points: signed(0) is the byte 128; saturation is a flat +0.5 (= 191.5 / 255).
@@ -643,15 +798,78 @@ mod tests {
             r#"{"secondaries": [{"key": {}, "correction": {}}]}"#,
         )
         .unwrap();
-        assert_eq!(none.resolve().secondaries, 0);
+        assert_eq!(none.resolve(0.0).secondaries, 0);
         let one: ColorGrade = serde_json::from_str(
             r#"{"secondaries": [{"key": {"hue": {"center": 120, "range": 30}}, "correction": {"saturation": -1}}]}"#,
         )
         .unwrap();
-        let r = one.resolve();
+        let r = one.resolve(0.0);
         assert_eq!(r.secondaries, 1);
         assert_eq!(texel(&r.advanced, 2, 0), [85, 43, 0, 255]);
         assert_eq!(texel(&r.advanced, 2, 3)[1], byte(signed(-1.0, 1.0)));
+    }
+
+    #[test]
+    fn the_effect_controls_sit_where_the_shader_and_the_compositor_read_them() {
+        let at = |name: &str| EFFECT_KEYS.iter().position(|k| k.0 == name).unwrap();
+        // shaders/color_grade.wgsl's E_* constants and compositor.rs's EFFECT_* constants.
+        for (name, index) in [
+            ("blur", 0),
+            ("tapeDamage", 3),
+            ("halftone", 8),
+            ("ascii", 12),
+            ("bloom", 20),
+            ("bloomRadius", 21),
+            ("monoScreen", 22),
+            ("scanlines", 28),
+            ("crtCurvature", 33),
+            ("digitalGlitch", 34),
+            ("engraving", 42),
+            ("crosshatch", 51),
+            ("kuwahara", 60),
+            ("kuwaharaSaturation", 63),
+        ] {
+            assert_eq!(at(name), index, "{name}");
+        }
+    }
+
+    #[test]
+    fn effects_take_their_defaults_and_limits_and_the_palette_its_default() {
+        let none = ColorGrade::default().resolve(2.0);
+        assert_eq!(none.time, 2.0);
+        assert_eq!(none.effects[0], 0.0);
+        assert!((none.effects[13] - 5.0 / 76.0).abs() < 1e-6);
+        assert_eq!(none.effects[5], 1.0);
+        assert_eq!(none.palette_len, 2);
+        assert_eq!(none.palette[0], [0.0; 3]);
+        assert_eq!(none.palette[5], [1.0; 3]);
+        let grade: ColorGrade = serde_json::from_str(
+            r##"{"effects": {"bloom": 9, "bloomRadius": 0, "crosshatch": 1}, "time": 0.5}"##,
+        )
+        .unwrap();
+        grade.validate("x").unwrap();
+        let r = grade.resolve(2.0);
+        assert_eq!(r.time, 0.5);
+        assert_eq!((r.effects[20], r.effects[21]), (3.0, 1.0));
+        // crosshatch (or engraving) draws dark ink on paper by default.
+        assert_eq!(r.palette_len, 2);
+        assert!((r.palette[1][2] - 220.0 / 255.0).abs() < 1e-6);
+        let custom: ColorGrade =
+            serde_json::from_str(r##"{"palette": ["#ff0000", "#00ff00", "#0000ff"]}"##).unwrap();
+        let r = custom.resolve(0.0);
+        assert_eq!(r.palette_len, 3);
+        assert_eq!(r.palette[2], [0.0, 0.0, 1.0]);
+        assert_eq!(r.palette[5], [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn an_unknown_effect_control_or_a_bad_palette_is_an_error() {
+        let bad: ColorGrade = serde_json::from_str(r#"{"effects": {"halftoen": 1}}"#).unwrap();
+        assert!(bad.validate("x").unwrap_err().to_string().contains("halftoen"));
+        let bad: ColorGrade = serde_json::from_str(r##"{"palette": ["#fff", "#000000"]}"##).unwrap();
+        assert!(bad.validate("x").is_err());
+        let bad: ColorGrade = serde_json::from_str(r##"{"palette": ["#000000"]}"##).unwrap();
+        assert!(bad.validate("x").is_err());
     }
 
     #[test]
@@ -674,6 +892,6 @@ mod tests {
             panic!("not a colour grade");
         };
         assert_eq!(grade.adjust.exposure, 0.5);
-        assert_eq!(grade.resolve().grain[3], 12.0);
+        assert_eq!(grade.resolve(0.0).grain[3], 12.0);
     }
 }
