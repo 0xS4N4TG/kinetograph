@@ -677,9 +677,8 @@ export class CanvasContext2D {
     if (this.state.blend !== 'source-over') out.blend = this.state.blend;
     const shadow = this.shadow();
     if (shadow !== null) out.shadow = shadow;
-    const { fns, unsupported } = this.state.filter;
+    const { fns } = this.state.filter;
     if (fns.length > 0) out.filter = fns;
-    if (unsupported.length > 0) out.unsupportedFilter = unsupported.join(' ');
     return out;
   }
 
@@ -1047,14 +1046,20 @@ export function createCanvasContext(options: CanvasContextOptions): CanvasContex
   return new CanvasContext2D(options);
 }
 
-/** The `url()` filters among `commands` (and the canvases they draw), which are not drawn, each once. */
+/**
+ * The `url()` filters among `commands` (and the canvases they draw or fill with), each once: what a canvas that is
+ * not in a page (a `<Canvas>` layer) cannot find, since the `<filter>` they name is an element of a page.
+ */
 export function unsupportedFilters(commands: readonly CanvasCommand[]): string[] {
   const found = new Set<string>();
   const visit = (list: readonly CanvasCommand[]): void => {
     for (const command of list) {
       if (command.op === 'clip' || command.op === 'unclip') continue;
-      if (command.unsupportedFilter !== undefined) found.add(command.unsupportedFilter);
+      for (const f of command.filter ?? []) if (f.type === 'url') found.add(f.url);
       if (command.op === 'image' && command.source.kind === 'canvas') visit(command.source.commands);
+      if ((command.op === 'fill' || command.op === 'stroke' || command.op === 'text') && command.paint.type === 'pattern' && command.paint.source.kind === 'canvas') {
+        visit(command.paint.source.commands);
+      }
     }
   };
   visit(commands);

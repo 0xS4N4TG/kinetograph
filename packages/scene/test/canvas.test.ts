@@ -280,14 +280,13 @@ describe('filter', () => {
     expect(ctx.commands).toHaveLength(1);
   });
 
-  it('keeps a url() as valid and not drawn, and says so on the command', () => {
+  it('keeps a url() in its place in the list, for the page to find the <filter> it names', () => {
     const ctx = make();
     ctx.filter = 'url(#rough) blur(2px)';
     expect(ctx.filter).toBe('url(#rough) blur(2px)');
     ctx.fillRect(0, 0, 5, 5);
-    const command = only(ctx) as { filter?: unknown; unsupportedFilter?: string };
-    expect(command.filter).toEqual([{ type: 'blur', radius: 2 }]);
-    expect(command.unsupportedFilter).toBe('url(#rough)');
+    const command = only(ctx) as { filter?: unknown };
+    expect(command.filter).toEqual([{ type: 'url', url: 'url(#rough)' }, { type: 'blur', radius: 2 }]);
     expect(unsupportedFilters(ctx.commands)).toEqual(['url(#rough)']);
   });
 

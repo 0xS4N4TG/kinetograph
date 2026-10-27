@@ -647,7 +647,11 @@ export type CanvasFilterFn =
   | { type: 'brightness' | 'contrast' | 'grayscale' | 'invert' | 'saturate' | 'sepia'; amount: number }
   | { type: 'hueRotate'; angle: number }
   /** `blur` is the standard deviation, half the CSS length. */
-  | { type: 'dropShadow'; x: number; y: number; blur: number; color: string };
+  | { type: 'dropShadow'; x: number; y: number; blur: number; color: string }
+  /** `url(#id)`: an SVG `<filter>` of the page, which the page's painter puts in as `graph`; drawn without when there is none. */
+  | { type: 'url'; url: string }
+  /** The SVG filter a `url()` names, as the `filterGraph` effect spells it (without its `type`). */
+  | { type: 'graph'; graph: Record<string, unknown> };
 
 /**
  * What every drawing command is drawn with; the defaults are the identity, 1 and `source-over`, no shadow and no
@@ -663,8 +667,6 @@ export interface CanvasState {
   shadow?: CanvasShadow;
   /** `filter`, in order; `opacity()` is in `a`. */
   filter?: CanvasFilterFn[];
-  /** The `url()` references in the `filter`, which are not drawn: the host reports them. */
-  unsupportedFilter?: string;
 }
 
 export interface CanvasLine {

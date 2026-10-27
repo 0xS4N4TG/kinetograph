@@ -1,7 +1,8 @@
 // The CSS `filter` strings a Canvas 2D context takes (`ctx.filter`): `none`, or a list of `blur()`, `brightness()`,
 // `contrast()`, `drop-shadow()`, `grayscale()`, `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`.
 // They become the functions the renderer runs (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), which are the passes of the scene's effects
-// of the same names. A `url()` reference is a valid value the renderer cannot draw; the rest of the list is.
+// of the same names. A `url()` reference names an SVG `<filter>` of the page the canvas is in, which the page's painter
+// finds (crates/dom); where there is no page, it is reported and drawn without.
 
 import { parseCssColor, toSceneColor } from './canvas-color.js';
 import type { CanvasFilterFn } from './types.js';
@@ -11,11 +12,9 @@ export interface ParsedFilter {
   fns: CanvasFilterFn[];
   /** The product of the `opacity()` functions, which the context multiplies into `globalAlpha`. */
   opacity: number;
-  /** The `url()` references: valid, and not drawn. */
-  unsupported: string[];
 }
 
-export const NO_FILTER: ParsedFilter = { fns: [], opacity: 1, unsupported: [] };
+export const NO_FILTER: ParsedFilter = { fns: [], opacity: 1 };
 
 const NUMBER = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[+-]?\\d+)?';
 const LENGTH = new RegExp(`^(${NUMBER})(px|pt|pc|in|cm|mm|q|em|rem)?$`, 'i');
@@ -115,14 +114,14 @@ export function parseFilter(value: string): ParsedFilter | null {
   if (text.toLowerCase() === 'none') return NO_FILTER;
   const list = words(text);
   if (list === null || list.length === 0) return null;
-  const out: ParsedFilter = { fns: [], opacity: 1, unsupported: [] };
+  const out: ParsedFilter = { fns: [], opacity: 1 };
   for (const word of list) {
     const call = /^([a-z-]+)\((.*)\)$/is.exec(word);
     if (!call) return null;
     const name = call[1]!.toLowerCase();
     const body = call[2]!.trim();
     if (name === 'url') {
-      out.unsupported.push(word);
+      out.fns.push({ type: 'url', url: word });
     } else if (name === 'blur') {
       const radius = body === '' ? 0 : length(body);
       if (radius === null || radius < 0) return null;

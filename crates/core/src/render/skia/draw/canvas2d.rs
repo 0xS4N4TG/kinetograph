@@ -176,7 +176,7 @@ impl Translator {
     /// command's alpha and composite operation, as the canvas does.
     fn canvas_with_effects(&mut self, canvas: &Canvas, size: (f64, f64), op: &CanvasOp, state: &DrawState, comp: Comp) {
         let b = Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32);
-        let filter = self.canvas_filter(&state.filter);
+        let filter = self.canvas_filter(&state.filter, size);
         if let Some(sh) = &state.shadow {
             let sg = (sh.blur / 2.0).clamp(0.0, crate::scene::MAX_SHADOW_SIZE) as f32;
             let f = image_filters::drop_shadow_only((sh.x as f32, sh.y as f32), (sg, sg), color4(sh.color), None, filter.clone(), None);
@@ -201,9 +201,15 @@ impl Translator {
         }
     }
 
-    /// A `filter` list as one image filter, in the pixels of the space the canvas is drawn in.
-    fn canvas_filter(&mut self, filter: &[FilterFn]) -> Option<ImageFilter> {
+    /// A `filter` list as one image filter, in the pixels of the space the canvas is drawn in: `size` is the canvas's,
+    /// the box an SVG filter's `objectBoundingBox` units are fractions of.
+    fn canvas_filter(&mut self, filter: &[FilterFn], size: (f64, f64)) -> Option<ImageFilter> {
         let mut out: Option<ImageFilter> = None;
+        for f in filter {
+            if let FilterFn::Url { url } = f {
+                self.stats.no(&format!("canvas filter {url} (no such <filter> in the document)"));
+            }
+        }
         for e in crate::canvas::filter_effects(filter, Affine::IDENTITY) {
             match e {
                 ResolvedEffect::Blur { radius } => {
@@ -228,6 +234,10 @@ impl Translator {
                     let input = out.take();
                     let shadow = image_filters::drop_shadow_only((sh.x, sh.y), (sh.blur, sh.blur), color4(sh.color), None, input.clone(), None);
                     out = image_filters::merge([shadow, input], None);
+                }
+                ResolvedEffect::FilterGraph(g) => {
+                    let canvas_box = Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32);
+                    out = self.filter_graph(&g, out.take(), 1.0, Some(canvas_box));
                 }
                 other => self.stats.no(&format!("canvas filter {}", effect_name(&other))),
             }
