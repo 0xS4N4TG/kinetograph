@@ -127,10 +127,12 @@ pub struct GlslTexture {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum GlslOp {
-    /// `clear(COLOR_BUFFER_BIT)` with this clear colour, of the drawing buffer
-    /// or of the target texture `target` names.
+    /// `clear` of the drawing buffer or of the target texture `target` names:
+    /// its colour with this clear colour (`COLOR_BUFFER_BIT`), its depth
+    /// buffer to this value (`DEPTH_BUFFER_BIT`), or both.
     Clear {
-        color: [f64; 4],
+        color: Option<[f64; 4]>,
+        depth: Option<f64>,
         target: Option<String>,
     },
     Draw(Box<GlslDraw>),
@@ -312,6 +314,28 @@ pub struct GlslCull {
     pub front: String,
 }
 
+/// The depth test of a draw: `depthFunc`, `depthMask` and `depthRange`. A draw
+/// without it has the test off (and writes no depth).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslDepth {
+    /// `NEVER`, `LESS`, `EQUAL`, `LEQUAL`, `GREATER`, `NOTEQUAL`, `GEQUAL` or
+    /// `ALWAYS`.
+    pub func: String,
+    pub mask: bool,
+    /// `depthRange(near, far)`, each within 0 to 1, near not above far.
+    pub near: f64,
+    pub far: f64,
+}
+
+/// `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslPolygonOffset {
+    pub factor: f64,
+    pub units: f64,
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GlslDraw {
@@ -341,6 +365,9 @@ pub struct GlslDraw {
     #[serde(default = "all_true")]
     pub color_mask: [bool; 4],
     pub cull: Option<GlslCull>,
+    /// The depth test, if it was on and the buffer drawn into has depth.
+    pub depth: Option<GlslDepth>,
+    pub polygon_offset: Option<GlslPolygonOffset>,
     /// The target texture the draw renders to; the drawing buffer without
     /// one.
     pub target: Option<String>,

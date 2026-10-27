@@ -572,7 +572,9 @@ pub fn device_info(device: &wgpu::Device) -> serde_json::Value {
             "maxStorageBufferBindingSize": w.max_storage_buffer_binding_size,
             "minUniformBufferOffsetAlignment": w.min_uniform_buffer_offset_alignment,
             "minStorageBufferOffsetAlignment": w.min_storage_buffer_offset_alignment,
-            "maxVertexBuffers": w.max_vertex_buffers,
+            // The device may allow more (a `glsl` draw gives each attribute a vertex buffer); a page is told the
+            // default, so that it sees the same limit on every machine.
+            "maxVertexBuffers": wgpu::Limits::default().max_vertex_buffers,
             "maxBufferSize": w.max_buffer_size,
             "maxVertexAttributes": w.max_vertex_attributes,
             "maxVertexBufferArrayStride": w.max_vertex_buffer_array_stride,
