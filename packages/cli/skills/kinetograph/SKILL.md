@@ -158,8 +158,9 @@ friends from the same CSS engine, `useLayoutEffect` measure-then-render code set
 `new Image()` and `matchMedia` work for project files and the composition's size, and `<canvas>` with
 `getContext('2d')` is drawn natively (paths, gradients, text, shadows, filters, `drawImage`, `getImageData`), and so
 are `webgl`/`webgl2` contexts; there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native
-element for the same drawing. A canvas starts empty on every frame: draw the whole frame from the frame number, never
-on top of what an earlier frame drew.
+element for the same drawing. In a component, draw the whole frame from the frame number every time (`clearRect`
+first), never on top of what an earlier frame drew: a still, or a worker that starts mid-way, does not have the earlier
+frames' pixels (until 0.2.x clears the canvas for you, such code renders differently alone than in a full render).
 
 `kinetograph doctor src/index.tsx` runs the JS stage for every frame (no GPU) and reports:
 
@@ -202,8 +203,8 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   `data-height` and `data-duration` (seconds; 30 fps), or it renders at 1920x1080 for 1 s. Scripts run as in a browser;
   `requestAnimationFrame` gets each frame's time (frame 45 is 1500 ms). A page's canvas keeps its pixels from frame to
   frame (trails work) and a single frame replays the calls before it, so a still matches the same frame of a render.
-- **Canvas.** `<Canvas width height draw>` or `<canvas>` + `getContext('2d'|'webgl'|'webgl2'|'webgpu')`; a canvas
-  starts empty each frame. AUTHORING.md §6.5 to §6.7. `preserve-3d` with effects is flattened (ENGINE.md).
+- **Canvas.** `<Canvas width height draw>` or `<canvas>` + `getContext('2d'|'webgl'|'webgl2'|'webgpu')`; in a component,
+  redraw the whole frame each time (never build on earlier frames). A plain HTML page is the exception (below). AUTHORING.md §6.5 to §6.7. `preserve-3d` with effects is flattened (ENGINE.md).
 - **`<Video datamosh>`** smears one shot into the next with the video's motion vectors. AUTHORING.md §11.8,
   `/docs/guides/datamosh/`.
 
