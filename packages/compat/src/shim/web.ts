@@ -360,6 +360,14 @@ export async function whenFetchesSettle(): Promise<void> {
   }
 }
 
+/** Counts `work` as a fetch in flight, so a frame waits for it (`whenFetchesSettle`): a dynamic `import()` the host answers. */
+export function trackPending<T>(work: Promise<T>): Promise<T> {
+  inFlight++;
+  return work.finally(() => {
+    inFlight--;
+  });
+}
+
 function makeFetch(real: typeof fetch): typeof fetch {
   const answer = makeAnswer(real);
   return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {

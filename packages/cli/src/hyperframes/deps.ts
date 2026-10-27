@@ -8,7 +8,7 @@
 // download first (`prefetch.ts`) unless `--offline`; what they download is pinned in `kinetograph.lock.json`.
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { lockMismatch, readLock, recordInLock, writeLock, type Lock } from '@kinetographdev/core/lock';
@@ -117,13 +117,13 @@ export const activeLockFile = (): string | null => active?.path ?? null;
 /**
  * A download of `url` with `bytes`: refused when the lock has another hash for it (unless `update`), else recorded.
  */
-function lockDownload(url: string, bytes: Uint8Array, update: boolean): void {
+function lockDownload(url: string, bytes: Uint8Array, update: boolean, final: string): void {
   if (active === null) return;
   if (!update) {
-    const mismatch = lockMismatch(active.lock, url, bytes);
+    const mismatch = lockMismatch(active.lock, url, bytes, final);
     if (mismatch !== null) throw new CliError('LOCK_MISMATCH', mismatch);
   }
-  const entry = { sha256: sha256Hex(bytes), size: bytes.length };
+  const entry = { sha256: sha256Hex(bytes), size: bytes.length, ...(final !== url ? { final } : {}) };
   active.lock.files[url] = entry;
   recordInLock(active.path, url, entry);
 }
@@ -131,7 +131,8 @@ function lockDownload(url: string, bytes: Uint8Array, update: boolean): void {
 /** A cached file that is not in the lock yet (downloaded for another project) joins it, as the hash stored beside it says. */
 function lockCached(url: string, file: string): void {
   if (active === null || active.lock.files[url]) return;
-  const entry = { sha256: readFileSync(hashFile(file), 'utf8').trim(), size: readFileSync(file).length };
+  const final = cachedFinal(file);
+  const entry = { sha256: readFileSync(hashFile(file), 'utf8').trim(), size: readFileSync(file).length, ...(final !== null ? { final } : {}) };
   active.lock.files[url] = entry;
   recordInLock(active.path, url, entry);
 }
@@ -147,12 +148,51 @@ function writeAtomic(file: string, data: Uint8Array | string): void {
  * and URL: a render running at the same time (parallel workers on a first run) sees either no file or a whole one with
  * its hash.
  */
-function store(file: string, url: string, bytes: Uint8Array, update: boolean): void {
-  lockDownload(url, bytes, update);
+function store(file: string, url: string, bytes: Uint8Array, update: boolean, final: string = url): void {
+  lockDownload(url, bytes, update, final);
   mkdirSync(dirname(file), { recursive: true });
   writeAtomic(hashFile(file), `${sha256Hex(bytes)}\n`);
   writeAtomic(`${file}.url`, `${url}\n`);
+  // Where a redirected request ended (a module's base for relative imports); absent when it was not redirected.
+  if (final !== url) writeAtomic(`${file}.final`, `${final}\n`);
+  else rmSync(`${file}.final`, { force: true });
   writeAtomic(file, bytes);
+}
+
+/** The URL a cached file's request was redirected to, or null. */
+function cachedFinal(file: string): string | null {
+  try {
+    return readFileSync(`${file}.final`, 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The URL a downloaded data file or module really came from: where its request ended after redirects, as the downloader
+ * recorded beside the cached file, or `url` itself. A browser resolves a module's relative imports and `import.meta.url`
+ * against this. The lock's `final` never steers resolution (it is project data anyone can edit): it is only compared with
+ * the cache's record, and a difference is an error. A record that is not https, or leaves the default hosts and the
+ * requested URL's host without the lock pinning it, is ignored.
+ */
+export function finalUrlOf(url: string): string {
+  const recorded = cachedFinal(dataCachePath(url));
+  const locked = active?.lock.files[url];
+  if (locked && (locked.final ?? url) !== (recorded ?? url)) {
+    throw new CliError(
+      'LOCK_MISMATCH',
+      `${url} was downloaded with a redirect to ${recorded ?? url} but ${active!.path} locked it at ${locked.final ?? url}. Run \`kinetograph fetch-deps <entry> --update\` to download it again and update the lock.`,
+    );
+  }
+  if (recorded === null) return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(recorded);
+  } catch {
+    return url;
+  }
+  const trusted = DEFAULT_ALLOWED_HOSTS.includes(parsed.hostname) || parsed.hostname === new URL(url).hostname || locked?.final === recorded;
+  return parsed.protocol === 'https:' && trusted ? recorded : url;
 }
 
 /** The hash `fetch-deps` stored beside a cached file. */
@@ -263,7 +303,7 @@ export function verifyIntegrity(bytes: Uint8Array, integrity: string, url: strin
   throw new CliError('INTEGRITY_MISMATCH', `${url} does not match the integrity attribute of its script tag (${integrity}): it is not cached`);
 }
 
-async function download(url: string, options: FetchOptions, allowed: Set<string>): Promise<Uint8Array> {
+async function download(url: string, options: FetchOptions, allowed: Set<string>): Promise<{ bytes: Uint8Array; final: string }> {
   const fetchImpl = options.fetchImpl ?? ((u, init) => fetch(u, init) as Promise<FetchResponse>);
   let current = url;
   for (let hop = 0; ; hop++) {
@@ -282,7 +322,7 @@ async function download(url: string, options: FetchOptions, allowed: Set<string>
     if (length > max) throw new CliError('FETCH_REFUSED', `${url} is ${length} bytes, over the ${max} byte limit`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.length > max) throw new CliError('FETCH_REFUSED', `${url} is over the ${max} byte limit`);
-    return bytes;
+    return { bytes, final: current };
   }
 }
 
@@ -317,9 +357,9 @@ export async function fetchCdnScripts(urls: string[], projectDir: string, option
     }
     const file = cdnCachePath(url);
     try {
-      const bytes = await download(url, options, allowed);
+      const { bytes, final } = await download(url, options, allowed);
       if (integrity) verifyIntegrity(bytes, integrity, url);
-      store(file, url, bytes, options.update === true);
+      store(file, url, bytes, options.update === true, final);
       results.push({ url, file, status: 'fetched' });
     } catch (error) {
       results.push({ url, file, status: 'failed', error: error instanceof Error ? error.message : String(error), ...(error instanceof CliError ? { code: error.code } : {}) });
@@ -368,8 +408,8 @@ export async function fetchCdnData(urls: string[], options: FetchOptions = {}): 
       continue;
     }
     try {
-      const bytes = await download(url, options, allowed);
-      store(file, url, bytes, options.update === true);
+      const { bytes, final } = await download(url, options, allowed);
+      store(file, url, bytes, options.update === true, final);
       results.push({ url, file, status: 'fetched' });
     } catch (error) {
       results.push({ url, file, status: 'failed', error: error instanceof Error ? error.message : String(error), ...(error instanceof CliError ? { code: error.code } : {}) });

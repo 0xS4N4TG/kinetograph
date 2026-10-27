@@ -28,7 +28,7 @@ const fullEffects: { [T in EffectType]: Required<EffectOf<T>> } = {
       { frame: 30, value: 1 },
     ],
   },
-  lut: { type: 'lut', src: 'looks/thermal.cube', amount: 1 },
+  lut: { type: 'lut', src: 'looks/thermal.cube', amount: 1, interpolation: 'tetrahedral' },
   colorGrade: {
     type: 'colorGrade',
     intensity: 0.8,

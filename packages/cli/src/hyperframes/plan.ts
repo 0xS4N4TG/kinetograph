@@ -77,6 +77,8 @@ export interface BuiltPlan {
   modules: ModuleScript[];
   /** The page's import maps, merged. */
   importMap: ImportMap;
+  /** A module script has an `import()` of a specifier built at run time (resolved while the page runs, `dynamic.ts`). */
+  computedImports: boolean;
 }
 
 interface Context {
@@ -651,13 +653,16 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   }
   // Module scripts are deferred: they run after every classic script, in document order. Their imports come from the
   // cache through the page's import map (`modules.ts`); the pre-download step has stored them.
+  let computedImports = false;
   if (!options.discoverOnly) {
     for (const module of builder.modules) {
       try {
         const bundled = await bundleModuleScript(module, builder.importMap);
+        computedImports ||= bundled.computed;
+        for (const input of bundled.inputs) builder.files.add(input);
         builder.scripts.push({ code: bundled.code, file: module.file, scope: module.scope, sourceFile: module.sourceFile });
       } catch (error) {
-        if (error instanceof CliError && (error.code === 'SCRIPT_NOT_AVAILABLE' || error.code === 'INTEGRITY_MISMATCH')) throw error;
+        if (error instanceof CliError && (error.code === 'SCRIPT_NOT_AVAILABLE' || error.code === 'INTEGRITY_MISMATCH' || error.code === 'LOCK_MISMATCH')) throw error;
         builder.note(error instanceof Error ? error.message : String(error));
       }
     }
@@ -721,5 +726,6 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     imageUrls: [...builder.imageUrls],
     modules: builder.modules,
     importMap: builder.importMap,
+    computedImports,
   };
 }

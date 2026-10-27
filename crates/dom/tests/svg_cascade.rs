@@ -197,15 +197,21 @@ fn unloaded(out: &IslandOutput) -> usize {
 #[test]
 fn a_font_face_family_the_html_sets_reaches_the_svg_text_however_it_is_quoted() {
     let fonts = json!({ "Display Face": dm_sans(), "Bob's Face": archivo_black() });
-    // The text with its family set on itself, as the references.
+    // The text with its family set on itself, as the references. The family is
+    // quoted: an unquoted `Bob's Face` is invalid CSS (the apostrophe opens a
+    // string), which a browser drops and sets the text in its default font.
     let reference = |family: &str| {
         let mut req = page("", json!({}), "", json!({}), fonts.clone());
         req["root"]["children"][0]["children"][2]["attrs"]["font-family"] = json!(family);
         glyphs(&req)
     };
     let display = reference("Display Face");
-    let bobs = reference("Bob's Face");
+    let bobs = reference("\"Bob's Face\"");
     assert_ne!(display, bobs);
+    // Both references draw the text: a reference that draws nothing proves nothing.
+    for (name, r) in [("display", &display), ("bobs", &bobs)] {
+        assert!(r.contains("$0.0.svg.3"), "the {name} reference has no text");
+    }
 
     for (sheet, style, want) in [
         (

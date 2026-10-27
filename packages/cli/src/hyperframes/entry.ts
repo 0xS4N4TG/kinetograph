@@ -29,6 +29,15 @@ export function isHyperframesEntry(entry: string): boolean {
   return ['.html', '.htm'].includes(extname(entry).toLowerCase());
 }
 
+let beforePlan: ((entry: string) => Promise<void>) | null = null;
+
+/** Called with the entry before the plan is read for a bundle (the studio: download what a rebuild newly needs). */
+export function setBeforePlan(hook: ((entry: string) => Promise<void>) | null): ((entry: string) => Promise<void>) | null {
+  const had = beforePlan;
+  beforePlan = hook;
+  return had;
+}
+
 const NAMESPACE = 'kinetograph-hf';
 export const HYPERFRAMES_PREFIX = `${NAMESPACE}:`;
 
@@ -52,10 +61,14 @@ export function hyperframesPlugin(): Plugin {
       b.onResolve({ filter: /^kinetograph-hf:/ }, (args) => ({ path: args.path.slice(HYPERFRAMES_PREFIX.length), namespace: NAMESPACE, sideEffects: true }));
       b.onLoad({ filter: /.*/, namespace: NAMESPACE }, async (args) => {
         try {
-          const { plan, files } = await buildPlan(args.path, { probeDuration });
+          // A dependency the studio has not downloaded yet (a module added since the last build) is downloaded first.
+          await beforePlan?.(args.path);
+          const { plan, files, computedImports, importMap } = await buildPlan(args.path, { probeDuration });
           return {
             contents: [
               `import { defineHyperframes } from '@kinetographdev/core/hyperframes';`,
+              // What `import()` of a computed specifier needs when the page runs (`dynamic.ts`).
+              ...(computedImports ? [`globalThis[Symbol.for('kinetograph.hf.dynamic')] = ${JSON.stringify({ importMap, root: plan.baseDir, entry: args.path })};`] : []),
               `defineHyperframes(${JSON.stringify(plan)});`,
             ].join('\n'),
             loader: 'js' as const,
