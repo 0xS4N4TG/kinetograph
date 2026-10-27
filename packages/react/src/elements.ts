@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { createElement, Fragment, type ReactNode } from 'react';
 import type {
   AudioClipJson,
+  HfAudioFxJson,
   BlendMode,
   CanvasContext2D,
   CanvasPass,
@@ -325,6 +326,8 @@ export interface AudioProps {
   muted?: boolean;
   /** The pitch times this, 0.01 to 2 (Remotion's); the speed is unchanged. */
   toneFrequency?: number;
+  /** A HyperFrames element's effects at the clip's own frame (the HyperFrames runtime sets it; AUTHORING.md §6.4). */
+  hfFx?: (frame: number) => HfAudioFxJson;
 }
 
 /** `toneFrequency` as a clip field: left out when it is 1 (or not given), so clips without it are as before. */
@@ -520,6 +523,7 @@ export function Audio(props: AudioProps) {
     loop: props.loop ?? false,
     muted: (props.muted ?? false) || timeline.frozen,
     ...toneOf(`<Audio src="${props.src}">`, props.toneFrequency),
+    ...(props.hfFx ? { hfFx: props.hfFx(timeline.frame) } : {}),
   };
   return createElement('kg-audio', { id: props.id, clip });
 }

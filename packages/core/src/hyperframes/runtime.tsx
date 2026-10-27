@@ -21,6 +21,7 @@ import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
 import { finishFontLoadsSync, getFonts } from '../font-registry.js';
 import { makeGoogleFont } from '../google-fonts.js';
 import { reportUnsupported } from '../unsupported.js';
+import type { HfAudioFxJson } from '@kinetographdev/scene';
 import type { HfNode, HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
 import { laneGain, MAX_GAIN, parseAutomation, sourceTimeAt, type AutomationLane } from './automation.js';
@@ -510,6 +511,8 @@ class Runtime {
   sounds(fps: number, totalFrames: number): ReactNode[] {
     const out: ReactNode[] = [];
     const media = Array.from(doc().querySelectorAll('audio[data-start], video[data-start]')) as AnyRecord[];
+    // The master bus: the root composition's chain, run over the whole mix (audioGroups.ts: readMasterFxChain).
+    const master = effectsOf(this.root);
     media.forEach((el, index) => {
       if (!isMedia(el as TimedElement)) return;
       if (el.tagName.toLowerCase() === 'video') {
@@ -538,15 +541,35 @@ class Runtime {
       const groupNumber = group === null ? 1 : Number.parseFloat(group.getAttribute('data-volume') ?? '');
       const groupGain = Number.isFinite(groupNumber) ? groupNumber : 1;
       const groupLane: AutomationLane | null = group === null ? null : (parseAutomation(group.getAttribute('data-automation'))?.volume ?? null);
-      const level = (frame: number): number => {
-        const t = frame / fps;
-        const local = t - origin;
+      const fader = (t: number): number => (groupLane !== null ? laneGain(groupLane, groupGain, t) : groupGain);
+      // With effects, `data-volume` goes ahead of the element's chain and the group's fader after the group's chain
+      // (audioMixer.ts: gainBeforeFx); the level of the `<Audio>` is what is left, after the element's chain.
+      const chain = effectsOf(el);
+      const groupChain = group === null ? null : effectsOf(group);
+      const post = (local: number): number => {
         let v = lane !== null ? laneGain(lane, gain, local) : gain;
+        if (chain !== null) v = gain > 0 ? v / gain : 0;
         if (fadeIn > 0) v *= Math.min(1, Math.max(0, local / (fadeIn * scale)));
         if (fadeOut > 0 && Number.isFinite(span)) v *= Math.min(1, Math.max(0, (span - local) / (fadeOut * scale)));
-        if (group !== null) v *= groupLane !== null ? laneGain(groupLane, groupGain, t) : groupGain;
+        if (group !== null && groupChain === null) v *= fader(origin + local);
         return Math.max(0, v);
       };
+      const level = (frame: number): number => post(frame / fps - origin);
+      const elementEnd = Number.isFinite(end) ? end : to / fps;
+      const hfFx =
+        chain === null && groupChain === null && master === null
+          ? undefined
+          : (frame: number): HfAudioFxJson => ({
+              track: key,
+              start: origin,
+              end: elementEnd,
+              chain,
+              automation: chain === null ? null : el.getAttribute('data-automation'),
+              pre: chain === null ? 1 : gain,
+              after: post(elementEnd - origin),
+              group: groupChain === null ? null : { id: group.id, chain: groupChain, automation: group.getAttribute('data-automation'), gain: fader(frame / fps) },
+              master,
+            });
       const mediaStart = sourceOffsetOf(el);
       const rate = rateSpecOf(el);
       const key = `${el.id || el.tagName.toLowerCase()}-${index}`;
@@ -566,7 +589,13 @@ class Runtime {
       parts.forEach(([f0, f1, seconds, partRate], i) => {
         out.push(
           <Sequence key={`${key}-${i}`} layout="none" from={f0} durationInFrames={f1 - f0} name={`hf-${key}-${i}`}>
-            <Audio src={src} volume={(frame: number) => level(f0 + frame)} trimBefore={Math.round(seconds * fps)} playbackRate={partRate} />
+            <Audio
+              src={src}
+              volume={(frame: number) => level(f0 + frame)}
+              trimBefore={Math.round(seconds * fps)}
+              playbackRate={partRate}
+              {...(hfFx ? { hfFx: (frame: number) => hfFx(f0 + frame) } : {})}
+            />
           </Sequence>,
         );
       });
@@ -582,6 +611,21 @@ class Runtime {
     for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
     for (const failure of this.seekFailures) reportUnsupported('HyperFrames', null, null, failure);
     for (const failure of this.scriptFailures) reportUnsupported('HyperFrames', null, null, failure);
+  }
+}
+
+/**
+ * An element's `data-fx-chain` when it puts an effect in the path, else null. A chain that cannot be read is passed on,
+ * so the mix stops on it as HyperFrames' render does; one whose nodes are all bypassed is no chain (audioFx.ts).
+ */
+function effectsOf(el: AnyRecord | null): string | null {
+  const raw = el?.getAttribute?.('data-fx-chain');
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  try {
+    const nodes = JSON.parse(raw)?.nodes;
+    return Array.isArray(nodes) && !nodes.some((node) => node?.enabled !== false) ? null : raw;
+  } catch {
+    return raw;
   }
 }
 
