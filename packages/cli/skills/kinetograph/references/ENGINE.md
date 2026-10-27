@@ -980,7 +980,7 @@ without a context is painted only from the lines. Reproduce: a `div` with text `
 (`paint/grade.rs`) pushes `{"type": "colorGrade", ..., "box": <content box>}` first on the group's effects.
 `crates/core/src/grade.rs` normalises it and builds the 1024 x 3 RGBA8 table of curves, hue curves and secondaries the way
 HyperFrames does (8-bit rounding included); `shaders/color_grade.wgsl` is HyperFrames' fragment shader in one pass: primary grade, wheels, RGB
-curves, hue curves, secondaries, `.cube` LUT (3D texture, shared with the `lut` effect's upload), the mix by `intensity`, grain, vignette. The
+curves, hue curves, secondaries, `.cube` LUT (3D texture, shared with the `lut` effect's upload; its trilinear blend is HyperFrames' own and stays, the `lut` effect's `interpolation: 'tetrahedral'` is not used here), the mix by `intensity`, grain, vignette. The
 vignette and grain are laid out on `box` in layer space, with HyperFrames' bottom-up `gl_FragCoord`. The grain seed is
 `hash(element id | src | tag:index) + floor(time * 60)`, computed in TS, so a frame does not depend on the frames before it. A
 layer with this effect leaves Skia's path (`own_gaps`) for the wgpu compositor. A LUT path is resolved by the painter against the project

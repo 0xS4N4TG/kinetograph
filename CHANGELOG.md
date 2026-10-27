@@ -19,6 +19,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 ### Fixed
 
 - `document.querySelector('body')`, `querySelectorAll('html')` and `getElementsByTagName('body')` find `html`, `head` and `body` themselves; they returned nothing, which broke `d3.select('body')`.
+- `lut` effect: `interpolation: 'trilinear' | 'tetrahedral'` (default `'trilinear'`). Tetrahedral blends four table points chosen from the six-tetrahedra split of the cell, as DaVinci Resolve, OpenColorIO and ffmpeg's `lut3d=interp=tetrahedral` do.
 - CSS Motion Path: `offset-path` (`path()`, `circle()`, `ellipse()`, `inset()`, `polygon()` and `ray()`), `offset-distance` (lengths and percentages of the path; a closed path wraps, an open one stops at its end), `offset-rotate` (`auto`, `reverse`, angles), `offset-anchor` and `offset-position` now move and turn the element, so GSAP tweens of `offsetDistance` animate. The offset transform sits between `translate`/`rotate`/`scale` and `transform`. Not followed, and reported: `url()` paths, `shape()` and a lone `<coord-box>`; rounded `inset()` corners and `ray(... contain)` are approximated.
 
 ### Fixed
