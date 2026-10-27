@@ -16,6 +16,9 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `<canvas>` a frame draws on, on the React path, starts that frame empty, as the docs say (one nobody draws on in a frame keeps its pixels, so a canvas drawn once in `useEffect(..., [])` still shows). It kept its pixels from the frame before, so `still 45` (or a render worker that starts mid-way) drew a different picture from frame 45 of a full render. A plain HTML page still keeps its canvas between frames.
 ### Added
 
+- `studio` downloads what an edit newly needs without a restart: the step before frame 0 runs again when any file of the project (the page, the compositions it mounts, the local modules it imports) changed, after a short wait for a save that touches several files, and fetches only what is not cached. A dependency added in a sub-composition or in a local module is there on the next rebuild.
+- HyperFrames modules: `import()` of a specifier built at run time (`` import(`./locale/${lang}.js`) ``, a bare name held in a variable) works. The pre-download pass runs the page's first frames (frame 0, the last and up to six between) with a hook on `import()`, resolves each requested specifier through the import map, downloads and locks it; the render bundles it from the cache. One first seen mid-render is fetched once, locked and noted; with `--offline` it is an error that names the specifier.
+- HyperFrames modules: a module whose download was redirected resolves its relative imports and `import.meta.url` against the final response URL, as a browser does. The cache keeps it beside the file and the lock records it as `final`. A redirect to a host that is not allowed is still refused.
 - A plain HTML page whose root element lacks `data-composition-id`, `data-width`, `data-height` or `data-duration` now gets a warning from `doctor`, `render` and `still` that names what is missing and shows the one-line fix (`--strict` fails on it, as on other unsupported content).
 - `doctor`, `render` and `still` report the errors a page's own scripts raise and survive: `console.error` calls, uncaught exceptions and unhandled promise rejections, once per message per frame, with the frames they were seen on. A library that catches its own failure (Mermaid) no longer passes as clean. `--strict` fails on them.
 - A constructable `CSSStyleSheet` (`insertRule`, `replaceSync`, `cssRules`, `rule.style`), as scripts that build CSS text use it.
@@ -44,6 +47,11 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A script's writes to an element's classes and data attributes reach the page: `svgElement.className.baseVal = 'on'`, `classList.replace()`, `classList.value` and `element.dataset.key = 'x'` (and `delete element.dataset.key`) were lost, so a selector that read them never matched. A class or attribute added to an SVG shape between frames already restyled it; tests now cover that for a class added, removed or toggled, `setAttribute`, the `style` attribute, a sibling's class, `:nth-child` after a node is inserted, and a rule inside `@media`.
 
 ## 0.2.0 (2026-10-27)
+### Added
+
+- HyperFrames' `effects` in `data-color-grading` are drawn: blur, bloom, kuwahara, chromaBleed, pixelate, halftone, twoInkPrint, ascii, dither, monoScreen, scanlines, chromaticAberration, crtCurvature, digitalGlitch, tapeDamage, filmArtifacts, engraving and crosshatch, with all 64 controls, the `palette`, the presets' own effect values and the tweened `--hf-color-grading-blur|bloom|kuwahara|pixelate|ascii|dither`. They are no longer reported as not drawn. See `/docs/compat/#hyperframes-projects`.
+- The `colorGrade` effect is a scene effect of its own (a helper `colorGrade({ effects: { halftone: 0.9 } })` in `@kinetographdev/scene`), so your components can use the grade and the look effects too; the catalog lists 23 effects now.
+
 
 ### Added
 

@@ -63,7 +63,10 @@ Every command takes `--json`. `npx kinetograph mcp` serves the same commands as 
 
 ## Requirements
 
-Node 22 or later, a GPU that wgpu supports (Metal on macOS), FFmpeg for `render`. No display needed.
+Node 22 or later. The npm packages carry FFmpeg, so nothing else is installed. A GPU is used when there is one
+(Metal on macOS, Vulkan on Linux, D3D12 on Windows), otherwise the CPU. No display needed. Building from source also
+needs the FFmpeg development libraries and `pkg-config` (`brew install ffmpeg pkgconf`), or `FFMPEG_DIR` set to the
+FFmpeg prefix: see the README.
 
 ## Docs
 

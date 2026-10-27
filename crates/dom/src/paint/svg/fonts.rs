@@ -30,9 +30,11 @@ fn build(fonts: &BTreeMap<String, String>) -> Database {
     let mut fixed_pitch: Option<String> = None;
     for (key, path) in fonts {
         let before: Vec<fontdb::ID> = db.faces().map(|f| f.id).collect();
-        if db.load_font_file(path).is_err() {
+        // usvg reads plain fonts only: a WOFF or WOFF2 file is unpacked first, as for HTML text.
+        let Ok(data) = crate::fonts::font_bytes(path) else {
             continue;
-        }
+        };
+        db.load_font_data(data.to_vec());
         let added: Vec<fontdb::FaceInfo> = db
             .faces()
             .filter(|f| !before.contains(&f.id))

@@ -169,7 +169,9 @@ has the client setup and the agent skill. `npm test` runs the CPU tests; the GPU
 ## Build from source
 
 Use the rustup toolchain (stable, edition 2024) and a GPU that wgpu supports (Metal on macOS); no display is needed.
-`render` links FFmpeg, so building needs its development libraries (`brew install ffmpeg` on macOS).
+`render` links FFmpeg, so building needs its development libraries and `pkg-config` to find them
+(`brew install ffmpeg pkgconf` on macOS). Without `pkg-config`, set `FFMPEG_DIR` to the FFmpeg prefix instead
+(`FFMPEG_DIR=$(brew --prefix ffmpeg)`).
 
 ```sh
 cargo build --release

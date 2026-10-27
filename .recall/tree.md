@@ -13,9 +13,9 @@ Format per feature:
 Status values: active | stable | blocked | archived
 -->
 
-- **release** [active] — 0.1.0 on npm; next is 0.2.0 (PRs #2-#9 merged); changelog branch ready; 6 feature branches in flight
+- **release** [active] — 0.2.0 on npm; 0.2.x batch #43-#54 merged 2026-10-27; tracking stage 1 + foreignObject in flight
   - paths: `.github/workflows/**`, `crates/node/npm/**`, `**/package.json`, `scripts/check-packages.mjs`
-  - last: 2026-10-25 (pipeline-expansion)
+  - last: 2026-10-27 (0-2-x-batch)
 - **engine** [active] — PRs #5 datamosh, #8 text, #9 WebGL merged; determinism holds; svg-cascade + WebGPU in flight; rustup PATH trap
   - paths: `crates/**`, `vendor/**`, `packages/core/**`, `packages/compat/**`, `packages/cli/src/**`, `packages/cli/skills/kinetograph/references/ENGINE.md`
   - last: 2026-10-25 (pipeline-expansion)

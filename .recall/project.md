@@ -30,3 +30,5 @@
 - Papercut Remotion kit: $KINETOGRAPH_CORPUS/lib/papercut/
 - Ep 13 papercut: .../tiny-agent/episodes/13-mods/papercut/src/ (composition ModsPapercut, S04Meter = frames 317–405, 1080x1920@30)
 - SFX corpus: $KINETOGRAPH_CORPUS/lib/audio/sfx/
+- HyperFrames test bench (since 2026-10-27): ./hf-bench/ (local only, ignored via .git/info/exclude, not in git): hf-corpus (29 comps), hf-corpus-tools/driver.py, hf-final refs, hf-real (7 projects); see hf-bench/README.md. vs-hf (HyperFrames clone) must be re-cloned to regenerate references.
+- CI gaps (noted 2026-10-27, user: just record it): native.yml never runs `cargo test`, and its JS `Test` step is `continue-on-error: true`, so a PR can be green with failing tests (#46 broke scene types.test.ts; #43 broke dom svg_cascade font test; both found only by running suites on the M4). Before asking to merge, run the touched crates' `cargo test` and the touched packages' vitest locally.

@@ -5,7 +5,8 @@ import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetograp
 import type { AudioClipJson, LayerName, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
-import { resolveEntry } from './hyperframes/entry.js';
+import { installDynamicImport } from './hyperframes/dynamic.js';
+import { isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
 import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
 import { prefetchBeforePlan, prefetchBundleAssets } from './prefetch.js';
@@ -141,6 +142,8 @@ async function loadProject(
   // A Remotion project: the remote pictures and videos its bundle names, before the project runs.
   if (prefetch !== null) await prefetchBundleAssets(entry, file, prefetch);
   process.setSourceMapsEnabled(true);
+  // A HyperFrames page's `import()` of a specifier built at run time is answered by the host.
+  if (isHyperframesEntry(entry)) installDynamicImport();
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
   // before setPublicDir below can.
   const publicDir = publicDirOf(entry);

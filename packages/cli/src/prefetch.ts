@@ -5,15 +5,19 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { lockPathOf } from '@kinetographdev/core/lock';
 import { prefetchRemoteAssets } from '@kinetographdev/core/remote-assets';
 import { CliError } from './errors.js';
 import { isHyperframesEntry } from './hyperframes/entry.js';
+import type { FetchOptions } from './hyperframes/deps.js';
 import { autoPrefetchHyperframes } from './hyperframes/prefetch.js';
 
 export interface PrefetchEntryOptions {
   offline?: boolean;
   progress?: (message: string) => void;
+  /** Replaces the network (tests). */
+  fetchImpl?: FetchOptions['fetchImpl'];
 }
 
 /** Whether downloads are off for this process. */
@@ -24,16 +28,59 @@ export function setOffline(offline: boolean): void {
   if (offline) process.env.KINETOGRAPH_OFFLINE = '1';
 }
 
-// The studio opens a project again for each preview: the step runs once for each version of the entry file.
-const done = new Map<string, number>();
+// The studio opens a project again for each preview and rebuilds it when a file changes. The step runs again when any file
+// the project is made of (its HTML, the compositions it mounts, the local modules it imports) has changed since the last
+// run, so a dependency added in a sub-composition is downloaded without a restart. What is cached is not downloaded again.
+const done = new Map<string, Map<string, number>>();
+const running = new Map<string, Promise<void>>();
+let debounceMs = 150;
+
+/** How long to wait, after a change, for the rest of a save that touches several files (tests set it to 0). */
+export function setPrefetchDebounce(ms: number): void {
+  debounceMs = ms;
+}
+
+const mtimeOf = (file: string): number => {
+  try {
+    return statSync(file).mtimeMs;
+  } catch {
+    return -1;
+  }
+};
+
+/** Whether a file of the project at `entry` is not as it was when the step last ran. */
+function changed(entry: string): boolean {
+  const stamps = done.get(entry);
+  if (stamps === undefined) return true;
+  for (const [file, stamp] of stamps) if (mtimeOf(file) !== stamp) return true;
+  return false;
+}
 
 /** What a HyperFrames entry needs before it is read; a no-op for any other entry or when offline. */
 export async function prefetchBeforePlan(entry: string, options: PrefetchEntryOptions = {}): Promise<void> {
   if (isOffline(options.offline) || !isHyperframesEntry(entry)) return;
-  const version = statSync(entry).mtimeMs;
-  if (done.get(entry) === version) return;
-  await autoPrefetchHyperframes(entry, options.progress ?? (() => {}));
-  done.set(entry, version);
+  // A second pass covers a file saved while the first ran.
+  for (let pass = 0; pass < 3; pass++) {
+    const pending = running.get(entry);
+    if (pending !== undefined) {
+      await pending;
+      continue;
+    }
+    if (!changed(entry)) return;
+    const run = (async () => {
+      if (done.has(entry)) await sleep(debounceMs);
+      const started = Date.now();
+      const inputs = await autoPrefetchHyperframes(entry, options.progress ?? (() => {}), options.fetchImpl ? { fetchImpl: options.fetchImpl } : {});
+      // A file written while the step ran may not have been read: it counts as changed.
+      done.set(entry, new Map(inputs.map((file): [string, number] => [file, mtimeOf(file) >= started ? NaN : mtimeOf(file)])));
+    })();
+    running.set(entry, run);
+    try {
+      await run;
+    } finally {
+      running.delete(entry);
+    }
+  }
 }
 
 // ---- a Remotion project: the remote pictures and videos its bundle names ----

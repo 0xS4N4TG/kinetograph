@@ -1654,7 +1654,9 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
                 .map(|c| c.as_ref().map(|[x, y]| [x.at(f), y.at(f)])),
         }),
         Effect::FilterGraph(g) => ResolvedEffect::FilterGraph(Box::new(g.resolve(f))),
-        Effect::ColorGrade(grade) => ResolvedEffect::ColorGrade(Box::new(grade.resolve())),
+        Effect::ColorGrade(grade) => {
+            ResolvedEffect::ColorGrade(Box::new(grade.resolve(f / clock.fps)))
+        }
         Effect::Shader(s) => ResolvedEffect::Shader(ResolvedShader {
             source: crate::shader::compose(&s.code, &s.names()),
             values: s.uniforms.values().map(|n| n.at(f) as f32).collect(),
