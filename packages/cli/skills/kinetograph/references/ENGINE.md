@@ -591,8 +591,9 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   after fallback is reported by the painter (`font-family`, "no glyph for U+XXXX ...") and by `inspect` (`missingChars`).
   The fallback covers symbols, arrows, maths and monochrome emoji, applied one character at a time to HTML text, SVG
   `<text>`, text layers, Text3D and canvas `fillText`. CJK, Arabic and other scripts are not bundled: load a font that
-  has them (`doctor` and `--strict` report the code point until then). `monospace` falls back to a proportional face
-  unless a monospace font is registered (`@remotion/google-fonts/JetBrainsMono`). `/docs/known-issues/`.
+  has them (`doctor` and `--strict` report the code point until then). `monospace` and `ui-monospace` use a
+  registered fixed-pitch font (the `post` table's flag) if there is one, else the bundled JetBrains Mono Regular
+  (`fallback_fonts::monospace_face`, SIL OFL 1.1; bold and italic are synthesised). `/docs/known-issues/`.
 - SVG files as pictures: `<Img src={staticFile('a.svg')}>`, `<img src>`, `background-image: url(a.svg)`, `image` layers
   and `data:` URLs draw natively (`crates/core/src/svg_picture.rs`), sized from the file's `width`, `height` and
   `viewBox` (300 x 150 with none) and painted at the size they are drawn at. Text inside such a picture is left out and

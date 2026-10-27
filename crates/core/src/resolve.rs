@@ -568,6 +568,8 @@ pub struct ResolvedGradient {
     /// Takes the gradient's space (after `units`) to the painted layer's
     /// (`Gradient::transform`).
     pub transform: Affine,
+    /// Stops blend without premultiplying alpha (`Gradient::unpremultiplied`).
+    pub unpremultiplied: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1424,6 +1426,7 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         extend: g.extend,
         units: g.units,
         transform: g.transform.map_or(Affine::IDENTITY, Affine::new),
+        unpremultiplied: g.unpremultiplied,
     }
 }
 
