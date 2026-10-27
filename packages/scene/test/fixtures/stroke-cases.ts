@@ -113,6 +113,17 @@ export const cases: [string, (ctx: Ctx, Path2D: Path2DClass) => unknown][] = [
     ctx.lineJoin = 'round';
     return p;
   }],
+  ['dashes too fine for Skia to make: a solid line', (ctx: Ctx) => {
+    // 160 px of 1e-5 px dashes are 8 million dashes; Skia makes at most a million and strokes the path solid.
+    ctx.lineWidth = 10;
+    ctx.setLineDash([1e-5, 1e-5]);
+    ctx.beginPath();
+    ctx.moveTo(10, 40);
+    ctx.lineTo(90, 40);
+    ctx.lineTo(90, 70);
+    ctx.lineTo(40, 70);
+    return null;
+  }],
   ['dots: subpaths of no length', (ctx: Ctx) => {
     ctx.lineWidth = 12;
     ctx.lineCap = 'round';

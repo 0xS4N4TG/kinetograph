@@ -269,6 +269,24 @@ function polylines(segments: readonly Segment[], tolerance: number): Polyline[] 
   return out;
 }
 
+/** The most dashes Skia makes of a path (`SkDashPath`'s `kMaxDashCount`): past it, it strokes the path undashed. */
+const MAX_DASH_COUNT = 1_000_000;
+
+/**
+ * Whether a dash pattern would make more than `MAX_DASH_COUNT` dashes of these lines: Skia, which draws the stroke and
+ * which Chrome's hit test uses, then leaves the path solid, so the test does too (and does not loop over millions of
+ * dashes).
+ */
+function dashTooFine(lines: readonly Polyline[], dash: readonly number[]): boolean {
+  const total = dash.reduce((a, b) => a + b, 0);
+  if (dash.length === 0 || !(total > 0)) return false;
+  let length = 0;
+  for (const l of lines) {
+    for (let i = 0; i + 1 < l.xs.length; i += 1) length += Math.hypot(l.xs[i + 1]! - l.xs[i]!, l.ys[i + 1]! - l.ys[i]!);
+  }
+  return (length * (dash.length >> 1)) / total > MAX_DASH_COUNT;
+}
+
 /** The parts of `line` that a dash pattern leaves on, each an open polyline; the pattern starts again at each subpath. */
 function dashed(line: Polyline, dash: readonly number[], offset: number): Polyline[] {
   const total = dash.reduce((a, b) => a + b, 0);
@@ -326,7 +344,8 @@ function dashed(line: Polyline, dash: readonly number[], offset: number): Polyli
 export function strokeContains(segments: readonly Segment[], style: StrokeStyle, x: number, y: number, tolerance = 0.05): boolean {
   const h = style.width / 2;
   if (!(h > 0)) return false;
-  const lines = polylines(segments, tolerance).flatMap((l) => dashed(l, style.dash, style.dashOffset));
+  const flat = polylines(segments, tolerance);
+  const lines = dashTooFine(flat, style.dash) ? flat : flat.flatMap((l) => dashed(l, style.dash, style.dashOffset));
   for (const line of lines) {
     const n = line.xs.length;
     if (n < 2) continue;

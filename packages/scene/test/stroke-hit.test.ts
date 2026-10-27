@@ -12,6 +12,19 @@ import { answers, cases, HEIGHT, WIDTH } from './fixtures/stroke-cases.js';
 const chrome = JSON.parse(readFileSync(new URL('./fixtures/stroke-chrome.json', import.meta.url), 'utf8')) as Record<string, string>;
 
 describe('isPointInStroke', () => {
+  it('strokes a path solid, at once, when its dashes are too many for Skia', () => {
+    const ctx = createCanvasContext({ size: () => ({ width: 2000, height: 10 }) });
+    ctx.lineWidth = 4;
+    ctx.setLineDash([1e-6, 1e-6]);
+    ctx.beginPath();
+    ctx.moveTo(0, 5);
+    ctx.lineTo(1000, 5);
+    const start = performance.now();
+    expect(ctx.isPointInStroke(500, 6)).toBe(true);
+    expect(ctx.isPointInStroke(500, 8)).toBe(false);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+
   for (const [name, setup] of cases) {
     it(`answers as Chrome does: ${name}`, () => {
       const ctx = createCanvasContext({ size: () => ({ width: WIDTH, height: HEIGHT }) });
