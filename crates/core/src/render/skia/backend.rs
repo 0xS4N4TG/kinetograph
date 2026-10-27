@@ -36,6 +36,9 @@ pub(in super::super) struct Inner {
     /// The frame `tr` was last told about (`Translator::begin_frame`), and the one being drawn.
     tr_frame: u64,
     frame: u64,
+    /// The frame's target texture, its view and whether it holds linear light, while the frame is drawn: a fallback
+    /// that blurs its backdrop reads what Skia has drawn into it so far (`Renderer::skia_backdrop`).
+    target: Option<(wgpu::Texture, wgpu::TextureView, bool)>,
     /// `None` when Skia draws on the CPU (`init`). Last: what Skia made (the translator's images) is dropped before the
     /// context it was made on.
     gpu: Option<Gpu>,
@@ -158,7 +161,7 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
         std::fs::create_dir_all(&dir).ok()?;
         std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
     });
-    let inner = Inner { gpu, tr: None, tr_frame: u64::MAX, frame: 0 };
+    let inner = Inner { gpu, tr: None, tr_frame: u64::MAX, frame: 0, target: None };
     Ok(SkiaBackend { _device: device.clone(), inner: Some(inner), rec, cpu_forced: forced, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
 }
 
@@ -297,11 +300,15 @@ impl Renderer {
         let SkiaBackend { inner, rec, tr, targets, .. } = sk;
         let mut side = inner.take().expect("the Skia context");
         side.frame = frame;
+        side.target = Some((targets[current]._texture.clone(), targets[current].view.clone(), linear));
         self.skia_inner = Some(side);
         let target = &mut targets[current];
         let margin = self.margin;
         tr.draw_scene(target.surface.canvas(), scene, scene.background, self, margin);
         *inner = self.skia_inner.take();
+        if let Some(inner) = inner.as_mut() {
+            inner.target = None;
+        }
         let Inner { gpu, tr: raster, .. } = inner.as_mut().expect("the Skia context");
         if let Some(raster) = raster {
             for (what, n) in std::mem::take(&mut raster.stats.unsupported) {
@@ -407,22 +414,60 @@ impl Renderer {
     /// `layer` as the wgpu path draws it (effects, clip, mask and matte on; opacity and blend left to the caller), for
     /// Skia to draw as an image: a texture of the canvas, or `None` if nothing shows. `parent` is the matrix from the
     /// layer's parent to the canvas texture.
+    /// `backdrop` is what lies behind the layer (`skia_backdrop`), for a layer that blurs it; it goes back to the pool.
     pub(in super::super) fn skia_fallback(
         &mut self,
         layer: &ResolvedLayer,
         siblings: &[ResolvedLayer],
         parent: Affine,
+        backdrop: Option<Tex>,
     ) -> Result<Option<Tex>> {
-        if let ResolvedKind::Group { children, preserve3d: true, .. } = &layer.kind {
+        let drawn = if let ResolvedKind::Group { children, preserve3d: true, .. } = &layer.kind {
             let empty = self.compositor.filled([0.0; 4]);
-            return self.draw_preserve3d(layer, children, parent, empty, None).map(Some);
+            self.draw_preserve3d(layer, children, parent, empty, backdrop.as_ref()).map(Some)
+        } else {
+            let placement = warp::layer_world(&layer.transform).map(|world| super::super::Placement {
+                parent,
+                world,
+                backface_hidden: layer.transform.backface_hidden,
+            });
+            self.layer_final_texture(layer, siblings, parent, placement, 1.0, backdrop.as_ref())
+        };
+        if let Some(tex) = backdrop {
+            self.compositor.release(tex);
         }
-        let placement = warp::layer_world(&layer.transform).map(|world| super::super::Placement {
-            parent,
-            world,
-            backface_hidden: layer.transform.backface_hidden,
-        });
-        self.layer_final_texture(layer, siblings, parent, placement, 1.0, None)
+        drawn
+    }
+
+    /// What Skia has drawn of the frame so far on `canvas` (the frame's surface, not a layer in it), as a canvas texture
+    /// of the compositor's: on the GPU the recording so far runs (after the wgpu work it reads, `held` the fallback
+    /// textures it samples) and its target is converted; on the CPU the surface's pixels are uploaded to the target
+    /// first. Nothing is read back.
+    pub(in super::super) fn skia_backdrop(
+        &mut self,
+        canvas: &Canvas,
+        rec: Option<&Rc<RefCell<graphite::Recorder>>>,
+        held: &[Tex],
+    ) -> Result<Tex> {
+        let inner = self.skia_inner.as_mut().expect("the Skia context");
+        let (texture, view, linear) = inner.target.clone().expect("the frame's target");
+        match (inner.gpu.as_mut(), rec) {
+            (Some(Gpu { native, ctx, .. }), Some(rec)) => {
+                self.compositor.submit();
+                native.before_skia(&self.device, &self.queue, &view, &held.iter().collect::<Vec<_>>());
+                let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
+                let info = graphite::InsertRecordingInfo::new(&mut recording);
+                if ctx.insert_recording(&info) != graphite::InsertStatus::Success {
+                    return Err(Error::Render("Skia refused its recording".into()));
+                }
+                ctx.submit(None);
+            }
+            _ => {
+                let pixmap = canvas.peek_pixels().ok_or_else(|| Error::Render("Skia's CPU surface has no pixels".into()))?;
+                upload_pixmap(&self.queue, &pixmap, &texture, (texture.width(), texture.height()))?;
+            }
+        }
+        Ok(self.compositor.from_skia(&view, linear))
     }
 
     /// The camera's projection of the frame being drawn (`warp::projection`).
@@ -457,6 +502,11 @@ fn cpu_surface(size: (u32, u32), color_type: ColorType, space: ColorSpace) -> Re
 /// Writes the pixels of the CPU `surface` over the whole of `texture` (the same size, the same format).
 fn upload_pixels(queue: &wgpu::Queue, surface: &mut Surface, texture: &wgpu::Texture, size: (u32, u32)) -> Result<()> {
     let pixmap = surface.peek_pixels().ok_or_else(|| Error::Render("Skia's CPU surface has no pixels".into()))?;
+    upload_pixmap(queue, &pixmap, texture, size)
+}
+
+/// `upload_pixels` for the pixels of a surface's canvas.
+fn upload_pixmap(queue: &wgpu::Queue, pixmap: &skia_safe::Pixmap, texture: &wgpu::Texture, size: (u32, u32)) -> Result<()> {
     let bytes = pixmap.bytes().ok_or_else(|| Error::Render("Skia's CPU surface has no pixels".into()))?;
     queue.write_texture(
         texture.as_image_copy(),
