@@ -750,7 +750,7 @@ than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
 `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
-`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`,
+`writing-mode`, multi-column, the old `clip`, `list-style-image`,
 form controls, iframes, `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list
