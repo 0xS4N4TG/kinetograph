@@ -201,6 +201,41 @@ describe('refs to DOM elements', () => {
     expect(last.root.attrs.class).toBe('on');
   });
 
+  it('write the class and data attributes of an SVG shape through className.baseVal, classList and dataset', () => {
+    function Probe() {
+      const ref = useRef<any>(null);
+      const box = useRef<any>(null);
+      useLayoutEffect(() => {
+        const circle = ref.current;
+        circle.className.baseVal = 'a b';
+        circle.classList.replace('a', 'c');
+        circle.dataset.fooBar = '1';
+        circle.dataset.gone = 'x';
+        delete circle.dataset.gone;
+        expect(circle.className.baseVal).toBe('c b');
+        expect(circle.classList.value).toBe('c b');
+        expect(Object.keys(circle.dataset)).toEqual(['fooBar']);
+        expect(circle.dataset.fooBar).toBe('1');
+        // Any read of the island's layout sends the request.
+        box.current.getBoundingClientRect();
+      }, []);
+      return (
+        <div ref={box} style={{ width: 10, height: 10 }}>
+          <svg width={10} height={10}>
+            <circle ref={ref} cx={5} cy={5} r={4} />
+          </svg>
+        </div>
+      );
+    }
+    const { root } = render(<Probe />);
+    const last = calls.requests.at(-1)!;
+    root.unmount();
+    const circle = last.root.children[0].children[0];
+    expect(circle.attrs.class).toBe('c b');
+    expect(circle.attrs['data-foo-bar']).toBe('1');
+    expect(circle.attrs['data-gone']).toBeUndefined();
+  });
+
   it('find elements with querySelector and closest over the host tree', () => {
     let found = '';
     function Probe() {
