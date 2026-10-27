@@ -19,6 +19,11 @@ use crate::scene3d::MAX_SHADOW_MAPS;
 use crate::scene3d::draw::{DrawItem, DrawScene, Texture};
 use crate::scene3d::environment::Environment;
 use crate::scene3d::mesh::{MeshData, VERTEX_BYTES, Vertex3};
+use crate::scene3d::model::DeformData;
+
+/// The most workgroups of the deform pass in a row (WebGPU's least
+/// `maxComputeWorkgroupsPerDimension`); a bigger mesh takes more rows.
+const MAX_GROUPS_WIDE: u32 = 65535;
 
 /// Bytes of the per-draw block in `shaders/scene3d.wgsl`.
 const DRAW_BYTES: u64 = 176;
@@ -35,9 +40,9 @@ pub(super) struct State {
     shadow_pipeline: wgpu::RenderPipeline,
     /// Its group 0: the light's matrix.
     shadow_layout: wgpu::BindGroupLayout,
-    /// The shadow maps of the lights that cast shadows, by slot.
-    shadow_maps: [Option<ShadowMap>; MAX_SHADOW_MAPS],
-    /// Bound for the slots that hold no map: one texel, never read.
+    /// The shadow maps of the lights that cast shadows: one layer a slot.
+    shadow_maps: Option<ShadowMaps>,
+    /// Bound when the scene has no shadow map: one texel, never read.
     empty_shadow: wgpu::TextureView,
     shadow_sampler: wgpu::Sampler,
     /// Makes the environment maps; built when the first environment is.
@@ -56,13 +61,101 @@ pub(super) struct State {
     /// The GPU copies of textures, by texture and whether it is read as sRGB.
     views: HashMap<(u64, bool), GpuView>,
     /// The bind groups of the textures an item has (base colour, normal map,
-    /// metallic-roughness: the textures' ids, 0 for none).
-    textures: HashMap<[u64; 3], GpuTexture>,
+    /// metallic-roughness, occlusion, emission: the textures' ids, 0 for none).
+    textures: HashMap<[u64; SLOTS], GpuTexture>,
     /// The texel that stands in for each slot of an item without it: white,
-    /// a flat normal, white.
-    defaults: [wgpu::TextureView; 3],
+    /// a flat normal, white, white (no occlusion), white (the emissive factor
+    /// as it is).
+    defaults: [wgpu::TextureView; SLOTS],
     /// The bind group of items with no texture.
     white: wgpu::BindGroup,
+    /// Deforms models' meshes (`shaders/scene3d_deform.wgsl`); made when
+    /// the first deformed mesh is drawn.
+    deformer: Option<Deformer>,
+    /// What deforms a mesh that does not change with the pose, on the GPU,
+    /// by `DeformData::id`.
+    deform_data: HashMap<u64, GpuDeformData>,
+}
+
+struct Deformer {
+    pipeline: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+    /// Bound for what a mesh has none of (targets, joints): never read.
+    empty: wgpu::Buffer,
+}
+
+struct GpuDeformData {
+    owner: Weak<DeformData>,
+    targets: Option<wgpu::Buffer>,
+    influences: Option<wgpu::Buffer>,
+}
+
+/// A storage buffer of `bytes`, `None` when there are none.
+fn storage(device: &wgpu::Device, label: &str, bytes: &[u8]) -> Option<wgpu::Buffer> {
+    (!bytes.is_empty()).then(|| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytes,
+            usage: wgpu::BufferUsages::STORAGE,
+        })
+    })
+}
+
+impl Deformer {
+    fn new(device: &wgpu::Device) -> Deformer {
+        let shader = shader_module(
+            device,
+            "scene3d deform",
+            include_str!("../shaders/scene3d_deform.wgsl"),
+        );
+        let entry = |binding: u32, ty: wgpu::BufferBindingType| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let read = wgpu::BufferBindingType::Storage { read_only: true };
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("scene3d deform"),
+            entries: &[
+                entry(0, wgpu::BufferBindingType::Uniform),
+                entry(1, read),
+                entry(2, read),
+                entry(3, read),
+                entry(4, read),
+                entry(5, read),
+                entry(6, wgpu::BufferBindingType::Storage { read_only: false }),
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("scene3d deform"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("scene3d deform"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("deform"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        Deformer {
+            pipeline,
+            layout,
+            // A 4 x 4 matrix: the smallest any binding reads.
+            empty: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("scene3d deform empty"),
+                size: 64,
+                usage: wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            }),
+        }
+    }
 }
 
 struct Target {
@@ -88,9 +181,14 @@ struct GpuTexture {
     group: wgpu::BindGroup,
 }
 
-struct ShadowMap {
+/// The shadow maps as layers of one depth array, `size` texels square: a map
+/// of a smaller `mapSize` is drawn into its layer's top left corner.
+struct ShadowMaps {
     size: u32,
-    view: wgpu::TextureView,
+    /// The view the shader reads, of every layer.
+    array: wgpu::TextureView,
+    /// The view of each layer, drawn into by the shadow pass.
+    layers: Vec<wgpu::TextureView>,
 }
 
 struct GpuEnvironment {
@@ -118,12 +216,12 @@ fn cube_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-fn shadow_map_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+fn texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::FRAGMENT,
         ty: wgpu::BindingType::Texture {
-            sample_type: wgpu::TextureSampleType::Depth,
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
             view_dimension: wgpu::TextureViewDimension::D2,
             multisampled: false,
         },
@@ -131,13 +229,26 @@ fn shadow_map_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-fn shadow_texture(device: &wgpu::Device, size: u32) -> wgpu::Texture {
+fn shadow_map_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Depth,
+            view_dimension: wgpu::TextureViewDimension::D2Array,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+fn shadow_texture(device: &wgpu::Device, size: u32, layers: u32) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("scene3d shadow map"),
+        label: Some("scene3d shadow maps"),
         size: wgpu::Extent3d {
             width: size,
             height: size,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: layers,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -167,13 +278,6 @@ impl State {
             entries: &[
                 uniform(0, both, false, FRAME_BYTES),
                 shadow_map_entry(1),
-                shadow_map_entry(2),
-                shadow_map_entry(3),
-                shadow_map_entry(4),
-                shadow_map_entry(5),
-                shadow_map_entry(6),
-                shadow_map_entry(7),
-                shadow_map_entry(8),
                 wgpu::BindGroupLayoutEntry {
                     binding: 9,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -201,42 +305,17 @@ impl State {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("scene3d texture"),
             entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
+                texture_entry(0),
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
+                texture_entry(2),
+                texture_entry(3),
+                texture_entry(4),
+                texture_entry(5),
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -298,7 +377,10 @@ impl State {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        let empty_shadow = shadow_texture(device, 1).create_view(&Default::default());
+        let empty_shadow = shadow_texture(device, 1, 1).create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
         let environment_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("scene3d environment"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -326,12 +408,14 @@ impl State {
                 false,
             ),
             upload_texture(device, queue, &Texture::new(1, 1, vec![255; 4]), false),
+            upload_texture(device, queue, &Texture::new(1, 1, vec![255; 4]), false),
+            upload_texture(device, queue, &Texture::new(1, 1, vec![255; 4]), true),
         ];
         let white = texture_group(
             device,
             &texture_layout,
             &sampler,
-            [&defaults[0], &defaults[1], &defaults[2]],
+            std::array::from_fn(|i| &defaults[i]),
         );
         State {
             shader,
@@ -341,7 +425,7 @@ impl State {
             pipeline_layout,
             shadow_pipeline,
             shadow_layout,
-            shadow_maps: Default::default(),
+            shadow_maps: None,
             empty_shadow,
             shadow_sampler,
             baker: None,
@@ -356,6 +440,8 @@ impl State {
             textures: HashMap::new(),
             defaults,
             white,
+            deformer: None,
+            deform_data: HashMap::new(),
         }
     }
 
@@ -491,20 +577,174 @@ impl State {
         &self.targets[&samples]
     }
 
-    /// Makes the shadow maps `scene` needs, one a slot, and frees the others.
+    /// Makes the array of the shadow maps `scene` needs, one layer a slot,
+    /// as big as its largest map; none when it needs none.
     fn shadow_maps(&mut self, device: &wgpu::Device, scene: &DrawScene) {
-        let mut wanted = [None; MAX_SHADOW_MAPS];
-        for (slot, shadow) in scene.shadows() {
-            wanted[slot] = Some(shadow.map_size);
+        let count = scene.shadows().count() as u32;
+        let size = scene.shadows().map(|(_, s)| s.map_size).max().unwrap_or(0);
+        let held = self
+            .shadow_maps
+            .as_ref()
+            .map(|m| (m.size, m.layers.len() as u32));
+        if count == 0 {
+            self.shadow_maps = None;
+        } else if held != Some((size, count)) {
+            let texture = shadow_texture(device, size, count);
+            self.shadow_maps = Some(ShadowMaps {
+                size,
+                array: texture.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    ..Default::default()
+                }),
+                layers: (0..count)
+                    .map(|layer| {
+                        texture.create_view(&wgpu::TextureViewDescriptor {
+                            dimension: Some(wgpu::TextureViewDimension::D2),
+                            base_array_layer: layer,
+                            array_layer_count: Some(1),
+                            ..Default::default()
+                        })
+                    })
+                    .collect(),
+            });
         }
-        for (held, wanted) in self.shadow_maps.iter_mut().zip(wanted) {
-            if held.as_ref().map(|m| m.size) != wanted {
-                *held = wanted.map(|size| ShadowMap {
-                    size,
-                    view: shadow_texture(device, size).create_view(&Default::default()),
-                });
+    }
+
+    /// Deforms the meshes of `scene`'s items that have a pose to be deformed
+    /// to, in a compute pass in `encoder`: a vertex buffer for each such
+    /// item, by its place in `scene.items`, which its draws read in place of
+    /// the mesh's own. Made anew each frame; what does not change with the
+    /// pose is uploaded once.
+    fn deform(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        scene: &DrawScene,
+    ) -> Vec<Option<wgpu::Buffer>> {
+        self.deform_data.retain(|_, d| d.owner.strong_count() > 0);
+        let mut out: Vec<Option<wgpu::Buffer>> = Vec::with_capacity(scene.items.len());
+        let mut groups = Vec::new();
+        for item in &scene.items {
+            let Some(deform) = &item.deform else {
+                out.push(None);
+                continue;
+            };
+            let data = &deform.data;
+            let deformer = self.deformer.get_or_insert_with(|| Deformer::new(device));
+            let gpu = self.deform_data.entry(data.id).or_insert_with(|| {
+                let targets: Vec<u8> = data
+                    .targets
+                    .iter()
+                    .flatten()
+                    .flat_map(|f| f.to_le_bytes())
+                    .collect();
+                let influences: Vec<u8> = data
+                    .joints
+                    .iter()
+                    .zip(&data.weights)
+                    .flat_map(|(j, w)| j.iter().copied().chain(w.iter().map(|w| w.to_bits())))
+                    .flat_map(u32::to_le_bytes)
+                    .collect();
+                GpuDeformData {
+                    owner: Arc::downgrade(data),
+                    targets: storage(device, "scene3d morph targets", &targets),
+                    influences: storage(device, "scene3d joints", &influences),
+                }
+            });
+            let skinned = !deform.joints.is_empty() && gpu.influences.is_some();
+            let count = data.vertex_count as u32;
+            let invocations = if data.flat { count / 3 } else { count };
+            let groups_wide = invocations.div_ceil(64).max(1);
+            let rows = groups_wide.div_ceil(MAX_GROUPS_WIDE);
+            let width = groups_wide.min(MAX_GROUPS_WIDE);
+            let params: Vec<u8> = [
+                count,
+                data.target_count as u32,
+                u32::from(skinned) | (u32::from(data.flat) << 1),
+                width * 64,
+            ]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+            let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("scene3d deform params"),
+                contents: &params,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let weights: Vec<u8> = deform
+                .weights
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect();
+            let weights = storage(device, "scene3d morph weights", &weights);
+            let joints: Vec<u8> = deform
+                .joints
+                .iter()
+                .flat_map(|m| m.to_cols_array())
+                .flat_map(f32::to_le_bytes)
+                .collect();
+            let joints = storage(device, "scene3d joint matrices", &joints);
+            let target = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("scene3d deformed vertices"),
+                size: (data.vertex_count as u64 * VERTEX_BYTES).max(VERTEX_BYTES),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            });
+            fn or_empty<'a>(
+                b: &'a Option<wgpu::Buffer>,
+                empty: &'a wgpu::Buffer,
+            ) -> wgpu::BindingResource<'a> {
+                b.as_ref().unwrap_or(empty).as_entire_binding()
+            }
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("scene3d deform"),
+                layout: &deformer.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.meshes[&item.mesh.id].vertices.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: or_empty(&gpu.targets, &deformer.empty),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: or_empty(&gpu.influences, &deformer.empty),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: or_empty(&weights, &deformer.empty),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: or_empty(&joints, &deformer.empty),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: target.as_entire_binding(),
+                    },
+                ],
+            });
+            groups.push((group, width, rows));
+            out.push(Some(target));
+        }
+        if let Some(deformer) = self.deformer.as_ref().filter(|_| !groups.is_empty()) {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("scene3d deform"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&deformer.pipeline);
+            for (group, width, rows) in &groups {
+                pass.set_bind_group(0, group, &[]);
+                pass.dispatch_workgroups(*width, *rows, 1);
             }
         }
+        out
     }
 
     /// Makes the maps of `scene`'s environment unless they are made, and
@@ -548,7 +788,8 @@ impl State {
                 vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("scene3d vertices"),
                     contents: &Vertex3::bytes(&mesh.vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
+                    // A deformed mesh's rest vertices are read by the deform pass.
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE,
                 }),
                 indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("scene3d indices"),
@@ -561,11 +802,7 @@ impl State {
                 }),
                 count: mesh.indices.len() as u32,
             });
-            let slots = [
-                (&item.texture, true),
-                (&item.maps.normal, false),
-                (&item.maps.metallic_roughness, false),
-            ];
+            let slots = texture_slots(item);
             if slots.iter().any(|(t, _)| t.is_some()) {
                 let key = texture_key(item);
                 if !self.textures.contains_key(&key) {
@@ -587,7 +824,7 @@ impl State {
                         device,
                         &self.texture_layout,
                         &self.sampler,
-                        [view(0), view(1), view(2)],
+                        std::array::from_fn(view),
                     );
                     self.textures.insert(
                         key,
@@ -617,14 +854,24 @@ const FRAME_BYTES: u64 = 64 * 2
     + 16
     + 16 * 2;
 
-/// What an item's bind group of textures is cached by: the ids of its textures.
-fn texture_key(item: &DrawItem) -> [u64; 3] {
-    let id = |t: &Option<Arc<Texture>>| t.as_ref().map_or(0, |t| t.id);
+/// The texture slots of a draw, in the order of their bindings in
+/// `shaders/scene3d.wgsl`.
+const SLOTS: usize = 5;
+
+/// An item's textures by slot, and whether each is read as sRGB colour.
+fn texture_slots(item: &DrawItem) -> [(&Option<Arc<Texture>>, bool); SLOTS] {
     [
-        id(&item.texture),
-        id(&item.maps.normal),
-        id(&item.maps.metallic_roughness),
+        (&item.texture, true),
+        (&item.maps.normal, false),
+        (&item.maps.metallic_roughness, false),
+        (&item.maps.occlusion, false),
+        (&item.maps.emissive, true),
     ]
+}
+
+/// What an item's bind group of textures is cached by: the ids of its textures.
+fn texture_key(item: &DrawItem) -> [u64; SLOTS] {
+    texture_slots(item).map(|(t, _)| t.as_ref().map_or(0, |t| t.id))
 }
 
 /// A texture on the GPU, with its mips, read as sRGB colour or as data.
@@ -665,34 +912,28 @@ fn upload_texture(
     gpu.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-/// The textures of one draw: base colour, normal map, metallic-roughness.
+/// The textures of one draw: base colour (binding 0), the sampler (1), then
+/// the normal map, metallic-roughness, occlusion and emission (2 to 5).
 fn texture_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     sampler: &wgpu::Sampler,
-    views: [&wgpu::TextureView; 3],
+    views: [&wgpu::TextureView; SLOTS],
 ) -> wgpu::BindGroup {
+    let mut entries = vec![wgpu::BindGroupEntry {
+        binding: 1,
+        resource: wgpu::BindingResource::Sampler(sampler),
+    }];
+    for (i, view) in views.into_iter().enumerate() {
+        entries.push(wgpu::BindGroupEntry {
+            binding: if i == 0 { 0 } else { i as u32 + 1 },
+            resource: wgpu::BindingResource::TextureView(view),
+        });
+    }
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scene3d texture"),
         layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(views[0]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(views[1]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::TextureView(views[2]),
-            },
-        ],
+        entries: &entries,
     })
 }
 
@@ -853,7 +1094,12 @@ fn draw_bytes(item: &DrawItem) -> Vec<u8> {
     push(&mut out, &m.color);
     push(
         &mut out,
-        &[m.emissive[0], m.emissive[1], m.emissive[2], 0.0],
+        &[
+            m.emissive[0],
+            m.emissive[1],
+            m.emissive[2],
+            m.occlusion_strength,
+        ],
     );
     let flags = u8::from(m.unlit)
         | (u8::from(m.double_sided) << 1)
@@ -881,6 +1127,7 @@ impl Compositor {
             .take()
             .unwrap_or_else(|| State::new(&self.device, &self.queue));
         state.upload(&self.device, &self.queue, scene);
+        let deformed = state.deform(&self.device, &mut self.encoder(), scene);
         state.bake(&self.device, &self.queue, &mut self.encoder(), scene);
         state.shadow_maps(&self.device, scene);
         state.pipelines(&self.device, scene.msaa);
@@ -901,11 +1148,10 @@ impl Compositor {
                 contents: &frame_bytes(scene, &place, mirrored, max_lod),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
-        let shadow_view = |slot: usize| {
-            state.shadow_maps[slot]
-                .as_ref()
-                .map_or(&state.empty_shadow, |m| &m.view)
-        };
+        let shadow_array = state
+            .shadow_maps
+            .as_ref()
+            .map_or(&state.empty_shadow, |m| &m.array);
         let frame_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene3d frame"),
             layout: &state.frame_layout,
@@ -916,35 +1162,7 @@ impl Compositor {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(0)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(1)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(2)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(3)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(4)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(5)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(6)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(shadow_view(7)),
+                    resource: wgpu::BindingResource::TextureView(shadow_array),
                 },
                 wgpu::BindGroupEntry {
                     binding: 9,
@@ -1020,15 +1238,15 @@ impl Compositor {
             .collect();
         {
             let mut encoder = self.encoder();
-            for (slot, light_view) in light_views.iter().enumerate() {
-                let map = state.shadow_maps[slot]
-                    .as_ref()
-                    .expect("made by shadow_maps");
+            for ((slot, shadow), light_view) in scene.shadows().zip(&light_views) {
+                let maps = state.shadow_maps.as_ref().expect("made by shadow_maps");
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("scene3d shadow"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &map.view,
+                        // The whole layer is cleared to "nothing in the way",
+                        // so a lookup past a smaller map's corner is lit.
+                        view: &maps.layers[slot],
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Clear(1.0),
                             store: wgpu::StoreOp::Store,
@@ -1037,6 +1255,8 @@ impl Compositor {
                     }),
                     ..Default::default()
                 });
+                let side = shadow.map_size as f32;
+                pass.set_viewport(0.0, 0.0, side, side, 0.0, 1.0);
                 pass.set_pipeline(&state.shadow_pipeline);
                 pass.set_bind_group(0, light_view, &[]);
                 for (i, item) in scene
@@ -1046,8 +1266,9 @@ impl Compositor {
                     .filter(|(_, i)| i.cast_shadow)
                 {
                     let mesh = &state.meshes[&item.mesh.id];
+                    let vertices = deformed[i].as_ref().unwrap_or(&mesh.vertices);
                     pass.set_bind_group(1, &draw_group, &[(i as u64 * stride) as u32]);
-                    pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                    pass.set_vertex_buffer(0, vertices.slice(..));
                     pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..mesh.count, 0, 0..1);
                 }
@@ -1113,9 +1334,10 @@ impl Compositor {
                     .textures
                     .get(&texture_key(item))
                     .map_or(&state.white, |t| &t.group);
+                let vertices = deformed[i].as_ref().unwrap_or(&mesh.vertices);
                 pass.set_bind_group(1, &draw_group, &[(i as u64 * stride) as u32]);
                 pass.set_bind_group(2, texture, &[]);
-                pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                pass.set_vertex_buffer(0, vertices.slice(..));
                 pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..mesh.count, 0, 0..1);
             }

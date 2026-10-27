@@ -580,14 +580,14 @@ class Emitter {
           type: 'text',
           text: textOf(node),
           font: fontKey(props.font, props.weight, props.fontStyle),
-          ...pick(props, ['size', 'depth', 'align', 'lineHeight']),
+          ...pick(props, ['size', 'depth', 'align', 'lineHeight', 'bevel']),
           ...material,
           ...shadowing,
           ...placement,
         } as Object3DJson;
       case 'kg-extrude':
         if (typeof props.path !== 'string') throw new Error('<Extrude> needs a path, SVG path data');
-        return { type: 'extrude', path: props.path, ...pick(props, ['size', 'depth', 'fillRule']), ...material, ...shadowing, ...placement } as Object3DJson;
+        return { type: 'extrude', path: props.path, ...pick(props, ['size', 'depth', 'fillRule', 'bevel']), ...material, ...shadowing, ...placement } as Object3DJson;
       case 'kg-group3d': {
         const children: Object3DJson[] = [];
         for (const child of node.children) {

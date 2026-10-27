@@ -9,7 +9,9 @@
 // before `place`, so a rotated or scaled layer is cut along its own edges.
 //
 // Shading is metallic-roughness, lean: Lambert diffuse plus GGX specular for
-// each directional and point light, a flat ambient term, and emission. A
+// each directional and point light, a flat ambient term, and emission (the
+// factor times the emissive texture). An occlusion texture darkens the
+// ambient and environment terms only, as glTF says. A
 // light's colour is already times its intensity; a point light's falls off as
 // 1 / d^2 and, with a range, fades to nothing at it. A directional light with
 // a shadow map is dimmed where the map says something is in the way; the map
@@ -25,7 +27,7 @@ struct Light {
     vector: vec4<f32>,
     // rgb: colour times intensity. a: a point/spot light's range, 0 for none.
     color: vec4<f32>,
-    // x: the light's first shadow map, 0 to 7, or -1 for none.
+    // x: the light's first shadow map, 0 to 47, or -1 for none.
     // y: cos_outer (spot). z: cos_inner (spot). w: shadow map count (1 or 6).
     shadow: vec4<f32>,
     // xyz: a spot light's direction.
@@ -48,7 +50,8 @@ struct Frame {
     // rgb: ambient light. a: how many of `lights` are lit.
     ambient: vec4<f32>,
     lights: array<Light, 8>,
-    shadows: array<Shadow, 8>,
+    // By slot, which is the layer of `shadow_maps`.
+    shadows: array<Shadow, 48>,
     // Clip space to world space, for the background's view rays.
     inverse_view_proj: mat4x4<f32>,
     // World directions to the environment's: the turn of the picture, undone.
@@ -70,6 +73,8 @@ struct Draw {
     normal: mat4x4<f32>,
     // Linear, straight alpha; multiplied by the texture.
     color: vec4<f32>,
+    // rgb: linear, multiplied by the emissive texture. w: the occlusion
+    // map's strength.
     emissive: vec4<f32>,
     // x: metallic. y: roughness. z: flags (bit 0 unlit, bit 1 double sided,
     // bit 2 mirrored by the model matrix, bit 3 receives shadows, bit 4 has a
@@ -78,14 +83,9 @@ struct Draw {
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
-@group(0) @binding(1) var shadow_map_0: texture_depth_2d;
-@group(0) @binding(2) var shadow_map_1: texture_depth_2d;
-@group(0) @binding(3) var shadow_map_2: texture_depth_2d;
-@group(0) @binding(4) var shadow_map_3: texture_depth_2d;
-@group(0) @binding(5) var shadow_map_4: texture_depth_2d;
-@group(0) @binding(6) var shadow_map_5: texture_depth_2d;
-@group(0) @binding(7) var shadow_map_6: texture_depth_2d;
-@group(0) @binding(8) var shadow_map_7: texture_depth_2d;
+// One layer a shadow map, as big as the largest; a smaller map fills its
+// layer's top left corner.
+@group(0) @binding(1) var shadow_maps: texture_depth_2d_array;
 @group(0) @binding(9) var shadow_sampler: sampler_comparison;
 @group(0) @binding(10) var env_specular: texture_cube<f32>;
 @group(0) @binding(11) var env_diffuse: texture_cube<f32>;
@@ -95,6 +95,8 @@ struct Draw {
 @group(2) @binding(1) var base_sampler: sampler;
 @group(2) @binding(2) var normal_texture: texture_2d<f32>;
 @group(2) @binding(3) var metal_rough_texture: texture_2d<f32>;
+@group(2) @binding(4) var occlusion_texture: texture_2d<f32>;
+@group(2) @binding(5) var emissive_texture: texture_2d<f32>;
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -165,19 +167,22 @@ fn env_brdf(n_dot_v: f32, roughness: f32) -> vec2<f32> {
 
 // How much of a light reaches a point: the mean of 3 x 3 compares of the
 // point's depth with the map's, each a bilinear one, spread `radius` texels
-// apart. The level-0 kind of compare may run in any control flow.
+// apart, in the layer `slot`. `uv` and `texel` are the map's own; the map
+// fills `scale` of its layer on each side. The level-0 kind of compare may
+// run in any control flow.
 fn filter_shadow(
-    map: texture_depth_2d,
+    slot: i32,
     uv: vec2<f32>,
     depth: f32,
     texel: f32,
     radius: f32,
+    scale: f32,
 ) -> f32 {
     var sum = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
-            let at = uv + vec2<f32>(f32(x), f32(y)) * radius * texel;
-            sum += textureSampleCompareLevel(map, shadow_sampler, at, depth);
+            let at = (uv + vec2<f32>(f32(x), f32(y)) * radius * texel) * scale;
+            sum += textureSampleCompareLevel(shadow_maps, shadow_sampler, at, slot, depth);
         }
     }
     return sum / 9.0;
@@ -203,32 +208,9 @@ fn shadow_visibility(slot: i32, world: vec3<f32>, n: vec3<f32>, n_dot_l: f32) ->
     if any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) {
         return 1.0;
     }
-    switch slot {
-        case 0: {
-            return filter_shadow(shadow_map_0, uv, depth, s.params.w, s.params.z);
-        }
-        case 1: {
-            return filter_shadow(shadow_map_1, uv, depth, s.params.w, s.params.z);
-        }
-        case 2: {
-            return filter_shadow(shadow_map_2, uv, depth, s.params.w, s.params.z);
-        }
-        case 3: {
-            return filter_shadow(shadow_map_3, uv, depth, s.params.w, s.params.z);
-        }
-        case 4: {
-            return filter_shadow(shadow_map_4, uv, depth, s.params.w, s.params.z);
-        }
-        case 5: {
-            return filter_shadow(shadow_map_5, uv, depth, s.params.w, s.params.z);
-        }
-        case 6: {
-            return filter_shadow(shadow_map_6, uv, depth, s.params.w, s.params.z);
-        }
-        default: {
-            return filter_shadow(shadow_map_7, uv, depth, s.params.w, s.params.z);
-        }
-    }
+    // The map's side over its layer's: a texel of the map over one of the layer.
+    let scale = 1.0 / (s.params.w * f32(textureDimensions(shadow_maps).x));
+    return filter_shadow(slot, uv, depth, s.params.w, s.params.z, scale);
 }
 
 // `n` turned by the tangent-space normal `tn` of a normal map (green up, the
@@ -262,6 +244,8 @@ fn fs_main(
     let texel = textureSample(base_texture, base_sampler, in.uv);
     let normal_texel = textureSample(normal_texture, base_sampler, in.uv).rgb;
     let metal_rough = textureSample(metal_rough_texture, base_sampler, in.uv);
+    let occlusion_texel = textureSample(occlusion_texture, base_sampler, in.uv).r;
+    let emissive_texel = textureSample(emissive_texture, base_sampler, in.uv).rgb;
     // The normal map's normal, in world space for the front of the face:
     // made here because it needs derivatives. The back's is its opposite.
     let has_normal_map = (u32(draw.params.z) & 16u) != 0u;
@@ -293,8 +277,11 @@ fn fs_main(
     }
 
     let base = draw.color * texel;
-    var rgb = draw.emissive.rgb;
+    var rgb = draw.emissive.rgb * emissive_texel;
     if !unlit {
+        // glTF's occlusion: it darkens the light from all around (ambient
+        // and environment), not the lights that have a direction.
+        let occlusion = 1.0 + draw.emissive.w * (occlusion_texel - 1.0);
         var n = mapped;
         if !front {
             n = -n;
@@ -310,7 +297,7 @@ fn fs_main(
 
         // Ambient light has no direction: all diffuse, and a little
         // specular so that a metal is not black in it.
-        rgb += frame.ambient.rgb * (diffuse_colour + f0 * (1.0 - roughness) * 0.5);
+        rgb += occlusion * frame.ambient.rgb * (diffuse_colour + f0 * (1.0 - roughness) * 0.5);
 
         if frame.env.x > 0.0 {
             let reflected = frame.env_rotation * reflect(-v, n);
@@ -322,7 +309,7 @@ fn fs_main(
             ).rgb;
             let f = fresnel_roughness(f0, n_dot_v, roughness);
             let ab = env_brdf(n_dot_v, roughness);
-            rgb += frame.env.x * ((vec3<f32>(1.0) - f) * diffuse_colour * irradiance
+            rgb += occlusion * frame.env.x * ((vec3<f32>(1.0) - f) * diffuse_colour * irradiance
                 + prefiltered * (f0 * ab.x + ab.y));
         }
 
