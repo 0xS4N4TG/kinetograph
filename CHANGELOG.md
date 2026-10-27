@@ -3,6 +3,12 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Fixed
+
+- `monospace` and `ui-monospace` text is set in a bundled JetBrains Mono (Regular, SIL OFL 1.1, 92 KB) when the project registers no fixed-pitch font, so code blocks (Shiki, Code Hike) line up instead of falling back to a proportional face. A registered monospace font still wins.
+
 ## 0.2.0 (2026-10-27)
 
 ### Added

@@ -30,6 +30,13 @@ notices and the licence are in `OFL-NOTO.txt`:
 - Noto Sans Math: Copyright 2022 Google LLC. All Rights Reserved.
 - Noto Emoji: Copyright 2013-2026 Google LLC
 
+## JetBrains Mono (SIL Open Font License 1.1)
+
+`monospace` and `ui-monospace` text is set in JetBrains Mono Regular when the project loads no fixed-pitch font, so code
+blocks line up. It is embedded in the addon as a WOFF2 file, converted from the TrueType original without other changes.
+Copyright 2020 The JetBrains Mono Project Authors (<https://github.com/JetBrains/JetBrainsMono>). The licence is in
+`OFL-NOTO.txt`, with the Noto fonts'.
+
 ## libvpx (BSD-3-Clause), macOS and Linux builds
 
 VP8 and VP9 encoding and decoding use Google's libvpx 1.15.0, built from source (<https://github.com/webmproject/libvpx>,

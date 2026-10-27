@@ -10,6 +10,11 @@ const SAMPLE: &str = "Hamburgefonstiv Quickly";
 
 /// The width of `SAMPLE` set in `style`, with `fonts` registered.
 fn width(fonts: Value, style: &str) -> f64 {
+    width_of(fonts, style, SAMPLE)
+}
+
+/// The width of `sample` set in `style`, with `fonts` registered.
+fn width_of(fonts: Value, style: &str, sample: &str) -> f64 {
     let root = el(
         "div",
         "$0",
@@ -18,7 +23,7 @@ fn width(fonts: Value, style: &str) -> f64 {
             "span",
             "$0.0",
             &format!("display: inline-block; font-size: 40px; white-space: nowrap; {style}"),
-            vec![text(SAMPLE)],
+            vec![text(sample)],
         )],
     );
     let mut req = request(root);
@@ -163,7 +168,19 @@ fn family_stack_and_names() {
         ),
         archivo
     );
-    assert_eq!(width(fonts, "font-family: monospace"), archivo);
+    // No fixed-pitch font registered: `monospace` is the bundled JetBrains
+    // Mono (the same advance as the registered one at any weight), not a
+    // proportional face.
+    // Uneven letters tell a fixed-pitch face from a proportional one.
+    let uneven = "iiiiiiiiWWWWWWWW";
+    let mono = |style: &str| width_of(fonts.clone(), style, uneven);
+    let reference = width_of(json!({ "X": jetbrains_mono() }), "font-family: X", uneven);
+    assert_ne!(reference, width_of(fonts.clone(), "font-family: Archivo", uneven));
+    assert_eq!(mono("font-family: monospace"), reference);
+    assert_eq!(mono("font-family: ui-monospace, monospace"), reference);
+    assert_eq!(mono("font-family: Missing, monospace; font-weight: 800"), reference);
+    // Other generic families are unchanged.
+    assert_eq!(width(fonts, "font-family: cursive"), archivo);
 }
 
 #[test]
