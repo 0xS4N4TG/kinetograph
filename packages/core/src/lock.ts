@@ -3,6 +3,8 @@
 // against it, so a file that changed upstream or on disk is an error, not a different video.
 //
 //   { "version": 1, "files": { "https://esm.sh/gsap@3.12.5": { "sha256": "…", "size": 71234 } } }
+//
+// A download that was redirected also records the URL it ended at (`"final"`).
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -13,6 +15,8 @@ export const LOCK_FILE_NAME = 'kinetograph.lock.json';
 export interface LockEntry {
   sha256: string;
   size: number;
+  /** Where the download ended up when the request was redirected: a module's relative imports and `import.meta.url` use it. */
+  final?: string;
 }
 
 export interface Lock {
@@ -39,7 +43,9 @@ export function readLock(path: string): Lock {
   const out: Lock = { version: 1, files: {} };
   for (const [url, entry] of Object.entries(files)) {
     const e = entry as Partial<LockEntry> | null;
-    if (e && typeof e.sha256 === 'string' && typeof e.size === 'number') out.files[url] = { sha256: e.sha256, size: e.size };
+    if (e && typeof e.sha256 === 'string' && typeof e.size === 'number') {
+      out.files[url] = { sha256: e.sha256, size: e.size, ...(typeof e.final === 'string' ? { final: e.final } : {}) };
+    }
   }
   return out;
 }
@@ -58,7 +64,7 @@ export function writeLock(path: string, lock: Lock): void {
 export function recordInLock(path: string, url: string, entry: LockEntry): void {
   const lock = readLock(path);
   const have = lock.files[url];
-  if (have && have.sha256 === entry.sha256 && have.size === entry.size) return;
+  if (have && have.sha256 === entry.sha256 && have.size === entry.size && have.final === entry.final) return;
   lock.files[url] = entry;
   writeLock(path, lock);
 }

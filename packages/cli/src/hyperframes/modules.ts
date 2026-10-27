@@ -11,7 +11,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { relative, resolve as resolvePath, isAbsolute } from 'node:path';
 import { build, type Message, type Plugin } from 'esbuild';
 import { CliError } from '../errors.js';
-import { fetchCdnData, resolveCdnData, verifyIntegrity, type FetchedDep, type FetchOptions } from './deps.js';
+import { fetchCdnData, finalUrlOf, resolveCdnData, verifyIntegrity, type FetchedDep, type FetchOptions } from './deps.js';
 
 /** A `<script type="importmap">`: bare names and prefixes to URLs, and per-referrer overrides. Every value is an absolute URL. */
 export interface ImportMap {
@@ -214,7 +214,7 @@ function modulePlugin(state: PluginState): Plugin {
           return { path: args.path, sideEffects: true };
         }
         const referrer =
-          args.namespace === REMOTE || args.namespace === GSAP ? args.importer : args.namespace === INLINE ? state.script.base : pathToFileURL(args.importer).href;
+          args.namespace === REMOTE || args.namespace === GSAP ? finalUrlOf(args.importer) : args.namespace === INLINE ? state.script.base : pathToFileURL(args.importer).href;
         let target: string;
         try {
           target = resolveImport(args.path, referrer, state.map);
@@ -263,7 +263,8 @@ function modulePlugin(state: PluginState): Plugin {
             return { errors: [{ text: error instanceof Error ? error.message : String(error) }] };
           }
         }
-        return { contents: withImportMeta(got.text, args.path), loader: loaderFor(args.path), pluginData: { noShim: true } };
+        // A redirected download is based at where it ended, as in a browser: its relative imports and `import.meta.url`.
+        return { contents: withImportMeta(got.text, finalUrlOf(args.path)), loader: loaderFor(args.path), pluginData: { noShim: true } };
       });
       b.onLoad({ filter: /.*/, namespace: GSAP }, async (args) => {
         // The module itself is read through the cache (and walked for its imports) like any other.
