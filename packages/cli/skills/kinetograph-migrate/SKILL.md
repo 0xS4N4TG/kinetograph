@@ -79,4 +79,4 @@ Needs no rewrite: `<Img src>` of an `.svg` file (text inside it is left out), na
 (`white`, `rgb()`, `oklch()`), `<TransitionSeries>` and `<Series>` children in a Fragment, `<canvas>` and `<Canvas>`,
 `-webkit-text-stroke`, and symbols or emoji missing from a font (bundled fallback; CJK needs a font you load). Libraries
 (Recharts, d3, rough.js, Chart.js, anime.js, Motion, Paper.js) run as they are when they draw from the frame; see
-`/docs/libraries/`. Mermaid draws only with `mermaid.initialize({ htmlLabels: false })`; its HTML labels (`<foreignObject>`) draw nothing.
+`/docs/libraries/`. Mermaid draws with its default HTML labels (`<foreignObject>`); load the label font first.

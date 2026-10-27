@@ -86,7 +86,8 @@ pub fn paint_svg(
     let key = (serialized.filters.is_empty()
         && !serialized.xml.contains("<image")
         && !serialized.xml.contains("<text")
-        && !serialized.xml.contains("<use"))
+        && !serialized.xml.contains("<use")
+        && !serialized.xml.contains(serialize::FOREIGN_PREFIX))
     .then(|| {
         (
             serialized.xml.clone(),
@@ -180,9 +181,13 @@ fn paint_serialized(
             .collect(),
         viewport: [request.viewport.width, request.viewport.height],
         coverage: false,
+        request,
+        painter: None,
+        foreign: Vec::new(),
     };
     let children = emitter.group(tree.root(), Affine::IDENTITY);
     notes.append(&mut emitter.notes);
+    let foreign = std::mem::take(&mut emitter.foreign);
     // Text with no font to set it in is dropped by usvg without a word.
     if serialized.xml.contains("<text") {
         if request.fonts.is_empty() {
@@ -223,10 +228,12 @@ fn paint_serialized(
             }
         }
     }
+    let mut reported = unsupported(path, notes);
+    reported.extend(foreign);
     if children.is_empty() {
         return SvgPaint {
             layer: None,
-            unsupported: unsupported(path, notes),
+            unsupported: reported,
         };
     }
     let mut layer = json!({"id": id, "type": "group", "children": children});
@@ -250,7 +257,7 @@ fn paint_serialized(
     }
     SvgPaint {
         layer: Some(layer),
-        unsupported: unsupported(path, notes),
+        unsupported: reported,
     }
 }
 

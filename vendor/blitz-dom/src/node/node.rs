@@ -514,7 +514,12 @@ impl Node {
             DisplayOutside::None => false,
             DisplayOutside::Block => true,
             _ => {
-                if display.inside() == DisplayInside::Flow {
+                // A replaced element is atomic: what its markup holds (an
+                // `<svg>`'s `foreignObject`) does not break the line it sits on.
+                let replaced = self
+                    .element_data()
+                    .is_some_and(|el| crate::layout::replaced::is_replaced_element(&el.name.local));
+                if !replaced && display.inside() == DisplayInside::Flow {
                     self.children
                         .iter()
                         .copied()
