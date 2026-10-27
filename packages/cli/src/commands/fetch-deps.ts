@@ -2,16 +2,37 @@
 // pictures and Google Fonts) into the local caches and pins it in `kinetograph.lock.json`. `render`, `still`, `studio`
 // and `doctor` do the same by themselves before frame 0 unless `--offline`; this is the explicit form (CI, a warm cache).
 
+import { existsSync, readFileSync } from 'node:fs';
 import { relative } from 'node:path';
+import { lockPathOf } from '@kinetographdev/core/lock';
+import { prefetchRemoteAssets } from '@kinetographdev/core/remote-assets';
+import { bundleProject } from '../bundle.js';
+import { scanRemoteUrls } from '../prefetch.js';
 import { CliError } from '../errors.js';
 import { isHyperframesEntry, resolveEntry } from '../hyperframes/entry.js';
 import { cdnCacheDir } from '../hyperframes/deps.js';
 import { prefetchHyperframes } from '../hyperframes/prefetch.js';
-import { ENTRY, type Command } from './types.js';
+import { ENTRY, type Command, type CommandResult } from './types.js';
+
+/** A Remotion project: the remote pictures and videos its bundle names, into the asset cache and the lock. */
+async function fetchRemotionAssets(entry: string, update: boolean): Promise<CommandResult> {
+  if (!existsSync(entry)) throw new CliError('ENTRY_NOT_FOUND', `no such file: ${entry}`);
+  const { file } = await bundleProject(entry);
+  const lockFile = lockPathOf(entry);
+  const urls = scanRemoteUrls(readFileSync(file, 'utf8'));
+  const result = await prefetchRemoteAssets(urls, { lockFile, update });
+  const lines = [
+    `lock: ${relative(process.cwd(), lockFile) || lockFile}`,
+    ...result.fetched.map((u) => `  fetched   ${u}`),
+    ...result.cached.map((u) => `  cached    ${u}`),
+    ...result.failed.map((f) => `  failed    ${f.url}  (${f.error})`),
+  ];
+  return { data: { lock: lockFile, ...result }, text: lines.join('\n'), exitCode: result.failed.length > 0 ? 1 : 0 };
+}
 
 export const fetchDeps: Command = {
   name: 'fetch-deps',
-  summary: 'Download the CDN scripts, remote pictures, media and Google Fonts a HyperFrames project loads, into the local cache',
+  summary: 'Download what a project loads from the web (CDN scripts, ES modules, remote pictures, media, Google Fonts) into the local cache and kinetograph.lock.json',
   positionals: [ENTRY],
   options: [
     { name: 'allow-host', type: 'string', description: 'Also download from this host (comma-separated for several); by default only cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com and esm.sh' },
@@ -22,7 +43,7 @@ export const fetchDeps: Command = {
   project: false,
   async run(args, context) {
     const entry = resolveEntry(String(args.positionals.entry));
-    if (!isHyperframesEntry(entry)) throw new CliError('INVALID_ARG', `${entry} is not an HTML file: fetch-deps is for HyperFrames projects`);
+    if (!isHyperframesEntry(entry)) return fetchRemotionAssets(entry, args.options.update === true);
     const split = (value: unknown): string[] => String(value ?? '').split(',').map((h) => h.trim()).filter(Boolean);
     const result = await prefetchHyperframes(entry, {
       allowHosts: split(args.options['allow-host']),

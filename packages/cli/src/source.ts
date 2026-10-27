@@ -8,7 +8,7 @@ import { CliError } from './errors.js';
 import { resolveEntry } from './hyperframes/entry.js';
 import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
-import { prefetchBeforePlan } from './prefetch.js';
+import { prefetchBeforePlan, prefetchBundleAssets } from './prefetch.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
 
@@ -138,6 +138,8 @@ async function loadProject(
   // What the project loads from the web is downloaded before it is read, so frame 0 starts offline.
   if (prefetch !== null) await prefetchBeforePlan(entry, prefetch);
   const file = bundleFile ?? (await bundleProject(entry, unsupported ? { unsupported } : {})).file;
+  // A Remotion project: the remote pictures and videos its bundle names, before the project runs.
+  if (prefetch !== null) await prefetchBundleAssets(entry, file, prefetch);
   process.setSourceMapsEnabled(true);
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
   // before setPublicDir below can.

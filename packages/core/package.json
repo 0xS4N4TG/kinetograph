@@ -62,6 +62,10 @@
       "types": "./dist/captions.d.ts",
       "default": "./dist/captions.js"
     },
+    "./remote-assets": {
+      "types": "./dist/remote-assets.d.ts",
+      "default": "./dist/remote-assets.js"
+    },
     "./lock": {
       "types": "./dist/lock.d.ts",
       "default": "./dist/lock.js"
