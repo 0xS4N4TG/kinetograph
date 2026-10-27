@@ -54,5 +54,70 @@
     "match": "previous",
     "pattern": 31,
     "search": 91
+  },
+  { "name": "blacksmith-detect-default", "video": "examples/launch/public/footage/blacksmith.mp4", "detect": {}, "detectOnly": true },
+  { "name": "veteran-detect-default", "video": "examples/launch/public/footage/veteran.mp4", "detect": {}, "detectOnly": true },
+  {
+    "name": "blacksmith-detect-low",
+    "video": "examples/launch/public/footage/blacksmith.mp4",
+    "detect": { "threshold": 0.02, "minDistance": 50, "margin": 40 },
+    "detectOnly": true
+  },
+  {
+    "name": "veteran-detect-low-frame30",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "from": 30,
+    "detect": { "threshold": 0.01, "minDistance": 40 },
+    "detectOnly": true
+  },
+  {
+    "name": "veteran-detect-inside",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "detect": { "threshold": 0.01, "minDistance": 40, "inside": [[100, 100, 900, 150, 800, 900, 150, 700]] },
+    "detectOnly": true
+  },
+  {
+    "name": "veteran-detect-outside",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "detect": {
+      "threshold": 0.01,
+      "minDistance": 40,
+      "outside": [[100, 100, 900, 150, 800, 900, 150, 700], [1200, 200, 1800, 200, 1500, 1000]]
+    },
+    "detectOnly": true
+  },
+  {
+    "name": "blacksmith-detect-track-plane",
+    "video": "examples/launch/public/footage/blacksmith.mp4",
+    "minCorrelation": 0.5,
+    "to": 40,
+    "detect": { "threshold": 0.05, "minDistance": 150 },
+    "planes": [{ "name": "all" }, { "name": "four", "tracks": ["p3", "p7", "p9", "p11"] }]
+  },
+  {
+    "name": "blacksmith-plane-short",
+    "video": "examples/launch/public/footage/blacksmith.mp4",
+    "minCorrelation": 0.5,
+    "points": [[980, 800], [1690, 640], [1000, 960], [1050, 290], [1500, 300]],
+    "planes": [{ "name": "four", "tracks": ["p1", "p2", "p3", "p4"] }, { "name": "five" }]
+  },
+  {
+    "name": "veteran-plane-middle",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "points": [[820, 540], [1250, 430], [820, 360], [200, 600]],
+    "from": 20,
+    "planes": [{}]
+  },
+  {
+    "name": "veteran-plane-backwards",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "points": [[820, 540], [1250, 430], [820, 360], [200, 600]],
+    "model": "affine",
+    "pattern": 31,
+    "search": 91,
+    "from": 5,
+    "to": 40,
+    "backwards": true,
+    "planes": [{}]
   }
 ]
