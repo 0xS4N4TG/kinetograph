@@ -36,6 +36,7 @@ import { resolveComposition, setInputProps, type ResolvedComposition } from './c
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { gsapIsLoaded, setGsapTime } from './gsap-clock.js';
+import { takePageErrors } from './page-errors.js';
 import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
 
 export interface FrameResult {
@@ -247,7 +248,7 @@ class Renderer implements FrameRenderer {
     // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
-    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported] };
+    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported, ...takePageErrors()] };
   }
 
   /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */

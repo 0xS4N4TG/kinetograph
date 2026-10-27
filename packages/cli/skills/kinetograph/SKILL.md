@@ -167,6 +167,10 @@ keeps its pixels. Draw the whole frame from the frame number every time, never o
 - each **issue**, grouped by element, property and reason, the one on the most frames first: `values` it was seen with,
   the element `paths` (`$0.2 <div>`, the host-tree position) and the inclusive frame `ranges`.
 
+An error the page's own scripts raise and survive (`console.error`, an uncaught exception, an unhandled promise
+rejection) is an issue too, `page script console.error` and so on, with the message in `values`: a library that catches
+its own failure (Mermaid) draws nothing and says so only this way. `--strict` fails on it.
+
 `--range 0..90` limits the frames, `--comp` and `--props` choose the composition and its props. A `stylesheets:` note
 in the report says a stylesheet could not be used (Tailwind that could not be built, a remote font).
 
@@ -200,7 +204,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   run downloads CDN scripts, ES modules, media and pictures first and pins them in `kinetograph.lock.json` (no need to run
   `fetch-deps` first; `--offline` never downloads; `fetch-deps --update` refreshes the lock). AUTHORING.md §11.11, `/docs/compat/#hyperframes-projects`.
 - **A plain HTML page** (no React) renders the same way: give the root element `data-composition-id`, `data-width`,
-  `data-height` and `data-duration` (seconds; 30 fps), or it renders at 1920x1080 for 1 s. Scripts run as in a browser;
+  `data-height` and `data-duration` (seconds; 30 fps), or it renders at 1920x1080 for 1 s; `doctor`, `render` and `still` warn when they are missing. Scripts run as in a browser;
   `requestAnimationFrame` gets each frame's time (frame 45 is 1500 ms). A page's canvas keeps its pixels from frame to
   frame (trails work) and a single frame replays the calls before it, so a still matches the same frame of a render.
 - **Canvas.** `<Canvas width height draw>` or `<canvas>` + `getContext('2d'|'webgl'|'webgl2'|'webgpu')`; in a component,

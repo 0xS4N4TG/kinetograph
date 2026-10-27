@@ -26,6 +26,8 @@ Each item says what doesn't work and what you see instead. For what does work, s
 ### Libraries
 
 - Mermaid 12 draws nothing: `mermaid.render` throws inside the library (`Cannot read properties of null (reading 'firstChild')`) and the diagram is left empty. `doctor` does not catch it yet. Render the diagram to SVG ahead of time and use the file.
+- Mermaid 12 draws nothing: `mermaid.render` throws inside the library (`Cannot read properties of null (reading 'firstChild')`) and the diagram is left empty. `doctor` now reports it. Two gaps behind it are closed (`document.querySelector('body')` and `CSSStyleSheet`); what is left is DOMPurify, which Mermaid calls for every label and which needs `DOMParser`, `document.implementation.createHTMLDocument`, node iterators and `<template>` content. Render the diagram to SVG ahead of time and use the file.
+- `monospace` text falls back to a proportional face, so code blocks (Shiki, Code Hike) look wider than in Chrome unless the project loads a monospace font, for example with `@remotion/google-fonts/JetBrainsMono`.
 
 ### Video and audio encoding and decoding in your own code
 
