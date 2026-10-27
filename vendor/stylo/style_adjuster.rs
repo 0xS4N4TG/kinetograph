@@ -609,6 +609,39 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             .set_text_align(TextAlign::Start)
     }
 
+    /// A table cell whose parent is no table part gets an anonymous table
+    /// around it (CSS 2.2 section 17.2.1), which is a block as wide as its
+    /// content. This makes the cell a block (with `justify-self: start`, so
+    /// that its automatic width is `fit-content`),
+    /// as the box tree has no anonymous table boxes. Libraries centre labels
+    /// with it (`display: table-cell` in a `foreignObject`).
+    fn adjust_for_orphan_table_cell(&mut self, layout_parent_style: &ComputedValues) {
+        use crate::values::computed::align::SelfAlignment;
+        use crate::values::specified::box_::DisplayInside;
+        if self.style.get_box().clone_display().inside() != DisplayInside::TableCell {
+            return;
+        }
+        let parent = layout_parent_style.get_box().clone_display();
+        if parent.is_item_container()
+            || matches!(
+                parent.inside(),
+                DisplayInside::Table
+                    | DisplayInside::TableRowGroup
+                    | DisplayInside::TableHeaderGroup
+                    | DisplayInside::TableFooterGroup
+                    | DisplayInside::TableRow
+            )
+        {
+            return;
+        }
+        self.style
+            .mutate_box()
+            .set_adjusted_display(Display::Block, false);
+        if self.style.get_position().justify_self.0 == AlignFlags::AUTO {
+            self.style.mutate_position().justify_self = SelfAlignment(AlignFlags::START);
+        }
+    }
+
     #[cfg(feature = "gecko")]
     fn should_suppress_linebreak<E>(&self, element: Option<E>) -> bool
     where
@@ -1072,6 +1105,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             self.adjust_for_justify_items();
         }
         self.adjust_for_table_text_align();
+        self.adjust_for_orphan_table_cell(layout_parent_style);
         self.adjust_for_writing_mode(layout_parent_style);
         #[cfg(feature = "gecko")]
         self.adjust_for_ruby(element);

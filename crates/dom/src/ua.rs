@@ -10,6 +10,9 @@ html, body { margin: 0; padding: 0; }
 /* Chrome: svg:not(:root), symbol, image, marker, pattern, foreignObject clip their overflow. */
 svg:not(:root), symbol, image, marker, pattern, foreignObject { overflow: hidden; }
 
+/* A foreignObject is a block box of the size its attributes give (a presentational hint in Blitz). */
+foreignObject { display: block; }
+
 /* A native kg-* element is a box of its given size. */
 kg-native { display: block; }
 

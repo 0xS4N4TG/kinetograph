@@ -23,7 +23,9 @@ use serde_json::{Map, Value, json};
 use usvg::tiny_skia_path::PathSegment;
 
 use super::filter;
-use super::serialize::Note;
+use super::serialize::{FOREIGN_PREFIX, Note};
+use crate::paint::Painter;
+use crate::request::{IslandRequest, Unsupported};
 
 /// The state of one emission.
 pub struct Emitter<'a> {
@@ -36,6 +38,11 @@ pub struct Emitter<'a> {
     pub viewport: [f64; 2],
     /// Clip path content is drawn in opaque white, as coverage.
     pub coverage: bool,
+    pub request: &'a IslandRequest,
+    /// Draws the HTML of a `foreignObject`; made when the first is met.
+    pub painter: Option<Painter<'a>>,
+    /// What the HTML of the `foreignObject`s could not be drawn as.
+    pub foreign: Vec<Unsupported>,
 }
 
 fn affine(t: usvg::Transform) -> Affine {
@@ -213,7 +220,7 @@ enum Paint<'p> {
     Pattern(&'p usvg::Pattern, f32),
 }
 
-impl Emitter<'_> {
+impl<'a> Emitter<'a> {
     fn next_id(&mut self) -> String {
         self.counter += 1;
         format!("{}.{}", self.id, self.counter)
@@ -226,6 +233,55 @@ impl Emitter<'_> {
             value: Some(value.to_string()),
             reason: reason.to_string(),
         });
+    }
+
+    // ---- foreignObject ----
+
+    /// The HTML of the `foreignObject` that the rectangle `p` stands for: the
+    /// layers of its stacking context (clipped to its box by its `overflow`),
+    /// in a group at the rectangle's corner, under `base`.
+    fn foreign_object(&mut self, p: &usvg::Path, base: Affine) -> Vec<Value> {
+        let doc = self.doc;
+        let node = p
+            .id()
+            .strip_prefix(FOREIGN_PREFIX)
+            .and_then(|n| n.parse::<u64>().ok())
+            .and_then(|n| doc.get_node(blitz_dom::NodeId::from_u64(n)));
+        let Some(node) = node else {
+            return Vec::new();
+        };
+        let at = p.data().bounds();
+        let m = base * Affine::translate((f64::from(at.x()), f64::from(at.y())));
+        let request = self.request;
+        let painter = self
+            .painter
+            .get_or_insert_with(|| Painter::new(doc, request));
+        let layers = painter.sc_content(node);
+        self.foreign.append(&mut painter.unsupported);
+        if layers.is_empty() {
+            return Vec::new();
+        }
+        let mut group = json!({"id": self.next_id(), "type": "group", "children": layers});
+        match transform_json(m) {
+            Some(t) if t != json!({}) => group["transform"] = t,
+            Some(_) => {}
+            None => {
+                let [a, b, c, d, e, f] = m.as_coeffs();
+                let mut matrix = [0.0; 16];
+                matrix[0] = a;
+                matrix[1] = b;
+                matrix[4] = c;
+                matrix[5] = d;
+                matrix[10] = 1.0;
+                matrix[12] = e;
+                matrix[13] = f;
+                matrix[15] = 1.0;
+                group["transform"] = json!({
+                    "x": 0, "y": 0, "anchorX": 0, "anchorY": 0, "matrix": matrix,
+                });
+            }
+        }
+        vec![group]
     }
 
     // ---- groups ----
@@ -451,6 +507,18 @@ impl Emitter<'_> {
     pub fn path(&mut self, p: &usvg::Path, base: Affine) -> Vec<Value> {
         if !p.is_visible() {
             return Vec::new();
+        }
+        if p.id().starts_with(FOREIGN_PREFIX) {
+            if self.coverage {
+                self.unsupported(
+                    "foreignObject",
+                    "clip-path",
+                    "",
+                    "HTML in a clip path draws nothing",
+                );
+                return Vec::new();
+            }
+            return self.foreign_object(p, base);
         }
         let m = base;
         let d = path_data(p.data(), m);

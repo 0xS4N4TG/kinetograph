@@ -1395,13 +1395,9 @@ Libraries that need no plugin, only frame-pure use (details and snippets in `/do
 `d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()`, Paper.js (clear and redraw each
 frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
 Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` is the bundled JetBrains Mono unless you
-load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws): render the diagram to
-Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` falls back to a proportional face, so
-load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws; `doctor` shows the error): render the diagram to
-SVG ahead of time and use it as an `<Img>`. Load a font before Chart.js or Recharts measure text.
-Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` falls back to a proportional face, so
-load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws with `mermaid.initialize({ startOnLoad: false, htmlLabels: false })` (flowchart, sequence, class and pie checked); with the
-default HTML labels (`<foreignObject>` with `<div>`s) the SVG is not drawn, so keep `htmlLabels: false`. Load a font before Chart.js or Recharts measure text.
+load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws with its default HTML labels (a `<foreignObject>` of `<div>`s: flowchart,
+class, state and ER checked) and with text labels (sequence, pie); load the font its labels use before `mermaid.render`, so the
+boxes are measured with it. Load a font before Chart.js or Recharts measure text.
 
 ### 11.11 HyperFrames projects
 
