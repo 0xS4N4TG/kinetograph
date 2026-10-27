@@ -9,7 +9,14 @@
 //! no field takes. So the check asks serde: a key is read when giving it a
 //! value no field type accepts makes the layer (or the scene) fail to parse.
 //! Two such values are tried, a control-character string and `true`, since a
-//! string field takes the first; a key that takes both is not read.
+//! string field takes the first; a key that takes both is taken as not read.
+//!
+//! So a field must refuse one of them. A field typed `serde_json::Value` or
+//! `IgnoredAny`, or an untagged enum with both a string and a bool variant,
+//! takes any value and would be reported as unknown: give such a field a type
+//! that refuses one of the two values, or add a case here before adding it.
+//! `the_shipped_scenes_have_no_unknown_keys` (tests/scene_keys.rs) fails when a
+//! shipped scene uses one.
 //!
 //! Each layer is parsed on its own with its children left out, and a key's
 //! answer is kept for every object at the same place in the same kinds of
