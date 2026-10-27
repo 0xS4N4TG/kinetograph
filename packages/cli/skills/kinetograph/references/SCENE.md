@@ -1674,6 +1674,7 @@ Common fields:
 | `extend` | `pad` | Outside the first and last stop. `pad` holds the end colours. `repeat` repeats the span from the first to the last stop, which is CSS `repeating-linear-gradient` and friends; `reflect` does the same with every second span backwards. For `conic`, which already goes round, `repeat` repeats the span within the turn. |
 | `units` | `user` | What the coordinates are measured in. `user`: pixels of the painted layer. `box`: fractions of the painted layer's box, see [Box units](#box-units). |
 | `transform` | none | A matrix `[a, b, c, d, e, f]` (SVG's `matrix()`, so `x' = a x + c y + e`) that takes the gradient's space (after `units`) to the painted layer's: SVG's `gradientTransform`. A non-uniform matrix turns a circle into an ellipse and skews a line's perpendiculars. |
+| `unpremultiplied` | `false` | Blend the stops without premultiplying alpha, as SVG and canvas gradients do (the DOM painter sets it for SVG `<linearGradient>` and `<radialGradient>`): a stop fading to `#0000ff00` darkens the red next to it through purple. |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
