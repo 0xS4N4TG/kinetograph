@@ -253,18 +253,36 @@ mod tests {
         let bundled = kinetograph_core::fallback_fonts::monospace_face().family;
         // A fixed-pitch font (the fixture is JetBrains Mono) leads, and the bundled one is not registered.
         let fonts = BTreeMap::from([
-            ("Code".to_string(), fixture("jetbrains-mono-700-latin.woff2")),
+            (
+                "Code".to_string(),
+                fixture("jetbrains-mono-700-latin.woff2"),
+            ),
             ("Text".to_string(), fixture("inter-800-latin.woff2")),
         ]);
         let mut ctx = font_context(&fonts, std::path::Path::new("")).unwrap();
-        assert_eq!(generic(&mut ctx, GenericFamily::Monospace), ["Code", "Text"]);
-        assert_eq!(generic(&mut ctx, GenericFamily::UiMonospace), ["Code", "Text"]);
-        assert_eq!(generic(&mut ctx, GenericFamily::SansSerif), ["Text", "Code"]);
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::Monospace),
+            ["Code", "Text"]
+        );
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::UiMonospace),
+            ["Code", "Text"]
+        );
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::SansSerif),
+            ["Text", "Code"]
+        );
         // Without one, the bundled font leads `monospace`, and no other generic family.
         let fonts = BTreeMap::from([("Text".to_string(), fixture("inter-800-latin.woff2"))]);
         let mut ctx = font_context(&fonts, std::path::Path::new("")).unwrap();
-        assert_eq!(generic(&mut ctx, GenericFamily::Monospace), [bundled, "Text"]);
-        assert_eq!(generic(&mut ctx, GenericFamily::UiMonospace), [bundled, "Text"]);
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::Monospace),
+            [bundled, "Text"]
+        );
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::UiMonospace),
+            [bundled, "Text"]
+        );
         assert_eq!(generic(&mut ctx, GenericFamily::Serif), ["Text"]);
     }
 

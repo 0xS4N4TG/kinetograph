@@ -159,7 +159,10 @@ fn svg_gradient_stops_blend_unpremultiplied() {
     let frame = svg_page("gradient_alpha.html", 100, 20);
     let i = (10 * frame.width + 50) as usize * 4;
     let px = &frame.rgba[i..i + 4];
-    assert!(px[0] < 215 && px[2] > 160, "blue is left at the middle: {px:?}");
+    assert!(
+        px[0] < 215 && px[2] > 160,
+        "blue is left at the middle: {px:?}"
+    );
     assert!(px[0].abs_diff(px[2]) < 25, "{px:?}");
 }
 
