@@ -363,7 +363,15 @@ pub enum CanvasSource {
     },
     /// The picture of a child of a canvas pass (`GroupLayer::canvas`), by id:
     /// the child as a browser would hold it for a canvas it was drawn on.
-    Layer { id: String },
+    /// `width` and `height` are the size the authoring layer gives it; the
+    /// picture is drawn at the canvas's size whatever they say.
+    Layer {
+        id: String,
+        #[serde(default)]
+        width: Option<f64>,
+        #[serde(default)]
+        height: Option<f64>,
+    },
     /// Another canvas, drawn at its commands' size.
     Canvas {
         width: f64,
@@ -590,7 +598,7 @@ pub fn layer_key(id: &str) -> String {
 pub fn layer_sources(ops: &[CanvasOp]) -> Vec<String> {
     fn source(s: &CanvasSource, out: &mut Vec<String>) {
         match s {
-            CanvasSource::Layer { id } => out.push(id.clone()),
+            CanvasSource::Layer { id, .. } => out.push(id.clone()),
             CanvasSource::Canvas { commands, .. } => out.extend(layer_sources(commands)),
             CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => {}
         }

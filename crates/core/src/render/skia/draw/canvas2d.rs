@@ -485,7 +485,7 @@ impl Translator {
                 canvas.clip_rect(src, ClipOp::Intersect, true);
                 self.canvas_nested(canvas, (*width, *height), commands, comp.alpha, comp.blend);
             }
-            CanvasSource::Layer { id } => {
+            CanvasSource::Layer { id, .. } => {
                 let p = Self::base_paint(comp);
                 let filter = if op.smooth { skia_safe::FilterMode::Linear } else { skia_safe::FilterMode::Nearest };
                 self.draw_layer_picture(canvas, id, src, &p, SamplingOptions::new(filter, skia_safe::MipmapMode::None));
