@@ -79,7 +79,7 @@ cargo build --release
 
 `kinetograph render <scene> -o out.mp4 [--range a..b | a..=b] [--encoder NAME] [--json]` renders frames of a scene and
 encodes them to H.264 with FFmpeg (the `ffmpeg-next` crate, linked against the FFmpeg development libraries: install
-FFmpeg with `libx264` and `pkg-config`, and `libclang` for the bindings; `brew install ffmpeg` on macOS, `libavcodec-dev
+FFmpeg with `libx264` and `pkg-config`, and `libclang` for the bindings; `brew install ffmpeg pkgconf` on macOS, or set `FFMPEG_DIR` to the FFmpeg prefix without `pkg-config`; `libavcodec-dev
 libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu).
 
 - **Range.** `10..40` is frames 10 to 39 and `10..=40` is 10 to 40, as in Rust; either start or the end of `..` may be

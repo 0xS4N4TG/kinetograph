@@ -14,7 +14,7 @@ Kinetograph is not on npm yet. Build it from a clone of the repository.
 
 Install the system libraries:
 
-- macOS: `brew install ffmpeg pkgconf`
+- macOS: `brew install ffmpeg pkgconf`. Without `pkg-config`, set `FFMPEG_DIR=$(brew --prefix ffmpeg)` instead.
 - Debian or Ubuntu: `sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libavutil-dev libclang-dev pkg-config`
 
 If Homebrew's `rustc` is first on your `PATH` and does not start, put rustup first:
