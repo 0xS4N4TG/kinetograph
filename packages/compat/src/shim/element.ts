@@ -27,6 +27,7 @@ import { isKnownCssProperty } from './css-names.js';
 import { collectionOf, nodeListOf, type HTMLCollection, type NodeList } from './lists.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
 import { parseHtmlFragment } from '../request/html.js';
+import { attributeMapOf, AttrShim, type NamedNodeMapShim } from './attributes.js';
 import { bodyHost, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
 import { matches, queryAll, type SelectorContext } from './selector.js';
 import {
@@ -216,6 +217,9 @@ export function computedStyleOf(host: HostElement, readback: Readback): CSSStyle
 type Listener = ((event: any) => void) | { handleEvent(event: any): void };
 
 const elements = new WeakMap<HostElement, DomElement>();
+const childLists = new WeakMap<HostElement, NodeList<DomElement | DomText>>();
+/** A `<template>`'s content: a fragment of its own. */
+const templateContents = new WeakMap<HostElement, HostElement>();
 const texts = new WeakMap<HostText, DomText>();
 
 /** The DOM-like object for a text node of the host tree (one per node). */
@@ -235,7 +239,7 @@ export function domNodeFor(host: DomNode): DomElement | DomText {
 
 /** The host node behind a shim node. */
 export function hostNodeOf(value: unknown): DomNode | null {
-  return value instanceof DomElement ? value.host : value instanceof DomText ? value.host : null;
+  return value instanceof DomElement || value instanceof DomText ? value.host : null;
 }
 
 /** How selectors read the host tree of a root. */
@@ -252,7 +256,7 @@ export function selectorContextOf(readback: Readback, scope?: HostElement): Sele
 export function domElementFor(host: HostElement, _readback?: Readback): DomElement {
   let element = elements.get(host);
   if (element === undefined) {
-    element = new DomElement(host);
+    element = host.type === FRAGMENT ? new DomFragment(host) : new DomElement(host);
     elements.set(host, element);
   }
   return element;
@@ -310,17 +314,84 @@ function documentPosition(a: Positioned, b: unknown): number {
 }
 
 const TEXT_TAGS = new Set(['text', 'tspan']);
+
+/**
+ * The registered font that measures text asking for `key`: that one, else the built-in fallback, else whichever is
+ * registered, as the painter draws text whose family is not loaded. Null when no font is registered at all.
+ */
+function measuringFont(key: string, fonts: Record<string, string>): string | null {
+  if (key in fonts) return key;
+  if ('Kinetograph Fallback' in fonts) return 'Kinetograph Fallback';
+  return Object.keys(fonts)[0] ?? null;
+}
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
 const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 
-export class DomElement {
-  readonly nodeType = 1;
+/** The host type of a `DocumentFragment`: a list of children that belongs to no tree and is never drawn. */
+export const FRAGMENT = 'kg-fragment';
+
+/** The document a node belongs to when it was not made by the page's own `document`: a parsed document, or the inert one a `<template>`'s content has. */
+const ownerDocuments = new WeakMap<object, unknown>();
+/** The document whose `documentElement` a host is. */
+const documentOfRoot = new WeakMap<object, unknown>();
+
+export function setOwnerDocument(host: DomNode, doc: unknown): void {
+  ownerDocuments.set(host, doc);
+}
+export function setDocumentRoot(host: HostElement, doc: unknown): void {
+  documentOfRoot.set(host, doc);
+  ownerDocuments.set(host, doc);
+}
+
+/** The document a node belongs to: the one that made it, else the one its tree hangs from, else the page's. */
+export function ownerDocumentOf(host: DomNode): unknown {
+  const own = ownerDocuments.get(host);
+  if (own !== undefined) return own;
+  let top: DomNode = host;
+  for (let p = rawParentOf(top); p !== null; p = rawParentOf(top)) top = p;
+  return ownerDocuments.get(top) ?? (globalThis as { document?: unknown }).document;
+}
+
+/**
+ * `Node`: what `instanceof Node` asks, and where `nodeType`, `nodeName` and `ownerDocument` live. They are getters on the
+ * prototype (as in a browser) because DOMPurify reads them through `Node.prototype` so a page cannot shadow them.
+ */
+export class DomNodeBase {
+  static readonly ELEMENT_NODE = 1;
+  static readonly ATTRIBUTE_NODE = 2;
+  static readonly TEXT_NODE = 3;
+  static readonly CDATA_SECTION_NODE = 4;
+  static readonly PROCESSING_INSTRUCTION_NODE = 7;
+  static readonly COMMENT_NODE = 8;
+  static readonly DOCUMENT_NODE = 9;
+  static readonly DOCUMENT_TYPE_NODE = 10;
+  static readonly DOCUMENT_FRAGMENT_NODE = 11;
+  get nodeType(): number {
+    const host = (this as unknown as { host: DomNode }).host;
+    return host.kind === 'text' ? 3 : host.type === FRAGMENT ? 11 : 1;
+  }
+  get nodeName(): string {
+    const host = (this as unknown as { host: DomNode }).host;
+    return host.kind === 'text' ? '#text' : host.type === FRAGMENT ? '#document-fragment' : (this as unknown as DomElement).tagName;
+  }
+  get nodeValue(): string | null {
+    const host = (this as unknown as { host: DomNode }).host;
+    return host.kind === 'text' ? host.text : null;
+  }
+  get ownerDocument(): unknown {
+    return ownerDocumentOf((this as unknown as { host: DomNode }).host);
+  }
+}
+
+export class DomElement extends DomNodeBase {
   private listeners = new Map<string, Set<Listener>>();
   private styleObject: CSSStyleDeclarationShim | null = null;
 
-  constructor(readonly host: HostElement) {}
+  constructor(readonly host: HostElement) {
+    super();
+  }
 
   /** The root whose tree holds this element (it can change: a script moves nodes), else the detached one. */
   private get readback(): Readback {
@@ -331,15 +402,16 @@ export class DomElement {
 
   get inSvg(): boolean {
     if (isSvgTag(this.host.type)) return true;
-    for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) if (h.type === 'svg') return true;
+    // `foreignObject` holds HTML: what is inside it is not in the SVG namespace.
+    for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) {
+      if (h.type === 'svg') return true;
+      if (h.type === 'foreignObject' && h !== this.host) return false;
+    }
     return false;
   }
   get tagName(): string {
     if (isFillLayer(this.host)) return 'DIV';
     return this.inSvg ? this.host.type : this.host.type.toUpperCase();
-  }
-  get nodeName(): string {
-    return this.tagName;
   }
   get localName(): string {
     return isFillLayer(this.host) ? 'div' : this.host.type.toLowerCase();
@@ -386,7 +458,35 @@ export class DomElement {
   // ---- attributes ----
 
   private attrs(): Record<string, string> {
-    return attributesOf(propsWithOverlay(this.host), this.inSvg);
+    const props = propsWithOverlay(this.host);
+    const attributes = attributesOf(props, this.inSvg);
+    // `style` is its own field in the props; as an attribute it is the declarations' text.
+    const style = styleToCss(props.style);
+    if (style !== '') attributes.style = style;
+    return attributes;
+  }
+  get attributes(): NamedNodeMapShim {
+    return attributeMapOf(this.host, this);
+  }
+  hasAttributes(): boolean {
+    return this.getAttributeNames().length > 0;
+  }
+  getAttributeNode(name: string): AttrShim | null {
+    const value = this.getAttribute(String(name));
+    return value === null ? null : new AttrShim(this, this.getAttributeNames().find((n) => n === name || n === String(name).toLowerCase()) ?? String(name), value);
+  }
+  setAttributeNode(attr: AttrShim): AttrShim | null {
+    const old = this.getAttributeNode(attr.name);
+    this.setAttribute(attr.name, attr.value);
+    return old;
+  }
+  removeAttributeNode(attr: AttrShim): AttrShim {
+    if (!this.hasAttribute(attr.name)) throw new DOMExceptionShim("Failed to execute 'removeAttributeNode' on 'Element': The node provided is not an attribute of this element.", 'NotFoundError', 8);
+    this.removeAttribute(attr.name);
+    return attr;
+  }
+  get shadowRoot(): null {
+    return null;
   }
   getAttribute(name: string): string | null {
     return this.attrs()[name] ?? this.attrs()[name.toLowerCase()] ?? null;
@@ -462,10 +562,11 @@ export class DomElement {
   }
   get parentNode(): DomElement | Document | null {
     if (this.host === htmlHost) return (globalThis as { document?: Document }).document ?? null;
+    const root = documentOfRoot.get(this.host);
+    if (root !== undefined) return root as Document;
+    const parent = effectiveParentOf(this.host);
+    if (parent !== null && parent.type === FRAGMENT) return domElementFor(parent) as unknown as DomElement;
     return this.parentElement;
-  }
-  get ownerDocument(): unknown {
-    return (globalThis as { document?: unknown }).document;
   }
   get isConnected(): boolean {
     return isConnectedHost(this.host);
@@ -475,7 +576,17 @@ export class DomElement {
     return this.readback.childNodes(this.host);
   }
   get childNodes(): NodeList<DomElement | DomText> {
-    return nodeListOf(this.childHosts().map(domNodeFor));
+    // One list per element, refilled each time it is asked for (a form's `childNodes` is compared with itself to find clobbering).
+    let list = childLists.get(this.host);
+    const nodes = this.childHosts().map(domNodeFor);
+    if (list === undefined) {
+      list = nodeListOf(nodes);
+      childLists.set(this.host, list);
+    } else {
+      list.length = 0;
+      list.push(...nodes);
+    }
+    return list as NodeList<DomElement | DomText>;
   }
   get children(): HTMLCollection<DomElement> {
     return collectionOf(this.childNodes.filter((n): n is DomElement => n instanceof DomElement));
@@ -576,10 +687,12 @@ export class DomElement {
 
   /** The nodes a script passes (nodes or strings) as host nodes; a string is a text node. A node already in a tree is moved. */
   private static hostsOf(nodes: unknown[]): DomNode[] {
-    return nodes.map((n) => {
-      const host = hostNodeOf(n);
-      return host ?? createHostText(String(n));
-    });
+    return expandFragments(
+      nodes.map((n) => {
+        const host = hostNodeOf(n);
+        return host ?? createHostText(String(n));
+      }),
+    );
   }
   private static required(node: unknown, method: string): DomNode {
     const host = hostNodeOf(node);
@@ -607,12 +720,13 @@ export class DomElement {
     visit(this.host);
   }
   appendChild<T>(child: T): T {
-    insertChild(this.host, DomElement.required(child, 'appendChild'), null);
+    for (const host of expandFragments([DomElement.required(child, 'appendChild')])) insertChild(this.host, host, null);
     return child;
   }
   insertBefore<T>(child: T, before: unknown): T {
-    const host = DomElement.required(child, 'insertBefore');
-    insertChild(this.host, host, before === null || before === undefined ? null : DomElement.required(before, 'insertBefore'));
+    const hosts = expandFragments([DomElement.required(child, 'insertBefore')]);
+    const anchor = before === null || before === undefined ? null : DomElement.required(before, 'insertBefore');
+    for (const host of hosts) insertChild(this.host, host, anchor);
     return child;
   }
   removeChild<T>(child: T): T {
@@ -624,14 +738,14 @@ export class DomElement {
     return child;
   }
   replaceChild<T>(child: unknown, old: T): T {
-    const host = DomElement.required(child, 'replaceChild');
+    const hosts = expandFragments([DomElement.required(child, 'replaceChild')]);
     const oldHost = DomElement.required(old, 'replaceChild');
     if (effectiveParentOf(oldHost) !== this.host && !(this.host === bodyHost && effectiveParentOf(oldHost) === null)) {
       throw new DOMExceptionShim("Failed to execute 'replaceChild' on 'Node': The node to be replaced is not a child of this node.", 'NotFoundError', 8);
     }
     const after = this.nextHostAfter(oldHost);
     removeChild(oldHost);
-    insertChild(this.host, host, after);
+    for (const host of hosts) insertChild(this.host, host, after);
     return old;
   }
   /** The node after `host` among this element's children, null at the end. */
@@ -675,18 +789,26 @@ export class DomElement {
     removeChild(this.host);
   }
   cloneNode(deep = false): DomElement {
-    return domElementFor(cloneHost(this.host, Boolean(deep)) as HostElement);
+    const copy = cloneHost(this.host, Boolean(deep)) as HostElement;
+    // A template's content is not among its children: a deep copy takes it along.
+    const content = templateContents.get(this.host);
+    if (deep && content !== undefined) for (const child of content.children) insertChild(contentOf(copy), cloneHost(child, true), null);
+    return domElementFor(copy);
+  }
+  /** A `<template>`'s content (a fragment); other elements have none. */
+  get content(): DomFragment | undefined {
+    return this.host.type === 'template' ? (domElementFor(contentOf(this.host)) as DomFragment) : undefined;
   }
   insertAdjacentElement(where: string, element: unknown): unknown {
     const host = DomElement.required(element, 'insertAdjacentElement');
-    this.insertAdjacent(where, [host]);
+    this.insertAdjacent(where, expandFragments([host]));
     return element;
   }
   insertAdjacentText(where: string, text: string): void {
     this.insertAdjacent(where, [createHostText(text)]);
   }
   insertAdjacentHTML(where: string, html: string): void {
-    this.insertAdjacent(where, parseHtmlFragment(String(html), this.inSvg));
+    this.insertAdjacent(where, parsedNodes(parseHtmlFragment(String(html), this.inSvg)));
   }
   private insertAdjacent(where: string, hosts: DomNode[]): void {
     switch (String(where).toLowerCase()) {
@@ -715,14 +837,21 @@ export class DomElement {
   }
   /** The markup of this element's children (what the DOM calls `innerHTML`). */
   get innerHTML(): string {
-    return this.childHosts().map((n) => serializeHost(n)).join('');
+    const content = templateContents.get(this.host);
+    return (content !== undefined ? content.children : this.childHosts()).map((n) => serializeHost(n, this.inSvg && this.host.type !== 'foreignObject')).join('');
   }
   set innerHTML(html: string) {
+    if (this.host.type === 'template') {
+      const content = contentOf(this.host);
+      clearChildren(content);
+      for (const node of parsedNodes(parseHtmlFragment(String(html), false))) insertChild(content, node, null);
+      return;
+    }
     clearChildren(this.host);
-    for (const node of parseHtmlFragment(String(html), this.inSvg)) insertChild(this.host, node, null);
+    for (const node of parsedNodes(parseHtmlFragment(String(html), this.inSvg))) insertChild(this.host, node, null);
   }
   get outerHTML(): string {
-    return serializeHost(this.host);
+    return serializeHost(this.host, this.inSvg);
   }
 
   /** Selector matching over the host tree. */
@@ -809,13 +938,20 @@ export class DomElement {
     if (owner === null) return null;
     const svg = owner.box();
     const ctm = this.getCTM();
-    if (svg === null || ctm === null) return null;
+    if (ctm === null) return null;
     const b = this.getBBox();
-    const view = (owner.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
-    const [vx, vy, vw, vh] = view.length === 4 && view.every(Number.isFinite) && view[2]! > 0 && view[3]! > 0 ? view : [0, 0, svg.width, svg.height];
-    const scale = Math.min(svg.width / vw!, svg.height / vh!);
-    const ox = svg.rect.x + (svg.width - vw! * scale) / 2 - vx! * scale;
-    const oy = svg.rect.y + (svg.height - vh! * scale) / 2 - vy! * scale;
+    // An `<svg>` no layout reaches (one a script made to measure text in, and has not shown) is measured in its own
+    // user units: where a browser, which lays every element out, would say the same for an `<svg>` with no size.
+    let scale = 1;
+    let ox = 0;
+    let oy = 0;
+    if (svg !== null) {
+      const view = (owner.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
+      const [vx, vy, vw, vh] = view.length === 4 && view.every(Number.isFinite) && view[2]! > 0 && view[3]! > 0 ? view : [0, 0, svg.width, svg.height];
+      scale = Math.min(svg.width / vw!, svg.height / vh!);
+      ox = svg.rect.x + (svg.width - vw! * scale) / 2 - vx! * scale;
+      oy = svg.rect.y + (svg.height - vh! * scale) / 2 - vy! * scale;
+    }
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
     for (const [px, py] of [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]] as const) {
       const x = ox + (ctm.a * px + ctm.c * py + ctm.e) * scale;
@@ -1093,7 +1229,9 @@ export class DomElement {
         const weight = computed('font-weight') || svgTextProperty(this.host, 'font-weight', this.readback);
         const style = computed('font-style') || svgTextProperty(this.host, 'font-style', this.readback);
         const key = fontKey(family, weight === '' ? undefined : weight, style === 'italic' || style === 'oblique' ? 'italic' : undefined);
-        const line = addonFunction('layoutText')({ text, font: key, size, fonts: registeredFonts() }).lines?.[0];
+        const fonts = registeredFonts();
+        const font = measuringFont(key, fonts);
+        const line = font === null ? undefined : addonFunction('layoutText')({ text, font, size, fonts }).lines?.[0];
         if (line) {
           ascent = line.baseline - line.top;
           height = line.bottom - line.top;
@@ -1128,7 +1266,10 @@ export class DomElement {
       try {
         // Spaces at the ends count: measure between two bars and take their width off.
         const padded = /^\s|\s$/.test(text);
-        const layout = (t: string): number => addonFunction('layoutText')({ text: t, font: key, size, fonts: registeredFonts() }).width;
+        const fonts = registeredFonts();
+        const font = measuringFont(key, fonts);
+        if (font === null) throw new Error('no font is registered');
+        const layout = (t: string): number => addonFunction('layoutText')({ text: t, font, size, fonts }).width;
         width = padded ? layout(`|${text}|`) - layout('||') : layout(text);
       } catch {
         width = null;
@@ -1229,6 +1370,67 @@ export class DomElement {
   }
 }
 
+// ---- fragments and templates ----
+
+/** The children of each fragment among `hosts` in its place (a fragment is emptied into the node it is inserted into). */
+function expandFragments(hosts: DomNode[]): DomNode[] {
+  const out: DomNode[] = [];
+  for (const host of hosts) {
+    if (host.kind === 'element' && host.type === FRAGMENT) out.push(...host.children);
+    else out.push(host);
+  }
+  return out;
+}
+
+let inertDocument: (() => unknown) | null = null;
+/** Document code hands over how the inert document that owns every `<template>`'s content is made. */
+export function setInertDocumentFactory(fn: () => unknown): void {
+  inertDocument = fn;
+}
+
+/** A `<template>`'s content: made on first use. */
+function contentOf(template: HostElement): HostElement {
+  let content = templateContents.get(template);
+  if (content === undefined) {
+    content = { kind: 'element', type: FRAGMENT, props: {}, children: [] };
+    templateContents.set(template, content);
+    if (inertDocument !== null) ownerDocuments.set(content, inertDocument());
+  }
+  return content;
+}
+
+/**
+ * Nodes the HTML parser made, ready to be put in a tree: each node knows its parent, and what is written inside a
+ * `<template>` is its content instead of its children.
+ */
+export function parsedNodes(nodes: DomNode[]): DomNode[] {
+  const visit = (node: DomNode, parent: HostElement | null): void => {
+    if (parent !== null) setRawParent(node, parent);
+    if (node.kind !== 'element') return;
+    if (node.type === 'template' && node.children.length > 0) {
+      const content = contentOf(node);
+      for (const child of node.children) content.children.push(child);
+      node.children.length = 0;
+      for (const child of content.children) visit(child, content);
+      return;
+    }
+    for (const child of node.children) visit(child, node);
+  };
+  for (const node of nodes) visit(node, null);
+  return nodes;
+}
+
+/** `new DocumentFragment()` and what `createDocumentFragment` makes: children that hang from no tree. */
+export class DomFragment extends DomElement {
+  constructor(host: HostElement = { kind: 'element', type: FRAGMENT, props: {}, children: [] }) {
+    super(host);
+    if (!elements.has(host)) elements.set(host, this);
+  }
+  getElementById(id: string): DomElement | null {
+    return this.querySelector(`#${String(id).replace(/[^\w-]/g, (c) => `\\${c}`)}`);
+  }
+}
+
 /** The error a DOM method throws for a node that cannot go there (`name` and the legacy `code`). */
 export class DOMExceptionShim extends Error {
   constructor(message: string, override readonly name: string, readonly code: number) {
@@ -1241,26 +1443,43 @@ const escapeText = (text: string): string => text.replace(/&/g, '&amp;').replace
 const escapeAttribute = (text: string): string => text.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
 /** A host node as markup. */
-export function serializeHost(node: DomNode): string {
+export function serializeHost(node: DomNode, inSvg = false): string {
   if (node.kind === 'text') return escapeText(node.text);
-  if (node.type === 'kg-sequence') return node.children.map(serializeHost).join('');
+  if (node.type === 'kg-sequence' || node.type === FRAGMENT) return node.children.map((c) => serializeHost(c, inSvg)).join('');
   if (!isDomElement(node.type)) return '';
+  // SVG attribute names keep their case (`viewBox`); inside `foreignObject` it is HTML again.
+  const svg = inSvg || isSvgTag(node.type);
+  const below = svg && node.type !== 'foreignObject';
   const props = propsWithOverlay(node);
-  const attributes = attributesOf(props, node.type === 'svg');
-  const style = styleToCss(typeof props.style === 'object' && props.style !== null ? props.style : {});
+  const attributes = attributesOf(props, svg);
+  const style = styleToCss(props.style);
   const written = Object.entries(attributes).map(([name, value]) => ` ${name}="${escapeAttribute(value)}"`).join('');
   const styleText = style === '' ? '' : ` style="${escapeAttribute(style)}"`;
   const open = `<${node.type}${written}${attributes.style === undefined ? styleText : ''}`;
   if (VOID_TAGS.has(node.type)) return `${open}>`;
-  const inner = node.type === 'style' || node.type === 'script' ? node.children.map((c) => (c.kind === 'text' ? c.text : '')).join('') : node.children.map(serializeHost).join('');
+  const content = templateContents.get(node);
+  const inner = node.type === 'style' || node.type === 'script' ? node.children.map((c) => (c.kind === 'text' ? c.text : '')).join('') : (content !== undefined ? content.children : node.children).map((c) => serializeHost(c, below)).join('');
   return `${open}>${inner}</${node.type}>`;
 }
 
 /** A text node of the host tree, as a script sees it. */
-export class DomText {
-  readonly nodeType = 3;
-  readonly nodeName = '#text';
-  constructor(readonly host: HostText) {}
+export class DomText extends DomNodeBase {
+  constructor(readonly host: HostText) {
+    super();
+  }
+  hasChildNodes(): boolean {
+    return false;
+  }
+  get childNodes(): NodeList<DomElement | DomText> {
+    return nodeListOf([]);
+  }
+  get firstChild(): null {
+    return null;
+  }
+  get lastChild(): null {
+    return null;
+  }
+  normalize(): void {}
   get data(): string {
     return this.host.text;
   }
@@ -1282,9 +1501,6 @@ export class DomText {
   get length(): number {
     return this.host.text.length;
   }
-  get ownerDocument(): unknown {
-    return (globalThis as { document?: unknown }).document;
-  }
   private parentHost(): HostElement | null {
     const parent = effectiveParentOf(this.host);
     if (parent !== null) return parent;
@@ -1295,6 +1511,8 @@ export class DomText {
     return parent !== null && isDomElement(parent.type) ? domElementFor(parent) : null;
   }
   get parentNode(): DomElement | null {
+    const parent = effectiveParentOf(this.host);
+    if (parent !== null && parent.type === FRAGMENT) return domElementFor(parent);
     return this.parentElement;
   }
   get isConnected(): boolean {
