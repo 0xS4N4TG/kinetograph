@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { homedir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { lockMismatch, readLock, recordInLock, writeLock, type Lock } from '@kinetographdev/core/lock';
+import { realFetch } from '@kinetographdev/compat/shim';
 import { CliError } from '../errors.js';
 
 export interface CdnRef {
@@ -304,7 +305,8 @@ export function verifyIntegrity(bytes: Uint8Array, integrity: string, url: strin
 }
 
 async function download(url: string, options: FetchOptions, allowed: Set<string>): Promise<{ bytes: Uint8Array; final: string }> {
-  const fetchImpl = options.fetchImpl ?? ((u, init) => fetch(u, init) as Promise<FetchResponse>);
+  // The network's own fetch: after a page has run in this process (the pre-download step runs it), `fetch` is the page's.
+  const fetchImpl = options.fetchImpl ?? ((u, init) => realFetch()(u, init) as Promise<FetchResponse>);
   let current = url;
   for (let hop = 0; ; hop++) {
     checkUrl(current, allowed);

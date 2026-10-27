@@ -9,6 +9,7 @@ import type { HfNode } from '@kinetographdev/core/hyperframes';
 import { dataCachePath, fetchCdnData } from '../src/hyperframes/deps.js';
 import { MAX_IMAGE_BYTES, pickSrcset, remoteImage, rewriteCssImages } from '../src/hyperframes/images.js';
 import { buildPlan } from '../src/hyperframes/plan.js';
+import { installRemotePictures, setDiscovery, discovered } from '../src/hyperframes/dynamic.js';
 
 function project(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), 'kg-hf-img-'));
@@ -219,6 +220,52 @@ describe('the render reads the pictures from the cache', () => {
       const notes = (await buildPlan(join(dir, 'index.html'))).plan.notes.join('\n');
       expect(notes).toContain('kinetograph fetch-deps');
       expect(notes).not.toContain('--allow-host');
+    });
+  });
+});
+
+describe('pictures a script sets at run time', () => {
+  const page = (script: string): string =>
+    `<!doctype html><html><body><div data-composition-id="m" data-duration="1"><img id="a"></div><script>${script}</script></body></html>`;
+
+  it('are found in the page\'s own scripts, on any host, and a URL built at run time asks for the page to be run', async () => {
+    await withCache(async () => {
+      const literal = project({ 'index.html': page(`document.getElementById('a').src = '${IMG}'; el.style.backgroundImage = 'url(${MASK})'; v.src = 'https://img.example.com/clip.mp4';`) });
+      const built = await buildPlan(join(literal, 'index.html'), { discoverOnly: true });
+      expect(new Set(built.imageUrls)).toEqual(new Set([IMG, MASK]));
+      expect(built.mediaUrls).toEqual(['https://img.example.com/clip.mp4']);
+      expect(built.runtimePictures).toBe(false);
+
+      const computed = project({ 'index.html': page("const base = 'https://img.example.com/'; document.getElementById('a').src = base + name + '.png';") });
+      expect((await buildPlan(join(computed, 'index.html'), { discoverOnly: true })).runtimePictures).toBe(true);
+      const template = project({ 'index.html': page('img.setAttribute("src", `https://img.example.com/${n}.png`);') });
+      expect((await buildPlan(join(template, 'index.html'), { discoverOnly: true })).runtimePictures).toBe(true);
+
+      // A URL in a script that sets no picture is not one.
+      const data = project({ 'index.html': page(`fetch('${IMG}')`) });
+      expect((await buildPlan(join(data, 'index.html'), { discoverOnly: true })).imageUrls).toEqual([]);
+    });
+  });
+
+  it('are read from the cache by the render, kept to download while the page is run, and said with the fix otherwise', async () => {
+    await withCache(async () => {
+      installRemotePictures();
+      const lookup = (globalThis as Record<symbol, unknown>)[Symbol.for('kinetograph.hf.remotePicture')] as (url: string) => Record<string, unknown>;
+      const missing = lookup(IMG);
+      expect(missing.error).toContain(`kinetograph fetch-deps <entry> --allow-host img.example.com`);
+      expect(missing.discovering).toBeUndefined();
+      expect(lookup('http://img.example.com/a.png').error).toContain('only https pictures are');
+
+      setDiscovery({});
+      try {
+        expect(lookup(IMG)).toMatchObject({ discovering: true });
+        expect([...discovered.pictures]).toEqual([IMG]);
+      } finally {
+        setDiscovery(null);
+      }
+
+      await fetchCdnData([IMG], { allowHosts: ['img.example.com'], maxBytes: MAX_IMAGE_BYTES, fetchImpl: fakeFetch() });
+      expect(lookup(IMG)).toEqual({ file: dataCachePath(IMG) });
     });
   });
 });

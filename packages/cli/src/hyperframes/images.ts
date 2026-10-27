@@ -2,6 +2,28 @@
 // in picture properties (`background`, `mask`, `border-image`, `list-style`, `content`, ...). `fetch-deps` downloads them
 // (`deps.ts`), the plan reads them from that cache, and a render never touches the network.
 
+import { DEFAULT_ALLOWED_HOSTS } from './deps.js';
+
+/** How the page's runtime asks the host for the cached file of a remote picture a script set (`dynamic.ts`). */
+export const REMOTE_PICTURE = Symbol.for('kinetograph.hf.remotePicture');
+
+/**
+ * Why a remote picture is drawn without, and the command that fixes it: `fetch-deps`, with `--allow-host` when its host is
+ * not one of the defaults. `http:` is refused outright.
+ */
+export function notCachedPicture(url: string, entry = '<entry>', what = 'the picture'): string {
+  if (/^http:/i.test(url)) return `${what} ${url} is not downloaded: only https pictures are`;
+  // The host is pasted into a command to copy: only a plain hostname is (punycode is ASCII), and a URL that does not parse gets none.
+  let host = '';
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // no host to suggest
+  }
+  const allow = host === '' || DEFAULT_ALLOWED_HOSTS.includes(host) || !/^[a-z0-9.-]+$/i.test(host) ? '' : ` --allow-host ${host}`;
+  return `${what} ${url} is not cached, and a render reads no network, so it is drawn without the picture: run \`kinetograph fetch-deps ${entry}${allow}\``;
+}
+
 /** The most bytes of one remote picture. */
 export const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 

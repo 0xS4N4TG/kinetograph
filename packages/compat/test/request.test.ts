@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { attributesOf } from '../src/request/attrs.js';
-import { buildIslandRequest, collectStyleElements } from '../src/request/build.js';
+import { buildIslandRequest, collectStyleElements, srcsetCandidate } from '../src/request/build.js';
 import { parseHtmlFragment } from '../src/request/html.js';
 import { styleToCss } from '../src/request/style.js';
 import type { DomNode } from '../src/types.js';
@@ -212,5 +212,35 @@ describe('remote files', () => {
   it('are left as they are with no resolver', () => {
     const { request } = buildIslandRequest(el('img', { src: 'https://x.test/a.png' }), opts);
     expect((request.root as any).attrs.src).toBe('https://x.test/a.png');
+  });
+});
+
+describe('srcset', () => {
+  const opts = { path: '$0', viewport: { width: 100, height: 100 }, fonts: {}, baseDir: '/p', time: 0, stylesheets: [] };
+
+  it('draws the candidate a browser at device pixel ratio 1 takes', () => {
+    expect(srcsetCandidate('b.png 2x, a.png 1x')).toBe('a.png');
+    expect(srcsetCandidate('a.png, b.png 2x')).toBe('a.png');
+    // `src` is the 1x candidate when the srcset has none.
+    expect(srcsetCandidate('b.png 2x, c.png 3x', 'a.png')).toBe('a.png');
+    expect(srcsetCandidate('c.png 3x, b.png 1.5x')).toBe('b.png');
+    expect(srcsetCandidate('w.png 400w, v.png 800w')).toBe('w.png');
+    expect(srcsetCandidate('https://img.test/a.png?w=1,2 1x')).toBe('https://img.test/a.png?w=1,2');
+    expect(srcsetCandidate('')).toBeNull();
+  });
+
+  it('stands in for an <img>\'s src, a remote one read from where it was downloaded', async () => {
+    const { request } = buildIslandRequest(el('div', {}, [el('img', { srcSet: 'big.png 2x, small.png 1x', src: 'fallback.png' }), el('img', { srcSet: 'big.png 2x' })]), opts);
+    const [a, b] = (request.root as any).children;
+    expect(a.attrs.src).toBe('small.png');
+    expect(b.attrs.src).toBe('big.png');
+    const { setRemoteAssetResolver } = await import('../src/environment.js');
+    setRemoteAssetResolver((url) => `/cache/${url.split('/').pop()}`);
+    try {
+      const { request: remote } = buildIslandRequest(el('img', { srcSet: 'https://x.test/r.png 1x' }), opts);
+      expect((remote.root as any).attrs.src).toBe('/cache/r.png');
+    } finally {
+      setRemoteAssetResolver(null);
+    }
   });
 });

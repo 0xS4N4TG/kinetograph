@@ -314,6 +314,17 @@ function documentPosition(a: Positioned, b: unknown): number {
 }
 
 const TEXT_TAGS = new Set(['text', 'tspan']);
+/** The HTML elements whose IDL attribute of each name reflects the content attribute (HTML, "reflect"). */
+const REFLECTED: Record<string, Set<string>> = {
+  src: new Set(['img', 'video', 'audio', 'source', 'track', 'script', 'iframe', 'embed', 'input']),
+  srcset: new Set(['img', 'source']),
+  sizes: new Set(['img', 'source']),
+  alt: new Set(['img', 'area', 'input']),
+  poster: new Set(['video']),
+  href: new Set(['a', 'area', 'link', 'base']),
+};
+/** The SVG elements whose `href` is an SVGAnimatedString. */
+const SVG_HREF_TAGS = new Set(['a', 'image', 'use', 'linearGradient', 'radialGradient', 'pattern', 'textPath', 'feImage', 'filter', 'mpath', 'script']);
 
 /**
  * The registered font that measures text asking for `key`: that one, else the built-in fallback, else whichever is
@@ -1088,8 +1099,81 @@ export class DomElement extends DomNodeBase {
     this.setAttribute('height', String(Math.max(0, Math.floor(Number(value)) || 0)));
     if (this.host.type === 'canvas') resetCanvasOf(this.host);
   }
+  // The IDL attributes a script commonly assigns (`img.src = url`) reflect their content attribute, as in a browser: the
+  // property reads and writes the attribute, so what a script sets is drawn like markup. On an element that has no such
+  // attribute the name is an ordinary property of the object (`div.src = x` is an expando, not an attribute).
   get src(): string {
-    return this.getAttribute('src') ?? '';
+    return this.reflected('src');
+  }
+  set src(value: string) {
+    this.reflect('src', value);
+  }
+  get srcset(): string {
+    return this.reflected('srcset');
+  }
+  set srcset(value: string) {
+    this.reflect('srcset', value);
+  }
+  get sizes(): string {
+    return this.reflected('sizes');
+  }
+  set sizes(value: string) {
+    this.reflect('sizes', value);
+  }
+  get alt(): string {
+    return this.reflected('alt');
+  }
+  set alt(value: string) {
+    this.reflect('alt', value);
+  }
+  get poster(): string {
+    return this.reflected('poster');
+  }
+  set poster(value: string) {
+    this.reflect('poster', value);
+  }
+  /** The URL that is drawn: `src`, else the `srcset` candidate (the first; there is no viewport density here but 1). */
+  get currentSrc(): string {
+    if (!REFLECTED.src!.has(this.host.type)) return undefined as never;
+    const src = this.getAttribute('src');
+    if (src !== null && src !== '') return src;
+    return /^\s*(\S+)/.exec(this.getAttribute('srcset') ?? '')?.[1]?.replace(/,$/, '') ?? '';
+  }
+  /**
+   * `href`: a string on an HTML `<a>`, `<area>`, `<link>`, `<base>`; an SVGAnimatedString on the SVG elements that link
+   * (`image.href.baseVal = url`), whose `baseVal` reads `href`, else the older `xlink:href`.
+   */
+  get href(): string | { baseVal: string; animVal: string } {
+    if (this.inSvg && SVG_HREF_TAGS.has(this.host.type)) {
+      const element = this;
+      const read = (): string => element.getAttribute('href') ?? element.getAttribute('xlink:href') ?? '';
+      return {
+        get baseVal(): string {
+          return read();
+        },
+        set baseVal(next: string) {
+          element.setAttribute('href', next);
+        },
+        get animVal(): string {
+          return read();
+        },
+      };
+    }
+    return this.reflected('href');
+  }
+  set href(value: string) {
+    // An SVGAnimatedString is read-only: only its `baseVal` writes.
+    if (this.inSvg && SVG_HREF_TAGS.has(this.host.type)) return;
+    this.reflect('href', value);
+  }
+  // Unset on an element without the attribute it is `undefined`; once set, the own property shadows this accessor.
+  private reflected(name: string): string {
+    if (!REFLECTED[name]!.has(this.host.type)) return undefined as never;
+    return this.getAttribute(name) ?? '';
+  }
+  private reflect(name: string, value: unknown): void {
+    if (REFLECTED[name]!.has(this.host.type)) this.setAttribute(name, value);
+    else Object.defineProperty(this, name, { value, writable: true, enumerable: true, configurable: true });
   }
   get naturalWidth(): number {
     return this.host.type === 'img' ? imageSize(this.src)?.width ?? 0 : 0;
