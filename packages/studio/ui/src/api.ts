@@ -94,6 +94,11 @@ export interface StudioApi {
   cancelRender(id: string): Promise<RenderJob>;
   /** Opens `/ws` and keeps it open: it reconnects after a drop. */
   connect(handlers: SocketHandlers): StudioSocket;
+  /**
+   * The address of a small picture of frame `frame`, `height` px tall, for a clip of the timeline. The server draws it
+   * only while no preview frame is being asked for; `build` makes the address change when the project is rebuilt.
+   */
+  thumbnailUrl(comp: string, frame: number, height: number, build: number, props?: Record<string, unknown>): string;
 }
 
 export interface ApiOptions {
@@ -183,6 +188,8 @@ export function createApi(options: ApiOptions = {}): StudioApi {
         body: JSON.stringify(body),
       }),
     cancelRender: (id) => request<RenderJob>(`/api/renders/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    thumbnailUrl: (comp, frame, height, build, props) =>
+      `${baseUrl}/api/thumbnail${query({ comp, frame, height, build, props: propsParam(props) })}`,
 
     connect(handlers) {
       const Socket = options.WebSocket ?? WebSocket;

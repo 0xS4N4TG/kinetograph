@@ -3,7 +3,7 @@ import { SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 
 import type { CompositionInfo } from '@/api';
 import { PanelHeader } from '@/components/shell/panel-header';
-import { Bar, EmptyRow, LABEL_WIDTH, ROW_HEIGHT, Row, TimelineNotice } from '@/components/timeline/timeline-row';
+import { Bar, EmptyRow, LABEL_WIDTH, ROW_HEIGHT, Row, THUMB_HEIGHT, TimelineNotice } from '@/components/timeline/timeline-row';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { formatTimecode } from '@/lib/format';
@@ -32,6 +32,8 @@ interface TimelineProps {
   selectedLayers: string[];
   /** A row was clicked: the layers it stands for (all the pieces of a folded row). */
   onSelectLayers(ids: string[]): void;
+  /** The address of a small picture of a frame, for the clips; none when left out. */
+  thumbnailUrl?: (frame: number, height: number) => string | null;
 }
 
 const DETAILS_KEY = 'kinetograph.studio.timeline.details';
@@ -65,7 +67,7 @@ function nodeTitle(node: TimelineNode): string {
  * The timeline: a ruler in frames, one row per Sequence nested under its parent, then a row per layer, and the playhead
  * across them. Pressing and dragging in the ruler or a lane scrubs; a row's click selects its layer.
  */
-export function Timeline({ comp, status, state, player, selectedLayers, onSelectLayers }: TimelineProps) {
+export function Timeline({ comp, status, state, player, selectedLayers, onSelectLayers, thumbnailUrl }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -351,6 +353,7 @@ export function Timeline({ comp, status, state, player, selectedLayers, onSelect
                           pxPerFrame={pxPerFrame}
                           title={title}
                           onClick={() => pick(node, false)}
+                          thumbnail={thumbnailUrl?.(a, THUMB_HEIGHT * 2)}
                           className={cn(
                             'border',
                             colors.bar,

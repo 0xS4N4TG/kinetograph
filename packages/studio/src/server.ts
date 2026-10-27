@@ -41,6 +41,12 @@ const MAX_BODY_BYTES = 1 << 20;
 const RECLAIM_MS = 30_000;
 /** The most chat records kept for a window that reconnects. */
 const CHAT_LIMIT = 5_000;
+/** A thumbnail is drawn only once no preview frame was asked for in this long (ms): playback is never kept waiting. */
+const THUMB_IDLE_MS = 250;
+/** Thumbnails kept, the least recently used dropped first. */
+const THUMB_CACHE = 400;
+/** The tallest thumbnail, px. */
+const THUMB_MAX_HEIGHT = 120;
 
 interface FrameParams {
   comp: string;
@@ -175,8 +181,103 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     return found;
   }
 
-  async function renderFrame(params: FrameParams): Promise<{ header: Omit<FrameHeader, 'requestId'>; image: Uint8Array }> {
+  // ---- thumbnails ----
+  // Small frames for the timeline's clips, drawn at low priority: one at a time, and only while no preview frame has
+  // been asked for in THUMB_IDLE_MS, so they never wait in front of playback or scrubbing. Kept by build, composition,
+  // frame, props and size.
+
+  let previewsBusy = 0;
+  let lastPreviewAt = 0;
+  const thumbs = new Map<string, Uint8Array>();
+  interface ThumbJob {
+    key: string;
+    params: FrameParams;
+    done(image: Uint8Array | null, error?: unknown): void;
+    gone: boolean;
+  }
+  const thumbQueue: ThumbJob[] = [];
+  let thumbRunning = false;
+  let thumbTimer: NodeJS.Timeout | null = null;
+  /** For tests and the measurement: thumbnails drawn so far. */
+  let thumbsDrawn = 0;
+
+  const notePreview = (busy: number): void => {
+    previewsBusy += busy;
+    lastPreviewAt = Date.now();
+  };
+
+  function pumpThumbs(): void {
+    if (thumbRunning || thumbTimer) return;
+    while (thumbQueue.length > 0 && thumbQueue[0]!.gone) thumbQueue.shift();
+    const job = thumbQueue[0];
+    if (!job) return;
+    const wait = previewsBusy > 0 ? THUMB_IDLE_MS : lastPreviewAt + THUMB_IDLE_MS - Date.now();
+    if (wait > 0) {
+      thumbTimer = setTimeout(() => {
+        thumbTimer = null;
+        pumpThumbs();
+      }, wait);
+      thumbTimer.unref();
+      return;
+    }
+    thumbQueue.shift();
+    thumbRunning = true;
+    void renderFrame(job.params, false).then(
+      ({ image }) => {
+        thumbsDrawn += 1;
+        thumbs.delete(job.key);
+        thumbs.set(job.key, image);
+        while (thumbs.size > THUMB_CACHE) thumbs.delete(thumbs.keys().next().value!);
+        // Every request for the same thumbnail that waited gets it.
+        for (const other of thumbQueue) if (other.key === job.key && !other.gone) other.done(image);
+        job.done(image);
+      },
+      (error: unknown) => job.done(null, error),
+    ).finally(() => {
+      thumbRunning = false;
+      pumpThumbs();
+    });
+  }
+
+  function thumbnail(params: FrameParams, onGone: (listen: () => void) => void): Promise<Uint8Array> {
+    const key = `${project.buildId}|${params.comp}|${params.frame}|${params.scale}|${JSON.stringify(params.props)}`;
+    const kept = thumbs.get(key);
+    if (kept) {
+      thumbs.delete(key);
+      thumbs.set(key, kept);
+      return Promise.resolve(kept);
+    }
+    return new Promise((resolve, reject) => {
+      const job: ThumbJob = {
+        key,
+        params,
+        gone: false,
+        done: (image, error) => {
+          job.gone = true;
+          if (image) resolve(image);
+          else reject(error);
+        },
+      };
+      // A thumbnail scrolled out of sight before it was drawn is not drawn.
+      onGone(() => {
+        if (!job.gone) job.gone = true;
+      });
+      thumbQueue.push(job);
+      pumpThumbs();
+    });
+  }
+
+  async function renderFrame(params: FrameParams, preview = true): Promise<{ header: Omit<FrameHeader, 'requestId'>; image: Uint8Array }> {
     known(params.comp);
+    if (preview) notePreview(1);
+    try {
+      return await renderFrameNow(params);
+    } finally {
+      if (preview) notePreview(-1);
+    }
+  }
+
+  async function renderFrameNow(params: FrameParams): Promise<{ header: Omit<FrameHeader, 'requestId'>; image: Uint8Array }> {
     const { result, buildId } = await project.call<PreviewReply>({
       op: 'preview',
       comp: params.comp,
@@ -296,6 +397,29 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         'X-Frame': String(header.frame),
       });
       return void res.end(Buffer.from(image.buffer, image.byteOffset, image.byteLength));
+    }
+    if (method === 'GET' && path === '/api/thumbnail') {
+      const comp = known(q.get('comp') ?? '');
+      const height = Math.min(THUMB_MAX_HEIGHT, Math.max(8, Math.round(number(q.get('height')) ?? 48)));
+      const params = frameParams({
+        comp: comp.id,
+        frame: number(q.get('frame')),
+        scale: Math.min(1, height / comp.height),
+        format: 'jpeg',
+        props: queryProps(q.get('props')),
+      });
+      const image = await thumbnail(params, (listen) => res.once('close', listen));
+      if (res.destroyed) return;
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Content-Length': image.length,
+        // The address names the build (`build`), so what it answers never changes.
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      });
+      return void res.end(Buffer.from(image.buffer, image.byteOffset, image.byteLength));
+    }
+    if (method === 'GET' && path === '/api/thumbnail/stats') {
+      return json(res, 200, { drawn: thumbsDrawn, queued: thumbQueue.filter((j) => !j.gone).length, kept: thumbs.size });
     }
     if (method === 'GET' && path === '/api/inspect') {
       const comp = q.get('comp') ?? '';

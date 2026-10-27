@@ -83,6 +83,8 @@ export interface Studio {
 
   /** Calls `listener` with each event of the coding agent, and returns how to stop. */
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
+  /** The address of a small picture of `frame` of the composition, for the timeline's clips; null without one. */
+  thumbnailUrl(frame: number, height: number): string | null;
   /** The conversation so far, sent when this window takes it over after a reload. */
   onAgentHistory(listener: (items: ChatRecord[]) => void): () => void;
   /** Sends a message to the coding agent; false when the connection is down. */
@@ -360,6 +362,10 @@ export function useStudio(api: StudioApi): Studio {
     };
   }, []);
   const agentInfo = useCallback(() => api.agentInfo(), [api]);
+  const thumbnailUrl = useCallback(
+    (frame: number, height: number) => (comp && buildId > 0 ? api.thumbnailUrl(comp.id, frame, height, buildId, propsOverride) : null),
+    [api, comp?.id, buildId, overrideKey],
+  );
   const sendAgent = useCallback((message: AgentClientMessage) => socketRef.current?.sendAgent(message) ?? false, []);
 
   // ---- renders ----
@@ -408,6 +414,7 @@ export function useStudio(api: StudioApi): Studio {
     selectLayers,
     onAgentEvent,
     onAgentHistory,
+    thumbnailUrl,
     sendAgent,
     agentInfo,
     renders,

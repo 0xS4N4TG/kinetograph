@@ -127,7 +127,12 @@ export function Row({ swatch, label, count, detail, badge, title, depth, expande
   );
 }
 
-/** A clip: a rounded block with its name, from frame `from` to `to` (exclusive). */
+/** The height of a clip's thumbnail, px: the bar's inner height. */
+export const THUMB_HEIGHT = 24;
+/** A clip narrower than this shows no thumbnail, px. */
+export const THUMB_MIN_BAR = 64;
+
+/** A clip: a rounded block with its name, from frame `from` to `to` (exclusive), and a picture of its first frame. */
 export function Bar({
   from,
   to,
@@ -135,6 +140,7 @@ export function Bar({
   className,
   title,
   onClick,
+  thumbnail,
   children,
 }: {
   from: number;
@@ -143,20 +149,40 @@ export function Bar({
   className: string;
   title?: string;
   onClick?: () => void;
+  /** The address of the picture of the clip's first frame. */
+  thumbnail?: string | null;
   children?: string;
 }) {
+  const width = Math.max(4, (to - from) * pxPerFrame);
+  const showThumb = thumbnail && width >= THUMB_MIN_BAR;
   return (
     <div
       data-testid="bar"
       title={title}
       onClick={onClick}
       className={cn(
-        'absolute inset-y-1.5 cursor-pointer overflow-hidden rounded-md px-2 text-[11px] leading-[22px] font-medium whitespace-nowrap shadow-xs',
+        'absolute inset-y-1.5 flex cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-2 text-[11px] leading-[22px] font-medium whitespace-nowrap shadow-xs',
+        showThumb && 'pl-0.5',
         className,
       )}
-      style={{ left: from * pxPerFrame, width: Math.max(4, (to - from) * pxPerFrame) }}
+      style={{ left: from * pxPerFrame, width }}
     >
-      {children}
+      {showThumb && (
+        <img
+          data-testid="bar-thumbnail"
+          src={thumbnail}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          className="h-full max-w-[45%] shrink-0 rounded-sm object-cover"
+          style={{ height: THUMB_HEIGHT }}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      )}
+      <span className="truncate">{children}</span>
     </div>
   );
 }

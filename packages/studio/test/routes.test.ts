@@ -42,6 +42,34 @@ describe('project and compositions', () => {
   });
 });
 
+describe('GET /api/thumbnail', () => {
+  it('draws a small JPEG of the frame once and keeps it, with an address that never changes', async () => {
+    const drawn = async () => (await api(studio, '/api/thumbnail/stats')).json.drawn as number;
+    const before = await drawn();
+    const r = await frameJson('/api/thumbnail?comp=Main&frame=12&height=18&build=1');
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toBe('image/jpeg');
+    expect(r.headers.get('cache-control')).toContain('immutable');
+    // 18 px of the 36 px tall composition.
+    expect(r.frame).toMatchObject({ frame: 12, scale: 0.5, format: 'jpeg' });
+    expect((await frameJson('/api/thumbnail?comp=Main&frame=12&height=18&build=1')).frame).toEqual(r.frame);
+    expect(await drawn()).toBe(before + 1);
+    expect((await api(studio, '/api/thumbnail?comp=Nope&frame=0')).status).toBe(404);
+  });
+
+  it('waits while preview frames are asked for, so playback never waits for it', async () => {
+    const start = Date.now();
+    const previews = (async () => {
+      while (Date.now() - start < 600) await api(studio, '/api/frame?comp=Main&frame=1');
+      return Date.now();
+    })();
+    await new Promise((r) => setTimeout(r, 50));
+    const thumb = api(studio, '/api/thumbnail?comp=Main&frame=40&height=18&build=1').then(() => Date.now());
+    const previewsEnded = await previews;
+    expect(await thumb).toBeGreaterThanOrEqual(previewsEnded + 150);
+  });
+});
+
 describe('GET /api/frame', () => {
   it('answers with the image, its mime and the build and frame headers', async () => {
     const r = await frameJson('/api/frame?comp=Main&frame=12&scale=0.5&format=png');
