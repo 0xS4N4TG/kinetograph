@@ -11,6 +11,7 @@ pub mod document;
 pub mod fonts;
 pub mod inline;
 pub mod motion;
+pub mod moving;
 pub mod net;
 pub mod paint;
 pub mod readback;

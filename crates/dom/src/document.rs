@@ -299,10 +299,13 @@ fn resolve_keeping(
     files_out: &mut Option<Arc<LocalFiles>>,
     plain_out: &mut bool,
 ) -> Result<IslandDocument, BuildError> {
+    // Only a transition or an animation reads the states before: when none can
+    // start, the replay ends where a build of the last state starts.
+    let replay = !request.history.is_empty() && moves(request, &[]);
     let mut states: Vec<(f64, &DomNode)> = request
         .history
         .iter()
-        .filter(|s| s.time < request.time)
+        .filter(|s| replay && s.time < request.time)
         .map(|s| (s.time, &s.root))
         .collect();
     states.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -329,7 +332,7 @@ fn resolve_keeping(
         }
     }
     // A state that has history is a replay, and is built afresh each time.
-    *plain_out = settle(&mut island, request) && request.history.is_empty();
+    *plain_out = settle(&mut island, request) && !replay;
     island.missing = files.missing();
     *files_out = Some(files);
     Ok(island)
@@ -528,12 +531,13 @@ fn same_page(a: &IslandRequest, b: &IslandRequest) -> bool {
         && a.public_dir == b.public_dir
 }
 
-/// Whether any CSS of `request` mentions a transition or an animation: an edit
-/// to such an element would start one that a fresh build does not have.
-fn moves(request: &IslandRequest) -> bool {
-    fn mentions(css: &str) -> bool {
-        css.contains("transition") || css.contains("animation") || css.contains("starting-style")
-    }
+/// Whether any CSS of `request` can start a transition or an animation on an
+/// element of its tree, its history's or `others`: an edit (or a replay) would
+/// start one that a fresh build does not have. An imported stylesheet counts
+/// when one of its rules that sets one can match an element of those trees
+/// (`moving`); a `style` and a `<style>` element when they mention one.
+fn moves(request: &IslandRequest, others: &[&DomNode]) -> bool {
+    use crate::moving::mentions;
     // Only a `<style>` element's text is CSS: a word in the page's text starts nothing.
     fn node(n: &DomNode, sheet: bool) -> bool {
         match n {
@@ -552,7 +556,10 @@ fn moves(request: &IslandRequest) -> bool {
             }
         }
     }
-    request.stylesheets.iter().any(|s| mentions(s)) || node(&request.root, false)
+    let mut trees = vec![&request.root];
+    trees.extend(request.history.iter().map(|s| &s.root));
+    trees.extend_from_slice(others);
+    trees.iter().any(|tree| node(tree, false)) || crate::moving::sheets_move(&request.stylesheets, &trees)
 }
 
 impl IslandCache {
@@ -574,8 +581,12 @@ impl IslandCache {
             }
             self.pass = pass;
         }
-        if pass.is_some()
-            && !moves(request)
+        let editable = pass.is_some()
+            && self
+                .kept
+                .get(&request.path)
+                .is_some_and(|kept| !moves(request, &[&kept.request.root]));
+        if editable
             && let Some(mut kept) = self.kept.remove(&request.path)
             && same_page(&kept.request, request)
             && let Some(edits) = changes(
@@ -1083,16 +1094,30 @@ mod tests {
     #[test]
     fn only_css_can_start_a_transition() {
         let words = serde_json::json!([{ "kind": "text", "text": "TransitionSeries, @remotion/transitions" }]);
-        assert!(!moves(&request(el("div", "", words.clone()))));
-        assert!(moves(&request(el(
-            "div",
-            "",
-            serde_json::json!([el("style", "", words)])
-        ))));
-        assert!(moves(&request(el(
-            "div",
-            "transition: opacity 1s",
-            serde_json::json!([])
-        ))));
+        assert!(!moves(&request(el("div", "", words.clone())), &[]));
+        assert!(moves(
+            &request(el("div", "", serde_json::json!([el("style", "", words)]))),
+            &[]
+        ));
+        assert!(moves(
+            &request(el("div", "transition: opacity 1s", serde_json::json!([]))),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn a_sheet_moves_only_what_its_rules_can_match() {
+        let with_sheet = |class: &str| {
+            let mut root = el("div", "", serde_json::json!([]));
+            root["attrs"] = serde_json::json!({ "class": class });
+            let mut r = request(root);
+            r.stylesheets = vec![".transition { transition-property: opacity; transition-duration: 150ms }".to_string()];
+            r
+        };
+        assert!(!moves(&with_sheet("flex"), &[]));
+        assert!(moves(&with_sheet("flex transition"), &[]));
+        // The tree an edit starts from counts too.
+        let was = with_sheet("transition").root;
+        assert!(moves(&with_sheet("flex"), &[&was]));
     }
 }
