@@ -1,9 +1,10 @@
-The fallback fonts in this directory are Noto Sans Symbols 2, Noto Sans Math and Noto Emoji, converted from TrueType to
-WOFF2 without other changes. Their copyright notices:
+The bundled fonts are Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (the fallback fonts) and JetBrains Mono (the
+`monospace` font), converted from TrueType to WOFF2 without other changes. Their copyright notices:
 
 - Noto Sans Symbols 2: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
 - Noto Sans Math: Copyright 2022 Google LLC. All Rights Reserved.
 - Noto Emoji: Copyright 2013-2026 Google LLC
+- JetBrains Mono: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
 
 Each is licensed under the SIL Open Font License, Version 1.1. The license is copied below, and is also available with a
 FAQ at: https://scripts.sil.org/OFL

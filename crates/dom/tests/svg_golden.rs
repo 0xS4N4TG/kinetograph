@@ -151,6 +151,21 @@ fn basic_shapes_gradients_and_strokes_match_golden() {
     check("svg-shapes", &svg_page("shapes.html", 400, 300));
 }
 
+/// SVG gradients blend their stops without premultiplying alpha, as Chrome does: half way from opaque red to
+/// `rgba(0,0,255,0)` is a half-transparent purple (127, 0, 127), so over white (191, 127, 191). Premultiplied it would
+/// be red at half alpha, (255, 127, 127), with no blue at all.
+#[test]
+fn svg_gradient_stops_blend_unpremultiplied() {
+    let frame = svg_page("gradient_alpha.html", 100, 20);
+    let i = (10 * frame.width + 50) as usize * 4;
+    let px = &frame.rgba[i..i + 4];
+    assert!(
+        px[0] < 215 && px[2] > 160,
+        "blue is left at the middle: {px:?}"
+    );
+    assert!(px[0].abs_diff(px[2]) < 25, "{px:?}");
+}
+
 #[test]
 fn clips_masks_patterns_markers_and_filters_match_golden() {
     check("svg-features", &svg_page("features.html", 480, 360));

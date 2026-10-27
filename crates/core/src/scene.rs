@@ -926,6 +926,10 @@ pub struct Gradient {
     /// gradient's space to the space of what it paints, after `units`
     /// (SVG's `gradientTransform`).
     pub transform: Option<[f64; 6]>,
+    /// Blend the stops without premultiplying alpha, as SVG gradients do (CSS
+    /// gradients blend premultiplied, the default).
+    #[serde(default)]
+    pub unpremultiplied: bool,
 }
 
 /// The space a gradient's coordinates are in.
