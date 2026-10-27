@@ -24,7 +24,7 @@ import { reportUnsupported } from '../unsupported.js';
 import type { HfNode, HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
 import { laneGain, MAX_GAIN, parseAutomation, sourceTimeAt, type AutomationLane } from './automation.js';
-import { gradeAttribute, gradeNotDrawn, normalizeGrade, seedOf } from './grading.js';
+import { ANIMATED_EFFECT_LIMITS, gradeAttribute, gradeNotDrawn, normalizeGrade, seedOf } from './grading.js';
 import {
   cutToSlots,
   isMedia,
@@ -426,7 +426,12 @@ class Runtime {
   }
 
   /** The animated values a tween leaves on an element (`--hf-color-grading-intensity`, `-lut-intensity`, `-exposure`). */
-  private animatedGrade(el: AnyRecord): { intensity: number | null; lutIntensity: number | null; exposure: number | null } {
+  private animatedGrade(el: AnyRecord): {
+    intensity: number | null;
+    lutIntensity: number | null;
+    exposure: number | null;
+    effects: Record<string, number | null>;
+  } {
     const read = (name: string, lo: number, hi: number): number | null => {
       const text = String(el.style.getPropertyValue(name)).trim();
       const n = Number(text);
@@ -436,6 +441,9 @@ class Runtime {
       intensity: read('--hf-color-grading-intensity', 0, 1),
       lutIntensity: read('--hf-color-grading-lut-intensity', 0, 1),
       exposure: read('--hf-color-grading-exposure', -2, 2),
+      effects: Object.fromEntries(
+        Object.entries(ANIMATED_EFFECT_LIMITS).map(([key, hi]) => [key, read(`--hf-color-grading-${key}`, 0, hi)]),
+      ),
     };
   }
 
@@ -451,7 +459,7 @@ class Runtime {
       const grade = normalizeGrade(el.getAttribute('data-color-grading'), this.variablesFor(el), this.animatedGrade(el));
       const siblings = Array.from(el.parentNode?.children ?? []);
       const key = el.id || el.getAttribute('src') || `${String(el.tagName).toUpperCase()}:${siblings.indexOf(el)}`;
-      const wanted = grade === null ? null : gradeAttribute(grade, seedOf(key) + Math.floor(Math.max(0, time) * 60));
+      const wanted = grade === null ? null : gradeAttribute(grade, seedOf(key) + Math.floor(Math.max(0, time) * 60), Math.max(0, time));
       if (grade !== null) for (const name of gradeNotDrawn(grade)) this.gradingNotes.push(`${name} is not drawn`);
       if (wanted === null) {
         if (el.hasAttribute('data-kg-grade')) el.removeAttribute('data-kg-grade');

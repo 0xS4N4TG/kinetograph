@@ -7,7 +7,7 @@
 // What is drawn, against HyperFrames' own shader: `adjust` (all ten controls), `wheels`, `curves`, `hueCurves`,
 // `secondaries`, `lut` (a `.cube` file of the project), `intensity`, `details.vignette` and `details.grain` (seeded by the
 // element and the frame, so a frame is the same alone or in a sequence). What is not drawn is reported per frame: the
-// `effects` the engine has no pass for (see `EFFECTS_DRAWN`).
+// `effects` (see `EFFECT_CONTROLS`): the engine draws all 18 and their 64 controls.
 
 export interface Grade {
   intensity: number;
@@ -18,8 +18,10 @@ export interface Grade {
   /** The enabled secondaries, at most four, as the shader reads them. */
   secondaries: Secondary[];
   details: Record<(typeof DETAIL_KEYS)[number], number>;
-  /** The effects that are on (above 0.0001), with their strength. */
+  /** Every control of `effects` (EFFECT_CONTROLS), at its default when the grade leaves it out. */
   effects: Record<string, number>;
+  /** The palette the print and drawing effects use: two to six `#rrggbb`, or null for the effect's own. */
+  palette: string[] | null;
   lut: { src: string; intensity: number } | null;
 }
 
@@ -51,49 +53,83 @@ const MAX_SECONDARIES = 4;
 
 interface Preset {
   adjust: Partial<Adjust>;
-  vignette?: number;
-  grain?: number;
-  effects?: string[];
+  details?: Partial<Record<DetailKey, number>>;
+  effects?: Record<string, number>;
   intensity?: number;
 }
 
-const VINTAGE: Preset = { adjust: { exposure: 0.03, contrast: -0.12, highlights: -0.1, shadows: 0.16, whites: -0.04, blacks: 0.08, temperature: 0.13, vibrance: -0.08, saturation: -0.08 }, vignette: 0.18 };
+const VINTAGE: Preset = { adjust: { exposure: 0.03, contrast: -0.12, highlights: -0.1, shadows: 0.16, whites: -0.04, blacks: 0.08, temperature: 0.13, vibrance: -0.08, saturation: -0.08 }, details: { vignette: 0.18 } };
 
-/** colorGrading.ts: HF_COLOR_GRADING_PRESETS (the numbers of each grade; `effects` lists the effects the preset turns on). */
+/** colorGrading.ts: HF_COLOR_GRADING_PRESETS (the numbers of each grade, with the details and effect controls the preset sets). */
 export const PRESETS: Record<string, Preset> = {
   neutral: { adjust: {} },
   'warm-daylight': { adjust: { exposure: 0.06, contrast: 0.07, highlights: -0.06, shadows: 0.08, temperature: 0.18, saturation: 0.08 } },
   'clean-studio': { adjust: { contrast: 0.08, highlights: -0.08, shadows: 0.06, temperature: -0.08, tint: 0.03, saturation: 0.04 } },
   'skin-soft': { adjust: { exposure: 0.04, contrast: -0.03, highlights: -0.12, shadows: 0.12, temperature: 0.08, tint: 0.02, saturation: 0.04 } },
   'food-pop': { adjust: { exposure: 0.06, contrast: 0.1, shadows: 0.06, temperature: 0.14, vibrance: 0.1, saturation: 0.18 } },
-  'night-lift': { adjust: { exposure: 0.08, contrast: 0.08, highlights: -0.18, shadows: 0.2, blacks: -0.08, saturation: 0.04 }, vignette: 0.12 },
-  'muted-editorial': { adjust: { exposure: -0.02, contrast: 0.08, highlights: -0.08, shadows: 0.06, blacks: -0.05, temperature: -0.03, saturation: -0.12 }, vignette: 0.1 },
+  'night-lift': { adjust: { exposure: 0.08, contrast: 0.08, highlights: -0.18, shadows: 0.2, blacks: -0.08, saturation: 0.04 }, details: { vignette: 0.12 } },
+  'muted-editorial': { adjust: { exposure: -0.02, contrast: 0.08, highlights: -0.08, shadows: 0.06, blacks: -0.05, temperature: -0.03, saturation: -0.12 }, details: { vignette: 0.1 } },
   'vintage-wash': VINTAGE,
   'mono-clean': { adjust: { contrast: 0.12, highlights: -0.04, shadows: 0.04, blacks: -0.08, saturation: -1 } },
-  'mono-fade': { adjust: { contrast: -0.04, highlights: -0.06, shadows: 0.1, blacks: 0.12, saturation: -1 }, vignette: 0.08 },
+  'mono-fade': { adjust: { contrast: -0.04, highlights: -0.06, shadows: 0.1, blacks: 0.12, saturation: -1 }, details: { vignette: 0.08 } },
   'soft-boost': { adjust: { exposure: 0.06, contrast: -0.04, highlights: -0.14, shadows: 0.16, vibrance: 0.08, saturation: 0.1 } },
   'bright-pop': { adjust: { exposure: 0.12, contrast: 0.12, whites: 0.08, blacks: -0.04, vibrance: 0.08, saturation: 0.14 } },
   'deep-contrast': { adjust: { exposure: -0.03, contrast: 0.2, highlights: -0.08, shadows: -0.08, blacks: -0.12, saturation: 0.06 } },
   'creator-camcorder': {
     adjust: { contrast: 0.08, highlights: -0.05, shadows: 0.02, whites: 0.03, blacks: -0.04, temperature: -0.03, tint: -0.015, vibrance: -0.03, saturation: -0.06 },
-    vignette: 0.06, grain: 0.08, effects: ['chromaBleed'], intensity: 0.72,
+    details: { vignette: 0.06, grain: 0.08, grainSize: 0.18, grainRoughness: 0.58 },
+    effects: { chromaBleed: 0.55 },
+    intensity: 0.72,
   },
   'vhs-playback': {
-    adjust: { contrast: -0.04, saturation: -0.08 }, grain: 0.16,
-    effects: ['tapeDamage', 'chromaBleed', 'chromaticAberration', 'scanlines', 'digitalGlitch'],
+    adjust: { contrast: -0.04, saturation: -0.08 },
+    details: { grain: 0.16, grainSize: 0.12, grainRoughness: 0.72 },
+    effects: {
+      tapeDamage: 0.82, tapeTracking: 0.85, tapeNoise: 0.3, tapeSpeed: 0.5, chromaBleed: 0.5, chromaticAberration: 0.18,
+      scanlines: 0.35, scanlineCount: 0.17, scanlineSoftness: 1, digitalGlitch: 0.32, digitalGlitchLineTear: 0.08, digitalGlitchSpeed: 0.5,
+    },
   },
-  'home-movie-8mm': { adjust: VINTAGE.adjust, vignette: 0.28, grain: 0.34, effects: ['filmArtifacts'], intensity: 0.72 },
-  'editorial-halftone': { adjust: { contrast: 0.04, saturation: 0.04 }, effects: ['halftone'] },
-  'two-ink-print': { adjust: { contrast: 0.08, highlights: -0.06, shadows: 0.04 }, effects: ['twoInkPrint'] },
+  'home-movie-8mm': {
+    adjust: VINTAGE.adjust,
+    details: { vignette: 0.28, vignetteMidpoint: 0.54, vignetteFeather: 0.72, grain: 0.34, grainSize: 0.18, grainRoughness: 0.72 },
+    effects: { filmArtifacts: 0.62 },
+    intensity: 0.72,
+  },
+  'editorial-halftone': { adjust: { contrast: 0.04, saturation: 0.04 }, effects: { halftone: 0.94, halftoneSize: 0.36 } },
+  'two-ink-print': { adjust: { contrast: 0.08, highlights: -0.06, shadows: 0.04 }, effects: { twoInkPrint: 1, twoInkPrintSize: 0.42 } },
 };
 
-const EFFECT_KEYS = [
-  'blur', 'pixelate', 'chromaBleed', 'tapeDamage', 'filmArtifacts', 'halftone', 'twoInkPrint', 'ascii', 'dither', 'bloom',
-  'monoScreen', 'scanlines', 'chromaticAberration', 'crtCurvature', 'digitalGlitch', 'engraving', 'crosshatch', 'kuwahara',
+/**
+ * The controls of `effects`: name, default, lowest and highest value, in the order of the engine's table
+ * (`crates/core/src/grade.rs`: EFFECT_KEYS). colorGrading.ts: EFFECT_DEFAULTS and the limits of the contract.
+ */
+const EFFECT_CONTROLS: readonly (readonly [string, number, number, number])[] = [
+  ['blur', 0, 0, 1], ['pixelate', 0, 0, 1], ['chromaBleed', 0, 0, 1], ['tapeDamage', 0, 0, 1], ['tapeTracking', 0, 0, 1],
+  ['tapeNoise', 1, 0, 1], ['tapeSpeed', 0.5, 0, 1], ['filmArtifacts', 0, 0, 1], ['halftone', 0, 0, 1], ['halftoneSize', 0, 0, 1],
+  ['twoInkPrint', 0, 0, 1], ['twoInkPrintSize', 0, 0, 1], ['ascii', 0, 0, 1], ['asciiSize', 5 / 76, 0, 1], ['asciiInvert', 0, 0, 1],
+  ['asciiStyle', 0, 0, 7], ['asciiColor', 1, 0, 1], ['asciiRotation', 0, 0, 1], ['dither', 0, 0, 1], ['ditherSize', 0, 0, 1],
+  ['bloom', 0, 0, 3], ['bloomRadius', 8, 1, 100], ['monoScreen', 0, 0, 1], ['monoScreenSize', 0, 0, 1], ['monoScreenAngle', 0, 0, 1],
+  ['monoScreenSpread', 0, 0, 1], ['monoScreenShape', 0, 0, 4], ['monoScreenInvert', 0, 0, 1], ['scanlines', 0, 0, 1],
+  ['scanlineCount', 0, 0, 1], ['scanlineSoftness', 0, 0, 1], ['chromaticAberration', 0, 0, 1], ['chromaticAngle', 0, 0, 1],
+  ['crtCurvature', 0, 0, 1], ['digitalGlitch', 0, 0, 1], ['digitalGlitchColorSplit', 0, 0, 1], ['digitalGlitchLineTear', 0, 0, 1],
+  ['digitalGlitchPixelate', 0, 0, 1], ['digitalGlitchBlockAmount', 0, 0, 1], ['digitalGlitchBlockDisplacement', 0, 0, 1],
+  ['digitalGlitchBlockOpacity', 0, 0, 1], ['digitalGlitchSpeed', 0, 0, 1], ['engraving', 0, 0, 1], ['engravingSpacing', 7 / 17, 0, 1],
+  ['engravingMinThickness', 0.2, 0, 1], ['engravingMaxThickness', 3.2 / 7, 0, 1], ['engravingAngle', 0.25, 0, 1],
+  ['engravingContrast', 7 / 15, 0, 1], ['engravingSharpness', 0.59, 0, 1], ['engravingWave', 0.2, 0, 1],
+  ['engravingWaveFrequency', 2 / 9, 0, 1], ['crosshatch', 0, 0, 1], ['crosshatchSpacing', 7 / 25, 0, 1], ['crosshatchThickness', 0.25, 0, 1],
+  ['crosshatchAngle', 0.25, 0, 1], ['crosshatchContrast', 1 / 3, 0, 1], ['crosshatchEdges', 0.5, 0, 1], ['crosshatchLineWeight', 0, 0, 1],
+  ['crosshatchWave', 0.33, 0, 1], ['crosshatchWaveFrequency', 2 / 9, 0, 1], ['kuwahara', 0, 0, 1], ['kuwaharaRadius', 1 / 7, 0, 1],
+  ['kuwaharaSharpness', 5 / 16, 0, 1], ['kuwaharaSaturation', 0.5, 0, 1],
 ];
 
-/** The effects of HyperFrames' list that the engine draws. */
-export const EFFECTS_DRAWN: readonly string[] = [];
+/** The 18 effects themselves (colorGrading.ts: HF_COLOR_GRADING_ACTIVE_EFFECT_KEYS): a grade with any above 0.0001 is active. */
+const ACTIVE_EFFECTS = [
+  'blur', 'pixelate', 'chromaBleed', 'tapeDamage', 'filmArtifacts', 'halftone', 'twoInkPrint', 'ascii', 'dither', 'bloom',
+  'monoScreen', 'scanlines', 'chromaticAberration', 'crtCurvature', 'digitalGlitch', 'engraving', 'crosshatch', 'kuwahara',
+] as const;
+
+/** The effects of HyperFrames' list that the engine draws: all of them. */
+export const EFFECTS_DRAWN: readonly string[] = ACTIVE_EFFECTS;
 
 const isRecord = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
@@ -136,6 +172,9 @@ function resolveVariables(raw: unknown, variables: Record<string, unknown>): unk
 }
 
 const identityCurve = (): [number, number][] => [[0, 0], [1, 1]];
+
+/** The effect controls a tween can animate (`--hf-color-grading-blur` and so on; colorGrading.ts: HF_COLOR_GRADING_ANIMATABLE_PROPERTIES). */
+export const ANIMATED_EFFECT_LIMITS: Record<string, number> = { blur: 1, bloom: 3, kuwahara: 1, pixelate: 1, ascii: 1, dither: 1 };
 
 /** colorGrading.ts: normalizeCurve. */
 function normalizeCurve(value: unknown): [number, number][] {
@@ -205,7 +244,7 @@ function normalizeSecondary(value: unknown): (Secondary & { enabled: boolean }) 
 export function normalizeGrade(
   raw: unknown,
   variables: Record<string, unknown> = {},
-  overrides: { intensity?: number | null; exposure?: number | null; lutIntensity?: number | null } = {},
+  overrides: { intensity?: number | null; exposure?: number | null; lutIntensity?: number | null; effects?: Record<string, number | null> } = {},
 ): Grade | null {
   let value = resolveVariables(raw, variables);
   if (typeof value === 'string') {
@@ -236,7 +275,7 @@ export function normalizeGrade(
   const rawCurves = isRecord(value.curves) ? value.curves : {};
   const rawHueCurves = isRecord(value.hueCurves) ? value.hueCurves : {};
   const rawDetails = isRecord(value.details) ? value.details : {};
-  const presetDetails: Partial<Record<DetailKey, number>> = { vignette: preset?.vignette ?? 0, grain: preset?.grain ?? 0 };
+  const presetDetails: Partial<Record<DetailKey, number>> = preset?.details ?? {};
   const details = { ...DETAIL_DEFAULTS };
   for (const key of DETAIL_KEYS) {
     const [lo, hi] = DETAIL_LIMITS[key];
@@ -244,10 +283,16 @@ export function normalizeGrade(
   }
   const rawEffects = isRecord(value.effects) ? value.effects : {};
   const effects: Record<string, number> = {};
-  for (const key of EFFECT_KEYS) {
-    const strength = limited(rawEffects[key] ?? (preset?.effects?.includes(key) ? 1 : 0), 0, key === 'bloom' ? 3 : 1);
-    if (strength > 0.0001) effects[key] = strength;
+  for (const [key, fallback, lo, hi] of EFFECT_CONTROLS) {
+    effects[key] = limited(rawEffects[key] ?? preset?.effects?.[key] ?? fallback, lo, hi);
+    const animated = overrides.effects?.[key];
+    if (animated != null && key in ANIMATED_EFFECT_LIMITS) effects[key] = clamp(animated, 0, hi);
   }
+  const rawPalette = value.palette;
+  const palette =
+    Array.isArray(rawPalette) && rawPalette.length >= 2 && rawPalette.length <= 6 && rawPalette.every((c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c))
+      ? rawPalette.map((c: string) => c.toLowerCase())
+      : null;
   const lutRaw = value.lut;
   const lutSrc = typeof lutRaw === 'string' ? lutRaw.trim() : isRecord(lutRaw) && typeof lutRaw.src === 'string' ? lutRaw.src.trim() : '';
   const lutIntensity = overrides.lutIntensity ?? (isRecord(lutRaw) ? unit(lutRaw.intensity, 1) : 1);
@@ -271,6 +316,7 @@ export function normalizeGrade(
     secondaries,
     details,
     effects,
+    palette,
     lut: lutSrc === '' ? null : { src: lutSrc, intensity: lutIntensity },
   };
 }
@@ -279,7 +325,7 @@ const FLAT = 0.0001;
 
 /** colorGrading.ts: isHfColorGradingActive. A grade that is not active leaves the picture as it is. */
 export function isGradeActive(grade: Grade): boolean {
-  if (grade.details.vignette > FLAT || grade.details.grain > FLAT || Object.keys(grade.effects).length > 0) return true;
+  if (grade.details.vignette > FLAT || grade.details.grain > FLAT || ACTIVE_EFFECTS.some((key) => Math.abs(grade.effects[key] ?? 0) > FLAT)) return true;
   if (grade.intensity === 0) return false;
   if (grade.lut && grade.lut.intensity !== 0) return true;
   return (
@@ -304,11 +350,14 @@ export function seedOf(key: string): number {
 /**
  * The `colorGrade` effect of the grade (the attribute the DOM painter reads; it adds the `type` and the picture's box),
  * or null when the grade changes nothing. `seed` is the grain's: the element's seed plus the whole 60ths of a second of
- * the time, as the runtime's shader gets it.
+ * the time, as the runtime's shader gets it; `time` is the time in seconds the time-varying effects run at. Only the effect
+ * controls that differ from their defaults are written.
  */
-export function gradeAttribute(grade: Grade, seed: number): string | null {
+export function gradeAttribute(grade: Grade, seed: number, time: number): string | null {
   if (!isGradeActive(grade)) return null;
   const d = grade.details;
+  const effects: Record<string, number> = {};
+  for (const [key, fallback] of EFFECT_CONTROLS) if (grade.effects[key] !== fallback) effects[key] = grade.effects[key]!;
   return JSON.stringify({
     intensity: grade.intensity,
     adjust: grade.adjust,
@@ -319,12 +368,13 @@ export function gradeAttribute(grade: Grade, seed: number): string | null {
     lut: grade.lut,
     vignette: { amount: d.vignette, midpoint: d.vignetteMidpoint, roundness: d.vignetteRoundness, feather: d.vignetteFeather },
     grain: { amount: d.grain, size: d.grainSize, roughness: d.grainRoughness, seed },
+    effects,
+    palette: grade.palette,
+    time,
   });
 }
 
-/** What the grade asks for and is not drawn: the effects of its `effects` list the engine has no pass for. */
+/** What the grade asks for and is not drawn: the effects of its `effects` list the engine has no pass for (none now). */
 export function gradeNotDrawn(grade: Grade): string[] {
-  return Object.keys(grade.effects)
-    .filter((name) => !EFFECTS_DRAWN.includes(name))
-    .map((name) => `effects.${name}`);
+  return ACTIVE_EFFECTS.filter((name) => (grade.effects[name] ?? 0) > FLAT && !EFFECTS_DRAWN.includes(name)).map((name) => `effects.${name}`);
 }
