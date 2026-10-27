@@ -1,6 +1,8 @@
 //! Finding the files behind CSS `url()`s and `<img src>`, and their sizes.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use base64::Engine as _;
 use style::url::ComputedUrl;
@@ -8,6 +10,30 @@ use style::url::ComputedUrl;
 use kinetograph_core::svg_picture;
 
 use super::Painter;
+
+type SizeKey = (PathBuf, u64, Option<std::time::SystemTime>);
+
+/// `image::image_dimensions`, remembered by path, length and modification time.
+/// A document built for each frame paints its background pictures again, and
+/// opening each file to read its header cost more than the rest of the paint;
+/// a changed file has a new key, so a size is never stale.
+fn raster_dimensions(path: &Path) -> image::ImageResult<(u32, u32)> {
+    static SIZES: OnceLock<Mutex<HashMap<SizeKey, (u32, u32)>>> = OnceLock::new();
+    let key = std::fs::metadata(path)
+        .ok()
+        .map(|meta| (path.to_path_buf(), meta.len(), meta.modified().ok()));
+    let sizes = SIZES.get_or_init(Mutex::default);
+    if let Some(key) = &key
+        && let Some(size) = sizes.lock().ok().and_then(|sizes| sizes.get(key).copied())
+    {
+        return Ok(size);
+    }
+    let size = image::image_dimensions(path)?;
+    if let (Some(key), Ok(mut sizes)) = (key, sizes.lock()) {
+        sizes.insert(key, size);
+    }
+    Ok(size)
+}
 
 /// What a picture URL turned out to be.
 pub enum Source {
@@ -85,7 +111,7 @@ impl<'a> Painter<'a> {
                 Err(e) => Source::Unsupported(format!("cannot read {}: {e}", path.display())),
             };
         }
-        match image::image_dimensions(&path) {
+        match raster_dimensions(&path) {
             Ok((w, h)) => Source::Raster {
                 path: path.to_string_lossy().into_owned(),
                 w: f64::from(w),
