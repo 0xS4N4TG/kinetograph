@@ -377,9 +377,36 @@ const worklets = (): WebAudio => webAudio!;
 let workletUrl: string | undefined;
 
 /**
+ * node-web-audio-api waits for a worklet's processors with the global `setTimeout`, which a render replaces with the
+ * frame clock's (packages/core/src/determinism.ts) and which then never fires. While any pass is rendering, the global
+ * is the real one; the first pass in puts it there and the last one out puts back what it found, however the passes
+ * overlap.
+ */
+let realTimerUsers = 0;
+let replacedTimer: typeof setTimeout | undefined;
+
+function useRealTimer(): () => void {
+  const g = globalThis as { setTimeout: typeof setTimeout };
+  if (realTimerUsers++ === 0) {
+    replacedTimer = g.setTimeout;
+    g.setTimeout = realSetTimeout;
+  }
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    if (--realTimerUsers === 0) {
+      g.setTimeout = replacedTimer!;
+      replacedTimer = undefined;
+    }
+  };
+}
+
+/**
  * Runs `planes` (one per channel, equal lengths) through `chain` with its effect `lanes`, in an OfflineAudioContext of
  * their length. `timing` places the lane clock: at context time `scheduledAt` the lanes are at `elapsed` seconds. The
  * output has the input's length and channels; a true-peak limiter's delay is trimmed (stubs/audio-fx-runtime-entry.ts).
+ * The pass takes `planes`: once they are in the context the array is emptied, so a long mix holds no second copy.
  */
 export async function runFxChain(
   planes: Float32Array[],
@@ -401,7 +428,9 @@ export async function runFxChain(
     await ctx.audioWorklet.addModule(workletUrl);
   }
   const buffer = ctx.createBuffer(planes.length, total, sampleRate);
+  const channels = planes.length;
   planes.forEach((plane, c) => buffer.copyToChannel(plane as Float32Array<ArrayBuffer>, c));
+  planes.length = 0;
   const source = ctx.createBufferSource();
   source.buffer = buffer;
   // The LFOs and the worklets' own clocks: lane time 0 is at context time `scheduledAt - elapsed`.
@@ -410,18 +439,17 @@ export async function runFxChain(
   source.connect(fx.input);
   fx.output.connect(ctx.destination);
   source.start(0);
-  // node-web-audio-api waits for the worklet's processors with the global `setTimeout`, which a render replaces with
-  // the frame clock's (packages/core/src/determinism.ts) and which then never fires: the real one, for the render.
-  const g = globalThis as { setTimeout: typeof setTimeout };
-  const frameClock = g.setTimeout;
-  g.setTimeout = realSetTimeout;
+  const release = useRealTimer();
   let rendered: Awaited<ReturnType<typeof ctx.startRendering>>;
   try {
     rendered = await ctx.startRendering();
   } finally {
-    g.setTimeout = frameClock;
+    release();
   }
   const out: Float32Array[] = [];
-  for (let c = 0; c < rendered.numberOfChannels; c++) out.push(Float32Array.from(rendered.getChannelData(c).subarray(latency, latency + frames)));
+  for (let c = 0; c < channels; c++) {
+    const data = rendered.getChannelData(c);
+    out.push(latency === 0 ? data : data.subarray(latency, latency + frames));
+  }
   return out;
 }
