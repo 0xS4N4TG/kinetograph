@@ -14,6 +14,15 @@ Video decoding and encoding use FFmpeg 9.0.1 (<https://ffmpeg.org>), built as LG
   (`npm run build:release -w @kinetographdev/native -- --features ffmpeg-static` with `PKG_CONFIG_PATH` or `FFMPEG_DIR`
   pointing at it) and replace the file in this package, which is the right the LGPL gives you.
 
+## HyperFrames colour grading (Apache License 2.0)
+
+The colour grade and its 18 look effects (the shaders `color_grade.wgsl` and `grade_prepass.wgsl` and `grade.rs`,
+compiled into the addon) port the shader maths and the effect passes of HyperFrames' colour grading runtime
+(`packages/core/src/runtime/colorGrading.ts`). Copyright HeyGen, Inc. and the HyperFrames contributors,
+https://github.com/heygen-com/hyperframes, licensed under the Apache License, Version 2.0, whose text follows the
+Abseil section of `CERES-LICENSE` and is at http://www.apache.org/licenses/LICENSE-2.0. Changed from the original:
+rewritten in WGSL and Rust for the engine's GPU passes, reading the layer's texture instead of a media element.
+
 ## OpenH264 (BSD-2-Clause), macOS and Linux builds
 
 The software H.264 encoder is Cisco's OpenH264 2.6.0, built from source (`OPENH264-LICENSE`). Cisco's patent licence

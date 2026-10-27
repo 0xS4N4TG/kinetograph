@@ -173,7 +173,9 @@
   },
   "files": [
     "dist",
-    "!dist/**/*.map"
+    "!dist/**/*.map",
+    "THIRD-PARTY-NOTICES.md",
+    "LICENSE-APACHE-2.0.txt"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
