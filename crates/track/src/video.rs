@@ -12,7 +12,7 @@ use std::sync::Arc;
 use kinetograph_core::video::{VideoDecoder, VideoInfo, probe};
 use peniko::ImageData;
 
-use crate::{Clip, Frames, Options, Point, Range, TrackFile, track_points};
+use crate::{Clip, Frames, Job, TrackFile, track_clip};
 
 /// Bytes of decoded frames a backwards run may hold.
 const RUN_BYTES: usize = 128 << 20;
@@ -130,24 +130,11 @@ impl Frames for VideoFrames {
     }
 }
 
-/// Tracks `points` through the video at `path`, between frame `first` (default 0) and `last` (default the clip's
-/// last), backwards from `last` if `backwards`.
-pub fn track_video(
-    path: &Path,
-    points: &[Point],
-    options: &Options,
-    first: Option<u32>,
-    last: Option<u32>,
-    backwards: bool,
-) -> Result<TrackFile, String> {
+/// Runs `job` (`track_clip`) on the video at `path`.
+pub fn track_video(path: &Path, job: &Job) -> Result<TrackFile, String> {
     let mut frames = VideoFrames::open(path)?;
     let count = frames.count;
-    let range = Range {
-        from: first.unwrap_or(0),
-        to: last.unwrap_or(count.saturating_sub(1)),
-        backwards,
-    };
-    let tracks = track_points(&mut frames, points, options, range)?;
+    let (tracks, planes) = track_clip(&mut frames, job)?;
     Ok(TrackFile {
         version: TrackFile::VERSION,
         clip: Clip {
@@ -157,5 +144,6 @@ pub fn track_video(
             frames: count,
         },
         tracks,
+        planes,
     })
 }
