@@ -3,6 +3,12 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Fixed
+
+- A `<canvas>` a frame draws on, on the React path, starts that frame empty, as the docs say (one nobody draws on in a frame keeps its pixels, so a canvas drawn once in `useEffect(..., [])` still shows). It kept its pixels from the frame before, so `still 45` (or a render worker that starts mid-way) drew a different picture from frame 45 of a full render. A plain HTML page still keeps its canvas between frames.
+
 ## 0.2.0 (2026-10-27)
 
 ### Added
