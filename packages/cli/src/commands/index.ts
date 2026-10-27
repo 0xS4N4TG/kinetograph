@@ -9,6 +9,7 @@ import { render, still } from './render.js';
 import { onion, strip } from './sheets.js';
 import { snapshot } from './snapshot.js';
 import { studio } from './studio.js';
+import { track } from './track.js';
 import type { Command } from './types.js';
 
 /** Every command, in the order of packages/cli/skills/kinetograph/references/AUTHORING.md §9. */
@@ -23,6 +24,7 @@ export const commands: Command[] = [
   check,
   bench,
   audioAnalyze,
+  track,
   snapshot,
   effects,
   doctor,

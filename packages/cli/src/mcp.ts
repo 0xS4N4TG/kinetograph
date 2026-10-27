@@ -55,7 +55,7 @@ export function inputShape(command: Command): Record<string, z.ZodType> {
   for (const o of allOptions(command)) {
     // Image tools write to a temp file when no output is given, so the agent need not choose a path.
     const optional = o.name !== 'output' || command.name !== 'render';
-    const base = o.type === 'number' ? z.number() : o.type === 'boolean' ? z.boolean() : z.string();
+    const base = o.multiple ? z.array(z.string()) : o.type === 'number' ? z.number() : o.type === 'boolean' ? z.boolean() : z.string();
     shape[o.name] = (optional ? base.optional() : base).describe(o.description);
   }
   return shape;
@@ -72,6 +72,8 @@ export function toArgv(command: Command, input: Record<string, unknown>): string
     if (value === undefined || value === null) continue;
     if (o.type === 'boolean') {
       if (value === true) argv.push(`--${o.name}`);
+    } else if (o.multiple && Array.isArray(value)) {
+      for (const v of value) argv.push(`--${o.name}`, String(v));
     } else {
       argv.push(`--${o.name}`, String(value));
     }

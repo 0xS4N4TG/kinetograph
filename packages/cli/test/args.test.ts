@@ -45,6 +45,13 @@ describe('parseCommandArgs', () => {
     }
   });
 
+  it('collects a repeated option into a list (track --point)', () => {
+    const args = parseCommandArgs(spec('track'), ['clip.mp4', '--point', '10,20', '--point', 'b=30,40', '--pattern', '31']);
+    expect(args.positionals.video).toBe('clip.mp4');
+    expect(args.options.point).toEqual(['10,20', 'b=30,40']);
+    expect(args.options.pattern).toBe(31);
+  });
+
   it('takes the two-word audio analyze command', () => {
     const found = findCommand(['audio', 'analyze', 'p.tsx', '--scenes', '0..30']);
     expect(found?.command.name).toBe('audio analyze');

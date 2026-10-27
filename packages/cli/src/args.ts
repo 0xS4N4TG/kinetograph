@@ -6,6 +6,8 @@ export interface OptionSpec {
   short?: string;
   type: 'string' | 'number' | 'boolean';
   description: string;
+  /** A string option given any number of times (`--point 10,20 --point 30,40`): its value is the list. */
+  multiple?: boolean;
 }
 
 export interface PositionalSpec {
@@ -17,7 +19,7 @@ export interface PositionalSpec {
 
 export interface ParsedArgs {
   positionals: Record<string, string | number | undefined>;
-  options: Record<string, string | number | boolean | undefined>;
+  options: Record<string, string | number | boolean | string[] | undefined>;
   json: boolean;
 }
 
@@ -52,7 +54,7 @@ export function parseCommandArgs(spec: ParseSpec, argv: string[]): ParsedArgs {
   for (const arg of argv) (/^-\d/.test(arg) ? negatives : flags).push(arg);
 
   const options = [...spec.options, JSON_OPTION];
-  let values: Record<string, string | boolean | undefined>;
+  let values: Record<string, string | boolean | string[] | undefined>;
   let positionals: string[];
   try {
     const parsed = parseArgs({
@@ -62,11 +64,15 @@ export function parseCommandArgs(spec: ParseSpec, argv: string[]): ParsedArgs {
       options: Object.fromEntries(
         options.map((o) => [
           o.name,
-          { type: o.type === 'boolean' ? ('boolean' as const) : ('string' as const), ...(o.short ? { short: o.short } : {}) },
+          {
+            type: o.type === 'boolean' ? ('boolean' as const) : ('string' as const),
+            ...(o.short ? { short: o.short } : {}),
+            ...(o.multiple ? { multiple: true } : {}),
+          },
         ]),
       ),
     });
-    values = parsed.values as Record<string, string | boolean | undefined>;
+    values = parsed.values as Record<string, string | boolean | string[] | undefined>;
     positionals = parsed.positionals;
   } catch (error) {
     throw new CliError('INVALID_ARG', `${error instanceof Error ? error.message : String(error)}\n${usage(spec)}`);
@@ -88,7 +94,7 @@ export function parseCommandArgs(spec: ParseSpec, argv: string[]): ParsedArgs {
   for (const o of spec.options) {
     const raw = values[o.name];
     if (raw === undefined) continue;
-    out.options[o.name] = o.type === 'number' ? toNumber(`--${o.name}`, raw as string) : raw;
+    out.options[o.name] = o.type === 'number' && !o.multiple ? toNumber(`--${o.name}`, raw as string) : raw;
   }
   return out;
 }
@@ -103,7 +109,7 @@ export function usage(spec: ParseSpec): string {
   const positionals = spec.positionals.map((p) => (p.optional ? `[${p.name}]` : `<${p.name}>`)).join(' ');
   const lines = [`usage: kinetograph ${spec.name}${positionals ? ' ' + positionals : ''} [options]`];
   for (const o of [...spec.options, JSON_OPTION]) {
-    const flag = `${o.short ? `-${o.short}, ` : '    '}--${o.name}${o.type === 'boolean' ? '' : ` <${o.type}>`}`;
+    const flag = `${o.short ? `-${o.short}, ` : '    '}--${o.name}${o.type === 'boolean' ? '' : ` <${o.type}>`}${o.multiple ? ' ...' : ''}`;
     lines.push(`  ${flag.padEnd(26)} ${o.description}`);
   }
   return lines.join('\n');

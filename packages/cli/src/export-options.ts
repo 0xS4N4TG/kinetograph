@@ -35,7 +35,7 @@ export interface ExportFlags {
   everyNthFrame?: number;
 }
 
-type Options = Record<string, string | number | boolean | undefined>;
+type Options = Record<string, string | number | boolean | string[] | undefined>;
 
 /** The export flags of a parsed command line, refused with `INVALID_ARG` when they contradict one another or are out of range. */
 export function parseExportFlags(options: Options): ExportFlags {
