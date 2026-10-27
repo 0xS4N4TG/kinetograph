@@ -1407,6 +1407,63 @@ rougher, finer edge uses a higher `baseFrequency` and a smaller `scale`.
 - Effects after `displace` see the displaced layer; one before it (`glow`, a shadow) is displaced with it. For the
   papercut look put the shadow after: `[displace, dropShadow]` casts the shadow of the torn edge.
 
+### colorGrade
+
+```json
+{ "type": "colorGrade", "adjust": { "exposure": 0.2, "contrast": 0.1 }, "vignette": { "amount": 0.3 } }
+{ "type": "colorGrade", "effects": { "halftone": 0.94, "halftoneSize": 0.36 } }
+{ "type": "colorGrade", "effects": { "dither": 1, "ditherSize": 0.5 }, "palette": ["#0f380f", "#306230", "#8bac0f", "#9bbc0f"] }
+{ "type": "colorGrade", "box": [0, 0, 640, 360], "effects": { "tapeDamage": 0.65, "tapeTracking": 0.55, "scanlines": 0.35, "scanlineCount": 0.17, "scanlineSoftness": 1 } }
+```
+
+HyperFrames' colour grade (`data-color-grading`) and its 18 look effects, in one pass, with the same shader maths as the
+original (Apache-2.0, see THIRD-PARTY-NOTICES.md). A HyperFrames page gets it from its `data-color-grading` attribute;
+a scene or component writes the effect itself. The numbers are plain (not keyframes): a tween of a control is a new
+effect value each frame.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `intensity` | `1` | 0..1: how much of the grade (not the effects) replaces the picture. |
+| `adjust` | none | `exposure` -2..2; `contrast`, `highlights`, `shadows`, `whites`, `blacks`, `temperature`, `tint`, `vibrance`, `saturation` -1..1. |
+| `wheels` | none | `shadows`, `midtones`, `highlights`, each `{ hue (degrees), amount 0..1, level -1..1 }`. |
+| `curves`, `hueCurves` | none | `master`, `red`, `green`, `blue`: `[input, output]` points (2 to 16); `hueVsHue`, `hueVsSaturation`, `hueVsLuma`: `[hue degrees, delta]` points (3 to 16). |
+| `secondaries` | none | Up to four `{ key: { hue, saturation, luma }, correction: { hueShift, saturation, luma, temperature, tint } }`. |
+| `lut` | none | `{ src: "a.cube", intensity }`, the file relative to the scene file. |
+| `vignette`, `grain` | none | `{ amount, midpoint, roundness, feather }` and `{ amount, size, roughness, seed }`. |
+| `effects` | none | The look effects by control name, below. A missing control keeps its default; an unknown name is an error. |
+| `palette` | black, white | 2 to 6 `"#rrggbb"` colours, darkest first, for `ascii`, `dither`, `monoScreen`, `engraving` and `crosshatch` (their default is dark ink on paper). |
+| `time` | the frame's time | Seconds the time-varying effects run at. `filmArtifacts` uses `grain.seed` as its frame count. |
+| `box` | the layer's box | `[x, y, width, height]` in layer space: what the vignette, grain and effects lay out on (their sizes scale with the box's shorter side over 540). |
+
+The look effects (0 is off; each control 0..1 unless noted, defaults in HyperFrames' contract):
+
+| Effect | Controls |
+|---|---|
+| `blur` | strength |
+| `pixelate` | strength (block 1 to 48 px) |
+| `bloom` 0..3 | `bloomRadius` 1..100 px |
+| `chromaBleed` | strength |
+| `tapeDamage` | `tapeTracking`, `tapeNoise` (1), `tapeSpeed` (0.5) |
+| `filmArtifacts` | strength (dust and scratches, stepping with the grain seed) |
+| `halftone`, `twoInkPrint` | `halftoneSize`, `twoInkPrintSize` |
+| `monoScreen` | `monoScreenSize`, `Angle`, `Spread`, `Shape` 0..4 (dot, square, diamond, triangle, line), `Invert` |
+| `ascii` | `asciiSize`, `asciiInvert`, `asciiStyle` 0..7, `asciiColor`, `asciiRotation` (procedural glyphs, no font) |
+| `dither` | `ditherSize` (ordered Bayer over the palette's colours) |
+| `scanlines` | `scanlineCount`, `scanlineSoftness` |
+| `chromaticAberration` | `chromaticAngle` |
+| `crtCurvature` | strength |
+| `digitalGlitch` | `ColorSplit`, `LineTear`, `Pixelate`, `BlockAmount`, `BlockDisplacement`, `BlockOpacity`, `Speed` (each prefixed `digitalGlitch`) |
+| `engraving`, `crosshatch` | `Spacing`, `MinThickness`, `MaxThickness`, `Angle`, `Contrast`, `Sharpness`, `Wave`, `WaveFrequency` (engraving); `Spacing`, `Thickness`, `Angle`, `Contrast`, `Edges`, `LineWeight`, `Wave`, `WaveFrequency` (crosshatch), each prefixed by the effect |
+| `kuwahara` | `kuwaharaRadius`, `kuwaharaSharpness`, `kuwaharaSaturation` |
+
+- **Order.** The effects that move or smear the picture (`pixelate`, `tapeDamage`, `chromaBleed`, `chromaticAberration`,
+  `digitalGlitch`, `crtCurvature`, `blur`, `kuwahara`) change how it is read; then the grade, `grain`, `filmArtifacts`,
+  `monoScreen`, `engraving`, `crosshatch`, `halftone`, `twoInkPrint`, `dither`, `ascii`, `bloom`, `scanlines`, the
+  vignette and the CRT mask, as HyperFrames' shader does.
+- **Determinism.** The hashes are functions of the pixel, `time` and `grain.seed`, never a clock. The grain's noise and the
+  glitch's hash use `sin`, so a GPU whose `sin` differs from Chrome's gives a different pattern (Metal agrees).
+- Blur, bloom and kuwahara radii are in canvas pixels of the layer. Counts nothing in the [margin](#canvas-margin).
+
 ### filterGraph
 
 An SVG `<filter>` as a graph of primitives: `feTurbulence` into `feDisplacementMap`, `feGaussianBlur`,

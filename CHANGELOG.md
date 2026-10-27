@@ -3,7 +3,13 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
-## 0.2.0 (2026-10-27)
+## Unreleased
+
+### Added
+
+- HyperFrames' `effects` in `data-color-grading` are drawn: blur, bloom, kuwahara, chromaBleed, pixelate, halftone, twoInkPrint, ascii, dither, monoScreen, scanlines, chromaticAberration, crtCurvature, digitalGlitch, tapeDamage, filmArtifacts, engraving and crosshatch, with all 64 controls, the `palette`, the presets' own effect values and the tweened `--hf-color-grading-blur|bloom|kuwahara|pixelate|ascii|dither`. They are no longer reported as not drawn. See `/docs/compat/#hyperframes-projects`.
+- The `colorGrade` effect is a scene effect of its own (a helper `colorGrade({ effects: { halftone: 0.9 } })` in `@kinetographdev/scene`), so your components can use the grade and the look effects too; the catalog lists 23 effects now.
+
 
 ### Added
 
