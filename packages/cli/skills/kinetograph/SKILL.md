@@ -158,9 +158,8 @@ friends from the same CSS engine, `useLayoutEffect` measure-then-render code set
 `new Image()` and `matchMedia` work for project files and the composition's size, and `<canvas>` with
 `getContext('2d')` is drawn natively (paths, gradients, text, shadows, filters, `drawImage`, `getImageData`), and so
 are `webgl`/`webgl2` contexts; there is no network. `<Canvas width height draw={(ctx) => ...} />` is the native
-element for the same drawing. In a component, draw the whole frame from the frame number every time (`clearRect`
-first), never on top of what an earlier frame drew: a still, or a worker that starts mid-way, does not have the earlier
-frames' pixels (until 0.2.x clears the canvas for you, such code renders differently alone than in a full render).
+element for the same drawing. In a component, a canvas you draw to in a frame starts that frame empty; one you don't touch
+keeps its pixels. Draw the whole frame from the frame number every time, never on top of what an earlier frame drew.
 
 `kinetograph doctor src/index.tsx` runs the JS stage for every frame (no GPU) and reports:
 
