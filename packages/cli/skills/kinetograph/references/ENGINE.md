@@ -432,7 +432,10 @@ islands for it. Chrome is for the tools only; the engine never starts one.
 - Find an element's path from a node with `data-kg-path`, or the maps in `IslandDocument`; the painter receives only
   `&BaseDocument`, so use the attribute (the island root is the element whose `data-kg-path` equals `request.path`).
 - The container `<div data-kg-island>` is in the document; its box is the composition. Stylesheet `<style>` elements and
-  `kg-spacer`s are in the document and paint nothing.
+  `kg-spacer`s are in the document and paint nothing. A tree whose root is an `<html>` (a HyperFrames page) is a page:
+  its `html` and `body` are the document's own (no container; the `head` of stylesheets is put in its `html`), so
+  `:root`, `html > body`, `rem` and the canvas background are a browser page's. The compat shim then answers
+  `document.documentElement` and `document.body` with them (`setPageDocument`).
 - Image pixels come from `node.element_data().special_data` (`SpecialElementData::Image`) and `background_images` /
   `mask_images` as Blitz fills them; the pixel `Arc` is shared across frames.
 - `tests/common/mod.rs` (JSON request helpers, `bounds`) is meant to be shared: stream 2's golden tests can use it.

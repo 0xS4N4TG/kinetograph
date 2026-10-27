@@ -1473,7 +1473,10 @@ The look effects (0 is off; each control 0..1 unless noted, defaults in HyperFra
   vignette and the CRT mask, as HyperFrames' shader does.
 - **Determinism.** The hashes are functions of the pixel, `time` and `grain.seed`, never a clock. The grain's noise and the
   glitch's hash use `sin`, so a GPU whose `sin` differs from Chrome's gives a different pattern (Metal agrees).
-- Blur, bloom and kuwahara radii are in canvas pixels of the layer. Counts nothing in the [margin](#canvas-margin).
+- Blur, bloom and kuwahara radii are in canvas pixels of the layer. The bloom runs at half size, as HyperFrames' does.
+- Counts in the [margin](#canvas-margin) only with `crtCurvature` and a `box`: `crtCurvature / 2` times the box's larger
+  side (times the layer's scale), how far the warp reads the box from where it draws, so a box that hangs off the canvas
+  is pulled in whole.
 
 ### filterGraph
 
