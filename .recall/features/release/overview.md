@@ -24,6 +24,8 @@ Publishing Kinetograph: npm packages, the native CI matrix (native.yml), publish
 
 - [ ] ROADMAP (2026-10-27): 0.2.x patch = determinism default, monospace fallback, SVG gradients, Mermaid; 0.2.5 or 0.3.0 = worker scaling (profile first); 0.3.0 = motion tracking v1 (pure-Rust Lucas-Kanade on imageproc + template matching, 1-4 points -> position/scale/rotation/corner pin, `kinetograph track` -> .track.json + `useTrack()`, ~1-2 weeks; details in engine overview); later = tracking studio UI (v2) and the opt-in ONNX plugin (CoTracker / SAM 2).
 
+- [ ] BUG for 0.2.x (found 2026-10-27, scratchpad/plaincanvas/r): a Remotion-path `<canvas>` drawn in useEffect KEEPS its pixels between frames in a sequential render, but a still (or a worker starting mid-way) does not replay the skipped frames' effects, so frame 45 differs between `still 45` (2 dots) and a full render (trail). Breaks 'a frame is a pure function of its number' and contradicts the docs ('a canvas starts empty each frame'). Fix: clear the canvas at the start of each frame on the React path (as documented). HTML/HF pages are fine: canvas keeps pixels and a jump replays rAF calls; still == render frame (max diff 1). Also: doctor on a page without root data-* attrs should say what to add (it renders 1920x1080 for 1 s silently).
+
 ## Key files
 - `.github/workflows/publish.yml` (inputs native_run_id, dry_run, tag; NPM_TOKEN secret)
 - `.github/workflows/native.yml` (push on all branches; builds 3 platforms + smoke)
