@@ -149,7 +149,8 @@ class Builder {
     const type = (attrOf(el, 'type') ?? '').trim().toLowerCase();
     if (type === 'importmap') {
       if (attrOf(el, 'src') !== null) {
-        this.note(`${ctx.file}: an import map with a src is not read: put its JSON inside the tag`);
+        // Chrome does not load an external import map: it never fetches the file, so the imports it names fail.
+        this.note(`${ctx.file}: an import map with a src is ignored, as browsers ignore it (external import maps are not supported): put its JSON inside the tag`);
         return;
       }
       const problems: string[] = [];
