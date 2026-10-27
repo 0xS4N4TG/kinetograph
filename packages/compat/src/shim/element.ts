@@ -433,7 +433,18 @@ export class DomElement extends DomNodeBase {
   }
   get className(): string | { baseVal: string } {
     const value = this.getAttribute('class') ?? '';
-    return this.inSvg ? { baseVal: value } : value;
+    // An SVGAnimatedString: `el.className.baseVal = 'on'` writes the class like `el.className = 'on'` does.
+    const element = this;
+    return this.inSvg
+      ? {
+          get baseVal(): string {
+            return element.getAttribute('class') ?? '';
+          },
+          set baseVal(next: string) {
+            element.setAttribute('class', next);
+          },
+        }
+      : value;
   }
   set className(value: string) {
     this.setAttribute('class', value);
@@ -451,6 +462,18 @@ export class DomElement extends DomNodeBase {
         if (want && !has) write([...list(), name]);
         if (!want && has) write(list().filter((n) => n !== name));
         return want;
+      },
+      replace: (from: string, to: string) => {
+        const names = list();
+        if (!names.includes(from)) return false;
+        write([...new Set(names.map((n) => (n === from ? to : n)))]);
+        return true;
+      },
+      get value() {
+        return list().join(' ');
+      },
+      set value(next: string) {
+        write(next.split(/\s+/).filter(Boolean));
       },
       get length() {
         return list().length;
@@ -539,11 +562,29 @@ export class DomElement extends DomNodeBase {
     return want;
   }
   get dataset(): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const [name, value] of Object.entries(this.attrs())) {
-      if (name.startsWith('data-')) out[name.slice(5).replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase())] = value;
-    }
-    return out;
+    // Reads and writes go to the `data-*` attributes: `el.dataset.state = 'on'` sets `data-state`.
+    const attribute = (key: string): string => `data-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+    const names = (): string[] =>
+      Object.keys(this.attrs())
+        .filter((name) => name.startsWith('data-'))
+        .map((name) => name.slice(5).replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase()));
+    return new Proxy({} as Record<string, string>, {
+      get: (_t, key) => (typeof key === 'string' ? (this.getAttribute(attribute(key)) ?? undefined) : undefined),
+      set: (_t, key, value) => {
+        if (typeof key === 'string') this.setAttribute(attribute(key), value);
+        return true;
+      },
+      deleteProperty: (_t, key) => {
+        if (typeof key === 'string') this.removeAttribute(attribute(key));
+        return true;
+      },
+      has: (_t, key) => typeof key === 'string' && this.getAttribute(attribute(key)) !== null,
+      ownKeys: () => names(),
+      getOwnPropertyDescriptor: (_t, key) =>
+        typeof key === 'string' && this.getAttribute(attribute(key)) !== null
+          ? { value: this.getAttribute(attribute(key)) as string, enumerable: true, configurable: true, writable: true }
+          : undefined,
+    });
   }
   get style(): CSSStyleDeclarationShim {
     return (this.styleObject ??= inlineStyle(this.host, () => this.readback));

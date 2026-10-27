@@ -72,19 +72,41 @@ pub fn local_transform(node: &Node, size: (f32, f32)) -> Option<Matrix> {
             .map(|(m, _)| m)
     };
 
-    if translate.is_none() && rotate.is_none() && scale.is_none() && transform.is_none() {
+    let motion = crate::motion::motion(node, size);
+    if translate.is_none()
+        && rotate.is_none()
+        && scale.is_none()
+        && transform.is_none()
+        && motion.is_none()
+    {
         return None;
     }
-    // origin · translate · rotate · scale · transform · origin⁻¹, the point
-    // going through the right-most first.
+    // origin · translate · rotate · scale · offset · transform · origin⁻¹, the
+    // point going through the right-most first.
     let origin = &b.transform_origin;
     let (ox, oy, oz) = (
         f64::from(origin.horizontal.resolve(CSSPixelLength::new(size.0)).px()),
         f64::from(origin.vertical.resolve(CSSPixelLength::new(size.1)).px()),
         f64::from(origin.depth.px()),
     );
+    // The offset transform works in the box's frame, the others in the origin's.
+    let offset = motion.map(|mo| {
+        Matrix::translation(ox, oy, 0.0)
+            .then(&Matrix::translation(-mo.anchor.0, -mo.anchor.1, 0.0))
+            .then(&Matrix::rotation(
+                0.0,
+                0.0,
+                1.0,
+                euclid::Angle::radians(mo.angle),
+            ))
+            .then(&Matrix::translation(mo.point.0, mo.point.1, 0.0))
+            .then(&Matrix::translation(-ox, -oy, 0.0))
+    });
     let mut m = Matrix::translation(-ox, -oy, -oz);
-    for step in [transform, scale, rotate, translate].into_iter().flatten() {
+    for step in [transform, offset, scale, rotate, translate]
+        .into_iter()
+        .flatten()
+    {
         m = m.then(&step);
     }
     non_identity(m.then(&Matrix::translation(ox, oy, oz)))

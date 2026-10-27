@@ -110,6 +110,12 @@ export const GL = {
   CULL_FACE_MODE: 0xb45,
   FRONT_FACE: 0xb46,
   DEPTH_RANGE: 0xb70,
+  DEPTH_WRITEMASK: 0xb72,
+  DEPTH_CLEAR_VALUE: 0xb73,
+  DEPTH_FUNC: 0xb74,
+  POLYGON_OFFSET_FACTOR: 0x8038,
+  POLYGON_OFFSET_UNITS: 0x2a00,
+  DEPTH_STENCIL: 0x84f9,
   VIEWPORT: 0xba2,
   SCISSOR_BOX: 0xc10,
   COLOR_CLEAR_VALUE: 0xc22,
@@ -258,6 +264,10 @@ export const GL = {
 
 /** What WebGL 2 adds that a recorded context takes. */
 export const GL2 = {
+  DEPTH_COMPONENT24: 0x81a6,
+  DEPTH_COMPONENT32F: 0x8cac,
+  DEPTH24_STENCIL8: 0x88f0,
+  DEPTH32F_STENCIL8: 0x8cad,
   RED: 0x1903,
   RG: 0x8227,
   R8: 0x8229,
@@ -340,10 +350,17 @@ export class WebGLTexture extends WebGLObject {
 export class WebGLFramebuffer extends WebGLObject {
   /** The texture attached to COLOR_ATTACHMENT0. */
   color: WebGLTexture | null = null;
+  /** The renderbuffer attached to DEPTH_ATTACHMENT or DEPTH_STENCIL_ATTACHMENT: it gives the framebuffer a depth buffer. */
+  depth: WebGLRenderbuffer | null = null;
   /** Bound at least once, as `isFramebuffer` asks. */
   bound = false;
 }
-export class WebGLRenderbuffer extends WebGLObject {}
+export class WebGLRenderbuffer extends WebGLObject {
+  /** The internal format `renderbufferStorage` gave it; null before. */
+  format: number | null = null;
+  width = 0;
+  height = 0;
+}
 export class WebGLVertexArrayObject extends WebGLObject {
   readonly attributes: VertexAttribute[] = [];
   element: WebGLBuffer | null = null;
@@ -577,7 +594,23 @@ interface Capability {
   scissor: boolean;
   depth: boolean;
   stencil: boolean;
+  polygonOffset: boolean;
 }
+
+/** The depth functions, by the name the recording uses. */
+const DEPTH_FUNCS: Record<number, string> = {
+  [GL.NEVER]: 'NEVER',
+  [GL.LESS]: 'LESS',
+  [GL.EQUAL]: 'EQUAL',
+  [GL.LEQUAL]: 'LEQUAL',
+  [GL.GREATER]: 'GREATER',
+  [GL.NOTEQUAL]: 'NOTEQUAL',
+  [GL.GEQUAL]: 'GEQUAL',
+  [GL.ALWAYS]: 'ALWAYS',
+};
+
+/** What a renderbuffer can hold here: a depth buffer (the stencil half of a combined format is not drawn). */
+const DEPTH_FORMATS = new Set<number>([GL.DEPTH_COMPONENT16, GL.DEPTH_STENCIL, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8]);
 
 interface BlendState {
   srcRgb: number;
@@ -590,9 +623,7 @@ interface BlendState {
 }
 
 const UNSUPPORTED_CAPS = new Map<number, string>([
-  [GL.DEPTH_TEST, 'the depth test (disable(gl.DEPTH_TEST); a flat quad does not need it)'],
   [GL.STENCIL_TEST, 'the stencil test'],
-  [GL.POLYGON_OFFSET_FILL, 'polygon offset'],
   [GL.SAMPLE_ALPHA_TO_COVERAGE, 'alpha to coverage'],
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
@@ -628,7 +659,13 @@ export class WebGLContext {
   private readFramebuffer: WebGLFramebuffer | null = null;
   private activeUnit = 0;
   private readonly units = new Map<number, WebGLTexture>();
-  private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false };
+  private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false, polygonOffset: false };
+  private depthFuncValue: number = GL.LESS;
+  private depthMaskValue = true;
+  private clearDepthValue = 1;
+  private depthRangeValue: [number, number] = [0, 1];
+  private polygonOffsetValue: [number, number] = [0, 0];
+  private renderbuffer: WebGLRenderbuffer | null = null;
   private viewportBox: [number, number, number, number] | null = null;
   private scissorBox: [number, number, number, number] | null = null;
   private blend: BlendState = { srcRgb: GL.ONE, dstRgb: GL.ZERO, srcAlpha: GL.ONE, dstAlpha: GL.ZERO, eqRgb: GL.FUNC_ADD, eqAlpha: GL.FUNC_ADD, color: [0, 0, 0, 0] };
@@ -823,6 +860,20 @@ export class WebGLContext {
         return this.caps.depth;
       case GL.STENCIL_TEST:
         return this.caps.stencil;
+      case GL.POLYGON_OFFSET_FILL:
+        return this.caps.polygonOffset;
+      case GL.DEPTH_FUNC:
+        return this.depthFuncValue;
+      case GL.DEPTH_WRITEMASK:
+        return this.depthMaskValue;
+      case GL.DEPTH_CLEAR_VALUE:
+        return this.clearDepthValue;
+      case GL.DEPTH_RANGE:
+        return new Float32Array(this.depthRangeValue);
+      case GL.POLYGON_OFFSET_FACTOR:
+        return this.polygonOffsetValue[0];
+      case GL.POLYGON_OFFSET_UNITS:
+        return this.polygonOffsetValue[1];
       default:
         this.fail(GL.INVALID_ENUM);
         return null;
@@ -916,6 +967,9 @@ export class WebGLContext {
       case GL.STENCIL_TEST:
         this.caps.stencil = on;
         break;
+      case GL.POLYGON_OFFSET_FILL:
+        this.caps.polygonOffset = on;
+        break;
       case GL.DITHER:
         break;
       default:
@@ -952,11 +1006,26 @@ export class WebGLContext {
   clearColor(r: number, g: number, b: number, a: number): void {
     this.clearColorValue = [Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)), Math.min(1, Math.max(0, a))];
   }
-  clearDepth(): void {}
+  clearDepth(depth: number): void {
+    this.clearDepthValue = Math.min(1, Math.max(0, Number(depth)));
+  }
   clearStencil(): void {}
-  depthFunc(): void {}
-  depthMask(): void {}
-  depthRange(): void {}
+  depthFunc(func: number): void {
+    if (DEPTH_FUNCS[func] === undefined) return this.fail(GL.INVALID_ENUM);
+    this.depthFuncValue = func;
+  }
+  depthMask(flag: boolean): void {
+    this.depthMaskValue = Boolean(flag);
+  }
+  depthRange(near: number, far: number): void {
+    const n = Math.min(1, Math.max(0, Number(near)));
+    const f = Math.min(1, Math.max(0, Number(far)));
+    if (n > f) return this.fail(GL.INVALID_OPERATION);
+    this.depthRangeValue = [n, f];
+  }
+  polygonOffset(factor: number, units: number): void {
+    this.polygonOffsetValue = [Number(factor), Number(units)];
+  }
   stencilFunc(): void {}
   stencilOp(): void {}
   stencilMask(): void {}
@@ -970,22 +1039,39 @@ export class WebGLContext {
     this.frontFaceMode = mode;
   }
 
+  /** Whether the framebuffer drawn into has a depth buffer: the canvas's `depth` attribute, or a renderbuffer attached to the framebuffer. */
+  private hasDepth(): boolean {
+    return this.drawFramebuffer === null ? this.attributes.depth : this.drawFramebuffer.depth !== null;
+  }
+
   clear(mask: number): void {
     if (mask & ~(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT)) return this.fail(GL.INVALID_VALUE);
-    if (!(mask & GL.COLOR_BUFFER_BIT)) return;
+    // The depth is cleared only where there is a depth buffer, and as far as depthMask lets it be written.
+    const color = (mask & GL.COLOR_BUFFER_BIT) !== 0;
+    const depth = (mask & GL.DEPTH_BUFFER_BIT) !== 0 && this.hasDepth() && this.depthMaskValue;
+    if (!color && !depth) return;
     if (this.caps.scissor) throw new WebGLUnsupportedError('clear with the scissor test on; draw a quad over the box instead');
-    if (this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
+    if (color && this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
     if (this.framebufferIncomplete()) return;
     this.begin();
     const target = this.targetId();
+    const op: GlslOp = {
+      op: 'clear',
+      ...(color ? { color: [...this.clearColorValue] as [number, number, number, number] } : {}),
+      ...(depth ? { depth: this.clearDepthValue } : {}),
+      ...(target === undefined ? {} : { target }),
+    };
     if (target !== undefined) {
-      this.ops.push({ op: 'clear', color: [...this.clearColorValue], target });
+      this.ops.push(op);
       return;
     }
-    // Everything drawn to the canvas before it is gone with it; what went to textures stays, as later draws may read it.
+    // Everything drawn to the canvas before it is gone with it, when the clear takes the colour and what the draws
+    // left in the depth buffer matters no more; what went to textures stays, as later draws may read it.
     // (A blit that reads the canvas keeps them: the replay drops what no blit reads.)
-    const read = this.ops.some((op) => op.op === 'blit' && op.src === undefined);
-    this.ops = [...(read ? this.ops : this.ops.filter((op) => op.target !== undefined)), { op: 'clear', color: [...this.clearColorValue] }];
+    const read = this.ops.some((o) => o.op === 'blit' && o.src === undefined);
+    const tested = this.ops.some((o) => o.op === 'draw' && o.target === undefined && o.depth !== undefined);
+    const gone = color && (depth || !tested) && !read;
+    this.ops = [...(gone ? this.ops.filter((o) => o.target !== undefined) : this.ops), op];
   }
 
   // ---- shaders and programs ----
@@ -1653,7 +1739,7 @@ export class WebGLContext {
     const { draw, read } = this.framebufferSides(target);
     if (!draw && !read) return this.fail(GL.INVALID_ENUM);
     if (attachment === GL.DEPTH_ATTACHMENT || attachment === GL.STENCIL_ATTACHMENT || attachment === GL.DEPTH_STENCIL_ATTACHMENT) {
-      if (texture !== null) throw new WebGLUnsupportedError('a depth or stencil attachment; draw without a depth buffer (disable(gl.DEPTH_TEST))');
+      if (texture !== null) throw new WebGLUnsupportedError('a depth or stencil texture; attach a depth renderbuffer instead (a depth texture cannot be sampled here)');
       return;
     }
     if (attachment !== GL.COLOR_ATTACHMENT0) {
@@ -1721,14 +1807,57 @@ export class WebGLContext {
     return this.registerTarget(texture);
   }
 
-  // ---- unsupported objects ----
+  // ---- renderbuffers ----
+  //
+  // A renderbuffer is a depth buffer for a framebuffer: `renderbufferStorage` with a depth format, attached with
+  // `framebufferRenderbuffer`. The stencil half of a combined format is kept apart and not drawn. A colour
+  // renderbuffer is refused: render to a texture.
 
   createRenderbuffer(): WebGLRenderbuffer {
     return new WebGLRenderbuffer();
   }
-  bindRenderbuffer(_target: number, renderbuffer: WebGLRenderbuffer | null): void {
-    if (renderbuffer !== null) throw new WebGLUnsupportedError('renderbuffers; render to a texture');
+  deleteRenderbuffer(renderbuffer: WebGLRenderbuffer | null): void {
+    if (renderbuffer === null) return;
+    renderbuffer.deleted = true;
+    if (this.renderbuffer === renderbuffer) this.renderbuffer = null;
   }
+  isRenderbuffer(renderbuffer: unknown): boolean {
+    return renderbuffer instanceof WebGLRenderbuffer && renderbuffer.format !== null && !renderbuffer.deleted;
+  }
+  bindRenderbuffer(target: number, renderbuffer: WebGLRenderbuffer | null): void {
+    if (target !== GL.RENDERBUFFER) return this.fail(GL.INVALID_ENUM);
+    if (renderbuffer?.deleted) return this.fail(GL.INVALID_OPERATION);
+    this.renderbuffer = renderbuffer;
+  }
+  renderbufferStorage(target: number, internalformat: number, width: number, height: number): void {
+    if (target !== GL.RENDERBUFFER) return this.fail(GL.INVALID_ENUM);
+    if (!(width >= 0 && height >= 0)) return this.fail(GL.INVALID_VALUE);
+    const renderbuffer = this.renderbuffer;
+    if (renderbuffer === null) return this.fail(GL.INVALID_OPERATION);
+    if (!DEPTH_FORMATS.has(internalformat)) throw new WebGLUnsupportedError('a colour or stencil renderbuffer; render to a texture (only depth renderbuffers are drawn)');
+    renderbuffer.format = internalformat;
+    renderbuffer.width = Math.trunc(width);
+    renderbuffer.height = Math.trunc(height);
+  }
+  framebufferRenderbuffer(target: number, attachment: number, renderbufferTarget: number, renderbuffer: WebGLRenderbuffer | null): void {
+    const { draw, read } = this.framebufferSides(target);
+    if (!draw && !read) return this.fail(GL.INVALID_ENUM);
+    if (renderbufferTarget !== GL.RENDERBUFFER) return this.fail(GL.INVALID_ENUM);
+    const framebuffer = draw ? this.drawFramebuffer : this.readFramebuffer;
+    if (framebuffer === null) return this.fail(GL.INVALID_OPERATION);
+    if (attachment === GL.DEPTH_ATTACHMENT || attachment === GL.DEPTH_STENCIL_ATTACHMENT) {
+      framebuffer.depth = renderbuffer;
+      return;
+    }
+    if (attachment === GL.STENCIL_ATTACHMENT || attachment === GL.COLOR_ATTACHMENT0) {
+      if (renderbuffer !== null) throw new WebGLUnsupportedError('a colour or stencil renderbuffer; render to a texture (only depth renderbuffers are drawn)');
+      return;
+    }
+    this.fail(GL.INVALID_ENUM);
+  }
+
+  // ---- unsupported objects ----
+
   drawBuffers(buffers: number[]): void {
     if (buffers.length !== 1 || (buffers[0] !== GL.BACK && buffers[0] !== GL.COLOR_ATTACHMENT0)) throw new WebGLUnsupportedError('several colour outputs');
   }
@@ -1766,7 +1895,6 @@ export class WebGLContext {
     if (program === null) return this.fail(GL.INVALID_OPERATION);
     const named = modes[mode];
     if (named === undefined) throw new WebGLUnsupportedError('drawing lines; draw triangles (points are drawn)');
-    if (this.caps.depth) throw new WebGLUnsupportedError('drawing with the depth test on (disable(gl.DEPTH_TEST); a flat quad does not need it)');
     if (this.caps.stencil) throw new WebGLUnsupportedError('drawing with the stencil test on');
     if (this.framebufferIncomplete()) return;
     if (instances === 0) return;
@@ -1843,6 +1971,13 @@ export class WebGLContext {
     }
     if (this.caps.cull) draw.cull = { face: this.cullMode === GL.FRONT ? 'FRONT' : this.cullMode === GL.BACK ? 'BACK' : 'FRONT_AND_BACK', front: this.frontFaceMode === GL.CW ? 'CW' : 'CCW' };
     if (draw.cull?.face === 'FRONT_AND_BACK') return;
+    // Without a depth buffer the test passes and nothing is written, as in a browser.
+    if (this.caps.depth && this.hasDepth()) {
+      const [near, far] = this.depthRangeValue;
+      draw.depth = { func: DEPTH_FUNCS[this.depthFuncValue]!, mask: this.depthMaskValue, near, far };
+      const [factor, units] = this.polygonOffsetValue;
+      if (this.caps.polygonOffset && named !== 'points' && (factor !== 0 || units !== 0)) draw.polygonOffset = { factor, units };
+    }
     const target = this.targetId();
     if (target !== undefined) draw.target = target;
     this.ops.push({ op: 'draw', ...draw });

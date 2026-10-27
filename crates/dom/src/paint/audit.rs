@@ -86,10 +86,6 @@ impl<'a> Painter<'a> {
                 "the deprecated clip property is not drawn",
             );
         }
-        let op = dbg(&style.get_box().offset_path);
-        if op != "none" {
-            self.report(node, "offset-path", op, "motion paths are not drawn");
-        }
         let lsi = dbg(&style.get_list().list_style_image);
         if lsi != "none" {
             self.report(

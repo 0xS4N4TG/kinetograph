@@ -2285,7 +2285,8 @@ pub fn webgpu_device_info() -> Option<String> {
     .clone()
 }
 
-/// The GPU device: the default adapter, default limits, `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
+/// The GPU device: the default adapter, default limits (but up to 16 vertex buffers, as a `glsl` draw gives each
+/// attribute one and a shader may have ten), `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
 /// `TIMESTAMP_QUERY` when there, for `set_pass_timing`, and `FLOAT32_FILTERABLE` when there, so that a WebGPU page may
 /// filter 32-bit float textures.
 async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Queue)> {
@@ -2300,7 +2301,10 @@ async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Qu
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
             required_features: adapter.features() & wanted,
-            required_limits: wgpu::Limits::default(),
+            required_limits: wgpu::Limits {
+                max_vertex_buffers: adapter.limits().max_vertex_buffers.min(16),
+                ..wgpu::Limits::default()
+            },
             ..Default::default()
         })
         .await

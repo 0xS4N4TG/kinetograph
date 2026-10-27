@@ -598,11 +598,11 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   in any order), `preserveDrawingBuffer` or not, and a frame that draws nothing draws nothing. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  renderbuffers and depth and stencil attachments, depth and stencil tests, `readPixels`, lines, instanced points,
+  colour and stencil renderbuffers, depth and stencil textures as attachments, the stencil test, `readPixels`, lines, instanced points,
   cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
-  Enabling the depth test is accepted but
-  the first draw with it on throws, because a flat quad does not need it and a scene that does is drawn wrongly
-  without it.
+  The depth test is drawn: `enable(DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and
+  `polygonOffset` on the canvas (the `depth` attribute, true by default) and on a framebuffer with a depth
+  renderbuffer (`renderbufferStorage` with a depth format, `framebufferRenderbuffer`).
 
 ### 6.4 Audio clips
 
