@@ -16,6 +16,11 @@ export interface IslandContext {
   viewport: { width: number; height: number };
   /** `getFonts()`: font key → file. */
   fonts: Record<string, string>;
+  /**
+   * `getFonts()` again: asked when the island's own `<style>` or `<link>` registered an `@font-face` while its request was
+   * built, so the text is set in that font on the frame it first appears, as a browser that waits for its fonts does.
+   */
+  refreshFonts?: () => Record<string, string>;
   /** Emits a native (`kg-*`) element found inside the island, as the reconciler would at `path`. */
   emitNative(node: DomNode, path: string): LayerJson | null;
   /** Seconds (frame / fps): the clock CSS animations and transitions read. Default 0. */

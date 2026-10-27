@@ -118,6 +118,11 @@ export function parseFontFaces(css: string): CssFontFace[] {
 const registeredFaces = new Set<string>();
 const seenSheets = new Set<string>();
 
+/** How many `@font-face` rules have been registered: a request built before one was has a stale font list. */
+export function fontFacesRegistered(): number {
+  return registeredFaces.size;
+}
+
 /** Registers the `@font-face` files of `css` through the handler (once per rule). */
 function registerFontFaces(css: string): void {
   if (!fontFaceHandler) return;

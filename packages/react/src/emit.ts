@@ -442,6 +442,7 @@ class Emitter {
       path,
       viewport,
       fonts: this.options.fonts?.() ?? {},
+      refreshFonts: () => this.options.fonts?.() ?? {},
       emitNative: (node: unknown, at: string) => this.element(node as HostElement, at),
       time: this.options.time?.() ?? 0,
       stylesheets: this.stylesheets(),
