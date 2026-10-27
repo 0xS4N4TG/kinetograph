@@ -10,6 +10,7 @@ import { cliVersion, CliError } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
 import { AgentBridge } from './agent-bridge.js';
+import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
@@ -39,8 +40,6 @@ const PROGRESS_INTERVAL_MS = 100;
 const MAX_BODY_BYTES = 1 << 20;
 /** How long a conversation waits for the window that began it to come back (a reload). */
 const RECLAIM_MS = 30_000;
-/** The most chat records kept for a window that reconnects. */
-const CHAT_LIMIT = 5_000;
 /** A thumbnail is drawn only once no preview frame was asked for in this long (ms): playback is never kept waiting. */
 const THUMB_IDLE_MS = 250;
 /** Thumbnails kept, the least recently used dropped first. */
@@ -137,16 +136,13 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const reclaimMs = options.agentReclaimMs ?? RECLAIM_MS;
   // The conversation, kept here so that a window that reloads gets it back. When the window that began it closes, the
   // agent waits RECLAIM_MS for it to come back (a reload) before it stops and the conversation is dropped.
-  let chat: ChatRecord[] = [];
+  const chat = new ChatLog();
   let orphaned: NodeJS.Timeout | null = null;
-  const keep = (record: ChatRecord): void => {
-    chat.push(record);
-    if (chat.length > CHAT_LIMIT) chat = chat.slice(-CHAT_LIMIT);
-  };
+  const keep = (record: ChatRecord): void => chat.push(record);
   const endConversation = (): void => {
     if (orphaned) clearTimeout(orphaned);
     orphaned = null;
-    chat = [];
+    chat.clear();
   };
   const bridge = new AgentBridge({
     cwd: agentCwd,
@@ -188,11 +184,18 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
 
   let previewsBusy = 0;
   let lastPreviewAt = 0;
-  const thumbs = new Map<string, Uint8Array>();
+  /** By `build` + `what`: the build the picture was drawn from, never the one asked for. */
+  const thumbs = new Map<string, Thumb>();
+  /** A thumbnail and the build it was drawn from. */
+  interface Thumb {
+    image: Uint8Array;
+    build: number;
+  }
   interface ThumbJob {
-    key: string;
+    /** The thumbnail's key without the build: `|comp|frame|scale|props`. */
+    what: string;
     params: FrameParams;
-    done(image: Uint8Array | null, error?: unknown): void;
+    done(thumb: Thumb | null, error?: unknown): void;
     gone: boolean;
   }
   const thumbQueue: ThumbJob[] = [];
@@ -223,14 +226,18 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     thumbQueue.shift();
     thumbRunning = true;
     void renderFrame(job.params, false).then(
-      ({ image }) => {
+      ({ header, image }) => {
         thumbsDrawn += 1;
-        thumbs.delete(job.key);
-        thumbs.set(job.key, image);
+        // Kept under the build it was drawn from: a rebuild during the idle wait does not put the new picture under
+        // the old build's address.
+        const thumb = { image, build: header.buildId };
+        const key = `${header.buildId}${job.what}`;
+        thumbs.delete(key);
+        thumbs.set(key, thumb);
         while (thumbs.size > THUMB_CACHE) thumbs.delete(thumbs.keys().next().value!);
         // Every request for the same thumbnail that waited gets it.
-        for (const other of thumbQueue) if (other.key === job.key && !other.gone) other.done(image);
-        job.done(image);
+        for (const other of thumbQueue) if (other.what === job.what && !other.gone) other.done(thumb);
+        job.done(thumb);
       },
       (error: unknown) => job.done(null, error),
     ).finally(() => {
@@ -239,8 +246,9 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     });
   }
 
-  function thumbnail(params: FrameParams, onGone: (listen: () => void) => void): Promise<Uint8Array> {
-    const key = `${project.buildId}|${params.comp}|${params.frame}|${params.scale}|${JSON.stringify(params.props)}`;
+  function thumbnail(params: FrameParams, onGone: (listen: () => void) => void): Promise<Thumb> {
+    const what = `|${params.comp}|${params.frame}|${params.scale}|${JSON.stringify(params.props)}`;
+    const key = `${project.buildId}${what}`;
     const kept = thumbs.get(key);
     if (kept) {
       thumbs.delete(key);
@@ -249,12 +257,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     }
     return new Promise((resolve, reject) => {
       const job: ThumbJob = {
-        key,
+        what,
         params,
         gone: false,
-        done: (image, error) => {
+        done: (thumb, error) => {
           job.gone = true;
-          if (image) resolve(image);
+          if (thumb) resolve(thumb);
           else reject(error);
         },
       };
@@ -408,13 +416,16 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         format: 'jpeg',
         props: queryProps(q.get('props')),
       });
-      const image = await thumbnail(params, (listen) => res.once('close', listen));
+      const asked = number(q.get('build'));
+      const { image, build } = await thumbnail(params, (listen) => res.once('close', listen));
       if (res.destroyed) return;
       res.writeHead(200, {
         'Content-Type': 'image/jpeg',
         'Content-Length': image.length,
-        // The address names the build (`build`), so what it answers never changes.
-        'Cache-Control': 'private, max-age=31536000, immutable',
+        'X-Build': String(build),
+        // The address names the build (`build`): when the picture is of that build it never changes; one of another
+        // build (the project was rebuilt meanwhile, or no build was named) is not kept by the browser.
+        'Cache-Control': asked === build ? 'private, max-age=31536000, immutable' : 'no-store',
       });
       return void res.end(Buffer.from(image.buffer, image.byteOffset, image.byteLength));
     }
@@ -612,7 +623,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       clearTimeout(orphaned);
       orphaned = null;
       owner = ws;
-      send(ws, { type: 'agent.history', items: chat });
+      send(ws, { type: 'agent.history', items: chat.records });
     }
   });
 

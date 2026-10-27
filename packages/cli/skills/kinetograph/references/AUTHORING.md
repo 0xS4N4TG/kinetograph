@@ -1344,12 +1344,15 @@ rendered, so a whole timeline is the union over frames; two entries with one `ke
   union of `sequences` and each layer's frame ranges, cached per (buildId, composition, props).
 - **Thumbnails.** `/api/thumbnail` draws a small JPEG of a frame for the timeline's clips through the preview worker,
   one at a time and only once no preview frame has been asked for in 250 ms, so playback and scrubbing never wait for
-  one. Thumbnails are kept (400, by build, composition, frame, props and size); the address carries the build, so the
-  answer is `immutable`.
+  one. Thumbnails are kept (400, by the build they were drawn from, composition, frame, props and size). The answer's
+  `X-Build` is the build drawn; when it is the `build` the address names, the answer is `immutable`, else `no-store`
+  (the project was rebuilt while it waited).
 - **Chat.** The server keeps the conversation with the coding agent (the user's messages, what the agent sent, the
   permissions answered). When the window that began it closes, the agent waits 30 s (`agentReclaimMs`) for it to come
   back: the next window to connect takes it over and is sent `agent.history`, which the chat replays. Starting over,
-  choosing another agent, or a window that does not come back drops it.
+  choosing another agent, or a window that does not come back drops it. At most 5,000 records and 4 MB are kept
+  (streamed text is one record per paragraph); past that whole turns go from the start, so a replay begins at one of
+  the user's messages.
 - **Names and source.** The studio bundles a project with esbuild's dev JSX transform, so each Sequence and layer
   (`/api/timeline`, `/api/inspect`) can carry optional `label` (a person's name for it: the Sequence `name`, the
   element `id`, `Component · “text…”`, the tag and class, or its kind), `component` (the nearest user component) and

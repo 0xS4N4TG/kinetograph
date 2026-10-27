@@ -50,6 +50,11 @@ describe('GET /api/thumbnail', () => {
     expect(r.status).toBe(200);
     expect(r.headers.get('content-type')).toBe('image/jpeg');
     expect(r.headers.get('cache-control')).toContain('immutable');
+    expect(r.headers.get('x-build')).toBe('1');
+    // Asked for another build than the one drawn: answered, not kept by the browser.
+    const other = await frameJson('/api/thumbnail?comp=Main&frame=12&height=18&build=7');
+    expect(other.headers.get('cache-control')).toBe('no-store');
+    expect(other.headers.get('x-build')).toBe('1');
     // 18 px of the 36 px tall composition.
     expect(r.frame).toMatchObject({ frame: 12, scale: 0.5, format: 'jpeg' });
     expect((await frameJson('/api/thumbnail?comp=Main&frame=12&height=18&build=1')).frame).toEqual(r.frame);
