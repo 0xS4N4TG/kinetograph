@@ -140,7 +140,8 @@ export function parseHtmlFragment(html: string, inSvg = false): DomNode[] {
       at = end === -1 ? html.length : end + 1;
       continue;
     }
-    stack.push({ type, node, inSvg: inside });
+    // `foreignObject` is an HTML integration point: what is written inside it is HTML, not SVG.
+    stack.push({ type, node, inSvg: inside && lower !== 'foreignobject' });
   }
   return roots;
 }

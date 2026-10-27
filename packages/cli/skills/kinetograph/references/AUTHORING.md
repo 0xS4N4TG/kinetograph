@@ -598,11 +598,11 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   in any order), `preserveDrawingBuffer` or not, and a frame that draws nothing draws nothing. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  renderbuffers and depth and stencil attachments, depth and stencil tests, `readPixels`, lines, instanced points,
+  colour and stencil renderbuffers, depth and stencil textures as attachments, the stencil test, `readPixels`, lines, instanced points,
   cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
-  Enabling the depth test is accepted but
-  the first draw with it on throws, because a flat quad does not need it and a scene that does is drawn wrongly
-  without it.
+  The depth test is drawn: `enable(DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and
+  `polygonOffset` on the canvas (the `depth` attribute, true by default) and on a framebuffer with a depth
+  renderbuffer (`renderbufferStorage` with a depth format, `framebufferRenderbuffer`).
 
 ### 6.4 Audio clips
 
@@ -1396,15 +1396,28 @@ Libraries that need no plugin, only frame-pure use (details and snippets in `/do
 frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
 Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` is the bundled JetBrains Mono unless you
 load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws): render the diagram to
+Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` falls back to a proportional face, so
+load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws; `doctor` shows the error): render the diagram to
 SVG ahead of time and use it as an `<Img>`. Load a font before Chart.js or Recharts measure text.
+Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` falls back to a proportional face, so
+load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws with `mermaid.initialize({ startOnLoad: false, htmlLabels: false })` (flowchart, sequence, class and pie checked); with the
+default HTML labels (`<foreignObject>` with `<div>`s) the SVG is not drawn, so keep `htmlLabels: false`. Load a font before Chart.js or Recharts measure text.
 
 ### 11.11 HyperFrames projects
 
 `kinetograph render|still|doctor|studio <index.html|dir>` takes a HyperFrames project as it is (nested compositions,
 `window.__timelines` seeked per frame, `data-hidden`, `data-color-grading`, speed ramps, volume lanes, its 18 embedded
-fonts, WebGPU shader backgrounds); the loader is `packages/core/src/hyperframes/`. A render never touches the network:
-run `kinetograph fetch-deps <entry>` once to cache the CDN scripts, data, media, fonts and remote pictures the page uses
-(https only; `--allow-host a.com,b.com` adds hosts, `--url` adds a file a scan missed, `--max-media-mb N`; each file is
-hash-checked on every read). A file that is not cached is reported with the exact command. Three.js and import maps are
-unsupported and reported. Full list: `/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
+fonts, WebGPU shader backgrounds); the loader is `packages/core/src/hyperframes/`. A frame never touches the network:
+before frame 0, `render|still|doctor|studio` download whatever the page loads from the web (CDN scripts, ES modules and
+their imports, data, media, fonts, remote pictures) into the cache and pin it in `kinetograph.lock.json` beside the entry
+(sha256 and size per URL; commit it). You do not need to run `fetch-deps` first. `--offline` never downloads (a missing
+file is the error it always was: it names the URL and the command). `kinetograph fetch-deps <entry>` runs the download on
+its own; `--update` downloads again and rewrites the lock, the way to accept a file that changed (a changed file otherwise
+stops the run). https only; `--allow-host a.com,b.com` adds hosts, `--url` adds a file a scan missed, `--max-media-mb N`;
+each file is hash-checked against the cache and the lock on every read. `<script type="importmap">` and
+`<script type="module">` (inline or `src`, relative or CDN imports, bare names through the map) are bundled into classic
+scripts that run after the page's classic scripts. A Remotion project's remote `<Img>`, `<Video>` and CSS `url()` files are
+found by scanning its bundle, downloaded the same way and locked in the same file; one first requested during a render is
+fetched once, added to the lock and noted. Three.js is unsupported and reported. Full list:
+`/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
 

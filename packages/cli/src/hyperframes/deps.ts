@@ -4,12 +4,14 @@
 //   1. the same package at the same version in a `node_modules` at or above the project (`gsap@3.14.2` → its dist file),
 //   2. the cache `~/.cache/kinetograph/cdn/<hash of the URL>.js`, which only `kinetograph fetch-deps <entry>` fills,
 //
-// and is an error naming the URL and that command otherwise.
+// and is an error naming the URL and that command otherwise. `render`, `still`, `doctor` and `studio` run the same
+// download first (`prefetch.ts`) unless `--offline`; what they download is pinned in `kinetograph.lock.json`.
 
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
+import { lockMismatch, readLock, recordInLock, writeLock, type Lock } from '@kinetographdev/core/lock';
 import { CliError } from '../errors.js';
 
 export interface CdnRef {
@@ -83,12 +85,75 @@ function installedFile(pkgDir: string, ref: CdnRef): string | null {
 export type ScriptResolution = { file: string; via: 'node_modules' | 'cache' } | { error: string };
 
 /** The hosts `fetch-deps` downloads from without being told to. */
-export const DEFAULT_ALLOWED_HOSTS = ['cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com', 'esm.sh'];
+export const DEFAULT_ALLOWED_HOSTS = ['cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com', 'esm.sh', 'cdn.skypack.dev'];
 /** The most bytes of one script. */
 export const MAX_SCRIPT_BYTES = 20 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 
 const sha256Hex = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+
+// ---- the project's lock file (kinetograph.lock.json) ----
+
+let active: { path: string; lock: Lock } | null = null;
+
+/** The lock file the next resolves check the cache against, and the downloads are recorded in; null for none. */
+export function useLockFile(path: string | null, fresh = false): void {
+  if (path === null) {
+    active = null;
+    return;
+  }
+  try {
+    // `fresh` (fetch-deps --update): the lock starts empty, so it ends up holding what the project uses now.
+    active = { path, lock: fresh ? { version: 1, files: {} } : readLock(path) };
+    if (fresh && existsSync(path)) writeLock(path, active.lock);
+  } catch (error) {
+    throw new CliError('LOCK_INVALID', error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** The lock file in use. */
+export const activeLockFile = (): string | null => active?.path ?? null;
+
+/**
+ * A download of `url` with `bytes`: refused when the lock has another hash for it (unless `update`), else recorded.
+ */
+function lockDownload(url: string, bytes: Uint8Array, update: boolean): void {
+  if (active === null) return;
+  if (!update) {
+    const mismatch = lockMismatch(active.lock, url, bytes);
+    if (mismatch !== null) throw new CliError('LOCK_MISMATCH', mismatch);
+  }
+  const entry = { sha256: sha256Hex(bytes), size: bytes.length };
+  active.lock.files[url] = entry;
+  recordInLock(active.path, url, entry);
+}
+
+/** A cached file that is not in the lock yet (downloaded for another project) joins it, as the hash stored beside it says. */
+function lockCached(url: string, file: string): void {
+  if (active === null || active.lock.files[url]) return;
+  const entry = { sha256: readFileSync(hashFile(file), 'utf8').trim(), size: readFileSync(file).length };
+  active.lock.files[url] = entry;
+  recordInLock(active.path, url, entry);
+}
+
+function writeAtomic(file: string, data: Uint8Array | string): void {
+  const tmp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
+  writeFileSync(tmp, data);
+  renameSync(tmp, file);
+}
+
+/**
+ * Stores a download. Every write is a temporary file renamed into place, and the file itself comes last, after its hash
+ * and URL: a render running at the same time (parallel workers on a first run) sees either no file or a whole one with
+ * its hash.
+ */
+function store(file: string, url: string, bytes: Uint8Array, update: boolean): void {
+  lockDownload(url, bytes, update);
+  mkdirSync(dirname(file), { recursive: true });
+  writeAtomic(hashFile(file), `${sha256Hex(bytes)}\n`);
+  writeAtomic(`${file}.url`, `${url}\n`);
+  writeAtomic(file, bytes);
+}
 
 /** The hash `fetch-deps` stored beside a cached file. */
 const hashFile = (file: string): string => `${file}.sha256`;
@@ -101,6 +166,13 @@ function verifiedCache(file: string, url: string): { ok: true } | { ok: false; e
   const b = Buffer.from(sha256Hex(readFileSync(file)));
   if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return { ok: false, error: `the cached copy of ${url} (${file}) does not match the hash recorded when it was downloaded: it was changed, and is not run. ${again}.` };
+  }
+  const locked = active?.lock.files[url];
+  if (locked && locked.sha256 !== a.toString()) {
+    return {
+      ok: false,
+      error: `the cached copy of ${url} (${file}) does not match kinetograph.lock.json (locked sha256 ${locked.sha256.slice(0, 12)}…, cached ${a.toString().slice(0, 12)}…) and is not run. Run \`kinetograph fetch-deps <entry> --update\` to download it again and update the lock.`,
+    };
   }
   return { ok: true };
 }
@@ -136,6 +208,8 @@ export interface FetchedDep {
   file: string;
   status: 'installed' | 'cached' | 'fetched' | 'failed';
   error?: string;
+  /** The error's code (`LOCK_MISMATCH`, `FETCH_REFUSED`, ...). */
+  code?: string;
 }
 
 export interface FetchResponse {
@@ -152,6 +226,8 @@ export interface FetchOptions {
   /** `integrity` attributes of the script tags, by URL (`sha384-<base64>`, several separated by spaces). */
   integrity?: Record<string, string>;
   maxBytes?: number;
+  /** `fetch-deps --update`: download again what is cached, and replace what the lock says. */
+  update?: boolean;
 }
 
 /** `//host/x` is `https://host/x`; anything else as it is. */
@@ -229,7 +305,8 @@ export async function fetchCdnScripts(urls: string[], projectDir: string, option
           mismatch = error instanceof Error ? error.message : String(error);
         }
       }
-      if (mismatch === null) {
+      if (mismatch === null && !(options.update && found.via === 'cache')) {
+        if (found.via === 'cache') lockCached(url, found.file);
         results.push({ url, file: found.file, status: found.via === 'node_modules' ? 'installed' : 'cached' });
         continue;
       }
@@ -242,16 +319,10 @@ export async function fetchCdnScripts(urls: string[], projectDir: string, option
     try {
       const bytes = await download(url, options, allowed);
       if (integrity) verifyIntegrity(bytes, integrity, url);
-      mkdirSync(dirname(file), { recursive: true });
-      // Temporary names, so a reader never sees half a file; the hash goes last.
-      const tmp = `${file}.${process.pid}.tmp`;
-      writeFileSync(tmp, bytes);
-      renameSync(tmp, file);
-      writeFileSync(`${file}.url`, `${url}\n`);
-      writeFileSync(hashFile(file), `${sha256Hex(bytes)}\n`);
+      store(file, url, bytes, options.update === true);
       results.push({ url, file, status: 'fetched' });
     } catch (error) {
-      results.push({ url, file, status: 'failed', error: error instanceof Error ? error.message : String(error) });
+      results.push({ url, file, status: 'failed', error: error instanceof Error ? error.message : String(error), ...(error instanceof CliError ? { code: error.code } : {}) });
     }
   }
   return results;
@@ -291,21 +362,17 @@ export async function fetchCdnData(urls: string[], options: FetchOptions = {}): 
   const results: FetchedDep[] = [];
   for (const url of [...new Set(urls)]) {
     const file = dataCachePath(url);
-    if (existsSync(file) && verifiedCache(file, url).ok) {
+    if (!options.update && existsSync(file) && verifiedCache(file, url).ok) {
+      lockCached(url, file);
       results.push({ url, file, status: 'cached' });
       continue;
     }
     try {
       const bytes = await download(url, options, allowed);
-      mkdirSync(dirname(file), { recursive: true });
-      const tmp = `${file}.${process.pid}.tmp`;
-      writeFileSync(tmp, bytes);
-      renameSync(tmp, file);
-      writeFileSync(`${file}.url`, `${url}\n`);
-      writeFileSync(hashFile(file), `${sha256Hex(bytes)}\n`);
+      store(file, url, bytes, options.update === true);
       results.push({ url, file, status: 'fetched' });
     } catch (error) {
-      results.push({ url, file, status: 'failed', error: error instanceof Error ? error.message : String(error) });
+      results.push({ url, file, status: 'failed', error: error instanceof Error ? error.message : String(error), ...(error instanceof CliError ? { code: error.code } : {}) });
     }
   }
   return results;

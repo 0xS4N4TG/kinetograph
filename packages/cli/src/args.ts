@@ -25,6 +25,7 @@ export interface ParsedArgs {
 export const PROJECT_OPTIONS: OptionSpec[] = [
   { name: 'comp', type: 'string', description: 'Composition id (default: the first composition)' },
   { name: 'props', type: 'string', description: 'Input props as a JSON object' },
+  { name: 'offline', type: 'boolean', description: 'Never download: remote scripts, modules, pictures and media must already be cached (a missing one is an error, as before the pre-download step)' },
 ];
 
 export const JSON_OPTION: OptionSpec = {

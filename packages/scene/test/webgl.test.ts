@@ -203,14 +203,133 @@ describe('the recording WebGL context', () => {
       }
       throw new Error('did not throw');
     };
-    gl.enable(GL.DEPTH_TEST);
-    expect(refused(() => gl.drawArrays(GL.TRIANGLES, 0, 3))).toMatch(/^unsupported:.*depth/);
-    gl.disable(GL.DEPTH_TEST);
+    gl.enable(GL.STENCIL_TEST);
+    expect(refused(() => gl.drawArrays(GL.TRIANGLES, 0, 3))).toMatch(/^unsupported:.*stencil/);
+    gl.disable(GL.STENCIL_TEST);
     expect(refused(() => gl.drawArrays(GL.LINES, 0, 2))).toMatch(/^unsupported:.*lines/);
-    expect(refused(() => gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/^unsupported:.*renderbuffers/);
+    gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer());
+    expect(refused(() => gl.renderbufferStorage(GL.RENDERBUFFER, GL.RGBA4, 4, 4))).toMatch(/^unsupported:.*colour.*renderbuffer/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(GL.TEXTURE_CUBE_MAP, gl.createTexture()))).toMatch(/cube/);
     expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
+  });
+
+  describe('the depth test', () => {
+    const draws = (gl: WebGLContext) => gl.content().ops.flatMap((op) => (op.op === 'draw' ? [op] : []));
+
+    it('draws without a depth test until DEPTH_TEST is on, then records the GL defaults: LESS, mask on, range 0 to 1', () => {
+      const { gl } = setup();
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.enable(GL.DEPTH_TEST);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const [off, on] = draws(gl);
+      expect(off!.depth).toBeUndefined();
+      expect(on!.depth).toEqual({ func: 'LESS', mask: true, near: 0, far: 1 });
+      expect(gl.isEnabled(GL.DEPTH_TEST)).toBe(true);
+      expect(gl.getParameter(GL.DEPTH_FUNC)).toBe(GL.LESS);
+      expect(gl.getParameter(GL.DEPTH_WRITEMASK)).toBe(true);
+      expect(gl.getParameter(GL.DEPTH_CLEAR_VALUE)).toBe(1);
+    });
+
+    it('records depthFunc, depthMask and depthRange with each draw, and refuses a function that is not one', () => {
+      const { gl } = setup();
+      gl.enable(GL.DEPTH_TEST);
+      const names = ['NEVER', 'LESS', 'EQUAL', 'LEQUAL', 'GREATER', 'NOTEQUAL', 'GEQUAL', 'ALWAYS'];
+      for (const [i, name] of names.entries()) {
+        gl.depthFunc(GL.NEVER + i);
+        gl.drawArrays(GL.TRIANGLES, 0, 3);
+        expect(draws(gl).at(-1)!.depth!.func).toBe(name);
+      }
+      gl.depthFunc(GL.LEQUAL);
+      gl.depthMask(false);
+      gl.depthRange(0.25, 3);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(draws(gl).at(-1)!.depth).toEqual({ func: 'LEQUAL', mask: false, near: 0.25, far: 1 });
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.depthFunc(GL.POINTS);
+      expect(gl.getError()).toBe(GL.INVALID_ENUM);
+      expect(gl.getParameter(GL.DEPTH_FUNC)).toBe(GL.LEQUAL);
+      gl.depthRange(0.8, 0.2);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('clears the depth buffer to clearDepth with DEPTH_BUFFER_BIT, clamped, only where depthMask lets it be written', () => {
+      const { gl } = setup();
+      gl.clearDepth(0.5);
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      gl.clearDepth(7);
+      gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
+      gl.depthMask(false);
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      expect(gl.content().ops).toEqual([{ op: 'clear', color: [0, 0, 0, 0], depth: 1 }]);
+      gl.depthMask(true);
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      expect(gl.content().ops.at(-1)).toEqual({ op: 'clear', depth: 1 });
+    });
+
+    it('keeps the draws before a colour-only clear when they tested depth, since a later draw tests against what they wrote', () => {
+      const { gl } = setup();
+      gl.enable(GL.DEPTH_TEST);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(gl.content().ops.map((o) => o.op)).toEqual(['draw', 'clear']);
+      gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
+      expect(gl.content().ops.map((o) => o.op)).toEqual(['clear']);
+    });
+
+    it('has no depth buffer, so the test passes and nothing is cleared, with the context attribute depth: false', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), attributes: { depth: false } });
+      gl.enable(GL.DEPTH_TEST);
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      expect(gl.content().ops).toEqual([]);
+      expect(gl.getParameter(GL.DEPTH_BITS)).toBe(0);
+    });
+
+    it('records polygonOffset with a draw that tests depth, only while POLYGON_OFFSET_FILL is on', () => {
+      const { gl } = setup();
+      gl.enable(GL.DEPTH_TEST);
+      gl.polygonOffset(-1, -2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.enable(GL.POLYGON_OFFSET_FILL);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.disable(GL.POLYGON_OFFSET_FILL);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(draws(gl).map((d) => d.polygonOffset)).toEqual([undefined, { factor: -1, units: -2 }, undefined]);
+    });
+
+    it('gives a framebuffer a depth buffer with a depth renderbuffer, and tests only a framebuffer that has one', () => {
+      const { gl } = setup();
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      gl.enable(GL.DEPTH_TEST);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(draws(gl).at(-1)!.depth).toBeUndefined();
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      expect(gl.content().ops.map((o) => o.op)).toEqual(['draw']);
+
+      const depth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, depth);
+      gl.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, 4, 2);
+      expect(gl.isRenderbuffer(depth)).toBe(true);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, depth);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(draws(gl).at(-1)!.depth).toEqual({ func: 'LESS', mask: true, near: 0, far: 1 });
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      const clear = gl.content().ops.at(-1)!;
+      expect(clear).toMatchObject({ op: 'clear', depth: 1 });
+      expect(clear.target).toBeDefined();
+
+      // The canvas is another buffer, with its own.
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(draws(gl).at(-1)!.depth).toBeDefined();
+      expect(draws(gl).at(-1)!.target).toBeUndefined();
+    });
   });
 
   describe('framebuffers', () => {
@@ -391,7 +510,7 @@ describe('the recording WebGL context', () => {
       const { framebuffer, texture } = attach(gl, 4, 2);
       expect(refused(() => gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.TEXTURE_2D, texture, 0))).toMatch(/^unsupported:.*depth/);
       expect(refused(() => gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 1))).toMatch(/level/);
-      expect(refused(() => gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/renderbuffers/);
+      expect(refused(() => gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/renderbuffer/);
 
       // Pixels from the page, or a format other than RGBA, cannot be drawn over.
       const specify = (internalformat: number, data: Uint8Array | null) => {

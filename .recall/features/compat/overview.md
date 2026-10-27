@@ -32,7 +32,7 @@ What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL librar
 - [ ] GSAP: warn on tweens not attached to the seeked timeline
 - [ ] Studio selection tag shows raw path ($0.0.2.3.0), not the layer name
 
-- [ ] FUTURE (user 2026-10-26): pre-download pass for Remotion remote assets (like HF fetch-deps: fetch every remote <Img>/url() before the render, lock file of hashes, --offline). Not for 0.2.0. Today remote-assets.ts already caches each URL once in ~/.cache/kinetograph/assets (in-memory map per render, offline after the first render); unverified: atomic cache write when 4 workers fetch the same URL on a first render.
+- [x] DONE on branch feat/prefetch-import-maps (2026-10-27): render/still/doctor/studio pre-download before frame 0 (HF: scripts, modules, data, media, pictures, fonts; Remotion: bundle scan for https image/video/audio URLs), kinetograph.lock.json beside the entry (url -> sha256,size; core/src/lock.ts), --offline, fetch-deps --update, atomic cache writes (hash first, file last); a URL first seen mid-render is fetched once, locked and noted. HF import maps + type=module bundled from the cache by esbuild (cli/src/hyperframes/modules.ts).
 
 ## Key files
 - `packages/compat/src/shim/` (3.4k-line DOM shim: element.ts, tree.ts, canvas.ts)

@@ -5,6 +5,7 @@ import type { OptionSpec, ParsedArgs, PositionalSpec } from '../args.js';
 import { PROJECT_OPTIONS } from '../args.js';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
+import { setOffline } from '../prefetch.js';
 import { openSource, type OpenOptions, type Source } from '../source.js';
 
 export interface Context {
@@ -75,7 +76,12 @@ export function allOptions(command: Command): OptionSpec[] {
 }
 
 export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports'> = {}): Promise<Source> {
+  const offline = args.options.offline === true;
+  setOffline(offline);
   return openSource(String(args.positionals.entry), {
+    offline,
+    // The pre-download step speaks on stderr, unless the command prints JSON.
+    ...(args.options.json === true ? {} : { progress: (message: string) => process.stderr.write(`${message}\n`) }),
     comp: args.options.comp as string | undefined,
     props: args.options.props as string | undefined,
     ...extra,
