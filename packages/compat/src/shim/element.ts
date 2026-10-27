@@ -5,7 +5,8 @@
 
 import { attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
-import { srcsetCandidate } from '../request/build.js';
+import { resolveDocumentUrl } from '../environment.js';
+import { srcsetCandidate } from '../request/srcset.js';
 import { isDomElement, isSvgTag } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
@@ -1104,7 +1105,7 @@ export class DomElement extends DomNodeBase {
   // property reads and writes the attribute, so what a script sets is drawn like markup. On an element that has no such
   // attribute the name is an ordinary property of the object (`div.src = x` is an expando, not an attribute).
   get src(): string {
-    return this.reflected('src');
+    return this.reflectedUrl('src');
   }
   set src(value: string) {
     this.reflect('src', value);
@@ -1128,7 +1129,7 @@ export class DomElement extends DomNodeBase {
     this.reflect('alt', value);
   }
   get poster(): string {
-    return this.reflected('poster');
+    return this.reflectedUrl('poster');
   }
   set poster(value: string) {
     this.reflect('poster', value);
@@ -1138,7 +1139,10 @@ export class DomElement extends DomNodeBase {
     if (!REFLECTED.src!.has(this.host.type)) return undefined as never;
     const src = this.getAttribute('src') ?? undefined;
     const srcset = this.getAttribute('srcset');
-    return (srcset !== null ? srcsetCandidate(srcset, src) : null) ?? src ?? '';
+    const sizes = this.getAttribute('sizes') ?? undefined;
+    const viewport = { width: Number((globalThis as { innerWidth?: number }).innerWidth) || 1920, height: Number((globalThis as { innerHeight?: number }).innerHeight) || 1080 };
+    const chosen = (srcset !== null ? srcsetCandidate(srcset, src, sizes, viewport) : null) ?? src;
+    return chosen === undefined ? '' : resolveDocumentUrl(chosen);
   }
   /**
    * `href`: a string on an HTML `<a>`, `<area>`, `<link>`, `<base>`; an SVGAnimatedString on the SVG elements that link
@@ -1160,7 +1164,7 @@ export class DomElement extends DomNodeBase {
         },
       };
     }
-    return this.reflected('href');
+    return this.reflectedUrl('href');
   }
   set href(value: string) {
     // An SVGAnimatedString is read-only: only its `baseVal` writes.
@@ -1172,15 +1176,25 @@ export class DomElement extends DomNodeBase {
     if (!REFLECTED[name]!.has(this.host.type)) return undefined as never;
     return this.getAttribute(name) ?? '';
   }
+  /** A URL attribute: '' when absent, else resolved against the document's URL (`getAttribute` keeps it as written). */
+  private reflectedUrl(name: string): string {
+    if (!REFLECTED[name]!.has(this.host.type)) return undefined as never;
+    const value = this.getAttribute(name);
+    return value === null ? '' : resolveDocumentUrl(value);
+  }
+  /** The `src` attribute as written: what the engine reads files by. */
+  private get rawSrc(): string {
+    return this.getAttribute('src') ?? '';
+  }
   private reflect(name: string, value: unknown): void {
     if (REFLECTED[name]!.has(this.host.type)) this.setAttribute(name, value);
     else Object.defineProperty(this, name, { value, writable: true, enumerable: true, configurable: true });
   }
   get naturalWidth(): number {
-    return this.host.type === 'img' ? imageSize(this.src)?.width ?? 0 : 0;
+    return this.host.type === 'img' ? imageSize(this.rawSrc)?.width ?? 0 : 0;
   }
   get naturalHeight(): number {
-    return this.host.type === 'img' ? imageSize(this.src)?.height ?? 0 : 0;
+    return this.host.type === 'img' ? imageSize(this.rawSrc)?.height ?? 0 : 0;
   }
   get complete(): boolean {
     return true;
@@ -1188,7 +1202,7 @@ export class DomElement extends DomNodeBase {
   // `<video>` and `<audio>`: what the file's header says, and a player that is always ready and never plays.
   private media(): { width: number; height: number; durationInSeconds: number } | null {
     if (this.host.type !== 'video' && this.host.type !== 'audio') return null;
-    const file = projectFileOf(this.src);
+    const file = projectFileOf(this.rawSrc);
     if (file === null || !hasAddonFunction('probeMedia')) return null;
     try {
       return addonFunction('probeMedia')(file);
@@ -1235,7 +1249,7 @@ export class DomElement extends DomNodeBase {
    */
   [VIDEO_FRAME](): VideoFrameSource | null {
     if (this.host.type !== 'video') return null;
-    const file = projectFileOf(this.src);
+    const file = projectFileOf(this.rawSrc);
     const size = this.media();
     if (file === null || size === null) return null;
     return { src: file, time: Number.isFinite(this.currentTime) && this.currentTime > 0 ? this.currentTime : 0, width: size.width, height: size.height };
@@ -1243,7 +1257,7 @@ export class DomElement extends DomNodeBase {
   /** What `drawImage` reads of this element: a canvas's commands, an image's file, a video's frame. */
   [CANVAS_SOURCE](): CanvasPicture | null {
     if (this.host.type === 'canvas') return canvasPictureOf(this.host, { width: this.width, height: this.height });
-    if (this.host.type === 'img') return pictureOfImage(this.src);
+    if (this.host.type === 'img') return pictureOfImage(this.rawSrc);
     if (this.host.type === 'video') {
       // The frame at `currentTime`, as the renderer's decoder gives it.
       const frame = this[VIDEO_FRAME]();

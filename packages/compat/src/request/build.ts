@@ -2,10 +2,13 @@
 // tags, attributes, `style` as CSS text, text, and native `kg-*` elements as boxes. Pure: no addon, no clock.
 
 import type { DomNode } from '../types.js';
-import { resolveRemoteAsset } from '../environment.js';
+import { resolveRemoteAsset, sameOriginPath } from '../environment.js';
 import { attributesOf, styleOf } from './attrs.js';
 import { parseHtmlFragment } from './html.js';
+import { srcsetCandidate } from './srcset.js';
 import { isDomElement } from './tags.js';
+
+export { parseSrcset, sourceSize, srcsetCandidate } from './srcset.js';
 
 /** `DomNode` of `crates/dom/src/request.rs`. */
 export type RequestNode =
@@ -41,26 +44,6 @@ type ElementNode = Extract<DomNode, { kind: 'element' }>;
 /** Attributes that name a file the engine reads: a remote one is read from where it was downloaded to. */
 const FILE_ATTRIBUTES = new Set(['src', 'href', 'xlink:href', 'poster']);
 const FILE_ELEMENTS = new Set(['img', 'video', 'source', 'image', 'input', 'use']);
-
-/**
- * The URL of a `srcset` a browser at device pixel ratio 1 draws: the 1x candidate (one with no descriptor is 1x), else
- * `src` (which counts as 1x), else the smallest density above 1, else the first. A width descriptor has no `sizes` to
- * be measured against here, so the first of those is taken. Null when there is no candidate.
- */
-export function srcsetCandidate(srcset: string, src?: string): string | null {
-  const candidates: { url: string; density: number | null }[] = [];
-  // A URL may hold a comma (a resizer's); a candidate ends at a comma followed by whitespace, or at the end.
-  for (const part of srcset.split(/,\s+|,$/)) {
-    const m = /^\s*(\S+?),?(?:\s+(\d+(?:\.\d+)?)([xw]))?\s*$/.exec(part);
-    if (m === null) continue;
-    candidates.push({ url: m[1]!, density: m[3] === 'x' ? Number(m[2]) : m[3] === 'w' ? null : 1 });
-  }
-  const one = candidates.find((c) => c.density === 1);
-  if (one) return one.url;
-  if (src !== undefined && src !== '') return src;
-  const above = candidates.filter((c) => c.density !== null && c.density > 1).sort((a, b) => a.density! - b.density!)[0];
-  return (above ?? candidates[0])?.url ?? null;
-}
 
 /** `url(https://…)` in CSS text, each remote one replaced by its local file (a quoted path when it has a space or quote). */
 export function localizeCssUrls(css: string, resolve: (url: string) => string | null = resolveRemoteAsset): string {
@@ -131,6 +114,9 @@ export function buildIslandRequest(root: ElementNode, options: BuildOptions): Bu
   // Each remote URL is looked up once per request.
   const remote = new Map<string, string | null>();
   const local = (url: string): string | null => {
+    // A URL of the document's own origin (a script copied a resolved `el.src`) is the project file it names.
+    const own = sameOriginPath(url);
+    if (own !== null) return own;
     if (!remote.has(url)) remote.set(url, resolveRemoteAsset(url));
     return remote.get(url) ?? null;
   };
@@ -149,7 +135,7 @@ export function buildIslandRequest(root: ElementNode, options: BuildOptions): Bu
     }
     // An `<img srcset>` is drawn as a browser at device pixel ratio 1 chooses: the candidate stands in for `src`.
     if (node.type === 'img' && attrs.srcset !== undefined) {
-      const chosen = srcsetCandidate(attrs.srcset, attrs.src);
+      const chosen = srcsetCandidate(attrs.srcset, attrs.src, attrs.sizes, options.viewport);
       if (chosen !== null) attrs.src = chosen;
     }
     if (FILE_ELEMENTS.has(node.type)) {

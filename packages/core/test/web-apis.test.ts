@@ -98,6 +98,12 @@ describe('new Image()', () => {
     again.src = 'pic.png';
     await again.decode();
     expect(again.naturalWidth).toBe(7);
+    // `src` reads back resolved against the document's URL, and that URL is the same project file.
+    expect(again.src).toBe('http://localhost/pic.png');
+    const copy = new g.Image();
+    copy.src = again.src;
+    await copy.decode();
+    expect(copy.naturalWidth).toBe(7);
   });
 
   it('fires error with a message for a missing file, a remote URL and a non-image', async () => {
@@ -133,6 +139,8 @@ describe('fetch', () => {
     expect(await (await fetch(staticFile('data.json'))).json()).toEqual({ a: 1 });
     expect(await (await fetch('data.json')).json()).toEqual({ a: 1 });
     expect(await (await fetch('/data.json')).json()).toEqual({ a: 1 });
+    // The document's own origin is the project, as a resolved `el.src` names it.
+    expect(await (await fetch('http://localhost/data.json')).json()).toEqual({ a: 1 });
     expect((await fetch('data.json')).headers.get('content-type')).toBe('application/json');
   });
 

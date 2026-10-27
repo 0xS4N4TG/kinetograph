@@ -18,7 +18,7 @@ import { CliError } from '../errors.js';
 import { lockPathOf } from '@kinetographdev/core/lock';
 import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, useLockFile, verifyIntegrity } from './deps.js';
 import { bundleModuleScript, emptyImportMap, mergeImportMaps, parseImportMap, type ImportMap, type ModuleScript } from './modules.js';
-import { notCachedPicture, pickSrcset, remoteImage, rewriteCssImages, type RemoteImage } from './images.js';
+import { notCachedPicture, pickSrcset, remoteImage, rewriteCssImages, srcsetUrls, type RemoteImage } from './images.js';
 import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
   extractGoogleFontImports,
@@ -454,10 +454,16 @@ class Builder {
     };
     const get = (name: string): string | undefined => attrs.find(([n]) => n === name)?.[1];
     if (tag === 'img') {
-      // A `srcset` is drawn as the browser would choose, so its candidate stands in for the `src`.
-      const candidate = pickSrcset(get('srcset') ?? '');
-      const chosen = candidate === null ? null : remoteImage(candidate);
+      // A `srcset` is drawn as the browser would choose, so its candidate stands in for the `src`. Each remote candidate
+      // is downloaded: the render chooses again against the composition's size and `sizes`.
+      const srcset = get('srcset') ?? '';
+      for (const url of srcsetUrls(srcset)) {
+        const image = remoteImage(url);
+        if (image !== null && 'url' in image) this.imageUrls.add(image.url);
+      }
       const src = get('src');
+      const candidate = pickSrcset(srcset, src, get('sizes'));
+      const chosen = candidate === null ? null : remoteImage(candidate);
       const own = src === undefined ? null : remoteImage(src);
       const image = chosen ?? own;
       if (image !== null) {

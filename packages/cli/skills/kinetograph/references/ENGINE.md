@@ -221,8 +221,13 @@ until the tree changes (`generation`: bumped by every commit, before layout effe
   `source`, `track`, `script`, `iframe`, `embed`, `input`), `srcset` and `sizes` (`img`, `source`), `alt`, `poster`,
   `href` of `a`, `area`, `link`, `base`, `width` and `height`, and `currentSrc`; an SVG element's `href` is an
   SVGAnimatedString (`image.href.baseVal = url`, reading `href`, else `xlink:href`). On an element without the
-  attribute the name is a plain property (`div.src = x` sets no attribute). An `<img srcset>` is drawn with the
-  candidate a browser at device pixel ratio 1 takes (1x, else `src`, else the smallest density above 1, else the first).
+  attribute the name is a plain property (`div.src = x` sets no attribute). `src`, `href`, `poster` and `currentSrc`
+  read back as a URL resolved against the document's (`location.href`, `http://localhost/`; '' when the attribute is
+  absent, the value as written when it does not parse), and a URL of that origin is the project file it names, so
+  `fetch(el.src)` and `new Image().src = el.src` read the file; `getAttribute` keeps the value as written. An
+  `<img srcset sizes>` is parsed as HTML parses it and drawn with the candidate Chrome takes at device pixel ratio 1:
+  each candidate's density (`x`, or `w` over the `sizes` length, `100vw` by default), `src` as 1x when the set has no 1x
+  and no `w`, then the smallest density of at least 1, else the largest.
   `document.querySelector/getElementById/…` search every root.
 - SVG: `getTotalLength`, `getPointAtLength` and `getBBox` of `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
   `polygon` use the path functions of `@kinetographdev/core/paths` (handed over by `web/install`); a group's `getBBox` is

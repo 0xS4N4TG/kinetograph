@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { attributesOf } from '../src/request/attrs.js';
-import { buildIslandRequest, collectStyleElements, srcsetCandidate } from '../src/request/build.js';
+import { buildIslandRequest, collectStyleElements, parseSrcset, srcsetCandidate } from '../src/request/build.js';
 import { parseHtmlFragment } from '../src/request/html.js';
 import { styleToCss } from '../src/request/style.js';
 import type { DomNode } from '../src/types.js';
@@ -209,6 +209,16 @@ describe('remote files', () => {
     }
   });
 
+  it('of the document\'s own origin are the project files they name', () => {
+    const { request } = buildIslandRequest(
+      el('div', { style: { backgroundImage: 'url(http://localhost/bg.png)' } }, [el('img', { src: 'http://localhost/img/a%20b.png' })]),
+      opts,
+    );
+    const root = request.root as any;
+    expect(root.children[0].attrs.src).toBe('img/a b.png');
+    expect(root.style).toBe('background-image: url("bg.png")');
+  });
+
   it('are left as they are with no resolver', () => {
     const { request } = buildIslandRequest(el('img', { src: 'https://x.test/a.png' }), opts);
     expect((request.root as any).attrs.src).toBe('https://x.test/a.png');
@@ -218,15 +228,30 @@ describe('remote files', () => {
 describe('srcset', () => {
   const opts = { path: '$0', viewport: { width: 100, height: 100 }, fonts: {}, baseDir: '/p', time: 0, stylesheets: [] };
 
-  it('draws the candidate a browser at device pixel ratio 1 takes', () => {
-    expect(srcsetCandidate('b.png 2x, a.png 1x')).toBe('a.png');
-    expect(srcsetCandidate('a.png, b.png 2x')).toBe('a.png');
-    // `src` is the 1x candidate when the srcset has none.
-    expect(srcsetCandidate('b.png 2x, c.png 3x', 'a.png')).toBe('a.png');
-    expect(srcsetCandidate('c.png 3x, b.png 1.5x')).toBe('b.png');
-    expect(srcsetCandidate('w.png 400w, v.png 800w')).toBe('w.png');
-    expect(srcsetCandidate('https://img.test/a.png?w=1,2 1x')).toBe('https://img.test/a.png?w=1,2');
+  it('parses and chooses as Chrome for Testing does at device pixel ratio 1, in a 640x360 viewport', () => {
+    const vp = { width: 640, height: 360 };
+    // Each row was read back from Chrome 154 (`img.currentSrc`) with the same attributes.
+    const cases: [string, string | undefined, string | undefined, string][] = [
+      ['a.png 1x,b.png 2x', undefined, undefined, 'a.png'],
+      ['b.png 2x,a.png 1x', undefined, undefined, 'a.png'],
+      ['b.png 2x, c.png 3x', 's.png', undefined, 's.png'],
+      ['w1.png 400w, w2.png 800w, w3.png 1600w', 's.png', undefined, 'w2.png'],
+      ['w1.png 400w, w2.png 800w, w3.png 1600w', undefined, '(max-width: 500px) 300px, 50vw', 'w1.png'],
+      ['w1.png 400w, w2.png 800w', undefined, '100px', 'w1.png'],
+      ['c.png 3x, b.png 1.5x', undefined, undefined, 'b.png'],
+      ['u.png?a=1,2 1x', undefined, undefined, 'u.png?a=1,2'],
+      ['a.png,b.png 2x', undefined, undefined, 'a.png,b.png'],
+      ['a.png 1x 2x, b.png 2x', undefined, undefined, 'b.png'],
+      ['  , a.png   ,,, b.png 2x', undefined, undefined, 'a.png'],
+      ['a.png 0.5x, b.png 1.2x, c.png 3x', undefined, undefined, 'b.png'],
+      ['a.png 0.5x', 's.png', undefined, 's.png'],
+      ['w1.png 400w, w2.png 800w', undefined, '(min-width: 600px) 400px, 900px', 'w1.png'],
+      ['a.png 1x', 's.png', undefined, 'a.png'],
+      ['a.png (junk 1, 2) 2x, b.png 1x', undefined, undefined, 'b.png'],
+    ];
+    for (const [srcset, src, sizes, want] of cases) expect(srcsetCandidate(srcset, src, sizes, vp), srcset).toBe(want);
     expect(srcsetCandidate('')).toBeNull();
+    expect(parseSrcset('a.png 1x, b.png 400w, c.png 2y')).toEqual([{ url: 'a.png', density: 1 }, { url: 'b.png', width: 400 }]);
   });
 
   it('stands in for an <img>\'s src, a remote one read from where it was downloaded', async () => {

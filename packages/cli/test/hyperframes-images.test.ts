@@ -88,7 +88,8 @@ describe('which pictures are collected', () => {
     await withCache(async () => {
       const dir = project({ 'index.html': page(), 'sheet.css': '', 'local.png': 'x' });
       const built = await buildPlan(join(dir, 'index.html'), { discoverOnly: true });
-      expect(new Set(built.imageUrls)).toEqual(new Set([GRAIN, MASK, BORDER, LIST, INLINE, IMG, PROTO, POSTER, SVGIMG]));
+      // Every remote srcset candidate (IMG2X too): the render chooses against the composition's size.
+      expect(new Set(built.imageUrls)).toEqual(new Set([GRAIN, MASK, BORDER, LIST, INLINE, IMG, IMG2X, PROTO, POSTER, SVGIMG]));
       // a font-face src and a cursor are not pictures; data:, http: and relative paths are never downloaded
       expect(built.imageUrls.join()).not.toMatch(/woff2|cursor|insecure|local\.png|data:/);
     });
@@ -106,11 +107,13 @@ describe('which pictures are collected', () => {
     });
   });
 
-  it('picks the srcset candidate the browser would: 1x, else the smallest density above 1, else the first', () => {
+  it('picks the srcset candidate Chrome would at device pixel ratio 1', () => {
     expect(pickSrcset('a.png 1x, b.png 2x')).toBe('a.png');
     expect(pickSrcset('b.png 3x, a.png 2x')).toBe('a.png');
     expect(pickSrcset('only.png')).toBe('only.png');
-    expect(pickSrcset('s.png 480w, l.png 960w')).toBe('s.png');
+    // 100vw of a 1920 px viewport: neither reaches density 1, so the largest.
+    expect(pickSrcset('s.png 480w, l.png 960w')).toBe('l.png');
+    expect(pickSrcset('s.png 480w, l.png 960w', undefined, '400px')).toBe('s.png');
     expect(pickSrcset('https://r.example.com/i?w=1,h=2 1x, https://r.example.com/j 2x')).toBe('https://r.example.com/i?w=1,h=2');
     expect(pickSrcset('')).toBeNull();
   });

@@ -9,7 +9,7 @@ import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
-import { resolveProjectFile } from '../environment.js';
+import { resolveDocumentUrl, resolveProjectFile, sameOriginPath } from '../environment.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
@@ -33,7 +33,9 @@ export function setWebViewport(size: { width: number; height: number }): void {
   setPageViewport(size);
 }
 
-const REMOTE = /^(https?|wss?|ftp):\/\//i;
+const REMOTE_SCHEME = /^(https?|wss?|ftp):\/\//i;
+/** Not a project file: another origin's URL (the document's own, `http://localhost/…`, is the project). */
+const REMOTE = { test: (url: string): boolean => REMOTE_SCHEME.test(url) && sameOriginPath(url) === null };
 
 export function remoteMessage(what: string, url: string): string {
   return (
@@ -149,6 +151,8 @@ const MIME: Record<string, string> = {
 /** The file a URL or path names in the project, or null (a `data:` or `blob:` URL, or no such file). */
 export function projectFileOf(url: string): string | null {
   if (url.startsWith('file:')) return fileURLToPath(url);
+  const own = sameOriginPath(url);
+  if (own !== null) return resolveProjectFile(own);
   if (/^(data|blob):/i.test(url)) return null;
   return resolveProjectFile(decodeURIComponent(url.split(/[?#]/)[0]!));
 }
@@ -218,7 +222,7 @@ class ImageShim extends BrowserEventTarget {
     return this.complete && !this.failure ? this.source : '';
   }
   get src(): string {
-    return this.source;
+    return this.source === '' ? '' : resolveDocumentUrl(this.source);
   }
   set src(value: string) {
     this.source = String(value);
