@@ -8,7 +8,7 @@ import { shiftPitch } from './pitch.js';
 import { registeredCallbacks } from './registry.js';
 import { parseFxChain, type FxChain } from './hf-fx/chain.js';
 import { parseFxLanes, type Lane } from './hf-fx/automation.js';
-import { chainTailSeconds, runFxChain } from './hf-fx/graph.js';
+import { chainTailSeconds, MAX_TAIL_SECONDS, runFxChain } from './hf-fx/graph.js';
 
 export interface AudioPcm {
   sampleRate: number;
@@ -233,7 +233,9 @@ async function mixHfFx(
     if (frames.length === 0) continue;
     const from = Math.max(first, Math.min(...frames));
     const at = Math.round(((from - first) / fps) * sampleRate);
-    const length = total - at;
+    // The element's sound runs until its end and the longest tail after it, at most.
+    const until = Math.max(track.fx.end, (Math.max(...frames) + 1) / fps) + MAX_TAIL_SECONDS;
+    const length = Math.min(total - at, Math.ceil((until - from / fps) * sampleRate));
     if (from > last || length <= 0) continue;
     // The element's sound alone, from its first frame in the range, at `pre`.
     const ctx = new OfflineAudioContext(channels.length, length, sampleRate);
