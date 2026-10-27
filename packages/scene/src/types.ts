@@ -304,6 +304,8 @@ export interface LutEffect {
   /** A `.cube` file, relative to the scene file. */
   src: string;
   amount?: Num;
+  /** How a colour between two grid points is blended. Default 'trilinear'. */
+  interpolation?: 'trilinear' | 'tetrahedral';
 }
 export interface GrainEffect {
   type: 'grain';

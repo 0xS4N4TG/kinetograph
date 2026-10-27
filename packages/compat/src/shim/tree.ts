@@ -45,6 +45,13 @@ export function recordMutation(mutation: HostMutation): void {
   sink?.(mutation);
 }
 
+/** Told of each node about to leave its place, with the node before it and the parent it leaves (node iterators move off it). */
+let removalHook: ((node: DomNode, parent: HostElement, previous: DomNode | null) => void) | null = null;
+
+export function setRemovalHook(fn: typeof removalHook): void {
+  removalHook = fn;
+}
+
 /** Whether anything listens for mutations (the reconciler skips the work when nothing does). */
 export function isRecordingMutations(): boolean {
   return sink !== null;
@@ -205,6 +212,7 @@ export function removeChild(node: DomNode): void {
   const readback = readbackOfHost(target);
   const previous = flatten(list.slice(0, at)).pop() ?? null;
   const next = flatten(list.slice(at + 1))[0] ?? null;
+  removalHook?.(node, target, previous);
   list.splice(at, 1);
   setRawParent(node, null);
   readback.touch();
@@ -271,6 +279,7 @@ export function clearChildren(host: HostElement): DomNode[] {
   const list = listOf(host);
   const removed = list.slice();
   if (removed.length === 0) return removed;
+  if (removalHook !== null) for (const node of removed) removalHook(node, host, null);
   for (const node of removed) setRawParent(node, null);
   list.length = 0;
   readbackOfHost(host).touch();

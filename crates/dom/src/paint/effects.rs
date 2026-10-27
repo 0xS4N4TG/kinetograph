@@ -208,6 +208,23 @@ impl<'a> Painter<'a> {
             m = m.mul(&Mat4::scale(f64::from(*x), f64::from(*y), f64::from(*z)));
             any = true;
         }
+        // offset-path (CSS Motion Path): the anchor goes to the path point, the
+        // box turned to the path's direction. It works in the box's own frame,
+        // so it is conjugated by the transform origin the layer turns about.
+        if let Some(mo) = crate::motion::motion(node, (w as f32, h as f32)) {
+            let o = &b.transform_origin;
+            let (ox, oy) = (lp(&o.horizontal, w), lp(&o.vertical, h));
+            m = m
+                .mul(&Mat4::translate(-ox, -oy, 0.0))
+                .mul(&Mat4::translate(mo.point.0, mo.point.1, 0.0))
+                .mul(&Mat4::rotate3d(0.0, 0.0, 1.0, mo.angle))
+                .mul(&Mat4::translate(-mo.anchor.0, -mo.anchor.1, 0.0))
+                .mul(&Mat4::translate(ox, oy, 0.0));
+            any = true;
+        }
+        if let Some((value, reason)) = crate::motion::unsupported(node) {
+            self.report(node, "offset-path", value, reason);
+        }
         if !b.transform.0.is_empty() {
             use style::values::computed::Length as L;
             let reference = euclid::Rect::new(

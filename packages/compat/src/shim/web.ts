@@ -11,10 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveProjectFile } from '../environment.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
-import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
+import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
+import { AttrShim, NamedNodeMapShim } from './attributes.js';
+import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, setPageViewport } from './host.js';
 import { collectionOf, HTMLCollection, NodeList, nodeListOf } from './lists.js';
 import { RangeShim } from './range.js';
+import { CSSRuleShim, CSSStyleDeclarationShim, CSSStyleSheetShim } from './stylesheet.js';
 import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
@@ -396,12 +399,28 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
   const out: DomElement[] = [];
   // `head` first (a script's `<style>` and `<link>` go there), then each root's tree.
   const head = domElementFor(headHost);
+  // `html`, `head` and `body` are matched themselves (`document.querySelector('body')`, which d3's `select('body')` calls):
+  // an element's own `querySelector` looks only below it.
+  const matching = (element: DomElement): boolean => element.matches(selector);
+  const html = domElementFor(htmlHost);
+  if (matching(html)) {
+    out.push(html);
+    if (first) return out;
+  }
+  if (matching(head)) {
+    out.push(head);
+    if (first) return out;
+  }
   for (const found of first ? [head.querySelector(selector)].filter((e) => e !== null) : head.querySelectorAll(selector)) {
     out.push(found as DomElement);
     if (first) return out;
   }
   // `body` next: it holds what a script appended to it outside any React root, as well as the roots' own top level.
   const body = domElementFor(bodyHost);
+  if (matching(body)) {
+    out.push(body);
+    if (first) return out;
+  }
   for (const found of first ? [body.querySelector(selector)].filter((e) => e !== null) : body.querySelectorAll(selector)) {
     if (!out.includes(found as DomElement)) out.push(found as DomElement);
     if (first) return out;
@@ -544,7 +563,21 @@ export function installDomGlobals(): void {
   define(g, 'Element', DomElement);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);
-  define(g, 'Node', DomElement);
+  define(g, 'Node', DomNodeBase);
+  define(g, 'DocumentFragment', DomFragment);
+  define(g, 'HTMLTemplateElement', HTMLTemplateElementShim);
+  define(g, 'HTMLFormElement', HTMLFormElementShim);
+  define(g, 'NamedNodeMap', NamedNodeMapShim);
+  define(g, 'Attr', AttrShim);
+  define(g, 'NodeFilter', NodeFilterShim);
+  define(g, 'NodeIterator', NodeIteratorShim);
+  define(g, 'TreeWalker', TreeWalkerShim);
+  define(g, 'DOMParser', DOMParserShim);
+  define(g, 'Document', class DocumentGlobal extends DocumentShim {
+    static [Symbol.hasInstance](value: unknown): boolean {
+      return value === (globalThis as { document?: unknown }).document || value instanceof DocumentShim;
+    }
+  });
   define(g, 'NodeList', NodeList);
   define(g, 'HTMLCollection', HTMLCollection);
   define(g, 'DOMRect', class DOMRectGlobal { constructor(readonly x = 0, readonly y = 0, readonly width = 0, readonly height = 0) {} });
@@ -585,11 +618,19 @@ export function installDomGlobals(): void {
   define(doc, 'createTextNode', (text: string) => domTextFor(createHostText(String(text))));
   define(doc, 'createRange', () => new RangeShim());
   define(g, 'Range', RangeShim);
+  define(g, 'CSSStyleSheet', CSSStyleSheetShim);
+  define(g, 'CSSRule', CSSRuleShim);
+  define(g, 'CSSStyleDeclaration', CSSStyleDeclarationShim);
   define(g, 'Text', DomText);
-  define(doc, 'getElementById', (id: string) => documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
+  installDocumentMembers(doc, define);
+  define(doc, 'getElementById', function (this: unknown, id: string) {
+    return this instanceof DocumentShim ? this.getElementById(id) : (documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
+  });
   define(doc, 'querySelector', (selector: string) => documentQuery(selector, true)[0] ?? null);
   define(doc, 'querySelectorAll', (selector: string) => nodeListOf(documentQuery(selector, false)));
-  define(doc, 'getElementsByTagName', (tag: string) => collectionOf(documentQuery(tag, false)));
+  define(doc, 'getElementsByTagName', function (this: unknown, tag: string) {
+    return this instanceof DocumentShim ? this.getElementsByTagName(tag) : collectionOf(documentQuery(tag, false));
+  });
   define(doc, 'getElementsByClassName', (names: string) => collectionOf(documentQuery(String(names).split(/\s+/).filter(Boolean).map((n) => `.${n}`).join(''), false)));
   define(doc, 'elementFromPoint', () => null);
   define(doc, 'hasFocus', () => true);

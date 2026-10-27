@@ -133,15 +133,21 @@ function newGlContext(type: string, size: () => { width: number; height: number 
   return context;
 }
 
+/** The 2D contexts of canvases in the tree (`contextOfHost`), the ones a frame's render draws on. */
+const hosted = new WeakSet<CanvasContext2D>();
+
 /**
- * Puts every canvas context's state back to a new canvas's, keeping what is drawn (`CanvasContext2D.resetState`). The
- * frame loop does it before it renders a frame, so a canvas drawn again for each frame starts from the same state
- * whichever frame was rendered before, as a function of the frame has to.
+ * Starts every canvas context from a new canvas's state. The frame loop does it before it renders a frame, so a canvas
+ * drawn again for each frame starts from the same state whichever frame was rendered before, as a function of the
+ * frame has to. A canvas in the tree is also emptied by the first thing a frame draws on it (`beginFrame`): its pixels would
+ * otherwise depend on the frames rendered before it (`still 45` against frame 45 of a render). One nobody draws on in a
+ * frame, and one outside the tree, keeps what is drawn (`resetState`).
  */
 export function resetCanvasStates(): void {
   for (const ref of live) {
     const context = ref.deref();
     if (context === undefined) live.delete(ref);
+    else if (context instanceof CanvasContext2D && hosted.has(context)) context.beginFrame();
     else context.resetState();
   }
 }
@@ -157,7 +163,9 @@ export function glContentOf(host: object): ReturnType<WebGLContext['content']> |
  * read when it matters (it changes with `canvas.width`). WebGL and the other kinds of context are not available.
  */
 export function contextOfHost(host: object, type: string, size: () => { width: number; height: number }, canvas: unknown, attributes?: unknown): CanvasContext2D | GlRecorder | null {
-  return contextFor(contexts, glContexts, host, type, size, canvas, attributes);
+  const context = contextFor(contexts, glContexts, host, type, size, canvas, attributes);
+  if (context instanceof CanvasContext2D) hosted.add(context);
+  return context;
 }
 
 function contextFor(

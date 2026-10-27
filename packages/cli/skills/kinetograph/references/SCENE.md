@@ -1223,13 +1223,16 @@ Grades the layer through a 3D colour lookup table from an Adobe/Resolve `.cube` 
 |---|---|---|
 | `src` | required | Path of the `.cube` file, relative to the scene file like an image's `src`. The file is read and checked when the renderer is built, so a missing or malformed file fails before any frame; the error names the layer, the file and (for a bad file) the line. Several layers can share one file. |
 | `amount` | `1` | Animatable, clamped to 0..1. Cross-fades from the original layer (`0`) to the graded one (`1`), in sRGB straight space. At `0` the effect does nothing. |
+| `interpolation` | `"trilinear"` | `"trilinear"` or `"tetrahedral"`. How a colour between table points is blended. Tetrahedral is what DaVinci Resolve, OpenColorIO and ffmpeg's `lut3d=interp=tetrahedral` do. |
 
 - **What is read.** `LUT_3D_SIZE` from 2 to 64, optional `DOMAIN_MIN` and `DOMAIN_MAX` (default 0 and 1), then
   `size`^3 rows of `r g b`, red varying fastest. `TITLE` and `#` comments are ignored. A 1D table (`LUT_1D_SIZE`), any
   other keyword and a wrong number of rows are errors.
 - **How it is applied.** To the layer's straight colour in sRGB encoding (what the file's author saw), mapped from the
-  domain to the table and clamped to it, with trilinear interpolation between the eight surrounding table points.
-  Outputs are clamped to 0..1. Alpha is unchanged and a fully transparent pixel stays empty. The interpolation is
+  domain to the table and clamped to it, with trilinear interpolation between the eight surrounding table points, or with
+  `"tetrahedral"` between four of them: the cell is cut into six tetrahedra along its dark-to-light diagonal and the
+  colour is blended inside the one it falls in. The two agree on the table points and differ between them, by most
+  where the table is strongly non-linear; tetrahedral keeps a straight grey axis straight. Outputs are clamped to 0..1. Alpha is unchanged and a fully transparent pixel stays empty. The interpolation is
   done by hand on exact table reads, so the result does not depend on the GPU's filtering.
 - Counts nothing in the [margin](#canvas-margin).
 
