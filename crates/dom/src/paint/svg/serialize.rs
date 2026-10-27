@@ -64,6 +64,10 @@ pub struct Serialized {
     pub inherited_family: Option<String>,
 }
 
+/// The id prefix of the rectangle that stands for a `foreignObject`, followed
+/// by the node's id.
+pub const FOREIGN_PREFIX: &str = "kgfo-";
+
 /// Elements that are not drawn where they are met.
 const NOT_DRAWN: [&str; 13] = [
     "defs",
@@ -870,9 +874,7 @@ impl Writer<'_> {
             _ => Vec::new(),
         };
         if urls.is_empty() {
-            self.open(&tag, &attrs);
-            self.children(id, &tag);
-            self.out.push_str(&format!("</{tag}>"));
+            self.write(id, &tag, &attrs);
             return;
         }
         self.counter += 1;
@@ -907,11 +909,53 @@ impl Writer<'_> {
         if tag == "g" {
             self.children(id, &tag);
         } else {
-            self.open(&tag, &attrs);
-            self.children(id, &tag);
-            self.out.push_str(&format!("</{tag}>"));
+            self.write(id, &tag, &attrs);
         }
         self.out.push_str("</g></g>");
+    }
+
+    /// The element and what it holds. A `foreignObject` holds HTML, which is
+    /// not SVG source: it is a group, with the transform, opacity and clip
+    /// of the element, holding a rectangle of its box that tells the painter
+    /// where to draw the HTML (`FOREIGN_PREFIX`).
+    fn write(&mut self, id: NodeId, tag: &str, attrs: &Attrs) {
+        if tag != "foreignObject" {
+            self.open(tag, attrs);
+            self.children(id, tag);
+            self.out.push_str(&format!("</{tag}>"));
+            return;
+        }
+        let mut group = attrs.clone();
+        let mut none = Vec::new();
+        let x = take(&mut group, &mut none, "x");
+        let y = take(&mut group, &mut none, "y");
+        let width = take(&mut group, &mut none, "width");
+        let height = take(&mut group, &mut none, "height");
+        let [_, _, vw, vh] = self.reference;
+        let at = |v: Option<String>, of: f64| v.and_then(|v| css::length(&v, of)).unwrap_or(0.0);
+        let percent = [&width, &height]
+            .iter()
+            .any(|v| v.as_deref().is_some_and(|v| v.trim_end().ends_with('%')));
+        if percent {
+            self.note(
+                "foreignObject",
+                "width",
+                width.as_deref().unwrap_or_default(),
+                "a percentage size is not supported, so the content is not drawn",
+            );
+        }
+        let [w, h] = self
+            .doc
+            .get_node(id)
+            .and_then(|n| self.doc.foreign_object_size(n))
+            .map_or([0.0, 0.0], |s| s.map(f64::from));
+        self.open("g", &group);
+        self.out.push_str(&format!(
+            "<rect id=\"{FOREIGN_PREFIX}{}\" x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" fill=\"#000\"/></g>",
+            id.as_u64(),
+            at(x, vw),
+            at(y, vh),
+        ));
     }
 }
 

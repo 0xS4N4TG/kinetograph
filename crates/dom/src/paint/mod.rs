@@ -550,7 +550,9 @@ impl<'a> Painter<'a> {
             }
             let positioned = !matches!(position, Position::Static);
             let is_sc = self.is_sc(child, parent_flex);
-            let inline_level = display.outside() == DisplayOutside::Inline;
+            // An inline that holds a block (`<span><p>..</p></span>`) is laid out as a block.
+            let inline_level =
+                display.outside() == DisplayOutside::Inline && !child.is_or_contains_block();
             drop(style);
 
             if is_sc {

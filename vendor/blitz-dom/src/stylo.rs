@@ -423,7 +423,11 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_html_element_in_html_document(&self) -> bool {
-        true // self.has_namespace(ns!(html))
+        // Type and attribute names of other namespaces (`foreignObject`,
+        // `clipPath`) match case-sensitively.
+        // Type and attribute names of other namespaces (`foreignObject`,
+        // `clipPath`) match case-sensitively.
+        self.element_data().is_none_or(|e| e.name.ns == ns!(html))
     }
 
     fn has_local_name(&self, local_name: &LocalName) -> bool {
@@ -1103,7 +1107,7 @@ impl<'a> TElement for BlitzNode<'a> {
             // presentation attributes that map to the CSS `width`/`height`
             // properties, so e.g. `width="1em"` must resolve against the
             // element's font-size like any other CSS length.
-            if *tag == local_name!("svg")
+            if (*tag == local_name!("svg") || &**tag == "foreignObject")
                 && (*name == local_name!("width") || *name == local_name!("height"))
             {
                 if let Some(size) = parse_svg_size_attr(value) {

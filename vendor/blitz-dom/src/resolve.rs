@@ -161,6 +161,10 @@ impl BaseDocument {
         // after layout and transforms so that stacking-context roots created by
         // this frame's transforms are picked up, and before damage is cleared.
         self.build_paint_tree(root_node_id);
+        for (id, _) in self.foreign_object_sizes() {
+            self.resolve_transforms(id);
+            self.build_paint_tree(id);
+        }
         timer.record_time("paint_tree");
 
         // Clear all damage and dirty flags, walking only subtrees which are
@@ -288,76 +292,33 @@ impl BaseDocument {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
-        resolve_layout_children_recursive(self, self.root_node().id);
+        construct_subtree(self, self.root_node().id);
+    }
 
-        fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: NodeId) {
-            // Anonymous blocks and pseudo-elements can be removed from the slab
-            // between render passes. Bail out rather than panicking on a stale key.
-            if doc.nodes.get(node_id).is_none() {
-                return;
-            }
+    /// The `foreignObject`s that have a box, with the size of each.
+    pub fn foreign_object_sizes(&self) -> Vec<(NodeId, [f32; 2])> {
+        self.nodes
+            .iter()
+            .filter_map(|(id, node)| Some((id, self.foreign_object_size(node)?)))
+            .collect()
+    }
 
-            let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
-            let _flags = doc.nodes[node_id].flags;
-
-            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
-                //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
-
-                // Deallocate the anonymous blocks created for this node in the
-                // previous construction round. They live only in the slab, so
-                // reconstructing without freeing them would leak a slab entry per
-                // anonymous block per reconstruction.
-                let old_anonymous_blocks = std::mem::take(&mut doc.nodes[node_id].anonymous_blocks);
-                for anon_id in old_anonymous_blocks {
-                    doc.deallocate_anonymous_block(anon_id);
-                }
-
-                let mut collected = LayoutChildren::default();
-                collect_layout_children(doc, node_id, &mut collected);
-                let layout_children = collected.children;
-                doc.nodes[node_id].anonymous_blocks = collected.anonymous_blocks;
-
-                // Recurse into newly collected layout children
-                for child_id in layout_children.iter().copied() {
-                    resolve_layout_children_recursive(doc, child_id);
-                    doc.nodes[child_id].layout_parent.set(Some(node_id));
-                    if let Some(mut data) = doc.nodes[child_id]
-                        .try_stylo_element_data_mut()
-                        .and_then(|s| s.get_mut())
-                    {
-                        data.damage
-                            .remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                    }
-                }
-
-                *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
-                // *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
-
-                damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
-            } else {
-                //if damage.contains(CONSTRUCT_DESCENDENT) {
-                let layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
-                if let Some(layout_children) = layout_children {
-                    for child_id in layout_children.iter().copied() {
-                        // Anonymous blocks and pseudo-elements can be removed from the
-                        // slab between render passes; skip stale IDs.
-                        if !doc.nodes.contains_key(child_id) {
-                            continue;
-                        }
-                        resolve_layout_children_recursive(doc, child_id);
-                        doc.nodes[child_id].layout_parent.set(Some(node_id));
-                    }
-
-                    *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
-                }
-
-                // damage.remove(CONSTRUCT_DESCENDENT);
-                // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
-            }
-
-            doc.nodes[node_id].set_damage(damage);
+    /// The size of a `foreignObject` that has a box: its `width` and `height`
+    /// (the attributes are presentational hints), zero for what is not a length.
+    pub fn foreign_object_size(&self, node: &crate::Node) -> Option<[f32; 2]> {
+        if !node.flags.is_in_document()
+            || node.layout_children.borrow().is_none()
+            || !node
+                .data
+                .is_element_with_tag_name(&markup5ever::LocalName::from("foreignObject"))
+            || node.display_style().is_none_or(|d| d.is_none())
+        {
+            return None;
         }
+        let style = node.layout_style();
+        let size = taffy::CoreStyle::size(&style);
+        let px = |d: taffy::Dimension| d.into_option().unwrap_or(0.0).max(0.0);
+        Some([px(size.width), px(size.height)])
     }
 
     /// Every layout child must point back at its container via
@@ -479,6 +440,7 @@ impl BaseDocument {
         };
 
         let root_element_id = crate::taffy_node_id(self.root_element().id);
+        let foreign_object_sizes = self.foreign_object_sizes();
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
@@ -498,7 +460,96 @@ impl BaseDocument {
         #[cfg(not(feature = "writing-mode"))]
         taffy::round_layout(&mut state, root_element_id);
 
+        // A `foreignObject`'s content is a layout tree of its own, the size
+        // of its box, which the `<svg>` around it does not lay out.
+        for (id, size) in foreign_object_sizes {
+            let taffy_id = crate::taffy_node_id(id);
+            let space = taffy::Size {
+                width: AvailableSpace::Definite(size[0]),
+                height: AvailableSpace::Definite(size[1]),
+            };
+            #[cfg(feature = "writing-mode")]
+            {
+                state.layout_wm = state.layout_wm_of(id);
+            }
+            taffy::compute_root_layout(&mut state, taffy_id, space);
+            #[cfg(feature = "writing-mode")]
+            state.physicalise_and_round_layout(taffy_id);
+            #[cfg(not(feature = "writing-mode"))]
+            taffy::round_layout(&mut state, taffy_id);
+        }
+
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
     }
+}
+
+/// Builds the layout children of `node_id` and below, where damage says to.
+pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
+    // Anonymous blocks and pseudo-elements can be removed from the slab
+    // between render passes. Bail out rather than panicking on a stale key.
+    if doc.nodes.get(node_id).is_none() {
+        return;
+    }
+
+    let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
+    let _flags = doc.nodes[node_id].flags;
+
+    if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+        //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
+
+        // Deallocate the anonymous blocks created for this node in the
+        // previous construction round. They live only in the slab, so
+        // reconstructing without freeing them would leak a slab entry per
+        // anonymous block per reconstruction.
+        let old_anonymous_blocks = std::mem::take(&mut doc.nodes[node_id].anonymous_blocks);
+        for anon_id in old_anonymous_blocks {
+            doc.deallocate_anonymous_block(anon_id);
+        }
+
+        let mut collected = LayoutChildren::default();
+        collect_layout_children(doc, node_id, &mut collected);
+        let layout_children = collected.children;
+        doc.nodes[node_id].anonymous_blocks = collected.anonymous_blocks;
+
+        // Recurse into newly collected layout children
+        for child_id in layout_children.iter().copied() {
+            construct_subtree(doc, child_id);
+            doc.nodes[child_id].layout_parent.set(Some(node_id));
+            if let Some(mut data) = doc.nodes[child_id]
+                .try_stylo_element_data_mut()
+                .and_then(|s| s.get_mut())
+            {
+                data.damage
+                    .remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            }
+        }
+
+        *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
+        // *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
+
+        damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+        // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
+    } else {
+        //if damage.contains(CONSTRUCT_DESCENDENT) {
+        let layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
+        if let Some(layout_children) = layout_children {
+            for child_id in layout_children.iter().copied() {
+                // Anonymous blocks and pseudo-elements can be removed from the
+                // slab between render passes; skip stale IDs.
+                if !doc.nodes.contains_key(child_id) {
+                    continue;
+                }
+                construct_subtree(doc, child_id);
+                doc.nodes[child_id].layout_parent.set(Some(node_id));
+            }
+
+            *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
+        }
+
+        // damage.remove(CONSTRUCT_DESCENDENT);
+        // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
+    }
+
+    doc.nodes[node_id].set_damage(damage);
 }
