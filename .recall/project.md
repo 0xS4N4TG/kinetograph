@@ -30,3 +30,4 @@
 - Papercut Remotion kit: $KINETOGRAPH_CORPUS/lib/papercut/
 - Ep 13 papercut: .../tiny-agent/episodes/13-mods/papercut/src/ (composition ModsPapercut, S04Meter = frames 317–405, 1080x1920@30)
 - SFX corpus: $KINETOGRAPH_CORPUS/lib/audio/sfx/
+- HyperFrames test bench (since 2026-10-27): ./hf-bench/ (local only, ignored via .git/info/exclude, not in git): hf-corpus (29 comps), hf-corpus-tools/driver.py, hf-final refs, hf-real (7 projects); see hf-bench/README.md. vs-hf (HyperFrames clone) must be re-cloned to regenerate references.
