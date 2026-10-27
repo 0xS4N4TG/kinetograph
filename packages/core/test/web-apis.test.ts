@@ -215,3 +215,36 @@ describe('@font-face in a stylesheet', () => {
     expect(getFonts()['My Face:700i']).toBe(join(dir, 'public', 'Face.ttf'));
   });
 });
+
+describe('document queries match html, head and body themselves', () => {
+  it('finds them by type selector, as d3.select("body") needs', () => {
+    expect(g.document.querySelector('body')).toBe(g.document.body);
+    expect(g.document.querySelector('html')).toBe(g.document.documentElement);
+    expect(g.document.querySelector('head')).toBe(g.document.head);
+    expect(g.document.querySelectorAll('body')).toHaveLength(1);
+    expect(g.document.getElementsByTagName('body')[0]).toBe(g.document.body);
+  });
+
+  it('lets a script append to the body it selected and find the result', () => {
+    const div = g.document.createElement('div');
+    div.setAttribute('id', 'dg-select');
+    g.document.querySelector('body').appendChild(div);
+    expect(g.document.querySelector('body').querySelector('#dg-select')).toBe(div);
+    div.remove();
+  });
+});
+
+describe('a constructable CSSStyleSheet', () => {
+  it('builds CSS text with insertRule, replaceSync and rule.style', () => {
+    const sheet = new g.CSSStyleSheet();
+    const at = sheet.insertRule(':root { --font: Arial }', sheet.cssRules.length);
+    expect(at).toBe(0);
+    const rule = sheet.cssRules[sheet.insertRule('.a .label {}', sheet.cssRules.length)];
+    rule.style.setProperty('font-size', '12px');
+    expect([...sheet.cssRules].map((r: any) => r.cssText)).toEqual([':root { --font: Arial; }', '.a .label { font-size: 12px; }']);
+    sheet.replaceSync('p { color: red } @media (min-width: 1px) { p { color: blue } }');
+    expect(sheet.cssRules).toHaveLength(2);
+    expect(sheet.cssRules[0].style.getPropertyValue('color')).toBe('red');
+    expect(() => sheet.insertRule('not a rule', 0)).toThrow();
+  });
+});

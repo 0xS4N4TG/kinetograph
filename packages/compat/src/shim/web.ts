@@ -15,6 +15,7 @@ import { DomElement, DomText, domElementFor, domTextFor, isDomElementShim, selec
 import { bodyHost, headHost, htmlHost, setPageViewport } from './host.js';
 import { collectionOf, HTMLCollection, NodeList, nodeListOf } from './lists.js';
 import { RangeShim } from './range.js';
+import { CSSRuleShim, CSSStyleDeclarationShim, CSSStyleSheetShim } from './stylesheet.js';
 import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
@@ -396,12 +397,28 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
   const out: DomElement[] = [];
   // `head` first (a script's `<style>` and `<link>` go there), then each root's tree.
   const head = domElementFor(headHost);
+  // `html`, `head` and `body` are matched themselves (`document.querySelector('body')`, which d3's `select('body')` calls):
+  // an element's own `querySelector` looks only below it.
+  const matching = (element: DomElement): boolean => element.matches(selector);
+  const html = domElementFor(htmlHost);
+  if (matching(html)) {
+    out.push(html);
+    if (first) return out;
+  }
+  if (matching(head)) {
+    out.push(head);
+    if (first) return out;
+  }
   for (const found of first ? [head.querySelector(selector)].filter((e) => e !== null) : head.querySelectorAll(selector)) {
     out.push(found as DomElement);
     if (first) return out;
   }
   // `body` next: it holds what a script appended to it outside any React root, as well as the roots' own top level.
   const body = domElementFor(bodyHost);
+  if (matching(body)) {
+    out.push(body);
+    if (first) return out;
+  }
   for (const found of first ? [body.querySelector(selector)].filter((e) => e !== null) : body.querySelectorAll(selector)) {
     if (!out.includes(found as DomElement)) out.push(found as DomElement);
     if (first) return out;
@@ -585,6 +602,9 @@ export function installDomGlobals(): void {
   define(doc, 'createTextNode', (text: string) => domTextFor(createHostText(String(text))));
   define(doc, 'createRange', () => new RangeShim());
   define(g, 'Range', RangeShim);
+  define(g, 'CSSStyleSheet', CSSStyleSheetShim);
+  define(g, 'CSSRule', CSSRuleShim);
+  define(g, 'CSSStyleDeclaration', CSSStyleDeclarationShim);
   define(g, 'Text', DomText);
   define(doc, 'getElementById', (id: string) => documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
   define(doc, 'querySelector', (selector: string) => documentQuery(selector, true)[0] ?? null);
