@@ -77,6 +77,8 @@ export type {
 
 // <Video datamosh> on a codec without motion vectors is reported as unsupported (AUTHORING.md §11.8).
 import './datamosh.js';
+// `onVideoFrame` of <Video> hands the project a frame it can draw on a canvas (AUTHORING.md §7.1).
+import './video-frame.js';
 
 // <Gif> with the duration lookup that `loopBehavior="unmount-after-finish"` needs (AUTHORING.md §11.3).
 export { Gif } from './gif.js';
