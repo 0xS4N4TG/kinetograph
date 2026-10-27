@@ -6,6 +6,7 @@ import {
   ApiError,
   type AgentClientMessage,
   type AgentEvent,
+  type ChatRecord,
   type CompositionInfo,
   type InspectResult,
   type ProjectInfo,
@@ -82,6 +83,8 @@ export interface Studio {
 
   /** Calls `listener` with each event of the coding agent, and returns how to stop. */
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
+  /** The conversation so far, sent when this window takes it over after a reload. */
+  onAgentHistory(listener: (items: ChatRecord[]) => void): () => void;
   /** Sends a message to the coding agent; false when the connection is down. */
   sendAgent(message: AgentClientMessage): boolean;
   agentInfo(): ReturnType<StudioApi['agentInfo']>;
@@ -115,6 +118,7 @@ export function useStudio(api: StudioApi): Studio {
   selectedRef.current = selectedLayers;
   const rebuilt = useRef(false);
   const agentListeners = useRef(new Set<(event: AgentEvent) => void>());
+  const historyListeners = useRef(new Set<(items: ChatRecord[]) => void>());
   const [renders, setRenders] = useState<RenderJob[]>([]);
   /** Bumped by every `reload`: what the timeline and the scene tree show is from the old build. */
   const [reloads, setReloads] = useState(0);
@@ -203,6 +207,9 @@ export function useStudio(api: StudioApi): Studio {
           break;
         case 'agent':
           for (const listener of agentListeners.current) listener(message.event);
+          break;
+        case 'agent.history':
+          for (const listener of historyListeners.current) listener(message.items);
           break;
         case 'error':
           player.handleError(message.requestId, message.error);
@@ -346,6 +353,12 @@ export function useStudio(api: StudioApi): Studio {
       agentListeners.current.delete(listener);
     };
   }, []);
+  const onAgentHistory = useCallback((listener: (items: ChatRecord[]) => void) => {
+    historyListeners.current.add(listener);
+    return () => {
+      historyListeners.current.delete(listener);
+    };
+  }, []);
   const agentInfo = useCallback(() => api.agentInfo(), [api]);
   const sendAgent = useCallback((message: AgentClientMessage) => socketRef.current?.sendAgent(message) ?? false, []);
 
@@ -394,6 +407,7 @@ export function useStudio(api: StudioApi): Studio {
     selectLayer,
     selectLayers,
     onAgentEvent,
+    onAgentHistory,
     sendAgent,
     agentInfo,
     renders,

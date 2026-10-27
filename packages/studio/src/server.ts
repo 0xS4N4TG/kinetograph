@@ -18,6 +18,7 @@ import {
   encodeFrameMessage,
   type AgentClientMessage,
   type AgentInfo,
+  type ChatRecord,
   type ClientMessage,
   type CompositionInfo,
   type FrameHeader,
@@ -36,6 +37,10 @@ import type { StudioOptions, StudioServer } from './index.js';
 /** The least time between two progress messages for a job (at most 10 a second). */
 const PROGRESS_INTERVAL_MS = 100;
 const MAX_BODY_BYTES = 1 << 20;
+/** How long a conversation waits for the window that began it to come back (a reload). */
+const RECLAIM_MS = 30_000;
+/** The most chat records kept for a window that reconnects. */
+const CHAT_LIMIT = 5_000;
 
 interface FrameParams {
   comp: string;
@@ -123,16 +128,32 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       ? 'The coding agent is off because the studio can be reached from other computers. Start it with --allow-remote-agent if you really want it on.'
       : null;
   let owner: WebSocket | null = null;
+  const reclaimMs = options.agentReclaimMs ?? RECLAIM_MS;
+  // The conversation, kept here so that a window that reloads gets it back. When the window that began it closes, the
+  // agent waits RECLAIM_MS for it to come back (a reload) before it stops and the conversation is dropped.
+  let chat: ChatRecord[] = [];
+  let orphaned: NodeJS.Timeout | null = null;
+  const keep = (record: ChatRecord): void => {
+    chat.push(record);
+    if (chat.length > CHAT_LIMIT) chat = chat.slice(-CHAT_LIMIT);
+  };
+  const endConversation = (): void => {
+    if (orphaned) clearTimeout(orphaned);
+    orphaned = null;
+    chat = [];
+  };
   const bridge = new AgentBridge({
     cwd: agentCwd,
     allowed: agents.map((a) => a.command),
     command: options.agent ?? agents[0]?.command ?? null,
     // The state of the agent goes to every window; what it says and asks goes to the window that owns the conversation.
     emit: (event) => {
-      if (event.kind === 'status') broadcast({ type: 'agent', event });
-      else if (owner) send(owner, { type: 'agent', event });
+      if (event.kind === 'status') return broadcast({ type: 'agent', event });
+      if (event.kind !== 'thought') keep({ kind: 'event', event });
+      if (owner) send(owner, { type: 'agent', event });
     },
-    hasViewer: () => owner !== null && owner.readyState === owner.OPEN,
+    // A permission asked while the window reloads waits for it to come back.
+    hasViewer: () => (owner !== null && owner.readyState === owner.OPEN) || orphaned !== null,
     version: cliVersion(),
   });
   const tokenOk = (given: string | null | undefined): boolean => {
@@ -393,19 +414,24 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         if (message.image !== undefined && (typeof message.image.data !== 'string' || typeof message.image.mimeType !== 'string')) {
           return bad('The picture is not valid.');
         }
+        keep({ kind: 'user', text: message.text, chips: Array.isArray(message.chips) ? message.chips.filter((c): c is string => typeof c === 'string') : [] });
         void bridge.prompt(message.text, typeof message.context === 'string' ? message.context : '', message.image);
         return;
       case 'agent.cancel':
         void bridge.cancel();
         return;
-      case 'agent.permission':
-        bridge.answerPermission(String(message.id), typeof message.optionId === 'string' ? message.optionId : null);
+      case 'agent.permission': {
+        const optionId = typeof message.optionId === 'string' ? message.optionId : null;
+        keep({ kind: 'answer', id: String(message.id), optionId });
+        bridge.answerPermission(String(message.id), optionId);
         return;
+      }
       case 'agent.select':
-        void bridge.select(typeof message.command === 'string' ? message.command : null);
+        // Cleared once the old conversation has stopped, so what stopping it said is not kept either.
+        void bridge.select(typeof message.command === 'string' ? message.command : null).finally(endConversation);
         return;
       case 'agent.reset':
-        void bridge.reset();
+        void bridge.reset().finally(endConversation);
         return;
       default:
         return bad('unknown agent message');
@@ -417,10 +443,17 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     frameState.set(ws, { busy: false });
     ws.on('close', () => {
       sockets.delete(ws);
-      // The conversation belongs to the window that began it: when that goes, the agent stops.
+      // The conversation belongs to the window that began it: when that goes and does not come back (a reload does),
+      // the agent stops.
       if (owner === ws) {
         owner = null;
-        void bridge.reset();
+        if (orphaned) clearTimeout(orphaned);
+        orphaned = setTimeout(() => {
+          orphaned = null;
+          if (owner !== null) return;
+          void bridge.reset().finally(endConversation);
+        }, reclaimMs);
+        orphaned.unref();
       }
     });
     ws.on('error', () => ws.terminate());
@@ -450,6 +483,13 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     });
     send(ws, { type: 'hello', version: cliVersion(), buildId: project.buildId, buildError: project.buildError });
     bridge.announce();
+    // A window that comes while the conversation's window is gone (it reloaded) takes the conversation over.
+    if (orphaned !== null && !agentOff) {
+      clearTimeout(orphaned);
+      orphaned = null;
+      owner = ws;
+      send(ws, { type: 'agent.history', items: chat });
+    }
   });
 
   project.on('reload', (buildId) => broadcast({ type: 'reload', buildId }));

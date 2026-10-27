@@ -2,14 +2,15 @@
 
 import { useCallback, useEffect, useReducer } from 'react';
 
-import type { AgentEvent, AgentInfo } from '@/api';
-import { addUserMessage, answerPermission, clearChat, emptyChat, reduceChat, type ChatState } from '@/lib/chat';
+import type { AgentEvent, AgentInfo, ChatRecord } from '@/api';
+import { addUserMessage, answerPermission, clearChat, emptyChat, reduceChat, replayChat, type ChatState } from '@/lib/chat';
 import type { Studio } from '@/studio';
 
 type Action =
   | { type: 'event'; event: AgentEvent }
   | { type: 'user'; text: string; chips: string[] }
   | { type: 'answer'; id: string; optionId: string | null }
+  | { type: 'history'; items: ChatRecord[] }
   | { type: 'clear' };
 
 function reducer(state: ChatState, action: Action): ChatState {
@@ -20,6 +21,8 @@ function reducer(state: ChatState, action: Action): ChatState {
       return addUserMessage(state, action.text, action.chips);
     case 'answer':
       return answerPermission(state, action.id, action.optionId);
+    case 'history':
+      return replayChat(state, action.items);
     case 'clear':
       return clearChat(state);
   }
@@ -36,16 +39,20 @@ export interface Chat {
   loadInfo(): Promise<AgentInfo | null>;
 }
 
-/** Lives in `App`, above the tabs, so that switching tabs does not lose the conversation. */
-export function useChat(studio: Pick<Studio, 'onAgentEvent' | 'sendAgent' | 'agentInfo'>): Chat {
+/**
+ * Lives in `App`, above the tabs, so that switching tabs does not lose the conversation; the server keeps it too, and
+ * replays it to this window after a reload (`agent.history`).
+ */
+export function useChat(studio: Pick<Studio, 'onAgentEvent' | 'onAgentHistory' | 'sendAgent' | 'agentInfo'>): Chat {
   const [state, dispatch] = useReducer(reducer, emptyChat);
-  const { onAgentEvent, sendAgent, agentInfo } = studio;
+  const { onAgentEvent, onAgentHistory, sendAgent, agentInfo } = studio;
 
   useEffect(() => onAgentEvent((event) => dispatch({ type: 'event', event })), [onAgentEvent]);
+  useEffect(() => onAgentHistory((items) => dispatch({ type: 'history', items })), [onAgentHistory]);
 
   const send = useCallback<Chat['send']>(
     (text, context, chips, image) => {
-      if (!sendAgent({ type: 'agent.prompt', text, context, image })) {
+      if (!sendAgent({ type: 'agent.prompt', text, context, image, chips })) {
         dispatch({ type: 'event', event: { kind: 'error', message: 'The studio is not connected. Wait a moment and try again.' } });
         return false;
       }

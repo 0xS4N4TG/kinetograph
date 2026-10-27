@@ -1,6 +1,6 @@
 // The chat as a list of items, built from the events the server sends. A pure reducer so the panel is only drawing.
 
-import type { AgentEvent, AgentPermissionOption, AgentStatus } from '@/api';
+import type { AgentEvent, AgentPermissionOption, AgentStatus, ChatRecord } from '@/api';
 
 export type ChatItem =
   | { kind: 'user'; id: number; text: string; chips: string[] }
@@ -84,4 +84,15 @@ export function reduceChat(state: ChatState, event: AgentEvent): ChatState {
     case 'error':
       return push({ kind: 'error', text: event.message });
   }
+}
+
+/** The conversation the server kept, replayed onto an empty chat (the status stays): what a reloaded window shows. */
+export function replayChat(state: ChatState, records: ChatRecord[]): ChatState {
+  let next = clearChat(state);
+  for (const record of records) {
+    if (record.kind === 'user') next = addUserMessage(next, record.text, record.chips);
+    else if (record.kind === 'answer') next = answerPermission(next, record.id, record.optionId);
+    else next = reduceChat(next, record.event);
+  }
+  return next;
 }
