@@ -24,10 +24,23 @@ function candidate(): unknown {
   return g.gsap ?? g[GSAP_REGISTRY];
 }
 
+/** The part of a GSAP animation (a tween or a timeline) the motion-blur samples use; all of it is documented API. */
+interface Animation {
+  startTime(): number;
+  timeScale(): number;
+  paused(): boolean;
+  totalTime(): number;
+  totalProgress(): number;
+  render(totalTime: number, suppressEvents?: boolean, force?: boolean): unknown;
+  eventCallback(type: 'onUpdate'): ((...args: unknown[]) => void) | undefined | null;
+  vars: { onUpdateParams?: unknown[]; callbackScope?: object };
+  getChildren?(nested: boolean, tweens: boolean, timelines: boolean): Animation[];
+}
+
 interface Gsap {
   updateRoot(time: number): void;
   ticker: { remove(callback: unknown): void; lagSmoothing(threshold: number, adjustedLag?: number): void };
-  globalTimeline: { getChildren(nested: boolean, tweens: boolean, timelines: boolean): unknown[] };
+  globalTimeline: { autoRemoveChildren: boolean; getChildren(nested: boolean, tweens: boolean, timelines: boolean): Animation[] };
 }
 
 /** The instances taken over, so each is set up once. */
@@ -50,9 +63,98 @@ function loaded(): Gsap | null {
   return g;
 }
 
+/** The root's time, and the root's children before it last moved there (a tween that ended on the way is let go). */
+let rootTime = 0;
+let before: Animation[] = [];
+
 /** Moves GSAP's root timeline to `seconds` (the virtual clock); nothing when GSAP is not loaded. */
 export function setGsapTime(seconds: number): void {
-  loaded()?.updateRoot(seconds);
+  const g = loaded();
+  if (g === null) return;
+  if (seconds !== rootTime) before = g.globalTimeline.getChildren(false, true, true);
+  rootTime = seconds;
+  g.updateRoot(seconds);
+}
+
+/** The animations a motion-blur sample moved, with the total time each had at the frame (restored by `endGsapSamples`). */
+let samples: Map<Animation, number> | null = null;
+
+/** Each animation in `list` and every animation nested in it, with the `onUpdate` it has. */
+function withNested(list: Iterable<Animation>): Animation[] {
+  const out: Animation[] = [];
+  for (const a of list) {
+    out.push(a);
+    if (typeof a.getChildren === 'function') out.push(...a.getChildren(true, true, true));
+  }
+  return out;
+}
+
+/** Calls the `onUpdate` of each animation in `list` whose total time is not the one in `was`, as GSAP calls it. */
+function updated(list: Animation[], was: Map<Animation, number>): void {
+  for (const a of list) {
+    if (a.totalTime() === was.get(a)) continue;
+    const callback = a.eventCallback('onUpdate');
+    if (typeof callback === 'function') callback.apply(a.vars.callbackScope ?? a, a.vars.onUpdateParams ?? []);
+  }
+}
+
+/**
+ * Shows GSAP at `seconds`, a motion-blur sub-frame of the frame the root is at, without moving the root: each animation
+ * that plays on the root clock (not paused, and started by the frame) is rendered at its own time for `seconds`, as a
+ * seekable animation would be at the sub-frame. Its `onUpdate` callbacks run; `onStart`, `onComplete`, `onRepeat` and
+ * the timeline's own calls do not, since what they do (make a tween, change state) would outlive the sample and make the
+ * frames after it depend on whether this one was blurred. A paused timeline the project seeks is left to the project.
+ * `endGsapSamples` puts everything back where the frame has it. Nothing when GSAP is not loaded.
+ */
+export function sampleGsapAt(seconds: number): void {
+  const g = loaded();
+  if (g === null) return;
+  if (samples === null) {
+    samples = new Map();
+    // The root's children, and those that finished on the way to the frame (a sample before it still shows them
+    // moving); one that was stopped (killed) is left alone.
+    const now = g.globalTimeline.getChildren(false, true, true);
+    for (const a of new Set([...before.filter((a) => a.totalProgress() === 1), ...now])) {
+      // An animation that has not started by the frame is not initialised yet; starting it in a sample would read its
+      // start values at the sub-frame instead of when the frames reach it.
+      if (a.paused() || a.timeScale() === 0 || a.startTime() > rootTime) continue;
+      samples.set(a, a.totalTime());
+    }
+  }
+  const nested = withNested(samples.keys());
+  const was = new Map(nested.map((a) => [a, a.totalTime()]));
+  renderKept(g, () => {
+    for (const a of samples!.keys()) a.render(Math.max(0, (seconds - a.startTime()) * a.timeScale()), true, true);
+  });
+  updated(nested, was);
+}
+
+/** Runs `render` with the root keeping the children that reach their end (a sample past a tween's end must not take it
+ *  off the root, which the frames after it still move). */
+function renderKept(g: Gsap, render: () => void): void {
+  const remove = g.globalTimeline.autoRemoveChildren;
+  g.globalTimeline.autoRemoveChildren = false;
+  try {
+    render();
+  } finally {
+    g.globalTimeline.autoRemoveChildren = remove;
+  }
+}
+
+/** Puts the animations the samples moved back at the frame's time, with their `onUpdate` callbacks. */
+export function endGsapSamples(): void {
+  if (samples === null) return;
+  const g = loaded();
+  const nested = withNested(samples.keys());
+  const was = new Map(nested.map((a) => [a, a.totalTime()]));
+  const back = samples;
+  const restore = () => {
+    for (const [a, time] of back) a.render(time, true, true);
+  };
+  if (g === null) restore();
+  else renderKept(g, restore);
+  updated(nested, was);
+  samples = null;
 }
 
 /** True once the page has loaded GSAP. */

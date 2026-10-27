@@ -3,8 +3,8 @@
 import { createRequire } from 'node:module';
 import { useEffect, useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Rect } from '@kinetographdev/react';
-import type { ShapeLayer } from '@kinetographdev/scene';
+import { Layer, Rect } from '@kinetographdev/react';
+import { motionSubFrames, type GroupLayer, type ShapeLayer } from '@kinetographdev/scene';
 import { resetRenderState } from '../src/assets.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
@@ -124,6 +124,96 @@ describe('a tween that plays by itself', () => {
     // Going back starts the scene over; its tweens were stopped by their cleanups, so the clock restarts with it.
     expect(await at(r, 20)).toEqual(inSequence[20]);
     expect(await at(r, 31)).toEqual(inSequence[31]);
+  });
+});
+
+/**
+ * A tween on the root clock, blurred or not: `x` goes 0 to 300 over 0.51 s (15.3 frames) and `shown` is what its
+ * `onUpdate` wrote; its `onComplete` makes a second tween of `y`, which a sample past the end must not start early.
+ */
+function Moving({ blur }: { blur: boolean }) {
+  const o = useRef({ x: 0, shown: 0, y: 0 });
+  useEffect(() => {
+    const v = o.current;
+    const a = gsap.to(v, {
+      x: 300,
+      duration: 0.51,
+      ease: 'none',
+      onUpdate: () => {
+        v.shown = v.x;
+      },
+      onComplete: () => {
+        gsap.to(v, { y: 100, duration: 1, ease: 'none' });
+      },
+    });
+    return () => {
+      a.kill();
+      gsap.killTweensOf(v);
+    };
+  }, []);
+  const box = <Rect id="box" width={10} height={10} fill="#fff" x={o.current.x} y={o.current.shown + o.current.y} />;
+  return blur ? (
+    <Layer id="blurred" motionBlur={{ samples: 4, shutter: 1 }}>
+      {box}
+    </Layer>
+  ) : (
+    <Layer id="blurred">{box}</Layer>
+  );
+}
+
+const boxOf = (layers: unknown[]): ShapeLayer => ((layers[0] as GroupLayer).children[0] as ShapeLayer);
+
+describe('motion blur of a tween on the root clock', () => {
+  beforeEach(() => {
+    registerRoot(() => (
+      <>
+        <Composition id="Blur" component={Moving} defaultProps={{ blur: true }} width={10} height={10} fps={30} durationInFrames={40} />
+        <Composition id="Sharp" component={Moving} defaultProps={{ blur: false }} width={10} height={10} fps={30} durationInFrames={40} />
+      </>
+    ));
+  });
+
+  it('samples GSAP at each sub-frame time, with its onUpdate, and keeps the frame its own', async () => {
+    const r = createFrameRenderer('Blur');
+    const layer = (await r.renderFrame(10)).scene.layers[0] as GroupLayer;
+    const samples = (motionSubFrames(layer) as GroupLayer[]).map((g) => g.children[0] as ShapeLayer);
+    // t_i = 10 + ((i + 0.5) / 4 - 0.5) -> 9.625, 9.875, 10.125, 10.375; x = 300 * (t / 30) / 0.51
+    const at = (t: number) => (300 * (t / 30)) / 0.51;
+    expect(samples.map((l) => l.transform!.x as number).map((x) => x.toFixed(6))).toEqual([9.625, 9.875, 10.125, 10.375].map((t) => at(t).toFixed(6)));
+    // `shown` is written by onUpdate, which runs in the samples too.
+    expect(samples.map((l) => l.transform!.y as number).map((y) => y.toFixed(6))).toEqual([9.625, 9.875, 10.125, 10.375].map((t) => at(t).toFixed(6)));
+    expect((boxOf([layer]).transform!.x as number)).toBeCloseTo(at(10), 3);
+  });
+
+  it('leaves the frames after a blurred one as they are without blur, past onComplete too', async () => {
+    const run = async (id: string) => {
+      const r = createFrameRenderer(id);
+      const out: unknown[] = [];
+      for (let f = 0; f < 40; f++) {
+        const t = boxOf((await r.renderFrame(f)).scene.layers).transform!;
+        out.push([t.x, t.y]);
+      }
+      r.dispose();
+      return out;
+    };
+    const blurred = await run('Blur');
+    const sharp = await run('Sharp');
+    expect(blurred).toEqual(sharp);
+    // The second tween, made by onComplete at frame 16 (the first frame past 15.3), moves y from there.
+    expect((sharp[16] as number[])[1]).toBeCloseTo(300, 9);
+    expect((sharp[31] as number[])[1]).toBeCloseTo(350, 3);
+  });
+
+  it('is the same alone as in sequence', async () => {
+    const sequence = createFrameRenderer('Blur');
+    const all: unknown[] = [];
+    for (let f = 0; f < 40; f++) all.push((await sequence.renderFrame(f)).scene.layers);
+    sequence.dispose();
+    for (const f of [9, 15, 16, 30]) {
+      const alone = createFrameRenderer('Blur');
+      expect((await alone.renderFrame(f)).scene.layers, `frame ${f}`).toEqual(all[f]);
+      alone.dispose();
+    }
   });
 });
 
