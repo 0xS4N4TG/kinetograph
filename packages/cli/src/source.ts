@@ -8,6 +8,7 @@ import { CliError } from './errors.js';
 import { resolveEntry } from './hyperframes/entry.js';
 import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
+import { prefetchBeforePlan } from './prefetch.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
 
@@ -79,6 +80,12 @@ export interface OpenOptions {
   bundleFile?: string;
   /** When given, an import of an unsupported package is listed here and stubbed, instead of failing the bundle. */
   unsupportedImports?: UnsupportedImport[];
+  /** Never download (`--offline`); also `KINETOGRAPH_OFFLINE=1`. */
+  offline?: boolean;
+  /** Where the pre-download step says what it fetched. */
+  progress?: (message: string) => void;
+  /** False in a render worker: the main thread did the pre-download step. */
+  prefetch?: boolean;
 }
 
 export function isSceneFile(entry: string): boolean {
@@ -126,7 +133,10 @@ async function loadProject(
   entry: string,
   bundleFile?: string,
   unsupported?: UnsupportedImport[],
+  prefetch: { offline?: boolean; progress?: (message: string) => void } | null = null,
 ): Promise<{ mod: ProjectModule; file: string }> {
+  // What the project loads from the web is downloaded before it is read, so frame 0 starts offline.
+  if (prefetch !== null) await prefetchBeforePlan(entry, prefetch);
   const file = bundleFile ?? (await bundleProject(entry, unsupported ? { unsupported } : {})).file;
   process.setSourceMapsEnabled(true);
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
@@ -163,10 +173,10 @@ async function loadProject(
 }
 
 /** The compositions a project (or a scene file, which is one) offers. */
-export async function listCompositions(entry: string, options: { bundleFile?: string } = {}): Promise<CompositionInfo[]> {
+export async function listCompositions(entry: string, options: { bundleFile?: string; offline?: boolean; progress?: (message: string) => void } = {}): Promise<CompositionInfo[]> {
   const absolute = requireEntry(entry);
   if (isSceneFile(absolute)) return [sceneComposition(absolute, readFileSync(absolute, 'utf8'))];
-  return (await loadProject(absolute, options.bundleFile)).mod.getCompositions();
+  return (await loadProject(absolute, options.bundleFile, undefined, options)).mod.getCompositions();
 }
 
 function sceneComposition(file: string, text: string): CompositionInfo {
@@ -200,7 +210,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
   }
 
   const inputProps = parseProps(options.props);
-  const { mod, file: bundleFile } = await loadProject(absolute, options.bundleFile, options.unsupportedImports);
+  const { mod, file: bundleFile } = await loadProject(absolute, options.bundleFile, options.unsupportedImports, options.prefetch === false ? null : options);
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);

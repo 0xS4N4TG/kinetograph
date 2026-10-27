@@ -14,7 +14,9 @@ import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { HfNode, HfPlan, HfScript, HfStylesheet } from '@kinetographdev/core/hyperframes';
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
-import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, verifyIntegrity } from './deps.js';
+import { lockPathOf } from '@kinetographdev/core/lock';
+import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, useLockFile, verifyIntegrity } from './deps.js';
+import type { ImportMap, ModuleScript } from './modules.js';
 import { pickSrcset, remoteImage, rewriteCssImages, type RemoteImage } from './images.js';
 import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
@@ -70,6 +72,10 @@ export interface BuiltPlan {
   mediaUrls: string[];
   /** URLs of remote pictures (`<img>`, CSS `url()`, SVG `<image>`, `<video poster>`), which `fetch-deps` downloads too. */
   imageUrls: string[];
+  /** The `<script type="module">`s of the page, in document order. */
+  modules: ModuleScript[];
+  /** The page's import maps, merged. */
+  importMap: ImportMap;
 }
 
 interface Context {
@@ -558,6 +564,8 @@ const normalizeUrl = (url: string): string => (url.startsWith('//') ? `https:${u
 export async function buildPlan(indexFile: string, options: PlanOptions = {}): Promise<BuiltPlan> {
   const file = resolve(indexFile);
   const root = dirname(file);
+  // The cache is checked against the project's lock file as it is read.
+  useLockFile(lockPathOf(file));
   const builder = new Builder(root, options, relative(process.cwd(), file) || file);
   const doc = parse(builder.read(file));
   const html = childrenOf(doc).find(isElement);
@@ -648,5 +656,7 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     dataUrls: [...builder.dataUrls],
     mediaUrls: [...builder.mediaUrls],
     imageUrls: [...builder.imageUrls],
+    modules: [],
+    importMap: { imports: {}, scopes: {} },
   };
 }

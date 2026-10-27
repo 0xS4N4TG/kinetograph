@@ -1,4 +1,6 @@
 import { CliError } from '../errors.js';
+import { resolveEntry } from '../hyperframes/entry.js';
+import { prefetchBeforePlan, setOffline } from '../prefetch.js';
 import { parseProps } from '../source.js';
 import { ENTRY, type Command } from './types.js';
 
@@ -75,6 +77,7 @@ export const studio: Command = {
     { name: 'agent', type: 'string', description: 'Command that starts your coding agent over ACP, for the chat panel (default: Claude Code, Codex or Gemini CLI, whichever is installed)' },
     { name: 'allow-remote-agent', type: 'boolean', description: 'Keep the coding agent on when --host lets other computers reach the studio (off by default then)' },
     { name: 'props', type: 'string', description: 'Input props as a JSON object, merged over each composition\'s defaultProps' },
+    { name: 'offline', type: 'boolean', description: 'Never download what a HyperFrames project loads from the web (it must already be cached)' },
   ],
   async run(args, context) {
     // Everything that can be wrong with the arguments is reported before anything starts.
@@ -85,6 +88,10 @@ export const studio: Command = {
 
     const agent = args.options.agent as string | undefined;
     if (agent === '') throw new CliError('INVALID_ARG', '--agent must not be empty');
+
+    // What a project loads from the web is downloaded first, as `render` does.
+    setOffline(args.options.offline === true);
+    await prefetchBeforePlan(resolveEntry(String(args.positionals.entry)), { offline: args.options.offline === true, progress: context.progress });
 
     const { startStudio } = await hooks.load();
     const server = await startStudio({
