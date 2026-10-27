@@ -19,6 +19,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 ### Fixed
 
 - `document.querySelector('body')`, `querySelectorAll('html')` and `getElementsByTagName('body')` find `html`, `head` and `body` themselves; they returned nothing, which broke `d3.select('body')`.
+- `lut` effect: `interpolation: 'trilinear' | 'tetrahedral'` (default `'trilinear'`). Tetrahedral blends four table points chosen from the six-tetrahedra split of the cell, as DaVinci Resolve, OpenColorIO and ffmpeg's `lut3d=interp=tetrahedral` do.
 
 ## 0.2.0 (2026-10-27)
 
