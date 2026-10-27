@@ -8,6 +8,7 @@ import {
   GPU_TEXTURE_USAGE,
   ImageData,
   layerPicture,
+  maxTextureBytes,
   VIDEO_FRAME,
   WebGpuUnsupportedError,
   type GPUDeviceShim,
@@ -88,12 +89,17 @@ describe('createTexture, createView and createSampler', () => {
 
   it('holds all the levels of all the textures to a cap', async () => {
     const { device } = await setup();
-    // 8192 x 8192 x 4 is 256 MiB: two fit, a third does not, and destroying one makes room.
-    const a = device.createTexture({ size: [8192, 8192], format: 'rgba8unorm', usage: TEXTURE_BINDING });
-    device.createTexture({ size: [8192, 8192], format: 'rgba8unorm', usage: TEXTURE_BINDING });
-    expect(() => device.createTexture({ size: [8192, 8192], format: 'rgba8unorm', usage: TEXTURE_BINDING })).toThrow(/together would exceed/);
+    // The cap is three of the biggest textures the limits allow, rgba32float with every level: 4 GiB at 8192.
+    expect(maxTextureBytes(8192)).toBe(4 * 2 ** 30);
+    const big = { size: [8192, 8192], format: 'rgba32float', mipLevelCount: 14, usage: TEXTURE_BINDING };
+    // 8192 x 8192 x 16 with its levels is a third more than 1 GiB: three fit, and a 1 GiB fourth does not.
+    const a = device.createTexture(big);
+    device.createTexture(big);
+    device.createTexture(big);
+    const gib = { size: [8192, 8192], format: 'rgba32float', usage: TEXTURE_BINDING };
+    expect(() => device.createTexture(gib)).toThrow(/together would exceed 4294967296/);
     a.destroy();
-    expect(() => device.createTexture({ size: [8192, 8192], format: 'rgba8unorm', usage: TEXTURE_BINDING })).not.toThrow();
+    expect(() => device.createTexture(gib)).not.toThrow();
   });
 
   it('checks the levels of a view', async () => {
