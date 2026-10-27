@@ -52,7 +52,7 @@ Upstream: crates.io `parley` 0.12.0 (`linebender/parley`). Licence: Apache-2.0 O
 
 - `src/layout/line_break.rs`: `BreakLines::new` starts the line's wrap mode from the root style.
 
-Drop when Parley's inline boxes follow the container's `text-wrap-mode`.
+Only this file differs from upstream 0.12.0 (5 added lines). Upstream it, then drop the copy when Parley's inline boxes follow the container's `text-wrap-mode`.
 
 ## rive (rive-rs and the C++ it builds)
 

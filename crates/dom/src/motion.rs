@@ -4,8 +4,10 @@
 //! The offset transform is a translation followed by a rotation, in the
 //! element's own box. It sits in the transform chain after `translate`,
 //! `rotate` and `scale` and before `transform` (`transform.rs`, `paint/effects.rs`).
-//! The path's coordinates are those of the containing block's border box; the
-//! element's layout position is cancelled, so its anchor lands on the path point.
+//! As Chrome does it, the coordinates of a `path()` are relative to the
+//! element's own position (its `left`/`top` shift it), while basic shapes and
+//! `ray()` use the containing block's border box, so the element's layout
+//! position is cancelled and its anchor lands on the path point.
 
 use blitz_dom::Node;
 use kurbo::{
@@ -320,9 +322,16 @@ pub fn motion(node: &Node, size: (f32, f32)) -> Option<Motion> {
     } else {
         f64::from(rotate.angle.radians())
     };
+    // Chrome measures `path()` from the element's own position, and every other
+    // path from the containing block's, so only those cancel the layout position.
+    let own = matches!(
+        &**path,
+        OffsetPathFunction::Shape(BasicShape::PathOrShape(PathOrShape::Path(_)))
+    );
+    let from = if own { (0.0, 0.0) } else { loc };
     Some(Motion {
         anchor,
-        point: (point.0 - loc.0, point.1 - loc.1),
+        point: (point.0 - from.0, point.1 - from.1),
         angle,
     })
 }
@@ -390,8 +399,17 @@ mod tests {
     #[test]
     fn ray_sides_reaches_the_edge() {
         // Straight up from (50, 50) in a 100 x 100 box.
-        near(ray_length(RaySize::Sides, (50.0, 50.0), (0.0, -1.0), 100.0, 100.0), 50.0);
-        near(ray_length(RaySize::Sides, (50.0, 50.0), (1.0, 0.0), 100.0, 100.0), 50.0);
-        near(ray_length(RaySize::FarthestCorner, (0.0, 0.0), (1.0, 0.0), 30.0, 40.0), 50.0);
+        near(
+            ray_length(RaySize::Sides, (50.0, 50.0), (0.0, -1.0), 100.0, 100.0),
+            50.0,
+        );
+        near(
+            ray_length(RaySize::Sides, (50.0, 50.0), (1.0, 0.0), 100.0, 100.0),
+            50.0,
+        );
+        near(
+            ray_length(RaySize::FarthestCorner, (0.0, 0.0), (1.0, 0.0), 30.0, 40.0),
+            50.0,
+        );
     }
 }
