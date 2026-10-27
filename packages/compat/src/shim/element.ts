@@ -26,6 +26,7 @@ import {
 import { isKnownCssProperty } from './css-names.js';
 import { collectionOf, nodeListOf, type HTMLCollection, type NodeList } from './lists.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
+import { AnimationShim, animationsOf, documentTimeline, KeyframeEffectShim, setAnimationTargetResolver, type AnimationTimelineShim } from './animations.js';
 import { cssTransformMatrix, IDENTITY, mapBox, mulAffine, parseViewBox, svgLength, viewBoxMatrix, type Affine } from './svg-transform.js';
 import { parseHtmlFragment } from '../request/html.js';
 import { attributeMapOf, AttrShim, type NamedNodeMapShim } from './attributes.js';
@@ -267,6 +268,8 @@ export function domElementFor(host: HostElement, _readback?: Readback): DomEleme
 export function hostOf(value: unknown): HostElement | null {
   return value instanceof DomElement ? value.host : null;
 }
+
+setAnimationTargetResolver(hostOf);
 
 export function isDomElementShim(value: unknown): value is DomElement {
   return value instanceof DomElement;
@@ -1463,11 +1466,17 @@ export class DomElement extends DomNodeBase {
   focus(): void {}
   blur(): void {}
   click(): void {}
-  animate(): never {
-    throw new Error('element.animate() is not supported: animate with the frame number, or with CSS keyframes, which follow the frame clock');
+  /** The Web Animations API on the virtual clock (animations.ts): a `KeyframeEffect` on this element, played. */
+  animate(keyframes: unknown, options?: number | (Record<string, unknown> & { id?: string; timeline?: AnimationTimelineShim | null })): AnimationShim {
+    const effect = new KeyframeEffectShim(this, keyframes, options as number | undefined);
+    const timeline = typeof options === 'object' && options !== null && 'timeline' in options ? (options.timeline ?? null) : documentTimeline;
+    const animation = new AnimationShim(effect, timeline);
+    if (typeof options === 'object' && options !== null && options.id !== undefined) animation.id = String(options.id);
+    animation.play();
+    return animation;
   }
-  getAnimations(): [] {
-    return [];
+  getAnimations(options?: { subtree?: boolean }): AnimationShim[] {
+    return animationsOf(this.host, options?.subtree === true);
   }
 }
 

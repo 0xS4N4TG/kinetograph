@@ -63,6 +63,12 @@ export interface Overlay {
 
 const overlays = new WeakMap<object, Overlay>();
 
+/** What the running Web Animations give an element's style (animations.ts), laid over everything else. */
+let animatedStyle: ((host: HostElement) => Map<string, string> | null) | null = null;
+export function setAnimatedStyleSource(source: ((host: HostElement) => Map<string, string> | null) | null): void {
+  animatedStyle = source;
+}
+
 export function overlayOf(host: object, create: boolean): Overlay | undefined {
   let overlay = overlays.get(host);
   if (overlay === undefined && create) {
@@ -78,13 +84,17 @@ export function overlayOf(host: object, create: boolean): Overlay | undefined {
  */
 export function propsWithOverlay(host: HostElement): Record<string, any> {
   const overlay = overlays.get(host);
-  if (overlay === undefined || (overlay.style.size === 0 && overlay.attrs.size === 0)) return host.props;
+  const animated = animatedStyle === null ? null : animatedStyle(host);
+  if (animated === null && (overlay === undefined || (overlay.style.size === 0 && overlay.attrs.size === 0))) return host.props;
   const props: Record<string, any> = { ...host.props };
-  if (overlay.style.size > 0) {
+  if ((overlay !== undefined && overlay.style.size > 0) || animated !== null) {
     const style: Record<string, unknown> = typeof props.style === 'object' && props.style !== null ? { ...props.style } : {};
-    for (const [name, value] of overlay.style) style[name] = value;
+    if (overlay !== undefined) for (const [name, value] of overlay.style) style[name] = value;
+    // The Web Animations API's values win over the inline style, as the animation origin of the cascade does.
+    if (animated !== null) for (const [name, value] of animated) style[name] = value;
     props.style = style;
   }
+  if (overlay === undefined) return props;
   for (const [name, value] of overlay.attrs) {
     if (name === 'class') props.className = value ?? undefined;
     else if (value === null) delete props[name];
