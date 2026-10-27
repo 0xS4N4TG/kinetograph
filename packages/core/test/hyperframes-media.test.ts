@@ -212,15 +212,15 @@ describe('data-color-grading', () => {
   });
 
   it('writes the grade of a frame as the attribute the painter reads, and nothing for a grade that changes nothing', () => {
-    expect(gradeAttribute(normalizeGrade('neutral')!, 0)).toBeNull();
-    expect(gradeAttribute(normalizeGrade('{"adjust":{"exposure":0.5},"intensity":0}')!, 0)).toBeNull();
-    const attr = JSON.parse(gradeAttribute(normalizeGrade('{"adjust":{"exposure":0.5},"details":{"grain":0.2},"lut":"look.cube"}')!, 1234)!);
+    expect(gradeAttribute(normalizeGrade('neutral')!, 0, 0)).toBeNull();
+    expect(gradeAttribute(normalizeGrade('{"adjust":{"exposure":0.5},"intensity":0}')!, 0, 0)).toBeNull();
+    const attr = JSON.parse(gradeAttribute(normalizeGrade('{"adjust":{"exposure":0.5},"details":{"grain":0.2},"lut":"look.cube"}')!, 1234, 0.5)!);
     expect(attr.adjust.exposure).toBe(0.5);
     expect(attr.grain).toEqual({ amount: 0.2, size: 0.25, roughness: 0.5, seed: 1234 });
     expect(attr.lut).toEqual({ src: 'look.cube', intensity: 1 });
     expect(attr.vignette.amount).toBe(0);
     // A vignette alone is a grade, even at intensity 0.
-    expect(gradeAttribute(normalizeGrade('{"intensity":0,"details":{"vignette":0.3}}')!, 0)).not.toBeNull();
+    expect(gradeAttribute(normalizeGrade('{"intensity":0,"details":{"vignette":0.3}}')!, 0, 0)).not.toBeNull();
   });
 
   it('seeds the grain like HyperFrames (FNV-1a modulo 10000)', () => {
@@ -230,9 +230,35 @@ describe('data-color-grading', () => {
     expect(seedOf('a')).toBe(Number(BigInt.asUintN(32, (2166136261n ^ 97n) * 16777619n) % 10000n));
   });
 
-  it('lists what it cannot draw', () => {
+  it('draws all 18 effects, so it lists nothing it cannot draw', () => {
     const g = normalizeGrade('{"preset":"vhs-playback","effects":{"halftone":0.5}}')!;
-    expect(gradeNotDrawn(g)).toEqual(expect.arrayContaining(['effects.halftone', 'effects.scanlines']));
+    expect(gradeNotDrawn(g)).toEqual([]);
     expect(gradeNotDrawn(normalizeGrade('{"adjust":{"exposure":1}}')!)).toEqual([]);
+  });
+
+  it('reads the effect controls with their defaults, limits, presets, palette and animated values', () => {
+    const g = normalizeGrade('{"effects":{"bloom":9,"bloomRadius":0,"asciiStyle":3.4,"tapeNoise":-1},"palette":["#AABBCC","#000000"]}')!;
+    expect(Object.keys(g.effects)).toHaveLength(64);
+    expect(g.effects).toMatchObject({ bloom: 3, bloomRadius: 1, asciiStyle: 3.4, tapeNoise: 0, tapeSpeed: 0.5, asciiColor: 1, engravingSpacing: 7 / 17 });
+    expect(g.palette).toEqual(['#aabbcc', '#000000']);
+    expect(normalizeGrade('{"palette":["#fff","#000000"]}')!.palette).toBeNull();
+    // A preset sets its effects and details, an authored control wins.
+    const vhs = normalizeGrade('{"preset":"vhs-playback","effects":{"scanlines":0.1}}')!;
+    expect(vhs.effects).toMatchObject({ tapeDamage: 0.82, tapeTracking: 0.85, scanlines: 0.1, scanlineCount: 0.17, digitalGlitchLineTear: 0.08 });
+    expect(vhs.details).toMatchObject({ grain: 0.16, grainSize: 0.12, grainRoughness: 0.72 });
+    // Only blur, bloom, kuwahara, pixelate, ascii and dither follow a tween.
+    const tweened = normalizeGrade('{"effects":{"blur":0.1,"halftone":0.2}}', {}, { effects: { blur: 0.7, bloom: 2, halftone: 0.9 } })!;
+    expect(tweened.effects).toMatchObject({ blur: 0.7, bloom: 2, halftone: 0.2 });
+  });
+
+  it('writes the effect controls that are not at their defaults, with the palette and the time', () => {
+    const g = normalizeGrade('{"effects":{"halftone":0.9,"asciiSize":0.2},"palette":["#000000","#ffffff"]}')!;
+    const attr = JSON.parse(gradeAttribute(g, 7, 1.5)!);
+    expect(attr.effects).toEqual({ halftone: 0.9, asciiSize: 0.2 });
+    expect(attr.palette).toEqual(['#000000', '#ffffff']);
+    expect(attr.time).toBe(1.5);
+    // An effect alone makes a grade active, even at intensity 0; a control without its effect does not.
+    expect(gradeAttribute(normalizeGrade('{"intensity":0,"effects":{"scanlines":0.3}}')!, 0, 0)).not.toBeNull();
+    expect(gradeAttribute(normalizeGrade('{"effects":{"halftoneSize":0.9}}')!, 0, 0)).toBeNull();
   });
 });

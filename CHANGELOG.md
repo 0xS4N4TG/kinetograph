@@ -43,6 +43,11 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A script's writes to an element's classes and data attributes reach the page: `svgElement.className.baseVal = 'on'`, `classList.replace()`, `classList.value` and `element.dataset.key = 'x'` (and `delete element.dataset.key`) were lost, so a selector that read them never matched. A class or attribute added to an SVG shape between frames already restyled it; tests now cover that for a class added, removed or toggled, `setAttribute`, the `style` attribute, a sibling's class, `:nth-child` after a node is inserted, and a rule inside `@media`.
 
 ## 0.2.0 (2026-10-27)
+### Added
+
+- HyperFrames' `effects` in `data-color-grading` are drawn: blur, bloom, kuwahara, chromaBleed, pixelate, halftone, twoInkPrint, ascii, dither, monoScreen, scanlines, chromaticAberration, crtCurvature, digitalGlitch, tapeDamage, filmArtifacts, engraving and crosshatch, with all 64 controls, the `palette`, the presets' own effect values and the tweened `--hf-color-grading-blur|bloom|kuwahara|pixelate|ascii|dither`. They are no longer reported as not drawn. See `/docs/compat/#hyperframes-projects`.
+- The `colorGrade` effect is a scene effect of its own (a helper `colorGrade({ effects: { halftone: 0.9 } })` in `@kinetographdev/scene`), so your components can use the grade and the look effects too; the catalog lists 23 effects now.
+
 
 ### Added
 

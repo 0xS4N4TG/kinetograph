@@ -118,7 +118,7 @@ Every element takes `id`, `x`, `y`, `scale`, `rotation`, `origin="center"`, `opa
 
 Effects (helpers of the same name; `kinetograph effects` lists their fields): `blur`, `backdropBlur`, `glow`,
 `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`, `contrast`, `brightness`, `grayscale`, `sepia`, `invert`,
-`hueRotate`, `gradientMap`, `lut`, `grain`, `dither`, `halftone`, `dotMatrix`, `displace`, `cornerPin`, and `shader`
+`hueRotate`, `gradientMap`, `lut`, `colorGrade` (HyperFrames' grade and its 18 look effects: `{ effects: { halftone: 0.9 } }`), `grain`, `dither`, `halftone`, `dotMatrix`, `displace`, `cornerPin`, and `shader`
 for your own WGSL. `motionBlur({ samples: 8 })` goes in the same `effects` array.
 
 The details are in this skill's references: `references/AUTHORING.md` (§5 helpers, §6 elements and their JSON, §7 the

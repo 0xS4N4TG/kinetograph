@@ -6,6 +6,7 @@ import type {
   BlurEffect,
   BrightnessEffect,
   ChromaticAberrationEffect,
+  ColorGradeEffect,
   ColorString,
   ContrastEffect,
   CornerPinEffect,
@@ -89,6 +90,10 @@ export function gradientMap(fields: Fields<GradientMapEffect>): GradientMapEffec
 }
 export function lut(fields: Fields<LutEffect>): LutEffect {
   return { type: 'lut', ...compact(fields) };
+}
+/** `colorGrade({ effects: { halftone: 0.9, halftoneSize: 0.4 } })`: HyperFrames' colour grade and look effects. */
+export function colorGrade(fields: Fields<ColorGradeEffect> = {}): ColorGradeEffect {
+  return { type: 'colorGrade', ...compact(fields) };
 }
 /** `grain(0.15, { seed: 7 })`: the amount first, then the rest. */
 export function grain(amount: Num, fields: Fields<GrainEffect, 'amount'>): GrainEffect {

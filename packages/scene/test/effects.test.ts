@@ -18,6 +18,7 @@ import {
   hueRotate,
   insetShadow,
   invert,
+  colorGrade,
   lut,
   motionBlur,
   saturate,
@@ -114,6 +115,15 @@ describe('effect helpers', () => {
       type: 'lut',
       src: 'a.cube',
       interpolation: 'tetrahedral',
+    });
+  });
+
+  it('build colorGrade', () => {
+    expect(colorGrade()).toEqual({ type: 'colorGrade' });
+    expect(colorGrade({ effects: { halftone: 0.9 }, palette: ['#000', '#fff'] })).toEqual({
+      type: 'colorGrade',
+      effects: { halftone: 0.9 },
+      palette: ['#000', '#fff'],
     });
   });
 

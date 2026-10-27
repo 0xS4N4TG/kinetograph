@@ -200,6 +200,31 @@ export const effectCatalog: EffectInfo[] = [
     ],
   },
   {
+    type: 'colorGrade',
+    description:
+      "HyperFrames' colour grade in one pass: exposure to saturation, tonal wheels, curves, hue curves, secondaries, a .cube look-up table, vignette and grain, then its 18 look effects (blur, bloom, halftone, ascii, dither, scanlines, CRT, glitch, tape, film, engraving, crosshatch, kuwahara, ...). The same maths as the original shader, with no browser.",
+    fields: [
+      { name: 'intensity', type: 'number', default: 1, description: 'Clamped to 0..1: how much of the grade replaces the picture (the effects are not scaled by it).' },
+      { name: 'adjust', type: 'object', description: 'exposure (-2..2), contrast, highlights, shadows, whites, blacks, temperature, tint, vibrance, saturation (each -1..1); missing ones are 0.' },
+      { name: 'wheels', type: 'object', description: 'shadows, midtones and highlights, each { hue (degrees), amount (0..1), level (-1..1) }.' },
+      { name: 'curves', type: 'object', description: 'master, red, green and blue: lists of [input, output] points, 2 to 16, inputs 0..1 and increasing.' },
+      { name: 'hueCurves', type: 'object', description: 'hueVsHue (-180..180), hueVsSaturation, hueVsLuma (-1..1): lists of [hue degrees, delta], 3 to 16.' },
+      { name: 'secondaries', type: 'object[]', description: 'Up to four { key: { hue, saturation, luma }, correction: { hueShift, saturation, luma, temperature, tint } } qualifiers.' },
+      { name: 'lut', type: '{ src: string; intensity?: number }', description: 'A .cube file relative to the scene file, and how much of it (0..1, default 1).' },
+      { name: 'vignette', type: 'object', description: '{ amount, midpoint, roundness, feather }, laid out on the graded box.' },
+      { name: 'grain', type: 'object', description: '{ amount, size, roughness, seed }: film grain on the graded box. seed is a whole number; film artifacts use it as their frame count.' },
+      {
+        name: 'effects',
+        type: 'Record<ColorGradeEffectKey, number>',
+        description:
+          'The look effects, by control name: blur, pixelate, chromaBleed, tapeDamage (+ tapeTracking, tapeNoise, tapeSpeed), filmArtifacts, halftone (+ halftoneSize), twoInkPrint (+ twoInkPrintSize), ascii (+ asciiSize, asciiInvert, asciiStyle 0..7, asciiColor, asciiRotation), dither (+ ditherSize), bloom 0..3 (+ bloomRadius 1..100), monoScreen (+ monoScreenSize, Angle, Spread, Shape 0..4, Invert), scanlines (+ scanlineCount, scanlineSoftness), chromaticAberration (+ chromaticAngle), crtCurvature, digitalGlitch (+ ColorSplit, LineTear, Pixelate, BlockAmount, BlockDisplacement, BlockOpacity, Speed), engraving (+ Spacing, MinThickness, MaxThickness, Angle, Contrast, Sharpness, Wave, WaveFrequency), crosshatch (+ Spacing, Thickness, Angle, Contrast, Edges, LineWeight, Wave, WaveFrequency), kuwahara (+ Radius, Sharpness, Saturation). Each 0..1 unless noted; 0 turns an effect off.',
+      },
+      { name: 'palette', type: 'string[]', description: '2 to 6 "#rrggbb" colours, darkest first, for ascii, dither, monoScreen, engraving and crosshatch. Default black and white (dark ink on paper for engraving and crosshatch).' },
+      { name: 'time', type: 'number', description: 'Seconds the time-varying effects run at (tape, glitch, crosshatch waves). Default: the frame time, frame / fps.' },
+      { name: 'box', type: '[number, number, number, number]', description: "The picture's box [x, y, width, height] in the layer's space: the vignette, grain and effects are laid out on it. Default: the layer's own box." },
+    ],
+  },
+  {
     type: 'grain',
     description: 'Film grain: seeded noise added to the layer\'s own pixels, fixed to the screen. A pure function of seed, pixel and frame.',
     fields: [

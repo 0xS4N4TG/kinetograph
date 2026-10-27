@@ -330,7 +330,7 @@ Pure TypeScript, no dependencies.
 
 ### 5.1 Types
 
-`SceneJson`, `LayerJson` (a union over `type`), `Transform`, `Effect` (a union over all 22 SCENE.md effect types),
+`SceneJson`, `LayerJson` (a union over `type`), `Transform`, `Effect` (a union over all 23 SCENE.md effect types),
 `Paint`, `Gradient`, `Clip`, `Mask`, `Matte`, `MotionBlurJson`, `CameraJson`, `Layout`, `LayoutItem`, `CharStyle`,
 `Num` (`number | Keyframe[]`), `KeyframeEasing` (named so it cannot clash with Remotion's `Easing` when
 `@kinetographdev/core` re-exports this package), `ColorString`, `BlendMode`, plus `AudioClipJson` (§6.4). Field names, optionality and

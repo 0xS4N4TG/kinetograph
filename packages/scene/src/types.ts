@@ -307,6 +307,58 @@ export interface LutEffect {
   /** How a colour between two grid points is blended. Default 'trilinear'. */
   interpolation?: 'trilinear' | 'tetrahedral';
 }
+/** The controls of `colorGrade`'s `effects`: HyperFrames' 18 look effects (`blur`, `bloom`, `halftone`, ...) and their settings. */
+export type ColorGradeEffectKey =
+  | 'blur' | 'pixelate' | 'chromaBleed' | 'tapeDamage' | 'tapeTracking' | 'tapeNoise' | 'tapeSpeed' | 'filmArtifacts'
+  | 'halftone' | 'halftoneSize' | 'twoInkPrint' | 'twoInkPrintSize'
+  | 'ascii' | 'asciiSize' | 'asciiInvert' | 'asciiStyle' | 'asciiColor' | 'asciiRotation'
+  | 'dither' | 'ditherSize' | 'bloom' | 'bloomRadius'
+  | 'monoScreen' | 'monoScreenSize' | 'monoScreenAngle' | 'monoScreenSpread' | 'monoScreenShape' | 'monoScreenInvert'
+  | 'scanlines' | 'scanlineCount' | 'scanlineSoftness' | 'chromaticAberration' | 'chromaticAngle' | 'crtCurvature'
+  | 'digitalGlitch' | 'digitalGlitchColorSplit' | 'digitalGlitchLineTear' | 'digitalGlitchPixelate'
+  | 'digitalGlitchBlockAmount' | 'digitalGlitchBlockDisplacement' | 'digitalGlitchBlockOpacity' | 'digitalGlitchSpeed'
+  | 'engraving' | 'engravingSpacing' | 'engravingMinThickness' | 'engravingMaxThickness' | 'engravingAngle'
+  | 'engravingContrast' | 'engravingSharpness' | 'engravingWave' | 'engravingWaveFrequency'
+  | 'crosshatch' | 'crosshatchSpacing' | 'crosshatchThickness' | 'crosshatchAngle' | 'crosshatchContrast'
+  | 'crosshatchEdges' | 'crosshatchLineWeight' | 'crosshatchWave' | 'crosshatchWaveFrequency'
+  | 'kuwahara' | 'kuwaharaRadius' | 'kuwaharaSharpness' | 'kuwaharaSaturation';
+export interface ColorGradeEffect {
+  type: 'colorGrade';
+  /** 0..1, default 1: the mix of the grade with the picture. */
+  intensity?: number;
+  /** exposure -2..2; contrast, highlights, shadows, whites, blacks, temperature, tint, vibrance, saturation -1..1. */
+  adjust?: Partial<
+    Record<'exposure' | 'contrast' | 'highlights' | 'shadows' | 'whites' | 'blacks' | 'temperature' | 'tint' | 'vibrance' | 'saturation', number>
+  >;
+  /** Each wheel: hue in degrees, amount 0..1, level -1..1. */
+  wheels?: Partial<Record<'shadows' | 'midtones' | 'highlights', { hue?: number; amount?: number; level?: number }>>;
+  /** Points [input, output], 2 to 16 per curve. */
+  curves?: Partial<Record<'master' | 'red' | 'green' | 'blue', [number, number][]>>;
+  /** Points [hue degrees, delta], 3 to 16 per curve. */
+  hueCurves?: Partial<Record<'hueVsHue' | 'hueVsSaturation' | 'hueVsLuma', [number, number][]>>;
+  /** Up to four HSL qualifiers with a correction each (HyperFrames' `secondaries`). */
+  secondaries?: {
+    key: {
+      hue?: { center?: number; range?: number; softness?: number };
+      saturation?: { min?: number; max?: number; softness?: number };
+      luma?: { min?: number; max?: number; softness?: number };
+    };
+    correction: { hueShift?: number; saturation?: number; luma?: number; temperature?: number; tint?: number };
+  }[];
+  /** A `.cube` file relative to the scene file, and how much of it. */
+  lut?: { src: string; intensity?: number };
+  vignette?: { amount?: number; midpoint?: number; roundness?: number; feather?: number };
+  /** Film grain, laid on the graded box. `seed` is a whole number the pattern is made from (also film artifacts' frame). */
+  grain?: { amount?: number; size?: number; roughness?: number; seed?: number };
+  /** The look effects, each control by name; a missing control keeps its HyperFrames default. */
+  effects?: Partial<Record<ColorGradeEffectKey, number>>;
+  /** 2 to 6 `#rrggbb` colours, darkest first, for ascii, dither, monoScreen, engraving and crosshatch. */
+  palette?: string[];
+  /** Seconds the time-varying effects run at (default: the frame's time). */
+  time?: number;
+  /** The picture's box in the layer's space [x, y, width, height], what the vignette, grain and the effects are laid out on. */
+  box?: [number, number, number, number];
+}
 export interface GrainEffect {
   type: 'grain';
   amount: Num;
@@ -368,7 +420,7 @@ export interface ShaderEffect {
   padding?: Num;
 }
 
-/** One SCENE.md effect: a union over `type` of all 22. */
+/** One SCENE.md effect: a union over `type` of all 23. */
 export type Effect =
   | BlurEffect
   | BackdropBlurEffect
@@ -385,6 +437,7 @@ export type Effect =
   | HueRotateEffect
   | GradientMapEffect
   | LutEffect
+  | ColorGradeEffect
   | GrainEffect
   | DitherEffect
   | HalftoneEffect

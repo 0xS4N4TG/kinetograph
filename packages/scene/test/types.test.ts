@@ -29,6 +29,22 @@ const fullEffects: { [T in EffectType]: Required<EffectOf<T>> } = {
     ],
   },
   lut: { type: 'lut', src: 'looks/thermal.cube', amount: 1, interpolation: 'tetrahedral' },
+  colorGrade: {
+    type: 'colorGrade',
+    intensity: 0.8,
+    adjust: { exposure: 0.1 },
+    wheels: { shadows: { hue: 220, amount: 0.3, level: 0 } },
+    curves: { master: [[0, 0], [1, 1]] },
+    hueCurves: { hueVsHue: [[0, 0], [120, 10], [240, 0]] },
+    secondaries: [{ key: { hue: { center: 120 } }, correction: { saturation: 0.2 } }],
+    lut: { src: 'looks/thermal.cube' },
+    vignette: { amount: 0.2 },
+    grain: { amount: 0.1, seed: 3 },
+    effects: { halftone: 0.9, halftoneSize: 0.4 },
+    palette: ['#000000', '#ffffff'],
+    time: 1,
+    box: [0, 0, 64, 48],
+  },
   grain: { type: 'grain', amount: 0.3, size: 3, seed: 21, animate: false, monochrome: false },
   dither: { type: 'dither', mode: 'random', levels: 4, size: 2, seed: 3, animate: true },
   halftone: { type: 'halftone', size: 5, angle: 0, shape: 'line', color: '#ffcc00', invert: true },
@@ -44,10 +60,10 @@ const fullEffects: { [T in EffectType]: Required<EffectOf<T>> } = {
   shader: { type: 'shader', code: 'fn effect(px: vec2<f32>) -> vec4<f32> { return layer(px); }', uniforms: { strength: 12 }, padding: 16 },
 };
 
-describe('the 22 effect types', () => {
+describe('the 23 effect types', () => {
   it('are all in the union and the catalog', () => {
     const types = Object.keys(fullEffects);
-    expect(types).toHaveLength(22);
+    expect(types).toHaveLength(23);
     expect(effectCatalog.map((e) => e.type).sort()).toEqual([...types].sort());
   });
 
@@ -77,6 +93,7 @@ describe('the 22 effect types', () => {
       chromaticAberration: ['amount'],
       gradientMap: ['stops'],
       lut: ['src'],
+      colorGrade: [],
       grain: ['amount', 'seed'],
       dotMatrix: ['progress'],
       displace: ['scale', 'turbulence'],
