@@ -5,6 +5,10 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+### Fixed
+
+- `monospace` and `ui-monospace` text is set in a bundled JetBrains Mono (Regular, SIL OFL 1.1, 92 KB) when the project registers no fixed-pitch font, so code blocks (Shiki, Code Hike) line up instead of falling back to a proportional face. A registered monospace font still wins.
+- SVG `<linearGradient>` and `<radialGradient>` blend their stops without premultiplying alpha, as Chrome does: a stop going from opaque red to `rgba(0,0,255,0)` passes through purple and fades out, where it used to fade to clear red. CSS gradients still blend premultiplied.
 ### Added
 
 - `render`, `still`, `doctor`, `studio` and the other commands that open a project download what a project loads from the web before frame 0, then draw offline. HyperFrames pages: CDN scripts, data, media, pictures and fonts, as `fetch-deps` did. Remotion projects: the https pictures, videos and audio that `<Img>`, `<Video>` and CSS `url()` name in the bundle. `--offline` never downloads. `fetch-deps` stays as the explicit command, works on Remotion entries, and gains `--update`.

@@ -178,13 +178,21 @@ pub fn font_context(
         }
     }
     // `monospace` falls back to a fixed-pitch font if the project registered
-    // one; every other generic family prefers the proportional ones.
+    // one, else to the bundled JetBrains Mono; every other generic family prefers the proportional ones.
     let proportional: Vec<_> = families
         .iter()
         .copied()
         .filter(|id| !fixed_pitch.contains(id))
         .collect();
-    let monospace_first: Vec<_> = fixed_pitch.iter().chain(&proportional).copied().collect();
+    // With none, the bundled JetBrains Mono leads, so code columns line up.
+    let monospace_first: Vec<_> = if fixed_pitch.is_empty() {
+        kinetograph_core::fallback_fonts::register_monospace(&mut ctx.collection)
+            .into_iter()
+            .chain(proportional.iter().copied())
+            .collect()
+    } else {
+        fixed_pitch.iter().chain(&proportional).copied().collect()
+    };
     let proportional_first: Vec<_> = proportional.iter().chain(&fixed_pitch).copied().collect();
     for generic in [
         GenericFamily::SansSerif,
@@ -224,6 +232,59 @@ fn is_fixed_pitch(data: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The family names of a generic family, in order.
+    fn generic(ctx: &mut FontContext, generic: GenericFamily) -> Vec<String> {
+        let ids: Vec<_> = ctx.collection.generic_families(generic).collect();
+        ids.into_iter()
+            .filter_map(|id| ctx.collection.family_name(id).map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn a_registered_fixed_pitch_font_leads_monospace_and_the_bundled_one_is_left_out() {
+        let fixture = |name: &str| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/fonts")
+                .join(name)
+                .to_string_lossy()
+                .into_owned()
+        };
+        let bundled = kinetograph_core::fallback_fonts::monospace_face().family;
+        // A fixed-pitch font (the fixture is JetBrains Mono) leads, and the bundled one is not registered.
+        let fonts = BTreeMap::from([
+            (
+                "Code".to_string(),
+                fixture("jetbrains-mono-700-latin.woff2"),
+            ),
+            ("Text".to_string(), fixture("inter-800-latin.woff2")),
+        ]);
+        let mut ctx = font_context(&fonts, std::path::Path::new("")).unwrap();
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::Monospace),
+            ["Code", "Text"]
+        );
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::UiMonospace),
+            ["Code", "Text"]
+        );
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::SansSerif),
+            ["Text", "Code"]
+        );
+        // Without one, the bundled font leads `monospace`, and no other generic family.
+        let fonts = BTreeMap::from([("Text".to_string(), fixture("inter-800-latin.woff2"))]);
+        let mut ctx = font_context(&fonts, std::path::Path::new("")).unwrap();
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::Monospace),
+            [bundled, "Text"]
+        );
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::UiMonospace),
+            [bundled, "Text"]
+        );
+        assert_eq!(generic(&mut ctx, GenericFamily::Serif), ["Text"]);
+    }
 
     #[test]
     fn parses_font_keys() {
