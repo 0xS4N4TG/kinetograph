@@ -646,7 +646,7 @@ export type CanvasFilterFn =
   | { type: 'blur'; radius: number }
   | { type: 'brightness' | 'contrast' | 'grayscale' | 'invert' | 'saturate' | 'sepia'; amount: number }
   | { type: 'hueRotate'; angle: number }
-  /** `blur` is the standard deviation, half the CSS length. */
+  /** `blur` is the standard deviation: the CSS length, as for `blur()`. */
   | { type: 'dropShadow'; x: number; y: number; blur: number; color: string }
   /** `url(#id)`: an SVG `<filter>` of the page, which the page's painter puts in as `graph`; drawn without when there is none. */
   | { type: 'url'; url: string }

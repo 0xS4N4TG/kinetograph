@@ -655,7 +655,7 @@ group that carries the clip. A canvas nothing was drawn on draws nothing and is 
 `crates/dom/tests/canvas.rs` are Canvas 2D scripts (`tests/canvas/*.js`) that Chrome runs and the engine draws from
 the recorded commands (`node crates/dom/tools/canvas-cases.mjs` makes the `.json` files): paths 0.35, gradients, a
 clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4, shadows (soft, hard, under a
-transform and an alpha) and each `filter` function 0.80, patterns of a canvas (16,000 tiles, a stroke, text) 3.3
+transform and an alpha) and each `filter` function 0.56 (`drop-shadow()`'s blur length is the deviation, as Chrome draws it), patterns of a canvas (16,000 tiles, a stroke, text) 3.3
 (text in Chrome's fallback font, as in the paint case) and `url()` filters 1.4 mean levels from Chrome. A pattern of a
 canvas, or of a canvas pass's child, is one recorded tile (`PictureRecorder`) that a Skia picture shader repeats, so the
 tile count does not matter. A `url()` filter is written by the context in its place in the list (`{ type: "url" }`);

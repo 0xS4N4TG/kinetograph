@@ -243,8 +243,8 @@ describe('filter', () => {
     expect(command.filter).toEqual([{ type: 'blur', radius: 2 }]);
   });
 
-  it('writes drop-shadow with a deviation of half its blur and the colour either side', () => {
-    expect(written('drop-shadow(4px 6px 8px red)')).toEqual({ filter: [{ type: 'dropShadow', x: 4, y: 6, blur: 4, color: '#ff0000' }], a: undefined });
+  it('writes drop-shadow with its blur as the deviation, as Chrome draws it, and the colour either side', () => {
+    expect(written('drop-shadow(4px 6px 8px red)')).toEqual({ filter: [{ type: 'dropShadow', x: 4, y: 6, blur: 8, color: '#ff0000' }], a: undefined });
     expect(written('drop-shadow(rgba(0, 0, 255, 0.5) -2px 3px)')).toEqual({ filter: [{ type: 'dropShadow', x: -2, y: 3, blur: 0, color: '#0000ff80' }], a: undefined });
     expect(written('drop-shadow(1px 1px)')).toEqual({ filter: [{ type: 'dropShadow', x: 1, y: 1, blur: 0, color: '#000000' }], a: undefined });
   });

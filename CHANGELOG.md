@@ -16,6 +16,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 ### Fixed
 
 - A canvas pattern of another canvas covers any number of tiles (it stopped at 10,000), and a pattern of a canvas pass's child is drawn (it was left out).
+- Canvas `ctx.filter = 'drop-shadow(...)'` blurs by its length as the standard deviation, as Chrome does; it was halved.
 - `isPointInStroke` takes the line width, caps, joins, miter limit and dashes into account, in the current transform, as Chrome does.
 - Explicit `layout(location = n)` on a WebGL shader's inputs and outputs is honoured; the translator dropped it.
 - With the default `antialias`, `blitFramebuffer` into a WebGL canvas, or out of it into a rectangle of another size, sets `INVALID_OPERATION`, as Chrome's multisampled canvas does.

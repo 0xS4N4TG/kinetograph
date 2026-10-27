@@ -77,7 +77,10 @@ function words(text: string): string[] | null {
   return depth === 0 && quote === '' ? out : null;
 }
 
-/** `drop-shadow(<color>? <length> <length> <length>?  <color>?)`; the blur is a standard deviation, half what is written. */
+/**
+ * `drop-shadow(<color>? <length> <length> <length>?  <color>?)`; the blur length is the standard deviation, as `blur()`'s
+ * is (Chrome draws `drop-shadow(0 0 10px)` as `blur(10px)`, and as `shadowBlur = 20`).
+ */
 function dropShadow(body: string): CanvasFilterFn | null {
   const parts = words(body);
   if (parts === null) return null;
@@ -96,7 +99,7 @@ function dropShadow(body: string): CanvasFilterFn | null {
   if (lengths.length < 2 || lengths.length > 3) return null;
   const [x, y, blur = 0] = lengths as [number, number, number?];
   if (blur < 0) return null;
-  return { type: 'dropShadow', x, y, blur: blur / 2, color: color ?? '#000000' };
+  return { type: 'dropShadow', x, y, blur, color: color ?? '#000000' };
 }
 
 const AMOUNTS = ['brightness', 'contrast', 'grayscale', 'invert', 'saturate', 'sepia'] as const;

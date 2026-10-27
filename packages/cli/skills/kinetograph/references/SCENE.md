@@ -447,7 +447,7 @@ default `source-over`), `shadow` and `filter` (below).
   is composited: `{ "type": "blur", "radius" }` (the deviation, pixels), `brightness`, `contrast`, `grayscale`,
   `invert`, `saturate`, `sepia` (each `{ "type", "amount" }`, 1 or 0 for no change as CSS has it),
   `{ "type": "hueRotate", "angle" }` (degrees), `{ "type": "dropShadow", "x", "y", "blur", "color" }` (`blur` the
-  deviation: half the CSS length) and `{ "type": "graph", "graph" }` (an SVG `<filter>`: the fields of the
+  deviation: the CSS length, as `blur()`'s, measured in Chrome) and `{ "type": "graph", "graph" }` (an SVG `<filter>`: the fields of the
   [`filterGraph`](#filtergraph) effect, its `objectBoundingBox` units and default region over the canvas's box, as
   Chrome applies a `url()` filter on a canvas). They are the passes of the effects of the same names (`blur`, the
   colour filters, `dropShadow`; colour filters in a row make one pass), and take lengths in the canvas's pixels like
