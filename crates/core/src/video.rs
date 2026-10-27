@@ -491,6 +491,11 @@ impl VideoDecoder {
         VideoDecoder::open_as(path, info, false)
     }
 
+    /// What the file's container says about the stream this decoder reads.
+    pub fn info(&self) -> &Arc<VideoInfo> {
+        &self.info
+    }
+
     /// Opens `path` with the decoder's motion vectors switched on (datamosh):
     /// `picture_motion` gives them with each picture. The pictures are the same
     /// ones `open` gives.
