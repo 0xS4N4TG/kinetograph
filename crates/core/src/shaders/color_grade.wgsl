@@ -1228,6 +1228,14 @@ fn fs_grade(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     g_frag = uv * size;
     let frag = g_frag;
 
+    // Outside the graded box (the corners of a rotated or skewed layer's bounds) nothing is drawn, as outside the
+    // canvas a browser draws the element on; a pixel's reach past the edge fades the picture out over that pixel.
+    let past = max(max(-(layer.x - params.box_rect.x), layer.x - params.box_rect.x - size.x),
+        max(-(layer.y - params.box_rect.y), layer.y - params.box_rect.y - size.y));
+    let fwd = params.forward;
+    let scale = sqrt(abs(fwd.x * fwd.w - fwd.y * fwd.z));
+    let inside = clamp(0.5 - max(past, 0.0) * scale + select(0.5, 0.0, past > 0.0), 0.0, 1.0);
+
     let uv_warped = apply_crt_warp(uv);
     var display_mask = 1.0;
     if fx(E_CRT) > 0.0 {
@@ -1237,6 +1245,7 @@ fn fs_grade(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     }
     var sample_color = sample_media(uv_warped);
     sample_color = sample_chromatic_media(uv_warped, sample_color);
+    sample_color.a *= inside;
     if sample_color.a <= 0.0 {
         return vec4<f32>(0.0);
     }
