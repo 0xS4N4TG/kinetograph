@@ -1,0 +1,58 @@
+[
+  {
+    "name": "blacksmith-loc",
+    "video": "examples/launch/public/footage/blacksmith.mp4",
+    "minCorrelation": 0.5,
+    "points": [[980, 800], [1690, 640], [1000, 960], [1050, 290]]
+  },
+  {
+    "name": "blacksmith-loc-previous",
+    "video": "examples/launch/public/footage/blacksmith.mp4",
+    "minCorrelation": 0.5,
+    "points": [[980, 800], [1690, 640], [1000, 960]],
+    "match": "previous"
+  },
+  {
+    "name": "blacksmith-locrotscale-big",
+    "video": "examples/launch/public/footage/blacksmith.mp4",
+    "minCorrelation": 0.5,
+    "points": [[980, 800], [1690, 640]],
+    "model": "locrotscale",
+    "pattern": 41,
+    "search": 121
+  },
+  {
+    "name": "blacksmith-affine-backwards",
+    "video": "examples/launch/public/footage/blacksmith.mp4",
+    "minCorrelation": 0.5,
+    "points": [[1000, 830], [1690, 640]],
+    "model": "affine",
+    "pattern": 31,
+    "search": 91,
+    "from": 10,
+    "to": 60,
+    "backwards": true
+  },
+  {
+    "name": "veteran-loc",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "points": [[820, 540], [1250, 430], [820, 360], [200, 600]]
+  },
+  {
+    "name": "veteran-perspective",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "points": [[820, 540], [1250, 430]],
+    "model": "perspective",
+    "pattern": 41,
+    "search": 101
+  },
+  {
+    "name": "veteran-locscale-previous",
+    "video": "examples/launch/public/footage/veteran.mp4",
+    "points": [[820, 540], [1250, 430]],
+    "model": "locscale",
+    "match": "previous",
+    "pattern": 31,
+    "search": 91
+  }
+]

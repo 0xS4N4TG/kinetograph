@@ -48,27 +48,52 @@ pub struct TrackRequest {
 #[napi]
 pub fn track(path: String, request: TrackRequest, base_dir: Option<String>) -> Result<String> {
     let path = resolve_base(base_dir).join(path);
-    std::fs::metadata(&path).map_err(|e| error(Code::Io, format!("cannot read {}: {e}", path.display())))?;
+    std::fs::metadata(&path)
+        .map_err(|e| error(Code::Io, format!("cannot read {}: {e}", path.display())))?;
     if request.points.is_empty() {
         return Err(invalid("track needs at least one point"));
     }
     let defaults = Options::default();
     let options = Options {
-        model: request.model.as_deref().map(MotionModel::parse).transpose().map_err(invalid)?.unwrap_or(defaults.model),
+        model: request
+            .model
+            .as_deref()
+            .map(MotionModel::parse)
+            .transpose()
+            .map_err(invalid)?
+            .unwrap_or(defaults.model),
         pattern_size: request.pattern.unwrap_or(defaults.pattern_size),
         search_size: request.search.unwrap_or(defaults.search_size),
         min_correlation: request.min_correlation.unwrap_or(defaults.min_correlation),
         margin: request.margin.unwrap_or(defaults.margin),
         normalize: request.normalize.unwrap_or(defaults.normalize),
         brute: request.brute.unwrap_or(defaults.brute),
-        matching: request.matching.as_deref().map(Match::parse).transpose().map_err(invalid)?.unwrap_or(defaults.matching),
+        matching: request
+            .matching
+            .as_deref()
+            .map(Match::parse)
+            .transpose()
+            .map_err(invalid)?
+            .unwrap_or(defaults.matching),
     };
     let points: Vec<Point> = request
         .points
         .into_iter()
         .enumerate()
-        .map(|(i, p)| Point { name: p.name.unwrap_or_else(|| format!("p{}", i + 1)), x: p.x, y: p.y })
+        .map(|(i, p)| Point {
+            name: p.name.unwrap_or_else(|| format!("p{}", i + 1)),
+            x: p.x,
+            y: p.y,
+        })
         .collect();
-    let file = track_video(&path, &points, &options, request.from, request.to, request.backwards.unwrap_or(false)).map_err(invalid)?;
+    let file = track_video(
+        &path,
+        &points,
+        &options,
+        request.from,
+        request.to,
+        request.backwards.unwrap_or(false),
+    )
+    .map_err(invalid)?;
     Ok(file.to_json())
 }

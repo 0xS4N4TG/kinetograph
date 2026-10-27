@@ -33,15 +33,27 @@ pub struct VideoFrames {
 impl VideoFrames {
     pub fn open(path: &Path) -> Result<VideoFrames, String> {
         let info = probe(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let fps = info.fps.filter(|f| *f > 0.0).ok_or_else(|| format!("{}: no frame rate", path.display()))?;
+        let fps = info
+            .fps
+            .filter(|f| *f > 0.0)
+            .ok_or_else(|| format!("{}: no frame rate", path.display()))?;
         let count = match info.frames {
             Some(n) => n as u32,
             None => (info.duration * fps).round().max(1.0) as u32,
         };
-        let decoder = VideoDecoder::open(path, info.clone()).map_err(|e| format!("{}: {e}", path.display()))?;
+        let decoder = VideoDecoder::open(path, info.clone())
+            .map_err(|e| format!("{}: {e}", path.display()))?;
         let frame_bytes = info.width as usize * info.height as usize * 4;
         let run = ((RUN_BYTES / frame_bytes.max(1)) as u32).clamp(2, MAX_RUN);
-        Ok(VideoFrames { info, decoder, fps, count, first: None, recent: VecDeque::new(), run })
+        Ok(VideoFrames {
+            info,
+            decoder,
+            fps,
+            count,
+            first: None,
+            recent: VecDeque::new(),
+            run,
+        })
     }
 
     pub fn fps(&self) -> f64 {
@@ -54,11 +66,17 @@ impl VideoFrames {
         {
             return Some(image);
         }
-        self.recent.iter().find(|(f, _)| *f == frame).map(|(_, image)| image)
+        self.recent
+            .iter()
+            .find(|(f, _)| *f == frame)
+            .map(|(_, image)| image)
     }
 
     fn decode(&mut self, frame: u32) -> Result<(), String> {
-        let ts = self.info.media_time(f64::from(frame) / self.fps, self.info.duration).ts;
+        let ts = self
+            .info
+            .media_time(f64::from(frame) / self.fps, self.info.duration)
+            .ts;
         let image = self.decoder.picture(ts)?;
         if self.first.is_none() {
             self.first = Some((frame, image.clone()));
@@ -90,7 +108,11 @@ impl Frames for VideoFrames {
             let entry = self.recent.remove(i).expect("found");
             self.recent.push_back(entry);
         } else if self.cached(frame).is_none() {
-            let first = if backwards && self.first.is_some() { frame.saturating_sub(self.run - 1) } else { frame };
+            let first = if backwards && self.first.is_some() {
+                frame.saturating_sub(self.run - 1)
+            } else {
+                frame
+            };
             for f in first..=frame {
                 if self.cached(f).is_none() {
                     self.decode(f)?;
@@ -120,11 +142,20 @@ pub fn track_video(
 ) -> Result<TrackFile, String> {
     let mut frames = VideoFrames::open(path)?;
     let count = frames.count;
-    let range = Range { from: first.unwrap_or(0), to: last.unwrap_or(count.saturating_sub(1)), backwards };
+    let range = Range {
+        from: first.unwrap_or(0),
+        to: last.unwrap_or(count.saturating_sub(1)),
+        backwards,
+    };
     let tracks = track_points(&mut frames, points, options, range)?;
     Ok(TrackFile {
         version: TrackFile::VERSION,
-        clip: Clip { width: frames.info.width, height: frames.info.height, fps: frames.fps, frames: count },
+        clip: Clip {
+            width: frames.info.width,
+            height: frames.info.height,
+            fps: frames.fps,
+            frames: count,
+        },
         tracks,
     })
 }

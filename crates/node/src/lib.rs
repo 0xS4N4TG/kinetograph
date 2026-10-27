@@ -19,7 +19,7 @@ mod media;
 mod preview;
 mod rive;
 pub mod streams;
-mod track;
+pub mod track;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

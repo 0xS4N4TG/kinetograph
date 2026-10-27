@@ -72,10 +72,16 @@ impl MotionModel {
     }
 
     pub fn parse(name: &str) -> Result<MotionModel, String> {
-        MotionModel::ALL.into_iter().find(|m| m.name() == name).ok_or_else(|| {
-            let names: Vec<_> = MotionModel::ALL.iter().map(|m| m.name()).collect();
-            format!("unknown motion model \"{name}\" (one of {})", names.join(", "))
-        })
+        MotionModel::ALL
+            .into_iter()
+            .find(|m| m.name() == name)
+            .ok_or_else(|| {
+                let names: Vec<_> = MotionModel::ALL.iter().map(|m| m.name()).collect();
+                format!(
+                    "unknown motion model \"{name}\" (one of {})",
+                    names.join(", ")
+                )
+            })
     }
 
     fn raw(self) -> c_int {
@@ -202,7 +208,8 @@ unsafe extern "C" fn read_region(
     // SAFETY: `user` is the `Reader` that `Tracker::track` set up and is live for the call; `out` holds
     // `width * height` floats (kt_libmv.h).
     let reader = unsafe { &mut *(user as *mut Reader) };
-    let out = unsafe { std::slice::from_raw_parts_mut(out, (width.max(0) * height.max(0)) as usize) };
+    let out =
+        unsafe { std::slice::from_raw_parts_mut(out, (width.max(0) * height.max(0)) as usize) };
     let (w, h) = (reader.frames.width() as i64, reader.frames.height() as i64);
     if frame < 0 || frame as u32 >= reader.frames.count() {
         return 0;
@@ -226,9 +233,13 @@ unsafe extern "C" fn read_region(
                 continue;
             }
             let p = &rgba[source + lx as usize * 4..];
-            let (r, g, b) =
-                (p[0] as f32 * (1.0 / 255.0), p[1] as f32 * (1.0 / 255.0), p[2] as f32 * (1.0 / 255.0));
-            out[(row * width as i64 + col) as usize] = 0.2126f32 * r + 0.7152f32 * g + 0.0722f32 * b;
+            let (r, g, b) = (
+                p[0] as f32 * (1.0 / 255.0),
+                p[1] as f32 * (1.0 / 255.0),
+                p[2] as f32 * (1.0 / 255.0),
+            );
+            out[(row * width as i64 + col) as usize] =
+                0.2126f32 * r + 0.7152f32 * g + 0.0722f32 * b;
         }
     }
     1
@@ -242,8 +253,16 @@ pub struct Tracker<'a> {
 
 impl<'a> Tracker<'a> {
     pub fn new(frames: &'a mut dyn Frames) -> Result<Tracker<'a>, String> {
-        let (w, h, n) = (frames.width() as c_int, frames.height() as c_int, frames.count() as c_int);
-        let mut reader = Box::new(Reader { frames, backwards: false, error: None });
+        let (w, h, n) = (
+            frames.width() as c_int,
+            frames.height() as c_int,
+            frames.count() as c_int,
+        );
+        let mut reader = Box::new(Reader {
+            frames,
+            backwards: false,
+            error: None,
+        });
         let user = &mut *reader as *mut Reader as *mut c_void;
         // SAFETY: `reader` is boxed, so `user` stays valid as long as the tracker, which is freed first (Drop).
         let raw = unsafe { sys::kt_tracker_new(w, h, n, read_region, user) };
@@ -296,11 +315,27 @@ impl Drop for Tracker<'_> {
 /// normalised f32 (v up), the pattern and search squares as f32 offsets from it in normalised units, each turned into
 /// libmv's pixels as `n * size - 0.5` in f32. The float steps are Blender's, so the tracker starts from the same bits.
 /// Corners in Blender's order (its bottom-left, bottom-right, top-right, top-left, v up).
-fn place(point: &Point, frame: u32, track: usize, options: &Options, width: u32, height: u32) -> RawMarker {
+fn place(
+    point: &Point,
+    frame: u32,
+    track: usize,
+    options: &Options,
+    width: u32,
+    height: u32,
+) -> RawMarker {
     let (w, h) = (width as f32, height as f32);
-    let pos = [(point.x / f64::from(width)) as f32, (1.0 - point.y / f64::from(height)) as f32];
-    let pattern = [options.pattern_size as f32 / 2.0 / w, options.pattern_size as f32 / 2.0 / h];
-    let search = [options.search_size as f32 / 2.0 / w, options.search_size as f32 / 2.0 / h];
+    let pos = [
+        (point.x / f64::from(width)) as f32,
+        (1.0 - point.y / f64::from(height)) as f32,
+    ];
+    let pattern = [
+        options.pattern_size as f32 / 2.0 / w,
+        options.pattern_size as f32 / 2.0 / h,
+    ];
+    let search = [
+        options.search_size as f32 / 2.0 / w,
+        options.search_size as f32 / 2.0 / h,
+    ];
     // Unfused, as Blender's build computes it (a fused multiply-add moves Blender parity from 1e-4 px to 1e-2).
     let px = |n: f32, size: f32| n * size - 0.5;
     let at = |offset: [f32; 2]| [px(offset[0] + pos[0], w), px(offset[1] + pos[1], h)];
@@ -348,7 +383,12 @@ fn to_video(m: &RawMarker, frame: u32, correlation: f64, height: u32) -> Tracked
         frame,
         center: at(m.center),
         // libmv's corner 3 is Blender's top-left (v up), which is top-left on screen too.
-        corners: [at(m.patch[3]), at(m.patch[2]), at(m.patch[1]), at(m.patch[0])],
+        corners: [
+            at(m.patch[3]),
+            at(m.patch[2]),
+            at(m.patch[1]),
+            at(m.patch[0]),
+        ],
         correlation: correlation as f32,
     }
 }
@@ -366,7 +406,12 @@ pub fn track_points(
         return Err("the clip has no frames".into());
     }
     if range.from > range.to || range.to >= count {
-        return Err(format!("frames {}..{} are not in the clip (frames 0..{})", range.from, range.to, count - 1));
+        return Err(format!(
+            "frames {}..{} are not in the clip (frames 0..{})",
+            range.from,
+            range.to,
+            count - 1
+        ));
     }
     if options.pattern_size < 5 || options.search_size < options.pattern_size {
         return Err(format!(
@@ -376,10 +421,17 @@ pub fn track_points(
     }
     for p in points {
         if !(0.0..=f64::from(width)).contains(&p.x) || !(0.0..=f64::from(height)).contains(&p.y) {
-            return Err(format!("point \"{}\" ({}, {}) is outside the {width}x{height} frame", p.name, p.x, p.y));
+            return Err(format!(
+                "point \"{}\" ({}, {}) is outside the {width}x{height} frame",
+                p.name, p.x, p.y
+            ));
         }
     }
-    let start = if range.backwards { range.to } else { range.from };
+    let start = if range.backwards {
+        range.to
+    } else {
+        range.from
+    };
     let mut tracker = Tracker::new(frames)?;
 
     struct Live {
@@ -393,7 +445,12 @@ pub fn track_points(
         .enumerate()
         .map(|(i, p)| {
             let m = place(p, start, i, options, width, height);
-            Live { current: m, frames: vec![to_video(&m, start, 1.0, height)], lost: Vec::new(), live: true }
+            Live {
+                current: m,
+                frames: vec![to_video(&m, start, 1.0, height)],
+                lost: Vec::new(),
+                live: true,
+            }
         })
         .collect();
     for t in &live {
@@ -402,7 +459,11 @@ pub fn track_points(
 
     let steps = range.to - range.from;
     for step in 1..=steps {
-        let frame = if range.backwards { start - step } else { start + step };
+        let frame = if range.backwards {
+            start - step
+        } else {
+            start + step
+        };
         for t in live.iter_mut().filter(|t| t.live) {
             if !inside_margin(&t.current, options.margin, width, height) {
                 t.lost.push(frame);
@@ -439,7 +500,12 @@ pub fn track_points(
             if range.backwards {
                 t.frames.reverse();
             }
-            TrackedPath { name: p.name.clone(), model: options.model.name().into(), frames: t.frames, lost: t.lost }
+            TrackedPath {
+                name: p.name.clone(),
+                model: options.model.name().into(),
+                frames: t.frames,
+                lost: t.lost,
+            }
         })
         .collect())
 }

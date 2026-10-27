@@ -73,7 +73,11 @@ unsafe extern "C" {
         user: *mut c_void,
     ) -> *mut kt_tracker;
     pub fn kt_tracker_free(tracker: *mut kt_tracker);
-    pub fn kt_tracker_add_marker(tracker: *mut kt_tracker, marker: *const kt_marker, tracked: c_int);
+    pub fn kt_tracker_add_marker(
+        tracker: *mut kt_tracker,
+        marker: *const kt_marker,
+        tracked: c_int,
+    );
     pub fn kt_tracker_track(
         tracker: *mut kt_tracker,
         options: *const kt_track_options,
