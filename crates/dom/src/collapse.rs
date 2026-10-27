@@ -505,11 +505,13 @@ pub fn apply(doc: &mut BaseDocument) -> usize {
     n
 }
 
-/// Runs [`apply`] and the layout it asks for.
-pub fn settle(doc: &mut BaseDocument, time: f64) {
+/// Runs [`apply`] and the layout it asks for. True when it changed a table.
+pub fn settle(doc: &mut BaseDocument, time: f64) -> bool {
     if apply(doc) > 0 {
         doc.resolve(time);
+        return true;
     }
+    false
 }
 
 #[cfg(test)]

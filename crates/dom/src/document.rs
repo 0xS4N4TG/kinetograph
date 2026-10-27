@@ -352,8 +352,9 @@ fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
     }
     // A collapsed table's cells give up their borders for half of each in their
     // padding, as Chrome lays it out (collapse.rs).
-    if collapse::requested(request) {
-        collapse::settle(&mut island.doc, request.time);
+    // A sheet that names `border-collapse` (every Tailwind build) with no collapsed table
+    // leaves the document as built.
+    if collapse::requested(request) && collapse::settle(&mut island.doc, request.time) {
         plain = false;
     }
     // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
