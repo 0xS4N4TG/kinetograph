@@ -330,6 +330,8 @@ export class CanvasContext2D {
   private readonly saved: State[] = [];
   private readonly path = new ContextPath();
   private log: CanvasCommand[] = [];
+  /** Set by `beginFrame`: what is drawn is emptied when the first command of the frame is recorded. */
+  private pending = false;
 
   constructor(private readonly options: CanvasContextOptions) {
     this.canvas = options.canvas;
@@ -357,6 +359,24 @@ export class CanvasContext2D {
    * Ends a frame's drawing: the state goes back to a new canvas's (the clips still open are closed), and what is
    * drawn stays. A canvas that is redrawn each frame is then drawn from the same state whichever frame came before.
    */
+  /**
+   * Starts a frame: the state is a new canvas's (`resetState`), and the pixels are emptied by the first command the frame
+   * draws, so a canvas redrawn each frame starts that frame empty and one nobody draws on keeps its pixels.
+   */
+  beginFrame(): void {
+    this.resetState();
+    this.pending = true;
+  }
+
+  /** The command list a command is recorded in: a new frame's first drawing empties it. */
+  private out(): CanvasCommand[] {
+    if (this.pending) {
+      this.pending = false;
+      this.log = [];
+    }
+    return this.log;
+  }
+
   resetState(): void {
     for (let i = this.state.clips; i > 0; i -= 1) this.log.push({ op: 'unclip' });
     this.saved.length = 0;
@@ -365,6 +385,7 @@ export class CanvasContext2D {
   }
 
   reset(): void {
+    this.pending = false;
     this.log = [];
     this.saved.length = 0;
     this.state = initial();
@@ -702,13 +723,13 @@ export class CanvasContext2D {
     if (shape === null || (path ?? this.path).segments.length === 0) return;
     const command: CanvasCommand = { op: 'fill', path: shape.d, paint: this.paintOf(this.state.fill), ...this.drawn(shape.m) };
     if (rule === 'evenodd') command.rule = 'evenodd';
-    this.log.push(command);
+    this.out().push(command);
   }
 
   stroke(path?: Path2D): void {
     const shape = this.geometry(path);
     if (shape === null || (path ?? this.path).segments.length === 0) return;
-    this.log.push({ op: 'stroke', path: shape.d, paint: this.paintOf(this.state.stroke), ...this.lineOf(), ...this.drawn(shape.m) });
+    this.out().push({ op: 'stroke', path: shape.d, paint: this.paintOf(this.state.stroke), ...this.lineOf(), ...this.drawn(shape.m) });
   }
 
   clip(...args: unknown[]): void {
@@ -718,7 +739,7 @@ export class CanvasContext2D {
     const command: CanvasCommand = { op: 'clip', path: shape.d };
     if (rule === 'evenodd') command.rule = 'evenodd';
     if (!isIdentity(shape.m)) command.m = [...shape.m] as Matrix;
-    this.log.push(command);
+    this.out().push(command);
     this.state.clips += 1;
   }
 
@@ -739,14 +760,14 @@ export class CanvasContext2D {
     if (this.state.clips === 0 && this.alpha() === 1 && this.state.filter.fns.length === 0 && this.state.blend === 'source-over' && 'css' in fill && fill.color.a === 1 && this.coversCanvas(x, y, width, height)) {
       this.log = [];
     }
-    this.log.push({ op: 'fill', path: pathData([['M', x, y], ['L', x + width, y], ['L', x + width, y + height], ['L', x, y + height], ['Z']]), paint: this.paintOf(fill), ...this.drawn() });
+    this.out().push({ op: 'fill', path: pathData([['M', x, y], ['L', x + width, y], ['L', x + width, y + height], ['L', x, y + height], ['Z']]), paint: this.paintOf(fill), ...this.drawn() });
   }
 
   strokeRect(x: number, y: number, width: number, height: number): void {
     if (![x, y, width, height].every(Number.isFinite)) return;
     if (width === 0 && height === 0) return;
     const d = pathData(width === 0 || height === 0 ? [['M', x, y], ['L', x + width, y + height]] : [['M', x, y], ['L', x + width, y], ['L', x + width, y + height], ['L', x, y + height], ['Z']]);
-    this.log.push({ op: 'stroke', path: d, paint: this.paintOf(this.state.stroke), ...this.lineOf(), ...this.drawn() });
+    this.out().push({ op: 'stroke', path: d, paint: this.paintOf(this.state.stroke), ...this.lineOf(), ...this.drawn() });
   }
 
   clearRect(x: number, y: number, width: number, height: number): void {
@@ -755,7 +776,7 @@ export class CanvasContext2D {
       this.log = [];
       return;
     }
-    this.log.push({
+    this.out().push({
       op: 'fill',
       path: pathData([['M', x, y], ['L', x + width, y], ['L', x + width, y + height], ['L', x, y + height], ['Z']]),
       paint: { type: 'color', color: '#000000' },
@@ -785,7 +806,7 @@ export class CanvasContext2D {
     const wordSpacing = parseSpacing(s.plain.wordSpacing as string, s.font.size);
     if (wordSpacing !== 0) command.wordSpacing = wordSpacing;
     if (stroke) command.line = this.lineOf();
-    this.log.push(command);
+    this.out().push(command);
   }
 
   fillText(text: string, x: number, y: number, maxWidth?: number): void {
@@ -838,7 +859,7 @@ export class CanvasContext2D {
     if (rect.dw === 0 || rect.dh === 0 || rect.sw === 0 || rect.sh === 0) return;
     const command: CanvasCommand = { op: 'image', source: picture.source, ...rect, ...this.drawn() };
     if (!this.state.smoothing) command.smooth = false;
-    this.log.push(command);
+    this.out().push(command);
   }
 
   /**
@@ -901,8 +922,8 @@ export class CanvasContext2D {
     if (!(w > 0 && h > 0)) return;
     // The pixels replace what is under them: the transform, alpha and composite operation do not apply.
     const [at, to] = [dx + x0, dy + y0];
-    this.log.push({ op: 'fill', path: pathData([['M', at, to], ['L', at + w, to], ['L', at + w, to + h], ['L', at, to + h], ['Z']]), paint: { type: 'color', color: '#000000' }, blend: 'clear' });
-    this.log.push({ op: 'image', source: image[CANVAS_SOURCE]().source, sx: x0, sy: y0, sw: w, sh: h, dx: at, dy: to, dw: w, dh: h, smooth: false });
+    this.out().push({ op: 'fill', path: pathData([['M', at, to], ['L', at + w, to], ['L', at + w, to + h], ['L', at, to + h], ['Z']]), paint: { type: 'color', color: '#000000' }, blend: 'clear' });
+    this.out().push({ op: 'image', source: image[CANVAS_SOURCE]().source, sx: x0, sy: y0, sw: w, sh: h, dx: at, dy: to, dw: w, dh: h, smooth: false });
   }
 
   // ---- hit testing, focus ----
