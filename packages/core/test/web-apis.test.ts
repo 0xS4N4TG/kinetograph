@@ -63,9 +63,24 @@ describe('window and matchMedia', () => {
     expect(g.matchMedia('(min-width: 10px)').media).toBe('(min-width: 10px)');
   });
 
+  it('have a visualViewport: the composition at scale 1, an event target that never fires', () => {
+    const v = g.visualViewport;
+    expect([v.width, v.height, v.scale, v.offsetLeft, v.offsetTop, v.pageLeft, v.pageTop]).toEqual([1080, 1920, 1, 0, 0, 0, 0]);
+    expect(v).toBeInstanceOf(g.VisualViewport);
+    expect(v).toBeInstanceOf(EventTarget);
+    const heard: string[] = [];
+    const listener = (e: Event) => heard.push(e.type);
+    v.addEventListener('resize', listener);
+    v.dispatchEvent(new Event('resize'));
+    v.removeEventListener('resize', listener);
+    expect(heard).toEqual(['resize']);
+    expect(v.onresize).toBeNull();
+  });
+
   it('follow the viewport', () => {
     setWebViewport({ width: 500, height: 400 });
     expect(g.innerWidth).toBe(500);
+    expect(g.visualViewport.width).toBe(500);
     expect(g.matchMedia('(orientation: landscape)').matches).toBe(true);
     setWebViewport({ width: 1080, height: 1920 });
   });

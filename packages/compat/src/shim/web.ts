@@ -481,6 +481,23 @@ class SVGElementShim extends DomElement {
 }
 
 
+/**
+ * `window.visualViewport`: the composition's size at scale 1, never scrolled or zoomed, so its `resize` and `scroll`
+ * events never fire. An EventTarget, as a library that listens to it expects.
+ */
+class VisualViewportShim extends EventTarget {
+  onresize: unknown = null;
+  onscroll: unknown = null;
+  onscrollend: unknown = null;
+  get width(): number { return viewport.width; }
+  get height(): number { return viewport.height; }
+  get scale(): number { return 1; }
+  get offsetLeft(): number { return 0; }
+  get offsetTop(): number { return 0; }
+  get pageLeft(): number { return 0; }
+  get pageTop(): number { return 0; }
+}
+
 class LocalStorage {
   private readonly map = new Map<string, string>();
   get length(): number { return this.map.size; }
@@ -523,6 +540,8 @@ export function installDomGlobals(): void {
   defineGetter(g, 'scrollY', () => 0);
   defineGetter(g, 'pageXOffset', () => 0);
   defineGetter(g, 'pageYOffset', () => 0);
+  define(g, 'VisualViewport', VisualViewportShim);
+  define(g, 'visualViewport', new VisualViewportShim());
   defineGetter(g, 'screen', () => ({
     width: viewport.width, height: viewport.height, availWidth: viewport.width, availHeight: viewport.height,
     colorDepth: 24, pixelDepth: 24, orientation: { type: viewport.height >= viewport.width ? 'portrait-primary' : 'landscape-primary', angle: 0 },
