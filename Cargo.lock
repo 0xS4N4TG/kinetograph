@@ -1905,6 +1905,7 @@ dependencies = [
  "kinetograph-core",
  "kinetograph-dom",
  "kinetograph-rive",
+ "kinetograph-track",
  "napi",
  "napi-build",
  "napi-derive",
@@ -1920,6 +1921,18 @@ dependencies = [
  "rive-rs",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "kinetograph-track"
+version = "0.2.0"
+dependencies = [
+ "ffmpeg-next",
+ "kinetograph-core",
+ "libmv-sys",
+ "peniko",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1977,7 +1990,6 @@ name = "libmv-sys"
 version = "0.2.0"
 dependencies = [
  "cc",
- "image",
 ]
 
 [[package]]
