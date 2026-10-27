@@ -46,6 +46,8 @@ a `Skia.Paint()`. Pass shaders and filters as components instead. Replace what i
 
 ## Canvas 2D, WebGL, shaders
 
+- Every canvas (2D, WebGL, WebGPU) starts empty each frame, also with `preserveDrawingBuffer`: redraw the whole frame from
+  the frame number instead of painting over the last one.
 - Canvas 2D: a pattern of a canvas used for a stroke or text draws transparent; `isPointInStroke` ignores caps, joins
   and dashes; `url()` filters are not drawn; shadow and filter images are capped at 50 megapixels per layer per frame.
   Use a plain `fillStyle`, or draw the pattern as repeated shapes.

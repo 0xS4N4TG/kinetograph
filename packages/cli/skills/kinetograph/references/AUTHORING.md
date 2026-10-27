@@ -438,7 +438,7 @@ Numbers may be plain numbers or keyframe lists (they pass through). Unknown prop
 | `<Ellipse>` | `width`, `height`, `fill`, `stroke` | `shape` `ellipse` |
 | `<Path>` | `d`, `fill`, `stroke` | `shape` `path` |
 | `<Text>` | children (strings and numbers, concatenated), `font`, `weight`, `fontStyle`, `size`, `color` or `fill`, `lineHeight`, `maxWidth`, `align`, `chars` | `text`, `font: fontKey(font, weight, fontStyle)`; `chars` may be an array or `(char, index, count) => CharStyle \| null`, evaluated to the array |
-| `<Image>` | `src`, `width?`, `height?`, `fit?` | `image` |
+| `<Image>` | `src` (PNG, JPEG, GIF, WebP, or an SVG file or `data:` URL, drawn sharp at its drawn size; text inside an SVG picture is left out and warned about), `width?`, `height?`, `fit?` | `image` |
 | `<Noise>` | `width`, `height`, `turbulence`, `channels` | `noise` |
 | `<MeshGradient>` | `width`, `height`, `columns`, `rows`, `points`, `colors` | `meshGradient` |
 | `<Canvas>` | `width`, `height` (whole numbers, not animated), `draw(context)` | `canvas`: `draw` is called with a fresh, empty `CanvasContext2D` (§6.5) each time the tree is read, and the commands it drew are the layer's `commands` |
@@ -637,7 +637,7 @@ frame (§8).
 
 Exported from `@kinetographdev/core` (and so from `remotion` through the CLI's alias), behaving as Remotion documents
 them: `useCurrentFrame`, `useVideoConfig`, `interpolate`, `interpolateColors`, `spring`, `measureSpring`, `Easing`,
-`random`, `Sequence`, `Series`, `Loop`, `Freeze`, `AbsoluteFill`, `Img`, `Audio` (re-exported from react), `staticFile`,
+`random`, `Sequence`, `Series` (and `TransitionSeries`: children wrapped in a `React.Fragment`, nested ones too, are flattened, so a `.map()` can emit a Transition and Sequence pair), `Loop`, `Freeze`, `AbsoluteFill`, `Img`, `Audio` (re-exported from react), `staticFile`,
 `delayRender`, `continueRender`, `cancelRender`, `getRemotionEnvironment`, `Composition`, `Still`, `Folder`,
 `registerRoot`, `getInputProps`.
 `random(seed)` is bit-exact with Remotion's; the rest match its documented behaviour, tested against values recorded
@@ -1008,7 +1008,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` (frame ranges `a..b`, as `--range`; each scene is reported in both units: `fromFrame`/`toFrame` and `from`/`to` in seconds) |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
-| `doctor [entry] [--range]` | without an entry, the install report; with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (the Remotion compatibility docs, `/docs/compat/`) |
+| `doctor [entry] [--range]` | without an entry, the install report (it lists the renderer; `render` and `still` print `renderer: Skia GPU (Metal)`, `Skia CPU (no GPU found)` or `Skia CPU (KINETOGRAPH_SKIA_CPU=1)` as progress); with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (the Remotion compatibility docs, `/docs/compat/`) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
 
@@ -1376,3 +1376,35 @@ as well: GSAP's root clock is moved with the frame, and a jump to a later frame 
 tween an effect makes at frame 30 starts there. Stop such a tween in the effect's cleanup. `ScrollTrigger` and
 `Draggable` need scrolling and dragging, which a render does not have. What works and the gaps are on the site at
 `/docs/compat/#gsap`.
+
+### 11.10 Animation libraries and their plugins
+
+A library that runs its own clock or randomness must show what the frame number says. Four optional plugins seek the
+library to `frame / fps`; the library stays a peer dependency (`npm install @kinetographdev/<name> <library>`). Sources:
+`packages/plugins/*/src`; use and checks: `/docs/libraries/`.
+
+| Package | Exports | For |
+|---|---|---|
+| `@kinetographdev/gsap` | `useGsapTimeline(build)`, `<GsapTimeline build>` | a paused timeline seeked to the frame (§11.9); put every tween on the `tl` it passes; the returned ref scopes string selectors |
+| `@kinetographdev/anime` | `useAnimeTimeline(build)`, `<AnimeTimeline build>` | a paused anime.js v4 timeline seeked to `frame / fps * 1000` ms; an `animate()` off the timeline is warned about |
+| `@kinetographdev/motion` | `<MotionFrame>`, `useMotionTime()`, `useSpringAt({ to, stiffness, damping, mass, delay })`, `useAnimateAt(() => animate(...))` | Motion: `motion.*` components inside `<MotionFrame>`; `animate()` paused at `frame / fps`; a spring or `MotionValue` that is a pure function of the frame |
+| `@kinetographdev/p5-brush` | `<BrushCanvas seed draw origin background width height>` | p5.brush: clears, seeds and draws every frame in `draw(brush, frame, { width })`; `origin="top-left"` moves p5.brush's centre origin; needs the WebGL support |
+
+Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/libraries/`, status in
+`/docs/compat/#libraries`): Recharts (`isAnimationActive={false}`, fixed `width`/`height`), d3 scales and shapes and
+`d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()`, Paper.js (clear and redraw each
+frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
+Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` falls back to a proportional face, so
+load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws): render the diagram to
+SVG ahead of time and use it as an `<Img>`. Load a font before Chart.js or Recharts measure text.
+
+### 11.11 HyperFrames projects
+
+`kinetograph render|still|doctor|studio <index.html|dir>` takes a HyperFrames project as it is (nested compositions,
+`window.__timelines` seeked per frame, `data-hidden`, `data-color-grading`, speed ramps, volume lanes, its 18 embedded
+fonts, WebGPU shader backgrounds); the loader is `packages/core/src/hyperframes/`. A render never touches the network:
+run `kinetograph fetch-deps <entry>` once to cache the CDN scripts, data, media, fonts and remote pictures the page uses
+(https only; `--allow-host a.com,b.com` adds hosts, `--url` adds a file a scan missed, `--max-media-mb N`; each file is
+hash-checked on every read). A file that is not cached is reported with the exact command. Three.js and import maps are
+unsupported and reported. Full list: `/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
+

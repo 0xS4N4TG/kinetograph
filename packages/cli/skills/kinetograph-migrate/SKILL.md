@@ -72,5 +72,11 @@ Core `remotion` and these `@remotion/*` packages are mapped: transitions, motion
 layout-utils, animation-utils, captions, google-fonts, fonts, lottie, gif, media-utils, media, light-leaks, starburst,
 sfx, zod-types, timeline-utils, media-parser, webcodecs, canvas, rive, skia. Not ported on purpose: three, player,
 renderer, bundler, cli, lambda, cloudrun, tailwind, tailwind-v4 (Tailwind itself works). The full table is on the docs
-site at `/docs/guides/migrate/`. GSAP (core and the free plugins) works too, with a paused timeline seeked to
-`frame / fps` in a layout effect; a tween that plays by itself does not advance (`/docs/compat/#gsap`).
+site at `/docs/guides/migrate/`. GSAP (core, the free plugins, Flip) works too: seek a paused timeline to
+`frame / fps` in a layout effect, or let a `gsap.to` in a `useEffect` play by itself (`/docs/compat/#gsap`).
+
+Needs no rewrite: `<Img src>` of an `.svg` file (text inside it is left out), named and functional CSS colours
+(`white`, `rgb()`, `oklch()`), `<TransitionSeries>` and `<Series>` children in a Fragment, `<canvas>` and `<Canvas>`,
+`-webkit-text-stroke`, and symbols or emoji missing from a font (bundled fallback; CJK needs a font you load). Libraries
+(Recharts, d3, rough.js, Chart.js, anime.js, Motion, Paper.js) run as they are when they draw from the frame; see
+`/docs/libraries/`. Mermaid does not draw: pre-render it to SVG.

@@ -111,7 +111,7 @@ Every element takes `id`, `x`, `y`, `scale`, `rotation`, `origin="center"`, `opa
 | `<Layer>` | a group; `layout` (flexbox) and `preserve3d` |
 | `<Rect>`, `<Ellipse>`, `<Path>`, `<Shape>` | vector shapes with `fill` (colour or gradient) and `stroke` |
 | `<Text>` | text; `font`, `size`, `color`, `maxWidth`, `align`, per-character `chars` |
-| `<Image>`, `<Img>` | PNG/JPEG; `fit="cover"` |
+| `<Image>`, `<Img>` | PNG, JPEG, GIF, WebP, SVG files; `fit="cover"` |
 | `<Noise>`, `<MeshGradient>`, `<Lottie>` | generated and Lottie layers |
 | `<Camera>` | a perspective camera for 3D transforms |
 | `<Audio>` | a sound file: `src`, `volume`, `trimBefore`, `playbackRate`, `loop` |
@@ -174,6 +174,34 @@ How to read it: an issue with a `property` is that CSS property on that element;
 (unsupported). 100% clean means nothing is left out. To bring the share up, remove or replace what the top issues name
 (a property the painter does not draw yet becomes one it does), then run `doctor` again. `lint` also lists each
 issue as a `compat` warning (it does not fail), but only for the frames it samples; `doctor` checks them all.
+
+## What 0.2.0 can draw and use
+
+One line each; the pointer has the detail. `kinetograph doctor` alone lists the renderer and what this install can do.
+
+- **Encoders.** `--encoder libx264|libx265` run in the bundled GPL `ffmpeg` program (`KINETOGRAPH_FFMPEG=/path` uses
+  another); H.264 defaults to libx264 off macOS hardware; VP9 on macOS and Linux; `--crf`, `--video-bitrate`.
+  AUTHORING.md §9 (render flags), `/docs/ffmpeg-license/`.
+- **SVG files as pictures.** `<Img src={staticFile('a.svg')}>`, `<img>`, `background-image`, `data:` URLs; text inside
+  an SVG picture is not drawn (warned). ENGINE.md "SVG files as pictures".
+- **Scene colours** take any CSS colour (`white`, `rgb()`, `hsl()`, `oklch()`, ...), not only hex. SCENE.md, top.
+- **Missing glyphs.** A character the font lacks falls back per character to bundled Noto Symbols 2, Math and Emoji
+  (monochrome). CJK is not bundled: load a font. A character no font has is reported by `doctor`, `--strict` and
+  `inspect` (`missingChars`). `monospace` is proportional unless you load a mono font. ENGINE.md "Fallback fonts".
+- **`<Series>` / `<TransitionSeries>`** accept Fragment-wrapped children, so `.map()` can emit pairs. AUTHORING.md §7.1.
+- **`renderer:` line.** `render`, `still` and `doctor` print `Skia GPU (Metal)` or `Skia CPU (...)`; CPU means slow.
+- **GSAP** (core, free plugins, Flip): seek a paused timeline to `frame / fps`, or let `gsap.to` play by itself.
+  AUTHORING.md §11.9, `/docs/compat/#gsap`.
+- **Plugins** `@kinetographdev/gsap`, `p5-brush`, `anime`, `motion`: seek a library with its own clock to the frame.
+  AUTHORING.md §11.10, `/docs/libraries/`.
+- **Libraries that render:** Recharts, d3-selection, anime.js, Motion `animate()`, Paper.js, Bklit, rough.js, Chart.js,
+  Plot, Vega; Shiki is close (needs a mono font); Mermaid is broken (pre-render to SVG). AUTHORING.md §11.10.
+- **HyperFrames projects** render as they are: `render|still|doctor|studio <index.html|dir>`; run
+  `kinetograph fetch-deps <entry>` first for CDN scripts and media. AUTHORING.md §11.11, `/docs/compat/#hyperframes-projects`.
+- **Canvas.** `<Canvas width height draw>` or `<canvas>` + `getContext('2d'|'webgl'|'webgl2'|'webgpu')`; a canvas
+  starts empty each frame. AUTHORING.md §6.5 to §6.7. `preserve-3d` with effects is flattened (ENGINE.md).
+- **`<Video datamosh>`** smears one shot into the next with the video's motion vectors. AUTHORING.md §11.8,
+  `/docs/guides/datamosh/`.
 
 ## Habits that save iterations
 

@@ -589,6 +589,22 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   collection (`fonts::font_context`, `TextEngine::new`) as the fallback of the common scripts, after the project's own
   families, and in the SVG font database. A glyph run names one `builtin:<name>` instead of a file. A glyph id 0 left
   after fallback is reported by the painter (`font-family`, "no glyph for U+XXXX ...") and by `inspect` (`missingChars`).
+  The fallback covers symbols, arrows, maths and monochrome emoji, applied one character at a time to HTML text, SVG
+  `<text>`, text layers, Text3D and canvas `fillText`. CJK, Arabic and other scripts are not bundled: load a font that
+  has them (`doctor` and `--strict` report the code point until then). `monospace` falls back to a proportional face
+  unless a monospace font is registered (`@remotion/google-fonts/JetBrainsMono`). `/docs/known-issues/`.
+- SVG files as pictures: `<Img src={staticFile('a.svg')}>`, `<img src>`, `background-image: url(a.svg)`, `image` layers
+  and `data:` URLs draw natively (`crates/core/src/svg_picture.rs`), sized from the file's `width`, `height` and
+  `viewBox` (300 x 150 with none) and painted at the size they are drawn at. Text inside such a picture is left out and
+  warned about (a browser sets it in none of the page's fonts); an unreadable file is reported by `doctor`.
+- A DOM measurement the engine cannot answer (`getComputedStyle`, `getBoundingClientRect`) is a warning and the script
+  gets the element's own style; `--strict` makes it an error. An element with `transform-style: preserve-3d` that also
+  has `opacity`, a filter, `clip-path`, `mask`, `mix-blend-mode`, `isolation`, `contain: paint`, `backdrop-filter` or
+  `overflow: hidden` is flattened (as CSS Transforms 2 does) and drawn as a flat group with its effect.
+- A canvas (2D, WebGL or WebGPU) starts empty each frame; `preserveDrawingBuffer` does not carry a frame into the next.
+  WebGPU on a canvas (buffers, WGSL render and compute pipelines, storage buffers and textures) replays on the engine's
+  GPU device; its gaps are in `/docs/known-issues/#webgpu`. `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
+  HyperFrames: AUTHORING.md §11.10 and §11.11.
 
 ### Paint order
 
