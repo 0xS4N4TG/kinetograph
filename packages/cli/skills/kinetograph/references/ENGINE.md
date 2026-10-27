@@ -1008,3 +1008,25 @@ reads it, so a frame is still a pure function of (project, frame). Repeatable bi
 (`crates/track/tests/golden.rs`, a golden per platform); not bit-equal across platforms. Parity against Blender run
 headless: `scripts/track-parity/`.
 
+Two more of Blender's tracking tools, rebuilt the same way (from the manual and from running Blender; its GPL code is
+not used), each over libmv's MIT code:
+
+- **Detect Features** (`crates/track/src/detect.rs`): `libmv::Detect` with the Harris detector
+  (`vendor/libmv/libmv/simple_pipeline/detect.cc`, built without FAST). The C API (`kt_detect_harris`) takes the frame
+  as Blender's image buffer holds it, RGBA rows bottom first, each byte over 255; libmv makes it grey. The operator's
+  defaults (margin 16, threshold 0.5 passed as 0.5 / 100000 in f32, minimum distance 120), features turned into
+  normalised positions `(x + 0.5) / size` and added in the reverse of libmv's order, and the annotation placement as an
+  even-odd polygon test in normalised f32.
+- **Plane tracks** (`crates/track/src/plane.rs`): the corners start as the bounding box of the tracks' patterns at the
+  placing frame (f32), or as given; then frame by frame, forwards and then backwards, libmv's
+  `EstimateHomography2DFromCorrespondences` (default options, `kt_homography`) over the tracks' normalised f32
+  positions on both frames, the matrix rounded to f32 and each corner multiplied by it unfused in f32, as Blender
+  stores both. Blender keeps the estimate whether or not Ceres calls it usable, and so does this. The point pairs
+  include the disabled markers Blender leaves at a track's ends (`Normalised` in `lib.rs`: one frame before the placed
+  marker, the frame after the last marker, and one more after a failed match but not after the margin check), which
+  is why Blender's planes reach a frame past each end of the tracked range; frames outside the clip are left out.
+  Corners are written as f64 (exactly Blender's f32 times the frame size).
+
+`track_clip` (`kinetograph track`) runs them in Blender's order: detect at the placing frame, track every point, make
+the planes. Blender parity: detected features identical in position and order, plane corners bit-equal on every frame.
+

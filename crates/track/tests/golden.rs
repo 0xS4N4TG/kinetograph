@@ -7,7 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
-use kinetograph_track::{Match, MotionModel, Options, Point, TrackFile, track_video};
+use kinetograph_track::{
+    DetectOptions, Job, Match, MotionModel, Options, PlaneRequest, Point, TrackFile, track_video,
+};
 
 fn platform() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -42,13 +44,24 @@ fn digest(file: &TrackFile) -> u64 {
         }
         t.lost.iter().for_each(|&f| eat(f));
     }
+    for p in &file.planes {
+        for m in &p.frames {
+            eat(m.frame);
+            for v in m.corners.iter().flatten() {
+                let bits = v.to_bits();
+                eat(bits as u32);
+                eat((bits >> 32) as u32);
+            }
+        }
+    }
     h
 }
 
 fn line(name: &str, file: &TrackFile) -> String {
-    let summary: Vec<String> = file
+    let mut summary: Vec<String> = file
         .tracks
         .iter()
+        .take(4)
         .map(|t| {
             let last = t.frames.last().expect("a placed marker");
             format!(
@@ -61,18 +74,25 @@ fn line(name: &str, file: &TrackFile) -> String {
             )
         })
         .collect();
+    if file.tracks.len() > 4 {
+        summary.push(format!("({} tracks)", file.tracks.len()));
+    }
+    summary.extend(file.planes.iter().map(|p| {
+        let last = p.frames.last().expect("a plane marker");
+        format!(
+            "{}:{}@{}=({:.3},{:.3})",
+            p.name,
+            p.frames.len(),
+            last.frame,
+            last.corners[0][0],
+            last.corners[0][1]
+        )
+    }));
     format!("{name} {:016x} {}", digest(file), summary.join(" "))
 }
 
-/// A name, the points, the options, the first and last frames, and whether backwards.
-type Case = (
-    &'static str,
-    Vec<Point>,
-    Options,
-    Option<u32>,
-    Option<u32>,
-    bool,
-);
+/// A name and the job.
+type Case = (&'static str, Job);
 
 #[test]
 fn real_footage_tracks_the_same_every_run() {
@@ -88,53 +108,91 @@ fn real_footage_tracks_the_same_every_run() {
             })
             .collect()
     };
+    let four = points(&[
+        (820.0, 540.0),
+        (1250.0, 430.0),
+        (820.0, 360.0),
+        (200.0, 600.0),
+    ]);
     let cases: Vec<Case> = vec![
         (
             "loc-keyframe",
-            points(&[
-                (820.0, 540.0),
-                (1250.0, 430.0),
-                (820.0, 360.0),
-                (200.0, 600.0),
-            ]),
-            Options::default(),
-            None,
-            None,
-            false,
+            Job {
+                points: four.clone(),
+                ..Job::default()
+            },
         ),
         (
             "affine-previous",
-            points(&[(1250.0, 430.0)]),
-            Options {
-                model: MotionModel::Affine,
-                matching: Match::Previous,
-                pattern_size: 31,
-                search_size: 91,
-                ..Options::default()
+            Job {
+                points: points(&[(1250.0, 430.0)]),
+                options: Options {
+                    model: MotionModel::Affine,
+                    matching: Match::Previous,
+                    pattern_size: 31,
+                    search_size: 91,
+                    ..Options::default()
+                },
+                ..Job::default()
             },
-            None,
-            None,
-            false,
         ),
         (
             "perspective-backwards",
-            points(&[(820.0, 540.0)]),
-            Options {
-                model: MotionModel::Perspective,
-                pattern_size: 41,
-                search_size: 101,
-                ..Options::default()
+            Job {
+                points: points(&[(820.0, 540.0)]),
+                options: Options {
+                    model: MotionModel::Perspective,
+                    pattern_size: 41,
+                    search_size: 101,
+                    ..Options::default()
+                },
+                first: Some(10),
+                last: Some(50),
+                backwards: true,
+                ..Job::default()
             },
-            Some(10),
-            Some(50),
-            true,
+        ),
+        (
+            "plane-middle",
+            Job {
+                points: four,
+                first: Some(20),
+                planes: vec![PlaneRequest {
+                    name: "plane1".into(),
+                    tracks: Vec::new(),
+                    corners: None,
+                }],
+                ..Job::default()
+            },
+        ),
+        (
+            "detect-plane",
+            Job {
+                detect: Some(DetectOptions {
+                    threshold: 0.05,
+                    min_distance: 150,
+                    ..DetectOptions::default()
+                }),
+                last: Some(30),
+                planes: vec![PlaneRequest {
+                    name: "plane1".into(),
+                    tracks: Vec::new(),
+                    corners: Some([
+                        [700.0, 300.0],
+                        [1300.0, 320.0],
+                        [1280.0, 700.0],
+                        [720.0, 680.0],
+                    ]),
+                }],
+                ..Job::default()
+            },
         ),
     ];
     let lines: Vec<String> = cases
         .iter()
-        .map(|(name, points, options, first, last, backwards)| {
-            let a = track_video(&clip, points, options, *first, *last, *backwards).unwrap();
-            let b = track_video(&clip, points, options, *first, *last, *backwards).unwrap();
+        .map(|(name, job)| {
+            let a = track_video(&clip, job).unwrap();
+            let b = track_video(&clip, job).unwrap();
             assert_eq!(a, b, "{name}: two runs differ");
             line(name, &a)
         })

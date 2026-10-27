@@ -79,6 +79,94 @@ All defaults are Blender's defaults for a new track.
 | `--backwards` | off | Place the points at `--to` and track towards the start. |
 | `-o` | `<video>.track.json` | Where to write the file. |
 
+## Find points automatically
+
+`--detect` finds good points for you, as Blender's **Detect Features** does: corners with plenty of texture, at least
+120 pixels apart, on the first frame tracked. Then it tracks them all.
+
+```sh
+npx kinetograph track public/clip.mp4 --detect
+```
+
+The detected points are named `p1`, `p2`, ... (after any `--point` you also give). The defaults are Blender's and
+find only the strongest few corners. To find more, lower the threshold or the distance:
+
+| Option | Default | What it does |
+|---|---|---|
+| `--detect-threshold` | 0.5 | How strong a corner must be. 0.05 finds many more. |
+| `--detect-distance` | 120 | Pixels between detected points, at least. |
+| `--detect-margin` | 16 | Pixels from the frame edge where nothing is detected. |
+| `--detect-inside`, `--detect-outside` | | Only keep points inside (or outside) a polygon, `x,y,x,y,...` in video pixels. Repeat for more polygons. |
+
+## Pin a picture to a surface
+
+A plane track follows a flat surface, such as a screen, a sign or a wall, through the shot. It is made from four or
+more tracked points on that surface, as Blender's **Create Plane Track** makes one:
+
+```sh
+npx kinetograph track public/clip.mp4 --point 820,540 --point 1250,430 --point 820,360 --point 200,600 \
+  --plane screen=p1,p2,p3,p4 --plane-corners screen=700,300,1300,320,1280,700,720,680
+```
+
+`--plane-corners` sets where the plane's corners are on the first frame tracked: top-left, top-right, bottom-right,
+bottom-left, as x,y pairs in video pixels (the corners of the screen, for example). Without it, the plane starts as the
+box around the points' patterns, as in Blender. `--plane all` uses every tracked point. Pick points that are on the
+surface, spread out, and not three on one line.
+
+In the composition, `usePlaneTrack()` gives the corners for the current frame, ready for the `cornerPin` effect:
+
+```tsx
+import { Image, cornerPin, usePlaneTrack } from '@kinetographdev/core';
+import { AbsoluteFill, OffthreadVideo, staticFile } from 'remotion';
+
+const Screen = () => {
+  const { pin } = usePlaneTrack('clip.mp4.track.json', 'screen');
+  return <Image src={staticFile('poster.png')} width={1280} height={720} effects={[cornerPin(pin)]} />;
+};
+
+export const Shot = () => (
+  <AbsoluteFill>
+    <OffthreadVideo src={staticFile('clip.mp4')} />
+    <AbsoluteFill>
+      <Screen />
+    </AbsoluteFill>
+  </AbsoluteFill>
+);
+```
+
+The picture's four corners go to the plane's four corners, whatever its size. The pinned layer must start at the
+video's top-left corner, with the video at its own size.
+
+## Steady a shot
+
+There is no stabiliser, but a track is all you need for one: move the video the opposite way to the tracked point,
+so the point stays where it was on the first frame.
+
+```tsx
+import { trackAt, useTrack } from '@kinetographdev/core';
+import { AbsoluteFill, OffthreadVideo, staticFile } from 'remotion';
+
+const file = 'clip.mp4.track.json';
+
+export const Steady = () => {
+  const { x, y, rotation, scale } = useTrack(file, 'anchor');
+  const start = trackAt(file, 0, 'anchor'); // where the point is on the first frame
+  // Read right to left: move the point to 0,0, undo its turn and growth, put it back where it started.
+  const steady = `translate(${start.x}px, ${start.y}px) rotate(${-rotation}deg) scale(${1 / scale}) translate(${-x}px, ${-y}px)`;
+  return (
+    <AbsoluteFill style={{ transform: 'scale(1.1)' }}>
+      <AbsoluteFill style={{ transformOrigin: '0 0', transform: steady }}>
+        <OffthreadVideo src={staticFile('clip.mp4')} />
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+```
+
+Track the point with `--model locrotscale` to undo rotation and zoom too; with the default `loc` model only the
+position moves. The outer `scale(1.1)` zooms in a little so the moving frame's edges stay out of view. That hides a
+shake; a large camera move, such as a pan, still shows the edges.
+
 ## When a track is lost
 
 A track stops where Blender's would: when the best match is below the minimum correlation, falls outside the search
@@ -90,4 +178,5 @@ texture.
 
 Kinetograph drives libmv the way Blender's "Track Markers" does, with Blender's defaults. Tracked in Blender on the same
 clip with the same settings, the same frames are tracked and lost, and the positions agree to within 0.0002 of a
-pixel, the rounding Blender's own marker storage adds. `scripts/track-parity/` in the repository runs that comparison.
+pixel, the rounding Blender's own marker storage adds. Detect Features finds the same points in the same order, and
+plane corners are exactly Blender's on every frame. `scripts/track-parity/` in the repository runs that comparison.

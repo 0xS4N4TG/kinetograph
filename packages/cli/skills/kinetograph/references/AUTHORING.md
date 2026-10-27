@@ -1008,7 +1008,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` (frame ranges `a..b`, as `--range`; each scene is reported in both units: `fromFrame`/`toFrame` and `from`/`to` in seconds) |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
-| `track <video> --point x,y [--point ...] [--model M] [--pattern N --search N] [--match keyframe\|previous] [--from F --to F] [--backwards] [-o out.json]` | tracks points with Blender's tracker and writes `<video>.track.json` for `useTrack()` (§11.12); takes a video, not an entry |
+| `track <video> [--point x,y ...] [--detect [--detect-threshold T ...]] [--plane all\|p1,p2,p3,p4 [--plane-corners ...]] [--model M] [--pattern N --search N] [--match keyframe\|previous] [--from F --to F] [--backwards] [-o out.json]` | tracks points (placed, or found by Blender's Detect Features) and plane tracks with Blender's tracker and writes `<video>.track.json` for `useTrack()` and `usePlaneTrack()` (§11.12); takes a video, not an entry |
 | `doctor [entry] [--range]` | without an entry, the install report (it lists the renderer; `render` and `still` print `renderer: Skia GPU (Metal)`, `Skia CPU (no GPU found)` or `Skia CPU (KINETOGRAPH_SKIA_CPU=1)` as progress); with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (the Remotion compatibility docs, `/docs/compat/`) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
@@ -1162,11 +1162,13 @@ export function decodeAudio(path: string, sampleRate: number, baseDir?: string):
 /** What a glTF or GLB model uses that the 3D layer does not read (SCENE.md, "scene3d", "glTF"), one entry for each
  *  kind of thing; empty for a file that uses nothing of the kind. `IO`/render error for a file that cannot be read. */
 export function modelUnsupported(src: string, baseDir?: string): { feature: string; reason: string }[];
-/** Tracks points through a video with Blender's tracker and returns the `.track.json` text (§11.12). Every field but
- *  `points` defaults to Blender's for a new track. `IO` for a missing file, `INVALID_ARG` for anything else wrong.
+/** Tracks points through a video with Blender's tracker and returns the `.track.json` text (§11.12): Detect Features
+ *  first with `detect`, plane tracks after with `planes`. Every field but `points` defaults to Blender's. `IO` for a missing file, `INVALID_ARG` for anything else wrong.
  *  CPU only; `kinetograph track` calls it, a render never does. */
 export function track(path: string, request: {
-  points: { name?: string; x: number; y: number }[];
+  points: { name?: string; x: number; y: number }[];   // may be empty with `detect`
+  detect?: { margin?: number; threshold?: number; minDistance?: number; inside?: number[][]; outside?: number[][] };
+  planes?: { name?: string; tracks?: string[]; corners?: number[] }[];   // corners: 8 numbers, x,y TL TR BR BL
   model?: string; pattern?: number; search?: number; minCorrelation?: number; margin?: number;
   normalize?: boolean; brute?: boolean; match?: string; from?: number; to?: number; backwards?: boolean;
 }, baseDir?: string): string;
@@ -1426,7 +1428,7 @@ found by scanning its bundle, downloaded the same way and locked in the same fil
 fetched once, added to the lock and noted. In the studio the download step runs again when a file of the project changes (a dependency added in a sub-composition or a local module needs no restart). Three.js is unsupported and reported. Full list:
 `/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
 
-### 11.12 Motion tracking (`kinetograph track`, `useTrack`)
+### 11.12 Motion tracking (`kinetograph track`, `useTrack`, `usePlaneTrack`)
 
 Blender's tracker, run ahead of time. `kinetograph track` follows points through a video with libmv, the tracker
 Blender's "Track Markers" uses (built into the addon from Blender 4.5 LTS's copy, `vendor/libmv`), and writes
@@ -1496,9 +1498,95 @@ const Label = () => {
 - The file is read with `staticFile()` rules and read again when it changes on disk (the studio picks up a new track).
   `trackAt(file, clipFrame, trackName?)` and `readTrackFile(file)` are the same reads outside a component.
 
+**Detect Features.** `--detect` places points the way Blender's "Detect Features" (`bpy.ops.clip.detect_features`)
+does, with libmv's Harris detector, on the frame the points are placed at (`--from`, or `--to` with `--backwards`),
+and then tracks them with the rest:
+
+```sh
+kinetograph track public/clip.mp4 --detect [--detect-threshold 0.5] [--detect-distance 120] [--detect-margin 16] \
+  [--detect-inside x,y,x,y,... | --detect-outside x,y,x,y,...] [--point x,y ...]
+```
+
+- The defaults are the operator's: threshold 0.5 (Blender's units; libmv gets it over 100000, so 0.05 finds about ten
+  times as many corners), minimum distance 120 px between features (a better one wins), margin 16 px from the frame
+  edge. Detection runs on the whole frame, Blender's `FRAME` placement.
+- `--detect-inside` / `--detect-outside` (repeatable, at least three x,y pairs in video pixels) keep the features inside
+  any of the polygons or outside all of them: Blender's `INSIDE_GPENCIL` / `OUTSIDE_GPENCIL`, whose polygons are the
+  strokes of the clip's annotation. Not both.
+- Detected points come after the `--point` ones, named on from them (`p<n>`), in the order Blender adds their tracks
+  (libmv lists the strongest corner first; Blender, and so the file, has it last). Each is at the centre of the pixel
+  libmv found, `(x + 0.5, y + 0.5)`. The command prints how many it placed.
+- The tracks get the same settings as `--point` tracks (`--model`, `--pattern`, ...), as Blender's new tracks get the
+  clip's defaults.
+
+**Plane tracks.** `--plane` makes a plane track from four or more point tracks, as Blender's "Create Plane Track" does
+after tracking: four corners carried through the clip by the homography of the points (libmv's
+`EstimateHomography2DFromCorrespondences`), for a corner pin.
+
+```sh
+kinetograph track public/clip.mp4 --point 820,540 --point 1250,430 --point 820,360 --point 200,600 \
+  --plane all [--plane screen=p1,p2,p3,p4] [--plane-corners screen=x,y,x,y,x,y,x,y]
+```
+
+- `--plane all` uses every track; `--plane p1,p2,p3,p4` names them (at least 4, no three on a line); `name=...` names
+  the plane (default `plane1`, `plane2`, ...). Repeat for more planes.
+- The plane is made at the frame the points are placed at. Its corners start as Blender's do, the bounding box of the
+  tracks' pattern squares there, or as `--plane-corners` gives them: x,y of top-left, top-right, bottom-right,
+  bottom-left in video pixels on that frame (Blender: dragging the corners into place). `name=` picks the plane;
+  without it, the first.
+- From that frame the corners are carried forwards, then backwards, one frame at a time: the tracks with a marker on
+  both frames give the point pairs, and each corner is moved by their homography, in Blender's f32 arithmetic. It stops
+  where fewer than four tracks have markers on both frames. Like Blender it counts the disabled markers a track leaves
+  at its ends (one frame before the placed marker, the frame it was lost, the frame after a failed match, one past the
+  range), so a plane usually reaches a frame past the tracked range at each end, holding still there.
+
+The file gains `planes`, left out when there are none (so a file without planes is unchanged):
+
+```ts
+interface TrackFile {
+  // ... as above, and:
+  planes?: {
+    name: string;
+    tracks: string[];                                    // the point tracks it follows
+    frames: { frame: number; corners: [[x, y], [x, y], [x, y], [x, y]] }[]; // top-left, top-right, bottom-right, bottom-left
+  }[];
+}
+```
+
+Plane corners are written as f64: Blender's f32 normalised corners times the frame size, exactly.
+
+```tsx
+import { Image, cornerPin, usePlaneTrack } from '@kinetographdev/core';
+import { AbsoluteFill, OffthreadVideo, staticFile } from 'remotion';
+
+const Screen = () => {
+  const { pin } = usePlaneTrack('clip.mp4.track.json', 'screen');
+  // The picture's box (any size) is pinned to the plane's corners, in the video's pixels.
+  return <Image src={staticFile('poster.png')} width={1280} height={720} effects={[cornerPin(pin)]} />;
+};
+
+export const Shot = () => (
+  <AbsoluteFill>
+    <OffthreadVideo src={staticFile('clip.mp4')} />
+    <AbsoluteFill>
+      <Screen />
+    </AbsoluteFill>
+  </AbsoluteFill>
+);
+```
+
+- `usePlaneTrack(file, planeName?)` returns `{ corners, pin, frame, tracked }` for `useCurrentFrame()`, with frames
+  matched and held as `useTrack` does (no name: the first plane). `pin` is `{ topLeft, topRight, bottomRight,
+  bottomLeft }`, what the `cornerPin` effect (SCENE.md, "cornerPin") takes; the corners are in the layer's own space,
+  so the pinned layer's box must start at the video's top-left corner with the video drawn at its own size (or the
+  same scale and offset applied). `planeAt(file, clipFrame, planeName?)` is the same read outside a component.
+
 Parity with Blender (`node scripts/track-parity/compare.mjs`: Blender run headless on the same clips, points and
 settings, all six models, both matches, backwards): the same frames are tracked and lost, and every marker agrees to
 within 2e-4 px, the f32 rounding of Blender's normalised marker coordinates (many are equal). That needs the marker
 placed through the same f32 steps as Blender's, and the same decoded pixels (they are: Blender's frames and ours were
-compared byte for byte). Repeatability: the same inputs give the same bits on a platform (`crates/track/tests/golden.rs`,
-a golden per platform); platforms are not bit-equal with each other.
+compared byte for byte). Detect Features finds the same features in the same order (positions bit-equal), with the
+defaults, other thresholds, distances and margins, another frame, and inside and outside polygons; plane corners are
+bit-equal to Blender's on every frame (0 px), over the same frames, for planes made at the first frame, mid-clip and
+tracking backwards, from 4, 5 and 24 tracks. Repeatability: the same inputs give the same bits on a platform
+(`crates/track/tests/golden.rs`, a golden per platform); platforms are not bit-equal with each other.
