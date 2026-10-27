@@ -28,7 +28,7 @@ const fullEffects: { [T in EffectType]: Required<EffectOf<T>> } = {
       { frame: 30, value: 1 },
     ],
   },
-  lut: { type: 'lut', src: 'looks/thermal.cube', amount: 1 },
+  lut: { type: 'lut', src: 'looks/thermal.cube', amount: 1, interpolation: 'tetrahedral' },
   grain: { type: 'grain', amount: 0.3, size: 3, seed: 21, animate: false, monochrome: false },
   dither: { type: 'dither', mode: 'random', levels: 4, size: 2, seed: 3, animate: true },
   halftone: { type: 'halftone', size: 5, angle: 0, shape: 'line', color: '#ffcc00', invert: true },
