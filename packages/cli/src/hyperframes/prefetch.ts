@@ -3,10 +3,13 @@
 // runs it by itself; `render`, `still`, `studio` and `doctor` run it first unless `--offline`. A frame is drawn after it
 // from the cache alone.
 
+import { whenFetchesSettle } from '@kinetographdev/compat/shim';
 import { makeGoogleFont } from '@kinetographdev/core/google-fonts';
 import { lockPathOf } from '@kinetographdev/core/lock';
 import { CliError } from '../errors.js';
 import { cdnCacheDir, fetchCdnData, fetchCdnScripts, MAX_DATA_BYTES, useLockFile, type FetchedDep, type FetchOptions } from './deps.js';
+import { discovered, installDynamicImport, setDiscovery } from './dynamic.js';
+import { setBeforePlan } from './entry.js';
 import { MAX_IMAGE_BYTES } from './images.js';
 import { fetchModuleGraph } from './modules.js';
 import { buildPlan } from './plan.js';
@@ -29,6 +32,8 @@ export interface PrefetchResult {
   lockFile: string;
   files: FetchedDep[];
   fonts: { family: string; status: 'ready' | 'failed'; error?: string }[];
+  /** The files the project is made of (HTML, local modules): a change to one can mean a new download. */
+  inputs: string[];
   /** How many files were downloaded just now. */
   fetched: number;
   /** One line: what the project loads from the web. */
@@ -40,7 +45,7 @@ export async function prefetchHyperframes(entry: string, options: PrefetchOption
   const allowHosts = options.allowHosts ?? [];
   const lockFile = lockPathOf(entry);
   useLockFile(lockFile, options.update === true);
-  const { plan, scriptUrls, scriptIntegrity, dataUrls, mediaUrls, imageUrls, modules, importMap } = await buildPlan(entry, { discoverOnly: true, allowHosts });
+  const { plan, files: planFiles, scriptUrls, scriptIntegrity, dataUrls, mediaUrls, imageUrls, modules, importMap } = await buildPlan(entry, { discoverOnly: true, allowHosts });
   const extra = options.extraUrls ?? [];
   const common: FetchOptions = { allowHosts, update: options.update === true, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) };
   const summary = `${scriptUrls.length} script URL(s), ${modules.length} module script(s), ${dataUrls.length + extra.length} data URL(s), ${mediaUrls.length} remote media file(s), ${imageUrls.length} remote picture(s), ${plan.googleFonts.length} Google font famil${plan.googleFonts.length === 1 ? 'y' : 'ies'}`;
@@ -52,7 +57,10 @@ export async function prefetchHyperframes(entry: string, options: PrefetchOption
   files.push(...(await fetchCdnData([...dataUrls, ...extra], { ...common, maxBytes: MAX_DATA_BYTES })));
   files.push(...(await fetchCdnData(mediaUrls, { ...common, maxBytes: Math.round(maxMedia * 1024 * 1024) })));
   files.push(...(await fetchCdnData(imageUrls, { ...common, maxBytes: MAX_IMAGE_BYTES })));
-  if (modules.length > 0) files.push(...(await fetchModuleGraph(modules, importMap, { ...common, maxBytes: MAX_DATA_BYTES })));
+  const moduleInfo = { inputs: new Set<string>(), computed: false };
+  if (modules.length > 0) files.push(...(await fetchModuleGraph(modules, importMap, { ...common, maxBytes: MAX_DATA_BYTES }, moduleInfo)));
+  // An `import()` of a specifier built at run time is found by running the page.
+  if (moduleInfo.computed) files.push(...(await discoverComputedImports(entry, { ...common, maxBytes: MAX_DATA_BYTES })));
 
   const fonts: PrefetchResult['fonts'] = [];
   for (const font of plan.googleFonts) {
@@ -67,15 +75,60 @@ export async function prefetchHyperframes(entry: string, options: PrefetchOption
       }
     }
   }
-  return { cache: cdnCacheDir(), lockFile, files, fonts, fetched: files.filter((f) => f.status === 'fetched').length, summary };
+  return { cache: cdnCacheDir(), lockFile, files, inputs: [...new Set([entry, ...planFiles, ...moduleInfo.inputs])], fonts, fetched: files.filter((f) => f.status === 'fetched').length, summary };
+}
+
+/** Frame 0, the last frame and up to six between: a specifier that depends on the frame is found if it shows in one of them. */
+function sampleFrames(total: number): number[] {
+  const count = Math.min(total, 8);
+  const frames = new Set<number>([0]);
+  for (let i = 1; i < count; i++) frames.add(Math.round((i * (total - 1)) / (count - 1)));
+  return [...frames];
+}
+
+/**
+ * Runs the page's JS for a sample of its frames, with a hook on `import()` of a computed specifier (`dynamic.ts`) that
+ * resolves each through the import map, downloads it and locks it. A render then finds the modules in the cache. A
+ * specifier that only shows in a frame not sampled is downloaded when a render first asks for it, and said so.
+ */
+async function discoverComputedImports(entry: string, options: FetchOptions): Promise<FetchedDep[]> {
+  const { openSource } = await import('../source.js');
+  // The bundle the pass builds must not start another download step.
+  const saved = setBeforePlan(null);
+  setDiscovery(options);
+  try {
+    installDynamicImport();
+    const source = await openSource(entry, { prefetch: false });
+    try {
+      for (const frame of sampleFrames(source.composition.durationInFrames)) {
+        await source.frame(frame);
+        await whenFetchesSettle();
+      }
+    } finally {
+      source.dispose();
+    }
+  } catch (error) {
+    return [{ url: entry, file: '', status: 'failed', error: `running the page to find its computed import() calls failed: ${error instanceof Error ? error.message : String(error)}` }];
+  } finally {
+    setDiscovery(null);
+    setBeforePlan(saved);
+  }
+  const seen = new Set<string>();
+  const results: FetchedDep[] = [];
+  for (const f of discovered.fetched) if (f.status !== 'failed' && !seen.has(f.url)) (seen.add(f.url), results.push(f));
+  for (const f of discovered.failed) {
+    results.push({ url: f.specifier, file: '', status: 'failed', error: `import(${JSON.stringify(f.specifier)}) from ${f.referrer}: ${f.error}`, ...(f.code ? { code: f.code } : {}) });
+  }
+  return results;
 }
 
 /**
  * The step `render`, `still`, `studio` and `doctor` run: `prefetchHyperframes`, with a failed download only said (the
- * render then reports the file that is missing as it always has), except a lock mismatch, which stops it.
+ * render then reports the file that is missing as it always has), except a lock mismatch, which stops it. Resolves to the
+ * files the project is made of.
  */
-export async function autoPrefetchHyperframes(entry: string, progress: (message: string) => void): Promise<void> {
-  const result = await prefetchHyperframes(entry);
+export async function autoPrefetchHyperframes(entry: string, progress: (message: string) => void, options: PrefetchOptions = {}): Promise<string[]> {
+  const result = await prefetchHyperframes(entry, options);
   if (result.fetched > 0) progress(`downloaded ${result.fetched} file(s) into ${result.cache} (locked in ${result.lockFile})`);
   for (const f of result.files) {
     if (f.status !== 'failed') continue;
@@ -83,4 +136,5 @@ export async function autoPrefetchHyperframes(entry: string, progress: (message:
     progress(`could not download ${f.url}: ${f.error}`);
   }
   for (const font of result.fonts) if (font.status === 'failed') progress(`could not download font ${font.family}: ${font.error}`);
+  return result.inputs;
 }
