@@ -790,7 +790,11 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 > **History.** This section and section 12 were written when Vello drew the 2D layers: its pages, to-linear passes,
 > vendored patches and numbers describe that renderer, which has been removed (Oct 2026). Skia (Graphite on Metal, or
 > Vulkan on Linux and Windows) now draws every 2D layer, and the wgpu path draws what Skia cannot (scene3d, GLSL,
-> mesh gradients, `preserve3d` groups). The compositor passes, the layer cache and frame reuse below still apply.
+> mesh gradients, `preserve3d` groups). A layer the wgpu path draws that blurs its backdrop sees what Skia has drawn
+> of the frame so far: Skia's recording runs into the frame's target first (the CPU backend uploads its pixels) and the
+> compositor reads that texture, with nothing read back; inside a layer of Skia's own that backdrop is left out and
+> reported. In an sRGB scene the compositor blurs a backdrop on its sRGB-encoded values, as Skia and Chrome do. The
+> compositor passes, the layer cache and frame reuse below still apply.
 
 Branch `perf/gpu-passes` (from `perf/gpu-pass-timing`, `feat/full-engine` merged in). Compositor internals only; every
 change below draws the same bytes as the build before it, checked on 34 scenes (`crates/core/tests/scenes`,
