@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { trackAt, useTrack, type TrackFile, type TrackValue } from '../src/index.js';
+import { cornerPin, planeAt, trackAt, usePlaneTrack, useTrack, type PlaneTrackValue, type TrackFile, type TrackValue } from '../src/index.js';
 import { renderAt } from './scene-harness.js';
 
 type XY = [number, number];
@@ -92,3 +92,57 @@ describe('useTrack', () => {
     expect(() => trackAt(bad, 0)).toThrow(/version 1 track file/);
   });
 });
+
+describe('usePlaneTrack', () => {
+  const corners = (f: number): [XY, XY, XY, XY] => [
+    [10 + f, 20],
+    [110 + f, 22],
+    [108 + f, 90],
+    [12 + f, 88],
+  ];
+  const withPlanes = write({
+    ...file,
+    planes: [
+      { name: 'screen', tracks: ['p1', 'p2', 'p3', 'p4'], frames: [1, 2, 3, 4].map((f) => ({ frame: f, corners: corners(f) })) },
+      { name: 'other', tracks: ['p1', 'p2', 'p3', 'p4'], frames: [{ frame: 0, corners: corners(0) }] },
+    ],
+  });
+
+  function readPlane(path: string, frame: number, fps = 30, name?: string): PlaneTrackValue {
+    let value!: PlaneTrackValue;
+    function Probe() {
+      value = usePlaneTrack(path, name);
+      return null;
+    }
+    renderAt(<Probe />, frame, {
+      config: { id: 'Main', width: 1280, height: 720, fps, durationInFrames: 90, defaultProps: {}, props: {} },
+    });
+    return value;
+  }
+
+  it('gives the corners of the current frame, and the pin cornerPin takes', () => {
+    const v = readPlane(withPlanes, 3);
+    expect(v).toMatchObject({ frame: 3, tracked: true, corners: corners(3) });
+    expect(v.pin).toEqual({ topLeft: [13, 20], topRight: [113, 22], bottomRight: [111, 90], bottomLeft: [15, 88] });
+    expect(cornerPin(v.pin)).toEqual({ type: 'cornerPin', ...v.pin });
+  });
+
+  it('holds the first corners before the plane and the last after it, and maps frames by time', () => {
+    expect(readPlane(withPlanes, 0)).toMatchObject({ frame: 1, tracked: false });
+    expect(readPlane(withPlanes, 20)).toMatchObject({ frame: 4, tracked: false, corners: corners(4) });
+    // At 60 fps, frame 5 is clip frame 2.
+    expect(readPlane(withPlanes, 5, 60).frame).toBe(2);
+  });
+
+  it('picks a plane by name and names the planes there are when it is wrong', () => {
+    expect(readPlane(withPlanes, 2, 30, 'other').frame).toBe(0);
+    expect(() => planeAt(withPlanes, 0, 'nope')).toThrow(/"screen", "other"/);
+    expect(() => planeAt(path0(), 0)).toThrow(/no plane track/);
+    expect(planeAt(withPlanes, 3)).toEqual(readPlane(withPlanes, 3));
+  });
+});
+
+/** A track file without planes. */
+function path0(): string {
+  return write(file);
+}

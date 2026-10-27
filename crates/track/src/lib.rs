@@ -21,8 +21,13 @@
 //!   stops its track;
 //! - a step libmv cannot use (correlation under the minimum, fell out of the search area, ...) ends the track; Blender
 //!   then keeps the marker where it was and disables it at that frame, which is the frame listed in `lost`.
+//!
+//! Points can also be placed by Blender's Detect Features (`detect.rs`), and plane tracks made from four or more point
+//! tracks (`plane.rs`); `track_clip` does all three in Blender's order: detect, track, make the planes.
 
+mod detect;
 mod file;
+mod plane;
 mod video;
 
 #[cfg(test)]
@@ -32,7 +37,9 @@ use std::os::raw::{c_int, c_void};
 
 use libmv_sys as sys;
 
-pub use file::{Clip, TrackFile, TrackedFrame, TrackedPath};
+pub use detect::{DetectOptions, Placement, detect_features};
+pub use file::{Clip, PlaneFrame, PlaneTrack, TrackFile, TrackedFrame, TrackedPath};
+pub use plane::PlaneRequest;
 pub use video::{VideoFrames, track_video};
 
 /// libmv's motion models, in Blender's order (`MovieTrackingTrack.motion_model`).
@@ -324,10 +331,7 @@ fn place(
     height: u32,
 ) -> RawMarker {
     let (w, h) = (width as f32, height as f32);
-    let pos = [
-        (point.x / f64::from(width)) as f32,
-        (1.0 - point.y / f64::from(height)) as f32,
-    ];
+    let pos = detect::normalised(point.x, point.y, width, height);
     let pattern = [
         options.pattern_size as f32 / 2.0 / w,
         options.pattern_size as f32 / 2.0 / h,
@@ -393,6 +397,14 @@ fn to_video(m: &RawMarker, frame: u32, correlation: f64, height: u32) -> Tracked
     }
 }
 
+/// Blender's normalised position (v up) of a marker libmv returned: `(centre + 0.5) / size`, in f32.
+fn normalised_raw(m: &RawMarker, width: u32, height: u32) -> [f32; 2] {
+    [
+        (m.center[0] + 0.5) / width as f32,
+        (m.center[1] + 0.5) / height as f32,
+    ]
+}
+
 /// Tracks every point through `range` with the same options, the way Blender tracks selected markers: frame by frame,
 /// each live track one step. Each path lists its frames in increasing order.
 pub fn track_points(
@@ -401,6 +413,25 @@ pub fn track_points(
     options: &Options,
     range: Range,
 ) -> Result<Vec<TrackedPath>, String> {
+    Ok(track_raw(frames, points, options, range)?
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect())
+}
+
+/// A track's markers as Blender holds them, in increasing frame order: (frame, normalised position (u, v), v up). Besides
+/// the tracked ones, Blender keeps disabled markers at a track's ends, each holding the position next to it: one a
+/// frame before the placed marker (against the tracking direction); one a frame past the last marker (where the track
+/// was lost, or past the end of the range); and, when a match failed (not the margin check), one more a frame past
+/// that. A plane track reads them all.
+type Normalised = Vec<(u32, [f32; 2])>;
+
+fn track_raw(
+    frames: &mut dyn Frames,
+    points: &[Point],
+    options: &Options,
+    range: Range,
+) -> Result<Vec<(TrackedPath, Normalised)>, String> {
     let (width, height, count) = (frames.width(), frames.height(), frames.count());
     if count == 0 {
         return Err("the clip has no frames".into());
@@ -437,7 +468,10 @@ pub fn track_points(
     struct Live {
         current: RawMarker,
         frames: Vec<TrackedFrame>,
+        normalised: Normalised,
         lost: Vec<u32>,
+        /// Stopped by the margin check rather than a failed match.
+        by_margin: bool,
         live: bool,
     }
     let mut live: Vec<Live> = points
@@ -448,7 +482,10 @@ pub fn track_points(
             Live {
                 current: m,
                 frames: vec![to_video(&m, start, 1.0, height)],
+                // The placed marker keeps the position it was given.
+                normalised: vec![(start, detect::normalised(p.x, p.y, width, height))],
                 lost: Vec::new(),
+                by_margin: false,
                 live: true,
             }
         })
@@ -467,6 +504,7 @@ pub fn track_points(
         for t in live.iter_mut().filter(|t| t.live) {
             if !inside_margin(&t.current, options.margin, width, height) {
                 t.lost.push(frame);
+                t.by_margin = true;
                 t.live = false;
                 continue;
             }
@@ -480,6 +518,8 @@ pub fn track_points(
                 Some(correlation) => {
                     tracker.add(&next, true);
                     t.frames.push(to_video(&next, frame, correlation, height));
+                    t.normalised
+                        .push((frame, normalised_raw(&next, width, height)));
                     t.current = next;
                 }
                 None => {
@@ -493,19 +533,143 @@ pub fn track_points(
         }
     }
 
+    let end = if range.backwards {
+        range.from
+    } else {
+        range.to
+    };
+    // The frame one step on from `frame` in the tracking direction (or against it), if it is in the clip.
+    let on = |frame: u32, forwards: bool| -> Option<u32> {
+        let next = if forwards != range.backwards {
+            frame.checked_add(1)
+        } else {
+            frame.checked_sub(1)
+        };
+        next.filter(|&f| f < count)
+    };
     Ok(live
         .into_iter()
         .zip(points)
         .map(|(mut t, p)| {
+            let first = t.normalised[0].1;
+            let last = t.normalised.last().expect("the placed marker").1;
+            if let Some(f) = on(start, false) {
+                t.normalised.push((f, first));
+            }
+            let past_last = match t.lost.first() {
+                Some(&lost) => Some(lost),
+                None => on(end, true),
+            };
+            if let Some(f) = past_last {
+                t.normalised.push((f, last));
+            }
+            if let (Some(&lost), false) = (t.lost.first(), t.by_margin)
+                && let Some(f) = on(lost, true)
+            {
+                t.normalised.push((f, last));
+            }
+            t.normalised.sort_by_key(|(f, _)| *f);
             if range.backwards {
                 t.frames.reverse();
             }
-            TrackedPath {
+            let path = TrackedPath {
                 name: p.name.clone(),
                 model: options.model.name().into(),
                 frames: t.frames,
                 lost: t.lost,
-            }
+            };
+            (path, t.normalised)
         })
         .collect())
+}
+
+/// Everything `kinetograph track` does to a clip.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Job {
+    /// Points placed by hand (`p1`, `p2`, ... unless named).
+    pub points: Vec<Point>,
+    /// Detect Features at the frame the points are placed at; its features follow the given points, named on from
+    /// them (`p<n>`).
+    pub detect: Option<DetectOptions>,
+    pub options: Options,
+    /// First and last frame (default the whole clip).
+    pub first: Option<u32>,
+    pub last: Option<u32>,
+    pub backwards: bool,
+    /// Plane tracks to make from the point tracks.
+    pub planes: Vec<PlaneRequest>,
+}
+
+/// Runs `job` on the clip: detect (if asked), track every point, then make the plane tracks.
+pub fn track_clip(
+    frames: &mut dyn Frames,
+    job: &Job,
+) -> Result<(Vec<TrackedPath>, Vec<PlaneTrack>), String> {
+    let (width, height, count) = (frames.width(), frames.height(), frames.count());
+    if count == 0 {
+        return Err("the clip has no frames".into());
+    }
+    let range = Range {
+        from: job.first.unwrap_or(0),
+        to: job.last.unwrap_or(count - 1),
+        backwards: job.backwards,
+    };
+    let start = if range.backwards {
+        range.to
+    } else {
+        range.from
+    };
+    let mut points = job.points.clone();
+    if let Some(detect) = &job.detect {
+        if range.from > range.to || range.to >= count {
+            return Err(format!(
+                "frames {}..{} are not in the clip (frames 0..{})",
+                range.from,
+                range.to,
+                count - 1
+            ));
+        }
+        let found = detect_features(frames, start, detect)?;
+        if found.is_empty() && points.is_empty() {
+            return Err(format!(
+                "Detect Features found nothing at frame {start}; try a lower threshold, a smaller margin or minimum distance"
+            ));
+        }
+        let first = points.len();
+        points.extend(found.into_iter().enumerate().map(|(i, [x, y])| Point {
+            name: format!("p{}", first + i + 1),
+            x,
+            y,
+        }));
+    }
+    if points.is_empty() {
+        return Err("there is no point to track".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    if let Some(p) = points.iter().find(|p| !seen.insert(p.name.as_str())) {
+        return Err(format!("two tracks are named \"{}\"", p.name));
+    }
+    let tracked = track_raw(frames, &points, &job.options, range)?;
+    let positions: Vec<plane::Positions> = tracked
+        .iter()
+        .map(|(path, normalised)| plane::Positions {
+            name: &path.name,
+            frames: normalised.clone(),
+        })
+        .collect();
+    let planes = job
+        .planes
+        .iter()
+        .map(|r| {
+            plane::track_plane(
+                r,
+                &positions,
+                start,
+                job.options.pattern_size,
+                width,
+                height,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((tracked.into_iter().map(|(path, _)| path).collect(), planes))
 }

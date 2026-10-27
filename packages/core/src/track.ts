@@ -5,6 +5,9 @@
 // picture a <Video> starting at frame 0 shows then; the value is that frame's marker, or the last one before it (a track
 // holds its last position after it is lost and after its range), or the first one for a frame before the range.
 // Coordinates are video pixels, y down, (0, 0) the frame's top-left corner.
+//
+// `usePlaneTrack(file, planeName?)` is the same for a plane track (`kinetograph track --plane`): its four corners at
+// the current frame, with `pin` ready for the `cornerPin` effect.
 
 import { readFileSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
@@ -21,10 +24,33 @@ export interface TrackFileFrame {
   correlation: number;
 }
 
+export type TrackCorners = [TrackPointXY, TrackPointXY, TrackPointXY, TrackPointXY];
+
+export interface TrackFilePlane {
+  name: string;
+  /** The point tracks it follows. */
+  tracks: string[];
+  /** Corners top-left, top-right, bottom-right, bottom-left, in increasing frame order. */
+  frames: { frame: number; corners: TrackCorners }[];
+}
+
 export interface TrackFile {
   version: number;
   clip: { width: number; height: number; fps: number; frames: number };
   tracks: { name: string; model: string; frames: TrackFileFrame[]; lost: number[] }[];
+  /** Plane tracks; left out of a file without any. */
+  planes?: TrackFilePlane[];
+}
+
+export interface PlaneTrackValue {
+  /** Top-left, top-right, bottom-right, bottom-left, video pixels. */
+  corners: TrackCorners;
+  /** The same corners as `cornerPin` takes them: `cornerPin(plane.pin)` pins a layer's box to the plane. */
+  pin: { topLeft: TrackPointXY; topRight: TrackPointXY; bottomRight: TrackPointXY; bottomLeft: TrackPointXY };
+  /** The clip frame whose corners these are. */
+  frame: number;
+  /** False when the value is held: the clip frame asked for has no plane marker of its own. */
+  tracked: boolean;
 }
 
 export interface TrackValue {
@@ -121,6 +147,26 @@ function load(name: string): Loaded {
   return entry;
 }
 
+/** The index of the last entry at or before `frame` in `frames` (increasing), or 0 when the frame is before them all. */
+function heldIndex(frames: { frame: number }[], frame: number): number {
+  let lo = 0;
+  let hi = frames.length - 1;
+  if (frame < frames[0]!.frame) hi = 0;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (frames[mid]!.frame <= frame) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/** The composition frame's clip frame: `floor(frame * clip fps / fps)`, the picture a `<Video>` from frame 0 shows. */
+function clipFrameNow(file: string): number {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  return Math.floor((frame * load(file).file.clip.fps) / fps + 1e-9);
+}
+
 /**
  * The value of track `trackName` (default: the first) of the file at clip frame `clipFrame`; `useTrack` is this at the
  * current frame. Pure: the same file and frame give the same value.
@@ -140,14 +186,7 @@ export function trackAt(file: string, clipFrame: number, trackName?: string): Tr
   const { frames } = prepared;
   if (frames.length === 0) throw new Error(`useTrack(): track ${JSON.stringify(track.name)} of ${file} has no markers`);
   // The last marker at or before the frame, or the first.
-  let lo = 0;
-  let hi = frames.length - 1;
-  if (clipFrame < frames[0]!.frame) hi = 0;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (frames[mid]!.frame <= clipFrame) lo = mid;
-    else hi = mid - 1;
-  }
+  const lo = heldIndex(frames, clipFrame);
   const m = frames[lo]!;
   return {
     x: m.center[0],
@@ -166,9 +205,35 @@ export function trackAt(file: string, clipFrame: number, trackName?: string): Tr
  * sequence; a clip at another frame rate is mapped by time.
  */
 export function useTrack(file: string, trackName?: string): TrackValue {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const clipFps = load(file).file.clip.fps;
-  const clipFrame = Math.floor((frame * clipFps) / fps + 1e-9);
-  return trackAt(file, clipFrame, trackName);
+  return trackAt(file, clipFrameNow(file), trackName);
+}
+
+/**
+ * Plane track `planeName` (default: the first) of the file at clip frame `clipFrame`: its corners there, or the last
+ * ones before it (a plane holds after its last frame), or the first ones before its first. `usePlaneTrack` is this at
+ * the current frame. Pure.
+ */
+export function planeAt(file: string, clipFrame: number, planeName?: string): PlaneTrackValue {
+  const entry = load(file);
+  const planes = entry.file.planes ?? [];
+  const plane = planeName === undefined ? planes[0] : planes.find((p) => p.name === planeName);
+  if (!plane) {
+    const names = planes.map((p) => JSON.stringify(p.name)).join(', ') || 'none';
+    throw new Error(
+      `usePlaneTrack(): ${file} has no plane track ${planeName === undefined ? '' : JSON.stringify(planeName) + ' '}(planes: ${names}). Make one with \`kinetograph track <video> --point ... --plane all\`.`,
+    );
+  }
+  if (plane.frames.length === 0) throw new Error(`usePlaneTrack(): plane ${JSON.stringify(plane.name)} of ${file} has no frames`);
+  const m = plane.frames[heldIndex(plane.frames, clipFrame)]!;
+  const [topLeft, topRight, bottomRight, bottomLeft] = m.corners;
+  return { corners: m.corners, pin: { topLeft, topRight, bottomRight, bottomLeft }, frame: m.frame, tracked: m.frame === clipFrame };
+}
+
+/**
+ * A plane track's corners at the current frame, from a `.track.json` with planes (`kinetograph track --plane`).
+ * `cornerPin(usePlaneTrack(file).pin)` on a layer whose box starts at the video's top-left corner, in the video's
+ * pixels, pins it to the plane. Frames are matched as `useTrack` matches them.
+ */
+export function usePlaneTrack(file: string, planeName?: string): PlaneTrackValue {
+  return planeAt(file, clipFrameNow(file), planeName);
 }
