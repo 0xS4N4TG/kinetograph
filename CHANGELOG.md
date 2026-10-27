@@ -3,6 +3,16 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Added
+
+- CSS Motion Path: `offset-path` (`path()`, `circle()`, `ellipse()`, `inset()`, `polygon()` and `ray()`), `offset-distance` (lengths and percentages of the path; a closed path wraps, an open one stops at its end), `offset-rotate` (`auto`, `reverse`, angles), `offset-anchor` and `offset-position` now move and turn the element, so GSAP tweens of `offsetDistance` animate. The offset transform sits between `translate`/`rotate`/`scale` and `transform`. Not followed, and reported: `url()` paths, `shape()` and a lone `<coord-box>`; rounded `inset()` corners and `ray(... contain)` are approximated.
+
+### Fixed
+
+- `white-space: nowrap` keeps inline-blocks on one line when no text comes before them (a row of `inline-block` tiles in an absolutely positioned box without a width used to wrap). Parley took the wrap mode from the last text only; it is now vendored (`vendor/parley`) and starts from the container's.
+
 ## 0.2.0 (2026-10-27)
 
 ### Added
