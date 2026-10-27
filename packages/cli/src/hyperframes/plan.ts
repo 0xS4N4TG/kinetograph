@@ -584,6 +584,21 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   const height = positiveInt(attr('data-height')) ?? viewport.height ?? 1080;
   const duration = attr('data-duration');
   const durationSeconds = duration !== null && Number.isFinite(Number(duration)) && Number(duration) > 0 ? Number(duration) : null;
+  // A page without the root attributes is drawn at 1920x1080 for as long as its timelines run (1 s with none): say so.
+  const absent = [
+    ...(composition === null ? ['data-composition-id'] : []),
+    ...(positiveInt(attr('data-width')) === null && viewport.width === undefined ? ['data-width'] : []),
+    ...(positiveInt(attr('data-height')) === null && viewport.height === undefined ? ['data-height'] : []),
+    ...(composition === null ? ['data-duration'] : []),
+  ];
+  if (absent.length > 0) {
+    builder.note(
+      `the root element lacks ${absent.join(', ')}, so the page is drawn at ${width}x${height}` +
+        `${durationSeconds === null ? ' for as long as its timelines run (1 second with none)' : ''}: ` +
+        `write it as <div id="root" data-composition-id="main" data-width="1920" data-height="1080" data-duration="10"> ` +
+        '(size in pixels, duration in seconds, 30 fps)',
+    );
+  }
 
   const attrsOf = (el: PElement | undefined): [string, string][] => (el ? el.attrs.map((a): [string, string] => [a.name, a.value]) : []);
   const mediaDurations: Record<string, number> = {};
