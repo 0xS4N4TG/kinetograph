@@ -3,6 +3,18 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Added
+
+- A plain HTML page whose root element lacks `data-composition-id`, `data-width`, `data-height` or `data-duration` now gets a warning from `doctor`, `render` and `still` that names what is missing and shows the one-line fix (`--strict` fails on it, as on other unsupported content).
+- `doctor`, `render` and `still` report the errors a page's own scripts raise and survive: `console.error` calls, uncaught exceptions and unhandled promise rejections, once per message per frame, with the frames they were seen on. A library that catches its own failure (Mermaid) no longer passes as clean. `--strict` fails on them.
+- A constructable `CSSStyleSheet` (`insertRule`, `replaceSync`, `cssRules`, `rule.style`), as scripts that build CSS text use it.
+
+### Fixed
+
+- `document.querySelector('body')`, `querySelectorAll('html')` and `getElementsByTagName('body')` find `html`, `head` and `body` themselves; they returned nothing, which broke `d3.select('body')`.
+
 ## 0.2.0 (2026-10-27)
 
 ### Added

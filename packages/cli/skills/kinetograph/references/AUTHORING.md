@@ -1395,7 +1395,7 @@ Libraries that need no plugin, only frame-pure use (details and snippets in `/do
 `d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()`, Paper.js (clear and redraw each
 frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
 Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` falls back to a proportional face, so
-load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws): render the diagram to
+load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws; `doctor` shows the error): render the diagram to
 SVG ahead of time and use it as an `<Img>`. Load a font before Chart.js or Recharts measure text.
 
 ### 11.11 HyperFrames projects
