@@ -109,16 +109,16 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### GSAP
 
-- GSAP's root clock follows the frame, so a `gsap.to` that plays by itself advances ([GSAP](/docs/compat/#gsap)). A jump to a later frame (a still, a worker starting at frame 600) renders the frames it skips, without reading them, so the effects that make tweens at an intermediate frame run there. That costs one React render per skipped frame in a project that imports `gsap`, also when it only seeks paused timelines.
-- Motion-blur sub-frames do not move GSAP's clock: a tween that plays by itself is at the frame's own state in every sub-frame. A paused timeline you seek yourself is blurred as usual.
+- GSAP's root clock follows the frame, so a `gsap.to` that plays by itself advances ([GSAP](/docs/compat/#gsap)). A jump to a later frame (a still, a worker starting at frame 600) renders the frames it skips, without drawing or reading them, so that an effect which makes a tween at an intermediate frame runs there. This can't be skipped without changing the frame: an effect that starts a tween at frame 30 has to run at frame 30. It costs one React render per skipped frame in a project that imports `gsap`, also when it only seeks paused timelines. Measured: about 0.1 ms per skipped frame for a 48-element composition (a still at frame 899 takes 100 ms more than one at frame 0), and 0.36 ms for the HyperFrames test page.
+- Motion-blur sub-frames show a tween that plays by itself at the sub-frame's time, and run its `onUpdate`. They do not run `onStart`, `onComplete`, `onRepeat` or a timeline's `call()`: what those do would outlive the sample. A tween that starts later than the frame is not sampled in the frame's later sub-frames.
 - `ScrollTrigger` and `Draggable` respond to scrolling and dragging, which a render does not have, so they do not apply. `Flip` works.
-- An SVG shape's `getBoundingClientRect` is worked out from its `getBBox`, its transforms and the `<svg>`'s `viewBox`, not from layout. Strokes and filters are not in it.
 - More in [GSAP](/docs/compat/#gsap).
 
 ### Libraries
 
 - A rendered frame is only as frame-pure as the library: Motion's `animate()` that plays by itself is (see [Libraries](/docs/compat/#libraries-that-run-their-own-frame-loop)), but one that reads the wall clock or a real `Date` outside the virtual one is not.
-- Motion picks the Web Animations API when `element.animate` exists. The engine's `animate()` throws, so Motion falls back to its own JavaScript animation, whose colour mixing differs slightly from the browser's.
+- The Web Animations API (`element.animate()`, which Motion uses) does not draw an animation of a pseudo-element (`pseudoElement: '::before'`); it warns once. An animation that a later one covers completely is not removed by itself (`replaceState` stays `active`), so `getAnimations()` keeps listing it until it is cancelled. Two transform lists whose functions don't pair up mix through their 2D matrices; a 3D function there is not mixed and jumps at half way.
+- Motion components that mount in the middle of a video (in a `<Sequence>`) start their animation at the frame they mount on. A still or a render worker that starts after that frame mounts them at its own first frame, so the animation starts there. Mount them at frame 0, or drive them from the frame with `@kinetographdev/motion`.
 - Chart.js, Recharts and the rest measure text only with the fonts you registered. With none, text is measured and drawn in the built-in font.
 
 ### `@remotion/skia` and `@shopify/react-native-skia`

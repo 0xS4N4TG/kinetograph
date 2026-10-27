@@ -1384,9 +1384,11 @@ interface DatamoshOptions {
 GSAP (core and the free plugins, `Flip` too) runs on the page's HTML and SVG. Build a paused timeline in a layout
 effect and `seek(frame / fps)` it in a second one. A tween that plays by itself (`gsap.to` in a `useEffect`) works
 as well: GSAP's root clock is moved with the frame, and a jump to a later frame renders the frames it skips so a
-tween an effect makes at frame 30 starts there. Stop such a tween in the effect's cleanup. `ScrollTrigger` and
-`Draggable` need scrolling and dragging, which a render does not have. What works and the gaps are on the site at
-`/docs/compat/#gsap`.
+tween an effect makes at frame 30 starts there (about 0.1 ms per skipped frame). Stop such a tween in the effect's
+cleanup. Such a tween is warned about once: Remotion's and HyperFrames' own renderers do not move GSAP's root clock
+with the frame, so it renders differently there. Motion-blur sub-frames sample it at their own time (`onUpdate` runs,
+`onComplete` and the other callbacks do not). `ScrollTrigger` and `Draggable` need scrolling and dragging, which a
+render does not have. What works and the gaps are on the site at `/docs/compat/#gsap`.
 
 ### 11.10 Animation libraries and their plugins
 
@@ -1403,7 +1405,8 @@ library to `frame / fps`; the library stays a peer dependency (`npm install @kin
 
 Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/libraries/`, status in
 `/docs/compat/#libraries`): Recharts (`isAnimationActive={false}`, fixed `width`/`height`), d3 scales and shapes and
-`d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()`, Paper.js (clear and redraw each
+`d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()` (on the Web Animations API,
+which runs on the frame clock: `element.animate()`, `KeyframeEffect`, `Animation`, `getAnimations()`), Paper.js (clear and redraw each
 frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
 Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` is the bundled JetBrains Mono unless you
 load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws with its default HTML labels (a `<foreignObject>` of `<div>`s: flowchart,
