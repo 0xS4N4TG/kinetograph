@@ -419,7 +419,9 @@ default `source-over`), `shadow` and `filter` (below).
 - **`source`** is `{ "kind": "src", "src" }` (an image file of the scene, loaded like an image layer's, so it is
   among the files the renderer holds), `{ "kind": "pixels", "width", "height", "data" }` (straight-alpha RGBA8 in
   base64: an `ImageData`), or `{ "kind": "canvas", "width", "height", "commands" }` (another canvas, drawn as a
-  whole: its commands are drawn into a layer that takes the `globalAlpha` and blend). A pattern takes the first two.
+  whole: its commands are drawn into a layer that takes the `globalAlpha` and blend). A pattern takes any of them (and
+  a canvas pass's `layer`): a canvas or a layer is recorded once as the tile and repeated by a picture shader, so a
+  pattern covers any number of tiles, in a fill, a stroke or text alike.
 - **`blend`** is any `globalCompositeOperation`: `source-over`, `source-in`, `source-out`, `source-atop`,
   `destination-over`, `destination-in`, `destination-out`, `destination-atop`, `lighter`, `copy`, `xor`, `multiply`,
   `screen`, `overlay`, `darken`, `lighten`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`,
@@ -444,21 +446,24 @@ default `source-over`), `shadow` and `filter` (below).
 - **`filter`** is a list of functions, run in order over the command's drawing before its shadow is cast and before it
   is composited: `{ "type": "blur", "radius" }` (the deviation, pixels), `brightness`, `contrast`, `grayscale`,
   `invert`, `saturate`, `sepia` (each `{ "type", "amount" }`, 1 or 0 for no change as CSS has it),
-  `{ "type": "hueRotate", "angle" }` (degrees) and `{ "type": "dropShadow", "x", "y", "blur", "color" }` (`blur` the
-  deviation: half the CSS length). They are the passes of the effects of the same names (`blur`, the colour filters,
-  `dropShadow`; colour filters in a row make one pass), and take lengths in the canvas's pixels like the shadow's.
-  `opacity()` is not among them: the context multiplies it into the command's `a`. The context writes the
-  functions of `filter` strings (`blur(4px)`, `brightness(150%)`, `hue-rotate(0.5turn)`, `drop-shadow(2px 2px 4px red)`,
-  lists, `none`); a value that is no filter list is ignored, as a browser ignores it, and a `url()` reference is a
-  valid value that is not drawn: the context writes it as `unsupportedFilter` on the command (the rest of the list is
-  drawn) and the host reports it as unsupported (`<Canvas>`: the tree's `unsupported`; a `<canvas>` in a DOM island:
-  the painter's), so `--strict` fails on it.
+  `{ "type": "hueRotate", "angle" }` (degrees), `{ "type": "dropShadow", "x", "y", "blur", "color" }` (`blur` the
+  deviation: half the CSS length) and `{ "type": "graph", "graph" }` (an SVG `<filter>`: the fields of the
+  [`filterGraph`](#filtergraph) effect, its `objectBoundingBox` units and default region over the canvas's box, as
+  Chrome applies a `url()` filter on a canvas). They are the passes of the effects of the same names (`blur`, the
+  colour filters, `dropShadow`; colour filters in a row make one pass), and take lengths in the canvas's pixels like
+  the shadow's. `opacity()` is not among them: the context multiplies it into the command's `a`. The context writes
+  the functions of `filter` strings (`blur(4px)`, `brightness(150%)`, `hue-rotate(0.5turn)`, `drop-shadow(2px 2px 4px
+  red)`, `url(#id)`, lists, `none`); a value that is no filter list is ignored, as a browser ignores it. A `url()` is
+  written as `{ "type": "url", "url" }` in its place: the painter of a DOM island turns one that names a `<filter>` of
+  the page into its `graph`; one that names nothing, or is on a `<Canvas>` (which has no page), is drawn without (the
+  rest of the list is drawn) and reported as unsupported, so `--strict` fails on it.
 - A command with a shadow or a filter is drawn by Skia as a layer with image filters (a blur, a colour filter, a drop
   shadow) at the place the command stands in the list, with its alpha, blend mode and clip. A command's shadow and
   filtered drawing reach no further than the scene's padded canvas (`margin`, which a canvas does not count), and the
   canvas's own box cuts them.
-- **Not drawn.** `imageSmoothingQuality` above the default, `fontKerning`, `textRendering`, `fontStretch` and hit
-  testing (`isPointInPath`) are not part of a layer; the context accepts the assignments and draws nothing for them.
+- **Not drawn.** `imageSmoothingQuality` above the default, `fontKerning`, `textRendering` and `fontStretch` are not
+  part of a layer; the context accepts the assignments and draws nothing for them. Hit testing (`isPointInPath`,
+  `isPointInStroke`) is answered by the context, not drawn.
 - The pictures a canvas draws from files (`kind: "src"`) are read when a renderer is built from the scene, as an image
   layer's are. A bad path or block of pixels is an error naming the layer when the scene loads.
 - Rendering is a pure function of the commands, the fonts and the files they name.
@@ -490,9 +495,10 @@ Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fra
 | `width`, `height` | required | Animatable, not negative. The drawing buffer's size in pixels (rounded). |
 | `programs` | `{}` | By id: `vertex` and `fragment` (GLSL ES 100, or 300 es with `#version 300 es`) and the `attributes` (name to location) the link gave the vertex shader. |
 | `buffers` | `{}` | By id: base64 bytes. |
-| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL) or `pixels` (base64 straight-alpha RGBA8 with `width` and `height`), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded) and `mipmaps` (`generateMipmap` was called). `target: true` with `width` and `height` and no pixels is a framebuffer's texture (below). |
-| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a, and `depth`: the value the depth buffer is cleared to; either or both) of the drawing buffer that takes the colour throws away every draw to the drawing buffer before it (unless a `blit` reads the drawing buffer in between, or the draws tested depth and the clear leaves the depth buffer). A `draw` runs one program. Both take an optional `target`, the id of a target texture to go to instead of the drawing buffer. A `blit` (`blitFramebuffer`) copies `from` `[x0, y0, x1, y1]` of `src` (a target texture, or the drawing buffer without one) over `to` of `target` (same), `linear` for `LINEAR`, with the `scissor` if the test was on; reversed corners mirror. An `upload` (`texSubImage2D`) writes `pixels` (base64 straight-alpha RGBA8, `width` x `height`, `flipY` and `premultiply` as the unpack flags were) at `x`, `y` of a target texture, in order with the draws. |
+| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL), `pixels` (base64 straight-alpha RGBA8 with `width` and `height`) or `layer` (a shader group's child), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded), `mipmaps` (`generateMipmap` was called) and `patches` (`texSubImage2D` since: each `x`, `y`, `width`, `height`, one of `src`, `pixels` or `layer`, and its own `flipY` and `premultiply`, laid over the picture in order). `target: true` with `width` and `height` and no pixels is a render target (below): `format` `depth`, `stencil` or `depthStencil` for a depth or stencil buffer (colour without), `levels` for a colour one with mip levels, `luminance` for a WebGL 1 depth texture. |
+| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a; `depth`: the value the depth buffer is cleared to; `stencil`: the stencil's; any of them) of the drawing buffer that takes the colour throws away every draw to the drawing buffer before it (unless a `blit` reads the drawing buffer in between, or the draws tested depth or stencil and the clear leaves that buffer). A `draw` runs one program. Both say where they go: nothing for the drawing buffer; for a framebuffer `target` (the colour attachment of output 0, at `level`), or `outputs` (the attachments of outputs 0 and up, `{ "target", "level" }` or `null` for `NONE`), and `depthStencil` (the target that is its depth or stencil buffer, which the ops that test or clear depth and stencil name). A `blit` (`blitFramebuffer`) copies `from` `[x0, y0, x1, y1]` of `src` (a target at `srcLevel`, or the drawing buffer without one) over `to` of `target` (same, at `level`), `linear` for `LINEAR`, with the `scissor` if the test was on; reversed corners mirror. With `aspect` (`depth`, `stencil` or `depthStencil`) it copies those buffers instead, texel for texel, and `src` and `target` name depth and stencil targets (the drawing buffer's without one). An `upload` (`texSubImage2D`) writes `pixels` (base64 straight-alpha RGBA8, `width` x `height`), a picture file `src` or a child `layer` (`flipY` and `premultiply` as the unpack flags were) at `x`, `y` of a target, in order with the draws. |
 | `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
+| `depth`, `stencil` | `true`, `false` | The context's attributes of those names: whether the drawing buffer has a depth buffer and a stencil buffer. |
 
 A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `triangleFan`), `first` and `count`,
 `instances` (default 1), `indices`
@@ -503,8 +509,10 @@ attribute that advances for each instance), `uniforms` by name
 `units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
 to, as the GL names), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
 equations and colour), `colorMask`, `cull`, `depth` (the depth test: `func`, the GL name of `depthFunc`; `mask`;
-`near` and `far` of `depthRange`; absent when the test was off or the buffer has no depth) and `polygonOffset`
-(`factor`, `units`; only with `depth`).
+`near` and `far` of `depthRange`; absent when the test was off or the buffer has no depth), `polygonOffset`
+(`factor`, `units`; only with `depth`) and `stencil` (the stencil test: `ref`, `valueMask`, `writeMask`, and for the
+`front` and `back` faces `func` and the `fail`, `zfail` and `zpass` operations by their GL names; absent when the test
+was off or the buffer has no stencil). Each unit's sampler also has `maxLevel` when `TEXTURE_MAX_LEVEL` was set.
 
 How it is drawn:
 
@@ -514,38 +522,53 @@ How it is drawn:
   wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
   uniforms travel packed (naga and Metal lay them out differently). A shader naga cannot read fails when the scene
   loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`).
-- A draw with `depth` is tested against a 32-bit float depth buffer that belongs to the target it draws into (the drawing
-  buffer, or a target texture), 1 until cleared and not carried from one frame to the next. Window depth is clip
-  depth taken from -w..w to 0..1 and then through `near` and `far`; `polygonOffset` moves it by `factor` times the
-  slope plus `units` steps of the buffer. A draw without `depth` neither tests nor writes. `NEVER`, `LESS`, `EQUAL`,
-  `LEQUAL`, `GREATER`, `NOTEQUAL`, `GEQUAL` and `ALWAYS` are all drawn. A draw with `depth` and one without go in
-  separate render passes, which share the depth buffer.
+- A draw with `depth` is tested against a 32-bit float depth buffer: the drawing buffer's, or the `depthStencil` target
+  its framebuffer names (shared by every framebuffer that attaches it), 1 until cleared and not carried from one frame
+  to the next. Window depth is clip depth taken from -w..w to 0..1 and then through `near` and `far`; `polygonOffset`
+  moves it by `factor` times the slope plus `units` steps of the buffer. A draw without `depth` neither tests nor
+  writes. `NEVER`, `LESS`, `EQUAL`, `LEQUAL`, `GREATER`, `NOTEQUAL`, `GEQUAL` and `ALWAYS` are all drawn. A draw with
+  `stencil` is tested against an 8-bit stencil buffer (0 until cleared) the same way, with every function and
+  operation; wgpu takes one reference and one pair of masks for both faces, which is what WebGL allows. A draw that
+  uses neither buffer and one that uses them go in separate render passes, which share the buffers.
+- A draw's fragment shader writes output `i` (`layout(location = i) out`, or `gl_FragColor` as output 0) to the
+  colour attachment `outputs` gives it; one with no attachment is dropped, and an attachment the shader does not write
+  keeps what it had. Up to 8 outputs (`MAX_DRAW_BUFFERS`). Every attachment of a pass is one size.
+- A depth target a draw samples is read as its depth in the red channel, `(d, 0, 0, 1)` as WebGL 2 reads it
+  (`(d, d, d, 1)` for a WebGL 1 depth texture, `luminance`), texel for texel (`NEAREST`): it is copied into a float
+  texture before the pass that samples it.
 - Drawing is into an 8-bit RGBA buffer, blended in it as GL does (on sRGB-encoded values, with the factors and the
   colour mask), not in linear light. The buffer is then placed under the layer's transform and converted to linear
   light like a picture is. The first frame costs the compile of each program; every later frame reuses the pipeline.
 - A texture whose minification filter reads mipmaps it does not have (WebGL's default filter, without
   `generateMipmap`) is incomplete and samples as opaque black, as in a browser.
-- A texture with `target: true` is what a framebuffer draws into (`width` x `height`, 1 to 8192 each way, RGBA8, 512
-  MiB for all of a layer's targets). The ops run in order, one render pass for each run of ops to the same target, so a
-  draw samples a target as the earlier ops left it, and a target nothing was drawn to is transparent black. A target
-  is not carried from one frame to the next. Its first row is GL's bottom one (so the viewport and scissor of a draw
-  into it, `gl_FragCoord` and the winding of a face are GL's, and sampling it needs no flip). A draw's `viewport` must
-  lie inside its target. A draw that samples its own target is an error (WebGL gives `INVALID_OPERATION`), and so is
-  a `target` that is not a target texture.
+- A texture with `target: true` is what a framebuffer draws into (`width` x `height`, 1 to 8192 each way, RGBA8 or a
+  depth and stencil format, 512 MiB for all of a layer's targets). The ops run in order, one render pass for each run
+  of ops to the same attachments, so a draw samples a target as the earlier ops left it, and a colour target nothing
+  was drawn to is transparent black. A target is not carried from one frame to the next. Its first row is GL's bottom
+  one (so the viewport and scissor of a draw into it, `gl_FragCoord` and the winding of a face are GL's, and sampling
+  it needs no flip). A colour target with `levels` is drawn into at an op's `level` (that level's size) and sampled
+  with its levels, which are complete when they reach 1 x 1 or the sampler's `maxLevel`. A draw's `viewport` must lie
+  inside its target. A draw that samples a target it draws into is an error (WebGL gives `INVALID_OPERATION`), and so
+  is a `target` that is not a target texture.
+- A depth and stencil `blit` writes the source's depth with a draw that sets the fragment's depth, and its stencil a
+  bit at a time (a fragment shader cannot write stencil): a draw zeroes it, then one for each of the 8 bits sets the
+  bit where the source has it.
 - Rendering is a pure function of the recording and the files it names; nothing reads a clock.
 
-Points (`mode: "points"`): each is a square of `gl_PointSize` pixels (1 to 511, the `ALIASED_POINT_SIZE_RANGE`)
-centred on the vertex, with `gl_PointCoord` (y down) in the fragment shader; a point whose centre is outside the clip
+Points (`mode: "points"`): each is a square of `gl_PointSize` pixels (1 to 511, the `ALIASED_POINT_SIZE_RANGE`,
+which is also what Chrome reports on Apple silicon, ANGLE on Metal) centred on the vertex, with `gl_PointCoord` (y down) in the fragment shader; a point whose centre is outside the clip
 volume is not drawn, and culling does not apply. `gl_VertexID` is the vertex's number (counting from `first`), and the
 point's number in a draw of points; `gl_InstanceID` the instance's. Instanced points are not drawn.
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
-colour and stencil renderbuffers, depth and stencil textures as attachments, the stencil test, `readPixels`, lines, instanced points, a
-`vertexAttribDivisor` above 1, integer and constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures,
-texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, several colour outputs (so
-one colour attachment), a framebuffer texture that is not RGBA or holds uploaded pixels, a texture read in the vertex
-shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
-`antialias: true` smooths them); a full-screen quad has none. The shaders' maths is the GPU's: a `sin` of a large
+multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer and
+constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures, pixels uploaded to
+texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, array outputs, a framebuffer
+texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, a texture read in
+the vertex shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
+`antialias: true` smooths them); a full-screen quad has none. The context keeps the rules a multisampled canvas has in
+Chrome, though: with `antialias`, `blitFramebuffer` into the canvas, or out of it into a rectangle of another size,
+sets `INVALID_OPERATION`. The shaders' maths is the GPU's: a `sin` of a large
 argument can differ from Chrome's last digits.
 
 ### Shader groups
@@ -609,7 +632,7 @@ pass, no `layout`, and is not `preserve3d`. A `layer` source outside such a grou
 
 The group is drawn by the wgpu path (Skia counts it as a fallback, "canvas group"): the children are drawn as layers,
 and Skia draws the canvas's commands with each child's texture as the image of its `layer` source (shadows and filters
-included). A pattern made from a `layer` source is not drawn (reported). `getImageData` of a layer picture is not available to a script.
+included). A pattern of a `layer` source repeats the child's picture as a pattern of any canvas does. `getImageData` of a layer picture is not available to a script.
 
 ### scene3d
 

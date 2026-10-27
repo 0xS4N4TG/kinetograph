@@ -655,9 +655,14 @@ group that carries the clip. A canvas nothing was drawn on draws nothing and is 
 `crates/dom/tests/canvas.rs` are Canvas 2D scripts (`tests/canvas/*.js`) that Chrome runs and the engine draws from
 the recorded commands (`node crates/dom/tools/canvas-cases.mjs` makes the `.json` files): paths 0.35, gradients, a
 clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4, shadows (soft, hard, under a
-transform and an alpha) and each `filter` function 0.80 mean levels from Chrome. A command that carries a `url()`
-filter (`unsupportedFilter`, which the context writes because the renderer does not draw it) is reported as an
-unsupported `filter` of the canvas, also when it is inside a canvas the first draws.
+transform and an alpha) and each `filter` function 0.80, patterns of a canvas (16,000 tiles, a stroke, text) 3.3
+(text in Chrome's fallback font, as in the paint case) and `url()` filters 1.4 mean levels from Chrome. A pattern of a
+canvas, or of a canvas pass's child, is one recorded tile (`PictureRecorder`) that a Skia picture shader repeats, so the
+tile count does not matter. A `url()` filter is written by the context in its place in the list (`{ type: "url" }`);
+`replaced.rs` looks the id up with the SVG painter's `filter_graph` (the `<filter>` anywhere in the document, the canvas's
+box as the box its fractions are of) and puts the graph in (`{ type: "graph" }`), also inside the canvases a command
+draws or repeats; one that names nothing stays, is reported as an unsupported `filter` of the canvas, and is drawn
+without. The Skia canvas path runs a graph with `filter_graph` like a layer's, in order with the other functions.
 
 A canvas with a WebGL context is the same with `data-kg-webgl` and a `glsl` layer (SCENE.md, "glsl"). The core
 translates each program once (`crates/core/src/glsl.rs`: a token-level rewrite of GLSL ES 100 and 300 es to the Vulkan
@@ -667,14 +672,33 @@ not keep the uniform array strides), and `compositor/glsl.rs` replays the draws 
 uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
 travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
 from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
-A framebuffer's texture is a second kind of target: the replay makes one render pass for each run of draws to the same
-target, in the order recorded. GL's rows count up from the bottom and a texture's first row is its bottom one, so a
-program that draws into a texture is translated upside down (`flip_y`: the vertex shader negates `gl_Position.y`,
-`gl_FragCoord.y` is wgpu's own) with the viewport, scissor and front face turned to match, and sampling needs
-nothing. A frame starts every target zeroed (wgpu's lazy clear), so a target is a function of the frame's own ops.
-`crates/dom/tests/webgl.rs` runs four cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
-them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0, texture sampling 0.05 and two
-render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off.
+What a framebuffer draws into is a second kind of target: colour (Rgba8, with mip levels when the texture has storage
+for them; a colour renderbuffer is one too) or a depth, stencil or depth-and-stencil buffer (`Depth32Float`,
+`Stencil8`, `Depth24PlusStencil8`, which is 32-bit float depth with 8 bits of stencil on Apple GPUs). An op names its
+colour attachment for each fragment output and its depth-and-stencil target (`GlslDest`), and the replay makes one
+render pass for each run of ops to the same attachments, in the order recorded; a pass has the depth-and-stencil
+attachment when an op in it tests or clears depth or stencil, and the pipeline's targets follow the pass's
+attachments (an output with no attachment is dropped by wgpu, an attachment the shader does not write gets an empty
+write mask). wgpu takes one stencil reference and one pair of masks for both faces, which is exactly what WebGL
+allows (it refuses a draw whose faces differ). GL's rows count up from the bottom and a texture's first row is its
+bottom one, so a program that draws into a framebuffer is translated upside down (`flip_y`: the vertex shader negates
+`gl_Position.y`, `gl_FragCoord.y` is wgpu's own) with the viewport, scissor and front face turned to match, and
+sampling needs nothing. A frame starts every colour target zeroed (wgpu's lazy clear) and every depth target at 1 and
+stencil 0 (a clear pass before the others, what Chrome's new depth textures and renderbuffers hold, measured), so a
+target is a function of the frame's own ops. A depth texture a draw samples is copied first into an `R32Float`
+texture (`shaders/glsl_depth_colour.wgsl`) so it reads `(d, 0, 0, 1)` as WebGL 2 does in Chrome (Metal would give
+`(d, d, d, 1)` from the depth texture itself), or into an `Rgba32Float` one as `(d, d, d, 1)` for WebGL 1's
+`WEBGL_depth_texture` (Chrome, measured); the copy is made before the pass and reused until something draws into the
+depth target again. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
+the stencil, which a fragment shader cannot write, by one draw that zeroes it and eight that each set one bit with a
+write mask of that bit, discarding where the source lacks it. `texSubImage2D` of a picture file is decoded and written
+like pixels; of a layer, a `copy_texture_to_texture` from the child's picture; over an uploaded texture, the texture
+carries `patches` that are laid over its picture (on the CPU, or on the GPU when a layer is among them).
+`crates/dom/tests/webgl.rs` runs eight cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
+them, with the context attributes of a case's second line) in Chrome for Testing on SwiftShader and natively:
+gradient 0.004, noise 0.0, texture sampling 0.05, two render-to-texture passes 0.002, several outputs 0.52, a depth
+texture 0.06, renderbuffers with a colour, depth and stencil blit and a level 1 target 0.60, none more than 1 level
+off, and the stencil test 0.85 (five edge pixels of the stars, where the two rasterisers round differently).
 Points, instancing and the copies between buffers are made of the same pieces (`tests/glsl.rs` pins each). A point is
 one instance of a six-vertex quad: its attributes advance for each instance (indexed points gather them in the order
 of the list first), and the vertex shader's wrapper places the quad after `main` ran, `gl_PointSize` pixels across in

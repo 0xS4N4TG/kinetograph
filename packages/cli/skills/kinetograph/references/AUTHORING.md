@@ -474,15 +474,17 @@ The context and the globals around it:
 |---|---|
 | Paths | `beginPath`, `closePath`, `moveTo`, `lineTo`, `bezierCurveTo`, `quadraticCurveTo`, `arc`, `arcTo`, `ellipse`, `rect`, `roundRect`, `fill(rule)`, `stroke`, `clip(rule)`, `Path2D` (SVG path data, `addPath` with a matrix) as an argument to all three. Each point is taken through the transform in force when it was added, as the spec has it. |
 | Rectangles | `fillRect`, `strokeRect`, `clearRect` |
-| Styles | `fillStyle`, `strokeStyle` as CSS colours (named, hex, `rgb()`, `hsl()`; no `lab()`, `oklch()`, `color()`: such an assignment is ignored, as an invalid one is), `createLinearGradient`, `createRadialGradient`, `createConicGradient`, `createPattern` of an image or `ImageData`, `globalAlpha`, `globalCompositeOperation` (all 26 plus `clear` for `clearRect`), `lineWidth`, `lineCap`, `lineJoin`, `miterLimit`, `setLineDash`, `lineDashOffset`, `imageSmoothingEnabled` |
+| Styles | `fillStyle`, `strokeStyle` as CSS colours (named, hex, `rgb()`, `hsl()`; no `lab()`, `oklch()`, `color()`: such an assignment is ignored, as an invalid one is), `createLinearGradient`, `createRadialGradient`, `createConicGradient`, `createPattern` of an image, `ImageData` or another canvas (any number of tiles, in fills, strokes and text), `globalAlpha`, `globalCompositeOperation` (all 26 plus `clear` for `clearRect`), `lineWidth`, `lineCap`, `lineJoin`, `miterLimit`, `setLineDash`, `lineDashOffset`, `imageSmoothingEnabled` |
 | Transform | `scale`, `rotate`, `translate`, `transform`, `setTransform` (six numbers or a matrix), `resetTransform`, `getTransform`, `save`, `restore`, `reset` |
 | Text | `fillText`, `strokeText` (with `maxWidth`), `measureText` (width from the text engine; the other metrics from the line's ascent and descent), `font` (the shorthand: style, weight, size in `px`, `pt`, `em`, `%` or a keyword, a family list), `textAlign`, `textBaseline` |
 | Pictures | `drawImage` (three forms) of an `<img>`, `new Image()` (a project file or a `data:` URL), another canvas (`<canvas>`, `document.createElement('canvas')`, `OffscreenCanvas`: its commands, drawn as a whole) or `ImageData`; `createImageData`, `putImageData` (with a dirty rectangle), `getImageData` |
 | Elsewhere | `canvas.width`/`height` (setting either empties the canvas and resets the context), `toDataURL()` (always PNG), `toBlob`, `OffscreenCanvas`, `Path2D`, `ImageData`, `CanvasGradient`, `CanvasPattern`, `CanvasRenderingContext2D` as globals |
 
 Kept and drawn with nothing (reading back what was set works): `letterSpacing`, `wordSpacing`, `fontKerning`,
-`fontStretch`, `fontVariantCaps`, `textRendering`, `direction`, `imageSmoothingQuality`. `isPointInPath` and
-`isPointInStroke` return `false`.
+`fontStretch`, `fontVariantCaps`, `textRendering`, `direction`, `imageSmoothingQuality`. `isPointInPath` answers
+with the fill rule, and `isPointInStroke` with the line width, caps, joins, miter limit and dashes in the current
+transform, as Chrome does (checked against Chrome on every pixel of twelve cases: straight edges agree exactly, a
+curve's to a tenth of a pixel).
 
 Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `crates/dom/tests/canvas/canvas_effects.js`):
 
@@ -494,11 +496,12 @@ Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `cr
 - **`filter`.** `none`, or a list of `blur()`, `brightness()`, `contrast()`, `drop-shadow()`, `grayscale()`,
   `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`, with CSS's units (`px`, `pt`, `em` as 16 px,
   `%` or a number, `deg`, `rad`, `grad`, `turn`). It runs over each command's drawing before its shadow is cast. A value
-  that is not a filter list is ignored, and a `url()` reference is kept and reported as unsupported (the rest of the
-  list is drawn). `clearRect` and `putImageData` are not filtered, nor do they cast shadows.
+  that is not a filter list is ignored. A `url(#id)` naming an SVG `<filter>` of the page is drawn in its place in the
+  list, its `objectBoundingBox` units over the canvas's box, as in Chrome (`crates/dom/tests/canvas/canvas_url_filter.js`);
+  one that names nothing, or is on a `<Canvas>` component (no page to find it in), is reported as unsupported and the
+  rest of the list is drawn. `clearRect` and `putImageData` are not filtered, nor do they cast shadows.
 - A command with either costs GPU passes of its own (drawn alone, blurred, drawn again as a picture), so a canvas with
-  hundreds of shadowed shapes is slower than one without, and one frame may not make more than 50 million pixels of
-  such pictures per canvas layer (SCENE.md, "canvas"). `getContext('webgl')` and
+  hundreds of shadowed shapes is slower than one without. `getContext('webgl')` and
 `'webgl2'` return a recording WebGL context (§6.7); `'webgpu'` returns a recording WebGPU context (ENGINE.md, "WebGPU"), compute passes, storage buffers and storage textures included. A page whose compute passes build on what an earlier frame left is replayed from that history and reported; to make a frame the same alone, clear or rewrite what the kernels write at the start of the frame; another context type returns `null`.
 
 - **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family
@@ -575,34 +578,45 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   array, `texParameteri`, `generateMipmap`, `activeTexture`, `pixelStorei` (flip and premultiply), `viewport`,
   `scissor`, `enable` (`BLEND`, `CULL_FACE`, `SCISSOR_TEST`), `blendFunc` and the rest of blending, `colorMask`,
   `clearColor`, `clear`, `drawArrays` and `drawElements` of triangles and of points (`gl_PointSize` pixels, 1 to 511, with
-  `gl_PointCoord`), `gl_VertexID`, and in WebGL 2 `drawArraysInstanced`, `drawElementsInstanced`,
-  `vertexAttribDivisor(i, 1)` (`gl_InstanceID`) and `blitFramebuffer` of the colour between the canvas and a texture
-  drawn in (`NEAREST` or `LINEAR`, mirrored by reversed corners). `getShaderParameter(COMPILE_STATUS)` is true:
-  a shader naga cannot read fails when the scene loads, naming the line. `getExtension('OES_standard_derivatives')`
-  answers (derivatives always work); other extensions return `null`.
+  `gl_PointCoord`; 511 is also what Chrome reports on Apple silicon), `gl_VertexID`, and in WebGL 2
+  `drawArraysInstanced`, `drawElementsInstanced`, `vertexAttribDivisor(i, 1)` (`gl_InstanceID`), `clearBuffer*`, and
+  `blitFramebuffer` of colour, depth and stencil (colour `NEAREST` or `LINEAR`, mirrored by reversed corners; depth
+  and stencil texel for texel; with `antialias`, as in Chrome, nothing is blitted into the canvas and it is read only
+  into a rectangle of its own bounds). The stencil test is drawn: `enable(STENCIL_TEST)`, `stencilFunc`, `stencilOp`,
+  `stencilMask` and their `Separate` forms, `clearStencil`, on a canvas made with `stencil: true` and on a framebuffer
+  with a stencil buffer. `getShaderParameter(COMPILE_STATUS)` is true: a shader naga cannot read fails when the scene
+  loads, naming the line. `getExtension('OES_standard_derivatives')` and, in WebGL 1, `'WEBGL_depth_texture'` answer;
+  other extensions return `null`.
 - **Framebuffers** (multi-pass shaders: render to a texture, then sample it; ping-pong; blur passes):
   `createFramebuffer`, `bindFramebuffer` (`FRAMEBUFFER`, and in WebGL 2 `DRAW_FRAMEBUFFER` and `READ_FRAMEBUFFER`),
-  `framebufferTexture2D` of an RGBA, `UNSIGNED_BYTE` `TEXTURE_2D` to `COLOR_ATTACHMENT0`, `checkFramebufferStatus`,
-  `deleteFramebuffer`, `isFramebuffer`; binding `null` returns to the canvas. Draws, `clear` and `viewport` act on the
-  bound framebuffer's texture, in GL's orientation (its first row is the bottom one), and the texture can then be
-  sampled by later draws. Call `viewport` after binding a framebuffer, as GL needs. Allocate the texture with
-  `texImage2D(..., null)` (or `texStorage2D`); one that holds uploaded pixels, or is not RGBA, cannot be drawn into. A
-  framebuffer with no texture, or a texture not yet specified, is incomplete: `checkFramebufferStatus` says so and a
-  draw or clear sets `INVALID_FRAMEBUFFER_OPERATION`. A draw that samples the texture it draws into sets
-  `INVALID_OPERATION` and draws nothing. A render is a function of its own frame: every framebuffer texture starts a
-  frame transparent black, so a pass reading what an earlier frame left reads black. A texture drawn into cannot be
-  given `generateMipmap`; `texSubImage2D` of a canvas, `ImageData` or an array of pixels patches it in order with the
-  draws; sample it with `LINEAR` or `NEAREST` (a mipmapped minification filter
-  without levels is incomplete, and reads black).
+  `framebufferTexture2D` of an RGBA, `UNSIGNED_BYTE` `TEXTURE_2D` (any level with storage, in WebGL 2) to
+  `COLOR_ATTACHMENT0` and, in WebGL 2, `COLOR_ATTACHMENT1` to 7 with `drawBuffers` (fragment outputs at
+  `layout(location = n)`); a depth texture (`DEPTH_COMPONENT16/24/32F`, `DEPTH24_STENCIL8`, or `DEPTH_COMPONENT` with
+  `WEBGL_depth_texture`) to `DEPTH_ATTACHMENT` or `DEPTH_STENCIL_ATTACHMENT`, which later draws sample as its depth;
+  `renderbufferStorage` of colour (`RGBA4`, `RGB565`, `RGB5_A1`, `RGBA8`, each drawn as RGBA8), depth, `STENCIL_INDEX8`
+  or depth-and-stencil formats with `framebufferRenderbuffer`; `checkFramebufferStatus`, `readBuffer`,
+  `invalidateFramebuffer`, `deleteFramebuffer`, `isFramebuffer`; binding `null` returns to the canvas. Draws, `clear`
+  and `viewport` act on the bound framebuffer's attachments, in GL's orientation (a texture's first row is the bottom
+  one), and its textures can then be sampled by later draws. Call `viewport` after binding a framebuffer, as GL needs.
+  Allocate a texture with `texImage2D(..., null)` (or `texStorage2D`, with levels); one that holds uploaded pixels, or
+  is not RGBA, cannot be drawn into. A framebuffer with no attachment, or one not yet specified, is incomplete:
+  `checkFramebufferStatus` says so and a draw or clear sets `INVALID_FRAMEBUFFER_OPERATION`. A draw that samples a
+  texture attached to the framebuffer it draws into sets `INVALID_OPERATION` and draws nothing. A render is a function
+  of its own frame: every framebuffer texture starts a frame transparent black (a depth buffer at 1, a stencil buffer
+  at 0), so a pass reading what an earlier frame left reads black. A texture drawn into cannot be given
+  `generateMipmap`; `texSubImage2D` of a canvas, `ImageData`, an array of pixels, an image or a layer's picture patches
+  it in order with the draws (and lays a picture over a texture made from an image or a layer); sample it with
+  `LINEAR` or `NEAREST`, or set `TEXTURE_MAX_LEVEL` to the levels it has (a mipmapped minification filter without
+  complete levels is incomplete, and reads black).
 - The drawing buffer is emptied before every frame (a frame is a function of its own calls, so the frames can be made
   in any order), `preserveDrawingBuffer` or not, and a frame that draws nothing draws nothing. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  colour and stencil renderbuffers, depth and stencil textures as attachments, the stencil test, `readPixels`, lines, instanced points,
-  cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
+  multisampled renderbuffers, `readPixels`, lines, instanced points, cube and float textures, attachments of different
+  sizes in one framebuffer, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
   The depth test is drawn: `enable(DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and
   `polygonOffset` on the canvas (the `depth` attribute, true by default) and on a framebuffer with a depth
-  renderbuffer (`renderbufferStorage` with a depth format, `framebufferRenderbuffer`).
+  renderbuffer or depth texture; framebuffers that attach one depth buffer share it.
 
 ### 6.4 Audio clips
 
