@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { fitSize, formatDuration, formatTimecode, jobEta, jobPercent, parseTimecode, stepZoom } from '../src/lib/format';
 import { buildAgentMessage, relativePath, sequenceOf } from '../src/lib/agent-message';
 import { findLayer, hitTest, type InspectLayer } from '../src/lib/inspect';
-import { displayName, fullSource, secondLine, tooltip } from '../src/lib/names';
+import { displayName, fullSource, numberByParent, numberSiblings, numberTree, secondLine, tooltip } from '../src/lib/names';
 import { layerRows, sequenceRows } from '../src/lib/tree';
 import { inspectFor, intro, introTimeline, job, layer } from './fixtures';
 
@@ -208,6 +208,37 @@ describe('names', () => {
     expect(displayName({ id: 'bg', type: 'shape' })).toBe('bg');
     expect(displayName({ id: '$0.1.2', type: 'shape' })).toBe('Shape');
     expect(displayName({ id: '$3', type: 'scene3d' })).toBe('Scene3d');
+  });
+
+  it('numbers siblings that share a name, as editors do: Card, Card 2, Card 3', () => {
+    const siblings = numberSiblings([
+      { id: '$0', type: 'group', label: 'Card' },
+      { id: '$1', type: 'shape' },
+      { id: '$2', type: 'group', label: 'Card' },
+      { id: '$3', type: 'group', label: 'Card' },
+      { id: '$4', type: 'shape' },
+    ]);
+    expect(siblings.map(displayName)).toEqual(['Card', 'Shape', 'Card 2', 'Card 3', 'Shape 2']);
+    // Numbering again (after the project changed) drops numbers that are no longer needed.
+    expect(numberSiblings([siblings[2]!]).map(displayName)).toEqual(['Card']);
+  });
+
+  it('numbers within each parent only: a tree, and a flat list by parent and Sequence', () => {
+    type Node = { id: string; type: string; label?: string; children?: Node[] };
+    const tree = numberTree<Node>([
+      { id: 'a', type: 'group', label: 'Row', children: [{ id: '$a0', type: 'text', label: 'Cell' }, { id: '$a1', type: 'text', label: 'Cell' }] },
+      { id: 'b', type: 'group', label: 'Row', children: [{ id: '$b0', type: 'text', label: 'Cell' }] },
+    ]);
+    expect(tree.map(displayName)).toEqual(['Row', 'Row 2']);
+    expect(tree[0]!.children!.map(displayName)).toEqual(['Cell', 'Cell 2']);
+    expect(tree[1]!.children!.map(displayName)).toEqual(['Cell']);
+    const flat = numberByParent([
+      { id: '$0', type: 'shape', parent: null, sequence: 's1' },
+      { id: '$0', type: 'shape', parent: null, sequence: 's2' },
+      { id: '$1', type: 'shape', parent: null, sequence: 's1' },
+      { id: '$2', type: 'shape', parent: '$0', sequence: 's1' },
+    ]);
+    expect(flat.map(displayName)).toEqual(['Shape', 'Shape', 'Shape 2', 'Shape']);
   });
 
   it('writes the second line and the tooltip from the component and source', () => {

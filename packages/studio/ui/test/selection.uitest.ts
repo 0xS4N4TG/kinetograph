@@ -69,6 +69,8 @@ describe('names', () => {
     expect(layerName(scene[1]!.children![1]!)).toBe('Image logo.png');
     expect(layerName(scene[0]!)).toBe('bg');
     expect(layerName(scene[1]!)).toBe('Group');
+    expect(layerName({ ...scene[1]!, ordinal: 2 } as InspectLayer)).toBe('Group 2');
+    expect(layerName({ ...scene[1]!.children![0]!, label: 'Card', ordinal: 3 } as InspectLayer)).toBe('Card 3');
   });
 
   it('writes a chip with the frame and the source position when it is known', () => {

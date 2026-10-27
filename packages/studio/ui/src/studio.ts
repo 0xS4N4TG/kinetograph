@@ -19,6 +19,7 @@ import {
   type TimelineData,
 } from '@/api';
 import { findLayer } from '@/lib/inspect';
+import { numberByParent, numberTree } from '@/lib/names';
 import { Player, type PlayerState } from '@/lib/player';
 import { layerName, remapSelection } from '@/lib/selection';
 
@@ -290,7 +291,8 @@ export function useStudio(api: StudioApi): Studio {
         );
       }, TIMELINE_POLL_MS);
       api.timeline(comp.id, propsOverride).then(
-        (data) => !cancelled && setTimeline({ state: 'ready', data }),
+        // Same-name siblings are numbered ("Card 2") once, here, for every view that names them.
+        (data) => !cancelled && setTimeline({ state: 'ready', data: { ...data, layers: numberByParent(data.layers) } }),
         (error: unknown) => !cancelled && setTimeline({ state: 'error', error: toStudioError(error) }),
       );
     }, TIMELINE_DELAY_MS);
@@ -314,6 +316,7 @@ export function useStudio(api: StudioApi): Studio {
       api.inspect(comp.id, frame, propsOverride).then(
         (data) => {
           if (cancelled) return;
+          numberTree(data.layers);
           setInspect(data);
           // After a rebuild the ids may have moved: find the selected layers again by the names they had.
           if (rebuilt.current) {
