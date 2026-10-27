@@ -5,6 +5,7 @@
 
 import { attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
+import { srcsetCandidate } from '../request/build.js';
 import { isDomElement, isSvgTag } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
@@ -1132,12 +1133,12 @@ export class DomElement extends DomNodeBase {
   set poster(value: string) {
     this.reflect('poster', value);
   }
-  /** The URL that is drawn: `src`, else the `srcset` candidate (the first; there is no viewport density here but 1). */
+  /** The URL that is drawn: the `srcset` candidate a browser at device pixel ratio 1 takes, else `src`. */
   get currentSrc(): string {
     if (!REFLECTED.src!.has(this.host.type)) return undefined as never;
-    const src = this.getAttribute('src');
-    if (src !== null && src !== '') return src;
-    return /^\s*(\S+)/.exec(this.getAttribute('srcset') ?? '')?.[1]?.replace(/,$/, '') ?? '';
+    const src = this.getAttribute('src') ?? undefined;
+    const srcset = this.getAttribute('srcset');
+    return (srcset !== null ? srcsetCandidate(srcset, src) : null) ?? src ?? '';
   }
   /**
    * `href`: a string on an HTML `<a>`, `<area>`, `<link>`, `<base>`; an SVGAnimatedString on the SVG elements that link

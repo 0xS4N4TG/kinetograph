@@ -251,6 +251,7 @@ describe('IDL attributes a script assigns', () => {
       );
     }
     render(<Probe />).root.unmount();
+    // `src` is the 1x candidate when the srcset has none.
     expect(seen.img).toEqual(['a.png', 'b.png 2x', 'A', '40', 'a.png', 'A', 'a.png']);
     expect(seen.video).toEqual(['p.png', 'v.mp4', 'p.png']);
     expect(seen.link).toEqual(['https://x.test/', 'https://x.test/']);
