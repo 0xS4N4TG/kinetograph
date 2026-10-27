@@ -90,7 +90,7 @@ registerRoot(() => (
 // timeline seeked to the frame, the second tween placed at 1 s. Both start at the same instant, so they are the same frames.
 const AUTO = `
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { AbsoluteFill, Composition, registerRoot, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Composition, registerRoot, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
 import { gsap } from 'gsap';
 
 const boxes = (a: React.Ref<HTMLDivElement>, b: React.Ref<HTMLDivElement>) => (
@@ -134,11 +134,46 @@ const Seeked = () => {
   return boxes(a, b);
 };
 
+// Staggers, repeat/yoyo, a delayedCall that builds a timeline in its callback, an onComplete that starts a tween, and a
+// sequence that mounts at frame 20 and starts its tween there.
+const Busy = () => {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      gsap.from('.c', { y: 20, opacity: 0, duration: 0.4, stagger: { each: 0.05, from: 'center' }, ease: 'back.out(1.7)' });
+      gsap.to('.c:nth-child(2n)', { rotation: 90, backgroundColor: '#ffbe0b', duration: 0.2, repeat: 5, yoyo: true, delay: 0.3 });
+      gsap.delayedCall(0.5, () => {
+        gsap.timeline({ onComplete: () => { gsap.to('.c:nth-child(3n)', { x: 12, duration: 0.4 }); } })
+          .to('.c:nth-child(3n+1)', { borderRadius: 10, duration: 0.3 })
+          .to('.c:nth-child(4n)', { y: -8, duration: 0.2, stagger: 0.03 });
+      });
+    }, root);
+    return () => ctx.revert();
+  }, []);
+  return (
+    <AbsoluteFill style={{ background: '#fff' }}>
+      <div ref={root} style={{ position: 'absolute', left: 6, top: 6, width: 150, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {Array.from({ length: 12 }, (_, i) => <div key={i} className="c" style={{ width: 20, height: 20, background: i % 2 ? '#2238c4' : '#e0261b' }} />)}
+      </div>
+      <Sequence from={20}><Late /></Sequence>
+    </AbsoluteFill>
+  );
+};
+const Late = () => {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const t = gsap.to(box.current, { x: 60, rotation: 45, duration: 0.8, ease: 'power2.out', repeat: 1, yoyo: true });
+    return () => { t.kill(); };
+  }, []);
+  return <div ref={box} style={{ position: 'absolute', left: 10, top: 62, width: 20, height: 20, background: '#2a9d8f' }} />;
+};
+
 const common = { width: 160, height: 90, fps: 30, durationInFrames: 60 };
 registerRoot(() => (
   <>
     <Composition id="Auto" component={Auto} {...common} />
     <Composition id="Seeked" component={Seeked} {...common} />
+    <Composition id="Busy" component={Busy} {...common} />
   </>
 ));
 `;
@@ -261,6 +296,24 @@ describe.skipIf(!ready)('@kinetographdev/gsap', () => {
     const seeked = render('auto.tsx', 'Seeked', 'Seeked-c1.mp4', ['--concurrency', '1']);
     expect(seeked.status, seeked.log).toBe(0);
     expect(frames('Seeked-c1.mp4')).toEqual(seq);
+  });
+
+  it('Busy: staggers, repeats, callbacks that make timelines and a late mount are the same alone, at any concurrency', () => {
+    const one = render('auto.tsx', 'Busy', 'Busy-c1.mp4', ['--concurrency', '1']);
+    expect(one.status, one.log).toBe(0);
+    // Tweens on the root clock are warned about once.
+    expect(one.log.split('\n').filter((l) => l.includes("GSAP's root clock"))).toHaveLength(1);
+    const four = render('auto.tsx', 'Busy', 'Busy-c4.mp4', ['--concurrency', '4']);
+    expect(four.status, four.log).toBe(0);
+    const seq = frames('Busy-c1.mp4');
+    expect(seq).toHaveLength(60);
+    expect(frames('Busy-c4.mp4')).toEqual(seq);
+    expect(new Set(seq).size).toBeGreaterThan(30);
+    for (const f of [1, 9, 15, 16, 20, 21, 33, 45, 59]) {
+      const alone = render('auto.tsx', 'Busy', `Busy-f${f}.mp4`, ['--range', `${f}..=${f}`]);
+      expect(alone.status, alone.log).toBe(0);
+      expect(frames(`Busy-f${f}.mp4`), `frame ${f}`).toEqual([seq[f]]);
+    }
   });
 
   it('Flip: a paused timeline from Flip.from moves, and a frame alone or at concurrency 4 is the frame in sequence', () => {
