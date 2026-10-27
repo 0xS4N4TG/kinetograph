@@ -109,4 +109,28 @@ describe('the recording WebGPU context', () => {
     expect(() => context.getCurrentTexture()).toThrow(/not configured/);
     expect(() => context.configure({ device: {} as GPUDeviceShim, format: 'rgba8unorm' })).toThrow(/GPUDevice/);
   });
+
+  it('records an rgba16float canvas and a display-p3 colorSpace, and notes only extended tone mapping', async () => {
+    const device = await (await createGpu().requestAdapter()).requestDevice();
+    const drawn = (configuration: { format: string; colorSpace?: string; toneMapping?: { mode: string } }) => {
+      const context = createGpuCanvasContext({ size: () => ({ width: 2, height: 2 }) });
+      context.configure({ device, ...configuration });
+      const encoder = device.createCommandEncoder();
+      encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] }).end();
+      device.queue.submit([encoder.finish()]);
+      return { context, webgpu: context.content().webgpu! };
+    };
+    const plain = drawn({ format: 'rgba8unorm' }).webgpu;
+    expect(plain.canvasFormat).toBeUndefined();
+    expect(plain.colorSpace).toBeUndefined();
+    const { context, webgpu } = drawn({ format: 'rgba16float', colorSpace: 'display-p3' });
+    expect(webgpu.canvasFormat).toBe('rgba16float');
+    expect(webgpu.colorSpace).toBe('display-p3');
+    expect(webgpu.notes ?? []).toEqual([]);
+    expect(context.getCurrentTexture().format).toBe('rgba16float');
+    expect(context.getConfiguration()!.colorSpace).toBe('display-p3');
+    const extended = drawn({ format: 'rgba16float', toneMapping: { mode: 'extended' } }).webgpu;
+    expect(extended.notes).toEqual([expect.stringMatching(/toneMapping extended .*clipped/)]);
+    expect(() => drawn({ format: 'rgba8unorm', colorSpace: 'rec2020' })).toThrow(/colorSpace rec2020/);
+  });
 });

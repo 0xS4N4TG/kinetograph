@@ -1,0 +1,58 @@
+{
+  "width": 480,
+  "height": 270,
+  "fps": 30,
+  "durationInFrames": 30,
+  "background": "#101218",
+  "fonts": { "DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf" },
+  "layers": [
+    {
+      "id": "stage",
+      "type": "scene3d",
+      "width": 480,
+      "height": 270,
+      "camera": { "fov": 34, "position": [0, 0.6, 8], "target": [0, 0, 0] },
+      "lights": [
+        { "type": "ambient", "color": "#b8c4ff", "intensity": 0.3 },
+        { "type": "directional", "direction": [-0.6, -0.7, -1], "intensity": 1.8 },
+        { "type": "point", "position": [3, 2, 4], "color": "#ffd0a0", "intensity": 18 }
+      ],
+      "objects": [
+        {
+          "id": "title",
+          "type": "text",
+          "text": "BEVEL",
+          "font": "DM Sans",
+          "size": 1.4,
+          "depth": 0.3,
+          "bevel": { "thickness": 0.08, "size": 0.04, "segments": 4 },
+          "material": { "color": "#f1c453", "metallic": 0.6, "roughness": 0.3 },
+          "position": [0, 1.0, 0],
+          "rotation": [-10, -25, 0]
+        },
+        {
+          "id": "chamfer",
+          "type": "extrude",
+          "path": "M0 0 H100 V100 H0 Z M30 30 V70 H70 V30 Z",
+          "size": 1.6,
+          "depth": 0.4,
+          "bevel": { "thickness": 0.12, "size": 0.12, "segments": 1 },
+          "material": { "color": "#4cc9f0", "roughness": 0.4 },
+          "position": [-2.0, -1.3, 0],
+          "rotation": [20, 35, 0]
+        },
+        {
+          "id": "star",
+          "type": "extrude",
+          "path": "M50 0 L61 35 L98 35 L68 57 L79 91 L50 70 L21 91 L32 57 L2 35 L39 35 Z",
+          "size": 1.7,
+          "depth": 0.3,
+          "bevel": {},
+          "material": { "color": "#e63946", "roughness": 0.35 },
+          "position": [2.2, -1.3, 0],
+          "rotation": [15, -30, 0]
+        }
+      ]
+    }
+  ]
+}

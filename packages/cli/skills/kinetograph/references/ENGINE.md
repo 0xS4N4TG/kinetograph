@@ -730,14 +730,18 @@ exception). Each step carries its own tables; the canvas's recording is the unio
 order and data (`blobs`) by content hash. Pictures are not decoded on the JS side: an upload names a file, a video file and
 time (`VIDEO_FRAME` on the `<video>`, read at `currentTime`), a layer of the shader group, or pixels of an `ImageData` or a
 rasterised canvas. `webgpu::validate` (core) bounds-checks every texture size, level, origin and rectangle and the frame's
-texture memory (512 MiB, 4096 steps) before anything is made; the JS side checks the same at the call. `compositor/glsl/webgpu.rs`
+texture memory (`webgpu::max_texture_bytes`: three of the biggest textures the device allows, 4 GiB at the default
+8192 limit, which Chrome on the M4 also gives a page; 4096 steps) before anything is made; the JS side checks the same at the call. `compositor/glsl/webgpu.rs`
 makes textures from the table, replays steps in order into one command buffer (an upload is a staging buffer copy, so it is
 ordered with the passes), decodes pictures (kept by file) and video frames (`VideoDecoder::picture` at
 `VideoInfo::media_time`, the same pictures a video layer shows), copies a layer from the group's input texture, and makes the pipelines
 (kept by id), builds the buffers from the recording and replays the passes in a command buffer of its own, inside a
-validation error scope, into the Rgba8 drawing buffer that `glsl_blit.wgsl` places (a bgra8 canvas is the same colours; the
-buffer is flushed first because earlier glsl layers' place passes read it). The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, multisampling, readback, `rgba16float` canvas range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+validation error scope, into the drawing buffer that `glsl_blit.wgsl` places: Rgba8 (a bgra8 canvas is the same colours),
+or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear compositor; a `display-p3` canvas is decoded
+and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
+sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
+passes read it. The dom painter reads every module with naga
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, multisampling, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,

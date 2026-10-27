@@ -78,6 +78,9 @@ const CANVAS_DS: &str = "\0drawing buffer depth and stencil";
 struct Target {
     /// Of level 0.
     size: (u32, u32),
+    /// The device format: Rgba8 for colour (the drawing buffer is Rgba16Float
+    /// for an `rgba16float` WebGPU canvas), a depth or stencil one for `ds`.
+    format: wgpu::TextureFormat,
     /// What draws sample: every level, and the depth of a depth-and-stencil
     /// buffer.
     view: wgpu::TextureView,
@@ -89,11 +92,12 @@ struct Target {
 }
 
 impl Target {
-    /// A colour texture of one level.
-    fn colour(texture: wgpu::Texture, size: (u32, u32)) -> Target {
+    /// A colour texture of one level, of `format`.
+    fn colour(texture: wgpu::Texture, size: (u32, u32), format: wgpu::TextureFormat) -> Target {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         Target {
             size,
+            format,
             levels: vec![view.clone()],
             view,
             ds: None,
@@ -363,7 +367,7 @@ impl Compositor {
                     | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
-            self.glsl.inputs[n] = Some(Target::colour(texture, size));
+            self.glsl.inputs[n] = Some(Target::colour(texture, size, COLOR_FORMAT));
         }
         let target = self.glsl.inputs[n].as_ref().expect("made above");
         let [a, b, c, d, e, f] = matrix.as_coeffs().map(|v| v as f32);
@@ -431,9 +435,15 @@ impl Compositor {
         target.view.clone()
     }
 
-    /// The drawing buffer, made when there is none of `size`.
-    fn drawing_buffer(&mut self, size: (u32, u32)) {
-        if self.glsl.target.as_ref().is_none_or(|t| t.size != size) {
+    /// The drawing buffer, made when there is none of `size` and `format` (Rgba8 for WebGL and an 8-bit WebGPU canvas,
+    /// Rgba16Float for an `rgba16float` one).
+    fn drawing_buffer(&mut self, size: (u32, u32), format: wgpu::TextureFormat) {
+        if self
+            .glsl
+            .target
+            .as_ref()
+            .is_none_or(|t| t.size != size || t.format != format)
+        {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("glsl drawing buffer"),
                 size: wgpu::Extent3d {
@@ -444,12 +454,12 @@ impl Compositor {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: COLOR_FORMAT,
+                format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
-            self.glsl.target = Some(Target::colour(texture, size));
+            self.glsl.target = Some(Target::colour(texture, size, format));
         }
     }
 
@@ -462,7 +472,7 @@ impl Compositor {
         base_dir: &Path,
         inputs: &Inputs,
     ) -> Result<()> {
-        self.drawing_buffer(size);
+        self.drawing_buffer(size, wgpu::TextureFormat::Rgba8Unorm);
 
         // Everything drawn to the drawing buffer before its last clear is gone
         // with it, unless a blit reads the drawing buffer in between. A
@@ -1006,6 +1016,7 @@ impl Compositor {
                 id,
                 Target {
                     size: (width, height),
+                    format,
                     view,
                     levels: level_views,
                     ds,
@@ -2164,6 +2175,12 @@ impl Compositor {
             self.height as f32,
             f32::from(u8::from(content.premultiplied_alpha)),
             f32::from(u8::from(!content.alpha)),
+            f32::from(u8::from(
+                content.webgpu.as_ref().is_some_and(|w| w.display_p3()),
+            )),
+            0.0,
+            0.0,
+            0.0,
         ]);
         let bytes: Vec<u8> = params.iter().flat_map(|f| f.to_le_bytes()).collect();
 

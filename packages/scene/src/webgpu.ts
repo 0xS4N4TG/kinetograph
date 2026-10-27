@@ -77,8 +77,13 @@ export const GPU_GLOBALS: Record<string, unknown> = {
 /** The most a buffer may hold, and the most all of them together may. */
 const MAX_BUFFER_SIZE = 256 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
-/** The most all the textures of a device may hold, all levels together (the renderer refuses a frame over the same). */
-const MAX_TEXTURE_BYTES = 512 * 1024 * 1024;
+/**
+ * The most all the textures of a device may hold, all levels together (the renderer refuses a frame over the same,
+ * `webgpu::max_texture_bytes`): three of the biggest textures the device's limits allow (`rgba32float` with every
+ * level), 4 GiB at the default 8192. WebGPU itself has no such cap (Chrome made 4 GiB of textures on the M4 without an
+ * error); the renderer keeps one because each worker makes a frame's textures anew.
+ */
+export const maxTextureBytes = (maxTextureDimension2D: number): number => 64 * maxTextureDimension2D * maxTextureDimension2D;
 /** The most steps a device keeps for later frames. */
 const MAX_STEPS = 4096;
 /** The most dispatches, and the most workgroups all of them launch, in what a frame's picture depends on (the renderer refuses a frame over the same). */
@@ -1014,6 +1019,7 @@ export class GPUCanvasContextShim {
   /** The device of the last `configure`, which keeps the drawing after an `unconfigure`. */
   private drawnBy: GPUDeviceShim | null = null;
   private format = 'rgba8unorm';
+  private colorSpace: 'srgb' | 'display-p3' = 'srgb';
   private alphaMode = 'opaque';
   private stale = false;
 
@@ -1026,11 +1032,15 @@ export class GPUCanvasContextShim {
     if (!(device instanceof GPUDeviceShim)) throw new TypeError("configure: 'device' is not a GPUDevice");
     const format = configuration.format;
     if (typeof format !== 'string' || !CANVAS_FORMATS.has(format)) throw new TypeError(`configure: the format ${String(format)} is not a canvas format`);
-    if (format === 'rgba16float') device.note('canvas format rgba16float (drawn as rgba8unorm, without extended range)');
-    if (configuration.colorSpace !== undefined && configuration.colorSpace !== 'srgb') device.note(`canvas colorSpace ${String(configuration.colorSpace)} (drawn as srgb)`);
+    const colorSpace = configuration.colorSpace ?? 'srgb';
+    if (colorSpace !== 'srgb' && colorSpace !== 'display-p3') throw new TypeError(`configure: the colorSpace ${String(colorSpace)} is not srgb or display-p3`);
+    // The video is SDR: an extended canvas is drawn as a standard one, its values clipped to 0..1 as the standard mode does.
+    const toneMapping = (configuration.toneMapping as { mode?: string } | undefined)?.mode ?? 'standard';
+    if (toneMapping === 'extended' && format === 'rgba16float') device.note('canvas toneMapping extended (drawn as standard: values above 1 are clipped, the video being SDR)');
     this.device = device;
     this.drawnBy = device;
     this.format = format;
+    this.colorSpace = colorSpace;
     this.alphaMode = configuration.alphaMode ?? 'opaque';
     device.contexts.add(this);
   }
@@ -1039,8 +1049,8 @@ export class GPUCanvasContextShim {
     this.device = null;
   }
 
-  getConfiguration(): { device: GPUDeviceShim; format: string; alphaMode: string } | null {
-    return this.device === null ? null : { device: this.device, format: this.format, alphaMode: this.alphaMode };
+  getConfiguration(): { device: GPUDeviceShim; format: string; alphaMode: string; colorSpace: string } | null {
+    return this.device === null ? null : { device: this.device, format: this.format, alphaMode: this.alphaMode, colorSpace: this.colorSpace };
   }
 
   getCurrentTexture(): GPUTextureShim {
@@ -1087,6 +1097,8 @@ export class GPUCanvasContextShim {
     if (merged.samplers.size > 0) webgpu.samplers = Object.fromEntries(merged.samplers);
     if (merged.blobs.size > 0) webgpu.blobs = Object.fromEntries(merged.blobs);
     if (notes.length > 0) webgpu.notes = notes;
+    if (this.format === 'rgba16float') webgpu.canvasFormat = 'rgba16float';
+    if (this.colorSpace === 'display-p3') webgpu.colorSpace = 'display-p3';
     return {
       premultipliedAlpha: this.alphaMode === 'premultiplied',
       alpha: this.alphaMode === 'premultiplied',
@@ -1313,8 +1325,9 @@ export class GPUDeviceShim extends EventTarget {
     return this.bufferCount;
   }
   reserveTexture(size: number): void {
-    if (this.textureTotal + size > MAX_TEXTURE_BYTES) {
-      throw new RangeError(`OperationError: createTexture: the textures together would exceed ${MAX_TEXTURE_BYTES} bytes (all levels counted)`);
+    const cap = maxTextureBytes(this.limits.maxTextureDimension2D ?? LIMITS.maxTextureDimension2D);
+    if (this.textureTotal + size > cap) {
+      throw new RangeError(`OperationError: createTexture: the textures together would exceed ${cap} bytes (all levels counted)`);
     }
     this.textureTotal += size;
   }

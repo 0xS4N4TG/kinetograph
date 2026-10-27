@@ -192,6 +192,14 @@ fn scene3d_text_matches_golden() {
 }
 
 #[test]
+fn scene3d_bevel_matches_golden() {
+    // Bevelled text (4 rounded bands), a square ring with a flat chamfer (1
+    // band) and a star with the default bevel, lit from three sides.
+    let frame = render_still(scene("tests/scenes/scene3d-bevel.json"), 0).unwrap();
+    check("scene3d-bevel", &frame);
+}
+
+#[test]
 fn scene3d_shadows_match_golden() {
     // Frame 15 of 30: a sphere, a turning box, a torus and extruded text on a
     // ground, under a directional light with a shadow map and a point light

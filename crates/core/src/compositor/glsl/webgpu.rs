@@ -1,6 +1,7 @@
 //! WebGPU layers (`crate::webgpu`): the steps a page submitted (render and compute passes, uploads and copies) run on
-//! the device with the page's own WGSL, and the passes into its canvas land in the same Rgba8 drawing buffer a WebGL
-//! layer draws into (`glsl_place` then puts it on the canvas).
+//! the device with the page's own WGSL, and the passes into its canvas land in the drawing buffer a WebGL layer draws
+//! into, Rgba8, or Rgba16Float for an `rgba16float` canvas (`glsl_place` then puts it on the canvas, converting a
+//! `display-p3` one to sRGB primaries).
 //!
 //! The recording is replayed in a command buffer of its own, submitted inside a validation error scope, so a page's
 //! mistake (a module naga refuses, a bind group that does not fit its layout, a draw wgpu rejects) is a warning on
@@ -52,8 +53,8 @@ struct Clip {
 pub(super) struct WebGpuCache {
     modules: HashMap<String, wgpu::ShaderModule>,
     layouts: HashMap<String, wgpu::BindGroupLayout>,
-    /// By the pipeline's id and whether it draws into the canvas (a canvas is drawn as rgba8unorm whatever it is
-    /// configured with) or into a texture.
+    /// By the pipeline's id and whether it draws into the canvas (an 8-bit canvas is drawn as rgba8unorm whatever its
+    /// byte order) or into a texture.
     pipelines: HashMap<String, wgpu::RenderPipeline>,
     compute: HashMap<String, wgpu::ComputePipeline>,
     samplers: HashMap<String, wgpu::Sampler>,
@@ -89,7 +90,7 @@ impl Compositor {
         base_dir: &Path,
         layers: &HashMap<String, wgpu::Texture>,
     ) {
-        self.drawing_buffer(size);
+        self.drawing_buffer(size, canvas_format(recording));
         // The earlier layers' passes read the drawing buffer; they run before this one overwrites it.
         self.submit();
         let initial = if content.alpha {
@@ -188,7 +189,8 @@ impl Compositor {
         };
         // Buffers, from the bytes of the recording.
         for (id, base64) in &recording.buffers {
-            let mut bytes = decode_blob(base64).map_err(|e| format!("buffer {id}: {e}"))?;
+            let mut bytes = decode_blob(base64, max_blob_bytes(&self.device))
+                .map_err(|e| format!("buffer {id}: {e}"))?;
             while bytes.len() < 4 || bytes.len() % 4 != 0 {
                 bytes.push(0);
             }
@@ -359,6 +361,7 @@ impl Compositor {
                             .blobs
                             .get(&w.data)
                             .ok_or("data that is not in the recording")?,
+                        max_blob_bytes(&device),
                     )?;
                     if !bytes.is_empty() {
                         let staging =
@@ -646,6 +649,7 @@ impl Compositor {
                         .blobs
                         .get(id)
                         .ok_or("data that is not in the recording")?,
+                    max_blob_bytes(&self.device),
                 )?;
                 let want = wg::packed_len(u.width, u.height, texel)?;
                 if bytes.len() != want {
@@ -664,6 +668,7 @@ impl Compositor {
                         .blobs
                         .get(id)
                         .ok_or("pixels that are not in the recording")?,
+                    max_blob_bytes(&self.device),
                 )?;
                 let want = wg::packed_len(*width, *height, 4)?;
                 if all.len() != want {
@@ -1007,10 +1012,17 @@ impl Compositor {
                     None => None,
                     Some(t) => Some(wgpu::ColorTargetState {
                         format: if canvas {
-                            // The drawing buffer is Rgba8: a bgra8 canvas holds the same colours.
-                            match t.format.as_str() {
-                                "rgba8unorm" | "bgra8unorm" | "rgba8unorm-srgb" | "bgra8unorm-srgb" => wgpu::TextureFormat::Rgba8Unorm,
-                                other => return Err(format!("a render target of format {other}; the canvas is drawn as rgba8unorm")),
+                            // The drawing buffer is Rgba8 (a bgra8 canvas holds the same colours) or, for an rgba16float
+                            // canvas, Rgba16Float.
+                            match (t.format.as_str(), recording.wide_canvas()) {
+                                ("rgba8unorm" | "bgra8unorm" | "rgba8unorm-srgb" | "bgra8unorm-srgb", false) => wgpu::TextureFormat::Rgba8Unorm,
+                                ("rgba16float", true) => wgpu::TextureFormat::Rgba16Float,
+                                (other, wide) => {
+                                    return Err(format!(
+                                        "a render target of format {other} into a canvas of format {}",
+                                        if wide { "rgba16float" } else { "rgba8unorm" }
+                                    ));
+                                }
                             }
                         } else {
                             texture_format(&t.format)?
@@ -1335,13 +1347,28 @@ fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
     })
 }
 
-/// Bytes from a recording's base64, refusing what could not fit the frame's texture memory anyway.
-fn decode_blob(base64: &str) -> Fail<Vec<u8>> {
-    if (base64.len() / 4) as u64 * 3 > wg::MAX_TEXTURE_BYTES {
+/// The format of the drawing buffer the canvas of `recording` draws into.
+fn canvas_format(recording: &WebGpuContent) -> wgpu::TextureFormat {
+    if recording.wide_canvas() {
+        wgpu::TextureFormat::Rgba16Float
+    } else {
+        wgpu::TextureFormat::Rgba8Unorm
+    }
+}
+
+/// The most data one upload or buffer write may hold: one level of the biggest texture the device allows
+/// (`rgba32float`), which is more than its biggest buffer.
+fn max_blob_bytes(device: &wgpu::Device) -> u64 {
+    let side = u64::from(device.limits().max_texture_dimension_2d);
+    side * side * 16
+}
+
+/// Bytes from a recording's base64, refusing more than `cap` before decoding it.
+fn decode_blob(base64: &str, cap: u64) -> Fail<Vec<u8>> {
+    if (base64.len() / 4) as u64 * 3 > cap {
         return Err(format!(
-            "{} bytes of data in a frame; the textures may hold {}",
-            base64.len() / 4 * 3,
-            wg::MAX_TEXTURE_BYTES
+            "{} bytes of data in a write; one may hold {cap}",
+            base64.len() / 4 * 3
         ));
     }
     base64::engine::general_purpose::STANDARD
@@ -1797,10 +1824,13 @@ mod tests {
 
     #[test]
     fn data_that_could_never_fit_is_refused_before_it_is_decoded() {
-        assert!(decode_blob("AAAA").is_ok());
-        assert!(decode_blob("!!!!").unwrap_err().contains("base64"));
-        let huge = "A".repeat((wg::MAX_TEXTURE_BYTES / 3 * 4 + 8) as usize);
-        assert!(decode_blob(&huge).unwrap_err().contains("bytes of data"));
+        assert!(decode_blob("AAAA", 3).is_ok());
+        assert!(decode_blob("!!!!", 3).unwrap_err().contains("base64"));
+        assert!(
+            decode_blob("AAAAAAAA", 5)
+                .unwrap_err()
+                .contains("6 bytes of data")
+        );
     }
 
     #[test]
