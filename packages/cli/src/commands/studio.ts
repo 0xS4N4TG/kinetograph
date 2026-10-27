@@ -1,5 +1,5 @@
 import { CliError } from '../errors.js';
-import { resolveEntry } from '../hyperframes/entry.js';
+import { resolveEntry, setBeforePlan } from '../hyperframes/entry.js';
 import { prefetchBeforePlan, setOffline } from '../prefetch.js';
 import { parseProps } from '../source.js';
 import { ENTRY, type Command } from './types.js';
@@ -91,7 +91,10 @@ export const studio: Command = {
 
     // What a project loads from the web is downloaded first, as `render` does.
     setOffline(args.options.offline === true);
-    await prefetchBeforePlan(resolveEntry(String(args.positionals.entry)), { offline: args.options.offline === true, progress: context.progress });
+    const prefetch = { offline: args.options.offline === true, progress: context.progress };
+    await prefetchBeforePlan(resolveEntry(String(args.positionals.entry)), prefetch);
+    // A rebuild after an edit downloads what the edit newly needs before the bundle reads it.
+    setBeforePlan((entry) => prefetchBeforePlan(entry, prefetch));
 
     const { startStudio } = await hooks.load();
     const server = await startStudio({
