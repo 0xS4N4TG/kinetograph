@@ -217,6 +217,12 @@ until the tree changes (`generation`: bumped by every commit, before layout effe
 - `matches`, `closest`, `querySelector(All)`, `getElementsBy…`, `contains`, `parentElement`, `children`, `textContent`,
   `classList`, `dataset`, `getAttribute/setAttribute/removeAttribute`, `style` (read, and write: a script's changes are
   laid over the props and are part of the next request, as in a DOM) and event listeners (nothing fires them).
+  The IDL attributes a script assigns reflect their content attribute, as in a browser: `src` (`img`, `video`, `audio`,
+  `source`, `track`, `script`, `iframe`, `embed`, `input`), `srcset` and `sizes` (`img`, `source`), `alt`, `poster`,
+  `href` of `a`, `area`, `link`, `base`, `width` and `height`, and `currentSrc`; an SVG element's `href` is an
+  SVGAnimatedString (`image.href.baseVal = url`, reading `href`, else `xlink:href`). On an element without the
+  attribute the name is a plain property (`div.src = x` sets no attribute). An `<img srcset>` is drawn with the
+  candidate a browser at device pixel ratio 1 takes (1x, else `src`, else the smallest density above 1, else the first).
   `document.querySelector/getElementById/…` search every root.
 - SVG: `getTotalLength`, `getPointAtLength` and `getBBox` of `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
   `polygon` use the path functions of `@kinetographdev/core/paths` (handed over by `web/install`); a group's `getBBox` is
@@ -241,7 +247,8 @@ these on the global object where they are missing:
 
 - `window` (is `globalThis`), `self`, `innerWidth/Height` and `outerWidth/Height` (the composition's size, set by
   `createSceneRoot({ viewport })`), `devicePixelRatio` 1, `screen`, `location` (`http://localhost/`), `history`,
-  `localStorage` and `sessionStorage` (in memory, empty at every start), `requestIdleCallback`;
+  `localStorage` and `sessionStorage` (in memory, empty at every start), `requestIdleCallback`, `visualViewport` (the
+  composition's size, `scale` 1, offsets 0, an EventTarget whose `resize` and `scroll` never fire);
 - `matchMedia`: `screen`, `width`/`height` features and their `min-`/`max-` forms, `orientation`, `aspect-ratio`,
   `prefers-reduced-motion: no-preference`, `prefers-color-scheme: light`, `hover: none`, 1x resolution; `not`, `and`
   and comma lists; `change` never fires;
