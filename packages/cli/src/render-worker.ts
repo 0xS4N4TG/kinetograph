@@ -46,7 +46,7 @@ const { spec, scale, convertFormat, devReact, origin, step } = workerData as Wor
 process.env.NODE_ENV = devReact ? 'development' : 'production';
 
 try {
-  const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile });
+  const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile, prefetch: false });
   source.clearArtifacts?.();
   const renderer = new (native().Renderer)();
   const log = profiling ? new ProfileLog(false) : undefined;

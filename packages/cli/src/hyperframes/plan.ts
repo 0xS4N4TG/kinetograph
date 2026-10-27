@@ -10,11 +10,14 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { HfNode, HfPlan, HfScript, HfStylesheet } from '@kinetographdev/core/hyperframes';
 import { absolutizeUrls, buildTailwind, readStylesheet, usesTailwind } from '../css.js';
 import { CliError } from '../errors.js';
-import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, verifyIntegrity } from './deps.js';
+import { lockPathOf } from '@kinetographdev/core/lock';
+import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, useLockFile, verifyIntegrity } from './deps.js';
+import { bundleModuleScript, emptyImportMap, mergeImportMaps, parseImportMap, type ImportMap, type ModuleScript } from './modules.js';
 import { pickSrcset, remoteImage, rewriteCssImages, type RemoteImage } from './images.js';
 import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
@@ -70,6 +73,10 @@ export interface BuiltPlan {
   mediaUrls: string[];
   /** URLs of remote pictures (`<img>`, CSS `url()`, SVG `<image>`, `<video poster>`), which `fetch-deps` downloads too. */
   imageUrls: string[];
+  /** The `<script type="module">`s of the page, in document order. */
+  modules: ModuleScript[];
+  /** The page's import maps, merged. */
+  importMap: ImportMap;
 }
 
 interface Context {
@@ -101,6 +108,9 @@ class Builder {
   /** Remote files found in the cache, by URL. */
   readonly remoteData: Record<string, string> = {};
   usesThree = false;
+  /** The page's import maps, merged, and its `<script type="module">`s in document order. */
+  readonly importMap: ImportMap = emptyImportMap();
+  readonly modules: ModuleScript[] = [];
 
   constructor(
     readonly root: string,
@@ -136,10 +146,22 @@ class Builder {
   script(el: PElement, ctx: Context): void {
     const type = (attrOf(el, 'type') ?? '').trim().toLowerCase();
     if (type === 'importmap') {
-      this.note('import maps are not supported: scripts that import by bare name are not run');
+      if (attrOf(el, 'src') !== null) {
+        this.note(`${ctx.file}: an import map with a src is not read: put its JSON inside the tag`);
+        return;
+      }
+      const problems: string[] = [];
+      const map = parseImportMap(textOf(el), pathToFileURL(ctx.file).href, problems);
+      for (const problem of problems) this.note(`${ctx.file}: ${problem}`);
+      mergeImportMaps(this.importMap, map);
+      if (Object.values(map.imports).some((u) => THREE_URL.test(u))) this.usesThree = true;
       return;
     }
-    if (type !== '' && type !== 'text/javascript' && type !== 'application/javascript' && type !== 'module') return;
+    if (type === 'module') {
+      this.moduleScript(el, ctx);
+      return;
+    }
+    if (type !== '' && type !== 'text/javascript' && type !== 'application/javascript') return;
     const src = attrOf(el, 'src');
     let code: string;
     let file: string;
@@ -169,15 +191,34 @@ class Builder {
       code = textOf(el);
       file = ctx.file;
     }
-    if (type === 'module') {
-      if (/^\s*import\s[^(]|^\s*export\s/m.test(code)) {
-        this.note(`${file}: an ES module script (it imports) is not run`);
-        return;
-      }
-    }
     if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
     this.scanDataUrls(code, src === null ? null : normalizeUrl(src));
     this.scripts.push({ code, file, scope: src === null ? ctx.scope : null, sourceFile: src === null && ctx.scope !== null ? ctx.file : null });
+  }
+
+  /** A `<script type="module">`: kept for the end, when the import maps are all read; it runs after the classic scripts. */
+  moduleScript(el: PElement, ctx: Context): void {
+    const src = attrOf(el, 'src');
+    if (src === null) {
+      const code = textOf(el);
+      this.scanDataUrls(code, null);
+      if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
+      this.modules.push({ code, file: ctx.file, base: pathToFileURL(ctx.file).href, scope: ctx.scope, sourceFile: ctx.scope !== null ? ctx.file : null, root: this.root });
+      return;
+    }
+    if (/^https?:\/\//i.test(src) || src.startsWith('//')) {
+      const url = normalizeUrl(src);
+      if (THREE_URL.test(url)) this.usesThree = true;
+      const integrity = attrOf(el, 'integrity');
+      if (integrity) this.scriptIntegrity[url] = integrity;
+      this.modules.push({ code: null, file: url, base: url, scope: null, sourceFile: null, root: this.root, ...(integrity ? { integrity } : {}) });
+      return;
+    }
+    const path = this.asset(src, ctx).split(/[?#]/)[0]!;
+    if (!existsSync(path)) throw new CliError('SCRIPT_NOT_FOUND', `${ctx.file}: <script type="module" src="${src}"> was not found beside ${ctx.file} or in ${this.root}`);
+    this.files.add(path);
+    this.checkIntegrity(el, path, path);
+    this.modules.push({ code: null, file: path, base: pathToFileURL(path).href, scope: null, sourceFile: null, root: this.root });
   }
 
   /**
@@ -558,6 +599,8 @@ const normalizeUrl = (url: string): string => (url.startsWith('//') ? `https:${u
 export async function buildPlan(indexFile: string, options: PlanOptions = {}): Promise<BuiltPlan> {
   const file = resolve(indexFile);
   const root = dirname(file);
+  // The cache is checked against the project's lock file as it is read.
+  useLockFile(lockPathOf(file));
   const builder = new Builder(root, options, relative(process.cwd(), file) || file);
   const doc = parse(builder.read(file));
   const html = childrenOf(doc).find(isElement);
@@ -605,6 +648,19 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   for (const media of builder.mediaFiles) {
     const seconds = options.probeDuration ? options.probeDuration(media) : null;
     if (seconds !== null && Number.isFinite(seconds) && seconds > 0) mediaDurations[media] = seconds;
+  }
+  // Module scripts are deferred: they run after every classic script, in document order. Their imports come from the
+  // cache through the page's import map (`modules.ts`); the pre-download step has stored them.
+  if (!options.discoverOnly) {
+    for (const module of builder.modules) {
+      try {
+        const bundled = await bundleModuleScript(module, builder.importMap);
+        builder.scripts.push({ code: bundled.code, file: module.file, scope: module.scope, sourceFile: module.sourceFile });
+      } catch (error) {
+        if (error instanceof CliError && (error.code === 'SCRIPT_NOT_AVAILABLE' || error.code === 'INTEGRITY_MISMATCH')) throw error;
+        builder.note(error instanceof Error ? error.message : String(error));
+      }
+    }
   }
   if (builder.usesThree) builder.note('Three.js is not supported: its scenes are not drawn');
 
@@ -663,5 +719,7 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     dataUrls: [...builder.dataUrls],
     mediaUrls: [...builder.mediaUrls],
     imageUrls: [...builder.imageUrls],
+    modules: builder.modules,
+    importMap: builder.importMap,
   };
 }

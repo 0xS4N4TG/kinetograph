@@ -95,6 +95,9 @@ const binaryFile = (url: string, options: FontDownloadOptions): { dir: string; f
   return { dir, file: join(dir, `${sha(url)}-${name}`) };
 };
 
+/** Where `fetchFileCached` keeps the file at `url`. */
+export const fileCachePath = (url: string, options: FontDownloadOptions = {}): string => binaryFile(url, options).file;
+
 /** `fetch` for a download: a network failure is a `FontDownloadError` too, so a caller catches one kind of error. */
 async function download(url: string, options: FontDownloadOptions, userAgent: string): Promise<FetchResponse> {
   let response: FetchResponse;
