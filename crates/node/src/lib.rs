@@ -121,7 +121,8 @@ fn check_files(scene_json: &str, base: &Path) -> Result<()> {
     if let Some(list) = doc.get("layers") {
         layers(list, &mut files);
     }
-    for file in files {
+    // A `data:` URL is the picture itself (an SVG `<image>` of the DOM painter's), not a file.
+    for file in files.into_iter().filter(|f| !f.starts_with("data:")) {
         let path = base.join(file);
         if let Err(source) = std::fs::metadata(&path) {
             return Err(from_core(CoreError::Io { path, source }));
