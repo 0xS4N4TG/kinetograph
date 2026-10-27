@@ -8,6 +8,8 @@
 #include "libmv/autotrack/frame_accessor.h"
 #include "libmv/autotrack/marker.h"
 #include "libmv/autotrack/region.h"
+#include "libmv/multiview/homography.h"
+#include "libmv/simple_pipeline/detect.h"
 #include "libmv/tracking/track_region.h"
 
 namespace {
@@ -115,6 +117,10 @@ TrackRegionOptions::Mode ToMode(int motion_model) {
 
 }  // namespace
 
+struct kt_features {
+  libmv::vector<libmv::Feature> list;
+};
+
 struct kt_tracker {
   CallbackAccessor accessor;
   mv::AutoTrack autotrack;
@@ -180,6 +186,55 @@ int kt_tracker_track(kt_tracker *tracker, const kt_track_options *o, kt_marker *
     return ok && r.is_usable() ? 1 : 0;
   } catch (...) {
     return 0;
+  }
+}
+
+kt_features *kt_detect_harris(const unsigned char *rgba, int width, int height, int margin, int min_distance,
+                              double threshold) {
+  try {
+    FloatImage image(height, width, 4);
+    const size_t n = size_t(width) * size_t(height) * 4;
+    float *data = image.Data();
+    for (size_t i = 0; i < n; ++i) data[i] = float(rgba[i]) / 255.0f;
+    libmv::DetectOptions options;
+    options.type = libmv::DetectOptions::HARRIS;
+    options.margin = margin;
+    options.min_distance = min_distance;
+    options.harris_threshold = threshold;
+    kt_features *features = new kt_features;
+    libmv::Detect(image, options, &features->list);
+    return features;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+int kt_features_count(const kt_features *features) { return int(features->list.size()); }
+
+kt_feature kt_features_get(const kt_features *features, int index) {
+  const libmv::Feature &f = features->list[index];
+  return kt_feature{f.x, f.y, f.score};
+}
+
+void kt_features_free(kt_features *features) { delete features; }
+
+int kt_homography(const double *x1, const double *x2, int n, double h[9]) {
+  try {
+    libmv::Mat a(2, n), b(2, n);
+    for (int i = 0; i < n; ++i) {
+      a(0, i) = x1[2 * i];
+      a(1, i) = x1[2 * i + 1];
+      b(0, i) = x2[2 * i];
+      b(1, i) = x2[2 * i + 1];
+    }
+    libmv::EstimateHomographyOptions options;
+    libmv::Mat3 H;
+    const bool usable = libmv::EstimateHomography2DFromCorrespondences(a, b, options, &H);
+    for (int c = 0; c < 3; ++c)
+      for (int r = 0; r < 3; ++r) h[3 * c + r] = H(r, c);
+    return usable ? 1 : 0;
+  } catch (...) {
+    return -1;
   }
 }
 

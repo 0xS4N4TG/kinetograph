@@ -17,6 +17,7 @@ const LIBMV: &[&str] = &[
     "multiview/homography.cc",
     "multiview/projection.cc",
     "numeric/numeric.cc",
+    "simple_pipeline/detect.cc",
     "tracking/track_region.cc",
 ];
 
@@ -53,6 +54,8 @@ fn main() {
         .define("EIGEN_MPL2_ONLY", None)
         // miniglog: warnings and errors only, no INFO/VLOG chatter from libmv.
         .define("MAX_LOG_LEVEL", Some("-1"))
+        // Only the Harris detector is used (Blender's Detect Features); FAST needs a third-party library.
+        .define("LIBMV_NO_FAST_DETECTOR", None)
         .include(manifest.join("csrc"))
         .include(&vendor) // "libmv/..."
         .include(ceres.join("config"))

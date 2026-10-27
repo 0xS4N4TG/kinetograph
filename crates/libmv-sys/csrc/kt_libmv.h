@@ -1,4 +1,5 @@
-/* Kinetograph's C API over libmv's AutoTrack (libmv/autotrack, MIT). Written for Kinetograph; Blender's own C API
+/* Kinetograph's C API over libmv's AutoTrack (libmv/autotrack), feature detector (libmv/simple_pipeline/detect) and
+ * homography estimation (libmv/multiview/homography), all MIT. Written for Kinetograph; Blender's own C API
  * (intern/libmv/intern, GPL) is not used.
  *
  * Coordinates are libmv's frame pixels: (0, 0) is the centre of the pixel in row 0, column 0 of the image the region
@@ -68,6 +69,32 @@ void kt_tracker_add_marker(kt_tracker *tracker, const kt_marker *marker, int tra
  * number, reference_frame set); on return, the tracked position. Returns 1 when the result is usable. */
 int kt_tracker_track(kt_tracker *tracker, const kt_track_options *options, kt_marker *marker,
                      kt_track_result *result);
+
+/* One feature libmv's Harris detector found: the pixel (x, y) in the image's row and column numbers, and its score. */
+typedef struct kt_feature {
+  float x;
+  float y;
+  float score;
+} kt_feature;
+
+typedef struct kt_features kt_features;
+
+/* libmv's Harris detector (Detect with DetectOptions::HARRIS) over an RGBA8 image, `width * height * 4` bytes, row 0
+ * first. Each channel is taken as byte / 255 and the image turned grey by libmv (0.2126 R + 0.7152 G + 0.0722 B).
+ * No feature within `margin` px of an edge, none closer than `min_distance` px to a better one, and none whose Harris
+ * response is not above `threshold`. Features in the detector's order (best first). NULL on failure. */
+kt_features *kt_detect_harris(const unsigned char *rgba, int width, int height, int margin, int min_distance,
+                              double threshold);
+int kt_features_count(const kt_features *features);
+/* Feature `index`, 0 <= index < count. */
+kt_feature kt_features_get(const kt_features *features, int index);
+void kt_features_free(kt_features *features);
+
+/* libmv's EstimateHomography2DFromCorrespondences with its default options: the homography H, x2 = H * x1, from `n`
+ * (at least 4) point pairs, each `x1` and `x2` holding n (x, y) pairs. `h` receives H column by column (h[3 * c + r]
+ * is row r, column c). Returns 1 when Ceres calls the refined estimate usable, 0 when it does not (`h` still holds
+ * it), -1 when nothing was estimated. */
+int kt_homography(const double *x1, const double *x2, int n, double h[9]);
 
 #ifdef __cplusplus
 }
