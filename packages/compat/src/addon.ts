@@ -25,6 +25,7 @@ export interface DomAddon {
   webgpuDeviceInfo?(): string | null;
   /** A Rive file played to a time, as a canvas's commands: `{ src, baseDir, artboard, animation, stateMachine, time, width, height, fit, alignment }` as JSON in, the commands as a JSON array out. */
   riveFrame?(requestJson: string): string;
+  riveInfo?(requestJson: string): string;
 }
 
 let override: Partial<DomAddon> | null = null;

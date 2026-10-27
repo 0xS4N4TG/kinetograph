@@ -347,10 +347,17 @@ export declare function rgbaToYuv(rgba: Buffer, width: number, height: number, p
 /**
  * A Rive file (`.riv`) played to a time, as the commands of a canvas layer
  * (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
- * time, width, height, fit, alignment }` as JSON in, the commands as a JSON
- * array out. CPU only; the file is read once.
+ * inputs, assets, time, width, height, fit, alignment }` as JSON in, the commands as a JSON
+ * array out. `inputs` are `[{ time, name, value }]` set as the state machine plays; `assets` are the bytes (base64)
+ * of assets outside the file, by file name. CPU only; the file is read once.
  */
 export declare function riveFrame(requestJson: string): string
+
+/**
+ * `{ src, baseDir, assets }` in; the file's artboards (with their animations, state machines and inputs) and assets
+ * (in the file, given, or missing) out, as JSON.
+ */
+export declare function riveInfo(requestJson: string): string
 
 /** Reads every packet of a file, without decoding, and totals them per stream: the "slow" fields of `parseMedia`. */
 export declare function scanStreams(path: string, baseDir?: string | undefined | null): Array<StreamScan>
