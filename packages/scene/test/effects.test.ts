@@ -18,6 +18,7 @@ import {
   hueRotate,
   insetShadow,
   invert,
+  colorGrade,
   lut,
   motionBlur,
   saturate,
@@ -110,6 +111,15 @@ describe('effect helpers', () => {
     expect(gradientMap({ stops, amount: ramp })).toEqual({ type: 'gradientMap', stops, amount: ramp });
     expect(lut({ src: 'looks/thermal.cube' })).toEqual({ type: 'lut', src: 'looks/thermal.cube' });
     expect(lut({ src: 'a.cube', amount: 0.5 })).toEqual({ type: 'lut', src: 'a.cube', amount: 0.5 });
+  });
+
+  it('build colorGrade', () => {
+    expect(colorGrade()).toEqual({ type: 'colorGrade' });
+    expect(colorGrade({ effects: { halftone: 0.9 }, palette: ['#000', '#fff'] })).toEqual({
+      type: 'colorGrade',
+      effects: { halftone: 0.9 },
+      palette: ['#000', '#fff'],
+    });
   });
 
   it('take the main field of grain and dither first', () => {
