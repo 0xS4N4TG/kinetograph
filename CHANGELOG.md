@@ -3,6 +3,12 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Added
+
+- `lut` effect: `interpolation: 'trilinear' | 'tetrahedral'` (default `'trilinear'`). Tetrahedral blends four table points chosen from the six-tetrahedra split of the cell, as DaVinci Resolve, OpenColorIO and ffmpeg's `lut3d=interp=tetrahedral` do.
+
 ## 0.2.0 (2026-10-27)
 
 ### Added

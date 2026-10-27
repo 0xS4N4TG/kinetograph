@@ -447,11 +447,14 @@ pub enum Effect {
     },
     /// Applies a `.cube` 3D colour lookup table (path relative to the scene
     /// file) to the sRGB colours; `amount` cross-fades from the original (0)
-    /// to the graded image (1).
+    /// to the graded image (1). `interpolation` picks how a colour between
+    /// two grid points is blended.
     Lut {
         src: String,
         #[serde(default = "one")]
         amount: Num,
+        #[serde(default)]
+        interpolation: LutInterpolation,
     },
     /// Film grain: seeded zero-mean noise added to the sRGB colour, fixed to
     /// the canvas.
@@ -686,6 +689,20 @@ pub enum HalftoneShape {
     Square,
     /// Parallel lines, thicker where the layer is brighter.
     Line,
+}
+
+/// How the `lut` effect blends the grid points around a colour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LutInterpolation {
+    /// Eight corners of the cell, blended along each axis in turn.
+    #[default]
+    Trilinear,
+    /// Four of the cell's eight corners, chosen by which of the red, green
+    /// and blue fractions is largest (the six-tetrahedra split of DaVinci
+    /// Resolve, OpenColorIO and ffmpeg's `lut3d=interp=tetrahedral`). Keeps
+    /// the grey axis straight when the table does.
+    Tetrahedral,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -3317,14 +3334,29 @@ mod tests {
             r#"[{"type": "lut", "src": "looks/thermal.cube"},
                 {"type": "lut", "src": "b.cube", "amount": [{"frame": 0, "value": 0}, {"frame": 9, "value": 1}]}]"#,
         );
-        let Effect::Lut { src, amount } = &scene.layers[0].effects[0] else {
+        let Effect::Lut {
+            src,
+            amount,
+            interpolation,
+        } = &scene.layers[0].effects[0]
+        else {
             panic!("not a lut");
         };
         assert_eq!((src.as_str(), amount.at(0.0)), ("looks/thermal.cube", 1.0));
+        assert_eq!(*interpolation, LutInterpolation::Trilinear);
         assert!(
             matches!(&scene.layers[0].effects[1], Effect::Lut { amount, .. } if amount.at(4.5) == 0.5)
         );
         assert_eq!(scene.margin(), 0);
+        let scene =
+            effects_of(r#"[{"type": "lut", "src": "a.cube", "interpolation": "tetrahedral"}]"#);
+        assert!(matches!(
+            &scene.layers[0].effects[0],
+            Effect::Lut {
+                interpolation: LutInterpolation::Tetrahedral,
+                ..
+            }
+        ));
         // The file is read when the renderer is built, not when the scene
         // loads (like an image), so a missing file is not an error here.
         let msg = error(r#""effects": [{"type": "lut"}],"#);
