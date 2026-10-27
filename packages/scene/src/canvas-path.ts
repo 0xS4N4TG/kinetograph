@@ -57,7 +57,7 @@ export type Segment =
   | readonly ['Q', number, number, number, number]
   | readonly ['Z'];
 
-function mapSegment(segment: Segment, m: Matrix): Segment {
+export function mapSegment(segment: Segment, m: Matrix): Segment {
   const out: [string, ...number[]] = [segment[0]];
   for (let i = 1; i < segment.length; i += 2) {
     const [x, y] = apply(m, segment[i] as number, segment[i + 1] as number);
@@ -186,6 +186,249 @@ export function flattenSegments(segments: readonly Segment[], m?: Matrix, tolera
     }
     return pts;
   });
+}
+
+/** The line state a stroke is drawn with, in the space of the path it strokes. */
+export interface StrokeStyle {
+  width: number;
+  cap: 'butt' | 'round' | 'square';
+  join: 'miter' | 'round' | 'bevel';
+  miterLimit: number;
+  /** Even length (the context doubles an odd list). */
+  dash: readonly number[];
+  dashOffset: number;
+}
+
+/** A flattened subpath: its points, which of them are corners (a segment's ends, where the line join applies), and whether it was closed. */
+interface Polyline {
+  xs: number[];
+  ys: number[];
+  corner: boolean[];
+  closed: boolean;
+}
+
+/** `segments` as polylines, curves flattened to `tolerance`; a point repeated in a row is kept once. */
+function polylines(segments: readonly Segment[], tolerance: number): Polyline[] {
+  const tol2 = tolerance * tolerance;
+  const out: Polyline[] = [];
+  let line: Polyline | null = null;
+  let [x, y, sx, sy] = [0, 0, 0, 0];
+  const start = (px: number, py: number) => {
+    [x, y, sx, sy] = [px, py, px, py];
+    line = { xs: [px], ys: [py], corner: [true], closed: false };
+    out.push(line);
+  };
+  const push = (px: number, py: number, corner: boolean) => {
+    const l = line!;
+    const n = l.xs.length - 1;
+    if (l.xs[n] === px && l.ys[n] === py) {
+      l.corner[n] = l.corner[n]! || corner;
+      // A repeated point still makes a subpath drawn (a dot with round or square caps).
+      if (l.xs.length === 1) {
+        l.xs.push(px);
+        l.ys.push(py);
+        l.corner.push(corner);
+      }
+      return;
+    }
+    l.xs.push(px);
+    l.ys.push(py);
+    l.corner.push(corner);
+  };
+  for (const s of segments) {
+    if (s[0] === 'M') {
+      start(s[1], s[2]);
+      continue;
+    }
+    if (s[0] === 'Z') {
+      // The closing segment back to the start, which the line join meets the first segment at.
+      if (line !== null) {
+        push(sx, sy, true);
+        (line as Polyline).closed = true;
+        line = null;
+        [x, y] = [sx, sy];
+      }
+      continue;
+    }
+    if (line === null) start(x, y);
+    if (s[0] === 'L') {
+      push(s[1], s[2], true);
+      [x, y] = [s[1], s[2]];
+      continue;
+    }
+    // A curve: its flattened points bend smoothly; its end is a corner.
+    const [c1x, c1y, c2x, c2y, ex, ey] =
+      s[0] === 'Q'
+        ? [x + (2 / 3) * (s[1] - x), y + (2 / 3) * (s[2] - y), s[3] + (2 / 3) * (s[1] - s[3]), s[4] + (2 / 3) * (s[2] - s[4]), s[3], s[4]]
+        : [s[1], s[2], s[3], s[4], s[5], s[6]];
+    const pts: number[] = [];
+    flattenCubic(x, y, c1x, c1y, c2x, c2y, ex, ey, tol2, pts);
+    for (let i = 0; i < pts.length; i += 2) push(pts[i]!, pts[i + 1]!, i === pts.length - 2);
+    [x, y] = [ex, ey];
+  }
+  return out;
+}
+
+/** The parts of `line` that a dash pattern leaves on, each an open polyline; the pattern starts again at each subpath. */
+function dashed(line: Polyline, dash: readonly number[], offset: number): Polyline[] {
+  const total = dash.reduce((a, b) => a + b, 0);
+  if (dash.length === 0 || !(total > 0)) return [line];
+  const { xs, ys, corner } = line;
+  // Where in the pattern the subpath starts.
+  let phase = ((offset % total) + total) % total;
+  let k = 0;
+  while (phase >= dash[k]!) {
+    phase -= dash[k]!;
+    k = (k + 1) % dash.length;
+  }
+  let left = dash[k]! - phase;
+  let on = k % 2 === 0;
+  const out: Polyline[] = [];
+  let piece: Polyline | null = on ? { xs: [xs[0]!], ys: [ys[0]!], corner: [true], closed: false } : null;
+  for (let i = 0; i + 1 < xs.length; i += 1) {
+    const [x0, y0, x1, y1] = [xs[i]!, ys[i]!, xs[i + 1]!, ys[i + 1]!];
+    const length = Math.hypot(x1 - x0, y1 - y0);
+    let at = 0;
+    while (length - at > left) {
+      at += left;
+      const t = at / length;
+      const [px, py] = [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t];
+      if (on) {
+        piece!.xs.push(px);
+        piece!.ys.push(py);
+        piece!.corner.push(false);
+        out.push(piece!);
+        piece = null;
+      } else {
+        piece = { xs: [px], ys: [py], corner: [false], closed: false };
+      }
+      on = !on;
+      k = (k + 1) % dash.length;
+      left = dash[k]!;
+    }
+    left -= length - at;
+    if (on) {
+      piece!.xs.push(x1);
+      piece!.ys.push(y1);
+      piece!.corner.push(corner[i + 1]!);
+    }
+  }
+  if (on && piece !== null) out.push(piece);
+  return out;
+}
+
+/**
+ * Whether `(x, y)` is in what a stroke of `segments` with `style` covers, all in the path's space: the outline Skia's
+ * stroker makes, which Chrome's `isPointInStroke` tests. That is the union of a band along each segment, the line
+ * join between two segments of the path (a curve's flattened pieces join round, as the curve bends smoothly), a cap
+ * at each end of an open subpath (or of each dash), and a dot for a subpath of no length with round or square caps.
+ */
+export function strokeContains(segments: readonly Segment[], style: StrokeStyle, x: number, y: number, tolerance = 0.05): boolean {
+  const h = style.width / 2;
+  if (!(h > 0)) return false;
+  const lines = polylines(segments, tolerance).flatMap((l) => dashed(l, style.dash, style.dashOffset));
+  for (const line of lines) {
+    const n = line.xs.length;
+    if (n < 2) continue;
+    const px = (i: number) => line.xs[i]!;
+    const py = (i: number) => line.ys[i]!;
+    // A subpath of no length is a dot.
+    let length = 0;
+    for (let i = 0; i + 1 < n; i += 1) length += Math.hypot(px(i + 1) - px(i), py(i + 1) - py(i));
+    if (length === 0) {
+      if (style.cap === 'round' && Math.hypot(x - px(0), y - py(0)) <= h) return true;
+      if (style.cap === 'square' && Math.abs(x - px(0)) <= h && Math.abs(y - py(0)) <= h) return true;
+      continue;
+    }
+    // The segments of positive length, with their unit directions.
+    const segs: { x0: number; y0: number; x1: number; y1: number; dx: number; dy: number; len: number; corner: boolean }[] = [];
+    for (let i = 0; i + 1 < n; i += 1) {
+      const len = Math.hypot(px(i + 1) - px(i), py(i + 1) - py(i));
+      if (len === 0) continue;
+      segs.push({ x0: px(i), y0: py(i), x1: px(i + 1), y1: py(i + 1), dx: (px(i + 1) - px(i)) / len, dy: (py(i + 1) - py(i)) / len, len, corner: line.corner[i]! });
+    }
+    for (const s of segs) {
+      const t = (x - s.x0) * s.dx + (y - s.y0) * s.dy;
+      const d = -(x - s.x0) * s.dy + (y - s.y0) * s.dx;
+      if (t >= 0 && t <= s.len && Math.abs(d) <= h) return true;
+    }
+    // Joins between consecutive segments, and between the last and the first of a closed subpath.
+    const joins: [number, number][] = [];
+    for (let i = 0; i + 1 < segs.length; i += 1) joins.push([i, i + 1]);
+    const closes = line.closed && segs.length > 1;
+    if (closes) joins.push([segs.length - 1, 0]);
+    for (const [a, b] of joins) {
+      const s0 = segs[a]!;
+      const s1 = segs[b]!;
+      const join = s1.corner || (b === 0 && closes) ? style.join : 'round';
+      if (inJoin(x, y, s0.x1, s0.y1, s0.dx, s0.dy, s1.dx, s1.dy, h, join, style.miterLimit)) return true;
+    }
+    // Caps at the ends of an open subpath.
+    if (!line.closed) {
+      const first = segs[0]!;
+      const last = segs.at(-1)!;
+      if (inCap(x, y, first.x0, first.y0, -first.dx, -first.dy, h, style.cap)) return true;
+      if (inCap(x, y, last.x1, last.y1, last.dx, last.dy, h, style.cap)) return true;
+    }
+  }
+  return false;
+}
+
+/** Whether `(x, y)` is in the cap at `(ex, ey)` of a stroke that ends going `(dx, dy)` (unit), `h` its half width. */
+function inCap(x: number, y: number, ex: number, ey: number, dx: number, dy: number, h: number, cap: StrokeStyle['cap']): boolean {
+  if (cap === 'round') return Math.hypot(x - ex, y - ey) <= h;
+  if (cap === 'butt') return false;
+  const t = (x - ex) * dx + (y - ey) * dy;
+  const d = -(x - ex) * dy + (y - ey) * dx;
+  return t >= 0 && t <= h && Math.abs(d) <= h;
+}
+
+/**
+ * Whether `(x, y)` is in the join at `(vx, vy)` between a segment going `(ax, ay)` and the next going `(bx, by)`
+ * (units), on the outside of the turn: a slice of a disk, a triangle (bevel), or the miter's quadrilateral when its ratio,
+ * `1 / sin(θ / 2)` of the angle θ between the segments, is within the limit (a bevel past it).
+ */
+function inJoin(x: number, y: number, vx: number, vy: number, ax: number, ay: number, bx: number, by: number, h: number, join: StrokeStyle['join'], miterLimit: number): boolean {
+  const cross = ax * by - ay * bx;
+  const dot = ax * bx + ay * by;
+  if (Math.abs(cross) < 1e-12 && dot > 0) return false;
+  // The outer normals: away from the side the path turns to.
+  const s = cross > 0 ? 1 : -1;
+  const [n0x, n0y] = [ay * s, -ax * s];
+  const [n1x, n1y] = [by * s, -bx * s];
+  if (join === 'round') {
+    // The slice of the disk between the two normals (all of it where the path turns back on itself).
+    if (Math.hypot(x - vx, y - vy) > h) return false;
+    const [qx, qy] = [x - vx, y - vy];
+    const turn = n0x * n1y - n0y * n1x;
+    if (Math.abs(turn) < 1e-12) return true;
+    return (n0x * qy - n0y * qx) * turn >= 0 && (qx * n1y - qy * n1x) * turn >= 0;
+  }
+  const p0: [number, number] = [vx + h * n0x, vy + h * n0y];
+  const p1: [number, number] = [vx + h * n1x, vy + h * n1y];
+  if (join === 'miter') {
+    const sinHalf = Math.sqrt(Math.max(0, (1 + dot) / 2));
+    if (sinHalf > 0 && 1 / sinHalf <= miterLimit) {
+      const k = h / (1 + n0x * n1x + n0y * n1y);
+      const tip: [number, number] = [vx + k * (n0x + n1x), vy + k * (n0y + n1y)];
+      return inConvex(x, y, [[vx, vy], p0, tip, p1]);
+    }
+  }
+  return inConvex(x, y, [[vx, vy], p0, p1]);
+}
+
+/** Whether `(x, y)` is in the convex polygon `points` (either winding), edges included. */
+function inConvex(x: number, y: number, points: [number, number][]): boolean {
+  let sign = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const [x0, y0] = points[i]!;
+    const [x1, y1] = points[(i + 1) % points.length]!;
+    const c = (x1 - x0) * (y - y0) - (y1 - y0) * (x - x0);
+    if (c === 0) continue;
+    if (sign === 0) sign = Math.sign(c);
+    else if (Math.sign(c) !== sign) return false;
+  }
+  return true;
 }
 
 const isFinite2 = (...values: number[]): boolean => values.every(Number.isFinite);

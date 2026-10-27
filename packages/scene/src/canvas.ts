@@ -9,14 +9,15 @@ import {
   apply,
   domError,
   flattenSegments,
-  flattenSubpaths,
   IDENTITY,
   invert,
   isIdentity,
+  mapSegment,
   multiply,
   Path2D,
   pathData,
   PathBuilder,
+  strokeContains,
   type Matrix,
 } from './canvas-path.js';
 import { fontKey } from './paint.js';
@@ -959,7 +960,10 @@ export class CanvasContext2D {
     return rule === 'evenodd' ? (winding & 1) !== 0 : winding !== 0;
   }
 
-  /** Hit-tests the stroke by distance to the flattened segments; caps, joins and dashes are not modelled. */
+  /**
+   * Whether the point is in what `stroke()` would cover, with the line width, caps, joins and dashes as they are now:
+   * the path and the point taken into the space of the current transform, as Chrome strokes and tests them.
+   */
   isPointInStroke(x: number, y: number): boolean;
   isPointInStroke(path: Path2D, x: number, y: number): boolean;
   isPointInStroke(...args: unknown[]): boolean {
@@ -968,38 +972,18 @@ export class CanvasContext2D {
     const x = Number(args[offset]);
     const y = Number(args[offset + 1]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    const inverse = invert(this.state.ctm);
+    if (inverse === null) return false;
+    // A Path2D is in the current space; the current path was kept in the canvas's.
+    const segments = path ? path.segments : this.path.segments.map((s) => mapSegment(s, inverse));
+    const [ux, uy] = apply(inverse, x, y);
     const [a, b, c, d] = this.state.ctm;
-    const det = Math.abs(a * d - b * c);
-    if (!Number.isFinite(det) || det === 0) return false;
-    const half = (this.state.lineWidth / 2) * Math.sqrt(det);
-    const r2 = half * half;
-    const subpaths = path ? flattenSubpaths(path.segments, this.state.ctm) : flattenSubpaths(this.path.segments);
-    for (const sub of subpaths) {
-      const pts = sub.points;
-      const count = pts.length;
-      if (count < 2) continue;
-      for (let i = 0; i + 3 < count; i += 2) {
-        if (distToSegmentSq(x, y, pts[i]!, pts[i + 1]!, pts[i + 2]!, pts[i + 3]!) <= r2) return true;
-      }
-      if (sub.closed && count >= 2) {
-        if (distToSegmentSq(x, y, pts[count - 2]!, pts[count - 1]!, pts[0]!, pts[1]!) <= r2) return true;
-      }
-    }
-    return false;
+    const scale = Math.sqrt(Math.abs(a * d - b * c));
+    const s = this.state;
+    return strokeContains(segments, { width: s.lineWidth, cap: s.lineCap, join: s.lineJoin, miterLimit: s.miterLimit, dash: s.dash, dashOffset: s.dashOffset }, ux, uy, 0.05 / Math.max(scale, 1e-6));
   }
   drawFocusIfNeeded(): void {}
   scrollPathIntoView(): void {}
-}
-
-function distToSegmentSq(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const len2 = dx * dx + dy * dy;
-  if (len2 === 0) return (px - x0) ** 2 + (py - y0) ** 2;
-  const t = Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
-  const qx = x0 + t * dx;
-  const qy = y0 + t * dy;
-  return (px - qx) ** 2 + (py - qy) ** 2;
 }
 
 const SPACING_LENGTH = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(px|em|rem|pt)?$/i;
