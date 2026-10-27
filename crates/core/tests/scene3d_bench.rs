@@ -46,8 +46,9 @@ fn scene(layer: serde_json::Value, base: &Path) -> Scene {
 
 /// A GLB of a tube `rings` x `around` vertices along +y (0 to 4), skinned to a
 /// chain of `joints` joints that bend about z over a 2 s clip "bend", with one
-/// morph target (the tube swelling) whose weight the clip also drives.
-fn skinned_tube(rings: usize, around: usize, joints: usize) -> Vec<u8> {
+/// morph target (the tube swelling) whose weight the clip also drives, and
+/// `idle` more targets that move nothing (they share one accessor of zeros).
+fn skinned_tube(rings: usize, around: usize, joints: usize, idle: usize) -> Vec<u8> {
     let height = 4.0_f32;
     let radius = 0.3_f32;
     let mut positions = Vec::new();
@@ -95,7 +96,10 @@ fn skinned_tube(rings: usize, around: usize, joints: usize) -> Vec<u8> {
         .iter()
         .flat_map(|&s| [0.0, 0.0, s, (1.0 - s * s).sqrt()])
         .collect();
-    let swell_weights = [0.0_f32, 1.0, 0.0];
+    let swell_weights: Vec<f32> = [0.0_f32, 1.0, 0.0]
+        .iter()
+        .flat_map(|&w| std::iter::once(w).chain(std::iter::repeat_n(0.0, idle)))
+        .collect();
 
     let mut blob: Vec<u8> = Vec::new();
     let mut views = Vec::new();
@@ -129,6 +133,7 @@ fn skinned_tube(rings: usize, around: usize, joints: usize) -> Vec<u8> {
     );
     let nrm = add(f32s(&normals), count, "VEC3", 5126, None);
     let swl = add(f32s(&swell), count, "VEC3", 5126, None);
+    let still = add(vec![0; count * 12], count, "VEC3", 5126, None);
     let jnt = add(
         joint_ids.iter().flat_map(|x| x.to_le_bytes()).collect(),
         count,
@@ -153,7 +158,16 @@ fn skinned_tube(rings: usize, around: usize, joints: usize) -> Vec<u8> {
         Some((vec![0.0], vec![2.0])),
     );
     let rot = add(f32s(&bend), 3, "VEC4", 5126, None);
-    let mw = add(f32s(&swell_weights), 3, "SCALAR", 5126, None);
+    let mw = add(
+        f32s(&swell_weights),
+        swell_weights.len(),
+        "SCALAR",
+        5126,
+        None,
+    );
+    let targets: Vec<_> = std::iter::once(json!({"POSITION": swl}))
+        .chain(std::iter::repeat_n(json!({"POSITION": still}), idle))
+        .collect();
 
     // Node 0 is the mesh; nodes 1.. the joints, each the child of the one before.
     let mut nodes = vec![json!({"mesh": 0, "skin": 0})];
@@ -173,9 +187,9 @@ fn skinned_tube(rings: usize, around: usize, joints: usize) -> Vec<u8> {
         "scene": 0,
         "scenes": [{"nodes": [0, 1]}],
         "nodes": nodes,
-        "meshes": [{"weights": [0.0], "primitives": [{
+        "meshes": [{"weights": vec![0.0; 1 + idle], "primitives": [{
             "attributes": {"POSITION": pos, "NORMAL": nrm, "JOINTS_0": jnt, "WEIGHTS_0": wgt},
-            "targets": [{"POSITION": swl}],
+            "targets": targets,
             "indices": idx,
             "material": 0
         }]}],
@@ -214,7 +228,7 @@ fn skinned_tube(rings: usize, around: usize, joints: usize) -> Vec<u8> {
 fn bench_skinned_model() {
     let dir = scratch();
     // 400 rings of 512: 204,800 vertices and 408,576 triangles a model.
-    std::fs::write(dir.join("tube.glb"), skinned_tube(400, 512, 8)).unwrap();
+    std::fs::write(dir.join("tube.glb"), skinned_tube(400, 512, 8, 0)).unwrap();
     for copies in [1, 4] {
         let objects: Vec<_> = (0..copies)
             .map(|i| {
@@ -303,4 +317,34 @@ fn bench_shadow_maps() {
             Err(e) => println!("shadows, {name}: not drawn ({e})"),
         }
     }
+}
+
+/// Not a benchmark: a rig whose morph targets are more than the device lets
+/// one storage binding hold (128 MiB by default) is deformed on the CPU, and
+/// draws as the same pose with the GPU deforming it.
+#[test]
+fn a_morph_rig_over_the_storage_binding_limit_is_drawn_as_on_the_gpu() {
+    let dir = scratch();
+    // 200 x 300 = 60,000 vertices; 1 + 99 targets of 24 bytes a vertex is 144 MB.
+    std::fs::write(dir.join("rig.glb"), skinned_tube(200, 300, 4, 99)).unwrap();
+    std::fs::write(dir.join("small.glb"), skinned_tube(200, 300, 4, 0)).unwrap();
+    let frame = |src: &str| {
+        let layer = json!({"id": "s", "type": "scene3d", "width": 320, "height": 180,
+            "camera": {"position": [0, 0, 8]},
+            "lights": [{"type": "ambient", "intensity": 0.3}, {"type": "directional", "direction": [-1, -1, -1]}],
+            "objects": [{"type": "model", "src": src, "animation": "bend", "position": [0, -2, 0], "castShadow": true}]});
+        let json = json!({"width": 320, "height": 180, "fps": 30, "durationInFrames": 60, "layers": [layer]});
+        let scene = Scene::from_json(&json.to_string(), dir.clone()).unwrap();
+        // 0.5 s into the clip: bent, and swollen by half.
+        kinetograph_core::render_still(scene, 15).unwrap()
+    };
+    let (big, small) = (frame("rig.glb"), frame("small.glb"));
+    assert!(big.rgba.chunks(4).any(|p| p[3] > 0), "the rig is drawn");
+    let off = big
+        .rgba
+        .iter()
+        .zip(&small.rgba)
+        .filter(|(a, b)| a.abs_diff(**b) > 2)
+        .count();
+    assert!(off < 20, "{off} channels differ");
 }

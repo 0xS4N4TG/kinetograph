@@ -19,7 +19,16 @@ use crate::scene3d::MAX_SHADOW_MAPS;
 use crate::scene3d::draw::{DrawItem, DrawScene, Texture};
 use crate::scene3d::environment::Environment;
 use crate::scene3d::mesh::{MeshData, VERTEX_BYTES, Vertex3};
-use crate::scene3d::model::DeformData;
+use crate::scene3d::model::{DeformData, deform_on_cpu};
+
+/// Whether a storage buffer of `bytes` may be made and bound whole on a
+/// device of `limits`.
+fn fits_storage_binding(bytes: u64, limits: &wgpu::Limits) -> bool {
+    bytes
+        <= limits
+            .max_storage_buffer_binding_size
+            .min(limits.max_buffer_size)
+}
 
 /// The most workgroups of the deform pass in a row (WebGPU's least
 /// `maxComputeWorkgroupsPerDimension`); a bigger mesh takes more rows.
@@ -630,6 +639,19 @@ impl State {
                 continue;
             };
             let data = &deform.data;
+            if !fits_storage_binding(data.largest_binding(deform.joints.len()), &device.limits()) {
+                // More than one storage binding may hold (a rig of many
+                // morph targets): deformed on the CPU, as the shader would.
+                let mesh = deform_on_cpu(&item.mesh, deform);
+                out.push(Some(device.create_buffer_init(
+                    &wgpu::util::BufferInitDescriptor {
+                        label: Some("scene3d deformed vertices (CPU)"),
+                        contents: &Vertex3::bytes(&mesh.vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    },
+                )));
+                continue;
+            }
             let deformer = self.deformer.get_or_insert_with(|| Deformer::new(device));
             let gpu = self.deform_data.entry(data.id).or_insert_with(|| {
                 let targets: Vec<u8> = data
@@ -1244,8 +1266,8 @@ impl Compositor {
                     label: Some("scene3d shadow"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        // The whole layer is cleared to "nothing in the way",
-                        // so a lookup past a smaller map's corner is lit.
+                        // The shader reads only the map's own corner of the
+                        // layer (it clamps to the map's texels).
                         view: &maps.layers[slot],
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Clear(1.0),
@@ -1391,6 +1413,20 @@ mod tests {
         // Scale 2 about the origin.
         let m = placement((50.0, 50.0), Affine::scale(2.0), (100, 100));
         assert!((through(&m, 1.0, -1.0).0 - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_deform_bigger_than_a_storage_binding_goes_to_the_cpu() {
+        let limits = wgpu::Limits::default();
+        // 128 MiB a binding by default.
+        assert!(fits_storage_binding(128 << 20, &limits));
+        assert!(!fits_storage_binding((128 << 20) + 1, &limits));
+        // A buffer bigger than the device makes does not fit, whatever the binding allows.
+        let wide = wgpu::Limits {
+            max_storage_buffer_binding_size: u64::MAX,
+            ..limits
+        };
+        assert!(!fits_storage_binding(wide.max_buffer_size + 1, &wide));
     }
 
     #[test]

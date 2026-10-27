@@ -181,7 +181,14 @@ fn filter_shadow(
     var sum = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
-            let at = (uv + vec2<f32>(f32(x), f32(y)) * radius * texel) * scale;
+            // Held to the map's own texels, as clamping to its edge would:
+            // a smaller map's layer holds nothing of it past its corner.
+            let own = clamp(
+                uv + vec2<f32>(f32(x), f32(y)) * radius * texel,
+                vec2<f32>(0.5 * texel),
+                vec2<f32>(1.0 - 0.5 * texel),
+            );
+            let at = own * scale;
             sum += textureSampleCompareLevel(shadow_maps, shadow_sampler, at, slot, depth);
         }
     }

@@ -370,10 +370,30 @@ impl DeformData {
     }
 }
 
+impl DeformData {
+    /// The bytes of the biggest storage buffer the GPU deform binds for this
+    /// part with `joints` joint matrices: the rest vertices, the vertices it
+    /// writes, the morph targets (24 bytes a vertex each), the joints and
+    /// weights (32 bytes a vertex), the matrices or the target weights.
+    pub fn largest_binding(&self, joints: usize) -> u64 {
+        let vertices = self.vertex_count as u64;
+        [
+            vertices * 32,
+            vertices * 24 * self.target_count as u64,
+            joints as u64 * 64,
+            self.target_count as u64 * 4,
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0)
+    }
+}
+
 /// What the GPU makes of `mesh` in the pose `deform`, on the CPU: the same
-/// sums as `shaders/scene3d_deform.wgsl`, for the tests to check it by.
-#[cfg(test)]
-pub(crate) fn deform_on_cpu(mesh: &MeshData, deform: &PoseDeform) -> MeshData {
+/// sums as `shaders/scene3d_deform.wgsl`. The compositor deforms a part this
+/// way when its data is more than the device lets one storage binding hold;
+/// the tests check the shader by it.
+pub fn deform_on_cpu(mesh: &MeshData, deform: &PoseDeform) -> MeshData {
     let data = &deform.data;
     let n = data.vertex_count;
     let mut vertices = mesh.vertices.clone();
@@ -861,10 +881,16 @@ impl Loader<'_> {
                     return Err("a skin's joints and weights do not cover every vertex".into());
                 }
                 for w in &mut weights {
-                    // The weights are to sum to 1; make sure.
+                    // The weights are to sum to 1 (glTF 2.0, "Skinned Mesh
+                    // Attributes"); make sure. A vertex whose weights do not
+                    // (all 0, or not numbers) follows its first joint alone, as
+                    // three.js's `normalizeSkinWeights` makes it, rather than
+                    // collapsing to the origin.
                     let sum: f32 = w.iter().sum();
-                    if sum > 0.0 {
+                    if sum > 0.0 && sum.is_finite() {
                         w.iter_mut().for_each(|x| *x /= sum);
+                    } else {
+                        *w = [1.0, 0.0, 0.0, 0.0];
                     }
                 }
                 Some((
@@ -1417,6 +1443,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_vertex_with_no_skin_weight_follows_its_first_joint_and_stays_in_the_box() {
+        // The top vertices weigh 0 on joints (1, 0, 0, 0): they follow joint 1,
+        // as in skin.glb where they weigh 1 on it, instead of the origin.
+        let (bare, skin) = (open("unweighted.glb"), open("skin.glb"));
+        for t in [0.0, 0.5, 1.0] {
+            let a = placed_on_cpu(&bare, &bare.pose(Some((0, t))));
+            let b = placed_on_cpu(&skin, &skin.pose(Some((0, t))));
+            for i in 0..6 {
+                near32(position(&a[0], i), position(&b[0], i));
+            }
+            inside_bounds(&bare, &bare.pose(Some((0, t))));
+        }
+        let data = &bare.parts[0].deform.as_ref().unwrap().data;
+        assert_eq!(data.weights[4], [1.0, 0.0, 0.0, 0.0]);
     }
 
     #[test]

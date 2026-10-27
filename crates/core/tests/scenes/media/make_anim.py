@@ -10,6 +10,7 @@
                      one corner (the flat normals follow).
     skin.glb         a bar of two segments skinned to two joints, and the clip
                      "bend" (the upper joint turns 90 degrees about z in 1 s).
+    unweighted.glb   skin.glb with the top two vertices' skin weights all 0.
     unsupported.glb  what the loader reports and does not read: a points
                      primitive, a texture on the second set of texture
                      coordinates, alphaMode MASK and the
@@ -239,6 +240,56 @@ inverse_bind = g.accessor(
 )
 g.write(
     "skin.glb",
+    scene=0,
+    scenes=[{"nodes": [0, 2]}],
+    nodes=[
+        {"name": "base", "children": [1]},
+        {"name": "tip", "translation": [0, 1, 0]},
+        {"name": "bar", "mesh": 0, "skin": 0},
+    ],
+    meshes=[
+        {
+            "primitives": [
+                {
+                    "attributes": {"POSITION": pos, "NORMAL": nrm, "JOINTS_0": joints, "WEIGHTS_0": weights},
+                    "indices": idx,
+                    "material": 0,
+                }
+            ]
+        }
+    ],
+    materials=[{"doubleSided": True}],
+    skins=[{"joints": [0, 1], "inverseBindMatrices": inverse_bind, "skeleton": 0}],
+    animations=[
+        {
+            "name": "bend",
+            "samplers": [sampler(g, [0.0, 1.0], [quat_z(0), quat_z(90)], "VEC4")],
+            "channels": [{"sampler": 0, "target": {"node": 1, "path": "rotation"}}],
+        }
+    ],
+)
+
+# --- unweighted.glb ------------------------------------------------------------
+# skin.glb with the top two vertices' weights all 0 (joints (1, 0, 0, 0)), which glTF forbids and files have.
+g = Glb()
+pos = g.accessor(bar, "VEC3", target=34962, bounds=True)
+nrm = g.accessor([(0.0, 0.0, 1.0)] * 6, "VEC3", target=34962)
+idx = g.accessor([0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4], "SCALAR", USHORT, target=34963)
+joints = g.accessor([(0, 0, 0, 0)] * 2 + [(0, 1, 0, 0)] * 2 + [(1, 0, 0, 0)] * 2, "VEC4", UBYTE, target=34962)
+weights = g.accessor(
+    [(1.0, 0.0, 0.0, 0.0)] * 2 + [(0.5, 0.5, 0.0, 0.0)] * 2 + [(0.0, 0.0, 0.0, 0.0)] * 2,
+    "VEC4",
+    target=34962,
+)
+inverse_bind = g.accessor(
+    [
+        (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+        (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 1.0),
+    ],
+    "MAT4",
+)
+g.write(
+    "unweighted.glb",
     scene=0,
     scenes=[{"nodes": [0, 2]}],
     nodes=[

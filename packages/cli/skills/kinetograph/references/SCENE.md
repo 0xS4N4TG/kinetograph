@@ -739,7 +739,8 @@ plus GGX specular per light, and the environment if there is one.
     and added; for a mesh with no normals the flat ones are made again from the moved positions. Tangent displacements
     are not read. The weights come from the clip, else the node's, else the mesh's.
   - **Skins.** A mesh on a node with a skin is moved by the skin's joints, each vertex by up to 4 of them
-    (`JOINTS_0`, `WEIGHTS_0`; the weights are made to sum to 1) through the joint matrices
+    (`JOINTS_0`, `WEIGHTS_0`; the weights are made to sum to 1, and a vertex whose weights are all 0, which glTF
+    forbids, follows its first listed joint alone, as three.js's `normalizeSkinWeights` makes it) through the joint matrices
     `world(joint) * inverseBind(joint)`, so an animated character deforms. The mesh node's own transform does not apply
     to a skinned mesh, as the glTF spec says. Normals are turned by the same blend. Morph targets are applied before the
     skin.
@@ -750,6 +751,9 @@ plus GGX specular per light, and the environment if there is one.
     the M4, where deforming it on the CPU took 10 to 12 ms, and four of them in 9 to 15 ms against about 30
     (`tests/scene3d_bench.rs`, two rounds each on a shared machine). The box a deformed part is
     sorted and shadow-fitted by is worked out from its joints' boxes, so it holds every vertex without reading them back.
+    A part whose data is more than the device lets one storage buffer hold (128 MiB at the default limits: a rig of 100
+    morph targets on 60,000 vertices is 144 MB) is deformed on the CPU instead, the same sums each frame, so nothing is
+    left out.
   - **Normal, metallic-roughness, occlusion and emissive maps** (texture coordinate set 0) are drawn: the normal map's
     tangent frame comes from screen-space derivatives, so the mesh needs no tangents; its `scale` is kept; the
     metallic-roughness texture's blue and green multiply the metallic and roughness factors; the occlusion texture's red,
