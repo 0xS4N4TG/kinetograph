@@ -192,7 +192,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 - **Scene colours** take any CSS colour (`white`, `rgb()`, `hsl()`, `oklch()`, ...), not only hex. SCENE.md, top.
 - **Missing glyphs.** A character the font lacks falls back per character to bundled Noto Symbols 2, Math and Emoji
   (monochrome). CJK is not bundled: load a font. A character no font has is reported by `doctor`, `--strict` and
-  `inspect` (`missingChars`). `monospace` is proportional unless you load a mono font. ENGINE.md "Fallback fonts".
+  `inspect` (`missingChars`). `monospace` is the bundled JetBrains Mono (Regular) unless you load a mono font. ENGINE.md "Fallback fonts".
 - **`<Series>` / `<TransitionSeries>`** accept Fragment-wrapped children, so `.map()` can emit pairs. AUTHORING.md §7.1.
 - **`renderer:` line.** `render`, `still` and `doctor` print `Skia GPU (Metal)` or `Skia CPU (...)`; CPU means slow.
 - **GSAP** (core, free plugins, Flip): seek a paused timeline to `frame / fps`, or let `gsap.to` play by itself.

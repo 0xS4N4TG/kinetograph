@@ -1394,6 +1394,9 @@ Libraries that need no plugin, only frame-pure use (details and snippets in `/do
 `/docs/compat/#libraries`): Recharts (`isAnimationActive={false}`, fixed `width`/`height`), d3 scales and shapes and
 `d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()`, Paper.js (clear and redraw each
 frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
+Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` is the bundled JetBrains Mono unless you
+load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws nothing (`mermaid.render` throws): render the diagram to
+SVG ahead of time and use it as an `<Img>`. Load a font before Chart.js or Recharts measure text.
 Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` falls back to a proportional face, so
 load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws with `mermaid.initialize({ startOnLoad: false, htmlLabels: false })` (flowchart, sequence, class and pie checked); with the
 default HTML labels (`<foreignObject>` with `<div>`s) the SVG is not drawn, so keep `htmlLabels: false`. Load a font before Chart.js or Recharts measure text.
