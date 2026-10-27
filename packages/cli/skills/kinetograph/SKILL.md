@@ -198,6 +198,10 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   Plot, Vega; Shiki is close (needs a mono font); Mermaid is broken (pre-render to SVG). AUTHORING.md §11.10.
 - **HyperFrames projects** render as they are: `render|still|doctor|studio <index.html|dir>`; run
   `kinetograph fetch-deps <entry>` first for CDN scripts and media. AUTHORING.md §11.11, `/docs/compat/#hyperframes-projects`.
+- **A plain HTML page** (no React) renders the same way: give the root element `data-composition-id`, `data-width`,
+  `data-height` and `data-duration` (seconds; 30 fps), or it renders at 1920x1080 for 1 s. Scripts run as in a browser;
+  `requestAnimationFrame` gets each frame's time (frame 45 is 1500 ms). A page's canvas keeps its pixels from frame to
+  frame (trails work) and a single frame replays the calls before it, so a still matches the same frame of a render.
 - **Canvas.** `<Canvas width height draw>` or `<canvas>` + `getContext('2d'|'webgl'|'webgl2'|'webgpu')`; a canvas
   starts empty each frame. AUTHORING.md §6.5 to §6.7. `preserve-3d` with effects is flattened (ENGINE.md).
 - **`<Video datamosh>`** smears one shot into the next with the video's motion vectors. AUTHORING.md §11.8,
