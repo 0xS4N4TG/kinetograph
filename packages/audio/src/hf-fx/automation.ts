@@ -286,3 +286,58 @@ export function laneMax(lanes: readonly Lane[], target: string): number | null {
   const lane = lanes.find((l) => l.target === target);
   return lane ? lane.points.reduce((max, p) => Math.max(max, p.v), -Infinity) : null;
 }
+
+// ---- a bus's fader (audioMixer.ts: volumeLaneKeyframes, the PCM baker) ----
+
+/** Linear gain of +12 dB, the ceiling of every volume (audioGain.ts: MAX_AUDIO_GAIN). */
+const MAX_GAIN = 10 ** (12 / 20);
+
+/** The `volume` lane of a `data-automation` value, clamped to 0..+12 dB; null without one or for text that is not an automation. */
+export function parseVolumeLane(json: string): Lane | null {
+  let raw: { version?: unknown; lanes?: unknown } | null;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== 'object' || raw === null || raw.version !== 1 || !Array.isArray(raw.lanes)) return null;
+  const lane = (raw.lanes as { target?: unknown; points?: unknown }[]).find((l) => l?.target === 'volume');
+  if (!lane || !Array.isArray(lane.points)) return null;
+  const points = cleanPoints(lane.points, { min: 0, max: MAX_GAIN, scale: 'linear' });
+  return points.length > 0 ? { target: 'volume', points } : null;
+}
+
+/**
+ * A bus's fader at composition seconds, read forwards (each call at a time no earlier than the last): `gain` alone, or
+ * the lane times `gain` (held to 0..+12 dB) capped at +12 dB, as HyperFrames bakes it: straight between the lane's
+ * points, a bent segment sampled 30 times a second and straight between the samples, the first value before the lane
+ * and the last after it.
+ */
+export function volumeEnvelope(lane: Lane | null, gain: number): (t: number) => number {
+  if (lane === null) return () => gain;
+  const g = Number.isFinite(gain) ? Math.max(0, Math.min(MAX_GAIN, gain)) : 1;
+  const ts: number[] = [];
+  const vs: number[] = [];
+  const pts = lane.points;
+  pts.forEach((a, i) => {
+    ts.push(a.t);
+    vs.push(g * a.v);
+    const b = pts[i + 1];
+    if (!b || !bent(a)) return;
+    const steps = Math.min(4096, Math.max(2, Math.ceil((b.t - a.t) * 30)));
+    for (let k = 1; k < steps; k++) {
+      const t = a.t + ((b.t - a.t) * k) / steps;
+      ts.push(t);
+      vs.push(Math.min(MAX_GAIN, g * sampleLane(lane, t)));
+    }
+  });
+  let k = 0;
+  return (t: number): number => {
+    if (t <= ts[0]!) return Math.min(MAX_GAIN, vs[0]!);
+    while (k + 1 < ts.length && ts[k + 1]! <= t) k++;
+    if (k + 1 >= ts.length) return Math.min(MAX_GAIN, vs[k]!);
+    const span = ts[k + 1]! - ts[k]!;
+    const x = span > 0 ? (t - ts[k]!) / span : 1;
+    return Math.min(MAX_GAIN, vs[k]! + (vs[k + 1]! - vs[k]!) * x);
+  };
+}

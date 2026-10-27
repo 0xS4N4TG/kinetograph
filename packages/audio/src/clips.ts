@@ -1,12 +1,10 @@
 import type { AudioClipJson, HfAudioFxJson } from '@kinetographdev/scene';
 
-export interface AudioClipTimeline extends Omit<AudioClipJson, 'volume' | 'hfFx'> {
+export interface AudioClipTimeline extends Omit<AudioClipJson, 'volume'> {
   /** frame → volume */
   volumes: Map<number, number>;
-  /** A HyperFrames element's effects; `group.gain` is in `groupGains`. */
-  hfFx?: Omit<HfAudioFxJson, 'group'> & { group: { id: string; chain: string; automation: string | null } | null };
-  /** frame → the fader of the element's `hfFx.group`. */
-  groupGains?: Map<number, number>;
+  /** A HyperFrames element's effects. */
+  hfFx?: HfAudioFxJson;
 }
 
 /**
@@ -14,7 +12,7 @@ export interface AudioClipTimeline extends Omit<AudioClipJson, 'volume' | 'hfFx'
  * sound of the same `<Video>`) while its `id` and its fixed fields (`src`, `from`, trims, rate, `loop`, `video`, `toneFrequency`) stay
  * the same; if one of those changes, the clip from that frame on is a new timeline, since it no longer plays one continuous file. A frame the clip is muted in
  * (`muted`, or inside a `<Freeze>`) gets volume 0, and `muted` on the result is true only if every frame was muted.
- * A HyperFrames element's `hfFx` is a fixed field too, except its group's fader, which is kept per frame in `groupGains`.
+ * A HyperFrames element's `hfFx` is a fixed field too.
  * A frame the clip is absent from has no entry, which the mix plays as silence.
  */
 export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): AudioClipTimeline[] {
@@ -32,7 +30,7 @@ export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): 
         clip.loop,
         clip.video === true,
         clip.toneFrequency ?? 1,
-        clip.hfFx ? fixedFx(clip.hfFx) : null,
+        clip.hfFx ?? null,
       ]);
       let timeline = timelines.get(key);
       if (!timeline) {
@@ -48,21 +46,14 @@ export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): 
           ...(clip.toneFrequency !== undefined && clip.toneFrequency !== 1 ? { toneFrequency: clip.toneFrequency } : {}),
           muted: true,
           volumes: new Map(),
-          ...(clip.hfFx ? { hfFx: fixedFx(clip.hfFx) } : {}),
-          ...(clip.hfFx?.group ? { groupGains: new Map<number, number>() } : {}),
+          ...(clip.hfFx ? { hfFx: clip.hfFx } : {}),
         };
         timelines.set(key, timeline);
       }
       if (!clip.muted) timeline.muted = false;
       timeline.volumes.set(frame, clip.muted ? 0 : clip.volume);
-      if (clip.hfFx?.group) timeline.groupGains!.set(frame, clip.hfFx.group.gain);
     }
   }
   return [...timelines.values()];
 }
 
-/** The fields of `hfFx` that are the same on every frame of an element. */
-function fixedFx(fx: HfAudioFxJson): NonNullable<AudioClipTimeline['hfFx']> {
-  const { group, ...rest } = fx;
-  return { ...rest, group: group ? { id: group.id, chain: group.chain, automation: group.automation } : null };
-}

@@ -7,7 +7,7 @@ import type { AudioClipTimeline } from './clips.js';
 import { shiftPitch } from './pitch.js';
 import { registeredCallbacks } from './registry.js';
 import { parseFxChain, type FxChain } from './hf-fx/chain.js';
-import { parseFxLanes, type Lane } from './hf-fx/automation.js';
+import { parseFxLanes, parseVolumeLane, volumeEnvelope, type Lane } from './hf-fx/automation.js';
 import { chainTailSeconds, MAX_TAIL_SECONDS, runFxChain } from './hf-fx/graph.js';
 
 export interface AudioPcm {
@@ -74,7 +74,7 @@ export async function renderAudio(options: {
 
   const rendered = await ctx.startRendering();
   const channels: Float32Array[] = [];
-  for (let c = 0; c < rendered.numberOfChannels; c++) channels.push(Float32Array.from(rendered.getChannelData(c)));
+  for (let c = 0; c < rendered.numberOfChannels; c++) channels.push(rendered.getChannelData(c));
   if (fx.tracks.length > 0 || fx.master !== null) await mixHfFx(fx, channels, { fps, first, last, sampleRate, load });
   return { sampleRate: rendered.sampleRate, channels };
 }
@@ -134,7 +134,8 @@ interface FxTrack {
 interface FxGroup {
   chain: FxChain;
   lanes: Lane[];
-  tracks: FxTrack[];
+  /** A new reader of the group's fader at composition seconds (read forwards). */
+  fader: () => (t: number) => number;
 }
 interface FxPlan {
   /** The clips that play into a chain rather than straight into the mix. */
@@ -174,10 +175,10 @@ function planHfFx(clips: AudioClipTimeline[]): FxPlan {
         if (!group) {
           const groupChain = read(`group #${bus.id}`, () => parseFxChain(bus.chain));
           const groupLanes = bus.automation ? read(`group #${bus.id}`, () => parseFxLanes(bus.automation!, groupChain)) : [];
-          group = { chain: groupChain, lanes: groupLanes, tracks: [] };
+          const lane = bus.automation ? parseVolumeLane(bus.automation) : null;
+          group = { chain: groupChain, lanes: groupLanes, fader: () => volumeEnvelope(lane, bus.volume) };
           plan.groups.set(bus.id, group);
         }
-        group.tracks.push(track);
       }
     }
     track.clips.push(clip);
@@ -185,22 +186,48 @@ function planHfFx(clips: AudioClipTimeline[]): FxPlan {
   return plan;
 }
 
-/**
- * `gains` (frame → gain) as one gain per sample from frame `from`: each frame's held for the frame, the first frame's
- * before it, and after the last frame `after` until `afterUntil` seconds, then 0.
- */
-function frameGains(gains: Map<number, number>, from: number, length: number, fps: number, sampleRate: number, after: number, afterUntil: number): Float32Array {
-  const out = new Float32Array(length);
-  if (gains.size === 0) return out;
-  const frames = [...gains.keys()];
-  const firstFrame = Math.min(...frames);
-  const lastFrame = Math.max(...frames);
-  for (let i = 0; i < length; i++) {
-    const t = from / fps + i / sampleRate;
-    const frame = Math.floor(t * fps + 1e-9);
-    out[i] = frame > lastFrame ? (t < afterUntil ? after : 0) : (gains.get(Math.max(frame, firstFrame)) ?? 0);
+/** The least and greatest of `values`, without spreading them into arguments (a long render has more frames than a call takes). */
+export function extent(values: Iterable<number>): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
   }
-  return out;
+  return [lo, hi];
+}
+
+/**
+ * Adds `planes` (from sample `at` of `into`) times one gain per frame of `gains` (frame → gain), the planes starting at
+ * frame `start`: each frame's gain held for the frame, the first frame's before it, and after the last frame `after`
+ * until `afterUntil` seconds, then 0. A missing channel of `planes` repeats its last.
+ */
+function addFrameGains(
+  into: Float32Array[],
+  planes: Float32Array[],
+  at: number,
+  clock: { start: number; fps: number; sampleRate: number },
+  gains: Map<number, number>,
+  after: number,
+  afterUntil: number,
+): void {
+  const { start, fps, sampleRate } = clock;
+  const [firstFrame, lastFrame] = extent(gains.keys());
+  into.forEach((target, c) => {
+    const plane = planes[Math.min(c, planes.length - 1)]!;
+    const n = Math.min(plane.length, target.length - at);
+    let frame = Number.NaN;
+    let gain = 0;
+    for (let i = 0; i < n; i++) {
+      const t = start / fps + i / sampleRate;
+      const f = Math.floor(t * fps + 1e-9);
+      if (f !== frame || f > lastFrame) {
+        frame = f;
+        gain = f > lastFrame ? (t < afterUntil ? after : 0) : (gains.get(Math.max(f, firstFrame)) ?? 0);
+      }
+      target[at + i]! += plane[i]! * gain;
+    }
+  });
 }
 
 /**
@@ -208,7 +235,8 @@ function frameGains(gains: Map<number, number>, from: number, length: number, fp
  * through the master bus, into `channels`, as HyperFrames' render does (engine/audioMixer.ts): the element's sound at
  * `pre` from its first sample, its chain with its `fx.*` lanes on the element's clock, then its `volume` (after `end`,
  * `after`, for as long as the chain's tail); a group's members summed, its chain with its lanes on composition time,
- * then its fader; and the master chain over the whole mix.
+ * then its fader (`data-volume` times its `volume` lane on composition time, so it holds through the gaps between
+ * members); and the master chain over the whole mix. Each pass hands its input to the next and keeps no copy of it.
  */
 async function mixHfFx(
   plan: FxPlan,
@@ -218,57 +246,53 @@ async function mixHfFx(
   const { fps, first, last, sampleRate, load } = range;
   const total = channels[0]!.length;
   const { OfflineAudioContext } = await import('node-web-audio-api');
-  const add = (into: Float32Array[], planes: Float32Array[], at: number, gain: Float32Array): void => {
-    into.forEach((target, c) => {
-      const plane = planes[Math.min(c, planes.length - 1)]!;
-      const n = Math.min(plane.length, target.length - at);
-      for (let i = 0; i < n; i++) target[at + i]! += plane[i]! * gain[i]!;
-    });
-  };
   const sums = new Map<FxGroup, Float32Array[]>();
   for (const group of plan.groups.values()) sums.set(group, channels.map(() => new Float32Array(total)));
 
   for (const track of plan.tracks) {
-    const frames = track.clips.flatMap((clip) => [...clip.volumes.keys()]);
-    if (frames.length === 0) continue;
-    const from = Math.max(first, Math.min(...frames));
-    const at = Math.round(((from - first) / fps) * sampleRate);
+    const volumes = new Map<number, number>();
+    for (const clip of track.clips) for (const [f, v] of clip.volumes) volumes.set(f, v);
+    if (volumes.size === 0) continue;
+    const [firstFrame, lastFrame] = extent(volumes.keys());
+    const start = Math.max(first, firstFrame);
+    const at = Math.round(((start - first) / fps) * sampleRate);
     // The element's sound runs until its end and the longest tail after it, at most.
-    const until = Math.max(track.fx.end, (Math.max(...frames) + 1) / fps) + MAX_TAIL_SECONDS;
-    const length = Math.min(total - at, Math.ceil((until - from / fps) * sampleRate));
-    if (from > last || length <= 0) continue;
+    const until = Math.max(track.fx.end, (lastFrame + 1) / fps) + MAX_TAIL_SECONDS;
+    const length = Math.min(total - at, Math.ceil((until - start / fps) * sampleRate));
+    if (start > last || length <= 0) continue;
     // The element's sound alone, from its first frame in the range, at `pre`.
     const ctx = new OfflineAudioContext(channels.length, length, sampleRate);
     for (const clip of track.clips) {
       const buffer = await load(clip);
       const dry = { ...clip, volumes: new Map([...clip.volumes.keys()].map((f): [number, number] => [f, track.fx.pre])) };
-      if (buffer) scheduleClip(ctx, buffer, dry, { fps, first: from, last, timeOf: (frame) => (frame - from) / fps });
+      if (buffer) scheduleClip(ctx, buffer, dry, { fps, first: start, last, timeOf: (frame) => (frame - start) / fps });
     }
     const rendered = await ctx.startRendering();
     let planes: Float32Array[] = [];
-    for (let c = 0; c < rendered.numberOfChannels; c++) planes.push(Float32Array.from(rendered.getChannelData(c)));
+    for (let c = 0; c < rendered.numberOfChannels; c++) planes.push(rendered.getChannelData(c));
     let tail = 0;
     if (track.chain !== null) {
-      planes = await runFxChain(planes, sampleRate, track.chain, track.lanes, { scheduledAt: 0, elapsed: from / fps - track.fx.start });
+      planes = await runFxChain(planes, sampleRate, track.chain, track.lanes, { scheduledAt: 0, elapsed: start / fps - track.fx.start });
       tail = chainTailSeconds(track.chain, track.lanes);
     }
-    const volumes = new Map<number, number>();
-    for (const clip of track.clips) for (const [f, v] of clip.volumes) volumes.set(f, v);
     const group = track.fx.group ? plan.groups.get(track.fx.group.id) : undefined;
-    add(group ? sums.get(group)! : channels, planes, at, frameGains(volumes, from, length, fps, sampleRate, track.fx.after, track.fx.end + tail));
+    addFrameGains(group ? sums.get(group)! : channels, planes, at, { start, fps, sampleRate }, volumes, track.fx.after, track.fx.end + tail);
   }
 
   for (const group of plan.groups.values()) {
-    const planes = await runFxChain(sums.get(group)!, sampleRate, group.chain, group.lanes, { scheduledAt: 0, elapsed: first / fps });
-    const faders = new Map<number, number>();
-    for (const track of group.tracks) for (const clip of track.clips) for (const [f, v] of clip.groupGains ?? []) faders.set(f, v);
-    const lastFader = faders.size > 0 ? faders.get(Math.max(...faders.keys()))! : 0;
-    add(channels, planes, 0, frameGains(faders, first, total, fps, sampleRate, lastFader, Infinity));
+    const sum = sums.get(group)!;
+    sums.delete(group);
+    const planes = await runFxChain(sum, sampleRate, group.chain, group.lanes, { scheduledAt: 0, elapsed: first / fps });
+    channels.forEach((target, c) => {
+      const plane = planes[Math.min(c, planes.length - 1)]!;
+      const fader = group.fader();
+      for (let i = 0; i < target.length; i++) target[i]! += plane[i]! * fader(first / fps + i / sampleRate);
+    });
   }
 
   if (plan.master !== null) {
-    const mastered = await runFxChain(channels, sampleRate, plan.master, [], { scheduledAt: 0, elapsed: first / fps });
-    mastered.forEach((plane, c) => channels[c]!.set(plane));
+    const mastered = await runFxChain(channels.splice(0), sampleRate, plan.master, [], { scheduledAt: 0, elapsed: first / fps });
+    channels.push(...mastered);
   }
 }
 

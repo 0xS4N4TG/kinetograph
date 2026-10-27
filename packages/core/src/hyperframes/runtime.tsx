@@ -564,7 +564,7 @@ class Runtime {
       const hfFx =
         chain === null && groupChain === null && master === null
           ? undefined
-          : (frame: number): HfAudioFxJson => ({
+          : (): HfAudioFxJson => ({
               track: key,
               start: origin,
               end: elementEnd,
@@ -572,7 +572,7 @@ class Runtime {
               automation: chain === null ? null : el.getAttribute('data-automation'),
               pre: chain === null ? 1 : gain,
               after: post(elementEnd - origin),
-              group: groupChain === null ? null : { id: group.id, chain: groupChain, automation: group.getAttribute('data-automation'), gain: fader(frame / fps) },
+              group: groupChain === null ? null : { id: group.id, chain: groupChain, automation: group.getAttribute('data-automation'), volume: groupGain },
               master,
             });
       const mediaStart = sourceOffsetOf(el);
@@ -598,7 +598,7 @@ class Runtime {
               volume={(frame: number) => level(f0 + frame)}
               trimBefore={Math.round(seconds * fps)}
               playbackRate={partRate}
-              {...(hfFx ? { hfFx: (frame: number) => hfFx(f0 + frame) } : {})}
+              {...(hfFx ? { hfFx } : {})}
             />
           </Sequence>,
         );

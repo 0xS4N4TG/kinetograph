@@ -1431,8 +1431,11 @@ export interface HfAudioFxJson {
   pre: number;
   /** The gain after the chain from `end` on (the volume lane's last value, 0 after a fade-out). */
   after: number;
-  /** The `<hf-audio-group>` bus the element plays into, when the group has effects: its chain and lanes (on composition time), and its fader at this frame. */
-  group: { id: string; chain: string; automation: string | null; gain: number } | null;
+  /**
+   * The `<hf-audio-group>` bus the element plays into, when the group has effects: its chain, its `data-automation`
+   * (lanes on composition time) and its `data-volume`. Its fader is `volume` times its `volume` lane.
+   */
+  group: { id: string; chain: string; automation: string | null; volume: number } | null;
   /** The master bus: the root composition's `data-fx-chain`, run over the whole mix. */
   master: string | null;
 }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { renderAudio, type AudioClipTimeline } from '../src/index.js';
+import { extent } from '../src/render.js';
 import { parseFxChain, FxChainError } from '../src/hf-fx/chain.js';
-import { parseFxLanes } from '../src/hf-fx/automation.js';
+import { parseFxLanes, parseVolumeLane, volumeEnvelope } from '../src/hf-fx/automation.js';
 import { chainLatencySamples, chainTailSeconds, reverbImpulse, runFxChain } from '../src/hf-fx/graph.js';
 import { peakBetween, sine, writeWav } from './helpers.js';
 
@@ -44,7 +45,10 @@ describe('HyperFrames effect chains', () => {
 
   it('runs a gain stage exactly and leaves an empty chain alone', async () => {
     const input = [sine(440, 0.5, 0.2, RATE), sine(440, 0.25, 0.2, RATE)];
-    const out = await runFxChain(input, RATE, parseFxChain(chain({ type: 'gain', params: { gain: -6 } })), [], { scheduledAt: 0, elapsed: 0 });
+    // The pass takes its input (the array is emptied), so it gets a copy here.
+    const given = input.map((p) => Float32Array.from(p));
+    const out = await runFxChain(given, RATE, parseFxChain(chain({ type: 'gain', params: { gain: -6 } })), [], { scheduledAt: 0, elapsed: 0 });
+    expect(given).toHaveLength(0);
     const k = Math.pow(10, -6 / 20);
     for (const i of [100, 5000, 9000]) {
       expect(out[0]![i]).toBeCloseTo(input[0]![i]! * k, 6);
@@ -111,6 +115,45 @@ describe('HyperFrames effect chains', () => {
     }
   });
 
+  it('puts the frame clock back once overlapping passes are all done, whatever order they end in', async () => {
+    const g = globalThis as { setTimeout: typeof setTimeout };
+    const real = g.setTimeout;
+    const frameClock = (() => 0) as unknown as typeof setTimeout;
+    g.setTimeout = frameClock;
+    try {
+      const short = runFxChain(impulse(RATE / 20, 10), RATE, parseFxChain(chain({ type: 'limiter' })), [], { scheduledAt: 0, elapsed: 0 });
+      const long = runFxChain(impulse(RATE * 2, 10), RATE, parseFxChain(chain({ type: 'compressor' })), [], { scheduledAt: 0, elapsed: 0 });
+      const third = runFxChain(impulse(RATE / 2, 10), RATE, parseFxChain(chain({ type: 'gate' })), [], { scheduledAt: 0, elapsed: 0 });
+      await Promise.all([short, long, third]);
+      expect(g.setTimeout).toBe(frameClock);
+    } finally {
+      g.setTimeout = real;
+    }
+  });
+
+  it('finds the extent of more values than a call takes as arguments', () => {
+    const many = Array.from({ length: 300_000 }, (_, i) => (i * 7919) % 300_000);
+    expect(() => Math.max(...many)).toThrow(RangeError);
+    expect(extent(many)).toEqual([0, 299_999]);
+    expect(extent(new Map(many.map((v) => [v, 1])).keys())).toEqual([0, 299_999]);
+  });
+
+  it("reads a bus's fader as HyperFrames bakes it: the lane times the gain, capped at +12 dB, held at both ends", () => {
+    expect(volumeEnvelope(null, 0.7)(123)).toBe(0.7);
+    const lane = parseVolumeLane(lanes({ target: 'volume', points: [{ t: 1, v: 1 }, { t: 3, v: 0 }, { t: 4, v: 4 }] }))!;
+    const f = volumeEnvelope(lane, 2);
+    expect(f(0)).toBe(2);
+    expect(f(2)).toBeCloseTo(1, 9);
+    expect(f(3)).toBe(0);
+    // 4 is held to the ceiling, 3.98, then times 2: capped at 3.98 again.
+    expect(f(10)).toBeCloseTo(10 ** (12 / 20), 9);
+    // A bent segment, sampled 30 times a second.
+    const bentLane = parseVolumeLane(lanes({ target: 'volume', points: [{ t: 0, v: 0, curve: 0.5 }, { t: 1, v: 1 }] }))!;
+    const b = volumeEnvelope(bentLane, 1);
+    expect(b(0.5)).toBeCloseTo(Math.pow(0.5, 2), 2);
+    expect(parseVolumeLane('{"version":1,"lanes":[]}')).toBeNull();
+  });
+
   it('builds the same reverb impulse every time, at unit energy, as long as its room', () => {
     const a = reverbImpulse(RATE, 0.7, 0.5);
     expect(a).toEqual(reverbImpulse(RATE, 0.7, 0.5));
@@ -174,11 +217,9 @@ describe('renderAudio with HyperFrames effects', () => {
 
   it('sums a group into its bus, runs the bus chain, then the fader; and the master over the mix', async () => {
     const { dir } = writeWav(sine(440, 0.5, 1, RATE), RATE);
-    const group = { id: 'g', chain: chain({ type: 'gain', params: { gain: -6 } }), automation: null };
-    const member = (track: string, frames: [number, number]): AudioClipTimeline => ({
-      ...clip({ frames, hfFx: fx({ track, start: frames[0] / FPS, end: (frames[1] + 1) / FPS, group }) }),
-      groupGains: new Map(Array.from({ length: frames[1] - frames[0] + 1 }, (_, i): [number, number] => [frames[0] + i, 0.5])),
-    });
+    const group = { id: 'g', chain: chain({ type: 'gain', params: { gain: -6 } }), automation: null, volume: 0.5 };
+    const member = (track: string, frames: [number, number]): AudioClipTimeline =>
+      clip({ frames, hfFx: fx({ track, start: frames[0] / FPS, end: (frames[1] + 1) / FPS, group }) });
     const master = chain({ type: 'gain', params: { gain: -6 } });
     const pcm = await renderAudio({
       fps: FPS,
@@ -191,6 +232,29 @@ describe('renderAudio with HyperFrames effects', () => {
     // Group: -6 dB, fader 0.5; master: another -6 dB.
     expect(peakBetween(pcm.channels[0]!, RATE, 0.1, 0.9)).toBeCloseTo(0.5 * k * 0.5 * k, 3);
     expect(peakBetween(pcm.channels[0]!, RATE, 1.1, 1.9)).toBeCloseTo(0.5 * k * 0.5 * k, 3);
+  });
+
+  it("keeps a group's fader up between its members, so a member's tail through the bus plays on", async () => {
+    const { dir } = writeWav(sine(440, 0.5, 1, RATE), RATE);
+    // A reverb on the bus; members at 0-1 s and 4-5 s, nothing between.
+    const group = { id: 'g', chain: chain({ type: 'reverb', params: { size: 0.5, wet: 1, dry: 0 } }), automation: null, volume: 0.8 };
+    const member = (track: string, frames: [number, number]): AudioClipTimeline =>
+      clip({ frames, hfFx: fx({ track, start: frames[0] / FPS, end: (frames[1] + 1) / FPS, group }) });
+    const pcm = await renderAudio({ fps: FPS, first: 0, last: 179, baseDir: dir, clips: [member('a', [0, 29]), member('b', [120, 149])] });
+    const ch = pcm.channels[0]!;
+    // The room after the first member rings on at the group's fader (it used to be cut at 1 s).
+    expect(peakBetween(ch, RATE, 1.05, 1.6)).toBeGreaterThan(0.01);
+    // A fader lane on composition time: down to 0 from 2 s, so the second member is silent.
+    const faded = { ...group, automation: lanes({ target: 'volume', points: [{ t: 1.9, v: 1 }, { t: 2, v: 0 }] }) };
+    const quiet = await renderAudio({
+      fps: FPS,
+      first: 0,
+      last: 179,
+      baseDir: dir,
+      clips: [clip({ frames: [0, 29], hfFx: fx({ track: 'a', start: 0, end: 1, group: faded }) }), clip({ frames: [120, 149], hfFx: fx({ track: 'b', start: 4, end: 5, group: faded }) })],
+    });
+    expect(peakBetween(quiet.channels[0]!, RATE, 1.05, 1.6)).toBeGreaterThan(0.01);
+    expect(peakBetween(quiet.channels[0]!, RATE, 2.05, 6)).toBe(0);
   });
 
   it('stops on an unreadable chain, naming the element', async () => {
