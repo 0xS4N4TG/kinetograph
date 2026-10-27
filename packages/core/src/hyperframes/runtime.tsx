@@ -556,6 +556,7 @@ class Runtime {
         return Math.max(0, v);
       };
       const level = (frame: number): number => post(frame / fps - origin);
+      const key = `${el.id || el.tagName.toLowerCase()}-${index}`;
       const elementEnd = Number.isFinite(end) ? end : to / fps;
       const hfFx =
         chain === null && groupChain === null && master === null
@@ -573,7 +574,6 @@ class Runtime {
             });
       const mediaStart = sourceOffsetOf(el);
       const rate = rateSpecOf(el);
-      const key = `${el.id || el.tagName.toLowerCase()}-${index}`;
       // [first frame, end frame, file seconds at the first frame, rate] of each Sequence.
       const parts: [number, number, number, number][] = [];
       if (typeof rate === 'number') {
