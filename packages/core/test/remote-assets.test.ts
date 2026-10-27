@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FontDownloadError } from '../src/font-files.js';
-import { makeRemoteAssetResolver } from '../src/remote-assets.js';
+import { readLock } from '../src/lock.js';
+import { makeRemoteAssetResolver, prefetchRemoteAssets } from '../src/remote-assets.js';
 
 describe('the remote asset resolver', () => {
   it('downloads a file once into the cache and answers from memory and then from disk', async () => {
@@ -35,5 +36,50 @@ describe('the remote asset resolver', () => {
     expect(resolve('https://x.test/gone.png')).toBeNull();
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatch(/gone\.png.*HTTP status 404/);
+  });
+
+  it('pre-downloads into the cache and the lock, and a render then reads the cache only', async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), 'kg-assets-'));
+    const lockFile = join(cacheDir, 'kinetograph.lock.json');
+    const url = 'https://x.test/img/a.png';
+    const fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer, text: async () => '', headers: { get: () => null } });
+    const done = await prefetchRemoteAssets([url], { cacheDir, lockFile, fetch: fetch as never });
+    expect(done.fetched).toEqual([url]);
+    expect(readLock(lockFile).files[url]!.size).toBe(3);
+
+    const notes: string[] = [];
+    const fetchSync = (): Uint8Array => {
+      throw new Error('the render must not download');
+    };
+    const path = makeRemoteAssetResolver((m) => notes.push(m), { fetchSync, cacheDir, lockFile })(url);
+    expect(path).not.toBeNull();
+    expect(notes).toEqual([]);
+    expect((await prefetchRemoteAssets([url], { cacheDir, lockFile, fetch: fetch as never })).cached).toEqual([url]);
+  });
+
+  it('stops when the cached file no longer matches the lock', async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), 'kg-assets-'));
+    const lockFile = join(cacheDir, 'kinetograph.lock.json');
+    const url = 'https://x.test/img/b.png';
+    const resolve = makeRemoteAssetResolver(() => {}, { fetchSync: () => new Uint8Array([9]), cacheDir, lockFile });
+    const path = resolve(url)!;
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(path, new Uint8Array([8, 8]));
+    expect(() => makeRemoteAssetResolver(() => {}, { cacheDir, lockFile })(url)).toThrow(/kinetograph\.lock\.json.*--update/);
+  });
+
+  it('adds a file first requested mid-render to the lock and says so; offline downloads nothing', async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), 'kg-assets-'));
+    const lockFile = join(cacheDir, 'kinetograph.lock.json');
+    const notes: string[] = [];
+    const fetchSync = (): Uint8Array => new Uint8Array([4, 4]);
+    expect(makeRemoteAssetResolver((m) => notes.push(m), { fetchSync, cacheDir, lockFile })('https://x.test/late.png')).not.toBeNull();
+    expect(notes[0]).toMatch(/first requested during the render/);
+    expect(readLock(lockFile).files['https://x.test/late.png']!.size).toBe(2);
+
+    const offlineNotes: string[] = [];
+    const offline = makeRemoteAssetResolver((m) => offlineNotes.push(m), { fetchSync, cacheDir, lockFile, offline: true });
+    expect(offline('https://x.test/other.png')).toBeNull();
+    expect(offlineNotes[0]).toMatch(/--offline/);
   });
 });
