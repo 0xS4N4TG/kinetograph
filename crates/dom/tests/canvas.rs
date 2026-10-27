@@ -86,6 +86,12 @@ fn canvas_effects() {
 }
 
 #[test]
+fn canvas_patterns() {
+    // A pattern of a canvas over 16,000 tiles, in a stroke and in text, and repeating along x under a transform.
+    run("canvas_patterns", "", None, 6.0);
+}
+
+#[test]
 fn canvas_scaled() {
     // The bitmap is 100 x 50; CSS makes it 200 x 100 with rounded corners. Chrome stretches the bitmap, which blurs
     // it; the engine draws the commands at the size of the box, so edges are sharp (hence the higher limit).
