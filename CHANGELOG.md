@@ -5,6 +5,12 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+### Added
+
+- `onVideoFrame` on `<Video>`, `<OffthreadVideo>` and `<Html5Video>`, as Remotion has had it since 4.0.190: your code is handed the frame the video shows at each composition frame, as a canvas image source decoded by the engine's own decoder (a pure function of the frame number, whichever frames were rendered before). `ctx.drawImage(frame, ...)` (all three forms, with crop and scale), `createPattern`, WebGL's `texImage2D` and WebGPU's `copyExternalImageToTexture` take it, and `getImageData` of the canvas returns its pixels, alpha included.
+- `drawImage` of a `<video>` element (the frame at its `currentTime`; HyperFrames pages set it from the timeline) on Canvas 2D, and the canvas source `{ "kind": "video" }` in a `canvas` layer (SCENE.md, "canvas").
+- `getImageData` and `texImage2D` of a canvas that holds one plain `drawImage` of a picture file or a video frame are answered on the CPU from the decoder's cache (the addon's `readCanvasPicture`), with no GPU: 0.7 ms against 3.3 ms for a held 1080p frame, and 39 ms against 101 ms for the first call. Anything else is drawn by the renderer as before.
+
 ### Fixed
 
 - An `<svg>` with a `<foreignObject>` that holds a block element (`<div>`, `<p>`) is drawn: the whole `<svg>` used to go missing, with nothing for `doctor` to say. The HTML in a `<foreignObject>` is laid out as a block box of the object's `width` and `height` (the attributes, or CSS), painted by the HTML painter (text, backgrounds, borders, flex, nested SVG), cut to the box by its `overflow`, and carried through the SVG's `viewBox`, transforms, opacity and clip. What cannot be drawn is reported by `doctor` per frame (a percentage size, HTML in a clip path), and the shapes beside it are drawn. Mermaid 12's default HTML labels draw as a result: flowchart, class, state and ER diagrams.
